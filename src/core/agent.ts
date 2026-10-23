@@ -555,7 +555,7 @@ export class Agent {
 
     if (mode === "implement" || mode === "debug") {
       this.isSimpleTask = true;
-      this.simpleTaskApproved = true;
+      this.simpleTaskApproved = this.planState !== "PLANNING_PENDING";
       if (this.planState === "PLANNING_PENDING" && !this.hasRealPlanContent()) {
         this.planState = "IDLE";
       }

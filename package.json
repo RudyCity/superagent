@@ -1,7 +1,7 @@
 {
   "name": "superagent",
   "version": "1.14.11",
-  "description": "Interactive terminal-based AI coding assistant",
+  "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
     "superagent": "./dist/cli.js"
@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "bun src/cli.tsx",
     "prebuild": "bun -e \"const p=require('./package.json');console.log('Building '+p.name+'@'+p.version+' with Bun '+Bun.version)\"",
-    "build": "tsc",
+    "build": "bun --bun x tsc",
     "sync-mcp": "bun scripts/syncMcpSchemas.ts",
     "postbuild": "bun scripts/syncMcpSchemas.ts",
     "start": "bun dist/cli.js",
@@ -30,7 +30,9 @@
     "perf:bun": "bun scripts/bench-bun-runtime.ts",
     "security:bun": "bun scripts/check-bun-security.ts",
     "integration:tline": "bun scripts/bun-tline-bridge-smoke.ts",
-    "compat:bun": "bun scripts/bun-dependency-compat-smoke.ts"
+    "compat:bun": "bun scripts/bun-dependency-compat-smoke.ts",
+    "doctor:launcher": "bun scripts/repair-bun-global-launcher.ts",
+    "repair:launcher": "bun scripts/repair-bun-global-launcher.ts --apply"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
@@ -60,6 +62,8 @@
     "ws": "^8.18.1"
   },
   "devDependencies": {
+    "@tailwindcss/node": "4.3.3",
+    "@tailwindcss/oxide": "4.3.3",
     "@types/node": "^22.15.2",
     "@types/pdf-parse": "^1.1.5",
     "@types/react": "^18.3.20",
@@ -68,9 +72,7 @@
     "@types/ws": "^8.18.1",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "vitest": "^4.1.8",
-    "@tailwindcss/node": "4.3.3",
-    "@tailwindcss/oxide": "4.3.3"
+    "vitest": "^4.1.8"
   },
   "engines": {
     "bun": ">=1.4.2"
@@ -88,11 +90,11 @@
     "jsondiffpatch": "0.7.6",
     "sharp": "0.35.5"
   },
-  "trustedDependencies": [
-    "r-memory"
-  ],
   "patchedDependencies": {
     "ink-text-input@6.0.0": "patches/ink-text-input@6.0.0.patch",
     "mammoth@1.12.0": "patches/mammoth@1.12.0.patch"
-  }
+  },
+  "trustedDependencies": [
+    "r-memory"
+  ]
 }

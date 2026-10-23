@@ -26,6 +26,7 @@
  */
 
 import { execa } from "execa";
+import { StringDecoder } from "node:string_decoder";
 import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import fs from "fs/promises";
@@ -415,7 +416,7 @@ export function knownCliDescriptors(): CliDescriptor[] {
       binary: process.platform === "win32" ? "codex.cmd" : "codex",
       label: "OpenAI Codex CLI",
       available: false,
-      installHint: "Install: npm i -g @openai/codex",
+      installHint: "Install: bun add -g @openai/codex",
       defaultArgs: ["exec", "--skip-git-repo-check"],
       promptSubcommand: ["exec"],
       promptAsArg: true,
@@ -425,7 +426,7 @@ export function knownCliDescriptors(): CliDescriptor[] {
       binary: process.platform === "win32" ? "claude.cmd" : "claude",
       label: "Claude Code CLI",
       available: false,
-      installHint: "Install: npm i -g @anthropic-ai/claude-code",
+      installHint: "Install: bun add -g @anthropic-ai/claude-code",
       defaultArgs: [],
       promptSubcommand: ["--print"],
       promptAsArg: true,
@@ -561,6 +562,7 @@ export async function runDelegate(opts: {
     proc = execa(opts.binary, argv, {
       cwd: opts.cwd,
       all: true,
+      buffer: false,
       reject: false,
       env: opts.env ?? process.env,
       input: opts.prompt, // also feed stdin in case CLI reads from it
@@ -579,9 +581,23 @@ export async function runDelegate(opts: {
     };
   }
 
-  let stdoutBuf = "";
-  let stderrBuf = "";
+  const decoder = new StringDecoder("utf8");
+  let outputTail = "";
+  let outputChars = 0;
+  let pendingLog: Promise<void> = Promise.resolve();
   let timedOut = false;
+  const handleOutput = (raw: string): void => {
+    if (!raw) return;
+    const clean = redactCliBridgeOutput(stripAnsi(raw));
+    outputChars += clean.length;
+    outputTail = (outputTail + clean).slice(-24_000);
+    appendActiveToolOutput(clean);
+    pendingLog = pendingLog.catch(() => {}).then(() => appendToLog(logPath, "stdout", clean));
+  };
+  const getPreview = (): string => {
+    const clipped = outputChars > outputTail.length;
+    return (clipped ? "[Earlier CLI output omitted from preview; full log saved at: " + logPath + "]\n" : "") + outputTail.trim();
+  };
 
   const onAbort = () => killHandle(proc);
   if (opts.signal) {
@@ -592,20 +608,18 @@ export async function runDelegate(opts: {
     opts.signal.addEventListener("abort", onAbort);
   }
 
-  proc.all?.on("data", async (data: Buffer | string) => {
-    const raw = data.toString();
-    const clean = redactCliBridgeOutput(stripAnsi(raw));
-    stdoutBuf = appendLines(stdoutBuf, clean, MAX_BUFFER_LINES);
-    appendActiveToolOutput(clean);
-    await appendToLog(logPath, "stdout", clean);
+  proc.all?.on("data", (data: Buffer | string) => {
+    handleOutput(decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data)));
   });
 
   try {
     const result = await proc;
+    handleOutput(decoder.end());
+    await pendingLog;
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     if (result.timedOut) timedOut = true;
-    const finalOutput = redactCliBridgeOutput(stripAnsi((result.all ?? stdoutBuf).toString())).trim();
-    const finalStderr = redactCliBridgeOutput(stripAnsi(result.stderr ?? "")).trim();
+    const finalOutput = getPreview();
+    const finalStderr = ""; // stderr is part of the combined full log.
     await appendToLog(
       logPath,
       "exit",
@@ -621,10 +635,12 @@ export async function runDelegate(opts: {
       cliAlias: opts.cliAlias,
     };
   } catch (err) {
+    handleOutput(decoder.end());
+    await pendingLog.catch(() => {});
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
     const msg = err instanceof Error ? err.message : String(err);
-    const finalOutput = redactCliBridgeOutput(stripAnsi(stdoutBuf)).trim();
-    const finalStderr = redactCliBridgeOutput(stripAnsi(stderrBuf || msg)).trim();
+    const finalOutput = getPreview();
+    const finalStderr = redactCliBridgeOutput(stripAnsi(msg)).trim();
     await appendToLog(
       logPath,
       "error",

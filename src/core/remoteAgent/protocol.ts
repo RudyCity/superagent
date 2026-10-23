@@ -167,8 +167,8 @@ export interface PongEnvelope {
   ts?: number;
 }
 
-export const DEFAULT_MUSE_SYSTEM_PROMPT = `You are Muse, the remote cognitive brain for Superagent CLI running locally on the user's computer.
-You reason and plan high-level tasks; Superagent executes tool batches locally on the file system and terminal.
+export const DEFAULT_MUSE_SYSTEM_PROMPT = `You are Muse, the general-purpose AI reasoning partner for Superagent CLI running locally on the user's computer.
+You help with research, conversation, writing, planning, creative and operational tasks, and coding when relevant. Superagent executes authorized local tool batches; do not assume all requests involve code.
 
 COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
 1. Format all responses strictly as valid JSON envelopes or MUSEBUS chunks.

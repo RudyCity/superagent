@@ -5,6 +5,9 @@
 import fs from "fs";
 import path from "path";
 import { execa } from "execa";
+import { StringDecoder } from "node:string_decoder";
+import { createCommandLog } from "../../tools/commandLogger.js";
+import { rollingCommandOutput, readCommandOutputPage } from "../../tools/commandOutputPaging.js";
 import { McpToolResult } from "../types.js";
 
 import { getMcpWorkspacePath } from "./workspaceContext.js";
@@ -105,8 +108,23 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
   const targetCwd = args.cwd || args.workspace || (args.worktreePath ? path.resolve(String(args.worktreePath)) : getMcpWorkspacePath());
   const timeoutMs = typeof args.timeoutMs === "number" ? args.timeoutMs : 30000;
 
+  if (args.commandId) {
+    try {
+      const page = await readCommandOutputPage(
+        String(args.commandId), getMcpWorkspacePath(),
+        args.offsetBytes === undefined ? 0 : Number(args.offsetBytes),
+        args.maxBytes === undefined ? 12_000 : Number(args.maxBytes),
+      );
+      return { content: [{ type: "text", text:
+        "CommandId: " + args.commandId + "\nBytes: " + page.offsetBytes + "-" + page.nextOffsetBytes +
+        " / " + page.totalBytes + "\nHas more: " + page.hasMore + "\nNext offsetBytes: " + page.nextOffsetBytes +
+        "\n\n" + page.text }] };
+    } catch (error) {
+      return { content: [{ type: "text", text: "Error reading command log: " + (error instanceof Error ? error.message : String(error)) }], isError: true };
+    }
+  }
   if (!command) {
-    return { content: [{ type: "text", text: "Error: 'command' is required." }], isError: true };
+    return { content: [{ type: "text", text: "Error: 'command' or 'commandId' is required." }], isError: true };
   }
 
   // Layer 2: Defense-in-depth safety checks for command execution
@@ -134,6 +152,7 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
   }
 
   let childPid: number | undefined;
+  let cmdLogger: ReturnType<typeof createCommandLog> | undefined;
   try {
     const isWin = process.platform === "win32";
     let shellPath: string | boolean = true;
@@ -154,25 +173,44 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       CI: "1",
     });
 
+    cmdLogger = createCommandLog(formattedCommand, String(targetCwd));
+    const capture = rollingCommandOutput();
+    const decoder = new StringDecoder("utf8");
     const proc = execa(formattedCommand, {
       shell: shellPath,
       cwd: targetCwd,
       timeout: timeoutMs,
       reject: false,
-      stripFinalNewline: true,
+      buffer: false,
+      all: true,
       stdin: "ignore",
       env: unbufferedEnv,
     });
     childPid = proc.pid;
-
+    const record = (data: Buffer | string) => {
+      const chunk = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));
+      cmdLogger?.write(chunk);
+      capture.append(chunk);
+    };
+    if (proc.all) proc.all.on("data", record);
+    else {
+      proc.stdout?.on("data", record);
+      proc.stderr?.on("data", record);
+    }
     const result = await proc;
+    const remaining = decoder.end();
+    if (remaining) { cmdLogger.write(remaining); capture.append(remaining); }
+    cmdLogger.end(result.exitCode, result.timedOut ? "Timed out" : undefined);
 
     const output = [
       `Command: ${command}`,
       `Directory: ${targetCwd}`,
       `Exit Code: ${result.exitCode}`,
-      result.stdout ? `\n--- STDOUT ---\n${result.stdout}` : "",
-      result.stderr ? `\n--- STDERR ---\n${result.stderr}` : "",
+      "CommandId: " + cmdLogger.id,
+      "Log: " + cmdLogger.logPath,
+      "Captured characters: " + capture.totalChars,
+      capture.clipped ? "Output preview is bounded. Fetch the full log with superagent_exec_command(commandId=\"" + cmdLogger.id + "\", offsetBytes=0, maxBytes=12000), then continue using nextOffsetBytes." : "",
+      capture.totalChars ? "\n--- COMBINED OUTPUT ---\n" + capture.preview(cmdLogger.id) : "",
     ].filter(Boolean).join("\n");
 
     return {
@@ -180,6 +218,7 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       isError: result.exitCode !== 0,
     };
   } catch (err: any) {
+    cmdLogger?.end(null, err instanceof Error ? err.message : String(err));
     if (childPid) {
       killProcessTree(childPid);
     }
@@ -431,12 +470,14 @@ export async function handleGrepSearch(args: any): Promise<McpToolResult> {
   const { grepTool } = await import("../../tools/fileReadTools.js");
   const result = await grepTool.execute(
     {
-      query,
+      pattern: query,
       path: searchPath,
       include: args.include || args.includes,
       exclude: args.exclude || args.excludes,
       isRegex: args.isRegex,
       caseSensitive: args.caseSensitive,
+      offset: args.offset,
+      limit: args.limit,
     },
     searchPath
   );

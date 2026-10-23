@@ -95,7 +95,7 @@ export async function handleCreateCliCommand(args: string[]): Promise<void> {
     console.log(`
 \x1b[36mNext steps:\x1b[0m
   1. cd "${result.targetDir}"
-  2. bun install  (or npm install)
+  2. bun install
   3. superagent
 `);
     try {

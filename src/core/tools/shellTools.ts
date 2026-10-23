@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import { StringDecoder } from "node:string_decoder";
 import { exec, execSync } from "child_process";
 import path from "path";
 import fs from "fs";
@@ -32,6 +33,7 @@ import {
   appendCapped
 } from "./state.js";
 import { createCommandLog, formatOutputWithLogReference } from "./commandLogger.js";
+import { rollingCommandOutput } from "./commandOutputPaging.js";
 import { agentLocalStorage } from "../agentLocalStorage.js";
 import { classifyVerificationCommand, queueTaskVerificationEvidence } from "../selfdev/taskEvidence.js";
 import net from "net";
@@ -198,10 +200,13 @@ export const bashTool: Tool = {
 
     try {
       clearActiveToolOutput();
+      const capture = rollingCommandOutput();
+      const decoder = new StringDecoder("utf8");
       const proc = execa(command, {
         shell: shellPath,
         cwd,
         reject: false,
+        buffer: false,
         all: true,
         env: unbufferedEnv,
         stdin: "ignore",
@@ -238,9 +243,10 @@ export const bashTool: Tool = {
 
       let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
-        const text = data.toString();
+        const text = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));
         appendActiveToolOutput(text);
         cmdLogger.write(text);
+        capture.append(text);
         const warning = detectInteractivePrompt(text);
         if (warning) {
           interactiveWarning = warning;
@@ -250,8 +256,10 @@ export const bashTool: Tool = {
 
       try {
         const result = await Promise.race([proc, timeoutPromise, abortPromise]);
+        const remaining = decoder.end();
+        if (remaining) { cmdLogger.write(remaining); capture.append(remaining); }
         clearActiveToolOutput();
-        let output = (result.all || result.stdout || "").trim();
+        let output = capture.preview(cmdLogger.id).trim();
         if (!interactiveWarning) queueVerificationEvidence(rawCommand, "bash", result.exitCode);
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
         cmdLogger.end(exitCodeNum, interactiveWarning || undefined);
@@ -379,10 +387,13 @@ export const runCommandTool: Tool = {
 
     try {
       clearActiveToolOutput();
+      const capture = rollingCommandOutput();
+      const decoder = new StringDecoder("utf8");
       const proc = execa(command, {
         shell: shellPath,
         cwd: targetCwd,
         reject: false,
+        buffer: false,
         all: true,
         env: unbufferedEnv,
         stdin: "ignore",
@@ -419,9 +430,10 @@ export const runCommandTool: Tool = {
 
       let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
-        const text = data.toString();
+        const text = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));
         appendActiveToolOutput(text);
         cmdLogger.write(text);
+        capture.append(text);
         const warning = detectInteractivePrompt(text);
         if (warning) {
           interactiveWarning = warning;
@@ -431,8 +443,10 @@ export const runCommandTool: Tool = {
 
       try {
         const result = await Promise.race([proc, timeoutPromise, abortPromise]);
+        const remaining = decoder.end();
+        if (remaining) { cmdLogger.write(remaining); capture.append(remaining); }
         clearActiveToolOutput();
-        let output = (result.all || result.stdout || "").trim();
+        let output = capture.preview(cmdLogger.id).trim();
         if (!interactiveWarning) queueVerificationEvidence(rawCommand, "run_command", result.exitCode);
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
         cmdLogger.end(exitCodeNum, interactiveWarning || undefined);

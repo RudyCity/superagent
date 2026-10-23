@@ -10,6 +10,7 @@ export interface TerminalReadOptions {
   terminal_id?: string;
   max_lines?: number;
   max_chars?: number;
+  before_line?: number; // Exclusive, zero-based end offset for older xterm scrollback pages.
   viewport_only?: boolean;
 }
 
@@ -22,6 +23,7 @@ export interface TerminalResult {
     source: string;
     lines: string[];
     totalLines: number | null;
+    startLine?: number;
     warning?: string;
     rect?: { x: number; y: number; width: number; height: number };
   }>;
@@ -37,7 +39,7 @@ function bound(value: unknown, fallback: number, min: number, max: number): numb
 
 // Evaluated inside the *page* by CDP; cannot reference imported modules/closures.
 function browserReadTerminal(opts: {
-  selector: string; index: number | null; terminal_id: string; max_lines: number; max_chars: number; viewport_only: boolean;
+  selector: string; index: number | null; terminal_id: string; max_lines: number; max_chars: number; before_line: number | null; viewport_only: boolean;
 }): TerminalResult {
   const roots: Element[] = [];
   const rootSelector = ".xterm, .hterm, [data-terminal], .terminal, .terminal-output, [role='log']";
@@ -163,14 +165,17 @@ function browserReadTerminal(opts: {
     let source = "unavailable";
     let lines: string[] = [];
     let totalLines: number | null = null;
+    let startLine: number | undefined;
     if (instance && isTerm(instance)) {
       try {
         const b = instance.buffer!.active!;
         const total = Math.max(0, Math.min(100000, Number(b.length) || 0));
         const baseY = Math.max(0, Number(b.baseY) || 0);
         const rows = Math.max(0, Math.min(10000, Number(instance.rows) || 0));
-        const end = opts.viewport_only && rows ? Math.min(total, baseY + rows) : total;
+        const last = opts.viewport_only && rows ? Math.min(total, baseY + rows) : total;
+        const end = Math.min(last, opts.before_line === null ? last : opts.before_line);
         const start = Math.max(opts.viewport_only ? baseY : 0, end - opts.max_lines);
+        startLine = start;
         for (let i = start; i < end; i++) {
           const line = b.getLine(i);
           lines.push(line ? String(line.translateToString(true)) : "");
@@ -192,7 +197,9 @@ function browserReadTerminal(opts: {
           const rows = Array.from(root.querySelectorAll(query));
           const data = rows.map((el) => el.textContent || el.getAttribute("aria-label") || "");
           if (data.some((line) => line.trim())) {
-            lines = data.slice(-opts.max_lines);
+            const end = Math.min(data.length, opts.before_line ?? data.length);
+            startLine = Math.max(0, end - opts.max_lines);
+            lines = data.slice(startLine, end);
             totalLines = rows.length;
             source = name;
             break;
@@ -204,7 +211,9 @@ function browserReadTerminal(opts: {
           const pre = root.matches("pre, [role='log']") ? root : root.querySelector("pre, [role='log']");
           if (pre && pre.textContent && pre.textContent.trim()) {
             const data = pre.textContent.split(/\r?\n/);
-            lines = data.slice(-opts.max_lines);
+            const end = Math.min(data.length, opts.before_line ?? data.length);
+            startLine = Math.max(0, end - opts.max_lines);
+            lines = data.slice(startLine, end);
             totalLines = data.length;
             source = "plaintext-dom";
           }
@@ -242,7 +251,7 @@ function browserReadTerminal(opts: {
         }
       } catch { /* no visible box */ }
     }
-    results.push({ index: idx, terminalId, kind, selector, source, lines, totalLines, warning, ...(rect ? { rect } : {}) });
+    results.push({ index: idx, terminalId, kind, selector, source, lines, totalLines, startLine, warning, ...(rect ? { rect } : {}) });
   }
   const selected = results.filter((r) =>
     (opts.index === null || r.index === opts.index) &&
@@ -275,6 +284,7 @@ export function buildReadTerminalJs(options: TerminalReadOptions = {}): string {
     terminal_id: String(options.terminal_id || "").slice(0, 120),
     max_lines: bound(options.max_lines, 80, 1, 200),
     max_chars: bound(options.max_chars, 12000, 200, 20000),
+    before_line: options.before_line === undefined ? null : bound(options.before_line, 0, 0, 100000),
     viewport_only: options.viewport_only === true
   };
   return "/*cdp-read-terminal*/(" + browserReadTerminal.toString() + ")(" + JSON.stringify(opts) + ")";
@@ -292,6 +302,7 @@ export function formatTerminalReadResult(data: unknown): string {
       "), source: " + terminal.source + ", total lines: " + (terminal.totalLines ?? "unknown"));
     parts.push(terminal.source === "unavailable" ? "Unavailable: " + terminal.warning :
       (terminal.lines.length ? "Output:\n" + terminal.lines.join("\n") : "Output: (empty)"));
+    if (terminal.startLine !== undefined && terminal.totalLines !== null) parts.push("Read window starts at line " + terminal.startLine + " (zero-based). For older lines call read_terminal with before_line=" + terminal.startLine + " and the same terminal_id.");
     if (terminal.warning && terminal.source !== "unavailable") parts.push("Note: " + terminal.warning);
   }
   return parts.join("\n");

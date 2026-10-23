@@ -288,7 +288,7 @@ function wsGetJson(path: string): Promise<any> {
 }
 
 /** Public browser locator for the cross-IDE CDP coordinator.
- * The MCP gateway requires a loopback-only CDP host before calling. */
+ * Never accepts a caller-provided remote host. The CDP host is local only. */
 export async function discoverCdpPages(port: number): Promise<Array<{ targetId: string; title: string; url: string }>> {
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error("Invalid CDP port.");
   return terminalCdpConfig.run({ port }, async () => (await listPageTargets()).slice(0, 100)
@@ -545,7 +545,8 @@ export const controlChromeCdpTool: Tool = {
       index: { type: "number", description: "Optional top-level element index for click/type or terminal index for read/write_terminal." },
       text: { type: "string", description: "Optional top-level text convenience shortcut for type or wait_for." },
       selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, wait_for, select_option, check_form, or read_terminal." },
-      max_lines: { type: "number", description: "read_terminal maximum recent lines (default 80, max 200)." },
+      max_lines: { type: "number", description: "read_terminal maximum lines per page (default 80, max 200)." },
+      before_line: { type: "number", description: "read_terminal: exclusive zero-based end line; pass the previous startLine to fetch older scrollback." },
       enter: { type: "boolean", description: "write_terminal: explicitly send Enter after typing (default false)." },
       terminal_id: { type: "string", description: "Opaque terminal ID returned by read_terminal, remains stable across pane reordering until reload." },
       allow_dangerous: { type: "boolean", description: "Explicit acknowledgment for high-risk terminal shell commands." },
@@ -627,7 +628,7 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
+      "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];

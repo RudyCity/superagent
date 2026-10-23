@@ -11,7 +11,17 @@ delete process.env.SUPERAGENT_SESSION_PATH;
 // Keep optional ML/model dependencies deterministic in unit tests. Real model
 // downloads and ONNX initialization belong in explicit integration tests.
 vi.mock("@huggingface/transformers", () => ({
-  pipeline: () => Promise.resolve(() => ({})),
+  // Offline transformer fixture for RMemory and translation tests.
+  env: { allowRemoteModels: false, useBrowserCache: false, logLevel: "error", backends: { onnx: { logLevel: "error" } } },
+  pipeline: vi.fn(async (task: string, model = "") => async (input: string | string[]) => {
+    if (task === "translation") return [{ translation_text: String(input) }];
+    if (task === "feature-extraction") {
+      const dimensions = model.includes("nomic") ? 768 : 384;
+      const count = Array.isArray(input) ? input.length : 1;
+      return { data: new Float32Array(count * dimensions).fill(0.1), dispose: () => undefined };
+    }
+    return {};
+  }),
 }));
 vi.mock("@xenova/transformers", () => ({
   env: { allowRemoteModels: false, useBrowserCache: false, backends: { onnx: {} }, logLevel: "error" },

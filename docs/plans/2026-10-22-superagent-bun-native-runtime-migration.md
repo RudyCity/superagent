@@ -34,6 +34,15 @@ Related T-Line work: T-Line v1.3.699 already bundles Bun and passes `TLINE_BUN_R
 - Test process used an isolated temp home and ephemeral ports; no existing SuperAgent listener (such as 7888) was killed or modified.
 - This commit does not include concurrent changes to agent ContextBuilder/HistoryCompactor, CLI Bridge, Motion effects, or untracked Gumroad assets.
 
+## Completion update — Bun-only first-party launches (2026-10-22)
+
+- The CLI now rejects Node rather than bootstrapping Bun through a Node parent. The first-party global Windows npm shims (`superagent`, `.cmd`, `.ps1`) were backed up and replaced with Bun-native launchers using `bun run repair:launcher`. `bun run doctor:launcher` verifies them; Git Bash MSYS path conversion was explicitly tested. CMD, PowerShell, and Git Bash each returned SuperAgent 1.14.11.
+- The persisted Antigravity MCP registration was replaced with the absolute Bun executable (`bun dist/cli.js mcp register`); already-running MCP clients must reconnect separately. Do not terminate historical Node bootstrap parents or active Bun children blindly.
+- Bun-native tests: `bun run build`, `bun run runtime:acceptance`, `bun run integration:tline` and launcher/MCP tests passed. The Bun security gate reported zero high/critical advisories at the final check; audit outcomes can change later.
+- The separately maintained T-Line Desktop 1.3.699 now uses Bun for first-party build scripts, Vite/TypeScript/Vitest, and the Tauri JavaScript CLI entry. The unused `node-pty` dependency and ignored legacy `desktop-tauri/node-runtime` directory were removed. T-Line Bun backend/ConPTY smoke, packaged NSIS extraction/backend authentication and targeted backend/frontend tests passed. A real installed GUI, tray and WebView2 end-to-end session is still a distinct verification gate.
+- `node:` import specifiers do not mean the Node runtime is in use. External user-selected CLI/MCP servers and Python Vision/voice/FFmpeg/Rust tooling continue to use their required independent runtimes and must not be silently altered.
+- Source changes in multiple unrelated workstreams were active concurrently. Do not stage or commit those unrelated modifications under the Bun migration without a targeted review.
+
 ## Final concurrent-work constraint
 
 The additional isolated Bun API-server smoke passed: the server started with Bun on an ephemeral loopback port and its protected API returned HTTP 401. The canonical lockfile dry run also passed. The final global TypeScript build was **not green** because another active development task concurrently modified Motion Studio/CLI Bridge files outside this migration. Its latest error was `src/core/commands/motionCliHandler.ts: EffectCatalogItem.complexity` (earlier the CLI Bridge declared a `lease` variable twice). Those files were not altered, staged or repaired by this Bun migration. After the concurrent tasks settle, rerun `bun run build` and the complete Vitest suite before approving production.

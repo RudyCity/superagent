@@ -620,7 +620,9 @@ export function getModelInstanceForString(modelStr: string) {
       "HTTP-Referer": "https://github.com/RudyCity/superagent",
       "X-Title": "SuperAgent CLI",
     },
-    fetch: async (url, options) => {
+    // AI SDK's fetch hook expects Bun's augmented fetch type (including preconnect).
+    // The adapter is called only as a request function; preserve native fetch for I/O.
+    fetch: (async (url, options) => {
       // If no valid apiKey was configured, do not send Authorization header (e.g. for free endpoints or local servers)
       if (!hasKey && options && options.headers) {
         if (options.headers instanceof Headers) {
@@ -800,7 +802,7 @@ export function getModelInstanceForString(modelStr: string) {
         }
       }
       return response;
-    },
+    }) as typeof fetch,
   });
   // Use .chat() to explicitly force Chat Completions API for custom base URLs/non-standard model names
   return baseUrl ? openai.chat(modelName) : openai(modelName);

@@ -15,6 +15,7 @@ export function getCurrentSkillQuery(messages: Message[]): string {
 export function getModeGuidance(mode: string, canSwitchMode: boolean): string {
   const descriptions: Record<string, string> = {
     ask: "Answer directly. Inspect files/search only when evidence is needed. Do not edit or execute mutating commands.",
+    assist: "Complete the requested general-purpose task with appropriate skills and authorized tools. Do not start a software engineering workflow unless code is explicitly involved.",
     research: "Explore with read/search tools, cite evidence, and avoid mutations.",
     plan: "Prepare the requested plan with manage_plan; do not edit until approval.",
     implement: "Implement authorized changes; validate affected code and report evidence and remaining issues.",

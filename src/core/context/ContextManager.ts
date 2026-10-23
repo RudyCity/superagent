@@ -348,6 +348,9 @@ export class ContextManager {
     const { event } = pending;
     this.continuity.record(event.strategy, pending.durationMs,
       event.tokensBefore, event.tokensAfter, pending.quality, pending.fallback);
+    if (result.metadata.checkpoint) {
+      this.continuity.commitCheckpoint(result.metadata.checkpoint);
+    }
     this.emit("compaction:complete", {
       strategy: event.strategy, tokensBefore: event.tokensBefore,
       tokensAfter: event.tokensAfter, messagesBefore: event.messagesBefore,

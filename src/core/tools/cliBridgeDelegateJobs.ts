@@ -4,6 +4,7 @@
  */
 import { execa } from "execa";
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -433,9 +434,23 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   job.pid = typeof proc.pid === "number" ? proc.pid : null;
   job.status = "running";
   job.updatedAt = Date.now();
-  proc.all?.on("data", (chunk: Buffer | string) => updateOutput(job, chunk));
-  proc.stderr?.on("data", (chunk: Buffer | string) => { if (!proc.all) updateOutput(job, chunk); });
-  proc.stdout?.on("data", (chunk: Buffer | string) => { if (!proc.all) updateOutput(job, chunk); });
+  // Preserve multi-byte characters even when a subprocess writes them across chunks.
+  const wireOutput = (stream: any) => {
+    const decoder = new StringDecoder("utf8");
+    stream?.on("data", (chunk: Buffer | string) => {
+      const cleanChunk = decoder.write(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      if (cleanChunk) updateOutput(job, cleanChunk);
+    });
+    stream?.on("end", () => {
+      const remaining = decoder.end();
+      if (remaining) updateOutput(job, remaining);
+    });
+  };
+  if (proc.all) wireOutput(proc.all);
+  else {
+    wireOutput(proc.stderr);
+    wireOutput(proc.stdout);
+  }
   const runner = finishJob(job, proc, opts.timeoutMs);
   runners.set(jobId, runner);
   // Heartbeat proves only that the SuperAgent bridge owner is alive.

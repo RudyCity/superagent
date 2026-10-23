@@ -380,9 +380,9 @@ export function loadAgentSkills(subagentType?: string, tier?: string, userQuery?
   return `
 
 # SKILL DISCOVERY
-- RULE: call get_skills(query) BEFORE coding, planning, or executing commands.
+- RULE: call get_skills(query) for actionable tasks when a relevant specialized skill is needed. Select writing, creative, research, productivity, browser, or coding skills according to intent.
   - EXCEPT: Skip if mode == 'ask' or skill is preloaded in prompt ${preloadedExamples}.
-- QUERY FORMAT: [task_type] + [technology] + [goal]. Never empty or single-word.
+- QUERY FORMAT: [task_type] + [context] + [goal]. Technology is optional for non-coding requests. Never empty or single-word.
   - Learn/explore: query containing "learn codebase architecture design technology"
   - Debug/fix: query containing "debug diagnose troubleshoot [tech] [issue]"
 - LOGIC GATES:

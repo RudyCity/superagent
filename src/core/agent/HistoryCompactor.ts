@@ -259,17 +259,17 @@ export class HistoryCompactor {
       .filter(Boolean)
       .join("\n\n");
 
-    const prompt = `You are a helper system node. Summarize the following past coding assistant chat history turns into a clean, human-readable format.
+    const prompt = `You are a helper system node. Summarize the assistant conversation history into a clear, human-readable summary.
 
 Structure:
 ### 🎯 User Goal
 - What the user requested.
 
 ### 🛠️ Key Actions Taken
-- Files created, edited, or commands executed.
+- Significant actions, research, writing, artifacts, tool use, and decisions where relevant.
 
-### 🔍 Workspace Status
-- Final state, test/build status, and unresolved issues if any.
+### 🔍 Current State
+- Current state, unresolved questions, and test/build status where relevant.
 
 Keep the summary natural, clear, direct, and formatted with clean Markdown bullet points. Preserve key file paths, function names, and technical decisions.
 

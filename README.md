@@ -2,7 +2,7 @@
 
 # 🚀 Superagent
 
-**An interactive, terminal-based AI coding assistant for pair programming, context engineering, and autonomous workflow automation.**
+**A terminal-native general-purpose AI assistant for research, writing, planning, creative work, automation, and coding.**
 
 [![Version](https://img.shields.io/github/v/release/RudyCity/superagent?style=flat-square&color=8A2BE2)](https://github.com/RudyCity/superagent/releases)
 [![License](https://img.shields.io/github/license/RudyCity/superagent?style=flat-square&color=blue)](LICENSE)
@@ -19,7 +19,7 @@
 
 ## ⚡ Overview
 
-**Superagent** is a high-performance, terminal-native AI coding assistant built for developers. It executes shell commands, inspects and edits codebases, runs test suites, manages multi-file edits, and automates context pruning—all directly from your local terminal.
+**Superagent** is a terminal-native general-purpose AI assistant and autonomous operator—not a programmer by default. It helps with questions, research, writing, planning, documents, browsing and workflows, and switches to specialized coding tools and agents when a task actually requires development.
 
 Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-line)**, its official desktop client.
 
@@ -33,7 +33,7 @@ Complete workflow and limitations: [Multi-agent Chrome CDP sessions](docs/plans/
 
 ## ✨ Key Features
 
-- **🎯 Single Agent Mode (Primary)**: Seamless pair programming with live terminal execution, intelligent tool usage, and subagent delegation.
+- **🎯 General-Purpose Assistant Mode (Primary)**: Natural conversation and content creation, task-aware tool selection, direct action on authorized workflows, and specialized software-engineering execution only when needed.
 - **⚡ Instant Startup & System Cache**: Parallelized zero-wait dependency checks, decoupled background neural classifier loading, persistent 24-hour cache, and instant `-q` / `--quick` fast-path (< 200ms).
 - **📡 Omnichannel Messaging Gateway**: Bidirectional messaging integration supporting Telegram, Discord, Slack, and generic webhooks with session mapping and automated message chunking.
 - **⏰ Autonomous Headless Daemon & Cron Scheduler**: Background execution daemon with standard 5-field cron parsing (`minute hour dom month dow`), overlap protection, concurrency limits, and CLI management.
@@ -73,6 +73,8 @@ bun run runtime:smoke  # isolated Bun CLI, process pool, SQLite and RMemory chec
 # Register globally (optional)
 bun install -g .
 ```
+
+On Windows, an older npm global installation can leave `superagent` shell/cmd/PowerShell shims that bootstrap `node.exe` even after the package is linked to Bun. Verify and repair only those owned shims with `bun run doctor:launcher` and `bun run repair:launcher`. The repair backs up each original shim as `*.pre-bun.bak`, never stops a live process, and requires reconnecting IDE MCP clients to activate the new Bun-native process. Re-register Antigravity with `bun dist/cli.js mcp register`; verify its configuration points to the absolute `bun.exe` executable. User-selected third-party CLI/MCP tools may still require their own runtimes.
 
 ### Usage
 
@@ -508,6 +510,21 @@ superagent muse watch ./frontend ./backend --tunnel
 superagent muse "find all unhandled promise rejections in src"
 ```
 
+#### Connecting Grok.com (Custom MCP)
+
+Grok.com supports custom remote MCP connectors via public HTTPS Streamable HTTP. Start Cloudflare with OAuth and safe tools:
+
+    superagent mcp tunnel start --provider cloudflare --mcp-auth oauth
+    superagent mcp tunnel status
+    bun scripts/grok-mcp-doctor.ts https://YOUR-TUNNEL.trycloudflare.com/mcp
+
+Open https://grok.com/connectors and choose New Connector > Custom. Enter the current public HTTPS /mcp URL and complete OAuth with the one-time bootstrap code from SuperAgent. Test a read-only tool. The doctor checks public OAuth discovery and the HEAD authentication challenge, not an authenticated Grok tool call. Grok Build CLI:
+
+    grok mcp add --transport http superagent https://YOUR-TUNNEL.trycloudflare.com/mcp
+    grok mcp doctor superagent
+
+Quick tunnel URLs change after restart; reconfigure the connector. Do not share OAuth tokens or bootstrap codes. See [Grok compatibility](docs/plans/2026-10-22-grok-mcp-compatibility.md).
+
 #### 🤖 Connecting ChatGPT as Custom MCP Client (OAuth 2.1)
 
 1. Launch the MCP tunnel in OAuth mode using the dedicated MCP command:
@@ -538,7 +555,7 @@ Superagent includes native integration with OpenAI Secure MCP Tunnels via the of
 1. **Prerequisites & Installation**:
    - Install the official OpenAI `tunnel-client` binary:
      ```bash
-     npm install -g @openai/tunnel-client
+     bun add -g @openai/tunnel-client
      # or download binary from https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
      ```
    - **OpenAI Control Plane API Key**:
@@ -932,11 +949,9 @@ Captions describe authored scene headlines and subtitles with non-overlapping cu
 
 Video footage, closed captions automatically transcribed from audio, genuine multi-pass vision production scoring, packaged desktop provider E2E, autonomous safe crash recovery and full professional motion effects remain release gates.
 
-### Cross-IDE CDP Gateway for Codex, Antigravity and SuperAgent
+## Senopati V2 (Experimental Shadow)
 
-The dangerous MCP tool `superagent_browser_gateway` coordinates separate initialized MCP clients on one Chrome browser across tabs and processes. It assigns an ephemeral actor ID per connection, discovers Chrome targets with coordinator leases, uses owner-approved encrypted one-time invitations for cross-IDE attach, and serializes shared-tab writes with `expectedRevision`. Clients can poll `events` / `wait_events` without accessing tokens. Use `superagent_tool_search` and `superagent_tool_execute` in compact Gateway mode or call `superagent_browser_gateway` directly in Full mode. Reconnect the MCP client after upgrading.
-
-Set `SUPERAGENT_CDP_GATEWAY_ONLY=1` **on the MCP server** to deny direct legacy MCP CDP/Vision commands and require the shared gateway. This cannot stop an independent application from connecting directly to Chrome's debugging socket; keep Chrome CDP bound to loopback, restrict OS/network access, and configure every participating IDE to use the gateway. Full workflow, security model and test instructions: `docs/plans/2026-10-23-cross-ide-cdp-gateway-implementation.md`.
+Five-head Senopati V2 candidate inference is available only as an **explicit, read-only shadow**. It does not replace the active Senopati ONNX, authorize tools, or approve plans. Use `bun scripts/run-senopati-v2-shadow.ts --model <candidate-json> --text <message>` and `bun scripts/check-senopati-v2-parity.ts <candidate-json> <rudy-oracle-jsonl>`. See `docs/plans/2026-10-22-senopati-v2-shadow-implementation.md` for metrics, safety constraints and release blockers.
 
 ### YOLO path/drive blocklist (local)
 

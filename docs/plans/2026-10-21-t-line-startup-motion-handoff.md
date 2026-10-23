@@ -16,7 +16,7 @@ An older, otherwise functioning T-Line backend without this endpoint is intentio
 
 1. Check SuperAgent and T-Line revisions independently and preserve running Hermes/Muse or customer-facing sessions. Do not restart a live service just to run a build.
 2. In SuperAgent run bun run build and run the Motion regression suite (bun x vitest run tests/motion*.test.ts). These validate the engine and must not be misreported as a live installed T-Line test.
-3. Build the **T-Line** Express backend and native launcher from the same updated T-Line revision. Verify Rust tests and the NSIS content checker. The Windows NSIS should contain the matching backend, licensed Node binary and SQLite native module.
+3. Build the **T-Line** Express backend and native launcher from the same updated T-Line revision. Verify Rust tests and the NSIS content checker. The Windows NSIS should contain the matching backend, verified bundled Bun runtime and Bun-compatible dependencies (not a Node executable).
 4. During an authorized maintenance window, shut down the specific old T-Line instance by its owner/service controls and launch the updated desktop. Do **not** terminate arbitrary processes bound to port 5779.
 5. On a disposable Windows profile, test secure startup, foreign-port conflict, verified external attach, Stop/Restart ownership, WebView2, workspace authorization and local Motion render/playback before declaring production readiness.
 

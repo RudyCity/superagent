@@ -14,6 +14,7 @@ import { redactMemorySecrets } from "../memoryLifecycle.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import { buildBudgetedPromptContext } from "./PromptContextBudget.js";
 import { getAgentActiveModelName } from "./AgentUtils.js";
+import { scopeSystemPromptForDomain } from "./PromptDomainScope.js";
 import type { Agent } from "../agent.js";
 
 export class ContextBuilder {
@@ -356,7 +357,9 @@ export class ContextBuilder {
     if (agent.activeModeOverride) {
       activeMode = agent.activeModeOverride;
     } else {
-      if (category === "conversation" || category === "question") {
+      if (["writing", "creative", "productivity"].includes(agent.currentClassification?.domain || "")) {
+        activeMode = "assist";
+      } else if (category === "conversation" || category === "question") {
         activeMode = "ask";
       } else if (category === "research") {
         activeMode = "research";
@@ -452,7 +455,8 @@ export class ContextBuilder {
     ], systemContextBudget);
     const toolDiscoveryInstruction = getToolDiscoveryGuidance(agent.tier, authorizedToolDefs.map((t: any) => t.name), activeMode);
     const executionDirective = getExecutionGuidance(maxIterationsStr, hasSubagents && !skipHeavyContext, isGoalMode);
-    const systemPrompt = [activeSystemPrompt, toolRestrictionNotice, runtimeCapabilitiesText, activeModeNotice,
+    const scopedIdentityPrompt = scopeSystemPromptForDomain(activeSystemPrompt, agent.currentClassification?.domain);
+    const systemPrompt = [scopedIdentityPrompt, toolRestrictionNotice, runtimeCapabilitiesText, activeModeNotice,
       toolDiscoveryInstruction, executionDirective, goalModeAddendum, brainWorkspaceNotice, budgetedSystemContext.text]
       .filter(Boolean).join("\n");
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);

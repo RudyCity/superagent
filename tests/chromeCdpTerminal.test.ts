@@ -68,6 +68,22 @@ describe("Chrome CDP web terminal reader", () => {
     expect(formatTerminalReadResult(result)).toContain("build success");
   });
 
+  it("paginates older xterm scrollback without losing rows", () => {
+    const root = fakeRoot("scrollback");
+    const all = Array.from({ length: 600 }, (_, i) => "line-" + i);
+    const term = termBuffer(root, all);
+    const newestResult = runTerminal({ max_lines: 200 }, [root], { term });
+    const newest = newestResult.terminals[0];
+    expect(newest.startLine).toBe(400);
+    expect(newest.lines[0]).toBe("line-400");
+    const middle = runTerminal({ max_lines: 200, before_line: newest.startLine }, [root], { term }).terminals[0];
+    expect(middle.startLine).toBe(200);
+    const oldest = runTerminal({ max_lines: 200, before_line: middle.startLine }, [root], { term }).terminals[0];
+    expect(oldest.startLine).toBe(0);
+    expect([...oldest.lines, ...middle.lines, ...newest.lines]).toEqual(all);
+    expect(formatTerminalReadResult(newestResult)).toContain("before_line=400");
+  });
+
   it("reads xterm accessibility rows without a global JS terminal instance", () => {
     const result = runTerminal({}, [fakeRoot("shell", "xterm", ["npm run build", "Done"])]);
     expect(result.terminals[0].source).toBe("xterm-accessibility");

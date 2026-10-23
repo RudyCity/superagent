@@ -85,6 +85,7 @@ import {
   ArtifactPaths,
 } from "./cliBridgeArtifacts.js";
 import fs from "fs";
+import { readCliLogPage } from "./cliBridgeObservability.js";
 import path from "path";
 import { canonicalCliWorkspace, resolveAuthorizedDelegateCwd, delegateJobVisibleToWorkspace, cliSessionVisibleToWorkspace, cliArtifactPathVisibleToWorkspace } from "./cliBridgeWorkspaceScope.js";
 import {
@@ -109,6 +110,7 @@ const ACTIONS = [
   "delegate.jobs",
   "delegate.get",
   "delegate.tail",
+  "delegate.read",
   "delegate.cancel",
   "delegate.claims",
   "delegate.recovery",
@@ -125,6 +127,7 @@ const ACTIONS = [
   "session.export",
   "session.config",
   "session.tail",   // v1.5.17
+  "session.read",   // persisted complete logs
   "session.detach", // v1.5.17
   "profile.list",
 ] as const;
@@ -303,6 +306,8 @@ export const cliBridgeTool: Tool = {
         description:
           "Maximum trailing lines/events returned by action=session.tail or action=delegate.tail (default 200, capped at 2000).",
       },
+      offsetBytes: { type: "number", description: "Byte cursor for delegate.read/session.read, beginning at 0." },
+      maxBytes: { type: "number", description: "Log page size for delegate.read/session.read (256-32000; default 12000)." },
       // ─────────────────────────────────────────────────────────
       conversationId: {
         type: "string",
@@ -390,6 +395,8 @@ export const cliBridgeTool: Tool = {
 
         case "delegate.tail":
           return await handleDelegateTail(String(args.jobId ?? "").trim(), args.tailLimit === undefined ? 200 : Number(args.tailLimit), cwd);
+        case "delegate.read":
+          return await handleCliLogRead(args, cwd, "delegate");
 
         case "delegate.cancel":
           return await handleDelegateCancel(String(args.jobId ?? "").trim(), cwd);
@@ -462,6 +469,8 @@ export const cliBridgeTool: Tool = {
 
         case "session.tail":
           return handleSessionTail(args);
+        case "session.read":
+          return await handleCliLogRead(args, cwd, "session");
 
         case "session.detach":
           return handleSessionDetach(String(args.sessionId ?? ""));
@@ -868,13 +877,48 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
   ].filter(Boolean).join("\n");
 }
 
+async function handleCliLogRead(
+  args: Record<string, unknown>, workspace: string, kind: "delegate" | "session",
+): Promise<string> {
+  const id = String(kind === "delegate" ? args.jobId ?? "" : args.sessionId ?? "").trim();
+  if (!id) return "Error: " + (kind === "delegate" ? "jobId" : "sessionId") + " required.";
+  const logPath = kind === "delegate"
+    ? (await getDelegateJob(id))
+    : getSessionAny(id);
+  if (!logPath || (kind === "delegate"
+    ? !delegateJobVisibleToWorkspace(logPath as Awaited<ReturnType<typeof getDelegateJob>> & {}, workspace)
+    : !cliSessionVisibleToWorkspace(logPath as NonNullable<ReturnType<typeof getSessionAny>>, workspace))) {
+    return "Error: log not found in authorized workspace.";
+  }
+  try {
+    const page = await readCliLogPage(
+      logPath.logPath,
+      args.offsetBytes === undefined ? 0 : Number(args.offsetBytes),
+      args.maxBytes === undefined ? 12000 : Number(args.maxBytes),
+    );
+    return [
+      "CLI Bridge " + kind + " " + id,
+      "Bytes: " + page.offsetBytes + "-" + page.nextOffsetBytes + " / " + page.totalBytes,
+      "Has more: " + page.hasMore,
+      "Next offsetBytes: " + page.nextOffsetBytes,
+      "",
+      page.text,
+    ].join("\n");
+  } catch (error) {
+    return "Error reading CLI log: " + (error instanceof Error ? error.message : String(error));
+  }
+}
+
 async function handleDelegateTail(jobId: string, tailLimit: number, callerWorkspace: string): Promise<string> {
   if (!jobId) return "Error: 'jobId' is required for action=delegate.tail.";
   const job = await getDelegateJob(jobId);
   if (!job || !delegateJobVisibleToWorkspace(job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
   const result = await tailDelegateJob(jobId, Number.isFinite(tailLimit) ? tailLimit : 200);
   if (!result || !delegateJobVisibleToWorkspace(result.job, callerWorkspace)) return "Error: delegation job not found in the authorized workspace.";
-  return ["CLI Bridge job " + jobId + " | status=" + result.job.status + " | proof=" + (result.job.completionState ?? "unverified") + " | exit=" + (result.job.exitCode ?? "-"), "Log: " + result.job.logPath, "", result.output].join("\n");
+  const bounded = result.output.length > 24_000;
+  const preview = bounded ? result.output.slice(-24_000) : result.output;
+  return ["CLI Bridge job " + jobId + " | status=" + result.job.status + " | proof=" + (result.job.completionState ?? "unverified") + " | exit=" + (result.job.exitCode ?? "-"), "Log: " + result.job.logPath,
+    bounded ? "Tail preview capped. Recover the full log with action=delegate.read, jobId=" + jobId + ", offsetBytes=0; repeat using nextOffsetBytes." : "", "", preview].filter(Boolean).join("\n");
 }
 
 async function handleDelegateCancel(jobId: string, callerWorkspace: string): Promise<string> {
@@ -1285,7 +1329,11 @@ function handleSessionTail(args: Record<string, unknown>): string {
       lines.push(`  [${timeStr}] #${ev.seq} [${ev.type.padEnd(6)}] ${payload}`);
     }
   }
-  return lines.join("\n");
+  const output = lines.join("\n");
+  if (output.length <= 24_000) return output;
+  return ["Session " + sessionId + " | bounded event preview",
+    "Full log: action=session.read, sessionId=" + sessionId + ", offsetBytes=0; repeat using nextOffsetBytes.",
+    "Event feed can be resumed using since (event sequence number).", "", output.slice(-24_000)].join("\n");
 }
 
 /**

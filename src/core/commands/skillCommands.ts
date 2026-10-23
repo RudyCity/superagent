@@ -31,7 +31,7 @@ export const installCommand: SlashCommand = {
       ctx.setIsProcessing?.(true);
       try {
         await ctx.agent.sendMessage(
-          `I would like you to install the skill: "${args}". Please execute the command "npx skills add ${args}" using your terminal execution tools. If there are any interactive prompts or registration required, handle them automatically. Once complete, verify the installation and let me know.`
+          `I would like you to install the skill: "${args}". Please execute the command "bunx skills add ${args}" using your terminal execution tools. If there are any interactive prompts or registration required, handle them automatically. Once complete, verify the installation and let me know.`
         );
       } catch (err: any) {
         ctx.addLine({

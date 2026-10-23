@@ -11,6 +11,7 @@
  */
 
 import fs from "fs";
+import { inferAssistantDomain, hasExplicitDestructiveIntent, type AssistantTaskDomain } from "./assistantRouting.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { Tool } from "./tools/types.js";
@@ -31,6 +32,8 @@ export type ClassificationConfidence = "high" | "medium" | "low";
 
 export interface ClassificationResult {
   category: RequestCategory;
+  /** Cross-domain task type, independent of Senopati's legacy class labels. */
+  domain?: AssistantTaskDomain;
   confidence: ClassificationConfidence;
   reason: string;
   /** Whether the heuristic alone was sufficient (no LLM call needed) */
@@ -1294,6 +1297,25 @@ export async function classifyWithLLM(
  * By default, bypasses regex heuristics entirely and runs Senopati System-1 ONNX neural classification directly.
  * Regex heuristics are disabled by default as requested (useHeuristic: false).
  */
+function applyAssistantDomainRoute(text: string, prediction: ClassificationResult): ClassificationResult {
+  const route = inferAssistantDomain(text);
+  if (!route) {
+    // A neural risk prediction alone cannot authorize or deny unrelated ordinary work.
+    // Retain protection for explicit destructive commands, independent of category.
+    return { ...prediction, isDestructive: Boolean(prediction.isDestructive) || hasExplicitDestructiveIntent(text) };
+  }
+  const explicitDestructive = hasExplicitDestructiveIntent(text);
+  return {
+    ...prediction,
+    category: route.category,
+    domain: route.domain,
+    confidence: "high",
+    isDestructive: explicitDestructive,
+    secondaryCategory: prediction.category !== route.category ? prediction.category : prediction.secondaryCategory,
+    reason: `${prediction.reason}; assistant-domain=${route.domain} (${route.reason})`,
+  };
+}
+
 export async function classifyRequest(
   userInput: string | any[],
   model?: any,
@@ -1330,23 +1352,23 @@ export async function classifyRequest(
 
     // If heuristic confidence meets threshold, skip local model entirely
     if (meetsThreshold(heuristicResult.confidence, threshold)) {
-      return heuristicResult;
+      return applyAssistantDomainRoute(text, heuristicResult);
     }
 
     // Secondary local classification for low-confidence heuristic results
     if (!options?.skipLLM) {
-      return classifyWithLLM(text, model, heuristicResult, options?.onProgress);
+      return applyAssistantDomainRoute(text, await classifyWithLLM(text, model, heuristicResult, options?.onProgress));
     }
 
     // Fallback to heuristic when local model is unavailable or skipped
-    return heuristicResult;
+    return applyAssistantDomainRoute(text, heuristicResult);
   }
 
   // DEFAULT ROUTE: PURE SENOPATI SYSTEM-1 ONNX NEURAL CLASSIFIER (REGEX DISABLED)
   try {
     const senopatiResult = await classifyWithSenopatiONNX(text, undefined, options?.onProgress);
     if (senopatiResult) {
-      return senopatiResult;
+      return applyAssistantDomainRoute(text, senopatiResult);
     }
   } catch (err: any) {
     // Graceful fallback if ONNX engine throws
@@ -1354,10 +1376,10 @@ export async function classifyRequest(
 
   // Fallback to heuristic only if Senopati ONNX model cannot be loaded
   const fallbackResult = classifyHeuristic(text, options?.customKeywords);
-  return {
+  return applyAssistantDomainRoute(text, {
     ...fallbackResult,
     reason: `${fallbackResult.reason} (Senopati fallback)`,
-  };
+  });
 }
 
 // ─── Toolset Filtering ──────────────────────────────────────────────────────
@@ -1468,6 +1490,7 @@ export function getCategoryPromptAddendum(category: RequestCategory): string {
 export function getClassificationPromptAddendum(classification: ClassificationResult): string {
   const parts: string[] = [];
   const category = classification.category;
+  if (classification.domain) parts.push(`ASSISTANT_DOMAIN: ${classification.domain}. Select domain-appropriate skills and tools; do not assume this is coding.`);
 
   switch (category) {
     case "conversation":

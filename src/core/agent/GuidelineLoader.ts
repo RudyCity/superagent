@@ -1,6 +1,7 @@
 import path from "path";
 import fs from "fs";
 import { getPackageRootDir } from "../config.js";
+import { inferAssistantDomain, isEngineeringIntent } from "../assistantRouting.js";
 
 export class GuidelineLoader {
   private static readonly MAX_SKILL_LINES = 300;
@@ -53,13 +54,15 @@ export class GuidelineLoader {
     ].join("\n");
   }
 
-  public static buildFastPathWorkspaceContext(workingDirectory: string): string {
+  public static buildFastPathWorkspaceContext(workingDirectory: string, includeProjectRules = true): string {
     const workspaceDir = workingDirectory || process.cwd();
     const sections: string[] = [
       `# ACTIVE WORKSPACE: "${workspaceDir}"`,
       `- WORKSPACE_GROUNDING: The active workspace directory is "${workspaceDir}". NEVER invent, guess, or hallucinate other workspace paths (such as default user home directories) or claim there is no active project when project files exist in this workspace.`,
       `- RESPONSE_FORMAT: Terminal-rendered plain text and flat single-level bullet points (-) only. Do NOT use **bold**, ## headings, *italic*, __underline__, or markdown tables.`,
     ];
+
+    if (!includeProjectRules) return sections.join("\n\n");
 
     const scopedRulePaths = [
       path.join(workspaceDir, ".agents", "AGENTS.md"),
@@ -178,16 +181,19 @@ export class GuidelineLoader {
     }
 
     const targetSkills: Array<{ key: string; label: string }> = [];
+    const query = opts.userQuery || "";
+    const domain = inferAssistantDomain(query);
+    const engineering = opts.tier === "subagent" || (domain === null && isEngineeringIntent(query));
     const karpathy = this.MANDATORY_SKILLS.find(s => s.key === "karpathy-guidelines");
-    if (karpathy) targetSkills.push(karpathy);
+    if (engineering && karpathy) targetSkills.push(karpathy);
 
-    if (!opts.isSimpleTask) {
+    if (!opts.isSimpleTask && engineering) {
       const planning = this.MANDATORY_SKILLS.find(s => s.key === "superagent-planning");
       if (planning) targetSkills.push(planning);
     }
 
 
-    if (opts.tier === "master") {
+    if (opts.tier === "master" && engineering) {
       const orchestration = this.MASTER_ONLY_SKILLS.find(s => s.key === "master-agent-orchestration");
       if (orchestration) targetSkills.push(orchestration);
     }

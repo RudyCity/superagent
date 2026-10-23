@@ -265,11 +265,11 @@ export const MCP_TOOL_DEFINITIONS = [
         properties: {
           action: { type: "string", enum: [
             "list", "profile.list", "delegate", "delegate.start", "delegate.jobs", "delegate.get",
-            "delegate.tail", "delegate.cancel", "delegate.claims", "delegate.recovery",
+            "delegate.tail", "delegate.read", "delegate.cancel", "delegate.claims", "delegate.recovery",
             "delegate.slots", "delegate.retry", "delegate.health",
             "session.create", "session.send", "session.list", "session.kill", "session.get",
             "session.resume", "session.respond", "session.export", "session.config",
-            "session.tail", "session.detach",
+            "session.tail", "session.read", "session.detach",
           ], description: "Use delegate.start for long tasks; delegate.get/tail require jobId." },
           cli: { type: "string", description: "Installed CLI alias (agy, claude, codex or custom)." },
           binary: { type: "string", description: "Absolute binary path for custom CLI." },
@@ -301,6 +301,8 @@ export const MCP_TOOL_DEFINITIONS = [
           autoSendInitial: { type: "boolean" },
           since: { type: "number" },
           tailLimit: { type: "number", minimum: 1, maximum: 2000 },
+          offsetBytes: { type: "number", description: "Cursor for delegate.read/session.read." },
+          maxBytes: { type: "number", description: "Page size, 256-32000 bytes (default 12000)." },
           tailLines: { type: "number" },
           answer: { type: "string" },
           interactive: { type: "boolean" },
@@ -322,8 +324,8 @@ export const MCP_TOOL_DEFINITIONS = [
     },
     {
       name: "superagent_exec_command",
-      description: "Execute a shell command inside the active workspace or specific Superagent worktree with stdout/stderr capture.",
-      inputSchema: { type: "object", properties: { command: { type: "string" }, cwd: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" }, timeoutMs: { type: "number" } }, required: ["command"] },
+      description: "Run a command with bounded output preview and persistent complete log; pass commandId with offsetBytes/maxBytes to retrieve any page.",
+      inputSchema: { type: "object", properties: { command: { type: "string" }, commandId: { type: "string", description: "Saved command ID to read." }, offsetBytes: { type: "number", description: "Byte offset to resume saved output." }, maxBytes: { type: "number", description: "Page size, 256-32000 bytes (default 12000)." }, cwd: { type: "string" }, workspace: { type: "string" }, projectId: { type: "string" }, timeoutMs: { type: "number" } } },
     },
     {
       name: "superagent_read_file",
@@ -380,8 +382,8 @@ export const MCP_TOOL_DEFINITIONS = [
     },
     {
       name: "superagent_grep_search",
-      description: "Fast ripgrep pattern searching across files in workspace or worktrees.",
-      inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } }, required: ["query"] },
+      description: "Pattern search with deterministic, paged results. Pass offset from More matches and limit to get later results without losing matches.",
+      inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" }, caseSensitive: { type: "boolean" }, offset: { type: "number", description: "Zero-based match offset (default 0)." }, limit: { type: "number", description: "Maximum matches (default 100, max 200)." }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } }, required: ["query"] },
     },
     {
       name: "superagent_find_files",
@@ -532,6 +534,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...MOTION_MCP_TOOL_DEFS,
     ...MCP_GATEWAY_TOOL_DEFS,
 ];
+
 const activeMcpServerInstances = new Set<Server>();
 
 export async function notifyMcpToolsListChanged(): Promise<void> {
@@ -623,8 +626,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   let activeProjectGrantRequired = false;
   // Stable for this server/transport session; never derived from a project cwd.
   const connectionBrainSessionId = crypto.randomUUID();
-  // Immutable actor ID scoped to this initialized MCP transport.
-  // The clientInfo label is self-reported, never a permission grant.
+  // Actor identity is generated per authenticated MCP transport. App/client
+  // names from initialize.clientInfo are informational, never authorization.
   const crossIdeGateway = new CrossIdeCdpGateway({
     sessionId: connectionBrainSessionId,
     clientLabel: process.env.SUPERAGENT_CDP_IDE_LABEL,
@@ -729,7 +732,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           const result = await crossIdeGateway.invoke(args);
           return { content: [{ type: "text", text: JSON.stringify(result) }] };
         }
-        // MCP-level enforcement; independent raw Chrome CDP sockets cannot be firewalled here.
+        // Optional MCP-only gateway enforcement. The raw debugging port still
+        // needs OS-level isolation to prevent independent direct CDP clients.
         if (process.env.SUPERAGENT_CDP_GATEWAY_ONLY === "1" &&
             ["superagent_chrome_cdp", "superagent_control_chrome_cdp",
              "superagent_chrome_vision", "superagent_control_chrome_vision"].includes(name)) {
@@ -1102,16 +1106,16 @@ function extractMcpResultText(result: unknown): string {
       }
     }
 
-    // Block direct calls too, including clients that cached an old tools/list response.
-    if (DISABLED_MCP_TOOLS.has(toolName)) {
-      const errReason = "disabled and hidden from MCP tool discovery";
-      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
     const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
     if (blockedRoot) {
       emitAudit({ tool: toolName, args: rawArgs, ok: false, error: "YOLO blocklist denied access" });
       throw new McpError(ErrorCode.InvalidRequest, `Access denied by YOLO blocklist: ${blockedRoot}`);
     }
 
+    // Block direct calls too, including clients that cached an old tools/list response.
+    if (DISABLED_MCP_TOOLS.has(toolName)) {
+      const errReason = "disabled and hidden from MCP tool discovery";
+      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,

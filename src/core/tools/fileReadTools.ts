@@ -259,6 +259,10 @@ export const grepTool: Tool = {
         type: "string",
         description: "Regex pattern to search for",
       },
+      offset: { type: "number", description: "Zero-based offset into matching lines (default 0)." },
+      limit: { type: "number", description: "Maximum matches in this page (default 100, max 200)." },
+      isRegex: { type: "boolean", description: "Treat pattern as regex (default true)." },
+      caseSensitive: { type: "boolean", description: "Case-sensitive matching (default false)." },
       include: {
         type: "string",
         description: "File pattern to include (e.g. *.ts)",
@@ -275,11 +279,15 @@ export const grepTool: Tool = {
       sshLogger.toolUse("grep", "routing grep tool to SSH remote", { meta: { pattern: args.pattern, include: args.include } });
       return await sshGrepToolExecute(args.pattern as string, args.include as string | undefined, signal);
     }
-    const pattern = args.pattern as string;
+    const rawPattern = String(args.pattern ?? args.query ?? "");
+    if (!rawPattern) return "Error: grep pattern is required.";
+    const pattern = args.isRegex === false
+      ? rawPattern.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+      : rawPattern;
     const include = (args.include as string) || "*";
 
     try {
-      new RegExp(pattern, "gi");
+      new RegExp(pattern, args.caseSensitive ? "g" : "gi");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error: ${message}`;
@@ -362,7 +370,7 @@ export const grepTool: Tool = {
                 const content = await fs.readFile(file, "utf-8");
                 if (content.includes("\0")) return; // skip binary
                 const lines = content.split(/\r?\n/);
-                const localRegex = new RegExp(pattern, "gi");
+                const localRegex = new RegExp(pattern, args.caseSensitive ? "g" : "gi");
                 for (let i = 0; i < lines.length; i++) {
                   if (localRegex.test(lines[i])) {
                     const relPath = isSearchPathFile
@@ -381,12 +389,16 @@ export const grepTool: Tool = {
         }
       }
 
-      if (results.length > 100) {
-        return results.slice(0, 100).join("\n") + `\n\n... (output truncated, showing 100 of ${results.length} matches. Refine your query/pattern or search path to narrow down results)`;
-      }
-      return results.length > 0
-        ? results.join("\n")
-        : "No matches found.";
+      results.sort();
+      const rawOffset = Number(args.offset ?? 0);
+      const rawLimit = Number(args.limit ?? 100);
+      const start = Number.isFinite(rawOffset) ? Math.max(0, Math.floor(rawOffset)) : 0;
+      const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(200, Math.floor(rawLimit))) : 100;
+      if (results.length === 0) return "No matches found.";
+      const page = results.slice(start, start + limit);
+      const nextOffset = start + page.length;
+      return page.join("\n") +
+        (nextOffset < results.length ? "\n\nMore matches: " + (results.length - nextOffset) + ". Next offset=" + nextOffset + ", limit=" + limit + " (total " + results.length + ")." : "");
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       return `Error: ${message}`;

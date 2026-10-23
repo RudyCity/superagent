@@ -38,7 +38,7 @@ export const manageMcpTool: Tool = {
       },
       command: {
         type: "string",
-        description: "The command to run the MCP server (e.g., 'npx', 'node'). Required for 'add'.",
+        description: "The command to run the MCP server (e.g., 'bunx' or an external server's required executable). Required for 'add'.",
       },
       args: {
         type: "array",

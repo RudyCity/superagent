@@ -1,3 +1,4 @@
+import { GENERAL_ASSISTANT_IDENTITY } from "../assistantIdentity.js";
 /**
  * resourcesAndPrompts.ts — MCP Resources and Prompts definitions and handlers for Superagent.
  */
@@ -102,7 +103,7 @@ export function registerResourcesAndPrompts(
         {
           uri: "superagent://instructions/agentic-mcp",
           name: "Superagent Agentic MCP Instructions",
-          description: "Authoritative instructions and system prompt for ChatGPT, Claude, and external LLMs to enforce tool-first agentic execution over MCP.",
+          description: "Optional general-purpose assistant guidance for external MCP clients. Client system policies and consent requirements always take precedence.",
           mimeType: "text/markdown",
         },
       ].filter(item => !SENSITIVE_MCP_RESOURCE_URIS.has(item.uri) || authorized(true)),
@@ -252,13 +253,13 @@ export function registerResourcesAndPrompts(
         const instructions = [
           `# SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL`,
           ``,
-          `You are an autonomous senior software engineering agent connected to a real codebase via Superagent MCP tools.`,
+          GENERAL_ASSISTANT_IDENTITY,
           ``,
           `## CRITICAL DIRECTIVES:`,
-          `1. TOOL_FIRST: Always invoke MCP tools ('superagent_*') on turn 1. Never guess file contents or speculate.`,
-          `2. ACTION OVER ADVICE: Never ask the user to run commands or make edits manually. Use 'superagent_exec_command', 'superagent_read_files', 'superagent_write_files', and 'superagent_replace_file_content'. The legacy single-file MCP endpoints 'superagent_read_file' and 'superagent_write_file' are disabled; batch related paths in one call (maximum 50 files per batch).`,
+          `1. TOOL_FIRST: For requests that need MCP action or evidence, use authorized tools promptly; for conversation or explanation, answer directly without unnecessary tool calls.`,
+          `2. ACTION OVER ADVICE: For executable user requests, use authorized MCP tools instead of merely giving manual steps. Batch file operations.`,
           `3. AUTONOMOUS LOOP: Complete the entire task end-to-end (Inspect -> Plan -> Act -> Verify -> Report) without unnecessary intermediate pauses.`,
-          `4. RIGOROUS VERIFICATION: Always run test suites and build scripts before declaring a task complete.`,
+          `4. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
           `5. ERROR RECOVERY: If a tool fails, diagnose the error, fix the root cause, and retry.`,
         ].join("\n");
 
@@ -328,7 +329,7 @@ export function registerResourcesAndPrompts(
         },
         {
           name: "superagent_agentic_mcp",
-          description: "Enforces strict agentic execution, TOOL_FIRST discipline, and autonomous loop for ChatGPT, Claude, and external MCP clients.",
+          description: "Template for authorized general-purpose task execution using MCP tools, verification, and confirmation gates.",
           arguments: [
             {
               name: "task",
@@ -445,10 +446,10 @@ export function registerResourcesAndPrompts(
           targetWorkspace ? `Target Workspace: ${targetWorkspace}` : "",
           constraints ? `Specific Constraints:\n${constraints}` : "",
           `\n## EXECUTION PROTOCOL (TOOL_FIRST):`,
-          `1. ZERO CONVERSATIONAL FILLER: Never start with conversational greetings, speculation, or hypothetical advice. Invoke MCP tools on your very first turn.`,
+          `1. ACTION-BASED ROUTING: Use MCP tools when the requested work requires actions or fresh evidence; ordinary questions and drafting can be answered directly.`,
           `2. NEVER DELEGATE TO USER: Never tell the user to run commands, edit files, or test changes manually. Execute commands with 'superagent_exec_command'; batch reads/writes with 'superagent_read_files' and 'superagent_write_files'; use 'superagent_replace_file_content' for targeted edits. Legacy 'superagent_read_file' and 'superagent_write_file' endpoints are disabled.`,
-          `3. AUTONOMOUS CONTINUOUS LOOP: Progress through Inspect -> Plan -> Act -> Verify -> Conclude without pausing for permission between steps.`,
-          `4. RIGOROUS VERIFICATION: Run project tests and build scripts via 'superagent_exec_command' to verify all changes before finishing.`,
+          `3. SAFE EXECUTION LOOP: Inspect -> Plan when needed -> Act when authorized -> Verify -> Conclude. Respect confirmation, permission and destructive-action gates; never infer consent from ambiguous replies.`,
+          `4. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
           `5. RESILIENT RECOVERY: If a tool fails, analyze the error output, adapt your parameters, and retry. Never output raw error dumps or surrender.`,
         ].filter(Boolean).join("\n");
 

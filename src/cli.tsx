@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 
-import { spawnSync } from "node:child_process";
 
 // SuperAgent is Bun-native. Do not silently start under Node, where the
 // memory/worker pipeline may use incompatible SQLite and loader behavior.
@@ -12,26 +11,7 @@ const isAdequateBun = Boolean(
 );
 
 if (!isAdequateBun) {
-  if (!bunRuntimeVersion) {
-    // Invoked under Node (e.g. global npm link or Windows superagent.cmd / superagent.ps1 shim).
-    // Transparently hand off execution to Bun if available on PATH.
-    try {
-      const targetScript = process.argv[1];
-      const result = spawnSync("bun", [targetScript, ...process.argv.slice(2)], {
-        stdio: "inherit",
-        env: process.env,
-      });
-      if (result.error && (result.error as any).code === "ENOENT") {
-        console.error("SuperAgent requires Bun 1.4.2 or newer, but 'bun' was not found in your PATH.");
-        console.error("Please install Bun from https://bun.sh and ensure it is available in PATH.");
-        process.exit(1);
-      }
-      process.exit(result.status ?? (result.signal ? 1 : 0));
-    } catch {
-      // Fall through to error output below
-    }
-  }
-  console.error("SuperAgent requires Bun 1.4.2 or newer. Start with: bun dist/cli.js");
+  console.error("SuperAgent requires Bun 1.4.2 or newer. Node.js launchers are unsupported. Start with: bun dist/cli.js");
   process.exit(1);
 }
 
@@ -146,6 +126,26 @@ After adding a provider, use:
 For full login help:
   superagent login --help
 `);
+  } else {
+    await handleLoginCliCommand(["add", ...args]);
+  }
+  process.exit(0);
+}
+
+if (process.argv[2] === "mcp") {
+  const sub = process.argv[3]?.toLowerCase();
+  if (sub === "register") {
+    const { registerToAgyConfig } = await import("./core/mcp/mcpRegistration.js");
+    const res = registerToAgyConfig();
+    console.log(res.message);
+    process.exit(res.success ? 0 : 1);
+  } else if ([ "list", "ls", "add", "add-http", "remove", "rm", "delete", "use", "tunnel", "help", "--help", "-h"].includes(sub) || !sub) {
+    const { handleMcpCliCommand } = await import("./core/commands/mcpCliHandler.js");
+    await handleMcpCliCommand(process.argv.slice(3));
+    process.exit(0);
+  }
+}
+
 // Never accept OS sandbox requirements based solely on an application toggle.
 // A trusted launcher must verify the OS token and enforce ACL access probes.
 if (process.env.SUPERAGENT_REQUIRE_OS_SANDBOX === "1") {
@@ -177,26 +177,6 @@ if (process.env.SUPERAGENT_REQUIRE_OS_SANDBOX === "1") {
   if (unexpectedlyReadable) {
     process.stderr.write("OS sandbox required: denied probe was readable; refusing to start.\n");
     process.exit(78);
-  }
-}
-
-  } else {
-    await handleLoginCliCommand(["add", ...args]);
-  }
-  process.exit(0);
-}
-
-if (process.argv[2] === "mcp") {
-  const sub = process.argv[3]?.toLowerCase();
-  if (sub === "register") {
-    const { registerToAgyConfig } = await import("./core/mcp/mcpRegistration.js");
-    const res = registerToAgyConfig();
-    console.log(res.message);
-    process.exit(res.success ? 0 : 1);
-  } else if ([ "list", "ls", "add", "add-http", "remove", "rm", "delete", "use", "tunnel", "help", "--help", "-h"].includes(sub) || !sub) {
-    const { handleMcpCliCommand } = await import("./core/commands/mcpCliHandler.js");
-    await handleMcpCliCommand(process.argv.slice(3));
-    process.exit(0);
   }
 }
 
@@ -449,4 +429,3 @@ if (serverIndex !== -1) {
 }
 
 export {};
-

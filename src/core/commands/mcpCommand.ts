@@ -129,7 +129,7 @@ export const mcpCommand: SlashCommand = {
       if (!name || !command) {
         ctx.addLine({
           type: "error",
-          content: "Usage: /mcp add <name> <command> [args...]\nExample: /mcp add everything npx -y @modelcontextprotocol/server-everything",
+          content: "Usage: /mcp add <name> <command> [args...]\nExample: /mcp add everything bunx -y @modelcontextprotocol/server-everything",
           timestamp: now,
         });
         return;

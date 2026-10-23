@@ -5,6 +5,7 @@ import { captureGitSnapshot } from "./GitUtils.js";
 import { contentToString } from "../conversation.js";
 import { isTransientContinuationNudge } from "./ChecklistContinuationGuard.js";
 import type { Agent } from "../agent.js";
+import { isExplicitPlanApproval, isExactContinuation } from "./ApprovalIntent.js";
 
 import { analyzePromptIntent, translationBadgeEmitter } from "../promptClarification.js";
 
@@ -50,14 +51,7 @@ export class RequestProcessor {
       const messages = agent.conversation.getMessages();
       const hasToolCalls = messages.some(m => m.role === "tool" || (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0));
       const lowerInput = textInput.toLowerCase().trim();
-      const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
-      const preApprovalWords = settings.simpleTaskKeywords || ['lanjut', 'coba', 'go ahead', 'proceed', 'try', 'run', 'execute', 'ok', 'yes', 'y'];
-      const isContinuation = preApprovalWords.some(word => {
-        if (word.includes(' ')) {
-          return lowerInput.includes(word);
-        }
-        return words.some(w => w === word || (word.length >= 4 && w.startsWith(word)));
-      });
+      const isContinuation = isExactContinuation(textInput);
 
       const modeSwitchMatch = lowerInput.match(/^(?:ganti\s+mode|ubah\s+mode|switch\s+mode|change\s+mode|pindah\s+mode)(?:\s+(?:ke\s+|to\s+)?([a-z_]+))?$/i);
       if (modeSwitchMatch) {
@@ -71,11 +65,8 @@ export class RequestProcessor {
         else targetMode = "implement";
 
         agent.setMode(targetMode, `User requested mode switch via message: "${textInput}"`);
-        if (agent.planState === "PLANNING_PENDING" && (targetMode === "implement" || targetMode === "debug")) {
-          agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
-          agent.simpleTaskApproved = true;
-        }
-      } else if (hasToolCalls && isContinuation) {
+        // Changing the mode never constitutes approval of a pending plan.
+      } else if (hasToolCalls && isContinuation && agent.planState === "APPROVED") {
         const classification = {
           category: "complex_task" as const,
           confidence: "high" as const,
@@ -87,9 +78,7 @@ export class RequestProcessor {
         agent.writeToLogFile("INFO", `Request classified (continuation): category=${classification.category}, confidence=${classification.confidence}, reason=${classification.reason}`);
         
         agent.isSimpleTask = true;
-        if (agent.planState === "IDLE") {
-          agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
-        }
+        // A leftover plan file must not be promoted to approved by 'continue'.
         agent.simpleTaskApproved = true;
       } else {
         try {
@@ -124,7 +113,7 @@ export class RequestProcessor {
                 const skipPlanningCategories = ["conversation", "question", "research"];
                 if (skipPlanningCategories.includes(classification.category)) {
                   agent.isSimpleTask = true;
-                  agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+                  agent.planState = "IDLE";
                   agent.simpleTaskApproved = true;
                 } else if (classification.category === "complex_task") {
                   const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
@@ -138,24 +127,20 @@ export class RequestProcessor {
                       agent.isSimpleTask = false;
                     } else {
                       agent.isSimpleTask = true;
-                      agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+                      agent.planState = "IDLE";
                       agent.simpleTaskApproved = true;
                     }
                   }
                 } else if (classification.category === "simple_edit" || classification.category === "command" || classification.category === "debug") {
                   agent.isSimpleTask = true;
-                  agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
+                  agent.planState = "IDLE";
                   agent.simpleTaskApproved = true;
                 }
               }
             } else if (agent.planState === "PLANNING_PENDING") {
               const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
               const lowerInput = userInputText.toLowerCase().trim();
-              // A pending plan requires EXACT, unconditional approval. Generic
-              // permission to edit and substring matches do not authorize it.
-              const normalizedApproval=lowerInput.normalize("NFKC").split(" ").filter(Boolean).join(" ");
-              const isConfirmation=agent.hasRealPlanContent() &&
-                /^(?:ya|iya|yes|y|ok|oke|okay|sip|siap|setuju|saya setuju|aku setuju|saya menyetujui|approve|approved|lgtm|konfirmasi|confirm|lanjut|lanjutkan|silakan lanjut|silahkan lanjut|proceed|go ahead|gas|boleh|aku izinkan|saya izinkan|lanjut implementasi)$/.test(normalizedApproval);
+              const isConfirmation = agent.hasRealPlanContent() && isExplicitPlanApproval(userInputText);
               if (isConfirmation) {
                 agent.setMode("implement", `User confirmed pending plan / authorized execution: "${userInputText}"`);
                 agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
@@ -268,11 +253,11 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
       try {
         const messages = agent.conversation.getMessages();
         const hasToolCalls = messages.some(m => m.role === "tool" || (m.role === "assistant" && m.toolCalls && m.toolCalls.length > 0));
-        const { isHighConfidenceConversation, CONTINUATION_COMMANDS } = await import("../requestClassifier.js");
+        const { isHighConfidenceConversation } = await import("../requestClassifier.js");
         const userText = typeof userInput === "string" ? userInput : "";
         const cleanLower = userText.toLowerCase().replace(/^[!?.,\s()'""-]+|[!?.,\s()'""-]+$/g, "").trim();
-        const isModeCmd = /\b(?:ganti|ubah|switch|change|pindah)\s+mode\b/i.test(cleanLower);
-        const isContinuation = isModeCmd || (messages.length > 0 && CONTINUATION_COMMANDS && CONTINUATION_COMMANDS.has(cleanLower));
+        const isModeCmd = /^(?:ganti|ubah|switch|change|pindah)\s+mode(?:\s+(?:ke\s+|to\s+)?[a-z_]+)?$/i.test(cleanLower);
+        const isContinuation = (isModeCmd && agent.planState !== "PLANNING_PENDING") || (hasToolCalls && isExactContinuation(userText) && agent.planState === "APPROVED");
 
         if (isContinuation) {
           // Promote continuation command ("lanjut", "continue", "iya", mode change, etc.) to command/task category so full toolset is available
@@ -284,10 +269,7 @@ Reply with EXACTLY "chat", "yes", or "no" ONLY.`;
             classificationTokens: 0,
           };
           agent.isSimpleTask = true;
-          agent.simpleTaskApproved = true;
-          if (agent.planState === "PLANNING_PENDING") {
-            agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";
-          }
+          agent.simpleTaskApproved = agent.planState === "APPROVED";
         } else if (!hasToolCalls && isHighConfidenceConversation(agent.currentClassification, agent.tier, agent.planState, messages.length > 0, userText)) {
           agent.writeToLogFile("INFO", `Conversation fast-path activated (category=conversation, confidence=high)`);
           const { FastPath } = await import("./FastPath.js");

@@ -2,6 +2,7 @@ import { streamText, generateText, type CoreMessage } from "ai";
 import { contentToString } from "../conversation.js";
 import { HistoryCompactor } from "./HistoryCompactor.js";
 import type { Agent } from "../agent.js";
+import { GENERAL_ASSISTANT_IDENTITY } from "../assistantIdentity.js";
 
 export function cleanThinkingTags(text: string, existingReasoning = ""): { cleanText: string; reasoning: string } {
   let rawText = text || "";
@@ -122,10 +123,13 @@ export class FastPath {
           const baseSystemPrompt = (agent as any).customSystemPrompt || (agent as any).config.systemPrompt || "";
           const workspaceDir = agent.worktreePath || agent.workingDirectory || process.cwd();
           const { GuidelineLoader } = await import("./GuidelineLoader.js");
-          const workspaceContext = GuidelineLoader.buildFastPathWorkspaceContext(workspaceDir);
-          const convSystemPrompt = baseSystemPrompt
-            ? `${baseSystemPrompt}\n\n${workspaceContext}\n\nCLASSIFICATION: Conversational message detected. Respond directly and concisely. No tools needed.`
-            : `You are a helpful AI coding assistant. The user sent a short conversational message. Respond naturally and concisely.\n\n${workspaceContext}`;
+          const workspaceContext = GuidelineLoader.buildFastPathWorkspaceContext(workspaceDir, false);
+          const conversationalIdentity = (agent as any).customSystemPrompt ? baseSystemPrompt : GENERAL_ASSISTANT_IDENTITY;
+          const convSystemPrompt = `${conversationalIdentity}
+
+${workspaceContext}
+
+CLASSIFICATION: Conversational message. Respond naturally and concisely. No tools needed.`;
 
           const startTime = Date.now();
           const useStreaming = !(agent as any).config.disableStreaming;

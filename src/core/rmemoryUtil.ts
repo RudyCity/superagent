@@ -1,4 +1,5 @@
 import { getSettings } from "./config/jsonConfig.js";
+import { getRootConfigDir } from "./config/paths.js";
 import { getConfiguredProviders } from "./config/providers.js";
 import { createHash } from "crypto";
 import fs from "fs";
@@ -10,7 +11,8 @@ import { fuseScopedMemoryHits } from "./memoryRetrieval.js";
 import { redactMemorySecrets } from "./memoryLifecycle.js";
 import { recordMemorySearchPerformance, recordMemoryIngestion } from "./memoryTelemetry.js";
 
-const globalDataDir = path.join(os.homedir(), ".superagent-r", "rmemory");
+// Honor the same config root as every other subsystem, especially isolated test workers.
+const globalDataDir = path.join(getRootConfigDir(), "rmemory");
 
 export const DEFAULT_LOCAL_EMBEDDING_MODEL = "Xenova/all-MiniLM-L6-v2";
 // Sharing the in-flight model load prevents duplicate ~100 MB ONNX instances.

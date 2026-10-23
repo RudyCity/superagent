@@ -16,7 +16,7 @@ Commands:
 
 Examples:
    superagent mcp list
-   superagent mcp add everything npx -y @modelcontextprotocol/server-everything
+   superagent mcp add everything bunx -y @modelcontextprotocol/server-everything
    superagent mcp add-http google https://mcp.example.com/mcp --oauth
    superagent mcp remove everything
    superagent mcp use gateway
@@ -82,7 +82,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
     if (!name || !command) {
       console.log("Error: Missing server name or command.");
       console.log("Usage: superagent mcp add <name> <command> [args...]");
-      console.log("Example: superagent mcp add everything npx -y @modelcontextprotocol/server-everything");
+      console.log("Example: superagent mcp add everything bunx -y @modelcontextprotocol/server-everything");
       process.exit(1);
     }
 
