@@ -43,7 +43,8 @@ describe("Skills Resolution and Deduplication", () => {
     if (os.platform() === "win32") {
       expect(normalizePath(p1)).toBe(normalizePath(p2));
     } else {
-      expect(normalizePath(p1)).toBe("C:/Users/USER/Documents/project");
+      // On POSIX, a Windows drive prefix is a relative path fragment.
+      expect(normalizePath(p1)).toBe(path.resolve(p1).replace(/\\/g, "/"));
     }
   });
 

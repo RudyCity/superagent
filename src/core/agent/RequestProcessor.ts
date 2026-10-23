@@ -151,16 +151,11 @@ export class RequestProcessor {
             } else if (agent.planState === "PLANNING_PENDING") {
               const userInputText = typeof userInput === "string" ? userInput : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
               const lowerInput = userInputText.toLowerCase().trim();
-              const confirmationWords = [
-                "oke", "ok", "okay", "yes", "y", "sip", "siap", "lanjut", "lanjutkan", 
-                "proceed", "go", "approved", "approve", "lgtm", "agree", "yep", "yup", 
-                "sure", "mantap", "gas", "confirm", "konfirmasi", "confirmsi", "acc", 
-                "setuju", "deal", "perbaik", "perbaiki", "izinkan", "ijinkan", "bolehkan",
-                "silakan", "silahkan", "boleh", "aku izinkan", "diizinkan", "edit aja",
-                "edit langsung", "lanjutkan edit", "ganti mode"
-              ];
-              const words = lowerInput.split(/[^a-zA-Z0-9'']+/).filter(Boolean);
-              const isConfirmation = confirmationWords.some(w => words.includes(w) || lowerInput.includes(w));
+              // A pending plan requires EXACT, unconditional approval. Generic
+              // permission to edit and substring matches do not authorize it.
+              const normalizedApproval=lowerInput.normalize("NFKC").split(" ").filter(Boolean).join(" ");
+              const isConfirmation=agent.hasRealPlanContent() &&
+                /^(?:ya|iya|yes|y|ok|oke|okay|sip|siap|setuju|saya setuju|aku setuju|saya menyetujui|approve|approved|lgtm|konfirmasi|confirm|lanjut|lanjutkan|silakan lanjut|silahkan lanjut|proceed|go ahead|gas|boleh|aku izinkan|saya izinkan|lanjut implementasi)$/.test(normalizedApproval);
               if (isConfirmation) {
                 agent.setMode("implement", `User confirmed pending plan / authorized execution: "${userInputText}"`);
                 agent.planState = agent.hasRealPlanContent() ? "APPROVED" : "IDLE";

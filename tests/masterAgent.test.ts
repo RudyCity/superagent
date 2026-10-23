@@ -170,7 +170,7 @@ const a = 2;
       });
 
       // Safe subset/superset conflict should resolve with line-based merge
-      const conflictContent = `<<<<<<< HEAD
+      let conflictContent = `<<<<<<< HEAD
 const x = 1;
 console.log("ours");
 =======
@@ -180,7 +180,7 @@ return "theirs";
 >>>>>>> feature-2`;
       const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
         const pathStr = String(p);
-        if (pathStr.endsWith("src/app.tsx")) {
+        if (pathStr.replace(/\\/g,"/").endsWith("src/app.tsx")) {
           return conflictContent as any;
         }
         if (pathStr.includes("model-config.json")) {
@@ -195,6 +195,9 @@ return "theirs";
         return true;
       });
 
+      vi.spyOn(fs,"writeFileSync").mockImplementation((p,content)=>{
+        if (String(p).replace(/\\/g,"/").endsWith("src/app.tsx")) conflictContent=String(content);
+      });
       const master = new MasterAgent({} as any);
       const result = await master.mergeBranch("feature-2", ["src/app.tsx"]);
 
@@ -227,10 +230,11 @@ return "theirs";
         if (pathStr.includes("model-config.json")) return false;
         return true;
       });
+      let conflictContent=`<<<<<<< HEAD\nconst a = 1;\n=======\nconst a = 1;\nconst b = 2;\n>>>>>>> feature-error`;
       const spyRead = vi.spyOn(fs, "readFileSync").mockImplementation((p) => {
         const pathStr = String(p);
-        if (pathStr.endsWith("src/app.tsx")) {
-          return `<<<<<<< HEAD\nconst a = 1;\n=======\nconst a = 1;\nconst b = 2;\n>>>>>>> feature-error` as any;
+        if (pathStr.replace(/\\/g,"/").endsWith("src/app.tsx")) {
+          return conflictContent as any;
         }
         if (pathStr.includes("model-config.json")) {
           throw new Error("Config not found");
@@ -238,6 +242,9 @@ return "theirs";
         return "" as any;
       });
 
+      vi.spyOn(fs,"writeFileSync").mockImplementation((p,content)=>{
+        if(String(p).replace(/\\/g,"/").endsWith("src/app.tsx")) conflictContent=String(content);
+      });
       const master = new MasterAgent({} as any);
       const result = await master.mergeBranch("feature-error", ["src/app.tsx"]);
 
