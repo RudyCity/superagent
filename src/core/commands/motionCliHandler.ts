@@ -56,6 +56,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio apply-template PROJECT_ID TEMPLATE_ID --base-revision N [--headline "H"] [--subtitle "S"] [--workspace PATH] [--json]
   superagent studio batch-variants PROJECT_ID --base-revision N [--ratios "16:9,9:16,1:1"] [--width 640] [--workspace PATH] [--json]
   superagent studio beat-sync PROJECT_ID --base-revision N --target-layer LAYER_ID [--audio-track 0] [--intensity 0.35] [--workspace PATH] [--json]
+  superagent studio preview PROJECT_ID [--open] [--workspace PATH] [--json]
 
 MP4 preview uses installed FFmpeg. --detach launches a separate Bun worker;
 recovery is diagnostic/read-only unless the operator explicitly runs recover --ack-stale.`;
@@ -63,7 +64,7 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--help", "-h"]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--open", "--help", "-h"]);
   const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
@@ -460,6 +461,50 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     }
     if (action === "inspect") {
       emit(await getMotionProject(workspace, projectId), json);
+      return 0;
+    }
+    if (action === "preview") {
+      const project = await getMotionProject(workspace, projectId);
+      const allJobs = await listMotionJobs(workspace);
+      const projectJobs = allJobs.filter(j => j.projectId === project.id && j.status === "completed");
+      const latestJob = projectJobs[0];
+      const { renderMotionPlayerHtml } = await import("../motion/render/motionPreviewHtml.js");
+      const html = renderMotionPlayerHtml(project, latestJob);
+
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      const { studioStorageRoot } = await import("../motion/project/projectStore.js");
+      const storageRoot = await studioStorageRoot(workspace, true);
+      const previewDir = path.join(storageRoot, "previews");
+      await fs.mkdir(previewDir, { recursive: true });
+      const previewFilePath = path.join(previewDir, `preview-${project.id}.html`);
+      await fs.writeFile(previewFilePath, html, "utf8");
+
+      let opened = false;
+      if (opts.has("--open")) {
+        try {
+          const { execa } = await import("execa");
+          const openTarget = `file://${path.resolve(previewFilePath).replace(/\\/g, "/")}`;
+          if (process.platform === "win32") {
+            await execa("cmd", ["/c", "start", "", openTarget], { stdio: "ignore", detached: true });
+          } else if (process.platform === "darwin") {
+            await execa("open", [openTarget], { stdio: "ignore", detached: true });
+          } else {
+            await execa("xdg-open", [openTarget], { stdio: "ignore", detached: true });
+          }
+          opened = true;
+        } catch {
+          // Non-fatal if browser launcher fails in headless/test environment
+        }
+      }
+
+      emit({
+        status: "ready",
+        projectId: project.id,
+        previewFile: previewFilePath,
+        opened,
+        hasRenderedVideo: Boolean(latestJob?.status === "completed"),
+      }, json);
       return 0;
     }
     if (action === "frame") {

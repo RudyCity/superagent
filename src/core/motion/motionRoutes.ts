@@ -37,6 +37,7 @@ import { convertMotionJobArtifact } from "./motionExportFormats.js";
 import { compileMotionParticles } from "./motionParticles.js";
 import { compileMotionTypography } from "./motionTypography.js";
 import { applyMotionEdits } from "./project/revisions.js";
+import { renderMotionPlayerHtml } from "./render/motionPreviewHtml.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -96,6 +97,7 @@ export async function handleMotionHttpRoute(
   const visionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-review$/);
   const visionRepair = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-repair$/);
   const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
+  const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
   const frameSnapshot = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/frames\/(\d{1,6})\.png$/);
   const render = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/render$/);
   const job = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})$/);
@@ -513,6 +515,20 @@ export async function handleMotionHttpRoute(
         "Content-Length": String(body.length),
         "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
         "Content-Disposition": 'attachment; filename="motion-captions.srt"',
+      });
+      res.end(body);
+    } else if (player && method === "GET") {
+      const projectItem = await getMotionProject(workspace, player[1]);
+      const allJobs = await listMotionJobs(workspace);
+      const projectJobs = allJobs.filter(j => j.projectId === projectItem.id && j.status === "completed");
+      const latestJob = projectJobs[0];
+      const html = renderMotionPlayerHtml(projectItem, latestJob);
+      const body = Buffer.from(html, "utf8");
+      res.writeHead(200, {
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Length": String(body.length),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
       });
       res.end(body);
     } else if (visionReview && method === "POST") {

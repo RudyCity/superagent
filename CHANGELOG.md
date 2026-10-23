@@ -1,3 +1,15 @@
+## [1.14.21] - 2026-10-23
+### Added
+- Motion Studio Standalone Web Browser Player & Live Scrubber (`src/core/motion/render/motionPreviewHtml.ts`, `src/core/motion/motionRoutes.ts`, `src/core/commands/motionCliHandler.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionPreviewPlayer.test.ts`):
+  - Created zero-dependency, self-contained HTML5 Player & Frame Scrubber adhering to Antislop and premium design-taste standards (clean dark theme `#0B0F19`, cyan/magenta neon accents, responsive layout, and zero external CDN script/stylesheet dependencies).
+  - Implemented dual-mode playback:
+    - Native `<video>` player when MP4 artifact is completed, with timecode tracking, playback rate, and frame-stepping.
+    - Live per-frame scrubber fallback scrubbing `/api/motion/projects/:id/frames/:n.png` when video is not yet rendered.
+  - Added HTTP routes `/api/motion/projects/:id/player` and `/preview` returning authenticated HTML document.
+  - Added CLI command `superagent studio preview PROJECT_ID [--open]` saving standalone `.html` files to `.superagent/studio/previews/` and auto-opening the default browser when requested.
+  - Advertised `standaloneBrowserPlayer: true` in `MOTION_CAPABILITIES`.
+  - Added dedicated test suite (`tests/motionPreviewPlayer.test.ts`) with 7 tests verifying HTML generation, offline safety, HTTP routing, and CLI file generation.
+
 ## [1.14.20] - 2026-10-23
 ### Added
 - Motion Studio Burn-in Animated Captions / Subtitle Overlay (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionCliParity.test.ts`):

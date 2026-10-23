@@ -6,6 +6,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   externalMotionTemplateImport: false,
   releaseChannel: "developer-preview",
   sceneAuthoring: true,
+  standaloneBrowserPlayer: true,
   standaloneBrowserEditor: false,
   nativeTLineEditor: "external-not-verified",
   localWorkspaceOnly: true,
