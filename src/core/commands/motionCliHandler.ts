@@ -4,6 +4,8 @@ import { MotionValidationError } from "../motion/schema/validation.js";
 import { probeFfmpeg } from "../motion/render/ffmpegEncoder.js";
 import { importMotionAsset } from "../motion/assets/motionAssets.js";
 import { importMotionAudio } from "../motion/assets/motionAudio.js";
+import { importMotionFont } from "../motion/assets/motionFonts.js";
+import { importMotionVideo } from "../motion/assets/motionVideoClips.js";
 import { readMotionWorkspaceInput } from "../motion/assets/motionInput.js";
 import { MOTION_CAPABILITIES } from "../motion/motionCapabilities.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../motion/director/directorService.js";
@@ -24,6 +26,8 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio edit PROJECT_ID --base-revision N --edits-file workspace/path/edits.json
   superagent studio import-image --file workspace/path/image.png [--workspace PATH] [--json]
   superagent studio import-audio --file workspace/path/clip.wav [--workspace PATH] [--json]
+  superagent studio import-font --file workspace/path/font.ttf --family "BrandFont" [--workspace PATH] [--json]
+  superagent studio import-video --file workspace/path/clip.mp4 [--workspace PATH] [--json]
   superagent studio frame PROJECT_ID --frame N [--workspace PATH] [--json]
   superagent studio render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent studio jobs [--workspace PATH] [--json]
@@ -56,7 +60,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -225,7 +229,23 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         return 0;
       } finally { process.off("SIGINT", stop); process.off("SIGTERM", stop); }
     }
-    if (action === "import-image" || action === "import-audio") {
+    if (action === "import-image" || action === "import-audio" || action === "import-font" || action === "import-video") {
+      if (action === "import-video") {
+        const filename = opt(opts, "--file");
+        if (!filename) throw new Error("import-video requires --file inside the authorized workspace");
+        const data = await readMotionWorkspaceInput(workspace, filename, 50 * 1024 * 1024);
+        emit(await importMotionVideo(workspace, data), json);
+        return 0;
+      }
+      if (action === "import-font") {
+        const filename = opt(opts, "--file");
+        const family = opt(opts, "--family");
+        if (!filename) throw new Error("import-font requires --file inside the authorized workspace");
+        if (!family) throw new Error("import-font requires --family <FontFamilyName>");
+        const data = await readMotionWorkspaceInput(workspace, filename, 5 * 1024 * 1024);
+        emit(await importMotionFont(workspace, family, data), json);
+        return 0;
+      }
       if (positionals.length) throw new Error(action + " requires --file and no positional arguments");
       const filename = opt(opts, "--file");
       if (!filename) throw new Error(action + " requires --file inside the authorized workspace");

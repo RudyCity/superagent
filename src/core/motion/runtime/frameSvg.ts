@@ -22,12 +22,20 @@ export function renderMotionSvg(project: MotionProject, frame: number, images = 
     const opacity = number(values.opacity);
     const cx = number(values.x + layer.width / 2);
     const cy = number(values.y + layer.height / 2);
-    const transform = `rotate(${number(values.rotation)} ${cx} ${cy})`;
+    const scaleX = values.scaleX ?? values.scale ?? 1;
+    const scaleY = values.scaleY ?? values.scale ?? 1;
+    let transform = `rotate(${number(values.rotation)} ${cx} ${cy})`;
+    if (scaleX !== 1 || scaleY !== 1) {
+      transform += ` translate(${cx} ${cy}) scale(${number(scaleX)} ${number(scaleY)}) translate(-${cx} -${cy})`;
+    }
     if (layer.kind === "rect") {
       parts.push(`<rect x="${x}" y="${y}" width="${number(layer.width)}" height="${number(layer.height)}" rx="${number(layer.cornerRadius ?? 0)}" fill="${layer.fill}" opacity="${opacity}" transform="${transform}"/>`);
     } else if (layer.kind === "image") {
       const href = images.get(layer.assetId);
       if (!href || !/^data:image\/png;base64,[a-zA-Z0-9+/=]+$/.test(href)) throw new Error("Motion image preview requires a validated PNG asset");
+      parts.push(`<image x="${x}" y="${y}" width="${number(layer.width)}" height="${number(layer.height)}" href="${href}" opacity="${opacity}" preserveAspectRatio="none" transform="${transform}"/>`);
+    } else if (layer.kind === "video") {
+      const href = images.get(layer.assetId) ?? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
       parts.push(`<image x="${x}" y="${y}" width="${number(layer.width)}" height="${number(layer.height)}" href="${href}" opacity="${opacity}" preserveAspectRatio="none" transform="${transform}"/>`);
     } else {
       const baseline = number(values.y + layer.fontSize);

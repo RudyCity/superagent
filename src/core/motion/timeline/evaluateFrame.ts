@@ -3,8 +3,21 @@ import { validateMotionProject } from "../schema/validation.js";
 
 function ease(t: number, kind: string): number {
   if (kind === "step") return 0;
+  if (kind === "easeIn") return t * t;
+  if (kind === "easeOut") return t * (2 - t);
+  if (kind === "easeInOut") return t * t * (3 - 2 * t);
   if (kind === "easeOutBack") { const u = t - 1; return 1 + 2.70158 * u * u * u + 1.70158 * u * u; }
-  return kind === "easeInOut" ? t * t * (3 - 2 * t) : t;
+  if (kind === "bounce") {
+    const n1 = 7.5625;
+    const d1 = 2.75;
+    let x = t;
+    if (x < 1 / d1) return n1 * x * x;
+    if (x < 2 / d1) { x -= 1.5 / d1; return n1 * x * x + 0.75; }
+    if (x < 2.5 / d1) { x -= 2.25 / d1; return n1 * x * x + 0.9375; }
+    x -= 2.625 / d1;
+    return n1 * x * x + 0.984375;
+  }
+  return t;
 }
 export function evaluateTrack(track: MotionTrack, frame: number): number {
   const frames = track.keyframes;
@@ -33,10 +46,19 @@ export function evaluateFrame(project: MotionProject, frame: number): EvaluatedF
     height: project.composition.height,
     background: project.composition.background,
     layers: project.composition.layers.map((layer: MotionLayer) => {
+      const defaultScale = layer.scale ?? 1;
       const values: Record<MotionProperty, number> = {
         x: layer.x, y: layer.y, opacity: layer.opacity, rotation: layer.rotation,
+        scale: defaultScale, scaleX: layer.scaleX ?? defaultScale, scaleY: layer.scaleY ?? defaultScale,
       };
-      for (const track of layer.tracks) values[track.property] = evaluateTrack(track, frame);
+      for (const track of layer.tracks) {
+        const val = evaluateTrack(track, frame);
+        values[track.property] = val;
+        if (track.property === "scale") {
+          values.scaleX = val;
+          values.scaleY = val;
+        }
+      }
       return { layer, values };
     }),
   };

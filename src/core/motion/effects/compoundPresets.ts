@@ -122,7 +122,8 @@ export function applyCompoundPreset(project: MotionProject, input: CompoundPrese
   }
   for (const [property, phases] of generated) {
     const old = layer.tracks.find(track => track.property === property);
-    const baseline = (frame: number) => old ? evaluateTrack(old, frame) : layer[property];
+    const getLayerProp = (p: MotionProperty): number => (layer[p] ?? (p.startsWith("scale") ? 1 : 0));
+    const baseline = (frame: number): number => old ? evaluateTrack(old, frame) : getLayerProp(property);
     const keyframes: MotionTrack["keyframes"] = old
       ? old.keyframes.filter(point => point.frame < start - 1 || point.frame > end + 1)
         .map(point => ({ ...point }))
@@ -134,7 +135,7 @@ export function applyCompoundPreset(project: MotionProject, input: CompoundPrese
         if (frame < phase.first || frame > phase.last) continue;
         const effectVal = evaluateTrack(phase.track, frame);
         if (property === "opacity") value *= effectVal;
-        else value += (effectVal - layer[property]) * strength;
+        else value += (effectVal - getLayerProp(property)) * strength;
       }
       if (property === "opacity") value = Math.min(1, Math.max(0, value));
       else value = Math.max(-100000, Math.min(100000, value));

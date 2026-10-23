@@ -1,6 +1,7 @@
 import { MOTION_SCHEMA_VERSION } from "./types.js";
 import type { MotionEdit, MotionKeyframe, MotionProject, MotionTrack } from "./types.js";
 import { MOTION_FONT_FAMILIES } from "./fontCatalog.js";
+import { isAllowedMotionFont } from "../assets/motionFonts.js";
 
 export class MotionValidationError extends Error {
   constructor(public readonly diagnostics: string[]) {
@@ -11,8 +12,8 @@ export class MotionValidationError extends Error {
 
 const color = /^#[0-9a-fA-F]{6}$/;
 const id = /^[a-z][a-z0-9-]{1,63}$/;
-const propertyNames = new Set(["x", "y", "opacity", "rotation"]);
-const easingNames = new Set(["linear", "step", "easeInOut", "easeOutBack"]);
+const propertyNames = new Set(["x", "y", "opacity", "rotation", "scale", "scaleX", "scaleY"]);
+const easingNames = new Set(["linear", "step", "easeInOut", "easeOutBack", "easeIn", "easeOut", "bounce"]);
 const fontNames = new Set<string>(MOTION_FONT_FAMILIES);
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -50,10 +51,10 @@ export function validateMotionTrack(raw: unknown, durationFrames: number, at = "
     if (!integer(keyframe.frame, 0, durationFrames - 1) || Number(keyframe.frame) <= previousFrame) {
       errors.push(location + ": frames must be integers, increasing and inside composition");
     } else previousFrame = keyframe.frame as number;
-    const range = raw.property === "opacity" ? [0, 1] : raw.property === "rotation" ? [-36000, 36000] : [-100000, 100000];
+    const range = raw.property === "opacity" ? [0, 1] : (raw.property === "scale" || raw.property === "scaleX" || raw.property === "scaleY") ? [0, 100] : raw.property === "rotation" ? [-36000, 36000] : [-100000, 100000];
     if (!finite(keyframe.value, range[0], range[1])) errors.push(location + ": invalid value");
     if (keyframe.easing !== undefined && !easingNames.has(String(keyframe.easing))) errors.push(location + ": invalid easing");
-    if (keyframe.easing === "easeOutBack" && raw.property === "opacity") errors.push(location + ": overshoot easing cannot affect opacity");
+    if ((keyframe.easing === "easeOutBack" || keyframe.easing === "bounce") && raw.property === "opacity") errors.push(location + ": overshoot easing cannot affect opacity");
   });
   return errors;
 }
@@ -151,11 +152,18 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         const at = "layers[" + i + "]";
         if (!record(layer)) { errors.push(at + ": expected object"); return; }
         const kind = layer.kind;
-        const common = ["id", "kind", "x", "y", "width", "height", "rotation", "opacity", "fill", "tracks"];
+        const common = ["id", "kind", "x", "y", "width", "height", "rotation", "opacity", "fill", "tracks", "scale", "scaleX", "scaleY"];
         allowedKeys(layer, kind === "text" ? [...common, "text", "fontSize", "fontFamily"] :
           kind === "image" ? [...common, "assetId"] :
+          kind === "video" ? [...common, "assetId", "startFrame", "trimInSeconds", "loop"] :
           kind === "rect" ? [...common, "cornerRadius"] : common, at, errors);
-        if (kind !== "text" && kind !== "rect" && kind !== "image") errors.push(at + ": unsupported layer kind");
+        if (kind !== "text" && kind !== "rect" && kind !== "image" && kind !== "video") errors.push(at + ": unsupported layer kind");
+        if (kind === "video") {
+          if (typeof layer.assetId !== "string" || !/^(?:asset|video)-[a-f0-9]{64}$/.test(layer.assetId)) errors.push(at + ": invalid video assetId");
+          if (layer.startFrame !== undefined && !integer(layer.startFrame, 0, 216000)) errors.push(at + ": invalid video startFrame");
+          if (layer.trimInSeconds !== undefined && !finite(layer.trimInSeconds, 0, 3600)) errors.push(at + ": invalid video trimInSeconds");
+          if (layer.loop !== undefined && typeof layer.loop !== "boolean") errors.push(at + ": video loop must be boolean");
+        }
         if (kind === "rect" && layer.cornerRadius !== undefined &&
             (!finite(layer.cornerRadius, 0, 4096) ||
               !finite(layer.width, 1, 100000) || !finite(layer.height, 1, 100000) ||
@@ -170,12 +178,15 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         if (!finite(layer.x, -100000, 100000) || !finite(layer.y, -100000, 100000) ||
           !finite(layer.width, 1, 100000) || !finite(layer.height, 1, 100000)) errors.push(at + ": invalid geometry");
         if (!finite(layer.rotation, -36000, 36000) || !finite(layer.opacity, 0, 1)) errors.push(at + ": invalid transform/opacity");
+        if (layer.scale !== undefined && !finite(layer.scale, 0, 100)) errors.push(at + ": invalid scale");
+        if (layer.scaleX !== undefined && !finite(layer.scaleX, 0, 100)) errors.push(at + ": invalid scaleX");
+        if (layer.scaleY !== undefined && !finite(layer.scaleY, 0, 100)) errors.push(at + ": invalid scaleY");
         if (typeof layer.fill !== "string" || !color.test(layer.fill)) errors.push(at + ": invalid fill");
         if (kind === "text") {
           if (typeof layer.text !== "string" || layer.text.length > 8192) errors.push(at + ": invalid text");
-          if (!finite(layer.fontSize, 1, 512) || !fontNames.has(String(layer.fontFamily))) errors.push(at + ": invalid font");
+          if (!finite(layer.fontSize, 1, 512) || !isAllowedMotionFont(String(layer.fontFamily))) errors.push(at + ": invalid font");
         }
-        if (!Array.isArray(layer.tracks) || layer.tracks.length > 4) errors.push(at + ": invalid tracks");
+        if (!Array.isArray(layer.tracks) || layer.tracks.length > 8) errors.push(at + ": invalid tracks");
         else {
           const seen = new Set<string>();
           layer.tracks.forEach((track: unknown, index) => {

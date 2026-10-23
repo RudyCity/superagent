@@ -9,7 +9,13 @@ import { splitTextLines } from "../layout/textLayout.js";
  * custom scripts, host files or user-selected fonts. Bundled catalog fonts from
  * assets/fonts are registered at render time by assets/motionFonts.ts.
  */
-export function createMotionFrameRenderer(project: MotionProject, width: number, height: number, images = new Map<string, Image>()) {
+export function createMotionFrameRenderer(
+  project: MotionProject,
+  width: number,
+  height: number,
+  images = new Map<string, Image>(),
+  videoFrames = new Map<string, Map<number, Image>>(),
+) {
   ensureMotionFontsRegistered();
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
@@ -28,6 +34,11 @@ export function createMotionFrameRenderer(project: MotionProject, width: number,
       const centerY = values.y + layer.height / 2;
       ctx.translate(centerX, centerY);
       ctx.rotate(values.rotation * Math.PI / 180);
+      const scaleX = values.scaleX ?? values.scale ?? 1;
+      const scaleY = values.scaleY ?? values.scale ?? 1;
+      if (scaleX !== 1 || scaleY !== 1) {
+        ctx.scale(scaleX, scaleY);
+      }
       ctx.translate(-centerX, -centerY);
       ctx.globalAlpha = values.opacity;
       ctx.fillStyle = layer.fill;
@@ -41,6 +52,14 @@ export function createMotionFrameRenderer(project: MotionProject, width: number,
         const image = images.get(layer.assetId);
         if (!image) throw new Error("Motion image asset missing from pinned renderer");
         ctx.drawImage(image, values.x, values.y, layer.width, layer.height);
+      } else if (layer.kind === "video") {
+        const frameImage = videoFrames?.get(layer.id)?.get(frameIndex) ?? images.get(layer.assetId);
+        if (frameImage) {
+          ctx.drawImage(frameImage, values.x, values.y, layer.width, layer.height);
+        } else {
+          ctx.fillStyle = layer.fill || "#0a0a0a";
+          ctx.fillRect(values.x, values.y, layer.width, layer.height);
+        }
       } else {
         ctx.textBaseline = "alphabetic";
         ctx.font = `${layer.fontSize}px "${layer.fontFamily}"`;

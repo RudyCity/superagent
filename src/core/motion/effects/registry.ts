@@ -1,4 +1,4 @@
-import type { MotionLayer, MotionProject, MotionProperty, MotionTrack } from "../schema/types.js";
+import type { MotionEasing, MotionLayer, MotionProject, MotionProperty, MotionTrack } from "../schema/types.js";
 import { validateMotionProject, MotionValidationError } from "../schema/validation.js";
 import type {
   EffectApplication,
@@ -327,7 +327,7 @@ export const effectRegistry = new EffectRegistry();
 /** Helper to construct a MotionTrack with valid ascending keyframes */
 export function createTrack(
   property: MotionProperty,
-  keyframes: { frame: number; value: number; easing?: "linear" | "step" | "easeInOut" | "easeOutBack" }[],
+  keyframes: { frame: number; value: number; easing?: MotionEasing }[],
 ): MotionTrack {
   const sorted = [...keyframes].sort((a, b) => a.frame - b.frame);
   const deduped: typeof keyframes = [];

@@ -1,3 +1,24 @@
+## [1.14.15] - 2026-10-23
+### Added
+- Motion Studio Extended Animation Properties (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`):
+  - Added support for `scale`, `scaleX`, and `scaleY` properties in `MotionProperty` and `MotionTrack` schemas.
+  - Implemented boundary validation for scale ranges (0 to 100) and track keyframes.
+  - Added transform evaluation and rendering: center-origin `ctx.scale(scaleX, scaleY)` in `@napi-rs/canvas` and compliant SVG `transform="scale(...)"`.
+- Motion Studio Extended Easing Curves (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`):
+  - Added `easeIn`, `easeOut`, and `bounce` easing algorithms to `MotionEasing`.
+  - Implemented standard 4-phase bounce overshoot curve calculation in frame interpolation.
+- Motion Studio Custom Font Ingestion & Dynamic Registration (`src/core/motion/assets/motionFonts.ts`, `src/core/motion/schema/validation.ts`, `src/core/commands/motionCliHandler.ts`):
+  - Implemented `importMotionFont` to securely validate and persist custom TTF and OTF typography assets into project workspaces.
+  - Added `registerCustomFont` for runtime dynamic font family registration with `@napi-rs/canvas`.
+  - Added `isAllowedMotionFont` dynamic font family lookup support in schema validator.
+  - Added CLI handler command `superagent motion import-font <filePath> [--family <name>]`.
+- Motion Studio Full Video Layer Integration (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/assets/motionVideoClips.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`, `src/core/commands/motionCliHandler.ts`):
+  - Added `VideoLayer` (`kind: "video"`) to project schema supporting `mediaId`, `startTimeMs`, `playbackRate`, `fit` (`cover` | `contain`), `loop`, and `volume`.
+  - Implemented `importMotionVideo` to validate MP4 and WebM video container signatures, enforce size limits, and extract preview poster snapshots (`extractVideoSnapshotPng`).
+  - Added frame renderer support for video layers in canvas and SVG with placeholder and snapshot fallbacks.
+  - Added CLI handler command `superagent motion import-video <filePath>`.
+  - Updated `MOTION_CAPABILITIES` to advertise video layers and MP4/WebM video import.
+
 ## [1.14.14] - 2026-10-23
 ### Added
 - Motion Studio Multiline & Auto-Wrap Text Engine (`src/core/motion/layout/textLayout.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`):

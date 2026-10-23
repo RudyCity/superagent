@@ -4,8 +4,8 @@
  */
 export const MOTION_SCHEMA_VERSION = 1 as const;
 
-export type MotionProperty = "x" | "y" | "opacity" | "rotation";
-export type MotionEasing = "linear" | "step" | "easeInOut" | "easeOutBack";
+export type MotionProperty = "x" | "y" | "opacity" | "rotation" | "scale" | "scaleX" | "scaleY";
+export type MotionEasing = "linear" | "step" | "easeInOut" | "easeOutBack" | "easeIn" | "easeOut" | "bounce";
 
 export interface MotionKeyframe {
   frame: number;
@@ -24,6 +24,9 @@ interface BaseLayer {
   height: number;
   rotation: number;
   opacity: number;
+  scale?: number;
+  scaleX?: number;
+  scaleY?: number;
   fill: string;
   tracks: MotionTrack[];
 }
@@ -41,7 +44,14 @@ export interface ImageLayer extends BaseLayer {
   kind: "image";
   assetId: string;
 }
-export type MotionLayer = TextLayer | RectLayer | ImageLayer;
+export interface VideoLayer extends BaseLayer {
+  kind: "video";
+  assetId: string;
+  startFrame?: number;
+  trimInSeconds?: number;
+  loop?: boolean;
+}
+export type MotionLayer = TextLayer | RectLayer | ImageLayer | VideoLayer;
 
 export interface MotionAudioTrack {
   assetId: string;

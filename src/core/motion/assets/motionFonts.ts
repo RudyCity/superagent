@@ -1,8 +1,11 @@
 import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import crypto from "node:crypto";
 import { GlobalFonts } from "@napi-rs/canvas";
-import { MOTION_BUNDLED_FONT_FAMILIES } from "../schema/fontCatalog.js";
+import { MOTION_BUNDLED_FONT_FAMILIES, MOTION_FONT_FAMILIES } from "../schema/fontCatalog.js";
+import { studioStorageRoot } from "../project/projectStore.js";
 
 /**
  * Bundled SIL Open Font License 1.1 font files (see fonts/LICENSES.md).
@@ -33,6 +36,22 @@ if (unmapped.length > 0) {
   throw new Error("motionFonts: catalog families without a bundled file: " + unmapped.join(", "));
 }
 
+const builtInFontFamilies = new Set<string>(MOTION_FONT_FAMILIES);
+const customRegisteredFonts = new Set<string>();
+
+export function isAllowedMotionFont(family: string): boolean {
+  return builtInFontFamilies.has(family) || customRegisteredFonts.has(family);
+}
+
+export function registerCustomFont(family: string, fontPath: string): boolean {
+  if (existsSync(fontPath)) {
+    GlobalFonts.registerFromPath(fontPath, family);
+    customRegisteredFonts.add(family);
+    return true;
+  }
+  return false;
+}
+
 let registered = false;
 
 /**
@@ -49,4 +68,40 @@ export function ensureMotionFontsRegistered(): void {
     const fontPath = join(dir, file);
     if (existsSync(fontPath)) GlobalFonts.registerFromPath(fontPath, family);
   }
+}
+
+/**
+ * Imports a custom TTF or OTF font file into workspace storage and registers
+ * it dynamically with the native canvas renderer.
+ */
+export async function importMotionFont(
+  workspace: string,
+  familyName: string,
+  source: Buffer,
+): Promise<{ family: string; bytes: number; path: string }> {
+  if (!Buffer.isBuffer(source) || source.length < 12 || source.length > 5 * 1024 * 1024) {
+    throw new Error("Invalid Motion font file (max 5 MB TTF/OTF)");
+  }
+  const name = familyName.trim();
+  if (!/^[a-zA-Z0-9 _-]{1,64}$/.test(name)) {
+    throw new Error("Invalid font family name (1–64 alphanumeric characters, spaces or hyphens)");
+  }
+  const tag = source.toString("ascii", 0, 4);
+  const isTtf = source.readUInt32BE(0) === 0x00010000 || tag === "OTTO" || tag === "true";
+  if (!isTtf) {
+    throw new Error("Invalid font format: valid TrueType (.ttf) or OpenType (.otf) required");
+  }
+
+  const root = await studioStorageRoot(workspace, true);
+  const fontsDir = join(root, "fonts");
+  await fs.mkdir(fontsDir, { recursive: true, mode: 0o700 });
+
+  const hash = crypto.createHash("sha256").update(source).digest("hex");
+  const fontFile = join(fontsDir, `font-${hash}.ttf`);
+  await fs.writeFile(fontFile, source, { mode: 0o600 });
+
+  GlobalFonts.registerFromPath(fontFile, name);
+  customRegisteredFonts.add(name);
+
+  return { family: name, bytes: source.length, path: fontFile };
 }
