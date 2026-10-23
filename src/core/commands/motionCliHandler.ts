@@ -65,7 +65,7 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--open", "--help", "-h"]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--help", "-h"]);
   const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
@@ -350,7 +350,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
         audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),
-        autoNarrateScenes: optionalBoolean(opt(opts, "--auto-narrate"), "--auto-narrate"),
+        autoNarrateScenes: opts.has("--auto-narrate") ? true : optionalBoolean(opt(opts, "--auto-narrate"), "--auto-narrate"),
         voiceoverText: opt(opts, "--voiceover-text"),
         voiceoverGain: opt(opts, "--voiceover-gain") === undefined ? undefined : Number(opt(opts, "--voiceover-gain")),
         audioAssetId: opt(opts, "--audio-asset"),
