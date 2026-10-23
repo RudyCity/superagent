@@ -1339,6 +1339,10 @@ export async function executeToolCall(
   signal?: AbortSignal,
   cachedActiveTools?: any[]
 ): Promise<ToolResult> {
+  // Enforcement also applies to direct callers bypassing ToolExecutor.
+  const { blockedYoloToolCall } = await import("./yoloBlocklist.js");
+  const blockedRoot = blockedYoloToolCall(toolCall.args, cwd);
+  if (blockedRoot) return { toolCallId: toolCall.id, name: toolCall.name, result: `Access denied by YOLO blocklist: ${blockedRoot}`, isError: true };
   const { getToolByName, canonicalizeToolName } = await getToolsModule();
   const registeredTool = getToolByName(toolCall.name);
   const currentAgent = agentLocalStorage.getStore();

@@ -8,6 +8,7 @@
  */
 
 import fs from "fs";
+import { blockedYoloToolCall } from "../yoloBlocklist.js";
 import path from "path";
 import os from "os";
 import crypto from "node:crypto";
@@ -633,6 +634,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
       if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "protected_path"; }
       return { content: [{ type: "text", text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard." }], isError: true };
+    const earlyBlockedRoot = blockedYoloToolCall(args, activeWorkspace);
+    if (earlyBlockedRoot) {
+      if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "yolo_path_blocked"; }
+      return { content: [{ type: "text", text: `Access denied by YOLO blocklist: ${earlyBlockedRoot}` }], isError: true };
+    }
     }
     if (typeof args.projectId === "string" && !WORKSPACE_SCOPED_MCP_TOOLS.has(name)
       && name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name)) {
@@ -1100,6 +1106,12 @@ function extractMcpResultText(result: unknown): string {
     if (DISABLED_MCP_TOOLS.has(toolName)) {
       const errReason = "disabled and hidden from MCP tool discovery";
       emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
+    const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
+    if (blockedRoot) {
+      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: "YOLO blocklist denied access" });
+      throw new McpError(ErrorCode.InvalidRequest, `Access denied by YOLO blocklist: ${blockedRoot}`);
+    }
+
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,

@@ -233,6 +233,7 @@ export const helpCommand: SlashCommand = {
         "              Usage: /stop [optional feedback / reason] | /stop all",
         "  /steer    - Interrupt and steer/redirect the agent with feedback (aliases: /sanggah, /intervene)",
         "              Usage: /steer <instructions/feedback> (e.g. /steer Jangan grep semua file, cari di src saja)",
+        "  /security - OS isolation diagnostics and path blocklist management",
         "  /yolo     - Toggle YOLO mode (scoped: project & 1 parent level; full: unrestricted system-wide)",
         "              Usage: /yolo [on|full|off|status] (/yolo full auto-approves all operations system-wide)",
         "  /setup    - Run the interactive provider and initial setup wizard",
@@ -705,6 +706,28 @@ export const yoloCommand: SlashCommand = {
   description: "Toggle YOLO mode (scoped: project & 1 parent level; full: unrestricted system-wide)",
   async execute(args, ctx) {
     const { isYoloMode, isFullYoloMode, setYoloMode, setFullYoloMode, getYoloAllowedRoot } = await import("../permissions.js");
+    const { listYoloBlocks, editYoloBlocks, blockedYoloPath } = await import("../yoloBlocklist.js");
+    const blockMatch = args.trim().match(/^block(?:\s+(add|remove|list|check|clear))?(?:\s+([\s\S]+))?$/i);
+    if (blockMatch) {
+      const operation = (blockMatch[1] || "list").toLowerCase();
+      const target = (blockMatch[2] || "").trim().replace(/^["']|["']$/g, "");
+      try {
+        let output: string;
+        if (operation === "check") {
+          if (!target) throw new Error("Usage: /yolo block check <path>");
+          output = blockedYoloPath(target) ? `BLOCKED: ${target}` : `NOT BLOCKED: ${target}`;
+        } else if (operation === "list") {
+          output = listYoloBlocks().join("\n") || "(empty)";
+        } else {
+          const entries = editYoloBlocks(operation as "add" | "remove" | "clear", target);
+          output = `YOLO blocklist updated (${entries.length} entries):\n${entries.join("\n") || "(empty)"}`;
+        }
+        ctx.addLine({ type: "system", content: output, timestamp: Date.now() });
+      } catch (error) {
+        ctx.addLine({ type: "system", content: `YOLO blocklist error: ${String(error)}`, timestamp: Date.now() });
+      }
+      return;
+    }
     const sub = args.trim().toLowerCase();
     const currentWs = ctx.agent?.workingDirectory || process.cwd();
     const allowedRoot = getYoloAllowedRoot(currentWs);
@@ -782,6 +805,49 @@ export const yoloCommand: SlashCommand = {
         timestamp: Date.now(),
       });
     }
+  },
+};
+
+// Security management: application blocks + Windows OS isolation diagnostics.
+export const securityCommand: SlashCommand = {
+  name: "security",
+  description: "Inspect OS isolation and manage persistent path/drive blocks",
+  async execute(args, ctx) {
+    const { editYoloBlocks, listYoloBlocks, blockedYoloPath } = await import("../yoloBlocklist.js");
+    const [domain = "status", op = "list", ...words] = args.trim().split(/\s+/);
+    const target = words.join(" ").replace(/^["']|["']$/g, "");
+    const say = (content: string) => ctx.addLine({ type: "system", content, timestamp: Date.now() });
+    try {
+      if (domain === "block") {
+        if (op === "list") return say(listYoloBlocks().join("\n") || "No blocked paths");
+        if (op === "check") {
+          if (!target) throw new Error("Usage: /security block check <path>");
+          return say(blockedYoloPath(target) ? `BLOCKED: ${target}` : `NOT BLOCKED: ${target}`);
+        }
+        if (!["add", "remove", "clear"].includes(op)) throw new Error("Expected add/remove/list/check/clear");
+        if (!target && op !== "clear") throw new Error("Path/drive required");
+        const result = editYoloBlocks(op as "add" | "remove" | "clear", target);
+        return say(`Application blocklist updated (${result.length} entries). Windows ACL is NOT changed.`);
+      }
+      if (domain === "sandbox" || domain === "status") {
+        const { platform, userInfo } = await import("node:os");
+        const user = userInfo().username;
+        const expected = process.env.SUPERAGENT_OS_RUNNER_IDENTITY?.trim();
+        const actual = process.platform === "win32" ? (await import("node:child_process")).execFileSync("whoami.exe", [], { encoding: "utf8", timeout: 3000 }).trim() : user;
+        const identityVerified = Boolean(expected && actual.toLowerCase() === expected.toLowerCase());
+        const mode = platform() === "win32" ? "Windows" : platform();
+        if (op === "enable" || op === "disable") return say(`OS sandbox ${op} refused: no isolated runner process/token is provisioned. Configure a separate non-admin Windows account and ACLs, then rerun /security sandbox doctor. This command never pretends an application toggle provides OS isolation.`);
+        if (op !== "status" && op !== "doctor" && domain !== "status") throw new Error("Usage: /security sandbox [status|doctor|enable|disable]");
+        return say(`[Security sandbox ${op}]
+Platform: ${mode}
+SuperAgent identity: ${user}
+Runner identity match: ${identityVerified ? "VERIFIED" : "NOT VERIFIED"}
+OS-level ACL protection: NOT VERIFIED (requires denied-path access probe under runner)
+App blocklist entries: ${listYoloBlocks().length}
+Recommendation: run tools under a separate non-admin user with explicit Windows ACL restrictions; isolate CDP and SSH separately.`);
+      }
+      say("Usage: /security sandbox [status|doctor|enable|disable] or /security block [add|remove|list|check|clear] <path>");
+    } catch (error) { say(`Security error: ${String(error)}`); }
   },
 };
 
@@ -880,4 +946,5 @@ registry.register(setupCommand);
 registry.register(stopCommand);
 registry.register(steerCommand);
 registry.register(yoloCommand);
+registry.register(securityCommand);
 registry.register(toolsCommand);

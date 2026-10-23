@@ -1,4 +1,5 @@
 import fs from "fs";
+import { blockedYoloToolCall } from "../yoloBlocklist.js";
 import path from "path";
 import {
   executeToolCall,
@@ -196,6 +197,14 @@ export class ToolExecutor {
       ToolExecutor.normalizeToolCallArgs(tc);
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
+
+      const blockedRoot = blockedYoloToolCall(tc.args, agent.worktreePath || agent.workingDirectory);
+      if (blockedRoot) {
+        const denied: ToolResult = { toolCallId: tc.id, name: tc.name, result: `Access denied by YOLO blocklist: ${blockedRoot}`, isError: true };
+        toolResults.push(denied);
+        agent.onEvent({ type: "tool_end", toolResult: denied, description, toolCall: tc });
+        continue;
+      }
 
       if (agent.restrictHeadlessTools && !agent.headlessAllowedTools.has(tc.name)) {
         const denied: ToolResult = {

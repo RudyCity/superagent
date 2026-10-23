@@ -71,9 +71,24 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/abort": "Stop/interrupt currently running tool, process, task, or agent",
   "/steer": "Interrupt and steer/redirect the agent with feedback or counter-instructions",
   "/sanggah": "Interrupt and steer/redirect the agent with feedback or counter-instructions",
+  "/security": "Inspect sandbox status and manage access blocklists",
+  "/security sandbox status": "Report effective OS isolation status",
+  "/security sandbox doctor": "Diagnose OS isolation prerequisites",
+  "/security sandbox enable": "Validate sandbox provisioning (refuses unsafe in-process enable)",
+  "/security sandbox disable": "Validate sandbox shutdown (no OS ACL changes)",
+  "/security block add": "Add a persistent application-level path/drive block",
+  "/security block remove": "Remove an application path/drive block",
+  "/security block list": "List blocked folders and drives",
+  "/security block check": "Check if path matches the blocklist",
+  "/security block clear": "Clear all application path blocks",
   "/yolo": "Toggle YOLO mode (scoped: project & 1 parent level; full: unrestricted system-wide)",
   "/yolo on": "Enable scoped YOLO mode (auto-approve within project & 1 parent level)",
   "/yolo full": "Enable full YOLO mode (unrestricted auto-approval system-wide)",
+  "/yolo block add": "Block a path or drive even in Full YOLO",
+  "/yolo block remove": "Remove a path or drive block",
+  "/yolo block list": "List blocked paths and drives",
+  "/yolo block check": "Check access for a path",
+  "/yolo block clear": "Clear YOLO blocklist",
   "/yolo off": "Disable YOLO mode and restore standard confirmation prompts",
   "/yolo status": "Check current YOLO mode status (scoped, full, or inactive)",
   "/mcp": "Manage MCP servers and MCP tunnel providers.",
@@ -829,9 +844,13 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       return filterSuggestions(["/tunnels", "/tunnel list"], query);
     }
 
+    if (mainCommand === "/security") {
+      return filterSuggestions(["/security", "/security sandbox status", "/security sandbox doctor", "/security sandbox enable", "/security sandbox disable", "/security block add", "/security block remove", "/security block list", "/security block check", "/security block clear"], query);
+    }
+
     if (mainCommand === "/yolo" || mainCommand === "/yolomode") {
       const prefix = mainCommand;
-      return filterSuggestions([prefix, `${prefix} on`, `${prefix} full`, `${prefix} off`, `${prefix} status`], query);
+      return filterSuggestions([prefix, `${prefix} on`, `${prefix} full`, `${prefix} off`, `${prefix} status`, `${prefix} block add`, `${prefix} block remove`, `${prefix} block list`, `${prefix} block check`, `${prefix} block clear`], query);
     }
 
     if (mainCommand === "/internal-hooks" || mainCommand === "/ih") {

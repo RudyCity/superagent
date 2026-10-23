@@ -146,6 +146,40 @@ After adding a provider, use:
 For full login help:
   superagent login --help
 `);
+// Never accept OS sandbox requirements based solely on an application toggle.
+// A trusted launcher must verify the OS token and enforce ACL access probes.
+if (process.env.SUPERAGENT_REQUIRE_OS_SANDBOX === "1") {
+  const { execFileSync } = await import("node:child_process");
+  const expected = process.env.SUPERAGENT_OS_RUNNER_IDENTITY?.trim();
+  let actual = "";
+  try {
+    if (process.platform === "win32") actual = execFileSync("whoami.exe", [], { encoding: "utf8", timeout: 3000 }).trim();
+  } catch {}
+  if (!expected || actual.toLowerCase() !== expected.toLowerCase()) {
+    process.stderr.write("OS sandbox required: Windows process identity does not match SUPERAGENT_OS_RUNNER_IDENTITY; refusing to start.\n");
+    process.exit(78);
+  }
+  const probePath = process.env.SUPERAGENT_OS_DENIED_PROBE_PATH;
+  if (!probePath) {
+    process.stderr.write("OS sandbox required: SUPERAGENT_OS_DENIED_PROBE_PATH must identify a denied file for access verification.\n");
+    process.exit(78);
+  }
+  const { openSync, closeSync } = await import("node:fs");
+  let unexpectedlyReadable = false;
+  try { const handle = openSync(probePath, "r"); closeSync(handle); unexpectedlyReadable = true; }
+  catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "EACCES" && code !== "EPERM") {
+      process.stderr.write("OS sandbox probe inconclusive (not a permission denial): " + String(error) + "\n");
+      process.exit(78);
+    }
+  }
+  if (unexpectedlyReadable) {
+    process.stderr.write("OS sandbox required: denied probe was readable; refusing to start.\n");
+    process.exit(78);
+  }
+}
+
   } else {
     await handleLoginCliCommand(["add", ...args]);
   }
