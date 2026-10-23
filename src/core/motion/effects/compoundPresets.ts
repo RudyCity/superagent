@@ -31,6 +31,10 @@ const recipes: CompoundPreset[] = [
   { id: "gentle-lift", name: "Gentle Lift", description: "Elegant uplift with pendulum easing", tags: ["elegant","gentle"], entrance: "entrance-rebound-up", emphasis: "kinetic-pendulum-decay", exit: "exit-fade-out", accent: "accent-overbar" },
   { id: "live-stream", name: "Live Stream", description: "Crisp live-broadcast text entrance and motion", tags: ["broadcast","tech"], entrance: "entrance-slide-right", emphasis: "kinetic-meter-pulse", exit: "exit-slide-left", accent: "accent-level-meter" },
   { id: "festival-pop", name: "Festival Pop", description: "Celebratory spring, bounce, and colorful exit", tags: ["festival","playful"], entrance: "entrance-pop-left", emphasis: "kinetic-bounce-settle", exit: "exit-pop-right", accent: "accent-spark-cross" },
+  { id: "elastic-impact", name: "Elastic Impact", description: "Bouncy scale pop entrance, rhythmic breathing pulse, and scale shrink exit", tags: ["elastic","bounce","scale","punchy"], entrance: "entrance-scale-pop", emphasis: "kinetic-pulse-scale", exit: "exit-scale-shrink", accent: "accent-spark-cross" },
+  { id: "zoom-hero", name: "Zoom Hero", description: "Cinematic zoom-in reveal, double heartbeat thump, and zoom blast exit", tags: ["cinematic","zoom","hero","dynamic"], entrance: "entrance-zoom-in", emphasis: "kinetic-heartbeat-scale", exit: "exit-zoom-out", accent: "accent-tech-callout" },
+  { id: "bouncy-pop", name: "Bouncy Pop", description: "Rubber-band anamorphic stretch, squash-and-stretch hop, and elastic collapse", tags: ["playful","bouncy","cartoon","fun"], entrance: "entrance-elastic-scale", emphasis: "kinetic-bounce-hop", exit: "exit-elastic-collapse", accent: "accent-arrow-indicator" },
+  { id: "overshoot-dynamo", name: "Overshoot Dynamo", description: "Enlarged overshoot drop with bounce, rhythmic breathing hold, and scale shrink", tags: ["bold","overshoot","dynamo","modern"], entrance: "entrance-overshoot-drop", emphasis: "kinetic-pulse-scale", exit: "exit-scale-shrink", accent: "accent-bracket-focus" },
 ];
 
 const byId = new Map(recipes.map(recipe => [recipe.id, recipe]));
@@ -138,6 +142,7 @@ export function applyCompoundPreset(project: MotionProject, input: CompoundPrese
         else value += (effectVal - getLayerProp(property)) * strength;
       }
       if (property === "opacity") value = Math.min(1, Math.max(0, value));
+      else if (property.startsWith("scale")) value = Math.min(100, Math.max(0, value));
       else value = Math.max(-100000, Math.min(100000, value));
       keyframes.push({ frame, value });
     }

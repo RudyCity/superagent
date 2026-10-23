@@ -14,6 +14,8 @@ import { importMotionFont, isAllowedMotionFont } from "../src/core/motion/assets
 import { importMotionVideo, readMotionVideo } from "../src/core/motion/assets/motionVideoClips.js";
 import { validateMotionProject } from "../src/core/motion/schema/validation.js";
 import type { MotionProject } from "../src/core/motion/schema/types.js";
+import { effectRegistry } from "../src/core/motion/effects/index.js";
+import { applyCompoundPreset } from "../src/core/motion/effects/compoundPresets.js";
 
 const tempDirs: string[] = [];
 afterEach(async () => {
@@ -417,6 +419,144 @@ describe("Superagent Studio P0 & Architecture Optimizations", () => {
 
       const invalidBytes = Buffer.from("random text bytes that are not MP4 or WebM");
       await expect(importMotionVideo(workspace, invalidBytes)).rejects.toThrow("Invalid Motion video format");
+    });
+  });
+
+  describe("Phase 3: Scale & Bounce Kinetic Effects & Compound Presets", () => {
+    it("registers all 10 scale & bounce effects in catalog", () => {
+      const ids = [
+        "entrance-scale-pop",
+        "entrance-zoom-in",
+        "entrance-overshoot-drop",
+        "entrance-elastic-scale",
+        "kinetic-pulse-scale",
+        "kinetic-heartbeat-scale",
+        "kinetic-bounce-hop",
+        "exit-scale-shrink",
+        "exit-zoom-out",
+        "exit-elastic-collapse",
+      ];
+      for (const id of ids) {
+        const effect = effectRegistry.get(id);
+        expect(effect, `Effect ${id} should be registered`).toBeDefined();
+        expect(effect?.targetKinds).toContain("text");
+        expect(effect?.targetKinds).toContain("rect");
+        expect(effect?.targetKinds).toContain("video");
+      }
+    });
+
+    it("applies entrance-scale-pop with bounce interpolation", () => {
+      const testProject: MotionProject = {
+        schemaVersion: 1,
+        id: "studio-scale-pop-test01",
+        workspaceRoot: "/test",
+        name: "Scale Pop Test",
+        revision: 1,
+        createdAt: "2026-10-23T00:00:00Z",
+        updatedAt: "2026-10-23T00:00:00Z",
+        composition: {
+          width: 640,
+          height: 360,
+          background: "#101420",
+          durationFrames: 60,
+          fps: { numerator: 30, denominator: 1 },
+          layers: [
+            {
+              id: "hero-text",
+              kind: "text",
+              text: "Scale Pop!",
+              fontFamily: "Inter",
+              fontSize: 48,
+              x: 100,
+              y: 150,
+              width: 400,
+              height: 60,
+              rotation: 0,
+              opacity: 1,
+              fill: "#FFFFFF",
+              tracks: [],
+            },
+          ],
+        },
+      };
+
+      const applied = effectRegistry.applyToProject(testProject, {
+        effectId: "entrance-scale-pop",
+        targetLayerId: "hero-text",
+        startFrame: 0,
+        durationFrames: 20,
+      });
+
+      expect(() => validateMotionProject(applied)).not.toThrow();
+
+      const scene0 = evaluateFrame(applied, 0);
+      const layer0 = scene0.layers.find(l => l.layer.id === "hero-text")!;
+      expect(layer0.values.scale).toBe(0);
+      expect(layer0.values.opacity).toBe(0);
+
+      const scene20 = evaluateFrame(applied, 20);
+      const layer20 = scene20.layers.find(l => l.layer.id === "hero-text")!;
+      expect(layer20.values.scale).toBe(1);
+      expect(layer20.values.opacity).toBe(1);
+    });
+
+    it("applies new scale-driven compound presets (elastic-impact, zoom-hero, bouncy-pop, overshoot-dynamo)", () => {
+      const presetsToTest = ["elastic-impact", "zoom-hero", "bouncy-pop", "overshoot-dynamo"];
+
+      for (const presetId of presetsToTest) {
+        const testProject: MotionProject = {
+          schemaVersion: 1,
+          id: `studio-compound-${presetId.slice(0, 10)}`,
+          workspaceRoot: "/test",
+          name: "Compound Scale Test",
+          revision: 1,
+          createdAt: "2026-10-23T00:00:00Z",
+          updatedAt: "2026-10-23T00:00:00Z",
+          composition: {
+            width: 1280,
+            height: 720,
+            background: "#0F172A",
+            durationFrames: 90,
+            fps: { numerator: 30, denominator: 1 },
+            layers: [
+              {
+                id: "title",
+                kind: "text",
+                text: "Dynamic Headline",
+                fontFamily: "Montserrat",
+                fontSize: 64,
+                x: 200,
+                y: 300,
+                width: 800,
+                height: 80,
+                rotation: 0,
+                opacity: 1,
+                fill: "#38BDF8",
+                tracks: [],
+              },
+            ],
+          },
+        };
+
+        const result = applyCompoundPreset(testProject, {
+          presetId,
+          targetLayerId: "title",
+          startFrame: 0,
+          durationFrames: 90,
+        });
+
+        expect(() => validateMotionProject(result)).not.toThrow();
+        const titleLayer = result.composition.layers.find(l => l.id === "title")!;
+        expect(titleLayer.tracks.length).toBeGreaterThan(0);
+
+        // Check evaluation across timeline
+        const evaluatedStart = evaluateFrame(result, 0);
+        const evaluatedMid = evaluateFrame(result, 45);
+        const evaluatedEnd = evaluateFrame(result, 89);
+        expect(evaluatedStart).toBeDefined();
+        expect(evaluatedMid).toBeDefined();
+        expect(evaluatedEnd).toBeDefined();
+      }
     });
   });
 });

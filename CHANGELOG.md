@@ -1,3 +1,20 @@
+## [1.14.16] - 2026-10-23
+### Added
+- Motion Studio Scale & Bounce Kinetic Effects Catalog (`src/core/motion/effects/catalog/scaleBounceEffects.ts`, `src/core/motion/effects/catalog/index.ts`, `src/core/motion/motionCapabilities.ts`):
+  - Created 10 new parameterized motion effects leveraging real scale transforms and bounce/easeIn/easeOut curves across text, rect, image, and video layers:
+    - Entrance: `entrance-scale-pop` (bouncy 0->1 expansion), `entrance-zoom-in` (cinematic zoom glide), `entrance-overshoot-drop` (oversized drop & settle), and `entrance-elastic-scale` (anamorphic rubber-band stretch).
+    - Kinetic / Emphasis: `kinetic-pulse-scale` (rhythmic breathing pulse), `kinetic-heartbeat-scale` (double-thump cardiac scale pulse), and `kinetic-bounce-hop` (squash & stretch bounce hop).
+    - Exit: `exit-scale-shrink` (smooth center collapse), `exit-zoom-out` (cinematic zoom blast into transparency), and `exit-elastic-collapse` (horizontal spring squash collapse).
+  - Expanded total catalog effects count from 224 to 234.
+- Motion Studio Scale-Driven Compound Presets (`src/core/motion/effects/compoundPresets.ts`, `src/core/motion/motionCapabilities.ts`):
+  - Added 4 curated three-phase kinetic recipes:
+    - `elastic-impact`: Bouncy scale pop entrance, rhythmic breathing pulse hold, and scale shrink exit with spark accents.
+    - `zoom-hero`: Cinematic zoom-in reveal, double heartbeat thump, and zoom blast exit with tech callouts.
+    - `bouncy-pop`: Rubber-band anamorphic stretch, squash-and-stretch hop, and elastic collapse with arrow indicators.
+    - `overshoot-dynamo`: Enlarged overshoot drop with bounce, rhythmic breathing hold, and scale shrink with bracket focus accents.
+  - Added strict scale parameter clamping `[0, 100]` in compound preset multi-phase compiler.
+  - Expanded compound preset count from 16 to 20.
+
 ## [1.14.15] - 2026-10-23
 ### Added
 - Motion Studio Extended Animation Properties (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`):

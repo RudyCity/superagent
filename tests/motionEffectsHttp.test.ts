@@ -35,7 +35,7 @@ afterAll(async () => {
   await fs.rm(workspace, { recursive: true, force: true });
 });
 describe("Motion effects catalog HTTP contract", () => {
-  it("paginates 224 effect definitions and exposes filtered totals", async () => {
+  it("paginates effect definitions and exposes filtered totals", async () => {
     const first = await fetch(urlBase + "/api/motion/effects?limit=5&offset=0");
     expect(first.status).toBe(200);
     const page = await first.json() as any;

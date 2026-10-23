@@ -37,7 +37,7 @@ function signature(project: MotionProject): string {
   ]));
 }
 
-describe("224 Motion effects: global functional and safety coverage", () => {
+describe("Motion effects: global functional and safety coverage", () => {
   it("defines >=200 non-duplicate effect IDs across every category", () => {
     const catalog = effectRegistry.getCatalog();
     expect(catalog.length).toBeGreaterThanOrEqual(200);

@@ -6,6 +6,7 @@ import { cameraEffects } from "./cameraEffects.js";
 import { transitionEffects } from "./transitionEffects.js";
 import { backgroundEffects } from "./backgroundEffects.js";
 import { graphicAccentEffects } from "./graphicAccentEffects.js";
+import { scaleBounceEffects } from "./scaleBounceEffects.js";
 
 let registered = false;
 
@@ -20,6 +21,7 @@ export function registerAllMotionEffects(): void {
   for (const e of transitionEffects) effectRegistry.register(e);
   for (const e of backgroundEffects) effectRegistry.register(e);
   for (const e of graphicAccentEffects) effectRegistry.register(e);
+  for (const e of scaleBounceEffects) effectRegistry.register(e);
 }
 
 // Auto-register upon import
@@ -33,4 +35,5 @@ export {
   transitionEffects,
   backgroundEffects,
   graphicAccentEffects,
+  scaleBounceEffects,
 };

@@ -22,9 +22,9 @@ function project(aspect: "16:9" | "1:1" | "9:16" = "16:9", durationFrames = 150)
   };
 }
 describe("Motion Studio compound presets", () => {
-  it("registers 16 genuinely different three-phase visual recipes", () => {
+  it("registers 20 genuinely different three-phase visual recipes", () => {
     const presets = listCompoundPresets();
-    expect(presets.length).toBe(16);
+    expect(presets.length).toBe(20);
     expect(new Set(presets.map(recipe => recipe.id)).size).toBe(presets.length);
     expect(listCompoundPresets("neon")).toHaveLength(1);
     for (const p of presets) {
@@ -54,7 +54,8 @@ describe("Motion Studio compound presets", () => {
       const ending = evaluateFrame(output, 119).layers.find(l => l.layer.id === title.id)!;
       const changed = [beginning, middle, ending].some(frame =>
         frame.values.x !== title.x || frame.values.y !== title.y ||
-        frame.values.opacity !== title.opacity || frame.values.rotation !== title.rotation);
+        frame.values.opacity !== title.opacity || frame.values.rotation !== title.rotation ||
+        frame.values.scale !== (title.scale ?? 1));
       expect(changed, recipe.id + " is visually inert").toBe(true);
     }
   });
