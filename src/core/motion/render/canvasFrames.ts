@@ -1,12 +1,15 @@
 import { createCanvas, type Image } from "@napi-rs/canvas";
 import type { MotionProject } from "../schema/types.js";
 import { evaluateFrame } from "../timeline/evaluateFrame.js";
+import { ensureMotionFontsRegistered } from "../assets/motionFonts.js";
 
 /**
  * Restricted built-in declarative canvas renderer. Does not load URLs, plugins,
- * custom scripts, host files or user-selected fonts.
+ * custom scripts, host files or user-selected fonts. Bundled catalog fonts from
+ * assets/fonts are registered at render time by assets/motionFonts.ts.
  */
 export function createMotionFrameRenderer(project: MotionProject, width: number, height: number, images = new Map<string, Image>()) {
+  ensureMotionFontsRegistered();
   const canvas = createCanvas(width, height);
   const ctx = canvas.getContext("2d");
   const sx = width / project.composition.width;

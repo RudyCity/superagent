@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import { motionStorageDir } from "./project/projectStore.js";
 import { readMotionAsset } from "./assets/motionAssets.js";
 import { MotionValidationError } from "./schema/validation.js";
+import { MOTION_FONT_FAMILIES, type MotionFontFamily } from "./schema/fontCatalog.js";
 
 export interface MotionBrandKit {
   revision: number;
@@ -12,7 +13,7 @@ export interface MotionBrandKit {
   accent: string;
   background: string;
   textColor: string;
-  fontFamily: "Arial" | "Helvetica" | "Georgia" | "Verdana" | "sans-serif" | "serif" | "monospace";
+  fontFamily: MotionFontFamily;
   logoAssetId?: string;
   updatedAt: string;
 }
@@ -20,7 +21,7 @@ export type MotionBrandKitInput = Pick<MotionBrandKit,
   "name" | "primary" | "accent" | "background" | "textColor" | "fontFamily" | "logoAssetId">;
 
 const hex = /^#[0-9A-Fa-f]{6}$/;
-const fontNames = new Set(["Arial", "Helvetica", "Georgia", "Verdana", "sans-serif", "serif", "monospace"]);
+const fontNames = new Set<string>(MOTION_FONT_FAMILIES);
 const asset = /^asset-[a-f0-9]{64}$/;
 const defaults: MotionBrandKit = {
   revision: 0, name: "Workspace Brand", primary: "#38BDF8",

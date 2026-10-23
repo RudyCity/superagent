@@ -1,5 +1,6 @@
 import { MOTION_SCHEMA_VERSION } from "./types.js";
 import type { MotionEdit, MotionKeyframe, MotionProject, MotionTrack } from "./types.js";
+import { MOTION_FONT_FAMILIES } from "./fontCatalog.js";
 
 export class MotionValidationError extends Error {
   constructor(public readonly diagnostics: string[]) {
@@ -12,7 +13,7 @@ const color = /^#[0-9a-fA-F]{6}$/;
 const id = /^[a-z][a-z0-9-]{1,63}$/;
 const propertyNames = new Set(["x", "y", "opacity", "rotation"]);
 const easingNames = new Set(["linear", "step", "easeInOut", "easeOutBack"]);
-const fontNames = new Set(["Arial", "Helvetica", "Georgia", "Verdana", "sans-serif", "serif", "monospace"]);
+const fontNames = new Set<string>(MOTION_FONT_FAMILIES);
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
