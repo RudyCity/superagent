@@ -13,6 +13,7 @@ import path from "node:path";
 import {createHash} from "node:crypto";
 import {screenV3Intake,type IntakeRow,type ReviewPacket} from "../src/core/senopatiV3EvidenceIntake.js";
 import {verifySenopatiV3ReviewEvidence,type SignedReview,type ReviewRoster} from "../src/core/senopatiV3SignedReview.js";
+import {auditV3QuarantinedCoverage,type V3PartitionPlan} from "../src/core/senopatiV3CoverageAudit.js";
 const args=process.argv.slice(2);
 const mode=args[0];
 if(mode!=="prepare"&&mode!=="verify")throw new Error("Usage: bun scripts/senopati-v3-evidence.ts prepare|verify");
@@ -131,12 +132,17 @@ if(mode==="prepare"){
   const adjFile=value("--adjudication",true);
   const adjudication=adjFile?JSON.parse(load(adjFile).toString("utf8")) as SignedReview:undefined;
   const result=verifySenopatiV3ReviewEvidence(packet,manifest,roster,reviewA,reviewB,adjudication);
-  createAll([{filename:out,content:JSON.stringify(result,null,2)+"\n"}]);
+  const planFile=value("--plan",true);
+  const coverage=planFile?auditV3QuarantinedCoverage(packet,manifest,
+    JSON.parse(load(planFile).toString("utf8")) as V3PartitionPlan,result):null;
+  const audited={...result,...(coverage?{coverage}:{}),releaseAuthorized:false,trainingAuthorized:false};
+  createAll([{filename:out,content:JSON.stringify(audited,null,2)+String.fromCharCode(10)}]);
   console.log(JSON.stringify({
     status:result.status,requests:result.counts.requests,
     agreement:result.counts.agreements,disagreement:result.counts.disagreements,
     adjudicated:result.counts.adjudicated,unresolved:result.counts.unresolved,
     reviewerSignaturesVerified:true,
+    coverageInsufficientOrUnverified:coverage?!coverage.coverageRequirementsMet:true,
     identitiesIndependentlyAuthenticated:false,trainingAuthorized:false,releaseAuthorized:false,
     output:out
   },null,2));

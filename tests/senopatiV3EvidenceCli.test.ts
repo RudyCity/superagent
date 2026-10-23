@@ -74,7 +74,9 @@ describe("Senopati V3 reviewer CLI integration",()=>{
   it("roundtrips new sample screening, offline Ed25519 signing, conflicts and quarantine",()=>{
     const f=fixture();
     const verified=path.join(f.dir,"verified.json");
+    const frozenPlan=f.manifest.replace(/\.json$/,"_sealed_partition_plan.json");
     f.run(cli,["verify","--manifest",f.manifest,"--packet",f.packet,
+      "--plan",frozenPlan,
       "--roster",f.roster,"--a",f.outputs[0],"--b",f.outputs[1],
       "--adjudication",f.outputs[2],"--out",verified]);
     const outcome=JSON.parse(fs.readFileSync(verified,"utf8"));
@@ -82,9 +84,27 @@ describe("Senopati V3 reviewer CLI integration",()=>{
       requests:3,agreements:2,disagreements:1,adjudicated:1,unresolved:0
     });
     expect(outcome.trainingAuthorized).toBe(false);
+    expect(outcome.coverage.status).toBe("UNVERIFIED_QUARANTINE_COVERAGE_DIAGNOSTIC");
+    expect(outcome.coverage.productionReleaseAuthorized).toBe(false);
+    expect(outcome.coverage.actualIndependentGoldLabelsAvailable).toBe(0);
+    expect(outcome.coverage.minorityCoverageDeficits.length).toBeGreaterThan(0);
     expect(outcome.newGoldLabelsAuthorized).toBe(0);
     expect(outcome.identitiesIndependentlyAuthenticated).toBe(false);
     expect(outcome.status).toBe("SIGNATURE_CHECKED_QUARANTINE_ONLY");
+  });
+  it("refuses altered frozen group partitions even when two reviews were correctly signed",()=>{
+    const f=fixture();
+    const frozen=f.manifest.replace(/\.json$/,"_sealed_partition_plan.json");
+    const plan=JSON.parse(fs.readFileSync(frozen,"utf8"));
+    const group=Object.keys(plan.partitionPlan)[0];
+    plan.partitionPlan[group].ids.push("forged-id");
+    fs.writeFileSync(frozen,JSON.stringify(plan));
+    const out=path.join(f.dir,"tampered-plan-denied.json");
+    f.run(cli,["verify","--manifest",f.manifest,"--packet",f.packet,
+      "--plan",frozen,"--roster",f.roster,
+      "--a",f.outputs[0],"--b",f.outputs[1],
+      "--adjudication",f.outputs[2],"--out",out],1);
+    expect(fs.existsSync(out)).toBe(false);
   });
   it("rejects tampered external signer payloads without writing a verified result",()=>{
     const f=fixture();
