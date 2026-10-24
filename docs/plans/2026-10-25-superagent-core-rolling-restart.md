@@ -72,6 +72,21 @@ Validation: bun run build; bun --bun x vitest run tests/coreDrainInspection.test
 
 This explicitly requested drain is conservative and limited to the supervised API host. It is NOT persistence of agent checkpoints, adoption after supervisor crash, complete separation of external transport, or a guarantee for unregistered out-of-band child processes. The original vision-owner worker remains retained. External MCP/Telegram/Muse transport supervision is future work.
 
+## Phase 3c: durable API routing checkpoint and explicit supervisor recovery
+
+Added superagent core recover --port 7888 as an EXTERNAL CLI action, not an in-session slash command. Recovery applies only to a service started with superagent core start; it does not adopt unsupervised servers or live MCP tunnels.
+
+- The supervisor saves an atomic versioned routing checkpoint under ~/.superagent-r/core-checkpoint-PORT.json: active/retained workers, private ports, PIDs, generation nonces and session ID ownership mappings. It also contains sensitive API and inspection bearer tokens. Treat this checkpoint as an owner-only secret file; it contains no chat transcripts.
+- HTTP 200 on session initialization is sent only after the session-to-worker mapping is durably checkpointed. Checkpoint failures produce HTTP 503 instead of falsely acknowledging durable registration.
+- Explicit recovery validates the saved file type/size, schema, ports, token shapes and session ownership. Each surviving generation must prove its original PID, random 128-bit generation identity and private inspection capability, and answer an authenticated API readiness probe. With no verified survivor, recovery fails closed.
+- The replacement supervisor rebinds the original public port, preserves the REST bearer, restores session affinity, and rotates the private supervisor control bearer. Adopted workers can serve traffic, but cannot be signalled by drain (no original child handle). New workers created afterward are managed normally.
+- A fresh core start refuses to overwrite an existing checkpoint; after a crash, use core recover. Corrupt or stale checkpoint files require investigating orphan worker PIDs before any manual cleanup. There is no unsafe force-adoption switch.
+- The isolated hard-crash smoke kills only its test-owned supervisor, performs authenticated recovery and a subsequent rolling restart, validates old session continuity, ensures dead-worker sessions return 503 and confirms bearer stability.
+
+Limits: The public TCP listener is down until the supervisor is recovered, and open SSE/WebSocket TCP connections must reconnect with their session ID after its crash. This is durable routing metadata, NOT serialized LLM agent checkpoints. OAuth MCP sessions, Telegram, Muse and other external transports still require an independent host for true connection continuity. A Windows Service/systemd or similar supervisor is still required to relaunch the API supervisor automatically. Worker births before checkpoint commit remain a narrow crash window. Adopted old workers are deliberately protected from drain and may occupy retained-generation slots.
+
+Validation: bun run build; bun --bun x vitest run tests/coreSupervisorCheckpoint.test.ts tests/coreDrainInspection.test.ts tests/coreGenerationPolicy.test.ts tests/coreSessionRouting.test.ts tests/coreSupervisor.test.ts; bun scripts/verify-core-supervisor.ts.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.

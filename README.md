@@ -246,6 +246,8 @@ Phase 3a: /core rollback (or superagent core rollback) switches new traffic back
 
 Phase 3b: /core drain (or superagent core drain) checks retained API workers twice before retirement and blocks when sessions, SSE/WebSocket requests, subprocesses, agents, background/daemon/Muse tasks or the fixed-port vision helper remain. The separate inspection endpoint uses a secret and is never exposed publicly. The action reports blocked/retired generations in /core status. Isolated verification: bun scripts/verify-core-supervisor.ts. Persistent external MCP/Telegram/Muse transport and supervisor crash adoption remain future work.
 
+Phase 3c: superagent core recover --port 7888 restores the opt-in API supervisor after a crash. A protected checkpoint retains session-to-worker ownership and the stable public API token; recovery verifies original worker identities before reattachment and refuses unverified sessions. New API generations can still be rolled. Existing SSE/WebSocket TCP connections must reconnect after supervisor crash; this does NOT migrate agent memory or make MCP/OAuth/Telegram/Muse zero-downtime. Isolated verification: bun scripts/verify-core-supervisor.ts. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
+
 ### Hermes-Style Skill Feedback and Guided Revision
 
 An approved/pinned skill run records version-bound outcome metrics. Two consecutive failed daemon runs for the same pinned version can create a **project-scoped, quarantined candidate advisory** in RMemory, linked to the exact run IDs. Negative feedback creates another quarantined advisory linked to a persisted feedback ID. Candidates are excluded from automatic recall until reviewed; failures to reach RMemory do not change the underlying run's outcome.

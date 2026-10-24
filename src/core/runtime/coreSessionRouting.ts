@@ -82,6 +82,21 @@ export class CoreSessionAffinity {
 
   get count(): number { return this.sessions.size; }
 
+  entries(): Array<{ sessionId: string; owner: CoreOwner }> {
+    return Array.from(this.sessions, ([sessionId, owner]) => ({
+      sessionId, owner: { ...owner },
+    }));
+  }
+
+  restore(entries: ReadonlyArray<{ sessionId: string; owner: CoreOwner }>): void {
+    if (this.sessions.size !== 0) throw new Error("Cannot restore into a live affinity registry");
+    for (const entry of entries) {
+      if (validCoreSessionId(entry.sessionId) !== entry.sessionId ||
+          this.sessions.has(entry.sessionId)) throw new Error("Invalid persisted affinity");
+      this.sessions.set(entry.sessionId, { ...entry.owner });
+    }
+  }
+
   countForOwner(owner: CoreOwner): number {
     let count = 0;
     for (const assigned of this.sessions.values()) {

@@ -7,6 +7,10 @@ import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { CoreDrainReport } from "./coreDrainInspection.js";
 import {
+  coreCheckpointPath, readCoreCheckpoint, writeCoreCheckpoint,
+  type CoreSupervisorCheckpoint,
+} from "./coreSupervisorCheckpoint.js";
+import {
   CoreSessionAffinity, CORE_ROUTING_BODY_LIMIT, inspectCoreSessionRequest,
 } from "./coreSessionRouting.js";
 import {
@@ -24,6 +28,7 @@ export interface CoreRuntimeStatus {
   maxRetainedWorkers?: number;
   lastRollback?: { reason: string; fromPid: number; toPid: number; at: number };
   lastDrain?: { checked: number; retiredPids: number[]; blocked: string[]; at: number };
+  recovered?: boolean;
 }
 
 /**
@@ -40,9 +45,12 @@ const validPort = (port: number) => Number.isInteger(port) && port >= 1 && port 
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 type Generation = CoreRuntimeStatus["active"] & {
-  child: ChildProcess;
+  child?: ChildProcess;
   generationId: string;
   drainEligible: boolean;
+  /** Adopted workers are never signalled by drain; unverified remain tombstones. */
+  adopted: boolean;
+  verified: boolean;
 };
 
 interface SupervisorDiscovery {
@@ -141,7 +149,10 @@ export async function requestCoreSupervisor(action: "status" | "restart" | "roll
   });
 }
 
-export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chrome-extension" = "tline"): Promise<void> {
+export async function runCoreSupervisor(
+  port = 7888, clientMode: "tline" | "chrome-extension" = "tline",
+  recover = false,
+): Promise<void> {
   if (!validPort(port)) throw new Error("Invalid public port");
   // Fail closed when an instance is already healthy; never touch existing owners.
   try {
@@ -151,16 +162,38 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     if (String(error).includes("already running")) throw error;
   }
 
+  // Explicit recovery only; starting a fresh listener while orphaned workers
+  // exist would lose affinity and misroute active sessions.
+  const checkpoint = recover ? readCoreCheckpoint(port) : undefined;
+  if (!recover && fs.existsSync(coreCheckpointPath(port))) {
+    throw new Error("Supervisor checkpoint exists for port " + port +
+      ". Use core recover --port " + port + " to verify/adopt old workers; refusing fresh overwrite.");
+  }
+  if (checkpoint && checkpoint.clientMode !== clientMode) {
+    throw new Error("Recovery client mode differs from saved supervisor");
+  }
   const controlToken = crypto.randomBytes(32).toString("hex");
-  // All workers use the same bearer token so reconnecting clients remain authorized.
-  const serverToken = crypto.randomBytes(24).toString("hex");
-  const inspectToken = crypto.randomBytes(32).toString("hex");
+  // Stable bearer across crash recovery for reconnecting clients.
+  const serverToken = checkpoint?.serverToken || crypto.randomBytes(24).toString("hex");
+  const inspectToken = checkpoint?.inspectToken || crypto.randomBytes(32).toString("hex");
   let active: Generation | undefined;
   const retained: Generation[] = [];
   const sessionAffinity = new CoreSessionAffinity();
   let restarting = false;
   let lastRollback: CoreRuntimeStatus["lastRollback"];
   let lastDrain: CoreRuntimeStatus["lastDrain"];
+  let recovered = false;
+
+  function persistCheckpoint(): void {
+    if (!active) return;
+    const workers = [active, ...retained].map(({ pid, port: workerPort, since, generationId, drainEligible }) =>
+      ({ pid, port: workerPort, since, generationId, drainEligible }));
+    writeCoreCheckpoint({
+      version: 1, port, savedAt: Date.now(), clientMode,
+      serverToken, inspectToken, activePid: active.pid,
+      workers, sessions: sessionAffinity.entries(),
+    } satisfies CoreSupervisorCheckpoint);
+  }
   // Account for in-flight requests, SSE streams and raw socket upgrades
   // before considering a worker for retirement.
   const inflight = new Map<number, number>();
@@ -209,7 +242,8 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       throw error;
     }
     if (!child.pid) throw new Error("Worker PID unavailable");
-    return { child, pid: child.pid, port: workerPort, since: Date.now(), generationId, drainEligible };
+    return { child, pid: child.pid, port: workerPort, since: Date.now(), generationId,
+      drainEligible, adopted: false, verified: true };
   }
 
   function status(): CoreRuntimeStatus {
@@ -223,11 +257,15 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       maxRetainedWorkers: MAX_RETAINED_CORE_WORKERS,
       ...(lastRollback ? { lastRollback } : {}),
       ...(lastDrain ? { lastDrain } : {}),
+      recovered,
     };
   }
 
   function workerExited(worker: Generation): boolean {
-    return worker.child.exitCode !== null || worker.child.signalCode !== null;
+    if (!worker.verified) return true;
+    if (worker.child) return worker.child.exitCode !== null || worker.child.signalCode !== null;
+    // Only metadata for adopted workers; never infer ownership from PID alone.
+    try { process.kill(worker.pid, 0); return false; } catch { return true; }
   }
 
   // Session affinity is a routing hint, never an implicit claim of a live
@@ -251,6 +289,46 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     });
   }
 
+  async function verifyRecoveryWorker(worker: Generation): Promise<boolean> {
+    const identified = await new Promise<boolean>(resolve => {
+      const req = http.get({
+        host: "127.0.0.1", port: worker.port,
+        path: "/_core/internal/drain",
+        headers: { "x-superagent-internal-token": inspectToken },
+        timeout: 1300,
+      }, res => {
+        const parts: Buffer[] = [];
+        let size = 0;
+        res.on("data", (chunk: Buffer) => {
+          size += chunk.length;
+          if (size > 8192) req.destroy();
+          else parts.push(chunk);
+        });
+        res.once("end", () => {
+          try {
+            const report = JSON.parse(Buffer.concat(parts).toString("utf8")) as CoreDrainReport;
+            resolve(res.statusCode === 200 && report.pid === worker.pid &&
+              report.workerGenerationId === worker.generationId &&
+              report.transportIsolated === worker.drainEligible);
+          } catch { resolve(false); }
+        });
+      });
+      req.once("timeout", () => req.destroy());
+      req.once("error", () => resolve(false));
+    });
+    if (!identified) return false;
+    // The child is not yet adopted, so its verified flag is intentionally
+    // false. Probe authenticated readiness directly before granting adoption.
+    return new Promise(resolve => {
+      const req = http.get({
+        host: "127.0.0.1", port: worker.port, path: "/api/status",
+        headers: { Authorization: "Bearer " + serverToken }, timeout: 1500,
+      }, res => { res.resume(); resolve(res.statusCode === 200); });
+      req.once("timeout", () => req.destroy());
+      req.once("error", () => resolve(false));
+    });
+  }
+
   async function rollback(reason: string): Promise<CoreRuntimeStatus> {
     if (restarting) throw new Error("Core lifecycle change already in progress");
     restarting = true;
@@ -262,9 +340,23 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
         const outcome = applyCoreRollback(current, retained, candidate.pid, !workerExited(current));
         if (!outcome) continue;
         // Preserve all live sessions on the former active generation.
+        const previousRetained = [...retained];
+        const previousRollback = lastRollback;
         retained.splice(0, retained.length, ...outcome.retained);
+        if (workerExited(current) && sessionAffinity.countForOwner(current) > 0 &&
+            !retained.some(worker => worker.pid === current.pid)) {
+          retained.push({ ...current, child: undefined, verified: false });
+        }
         active = outcome.active as Generation;
         lastRollback = { reason, fromPid: current.pid, toPid: candidate.pid, at: Date.now() };
+        try {
+          persistCheckpoint();
+        } catch (error) {
+          active = current;
+          retained.splice(0, retained.length, ...previousRetained);
+          lastRollback = previousRollback;
+          throw error;
+        }
         return status();
       }
       throw new Error("No responsive previous core worker; no session or tunnel was stopped");
@@ -284,8 +376,17 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     restarting = true;
     try {
       const candidate = await spawnWorker();
+      const previous = active;
       if (active) retained.push(active); // never kill existing generation
       active = candidate;
+      try {
+        persistCheckpoint();
+      } catch (error) {
+        active = previous;
+        if (previous) retained.pop();
+        try { candidate.child?.kill(); } catch {}
+        throw error;
+      }
       return status();
     } finally {
       restarting = false;
@@ -338,8 +439,8 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
           blocked.push("PID " + worker.pid + ": worker already exited");
           continue;
         }
-        if (!worker.drainEligible) {
-          blocked.push("PID " + worker.pid + ": owns persistent helper");
+        if (!worker.drainEligible || worker.adopted) {
+          blocked.push("PID " + worker.pid + ": owns helper or adopted process (cannot signal)");
           continue;
         }
         if (sessionAffinity.countForOwner(worker) > 0) {
@@ -367,6 +468,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
         // sessions, jobs, subprocesses, streams or auxiliary listeners can
         // be requested to stop. Never use taskkill /T or signal a tunnel PID.
         const stopped = await new Promise<boolean>(resolve => {
+          if (!worker.child) { resolve(false); return; }
           worker.child.once("exit", () => resolve(true));
           if (!worker.child.kill("SIGTERM")) { resolve(false); return; }
           setTimeout(() => resolve(workerExited(worker)), 2500).unref();
@@ -378,8 +480,10 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
         const index = retained.findIndex(item => item.pid === worker.pid && item.generationId === worker.generationId);
         if (index >= 0) retained.splice(index, 1);
         retiredPids.push(worker.pid);
+        persistCheckpoint();
       }
       lastDrain = { checked: candidates.length, retiredPids, blocked, at: Date.now() };
+      persistCheckpoint();
       return status();
     } finally {
       restarting = false;
@@ -416,7 +520,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
         res.end(JSON.stringify({ error: "Session owner is no longer available; explicitly resume the session." }));
         return;
       }
-      if (worker.child.exitCode !== null || worker.child.signalCode !== null) {
+      if (workerExited(worker)) {
         // Do not reassign an existing session to a worker with no in-memory state.
         res.writeHead(503, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Session worker unavailable; explicitly resume the session." }));
@@ -431,23 +535,47 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
         host: "127.0.0.1", port: worker.port,
         path: req.url, method: req.method, headers: forwardedHeaders,
       }, upstream => {
-        res.writeHead(upstream.statusCode || 502, upstream.headers);
         if (!inspected.isSessionRegistration || upstream.statusCode !== 200) {
+          res.writeHead(upstream.statusCode || 502, upstream.headers);
           upstream.pipe(res);
           return;
         }
-        // The successful /api/init or workspace switch response is the
-        // authoritative assignment: never trust the client-supplied ID alone.
-        let recorded = "";
+        // Never acknowledge a successful session initialization until its
+        // owner mapping has been durably checkpointed. Bounded JSON only.
+        const chunks: Buffer[] = [];
+        let size = 0;
         upstream.on("data", (chunk: Buffer) => {
-          if (recorded.length <= 16 * 1024) recorded += chunk.toString("utf8");
-          res.write(chunk);
+          size += chunk.length;
+          if (size <= 16 * 1024) chunks.push(chunk);
         });
         upstream.once("end", () => {
-          sessionAffinity.registerFromResponse(
+          if (size > 16 * 1024) {
+            res.writeHead(502, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Core session response exceeds safe checkpoint limit" }));
+            return;
+          }
+          const recorded = Buffer.concat(chunks).toString("utf8");
+          const sessionId = sessionAffinity.registerFromResponse(
             upstream.statusCode || 0, recorded, worker, inspected.sessionId,
           );
-          res.end();
+          if (!sessionId) {
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Core session affinity could not be registered safely" }));
+            return;
+          }
+          try { persistCheckpoint(); }
+          catch {
+            console.error("[core] Failed to persist session affinity checkpoint");
+            res.writeHead(503, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Core session checkpoint unavailable; retry initialization" }));
+            return;
+          }
+          res.writeHead(200, upstream.headers);
+          res.end(Buffer.concat(chunks));
+        });
+        upstream.once("error", () => {
+          if (!res.headersSent) res.writeHead(502);
+          if (!res.writableEnded) res.end("Core upstream unavailable");
         });
       });
       proxy.once("error", () => {
@@ -486,7 +614,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     if (inspected.pathname.startsWith("/_core/")) { socket.destroy(); return; }
     const worker = selectWorker(inspected.sessionId);
     if (!worker) { socket.destroy(); return; }
-    if (worker.child.exitCode !== null || worker.child.signalCode !== null) {
+    if (workerExited(worker)) {
       socket.destroy();
       return;
     }
@@ -532,6 +660,22 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     }
   });
 
+  if (checkpoint) {
+    const restored: Generation[] = checkpoint.workers.map(worker => ({
+      ...worker, child: undefined, adopted: true, verified: false,
+    }));
+    // Adoption requires authenticated proof from the ORIGINAL worker at
+    // its persisted private port, including a 128-bit generation identity.
+    for (const worker of restored) worker.verified = await verifyRecoveryWorker(worker);
+    const chosen = restored.find(worker => worker.pid === checkpoint.activePid && worker.verified)
+      || restored.slice().reverse().find(worker => worker.verified);
+    if (!chosen) throw new Error("No authenticated worker survived; refusing unsafe recovery");
+    active = chosen;
+    retained.push(...restored.filter(worker => worker !== chosen));
+    sessionAffinity.restore(checkpoint.sessions);
+    recovered = true;
+  }
+
   try {
     // Do not bind over existing live REST/SSE or tunnel endpoints.
     await new Promise<void>((resolve, reject) => {
@@ -542,9 +686,10 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       control.once("error", reject);
       control.listen(0, "127.0.0.1", () => resolve());
     });
-    active = await spawnWorker();
+    if (!checkpoint) active = await spawnWorker();
     const controlAddress = control.address();
     if (!controlAddress || typeof controlAddress === "string") throw new Error("Control port missing");
+    persistCheckpoint();
     saveJsonAtomic(statePath(port), {
       supervisorPid: process.pid, publicPort: port, controlPort: controlAddress.port, controlToken,
     } satisfies SupervisorDiscovery);
@@ -555,7 +700,8 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     // Avoid changing another live T-Line instance when using a custom port.
     if (port === 7888) saveJsonAtomic(path.join(stateDir(), "server-info.json"), authInfo);
     console.log("Core supervisor listening on http://127.0.0.1:" + port);
-    console.log("Worker PID " + active.pid + "; use: superagent core restart --port " + port);
+    console.log("Worker PID " + active!.pid + "; use: superagent core restart --port " + port);
+    if (recovered) console.log("Authenticated supervisor recovery completed; old sessions kept on original workers.");
     console.log("MCP, Muse and Telegram processes are not controlled by this supervisor.");
   } catch (error) {
     control.close();
@@ -571,6 +717,7 @@ export function formatCoreSupervisorStatus(value: CoreRuntimeStatus): string {
     "Supervisor PID: " + value.supervisorPid,
     "Active worker: PID " + value.active.pid + " / internal port " + value.active.port,
     "Retained previous workers: " + value.retained.length,
+    "Recovered from checkpoint: " + Boolean(value.recovered),
     "Session IDs pinned to origin workers: " + (value.affinitySessions ?? 0),
     "Retained-worker safety limit: " + (value.maxRetainedWorkers ?? MAX_RETAINED_CORE_WORKERS),
     ...(value.lastRollback ? ["Last rollback: " + value.lastRollback.reason +
@@ -593,16 +740,19 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core restart [--port 7888]");
     console.log("superagent core rollback [--port 7888]");
     console.log("superagent core drain [--port 7888]");
+    console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
     return;
   }
-  if (action === "start") {
+  if (action === "start" || action === "recover") {
     const clientModeIdx = argv.indexOf("--client-mode");
-    const mode = clientModeIdx < 0 ? "tline" : argv[clientModeIdx + 1];
+    const mode = clientModeIdx < 0
+      ? (action === "recover" ? readCoreCheckpoint(port).clientMode : "tline")
+      : argv[clientModeIdx + 1];
     if (mode !== "tline" && mode !== "chrome-extension") throw new Error("Invalid --client-mode");
-    await runCoreSupervisor(port, mode);
+    await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { requestCoreSupervisor } from "../src/core/runtime/coreSupervisor.js";
+import { coreCheckpointPath, readCoreCheckpoint } from "../src/core/runtime/coreSupervisorCheckpoint.js";
 
 async function freePort(): Promise<number> {
   const server = net.createServer();
@@ -80,8 +81,10 @@ const owner = spawn(process.execPath, [path.join(root, "src", "cli.tsx"), "core"
 });
 owner.once("error", () => {});
 const ownedPids = new Set<number>();
+let recoveryOwner: ReturnType<typeof spawn> | undefined;
 const discoveryFile = path.join(os.homedir(), ".superagent-r", "core-supervisor-" + publicPort + ".json");
 const infoFile = path.join(os.homedir(), ".superagent-r", "server-info-" + publicPort + ".json");
+const checkpointFile = coreCheckpointPath(publicPort);
 
 try {
   let initial: Awaited<ReturnType<typeof requestCoreSupervisor>> | undefined;
@@ -217,16 +220,88 @@ try {
   if (await status(publicPort, initialToken) !== 200) {
     throw new Error("Public API did not survive worker drain");
   }
-  console.log("PASS isolated core: affinity, rollback, crash failover, fail-closed inspection, verified idle drain");
+  // A hard crash of only the TEST supervisor leaves detached worker processes
+  // running. Explicit recovery must verify their generation nonces before
+  // rebinding the public listener and must keep prior session affinity.
+  const persisted = readCoreCheckpoint(publicPort);
+  if (persisted.sessions.length < 3 || persisted.activePid !== verified.active.pid) {
+    throw new Error("Supervisor checkpoint is stale or incomplete");
+  }
+  killOwned(owner.pid ?? 0);
+  await new Promise(resolve => setTimeout(resolve, 350));
+  const workerStillOnline = await status(persisted.workers.find(w => w.pid === persisted.activePid)!.port, initialToken)
+    .catch(() => -1);
+  let recoveryLog = "";
+  recoveryOwner = spawn(process.execPath, [path.join(root, "src", "cli.tsx"), "core", "recover",
+    "--port", String(publicPort)], {
+    cwd: root, stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
+  });
+  recoveryOwner.stdout?.on("data", (chunk: Buffer) => { recoveryLog += chunk.toString("utf8").slice(-2000); });
+  recoveryOwner.stderr?.on("data", (chunk: Buffer) => { recoveryLog += chunk.toString("utf8").slice(-3000); });
+  recoveryOwner.once("error", (error) => { recoveryLog += String(error); });
+  let recovered: Awaited<ReturnType<typeof requestCoreSupervisor>> | undefined;
+  for (let i = 0; i < 150; i++) {
+    try {
+      const observed = await requestCoreSupervisor("status", publicPort);
+      if (observed.supervisorPid === recoveryOwner.pid && observed.recovered === true) {
+        recovered = observed;
+        break;
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  if (!recovered || recovered.active.pid !== persisted.activePid) {
+    throw new Error("Core recovery did not verify/rebind previous worker; worker status=" +
+      workerStillOnline + "; exit=" + recoveryOwner?.exitCode + "; output=" + recoveryLog.slice(-3000));
+  }
+  if (JSON.parse(fs.readFileSync(infoFile, "utf8")).authToken !== initialToken) {
+    throw new Error("Recovery unexpectedly rotated the authenticated public token");
+  }
+  for (const id of [oldId, newId]) {
+    const restored = await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + id);
+    if (restored.status !== 200 || restored.data.sessionId !== id) {
+      throw new Error("Recovery lost a pre-crash session owner: " + id);
+    }
+  }
+  const orphaned = await jsonApi(publicPort, initialToken, "GET",
+    "/api/status?sessionId=" + crashedSessionId);
+  if (orphaned.status !== 503) {
+    throw new Error("Recovery incorrectly adopted a dead worker's session");
+  }
+  const newAfterRecovery = await requestCoreSupervisor("restart", publicPort);
+  ownedPids.add(newAfterRecovery.active.pid);
+  if (newAfterRecovery.active.pid === recovered.active.pid) {
+    throw new Error("Recovered supervisor could not spawn a fresh API generation");
+  }
+  const persistedAfterRecovery = readCoreCheckpoint(publicPort);
+  if (persistedAfterRecovery.activePid !== newAfterRecovery.active.pid ||
+      persistedAfterRecovery.sessions.length !== persisted.sessions.length) {
+    throw new Error("Post-recovery rolling generation was not durably checkpointed");
+  }
+  for (const id of [oldId, newId]) {
+    const retained = await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + id);
+    if (retained.status !== 200 || retained.data.sessionId !== id) {
+      throw new Error("Post-recovery restart lost session: " + id);
+    }
+  }
+  const adoptedDrain = await requestCoreSupervisor("drain", publicPort);
+  if (adoptedDrain.lastDrain?.retiredPids.length) {
+    throw new Error("Recovered supervisor should not signal adopted worker processes");
+  }
+  console.log("PASS isolated core: handover, guarded drain, hard supervisor crash, nonce-verified recovery + restart");
 } finally {
+  killOwned(recoveryOwner?.pid ?? 0);
   killOwned(owner.pid ?? 0);
   for (const pid of ownedPids) killOwned(pid);
+  try { fs.rmSync(checkpointFile, { force: true }); } catch {}
   try {
     const disc = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));
-    if (disc.supervisorPid === owner.pid) fs.rmSync(discoveryFile, { force: true });
+    if (disc.supervisorPid === owner.pid || disc.supervisorPid === recoveryOwner?.pid)
+      fs.rmSync(discoveryFile, { force: true });
   } catch {}
   try {
     const state = JSON.parse(fs.readFileSync(infoFile, "utf8"));
-    if (state.pid === owner.pid) fs.rmSync(infoFile, { force: true });
+    if (state.pid === owner.pid || state.pid === recoveryOwner?.pid)
+      fs.rmSync(infoFile, { force: true });
   } catch {}
 }

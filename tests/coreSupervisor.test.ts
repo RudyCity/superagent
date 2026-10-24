@@ -12,6 +12,7 @@ describe("opt-in core supervisor safety", () => {
       affinitySessions: 2,
       lastRollback: { reason: "operator-requested", fromPid: 13, toPid: 12, at: 1200 },
       lastDrain: { checked: 2, retiredPids: [14], blocked: ["PID 13: pinned sessions remain"], at: 1400 },
+      recovered: true,
     });
     expect(result).toContain("Supervisor PID: 11");
     expect(result).toContain("Active worker: PID 12");
@@ -20,6 +21,7 @@ describe("opt-in core supervisor safety", () => {
     expect(result).toContain("Session IDs pinned to origin workers: 2");
     expect(result).toContain("Last rollback: operator-requested");
     expect(result).toContain("Last drain: inspected 2, retired 1");
+    expect(result).toContain("Recovered from checkpoint: true");
     expect(result).toContain("blocked: PID 13: pinned sessions remain");
     expect(result).not.toContain("controlToken");
   });

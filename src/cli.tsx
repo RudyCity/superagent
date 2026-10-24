@@ -80,7 +80,7 @@ if (process.argv[2] === "core") {
   try {
     const { handleCoreCliCommand } = await import("./core/runtime/coreSupervisor.js");
     await handleCoreCliCommand(process.argv.slice(3));
-    if (process.argv[3] === "start") await new Promise(() => {});
+    if (process.argv[3] === "start" || process.argv[3] === "recover") await new Promise(() => {});
     process.exit(0);
   } catch (error) {
     console.error("[Core] " + String(error));
@@ -234,7 +234,7 @@ Commands:
   session           Manage conversation sessions (list, export, clear --empty, import)
   memory            Review RMemory retention (sweep [--apply])
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
-  core              Manage supervised API core (start, status, restart, rollback, drain)
+  core              Manage supervised API core (start, recover, status, restart, rollback, drain)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
   tunnel            Manage Cloudflare quick tunnels (list, start [--https], stop, status)
