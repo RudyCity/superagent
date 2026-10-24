@@ -14,6 +14,7 @@ export const coreRuntimeCommand: SlashCommand = {
         content: [
           "/core status [--port 7888]",
           "/core restart [--port 7888]",
+          "/core rollback [--port 7888]",
           "Start supervisor separately: superagent core start --port 7888",
           "Unsupervised CLI/server instances cannot be rolled automatically.",
           "Previous workers are retained; MCP, Muse, Telegram and jobs are not stopped.",
@@ -22,8 +23,8 @@ export const coreRuntimeCommand: SlashCommand = {
       });
       return;
     }
-    if (action !== "status" && action !== "restart") {
-      ctx.addLine({ type: "error", content: "Use /core status, /core restart or /core help", timestamp: Date.now() });
+    if (action !== "status" && action !== "restart" && action !== "rollback") {
+      ctx.addLine({ type: "error", content: "Use /core status, /core restart, /core rollback or /core help", timestamp: Date.now() });
       return;
     }
     const idx = parts.indexOf("--port");

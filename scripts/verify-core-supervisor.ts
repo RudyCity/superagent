@@ -140,7 +140,56 @@ try {
   }
   const afterStatus = await requestCoreSupervisor("status", publicPort);
   if (afterStatus.affinitySessions !== 2) throw new Error("Wrong session-affinity count after handover");
-  console.log("PASS isolated core handover: auth/port stable, old session+chat pinned, new session on new worker");
+
+  // Manual rollback only changes the default route; pre-existing sessions
+  // on both generations MUST remain bound to their owning worker.
+  const rolledBack = await requestCoreSupervisor("rollback", publicPort);
+  if (rolledBack.active.pid !== initial.active.pid ||
+      rolledBack.lastRollback?.reason !== "operator-requested") {
+    throw new Error("Manual rollback did not switch to the verified previous generation");
+  }
+  if ((await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + newId)).data.sessionId !== newId) {
+    throw new Error("New-generation session was lost during manual rollback");
+  }
+  if ((await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + oldId)).data.sessionId !== oldId) {
+    throw new Error("Old-generation session was lost during manual rollback");
+  }
+
+  // If the newly active test worker exits, the supervisor can automatically
+  // reselect a responsive previous generation. Never kill the production PID.
+  const third = await requestCoreSupervisor("restart", publicPort);
+  ownedPids.add(third.active.pid);
+  if (third.active.pid === rolledBack.active.pid) throw new Error("Third generation did not change");
+  const crashedSessionId = newId + "_crashed";
+  const crashedInit = await jsonApi(publicPort, initialToken, "POST", "/api/init", {
+    sessionId: crashedSessionId, mode: "single", workspace: root,
+  });
+  if (crashedInit.status !== 200 || crashedInit.data.sessionId !== crashedSessionId) {
+    throw new Error("Third generation could not create a crash-recovery fixture");
+  }
+  killOwned(third.active.pid);
+  let automatic: Awaited<ReturnType<typeof requestCoreSupervisor>> | undefined;
+  for (let i = 0; i < 30; i++) {
+    const observed = await requestCoreSupervisor("status", publicPort);
+    if (observed.active.pid !== third.active.pid &&
+        observed.lastRollback?.reason === "active-worker-exited") {
+      automatic = observed;
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  if (!automatic) throw new Error("Supervisor failed to roll back after an owned test worker exited");
+  const unavailable = await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + crashedSessionId);
+  if (unavailable.status !== 503) {
+    throw new Error("A session owned by a crashed generation must fail closed, not migrate silently");
+  }
+  if ((await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + oldId)).data.sessionId !== oldId) {
+    throw new Error("Original session did not survive automatic failover");
+  }
+  if ((await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + newId)).data.sessionId !== newId) {
+    throw new Error("Second-generation session did not survive automatic failover");
+  }
+  console.log("PASS isolated core handover: auth stable, session affinity, manual rollback, crash failover");
 } finally {
   killOwned(owner.pid ?? 0);
   for (const pid of ownedPids) killOwned(pid);

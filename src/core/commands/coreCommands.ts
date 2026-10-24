@@ -198,7 +198,7 @@ export const helpCommand: SlashCommand = {
         "              Stop: /terminal stop [id|all]  - Kill running terminal processes",
         "              Shortcut: !<command> (e.g. !npm run dev)",
         "  /daemon   - Manage autonomous background daemon & cron scheduler",
-        "  /core     - Manage supervised API core (/core status|restart)",
+        "  /core     - Manage supervised API core (/core status|restart|rollback)",
         "              Usage: /daemon [start|stop|status|list|add|remove|run]",
         "  /skills   - List installed agent skills and templates (/skills [list|synthesize])",
         "  /install  - Install a skill from skills.sh (e.g. /install vercel-labs/skills/find-skills)",

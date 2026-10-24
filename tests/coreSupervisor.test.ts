@@ -8,10 +8,16 @@ describe("opt-in core supervisor safety", () => {
       supervisorPid: 11,
       active: { pid: 12, port: 31234, since: 1000 },
       retained: [{ pid: 13, port: 31235, since: 900 }],
+      maxRetainedWorkers: 4,
+      affinitySessions: 2,
+      lastRollback: { reason: "operator-requested", fromPid: 13, toPid: 12, at: 1200 },
     });
     expect(result).toContain("Supervisor PID: 11");
     expect(result).toContain("Active worker: PID 12");
     expect(result).toContain("Retained previous workers: 1");
+    expect(result).toContain("Retained-worker safety limit: 4");
+    expect(result).toContain("Session IDs pinned to origin workers: 2");
+    expect(result).toContain("Last rollback: operator-requested");
     expect(result).not.toContain("controlToken");
   });
 

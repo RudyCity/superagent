@@ -242,6 +242,8 @@ Run from the repository: bun src/cli.tsx core start --port 7888, then bun src/cl
 
 Phase 2 also pins successful session IDs to their original API workers, including session-bound chat JSON, SSE and upgrade routes after restart. New sessions use the new worker. Existing clients should send their session ID when reconnecting; session data stays inside its original process. This is API-core rolling handover, **not full zero-downtime migration of in-memory sessions or live MCP tool processes**. Old workers remain alive rather than being force-killed; a full transport/session supervisor and verified generation drain are future work. See docs/plans/2026-10-25-superagent-core-rolling-restart.md. Manual isolated smoke: bun scripts/verify-core-supervisor.ts.
 
+Phase 3a: /core rollback (or superagent core rollback) switches new traffic back to a previously retained, health-checked worker. A detected active worker exit triggers attempted automatic rollback, without terminating any tunnel or healthy worker. Restart fails closed at four retained workers: there is **no** unverified cleanup or forced process kill to make room. Monitor with /core status. Verified draining and a persistent transport/session host remain future work.
+
 ### Hermes-Style Skill Feedback and Guided Revision
 
 An approved/pinned skill run records version-bound outcome metrics. Two consecutive failed daemon runs for the same pinned version can create a **project-scoped, quarantined candidate advisory** in RMemory, linked to the exact run IDs. Negative feedback creates another quarantined advisory linked to a persisted feedback ID. Candidates are excluded from automatic recall until reviewed; failures to reach RMemory do not change the underlying run's outcome.

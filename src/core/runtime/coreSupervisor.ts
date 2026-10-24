@@ -8,6 +8,10 @@ import { spawn, type ChildProcess } from "node:child_process";
 import {
   CoreSessionAffinity, CORE_ROUTING_BODY_LIMIT, inspectCoreSessionRequest,
 } from "./coreSessionRouting.js";
+import {
+  MAX_RETAINED_CORE_WORKERS, applyCoreRollback, mayCreateCoreGeneration,
+  rollbackCandidates,
+} from "./coreGenerationPolicy.js";
 
 export interface CoreRuntimeStatus {
   supervisorPid: number;
@@ -16,6 +20,8 @@ export interface CoreRuntimeStatus {
   retained: Array<{ pid: number; port: number; since: number }>;
   /** Bound session IDs remain pinned to the generation that initialized them. */
   affinitySessions?: number;
+  maxRetainedWorkers?: number;
+  lastRollback?: { reason: string; fromPid: number; toPid: number; at: number };
 }
 
 /**
@@ -101,13 +107,13 @@ async function ready(port: number, child: ChildProcess, bearer: string): Promise
   throw new Error("New core worker did not pass HTTP readiness within 15 seconds");
 }
 
-export async function requestCoreSupervisor(action: "status" | "restart", port = 7888): Promise<CoreRuntimeStatus> {
+export async function requestCoreSupervisor(action: "status" | "restart" | "rollback", port = 7888): Promise<CoreRuntimeStatus> {
   let info: SupervisorDiscovery;
   try { info = readDiscovery(port); }
   catch { throw new Error("No supervised core is registered on port " + port + ". Start: superagent core start --port " + port); }
   return new Promise<CoreRuntimeStatus>((resolve, reject) => {
     const req = http.request({
-      host: "127.0.0.1", port: info.controlPort, method: action === "restart" ? "POST" : "GET",
+      host: "127.0.0.1", port: info.controlPort, method: action === "status" ? "GET" : "POST",
       path: "/" + action,
       timeout: 30000,
       headers: { Authorization: "Bearer " + info.controlToken },
@@ -146,6 +152,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
   const retained: Generation[] = [];
   const sessionAffinity = new CoreSessionAffinity();
   let restarting = false;
+  let lastRollback: CoreRuntimeStatus["lastRollback"];
 
   async function spawnWorker(): Promise<Generation> {
     const workerPort = await reserveLoopbackPort();
@@ -184,21 +191,86 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       active: { pid: active.pid, port: active.port, since: active.since },
       retained: retained.map(({ pid, port: workerPort, since }) => ({ pid, port: workerPort, since })),
       affinitySessions: sessionAffinity.count,
+      maxRetainedWorkers: MAX_RETAINED_CORE_WORKERS,
+      ...(lastRollback ? { lastRollback } : {}),
     };
   }
 
+  function workerExited(worker: Generation): boolean {
+    return worker.child.exitCode !== null || worker.child.signalCode !== null;
+  }
+
+  // Session affinity is a routing hint, never an implicit claim of a live
+  // worker. Always resolve it back to a currently tracked child process.
+  function selectWorker(sessionId: string | undefined): Generation | undefined {
+    if (!active) return undefined;
+    const owner = sessionAffinity.resolve(sessionId, active);
+    return [active, ...retained].find(worker =>
+      worker.pid === owner.pid && worker.port === owner.port);
+  }
+
+  async function workerResponsive(worker: Generation): Promise<boolean> {
+    if (workerExited(worker)) return false;
+    return new Promise(resolve => {
+      const req = http.get({
+        host: "127.0.0.1", port: worker.port, path: "/api/status",
+        headers: { Authorization: "Bearer " + serverToken }, timeout: 1000,
+      }, res => { res.resume(); resolve(res.statusCode === 200); });
+      req.once("timeout", () => req.destroy());
+      req.once("error", () => resolve(false));
+    });
+  }
+
+  async function rollback(reason: string): Promise<CoreRuntimeStatus> {
+    if (restarting) throw new Error("Core lifecycle change already in progress");
+    restarting = true;
+    try {
+      const current = active;
+      if (!current) throw new Error("No active core worker");
+      for (const candidate of rollbackCandidates(retained, current.pid)) {
+        if (!await workerResponsive(candidate)) continue;
+        const outcome = applyCoreRollback(current, retained, candidate.pid, !workerExited(current));
+        if (!outcome) continue;
+        // Preserve all live sessions on the former active generation.
+        retained.splice(0, retained.length, ...outcome.retained);
+        active = outcome.active as Generation;
+        lastRollback = { reason, fromPid: current.pid, toPid: candidate.pid, at: Date.now() };
+        return status();
+      }
+      throw new Error("No responsive previous core worker; no session or tunnel was stopped");
+    } finally {
+      restarting = false;
+    }
+  }
+
   async function restart(): Promise<CoreRuntimeStatus> {
-    if (restarting) throw new Error("Core restart already in progress");
+    if (restarting) throw new Error("Core lifecycle change already in progress");
+    // No worker is discarded while its SSE streams, tool processes or
+    // in-memory agent state may still be alive. Fail closed at the limit.
+    if (!mayCreateCoreGeneration(retained.length)) {
+      throw new Error("Retained worker safety limit (" + MAX_RETAINED_CORE_WORKERS +
+        ") reached; verified drain is required before another restart");
+    }
     restarting = true;
     try {
       const candidate = await spawnWorker();
-      if (active) retained.push(active); // no SIGTERM, taskkill or process-tree cleanup
-      active = candidate;                 // new requests use new version atomically
+      if (active) retained.push(active); // never kill existing generation
+      active = candidate;
       return status();
     } finally {
       restarting = false;
     }
   }
+
+  // On an observed active process exit, prefer a verified prior generation
+  // for NEW traffic. Sessions owned by the failed worker remain unavailable,
+  // rather than being silently moved to an incompatible in-memory agent.
+  const failureMonitor = setInterval(() => {
+    if (active && workerExited(active) && !restarting) {
+      void rollback("active-worker-exited").catch(() => {});
+    }
+  }, 1500);
+  failureMonitor.unref();
 
   /**
    * Keep requests for pre-restart sessions on their original worker,
@@ -211,9 +283,13 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       const inspected = bufferedBody
         ? inspectCoreSessionRequest(req.url, req.method, req.headers, bufferedBody.toString("utf8"))
         : route;
-      const fallback = active;
-      if (!fallback) { res.writeHead(503); res.end("Core starting"); return; }
-      const worker = sessionAffinity.resolve(inspected.sessionId, fallback) as Generation;
+      if (!active) { res.writeHead(503); res.end("Core starting"); return; }
+      const worker = selectWorker(inspected.sessionId);
+      if (!worker) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Session owner is no longer available; explicitly resume the session." }));
+        return;
+      }
       if (worker.child.exitCode !== null || worker.child.signalCode !== null) {
         // Do not reassign an existing session to a worker with no in-memory state.
         res.writeHead(503, { "Content-Type": "application/json" });
@@ -274,10 +350,10 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     req.once("error", () => { if (!res.writableEnded) res.destroy(); });
   });
   listener.on("upgrade", (req, socket, head) => {
-    const fallback = active;
-    if (!fallback) { socket.destroy(); return; }
+    if (!active) { socket.destroy(); return; }
     const inspected = inspectCoreSessionRequest(req.url, req.method, req.headers);
-    const worker = sessionAffinity.resolve(inspected.sessionId, fallback) as Generation;
+    const worker = selectWorker(inspected.sessionId);
+    if (!worker) { socket.destroy(); return; }
     if (worker.child.exitCode !== null || worker.child.signalCode !== null) {
       socket.destroy();
       return;
@@ -307,7 +383,9 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
         ? status()
         : req.method === "POST" && req.url === "/restart"
           ? await restart()
-          : null;
+          : req.method === "POST" && req.url === "/rollback"
+            ? await rollback("operator-requested")
+            : null;
       if (!result) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(result));
@@ -357,6 +435,9 @@ export function formatCoreSupervisorStatus(value: CoreRuntimeStatus): string {
     "Active worker: PID " + value.active.pid + " / internal port " + value.active.port,
     "Retained previous workers: " + value.retained.length,
     "Session IDs pinned to origin workers: " + (value.affinitySessions ?? 0),
+    "Retained-worker safety limit: " + (value.maxRetainedWorkers ?? MAX_RETAINED_CORE_WORKERS),
+    ...(value.lastRollback ? ["Last rollback: " + value.lastRollback.reason +
+      " (PID " + value.lastRollback.fromPid + " -> " + value.lastRollback.toPid + ")"] : []),
     "Existing connections remain on their original worker. Previous workers are not killed automatically.",
   ].join("\n");
 }
@@ -370,6 +451,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core start [--port 7888] [--client-mode tline|chrome-extension]");
     console.log("superagent core status [--port 7888]");
     console.log("superagent core restart [--port 7888]");
+    console.log("superagent core rollback [--port 7888]");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
     return;
   }
@@ -380,6 +462,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode);
     return;
   }
-  if (action !== "status" && action !== "restart") throw new Error("Expected start, status, restart or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback") throw new Error("Expected start, status, restart, rollback or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }
