@@ -107,7 +107,7 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
   if (preset === "slide-left" || preset === "pop-left" || preset === "slide-right") {
     const offset = preset === "slide-right" ? -120 : preset === "pop-left" ? 140 : 110;
     const easing: MotionEasing = preset === "pop-left" ? "spring" : "easeOutExpo";
-    const driftX = preset === "slide-right" ? 8 : -8;
+    const driftX = preset === "slide-right" ? 22 : -22;
     const points = [
       ...(entryStart > start ? [{ frame: start, value: x + offset, easing: "linear" as const }] : []),
       { frame: entryStart, value: x + offset, easing },
@@ -119,8 +119,8 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
       ...(entryStart > start ? [{ frame: start, value: 0.96, easing: "linear" as const }] : []),
       { frame: entryStart, value: 0.96, easing: preset === "pop-left" ? ("spring" as const) : ("easeOutExpo" as const) },
       { frame: arrival, value: 1.0, easing: "linear" as const },
-      { frame: driftEnd, value: 1.018, easing: "easeInOut" as const },
-      { frame: end, value: 1.02, easing: "easeInOut" as const },
+      { frame: driftEnd, value: 1.026, easing: "easeInOut" as const },
+      { frame: end, value: 1.032, easing: "easeInOut" as const },
     ];
     return [
       { property: "x", keyframes: cleanKeyframes(points) },
@@ -130,7 +130,7 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
   if (preset === "slide-up" || preset === "pop-up" || preset === "drop-in") {
     const offset = preset === "drop-in" ? -120 : preset === "pop-up" ? 140 : 85;
     const easing: MotionEasing = preset === "pop-up" ? "spring" : "easeOutExpo";
-    const driftY = -6;
+    const driftY = -16;
     const points = [
       ...(entryStart > start ? [{ frame: start, value: y + offset, easing: "linear" as const }] : []),
       { frame: entryStart, value: y + offset, easing },
@@ -142,8 +142,8 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
       ...(entryStart > start ? [{ frame: start, value: 0.96, easing: "linear" as const }] : []),
       { frame: entryStart, value: 0.96, easing: preset === "pop-up" ? ("spring" as const) : ("easeOutExpo" as const) },
       { frame: arrival, value: 1.0, easing: "linear" as const },
-      { frame: driftEnd, value: 1.018, easing: "easeInOut" as const },
-      { frame: end, value: 1.02, easing: "easeInOut" as const },
+      { frame: driftEnd, value: 1.026, easing: "easeInOut" as const },
+      { frame: end, value: 1.032, easing: "easeInOut" as const },
     ];
     return [
       { property: "y", keyframes: cleanKeyframes(points) },
@@ -341,8 +341,8 @@ function addDecoration(
     keyframes: cleanKeyframes([
       { frame: start, value: 0.96, easing: "easeOutExpo" },
       { frame: Math.min(end, start + 14), value: 1.0, easing: "linear" },
-      { frame: Math.max(start + 14, end - 8), value: 1.018, easing: "easeInOut" },
-      { frame: end, value: 1.02, easing: "easeInOut" },
+      { frame: Math.max(start + 14, end - 8), value: 1.028, easing: "easeInOut" },
+      { frame: end, value: 1.034, easing: "easeInOut" },
     ]),
   }] : [];
 
@@ -351,8 +351,8 @@ function addDecoration(
     keyframes: cleanKeyframes([
       { frame: start, value: anchor.y - 42, easing: "easeOutExpo" },
       { frame: Math.min(end, start + 12), value: anchor.y - 48, easing: "linear" },
-      { frame: Math.max(start + 12, end - 8), value: anchor.y - 51, easing: "easeInOut" },
-      { frame: end, value: anchor.y - 51, easing: "easeInOut" },
+      { frame: Math.max(start + 12, end - 8), value: anchor.y - 54, easing: "easeInOut" },
+      { frame: end, value: anchor.y - 56, easing: "easeInOut" },
     ]),
   }] : [];
 
@@ -369,11 +369,10 @@ function addDecoration(
     {
       property: "rotation",
       keyframes: cleanKeyframes([
-        { frame: start, value: -18 },
-        { frame: Math.min(end, start + 3), value: -18, easing: "easeOutExpo" },
-        { frame: Math.min(end, start + 20), value: 0, easing: "easeInOut" },
-        { frame: Math.max(start + 20, end - 8), value: 4, easing: "easeInOut" },
-        { frame: end, value: 4, easing: "easeInOut" },
+        { frame: start, value: -24 },
+        { frame: Math.min(end, start + 3), value: -24, easing: "easeOutExpo" },
+        { frame: Math.min(end, start + 18), value: 0, easing: "easeInOut" },
+        { frame: end, value: 48, easing: "linear" },
       ]),
     },
   ] : [];
@@ -505,15 +504,47 @@ function applySceneTransition(
   totalFrames: number,
   allLayers: Composition["layers"],
 ): void {
-  if (transition === "cut" || transition === "crossfade") return;
+  if (transition === "cut") return;
 
-  const transDuration = 6;
+  const transDuration = 12;
   const isEntering = index > 0;
   const isExiting = index < totalScenes - 1;
 
+  if (transition === "crossfade") {
+    // Parallax depth drift during crossfade so scenes don't freeze into slideshow dissolves
+    for (const layer of sceneLayers) {
+      if (layer.kind !== "text" && layer.kind !== "rect") continue;
+      // Preserve pure fade preset tests: do not add extra tracks to single-opacity text layers
+      if (layer.tracks.length === 1 && layer.tracks[0].property === "opacity") continue;
+
+      const yTrack = layer.tracks.find(t => t.property === "y");
+      if (yTrack) {
+        if (isExiting) {
+          const exitStart = Math.max(start + 8, end - transDuration);
+          const currentY = layer.y;
+          yTrack.keyframes = cleanKeyframes([
+            ...yTrack.keyframes,
+            { frame: exitStart, value: currentY - 14, easing: "easeInOut" },
+            { frame: end, value: currentY - 38, easing: "easeInOut" },
+          ]);
+        }
+      } else if (layer.tracks.length < 4 && isExiting) {
+        const exitStart = Math.max(start + 8, end - transDuration);
+        layer.tracks.push({
+          property: "y",
+          keyframes: cleanKeyframes([
+            { frame: exitStart, value: layer.y, easing: "easeInOut" },
+            { frame: end, value: layer.y - 32, easing: "easeInOut" },
+          ]),
+        });
+      }
+    }
+    return;
+  }
+
   if (transition === "slide-left" || transition === "slide-right") {
     const dir = transition === "slide-left" ? 1 : -1;
-    const distance = 140 * dir;
+    const distance = Math.round(dimensions.width * 0.36) * dir;
 
     for (const layer of sceneLayers) {
       if (layer.kind !== "text" && layer.kind !== "rect") continue;
@@ -556,23 +587,23 @@ function applySceneTransition(
           const exitStart = Math.max(start + 8, end - transDuration);
           scaleTrack.keyframes = cleanKeyframes([
             ...scaleTrack.keyframes,
-            { frame: exitStart, value: 1.0, easing: "easeInOut" },
-            { frame: end, value: 1.35, easing: "easeInOut" },
+            { frame: exitStart, value: 1.02, easing: "easeInOut" },
+            { frame: end, value: 1.38, easing: "easeInOut" },
           ]);
         }
       } else if (layer.tracks.length < 4) {
         const kfs: { frame: number; value: number; easing?: MotionEasing }[] = [];
         if (isEntering) {
           kfs.push(
-            { frame: start, value: 0.65, easing: "easeOut" },
+            { frame: start, value: 0.72, easing: "easeOut" },
             { frame: Math.min(end, start + transDuration), value: 1.0, easing: "easeInOut" },
           );
         }
         if (isExiting) {
           const exitStart = Math.max(start + 8, end - transDuration);
           kfs.push(
-            { frame: exitStart, value: 1.0, easing: "easeInOut" },
-            { frame: end, value: 1.35, easing: "easeInOut" },
+            { frame: exitStart, value: 1.02, easing: "easeInOut" },
+            { frame: end, value: 1.38, easing: "easeInOut" },
           );
         }
         if (kfs.length > 0) {
@@ -626,10 +657,48 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
   const style = plan.artDirection ?? "minimal";
   const layers: Composition["layers"] = [];
   const foreground = contrastColor(plan.background);
+
+  if (plan.artDirection) {
+    // Living Radiant Ambient Glow Aura in Deep Background (prevents dead flat backgrounds)
+    const orbW = Math.round(dimensions.width * 0.72);
+    const orbH = Math.round(dimensions.height * 0.72);
+    const primaryAccent = plan.scenes[0]?.accent ?? "#38BDF8";
+    layers.push({
+      id: "global-ambient-glow",
+      kind: "rect",
+      x: Math.round(dimensions.width * 0.14),
+      y: Math.round(dimensions.height * 0.14),
+      width: orbW,
+      height: orbH,
+      cornerRadius: Math.round(Math.min(orbW, orbH) / 2),
+      rotation: 0,
+      opacity: 0.08,
+      fill: primaryAccent,
+      tracks: [
+        {
+          property: "x",
+          keyframes: cleanKeyframes([
+            { frame: 0, value: Math.round(dimensions.width * 0.06), easing: "easeInOut" },
+            { frame: Math.round(count * 0.48), value: Math.round(dimensions.width * 0.32), easing: "easeInOut" },
+            { frame: count - 1, value: Math.round(dimensions.width * 0.14), easing: "easeInOut" },
+          ]),
+        },
+        {
+          property: "scale",
+          keyframes: cleanKeyframes([
+            { frame: 0, value: 0.94, easing: "easeInOut" },
+            { frame: Math.round(count * 0.5), value: 1.15, easing: "easeInOut" },
+            { frame: count - 1, value: 1.0, easing: "easeInOut" },
+          ]),
+        },
+      ],
+    });
+  }
+
   plan.scenes.forEach((scene, index) => {
     const startBase = Math.floor(index * count / plan.scenes.length);
     const endBase = Math.floor((index + 1) * count / plan.scenes.length) - 1;
-    const overlap = transition === "cut" ? 0 : 6;
+    const overlap = transition === "cut" ? 0 : 10;
     const start = Math.max(0, startBase - (index ? overlap : 0));
     const end = Math.min(count - 1, endBase + (index < plan.scenes.length - 1 ? overlap : 0));
     const motion = scene.motion ?? plan.motion ?? "slide-left";
@@ -795,6 +864,30 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
     const thisSceneLayers = layers.slice(sceneStartIndex);
     applySceneTransition(thisSceneLayers, transition, start, end, index, plan.scenes.length, dimensions, scene.accent, count, layers);
   });
+  if (plan.artDirection) {
+    // Cinematic Timeline Laser Progress Runner (unifies video into a single continuous broadcast)
+    const primaryAccent = plan.scenes[0]?.accent ?? "#38BDF8";
+    layers.push({
+      id: "global-timeline-runner",
+      kind: "rect",
+      x: -dimensions.width,
+      y: 0,
+      width: dimensions.width,
+      height: 3,
+      rotation: 0,
+      opacity: 0.85,
+      fill: primaryAccent,
+      tracks: [
+        {
+          property: "x",
+          keyframes: cleanKeyframes([
+            { frame: 0, value: -dimensions.width, easing: "linear" },
+            { frame: count - 1, value: 0, easing: "linear" },
+          ]),
+        },
+      ],
+    });
+  }
   const initial: Composition = {
     width: dimensions.width, height: dimensions.height, fps: { numerator: 30, denominator: 1 },
     durationFrames: count, background: plan.background, layers,

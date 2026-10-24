@@ -197,8 +197,8 @@ export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan 
     : "Ready anytime, anywhere. Experience the difference.";
 
   const transition: MotionTransition =
-    artDirection === "minimal" ? "crossfade" :
-    artDirection === "editorial" ? "crossfade" :
+    artDirection === "minimal" ? "slide-left" :
+    artDirection === "editorial" ? "slide-left" :
     artDirection === "brutalist" ? "cut" : "wipe";
 
   const sceneMotions: [MotionPreset, MotionPreset, MotionPreset] =

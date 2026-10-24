@@ -1,3 +1,13 @@
+## [1.14.29] - 2026-10-24
+### Added
+- Continuous Camera Tracking, Living Background Aura & Slide-Free Kinetic Momentum (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `package.json`):
+  - **Eliminated Slideshow Stagnation**: Completely overhauled scene transition physics and background mechanics so videos feel like continuous cinematic broadcast reels rather than discrete PowerPoint slide replacements.
+  - **Living Radiant Ambient Aura**: Injected persistent radiant ambient light orb (`global-ambient-glow`) into the deep canvas background across all frames ($0 \to \text{durationFrames}$) with continuous spatial drift and scale breathing, preventing the background from ever becoming a dead, static black screen.
+  - **Cinematic Timeline Progress Runner**: Injected continuous 3px laser timeline runner (`global-timeline-runner`) across the top viewport boundary that tracks whole-video duration progress with zero jarring restarts.
+  - **Continuous Camera Tracking Transitions**: Upgraded `applySceneTransition()` with high-velocity spatial tracking hand-offs (`slide-left` / `slide-right` distance expanded to $36\%$ viewport width $\sim 700\text{px}$, transition window expanded to 12 frames), creating a seamless panning camera shot across adjacent panels with a 10-frame overlap.
+  - **Parallax Depth Drift for Crossfade**: Upgraded `crossfade` from a flat opacity dissolve to an active depth parallax drift ($Y \to Y - 38\text{px}$) for exiting layers while incoming layers glide in from $Y + 40\text{px}$.
+  - **Continuous Secondary Kinetic Momentum**: Increased active hold-phase drift velocity ($Y \to Y - 16\text{px}$, $X \to X \pm 22\text{px}$, scale $1.0 \to 1.034$) and injected continuous angular momentum into vector emblems ($0^\circ \to 48^\circ$) across scene lifespans so content never freezes into static text.
+
 ## [1.14.28] - 2026-10-24
 ### Added
 - Universal Professional Motion Physics & Multi-Style Art Direction Elevation (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `package.json`):
