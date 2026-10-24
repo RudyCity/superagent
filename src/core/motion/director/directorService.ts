@@ -53,6 +53,9 @@ export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequ
   codeSnippet?: string;
   audioVisualizer?: boolean | "equalizer" | "waveform" | "pulse-ring";
   sheen?: boolean;
+  specularSheen?: boolean;
+  codeLang?: string;
+  voice?: string;
   burnCaptions?: boolean;
   autoNarrateScenes?: boolean;
   deviceMockup?: "macbook" | "iphone" | "browser";

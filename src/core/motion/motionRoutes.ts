@@ -263,13 +263,12 @@ export async function handleMotionHttpRoute(
       json(res, ctx, 200, { mockups: listDeviceMockups() });
     } else if (saasPromoRoute && method === "POST") {
       const body = await readMotionJson(req, 12_000);
-      const { generateSaasPromoProject } = await import("./director/narrativeArc.js");
-      const { project: saasProj, job: saasJob } = await generateSaasPromoProject(workspace, {
-        product: body.product as string | undefined,
+      const { generateSaaSPromo } = await import("./director/narrativeArc.js");
+      const { project: saasProj, job: saasJob } = await generateSaaSPromo(workspace, {
+        productName: (body.productName ?? body.product) as string | undefined,
         tagline: body.tagline as string | undefined,
         palette: body.palette as string | undefined,
         device: body.device as "macbook" | "iphone" | "browser" | undefined,
-        voice: body.voice as string | undefined,
         width: body.width as number | undefined,
       });
       json(res, ctx, 202, { project: saasProj, job: saasJob });
@@ -282,7 +281,7 @@ export async function handleMotionHttpRoute(
         device: body.device as "macbook" | "iphone" | "browser" | undefined,
         title: body.title as string | undefined,
         url: body.url as string | undefined,
-        accent: body.accent as string | undefined,
+        accentColor: (body.accentColor ?? body.accent) as string | undefined,
       });
       const saved = await updateMotionProject(workspace, mockupRoute[1], body.baseRevision as number, mockupEdits);
       json(res, ctx, 200, { project: saved, layersAdded: layerCount, deviceType });
@@ -297,7 +296,7 @@ export async function handleMotionHttpRoute(
         kpiValue: body.kpiValue as string | undefined,
         kpiBadge: body.kpiBadge as string | undefined,
         progressPercent: body.progressPercent as number | undefined,
-        accent: body.accent as string | undefined,
+        accentColor: (body.accentColor ?? body.accent) as string | undefined,
       });
       const saved = await updateMotionProject(workspace, chartRoute[1], body.baseRevision as number, chartEdits);
       json(res, ctx, 200, { project: saved, layersAdded: layerCount });

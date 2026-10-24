@@ -134,7 +134,7 @@ export function upscaleMotionComposition(project: MotionProject, options: Motion
     const y = clamp(Math.round(layer.y * factor), -100000, 100000);
 
     const tracks = layer.tracks.map(t => {
-      if (t.property === "x" || t.property === "y" || t.property === "width" || t.property === "height") {
+      if (t.property === "x" || t.property === "y") {
         return {
           ...t,
           keyframes: t.keyframes.map(k => ({
