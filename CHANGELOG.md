@@ -1,3 +1,26 @@
+## [1.14.32] - 2026-10-24
+### Added
+- 3D Perspective Device Mockups, Kinetic Parallax Tilt, Animated Benchmark Charts & Autonomous AI Voiceover Suite (`src/core/motion/mockups/deviceMockups.ts`, `src/core/motion/charts/motionCharts.ts`, `src/core/motion/voiceover/voiceoverService.ts`, `src/core/motion/director/directorService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionMockupsChartsVoiceover.test.ts`, `package.json`):
+  - **1. 3D Perspective Device Mockups & Parallax Tilt (`src/core/motion/mockups/deviceMockups.ts`)**:
+    - Created realistic multi-layer hardware device frames with 3 presets: `macbook` (dark titanium lid, camera notch, keyboard base lip), `iphone` (chassis bezel, Dynamic Island pill, home indicator bar), and `browser` (Arc/Chrome window chrome, traffic light dots, HTTPS URL pill bar).
+    - Implemented kinetic parallax tilt: 3D entrance rotation with spring physics (`rotation: -3° -> 0°`), smooth scale expansion (`scale: 0.9 -> 1.0`), and ambient multi-tier drop-shadows with spatial depth.
+    - Specular glass reflection layer sweeping diagonally across device screens.
+    - Added CLI commands: `superagent studio mockups` & `superagent studio mockup PROJECT_ID --base-revision N [--device macbook|iphone|browser] [--title "..."]`.
+  - **2. Animated Benchmark Charts & KPI Telemetry Counters (`src/core/motion/charts/motionCharts.ts`)**:
+    - Added 4 kinetic data visualization chart types:
+      - `benchmark`: Comparative horizontal bars with gradient fills, left-anchored scale tracks (`scaleX: 0 -> 1` with X compensation), and value readouts.
+      - `kpi`: Large bold hero metric value (e.g. `99.9%`, `0ms`) with glowing ambient orb backdrop and trending badge pill.
+      - `radial`: Circular SVG progress ring with animated `strokeDashoffset` arc reveal and center percentage spring text.
+      - `sparkline`: Smooth polyline trend curve with animated drawing stroke and terminal glowing marker dot.
+    - Added CLI command: `superagent studio chart PROJECT_ID --base-revision N [--type benchmark|kpi|radial|sparkline] [--title "..."]`.
+  - **3. Autonomous AI Voiceover & Scene Duration Auto-Fit (`src/core/motion/voiceover/voiceoverService.ts`)**:
+    - Deterministic speech synthesizer (`synthesizeDeterministicSpeechWav`): converts narration text into canonical PCM16 RIFF WAV with natural F0 pitch intonation, syllabic attack-decay envelope, and punctuation-based pacing.
+    - Scene duration auto-fitting (`autoFitCompositionToVoiceover`): calculates exact spoken audio duration and proportionally stretches scene keyframes and composition `durationFrames` to prevent cut-offs.
+    - Dynamic burn-in subtitle pill generator (`compileVoiceoverBurnInSubtitles`): renders high-contrast pill banner with accent pip and timed narration text.
+    - Cloud/local TTS bridge: supports optional Edge-TTS (`edge-tts --write-media`) with automatic transcoding and zero-dependency offline fallback.
+    - Added CLI command: `superagent studio voiceover PROJECT_ID --base-revision N [--text "..."] [--voice "..."]` and flags `--device`, `--chart`, `--voice` on `studio generate`.
+  - Full test suite in `tests/motionMockupsChartsVoiceover.test.ts` (13 tests) with 100% pass rate. Total motion test suite expanded to 55 files, 278 tests.
+
 ## [1.14.31] - 2026-10-24
 ### Added
 - Advanced Motion Studio Expansion Suite: Audio-Reactive Visualizers, Syntax-Highlighted Code Cards, Autonomous Repo/Changelog Reels & Curated Design Palettes with Specular Sheen (`src/core/motion/visualizer/audioVisualizer.ts`, `src/core/motion/code/codeCardCompiler.ts`, `src/core/motion/palettes/colorPalettes.ts`, `src/core/motion/autonomous/repoReelGenerator.ts`, `src/core/motion/director/directorService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionAdvancedStudioFeatures.test.ts`, `package.json`):

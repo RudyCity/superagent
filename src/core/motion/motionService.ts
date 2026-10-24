@@ -43,6 +43,33 @@ export {
   type ReleasePromoOptions,
 } from "./autonomous/repoReelGenerator.js";
 
+export {
+  compileDeviceMockupLayers,
+  attachDeviceMockupToProject,
+  listDeviceMockups,
+  type DeviceType,
+  type DeviceMockupOptions,
+  type DeviceMockupPreset,
+} from "./mockups/deviceMockups.js";
+
+export {
+  compileMotionChartLayers,
+  attachChartToProject,
+  type MotionChartType,
+  type MotionChartOptions,
+  type BenchmarkItem,
+} from "./charts/motionCharts.js";
+
+export {
+  synthesizeSpeechWav,
+  synthesizeDeterministicSpeechWav,
+  autoFitCompositionToVoiceover,
+  compileVoiceoverBurnInSubtitles,
+  generateVoiceoverForProject,
+  type VoiceoverOptions,
+  type SpeechSynthOptions,
+} from "./voiceover/voiceoverService.js";
+
 /**
  * Apply a declarative effect from the SuperAgent Studio Effects Engine to a project
  * using optimistic locking and compare-and-swap revisions.

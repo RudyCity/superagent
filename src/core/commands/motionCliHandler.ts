@@ -16,10 +16,14 @@ import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
 const usage = `SuperAgent Studio (developer preview)
-  superagent studio generate --prompt "Animated promo" [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--sheen] [--audio-visualizer] [--code "SNIPPET"] [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent studio generate --prompt "Animated promo" [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--sheen] [--audio-visualizer] [--code "SNIPPET"] [--device macbook|iphone|browser] [--chart benchmark|kpi|radial|sparkline] [--voice VOICE] [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
   superagent studio repo-reel [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--wait] [--width 640] [--workspace PATH] [--json]
   superagent studio release-promo [VERSION] [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--wait] [--width 640] [--workspace PATH] [--json]
   superagent studio palettes [--json]
+  superagent studio mockups [--json]
+  superagent studio mockup PROJECT_ID --base-revision N [--device macbook|iphone|browser] [--title "TITLE"] [--url "URL"] [--accent "#RRGGBB"] [--workspace PATH] [--json]
+  superagent studio chart PROJECT_ID --base-revision N [--type benchmark|kpi|radial|sparkline] [--title "TITLE"] [--kpi-value "VAL"] [--progress N] [--accent "#RRGGBB"] [--workspace PATH] [--json]
+  superagent studio voiceover PROJECT_ID --base-revision N [--text "NARRATION"] [--voice "VOICE"] [--no-fit] [--no-subs] [--accent "#RRGGBB"] [--workspace PATH] [--json]
   superagent studio audio-visualizer PROJECT_ID --base-revision N [--type equalizer|waveform|pulse-ring] [--accent "#RRGGBB"] [--workspace PATH] [--json]
   superagent studio code-card PROJECT_ID --base-revision N --code "CODE" [--file NAME] [--lang LANG] [--workspace PATH] [--json]
   superagent studio revise MOTION_ID --prompt "Shorter title" [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
@@ -72,8 +76,8 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h"]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -331,6 +335,86 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       emit({ id: updated.id, revision: updated.revision, codeCardAdded: true, layersCount: layers.length }, json);
       return 0;
     }
+    if (action === "mockups") {
+      const { listDeviceMockups } = await import("../motion/mockups/deviceMockups.js");
+      emit(listDeviceMockups(), json);
+      return 0;
+    }
+    if (action === "mockup") {
+      if (positionals.length !== 1) throw new Error("mockup requires PROJECT_ID");
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("mockup requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const device = opt(opts, "--device") as "macbook" | "iphone" | "browser" | undefined;
+      const title = opt(opts, "--title");
+      const url = opt(opts, "--url");
+      const accent = opt(opts, "--accent");
+      const { attachDeviceMockupToProject } = await import("../motion/mockups/deviceMockups.js");
+      const project = await getMotionProject(workspace, positionals[0]);
+      const { edits, layerCount, deviceType } = await attachDeviceMockupToProject(workspace, project, {
+        device,
+        title,
+        url,
+        accentColor: accent,
+      });
+      const updated = await updateMotionProject(workspace, project.id, baseRevision, edits);
+      emit({ id: updated.id, revision: updated.revision, deviceType, layersAdded: layerCount }, json);
+      return 0;
+    }
+    if (action === "chart") {
+      if (positionals.length !== 1) throw new Error("chart requires PROJECT_ID");
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("chart requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const chartType = (opt(opts, "--type") ?? "benchmark") as "benchmark" | "kpi" | "radial" | "sparkline";
+      const title = opt(opts, "--title");
+      const subtitle = opt(opts, "--subtitle");
+      const kpiVal = opt(opts, "--kpi-value");
+      const kpiBadge = opt(opts, "--badge");
+      const progress = opt(opts, "--progress") === undefined ? undefined : Number(opt(opts, "--progress"));
+      const accent = opt(opts, "--accent");
+      const { attachChartToProject } = await import("../motion/charts/motionCharts.js");
+      const project = await getMotionProject(workspace, positionals[0]);
+      const { edits, layerCount } = await attachChartToProject(workspace, project, {
+        type: chartType,
+        title,
+        subtitle,
+        kpiValue: kpiVal,
+        kpiBadge,
+        progressPercent: progress,
+        accentColor: accent,
+      });
+      const updated = await updateMotionProject(workspace, project.id, baseRevision, edits);
+      emit({ id: updated.id, revision: updated.revision, chartType, layersAdded: layerCount }, json);
+      return 0;
+    }
+    if (action === "voiceover") {
+      if (positionals.length !== 1) throw new Error("voiceover requires PROJECT_ID");
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("voiceover requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const narration = opt(opts, "--text");
+      const voice = opt(opts, "--voice");
+      const autoFit = !opts.has("--no-fit");
+      const burnSubs = !opts.has("--no-subs");
+      const accent = opt(opts, "--accent");
+      const { generateVoiceoverForProject } = await import("../motion/voiceover/voiceoverService.js");
+      const result = await generateVoiceoverForProject(workspace, positionals[0], baseRevision, {
+        narrationText: narration,
+        voiceName: voice,
+        autoFitTimeline: autoFit,
+        burnSubtitles: burnSubs,
+        accentColor: accent,
+      });
+      emit({
+        id: result.project.id,
+        revision: result.project.revision,
+        audioAssetId: result.audioAssetId,
+        durationSeconds: result.durationSeconds,
+        layersAdded: result.layersAdded,
+      }, json);
+      return 0;
+    }
     if (action === "repo-reel" || action === "release-promo") {
       const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
       const styleArg = opt(opts, "--style") ?? opt(opts, "--art-direction");
@@ -465,6 +549,12 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         audioVisualizer: opts.has("--audio-visualizer") ? true : undefined,
         sheen: opts.has("--sheen") ? true : undefined,
         burnCaptions: opts.has("--burn-captions") ? true : undefined,
+        deviceMockup: opt(opts, "--device") as any,
+        chartType: opt(opts, "--chart") as any,
+        chartTitle: opt(opts, "--chart-title"),
+        chartKpiValue: opt(opts, "--kpi-value"),
+        chartProgressPercent: opt(opts, "--progress") === undefined ? undefined : Number(opt(opts, "--progress")),
+        voiceover: opt(opts, "--voice") ?? (opts.has("--voiceover") ? true : undefined),
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
         audioLoop: optionalBoolean(opt(opts, "--audio-loop"), "--audio-loop"),

@@ -55,6 +55,13 @@ export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequ
   sheen?: boolean;
   burnCaptions?: boolean;
   autoNarrateScenes?: boolean;
+  deviceMockup?: "macbook" | "iphone" | "browser";
+  chartType?: "benchmark" | "kpi" | "radial" | "sparkline";
+  chartTitle?: string;
+  chartSubtitle?: string;
+  chartKpiValue?: string;
+  chartProgressPercent?: number;
+  voiceover?: boolean | string;
   expectedRevision?: number;
   signal?: AbortSignal;
   planner?: MotionPlanner;
@@ -413,6 +420,75 @@ export async function generateMotionFromPrompt(workspace: string, prompt: string
     });
     composition.layers.push(...codeLayers);
   }
+
+  if (options.deviceMockup) {
+    const { compileDeviceMockupLayers } = await import("../mockups/deviceMockups.js");
+    const mockupLayers = compileDeviceMockupLayers({
+      device: options.deviceMockup,
+      x: Math.round(composition.width * 0.15),
+      y: Math.round(composition.height * 0.16),
+      width: Math.round(composition.width * 0.7),
+      height: Math.round(composition.height * 0.68),
+      startFrame: 0,
+      endFrame: composition.durationFrames - 1,
+      title: plan.name,
+      accentColor: plan.scenes[0]?.accent || "#38BDF8",
+      parallaxTilt: true,
+    });
+    composition.layers.push(...mockupLayers);
+  }
+
+  if (options.chartType) {
+    const { compileMotionChartLayers } = await import("../charts/motionCharts.js");
+    const chartLayers = compileMotionChartLayers({
+      type: options.chartType,
+      x: Math.round(composition.width * 0.18),
+      y: Math.round(composition.height * 0.2),
+      width: Math.round(composition.width * 0.64),
+      height: Math.round(composition.height * 0.58),
+      startFrame: 0,
+      endFrame: composition.durationFrames - 1,
+      title: options.chartTitle || "Performance Telemetry",
+      subtitle: options.chartSubtitle,
+      kpiValue: options.chartKpiValue,
+      progressPercent: options.chartProgressPercent,
+      accentColor: plan.scenes[0]?.accent || "#38BDF8",
+    });
+    composition.layers.push(...chartLayers);
+  }
+
+  if (options.voiceover) {
+    const { synthesizeSpeechWav, autoFitCompositionToVoiceover, compileVoiceoverBurnInSubtitles } = await import("../voiceover/voiceoverService.js");
+    const { importMotionAudio } = await import("../assets/motionAudio.js");
+    const narrationText = plan.scenes.map(s => s.narration || s.headline).join(". ");
+    const voiceName = typeof options.voiceover === "string" ? options.voiceover : undefined;
+    const wavBytes = await synthesizeSpeechWav(narrationText, { voiceName, tryEdgeTts: true });
+    const audioAsset = await importMotionAudio(workspace, wavBytes);
+    composition = autoFitCompositionToVoiceover(composition, wavBytes.length / (16000 * 2));
+    const voiceTrack = {
+      assetId: audioAsset.id,
+      startFrame: 0,
+      volume: 1.0,
+      role: "voiceover" as const,
+    };
+    const existingTracks = composition.audioTracks ? [...composition.audioTracks] : (composition.audio ? [composition.audio] : []);
+    existingTracks.push(voiceTrack);
+    const { audio: _omit, ...compNoAudio } = composition as any;
+    composition = {
+      ...compNoAudio,
+      audioTracks: existingTracks,
+    };
+    const subLayers = compileVoiceoverBurnInSubtitles(
+      narrationText,
+      composition.width,
+      composition.height,
+      0,
+      composition.durationFrames - 1,
+      plan.scenes[0]?.accent || "#F59E0B",
+    );
+    composition.layers.push(...subLayers);
+  }
+
   const project = await createMotionProject(workspace, plan.name);
   const updated = await updateMotionProject(workspace, project.id, project.revision,
     [{ type: "replace-composition", composition }]);
