@@ -49,6 +49,10 @@ export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequ
   width?: number;
   aspectRatio?: MotionAspectRatio;
   artDirection?: MotionArtDirection;
+  palette?: string;
+  codeSnippet?: string;
+  audioVisualizer?: boolean | "equalizer" | "waveform" | "pulse-ring";
+  sheen?: boolean;
   burnCaptions?: boolean;
   autoNarrateScenes?: boolean;
   expectedRevision?: number;
@@ -175,9 +179,9 @@ export function createHeuristicDirectorPlan(prompt: string, explicitArtDirection
   const sub1 = feature
     ? formatTitle(feature.slice(0, 80))
     : (isIndonesian ? "Solusi Visual Generatif" : "Next-Gen Generative Motion");
-  const narr1 = isIndonesian
+  const narr1 = (isIndonesian
     ? `Memperkenalkan ${title1}, solusi visual generasi baru.`
-    : `Introducing ${title1}, engineered for visual impact.`;
+    : `Introducing ${title1}, engineered for visual impact.`).slice(0, 100);
 
   const title2 = feature
     ? formatTitle(feature.slice(0, 50))
@@ -185,17 +189,17 @@ export function createHeuristicDirectorPlan(prompt: string, explicitArtDirection
   const sub2 = isIndonesian
     ? "Didukung 234 efek visual dan suara AI lokal"
     : "Powered by 234 studio effects and local AI narration";
-  const narr2 = isIndonesian
+  const narr2 = (isIndonesian
     ? `Dilengkapi ${feature || "animasi kinetik canggih"} untuk hasil profesional.`
-    : `Equipped with ${feature || "advanced kinetic animation"} for professional results.`;
+    : `Equipped with ${feature || "advanced kinetic animation"} for professional results.`).slice(0, 100);
 
   const title3 = isIndonesian ? "Mulai Sekarang" : "Get Started Now";
   const sub3 = isIndonesian
     ? "Tingkatkan kreativitas visual Anda tanpa batas"
     : "Elevate your visual storytelling today";
-  const narr3 = isIndonesian
+  const narr3 = (isIndonesian
     ? "Siap digunakan kapan saja. Coba sekarang juga."
-    : "Ready anytime, anywhere. Experience the difference.";
+    : "Ready anytime, anywhere. Experience the difference.").slice(0, 100);
 
   const transition: MotionTransition =
     artDirection === "minimal" ? "slide-left" :
@@ -344,10 +348,71 @@ export async function generateMotionFromPrompt(workspace: string, prompt: string
     { voiceoverText: narrationText, voiceoverGain: options.voiceoverGain }, options.signal);
   const composedMedia = { ...media, ...(voiceover ? { voiceover } : {}) };
   const artDirection = options.artDirection ?? chooseMotionArtDirection(user, plan.artDirection);
-  const composition = embedDirectorMedia(
+  let composition = embedDirectorMedia(
     compileDirectorPlan({ ...plan, artDirection,
       aspectRatio: options.aspectRatio ?? plan.aspectRatio,
       burnCaptions: options.burnCaptions ?? plan.burnCaptions }), composedMedia);
+
+  if (options.palette) {
+    const { applyPaletteToComposition } = await import("../palettes/colorPalettes.js");
+    const dummyProj = {
+      schemaVersion: 1 as const,
+      id: "temp",
+      workspaceRoot: workspace,
+      name: plan.name,
+      revision: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      composition,
+    };
+    composition = applyPaletteToComposition(dummyProj, options.palette).composition;
+  }
+
+  if (options.sheen) {
+    const { compileSpecularSheenLayer } = await import("../palettes/colorPalettes.js");
+    const heroCard = composition.layers.find(l => l.id.endsWith("-hero-card"));
+    if (heroCard && heroCard.kind === "rect") {
+      const sheenLayer = compileSpecularSheenLayer({
+        cardX: heroCard.x,
+        cardY: heroCard.y,
+        cardWidth: heroCard.width,
+        cardHeight: heroCard.height,
+        startFrame: 0,
+        endFrame: 60,
+      });
+      composition.layers.push(sheenLayer);
+    }
+  }
+
+  if (options.audioVisualizer) {
+    const { compileAudioVisualizerLayers } = await import("../visualizer/audioVisualizer.js");
+    const visType = typeof options.audioVisualizer === "string" ? options.audioVisualizer : "equalizer";
+    const visLayers = compileAudioVisualizerLayers({
+      type: visType,
+      fps: composition.fps.numerator / composition.fps.denominator,
+      durationFrames: composition.durationFrames,
+      x: Math.round(composition.width * 0.25),
+      y: Math.round(composition.height * 0.86),
+      width: Math.round(composition.width * 0.5),
+      height: 48,
+      accentColor: plan.scenes[0]?.accent || "#38BDF8",
+    });
+    composition.layers.push(...visLayers);
+  }
+
+  if (options.codeSnippet) {
+    const { compileCodeCardLayers } = await import("../code/codeCardCompiler.js");
+    const codeLayers = compileCodeCardLayers({
+      code: options.codeSnippet,
+      x: Math.round(composition.width * 0.15),
+      y: Math.round(composition.height * 0.22),
+      width: Math.round(composition.width * 0.7),
+      height: Math.round(composition.height * 0.58),
+      startFrame: 60,
+      endFrame: 120,
+    });
+    composition.layers.push(...codeLayers);
+  }
   const project = await createMotionProject(workspace, plan.name);
   const updated = await updateMotionProject(workspace, project.id, project.revision,
     [{ type: "replace-composition", composition }]);

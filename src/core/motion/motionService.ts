@@ -11,6 +11,38 @@ import { applyCompoundPreset, type CompoundPresetApplication } from "./effects/c
 export { createMotionProject, getMotionProject, listMotionProjects, updateMotionProject };
 export type { MotionProject, MotionEdit, EffectApplication, CompoundPresetApplication };
 
+export {
+  compileAudioVisualizerLayers,
+  attachAudioVisualizerToProject,
+  type AudioVisualizerType,
+  type AudioVisualizerOptions,
+} from "./visualizer/audioVisualizer.js";
+
+export {
+  compileCodeCardLayers,
+  tokenizeCodeLine,
+  type CodeCardOptions,
+  type CodeToken,
+} from "./code/codeCardCompiler.js";
+
+export {
+  MOTION_PALETTES,
+  getMotionPalette,
+  listMotionPalettes,
+  compileSpecularSheenLayer,
+  applyPaletteToComposition,
+  type MotionPalette,
+} from "./palettes/colorPalettes.js";
+
+export {
+  generateRepoReel,
+  generateReleasePromo,
+  inspectWorkspaceRepository,
+  inspectChangelogRelease,
+  type RepoReelOptions,
+  type ReleasePromoOptions,
+} from "./autonomous/repoReelGenerator.js";
+
 /**
  * Apply a declarative effect from the SuperAgent Studio Effects Engine to a project
  * using optimistic locking and compare-and-swap revisions.

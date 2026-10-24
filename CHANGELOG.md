@@ -1,3 +1,27 @@
+## [1.14.31] - 2026-10-24
+### Added
+- Advanced Motion Studio Expansion Suite: Audio-Reactive Visualizers, Syntax-Highlighted Code Cards, Autonomous Repo/Changelog Reels & Curated Design Palettes with Specular Sheen (`src/core/motion/visualizer/audioVisualizer.ts`, `src/core/motion/code/codeCardCompiler.ts`, `src/core/motion/palettes/colorPalettes.ts`, `src/core/motion/autonomous/repoReelGenerator.ts`, `src/core/motion/director/directorService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionAdvancedStudioFeatures.test.ts`, `package.json`):
+  - **1. Audio-Reactive Waveforms & Equalizer Bars (`src/core/motion/visualizer/audioVisualizer.ts`)**:
+    - Created deterministic multi-band audio energy extractor (`extractAudioEnergyProfile`) analyzing raw PCM16 WAV buffers per frame.
+    - Implemented 3 reactive visualizer primitive styles:
+      - `equalizer`: Multi-bar dynamic frequency visualizer animating `scaleY` and vertical anchor tracking with `easeOutExpo`.
+      - `waveform`: Symmetric pill segments contouring whole-frame audio envelope.
+      - `pulse-ring`: Concentric expanding rounded pulse rings reacting to audio transient energy.
+    - Added CLI command `superagent studio audio-visualizer PROJECT_ID --base-revision N [--type equalizer|waveform|pulse-ring]` and `--audio-visualizer` flag to `studio generate`.
+  - **2. Animated Syntax-Highlighted Code Cards (`src/core/motion/code/codeCardCompiler.ts`)**:
+    - Built pure-TypeScript deterministic code tokenizer (`tokenizeCodeLine`) categorizing keywords, strings, types, functions, numbers, operators, and comments.
+    - Renders macOS terminal window chrome with traffic light controls, file path header, language chip (`TS`, `PY`, `RS`), and line numbers column.
+    - Implemented kinetic character typing effect with sequential frame reveals and an authentic blinking block cursor (`▋`).
+    - Added CLI command `superagent studio code-card PROJECT_ID --base-revision N --code "..." [--file name] [--lang type]` and `--code` flag to `studio generate`.
+  - **3. Curated Palettes & Specular Sheen Sweep (`src/core/motion/palettes/colorPalettes.ts`)**:
+    - Created 7 high-end designer color systems: `cyber`, `nord`, `emerald`, `dracula`, `luxury`, `sunset`, and `monochrome`.
+    - Added specular sheen sweep (`compileSpecularSheenLayer`): angled 20° translucent light beam traveling across hero cards with smooth exponential velocity, creating the signature Apple/Linear polished reflection.
+    - Added CLI command `superagent studio palettes` and `--palette` / `--sheen` flags to `studio generate`.
+  - **4. Autonomous Repo-to-Reel & Changelog Video Generator (`src/core/motion/autonomous/repoReelGenerator.ts`)**:
+    - Added `superagent studio repo-reel`: automatically inspects `package.json`, `README.md`, and git log to generate an authentic 3-act product video showcase.
+    - Added `superagent studio release-promo [VERSION]`: parses `CHANGELOG.md` version tags and feature bullet points to synthesize release announcement reels in 16:9 and 9:16.
+    - Full test suite in `tests/motionAdvancedStudioFeatures.test.ts` (13 tests) with 100% pass rate.
+
 ## [1.14.30] - 2026-10-24
 ### Added
 - High-Density Scene Card Content, Motion Catalog Effects Integration & CLI Style Flag Controls (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionCliParity.test.ts`, `tests/motionHeuristicDirector.test.ts`, `package.json`):

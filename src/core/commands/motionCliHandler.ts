@@ -16,7 +16,12 @@ import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
 const usage = `SuperAgent Studio (developer preview)
-  superagent studio generate --prompt "Animated promo" [--style neon|minimal|editorial|brutalist] [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent studio generate --prompt "Animated promo" [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--sheen] [--audio-visualizer] [--code "SNIPPET"] [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
+  superagent studio repo-reel [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--wait] [--width 640] [--workspace PATH] [--json]
+  superagent studio release-promo [VERSION] [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--wait] [--width 640] [--workspace PATH] [--json]
+  superagent studio palettes [--json]
+  superagent studio audio-visualizer PROJECT_ID --base-revision N [--type equalizer|waveform|pulse-ring] [--accent "#RRGGBB"] [--workspace PATH] [--json]
+  superagent studio code-card PROJECT_ID --base-revision N --code "CODE" [--file NAME] [--lang LANG] [--workspace PATH] [--json]
   superagent studio revise MOTION_ID --prompt "Shorter title" [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
   superagent studio new --name "Title" [--workspace PATH] [--json]
   superagent studio list [--workspace PATH] [--json]
@@ -67,8 +72,8 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--help", "-h"]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -275,6 +280,89 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       emit({ id: updated.id, revision: updated.revision, onsetFrames, analysis }, json);
       return 0;
     }
+    if (action === "palettes") {
+      const { listMotionPalettes } = await import("../motion/palettes/colorPalettes.js");
+      emit(listMotionPalettes(), json);
+      return 0;
+    }
+    if (action === "audio-visualizer") {
+      if (positionals.length !== 1) throw new Error("audio-visualizer requires PROJECT_ID");
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("audio-visualizer requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const { attachAudioVisualizerToProject } = await import("../motion/visualizer/audioVisualizer.js");
+      const project = await getMotionProject(workspace, positionals[0]);
+      const visType = opt(opts, "--type") as "equalizer" | "waveform" | "pulse-ring" | undefined;
+      const accent = opt(opts, "--accent");
+      const { edits, layerCount } = await attachAudioVisualizerToProject(workspace, project, {
+        type: visType,
+        accentColor: accent,
+      });
+      const updated = await updateMotionProject(workspace, project.id, baseRevision, edits);
+      emit({ id: updated.id, revision: updated.revision, visualizerType: visType ?? "equalizer", layersAdded: layerCount }, json);
+      return 0;
+    }
+    if (action === "code-card") {
+      if (positionals.length !== 1) throw new Error("code-card requires PROJECT_ID");
+      const baseRevText = opt(opts, "--base-revision");
+      if (!baseRevText) throw new Error("code-card requires --base-revision N");
+      const baseRevision = nonnegativeInteger(baseRevText, "--base-revision");
+      const code = opt(opts, "--code");
+      if (!code) throw new Error("code-card requires --code CODE_STRING");
+      const filename = opt(opts, "--file") ?? "masterAgent.ts";
+      const language = opt(opts, "--lang") ?? "TypeScript";
+      const { compileCodeCardLayers } = await import("../motion/code/codeCardCompiler.js");
+      const project = await getMotionProject(workspace, positionals[0]);
+      const comp = project.composition;
+      const layers = compileCodeCardLayers({
+        code,
+        filename,
+        language,
+        x: Math.round(comp.width * 0.15),
+        y: Math.round(comp.height * 0.2),
+        width: Math.round(comp.width * 0.7),
+        height: Math.round(comp.height * 0.6),
+        startFrame: 0,
+        endFrame: comp.durationFrames - 1,
+      });
+      const updated = await updateMotionProject(workspace, project.id, baseRevision, [
+        { type: "replace-composition", composition: { ...comp, layers: [...comp.layers, ...layers] } },
+      ]);
+      emit({ id: updated.id, revision: updated.revision, codeCardAdded: true, layersCount: layers.length }, json);
+      return 0;
+    }
+    if (action === "repo-reel" || action === "release-promo") {
+      const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
+      const styleArg = opt(opts, "--style") ?? opt(opts, "--art-direction");
+      const { generateRepoReel, generateReleasePromo } = await import("../motion/autonomous/repoReelGenerator.js");
+      const result = action === "repo-reel" ?
+        await generateRepoReel(workspace, {
+          style: styleArg as any,
+          palette: opt(opts, "--palette"),
+          width,
+          aspectRatio: opt(opts, "--aspect-ratio") as any,
+        }) :
+        await generateReleasePromo(workspace, {
+          version: positionals[0],
+          style: styleArg as any,
+          palette: opt(opts, "--palette"),
+          width,
+          aspectRatio: opt(opts, "--aspect-ratio") as any,
+        });
+      if (opts.has("--wait")) {
+        const timeoutMs = 120_000;
+        const start = Date.now();
+        let job = result.job;
+        while (!["completed", "failed", "cancelled", "interrupted"].includes(job.status)) {
+          if (Date.now() - start > timeoutMs) throw new Error("Motion video render timed out");
+          await new Promise(resolve => setTimeout(resolve, 200));
+          job = await getMotionJob(workspace, result.job.id);
+        }
+        result.job = job;
+      }
+      emit(result, json);
+      return result.job.status === "failed" ? 1 : 0;
+    }
     if (action === "supervisor-status") {
       if (positionals.length || opts.has("--once") || opts.has("--watch")) throw new Error("supervisor-status is read-only and accepts no positional arguments");
       emit(await inspectMotionSupervisor(workspace), json); return 0;
@@ -372,6 +460,10 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const result = await generateMotionFromPrompt(workspace, prompt, { width,
         aspectRatio: opt(opts, "--aspect-ratio") as "16:9" | "1:1" | "9:16" | undefined,
         artDirection: styleArg as "neon" | "minimal" | "editorial" | "brutalist" | undefined,
+        palette: opt(opts, "--palette"),
+        codeSnippet: opt(opts, "--code"),
+        audioVisualizer: opts.has("--audio-visualizer") ? true : undefined,
+        sheen: opts.has("--sheen") ? true : undefined,
         burnCaptions: opts.has("--burn-captions") ? true : undefined,
         imageAssetId: opt(opts, "--image-asset"),
         sceneImageAssetIds: opt(opts, "--scene-images")?.split(",").map(item => item.trim()),
