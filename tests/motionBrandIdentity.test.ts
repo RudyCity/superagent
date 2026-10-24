@@ -11,7 +11,7 @@ describe("SuperAgent Studio first-party display identity", () => {
   });
   it("serves the original native catalog with explicit first-party provenance", () => {
     const templates = listMotionTemplates();
-    expect(templates).toHaveLength(6);
+    expect(templates).toHaveLength(7);
     expect(templates.every(template => template.origin === "superagent-original")).toBe(true);
     expect(new Set(templates.map(template => template.id)).size).toBe(templates.length);
   });

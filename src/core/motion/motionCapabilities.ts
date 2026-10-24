@@ -58,7 +58,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   committedEditsAutoPersisted: true,
   motionBrandKit: true,
   motionTemplateLibrary: true,
-  motionTemplateCount: 6,
+  motionTemplateCount: 7,
   motionBatchAspectVariants: true,
   motionBatchAspectVariantsMax: 3,
   motionAudioBeatSync: true,

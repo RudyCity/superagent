@@ -29,9 +29,9 @@ const send = async (url: string, body: unknown) => fetch(base + url, {
   method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
 });
 describe("Motion template and Brand Kit HTTP API", () => {
-  it("serves six safe templates, persists workspace brand settings and rejects revision conflict", async () => {
+  it("serves seven safe templates, persists workspace brand settings and rejects revision conflict", async () => {
     const gallery = await (await fetch(base + "/api/motion/templates")).json() as any;
-    expect(gallery.templates).toHaveLength(6);
+    expect(gallery.templates).toHaveLength(7);
     const original = await (await fetch(base + "/api/motion/brand-kit")).json() as any;
     expect(original.revision).toBe(0);
     const brand = { name: "Laris", primary: "#123456", accent: "#ff9900",

@@ -125,7 +125,7 @@ export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {
  * direction; old programmatic compositions without artDirection stay unchanged.
  */
 export function chooseMotionArtDirection(prompt: string, planned?: MotionArtDirection): MotionArtDirection {
-  if (/\b(neon|cyberpunk|futurist\w*|sci[ -]?fi|glowing)\b/i.test(prompt)) return "neon";
+  if (/\b(neon|cyberpunk|futurist\w*|sci[ -]?fi|glowing|terminal|coding|developer|superagent|cli|agent)\b/i.test(prompt)) return "neon";
   if (/\b(brutalis\w*|bold|geometric\w*|geometris|tegas)\b/i.test(prompt)) return "brutalist";
   if (/\b(minimal\w*|clean|simple|sederhana|elegan\w*)\b/i.test(prompt)) return "minimal";
   if (/\b(editorial|magazine|majalah|typograph\w*|tipografi\w*)\b/i.test(prompt)) return "editorial";

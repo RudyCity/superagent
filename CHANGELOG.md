@@ -1,3 +1,13 @@
+## [1.14.27] - 2026-10-24
+### Added
+- Motion Director Cyberpunk Terminal HUD, Responsive Emblems & Terminal Promo Template (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/motion/motionTemplates.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionBrandTemplate.test.ts`, `tests/motionBrandIdentity.test.ts`, `tests/motionTemplateHttp.test.ts`):
+  - Upgraded Motion Director vector emblem generator from static 48px icons to dynamically scaled, multi-stroke vector geometry (`width * 0.042`, stroke width `2.5`, `strokeDasharray: [240, 240]`).
+  - Added authentic macOS/Linux terminal console window decorations (`dot-red`, `dot-yellow`, `dot-green`), titlebar divider lines, and corner HUD telemetry badges (`hud-tl`, `hud-tr`) to `neon` and `brutalist` creative art directions.
+  - Enhanced layout centering in `sceneLayout`: balanced vertical baseline (`baseY = 476`) eliminating bottom dead zones in 16:9 widescreen renders.
+  - Expanded `chooseMotionArtDirection` prompt inference: automatically maps developer, CLI, superagent, terminal, and coding prompts directly to the high-density `neon` terminal aesthetic.
+  - Introduced new first-class `terminal-promo` template in `motionTemplates.ts` with traffic light window frame, glowing top strip, command prompt typography, and telemetry highlights.
+  - Updated capabilities and test suites to verify 7 first-party Studio templates.
+
 ## [1.14.26] - 2026-10-24
 ### Added
 - Kinetic Vector Stroke Animation & Multi-Aspect Motion Optimization (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`, `src/core/motion/director/creativePresets.ts`, `src/core/motion/motionCapabilities.ts`):

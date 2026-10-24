@@ -46,7 +46,7 @@ describe("workspace-owned Motion Brand Kit and scene templates", () => {
       const project = await createMotionProject(dir, "Template gallery");
       const brand = await getMotionBrandKit(dir);
       const gallery = listMotionTemplates();
-      expect(gallery).toHaveLength(6);
+      expect(gallery).toHaveLength(7);
       for (const template of gallery) {
         const composition = compileMotionTemplate(project, brand, {
           templateId: template.id, headline: "Ship faster", subtitle: "New feature available",
@@ -55,6 +55,10 @@ describe("workspace-owned Motion Brand Kit and scene templates", () => {
         expect(composition.layers.some(layer => layer.kind === "text" && layer.text === "Ship faster")).toBe(true);
         expect(composition.background).toBe(brand.background);
         expect(composition.durationFrames).toBe(project.composition.durationFrames);
+        if (template.id === "terminal-promo") {
+          expect(composition.layers.some(l => l.id === "terminal-dot-red")).toBe(true);
+          expect(composition.layers.some(l => l.id === "terminal-accent-strip")).toBe(true);
+        }
       }
       const result = compileMotionTemplate(project, brand, { templateId: "product-launch" });
       expect((await updateMotionProject(dir, project.id, 1, [

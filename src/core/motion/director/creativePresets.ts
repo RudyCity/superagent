@@ -237,7 +237,7 @@ function sceneLayout(
   const layout: Layout = scene.layout ?? (style === "editorial" && index % 2 ? "right" : "left");
   const x = layout === "left" ? margin :
     layout === "right" ? width - margin - contentWidth : Math.round((width - contentWidth) / 2);
-  const baseY = portrait ? 1080 : square ? 540 : 444;
+  const baseY = portrait ? 1080 : square ? 540 : 476;
   const y = Math.round(baseY + (style === "editorial" && index % 2 ? (portrait ? 70 : 54) : 0));
   const subtitle = contrast(scene.accent, foreground === "#FFFFFF" ? "#000000" : "#FFFFFF") >= 3
     ? scene.accent : foreground;
@@ -295,22 +295,23 @@ function addDecoration(
     layers.push(layer);
   };
 
-  const vectorEmblem = (suffix: string, d: string, x: number, y: number, stroke = scene.accent, strokeWidth = 2, extraTracks: MotionTrack[] = []): void => {
+  const emblemSize = Math.max(54, Math.min(76, Math.round(width * 0.042)));
+  const vectorEmblem = (suffix: string, d: string, x: number, y: number, stroke = scene.accent, strokeWidth = 2.5, extraTracks: MotionTrack[] = []): void => {
     layers.push({
       kind: "path",
       id: "scene-" + index + "-" + suffix,
       d,
       x: Math.round(x),
       y: Math.round(y),
-      width: 48,
-      height: 48,
+      width: emblemSize,
+      height: emblemSize,
       rotation: 0,
       opacity: 1,
       fill: "none",
       stroke,
       strokeWidth,
-      strokeDasharray: [160, 160],
-      strokeDashoffset: 160,
+      strokeDasharray: [240, 240],
+      strokeDashoffset: 240,
       tracks: [opacityAt(visible, 0.95), ...extraTracks],
     });
   };
@@ -339,8 +340,8 @@ function addDecoration(
     {
       property: "strokeDashoffset",
       keyframes: cleanKeyframes([
-        { frame: start, value: 160 },
-        { frame: Math.min(end, start + 3), value: 160, easing: "easeOutExpo" },
+        { frame: start, value: 240 },
+        { frame: Math.min(end, start + 3), value: 240, easing: "easeOutExpo" },
         { frame: Math.min(end, start + 20), value: 0, easing: "linear" },
         { frame: end, value: 0, easing: "linear" },
       ]),
@@ -375,10 +376,22 @@ function addDecoration(
     // Glowing Neon Top Accent Strip
     rect("accent-strip", cardX + 28, cardY, Math.min(cardW - 56, 220), 4, scene.accent, 0.95, 2);
 
+    // Window Traffic Lights
+    rect("dot-red", cardX + 20, cardY + 16, 10, 10, "#EF4444", 0.95, 5);
+    rect("dot-yellow", cardX + 36, cardY + 16, 10, 10, "#F59E0B", 0.95, 5);
+    rect("dot-green", cardX + 52, cardY + 16, 10, 10, "#10B981", 0.95, 5);
+
+    // Fine Titlebar Divider Line
+    rect("titlebar-divider", cardX, cardY + 36, cardW, 1, "#334155", 0.35);
+
+    // Corner HUD Telemetry Markers
+    label("hud-tl", `[ ACT 0${index + 1} // SYS_LIVE ]`, Math.round(anchor.margin / 2), 36, 12, fonts.kicker, scene.accent);
+    label("hud-tr", `[ 30FPS // 1080P ]`, Math.max(width / 2, width - Math.round(anchor.margin / 2) - 160), 36, 12, fonts.kicker, scene.accent);
+
     // Kinetic Vector Double-Hexagon Emblem
-    const hexD = "M 24 4 L 42 14 L 42 34 L 24 44 L 6 34 L 6 14 Z M 24 12 L 34 18 L 34 30 L 24 36 L 14 30 L 14 18 Z";
-    const emblemX = anchor.layout === "center" ? Math.round((width - 48) / 2) : anchor.x;
-    vectorEmblem("emblem", hexD, emblemX, cardY - 56, scene.accent, 2, emblemTracks);
+    const hexD = "M 32 6 L 56 19 L 56 45 L 32 58 L 8 45 L 8 19 Z M 32 16 L 45 24 L 45 40 L 32 48 L 19 40 L 19 24 Z";
+    const emblemX = anchor.layout === "center" ? Math.round((width - emblemSize) / 2) : anchor.x;
+    vectorEmblem("emblem", hexD, emblemX, cardY - 64, scene.accent, 2.5, emblemTracks);
 
     // Pill Badge Container & Monospace Kicker
     const pillW = 128;
@@ -400,10 +413,14 @@ function addDecoration(
     // Main Solid Black Card
     rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 1.0, 0, cardScaleTrack);
 
+    // Corner HUD Telemetry Markers
+    label("hud-tl", `+ [ FOCUS 0${index + 1} ]`, Math.round(anchor.margin / 2), 36, 13, fonts.kicker, scene.accent);
+    label("hud-tr", `[ GEOMETRIC CORE ] +`, Math.max(width / 2, width - Math.round(anchor.margin / 2) - 180), 36, 13, fonts.kicker, scene.accent);
+
     // Kinetic Vector Diamond Cross Emblem
-    const diamondD = "M 24 4 L 44 24 L 24 44 L 4 24 Z M 24 14 L 34 24 L 24 34 L 14 24 Z";
-    const emblemX = anchor.layout === "center" ? Math.round((width - 48) / 2) : anchor.x;
-    vectorEmblem("emblem", diamondD, emblemX, cardY - 52, scene.accent, 2, emblemTracks);
+    const diamondD = "M 32 6 L 58 32 L 32 58 L 6 32 Z M 32 18 L 46 32 L 32 46 L 18 32 Z";
+    const emblemX = anchor.layout === "center" ? Math.round((width - emblemSize) / 2) : anchor.x;
+    vectorEmblem("emblem", diamondD, emblemX, cardY - 60, scene.accent, 2.5, emblemTracks);
 
     // Brutalist Kicker Tag
     label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 46, 16, fonts.kicker, scene.accent, kickerTracks);
@@ -425,9 +442,9 @@ function addDecoration(
     rect("hairline", cardX + 28, cardY, Math.min(cardW - 56, 160), 3, scene.accent, 0.85, 1);
 
     // Minimalist Vector Orbit Emblem
-    const orbitD = "M 24 6 A 18 18 0 1 0 24 42 A 18 18 0 1 0 24 6 Z M 16 24 L 32 24 M 24 16 L 24 32";
-    const emblemX = anchor.layout === "center" ? Math.round((width - 48) / 2) : anchor.x;
-    vectorEmblem("emblem", orbitD, emblemX, cardY - 54, scene.accent, 2, emblemTracks);
+    const orbitD = "M 32 8 A 24 24 0 1 0 32 56 A 24 24 0 1 0 32 8 Z M 22 32 L 42 32 M 32 22 L 32 42";
+    const emblemX = anchor.layout === "center" ? Math.round((width - emblemSize) / 2) : anchor.x;
+    vectorEmblem("emblem", orbitD, emblemX, cardY - 60, scene.accent, 2.5, emblemTracks);
 
     label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 50, 13, fonts.kicker, scene.accent, kickerTracks);
   }
