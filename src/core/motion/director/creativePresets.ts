@@ -418,6 +418,11 @@ function addDecoration(
     const pillX = anchor.layout === "center" ? Math.round((width - pillW) / 2) : anchor.x;
     rect("pill-bg", pillX, anchor.y - 54, pillW, pillH, scene.accent, 0.22, 13, kickerTracks);
     label("kicker", String(index + 1).padStart(2, "0") + " // ACT", pillX + 14, anchor.y - 48, 12, fonts.kicker, scene.accent, kickerTracks);
+
+    // Terminal Command Prompt Bar & Active Status Beacon
+    label("prompt-cli", "$ superagent --multi --autonomous", cardX + 28, cardY + cardH - 32, 12, fonts.kicker, "#94A3B8");
+    rect("status-pill", cardX + cardW - 128, cardY + cardH - 36, 100, 20, "#10B981", 0.18, 10);
+    label("status-text", "● LIVE 30FPS", cardX + cardW - 116, cardY + cardH - 33, 11, fonts.kicker, "#10B981");
   } else if (style === "brutalist") {
     // Bold Solid Offset Card
     const cardPadX = 36;
@@ -443,6 +448,13 @@ function addDecoration(
 
     // Brutalist Kicker Tag
     label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 46, 16, fonts.kicker, scene.accent, kickerTracks);
+
+    // Monolithic Architectural Chips & Coordinates
+    const brutY = cardY + cardH - 34;
+    rect("brut-chip-1", cardX + 24, brutY, 112, 22, scene.accent, 0.95, 0, kickerTracks);
+    label("brut-chip-1-txt", "SEC.0" + (index + 1) + " // RAW", cardX + 32, brutY + 4, 12, fonts.kicker, "#000000", kickerTracks);
+    rect("brut-chip-2", cardX + 148, brutY, 130, 22, "#27272A", 1.0, 0, kickerTracks);
+    label("brut-chip-2-txt", "GRID: 1920x1080", cardX + 158, brutY + 4, 12, fonts.kicker, "#FFFFFF", kickerTracks);
   } else if (style === "editorial") {
     // Refined Asymmetric Editorial Frame & Luxury Magazine Geometry
     rect("side-rule", width - anchor.margin / 2, height * .14, 4, height * .69, scene.accent, 0.75, 2);
@@ -459,6 +471,11 @@ function addDecoration(
     vectorEmblem("emblem", starD, emblemX, Math.max(20, anchor.y - 120), scene.accent, 2.2, emblemTracks);
 
     label("kicker", "CHAPTER " + String(index + 1).padStart(2, "0"), anchor.x, anchor.y - 64, 16, fonts.kicker, scene.accent, kickerTracks);
+
+    // Editorial Pull Annotation & Issue Tag
+    const edTagY = anchor.y + anchor.titleSize + (scene.subtitle ? anchor.subtitleSize + 48 : 36);
+    rect("ed-divider", anchor.x, edTagY - 8, Math.min(anchor.width, 240), 1, scene.accent, 0.35);
+    label("ed-tag", "// CURATED SERIES · ISSUE NO. 0" + (index + 1), anchor.x, edTagY, 12, fonts.kicker, scene.accent, kickerTracks);
   } else {
     // Clean Minimalist Hero Card (Braun / Linear aesthetic)
     const cardPadX = 42;
@@ -490,6 +507,23 @@ function addDecoration(
     const pillX = anchor.layout === "center" ? Math.round((width - pillW) / 2) : anchor.x;
     rect("pill-bg", pillX, anchor.y - 54, pillW, pillH, scene.accent, 0.15, 12, kickerTracks);
     label("kicker", String(index + 1).padStart(2, "0") + " // " + String(count).padStart(2, "0"), pillX + 16, anchor.y - 48, 12, fonts.kicker, scene.accent, kickerTracks);
+
+    // 3 Staggered Metric / Feature Chips inside Hero Card (Linear / Apple benchmark)
+    const chipW = 104;
+    const chipH = 22;
+    const chipY = cardY + cardH - 34;
+    const chip1X = cardX + 28;
+    const chip2X = chip1X + chipW + 12;
+    const chip3X = chip2X + chipW + 12;
+
+    rect("chip-1-bg", chip1X, chipY, chipW, chipH, scene.accent, 0.14, 11, kickerTracks);
+    label("chip-1-txt", "● SUB-PIXEL", chip1X + 12, chipY + 4, 11, fonts.kicker, scene.accent, kickerTracks);
+
+    rect("chip-2-bg", chip2X, chipY, chipW, chipH, scene.accent, 0.14, 11, kickerTracks);
+    label("chip-2-txt", "● 10X SPEED", chip2X + 14, chipY + 4, 11, fonts.kicker, scene.accent, kickerTracks);
+
+    rect("chip-3-bg", chip3X, chipY, chipW, chipH, scene.accent, 0.14, 11, kickerTracks);
+    label("chip-3-txt", "● 60 FPS", chip3X + 20, chipY + 4, 11, fonts.kicker, scene.accent, kickerTracks);
   }
 }
 function applySceneTransition(

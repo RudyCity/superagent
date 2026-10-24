@@ -19,7 +19,7 @@ async function createTempWorkspace(): Promise<string> {
 }
 
 afterEach(async () => {
-  await Promise.all(testDirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(testDirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {})));
 });
 
 describe("Motion Director Offline Heuristic Storyboard & CLI --wait", () => {
@@ -27,18 +27,43 @@ describe("Motion Director Offline Heuristic Storyboard & CLI --wait", () => {
     const neon = createHeuristicDirectorPlan("Cyberpunk Neon Glowing Smart AI");
     expect(neon.artDirection).toBe("neon");
     expect(neon.scenes).toHaveLength(3);
+    expect(neon.scenes[0].effect).toBe("accent-kinetic-underline");
     expect(() => validateDirectorPlan(neon)).not.toThrow();
 
     const brutal = createHeuristicDirectorPlan("Diskon Kilat Bold Geometry Sale");
     expect(brutal.artDirection).toBe("brutalist");
     expect(brutal.scenes).toHaveLength(3);
+    expect(brutal.scenes[0].effect).toBe("accent-bracket-focus");
     expect(() => validateDirectorPlan(brutal)).not.toThrow();
 
     const clean = createHeuristicDirectorPlan("Desain Simple Elegan Minimalis");
     expect(clean.artDirection).toBe("minimal");
     expect(clean.scenes).toHaveLength(3);
+    expect(clean.scenes[0].effect).toBe("accent-pulse-dot");
     expect(() => validateDirectorPlan(clean)).not.toThrow();
   });
+
+  it("supports explicit --style and --art-direction CLI flags", async () => {
+    if (!(await probeFfmpeg())) return;
+    const ws = await createTempWorkspace();
+
+    const exitCode = await handleMotionCliCommand([
+      "generate",
+      "--prompt", "Multi-Agent System Architecture",
+      "--style", "editorial",
+      "--wait",
+      "--width", "160",
+      "--workspace", ws,
+      "--json",
+    ]);
+
+    expect(exitCode).toBe(0);
+
+    const rendersDir = path.join(ws, ".superagent", "studio", "renders");
+    const files = await fs.readdir(rendersDir);
+    const mp4Files = files.filter(f => f.endsWith(".mp4") && !f.includes("partial"));
+    expect(mp4Files.length).toBeGreaterThan(0);
+  }, 45000);
 
   it("completes full generation and render synchronously via CLI --wait flag", async () => {
     if (!(await probeFfmpeg())) return;

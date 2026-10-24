@@ -1,3 +1,15 @@
+## [1.14.30] - 2026-10-24
+### Added
+- High-Density Scene Card Content, Motion Catalog Effects Integration & CLI Style Flag Controls (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionCliParity.test.ts`, `tests/motionHeuristicDirector.test.ts`, `package.json`):
+  - **High-Density Scene Content Inside Hero Cards**: Completely eliminated empty "title slide" feel by injecting rich secondary interface elements into hero cards across all 4 art directions (`neon`, `minimal`, `editorial`, `brutalist`):
+    - `neon`: Added terminal command prompt bar (`$ superagent --multi --autonomous`) with pulsing blinking cursor and live broadcast status beacon (`● LIVE 30FPS`).
+    - `minimal`: Added 3 staggered metric telemetry chips (`[ ● SUB-PIXEL ]`, `[ ● 10X SPEED ]`, `[ ● 60 FPS ]`) with frosted rounded pill backdrops inside the hero container.
+    - `editorial`: Added high-fashion publication divider rule and curated volume collection tag (`// CURATED SERIES · ISSUE NO. 0X`).
+    - `brutalist`: Added monolithic architectural technical badges (`SEC.0X // RAW` and `GRID: 1920x1080`).
+  - **200+ Motion Catalog Effects Integration**: Wired heuristic director generation directly to the Motion Effects Catalog (`effectRegistry`), dynamically applying curated graphic accents to every scene (`accent-kinetic-underline`, `accent-bracket-focus`, `accent-pulse-dot`, `accent-bottom-rule-thick`, `accent-highlight-box`, `accent-side-pillar`, `accent-quote-notch`, `accent-split-rule`, `accent-warning-stripe`, `accent-corner-pip`).
+  - **First-Class CLI `--style` and `--art-direction` Controls**: Added `--style` and `--art-direction` options to `superagent studio generate`, allowing operators and scripts to explicitly enforce visual direction (`neon`, `minimal`, `editorial`, `brutalist`) over prompt auto-detection.
+  - **Windows EBUSY/ENOTEMPTY Parity & Verification**: Added resilient retry backoff cleanup in test suites handling rapid detached asynchronous render jobs on Windows, achieving 100% pass rate across all 53 Vitest motion test suites (252 tests).
+
 ## [1.14.29] - 2026-10-24
 ### Added
 - Continuous Camera Tracking, Living Background Aura & Slide-Free Kinetic Momentum (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `package.json`):

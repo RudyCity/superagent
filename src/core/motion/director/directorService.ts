@@ -48,6 +48,7 @@ export type MotionPlanner = (system: string, user: string, signal?: AbortSignal)
 export type MotionDirectorOptions = MotionDirectorMediaSelection & NarrationRequest & {
   width?: number;
   aspectRatio?: MotionAspectRatio;
+  artDirection?: MotionArtDirection;
   burnCaptions?: boolean;
   autoNarrateScenes?: boolean;
   expectedRevision?: number;
@@ -134,9 +135,9 @@ export function chooseMotionArtDirection(prompt: string, planned?: MotionArtDire
 export function compileDirectorPlan(raw: MotionDirectorPlan): MotionProject["composition"] {
   return compilePresetComposition(validateDirectorPlan(raw));
 }
-export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan {
+export function createHeuristicDirectorPlan(prompt: string, explicitArtDirection?: MotionArtDirection): MotionDirectorPlan {
   const clean = prompt.trim().replace(/^["']|["']$/g, "");
-  const artDirection = chooseMotionArtDirection(prompt, "neon");
+  const artDirection = explicitArtDirection ?? chooseMotionArtDirection(prompt, "neon");
   const background = artDirection === "neon" ? "#0B0F19" :
     artDirection === "brutalist" ? "#121214" :
     artDirection === "editorial" ? "#0F141C" : "#0A0A0C";
@@ -207,6 +208,14 @@ export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan 
     artDirection === "brutalist" ? ["scale-pop", "pop-up", "drop-in"] :
     ["elastic-scale", "bounce-drop", "scale-pop"];
 
+  const effectsByStyle: Record<MotionArtDirection, [string, string, string]> = {
+    neon: ["accent-kinetic-underline", "accent-bracket-focus", "accent-pulse-dot"],
+    minimal: ["accent-pulse-dot", "accent-bottom-rule-thick", "accent-highlight-box"],
+    editorial: ["accent-side-pillar", "accent-quote-notch", "accent-split-rule"],
+    brutalist: ["accent-bracket-focus", "accent-warning-stripe", "accent-corner-pip"],
+  };
+  const sceneEffects = effectsByStyle[artDirection];
+
   const sceneLayouts: [MotionDirectorScene["layout"], MotionDirectorScene["layout"], MotionDirectorScene["layout"]] =
     artDirection === "editorial" ? ["left", "right", "left"] :
     artDirection === "brutalist" ? ["left", "right", "center"] :
@@ -224,6 +233,7 @@ export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan 
         subtitle: sub1,
         accent: accent1,
         motion: sceneMotions[0],
+        effect: sceneEffects[0],
         narration: narr1,
         layout: sceneLayouts[0],
       },
@@ -232,6 +242,7 @@ export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan 
         subtitle: sub2,
         accent: accent2,
         motion: sceneMotions[1],
+        effect: sceneEffects[1],
         narration: narr2,
         layout: sceneLayouts[1],
       },
@@ -240,6 +251,7 @@ export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan 
         subtitle: sub3,
         accent: accent3,
         motion: sceneMotions[2],
+        effect: sceneEffects[2],
         narration: narr3,
         layout: sceneLayouts[2],
       },
@@ -331,8 +343,9 @@ export async function generateMotionFromPrompt(workspace: string, prompt: string
   const voiceover = await synthesizeLocalVoiceover(workspace,
     { voiceoverText: narrationText, voiceoverGain: options.voiceoverGain }, options.signal);
   const composedMedia = { ...media, ...(voiceover ? { voiceover } : {}) };
+  const artDirection = options.artDirection ?? chooseMotionArtDirection(user, plan.artDirection);
   const composition = embedDirectorMedia(
-    compileDirectorPlan({ ...plan, artDirection: chooseMotionArtDirection(user, plan.artDirection),
+    compileDirectorPlan({ ...plan, artDirection,
       aspectRatio: options.aspectRatio ?? plan.aspectRatio,
       burnCaptions: options.burnCaptions ?? plan.burnCaptions }), composedMedia);
   const project = await createMotionProject(workspace, plan.name);

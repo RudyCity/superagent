@@ -43,7 +43,7 @@ function generatePcmWav(seconds = 1, sampleRate = 16000): Buffer {
 }
 
 afterEach(async () => {
-  await Promise.all(testDirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true })));
+  await Promise.all(testDirs.splice(0).map(dir => fs.rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {})));
 });
 
 describe("Motion Studio CLI Feature Parity & Burn-in Captions", () => {
