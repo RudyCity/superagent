@@ -115,7 +115,17 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
       { frame: driftEnd, value: x + driftX, easing: "easeInOut" as const },
       { frame: end, value: x + driftX * 1.3, easing: "easeInOut" as const },
     ];
-    return [{ property: "x", keyframes: cleanKeyframes(points) }];
+    const scalePoints = [
+      ...(entryStart > start ? [{ frame: start, value: 0.96, easing: "linear" as const }] : []),
+      { frame: entryStart, value: 0.96, easing: preset === "pop-left" ? ("spring" as const) : ("easeOutExpo" as const) },
+      { frame: arrival, value: 1.0, easing: "linear" as const },
+      { frame: driftEnd, value: 1.018, easing: "easeInOut" as const },
+      { frame: end, value: 1.02, easing: "easeInOut" as const },
+    ];
+    return [
+      { property: "x", keyframes: cleanKeyframes(points) },
+      { property: "scale", keyframes: cleanKeyframes(scalePoints) },
+    ];
   }
   if (preset === "slide-up" || preset === "pop-up" || preset === "drop-in") {
     const offset = preset === "drop-in" ? -120 : preset === "pop-up" ? 140 : 85;
@@ -128,7 +138,17 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
       { frame: driftEnd, value: y + driftY, easing: "easeInOut" as const },
       { frame: end, value: y + driftY * 1.3, easing: "easeInOut" as const },
     ];
-    return [{ property: "y", keyframes: cleanKeyframes(points) }];
+    const scalePoints = [
+      ...(entryStart > start ? [{ frame: start, value: 0.96, easing: "linear" as const }] : []),
+      { frame: entryStart, value: 0.96, easing: preset === "pop-up" ? ("spring" as const) : ("easeOutExpo" as const) },
+      { frame: arrival, value: 1.0, easing: "linear" as const },
+      { frame: driftEnd, value: 1.018, easing: "easeInOut" as const },
+      { frame: end, value: 1.02, easing: "easeInOut" as const },
+    ];
+    return [
+      { property: "y", keyframes: cleanKeyframes(points) },
+      { property: "scale", keyframes: cleanKeyframes(scalePoints) },
+    ];
   }
   if (preset === "tilt" || preset === "swing") {
     const easing: MotionEasing = preset === "swing" ? "spring" : "easeOutExpo";
@@ -425,12 +445,23 @@ function addDecoration(
     // Brutalist Kicker Tag
     label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 46, 16, fonts.kicker, scene.accent, kickerTracks);
   } else if (style === "editorial") {
-    // Refined Asymmetric Editorial Frame
+    // Refined Asymmetric Editorial Frame & Luxury Magazine Geometry
     rect("side-rule", width - anchor.margin / 2, height * .14, 4, height * .69, scene.accent, 0.75, 2);
     rect("top-accent", anchor.x, anchor.y - 32, Math.min(180, width * .20), 3, scene.accent, 0.9, 1);
+    rect("bottom-rule", Math.round(anchor.margin / 2), height - 42, width - anchor.margin, 1, scene.accent, 0.35);
+
+    // Folio & Publication Markers
+    label("hud-tl", "[ FOLIO 0" + (index + 1) + " // CURATED ]", Math.round(anchor.margin / 2), 36, 12, fonts.kicker, scene.accent);
+    label("hud-tr", "[ EDITORIAL SERIES ]", Math.max(width / 2, width - Math.round(anchor.margin / 2) - 170), 36, 12, fonts.kicker, scene.accent);
+
+    // Kinetic Vector Editorial Crest / Star Emblem
+    const starD = "M 32 8 L 32 56 M 8 32 L 56 32 M 15 15 L 49 49 M 15 49 L 49 15";
+    const emblemX = anchor.layout === "center" ? Math.round((width - emblemSize) / 2) : anchor.layout === "right" ? anchor.x + anchor.width - emblemSize : anchor.x;
+    vectorEmblem("emblem", starD, emblemX, Math.max(20, anchor.y - 120), scene.accent, 2.2, emblemTracks);
+
     label("kicker", "CHAPTER " + String(index + 1).padStart(2, "0"), anchor.x, anchor.y - 64, 16, fonts.kicker, scene.accent, kickerTracks);
   } else {
-    // Clean Minimalist Hero Card
+    // Clean Minimalist Hero Card (Braun / Linear aesthetic)
     const cardPadX = 42;
     const minCardW = Math.max(width * 0.56, anchor.width + cardPadX * 2);
     const cardW = Math.min(width - 64, Math.round(minCardW));
@@ -438,15 +469,28 @@ function addDecoration(
     const cardY = Math.max(40, anchor.y - 78);
     const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 120);
 
-    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.60, 16, cardScaleTrack);
+    // Subtle Ambient Breathing Glow Aura
+    rect("ambient-glow", cardX - 14, cardY - 14, cardW + 28, cardH + 28, scene.accent, 0.05, 24, cardScaleTrack);
+
+    // Frosted Card Body & Hairline Top Border
+    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.65, 16, cardScaleTrack);
     rect("hairline", cardX + 28, cardY, Math.min(cardW - 56, 160), 3, scene.accent, 0.85, 1);
+
+    // Corner Telemetry Markers
+    label("hud-tl", "SYS.0" + (index + 1) + " // MINIMAL", Math.round(anchor.margin / 2), 36, 11, fonts.kicker, scene.accent);
+    label("hud-tr", "[ 60FPS // CLEAN ]", Math.max(width / 2, width - Math.round(anchor.margin / 2) - 150), 36, 11, fonts.kicker, scene.accent);
 
     // Minimalist Vector Orbit Emblem
     const orbitD = "M 32 8 A 24 24 0 1 0 32 56 A 24 24 0 1 0 32 8 Z M 22 32 L 42 32 M 32 22 L 32 42";
     const emblemX = anchor.layout === "center" ? Math.round((width - emblemSize) / 2) : anchor.x;
     vectorEmblem("emblem", orbitD, emblemX, cardY - 60, scene.accent, 2.5, emblemTracks);
 
-    label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 50, 13, fonts.kicker, scene.accent, kickerTracks);
+    // Pill Badge Container & Kicker
+    const pillW = 108;
+    const pillH = 24;
+    const pillX = anchor.layout === "center" ? Math.round((width - pillW) / 2) : anchor.x;
+    rect("pill-bg", pillX, anchor.y - 54, pillW, pillH, scene.accent, 0.15, 12, kickerTracks);
+    label("kicker", String(index + 1).padStart(2, "0") + " // " + String(count).padStart(2, "0"), pillX + 16, anchor.y - 48, 12, fonts.kicker, scene.accent, kickerTracks);
   }
 }
 function applySceneTransition(

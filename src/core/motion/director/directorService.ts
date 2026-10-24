@@ -196,36 +196,52 @@ export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan 
     ? "Siap digunakan kapan saja. Coba sekarang juga."
     : "Ready anytime, anywhere. Experience the difference.";
 
+  const transition: MotionTransition =
+    artDirection === "minimal" ? "crossfade" :
+    artDirection === "editorial" ? "crossfade" :
+    artDirection === "brutalist" ? "cut" : "wipe";
+
+  const sceneMotions: [MotionPreset, MotionPreset, MotionPreset] =
+    artDirection === "minimal" ? ["slide-up", "zoom-in", "scale-pop"] :
+    artDirection === "editorial" ? ["slide-left", "slide-right", "pop-left"] :
+    artDirection === "brutalist" ? ["scale-pop", "pop-up", "drop-in"] :
+    ["elastic-scale", "bounce-drop", "scale-pop"];
+
+  const sceneLayouts: [MotionDirectorScene["layout"], MotionDirectorScene["layout"], MotionDirectorScene["layout"]] =
+    artDirection === "editorial" ? ["left", "right", "left"] :
+    artDirection === "brutalist" ? ["left", "right", "center"] :
+    ["center", "center", "center"];
+
   return {
     name: title1.slice(0, 40),
     durationSeconds: 6,
     background,
     artDirection,
-    transition: "wipe",
+    transition,
     scenes: [
       {
         headline: title1,
         subtitle: sub1,
         accent: accent1,
-        motion: "elastic-scale",
+        motion: sceneMotions[0],
         narration: narr1,
-        layout: "center",
+        layout: sceneLayouts[0],
       },
       {
         headline: title2,
         subtitle: sub2,
         accent: accent2,
-        motion: "bounce-drop",
+        motion: sceneMotions[1],
         narration: narr2,
-        layout: "center",
+        layout: sceneLayouts[1],
       },
       {
         headline: title3,
         subtitle: sub3,
         accent: accent3,
-        motion: "scale-pop",
+        motion: sceneMotions[2],
         narration: narr3,
-        layout: "center",
+        layout: sceneLayouts[2],
       },
     ],
   };
