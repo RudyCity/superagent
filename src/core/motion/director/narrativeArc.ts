@@ -341,6 +341,7 @@ await master.execute("Architect & Deploy");`;
         property: "opacity",
         keyframes: [
           { frame: 0, value: 0 },
+          { frame: act4Start, value: 0 },
           { frame: act4Start + 10, value: 1, easing: "apple" },
           { frame: act4End, value: 1 },
         ],
@@ -367,6 +368,7 @@ await master.execute("Architect & Deploy");`;
         property: "opacity",
         keyframes: [
           { frame: 0, value: 0 },
+          { frame: act4Start, value: 0 },
           { frame: act4Start + 14, value: 0.85, easing: "apple" },
           { frame: act4End, value: 0.85 },
         ],
@@ -392,6 +394,7 @@ await master.execute("Architect & Deploy");`;
         property: "opacity",
         keyframes: [
           { frame: 0, value: 0 },
+          { frame: act4Start, value: 0 },
           { frame: act4Start + 18, value: 0.95, easing: "apple" },
           { frame: act4End, value: 0.95 },
         ],
@@ -417,6 +420,7 @@ await master.execute("Architect & Deploy");`;
         property: "opacity",
         keyframes: [
           { frame: 0, value: 0 },
+          { frame: act4Start, value: 0 },
           { frame: act4Start + 22, value: 1, easing: "apple" },
           { frame: act4End, value: 1 },
         ],

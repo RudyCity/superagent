@@ -31,7 +31,7 @@ function inferLayerRole(layer: MotionLayer): LayerSemanticRole {
   if (id.includes("ambient") || id.includes("aura") || id.includes("backdrop") || id.includes("background")) {
     return "ambient";
   }
-  if (id.includes("card") || id.includes("lid") || id.includes("chassis") || id.includes("window") || id.includes("frame")) {
+  if (id.includes("card") || id.includes("lid") || id.includes("chassis") || id.includes("window") || id.includes("frame") || id.includes("container") || id.includes("mockup") || id.includes("box")) {
     return "container";
   }
   if (id.includes("badge") || id.includes("pill") || id.includes("kicker") || id.includes("chip") || id.includes("tag") || id.includes("dot")) {
@@ -88,25 +88,68 @@ export function choreographSceneLayers(
     const frameOffset = rank * interval;
 
     const updatedTracks: MotionTrack[] = layer.tracks.map(track => {
-      // Find the initial entrance keyframe (typically first frame where value changes from 0 to 1)
-      const adjustedKeyframes = track.keyframes.map((kf, i) => {
-        let targetFrame = kf.frame;
+      const kfs = track.keyframes;
+      if (kfs.length < 2) return track;
 
-        // Apply stagger delay to early entrance keyframes (first half of layer lifecycle)
-        if (kf.frame < Math.floor(duration * 0.45) && kf.frame > 0) {
-          targetFrame = Math.min(maxAllowed, kf.frame + frameOffset);
-        }
+      // Identify entrance keyframe index:
+      // For opacity: index where value transitions from 0 to > 0.
+      // For position/scale/rotation: index of first keyframe with frame > kfs[0].frame.
+      let entranceIdx = -1;
+      if (track.property === "opacity") {
+        entranceIdx = kfs.findIndex((k, i) => i > 0 && k.value > 0 && kfs[i - 1].value === 0);
+      } else {
+        entranceIdx = kfs.findIndex((k, i) => i > 0 && k.frame > kfs[0].frame);
+      }
 
-        // Upgrade legacy linear or generic easings on entrances to Apple/Linear curve
+      if (entranceIdx === -1) {
+        entranceIdx = 1;
+      }
+
+      const entranceEnd = kfs[entranceIdx];
+      const nextKf = kfs[entranceIdx + 1];
+
+      // Stagger limit: entrance must never collide with or overtake hold/exit keyframe
+      const maxShift = nextKf ? Math.max(0, Math.floor((nextKf.frame - entranceEnd.frame) * 0.75)) : 24;
+      const actualOffset = Math.min(frameOffset, maxShift);
+
+      const adjustedKeyframes = kfs.map((kf, i) => {
         let kfEasing = kf.easing;
-        if (i === 0 || (kf.value > 0 && (!kfEasing || kfEasing === "linear" || kfEasing === "easeIn"))) {
+        if (i === entranceIdx || (i === entranceIdx - 1 && (!kfEasing || kfEasing === "linear" || kfEasing === "easeIn"))) {
           kfEasing = easing;
         }
 
+        // Stagger entrance keyframe
+        if (i === entranceIdx) {
+          return {
+            frame: Math.min(maxAllowed, kf.frame + actualOffset),
+            value: kf.value,
+            easing: kfEasing,
+          };
+        }
+
+        // Stagger preceding zero-hold frame if not anchored at 0
+        if (i === entranceIdx - 1 && kf.frame > 0) {
+          return {
+            frame: Math.min(maxAllowed, kf.frame + actualOffset),
+            value: kf.value,
+            easing: kfEasing,
+          };
+        }
+
+        // Anchor at frame 0 if entrance starts at 0
+        if (i === entranceIdx - 1 && kf.frame === 0) {
+          return {
+            frame: 0,
+            value: kf.value,
+            easing: kfEasing,
+          };
+        }
+
+        // Hold and exit keyframes (i > entranceIdx) REMAIN ANCHORED to their exact scheduled scene bounds!
         return {
-          frame: targetFrame,
+          frame: kf.frame,
           value: kf.value,
-          easing: kfEasing,
+          easing: kf.easing,
         };
       });
 
@@ -120,15 +163,25 @@ export function choreographSceneLayers(
     if (options.applyMicroDrift && (role === "headline" || role === "container")) {
       const existingScale = updatedTracks.find(t => t.property === "scale");
       if (!existingScale) {
-        updatedTracks.push({
-          property: "scale",
-          keyframes: cleanKeyframes([
-            { frame: 0, value: 0.96 },
-            { frame: frameOffset + 12, value: 1.0, easing },
-            { frame: Math.round(duration * 0.8), value: 1.018, easing: "easeInOut" },
-            { frame: maxAllowed, value: 1.0 },
-          ], maxAllowed),
-        });
+        // Determine active visibility window from opacity track
+        const opacityTrack = updatedTracks.find(t => t.property === "opacity");
+        const firstVisibleKf = opacityTrack?.keyframes.find(k => k.value > 0);
+        const lastVisibleKf = opacityTrack?.keyframes.slice().reverse().find(k => k.value > 0);
+
+        const startF = firstVisibleKf ? Math.max(0, firstVisibleKf.frame - 6) : 0;
+        const endF = lastVisibleKf ? Math.min(maxAllowed, lastVisibleKf.frame + 6) : maxAllowed;
+
+        if (endF > startF + 12) {
+          updatedTracks.push({
+            property: "scale",
+            keyframes: cleanKeyframes([
+              { frame: startF, value: 0.96 },
+              { frame: Math.min(endF, startF + frameOffset + 12), value: 1.0, easing },
+              { frame: Math.round(startF + (endF - startF) * 0.8), value: 1.018, easing: "easeInOut" },
+              { frame: endF, value: 1.0 },
+            ], maxAllowed),
+          });
+        }
       }
     }
 

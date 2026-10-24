@@ -241,7 +241,8 @@ export function compileMotionChartLayers(options: MotionChartOptions): MotionLay
         { frame: 0, value: 0 },
         { frame: barEnd - 6, value: 0 },
         { frame: barEnd + 6, value: 1, easing: "easeOutExpo" },
-        { frame: endFrame, value: 1 },
+        { frame: Math.max(barEnd + 6, endFrame - 6), value: 1 },
+        { frame: endFrame, value: 0 },
       ], endFrame);
 
       layers.push({

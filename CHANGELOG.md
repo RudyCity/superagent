@@ -1,3 +1,11 @@
+## [1.14.34] - 2026-10-25
+### Fixed
+- Multi-Act Scene Layer Isolation & Ghosting Prevention (`src/core/motion/choreography/choreographyEngine.ts`, `src/core/motion/director/narrativeArc.ts`, `src/core/motion/code/codeCardCompiler.ts`, `src/core/motion/charts/motionCharts.ts`, `package.json`):
+  - **Eliminated Cross-Act Layer Bleed & Stacking ("Numpuk")**: Fixed premature layer interpolation where Act 4 text layers (`act4-brand-headline`, `act4-brand-sub`, `act4-install-pill`, `act4-install-txt`) were visible throughout Acts 1–3 due to missing zero-opacity hold keyframes at `act4Start`.
+  - **Terminal Typing Cursor Lifecycle Isolation (`codeCardCompiler.ts`)**: Added explicit zero-opacity keyframes before `startFrame` and after `endFrame` to prevent `code-typing-cursor` from ghosting during other scenes.
+  - **Benchmark Telemetry Value Fadeout (`motionCharts.ts`)**: Fixed `valFadeKeys` to animate opacity to 0 at `endFrame` instead of persisting indefinitely into Act 4.
+  - **Safe Entrance Stagger & Anchored Exits (`choreographyEngine.ts`)**: Refined cascade choreography algorithm to strictly shift initial entrance transitions without delaying hold or exit keyframes past their scheduled scene boundaries.
+
 ## [1.14.33] - 2026-10-24
 ### Added
 - Signature Apple Velocity Curves, Choreography & Cascade Engine, Simulated 3D Camera Parallax & 4-Act SaaS Promo Video Suite (`src/core/motion/choreography/choreographyEngine.ts`, `src/core/motion/camera/camera3d.ts`, `src/core/motion/director/narrativeArc.ts`, `src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/motionService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionChoreographyCameraNarrative.test.ts`, `package.json`):

@@ -393,11 +393,16 @@ export function compileCodeCardLayers(options: CodeCardOptions): MotionLayer[] {
 
   // 9. Blinking Terminal Block Cursor
   const cursorBlinkRaw: { frame: number; value: number }[] = [];
-  for (let f = startFrame; f <= endFrame; f++) {
+  cursorBlinkRaw.push({ frame: 0, value: 0 });
+  if (startFrame > 0) {
+    cursorBlinkRaw.push({ frame: startFrame, value: 0 });
+  }
+  for (let f = startFrame + 1; f < endFrame; f++) {
     // Blinks every 8 frames
     const blink = Math.floor((f - startFrame) / 8) % 2 === 0 ? 0.9 : 0;
     cursorBlinkRaw.push({ frame: f, value: blink });
   }
+  cursorBlinkRaw.push({ frame: endFrame, value: 0 });
   const cursorBlinkKeys = cleanKeyframes(cursorBlinkRaw, endFrame);
 
   const lastLineY = codeStartY + Math.min(lines.length, 9) * lineHeight;
