@@ -54,7 +54,7 @@ export interface EffectDefinition {
   category: EffectCategory;
   description: string;
   tags: string[];
-  targetKinds: ("text" | "rect" | "image" | "video" | "scene")[];
+  targetKinds: ("text" | "rect" | "image" | "video" | "path" | "scene")[];
   parameters: Record<string, EffectParamDefinition>;
   apply: (ctx: EffectApplyContext, params: Record<string, any>) => EffectApplyResult;
 }
@@ -65,7 +65,7 @@ export interface EffectCatalogItem {
   category: EffectCategory;
   description: string;
   tags: string[];
-  targetKinds: ("text" | "rect" | "image" | "video" | "scene")[];
+  targetKinds: ("text" | "rect" | "image" | "video" | "path" | "scene")[];
   parameters: Record<string, {
     name: string;
     type: EffectParamType;
@@ -81,7 +81,7 @@ export interface EffectCatalogItem {
 export interface EffectFilter {
   category?: EffectCategory;
   query?: string;
-  targetKind?: "text" | "rect" | "image" | "video" | "scene";
+  targetKind?: "text" | "rect" | "image" | "video" | "path" | "scene";
   tag?: string;
 }
 

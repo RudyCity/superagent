@@ -2,7 +2,7 @@ import { createMotionProject, getMotionProject, listMotionProjects, updateMotion
 import { MotionRevisionConflict } from "../motion/project/revisions.js";
 import { MotionValidationError } from "../motion/schema/validation.js";
 import { probeFfmpeg } from "../motion/render/ffmpegEncoder.js";
-import { importMotionAsset } from "../motion/assets/motionAssets.js";
+import { importMotionAsset, readMotionAsset } from "../motion/assets/motionAssets.js";
 import { importMotionAudio } from "../motion/assets/motionAudio.js";
 import { importMotionFont } from "../motion/assets/motionFonts.js";
 import { importMotionVideo } from "../motion/assets/motionVideoClips.js";
@@ -58,6 +58,8 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio beat-sync PROJECT_ID --base-revision N --target-layer LAYER_ID [--audio-track 0] [--intensity 0.35] [--workspace PATH] [--json]
   superagent studio preview PROJECT_ID [--open] [--workspace PATH] [--json]
   superagent studio export-bundle PROJECT_ID [--workspace PATH] [--json]
+  superagent studio trace-image --file workspace/path/logo.png [--mode silhouette|color|outline] [--threshold N] [--simplify N] [--smooth] [--workspace PATH] [--json]
+  superagent studio vectorize PROJECT_ID --layer LAYER_ID [--mode silhouette|color|outline] [--workspace PATH] [--json]
 
 MP4 preview uses installed FFmpeg. --detach launches a separate Bun worker;
 recovery is diagnostic/read-only unless the operator explicitly runs recover --ack-stale.`;
@@ -65,8 +67,8 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", ...boolean]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--help", "-h"]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--aspect-ratio", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -319,6 +321,28 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       emit(action === "import-image" ? await importMotionAsset(workspace, data) : await importMotionAudio(workspace, data), json);
       return 0;
     }
+    if (action === "trace-image") {
+      const filename = opt(opts, "--file");
+      if (!filename || positionals.length) throw new Error("trace-image requires --file and no positional arguments");
+      const data = await readMotionWorkspaceInput(workspace, filename, 4 * 1024 * 1024);
+      const { traceImageBuffer } = await import("../motion/vector/imageTracer.js");
+      const mode = opt(opts, "--mode") as "silhouette" | "color" | "outline" | undefined;
+      const threshold = opt(opts, "--threshold") !== undefined ? Number(opt(opts, "--threshold")) : undefined;
+      const simplify = opt(opts, "--simplify") !== undefined ? Number(opt(opts, "--simplify")) : undefined;
+      const minArea = opt(opts, "--min-area") !== undefined ? Number(opt(opts, "--min-area")) : undefined;
+      const smooth = opts.has("--smooth") ? true : undefined;
+      const invert = opts.has("--invert") ? true : undefined;
+      const fill = opt(opts, "--fill");
+      const stroke = opt(opts, "--stroke");
+      const strokeWidth = opt(opts, "--stroke-width") !== undefined ? Number(opt(opts, "--stroke-width")) : undefined;
+      const fitWidth = opt(opts, "--fit-width") !== undefined ? Number(opt(opts, "--fit-width")) : undefined;
+      const fitHeight = opt(opts, "--fit-height") !== undefined ? Number(opt(opts, "--fit-height")) : undefined;
+      const result = await traceImageBuffer(data, {
+        mode, threshold, simplify, minArea, smooth, invert, fill, stroke, strokeWidth, fitWidth, fitHeight,
+      });
+      emit(result, json);
+      return 0;
+    }
     if (action === "queue-recovery" || action === "dispatch-queue") {
       if (positionals.length) throw new Error(action + " does not accept positional arguments");
       const age = opt(opts, "--min-age-seconds") === undefined ? 30 : nonnegativeInteger(opt(opts, "--min-age-seconds"), "--min-age-seconds");
@@ -512,6 +536,37 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const { exportMotionDeliverablesBundle } = await import("../motion/motionBundleExport.js");
       const manifest = await exportMotionDeliverablesBundle(workspace, projectId);
       emit(manifest, json);
+      return 0;
+    }
+    if (action === "vectorize") {
+      const layerId = opt(opts, "--layer") ?? opt(opts, "--target-layer");
+      if (!layerId) throw new Error("vectorize requires --layer <id>");
+      const project = await getMotionProject(workspace, projectId);
+      const targetLayer = project.composition.layers.find(l => l.id === layerId);
+      if (!targetLayer) throw new Error(`Layer "${layerId}" not found in project`);
+      let imageBuffer: Buffer;
+      if (targetLayer.kind === "image") {
+        imageBuffer = await readMotionAsset(workspace, targetLayer.assetId);
+      } else {
+        const file = opt(opts, "--file");
+        if (!file) throw new Error("vectorize non-image layer requires --file <image>");
+        imageBuffer = await readMotionWorkspaceInput(workspace, file, 4 * 1024 * 1024);
+      }
+      const { vectorizeProjectLayer } = await import("../motion/vector/imageTracer.js");
+      const mode = opt(opts, "--mode") as "silhouette" | "color" | "outline" | undefined;
+      const threshold = opt(opts, "--threshold") !== undefined ? Number(opt(opts, "--threshold")) : undefined;
+      const simplify = opt(opts, "--simplify") !== undefined ? Number(opt(opts, "--simplify")) : undefined;
+      const fill = opt(opts, "--fill");
+      const stroke = opt(opts, "--stroke");
+      const strokeWidth = opt(opts, "--stroke-width") !== undefined ? Number(opt(opts, "--stroke-width")) : undefined;
+      const smooth = opts.has("--smooth") ? true : undefined;
+      const { project: updated, newLayers } = await vectorizeProjectLayer(project, layerId, imageBuffer, {
+        mode, threshold, simplify, fill, stroke, strokeWidth, smooth,
+      });
+      const saved = await updateMotionProject(workspace, project.id, project.revision, [
+        { type: "replace-composition", composition: updated.composition },
+      ]);
+      emit({ id: saved.id, projectId: saved.id, revision: saved.revision, newLayers: newLayers.map(l => l.id) }, json);
       return 0;
     }
     if (action === "frame") {

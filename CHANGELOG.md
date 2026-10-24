@@ -1,3 +1,19 @@
+## [1.14.24] - 2026-10-24
+### Added
+- Native Image to Vector Tracer & PathLayer Primitive (`src/core/motion/vector/imageTracer.ts`, `src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`, `src/core/motion/motionResize.ts`, `src/core/motion/motionCapabilities.ts`, `src/core/commands/motionCliHandler.ts`, `src/core/motion/motionRoutes.ts`, `tests/motionImageVectorTracer.test.ts`):
+  - Created high-performance pure-TypeScript bitmap-to-vector tracer supporting Moore-Neighbor 8-connected contour extraction, Shoelace area filtering, and Ramer-Douglas-Peucker polygon decimation with smooth quadratic Bezier curve fitting.
+  - Implemented 3 versatile tracing modes:
+    - `"silhouette"`: Binarizes raster logos, icons, and silhouettes with alpha/luminance thresholding and automatic color detection.
+    - `"color"`: Multi-tonal posterized vectorization quantizing images into 2 to 4 distinct tonal bands for multi-layer vector illustrations.
+    - `"outline"`: Extracts boundary contours with configurable stroke color, width, and kinetic `strokeDasharray` / `strokeDashoffset` parameters for line-drawing reveals.
+  - Introduced `PathLayer` declarative schema primitive (`kind: "path"`, `d`, `stroke`, `strokeWidth`, `strokeDasharray`, `strokeDashoffset`, `fillRule`) with native `@napi-rs/canvas` `Path2D` frame rendering and declarative SVG export.
+  - Added CLI commands:
+    - `superagent studio trace-image --file <image.png> [--mode silhouette|color|outline] [--threshold N] [--simplify N] [--smooth] [--json]`
+    - `superagent studio vectorize PROJECT_ID --layer LAYER_ID [--mode silhouette|color|outline] [--json]` (replaces raster image layers with animated vector paths).
+  - Added HTTP endpoints `POST /api/motion/trace-image` and `POST /api/motion/projects/:id/vectorize`.
+  - Advertised `imageVectorTracer: true` and `"path"` layer kind in `MOTION_CAPABILITIES`.
+  - Added dedicated test suite (`tests/motionImageVectorTracer.test.ts`) with 7 comprehensive unit and integration tests.
+
 ## [1.14.23] - 2026-10-24
 ### Changed
 - Motion Director Anti-Slop Visual & Narrative Overhaul (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `tests/motionHeuristicDirector.test.ts`):

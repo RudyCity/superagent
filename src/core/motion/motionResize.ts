@@ -40,6 +40,13 @@ export function resizeMotionComposition(project: MotionProject, target: MotionOu
     if (result.kind === "text") result.fontSize = clamp(result.fontSize * scale, 1, 512);
     if (result.kind === "rect" && result.cornerRadius !== undefined)
       result.cornerRadius = Math.min(result.cornerRadius * scale, w / 2, h / 2);
+    if (result.kind === "path") {
+      if (result.strokeWidth !== undefined) result.strokeWidth = Math.max(0.1, result.strokeWidth * scale);
+      if (scale !== 1) {
+        result.scaleX = (result.scaleX ?? 1) * scale;
+        result.scaleY = (result.scaleY ?? 1) * scale;
+      }
+    }
     return result;
   });
   const base: MotionComposition = { ...structuredClone(source), width: targetWidth,

@@ -1,4 +1,4 @@
-import { createCanvas, type Image } from "@napi-rs/canvas";
+import { createCanvas, Path2D, type Image } from "@napi-rs/canvas";
 import type { MotionProject } from "../schema/types.js";
 import { evaluateFrame } from "../timeline/evaluateFrame.js";
 import { ensureMotionFontsRegistered } from "../assets/motionFonts.js";
@@ -79,6 +79,26 @@ export function createMotionFrameRenderer(
           ctx.fillStyle = layer.fill || "#0a0a0a";
           ctx.fillRect(values.x, values.y, layer.width, layer.height);
         }
+      } else if (layer.kind === "path") {
+        ctx.save();
+        ctx.translate(values.x, values.y);
+        const path = new Path2D(layer.d);
+        if (layer.fill && layer.fill !== "none") {
+          ctx.fillStyle = layer.fill;
+          ctx.fill(path, layer.fillRule ?? "nonzero");
+        }
+        if (layer.stroke && layer.stroke !== "none" && (layer.strokeWidth ?? 0) > 0) {
+          ctx.strokeStyle = layer.stroke;
+          ctx.lineWidth = layer.strokeWidth!;
+          if (layer.strokeDasharray && layer.strokeDasharray.length > 0) {
+            ctx.setLineDash(layer.strokeDasharray);
+            if (layer.strokeDashoffset !== undefined) {
+              ctx.lineDashOffset = layer.strokeDashoffset;
+            }
+          }
+          ctx.stroke(path);
+        }
+        ctx.restore();
       } else {
         ctx.textBaseline = "alphabetic";
         ctx.font = `${layer.fontSize}px "${layer.fontFamily}"`;

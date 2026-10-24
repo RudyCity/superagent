@@ -156,8 +156,23 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         allowedKeys(layer, kind === "text" ? [...common, "text", "fontSize", "fontFamily"] :
           kind === "image" ? [...common, "assetId"] :
           kind === "video" ? [...common, "assetId", "startFrame", "trimInSeconds", "trimOutSeconds", "speedMultiplier", "loop"] :
-          kind === "rect" ? [...common, "cornerRadius"] : common, at, errors);
-        if (kind !== "text" && kind !== "rect" && kind !== "image" && kind !== "video") errors.push(at + ": unsupported layer kind");
+          kind === "rect" ? [...common, "cornerRadius"] :
+          kind === "path" ? [...common, "d", "stroke", "strokeWidth", "strokeDasharray", "strokeDashoffset", "fillRule"] : common, at, errors);
+        if (kind !== "text" && kind !== "rect" && kind !== "image" && kind !== "video" && kind !== "path") errors.push(at + ": unsupported layer kind");
+        if (kind === "path") {
+          if (typeof layer.d !== "string" || !layer.d.trim() || layer.d.length > 262144) errors.push(at + ": invalid path data d");
+          if (layer.stroke !== undefined && (typeof layer.stroke !== "string" || (!color.test(layer.stroke) && layer.stroke !== "none"))) {
+            errors.push(at + ": invalid stroke color");
+          }
+          if (layer.strokeWidth !== undefined && !finite(layer.strokeWidth, 0, 1000)) errors.push(at + ": invalid strokeWidth");
+          if (layer.fillRule !== undefined && layer.fillRule !== "nonzero" && layer.fillRule !== "evenodd") errors.push(at + ": invalid fillRule");
+          if (layer.strokeDasharray !== undefined) {
+            if (!Array.isArray(layer.strokeDasharray) || layer.strokeDasharray.some(n => !finite(n, 0, 10000))) {
+              errors.push(at + ": invalid strokeDasharray");
+            }
+          }
+          if (layer.strokeDashoffset !== undefined && !finite(layer.strokeDashoffset, -100000, 100000)) errors.push(at + ": invalid strokeDashoffset");
+        }
         if (kind === "video") {
           if (typeof layer.assetId !== "string" || !/^(?:asset|video)-[a-f0-9]{64}$/.test(layer.assetId)) errors.push(at + ": invalid video assetId");
           if (layer.startFrame !== undefined && !integer(layer.startFrame, 0, 216000)) errors.push(at + ": invalid video startFrame");
@@ -186,7 +201,7 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         if (layer.scale !== undefined && !finite(layer.scale, 0, 100)) errors.push(at + ": invalid scale");
         if (layer.scaleX !== undefined && !finite(layer.scaleX, 0, 100)) errors.push(at + ": invalid scaleX");
         if (layer.scaleY !== undefined && !finite(layer.scaleY, 0, 100)) errors.push(at + ": invalid scaleY");
-        if (typeof layer.fill !== "string" || !color.test(layer.fill)) errors.push(at + ": invalid fill");
+        if (typeof layer.fill !== "string" || !(color.test(layer.fill) || (kind === "path" && layer.fill === "none"))) errors.push(at + ": invalid fill");
         if (kind === "text") {
           if (typeof layer.text !== "string" || layer.text.length > 8192) errors.push(at + ": invalid text");
           if (!finite(layer.fontSize, 1, 512) || !isAllowedMotionFont(String(layer.fontFamily))) errors.push(at + ": invalid font");

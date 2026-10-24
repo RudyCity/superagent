@@ -37,6 +37,14 @@ export function renderMotionSvg(project: MotionProject, frame: number, images = 
     } else if (layer.kind === "video") {
       const href = images.get(layer.assetId) ?? "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
       parts.push(`<image x="${x}" y="${y}" width="${number(layer.width)}" height="${number(layer.height)}" href="${href}" opacity="${opacity}" preserveAspectRatio="none" transform="${transform}"/>`);
+    } else if (layer.kind === "path") {
+      const fill = layer.fill ?? "none";
+      const stroke = layer.stroke ?? "none";
+      const strokeWidth = layer.strokeWidth ? ` stroke-width="${number(layer.strokeWidth)}"` : "";
+      const dash = layer.strokeDasharray && layer.strokeDasharray.length > 0 ? ` stroke-dasharray="${layer.strokeDasharray.join(" ")}"` : "";
+      const offset = layer.strokeDashoffset !== undefined ? ` stroke-dashoffset="${number(layer.strokeDashoffset)}"` : "";
+      const fillRule = layer.fillRule ? ` fill-rule="${layer.fillRule}"` : "";
+      parts.push(`<g transform="${transform} translate(${x} ${y})"><path d="${escapeXml(layer.d)}" fill="${fill}" stroke="${stroke}"${strokeWidth}${dash}${offset}${fillRule} opacity="${opacity}"/></g>`);
     } else {
       const baseline = number(values.y + layer.fontSize);
       const lines = splitTextLines(layer.text, layer.width > 0 ? layer.width : undefined, s => s.length * layer.fontSize * 0.48);

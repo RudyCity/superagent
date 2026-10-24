@@ -53,7 +53,16 @@ export interface VideoLayer extends BaseLayer {
   speedMultiplier?: number;
   loop?: boolean;
 }
-export type MotionLayer = TextLayer | RectLayer | ImageLayer | VideoLayer;
+export interface PathLayer extends BaseLayer {
+  kind: "path";
+  d: string;
+  stroke?: string;
+  strokeWidth?: number;
+  strokeDasharray?: number[];
+  strokeDashoffset?: number;
+  fillRule?: "nonzero" | "evenodd";
+}
+export type MotionLayer = TextLayer | RectLayer | ImageLayer | VideoLayer | PathLayer;
 
 export interface MotionAudioTrack {
   assetId: string;

@@ -40,6 +40,7 @@ import { applyMotionEdits } from "./project/revisions.js";
 import { renderMotionPlayerHtml } from "./render/motionPreviewHtml.js";
 import { subscribeMotionStudioEvents, getMotionBridgeStats } from "./motionEvents.js";
 import { exportMotionDeliverablesBundle, getMotionDeliverablesBundleManifest } from "./motionBundleExport.js";
+import type { ImageTraceOptions } from "./vector/imageTracer.js";
 
 export interface MotionHttpContext {
   resolveWorkspacePath: (req: IncomingMessage) => string | null;
@@ -132,6 +133,7 @@ export async function handleMotionHttpRoute(
   const resizeRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/resize(?:\/(preview))?$/);
   const projectHistory = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/history$/);
   const restoreHistory = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/history\/restore$/);
+  const vectorizeRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vectorize$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -260,6 +262,46 @@ export async function handleMotionHttpRoute(
         voiceoverGain: body.voiceoverGain as number | undefined,
       });
       json(res, ctx, 202, result);
+    } else if (pathname === "/api/motion/trace-image" && method === "POST") {
+      const body = await readMotionJson(req, 20_000_000);
+      let buffer: Buffer;
+      if (typeof body.imageBase64 === "string") {
+        const clean = body.imageBase64.replace(/^data:image\/[a-zA-Z+]+;base64,/, "");
+        buffer = Buffer.from(clean, "base64");
+      } else if (typeof body.assetId === "string") {
+        buffer = await readMotionAsset(workspace, body.assetId);
+      } else {
+        throw new MotionValidationError(["trace-image requires imageBase64 or assetId"]);
+      }
+      const { traceImageBuffer } = await import("./vector/imageTracer.js");
+      const trace = await traceImageBuffer(buffer, body.options as ImageTraceOptions | undefined);
+      json(res, ctx, 200, trace);
+    } else if (vectorizeRoute && method === "POST") {
+      const body = await readMotionJson(req, 5_000);
+      if (typeof body.layerId !== "string" || !Number.isSafeInteger(body.baseRevision)) {
+        throw new MotionValidationError(["vectorize requires layerId and baseRevision"]);
+      }
+      const current = await getMotionProject(workspace, vectorizeRoute[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before vectorizing" });
+      } else {
+        const targetLayer = current.composition.layers.find(l => l.id === body.layerId);
+        if (!targetLayer) throw new MotionValidationError([`Layer "${body.layerId}" not found in project`]);
+        let buffer: Buffer;
+        if (targetLayer.kind === "image") {
+          buffer = await readMotionAsset(workspace, targetLayer.assetId);
+        } else if (typeof body.imageBase64 === "string") {
+          buffer = Buffer.from(body.imageBase64.replace(/^data:image\/[a-zA-Z+]+;base64,/, ""), "base64");
+        } else {
+          throw new MotionValidationError(["vectorize target must be an image layer or supply imageBase64"]);
+        }
+        const { vectorizeProjectLayer } = await import("./vector/imageTracer.js");
+        const { project: updated } = await vectorizeProjectLayer(current, body.layerId, buffer, body.options as ImageTraceOptions | undefined);
+        const saved = await updateMotionProject(workspace, vectorizeRoute[1], body.baseRevision as number, [
+          { type: "replace-composition", composition: updated.composition },
+        ]);
+        json(res, ctx, 200, saved);
+      }
     } else if (pathname.match(/^\/api\/motion\/projects\/(?:studio|motion)-[a-f0-9]{20}\/revise$/) && method === "POST") {
       const body = await readMotionJson(req, 12_000);
       const motionId = pathname.split("/")[4];
