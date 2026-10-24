@@ -159,7 +159,15 @@ export async function migrateStudioStorage(workspace: string): Promise<{
     if (scan.state === "conflict" || scan.blockers.length)
       throw new Error("Studio storage migration blocked: " + scan.blockers.join("; "));
     if (scan.state !== "legacy") return { migrated: false, from: scan.from, to: scan.to };
-    await fs.rename(scan.from, scan.to);
+    try {
+      await fs.rename(scan.from, scan.to);
+    } catch (error) {
+      if (process.platform === "win32" &&
+          ["EPERM", "EACCES", "EBUSY"].includes(String((error as NodeJS.ErrnoException).code))) {
+        throw new Error("Windows denied the atomic Studio namespace rename. Close File Explorer folders, previews, and any process holding the legacy directory; original storage is preserved. Do not copy both namespaces or force-delete locks.", { cause: error });
+      }
+      throw error;
+    }
     return { migrated: true, from: scan.from, to: scan.to };
   } finally {
     await lock.close();

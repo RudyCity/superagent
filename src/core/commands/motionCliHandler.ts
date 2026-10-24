@@ -12,6 +12,7 @@ import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../motion/dire
 import { motionStorageMaintenance } from "../motion/jobs/storageMaintenance.js";
 import { inspectMotionSupervisor, runMotionSupervisorOnce, runMotionSupervisorWatch } from "../motion/jobs/motionSupervisor.js";
 import { inspectMotionQueueRecovery, dispatchOrphanedMotionQueue } from "../motion/jobs/queueRecovery.js";
+import { reconcileAbandonedMotionWorker } from "../motion/jobs/orphanRecovery.js";
 import type { MotionEdit } from "../motion/schema/types.js";
 import { getMotionJob, getMotionSchedulerStatus, listMotionJobs, inspectMotionJob, renderMotionJob, startDetachedMotionJob, reconcileStaleMotionJob, requestMotionCancellation, enqueueSupervisedMotionJob } from "../motion/jobs/motionJobs.js";
 
@@ -53,6 +54,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio status JOB_ID [--workspace PATH] [--json]
   superagent studio recovery JOB_ID [--workspace PATH] [--json]
   superagent studio recover JOB_ID --ack-stale [--workspace PATH] [--json]
+  superagent studio recover-worker JOB_ID --ack-stale --expected-pid PID [--workspace PATH] [--json]
   superagent studio cancel JOB_ID [--workspace PATH] [--json]
   superagent studio doctor [--json]
   superagent studio migrate [--workspace PATH] [--apply] [--json]
@@ -78,7 +80,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--expected-pid", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -668,6 +670,15 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     if (action === "recover") {
       if (!opts.has("--ack-stale")) throw new Error("recover requires --ack-stale after verifying the worker has stopped");
       emit(await reconcileStaleMotionJob(workspace, projectId), json);
+      return 0;
+    }
+    if (action === "recover-worker") {
+      if (!opts.has("--ack-stale")) throw new Error("recover-worker requires explicit --ack-stale");
+      const pidText = opt(opts, "--expected-pid");
+      if (!pidText) throw new Error("recover-worker requires --expected-pid");
+      const expectedPid = nonnegativeInteger(pidText, "--expected-pid");
+      if (expectedPid < 1) throw new Error("--expected-pid must be positive");
+      emit(await reconcileAbandonedMotionWorker(workspace, projectId, expectedPid), json);
       return 0;
     }
     if (action === "status") {
