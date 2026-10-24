@@ -771,6 +771,9 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     process.on("SIGINT", () => { cleanup(); process.exit(0); });
     process.on("SIGTERM", () => { cleanup(); process.exit(0); });
   } else {
+    // Internal rolling generations share a single fixed-port vision helper.
+    // They must not start competing Python services at port 8095.
+    if (process.env.SUPERAGENT_CORE_WORKER !== "1" || process.env.SUPERAGENT_CORE_VISION_OWNER === "1") {
     try {
       const { execa } = await import("execa");
       const scriptPath = path.join(getPackageRootDir(), "scripts", "vision_server.py");
@@ -788,6 +791,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       if (!silent) {
         console.error("Failed to spawn Python Vision Server:", err.message);
       }
+    }
     }
     const cleanup = () => {
       clearInterval(harvestTimer);

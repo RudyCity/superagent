@@ -240,7 +240,7 @@ For source changes, a separate supervisor can keep the REST/SSE/WebSocket port a
 
 Run from the repository: bun src/cli.tsx core start --port 7888, then bun src/cli.tsx core status or bun src/cli.tsx core restart. The equivalent slash commands are /core status and /core restart. Build first when running via dist/cli.js. Starting this mode on a port already occupied by an unsupervised server is intentionally refused.
 
-This is API-core rolling handover, **not full zero-downtime migration of in-memory sessions or live MCP tool processes**. Old workers remain alive rather than being force-killed; a full transport/session supervisor and verified generation drain are future work. See docs/plans/2026-10-25-superagent-core-rolling-restart.md. Manual isolated smoke: bun scripts/verify-core-supervisor.ts.
+Phase 2 also pins successful session IDs to their original API workers, including session-bound chat JSON, SSE and upgrade routes after restart. New sessions use the new worker. Existing clients should send their session ID when reconnecting; session data stays inside its original process. This is API-core rolling handover, **not full zero-downtime migration of in-memory sessions or live MCP tool processes**. Old workers remain alive rather than being force-killed; a full transport/session supervisor and verified generation drain are future work. See docs/plans/2026-10-25-superagent-core-rolling-restart.md. Manual isolated smoke: bun scripts/verify-core-supervisor.ts.
 
 ### Hermes-Style Skill Feedback and Guided Revision
 

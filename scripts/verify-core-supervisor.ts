@@ -33,6 +33,34 @@ async function status(port: number, token: string): Promise<number> {
   });
 }
 
+async function jsonApi(
+  port: number, token: string, method: string, pathname: string,
+  body?: Record<string, unknown>,
+): Promise<{ status: number; data: Record<string, any> }> {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  return new Promise((resolve, reject) => {
+    const req = http.request({
+      host: "127.0.0.1", port, path: pathname, method, timeout: 9000,
+      headers: {
+        Authorization: "Bearer " + token,
+        "Content-Type": "application/json",
+        ...(payload ? { "Content-Length": Buffer.byteLength(payload) } : {}),
+      },
+    }, res => {
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.once("end", () => {
+        try {
+          resolve({ status: res.statusCode || 0, data: JSON.parse(Buffer.concat(chunks).toString("utf8")) });
+        } catch (error) { reject(error); }
+      });
+    });
+    req.once("error", reject);
+    req.once("timeout", () => req.destroy(new Error("API request timed out")));
+    req.end(payload);
+  });
+}
+
 function killOwned(pid: number): void {
   if (!Number.isSafeInteger(pid) || pid <= 0) return;
   try {
@@ -69,6 +97,18 @@ try {
 
   const initialToken = JSON.parse(fs.readFileSync(infoFile, "utf8")).authToken as string;
   if (await status(publicPort, initialToken) !== 200) throw new Error("Front-door proxy auth/status failed");
+
+  // Initialize a real in-memory session before swapping the code generation.
+  const oldId = "core_acceptance_" + process.pid + "_" + Date.now();
+  const initialized = await jsonApi(publicPort, initialToken, "POST", "/api/init", {
+    sessionId: oldId, mode: "single", workspace: root,
+  });
+  if (initialized.status !== 200 || initialized.data.sessionId !== oldId) {
+    throw new Error("First generation did not create session: " + JSON.stringify(initialized));
+  }
+  if ((await requestCoreSupervisor("status", publicPort)).affinitySessions !== 1) {
+    throw new Error("Core supervisor did not pin initialized session");
+  }
   const next = await requestCoreSupervisor("restart", publicPort);
   if (next.supervisorPid !== owner.pid) throw new Error("Supervisor ownership changed unexpectedly");
   ownedPids.add(next.active.pid);
@@ -79,7 +119,28 @@ try {
   if (await status(next.active.port, initialToken) !== 200) throw new Error("New worker did not respond");
   const afterToken = JSON.parse(fs.readFileSync(infoFile, "utf8")).authToken;
   if (afterToken !== initialToken) throw new Error("Public auth token unexpectedly rotated");
-  console.log("PASS isolated core restart: public port, auth, previous worker, next worker retained");
+
+  // A named old session stays on the previous worker and new sessions go to
+  // the newly selected worker. No LLM is called by this smoke scenario.
+  const oldStatus = await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + oldId);
+  if (oldStatus.status !== 200 || oldStatus.data.sessionId !== oldId) {
+    throw new Error("Session affinity lost after restart: " + JSON.stringify(oldStatus));
+  }
+  const oldChat = await jsonApi(publicPort, initialToken, "POST", "/api/chat", { sessionId: oldId, message: "" });
+  if (oldChat.status !== 400 || oldChat.data.error === "Session not initialized") {
+    throw new Error("POST chat body affinity failed: " + JSON.stringify(oldChat));
+  }
+
+  const newId = oldId + "_new";
+  const newInit = await jsonApi(publicPort, initialToken, "POST", "/api/init", {
+    sessionId: newId, mode: "single", workspace: root,
+  });
+  if (newInit.status !== 200 || newInit.data.sessionId !== newId) {
+    throw new Error("Second generation could not create a new session: " + JSON.stringify(newInit));
+  }
+  const afterStatus = await requestCoreSupervisor("status", publicPort);
+  if (afterStatus.affinitySessions !== 2) throw new Error("Wrong session-affinity count after handover");
+  console.log("PASS isolated core handover: auth/port stable, old session+chat pinned, new session on new worker");
 } finally {
   killOwned(owner.pid ?? 0);
   for (const pid of ownedPids) killOwned(pid);

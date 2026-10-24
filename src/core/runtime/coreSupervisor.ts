@@ -5,12 +5,17 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
+import {
+  CoreSessionAffinity, CORE_ROUTING_BODY_LIMIT, inspectCoreSessionRequest,
+} from "./coreSessionRouting.js";
 
 export interface CoreRuntimeStatus {
   supervisorPid: number;
   publicPort: number;
   active: { pid: number; port: number; since: number };
   retained: Array<{ pid: number; port: number; since: number }>;
+  /** Bound session IDs remain pinned to the generation that initialized them. */
+  affinitySessions?: number;
 }
 
 /**
@@ -139,6 +144,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
   const serverToken = crypto.randomBytes(24).toString("hex");
   let active: Generation | undefined;
   const retained: Generation[] = [];
+  const sessionAffinity = new CoreSessionAffinity();
   let restarting = false;
 
   async function spawnWorker(): Promise<Generation> {
@@ -152,6 +158,9 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       env: {
         ...process.env,
         SUPERAGENT_CORE_WORKER: "1",
+        // Launch fixed-port vision helper only once from generation #1.
+        // Subsequent workers can use the same helper without binding 8095 again.
+        SUPERAGENT_CORE_VISION_OWNER: active ? "0" : "1",
         SUPERAGENT_SERVER_AUTH_TOKEN: serverToken,
       },
     });
@@ -174,6 +183,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       publicPort: port,
       active: { pid: active.pid, port: active.port, since: active.since },
       retained: retained.map(({ pid, port: workerPort, since }) => ({ pid, port: workerPort, since })),
+      affinitySessions: sessionAffinity.count,
     };
   }
 
@@ -190,25 +200,88 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     }
   }
 
+  /**
+   * Keep requests for pre-restart sessions on their original worker,
+   * including chat (sessionId in JSON), SSE, and upgraded sockets.
+   * The actual worker still enforces workspace/client-mode authorization.
+   */
   const listener = http.createServer((req, res) => {
-    const worker = active;
-    if (!worker) { res.writeHead(503); res.end("Core starting"); return; }
-    const proxy = http.request({
-      host: "127.0.0.1", port: worker.port,
-      path: req.url, method: req.method, headers: req.headers,
-    }, upstream => {
-      res.writeHead(upstream.statusCode || 502, upstream.headers);
-      upstream.pipe(res);
+    const route = inspectCoreSessionRequest(req.url, req.method, req.headers);
+    const forward = (bufferedBody?: Buffer) => {
+      const inspected = bufferedBody
+        ? inspectCoreSessionRequest(req.url, req.method, req.headers, bufferedBody.toString("utf8"))
+        : route;
+      const fallback = active;
+      if (!fallback) { res.writeHead(503); res.end("Core starting"); return; }
+      const worker = sessionAffinity.resolve(inspected.sessionId, fallback) as Generation;
+      if (worker.child.exitCode !== null || worker.child.signalCode !== null) {
+        // Do not reassign an existing session to a worker with no in-memory state.
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Session worker unavailable; explicitly resume the session." }));
+        return;
+      }
+      const proxy = http.request({
+        host: "127.0.0.1", port: worker.port,
+        path: req.url, method: req.method, headers: req.headers,
+      }, upstream => {
+        res.writeHead(upstream.statusCode || 502, upstream.headers);
+        if (!inspected.isSessionRegistration || upstream.statusCode !== 200) {
+          upstream.pipe(res);
+          return;
+        }
+        // The successful /api/init or workspace switch response is the
+        // authoritative assignment: never trust the client-supplied ID alone.
+        let recorded = "";
+        upstream.on("data", (chunk: Buffer) => {
+          if (recorded.length <= 16 * 1024) recorded += chunk.toString("utf8");
+          res.write(chunk);
+        });
+        upstream.once("end", () => {
+          sessionAffinity.registerFromResponse(
+            upstream.statusCode || 0, recorded, worker, inspected.sessionId,
+          );
+          res.end();
+        });
+      });
+      proxy.once("error", () => {
+        if (!res.headersSent) res.writeHead(502);
+        if (!res.writableEnded) res.end("Core upstream unavailable");
+      });
+      res.once("close", () => { if (!res.writableEnded) proxy.destroy(); });
+      if (bufferedBody) proxy.end(bufferedBody);
+      else req.pipe(proxy);
+    };
+
+    if (!route.parseBody) { forward(); return; }
+
+    // Only inspect bounded JSON bodies on session-bearing endpoints.
+    // Other endpoints retain request streaming and are never buffered.
+    const bodyChunks: Buffer[] = [];
+    let length = 0;
+    let overflow = false;
+    req.on("data", (chunk: Buffer) => {
+      if (overflow) return;
+      length += chunk.length;
+      if (length > CORE_ROUTING_BODY_LIMIT) {
+        overflow = true;
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Session request body exceeds routing limit." }));
+        return;
+      }
+      bodyChunks.push(chunk);
     });
-    proxy.on("error", () => {
-      if (!res.headersSent) res.writeHead(502);
-      res.end("Core upstream unavailable");
-    });
-    req.pipe(proxy);
+    req.once("end", () => { if (!overflow) forward(Buffer.concat(bodyChunks)); });
+    req.once("error", () => { if (!res.writableEnded) res.destroy(); });
   });
   listener.on("upgrade", (req, socket, head) => {
-    const worker = active;
-    if (!worker) { socket.destroy(); return; }
+    const fallback = active;
+    if (!fallback) { socket.destroy(); return; }
+    const inspected = inspectCoreSessionRequest(req.url, req.method, req.headers);
+    const worker = sessionAffinity.resolve(inspected.sessionId, fallback) as Generation;
+    if (worker.child.exitCode !== null || worker.child.signalCode !== null) {
+      socket.destroy();
+      return;
+    }
     const upstream = net.connect(worker.port, "127.0.0.1", () => {
       const lines = [req.method + " " + (req.url || "/") + " HTTP/" + req.httpVersion];
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
@@ -283,6 +356,7 @@ export function formatCoreSupervisorStatus(value: CoreRuntimeStatus): string {
     "Supervisor PID: " + value.supervisorPid,
     "Active worker: PID " + value.active.pid + " / internal port " + value.active.port,
     "Retained previous workers: " + value.retained.length,
+    "Session IDs pinned to origin workers: " + (value.affinitySessions ?? 0),
     "Existing connections remain on their original worker. Previous workers are not killed automatically.",
   ].join("\n");
 }

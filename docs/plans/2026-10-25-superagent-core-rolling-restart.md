@@ -17,11 +17,30 @@ Scope:
 - No taskkill, /stop all, tunnel replacement, or process-tree cleanup for previous worker generations during core restart.
 - Standalone MCP HTTP tunnel, OpenAI/Cloudflare MCP connector, Muse transport, Telegram, CLI jobs, and other background processes are not restarted by this supervisor.
 - This does NOT hot-patch already running MCP server code, nor migrate in-memory agent sessions, OAuth registries, or MCP Session IDs across processes. Those components require future out-of-process connection and session management.
-- Requests already streaming remain bound to the previous worker. New requests after the switch use the new worker. Clients may need to resume sessions on the new worker.
+- Requests already streaming remain bound to the previous worker. New requests for existing pinned session IDs stay on their original worker; previously unseen sessions go to the new worker. Sessionless clients may need explicit resume.
 - Old workers intentionally remain alive. Repeated restarts consume memory and ports; generation draining must wait for verified idle jobs/sessions/leases in a later phase.
 - Supervisor termination closes public API listener. Full protection requires Windows Service/systemd or another external supervisor.
 - Cannot adopt a currently active unsupervised port without disruption. Do NOT launch this over a live T-Line server.
 
-## Next phase
+## Phase 2: session-bound routing and process ownership
 
-Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated transport host; create durable session/checkpoint store, session-affinity and verified handoff; add generation ownership, safe retirement, crash recovery and rollback tests. Full zero-downtime restart is NOT available yet.
+The supervisor records session affinity only when /api/init or /api/switch-workspace returns successful, server-authorized session metadata. On rolling restart:
+
+- Requests with a known sessionId in URL, x-superagent-session-id, or bounded JSON body for /api/init, /api/chat, /api/switch-workspace stay on the original worker. SSE and upgraded requests with a session ID use the same routing.
+- Requests without a known session ID, including new sessions, go to the new active worker.
+- The underlying API still validates workspace and client mode. A supplied session ID alone never authorizes access or claims affinity.
+- Session traffic is not silently reassigned if its worker exits; the proxy returns 503 and asks for explicit session resume.
+- /core status reports pinned session IDs. Routing state is supervisor memory, not an external durable store.
+- Session-bound JSON payloads have a 1 MiB routing inspection limit; other routes still stream without buffering.
+- Only the initial supervised worker launches the fixed-port Python vision helper. Later workers do not attempt competing port 8095 binds; the initial worker is retained.
+
+Verification:
+- bun run build
+- bun --bun x vitest run tests/coreSessionRouting.test.ts tests/coreSupervisor.test.ts
+- bun scripts/verify-core-supervisor.ts (isolated port, real /api/init sessions, authorization and /api/chat routing; live MCP tunnel untouched)
+
+Known limitations: clients omitting sessionId cannot reliably route to a pre-restart in-memory session; attach it on reconnect, SSE, chat and workspace commands. Agent execution is retained on old workers, not serialized or migrated. Old generations accumulate without automatic drain, session rollback or transport-host crash recovery. OAuth MCP sessions, connected external MCP tools and Muse/Telegram listeners are out of scope.
+
+## Future phase: independent transport host
+
+Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.
