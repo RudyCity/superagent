@@ -29,6 +29,7 @@ export function createMotionFrameRenderer(
     ctx.fillRect(0, 0, width, height);
     ctx.scale(sx, sy);
     for (const { layer, values } of frame.layers) {
+      if (values.opacity <= 0.0001) continue;
       ctx.save();
       const centerX = values.x + layer.width / 2;
       const centerY = values.y + layer.height / 2;
