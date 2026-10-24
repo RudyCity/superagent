@@ -98,7 +98,8 @@ describe("Motion HTTP and artifact transport", () => {
     expect(result.status).toBe(200);
     const info = await result.json();
     expect(info.apiVersion).toBe(1);
-    expect(info.capabilities.renderWidthMax).toBe(1920);
+    expect(info.capabilities.renderWidthMax).toBe(3840);
+    expect(info.capabilities.upscale).toBe(true);
     expect(info.capabilities.aiSceneImagesMax).toBe(3);
     expect(info.capabilities.aiAudioLoop).toBe(true);
     expect(typeof info.capabilities.localVoiceoverConfigured).toBe("boolean");
@@ -287,4 +288,34 @@ describe("Motion HTTP and artifact transport", () => {
     expect((await full.arrayBuffer()).byteLength).toBe(job.artifact!.bytes);
     expect((await request("/api/motion/jobs/motionjob-aaaaaaaaaaaaaaaaaaaaaaaa/artifact")).status).toBe(404);
   }, 30000);
+
+  it("upscales motion projects and retrieves available targets via HTTP API", async () => {
+    const { root, request } = await fixture();
+    const project = await createMotionProject(root, "Upscale API");
+
+    const targetsRes = await request("/api/motion/projects/" + project.id + "/upscale/targets");
+    expect(targetsRes.status).toBe(200);
+    const targets = await targetsRes.json();
+    expect(targets.availableTargets.length).toBeGreaterThan(0);
+    expect(targets.availableTargets.map((t: any) => t.target)).toContain("4k");
+
+    const previewRes = await request("/api/motion/projects/" + project.id + "/upscale/preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseRevision: project.revision, target: "1080p" }),
+    });
+    expect(previewRes.status).toBe(200);
+    const previewData = await previewRes.json();
+    expect(previewData.composition.width).toBe(1920);
+
+    const commitRes = await request("/api/motion/projects/" + project.id + "/upscale", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ baseRevision: project.revision, target: "4k" }),
+    });
+    expect(commitRes.status).toBe(200);
+    const commitData = await commitRes.json();
+    expect(commitData.composition.width).toBe(3840);
+    expect(commitData.revision).toBe(project.revision + 1);
+  });
 });

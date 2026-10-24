@@ -1,3 +1,12 @@
+## [1.14.36] - 2026-10-25
+### Added
+- Motion Upscale Engine & 4K UHD Render Support (`src/core/motion/motionUpscale.ts`, `src/core/motion/motionRoutes.ts`, `src/core/motion/render/ffmpegEncoder.ts`, `src/core/motion/motionResize.ts`, `src/core/tools/motionAgentTools.ts`, `src/core/tools/toolsets.ts`, `tests/motionUpscale.test.ts`, `package.json`):
+  - **Vector Composition Upscaling (`motionUpscale.ts`)**: Accurately scales canvas dimensions, layer geometries, keyframe tracks (`x`, `y`, `width`, `height`, `strokeDashoffset`), font sizes, corner radii, and stroke widths with aspect ratio preservation and effect stack recompilation up to 4K UHD (3840x2160).
+  - **High-Fidelity FFmpeg Artifact Upscaling**: Added Lanczos, unsharp sharpening, spline, and super-resolution video upscaling filters with audio pass-through (`-c:a copy`) and faststart MP4 containers.
+  - **4K Dimension Barrier Lifting**: Expanded render width/height ceilings in `ffmpegEncoder.ts`, `motionResize.ts`, and `directorService.ts` from 1920 to 3840 (supporting 1080p, 2K QHD, and 4K UHD).
+  - **REST API Routes**: Exposed `POST /api/motion/projects/:id/upscale` (with `/preview`), `GET /api/motion/projects/:id/upscale/targets`, and `POST /api/motion/jobs/:id/upscale`.
+  - **Agent Tooling**: Added `motion_upscale` and `studio_upscale` tools to `superagentToolset`.
+
 ## [1.14.35] - 2026-10-25
 ### Added
 - SuperAgent Motion Studio HTTP API Extension & T-Line Desktop Parity (`src/core/motion/motionRoutes.ts`, `package.json`):

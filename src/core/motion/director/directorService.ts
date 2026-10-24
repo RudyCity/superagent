@@ -76,8 +76,8 @@ const brief = (input: unknown): string => {
 };
 function widthOf(value: unknown): number {
   const n = value ?? 640;
-  if (!Number.isSafeInteger(n) || Number(n) < 160 || Number(n) > 1920 || Number(n) % 2)
-    throw new Error("Motion width must be an even integer between 160 and 1920");
+  if (!Number.isSafeInteger(n) || Number(n) < 160 || Number(n) > 3840 || Number(n) % 2)
+    throw new Error("Motion width must be an even integer between 160 and 3840");
   return Number(n);
 }
 export function validateDirectorPlan(raw: unknown): MotionDirectorPlan {

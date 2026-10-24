@@ -1,12 +1,13 @@
 import type { Tool } from "./types.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../motion/director/directorService.js";
 import { getMotionJob } from "../motion/jobs/motionJobs.js";
-import { getMotionProject } from "../motion/motionService.js";
+import { getMotionProject, updateMotionProject } from "../motion/motionService.js";
 import { inspectMotionQuality } from "../motion/director/motionQuality.js";
+import { upscaleMotionComposition, upscaleMotionArtifact, getAvailableUpscaleTargets, type MotionUpscaleTarget, type MotionUpscaleMode } from "../motion/motionUpscale.js";
 
 const promptParameters = { type: "object", properties: {
   prompt: { type: "string", description: "Describe the short motion graphic in Indonesian or English. 1-2000 characters." },
-  width: { type: "integer", description: "Output width in pixels (even number 160-1920, default 640)." },
+  width: { type: "integer", description: "Output width in pixels (even number 160-3840, default 640, supports 1080p, 2K, and 4K UHD)." },
   aspectRatio: { type: "string", enum: ["16:9", "1:1", "9:16"], description: "Optional landscape, square or portrait composition for new motions." },
   sceneImageAssetIds: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 3, description: "Optional one to three pre-uploaded image IDs, assigned in order to storyboard scenes. Cannot combine with imageAssetId." },
   audioLoop: { type: "boolean", description: "Repeat a selected WAV soundtrack to the video's end." },
@@ -119,5 +120,70 @@ export const studioStatusTool: Tool = {
     const raw = await motionStatusTool.execute(args, cwd, signal);
     const result = JSON.parse(String(raw));
     return JSON.stringify({ ...result, studioId: result.motionId });
+  },
+};
+
+export const motionUpscaleTool: Tool = {
+  name: "motion_upscale",
+  description: "Upscale a SuperAgent Studio motion project or rendered video artifact to higher resolutions (1080p, 2K, 4K UHD, or 2x-4x factor) with vector coordinate scaling or FFmpeg Lanczos/sharp filtering.",
+  parameters: {
+    type: "object",
+    properties: {
+      motionId: { type: "string", description: "Optional project ID to upscale vector composition and keyframe coordinates." },
+      jobId: { type: "string", description: "Optional completed render job ID to upscale the resulting MP4 video artifact." },
+      scale: { type: "number", description: "Optional scaling factor (e.g. 1.5, 2, 4)." },
+      target: { type: "string", enum: ["1080p", "2k", "4k"], description: "Standard resolution target preset (1080p FHD, 2K QHD, 4K UHD)." },
+      targetWidth: { type: "integer", description: "Custom output width (even number 160-3840)." },
+      mode: { type: "string", enum: ["vector", "lanczos", "sharp", "spline", "superres"], description: "Upscale algorithm/mode (default: sharp for video, vector for project)." },
+    },
+  },
+  async execute(args, cwd) {
+    const motionId = (args.motionId || args.studioId) as string | undefined;
+    const jobId = args.jobId as string | undefined;
+
+    if (!motionId && !jobId) {
+      throw new Error("Either motionId (to upscale scene composition) or jobId (to upscale rendered video artifact) must be provided.");
+    }
+
+    const results: Record<string, unknown> = {};
+
+    if (motionId) {
+      const current = await getMotionProject(cwd, motionId);
+      const composition = upscaleMotionComposition(current, {
+        scale: typeof args.scale === "number" ? args.scale : undefined,
+        target: typeof args.target === "string" ? args.target as MotionUpscaleTarget : undefined,
+        targetWidth: typeof args.targetWidth === "number" ? args.targetWidth : undefined,
+      });
+      const updated = await updateMotionProject(cwd, motionId, current.revision, [{ type: "replace-composition", composition }]);
+      results.project = {
+        motionId,
+        previousDimensions: { width: current.composition.width, height: current.composition.height },
+        upscaledDimensions: { width: composition.width, height: composition.height },
+        revision: updated.revision,
+      };
+    }
+
+    if (jobId) {
+      const artifactResult = await upscaleMotionArtifact(cwd, jobId, {
+        scale: typeof args.scale === "number" ? args.scale : undefined,
+        target: typeof args.target === "string" ? args.target as MotionUpscaleTarget : undefined,
+        mode: typeof args.mode === "string" ? args.mode as MotionUpscaleMode : undefined,
+      });
+      results.artifact = artifactResult;
+    }
+
+    return JSON.stringify(results);
+  },
+};
+
+export const studioUpscaleTool: Tool = {
+  ...motionUpscaleTool,
+  name: "studio_upscale",
+  description: motionUpscaleTool.description.replace("motion", "Studio"),
+  async execute(args, cwd, signal) {
+    const raw = await motionUpscaleTool.execute(args, cwd, signal);
+    const parsed = JSON.parse(String(raw));
+    if (parsed.project) parsed.project.studioId = parsed.project.motionId;
+    return JSON.stringify(parsed);
   },
 };

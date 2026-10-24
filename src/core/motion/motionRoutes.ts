@@ -40,6 +40,7 @@ import { applyMotionEdits } from "./project/revisions.js";
 import { renderMotionPlayerHtml } from "./render/motionPreviewHtml.js";
 import { subscribeMotionStudioEvents, getMotionBridgeStats } from "./motionEvents.js";
 import { exportMotionDeliverablesBundle, getMotionDeliverablesBundleManifest } from "./motionBundleExport.js";
+import { upscaleMotionComposition, upscaleMotionArtifact, getAvailableUpscaleTargets, type MotionUpscaleTarget, type MotionUpscaleMode } from "./motionUpscale.js";
 import type { ImageTraceOptions } from "./vector/imageTracer.js";
 
 export interface MotionHttpContext {
@@ -139,6 +140,8 @@ export async function handleMotionHttpRoute(
   const saasPromoRoute = pathname === "/api/motion/saas-promo";
   const mockupRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/mockup$/);
   const chartRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/chart$/);
+  const upscaleRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/upscale(?:\/(preview|targets))?$/);
+  const jobUpscaleRoute = pathname.match(/^\/api\/motion\/jobs\/((?:studiojob|motionjob)-[a-f0-9]{24})\/upscale$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -544,6 +547,29 @@ export async function handleMotionHttpRoute(
         else json(res, ctx, 200, await updateMotionProject(workspace, resizeRoute[1],
           body.baseRevision as number, [{ type: "replace-composition", composition }]));
       }
+    } else if (upscaleRoute && method === "GET" && upscaleRoute[2] === "targets") {
+      const current = await getMotionProject(workspace, upscaleRoute[1]);
+      json(res, ctx, 200, {
+        currentWidth: current.composition.width,
+        currentHeight: current.composition.height,
+        availableTargets: getAvailableUpscaleTargets(current.composition.width, current.composition.height),
+      });
+    } else if (upscaleRoute && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      if (!Number.isSafeInteger(body.baseRevision)) throw new MotionValidationError(["baseRevision is required"]);
+      const current = await getMotionProject(workspace, upscaleRoute[1]);
+      if (current.revision !== body.baseRevision) {
+        json(res, ctx, 409, { error: "Motion revision conflict; reload before upscaling" });
+      } else {
+        const composition = upscaleMotionComposition(current, {
+          scale: typeof body.scale === "number" ? body.scale : undefined,
+          target: typeof body.target === "string" ? body.target as MotionUpscaleTarget : undefined,
+          targetWidth: typeof body.targetWidth === "number" ? body.targetWidth : undefined,
+        });
+        if (upscaleRoute[2] === "preview") json(res, ctx, 200, { ...current, composition });
+        else json(res, ctx, 200, await updateMotionProject(workspace, upscaleRoute[1],
+          body.baseRevision as number, [{ type: "replace-composition", composition }]));
+      }
     } else if (stackRoute && method === "POST") {
       const body = await readMotionJson(req, 10_000);
       if (!Number.isSafeInteger(body.baseRevision)) throw new MotionValidationError(["baseRevision is required"]);
@@ -724,6 +750,14 @@ export async function handleMotionHttpRoute(
         "X-Content-Type-Options": "nosniff",
       });
       res.end(data);
+    } else if (jobUpscaleRoute && method === "POST") {
+      const body = await readMotionJson(req, 2000);
+      const result = await upscaleMotionArtifact(workspace, jobUpscaleRoute[1], {
+        scale: typeof body.scale === "number" ? body.scale : undefined,
+        target: typeof body.target === "string" ? body.target as MotionUpscaleTarget : undefined,
+        mode: typeof body.mode === "string" ? body.mode as MotionUpscaleMode : undefined,
+      });
+      json(res, ctx, 200, result);
     } else if (artifact && (method === "GET" || method === "HEAD")) {
       await streamMotionArtifact(req, res, workspace, artifact[1]);
     } else {

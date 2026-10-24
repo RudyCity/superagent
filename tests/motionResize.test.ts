@@ -21,7 +21,7 @@ describe("Motion smart resize", () => {
       const square = resizeMotionComposition(original, "1:1");
       expect([square.width, square.height]).toEqual([1080, 1080]);
       expect(() => resizeMotionComposition(original, "16:9", 191)).toThrow();
-      expect(() => resizeMotionComposition(original, "9:16", 1920)).toThrow();
+      expect(() => resizeMotionComposition(original, "9:16", 3840)).toThrow();
     } finally { await fs.rm(workspace, { recursive: true, force: true }); }
   });
   it("preserves an editable effect stack and recompiles from resized source", async () => {

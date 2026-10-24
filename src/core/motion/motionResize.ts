@@ -16,10 +16,10 @@ export function resizeMotionComposition(project: MotionProject, target: MotionOu
   if (!Object.hasOwn(aspect, target)) throw new MotionValidationError(["Unsupported target aspect ratio"]);
   const source = project.composition.stackBase ?? project.composition;
   const targetWidth = width ?? (target === "9:16" ? 720 : target === "1:1" ? 1080 : 1280);
-  if (!Number.isSafeInteger(targetWidth) || targetWidth < 160 || targetWidth > 1920 || targetWidth % 2 !== 0)
-    throw new MotionValidationError(["Width must be even and between 160 and 1920"]);
+  if (!Number.isSafeInteger(targetWidth) || targetWidth < 160 || targetWidth > 3840 || targetWidth % 2 !== 0)
+    throw new MotionValidationError(["Width must be even and between 160 and 3840"]);
   const targetHeight = even(targetWidth / aspect[target]);
-  if (targetHeight > 1920) throw new MotionValidationError(["Height exceeds render limit"]);
+  if (targetHeight > 3840) throw new MotionValidationError(["Height exceeds render limit"]);
   const scale = Math.min(targetWidth / source.width, targetHeight / source.height);
   const scaledWidth = source.width * scale;
   const scaledHeight = source.height * scale;
