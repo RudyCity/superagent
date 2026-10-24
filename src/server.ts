@@ -1,4 +1,5 @@
 import http from "http";
+import crypto from "node:crypto";
 import net from "net";
 import { URL } from "url";
 import fs from "fs";
@@ -9,7 +10,8 @@ import { Agent } from "./core/agent.js";
 import type { AgentEvent } from "./core/agent.js";
 import { getConfig, getSettings, getConfiguredProviders, addTrustedDirectory, ensureDirectoryTrusted, getPresets, getActivePresetId, setActivePresetId, updateSettings, listHistorySessions, getTrustedDirectories, closeHistoryDb, generateSessionId, purgeEmptySessions, getPackageRootDir, getInstalledSkills, getSuperAgentVersion, getRootConfigDir } from "./core/config.js";
 import { readChecklistTasks, ReadChecklistResult } from "./core/taskChecklist.js";
-import { subagentInstances, superagentInstances, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
+import { subagentInstances, superagentInstances, backgroundTasks, scheduledJobs, registerMasterAgent, subscribeToActiveOutput, subscribeToSubagents, subscribeToSuperagents, registerQuestionHandler } from "./core/tools/state.js";
+import { evaluateCoreDrain } from "./core/runtime/coreDrainInspection.js";
 import { setBrowserControlHandler } from "./core/tools/otherTools.js";
 import { getBrowserMacros, saveBrowserMacro, deleteBrowserMacro } from "./core/config/browserMacros.js";
 import { execSync } from "child_process";
@@ -814,6 +816,52 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
     const pathname = parsedUrl.pathname;
 
+    // Private, loopback-only process inspection. The supervisor explicitly
+    // blocks this route from the public listener before proxying.
+    if (pathname === "/_core/internal/drain") {
+      const secret = process.env.SUPERAGENT_CORE_INSPECT_TOKEN || "";
+      const headerValue = req.headers["x-superagent-internal-token"];
+      const provided = typeof headerValue === "string" ? headerValue : "";
+      const a = Buffer.from(provided);
+      const b = Buffer.from(secret);
+      const authorized = process.env.SUPERAGENT_CORE_WORKER === "1" &&
+        secret.length === 64 && req.method === "GET" &&
+        (req.socket.remoteAddress === "127.0.0.1" || req.socket.remoteAddress === "::1") &&
+        a.length === b.length && crypto.timingSafeEqual(a, b);
+      if (!authorized) { res.writeHead(404); res.end(); return; }
+      try {
+        const { listSessions, listDetachedSessions } = await import("./core/tools/cliBridgeSession.js");
+        const { getActiveRemoteTaskSnapshot } = await import("./core/remoteAgent/taskRunner.js");
+        const { isMuseWatcherActive } = await import("./core/remoteAgent/museWatcherRegistry.js");
+        const { daemonScheduler } = await import("./core/daemon/daemonScheduler.js");
+        const report = evaluateCoreDrain(process.pid, process.env.SUPERAGENT_CORE_GENERATION_ID || "", {
+          transportIsolated: process.env.SUPERAGENT_CORE_TRANSPORT_ISOLATED === "1",
+          visionOwner: process.env.SUPERAGENT_CORE_VISION_OWNER === "1",
+          metrics: {
+            sessions: activeSessions.size,
+            sseClients: sseClients.size,
+            browserClients: browserInstances.size,
+            pendingPrompts: pendingPermissions.size + pendingQuestions.size + pendingBrowserControls.size,
+            backgroundTasks: [...backgroundTasks.values()].filter(t => !t.hasExited).length,
+            // Conservative: even completed instance records can own references.
+            agents: subagentInstances.size + superagentInstances.size,
+            cliBridgeSessions: listSessions().filter(t => t.status !== "exited" && t.status !== "errored").length,
+            detachedCliBridgeSessions: listDetachedSessions().length,
+            scheduledJobs: scheduledJobs.size,
+            remoteTasks: getActiveRemoteTaskSnapshot() ? 1 : 0,
+            daemonRunning: daemonScheduler.isRunning() ? 1 : 0,
+            museWatcher: isMuseWatcherActive() ? 1 : 0,
+          },
+        });
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify(report));
+      } catch {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ safe: false, blockers: ["worker inspection failed"] }));
+      }
+      return;
+    }
+
     logToSuperAgentServerFile(`[Request] ${req.method} ${req.url} (Workspace: ${req.headers["x-workspace-path"] || "none"})`);
 
     // Auth gate for the HTTP API (OPTIONS preflight passes through)
@@ -945,7 +993,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   });
 
   // Start the Chrome Remote WSS bridge silently in the background if not in a test environment
-  if (!process.env.VITEST && process.env.NODE_ENV !== "test") {
+  if (!process.env.VITEST && process.env.NODE_ENV !== "test" && process.env.SUPERAGENT_CORE_WORKER !== "1") {
     try {
       const { ensureRemoteChromeBridge } = await import("./core/tools/remoteChromeBridge.js");
       ensureRemoteChromeBridge().catch(() => {});

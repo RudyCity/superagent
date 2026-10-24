@@ -156,6 +156,7 @@ export const CORE_RUNTIME_SUGGESTIONS = [
   "/core status",
   "/core restart",
   "/core rollback",
+  "/core drain",
 ] as const;
 
 export const SERVER_TUNNEL_SUGGESTIONS = [

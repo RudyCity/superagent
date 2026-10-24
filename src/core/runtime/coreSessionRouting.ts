@@ -82,6 +82,14 @@ export class CoreSessionAffinity {
 
   get count(): number { return this.sessions.size; }
 
+  countForOwner(owner: CoreOwner): number {
+    let count = 0;
+    for (const assigned of this.sessions.values()) {
+      if (assigned.pid === owner.pid && assigned.port === owner.port) count++;
+    }
+    return count;
+  }
+
   resolve(sessionId: string | undefined, fallback: CoreOwner): CoreOwner {
     return sessionId && this.sessions.get(sessionId) || fallback;
   }

@@ -234,7 +234,7 @@ Commands:
   session           Manage conversation sessions (list, export, clear --empty, import)
   memory            Review RMemory retention (sweep [--apply])
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
-  core              Manage supervised API core (start, status, restart, rollback)
+  core              Manage supervised API core (start, status, restart, rollback, drain)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
   tunnel            Manage Cloudflare quick tunnels (list, start [--https], stop, status)

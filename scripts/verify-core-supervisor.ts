@@ -22,10 +22,10 @@ async function freePort(): Promise<number> {
   });
 }
 
-async function status(port: number, token: string): Promise<number> {
+async function status(port: number, token: string, pathname = "/api/status"): Promise<number> {
   return new Promise((resolve, reject) => {
     const req = http.get({
-      host: "127.0.0.1", port, path: "/api/status",
+      host: "127.0.0.1", port, path: pathname,
       headers: { Authorization: "Bearer " + token }, timeout: 3500,
     }, res => { res.resume(); resolve(res.statusCode ?? 0); });
     req.once("error", reject);
@@ -97,6 +97,9 @@ try {
 
   const initialToken = JSON.parse(fs.readFileSync(infoFile, "utf8")).authToken as string;
   if (await status(publicPort, initialToken) !== 200) throw new Error("Front-door proxy auth/status failed");
+  if (await status(publicPort, initialToken, "/_core/internal/drain") !== 404) {
+    throw new Error("Internal drain endpoint escaped onto public API port");
+  }
 
   // Initialize a real in-memory session before swapping the code generation.
   const oldId = "core_acceptance_" + process.pid + "_" + Date.now();
@@ -189,7 +192,32 @@ try {
   if ((await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + newId)).data.sessionId !== newId) {
     throw new Error("Second-generation session did not survive automatic failover");
   }
-  console.log("PASS isolated core handover: auth stable, session affinity, manual rollback, crash failover");
+  // The vision owner and session-bearing old workers must not be reaped.
+  const guarded = await requestCoreSupervisor("drain", publicPort);
+  if (guarded.lastDrain?.retiredPids.length !== 0 || guarded.lastDrain.blocked.length === 0) {
+    throw new Error("Draining retained workers with live sessions/helper should fail closed");
+  }
+
+  // New API-only generation with NO session or open stream may be retired.
+  const fourth = await requestCoreSupervisor("restart", publicPort);
+  ownedPids.add(fourth.active.pid);
+  const fifth = await requestCoreSupervisor("restart", publicPort);
+  ownedPids.add(fifth.active.pid);
+  const verified = await requestCoreSupervisor("drain", publicPort);
+  if (!verified.lastDrain?.retiredPids.includes(fourth.active.pid)) {
+    throw new Error("Quiescent API-only worker was not verified and drained: " +
+      JSON.stringify(verified.lastDrain));
+  }
+  if (verified.retained.some(w => w.pid === fourth.active.pid)) {
+    throw new Error("Retired worker still occupies retained generation slot");
+  }
+  if (!verified.lastDrain.blocked.some(reason => reason.includes("pinned sessions"))) {
+    throw new Error("Drain failed to protect workers with pre-existing sessions");
+  }
+  if (await status(publicPort, initialToken) !== 200) {
+    throw new Error("Public API did not survive worker drain");
+  }
+  console.log("PASS isolated core: affinity, rollback, crash failover, fail-closed inspection, verified idle drain");
 } finally {
   killOwned(owner.pid ?? 0);
   for (const pid of ownedPids) killOwned(pid);

@@ -5,6 +5,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
+import type { CoreDrainReport } from "./coreDrainInspection.js";
 import {
   CoreSessionAffinity, CORE_ROUTING_BODY_LIMIT, inspectCoreSessionRequest,
 } from "./coreSessionRouting.js";
@@ -22,6 +23,7 @@ export interface CoreRuntimeStatus {
   affinitySessions?: number;
   maxRetainedWorkers?: number;
   lastRollback?: { reason: string; fromPid: number; toPid: number; at: number };
+  lastDrain?: { checked: number; retiredPids: number[]; blocked: string[]; at: number };
 }
 
 /**
@@ -37,7 +39,11 @@ const statePath = (port: number) => path.join(stateDir(), "core-supervisor-" + p
 const validPort = (port: number) => Number.isInteger(port) && port >= 1 && port <= 65535;
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
-type Generation = CoreRuntimeStatus["active"] & { child: ChildProcess };
+type Generation = CoreRuntimeStatus["active"] & {
+  child: ChildProcess;
+  generationId: string;
+  drainEligible: boolean;
+};
 
 interface SupervisorDiscovery {
   supervisorPid: number;
@@ -107,7 +113,7 @@ async function ready(port: number, child: ChildProcess, bearer: string): Promise
   throw new Error("New core worker did not pass HTTP readiness within 15 seconds");
 }
 
-export async function requestCoreSupervisor(action: "status" | "restart" | "rollback", port = 7888): Promise<CoreRuntimeStatus> {
+export async function requestCoreSupervisor(action: "status" | "restart" | "rollback" | "drain", port = 7888): Promise<CoreRuntimeStatus> {
   let info: SupervisorDiscovery;
   try { info = readDiscovery(port); }
   catch { throw new Error("No supervised core is registered on port " + port + ". Start: superagent core start --port " + port); }
@@ -148,14 +154,32 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
   const controlToken = crypto.randomBytes(32).toString("hex");
   // All workers use the same bearer token so reconnecting clients remain authorized.
   const serverToken = crypto.randomBytes(24).toString("hex");
+  const inspectToken = crypto.randomBytes(32).toString("hex");
   let active: Generation | undefined;
   const retained: Generation[] = [];
   const sessionAffinity = new CoreSessionAffinity();
   let restarting = false;
   let lastRollback: CoreRuntimeStatus["lastRollback"];
+  let lastDrain: CoreRuntimeStatus["lastDrain"];
+  // Account for in-flight requests, SSE streams and raw socket upgrades
+  // before considering a worker for retirement.
+  const inflight = new Map<number, number>();
+  function acquire(worker: Generation): () => void {
+    inflight.set(worker.pid, (inflight.get(worker.pid) || 0) + 1);
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const remaining = (inflight.get(worker.pid) || 0) - 1;
+      if (remaining > 0) inflight.set(worker.pid, remaining);
+      else inflight.delete(worker.pid);
+    };
+  }
 
   async function spawnWorker(): Promise<Generation> {
     const workerPort = await reserveLoopbackPort();
+    const generationId = crypto.randomBytes(16).toString("hex");
+    const drainEligible = !!active;
     const entry = path.resolve(process.argv[1] || "");
     const child = spawn(process.execPath, [entry, "--server", String(workerPort), "--client-mode", clientMode], {
       cwd: process.cwd(),
@@ -165,6 +189,11 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       env: {
         ...process.env,
         SUPERAGENT_CORE_WORKER: "1",
+        SUPERAGENT_CORE_GENERATION_ID: generationId,
+        SUPERAGENT_CORE_INSPECT_TOKEN: inspectToken,
+        // First generation owns the fixed-port vision helper and cannot be
+        // retired automatically. Others are API-only (no sidecar listeners).
+        SUPERAGENT_CORE_TRANSPORT_ISOLATED: drainEligible ? "1" : "0",
         // Launch fixed-port vision helper only once from generation #1.
         // Subsequent workers can use the same helper without binding 8095 again.
         SUPERAGENT_CORE_VISION_OWNER: active ? "0" : "1",
@@ -180,7 +209,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       throw error;
     }
     if (!child.pid) throw new Error("Worker PID unavailable");
-    return { child, pid: child.pid, port: workerPort, since: Date.now() };
+    return { child, pid: child.pid, port: workerPort, since: Date.now(), generationId, drainEligible };
   }
 
   function status(): CoreRuntimeStatus {
@@ -193,6 +222,7 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
       affinitySessions: sessionAffinity.count,
       maxRetainedWorkers: MAX_RETAINED_CORE_WORKERS,
       ...(lastRollback ? { lastRollback } : {}),
+      ...(lastDrain ? { lastDrain } : {}),
     };
   }
 
@@ -262,6 +292,100 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
     }
   }
 
+  async function inspectForDrain(worker: Generation): Promise<CoreDrainReport | undefined> {
+    if (!worker.drainEligible || workerExited(worker)) return undefined;
+    return new Promise(resolve => {
+      const req = http.get({
+        host: "127.0.0.1", port: worker.port,
+        path: "/_core/internal/drain",
+        headers: { "x-superagent-internal-token": inspectToken },
+        timeout: 2000,
+      }, res => {
+        const parts: Buffer[] = [];
+        let length = 0;
+        res.on("data", (chunk: Buffer) => {
+          length += chunk.length;
+          if (length > 8192) req.destroy();
+          else parts.push(chunk);
+        });
+        res.once("end", () => {
+          if (res.statusCode !== 200) { resolve(undefined); return; }
+          try {
+            const report = JSON.parse(Buffer.concat(parts).toString("utf8")) as CoreDrainReport;
+            resolve(report.pid === worker.pid && report.workerGenerationId === worker.generationId
+              && report.transportIsolated && !report.visionOwner &&
+              typeof report.safe === "boolean" && Array.isArray(report.blockers)
+              ? report : undefined);
+          } catch { resolve(undefined); }
+        });
+      });
+      req.once("timeout", () => req.destroy());
+      req.once("error", () => resolve(undefined));
+    });
+  }
+
+  async function drain(): Promise<CoreRuntimeStatus> {
+    if (restarting) throw new Error("Core lifecycle change already in progress");
+    restarting = true;
+    const retiredPids: number[] = [];
+    const blocked: string[] = [];
+    const candidates = [...retained];
+    try {
+      for (const worker of candidates) {
+        if (workerExited(worker)) {
+          // Keep the recorded dead generation and fail closed on its pinned
+          // sessions. Process liveness alone is not a safe cleanup permission.
+          blocked.push("PID " + worker.pid + ": worker already exited");
+          continue;
+        }
+        if (!worker.drainEligible) {
+          blocked.push("PID " + worker.pid + ": owns persistent helper");
+          continue;
+        }
+        if (sessionAffinity.countForOwner(worker) > 0) {
+          blocked.push("PID " + worker.pid + ": pinned sessions remain");
+          continue;
+        }
+        if ((inflight.get(worker.pid) || 0) > 0) {
+          blocked.push("PID " + worker.pid + ": active HTTP/SSE/WebSocket requests");
+          continue;
+        }
+        const first = await inspectForDrain(worker);
+        if (!first?.safe) {
+          blocked.push("PID " + worker.pid + ": " + (first?.blockers.join(", ") || "inspection unavailable"));
+          continue;
+        }
+        // Observe quiescence twice after a delay; reject a newly active worker.
+        await pause(300);
+        const second = await inspectForDrain(worker);
+        if (!second?.safe || (inflight.get(worker.pid) || 0) !== 0 ||
+            sessionAffinity.countForOwner(worker) !== 0) {
+          blocked.push("PID " + worker.pid + ": changed state during drain verification");
+          continue;
+        }
+        // Only a supervisor-spawned, private, nonce-verified process with no
+        // sessions, jobs, subprocesses, streams or auxiliary listeners can
+        // be requested to stop. Never use taskkill /T or signal a tunnel PID.
+        const stopped = await new Promise<boolean>(resolve => {
+          worker.child.once("exit", () => resolve(true));
+          if (!worker.child.kill("SIGTERM")) { resolve(false); return; }
+          setTimeout(() => resolve(workerExited(worker)), 2500).unref();
+        });
+        if (!stopped) {
+          blocked.push("PID " + worker.pid + ": shutdown unconfirmed; retained");
+          continue;
+        }
+        const index = retained.findIndex(item => item.pid === worker.pid && item.generationId === worker.generationId);
+        if (index >= 0) retained.splice(index, 1);
+        retiredPids.push(worker.pid);
+      }
+      lastDrain = { checked: candidates.length, retiredPids, blocked, at: Date.now() };
+      return status();
+    } finally {
+      restarting = false;
+    }
+  }
+
   // On an observed active process exit, prefer a verified prior generation
   // for NEW traffic. Sessions owned by the failed worker remain unavailable,
   // rather than being silently moved to an incompatible in-memory agent.
@@ -279,6 +403,8 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
    */
   const listener = http.createServer((req, res) => {
     const route = inspectCoreSessionRequest(req.url, req.method, req.headers);
+    // Never expose the internal inspection protocol on the stable public port.
+    if (route.pathname.startsWith("/_core/")) { res.writeHead(404); res.end(); return; }
     const forward = (bufferedBody?: Buffer) => {
       const inspected = bufferedBody
         ? inspectCoreSessionRequest(req.url, req.method, req.headers, bufferedBody.toString("utf8"))
@@ -296,9 +422,14 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
         res.end(JSON.stringify({ error: "Session worker unavailable; explicitly resume the session." }));
         return;
       }
+      const release = acquire(worker);
+      res.once("close", release);
+      res.once("finish", release);
+      const forwardedHeaders = { ...req.headers };
+      delete forwardedHeaders["x-superagent-internal-token"];
       const proxy = http.request({
         host: "127.0.0.1", port: worker.port,
-        path: req.url, method: req.method, headers: req.headers,
+        path: req.url, method: req.method, headers: forwardedHeaders,
       }, upstream => {
         res.writeHead(upstream.statusCode || 502, upstream.headers);
         if (!inspected.isSessionRegistration || upstream.statusCode !== 200) {
@@ -352,13 +483,17 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
   listener.on("upgrade", (req, socket, head) => {
     if (!active) { socket.destroy(); return; }
     const inspected = inspectCoreSessionRequest(req.url, req.method, req.headers);
+    if (inspected.pathname.startsWith("/_core/")) { socket.destroy(); return; }
     const worker = selectWorker(inspected.sessionId);
     if (!worker) { socket.destroy(); return; }
     if (worker.child.exitCode !== null || worker.child.signalCode !== null) {
       socket.destroy();
       return;
     }
+    const release = acquire(worker);
+    socket.once("close", release);
     const upstream = net.connect(worker.port, "127.0.0.1", () => {
+      upstream.once("close", release);
       const lines = [req.method + " " + (req.url || "/") + " HTTP/" + req.httpVersion];
       for (let i = 0; i < req.rawHeaders.length; i += 2) {
         lines.push(req.rawHeaders[i] + ": " + req.rawHeaders[i + 1]);
@@ -385,7 +520,9 @@ export async function runCoreSupervisor(port = 7888, clientMode: "tline" | "chro
           ? await restart()
           : req.method === "POST" && req.url === "/rollback"
             ? await rollback("operator-requested")
-            : null;
+            : req.method === "POST" && req.url === "/drain"
+              ? await drain()
+              : null;
       if (!result) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(result));
@@ -438,7 +575,10 @@ export function formatCoreSupervisorStatus(value: CoreRuntimeStatus): string {
     "Retained-worker safety limit: " + (value.maxRetainedWorkers ?? MAX_RETAINED_CORE_WORKERS),
     ...(value.lastRollback ? ["Last rollback: " + value.lastRollback.reason +
       " (PID " + value.lastRollback.fromPid + " -> " + value.lastRollback.toPid + ")"] : []),
-    "Existing connections remain on their original worker. Previous workers are not killed automatically.",
+    ...(value.lastDrain ? ["Last drain: inspected " + value.lastDrain.checked +
+      ", retired " + value.lastDrain.retiredPids.length,
+      ...value.lastDrain.blocked.map(reason => "  blocked: " + reason)] : []),
+    "Existing connections stay on origin workers; only explicit verified drain retires idle generations.",
   ].join("\n");
 }
 
@@ -452,6 +592,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core status [--port 7888]");
     console.log("superagent core restart [--port 7888]");
     console.log("superagent core rollback [--port 7888]");
+    console.log("superagent core drain [--port 7888]");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
     return;
   }
@@ -462,6 +603,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode);
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback") throw new Error("Expected start, status, restart, rollback or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

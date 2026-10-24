@@ -56,6 +56,22 @@ The isolated acceptance test now exercises actual session initialization across 
 
 Operational caveat: process-exit monitoring is not the same as comprehensive hang detection, and the supervisor itself remains a single point of failure. This is Phase 3a API hardening, NOT independent MCP/OAuth/Telegram transport or true zero-downtime runtime migration.
 
+## Phase 3b: verified idle worker drain (API worker only)
+
+Added superagent core drain --port 7888 and /core drain. The operator-initiated action inspects retained worker generations and never drains the active worker. The supervisor performs two authenticated private loopback probes 300 ms apart and refuses retirement unless every condition holds:
+
+- The worker is supervisor-owned and does not own the fixed-port Python vision helper. Supervised API workers no longer spawn competing remote Chrome bridge listeners.
+- No session affinity entries, public HTTP requests, SSE streams or upgraded sockets remain on the generation.
+- The worker reports no agent sessions, browser clients, pending approvals/questions, background tasks, subagents, CLI bridge/detached subprocess sessions, scheduled jobs, remote Muse tasks/watchers or active daemon scheduler.
+- The report matches the expected process PID and supervisor-generated generation nonce. The private endpoint requires a distinct random 256-bit token and is blocked at the public reverse proxy.
+- If activity changes between probes, the report cannot be verified or the worker does not exit after bounded SIGTERM, the worker is retained. No process-tree kill or unrelated MCP tunnel termination is performed.
+
+The last drain result (inspected, retired and blocked PIDs) appears in core status. A successful retirement frees one retained-generation slot, allowing later rolling restarts.
+
+Validation: bun run build; bun --bun x vitest run tests/coreDrainInspection.test.ts tests/coreGenerationPolicy.test.ts tests/coreSessionRouting.test.ts tests/coreSupervisor.test.ts; bun scripts/verify-core-supervisor.ts. The isolated smoke exercises session retention, rollback, crash failover, private endpoint denial, blocked drain and verified retirement.
+
+This explicitly requested drain is conservative and limited to the supervised API host. It is NOT persistence of agent checkpoints, adoption after supervisor crash, complete separation of external transport, or a guarantee for unregistered out-of-band child processes. The original vision-owner worker remains retained. External MCP/Telegram/Muse transport supervision is future work.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.

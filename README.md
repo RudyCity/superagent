@@ -244,6 +244,8 @@ Phase 2 also pins successful session IDs to their original API workers, includin
 
 Phase 3a: /core rollback (or superagent core rollback) switches new traffic back to a previously retained, health-checked worker. A detected active worker exit triggers attempted automatic rollback, without terminating any tunnel or healthy worker. Restart fails closed at four retained workers: there is **no** unverified cleanup or forced process kill to make room. Monitor with /core status. Verified draining and a persistent transport/session host remain future work.
 
+Phase 3b: /core drain (or superagent core drain) checks retained API workers twice before retirement and blocks when sessions, SSE/WebSocket requests, subprocesses, agents, background/daemon/Muse tasks or the fixed-port vision helper remain. The separate inspection endpoint uses a secret and is never exposed publicly. The action reports blocked/retired generations in /core status. Isolated verification: bun scripts/verify-core-supervisor.ts. Persistent external MCP/Telegram/Muse transport and supervisor crash adoption remain future work.
+
 ### Hermes-Style Skill Feedback and Guided Revision
 
 An approved/pinned skill run records version-bound outcome metrics. Two consecutive failed daemon runs for the same pinned version can create a **project-scoped, quarantined candidate advisory** in RMemory, linked to the exact run IDs. Negative feedback creates another quarantined advisory linked to a persisted feedback ID. Candidates are excluded from automatic recall until reviewed; failures to reach RMemory do not change the underlying run's outcome.

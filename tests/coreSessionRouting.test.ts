@@ -23,6 +23,8 @@ describe("core worker session affinity", () => {
     expect(affinity.resolve("s123", newWorker)).toEqual(oldWorker);
     expect(affinity.resolve("sNEW", newWorker)).toEqual(newWorker);
     expect(affinity.count).toBe(1);
+    expect(affinity.countForOwner(oldWorker)).toBe(1);
+    expect(affinity.countForOwner(newWorker)).toBe(0);
   });
 
   it("never captures rejected, mismatched or collision session responses", () => {
