@@ -902,6 +902,9 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   });
 
   server.listen(port, '127.0.0.1', () => {
+    // The supervisor owns public auth metadata; private workers must not
+    // overwrite shared server-info or invalidate existing client tokens.
+    if (process.env.SUPERAGENT_CORE_WORKER !== "1") {
     try {
       const serverInfoPath = path.join(getRootConfigDir(), "server-info.json");
       const portServerInfoPath = path.join(getRootConfigDir(), `server-info-${port}.json`);
@@ -924,6 +927,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
         }
       }
     } catch {}
+    }
     // Never expose bearer credentials in persisted diagnostic logs.
     logToSuperAgentServerFile('[SERVER] Auth token initialized (redacted).');
     if (!silent) {

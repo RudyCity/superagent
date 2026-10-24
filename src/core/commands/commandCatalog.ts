@@ -151,6 +151,12 @@ export const MCP_TUNNEL_SUGGESTIONS = [
   "/mcp tunnel doctor --provider openai",
 ];
 
+export const CORE_RUNTIME_SUGGESTIONS = [
+  "/core help",
+  "/core status",
+  "/core restart",
+] as const;
+
 export const SERVER_TUNNEL_SUGGESTIONS = [
   "/server tunnel list",
   "/server tunnel start",

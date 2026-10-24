@@ -28,7 +28,14 @@ let serverAuthToken = "";
 
 export function ensureServerAuthToken(): string {
   if (!serverAuthToken) {
-    serverAuthToken = crypto.randomBytes(24).toString("hex");
+    // Only explicitly supervised workers inherit the stable bearer token.
+    // An updated worker generation must not invalidate existing clients.
+    const injected = process.env.SUPERAGENT_CORE_WORKER === "1"
+      ? process.env.SUPERAGENT_SERVER_AUTH_TOKEN
+      : undefined;
+    serverAuthToken = injected && /^[a-f0-9]{48}$/.test(injected)
+      ? injected
+      : crypto.randomBytes(24).toString("hex");
   }
   return serverAuthToken;
 }

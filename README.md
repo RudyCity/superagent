@@ -231,7 +231,16 @@ The `control_chrome_vision` tool provides **human-like visual perception and spa
 | `/muse` | Coordinate Muse tasks and watch sessions; `/muse tunnel` controls Muse WebSocket only |
 | `/telegram` | Manage direct Telegram bot/group operations: `status`, `doctor`, `send`, `config`, `fallback` |
 | `/server tunnel` | Manage Superagent REST/SSE server exposure independently |
+| `/core status` `/core restart` | Inspect or roll an opt-in supervised API core; no MCP/Muse/Telegram shutdown |
 | `/tunnel` `/tunnels` | Deprecated Muse-only aliases; use `/mcp tunnel` for MCP or `/server tunnel` for REST/SSE |
+
+### Supervised API core restart (opt-in)
+
+For source changes, a separate supervisor can keep the REST/SSE/WebSocket port and bearer token stable while switching API core worker versions. It never calls stop-all or restarts MCP, Muse, or Telegram services. Existing SSE/WebSocket sockets and background tasks remain with the old worker; new requests go to the new worker only after readiness checks.
+
+Run from the repository: bun src/cli.tsx core start --port 7888, then bun src/cli.tsx core status or bun src/cli.tsx core restart. The equivalent slash commands are /core status and /core restart. Build first when running via dist/cli.js. Starting this mode on a port already occupied by an unsupervised server is intentionally refused.
+
+This is API-core rolling handover, **not full zero-downtime migration of in-memory sessions or live MCP tool processes**. Old workers remain alive rather than being force-killed; a full transport/session supervisor and verified generation drain are future work. See docs/plans/2026-10-25-superagent-core-rolling-restart.md. Manual isolated smoke: bun scripts/verify-core-supervisor.ts.
 
 ### Hermes-Style Skill Feedback and Guided Revision
 
