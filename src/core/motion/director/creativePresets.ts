@@ -197,7 +197,7 @@ function sceneLayout(
 function addDecoration(
   layers: Composition["layers"], scene: MotionDirectorScene,
   style: MotionArtDirection, index: number, count: number, dimensions: { width: number; height: number },
-  anchor: { x: number; y: number; margin: number; width: number; titleSize: number; subtitleSize: number },
+  anchor: { x: number; y: number; margin: number; width: number; titleSize: number; subtitleSize: number; layout: Layout },
   visible: MotionTrack,
   fonts: { title: string; subtitle: string; kicker: string },
 ): void {
@@ -245,29 +245,36 @@ function addDecoration(
 
   if (style === "neon") {
     // 1. Sleek Glassmorphism Hero Card Backdrop
-    const cardPadX = 36;
-    const cardX = Math.max(20, anchor.x - cardPadX);
-    const cardY = Math.max(40, anchor.y - 74);
-    const cardW = Math.min(width - 40, anchor.width + cardPadX * 2);
-    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 120);
+    const cardPadX = 48;
+    const minCardW = Math.max(width * 0.58, anchor.width + cardPadX * 2);
+    const cardW = Math.min(width - 64, Math.round(minCardW));
+    const cardX = anchor.layout === "center" ? Math.round((width - cardW) / 2) : Math.max(24, anchor.x - cardPadX);
+    const cardY = Math.max(40, anchor.y - 84);
+    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 130);
+
+    // Subtle Ambient Glow Aura Behind Card
+    rect("ambient-glow", cardX - 16, cardY - 16, cardW + 32, cardH + 32, scene.accent, 0.08, 28);
 
     // Frosted Card Body
-    rect("hero-card", cardX, cardY, cardW, cardH, "#111827", 0.65, 20);
+    rect("hero-card", cardX, cardY, cardW, cardH, "#111827", 0.72, 20);
 
     // Glowing Neon Top Accent Strip
-    rect("accent-strip", cardX + 24, cardY, Math.min(cardW - 48, 180), 4, scene.accent, 0.95, 2);
+    rect("accent-strip", cardX + 28, cardY, Math.min(cardW - 56, 220), 4, scene.accent, 0.95, 2);
 
     // Pill Badge Container & Monospace Kicker
     const pillW = 128;
     const pillH = 26;
-    rect("pill-bg", anchor.x, anchor.y - 48, pillW, pillH, scene.accent, 0.18, 13);
-    label("kicker", String(index + 1).padStart(2, "0") + " // ACT", anchor.x + 14, anchor.y - 42, 12, fonts.kicker, scene.accent);
+    const pillX = anchor.layout === "center" ? Math.round((width - pillW) / 2) : anchor.x;
+    rect("pill-bg", pillX, anchor.y - 54, pillW, pillH, scene.accent, 0.22, 13);
+    label("kicker", String(index + 1).padStart(2, "0") + " // ACT", pillX + 14, anchor.y - 48, 12, fonts.kicker, scene.accent);
   } else if (style === "brutalist") {
     // Bold Solid Offset Card
-    const cardX = Math.max(20, anchor.x - 24);
-    const cardY = Math.max(40, anchor.y - 64);
-    const cardW = Math.min(width - 40, anchor.width + 48);
-    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 100);
+    const cardPadX = 36;
+    const minCardW = Math.max(width * 0.58, anchor.width + cardPadX * 2);
+    const cardW = Math.min(width - 64, Math.round(minCardW));
+    const cardX = anchor.layout === "center" ? Math.round((width - cardW) / 2) : Math.max(24, anchor.x - cardPadX);
+    const cardY = Math.max(40, anchor.y - 74);
+    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 110);
 
     // Offset shadow block
     rect("offset-shadow", cardX + 12, cardY + 12, cardW, cardH, scene.accent, 0.9, 0);
@@ -275,7 +282,7 @@ function addDecoration(
     rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 1.0, 0);
 
     // Brutalist Kicker Tag
-    label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 44, 18, fonts.kicker, scene.accent);
+    label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 46, 16, fonts.kicker, scene.accent);
   } else if (style === "editorial") {
     // Refined Asymmetric Editorial Frame
     rect("side-rule", width - anchor.margin / 2, height * .14, 4, height * .69, scene.accent, 0.75, 2);
@@ -283,15 +290,16 @@ function addDecoration(
     label("kicker", "CHAPTER " + String(index + 1).padStart(2, "0"), anchor.x, anchor.y - 64, 16, fonts.kicker, scene.accent);
   } else {
     // Clean Minimalist Hero Card
-    const cardPad = 32;
-    const cardX = Math.max(20, anchor.x - cardPad);
-    const cardY = Math.max(40, anchor.y - 68);
-    const cardW = Math.min(width - 40, anchor.width + cardPad * 2);
-    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 110);
+    const cardPadX = 42;
+    const minCardW = Math.max(width * 0.56, anchor.width + cardPadX * 2);
+    const cardW = Math.min(width - 64, Math.round(minCardW));
+    const cardX = anchor.layout === "center" ? Math.round((width - cardW) / 2) : Math.max(24, anchor.x - cardPadX);
+    const cardY = Math.max(40, anchor.y - 78);
+    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 120);
 
-    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.55, 16);
-    rect("hairline", anchor.x, anchor.y - 44, Math.min(cardW - 64, 120), 2, scene.accent, 0.7, 1);
-    label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 72, 13, fonts.kicker, scene.accent);
+    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.60, 16);
+    rect("hairline", cardX + 28, cardY, Math.min(cardW - 56, 160), 3, scene.accent, 0.85, 1);
+    label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 50, 13, fonts.kicker, scene.accent);
   }
 }
 function applySceneTransition(
@@ -440,10 +448,13 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
     const fonts = getArtDirectionFonts(style);
     const anchor = sceneLayout(scene, style, index, dimensions.width, dimensions.height, foreground);
     const sceneStartIndex = layers.length;
-    if (plan.artDirection) addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible, fonts);
-    const accentW = Math.min(160, anchor.width);
-    layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: anchor.x, y: anchor.y - 32,
-      width: accentW, height: 4, cornerRadius: 2, rotation: 0, opacity: 1, fill: scene.accent, tracks: [visible] });
+    if (plan.artDirection) {
+      addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible, fonts);
+    } else {
+      const accentW = Math.min(160, anchor.width);
+      layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: anchor.x, y: anchor.y - 32,
+        width: accentW, height: 4, cornerRadius: 2, rotation: 0, opacity: 1, fill: scene.accent, tracks: [visible] });
+    }
 
     let titleTracks = entry(motion, start, end, anchor.x, anchor.y);
     let titleOpacity = visible;

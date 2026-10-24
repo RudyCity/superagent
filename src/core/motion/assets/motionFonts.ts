@@ -63,7 +63,15 @@ let registered = false;
 export function ensureMotionFontsRegistered(): void {
   if (registered) return;
   registered = true;
-  const dir = join(dirname(fileURLToPath(import.meta.url)), "fonts");
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidateDirs = [
+    join(here, "fonts"),
+    join(here, "../../../../src/core/motion/assets/fonts"),
+    join(process.cwd(), "src/core/motion/assets/fonts"),
+    join(process.cwd(), "dist/core/motion/assets/fonts"),
+  ];
+  const dir = candidateDirs.find(d => existsSync(d));
+  if (!dir) return;
   for (const [family, file] of Object.entries(MOTION_FONT_FILES)) {
     const fontPath = join(dir, file);
     if (existsSync(fontPath)) GlobalFonts.registerFromPath(fontPath, family);

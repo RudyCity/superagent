@@ -36,4 +36,14 @@ function syncInto(dir: string, create: boolean): number {
 
 const local = syncInto(distDir, true);
 const antigravity = syncInto(antigravityDir, false);
+
+const srcFonts = path.join(repo, "src", "core", "motion", "assets", "fonts");
+const distFonts = path.join(repo, "dist", "core", "motion", "assets", "fonts");
+if (fs.existsSync(srcFonts)) {
+  fs.mkdirSync(distFonts, { recursive: true });
+  for (const file of fs.readdirSync(srcFonts)) {
+    fs.copyFileSync(path.join(srcFonts, file), path.join(distFonts, file));
+  }
+}
+
 console.log("MCP Chrome schemas synchronized: dist=" + local + ", existing Antigravity folder=" + antigravity + ".");
