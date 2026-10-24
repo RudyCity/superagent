@@ -71,7 +71,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   motionCpuParticleStyles: ["confetti", "sparks", "snow"],
   motionCustomFontUpload: true,
   motionExtendedProperties: ["scale", "scaleX", "scaleY"],
-  motionExtendedEasings: ["easeIn", "easeOut", "bounce"],
+  motionExtendedEasings: ["easeIn", "easeOut", "bounce", "easeOutExpo", "easeOutQuart", "easeOutCubic", "spring"],
   effectsEngine: true,
   effectsCount: 234,
   effectsCatalog: true,

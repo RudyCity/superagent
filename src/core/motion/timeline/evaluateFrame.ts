@@ -6,6 +6,14 @@ function ease(t: number, kind: string): number {
   if (kind === "easeIn") return t * t;
   if (kind === "easeOut") return t * (2 - t);
   if (kind === "easeInOut") return t * t * (3 - 2 * t);
+  if (kind === "easeOutCubic") { const u = 1 - t; return 1 - u * u * u; }
+  if (kind === "easeOutQuart") { const u = 1 - t; return 1 - u * u * u * u; }
+  if (kind === "easeOutExpo") { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+  if (kind === "spring") {
+    const damping = 9;
+    const frequency = 4.2;
+    return 1 - Math.exp(-damping * t * 0.5) * Math.cos(frequency * t * Math.PI);
+  }
   if (kind === "easeOutBack") { const u = t - 1; return 1 + 2.70158 * u * u * u + 1.70158 * u * u; }
   if (kind === "bounce") {
     const n1 = 7.5625;

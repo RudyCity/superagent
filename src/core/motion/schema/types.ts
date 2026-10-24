@@ -5,7 +5,18 @@
 export const MOTION_SCHEMA_VERSION = 1 as const;
 
 export type MotionProperty = "x" | "y" | "opacity" | "rotation" | "scale" | "scaleX" | "scaleY";
-export type MotionEasing = "linear" | "step" | "easeInOut" | "easeOutBack" | "easeIn" | "easeOut" | "bounce";
+export type MotionEasing =
+  | "linear"
+  | "step"
+  | "easeInOut"
+  | "easeOutBack"
+  | "easeIn"
+  | "easeOut"
+  | "bounce"
+  | "easeOutExpo"
+  | "easeOutQuart"
+  | "easeOutCubic"
+  | "spring";
 
 export interface MotionKeyframe {
   frame: number;

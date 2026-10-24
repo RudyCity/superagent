@@ -1,3 +1,12 @@
+## [1.14.25] - 2026-10-24
+### Added
+- Fluid Motion Easing, Cascaded Layer Staggering & Continuous Ambient Life (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/director/creativePresets.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionCreativePresets.test.ts`):
+  - Added modern easing functions (`"easeOutExpo"`, `"easeOutQuart"`, `"easeOutCubic"`, `"spring"`) into core Motion schema, validation rules, and runtime evaluator (`evaluateFrame.ts`).
+  - Implemented Apple & Linear benchmark curves (`easeOutExpo` $1 - 2^{-10t}$ and damped harmonic `spring` oscillation) for rapid entrance momentum with silky-smooth deceleration.
+  - Eliminated robotic stiffness by introducing **Cascaded Layer Staggering** across Motion Director presets: card (0f) -> pill kicker (+3f) -> headline (+7f) -> subtitle (+12f) -> accent strip (+16f).
+  - Eliminated the frozen holding dead-zone by injecting **Continuous Secondary Drift** (continuous micro-scale breathing $1.0 \to 1.02$ and subtle spatial floating $Y \to Y - 6\text{px}$) during hold phases so scenes remain alive and organic.
+  - Added keyframe deduplication helper `cleanKeyframes()` guaranteeing strictly increasing integer frame sequences across scene transitions (`slide-left`, `slide-right`, `zoom`, `wipe`).
+
 ## [1.14.24] - 2026-10-24
 ### Added
 - Native Image to Vector Tracer & PathLayer Primitive (`src/core/motion/vector/imageTracer.ts`, `src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`, `src/core/motion/motionResize.ts`, `src/core/motion/motionCapabilities.ts`, `src/core/commands/motionCliHandler.ts`, `src/core/motion/motionRoutes.ts`, `tests/motionImageVectorTracer.test.ts`):

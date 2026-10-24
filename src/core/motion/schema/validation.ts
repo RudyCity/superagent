@@ -13,7 +13,19 @@ export class MotionValidationError extends Error {
 const color = /^#[0-9a-fA-F]{6}$/;
 const id = /^[a-z][a-z0-9-]{1,63}$/;
 const propertyNames = new Set(["x", "y", "opacity", "rotation", "scale", "scaleX", "scaleY"]);
-const easingNames = new Set(["linear", "step", "easeInOut", "easeOutBack", "easeIn", "easeOut", "bounce"]);
+const easingNames = new Set([
+  "linear",
+  "step",
+  "easeInOut",
+  "easeOutBack",
+  "easeIn",
+  "easeOut",
+  "bounce",
+  "easeOutExpo",
+  "easeOutQuart",
+  "easeOutCubic",
+  "spring",
+]);
 const fontNames = new Set<string>(MOTION_FONT_FAMILIES);
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -54,7 +66,7 @@ export function validateMotionTrack(raw: unknown, durationFrames: number, at = "
     const range = raw.property === "opacity" ? [0, 1] : (raw.property === "scale" || raw.property === "scaleX" || raw.property === "scaleY") ? [0, 100] : raw.property === "rotation" ? [-36000, 36000] : [-100000, 100000];
     if (!finite(keyframe.value, range[0], range[1])) errors.push(location + ": invalid value");
     if (keyframe.easing !== undefined && !easingNames.has(String(keyframe.easing))) errors.push(location + ": invalid easing");
-    if ((keyframe.easing === "easeOutBack" || keyframe.easing === "bounce") && raw.property === "opacity") errors.push(location + ": overshoot easing cannot affect opacity");
+    if ((keyframe.easing === "easeOutBack" || keyframe.easing === "bounce" || keyframe.easing === "spring") && raw.property === "opacity") errors.push(location + ": overshoot easing cannot affect opacity");
   });
   return errors;
 }

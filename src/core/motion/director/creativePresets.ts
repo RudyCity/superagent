@@ -71,84 +71,134 @@ function contrast(a: string, b: string): number {
 function contrastColor(background: string): string {
   return luminance(background) > 0.179 ? "#000000" : "#FFFFFF";
 }
+function cleanKeyframes(points: { frame: number; value: number; easing?: MotionEasing }[]): { frame: number; value: number; easing?: MotionEasing }[] {
+  const map = new Map<number, { frame: number; value: number; easing?: MotionEasing }>();
+  for (const p of points) {
+    const f = Math.round(p.frame);
+    map.set(f, { ...p, frame: f });
+  }
+  return [...map.values()].sort((a, b) => a.frame - b.frame);
+}
 function fade(start: number, end: number, total: number, transition: MotionTransition): MotionTrack {
   if (transition === "cut") {
-    return { property: "opacity", keyframes: [
+    return { property: "opacity", keyframes: cleanKeyframes([
       ...(start > 0 ? [{ frame: start - 1, value: 0 }] : []),
       { frame: start, value: 1 }, { frame: end, value: 1 },
       ...(end < total - 1 ? [{ frame: end + 1, value: 0 }] : []),
-    ] };
+    ]) };
   }
   const duration = end - start + 1;
-  const ease = "easeInOut" as const;
-  const ramp = transition === "wipe" ? 2 : Math.max(3, Math.min(9, Math.floor(duration / 4)));
+  const ramp = transition === "wipe" ? 2 : Math.max(3, Math.min(8, Math.floor(duration / 4)));
   const fadeInEnd = Math.min(end, start + ramp);
   const fadeOutStart = Math.max(fadeInEnd + 1, end - ramp);
-  const unique = new Map([
-    [start, { frame: start, value: 0, easing: ease }],
-    [fadeInEnd, { frame: fadeInEnd, value: 1, easing: ease }],
-    [fadeOutStart, { frame: fadeOutStart, value: 1, easing: ease }],
-    [end, { frame: end, value: 0, easing: ease }],
-  ]);
-  return { property: "opacity", keyframes: [...unique.values()].sort((a, b) => a.frame - b.frame) };
+  const points = [
+    { frame: start, value: 0, easing: "easeOutExpo" as const },
+    { frame: fadeInEnd, value: 1, easing: "linear" as const },
+    { frame: fadeOutStart, value: 1, easing: "easeInOut" as const },
+    { frame: end, value: 0, easing: "easeInOut" as const },
+  ];
+  return { property: "opacity", keyframes: cleanKeyframes(points) };
 }
-function entry(preset: MotionPreset, start: number, end: number, x: number, y: number): MotionTrack[] {
-  const arrival = Math.min(end, start + 13);
+function entry(preset: MotionPreset, start: number, end: number, x: number, y: number, delay = 0): MotionTrack[] {
+  const entryStart = Math.min(end - 4, start + delay);
+  const arrival = Math.min(end - 2, entryStart + 15);
+  const driftEnd = Math.max(arrival + 1, end - 6);
+
   if (preset === "slide-left" || preset === "pop-left" || preset === "slide-right") {
-    const offset = preset === "slide-right" ? -110 : preset === "pop-left" ? 150 : 105;
-    const easing = preset === "pop-left" ? "easeOutBack" : "easeInOut";
-    return [{ property: "x", keyframes: [
-      { frame: start, value: x + offset, easing }, { frame: arrival, value: x, easing: "easeInOut" },
-    ] }];
+    const offset = preset === "slide-right" ? -120 : preset === "pop-left" ? 140 : 110;
+    const easing: MotionEasing = preset === "pop-left" ? "spring" : "easeOutExpo";
+    const driftX = preset === "slide-right" ? 8 : -8;
+    const points = [
+      ...(entryStart > start ? [{ frame: start, value: x + offset, easing: "linear" as const }] : []),
+      { frame: entryStart, value: x + offset, easing },
+      { frame: arrival, value: x, easing: "linear" as const },
+      { frame: driftEnd, value: x + driftX, easing: "easeInOut" as const },
+      { frame: end, value: x + driftX * 1.3, easing: "easeInOut" as const },
+    ];
+    return [{ property: "x", keyframes: cleanKeyframes(points) }];
   }
   if (preset === "slide-up" || preset === "pop-up" || preset === "drop-in") {
-    const offset = preset === "drop-in" ? -115 : preset === "pop-up" ? 150 : 90;
-    const easing = preset === "pop-up" ? "easeOutBack" : "easeInOut";
-    return [{ property: "y", keyframes: [
-      { frame: start, value: y + offset, easing }, { frame: arrival, value: y, easing: "easeInOut" },
-    ] }];
+    const offset = preset === "drop-in" ? -120 : preset === "pop-up" ? 140 : 85;
+    const easing: MotionEasing = preset === "pop-up" ? "spring" : "easeOutExpo";
+    const driftY = -6;
+    const points = [
+      ...(entryStart > start ? [{ frame: start, value: y + offset, easing: "linear" as const }] : []),
+      { frame: entryStart, value: y + offset, easing },
+      { frame: arrival, value: y, easing: "linear" as const },
+      { frame: driftEnd, value: y + driftY, easing: "easeInOut" as const },
+      { frame: end, value: y + driftY * 1.3, easing: "easeInOut" as const },
+    ];
+    return [{ property: "y", keyframes: cleanKeyframes(points) }];
   }
   if (preset === "tilt" || preset === "swing") {
-    return [{ property: "rotation", keyframes: [
-      { frame: start, value: preset === "swing" ? 16 : -11,
-        easing: preset === "swing" ? "easeOutBack" : "easeInOut" },
-      { frame: arrival, value: 0, easing: "easeInOut" },
-    ] }];
+    const easing: MotionEasing = preset === "swing" ? "spring" : "easeOutExpo";
+    const points = [
+      ...(entryStart > start ? [{ frame: start, value: preset === "swing" ? 14 : -9, easing: "linear" as const }] : []),
+      { frame: entryStart, value: preset === "swing" ? 14 : -9, easing },
+      { frame: arrival, value: 0, easing: "linear" as const },
+      { frame: driftEnd, value: preset === "swing" ? -0.8 : 0.8, easing: "easeInOut" as const },
+      { frame: end, value: 0, easing: "easeInOut" as const },
+    ];
+    return [{ property: "rotation", keyframes: cleanKeyframes(points) }];
   }
   if (preset === "scale-pop") {
-    return [{ property: "scale", keyframes: [
-      { frame: start, value: 0, easing: "bounce" },
-      { frame: arrival, value: 1, easing: "easeInOut" },
-    ] }];
+    const points = [
+      ...(entryStart > start ? [{ frame: start, value: 0.85, easing: "linear" as const }] : []),
+      { frame: entryStart, value: 0.85, easing: "spring" as const },
+      { frame: arrival, value: 1.0, easing: "linear" as const },
+      { frame: driftEnd, value: 1.025, easing: "easeInOut" as const },
+      { frame: end, value: 1.025, easing: "easeInOut" as const },
+    ];
+    return [{ property: "scale", keyframes: cleanKeyframes(points) }];
   }
   if (preset === "zoom-in") {
-    return [{ property: "scale", keyframes: [
-      { frame: start, value: 0.4, easing: "easeOut" },
-      { frame: arrival, value: 1, easing: "easeInOut" },
-    ] }];
+    const points = [
+      ...(entryStart > start ? [{ frame: start, value: 0.88, easing: "linear" as const }] : []),
+      { frame: entryStart, value: 0.88, easing: "easeOutExpo" as const },
+      { frame: arrival, value: 1.0, easing: "linear" as const },
+      { frame: driftEnd, value: 1.035, easing: "easeInOut" as const },
+      { frame: end, value: 1.04, easing: "easeInOut" as const },
+    ];
+    return [{ property: "scale", keyframes: cleanKeyframes(points) }];
   }
   if (preset === "bounce-drop") {
+    const yPoints = [
+      ...(entryStart > start ? [{ frame: start, value: y - 85, easing: "linear" as const }] : []),
+      { frame: entryStart, value: y - 85, easing: "bounce" as const },
+      { frame: arrival, value: y, easing: "linear" as const },
+      { frame: driftEnd, value: y - 5, easing: "easeInOut" as const },
+      { frame: end, value: y - 5, easing: "easeInOut" as const },
+    ];
+    const scalePoints = [
+      ...(entryStart > start ? [{ frame: start, value: 1.2, easing: "linear" as const }] : []),
+      { frame: entryStart, value: 1.2, easing: "easeOutExpo" as const },
+      { frame: arrival, value: 1.0, easing: "linear" as const },
+      { frame: driftEnd, value: 1.02, easing: "easeInOut" as const },
+      { frame: end, value: 1.02, easing: "easeInOut" as const },
+    ];
     return [
-      { property: "y", keyframes: [
-        { frame: start, value: y - 85, easing: "bounce" },
-        { frame: arrival, value: y, easing: "easeInOut" },
-      ] },
-      { property: "scale", keyframes: [
-        { frame: start, value: 1.5, easing: "bounce" },
-        { frame: arrival, value: 1, easing: "easeInOut" },
-      ] },
+      { property: "y", keyframes: cleanKeyframes(yPoints) },
+      { property: "scale", keyframes: cleanKeyframes(scalePoints) },
     ];
   }
   if (preset === "elastic-scale") {
+    const xPoints = [
+      ...(entryStart > start ? [{ frame: start, value: 0.6, easing: "linear" as const }] : []),
+      { frame: entryStart, value: 0.6, easing: "spring" as const },
+      { frame: arrival, value: 1.0, easing: "linear" as const },
+      { frame: driftEnd, value: 1.02, easing: "easeInOut" as const },
+      { frame: end, value: 1.02, easing: "easeInOut" as const },
+    ];
+    const yPoints = [
+      ...(entryStart > start ? [{ frame: start, value: 1.35, easing: "linear" as const }] : []),
+      { frame: entryStart, value: 1.35, easing: "spring" as const },
+      { frame: arrival, value: 1.0, easing: "linear" as const },
+      { frame: driftEnd, value: 1.02, easing: "easeInOut" as const },
+      { frame: end, value: 1.02, easing: "easeInOut" as const },
+    ];
     return [
-      { property: "scaleX", keyframes: [
-        { frame: start, value: 0.2, easing: "bounce" },
-        { frame: arrival, value: 1, easing: "easeInOut" },
-      ] },
-      { property: "scaleY", keyframes: [
-        { frame: start, value: 1.8, easing: "bounce" },
-        { frame: arrival, value: 1, easing: "easeInOut" },
-      ] },
+      { property: "scaleX", keyframes: cleanKeyframes(xPoints) },
+      { property: "scaleY", keyframes: cleanKeyframes(yPoints) },
     ];
   }
   return [];
@@ -200,10 +250,12 @@ function addDecoration(
   anchor: { x: number; y: number; margin: number; width: number; titleSize: number; subtitleSize: number; layout: Layout },
   visible: MotionTrack,
   fonts: { title: string; subtitle: string; kicker: string },
+  start?: number,
+  end?: number,
 ): void {
   const { width, height } = dimensions;
 
-  const rect = (suffix: string, x: number, y: number, w: number, h: number, fill = scene.accent, strength = 1, cornerRadius?: number): void => {
+  const rect = (suffix: string, x: number, y: number, w: number, h: number, fill = scene.accent, strength = 1, cornerRadius?: number, extraTracks: MotionTrack[] = []): void => {
     const finalW = Math.max(1, Math.round(w));
     const finalH = Math.max(1, Math.round(h));
     const maxRadius = Math.floor(Math.min(finalW, finalH) / 2);
@@ -219,12 +271,12 @@ function addDecoration(
       rotation: 0,
       opacity: 1,
       fill,
-      tracks: [opacityAt(visible, strength)],
+      tracks: [opacityAt(visible, strength), ...extraTracks],
     };
     layers.push(layer);
   };
 
-  const label = (suffix: string, text: string, x: number, y: number, size: number, family = fonts.kicker, fill = scene.accent): void => {
+  const label = (suffix: string, text: string, x: number, y: number, size: number, family = fonts.kicker, fill = scene.accent, extraTracks: MotionTrack[] = []): void => {
     const layer: TextLayer = {
       kind: "text",
       id: "scene-" + index + "-" + suffix,
@@ -238,10 +290,30 @@ function addDecoration(
       fill,
       fontSize: size,
       fontFamily: family,
-      tracks: [visible],
+      tracks: [visible, ...extraTracks],
     };
     layers.push(layer);
   };
+
+  const cardScaleTrack: MotionTrack[] = start !== undefined && end !== undefined ? [{
+    property: "scale",
+    keyframes: cleanKeyframes([
+      { frame: start, value: 0.96, easing: "easeOutExpo" },
+      { frame: Math.min(end, start + 14), value: 1.0, easing: "linear" },
+      { frame: Math.max(start + 14, end - 8), value: 1.018, easing: "easeInOut" },
+      { frame: end, value: 1.02, easing: "easeInOut" },
+    ]),
+  }] : [];
+
+  const kickerTracks: MotionTrack[] = start !== undefined && end !== undefined ? [{
+    property: "y",
+    keyframes: cleanKeyframes([
+      { frame: start, value: anchor.y - 42, easing: "easeOutExpo" },
+      { frame: Math.min(end, start + 12), value: anchor.y - 48, easing: "linear" },
+      { frame: Math.max(start + 12, end - 8), value: anchor.y - 51, easing: "easeInOut" },
+      { frame: end, value: anchor.y - 51, easing: "easeInOut" },
+    ]),
+  }] : [];
 
   if (style === "neon") {
     // 1. Sleek Glassmorphism Hero Card Backdrop
@@ -253,10 +325,10 @@ function addDecoration(
     const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 130);
 
     // Subtle Ambient Glow Aura Behind Card
-    rect("ambient-glow", cardX - 16, cardY - 16, cardW + 32, cardH + 32, scene.accent, 0.08, 28);
+    rect("ambient-glow", cardX - 16, cardY - 16, cardW + 32, cardH + 32, scene.accent, 0.08, 28, cardScaleTrack);
 
     // Frosted Card Body
-    rect("hero-card", cardX, cardY, cardW, cardH, "#111827", 0.72, 20);
+    rect("hero-card", cardX, cardY, cardW, cardH, "#111827", 0.72, 20, cardScaleTrack);
 
     // Glowing Neon Top Accent Strip
     rect("accent-strip", cardX + 28, cardY, Math.min(cardW - 56, 220), 4, scene.accent, 0.95, 2);
@@ -265,8 +337,8 @@ function addDecoration(
     const pillW = 128;
     const pillH = 26;
     const pillX = anchor.layout === "center" ? Math.round((width - pillW) / 2) : anchor.x;
-    rect("pill-bg", pillX, anchor.y - 54, pillW, pillH, scene.accent, 0.22, 13);
-    label("kicker", String(index + 1).padStart(2, "0") + " // ACT", pillX + 14, anchor.y - 48, 12, fonts.kicker, scene.accent);
+    rect("pill-bg", pillX, anchor.y - 54, pillW, pillH, scene.accent, 0.22, 13, kickerTracks);
+    label("kicker", String(index + 1).padStart(2, "0") + " // ACT", pillX + 14, anchor.y - 48, 12, fonts.kicker, scene.accent, kickerTracks);
   } else if (style === "brutalist") {
     // Bold Solid Offset Card
     const cardPadX = 36;
@@ -277,17 +349,17 @@ function addDecoration(
     const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 110);
 
     // Offset shadow block
-    rect("offset-shadow", cardX + 12, cardY + 12, cardW, cardH, scene.accent, 0.9, 0);
+    rect("offset-shadow", cardX + 12, cardY + 12, cardW, cardH, scene.accent, 0.9, 0, cardScaleTrack);
     // Main Solid Black Card
-    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 1.0, 0);
+    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 1.0, 0, cardScaleTrack);
 
     // Brutalist Kicker Tag
-    label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 46, 16, fonts.kicker, scene.accent);
+    label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 46, 16, fonts.kicker, scene.accent, kickerTracks);
   } else if (style === "editorial") {
     // Refined Asymmetric Editorial Frame
     rect("side-rule", width - anchor.margin / 2, height * .14, 4, height * .69, scene.accent, 0.75, 2);
     rect("top-accent", anchor.x, anchor.y - 32, Math.min(180, width * .20), 3, scene.accent, 0.9, 1);
-    label("kicker", "CHAPTER " + String(index + 1).padStart(2, "0"), anchor.x, anchor.y - 64, 16, fonts.kicker, scene.accent);
+    label("kicker", "CHAPTER " + String(index + 1).padStart(2, "0"), anchor.x, anchor.y - 64, 16, fonts.kicker, scene.accent, kickerTracks);
   } else {
     // Clean Minimalist Hero Card
     const cardPadX = 42;
@@ -297,9 +369,9 @@ function addDecoration(
     const cardY = Math.max(40, anchor.y - 78);
     const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 120);
 
-    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.60, 16);
+    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.60, 16, cardScaleTrack);
     rect("hairline", cardX + 28, cardY, Math.min(cardW - 56, 160), 3, scene.accent, 0.85, 1);
-    label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 50, 13, fonts.kicker, scene.accent);
+    label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 50, 13, fonts.kicker, scene.accent, kickerTracks);
   }
 }
 function applySceneTransition(
@@ -330,11 +402,11 @@ function applySceneTransition(
       if (xTrack) {
         if (isExiting) {
           const exitStart = Math.max(start + 8, end - transDuration);
-          xTrack.keyframes.push(
+          xTrack.keyframes = cleanKeyframes([
+            ...xTrack.keyframes,
             { frame: exitStart, value: layer.x, easing: "easeInOut" },
             { frame: end, value: layer.x - distance, easing: "easeInOut" },
-          );
-          xTrack.keyframes.sort((a, b) => a.frame - b.frame);
+          ]);
         }
       } else if (layer.tracks.length < 4) {
         const kfs: { frame: number; value: number; easing?: MotionEasing }[] = [];
@@ -352,8 +424,7 @@ function applySceneTransition(
           );
         }
         if (kfs.length > 0) {
-          kfs.sort((a, b) => a.frame - b.frame);
-          layer.tracks.push({ property: "x", keyframes: kfs });
+          layer.tracks.push({ property: "x", keyframes: cleanKeyframes(kfs) });
         }
       }
     }
@@ -364,11 +435,11 @@ function applySceneTransition(
       if (scaleTrack) {
         if (isExiting) {
           const exitStart = Math.max(start + 8, end - transDuration);
-          scaleTrack.keyframes.push(
+          scaleTrack.keyframes = cleanKeyframes([
+            ...scaleTrack.keyframes,
             { frame: exitStart, value: 1.0, easing: "easeInOut" },
             { frame: end, value: 1.35, easing: "easeInOut" },
-          );
-          scaleTrack.keyframes.sort((a, b) => a.frame - b.frame);
+          ]);
         }
       } else if (layer.tracks.length < 4) {
         const kfs: { frame: number; value: number; easing?: MotionEasing }[] = [];
@@ -386,8 +457,7 @@ function applySceneTransition(
           );
         }
         if (kfs.length > 0) {
-          kfs.sort((a, b) => a.frame - b.frame);
-          layer.tracks.push({ property: "scale", keyframes: kfs });
+          layer.tracks.push({ property: "scale", keyframes: cleanKeyframes(kfs) });
         }
       }
     }
@@ -449,7 +519,7 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
     const anchor = sceneLayout(scene, style, index, dimensions.width, dimensions.height, foreground);
     const sceneStartIndex = layers.length;
     if (plan.artDirection) {
-      addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible, fonts);
+      addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible, fonts, start, end);
     } else {
       const accentW = Math.min(160, anchor.width);
       layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: anchor.x, y: anchor.y - 32,
@@ -548,7 +618,7 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
         width: anchor.width - 8, height: anchor.subtitleSize + 22,
         rotation: 0, opacity: 0.9, fill: anchor.subtitle, fontSize: anchor.subtitleSize,
         fontFamily: fonts.subtitle, tracks: [visible, ...entry(motion, start, end, anchor.x + 4,
-          anchor.y + subOffset)] });
+          anchor.y + subOffset, 5)] });
     }
 
     if (plan.burnCaptions) {
