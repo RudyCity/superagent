@@ -41,7 +41,7 @@ export async function generateSaaSPromo(
   const deviceType = options.device ?? "macbook";
   const installCmd = options.installCommand ?? "npm install -g superagent";
   const width = options.width ?? 1920;
-  const height = options.height ?? 1080;
+  const height = options.height ?? Math.round((width * 9) / 16);
   const fps = { numerator: 30, denominator: 1 };
 
   // Base 4-Act timing structure (30 seconds = 900 frames at 30fps)
