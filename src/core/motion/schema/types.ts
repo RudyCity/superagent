@@ -16,7 +16,8 @@ export type MotionEasing =
   | "easeOutExpo"
   | "easeOutQuart"
   | "easeOutCubic"
-  | "spring";
+  | "spring"
+  | "apple";
 
 export interface MotionKeyframe {
   frame: number;

@@ -70,6 +70,25 @@ export {
   type SpeechSynthOptions,
 } from "./voiceover/voiceoverService.js";
 
+export {
+  choreographSceneLayers,
+  computeAnchoredScaling,
+  type ChoreographyOptions,
+  type LayerSemanticRole,
+} from "./choreography/choreographyEngine.js";
+
+export {
+  applyInertialCameraMotion,
+  type CameraMoveType,
+  type CameraOptions,
+  Z_DEPTHS,
+} from "./camera/camera3d.js";
+
+export {
+  generateSaaSPromo,
+  type SaaSPromoOptions,
+} from "./director/narrativeArc.js";
+
 /**
  * Apply a declarative effect from the SuperAgent Studio Effects Engine to a project
  * using optimistic locking and compare-and-swap revisions.

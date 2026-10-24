@@ -1,3 +1,31 @@
+## [1.14.33] - 2026-10-24
+### Added
+- Signature Apple Velocity Curves, Choreography & Cascade Engine, Simulated 3D Camera Parallax & 4-Act SaaS Promo Video Suite (`src/core/motion/choreography/choreographyEngine.ts`, `src/core/motion/camera/camera3d.ts`, `src/core/motion/director/narrativeArc.ts`, `src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/motionService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionChoreographyCameraNarrative.test.ts`, `package.json`):
+  - **1. Signature Apple / Linear Asymmetric Velocity Curve (`"apple"`)**:
+    - Modeled Apple's canonical quintic easing `cubic-bezier(0.16, 1, 0.3, 1)`: ultra-fast acceleration reaching 57% position at 20% elapsed time, and 93% position at 50% time, followed by a long, luxurious, friction-based deceleration tail.
+    - Integrated across `MotionEasing` schema types, timeline evaluation engine (`1 - Math.pow(1 - t, 3.8)`), and schema validators.
+  - **2. Visual Hierarchy Choreography & Cascade Scheduling (`src/core/motion/choreography/choreographyEngine.ts`)**:
+    - Created semantic layer role classifier (`ambient`, `container`, `badge`, `headline`, `subtitle`, `telemetry`, `accent`) to automatically sequence layers by perceptual importance.
+    - Implemented 2–4 frame stagger scheduling preventing simultaneous "slideshow" popping.
+    - Added edge-anchored directional scaling (`computeAnchoredScaling`): compensates layer positions when scaling from `left`, `right`, `top`, or `bottom` boundaries.
+    - Integrated living micro-drift idle animations (harmonic breathing and continuous rotational drift) to eliminate static frozen frames.
+  - **3. Simulated 3D Camera Parallax & Z-Axis Depth Engine (`src/core/motion/camera/camera3d.ts`)**:
+    - Multi-plane Z-axis depth layering with calibrated physical depth coefficients: `BACKDROP: -200`, `SHADOW: -60`, `CANVAS: 0`, `SURFACE: 35`, `FOREGROUND: 85`.
+    - Added 4 cinematic camera moves with smooth cubic/inertial deceleration:
+      - `isometric-reveal`: Diagonal dolly (`x: -36 -> 0`, `y: 42 -> 0`, `scale: 0.94 -> 1.0`, `rotation: -2° -> 0°`).
+      - `cinematic-push`: Immersive slow zoom push-in (`scale: 0.92 -> 1.05`).
+      - `lateral-dolly`: Cinematic horizontal pan (`x: -60 -> 60`).
+      - `floating-tilt`: Atmospheric micro-handheld continuous orbital drift.
+  - **4. Autonomous 4-Act SaaS Narrative Arc Generator (`src/core/motion/director/narrativeArc.ts`)**:
+    - Implemented high-converting 4-Act marketing video structure:
+      - **Act 1: The Hook (0–4s)** — Punchy problem statement, glowing ambient backdrop aura, animated headline, badge chip, and laser progress runner.
+      - **Act 2: The Core Engine (4–14s)** — Realistic hardware browser/MacBook mockup container with live typing syntax code card, traffic lights, and active terminal cursor.
+      - **Act 3: Telemetry & Proof (14–24s)** — Kinetic benchmark comparison bars showing 10x performance multipliers, glowing metric counters, and latency reduction proof.
+      - **Act 4: The Call to Action (24–30s)** — High-contrast CTA card with quick-install command pill (`curl -fsSL https://...`), primary action button, and glowing halo glow.
+    - Integrated autonomous deterministic voiceover narration auto-fitting scene durations and synchronizing burn-in subtitles.
+    - Added CLI command: `superagent studio saas-promo [--product "..."] [--tagline "..."] [--install "..."] [--wait]`.
+  - Comprehensive unit and integration test suite in `tests/motionChoreographyCameraNarrative.test.ts` (8 tests) passing 100%. Total motion test suite expanded to 56 files, 286 tests.
+
 ## [1.14.32] - 2026-10-24
 ### Added
 - 3D Perspective Device Mockups, Kinetic Parallax Tilt, Animated Benchmark Charts & Autonomous AI Voiceover Suite (`src/core/motion/mockups/deviceMockups.ts`, `src/core/motion/charts/motionCharts.ts`, `src/core/motion/voiceover/voiceoverService.ts`, `src/core/motion/director/directorService.ts`, `src/core/commands/motionCliHandler.ts`, `tests/motionMockupsChartsVoiceover.test.ts`, `package.json`):

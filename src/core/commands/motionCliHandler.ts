@@ -19,6 +19,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio generate --prompt "Animated promo" [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--sheen] [--audio-visualizer] [--code "SNIPPET"] [--device macbook|iphone|browser] [--chart benchmark|kpi|radial|sparkline] [--voice VOICE] [--wait] [--width 640] [--image-asset ASSET_ID | --scene-images ID1,ID2,ID3] [--audio-asset AUDIO_ID] [--audio-gain 1] [--audio-loop true] [--voiceover-text TEXT] [--workspace PATH] [--json]
   superagent studio repo-reel [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--wait] [--width 640] [--workspace PATH] [--json]
   superagent studio release-promo [VERSION] [--style neon|minimal|editorial|brutalist] [--palette PALETTE] [--wait] [--width 640] [--workspace PATH] [--json]
+  superagent studio saas-promo [--product NAME] [--tagline "..."] [--palette PALETTE] [--device macbook|iphone|browser] [--voice "..."] [--wait] [--workspace PATH] [--json]
   superagent studio palettes [--json]
   superagent studio mockups [--json]
   superagent studio mockup PROJECT_ID --base-revision N [--device macbook|iphone|browser] [--title "TITLE"] [--url "URL"] [--accent "#RRGGBB"] [--workspace PATH] [--json]
@@ -77,7 +78,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -433,6 +434,38 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
           width,
           aspectRatio: opt(opts, "--aspect-ratio") as any,
         });
+      if (opts.has("--wait")) {
+        const timeoutMs = 120_000;
+        const start = Date.now();
+        let job = result.job;
+        while (!["completed", "failed", "cancelled", "interrupted"].includes(job.status)) {
+          if (Date.now() - start > timeoutMs) throw new Error("Motion video render timed out");
+          await new Promise(resolve => setTimeout(resolve, 200));
+          job = await getMotionJob(workspace, result.job.id);
+        }
+        result.job = job;
+      }
+      emit(result, json);
+      return result.job.status === "failed" ? 1 : 0;
+    }
+    if (action === "saas-promo") {
+      const product = opt(opts, "--product");
+      const tagline = opt(opts, "--tagline");
+      const palette = opt(opts, "--palette");
+      const device = opt(opts, "--device") as "macbook" | "iphone" | "browser" | undefined;
+      const voice = opt(opts, "--voice");
+      const install = opt(opts, "--install");
+      const width = opt(opts, "--width") === undefined ? undefined : nonnegativeInteger(opt(opts, "--width"), "--width");
+      const { generateSaaSPromo } = await import("../motion/director/narrativeArc.js");
+      const result = await generateSaaSPromo(workspace, {
+        productName: product,
+        tagline,
+        palette,
+        device,
+        voiceover: voice ?? (opts.has("--voiceover") ? true : undefined),
+        installCommand: install,
+        width,
+      });
       if (opts.has("--wait")) {
         const timeoutMs = 120_000;
         const start = Date.now();

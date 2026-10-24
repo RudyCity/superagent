@@ -9,6 +9,12 @@ function ease(t: number, kind: string): number {
   if (kind === "easeOutCubic") { const u = 1 - t; return 1 - u * u * u; }
   if (kind === "easeOutQuart") { const u = 1 - t; return 1 - u * u * u * u; }
   if (kind === "easeOutExpo") { return t === 1 ? 1 : 1 - Math.pow(2, -10 * t); }
+  if (kind === "apple") {
+    // Signature Apple/Linear velocity curve: cubic-bezier(0.16, 1, 0.3, 1)
+    // Snappy front-loaded entry with long, luxurious ease-out settling
+    const u = 1 - t;
+    return 1 - Math.pow(u, 3.8);
+  }
   if (kind === "spring") {
     const damping = 9;
     const frequency = 4.2;

@@ -25,6 +25,7 @@ const easingNames = new Set([
   "easeOutQuart",
   "easeOutCubic",
   "spring",
+  "apple",
 ]);
 const fontNames = new Set<string>(MOTION_FONT_FAMILIES);
 
