@@ -1,3 +1,12 @@
+## [1.14.23] - 2026-10-24
+### Changed
+- Motion Director Anti-Slop Visual & Narrative Overhaul (`src/core/motion/director/creativePresets.ts`, `src/core/motion/director/directorService.ts`, `tests/motionHeuristicDirector.test.ts`):
+  - Completely overhauled Motion Director typography system from generic system Arial to curated, registered Google font pairings (`Space Grotesk`, `Inter`, `JetBrains Mono`, `Bebas Neue`, `Montserrat`, `Playfair Display`, `Archivo Black`) per art direction style (`neon`, `brutalist`, `editorial`, `minimal`).
+  - Replaced disjointed floating decorative lines with an anchored frosted glassmorphism hero card container (`#111827`, opacity `0.65`, `cornerRadius: 20`), glowing neon top accent strip, and monospace pill kicker badge (`JetBrains Mono`, `cornerRadius: 13`).
+  - Added strict geometric safety clamping to `RectLayer.cornerRadius` (`Math.min(cornerRadius, Math.floor(Math.min(w, h) / 2))`) ensuring all generated cards, pills, rules, and caption accents pass schema validation rules.
+  - Rewrote offline heuristic storyboard generator `createHeuristicDirectorPlan` to generate authentic 3-act narrative arcs (Hook -> Value Prop -> Impact/CTA) with natural copywriting in Indonesian and English, eliminating fragmented word chops.
+  - Upgraded burn-in captions styling with rounded dark glass pill backdrops and color-coded accent bars.
+
 ## [1.14.22] - 2026-10-23
 ### Added
 - T-Line Desktop Integration & Real-time Studio Event Bus (`src/core/motion/motionEvents.ts`, `src/core/channels/tlineCapabilities.ts`, `src/core/motion/motionRoutes.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionTlineDeliverables.test.ts`):

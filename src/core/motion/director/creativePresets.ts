@@ -4,10 +4,50 @@ import type { MotionDirectorPlan, MotionDirectorScene } from "./directorService.
 import { effectRegistry } from "../effects/index.js";
 import { applyCompoundPreset } from "../effects/compoundPresets.js";
 import { evaluateTrack } from "../timeline/evaluateFrame.js";
+import { ensureMotionFontsRegistered } from "../assets/motionFonts.js";
 
 /** Intentional visual systems; no arbitrary user CSS, SVG, or executable effects. */
 export const MOTION_ART_DIRECTIONS = ["minimal", "editorial", "neon", "brutalist"] as const;
 export type MotionArtDirection = typeof MOTION_ART_DIRECTIONS[number];
+
+export function getArtDirectionFonts(style: MotionArtDirection): {
+  title: string;
+  subtitle: string;
+  kicker: string;
+  caption: string;
+} {
+  switch (style) {
+    case "neon":
+      return {
+        title: "Space Grotesk",
+        subtitle: "Inter",
+        kicker: "JetBrains Mono",
+        caption: "Space Grotesk",
+      };
+    case "brutalist":
+      return {
+        title: "Bebas Neue",
+        subtitle: "Space Grotesk",
+        kicker: "JetBrains Mono",
+        caption: "Space Grotesk",
+      };
+    case "editorial":
+      return {
+        title: "Playfair Display",
+        subtitle: "Merriweather",
+        kicker: "Inter",
+        caption: "Inter",
+      };
+    case "minimal":
+    default:
+      return {
+        title: "Montserrat",
+        subtitle: "Inter",
+        kicker: "Inter",
+        caption: "Inter",
+      };
+  }
+}
 export const MOTION_PRESETS = [
   "slide-left", "slide-up", "slide-right", "drop-in", "tilt", "swing", "fade", "pop-left", "pop-up",
   "scale-pop", "zoom-in", "bounce-drop", "elastic-scale",
@@ -113,13 +153,14 @@ function entry(preset: MotionPreset, start: number, end: number, x: number, y: n
   }
   return [];
 }
-function measure(text: string, size: number): number {
-  ctx.font = size + "px Arial";
+function measure(text: string, size: number, family = "Space Grotesk"): number {
+  ensureMotionFontsRegistered();
+  ctx.font = `${size}px "${family}"`;
   return ctx.measureText(text).width;
 }
-function fitFont(text: string, maxWidth: number, base: number): number {
+function fitFont(text: string, maxWidth: number, base: number, family = "Space Grotesk"): number {
   let size = base;
-  while (size > 30 && measure(text, size) > maxWidth) size -= 2;
+  while (size > 28 && measure(text, size, family) > maxWidth) size -= 2;
   return size;
 }
 function opacityAt(track: MotionTrack, strength: number): MotionTrack {
@@ -133,15 +174,16 @@ function sceneLayout(
   scene: MotionDirectorScene, style: MotionArtDirection, index: number,
   width: number, height: number, foreground: string,
 ) {
+  const fonts = getArtDirectionFonts(style);
   const portrait = height > width, square = height === width;
   const margin = portrait ? 90 : square ? 100 : 148;
   const maxWidth = width - 2 * margin;
   const base = style === "brutalist" ? 94 : style === "editorial" ? 86 : style === "neon" ? 82 : 76;
-  const titleSize = fitFont(scene.headline, maxWidth - 12, portrait ? base - 6 : base);
-  const subtitleSize = scene.subtitle ? fitFont(scene.subtitle, maxWidth - 20, portrait ? 37 : 39) : 39;
+  const titleSize = fitFont(scene.headline, maxWidth - 24, portrait ? base - 6 : base, fonts.title);
+  const subtitleSize = scene.subtitle ? fitFont(scene.subtitle, maxWidth - 32, portrait ? 36 : 38, fonts.subtitle) : 38;
   const contentWidth = Math.min(maxWidth,
-    Math.max(portrait ? 480 : 420, measure(scene.headline, titleSize) + 28,
-      scene.subtitle ? measure(scene.subtitle, subtitleSize) + 28 : 0));
+    Math.max(portrait ? 480 : 420, measure(scene.headline, titleSize, fonts.title) + 28,
+      scene.subtitle ? measure(scene.subtitle, subtitleSize, fonts.subtitle) + 28 : 0));
   const layout: Layout = scene.layout ?? (style === "editorial" && index % 2 ? "right" : "left");
   const x = layout === "left" ? margin :
     layout === "right" ? width - margin - contentWidth : Math.round((width - contentWidth) / 2);
@@ -155,45 +197,101 @@ function sceneLayout(
 function addDecoration(
   layers: Composition["layers"], scene: MotionDirectorScene,
   style: MotionArtDirection, index: number, count: number, dimensions: { width: number; height: number },
-  anchor: { x: number; y: number; margin: number; width: number }, visible: MotionTrack,
+  anchor: { x: number; y: number; margin: number; width: number; titleSize: number; subtitleSize: number },
+  visible: MotionTrack,
+  fonts: { title: string; subtitle: string; kicker: string },
 ): void {
   const { width, height } = dimensions;
-  const lineY = height - (height > width ? 110 : 70);
-  const rect = (suffix: string, x: number, y: number, w: number, h: number, strength = 1): void => {
-    const layer: RectLayer = { kind: "rect", id: "scene-" + index + "-" + suffix,
-      x: Math.round(x), y: Math.round(y), width: Math.max(1, Math.round(w)), height: Math.max(1, Math.round(h)),
-      rotation: 0, opacity: 1, fill: scene.accent, tracks: [opacityAt(visible, strength)] };
+
+  const rect = (suffix: string, x: number, y: number, w: number, h: number, fill = scene.accent, strength = 1, cornerRadius?: number): void => {
+    const finalW = Math.max(1, Math.round(w));
+    const finalH = Math.max(1, Math.round(h));
+    const maxRadius = Math.floor(Math.min(finalW, finalH) / 2);
+    const finalRadius = cornerRadius !== undefined ? Math.max(0, Math.min(cornerRadius, maxRadius)) : undefined;
+    const layer: RectLayer = {
+      kind: "rect",
+      id: "scene-" + index + "-" + suffix,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: finalW,
+      height: finalH,
+      cornerRadius: finalRadius,
+      rotation: 0,
+      opacity: 1,
+      fill,
+      tracks: [opacityAt(visible, strength)],
+    };
     layers.push(layer);
   };
-  const label = (suffix: string, text: string, x: number, y: number, size: number): void => {
-    const layer: TextLayer = { kind: "text", id: "scene-" + index + "-" + suffix, text,
-      x: Math.round(x), y: Math.round(y), width: 210, height: size + 8, rotation: 0, opacity: 1,
-      fill: scene.accent, fontSize: size, fontFamily: "Arial", tracks: [visible] };
+
+  const label = (suffix: string, text: string, x: number, y: number, size: number, family = fonts.kicker, fill = scene.accent): void => {
+    const layer: TextLayer = {
+      kind: "text",
+      id: "scene-" + index + "-" + suffix,
+      text,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: 320,
+      height: size + 8,
+      rotation: 0,
+      opacity: 1,
+      fill,
+      fontSize: size,
+      fontFamily: family,
+      tracks: [visible],
+    };
     layers.push(layer);
   };
-  if (style === "minimal") {
-    rect("hairline", anchor.margin, lineY, width - 2 * anchor.margin, 3, .55);
-    rect("progress", anchor.margin, lineY, (width - 2 * anchor.margin) * (index + 1) / count, 6);
-    label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"),
-      anchor.margin, Math.round(height * .12), 27);
+
+  if (style === "neon") {
+    // 1. Sleek Glassmorphism Hero Card Backdrop
+    const cardPadX = 36;
+    const cardX = Math.max(20, anchor.x - cardPadX);
+    const cardY = Math.max(40, anchor.y - 74);
+    const cardW = Math.min(width - 40, anchor.width + cardPadX * 2);
+    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 120);
+
+    // Frosted Card Body
+    rect("hero-card", cardX, cardY, cardW, cardH, "#111827", 0.65, 20);
+
+    // Glowing Neon Top Accent Strip
+    rect("accent-strip", cardX + 24, cardY, Math.min(cardW - 48, 180), 4, scene.accent, 0.95, 2);
+
+    // Pill Badge Container & Monospace Kicker
+    const pillW = 128;
+    const pillH = 26;
+    rect("pill-bg", anchor.x, anchor.y - 48, pillW, pillH, scene.accent, 0.18, 13);
+    label("kicker", String(index + 1).padStart(2, "0") + " // ACT", anchor.x + 14, anchor.y - 42, 12, fonts.kicker, scene.accent);
+  } else if (style === "brutalist") {
+    // Bold Solid Offset Card
+    const cardX = Math.max(20, anchor.x - 24);
+    const cardY = Math.max(40, anchor.y - 64);
+    const cardW = Math.min(width - 40, anchor.width + 48);
+    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 100);
+
+    // Offset shadow block
+    rect("offset-shadow", cardX + 12, cardY + 12, cardW, cardH, scene.accent, 0.9, 0);
+    // Main Solid Black Card
+    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 1.0, 0);
+
+    // Brutalist Kicker Tag
+    label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 44, 18, fonts.kicker, scene.accent);
   } else if (style === "editorial") {
-    rect("side-rule", width - anchor.margin / 2, height * .14, 8, height * .69, .75);
-    rect("top-accent", anchor.margin, height * .13, Math.min(250, width * .22), 5);
-    rect("shape", width * .66, height * .12, width * .20, height * .22, .11);
-    label("kicker", "CHAPTER " + String(index + 1).padStart(2, "0"),
-      anchor.margin, height * .15, 24);
-  } else if (style === "neon") {
-    rect("beam-top", anchor.margin, height * .17, width * .30, 5, .9);
-    rect("beam-bottom", width * .56, lineY, width * .30, 5, .9);
-    rect("beam-vertical", width - anchor.margin, height * .24, 6, height * .41, .7);
-    rect("atmosphere", width * .76, height * .36, width * .12, height * .12, .12);
-    label("kicker", "/// " + String(index + 1).padStart(2, "0"),
-      anchor.margin, height * .115, 25);
+    // Refined Asymmetric Editorial Frame
+    rect("side-rule", width - anchor.margin / 2, height * .14, 4, height * .69, scene.accent, 0.75, 2);
+    rect("top-accent", anchor.x, anchor.y - 32, Math.min(180, width * .20), 3, scene.accent, 0.9, 1);
+    label("kicker", "CHAPTER " + String(index + 1).padStart(2, "0"), anchor.x, anchor.y - 64, 16, fonts.kicker, scene.accent);
   } else {
-    rect("corner-block", width * .72, height * .05, width * .22, height * .26, .20);
-    rect("title-underlay", anchor.x - 10, anchor.y - 32, Math.min(anchor.width + 20, 330), 18, .9);
-    rect("edge-block", 0, lineY, width * .36, 25);
-    label("kicker", "NO. " + String(index + 1).padStart(2, "0"), anchor.margin, height * .13, 31);
+    // Clean Minimalist Hero Card
+    const cardPad = 32;
+    const cardX = Math.max(20, anchor.x - cardPad);
+    const cardY = Math.max(40, anchor.y - 68);
+    const cardW = Math.min(width - 40, anchor.width + cardPad * 2);
+    const cardH = Math.min(height - cardY - 40, (anchor.titleSize + 28) + (scene.subtitle ? anchor.subtitleSize + 48 : 0) + 110);
+
+    rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.55, 16);
+    rect("hairline", anchor.x, anchor.y - 44, Math.min(cardW - 64, 120), 2, scene.accent, 0.7, 1);
+    label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 72, 13, fonts.kicker, scene.accent);
   }
 }
 function applySceneTransition(
@@ -339,11 +437,13 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
     const end = Math.min(count - 1, endBase + (index < plan.scenes.length - 1 ? overlap : 0));
     const motion = scene.motion ?? plan.motion ?? "slide-left";
     const visible = fade(start, end, count, transition);
+    const fonts = getArtDirectionFonts(style);
     const anchor = sceneLayout(scene, style, index, dimensions.width, dimensions.height, foreground);
     const sceneStartIndex = layers.length;
-    if (plan.artDirection) addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible);
-    layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: anchor.x, y: anchor.y - 37,
-      width: 164, height: 9, rotation: 0, opacity: 1, fill: scene.accent, tracks: [visible] });
+    if (plan.artDirection) addDecoration(layers, scene, style, index, plan.scenes.length, dimensions, anchor, visible, fonts);
+    const accentW = Math.min(160, anchor.width);
+    layers.push({ id: "scene-" + index + "-accent", kind: "rect", x: anchor.x, y: anchor.y - 32,
+      width: accentW, height: 4, cornerRadius: 2, rotation: 0, opacity: 1, fill: scene.accent, tracks: [visible] });
 
     let titleTracks = entry(motion, start, end, anchor.x, anchor.y);
     let titleOpacity = visible;
@@ -378,7 +478,7 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
         opacity: 1,
         fill: foreground,
         fontSize: anchor.titleSize,
-        fontFamily: "Arial",
+        fontFamily: fonts.title,
         tracks: [visible],
       };
       const definition = effectRegistry.get(effectId)!;
@@ -428,15 +528,16 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
 
     layers.push({ id: "scene-" + index + "-title", kind: "text", text: scene.headline,
       x: anchor.x, y: anchor.y, width: anchor.width, height: anchor.titleSize + 24,
-      rotation: 0, opacity: 1, fill: foreground, fontSize: anchor.titleSize, fontFamily: "Arial",
+      rotation: 0, opacity: 1, fill: foreground, fontSize: anchor.titleSize, fontFamily: fonts.title,
       tracks: [titleOpacity, ...titleTracks] });
     if (scene.subtitle) {
+      const subOffset = anchor.titleSize + (dimensions.height > dimensions.width ? 36 : 28);
       layers.push({ id: "scene-" + index + "-subtitle", kind: "text", text: scene.subtitle,
-        x: anchor.x + 4, y: anchor.y + (dimensions.height > dimensions.width ? 144 : 161),
+        x: anchor.x + 4, y: anchor.y + subOffset,
         width: anchor.width - 8, height: anchor.subtitleSize + 22,
-        rotation: 0, opacity: 1, fill: anchor.subtitle, fontSize: anchor.subtitleSize,
-        fontFamily: "Arial", tracks: [visible, ...entry(motion, start, end, anchor.x + 4,
-          anchor.y + (dimensions.height > dimensions.width ? 144 : 161))] });
+        rotation: 0, opacity: 0.9, fill: anchor.subtitle, fontSize: anchor.subtitleSize,
+        fontFamily: fonts.subtitle, tracks: [visible, ...entry(motion, start, end, anchor.x + 4,
+          anchor.y + subOffset)] });
     }
 
     if (plan.burnCaptions) {
@@ -453,6 +554,7 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
         y: captionY - 8,
         width: estimatedWidth,
         height: captionSize + 26,
+        cornerRadius: 14,
         rotation: 0,
         opacity: 0.85,
         fill: "#0B0F19",
@@ -465,7 +567,8 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
         x: captionX + 16,
         y: captionY + captionSize + 14,
         width: estimatedWidth - 32,
-        height: 3,
+        height: 4,
+        cornerRadius: 2,
         rotation: 0,
         opacity: 0.9,
         fill: scene.accent,
@@ -484,7 +587,7 @@ export function compilePresetComposition(plan: MotionDirectorPlan): Composition 
         opacity: 1,
         fill: "#FFFFFF",
         fontSize: captionSize,
-        fontFamily: "Arial",
+        fontFamily: fonts.caption,
         tracks: [visible],
       });
     }

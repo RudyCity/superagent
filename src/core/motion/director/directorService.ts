@@ -136,46 +136,95 @@ export function compileDirectorPlan(raw: MotionDirectorPlan): MotionProject["com
 }
 export function createHeuristicDirectorPlan(prompt: string): MotionDirectorPlan {
   const clean = prompt.trim().replace(/^["']|["']$/g, "");
-  const words = clean.split(/\s+/).filter(Boolean);
-  const title = words.slice(0, 5).join(" ") || "Motion Studio Video";
   const artDirection = chooseMotionArtDirection(prompt, "neon");
-  const background = artDirection === "neon" ? "#0F172A" :
-    artDirection === "brutalist" ? "#18181B" :
-    artDirection === "editorial" ? "#1E293B" : "#111827";
+  const background = artDirection === "neon" ? "#0B0F19" :
+    artDirection === "brutalist" ? "#121214" :
+    artDirection === "editorial" ? "#0F141C" : "#0A0A0C";
 
   const accent1 = artDirection === "neon" ? "#38BDF8" : artDirection === "brutalist" ? "#F59E0B" : "#F43F5E";
   const accent2 = artDirection === "neon" ? "#F43F5E" : artDirection === "brutalist" ? "#EF4444" : "#10B981";
   const accent3 = artDirection === "neon" ? "#10B981" : artDirection === "brutalist" ? "#3B82F6" : "#A855F7";
 
+  const isIndonesian = /\b(dengan|untuk|yang|dan|ini|bisa|kami|anda|buat|promo|diskon|cepat|otomatis|kualitas|keren|murah)\b/i.test(clean);
+
+  // Normalize: remove imperative prefixes like "buatkan video promo", "bikin iklan", "create promo"
+  const stripped = clean
+    .replace(/^(?:buatkan?|bikin|generate|create|video|promo|iklan)\s+(?:tentang\s+|mengenai\s+|untuk\s+)?/i, "")
+    .trim();
+
+  // Try splitting by conjunctions: "dengan", "featuring", "fitur", "with", "plus", "equipped with"
+  const conjunctionMatch = stripped.split(/\b(?:dengan|featuring|fitur|equipped with|with|plus)\b/i);
+  let subject = (conjunctionMatch[0] || stripped).trim();
+  let feature = (conjunctionMatch[1] || "").trim();
+
+  if (!feature) {
+    const words = subject.split(/\s+/).filter(Boolean);
+    if (words.length >= 6) {
+      subject = words.slice(0, 3).join(" ");
+      feature = words.slice(3).join(" ");
+    }
+  }
+
+  const formatTitle = (s: string) => {
+    if (!s) return "";
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  };
+
+  const title1 = formatTitle(subject.slice(0, 60)) || (isIndonesian ? "Motion Studio Video" : "Studio Motion Video");
+  const sub1 = feature
+    ? formatTitle(feature.slice(0, 80))
+    : (isIndonesian ? "Solusi Visual Generatif" : "Next-Gen Generative Motion");
+  const narr1 = isIndonesian
+    ? `Memperkenalkan ${title1}, solusi visual generasi baru.`
+    : `Introducing ${title1}, engineered for visual impact.`;
+
+  const title2 = feature
+    ? formatTitle(feature.slice(0, 50))
+    : (isIndonesian ? "Performa Kinetik Cerdas" : "Intelligent Kinetic Motion");
+  const sub2 = isIndonesian
+    ? "Didukung 234 efek visual dan suara AI lokal"
+    : "Powered by 234 studio effects and local AI narration";
+  const narr2 = isIndonesian
+    ? `Dilengkapi ${feature || "animasi kinetik canggih"} untuk hasil profesional.`
+    : `Equipped with ${feature || "advanced kinetic animation"} for professional results.`;
+
+  const title3 = isIndonesian ? "Mulai Sekarang" : "Get Started Now";
+  const sub3 = isIndonesian
+    ? "Tingkatkan kreativitas visual Anda tanpa batas"
+    : "Elevate your visual storytelling today";
+  const narr3 = isIndonesian
+    ? "Siap digunakan kapan saja. Coba sekarang juga."
+    : "Ready anytime, anywhere. Experience the difference.";
+
   return {
-    name: title.slice(0, 40),
+    name: title1.slice(0, 40),
     durationSeconds: 6,
     background,
     artDirection,
     transition: "wipe",
     scenes: [
       {
-        headline: title.slice(0, 100),
-        subtitle: clean.length > title.length ? clean.slice(title.length).trim().slice(0, 100) : "SuperAgent Motion",
+        headline: title1,
+        subtitle: sub1,
         accent: accent1,
         motion: "elastic-scale",
-        narration: title + ".",
+        narration: narr1,
         layout: "center",
       },
       {
-        headline: (words.length > 5 ? words.slice(5, 10).join(" ") : "Kualitas Kinetik Studio").slice(0, 100),
-        subtitle: "Animasi terkomposisi otomatis",
+        headline: title2,
+        subtitle: sub2,
         accent: accent2,
         motion: "bounce-drop",
-        narration: "Dibuat otomatis dengan Superagent Studio.",
+        narration: narr2,
         layout: "center",
       },
       {
-        headline: "Dapatkan Sekarang",
-        subtitle: "Coba sekarang juga",
+        headline: title3,
+        subtitle: sub3,
         accent: accent3,
         motion: "scale-pop",
-        narration: "Siap digunakan kapan saja.",
+        narration: narr3,
         layout: "center",
       },
     ],
