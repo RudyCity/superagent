@@ -100,14 +100,14 @@ describe("Motion authoring entrypoint parity and input boundaries", () => {
     }
   });
 
-  it("advertises 1080p output and keeps frame and width safety budgets", async () => {
+  it("advertises the 4K backend ceiling while keeping CLI frame and width safety budgets", async () => {
     const root = await workspace();
     const project = await createMotionProject(root, "1080p");
     expect(deriveRenderProfile(project, 1920)).toMatchObject({ width: 1920, height: 1080, frameCount: 300 });
     expect(() => deriveRenderProfile(project, 1921)).toThrow(RangeError);
     expect(() => deriveRenderProfile({ ...project, composition: { ...project.composition, durationFrames: 1801 } }, 1920)).toThrow(RangeError);
     const doctor = await cli(["doctor"]);
-    expect(doctor.result.renderWidthMax).toBe(1920);
+    expect(doctor.result.renderWidthMax).toBe(3840);
     expect(doctor.result.standaloneBrowserEditor).toBe(false);
     expect(doctor.result.nativeTLineEditor).toBe("external-not-verified");
   });

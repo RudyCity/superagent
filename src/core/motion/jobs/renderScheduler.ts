@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import path from "node:path";
 import type { MotionJob } from "./motionJobs.js";
 import { getSettings } from "../../config/jsonConfig.js";
@@ -29,30 +30,36 @@ function slotFile(dir: string, slot: number) { return path.join(dir, ".render-sl
 export async function withMotionQueueAdmission<T>(dir: string, operation: () => Promise<T>): Promise<T> {
   let lock: Awaited<ReturnType<typeof fs.open>> | undefined;
   const lockFile = admissionFile(dir);
+  const token = crypto.randomBytes(16).toString("hex");
   for (let attempt = 0; attempt < 80; attempt++) {
     try { lock = await fs.open(lockFile, "wx", 0o600); break; }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-      // Stale lock self-healing: if an admission lock has been held for > 10,000ms by an ungracefully
-      // killed process, inspect its modification time and safely evict it.
-      if (attempt === 30 || attempt === 60) {
-        try {
-          const stat = await fs.lstat(lockFile);
-          if (stat.isFile() && !stat.isSymbolicLink() && Date.now() - stat.mtimeMs > 10_000) {
-            await fs.rm(lockFile, { force: true });
-          }
-        } catch { /* ignore concurrent unlinks */ }
-      }
+      // Age alone cannot prove owner death (slow disk, suspended process, PID reuse).
+      // Never reclaim another writer's admission lock while it may be active.
       await sleep(50);
     }
   }
-  if (!lock) throw new Error("Motion queue admission lock is busy; manual inspection may be required");
-  try { return await operation(); }
-  finally {
-    if (lock) {
-      await lock.close().catch(() => {});
-      await fs.rm(lockFile, { force: true }).catch(() => {});
+  if (!lock) throw new Error("Motion queue admission lock is busy or orphaned; inspect ownership before recovery");
+  try {
+    await lock.writeFile(JSON.stringify({ token, pid: process.pid, startedAt: new Date().toISOString() }) + "\n");
+    await lock.sync();
+    return await operation();
+  } finally {
+    await lock.close();
+    // An operator or other process may have replaced this file. Only release our own token.
+    const stat = await fs.lstat(lockFile).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (!stat || !stat.isFile() || stat.isSymbolicLink() || stat.size > 1000) {
+      throw new Error("Motion admission lock is missing or unsafe; preserved for inspection");
     }
+    const claim: unknown = JSON.parse(await fs.readFile(lockFile, "utf8"));
+    if (!claim || typeof claim !== "object" || (claim as { token?: unknown }).token !== token) {
+      throw new Error("Motion admission lock ownership changed; lock preserved");
+    }
+    await fs.rm(lockFile);
   }
 }
 export async function assertMotionQueueCapacity(dir: string): Promise<void> {

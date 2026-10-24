@@ -69,8 +69,18 @@ async function queueEligibility(workspace: string, dir: string, jobId: string, m
     } catch { return "an unverifiable slot claim exists"; }
   }
   try { await verifyPreparedMotionSnapshot(workspace, jobId); }
-  catch { return "source snapshot or referenced media failed verification"; }
+  catch (error) { return sourceVerificationReason(error); }
   return null;
+}
+
+/** Fixed, non-sensitive diagnostics. Never expose filesystem paths or raw parser output. */
+function sourceVerificationReason(error: unknown): string {
+  const message = error instanceof Error ? error.message : "";
+  if (/hash mismatch/i.test(message)) return "source snapshot hash mismatch";
+  if (/foreign or mismatched/i.test(message)) return "source snapshot project, workspace or revision mismatch";
+  if (/ENOENT|not found/i.test(message)) return "source snapshot or referenced media is missing";
+  if (/asset|audio|image|video|media/i.test(message)) return "referenced media failed verification";
+  return "source snapshot validation failed; inspect runtime version and server logs";
 }
 
 /** Diagnostic only: never mutates queued state or relies on PID reuse. */

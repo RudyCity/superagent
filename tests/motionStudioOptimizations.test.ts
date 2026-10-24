@@ -171,7 +171,7 @@ describe("Superagent Studio P0 & Architecture Optimizations", () => {
     });
   });
 
-  describe("3. Resilient Queue Admission & Stale Lock Eviction", () => {
+  describe("3. Resilient Queue Admission & Fail-Closed Ownership", () => {
     it("respects motionMaxRenderers in JSON settings", () => {
       updateSettings({ motionMaxRenderers: 3 });
       expect(motionConcurrentSlots()).toBe(3);
@@ -179,26 +179,23 @@ describe("Superagent Studio P0 & Architecture Optimizations", () => {
       updateSettings({ motionMaxRenderers: undefined });
     });
 
-    it("auto-evicts stale .admission.lock older than 10 seconds", async () => {
+    it("preserves old unknown .admission.lock instead of evicting another owner", async () => {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), "motion-stale-lock-test-"));
       tempDirs.push(dir);
 
       const admissionLock = path.join(dir, ".admission.lock");
-      // Simulate an abandoned lock file created 15 seconds ago
-      await fs.writeFile(admissionLock, "abandoned");
+      await fs.writeFile(admissionLock, "unverified owner");
       const pastTime = (Date.now() - 15_000) / 1000;
       await fs.utimes(admissionLock, pastTime, pastTime);
 
-      // Running withMotionQueueAdmission should evict the stale lock and succeed
       let executed = false;
-      await withMotionQueueAdmission(dir, async () => {
+      await expect(withMotionQueueAdmission(dir, async () => {
         executed = true;
-      });
+      })).rejects.toThrow(/busy or orphaned/);
 
-      expect(executed).toBe(true);
-      // Lock file should be cleaned up after operation completes
-      await expect(fs.access(admissionLock)).rejects.toThrow();
-    });
+      expect(executed).toBe(false);
+      expect(await fs.readFile(admissionLock, "utf8")).toBe("unverified owner");
+    }, 12000);
   });
 
   describe("4. Audio Transcoding Validation", () => {

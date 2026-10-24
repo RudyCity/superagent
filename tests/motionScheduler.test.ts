@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createMotionProject } from "../src/core/motion/project/projectStore.js";
 import { motionJobDir, getMotionJob, prepareMotionJob, requestMotionCancellation, runPreparedMotionJob } from "../src/core/motion/jobs/motionJobs.js";
-import { MOTION_QUEUE_LIMIT, acquireMotionRenderSlot, assertMotionQueueCapacity, inspectMotionSlots } from "../src/core/motion/jobs/renderScheduler.js";
+import { MOTION_QUEUE_LIMIT, acquireMotionRenderSlot, assertMotionQueueCapacity, inspectMotionSlots, withMotionQueueAdmission } from "../src/core/motion/jobs/renderScheduler.js";
 
 const roots: string[] = [];
 const previous = process.env.SUPERAGENT_MOTION_MAX_RENDERERS;
@@ -74,6 +74,27 @@ describe("Motion render scheduler across processes", () => {
     expect((await fs.readdir(dir)).some(file => file.endsWith(".render.lock") || file.endsWith(".waiting.lock"))).toBe(false);
     await blocker.release();
     expect((await inspectMotionSlots(dir))[0].state).toBe("free");
+  });
+
+  it("does not evict a stale admission lock based on age alone", async () => {
+    const { root } = await fixture();
+    const dir = await motionJobDir(root, "jobs");
+    const lock = path.join(dir, ".admission.lock");
+    await fs.writeFile(lock, "unverified owner");
+    const old = new Date(Date.now() - 60_000);
+    await fs.utimes(lock, old, old);
+    await expect(withMotionQueueAdmission(dir, async () => "unsafe")).rejects.toThrow(/busy or orphaned/);
+    expect(await fs.readFile(lock, "utf8")).toBe("unverified owner");
+  }, 12000);
+
+  it("preserves an admission lock that changes ownership during work", async () => {
+    const { root } = await fixture();
+    const dir = await motionJobDir(root, "jobs");
+    const lock = path.join(dir, ".admission.lock");
+    await expect(withMotionQueueAdmission(dir, async () => {
+      await fs.writeFile(lock, JSON.stringify({ token: "another-owner" }));
+    })).rejects.toThrow(/ownership changed/);
+    expect(JSON.parse(await fs.readFile(lock, "utf8")).token).toBe("another-owner");
   });
 
   it("times out safely and preserves ownership of another worker's slot", async () => {

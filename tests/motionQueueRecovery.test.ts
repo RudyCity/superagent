@@ -55,7 +55,7 @@ describe("Operator-safe Motion queued job redispatch", () => {
     modified.composition.background = "#ABCDEF";
     await fs.writeFile(snapshot, JSON.stringify(modified));
     const changed = await inspectMotionQueueRecovery(root);
-    expect(changed.items[0].reason).toMatch(/snapshot/);
+    expect(changed.items[0].reason).toBe("source snapshot hash mismatch");
     const replay = await dispatchOrphanedMotionQueue(root, { apply: true });
     expect(replay.results).toHaveLength(0);
     expect((await getMotionJob(root, job.id)).status).toBe("queued");
