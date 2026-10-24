@@ -1,3 +1,10 @@
+## [1.14.35] - 2026-10-25
+### Added
+- SuperAgent Motion Studio HTTP API Extension & T-Line Desktop Parity (`src/core/motion/motionRoutes.ts`, `package.json`):
+  - **Exposed REST API Endpoints for Motion Studio**: Added HTTP routes for `/api/motion/palettes` (GET catalog), `/api/motion/mockups` (GET device mockups), `/api/motion/saas-promo` (POST autonomous 4-act SaaS generator), `/api/motion/projects/:id/mockup` (POST device mockup attachment), and `/api/motion/projects/:id/chart` (POST animated telemetry chart attachment).
+  - **Extended `/generate` Parameters**: Forwarded `palette`, `specularSheen`, `deviceMockup`, `chartType`, `chartTitle`, `chartKpiValue`, `chartProgressPercent`, `codeSnippet`, `codeLang`, `audioVisualizer`, `voice`, and `burnCaptions` to `generateMotionFromPrompt`.
+  - **Full T-Line Client Synchrony**: Enabled complete desktop client integration with Superagent's latest motion capabilities.
+
 ## [1.14.34] - 2026-10-25
 ### Fixed
 - Multi-Act Scene Layer Isolation & Ghosting Prevention (`src/core/motion/choreography/choreographyEngine.ts`, `src/core/motion/director/narrativeArc.ts`, `src/core/motion/code/codeCardCompiler.ts`, `src/core/motion/charts/motionCharts.ts`, `package.json`):

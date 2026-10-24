@@ -134,6 +134,11 @@ export async function handleMotionHttpRoute(
   const projectHistory = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/history$/);
   const restoreHistory = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/history\/restore$/);
   const vectorizeRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vectorize$/);
+  const palettesRoute = pathname === "/api/motion/palettes";
+  const mockupsRoute = pathname === "/api/motion/mockups";
+  const saasPromoRoute = pathname === "/api/motion/saas-promo";
+  const mockupRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/mockup$/);
+  const chartRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/chart$/);
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
@@ -247,6 +252,52 @@ export async function handleMotionHttpRoute(
         width: body.width as number | undefined,
       });
       json(res, ctx, 202, result);
+    } else if (palettesRoute && method === "GET") {
+      const { listMotionPalettes } = await import("./palettes/colorPalettes.js");
+      json(res, ctx, 200, { palettes: listMotionPalettes() });
+    } else if (mockupsRoute && method === "GET") {
+      const { listDeviceMockups } = await import("./mockups/deviceMockups.js");
+      json(res, ctx, 200, { mockups: listDeviceMockups() });
+    } else if (saasPromoRoute && method === "POST") {
+      const body = await readMotionJson(req, 12_000);
+      const { generateSaasPromoProject } = await import("./director/narrativeArc.js");
+      const { project: saasProj, job: saasJob } = await generateSaasPromoProject(workspace, {
+        product: body.product as string | undefined,
+        tagline: body.tagline as string | undefined,
+        palette: body.palette as string | undefined,
+        device: body.device as "macbook" | "iphone" | "browser" | undefined,
+        voice: body.voice as string | undefined,
+        width: body.width as number | undefined,
+      });
+      json(res, ctx, 202, { project: saasProj, job: saasJob });
+    } else if (mockupRoute && method === "POST") {
+      const body = await readMotionJson(req, 5000);
+      if (!Number.isSafeInteger(body.baseRevision)) throw new MotionValidationError(["baseRevision is required"]);
+      const current = await getMotionProject(workspace, mockupRoute[1]);
+      const { attachDeviceMockupToProject } = await import("./mockups/deviceMockups.js");
+      const { edits: mockupEdits, layerCount, deviceType } = await attachDeviceMockupToProject(workspace, current, {
+        device: body.device as "macbook" | "iphone" | "browser" | undefined,
+        title: body.title as string | undefined,
+        url: body.url as string | undefined,
+        accent: body.accent as string | undefined,
+      });
+      const saved = await updateMotionProject(workspace, mockupRoute[1], body.baseRevision as number, mockupEdits);
+      json(res, ctx, 200, { project: saved, layersAdded: layerCount, deviceType });
+    } else if (chartRoute && method === "POST") {
+      const body = await readMotionJson(req, 5000);
+      if (!Number.isSafeInteger(body.baseRevision)) throw new MotionValidationError(["baseRevision is required"]);
+      const current = await getMotionProject(workspace, chartRoute[1]);
+      const { attachChartToProject } = await import("./charts/motionCharts.js");
+      const { edits: chartEdits, layerCount } = await attachChartToProject(workspace, current, {
+        type: (body.type ?? "benchmark") as "benchmark" | "kpi" | "radial" | "sparkline",
+        title: body.title as string | undefined,
+        kpiValue: body.kpiValue as string | undefined,
+        kpiBadge: body.kpiBadge as string | undefined,
+        progressPercent: body.progressPercent as number | undefined,
+        accent: body.accent as string | undefined,
+      });
+      const saved = await updateMotionProject(workspace, chartRoute[1], body.baseRevision as number, chartEdits);
+      json(res, ctx, 200, { project: saved, layersAdded: layerCount });
     } else if (pathname === "/api/motion/generate" && method === "POST") {
       const body = await readMotionJson(req, 12_000);
       const result = await generateMotionFromPrompt(workspace, body.prompt as string, {
@@ -260,6 +311,18 @@ export async function handleMotionHttpRoute(
         autoNarrateScenes: body.autoNarrateScenes as boolean | undefined,
         voiceoverText: body.voiceoverText as string | undefined,
         voiceoverGain: body.voiceoverGain as number | undefined,
+        burnCaptions: body.burnCaptions as boolean | undefined,
+        palette: body.palette as string | undefined,
+        specularSheen: body.specularSheen as boolean | undefined,
+        codeSnippet: body.codeSnippet as string | undefined,
+        codeLang: body.codeLang as string | undefined,
+        audioVisualizer: body.audioVisualizer as boolean | undefined,
+        deviceMockup: body.deviceMockup as "macbook" | "iphone" | "browser" | undefined,
+        chartType: body.chartType as "benchmark" | "kpi" | "radial" | "sparkline" | undefined,
+        chartTitle: body.chartTitle as string | undefined,
+        chartKpiValue: body.chartKpiValue as string | undefined,
+        chartProgressPercent: body.chartProgressPercent as number | undefined,
+        voice: body.voice as string | undefined,
       });
       json(res, ctx, 202, result);
     } else if (pathname === "/api/motion/trace-image" && method === "POST") {
