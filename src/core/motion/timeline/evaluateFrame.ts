@@ -58,6 +58,7 @@ export function evaluateFrame(project: MotionProject, frame: number): EvaluatedF
       const values: Record<MotionProperty, number> = {
         x: layer.x, y: layer.y, opacity: layer.opacity, rotation: layer.rotation,
         scale: defaultScale, scaleX: layer.scaleX ?? defaultScale, scaleY: layer.scaleY ?? defaultScale,
+        strokeDashoffset: (layer as any).strokeDashoffset ?? 0,
       };
       for (const track of layer.tracks) {
         const val = evaluateTrack(track, frame);

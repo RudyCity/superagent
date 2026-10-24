@@ -295,6 +295,26 @@ function addDecoration(
     layers.push(layer);
   };
 
+  const vectorEmblem = (suffix: string, d: string, x: number, y: number, stroke = scene.accent, strokeWidth = 2, extraTracks: MotionTrack[] = []): void => {
+    layers.push({
+      kind: "path",
+      id: "scene-" + index + "-" + suffix,
+      d,
+      x: Math.round(x),
+      y: Math.round(y),
+      width: 48,
+      height: 48,
+      rotation: 0,
+      opacity: 1,
+      fill: "none",
+      stroke,
+      strokeWidth,
+      strokeDasharray: [160, 160],
+      strokeDashoffset: 160,
+      tracks: [opacityAt(visible, 0.95), ...extraTracks],
+    });
+  };
+
   const cardScaleTrack: MotionTrack[] = start !== undefined && end !== undefined ? [{
     property: "scale",
     keyframes: cleanKeyframes([
@@ -315,6 +335,28 @@ function addDecoration(
     ]),
   }] : [];
 
+  const emblemTracks: MotionTrack[] = start !== undefined && end !== undefined ? [
+    {
+      property: "strokeDashoffset",
+      keyframes: cleanKeyframes([
+        { frame: start, value: 160 },
+        { frame: Math.min(end, start + 3), value: 160, easing: "easeOutExpo" },
+        { frame: Math.min(end, start + 20), value: 0, easing: "linear" },
+        { frame: end, value: 0, easing: "linear" },
+      ]),
+    },
+    {
+      property: "rotation",
+      keyframes: cleanKeyframes([
+        { frame: start, value: -18 },
+        { frame: Math.min(end, start + 3), value: -18, easing: "easeOutExpo" },
+        { frame: Math.min(end, start + 20), value: 0, easing: "easeInOut" },
+        { frame: Math.max(start + 20, end - 8), value: 4, easing: "easeInOut" },
+        { frame: end, value: 4, easing: "easeInOut" },
+      ]),
+    },
+  ] : [];
+
   if (style === "neon") {
     // 1. Sleek Glassmorphism Hero Card Backdrop
     const cardPadX = 48;
@@ -332,6 +374,11 @@ function addDecoration(
 
     // Glowing Neon Top Accent Strip
     rect("accent-strip", cardX + 28, cardY, Math.min(cardW - 56, 220), 4, scene.accent, 0.95, 2);
+
+    // Kinetic Vector Double-Hexagon Emblem
+    const hexD = "M 24 4 L 42 14 L 42 34 L 24 44 L 6 34 L 6 14 Z M 24 12 L 34 18 L 34 30 L 24 36 L 14 30 L 14 18 Z";
+    const emblemX = anchor.layout === "center" ? Math.round((width - 48) / 2) : anchor.x;
+    vectorEmblem("emblem", hexD, emblemX, cardY - 56, scene.accent, 2, emblemTracks);
 
     // Pill Badge Container & Monospace Kicker
     const pillW = 128;
@@ -353,6 +400,11 @@ function addDecoration(
     // Main Solid Black Card
     rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 1.0, 0, cardScaleTrack);
 
+    // Kinetic Vector Diamond Cross Emblem
+    const diamondD = "M 24 4 L 44 24 L 24 44 L 4 24 Z M 24 14 L 34 24 L 24 34 L 14 24 Z";
+    const emblemX = anchor.layout === "center" ? Math.round((width - 48) / 2) : anchor.x;
+    vectorEmblem("emblem", diamondD, emblemX, cardY - 52, scene.accent, 2, emblemTracks);
+
     // Brutalist Kicker Tag
     label("kicker", "ACT " + String(index + 1).padStart(2, "0") + " — FOCUS", anchor.x, anchor.y - 46, 16, fonts.kicker, scene.accent, kickerTracks);
   } else if (style === "editorial") {
@@ -371,6 +423,12 @@ function addDecoration(
 
     rect("hero-card", cardX, cardY, cardW, cardH, "#18181B", 0.60, 16, cardScaleTrack);
     rect("hairline", cardX + 28, cardY, Math.min(cardW - 56, 160), 3, scene.accent, 0.85, 1);
+
+    // Minimalist Vector Orbit Emblem
+    const orbitD = "M 24 6 A 18 18 0 1 0 24 42 A 18 18 0 1 0 24 6 Z M 16 24 L 32 24 M 24 16 L 24 32";
+    const emblemX = anchor.layout === "center" ? Math.round((width - 48) / 2) : anchor.x;
+    vectorEmblem("emblem", orbitD, emblemX, cardY - 54, scene.accent, 2, emblemTracks);
+
     label("kicker", String(index + 1).padStart(2, "0") + " / " + String(count).padStart(2, "0"), anchor.x, anchor.y - 50, 13, fonts.kicker, scene.accent, kickerTracks);
   }
 }

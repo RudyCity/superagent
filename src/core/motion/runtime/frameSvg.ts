@@ -42,7 +42,8 @@ export function renderMotionSvg(project: MotionProject, frame: number, images = 
       const stroke = layer.stroke ?? "none";
       const strokeWidth = layer.strokeWidth ? ` stroke-width="${number(layer.strokeWidth)}"` : "";
       const dash = layer.strokeDasharray && layer.strokeDasharray.length > 0 ? ` stroke-dasharray="${layer.strokeDasharray.join(" ")}"` : "";
-      const offset = layer.strokeDashoffset !== undefined ? ` stroke-dashoffset="${number(layer.strokeDashoffset)}"` : "";
+      const currentOffset = values.strokeDashoffset ?? layer.strokeDashoffset;
+      const offset = currentOffset !== undefined ? ` stroke-dashoffset="${number(currentOffset)}"` : "";
       const fillRule = layer.fillRule ? ` fill-rule="${layer.fillRule}"` : "";
       parts.push(`<g transform="${transform} translate(${x} ${y})"><path d="${escapeXml(layer.d)}" fill="${fill}" stroke="${stroke}"${strokeWidth}${dash}${offset}${fillRule} opacity="${opacity}"/></g>`);
     } else {

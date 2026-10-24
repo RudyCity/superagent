@@ -12,7 +12,7 @@ export class MotionValidationError extends Error {
 
 const color = /^#[0-9a-fA-F]{6}$/;
 const id = /^[a-z][a-z0-9-]{1,63}$/;
-const propertyNames = new Set(["x", "y", "opacity", "rotation", "scale", "scaleX", "scaleY"]);
+const propertyNames = new Set(["x", "y", "opacity", "rotation", "scale", "scaleX", "scaleY", "strokeDashoffset"]);
 const easingNames = new Set([
   "linear",
   "step",

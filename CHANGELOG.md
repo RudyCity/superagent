@@ -1,3 +1,11 @@
+## [1.14.26] - 2026-10-24
+### Added
+- Kinetic Vector Stroke Animation & Multi-Aspect Motion Optimization (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/render/canvasFrames.ts`, `src/core/motion/runtime/frameSvg.ts`, `src/core/motion/director/creativePresets.ts`, `src/core/motion/motionCapabilities.ts`):
+  - Promoted `strokeDashoffset` to a first-class animatable `MotionProperty` with full schema validation and type support across all layer types.
+  - Added native `ctx.lineDashOffset` support in the Canvas frame renderer (`canvasFrames.ts`) and SVG `stroke-dashoffset` generator (`frameSvg.ts`) for smooth path drawing and stroke reveal transitions.
+  - Injected procedural kinetic vector emblems (`vectorEmblem`) into Motion Director creative presets (`neon`, `brutalist`, `minimal`) featuring synchronized stroke reveal animation and continuous angular momentum ($0^\circ \to 90^\circ$).
+  - Added responsive layout adaptation for multi-aspect renders: automatically handles 16:9 Landscape (1280x720) and 9:16 Vertical Mobile Stories (720x1280) with dynamic emblem placement and font scaling.
+
 ## [1.14.25] - 2026-10-24
 ### Added
 - Fluid Motion Easing, Cascaded Layer Staggering & Continuous Ambient Life (`src/core/motion/schema/types.ts`, `src/core/motion/schema/validation.ts`, `src/core/motion/timeline/evaluateFrame.ts`, `src/core/motion/director/creativePresets.ts`, `src/core/motion/motionCapabilities.ts`, `tests/motionCreativePresets.test.ts`):

@@ -92,8 +92,9 @@ export function createMotionFrameRenderer(
           ctx.lineWidth = layer.strokeWidth!;
           if (layer.strokeDasharray && layer.strokeDasharray.length > 0) {
             ctx.setLineDash(layer.strokeDasharray);
-            if (layer.strokeDashoffset !== undefined) {
-              ctx.lineDashOffset = layer.strokeDashoffset;
+            const dashOffset = values.strokeDashoffset ?? layer.strokeDashoffset;
+            if (dashOffset !== undefined) {
+              ctx.lineDashOffset = dashOffset;
             }
           }
           ctx.stroke(path);

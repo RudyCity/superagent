@@ -4,7 +4,7 @@
  */
 export const MOTION_SCHEMA_VERSION = 1 as const;
 
-export type MotionProperty = "x" | "y" | "opacity" | "rotation" | "scale" | "scaleX" | "scaleY";
+export type MotionProperty = "x" | "y" | "opacity" | "rotation" | "scale" | "scaleX" | "scaleY" | "strokeDashoffset";
 export type MotionEasing =
   | "linear"
   | "step"
@@ -38,6 +38,7 @@ interface BaseLayer {
   scale?: number;
   scaleX?: number;
   scaleY?: number;
+  strokeDashoffset?: number;
   fill: string;
   tracks: MotionTrack[];
 }
