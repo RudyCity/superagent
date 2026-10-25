@@ -12,6 +12,9 @@ export interface StudioBrowserVideoOptions {
   height?: number;
   fps?: number;
   durationSeconds?: number;
+  signal?: AbortSignal;
+  onProgress?: (completed: number, total: number) => void;
+  audioAssetId?: string;
 }
 export interface StudioBrowserVideoResult {
   id: string;
@@ -146,10 +149,28 @@ export async function renderStudioBrowserVideo(
     ? renderStudioNativeHtml(input.project, "autoplay")
     : validateHtml(input.reactTsx ? extractStudioReactOfflineHtml(input.reactTsx) : input.html!);
   const executablePath = await findChromeExecutable();
-  const { id, file } = await safeOutputPath(workspace);
+  const { id, file, dir } = await safeOutputPath(workspace);
+  let temporaryAudio: string | undefined;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let ffmpeg: ReturnType<typeof spawn> | undefined;
+  const cancelled = () => {
+    if (options.signal?.aborted) throw Object.assign(
+      new Error("Code-to-Video render cancelled"), { name: "AbortError" });
+  };
+  const abort = () => { try { ffmpeg?.kill(); } catch {}
+    void browser?.close().catch(() => {}); };
+  options.signal?.addEventListener("abort", abort, { once: true });
   try {
+    cancelled();
+    if (options.audioAssetId !== undefined) {
+      if (!/^audio-[a-f0-9]{64}$/.test(options.audioAssetId))
+        throw new Error("Invalid Studio audio asset ID");
+      const { readMotionAudio } = await import("../assets/motionAudio.js");
+      const audio = await readMotionAudio(workspace, options.audioAssetId);
+      temporaryAudio = path.join(dir, id + ".temporary.wav");
+      await fs.writeFile(temporaryAudio, audio, { flag: "wx", mode: 0o600 });
+    }
+    cancelled();
     browser = await chromium.launch({
       executablePath, headless: true, timeout: 20000,
       args: ["--no-first-run", "--disable-extensions", "--disable-background-networking",
@@ -172,19 +193,29 @@ export async function renderStudioBrowserVideo(
       (window as any).__studioStopCapture?.();
       for (const animation of document.getAnimations()) animation.pause();
     });
+    cancelled();
     ffmpeg = spawn("ffmpeg", [
       "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
       "-f", "image2pipe", "-framerate", String(profile.fps),
       "-vcodec", "png", "-i", "pipe:0",
+      ...(temporaryAudio ? ["-i", temporaryAudio] : []),
       "-vf", "scale=" + profile.width + ":" + profile.height,
+      "-map", "0:v:0",
+      ...(temporaryAudio ? ["-map", "1:a:0", "-af", "apad", "-c:a", "aac", "-b:a", "128k",
+        "-t", String(profile.frameCount / profile.fps)] : ["-an"]),
       "-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
       "-pix_fmt", "yuv420p", "-threads", "2", "-movflags", "+faststart",
       file,
     ], { windowsHide: true, stdio: ["pipe", "ignore", "pipe"] });
+    const closed = new Promise<number | null>((resolve, reject) => {
+      ffmpeg!.once("error", reject);
+      ffmpeg!.once("close", resolve);
+    });
     let ffmpegError = "";
     ffmpeg.stderr?.on("data", chunk => { ffmpegError = (ffmpegError + chunk.toString()).slice(-2000); });
     const timeoutAt = Date.now() + 90000;
     for (let i = 0; i < profile.frameCount; i++) {
+      cancelled();
       if (Date.now() > timeoutAt) throw new Error("Code-to-Video browser render exceeded 90s");
       const time = i / profile.fps;
       await page.evaluate((seconds: number) => {
@@ -201,10 +232,16 @@ export async function renderStudioBrowserVideo(
       const png = input.project && await stage.count()
         ? await stage.screenshot({ animations: "allow", timeout: 10000 })
         : await page.screenshot({ animations: "allow", timeout: 10000 });
-      if (!ffmpeg.stdin?.write(png)) await once(ffmpeg.stdin!, "drain");
+      cancelled();
+      if (!ffmpeg.stdin?.write(png)) await Promise.race([
+        once(ffmpeg.stdin!, "drain"), closed.then(() => { throw new Error("FFmpeg stopped before all frames were encoded"); }),
+      ]);
+      options.onProgress?.(i + 1, profile.frameCount);
     }
+    cancelled();
     ffmpeg.stdin?.end();
-    const [code] = await once(ffmpeg, "close") as [number | null];
+    const code = await closed;
+    cancelled();
     if (code !== 0) throw new Error("Code-to-Video FFmpeg encoding failed: " + ffmpegError.slice(-400));
     const stat = await fs.lstat(file);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 1024 ||
@@ -216,7 +253,9 @@ export async function renderStudioBrowserVideo(
     await fs.rm(file, { force: true });
     throw error;
   } finally {
+    options.signal?.removeEventListener("abort", abort);
     await browser?.close().catch(() => {});
+    if (temporaryAudio) await fs.rm(temporaryAudio, { force: true }).catch(() => {});
   }
 }
 

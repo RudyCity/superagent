@@ -64,6 +64,37 @@ describe("studio code-video authenticated workspace routes", () => {
       const reactBody = await reactResult.json() as { source: string; file?: string };
       expect(reactBody.source).toBe("studio-react");
       expect(reactBody.file).toBeUndefined();
+      const queuedResponse = await fetch(base + "/code-to-video/jobs", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: project.id, width: 640, height: 360,
+          fps: 6, durationSeconds: 1 }),
+      });
+      expect(queuedResponse.status).toBe(202);
+      const submitted = await queuedResponse.json() as { id: string; status: string };
+      expect(submitted.id).toMatch(/^codejob-[a-f0-9]{24}$/);
+      let polled: { status: string; framesCompleted: number; result?: { id: string; file?: string } } |
+        undefined;
+      for (let retry = 0; retry < 150; retry++) {
+        const status = await fetch(base + "/code-to-video/jobs/" + submitted.id);
+        expect(status.status).toBe(200);
+        polled = await status.json() as typeof polled;
+        if (polled?.status === "completed" || polled?.status === "failed") break;
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+      expect(polled?.status).toBe("completed");
+      expect(polled?.framesCompleted).toBe(6);
+      expect(polled?.result?.file).toBeUndefined();
+      const mp4 = await fetch(base + "/code-videos/" + polled!.result!.id + ".mp4");
+      expect(mp4.status).toBe(200);
+      expect(mp4.headers.get("content-type")).toBe("video/mp4");
+      const cancelCompleted = await fetch(base + "/code-to-video/jobs/" + submitted.id + "/cancel", {
+        method: "POST",
+      });
+      expect(cancelCompleted.status).toBe(200);
+      expect((await cancelCompleted.json() as { status: string }).status).toBe("completed");
+      const fakeId = "codejob-" + "f".repeat(24);
+      expect((await fetch(base + "/code-to-video/jobs/" + fakeId)).status).toBe(404);
+
     } finally {
       server.closeAllConnections();
       if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));

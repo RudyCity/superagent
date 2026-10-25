@@ -1048,7 +1048,7 @@ superagent studio code-to-video --file page.html --trust-html --width 640 --heig
 # Or use --file studio-generated.tsx --trust-html for a Studio React export
 ```
 
-Private workspace-scoped HTTP: `POST /api/studio/code-to-video` and `GET /api/studio/code-videos/:id.mp4`. T-Line adds **Code → MP4** with video preview and download. External HTML must be trusted by the user; remote content is blocked, but this is NOT an untrusted-code sandbox. No arbitrary external React TSX execution, URLs, audio, or arbitrary-JS animation parity yet. See `docs/audits/2026-10-25-studio-code-to-video.md`.
+Private workspace-scoped HTTP: `POST /api/studio/code-to-video` and `GET /api/studio/code-videos/:id.mp4`. T-Line adds **Code → MP4** with video preview and download. External HTML must be trusted by the user; remote content is blocked, but this is NOT an untrusted-code sandbox. No arbitrary external React TSX execution, URLs, browser-generated audio capture, or arbitrary-JS animation parity yet. Optional canonical Studio WAV audio assets can be muxed as AAC into Code-to-Video MP4 (`--audio-asset AUDIO_ID`). A bounded in-process queue supports `POST /api/studio/code-to-video/jobs`, `GET /api/studio/code-to-video/jobs/:id` and `POST /api/studio/code-to-video/jobs/:id/cancel`; up to 1 active and 3 queued, with frame progress and cancellation. Queue metadata is lost after backend restart (not durable). See `docs/audits/2026-10-25-studio-code-to-video.md`.
 
 **Not yet supported:** general video-to-code reverse engineering, editable
 DOM/SVG reconstruction of arbitrary footage, raster/image/video/audio assets

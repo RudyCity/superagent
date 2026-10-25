@@ -597,6 +597,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const options = {
         width: numberOption("--width"), height: numberOption("--height"),
         fps: numberOption("--fps"), durationSeconds: numberOption("--seconds"),
+        audioAssetId: opt(opts, "--audio-asset"),
       };
       let input: { project?: Awaited<ReturnType<typeof getMotionProject>>;
         html?: string; reactTsx?: string };

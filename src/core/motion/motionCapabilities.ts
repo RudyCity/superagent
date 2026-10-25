@@ -11,6 +11,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   studioToCodeOffline: true,
   studioToCodeFormats: ["html", "react"],
   studioCodeToVideo: "offline-chromium-ffmpeg-preview-v1",
+  studioCodeToVideoJobs: "bounded-inprocess-cancellable-v1",
   studioCodeToVideoFormats: ["mp4"],
   studioCodeToVideoSources: ["studio-html", "studio-react-wrapper", "trusted-local-html"],
   studioInteractionRules: "declarative-bindings-v1",

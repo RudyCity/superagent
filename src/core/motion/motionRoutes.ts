@@ -74,6 +74,7 @@ function routeError(error: unknown): { status: number; message: string } {
   const status = (error as { statusCode?: number })?.statusCode;
   if (status === 409) return { status: 409, message };
   if (status === 413) return { status: 413, message };
+  if (status === 429) return { status: 429, message };
   if (status === 503) return { status: 503, message };
   if (error instanceof MotionRevisionConflict) return { status: 409, message };
   if (error instanceof MotionValidationError || error instanceof RangeError || error instanceof SyntaxError) return { status: 400, message };
@@ -109,6 +110,7 @@ export async function handleMotionHttpRoute(
   const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
   const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.(html|tsx)$/);
   const codeVideoDownload = pathname.match(/^\/api\/motion\/code-videos\/(codevideo-[a-f0-9]{24})\.mp4$/);
+  const codeVideoJobRoute = pathname.match(/^\/api\/motion\/code-to-video\/jobs\/(codejob-[a-f0-9]{24})(\/cancel)?$/);
   const reconstructionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/reconstruction-review\.png$/);
   const eventsRoute = pathname === "/api/motion/events";
   const tlineBridgeRoute = pathname === "/api/motion/tline-bridge";
@@ -714,6 +716,33 @@ export async function handleMotionHttpRoute(
         "Content-Disposition": 'attachment; filename="motion-captions.srt"',
       });
       res.end(body);
+    } else if (pathname === "/api/motion/code-to-video/jobs" && method === "POST") {
+      const body = await readMotionJson(req, 2_400_000);
+      const projectId = body.projectId;
+      const html = body.html;
+      const reactTsx = body.reactTsx;
+      if ([projectId, html, reactTsx].filter(value => typeof value === "string").length !== 1)
+        throw new MotionValidationError(["Supply exactly one Studio projectId, HTML or Studio React TSX"]);
+      if (typeof projectId === "string" && !/^(?:studio|motion)-[a-f0-9]{20}$/.test(projectId))
+        throw new MotionValidationError(["Invalid code-to-video Studio projectId"]);
+      if ((typeof html === "string" || typeof reactTsx === "string") && body.trustLocalHtml !== true)
+        throw new MotionValidationError(["External HTML/Studio React TSX requires explicit trustLocalHtml=true confirmation"]);
+      const { queueStudioCodeVideo } = await import("./code/studioCodeVideoJobs.js");
+      const options = {
+        width: body.width as number | undefined, height: body.height as number | undefined,
+        fps: body.fps as number | undefined, durationSeconds: body.durationSeconds as number | undefined,
+        audioAssetId: body.audioAssetId as string | undefined,
+      };
+      const input = typeof projectId === "string"
+        ? { project: await getMotionProject(workspace, projectId) }
+        : typeof reactTsx === "string" ? { reactTsx } : { html: html as string };
+      json(res, ctx, 202, await queueStudioCodeVideo(workspace, input, options));
+    } else if (codeVideoJobRoute && method === "GET" && !codeVideoJobRoute[2]) {
+      const { inspectStudioCodeVideo } = await import("./code/studioCodeVideoJobs.js");
+      json(res, ctx, 200, await inspectStudioCodeVideo(workspace, codeVideoJobRoute[1]));
+    } else if (codeVideoJobRoute && method === "POST" && codeVideoJobRoute[2] === "/cancel") {
+      const { cancelStudioCodeVideo } = await import("./code/studioCodeVideoJobs.js");
+      json(res, ctx, 200, await cancelStudioCodeVideo(workspace, codeVideoJobRoute[1]));
     } else if (pathname === "/api/motion/code-to-video" && method === "POST") {
       const body = await readMotionJson(req, 2_400_000);
       const projectId = body.projectId;
@@ -730,6 +759,7 @@ export async function handleMotionHttpRoute(
         width: body.width as number | undefined, height: body.height as number | undefined,
         fps: body.fps as number | undefined,
         durationSeconds: body.durationSeconds as number | undefined,
+        audioAssetId: body.audioAssetId as string | undefined,
       };
       const input = typeof projectId === "string"
         ? { project: await getMotionProject(workspace, projectId) }

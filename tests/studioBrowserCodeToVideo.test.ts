@@ -6,6 +6,7 @@ import { execFileSync } from "node:child_process";
 import { createMotionProject } from "../src/core/motion/project/projectStore.js";
 import { renderStudioReactComponent } from "../src/core/motion/code/studioReactCodeExporter.js";
 import { extractStudioReactOfflineHtml } from "../src/core/motion/code/studioBrowserVideoRenderer.js";
+import { importMotionAudio } from "../src/core/motion/assets/motionAudio.js";
 import { readStudioCodeVideo, renderStudioBrowserVideo } from "../src/core/motion/code/studioBrowserVideoRenderer.js";
 
 const workspaces: string[] = [];
@@ -71,6 +72,42 @@ describe("Code-to-Video Chromium+FFmpeg developer preview", () => {
     });
     expect(video.source).toBe("studio-react");
     expect(video.bytes).toBeGreaterThan(1500);
+  }, 65000);
+
+  it("muxes a canonical Studio audio asset as AAC without retaining temporary WAV", async () => {
+    const ws = await workspace();
+    const samples = 24_000;
+    const pcm = Buffer.alloc(samples * 2);
+    for (let n = 0; n < samples; n++)
+      pcm.writeInt16LE(Math.round(9000 * Math.sin(2 * Math.PI * 440 * n / 24000)), n * 2);
+    const wav = Buffer.alloc(44 + pcm.length);
+    wav.write("RIFF", 0, "ascii"); wav.writeUInt32LE(wav.length - 8, 4);
+    wav.write("WAVEfmt ", 8, "ascii"); wav.writeUInt32LE(16, 16);
+    wav.writeUInt16LE(1, 20); wav.writeUInt16LE(1, 22);
+    wav.writeUInt32LE(24000, 24); wav.writeUInt32LE(48000, 28);
+    wav.writeUInt16LE(2, 32); wav.writeUInt16LE(16, 34);
+    wav.write("data", 36, "ascii"); wav.writeUInt32LE(pcm.length, 40);
+    pcm.copy(wav, 44);
+    const audio = await importMotionAudio(ws, wav);
+    const output = await renderStudioBrowserVideo(ws, { html }, {
+      width: 640, height: 360, fps: 5, durationSeconds: 1, audioAssetId: audio.id,
+    });
+    const probed = JSON.parse(execFileSync("ffprobe", [
+      "-v", "error", "-show_entries", "stream=codec_type,codec_name",
+      "-of", "json", output.file,
+    ], { timeout: 15000, windowsHide: true }).toString()) as {
+      streams: Array<{ codec_type: string; codec_name: string }>;
+    };
+    expect(probed.streams).toEqual(expect.arrayContaining([
+      { codec_type: "video", codec_name: "h264" },
+      { codec_type: "audio", codec_name: "aac" },
+    ]));
+    const names = await fs.readdir(path.dirname(output.file));
+    expect(names.some(name => name.endsWith(".temporary.wav"))).toBe(false);
+    await expect(renderStudioBrowserVideo(ws, { html }, {
+      width: 640, height: 360, fps: 4, durationSeconds: 1,
+      audioAssetId: "audio-" + "a".repeat(64),
+    })).rejects.toThrow(/not found|ENOENT/);
   }, 65000);
 
   it("renders a first-party Studio project and retains private workspace ownership", async () => {
