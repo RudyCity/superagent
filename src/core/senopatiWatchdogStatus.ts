@@ -23,11 +23,11 @@ export function readSenopatiWatchdogStatus(
   let alive=false;
   try{process.kill(data.pid,0);alive=true;}
   catch(error:any){alive=error?.code==="EPERM";}
-  const heartbeatFresh=now-data.updatedAt<12_000;
+  const heartbeatFresh=(now-data.updatedAt)>=-1_000 && (now-data.updatedAt)<=12_000;
   return {
    pid:data.pid,alive:alive&&heartbeatFresh,heartbeatFresh,
    modelPid:Number.isSafeInteger(data.modelPid)&&data.modelPid>0?data.modelPid:null,
-   healthy:data.healthy===true,updatedAt:data.updatedAt,
+   healthy:data.healthy===true && alive && heartbeatFresh,updatedAt:data.updatedAt,
   };
  }catch{return null;}
 }

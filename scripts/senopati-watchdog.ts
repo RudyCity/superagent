@@ -17,6 +17,7 @@ import {getRootConfigDir} from "../src/core/config/paths.js";
 import {getModernPolicy} from "../src/core/senopatiModernBert.js";
 import {sharedSenopatiStatus} from "../src/core/senopatiSharedClient.js";
 import {modelStartLeaseBlocksNewModel} from "../src/core/senopatiStartLease.js";
+import {readSenopatiWatchdogStatus} from "../src/core/senopatiWatchdogStatus.js";
 import {
   SENOPATI_WATCH_CHECK_MS,
   decideSenopatiRestart,initialWatchState,
@@ -200,9 +201,12 @@ async function main(){
   if(action==="run"){await worker();return;}
   if(action==="status"){
     const watch=statusRecord();
+    const observed=readSenopatiWatchdogStatus(lockPath);
     console.log(JSON.stringify({
       watchdog:watch?{
-        pid:watch.pid,active:pidAlive(watch.pid),healthy:watch.healthy,
+        pid:watch.pid,active:observed?.alive===true,
+        heartbeatFresh:observed?.heartbeatFresh===true,
+        healthy:observed?.healthy===true,
         configuredPrecision:watch.configuredPrecision,
         modelPid:watch.modelPid,updatedAt:watch.updatedAt,
         failedChecks:watch.failedChecks,
