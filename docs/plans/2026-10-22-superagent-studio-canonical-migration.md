@@ -19,7 +19,7 @@ The following technical names are **aliases for existing data and clients**, not
 - Existing `motion-*` project IDs and `motionjob-*` job IDs are accepted by all relevant validators, job queues and T-Line API/proxy.
 - Old MCP `superagent_motion_*` and native `motion_*` tools remain functional while new names are available; both use the same project capability and dangerous execution gates.
 - Existing `<workspace>/.superagent/motion` content is accessed transparently *only when no Studio directory exists*.
-- A workspace containing **both** `.superagent/motion` and `.superagent/studio` is blocked rather than silently merging sources.
+- A workspace containing **both** `.superagent/motion` and `.superagent/studio` is blocked unless an explicit, verified-copy cutover marker records successful byte-for-byte migration; otherwise it fails closed.
 - Preexisting completed-render manifest absolute paths are remapped to Studio render paths in memory after guarded migration. Job/project ID references never change.
 - The underlying TypeScript implementation symbols and some `motion` field names that describe animation concepts remain internal compatibility contracts; they are not new product brands. Do not bulk-replace field names in stored schema v1.
 
@@ -28,8 +28,8 @@ The following technical names are **aliases for existing data and clients**, not
 1. Stop CLI/T-Line renderers, supervisors and any other processes that may be writing to the target workspace; do not force-kill live sessions from within this command.
 2. Back up the complete `.superagent/motion` workspace directory with its file permissions and hashes.
 3. Run `superagent studio migrate --workspace <workspace> --json`. Check `state`, `blockers`, `from` and `to`.
-4. When state is `legacy` and `blockers: []`, run `superagent studio migrate --workspace <workspace> --apply --json`. The operation takes an exclusive migration lock and atomically renames the namespace *on the same volume*.
-5. Confirm projects, asset images/audio, histories, brand kit and historical video downloads after restarting the upgraded Studio application. Never create a parallel Studio directory when legacy data is present.
+4. When state is `legacy` and `blockers: []`, run `superagent studio migrate --workspace <workspace> --apply --json` for atomic same-volume rename. If Windows denies the rename because Explorer/IDE holds directory handles, use explicit `superagent studio migrate --workspace <workspace> --apply --verified-copy --json` only when no old Studio runtime is writing: the source and target file sets are SHA-256 verified before cutover, and a strict marker allows the canonical Studio namespace to coexist with a retained legacy rollback copy.
+5. Confirm projects, asset images/audio, histories, brand kit and historical video downloads from the new Studio root after refreshing *upgraded* clients. With verified-copy, do not delete the legacy tree while it is locked or while clients may still use the old implementation. Never create a parallel Studio directory manually without the validated migration marker.
 
 The migration **refuses active queued/preparing/rendering records, lock/claim files, suspicious metadata, symlinks, or mixed old/new namespace directories**. It does not silently perform data conversion, mutate project IDs, delete old assets, restart workers or recreate failed renders. Re-running the migration after success is a no-op. Before applying to important production data, perform a controlled backup/restore rehearsal.
 

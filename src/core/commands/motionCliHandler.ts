@@ -57,7 +57,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio recover-worker JOB_ID --ack-stale --expected-pid PID [--workspace PATH] [--json]
   superagent studio cancel JOB_ID [--workspace PATH] [--json]
   superagent studio doctor [--json]
-  superagent studio migrate [--workspace PATH] [--apply] [--json]
+  superagent studio migrate [--workspace PATH] [--apply] [--verified-copy] [--json]
   superagent studio effects [--category CATEGORY] [--search QUERY] [--workspace PATH] [--json]
   superagent studio effect-info EFFECT_ID [--workspace PATH] [--json]
   superagent studio presets [--search QUERY] [--json]
@@ -79,7 +79,7 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h"]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--verified-copy", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h"]);
   const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--expected-pid", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
@@ -128,11 +128,18 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const { inspectStudioStorageMigration, migrateStudioStorage } =
         await import("../motion/project/projectStore.js");
       const before = await inspectStudioStorageMigration(workspace);
-      if (opts.has("--apply")) {
+      if (opts.has("--verified-copy")) {
+        if (!opts.has("--apply")) throw new Error("--verified-copy requires --apply");
+        const { migrateStudioStorageVerifiedCopy } =
+          await import("../motion/project/storageCopyMigration.js");
+        const result = await migrateStudioStorageVerifiedCopy(workspace);
+        emit({ ...result, preview: before }, json);
+      } else if (opts.has("--apply")) {
         const result = await migrateStudioStorage(workspace);
         emit({ ...result, preview: before }, json);
       } else {
-        emit({ ...before, dryRun: true, applyInstruction: "superagent studio migrate --apply --workspace PATH" }, json);
+        emit({ ...before, dryRun: true, applyInstruction: "superagent studio migrate --apply --workspace PATH",
+          windowsFallback: "superagent studio migrate --apply --verified-copy --workspace PATH (retains legacy backup)" }, json);
       }
       return 0;
     }

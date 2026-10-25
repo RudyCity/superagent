@@ -1,5 +1,34 @@
 # SuperAgent Studio — 2026-10-25 recovery, migration, and release follow-up
 
+## Verified-copy cutover completed on 2026-10-25 (supersedes earlier rename blocker)
+
+The physical atomic Windows rename remains unavailable because Explorer and the
+Antigravity language server hold directory handles, but the workspace now uses
+**.superagent/studio as its canonical storage**. The original
+**.superagent/motion stays intact as a rollback copy**. No active application or
+tunnel was killed. This is a verified logical cutover, not destructive removal.
+
+- Operator command: `bun src/cli.tsx studio migrate --apply --verified-copy --workspace . --json`.
+- Migrated 278 files, **27,349,835 bytes** with source-before, target and source-after
+  SHA-256 inventory matching: `74902d0bb549673baf79c545f0e81e32c24342685e62f304f1c21679359796f0`.
+- Cutover marker: `.superagent/.studio-verified-copy.json`.
+  Without a valid marker, concurrent old/new namespaces still fail closed.
+- Post-cutover CLI: `studio migrate` returns `already-studio`, zero blockers.
+  `studio storage` returns 46 jobs: **45 completed**, 1 interrupted,
+  0 queued/running/failed; 2 free render slots.
+- Studio project list: **47** project records readable.
+- Independent source/target comparison: same 278 relative paths, zero hash
+  mismatches; all **45 completed MP4** files pass FFprobe (650.57s combined).
+- Build passed and the Studio test suite plus 22 focused migration/recovery tests passed.
+- Archive still available: `.superagent/studio-legacy-pre-migration-20261025.tar.gz`.
+- Important: long-running clients with an old in-memory storage implementation
+  must refresh before writing; do not delete the old tree while Windows holds
+  directory handles or before rollback retention policy is agreed.
+- No installed T-Line/Antigravity UI interactive render E2E was performed by
+  this storage migration. Release approval is separate.
+
+## Earlier findings (historical, prior to verified-copy cutover)
+
 ## Implementation completed
 
 - Added `studio recover-worker JOB_ID --ack-stale --expected-pid PID` for operator-initiated abandoned-worker reconciliation.

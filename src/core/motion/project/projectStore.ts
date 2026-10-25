@@ -51,9 +51,12 @@ export async function studioStorageRoot(workspace: string, create = false): Prom
   const [hasStudio, hasLegacy] = await Promise.all([
     safeDirectory(studio, false), safeDirectory(legacy, false),
   ]);
-  if (hasStudio && hasLegacy) throw new Error(
+  const { isVerifiedStudioCopyCutover } = await import("./storageCopyMigration.js");
+  if (hasStudio && hasLegacy && !(await isVerifiedStudioCopyCutover(home))) throw new Error(
     "Both Studio and legacy Motion storage exist; resolve the conflict manually before using either");
-  const selected = hasLegacy ? legacy : studio;
+  if (hasLegacy && !hasStudio && await isVerifiedStudioCopyCutover(home)) throw new Error(
+    "Studio verified-copy destination is missing; refusing fallback to legacy");
+  const selected = hasStudio ? studio : hasLegacy ? legacy : studio;
   if (create) await safeDirectory(selected, true);
   return selected;
 }
@@ -76,8 +79,14 @@ export async function inspectStudioStorageMigration(workspace: string): Promise<
   const [oldExists, newExists] = await Promise.all([
     safeDirectory(oldDir, false), safeDirectory(newDir, false),
   ]);
-  if (oldExists && newExists)
+  const { isVerifiedStudioCopyCutover } = await import("./storageCopyMigration.js");
+  if (oldExists && newExists) {
+    if (await isVerifiedStudioCopyCutover(home))
+      return { state: "already-studio", from: oldDir, to: newDir, blockers: [] };
     return { state: "conflict", from: oldDir, to: newDir, blockers: ["Both namespace directories exist"] };
+  }
+  if (oldExists && !newExists && await isVerifiedStudioCopyCutover(home))
+    return { state: "conflict", from: oldDir, to: newDir, blockers: ["Verified Studio copy destination missing"] };
   if (!oldExists)
     return { state: newExists ? "already-studio" : "empty", from: oldDir, to: newDir, blockers: [] };
   const blockers: string[] = [];

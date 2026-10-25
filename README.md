@@ -856,6 +856,18 @@ Manual verification (requires user action — NOT yet run):
 
 Endpoint mode for manual tests: `--mcp-auth oauth` (OAuth 2.1 + PKCE). Static-bearer mode remains the default for backward compatibility.
 
+### SuperAgent Studio storage namespace (October 2026)
+
+Local Studio data is stored under `<workspace>/.superagent/studio`. Existing
+`.superagent/motion` workspaces can be migrated via `superagent studio migrate
+--workspace PATH --json` (dry-run), then `--apply` (atomic rename). On Windows,
+a directory handle held by an editor can block the rename; with a verified backup
+and **no active legacy writers**, `--apply --verified-copy` verifies the full
+source/target SHA-256 inventories and activates Studio while retaining the old
+folder as a rollback copy. Both namespaces without the verified cutover marker
+remain blocked; do not manually copy, delete or merge either directory.
+See [the migration plan](docs/plans/2026-10-22-superagent-studio-canonical-migration.md).
+
 ### Motion Studio (developer preview)
 
 Motion Studio stores revision-checked scenes and media inside the selected **local workspace**. The native editor is delivered by the separate T-Line Desktop project; no independent browser Studio or live packaged-Tauri integration is implied by the backend API.
