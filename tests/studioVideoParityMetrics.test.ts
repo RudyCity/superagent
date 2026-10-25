@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { measureStudioVideoFrameParity } from "../src/core/motion/code/studioVideoParityMetrics.js";
+import { measureStudioVideoFrameParity, studioForegroundDiffPixels } from "../src/core/motion/code/studioVideoParityMetrics.js";
 import { studioTrackedObjectTransform } from "../src/core/motion/code/videoMultiObjectReconstruction.js";
 
 function image(width:number,height:number,background:[number,number,number],
@@ -39,6 +39,17 @@ describe("Studio video visual parity metrics",()=>{
     expect(()=>measureStudioVideoFrameParity(source,source,20,20,[0,0,0],[0,0,0]))
       .toThrow(/Invalid bounded/);
   });
+  it("marks reference-only, rendered-only, overlap and background pixels with deterministic diagnostic colors",()=>{
+    const reference=image(16,16,[0,0,0],[{x:2,y:2,width:6,height:6,color:[255,255,255]}]);
+    const rendered=image(16,16,[0,0,0],[{x:4,y:4,width:6,height:6,color:[255,255,255]}]);
+    const diff=studioForegroundDiffPixels(reference,rendered,16,16,[0,0,0],[0,0,0]);
+    const at=(x:number,y:number)=>Array.from(diff.slice((y*16+x)*4,(y*16+x)*4+4));
+    expect(at(0,0)).toEqual([20,28,42,255]); // neither
+    expect(at(2,2)).toEqual([245,69,79,255]); // missed
+    expect(at(5,5)).toEqual([148,153,168,255]); // overlap
+    expect(at(9,9)).toEqual([41,215,225,255]); // extra
+  });
+
   it("produces bounded scale with center-anchor compensation and rejects extreme changes",()=>{
     const shape={width:20,height:10};
     expect(studioTrackedObjectTransform(shape,{x:15,y:25,width:20,height:10}))

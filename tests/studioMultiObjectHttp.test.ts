@@ -82,6 +82,7 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
           foregroundRecall:number; foregroundF1:number; rgbMeanAbsoluteError:number }>;
       };
       expect((body as Record<string, unknown>).reviewPng).toBeUndefined();
+      expect((body as Record<string, unknown>).diffPng).toBeUndefined();
       expect(body.objects).toHaveLength(2);
       expect(body.measuredForegroundIoU).toHaveLength(3);
       expect(body.interpolationCheckIoU).toHaveLength(2);
@@ -104,6 +105,19 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
       expect(head.status).toBe(200);
       expect((await head.arrayBuffer()).byteLength).toBe(0);
       expect((await fetch(url + "999")).status).toBe(400);
+      const difference = await fetch(base + "/projects/" + body.projectId +
+        "/reconstruction-diff.png?revision=" + body.revision);
+      expect(difference.status).toBe(200);
+      expect(difference.headers.get("content-type")).toBe("image/png");
+      expect(difference.headers.get("cache-control")).toBe("private, no-store");
+      expect(Buffer.from(await difference.arrayBuffer()).subarray(0,8).toString("hex"))
+        .toBe("89504e470d0a1a0a");
+      const diffHead = await fetch(base + "/projects/" + body.projectId +
+        "/reconstruction-diff.png?revision=" + body.revision, { method: "HEAD" });
+      expect(diffHead.status).toBe(200);
+      expect((await diffHead.arrayBuffer()).byteLength).toBe(0);
+      expect((await fetch(base + "/projects/" + body.projectId +
+        "/reconstruction-diff.png?revision=999999999")).status).toBe(400);
       const original = await fetch(base + "/projects/" + body.projectId);
       expect(original.status).toBe(200);
     } finally {

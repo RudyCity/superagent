@@ -65,3 +65,34 @@ export function measureStudioVideoFrameParity(
     foregroundRgbMeanAbsoluteError: rounded(foregroundDifference / (referenceArea * 3 * 255)),
   };
 }
+
+
+/** Render a diagnostic mask-difference image. The colors are semantic classes,
+ * not a visual prediction: red = reference-only (missing reconstruction),
+ * cyan = output-only (extra pixels), muted grey = overlap and dark = backdrop.
+ * Retains bounded preconditions and never encodes the source frame itself.
+ */
+export function studioForegroundDiffPixels(
+  reference: Uint8Array | Uint8ClampedArray,
+  actual: Uint8Array | Uint8ClampedArray,
+  width: number, height: number,
+  referenceBackground: RGB, actualBackground: RGB,
+  foregroundThreshold = 58,
+): Uint8ClampedArray {
+  // One common validator for both reporting and visualization.
+  measureStudioVideoFrameParity(reference, actual, width, height,
+    referenceBackground, actualBackground, foregroundThreshold);
+  const output = new Uint8ClampedArray(width * height * 4);
+  for (let i=0; i<reference.length; i+=4) {
+    const source = reference[i+3] >= 64 &&
+      distance(reference[i], reference[i+1], reference[i+2], referenceBackground) >= foregroundThreshold;
+    const rendered = actual[i+3] >= 64 &&
+      distance(actual[i], actual[i+1], actual[i+2], actualBackground) >= foregroundThreshold;
+    // Red missing, cyan extra, grey overlap, navy both background.
+    const rgb = source && rendered ? [148, 153, 168] :
+      source ? [245, 69, 79] : rendered ? [41, 215, 225] : [20, 28, 42];
+    output[i] = rgb[0]; output[i+1] = rgb[1]; output[i+2] = rgb[2];
+    output[i+3] = 255;
+  }
+  return output;
+}

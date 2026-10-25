@@ -8,7 +8,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import { importMotionVideo } from "../src/core/motion/assets/motionVideoClips.js";
 import {
   associateStudioObjects, findStudioBrightComponents, findStudioForegroundComponents,
-  reconstructMultiObjectStudioVideo, studioBaseSampleFrames,
+  reconstructMultiObjectStudioVideo, studioBaseSampleFrames, studioBoundedRotationSamples,
 } from "../src/core/motion/code/videoMultiObjectReconstruction.js";
 import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
 import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
@@ -223,6 +223,9 @@ describe("multi-object reference video prototype", () => {
     const preview = await fs.readFile(built.reviewPng);
     expect(preview.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
     expect(preview.length).toBeLessThan(2 * 1024 * 1024);
+    const diff = await fs.readFile(built.diffPng);
+    expect(diff.subarray(0,8).toString("hex")).toBe("89504e470d0a1a0a");
+    expect(diff.length).toBeLessThan(2 * 1024 * 1024);
     expect(built.sampleTimes.length).toBeGreaterThanOrEqual(5);
     expect(built.sampleTimes.length).toBeLessThanOrEqual(9);
     expect(built.objects.every(obj => obj.boxes.length === built.sampleTimes.length)).toBe(true);
@@ -297,6 +300,53 @@ describe("multi-object reference video prototype", () => {
     expect(jsx).toContain('"property":"scaleY"');
     expect(() => transformSync(jsx,{loader:"tsx",format:"esm"})).not.toThrow();
   }, 65000);
+
+  it("recovers bounded clockwise rotation of a distinctive elongated object from an encoded video", async () => {
+    const workspace = await ws();
+    for (let f=0; f<30; f++) {
+      const canvas=createCanvas(160,90), ctx=canvas.getContext("2d");
+      ctx.fillStyle="#101010"; ctx.fillRect(0,0,160,90);
+      ctx.save();
+      ctx.translate(57,42);
+      ctx.rotate(f/29 * 25 * Math.PI/180);
+      ctx.fillStyle="#f9de6a";
+      ctx.fillRect(-27,-6,54,12);
+      ctx.restore();
+      ctx.fillStyle="#34caff";ctx.fillRect(121,60,16,16);
+      await fs.writeFile(path.join(workspace,"spin"+String(f).padStart(3,"0")+".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg",["-hide_banner","-loglevel","error","-framerate","10",
+      "-i",path.join(workspace,"spin%03d.png"),"-y","-c:v","libx264",
+      "-pix_fmt","yuv420p",path.join(workspace,"spin.mp4")],
+      {timeout:30000,maxBuffer:4096,windowsHide:true});
+    const imported=await importMotionVideo(workspace,
+      await fs.readFile(path.join(workspace,"spin.mp4")));
+    const built=await reconstructMultiObjectStudioVideo(workspace,imported.id);
+    const scene=await getMotionProject(workspace,built.projectId);
+    const rotation=scene.composition.layers[0].tracks.find(t=>t.property==="rotation");
+    expect(rotation).toBeDefined();
+    expect(rotation!.keyframes.at(-1)!.value).toBeGreaterThan(18);
+    expect(rotation!.keyframes.at(-1)!.value).toBeLessThan(32);
+    expect(scene.composition.layers[1].tracks.some(t=>t.property==="rotation")).toBe(false);
+    expect(built.parityReport.every(p=>p.foregroundIoU>=.38)).toBe(true);
+    const jsx=renderStudioEditableReactComponent(scene);
+    expect(jsx).toContain('"property":"rotation"');
+    expect(()=>transformSync(jsx,{loader:"tsx",format:"esm"})).not.toThrow();
+  },65000);
+
+  it("rejects symmetric and discontinuous orientation tracks instead of fabricating rotation",()=>{
+    const baseline={width:54,height:12,principalAngle:0,principalRatio:4.4,
+      majorVariance:240,minorVariance:11,centroidX:60,centroidY:40};
+    expect(studioBoundedRotationSamples([baseline,{...baseline,principalAngle:5},
+      {...baseline,principalAngle:17}])).toEqual([0,5,17]);
+    expect(studioBoundedRotationSamples([baseline,{...baseline,principalRatio:1.01,
+      principalAngle:10}])).toBeNull();
+    expect(studioBoundedRotationSamples([baseline,{...baseline,principalAngle:29}]))
+      .toBeNull();
+    expect(studioBoundedRotationSamples([{...baseline,width:17,height:17},baseline]))
+      .toBeNull();
+  });
 
   it("tracks direction reversals with more than three editable keyframes", async () => {
     const workspace = await ws();

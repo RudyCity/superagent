@@ -1060,6 +1060,17 @@ superagent studio code-to-video --file page.html --trust-html --width 640 --heig
 
 Private workspace-scoped HTTP: `POST /api/studio/code-to-video` and `GET /api/studio/code-videos/:id.mp4`. T-Line adds **Code → MP4** with video preview and download. External HTML must be trusted by the user; remote content is blocked, but this is NOT an untrusted-code sandbox. No arbitrary external React TSX execution, URLs, browser-generated audio capture, or arbitrary-JS animation parity yet. Optional canonical Studio WAV audio assets can be muxed as AAC into Code-to-Video MP4 (`--audio-asset AUDIO_ID`). A bounded in-process queue supports `POST /api/studio/code-to-video/jobs`, `GET /api/studio/code-to-video/jobs/:id` and `POST /api/studio/code-to-video/jobs/:id/cancel`; up to 1 active and 3 queued, with frame progress and cancellation. Queued/running/cancelling jobs are persisted as **metadata only** in workspace Studio storage. Completed MP4 IDs, status and progress survive backend restart, but in-flight jobs from a previous process are marked **interrupted** and NEVER automatically replayed. Query `GET /api/studio/code-to-video/jobs` for the last 20 jobs and open any previously completed MP4 by opaque ID; restart recovery is not a durable multi-process worker or automatic retry. The Studio editor includes recent-job history, MP4 reopen and explicit interruption warnings. See `docs/audits/2026-10-25-studio-code-to-video.md`.
 
+**P5 rotation + mask-difference follow-up:** An elongated horizontal
+isolated foreground object can now yield bounded `rotation` keyframes (up to
+±32 degrees), estimated from binary-mask second moments with confidence
+gates. Symmetric/ambiguous shapes are not assigned rotation. The private
+`GET /api/studio/projects/:id/reconstruction-diff.png?revision=N` gives a
+three-sampled-frame diagnostic heatmap: red missing, cyan extra, grey overlap.
+The older side-by-side PNG and numeric holdout metrics remain unchanged.
+Direct JSX export now rotates/scales around the layer's center to match Studio.
+This is not optical-flow, occlusion or generic motion inference. Details in
+`docs/audits/2026-10-25-studio-p5-rotation-diff.md`.
+
 **Video-to-Code P5 (bounded scale + visual parity):** The 2–4-object
 high-contrast video tracker now emits editable `x/y/scaleX/scaleY`
 keyframes, including center-anchor compensation for objects that grow/shrink

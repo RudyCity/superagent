@@ -111,7 +111,7 @@ export async function handleMotionHttpRoute(
   const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.(html|tsx|editable\.tsx)$/);
   const codeVideoDownload = pathname.match(/^\/api\/motion\/code-videos\/(codevideo-[a-f0-9]{24})\.mp4$/);
   const codeVideoJobRoute = pathname.match(/^\/api\/motion\/code-to-video\/jobs\/(codejob-[a-f0-9]{24})(\/cancel)?$/);
-  const reconstructionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/reconstruction-review\.png$/);
+  const reconstructionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/reconstruction-(review|diff)\.png$/);
   const eventsRoute = pathname === "/api/motion/events";
   const tlineBridgeRoute = pathname === "/api/motion/tline-bridge";
   const bundleRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/bundle$/);
@@ -186,7 +186,7 @@ export async function handleMotionHttpRoute(
         throw new MotionValidationError(["Expected an imported Studio video ID"]);
       const { reconstructMultiObjectStudioVideo } =
         await import("./code/videoMultiObjectReconstruction.js");
-      const { reviewPng: _internalPath, ...result } =
+      const { reviewPng: _internalPath, diffPng: _privateDiffPath, ...result } =
         await reconstructMultiObjectStudioVideo(workspace, body.videoId);
       // Clients retrieve review images through the authenticated project route.
       // The on-disk Windows workspace path is not part of the public API.
@@ -197,7 +197,12 @@ export async function handleMotionHttpRoute(
       if (!/^[1-9][0-9]{0,8}$/.test(requested) || Number(requested) > source.revision)
         throw new MotionValidationError(["Invalid Studio reconstruction review revision"]);
       const root = await studioStorageRoot(workspace);
-      const file = path.join(root, "code", source.id + "-r" + requested + "-multi-review.png");
+      const folder = path.join(root, "code");
+      const directory = await fs.lstat(folder);
+      if (!directory.isDirectory() || directory.isSymbolicLink())
+        throw new Error("Invalid Studio review directory");
+      const file = path.join(folder, source.id + "-r" + requested +
+        (reconstructionReview[2] === "diff" ? "-multi-diff.png" : "-multi-review.png"));
       const stats = await fs.lstat(file);
       if (!stats.isFile() || stats.isSymbolicLink() || stats.size < 24 ||
           stats.size > 2 * 1024 * 1024) throw new Error("Invalid Studio review PNG");

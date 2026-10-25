@@ -54,6 +54,8 @@ describe("Video-to-Code: native editable React JSX output", () => {
       const source = renderStudioEditableReactComponent(project(), trigger);
       expect(source).toMatch(/^"use client";/);
       expect(source).toContain("<svg");
+      expect(source).toContain('transform(layer0, SCENE_LAYERS[0].width, SCENE_LAYERS[0].height)');
+      expect(source).toContain('const cx = width / 2, cy = height / 2;');
       expect(source).toContain("<path");
       expect(source).toContain("<text");
       expect(source).toContain("<rect");

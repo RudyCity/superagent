@@ -19,7 +19,7 @@ function elementOf(layer: MotionLayer, index: number): string {
     "key={" + literal(layer.id) + "}",
     "data-studio-id={" + literal(layer.id) + "}",
     "data-studio-index={" + index + "}",
-    "transform={transform(" + state + ")}",
+    "transform={transform(" + state + ", SCENE_LAYERS[" + index + "].width, SCENE_LAYERS[" + index + "].height)}",
     "opacity={" + state + ".opacity}",
   ].join(" ");
   let inner: string;
@@ -59,7 +59,8 @@ export function renderStudioEditableReactComponent(
     throw new Error("Editable React JSX does not yet translate Interaction Graph bindings; use HTML or sandboxed React");
   if (c.layers.length > 96) throw new Error("Editable React JSX supports up to 96 vector layers");
   const data = c.layers.map(layer => ({
-    id: layer.id, x: layer.x, y: layer.y, opacity: layer.opacity,
+    id: layer.id, width: layer.width, height: layer.height,
+    x: layer.x, y: layer.y, opacity: layer.opacity,
     rotation: layer.rotation, scaleX: layer.scaleX ?? layer.scale ?? 1,
     scaleY: layer.scaleY ?? layer.scale ?? 1,
     strokeDashoffset: layer.kind === "path" ? layer.strokeDashoffset ?? 0 : 0,
@@ -92,7 +93,7 @@ type StudioState = {
   x: number; y: number; opacity: number; rotation: number;
   scaleX: number; scaleY: number; strokeDashoffset: number;
 };
-type StudioLayer = StudioState & { id: string; tracks: StudioTrack[] };
+type StudioLayer = StudioState & { id: string; width: number; height: number; tracks: StudioTrack[] };
 
 const FPS = ${fps};
 const DURATION_FRAMES = ${c.durationFrames};
@@ -151,9 +152,13 @@ function evaluateLayer(layer: StudioLayer, frame: number): StudioState {
   }
   return state;
 }
-function transform(values: StudioState): string {
-  return "translate(" + values.x + " " + values.y + ") rotate(" + values.rotation +
-    ") scale(" + values.scaleX + " " + values.scaleY + ")";
+function transform(values: StudioState, width: number, height: number): string {
+  // Match Studio native SVG: translation then rotation and scale around the
+  // visual layer center. Rotate/scale at the origin would visibly drift.
+  const cx = width / 2, cy = height / 2;
+  return "translate(" + values.x + " " + values.y + ") translate(" +
+    cx + " " + cy + ") rotate(" + values.rotation + ") scale(" +
+    values.scaleX + " " + values.scaleY + ") translate(" + (-cx) + " " + (-cy) + ")";
 }
 
 /** Deterministic direct JSX scene. Position and text nodes are editable below. */

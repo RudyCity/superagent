@@ -9,7 +9,7 @@ import { traceImageData } from "../vector/imageTracer.js";
 import { createMotionProject, motionWorkspaceRoot, studioStorageRoot, updateMotionProject } from "../project/projectStore.js";
 import { renderMotionSvg } from "../runtime/frameSvg.js";
 import { validateMotionProject } from "../schema/validation.js";
-import { measureStudioVideoFrameParity, type StudioFrameParity } from "./studioVideoParityMetrics.js";
+import { measureStudioVideoFrameParity, studioForegroundDiffPixels, type StudioFrameParity } from "./studioVideoParityMetrics.js";
 import type { MotionComposition, MotionProject, MotionTrack, PathLayer } from "../schema/types.js";
 
 const execute = promisify(execFile);
@@ -59,6 +59,41 @@ export function studioTrackedObjectTransform(
   };
 }
 
+/**
+ * Principal-axis orientation is meaningful only for isolated anisotropic
+ * masks which begin near-horizontal. Avoid guessing a heading for squares,
+ * circles, symmetric silhouettes or large discontinuous turns (180° alias).
+ * Angles are relative to the first sampled mask and bounded to ±32 degrees.
+ */
+export function studioBoundedRotationSamples(
+  samples: Array<{width:number;height:number;principalAngle?:number;
+    principalRatio?:number; majorVariance?:number; minorVariance?:number;
+    centroidX?:number; centroidY?:number}>,
+): number[] | null {
+  if (samples.length < 2) return null;
+  const first = samples[0];
+  if (first.width/first.height < 2.2 ||
+      first.principalRatio === undefined || first.principalRatio < 2.0 ||
+      first.principalAngle === undefined || Math.abs(first.principalAngle) > 8 ||
+      !first.majorVariance || !first.minorVariance) return null;
+  const angles = [0];
+  let prior = first.principalAngle;
+  for (const sample of samples.slice(1)) {
+    if (sample.principalAngle === undefined || sample.principalRatio === undefined ||
+        sample.principalRatio < 1.65 || !sample.majorVariance || !sample.minorVariance ||
+        sample.centroidX === undefined || sample.centroidY === undefined) return null;
+    let current = sample.principalAngle;
+    while (current - prior > 90) current -= 180;
+    while (current - prior < -90) current += 180;
+    const angle = current - first.principalAngle;
+    if (Math.abs(angle) > 32 || Math.abs(current-prior) > 16)
+      return null;
+    angles.push(Number(angle.toFixed(3)));
+    prior = current;
+  }
+  return Math.max(...angles.map(Math.abs)) >= 3 ? angles : null;
+}
+
 export interface StudioTrackedObject {
   id: string;
   boxes: Array<{ frame: number; x: number; y: number; width: number; height: number }>;
@@ -76,11 +111,16 @@ export interface StudioMultiObjectReconstruction {
   interpolationCheckIoU: number[];
   parityReport: Array<{ frame: number; sampleType: "keyframe" | "holdout" } & StudioFrameParity>;
   reviewPng: string;
+  diffPng: string;
   limitations: string[];
 }
 interface Component {
   x: number; y: number; width: number; height: number;
   count: number; r: number; g: number; b: number;
+  // Pixel-mask second moments; optional to preserve legacy matching fixtures.
+  centroidX?: number; centroidY?: number;
+  principalAngle?: number; principalRatio?: number;
+  majorVariance?: number; minorVariance?: number;
 }
 interface Frame {
   time: number;
@@ -152,6 +192,7 @@ export function findStudioForegroundComponents(
     mask[first] = 0;
     let xmin = width, ymin = height, xmax = 0, ymax = 0;
     let red = 0, green = 0, blue = 0;
+    let sumX = 0, sumY = 0, sumXX = 0, sumYY = 0, sumXY = 0;
     while (head < tail) {
       const i = queue[head++];
       const x = i % width, y = Math.floor(i / width);
@@ -159,6 +200,7 @@ export function findStudioForegroundComponents(
       xmax = Math.max(xmax, x); ymax = Math.max(ymax, y);
       const offset = i * 4;
       red += pixels[offset]; green += pixels[offset + 1]; blue += pixels[offset + 2];
+      sumX += x; sumY += y; sumXX += x*x; sumYY += y*y; sumXY += x*y;
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         if (dx === 0 && dy === 0) continue;
         const xx = x + dx, yy = y + dy;
@@ -170,8 +212,19 @@ export function findStudioForegroundComponents(
     if (tail < MIN_PIXELS) continue;
     const boxWidth = xmax - xmin + 1, boxHeight = ymax - ymin + 1;
     if (boxWidth * boxHeight >= width * height * .55 || boxWidth < 5 || boxHeight < 5) continue;
+    const centroidX = sumX/tail, centroidY = sumY/tail;
+    const xx = Math.max(0, sumXX/tail - centroidX*centroidX);
+    const yy = Math.max(0, sumYY/tail - centroidY*centroidY);
+    const xy = sumXY/tail - centroidX*centroidY;
+    const delta = Math.hypot(xx-yy,2*xy);
+    const majorVariance = Math.max(0,(xx+yy+delta)/2);
+    const minorVariance = Math.max(0,(xx+yy-delta)/2);
     result.push({ x: xmin, y: ymin, width: boxWidth, height: boxHeight,
-      count: tail, r: red / tail, g: green / tail, b: blue / tail });
+      count: tail, r: red / tail, g: green / tail, b: blue / tail,
+      centroidX, centroidY,
+      principalAngle: .5 * Math.atan2(2*xy,xx-yy)*180/Math.PI,
+      principalRatio: Math.sqrt(majorVariance/Math.max(.01,minorVariance)),
+      majorVariance, minorVariance });
     if (result.length > MAX_OBJECTS) throw new Error(
       "Too many foreground components; this prototype supports at most four separated shapes");
   }
@@ -273,7 +326,8 @@ function vectorObject(frame: Frame, region: Component): string {
  */
 async function compareSampledVideoAndStudio(
   project: MotionProject, decoded: Frame[], frames: number[],
-): Promise<{ foregroundIoU: number[]; metrics: StudioFrameParity[]; contactSheet: Buffer }> {
+): Promise<{ foregroundIoU: number[]; metrics: StudioFrameParity[];
+  contactSheet: Buffer; diffSheet: Buffer }> {
   const width = decoded[0].width, height = decoded[0].height;
   const expectedBackground = [
     parseInt(project.composition.background.slice(1, 3), 16),
@@ -289,6 +343,13 @@ async function compareSampledVideoAndStudio(
   context.font = "14px Arial";
   context.fillText("Video source (sampled)", 8, 19);
   context.fillText("Studio SVG reconstruction", width + 8, 19);
+  const diff = createCanvas(width, height * decoded.length + header);
+  const diffContext = diff.getContext("2d");
+  diffContext.fillStyle = "#151923";
+  diffContext.fillRect(0, 0, diff.width, header);
+  diffContext.fillStyle = "#ffffff";
+  diffContext.font = "11px Arial";
+  diffContext.fillText("Red missing | Cyan extra | Grey overlap", 7, 18);
   const quality: number[] = [];
   const metrics: StudioFrameParity[] = [];
   for (let index = 0; index < decoded.length; index++) {
@@ -303,6 +364,10 @@ async function compareSampledVideoAndStudio(
       FOREGROUND_RGB_DISTANCE);
     quality.push(parity.foregroundIoU);
     metrics.push(parity);
+    const diagnostic = diffContext.createImageData(width, height);
+    diagnostic.data.set(studioForegroundDiffPixels(source.pixels, pixels,
+      width, height, source.background, expectedBackground, FOREGROUND_RGB_DISTANCE));
+    diffContext.putImageData(diagnostic, 0, header + index * height);
     const originalCanvas = createCanvas(width, height);
     const originalContext = originalCanvas.getContext("2d");
     const frameImage = originalContext.createImageData(width, height);
@@ -312,8 +377,10 @@ async function compareSampledVideoAndStudio(
     context.drawImage(result, width, header + index * height);
   }
   const png = await contact.encode("png");
-  if (png.length > 2 * 1024 * 1024) throw new Error("Studio comparison PNG exceeded safe size limit");
-  return { foregroundIoU: quality, metrics, contactSheet: png };
+  const diffPng = await diff.encode("png");
+  if (png.length > 2 * 1024 * 1024 || diffPng.length > 2 * 1024 * 1024)
+    throw new Error("Studio comparison PNG exceeded safe size limit");
+  return { foregroundIoU: quality, metrics, contactSheet: png, diffSheet: diffPng };
 }
 
 /** Experimental multiple-object video → editable SVG paths and keyframes.
@@ -410,8 +477,21 @@ export async function reconstructMultiObjectStudioVideo(
     const objects: StudioTrackedObject[] = [];
     for (let j = 0; j < ordered[0].length; j++) {
       const first = ordered[0][j];
-      const transforms = ordered.map(set => studioTrackedObjectTransform(first, set[j]));
-      const track = (axis: "x" | "y" | "scaleX" | "scaleY"): MotionTrack => ({
+      const measurements = ordered.map(set=>set[j]);
+      const angles = studioBoundedRotationSamples(measurements);
+      const transforms = measurements.map((observed, index) => {
+        if (!angles) return { ...studioTrackedObjectTransform(first, observed), rotation: 0 };
+        const scaleX = Math.sqrt(observed.majorVariance! / first.majorVariance!);
+        const scaleY = Math.sqrt(observed.minorVariance! / first.minorVariance!);
+        if (![scaleX,scaleY].every(value=>Number.isFinite(value) && value>=.5 && value<=2))
+          throw new Error("Tracked principal-axis scale exceeded safe range");
+        return {
+          x: observed.centroidX! - (first.width + 4)/2,
+          y: observed.centroidY! - (first.height + 4)/2,
+          scaleX, scaleY, rotation: angles[index],
+        };
+      });
+      const track = (axis: "x" | "y" | "scaleX" | "scaleY" | "rotation"): MotionTrack => ({
         property: axis,
         keyframes: transforms.map((transform, index) => ({
           frame: sampledFrames[index], value: transform[axis], easing: "linear" as const,
@@ -424,7 +504,8 @@ export async function reconstructMultiObjectStudioVideo(
         rotation: 0, opacity: 1,
         fill: colorHex(first.r, first.g, first.b), fillRule: "evenodd",
         d: vectorObject(frames[0], first),
-        tracks: [track("x"), track("y"), track("scaleX"), track("scaleY")],
+        tracks: [track("x"), track("y"), track("scaleX"), track("scaleY"),
+          ...(angles ? [track("rotation")] : [])],
       });
       objects.push({
         id, boxes: ordered.map((set, i) => ({
@@ -480,6 +561,8 @@ export async function reconstructMultiObjectStudioVideo(
       throw new Error("Unsafe Studio review artifact directory");
     const reviewPng = path.join(code, saved.id + "-r" + saved.revision + "-multi-review.png");
     await fs.writeFile(reviewPng, review.contactSheet, { flag: "wx", mode: 0o600 });
+    const diffPng = path.join(code, saved.id + "-r" + saved.revision + "-multi-diff.png");
+    await fs.writeFile(diffPng, review.diffSheet, { flag: "wx", mode: 0o600 });
     const average = costs.flat().reduce((sum, n) => sum + n, 0) / costs.flat().length;
     return {
       status: "experimental-multi", projectId: saved.id, revision: saved.revision, objects,
@@ -496,10 +579,10 @@ export async function reconstructMultiObjectStudioVideo(
           frame: checkFrames[index], sampleType: "holdout" as const, ...metrics,
         })),
       ].sort((a, b) => a.frame - b.frame),
-      reviewPng,
+      reviewPng, diffPng,
       limitations: [
         "Only 2-4 separated high-contrast shapes on a stable solid-color background; no AI vision model is used.",
-        "Only 5–9 bounded samples estimate x/y and axis-aligned scaleX/scaleY; rotation, deformable shapes, text and audio are not reconstructed.",
+        "Only 5–9 bounded samples estimate x/y/scale and optional ±32-degree rotation for distinctive near-horizontal shapes; arbitrary rotations, deformable shapes, text/audio are not reconstructed.",
         "Crossing or overlapping objects, occlusion and unstable identities fail closed.",
         "Confidence is association-cost heuristic; per-frame IoU, precision, recall and RGB pixel error cover three keyframes plus up to two unseen holdouts, not every frame.",
       ],
