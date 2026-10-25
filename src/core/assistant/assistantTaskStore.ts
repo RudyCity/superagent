@@ -203,6 +203,13 @@ export class AssistantTaskStore {
     });
   }
 
+  async get(taskId: string): Promise<AssistantTaskRecord | null> {
+    validId(taskId, "taskId");
+    const snapshot = await this.load();
+    const task = snapshot.tasks.find(t => t.taskId === taskId);
+    return task ? copy(task) : null;
+  }
+
   async list(limit = 100): Promise<AssistantTaskRecord[]> {
     const snapshot = await this.load();
     return copy(snapshot.tasks.slice(-Math.max(1, Math.min(100, limit))).reverse());

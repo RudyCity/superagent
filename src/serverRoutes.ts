@@ -193,6 +193,15 @@ export async function handleServerRoute(
     killVisionServerProcess
   } = ctx;
 
+  // Session-scoped assistant task metadata. The outer server authentication and
+  // request-local workspace policy run before this endpoint is reached.
+  if (pathname.startsWith("/api/assistant/tasks")) {
+    const { handleAssistantTaskHttpRoute } = await import("./core/assistant/assistantTaskHttpRoutes.js");
+    if (await handleAssistantTaskHttpRoute(req, res, pathname, parsedUrl, {
+      resolveSession, readBody, sendJSON,
+    })) return true;
+  }
+
   // Motion API reuses the existing /api authorization and validated workspace gate.
   if (pathname === "/api/studio" || pathname.startsWith("/api/studio/") || pathname === "/api/motion" || pathname.startsWith("/api/motion/")) {
     const { handleMotionHttpRoute } = await import("./core/motion/motionRoutes.js");
