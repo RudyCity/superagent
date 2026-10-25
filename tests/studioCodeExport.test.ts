@@ -147,6 +147,26 @@ describe("Studio to Code deterministic vector export", () => {
     expect(response.headers.get("content-type")).toContain("text/plain");
     expect(await response.text()).toContain("StudioAnimation");
   });
+  it("serves direct editable React JSX through the same authenticated Studio code route", async () => {
+    const url = base + "/api/studio/projects/" + project.id +
+      "/code.editable.tsx?trigger=click";
+    const response = await fetch(url);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(response.headers.get("content-disposition")).toContain(".editable.tsx");
+    expect(response.headers.get("cache-control")).toContain("private, no-store");
+    const source = await response.text();
+    expect(source).toContain("<svg");
+    expect(source).toContain("data-studio-id");
+    expect(source).not.toContain("<iframe");
+    expect(source).not.toContain("srcDoc");
+    const { transformSync } = await import("esbuild");
+    expect(() => transformSync(source, {loader:"tsx",format:"esm"})).not.toThrow();
+    const legacy = await fetch(base + "/api/studio/projects/" + project.id + "/code.tsx");
+    expect(legacy.status).toBe(200);
+    expect(await legacy.text()).toContain('sandbox="allow-scripts"');
+  });
+
   it("rejects invalid triggers and unknown project identifiers", async () => {
     const route = base + "/api/studio/projects/" + project.id + "/code.html";
     expect((await fetch(route + "?trigger=evil")).status).toBe(400);

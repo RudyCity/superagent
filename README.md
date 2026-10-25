@@ -1056,6 +1056,22 @@ superagent studio code-to-video --file page.html --trust-html --width 640 --heig
 
 Private workspace-scoped HTTP: `POST /api/studio/code-to-video` and `GET /api/studio/code-videos/:id.mp4`. T-Line adds **Code → MP4** with video preview and download. External HTML must be trusted by the user; remote content is blocked, but this is NOT an untrusted-code sandbox. No arbitrary external React TSX execution, URLs, browser-generated audio capture, or arbitrary-JS animation parity yet. Optional canonical Studio WAV audio assets can be muxed as AAC into Code-to-Video MP4 (`--audio-asset AUDIO_ID`). A bounded in-process queue supports `POST /api/studio/code-to-video/jobs`, `GET /api/studio/code-to-video/jobs/:id` and `POST /api/studio/code-to-video/jobs/:id/cancel`; up to 1 active and 3 queued, with frame progress and cancellation. Queued/running/cancelling jobs are persisted as **metadata only** in workspace Studio storage. Completed MP4 IDs, status and progress survive backend restart, but in-flight jobs from a previous process are marked **interrupted** and NEVER automatically replayed. Query `GET /api/studio/code-to-video/jobs` for the last 20 jobs and open any previously completed MP4 by opaque ID; restart recovery is not a durable multi-process worker or automatic retry. The Studio editor includes recent-job history, MP4 reopen and explicit interruption warnings. See `docs/audits/2026-10-25-studio-code-to-video.md`.
 
+**Video → editable React JSX (P4 developer preview):** The experimental video
+vector/OCR reconstruction can now export actual editable React/Next.js SVG
+component markup, rather than only an iframe wrapper. `path`, `rect`, and
+`text` are individual JSX nodes and animation keyframes remain editable.
+
+```bash
+superagent studio export-code PROJECT_ID --format react-jsx --workspace . --json
+```
+
+Or download `GET /api/studio/projects/:id/code.editable.tsx?trigger=autoplay`
+via the existing workspace-authenticated API. This is opt-in and does not
+change the existing `html` or `react` wrapper formats. Raster/video,
+audio, and nonempty Interaction Graph bindings are refused; fonts and
+complex video parity are not guaranteed. See
+`docs/audits/2026-10-25-studio-video-to-editable-react-p4.md`.
+
 **Not yet supported:** general video-to-code reverse engineering, editable
 DOM/SVG reconstruction of arbitrary footage, raster/image/video/audio assets
 in the exported web code, or native per-layer React/Next.js JSX (only a

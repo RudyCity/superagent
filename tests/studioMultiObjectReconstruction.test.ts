@@ -13,6 +13,8 @@ import {
 import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
 import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
 import { renderStudioNativeHtml } from "../src/core/motion/code/studioNativeCodeExporter.js";
+import { renderStudioEditableReactComponent } from "../src/core/motion/code/studioEditableReactExporter.js";
+import { transformSync } from "esbuild";
 
 const run = promisify(execFile);
 const workspaces: string[] = [];
@@ -244,6 +246,15 @@ describe("multi-object reference video prototype", () => {
     expect(html).toContain('data-studio-id="reconstructed-object-1"');
     expect(html).toContain('data-studio-id="reconstructed-object-2"');
     expect(html).not.toContain("cdn.jsdelivr.net");
+    // End-to-end: encoded video -> detected objects -> native editable JSX.
+    const jsx = renderStudioEditableReactComponent(project);
+    expect(jsx.match(/data-studio-id=\{/g)).toHaveLength(2);
+    expect(jsx.match(/<path /g)).toHaveLength(2);
+    expect(jsx).toContain("reconstructed-object-1");
+    expect(jsx).toContain("reconstructed-object-2");
+    expect(jsx).not.toContain("<iframe");
+    expect(jsx).toContain("SCENE_LAYERS:");
+    expect(() => transformSync(jsx, {loader: "tsx", format: "esm"})).not.toThrow();
   }, 65000);
 
   it("tracks direction reversals with more than three editable keyframes", async () => {

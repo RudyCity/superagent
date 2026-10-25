@@ -74,7 +74,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio beat-sync PROJECT_ID --base-revision N --target-layer LAYER_ID [--audio-track 0] [--intensity 0.35] [--workspace PATH] [--json]
   superagent studio preview PROJECT_ID [--open] [--workspace PATH] [--json]
   superagent studio export-bundle PROJECT_ID [--workspace PATH] [--json]
-  superagent studio export-code PROJECT_ID [--format html|react] [--trigger autoplay|scroll|click|hover] [--workspace PATH] [--json]
+  superagent studio export-code PROJECT_ID [--format html|react|react-jsx] [--trigger autoplay|scroll|click|hover] [--workspace PATH] [--json]
   superagent studio code-to-video PROJECT_ID [--width 640 --height 360 --fps 12 --seconds 2] [--workspace PATH] [--json]
   superagent studio code-to-video --file local.html --trust-html [--width 640 --height 360 --fps 12 --seconds 2] [--workspace PATH] [--json]
   superagent studio trace-image --file workspace/path/logo.png [--mode silhouette|color|outline] [--threshold N] [--simplify N] [--smooth] [--workspace PATH] [--json]
@@ -833,6 +833,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     if (action === "export-code") {
       const { renderStudioNativeHtml } = await import("../motion/code/studioNativeCodeExporter.js");
       const { renderStudioReactComponent } = await import("../motion/code/studioReactCodeExporter.js");
+      const { renderStudioEditableReactComponent } = await import("../motion/code/studioEditableReactExporter.js");
       const { studioStorageRoot } = await import("../motion/project/projectStore.js");
       const { default: fs } = await import("node:fs/promises");
       const { default: path } = await import("node:path");
@@ -841,17 +842,19 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         throw new Error("Invalid Studio to Code trigger");
       }
       const format = opt(opts, "--format") ?? "html";
-      if (!["html", "react"].includes(format)) throw new Error("Invalid Studio to Code format");
+      if (!["html", "react", "react-jsx"].includes(format)) throw new Error("Invalid Studio to Code format");
       const project = await getMotionProject(workspace, projectId);
       const argsTrigger = trigger as "autoplay" | "scroll" | "click" | "hover";
-      const html = format === "react" ? renderStudioReactComponent(project, argsTrigger)
+      const html = format === "react-jsx" ? renderStudioEditableReactComponent(project, argsTrigger)
+        : format === "react" ? renderStudioReactComponent(project, argsTrigger)
         : renderStudioNativeHtml(project, argsTrigger);
       const outputRoot = path.join(await studioStorageRoot(workspace, true), "code");
       await fs.mkdir(outputRoot, { recursive: true });
-      const output = path.join(outputRoot, project.id + "-r" + project.revision + "-" + trigger + (format === "react" ? ".tsx" : ".html"));
+      const suffix = format === "react-jsx" ? ".editable.tsx" : format === "react" ? ".tsx" : ".html";
+      const output = path.join(outputRoot, project.id + "-r" + project.revision + "-" + trigger + suffix);
       // Never overwrite an earlier export unexpectedly.
       await fs.writeFile(output, html, { flag: "wx", encoding: "utf8" });
-      emit({ status: "exported", format: format === "react" ? "react-tsx-sandboxed" : "html-svg-native", projectId: project.id,
+      emit({ status: "exported", format: format === "react-jsx" ? "react-tsx-direct-editable" : format === "react" ? "react-tsx-sandboxed" : "html-svg-native", projectId: project.id,
         revision: project.revision, trigger, file: output, bytes: Buffer.byteLength(html) }, json);
       return 0;
     }

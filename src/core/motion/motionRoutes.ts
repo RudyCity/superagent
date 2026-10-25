@@ -108,7 +108,7 @@ export async function handleMotionHttpRoute(
   const visionRepair = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-repair$/);
   const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
   const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
-  const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.(html|tsx)$/);
+  const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.(html|tsx|editable\.tsx)$/);
   const codeVideoDownload = pathname.match(/^\/api\/motion\/code-videos\/(codevideo-[a-f0-9]{24})\.mp4$/);
   const codeVideoJobRoute = pathname.match(/^\/api\/motion\/code-to-video\/jobs\/(codejob-[a-f0-9]{24})(\/cancel)?$/);
   const reconstructionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/reconstruction-review\.png$/);
@@ -785,8 +785,12 @@ export async function handleMotionHttpRoute(
       } else {
         const source = await getMotionProject(workspace, codeExport[1]);
         // The old CDN/GSAP adapter remains private pending license review.
-        const react = codeExport[2] === "tsx";
-        const output = react ? renderStudioReactComponent(source, requested as StudioCodeTrigger)
+        const react = codeExport[2] !== "html";
+        const editable = codeExport[2] === "editable.tsx";
+        const output = editable
+          ? (await import("./code/studioEditableReactExporter.js")).renderStudioEditableReactComponent(
+            source, requested as StudioCodeTrigger)
+          : react ? renderStudioReactComponent(source, requested as StudioCodeTrigger)
           : renderStudioNativeHtml(source, requested as StudioCodeTrigger);
         const body = Buffer.from(output, "utf8");
         if (body.length > 4 * 1024 * 1024) throw Object.assign(
@@ -794,7 +798,7 @@ export async function handleMotionHttpRoute(
         res.writeHead(200, {
           "Content-Type": react ? "text/plain; charset=utf-8" : "text/html; charset=utf-8",
           "Content-Length": String(body.length),
-          "Content-Disposition": 'attachment; filename="studio-' + source.id + '-r' + source.revision + (react ? '.tsx' : '.html') + '"',
+          "Content-Disposition": 'attachment; filename="studio-' + source.id + '-r' + source.revision + (editable ? '.editable.tsx' : react ? '.tsx' : '.html') + '"',
           "Cache-Control": "private, no-store",
           "X-Content-Type-Options": "nosniff",
         });

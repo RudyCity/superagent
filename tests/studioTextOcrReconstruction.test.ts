@@ -13,6 +13,8 @@ import { localStudioTextOcrReady, parseStudioOcrTsv, reconstructStudioTextVideo,
 import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
 import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
 import { renderStudioNativeHtml } from "../src/core/motion/code/studioNativeCodeExporter.js";
+import { renderStudioEditableReactComponent } from "../src/core/motion/code/studioEditableReactExporter.js";
+import { transformSync } from "esbuild";
 const execute = promisify(execFile);
 const dirs: string[] = [];
 const hasOcr = (() => {
@@ -84,6 +86,11 @@ describe("Studio optional local video OCR", () => {
     const result=await reconstructStudioCaptionTimelineVideo(workspace,videoId);
     expect(result.status).toBe("experimental-ocr-timeline");
     expect(result.captions.map(item=>item.text)).toEqual(["STUDIO","HELLO"]);
+    const jsxTimeline = renderStudioEditableReactComponent(await getMotionProject(workspace,result.projectId));
+    expect(jsxTimeline).toContain('STUDIO');
+    expect(jsxTimeline).toContain('HELLO');
+    expect(jsxTimeline).toContain('"property":"opacity"');
+    expect(() => transformSync(jsxTimeline, {loader:"tsx",format:"esm"})).not.toThrow();
     const project=await getMotionProject(workspace,result.projectId);
     expect(project.composition.layers).toHaveLength(2);
     expect(project.composition.layers.every(layer=>layer.kind==="text" &&
@@ -141,6 +148,11 @@ describe("Studio optional local video OCR", () => {
     expect(text.tracks.map(track=>track.property)).toEqual(["x","y"]);
     expect(text.tracks[0].keyframes).toHaveLength(3);
     expect(text.tracks[0].keyframes[2].value).toBeGreaterThan(text.tracks[0].keyframes[0].value);
+    const jsx = renderStudioEditableReactComponent(saved);
+    expect(jsx).toContain('<text ');
+    expect(jsx).toContain('STUDIO');
+    expect(jsx).not.toContain('<iframe');
+    expect(() => transformSync(jsx, {loader: "tsx", format: "esm"})).not.toThrow();
     const html=renderStudioNativeHtml(saved);
     expect(html).toContain("STUDIO");
     expect(html).not.toContain("cdn.jsdelivr.net");
