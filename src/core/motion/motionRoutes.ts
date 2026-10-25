@@ -162,6 +162,13 @@ export async function handleMotionHttpRoute(
       const body = await readMotionJson(req, 17_000_000);
       json(res, ctx, 201, await importMotionVideo(workspace,
         decodeMotionMediaBase64(body.base64, 12 * 1024 * 1024)));
+    } else if (pathname === "/api/motion/reconstruct/text-timeline" && method === "POST") {
+      const body = await readMotionJson(req, 1200);
+      if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId))
+        throw new MotionValidationError(["Expected an imported Studio video ID"]);
+      const { reconstructStudioCaptionTimelineVideo } =
+        await import("./code/videoTextOcrReconstruction.js");
+      json(res, ctx, 201, await reconstructStudioCaptionTimelineVideo(workspace, body.videoId));
     } else if (pathname === "/api/motion/reconstruct/text" && method === "POST") {
       const body = await readMotionJson(req, 1200);
       if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId))

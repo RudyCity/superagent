@@ -8,6 +8,7 @@ import { readMotionVideo } from "../assets/motionVideoClips.js";
 import { createMotionProject, motionWorkspaceRoot, updateMotionProject } from "../project/projectStore.js";
 import { validateMotionProject } from "../schema/validation.js";
 import type { MotionProject, MotionTrack, TextLayer } from "../schema/types.js";
+import { segmentStudioCaptionTimeline, buildStudioCaptionTimelineLayers } from "./videoCaptionTimeline.js";
 
 const run = promisify(execFile);
 interface OcrLine { text: string; confidence: number; x: number; y: number; width: number; height: number; }
@@ -21,6 +22,21 @@ export interface StudioTextOcrResult {
   sampleTimes: number[]; dimensions: { width: number; height: number };
   averageConfidence: number; limitations: string[];
 }
+export interface StudioCaptionTimelineResult {
+  status: "experimental-ocr-timeline"; projectId: string; revision: number;
+  captions: Array<{ id: string; text: string; confidence: number;
+    startFrame: number; endFrame: number;
+    box: { x: number; y: number; width: number; height: number } }>;
+  sampleTimes: number[]; dimensions: { width: number; height: number };
+  averageConfidence: number; limitations: string[];
+}
+export function studioCaptionTimelineFrames(totalFrames: number): number[] {
+  if (!Number.isSafeInteger(totalFrames) || totalFrames < 30 || totalFrames > 360)
+    throw new Error("Invalid bounded OCR timeline duration");
+  return Array.from({ length: 9 }, (_, index) =>
+    Math.round((totalFrames - 1) * .96 * index / 8));
+}
+
 /** Expose OCR UI only when the local executable and English data exist.
  * This runtime check is independent of a built/packaged feature flag.
  */
@@ -89,6 +105,16 @@ export function parseStudioOcrTsv(tsv: string, width: number, height: number): O
 export async function reconstructStudioTextVideo(
   workspace: string, videoId: string,
 ): Promise<StudioTextOcrResult> {
+  return reconstructStudioTextVideoInternal(workspace,videoId,false) as Promise<StudioTextOcrResult>;
+}
+export async function reconstructStudioCaptionTimelineVideo(
+  workspace: string,videoId: string,
+): Promise<StudioCaptionTimelineResult> {
+  return reconstructStudioTextVideoInternal(workspace,videoId,true) as Promise<StudioCaptionTimelineResult>;
+}
+async function reconstructStudioTextVideoInternal(
+  workspace:string, videoId:string, timeline:boolean,
+): Promise<StudioTextOcrResult | StudioCaptionTimelineResult> {
   const video = await readMotionVideo(workspace, videoId);
   if (video.length > 12*1024*1024) throw new Error("OCR source video exceeds 12 MiB");
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "studio-text-ocr-"));
@@ -106,7 +132,8 @@ export async function reconstructStudioTextVideo(
     if (!(duration>=1 && duration<=12) || !(sw>=64 && sw<=1280 && sh>=32 && sh<=720) ||
       sw/sh<.25 || sw/sh>4) throw new Error("OCR prototype accepts 1–12s video up to 1280×720");
     const totalFrames = Math.round(duration*30);
-    const sampledFrames = [0,Math.round(totalFrames*.48),Math.min(totalFrames-1,Math.round(totalFrames*.94))];
+    const sampledFrames = timeline ? studioCaptionTimelineFrames(totalFrames)
+      : [0,Math.round(totalFrames*.48),Math.min(totalFrames-1,Math.round(totalFrames*.94))];
     const sampled: OcrFrame[]=[];
     for (let i=0;i<sampledFrames.length;i++) {
       const frame=sampledFrames[i];
@@ -133,14 +160,14 @@ export async function reconstructStudioTextVideo(
         filename,"stdout","-l","eng","--psm","6","tsv"
       ],{timeout:15000,maxBuffer:220000,windowsHide:true});
       const lines=parseStudioOcrTsv(String(result.stdout),img.width,img.height);
-      if(!lines.length || lines.length>3)
+      if((!timeline && !lines.length) || lines.length>3)
         throw new Error("OCR could not confidently recognize 1–3 caption lines");
       sampled.push({index:frame,width:img.width,height:img.height,
         background:rgbHex(mean[0],mean[1],mean[2]),lines});
     }
     const reference=sampled[0];
     if(sampled.some(sample=>sample.width!==reference.width || sample.height!==reference.height ||
-      sample.lines.length!==reference.lines.length))
+      (!timeline && sample.lines.length!==reference.lines.length)))
       throw new Error("OCR text lines or dimensions changed across sampled frames");
     const background=reference.background;
     const color=background.slice(1).match(/../g)!.map(v=>parseInt(v,16));
@@ -148,6 +175,47 @@ export async function reconstructStudioTextVideo(
       const channels=frame.background.slice(1).match(/../g)!.map(v=>parseInt(v,16));
       return Math.hypot(...channels.map((v,k)=>v-color[k]))>35;
     })) throw new Error("OCR background changed across sampled frames");
+    if(timeline) {
+      const segments=segmentStudioCaptionTimeline(sampled,totalFrames,reference.width,reference.height);
+      const inferredWhite=color.reduce((a,b)=>a+b,0)/3<128;
+      const annotated=buildStudioCaptionTimelineLayers(sampled,segments,totalFrames,
+        inferredWhite?"#ffffff":"#121212");
+      const composition={
+        width:reference.width,height:reference.height,
+        background,fps:{numerator:30,denominator:1},durationFrames:totalFrames,
+        layers:annotated.map(item=>item.layer)
+      };
+      const now=new Date().toISOString();
+      const preview:MotionProject={
+        schemaVersion:1,id:"studio-ocr-timeline-preview",
+        workspaceRoot:await motionWorkspaceRoot(workspace),
+        name:"Editable caption timeline from reference video",revision:1,
+        createdAt:now,updatedAt:now,composition
+      };
+      validateMotionProject(preview);
+      const created=await createMotionProject(workspace,preview.name);
+      const saved=await updateMotionProject(workspace,created.id,created.revision,[
+        {type:"replace-composition",composition}
+      ]);
+      return {
+        status:"experimental-ocr-timeline",projectId:saved.id,revision:saved.revision,
+        captions:annotated.map(({layer,confidence,startFrame,endFrame})=>({
+          id:layer.id,text:layer.text,confidence:Number((confidence/100).toFixed(3)),
+          startFrame,endFrame,
+          box:{x:layer.x,y:layer.y,width:layer.width,height:layer.height}
+        })),
+        sampleTimes:sampledFrames.map(frame=>Number((frame/30).toFixed(3))),
+        dimensions:{width:reference.width,height:reference.height},
+        averageConfidence:Number((annotated.reduce((sum,item)=>sum+item.confidence,0)
+          /annotated.length/100).toFixed(3)),
+        limitations:[
+          "Caption transitions are approximated midway between samples, not frame-accurate.",
+          "Only 1–3 simultaneous English caption lines on a stable solid-color background.",
+          "One-sample captions and inconsistent OCR text/geometry require manual review.",
+          "Local Tesseract only; font, color, glyph metrics and timing are approximate."
+        ]
+      };
+    }
     for(const frame of sampled) for(let j=0;j<reference.lines.length;j++){
       const original=reference.lines[j], current=frame.lines[j];
       if(normalizeLine(current.text).toUpperCase()!==normalizeLine(original.text).toUpperCase() ||

@@ -23,3 +23,23 @@
 - OCR languages other than `eng`; fine print, poor contrast, rotation/perspective, text appearing/disappearing/changing, transitions, multiple scene cuts, font identification, native video color match, occlusion, multilingual OCR, complete arbitrary footage, model-assisted optical flow, or accurate pixel/perceptual reconstruction.
 - T-Line installer must be rebuilt after this change to include new UI/backend routes; installed WebView2 end-to-end interaction, real user videos and production license requirements remain unverified.
 - Tesseract must be separately installed on the machine and is not included in distributed app. Do not infer vendor licensing approval from successful tests.
+
+## P3 Caption Timeline follow-up (2026-10-25)
+
+New opt-in command `reconstruct-video-text-timeline` and scoped API
+`POST /api/studio/reconstruct/text-timeline`. Strict stable OCR behavior is
+unchanged. Nine sequential bounded local FFmpeg/Tesseract frame samples find
+up to 3 simultaneous English caption lines and up to 12 segments. Each
+caption needs >=2 consecutive high-confidence samples; one-sample ambiguity
+is rejected without a project. Empty intervals and text changes produce
+separate editable TextLayers, with x/y and step-opacity tracks. Caption
+transition boundaries are inferred by rounding between the adjacent samples;
+these are **estimates, not frame-accurate segmentation**.
+
+Real MP4 synthetic tests cover STUDIO→HELLO, blank intervals, OCR outliers,
+and project absence after a one-off caption fails. Browser test:
+`python scripts/studio_ocr_timeline_browser_smoke.py` verifies exported
+offline HTML visually updates the layer opacity at 10%, 50%, 90%
+(visible STUDIO → empty → visible HELLO), with no network requests and no
+JavaScript exceptions. Local Tesseract 5 with `eng` is not bundled.
+Real arbitrary footage and installed T-Line OCR end-to-end remain unverified.

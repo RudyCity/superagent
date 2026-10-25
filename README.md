@@ -254,6 +254,8 @@ Phase 4b: an independent opt-in channel host can own a Muse WebSocket or Telegra
 
 Phase 4c: authenticated channel-host IPC now exposes only the explicitly supported steer, task and abort operations from the owner process; no new watcher is spawned by the core. A per-host 256-bit token is kept in owner-only local discovery metadata (not health/status), a request ID prevents concurrent duplicate dispatch for 10 minutes, and a single-flight guard rejects overlapping different mutations. Use /muse host status, /muse host steer <text> --port 7892, /muse host task <text> --port 7892 or /muse host abort [reason] --port 7892. Requires an independently running and active Muse or Telegram fallback channel host. Legacy /muse watch and /muse steer remain local. This is dispatch acknowledgment, not proof of remote delivery, and no actual bot/tunnel was contacted during tests. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
 
+Phase 4n adds opt-in Muse recovery incident delivery and an independent channel-host liveness watchdog. The durable per-port incident center deduplicates integrity transitions, tracks OPEN / ACKNOWLEDGED / RESOLVED incidents, and retries failed webhook or Telegram notifications with bounded backoff and per-message leases (at-least-once; not exactly-once). No provider configured means no network delivery. Configure SUPERAGENT_MUSE_ALERT_WEBHOOK_URL for public HTTPS webhook delivery OR SUPERAGENT_MUSE_ALERT_TELEGRAM_BOT_TOKEN plus SUPERAGENT_MUSE_ALERT_TELEGRAM_CHAT_ID; credentials are environment-only, not saved to incident storage. Run superagent channel-host watchdog --port 7892 --interval-seconds 30 as a separate managed process, inspect superagent channel-host incidents --port 7892, and open http://127.0.0.1:7892/_channel/incidents/dashboard on the machine hosting that channel. ACK via superagent channel-host acknowledge --port 7892 --incident ID --confirm ID; only actual health recovery resolves the incident. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
+
 Phase 4m adds *fail-closed integrity enforcement* at side-effect boundaries: managed Muse channel hosts rescan recovery storage before new tool batches, result replay and untouched resume, refusing unsafe operations on damaged or unverified checkpoints while leaving abort available. Sanitized transitions are appended/fsynced to an owner-port-local hash-chained history; view with superagent channel-host alerts --port 7892 [--limit 20]. The ledger is bundled with Phase 4k backups, and a corrupt, full or unwritable ledger blocks sensitive recovery operations. Local status/console notifications are not external push alerts or rollback-proof WORM logging. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
 
 Phase 4l adds periodic read-only Muse recovery integrity monitoring to independent channel hosts (first scan at start; repeat every 60 seconds; stop on host close). The loopback health status exposes redacted last scan, counts and states not_initialized / healthy / degraded / failed / stale, with no checkpoint contents or secret paths. Inspect using superagent channel-host status --port 7892 or superagent channel-host integrity --port 7892 (live cached verified-owner status, otherwise offline full scan); use verify-store for a direct deep scan. Monitoring does not restart channels, rerun tools, repair storage or send remote alerts. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
@@ -1008,6 +1010,31 @@ Video-to-Code panel select **Editable Text (English OCR)** if an updated
 Studio backend advertises `experimentalTextOcrReconstruction`. HTTP route:
 `POST /api/studio/reconstruct/text` through existing authorization/workspace
 gate. Only English OCR data is currently supported.
+
+**Experimental caption timeline (changing/vanishing English text):**
+
+```bash
+superagent studio reconstruct-video-text-timeline VIDEO_ID --workspace . --json
+superagent studio export-code NEW_PROJECT_ID --format html --workspace . --json
+```
+
+This is an opt-in mode **separate from strict/stable OCR**. It reads nine
+bounded frames near 0–96% of a video, groups repeated caption lines into
+separate editable TextLayers, and adds step-opacity tracks for the estimated
+visible time intervals. Blank frames and changes of caption text are allowed.
+Each recognized caption must recur in at least two consecutive OCR samples:
+single-sample text is rejected instead of silently hallucinating or dropping a
+caption. At most 12 caption segments and three simultaneous English lines
+are accepted. Timing boundaries are approximated at the midpoint between
+samples; missing fast changes, animated fonts and mixed footage remain
+unsupported. The scoped authenticated route is
+`POST /api/studio/reconstruct/text-timeline`; the T-Line mode appears only
+when both `experimentalTextOcrTimeline=local-english-caption-timeline-v1`
+and `localTextOcrReady=true` are reported.
+
+Reproducible offline Chrome smoke with scene changes:
+`python scripts/studio_ocr_timeline_browser_smoke.py`. Requires local
+Tesseract English data, FFmpeg, Pillow, Python Playwright, Chrome and Bun.
 
 **Not yet supported:** general video-to-code reverse engineering, editable
 DOM/SVG reconstruction of arbitrary footage, raster/image/video/audio assets

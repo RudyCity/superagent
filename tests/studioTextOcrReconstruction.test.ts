@@ -8,8 +8,10 @@ import { handleMotionHttpRoute } from "../src/core/motion/motionRoutes.js";
 import { promisify } from "node:util";
 import { createCanvas } from "@napi-rs/canvas";
 import { importMotionVideo } from "../src/core/motion/assets/motionVideoClips.js";
-import { localStudioTextOcrReady, parseStudioOcrTsv, reconstructStudioTextVideo } from "../src/core/motion/code/videoTextOcrReconstruction.js";
+import { localStudioTextOcrReady, parseStudioOcrTsv, reconstructStudioTextVideo,
+  reconstructStudioCaptionTimelineVideo, studioCaptionTimelineFrames } from "../src/core/motion/code/videoTextOcrReconstruction.js";
 import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
+import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
 import { renderStudioNativeHtml } from "../src/core/motion/code/studioNativeCodeExporter.js";
 const execute = promisify(execFile);
 const dirs: string[] = [];
@@ -42,7 +44,73 @@ async function clip(changeText = false) {
   const imported = await importMotionVideo(workspace, await fs.readFile(path.join(workspace,"clip.mp4")));
   return { workspace, videoId: imported.id };
 }
+async function timelineClip(mode: "change" | "one-off" | "blank") {
+  const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "studio-ocr-timeline-"));
+  dirs.push(workspace);
+  for(let frame=0;frame<30;frame++){
+    const canvas=createCanvas(640,360);
+    const context=canvas.getContext("2d");
+    context.fillStyle="#f0f0f0";
+    context.fillRect(0,0,640,360);
+    context.font="bold 72px Arial";
+    context.fillStyle="#101c40";
+    const text=mode==="one-off" ? (frame>=13 && frame<17 ? "FLASH" : "STUDIO")
+      : mode==="blank" ? (frame<11 ? "STUDIO" : frame>=20 ? "HELLO" : "")
+      : (frame<14 ? "STUDIO" : "HELLO");
+    if(text)context.fillText(text,80,185);
+    await fs.writeFile(path.join(workspace,"f"+String(frame).padStart(3,"0")+".png"),
+      await canvas.encode("png"));
+  }
+  await execute("ffmpeg",[
+    "-hide_banner","-loglevel","error","-framerate","10","-i",
+    path.join(workspace,"f%03d.png"),"-y","-c:v","libx264","-pix_fmt","yuv420p",
+    path.join(workspace,"timeline.mp4")
+  ],{timeout:30000,maxBuffer:4096,windowsHide:true});
+  const imported=await importMotionVideo(workspace,
+    await fs.readFile(path.join(workspace,"timeline.mp4")));
+  return {workspace,videoId:imported.id};
+}
 describe("Studio optional local video OCR", () => {
+  it("produces nine bounded monotonic timeline samples", () => {
+    expect(studioCaptionTimelineFrames(90)).toHaveLength(9);
+    const frames=studioCaptionTimelineFrames(90);
+    expect(frames[0]).toBe(0);
+    expect(frames.at(-1)).toBeGreaterThan(80);
+    expect(frames.every((v,i)=>!i||v>frames[i-1])).toBe(true);
+    expect(()=>studioCaptionTimelineFrames(361)).toThrow();
+  });
+  it.skipIf(!hasOcr)("builds separate visible text layers for changing captions", async () => {
+    const {workspace,videoId}=await timelineClip("change");
+    const result=await reconstructStudioCaptionTimelineVideo(workspace,videoId);
+    expect(result.status).toBe("experimental-ocr-timeline");
+    expect(result.captions.map(item=>item.text)).toEqual(["STUDIO","HELLO"]);
+    const project=await getMotionProject(workspace,result.projectId);
+    expect(project.composition.layers).toHaveLength(2);
+    expect(project.composition.layers.every(layer=>layer.kind==="text" &&
+      layer.tracks.some(track=>track.property==="opacity"))).toBe(true);
+    const early=evaluateFrame(project,5).layers.map(layer=>layer.values.opacity);
+    const late=evaluateFrame(project,80).layers.map(layer=>layer.values.opacity);
+    expect(early).toEqual([1,0]);
+    expect(late).toEqual([0,1]);
+    const html=renderStudioNativeHtml(project);
+    expect(html).toContain("STUDIO");
+    expect(html).toContain("HELLO");
+  },65000);
+  it.skipIf(!hasOcr)("preserves blank intervals between caption segments", async () => {
+    const {workspace,videoId}=await timelineClip("blank");
+    const result=await reconstructStudioCaptionTimelineVideo(workspace,videoId);
+    expect(result.captions).toHaveLength(2);
+    const project=await getMotionProject(workspace,result.projectId);
+    const middle=evaluateFrame(project,45).layers.map(layer=>layer.values.opacity);
+    expect(middle).toEqual([0,0]);
+  },65000);
+  it.skipIf(!hasOcr)("fails closed on one-off caption without saving a project", async () => {
+    const {workspace,videoId}=await timelineClip("one-off");
+    await expect(reconstructStudioCaptionTimelineVideo(workspace,videoId))
+      .rejects.toThrow(/unconfirmed/);
+    expect(await listMotionProjects(workspace)).toEqual([]);
+  },65000);
+
   it("gates OCR readiness on the presence of local English Tesseract", async () => {
     expect(await localStudioTextOcrReady()).toBe(hasOcr);
   });
@@ -120,6 +188,24 @@ describe("Studio optional local video OCR", () => {
       const saved=await fetch(base+"/projects/"+body.projectId);
       expect(saved.status).toBe(200);
       expect((await getMotionProject(workspace,body.projectId)).composition.layers[0].kind).toBe("text");
+      const invalidTimeline=await fetch(base+"/reconstruct/text-timeline",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({videoId:"../../outside"}),
+      });
+      expect(invalidTimeline.status).toBe(400);
+      const timelineResponse=await fetch(base+"/reconstruct/text-timeline",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({videoId}),
+      });
+      expect(timelineResponse.status).toBe(201);
+      const timeline=await timelineResponse.json() as {
+        status:string;projectId:string;captions:Array<{text:string}>;sampleTimes:number[];
+      };
+      expect(timeline.status).toBe("experimental-ocr-timeline");
+      expect(timeline.captions.map(c=>c.text)).toEqual(["STUDIO"]);
+      expect(timeline.sampleTimes).toHaveLength(9);
+      expect((await getMotionProject(workspace,timeline.projectId)).composition.layers[0]
+        .tracks.some(track=>track.property==="opacity")).toBe(true);
     } finally {
       server.closeAllConnections();
       if(server.listening) await new Promise<void>(resolve=>server.close(()=>resolve()));
