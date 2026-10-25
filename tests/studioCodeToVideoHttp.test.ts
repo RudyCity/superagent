@@ -84,6 +84,11 @@ describe("studio code-video authenticated workspace routes", () => {
       expect(polled?.status).toBe("completed");
       expect(polled?.framesCompleted).toBe(6);
       expect(polled?.result?.file).toBeUndefined();
+      const historyResponse = await fetch(base + "/code-to-video/jobs");
+      expect(historyResponse.status).toBe(200);
+      const history = await historyResponse.json() as Array<{ id: string; status: string; result?: {file?: string} }>;
+      expect(history.some(item => item.id === submitted.id && item.status === "completed")).toBe(true);
+      expect(history.every(item => !item.result?.file)).toBe(true);
       const mp4 = await fetch(base + "/code-videos/" + polled!.result!.id + ".mp4");
       expect(mp4.status).toBe(200);
       expect(mp4.headers.get("content-type")).toBe("video/mp4");

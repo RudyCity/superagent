@@ -1,11 +1,12 @@
 import crypto from "node:crypto";
+import { readStudioCodeVideoJob, saveStudioCodeVideoJob, listStudioCodeVideoJobs } from "./studioCodeVideoJobStore.js";
 import { motionWorkspaceRoot } from "../project/projectStore.js";
 import { renderStudioBrowserVideo, type StudioBrowserVideoOptions,
   type StudioBrowserVideoResult } from "./studioBrowserVideoRenderer.js";
 import type { MotionProject } from "../schema/types.js";
 
 export type StudioCodeVideoJobStatus = "queued" | "running" | "cancelling" |
-  "completed" | "failed" | "cancelled";
+  "completed" | "failed" | "cancelled" | "interrupted";
 export interface StudioCodeVideoJobPublic {
   id: string;
   status: StudioCodeVideoJobStatus;
@@ -24,6 +25,8 @@ interface InternalJob {
   input: Input;
   options: StudioBrowserVideoOptions;
   controller: AbortController;
+  persisted: Promise<void>;
+  persistenceError?: Error;
 }
 
 const jobs = new Map<string, InternalJob>();
@@ -33,6 +36,19 @@ const MAX_TRACKED = 32;
 const TERMINAL_RETENTION_MS = 30 * 60_000;
 function publicJob(job: InternalJob): StudioCodeVideoJobPublic {
   return structuredClone(job.public);
+}
+/** Serialize immutable snapshots per job so a late progress write cannot
+ * overwrite the completed/cancelled state. Persistence failures abort the
+ * active render rather than silently claiming durable recovery.
+ */
+function persist(job: InternalJob): Promise<void> {
+  const snapshot = publicJob(job);
+  job.persisted = job.persisted.then(() =>
+    saveStudioCodeVideoJob(job.workspace, snapshot)).catch(error => {
+    job.persistenceError = error instanceof Error ? error : new Error(String(error));
+    job.controller.abort();
+  });
+  return job.persisted;
 }
 function prune() {
   const now = Date.now();
@@ -46,11 +62,11 @@ function prune() {
     if (job.public.finishedAt) jobs.delete(id);
   }
 }
-async function authorized(workspace: string, id: string): Promise<InternalJob> {
+async function authorized(workspace: string, id: string): Promise<InternalJob | null> {
   if (!/^codejob-[a-f0-9]{24}$/.test(id)) throw new Error("Invalid Studio code-video job ID");
   const job = jobs.get(id);
-  if (!job || job.workspace !== await motionWorkspaceRoot(workspace))
-    throw new Error("Studio code-video job not found");
+  const root = await motionWorkspaceRoot(workspace);
+  if (!job || job.workspace !== root) return null;
   return job;
 }
 async function drain() {
@@ -63,10 +79,12 @@ async function drain() {
       if (job.controller.signal.aborted) {
         job.public.status = "cancelled";
         job.public.finishedAt = new Date().toISOString();
+        await persist(job);
         continue;
       }
       job.public.status = "running";
       job.public.startedAt = new Date().toISOString();
+      await persist(job);
       try {
         const result = await renderStudioBrowserVideo(job.workspace, job.input, {
           ...job.options,
@@ -74,6 +92,10 @@ async function drain() {
           onProgress: (count, total) => {
             job.public.framesCompleted = count;
             job.public.frameCount = total;
+            // Bounded disk traffic: initial status, 10% milestones, terminal.
+            if (count === 1 || count === total ||
+                (total > 0 && count % Math.max(1, Math.ceil(total / 10)) === 0))
+              void persist(job);
           },
         });
         if (job.controller.signal.aborted) {
@@ -96,6 +118,13 @@ async function drain() {
       }
       job.public.finishedAt = new Date().toISOString();
       job.input = {};
+      await persist(job);
+      if (job.persistenceError) {
+        // A filesystem failure means the last known state cannot be trusted.
+        job.public.status = "failed";
+        job.public.result = undefined;
+        job.public.error = "Job metadata storage failed; inspect Studio storage";
+      }
       prune();
     }
   } finally {
@@ -113,28 +142,57 @@ export async function queueStudioCodeVideo(workspace: string, input: Input,
   const id = "codejob-" + crypto.randomBytes(12).toString("hex");
   const item: InternalJob = {
     workspace: root, input, options, controller: new AbortController(),
+    persisted: Promise.resolve(),
     public: { id, status: "queued", framesCompleted: 0, frameCount: 0,
       queuedAt: new Date().toISOString() },
   };
   jobs.set(id, item);
-  // Detached in-process execution: completed state remains readable only
-  // while this backend runs. No restart durability or multi-process scheduler.
+  await persist(item);
+  if (item.persistenceError) {
+    jobs.delete(id);
+    throw new Error("Unable to persist Studio render job metadata");
+  }
+  // In-process execution still requires the original owner. Metadata survives
+  // restart, but interrupted work is never automatically replayed.
   void drain();
   return publicJob(item);
 }
 export async function inspectStudioCodeVideo(workspace: string, id: string) {
-  return publicJob(await authorized(workspace, id));
+  const job = await authorized(workspace, id);
+  if (job) return publicJob(job);
+  const restored = await readStudioCodeVideoJob(workspace, id);
+  if (!restored) throw new Error("Studio code-video job not found");
+  return restored;
+}
+export async function listStudioCodeVideos(workspace: string, limit = 20) {
+  const root = await motionWorkspaceRoot(workspace);
+  const activeIds = new Set([...jobs.values()]
+    .filter(item => item.workspace === root).map(item => item.public.id));
+  const disk = await listStudioCodeVideoJobs(root, Math.max(1, Math.min(64, limit)), activeIds);
+  // Current in-memory jobs are authoritative; disk snapshots may lag by a few frames.
+  const merged = new Map(disk.map(item => [item.id, item]));
+  for (const item of jobs.values()) if (item.workspace === root)
+    merged.set(item.public.id, publicJob(item));
+  return [...merged.values()].sort((a,b) => b.queuedAt.localeCompare(a.queuedAt)).slice(0,limit);
 }
 export async function cancelStudioCodeVideo(workspace: string, id: string) {
   const job = await authorized(workspace, id);
+  if (!job) {
+    const restored = await readStudioCodeVideoJob(workspace, id);
+    if (!restored) throw new Error("Studio code-video job not found");
+    // A finished or interrupted job does not have a live worker to cancel.
+    return restored;
+  }
   if (job.public.status === "queued") {
     job.controller.abort();
     job.public.status = "cancelled";
     job.public.finishedAt = new Date().toISOString();
     job.input = {};
+    await persist(job);
   } else if (job.public.status === "running") {
     job.public.status = "cancelling";
     job.controller.abort();
+    await persist(job);
   }
   return publicJob(job);
 }

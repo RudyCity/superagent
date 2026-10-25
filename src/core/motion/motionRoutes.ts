@@ -737,6 +737,9 @@ export async function handleMotionHttpRoute(
         ? { project: await getMotionProject(workspace, projectId) }
         : typeof reactTsx === "string" ? { reactTsx } : { html: html as string };
       json(res, ctx, 202, await queueStudioCodeVideo(workspace, input, options));
+    } else if (pathname === "/api/motion/code-to-video/jobs" && method === "GET") {
+      const { listStudioCodeVideos } = await import("./code/studioCodeVideoJobs.js");
+      json(res, ctx, 200, await listStudioCodeVideos(workspace, 20));
     } else if (codeVideoJobRoute && method === "GET" && !codeVideoJobRoute[2]) {
       const { inspectStudioCodeVideo } = await import("./code/studioCodeVideoJobs.js");
       json(res, ctx, 200, await inspectStudioCodeVideo(workspace, codeVideoJobRoute[1]));
