@@ -164,6 +164,13 @@ export const MCP_TUNNEL_SUGGESTIONS = [
   "/mcp tunnel doctor --provider openai",
 ];
 
+export const SENOPATI_RUNTIME_SUGGESTIONS = [
+  "/senopati help",
+  "/senopati status",
+  "/senopati autostart on",
+  "/senopati autostart off",
+] as const;
+
 export const CORE_RUNTIME_SUGGESTIONS = [
   "/core help",
   "/core status",

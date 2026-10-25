@@ -6,6 +6,8 @@ import crypto from "node:crypto";
 import {sharedEndpoint,sharedRegistry,readSharedCredentials,sharedSenopatiStatus,
         validSharedPrediction} from "./senopatiSharedClient.js";
 import type {ModernPrecision,ModernPrediction} from "./senopatiModernBert.js";
+import {SenopatiBoundedQueue} from "./senopatiSharedQueue.js";
+import {acquireSenopatiModelStartLease} from "./senopatiStartLease.js";
 
 export type SharedServer={
  pid:number;endpoint:string;stop:()=>Promise<void>;
@@ -19,22 +21,55 @@ export async function serveSenopatiShared(
   throw new Error("Existing Unix socket requires manual cleanup");
  }
  const token=crypto.randomBytes(32).toString("base64url");
- let running=0,accepted=0,rejected=0,stopping=false;
+ let accepted=0,rejected=0,stopping=false;
+ const openSockets=new Set<net.Socket>();
+ // One ORT model instance, at most four active inferences and 64 waiting.
+ // Busy clients never spawn another 500+ MiB model.
+ const queue=new SenopatiBoundedQueue<ModernPrediction>(4,64,7000);
  let server:net.Server;
  const stop=async()=>{
   if(stopping)return;
+  // Fence model replacement before changing the IPC registry or accepting
+  // shutdown. A watchdog must never allocate another large ONNX session
+  // while this owner is draining outstanding inference requests.
+  const shutdownLease=acquireSenopatiModelStartLease();
   stopping=true;
-  const now=readSharedCredentials();
-  if(now?.secret===token && now.pid===process.pid){
-   try{fs.rmSync(sharedRegistry,{force:true});}catch{}
-  }
-  await new Promise<void>(resolve=>server.close(()=>resolve()));
-  if(process.platform!=="win32"){
-   try{fs.rmSync(sharedEndpoint,{force:true});}catch{}
+  queue.close();
+  try {
+   await new Promise<void>(resolve=>{
+    let finished=false;
+    const complete=()=>{
+     if(finished)return;
+     finished=true;
+     clearTimeout(deadline);
+     resolve();
+    };
+    const deadline=setTimeout(()=>{
+     for(const socket of openSockets)socket.destroy();
+     complete();
+    },15_000);
+    server.close(()=>complete());
+   });
+   // Remove the bearer registry only after service requests have drained.
+   const current=readSharedCredentials();
+   if(current?.secret===token && current.pid===process.pid){
+    try{fs.rmSync(sharedRegistry,{force:true});}catch{}
+   }
+   if(process.platform!=="win32"){
+    try{fs.rmSync(sharedEndpoint,{force:true});}catch{}
+   }
+  } finally {
+   shutdownLease.release();
   }
  };
  server=net.createServer(socket=>{
-  socket.setTimeout(4500);
+  openSockets.add(socket);
+  socket.once("close",()=>openSockets.delete(socket));
+  if(stopping){socket.destroy();return;}
+  // Longer than the 7s queue wait, but still bounded.
+  socket.setTimeout(10500);
+  const requestAborted = new AbortController();
+  socket.once("close", () => requestAborted.abort());
   let buffer="",seen=false;
   const send=(p:Record<string,unknown>)=>{
    const response=JSON.stringify(p)+"\n";
@@ -59,13 +94,23 @@ export async function serveSenopatiShared(
        !crypto.timingSafeEqual(supplied,expected)){
       rejected++;send({ok:false,error:"unauthorized"});return;
     }
+    if(stopping && p.type!=="stop"){
+     rejected++;send({ok:false,error:"draining"});return;
+    }
     if(p.type==="health"){
      const state=getDetails();
      send({ok:true,status:{
        pid:process.pid,precision:state.precision,
        tokenizerEngine:state.tokenizerEngine,
        rssMiB:Math.round(process.memoryUsage().rss/1048576),
-       accepted,rejected,active:running,
+       // "rejected" is the total failed responses; queue counters below
+       // are breakdowns, not values to add a second time.
+       accepted,rejected,
+       active:queue.stats().active,
+       queued:queue.stats().queued,
+       overloaded:queue.stats().rejected,
+       queueTimedOut:queue.stats().timedOut,
+       queueCanceled:queue.stats().canceled,
      }});
      return;
     }
@@ -79,18 +124,20 @@ export async function serveSenopatiShared(
        p.precision!==getDetails().precision){
       rejected++;send({ok:false,error:"invalid-request"});return;
     }
-    if(running>=8){rejected++;send({ok:false,error:"busy"});return;}
-    running++;
+    // Full queue responds with a bounded denial; queued tasks expire
+    // without running when overloaded for too long.
     try{
-     const prediction=await infer(p.text,p.precision);
+     const prediction=await queue.run(()=>infer(p.text,p.precision),requestAborted.signal);
      if(!validSharedPrediction(prediction)){
-      rejected++;send({ok:false,error:"model-unavailable"});return;
+      rejected++;
+      send({ok:false,error:"model-busy-or-unavailable"});
+      return;
      }
      accepted++;
      send({ok:true,precision:p.precision,prediction});
     }catch{
      rejected++;send({ok:false,error:"inference-failed"});
-    }finally{running--;}
+    }
    })();
   });
  });

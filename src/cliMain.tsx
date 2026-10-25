@@ -127,6 +127,13 @@ export async function runCli() {
     purgeEmptySessions(24);
   } catch {}
 
+  // Shared Senopati lifecycle: auto-start one owner-safe watchdog when
+  // guarded shared_only routing is configured. Never restart CLI/tunnels.
+  try {
+    const {scheduleSenopatiLifecycle}=await import("./core/senopatiLifecycle.js");
+    scheduleSenopatiLifecycle();
+  }catch{}
+
   // Start extension server silently in the background
   try {
     const { runServer } = await import("./server.js");

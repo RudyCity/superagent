@@ -18,6 +18,7 @@ import "./museCommand.js";
 import "./telegramCommand.js";
 import "./serverCommand.js";
 import "./coreRuntimeCommand.js";
+import "./senopatiRuntimeCommand.js";
 import "./serviceStatusCommand.js";
 import "./selfdevCommand.js";
 import "./modeCommand.js";

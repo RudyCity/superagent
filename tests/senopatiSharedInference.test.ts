@@ -1,6 +1,7 @@
 import {describe,it,expect} from "vitest";
 import {toSenopatiEncoding,SENOPATI_MAX_TOKENS} from "../src/core/senopatiTokenizer.js";
-import {validSharedPrediction} from "../src/core/senopatiSharedClient.js";
+import {validSharedPrediction,senopatiIpcNamespace}
+ from "../src/core/senopatiSharedClient.js";
 import {validateModernPolicy,GUARDED_POLICY,LEGACY_POLICY,
         mergeModernIntent,MODERN_MODEL} from "../src/core/senopatiModernBert.js";
 import type {ClassificationResult} from "../src/core/requestClassifier.js";
@@ -32,6 +33,17 @@ describe("Senopati native tokenizer and single-owner IPC boundaries",()=>{
   expect(()=>toSenopatiEncoding(tokens,[1,2,...mask.slice(2)])).toThrow();
   expect(()=>toSenopatiEncoding([2,64573,1,4,...tokens.slice(4)],mask)).toThrow();
   expect(()=>toSenopatiEncoding(tokens,[1,1,1,1,...mask.slice(4)])).toThrow();
+ });
+ it("isolates staging and test config profiles while sharing one installation",()=>{
+  const install="C:/SuperAgent-Install";
+  const main=senopatiIpcNamespace(install,"C:/Users/Example/.superagent-r");
+  const shared=senopatiIpcNamespace(install,"C:/Users/Example/.superagent-r");
+  const staging=senopatiIpcNamespace(install,"C:/Users/Example/.superagent-r-staging");
+  const another=senopatiIpcNamespace("D:/OtherSuperAgent", "C:/Users/Example/.superagent-r");
+  expect(main).toBe(shared);
+  expect(main).not.toBe(staging);
+  expect(main).not.toBe(another);
+  expect(main).toMatch(/^[a-f0-9]{20}$/);
  });
  it("rejects spoofed models, capabilities and non-finite IPC predictions",()=>{
   expect(validSharedPrediction(prediction)).toBe(true);

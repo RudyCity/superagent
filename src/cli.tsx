@@ -100,6 +100,12 @@ if (process.argv[2] === "transport") {
   }
 }
 
+if (process.argv[2] === "senopati") {
+  const {handleSenopatiCliCommand} =
+    await import("./core/commands/senopatiCliHandler.js");
+  process.exit(await handleSenopatiCliCommand(process.argv.slice(3)));
+}
+
 if (process.argv[2] === "core") {
   try {
     const { handleCoreCliCommand } = await import("./core/runtime/coreSupervisor.js");

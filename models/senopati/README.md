@@ -173,3 +173,108 @@ or agent sessions are force-restarted by these scripts.
 
 For diagnostics and verification, see
 `docs/audits/2026-10-25-senopati-v67-native-tokenizer-shared-inference.md`.
+
+
+---
+
+## Shared inference recovery and concurrency (V6.8)
+
+Senopati now has a bounded inference queue (4 active and up to 64 waiting),
+request cancellation on client disconnect, and a detached local watchdog
+with restart throttling. These services manage **only the inference model**;
+they never restart CLI/T-Line/tunnels, authorize tools, or make tenant decisions.
+
+Quick check:
+
+```bash
+bun scripts/senopati-watchdog.ts start
+bun scripts/senopati-watchdog.ts status
+bun scripts/senopati-shared.ts status
+bun scripts/senopati-burst-probe.ts 48 16
+bun scripts/senopati-multiprocess-bench.ts 4 48
+```
+
+To intentionally stop the model for maintenance, stop monitoring first:
+
+```bash
+bun scripts/senopati-watchdog.ts stop  # watchdog only; model keeps running
+bun scripts/senopati-shared.ts stop    # model only; other agents stay online
+```
+
+After maintenance: `bun scripts/senopati-shared.ts start`, then
+`bun scripts/senopati-watchdog.ts start`.
+
+If the watchdog is left online, issuing only `senopati-shared.ts stop`
+will trigger a model restart within the recovery interval. The watchdog
+restarts only after repeated failed health checks, with a bounded
+10-minute retry circuit breaker; a mismatched precision requires a manual
+reload, not a forced takeover. Clients use the legacy classifier while
+shared inference is down. No external notifications are sent.
+
+**OS restart caveat:** the detached watchdog is not yet installed in
+Windows startup/Task Scheduler; it must be started again by the launcher
+or operator after signing in. This project does not silently install an
+OS-login task.
+
+On the local Windows staging machine, 48/48 requests at concurrency 16
+passed after queuing (versus 21/48 before), and four independent Bun
+processes completed 192/192 **unique synthetic prompts** using one
+ONNX session, with server process RSS around 576 MiB. These short
+synthetic measurements are not production SLAs or human-reviewed safety
+benchmarks. Model guardrails and original lightweight Senopati remain intact.
+
+See `docs/audits/2026-10-25-senopati-v68-watchdog-concurrency.md`.
+
+
+## Senopati V6.9 — lifecycle integration and crash recovery
+
+The optional guarded INT8 semantic-intent model is now a shared local service
+with a user-scoped watchdog and explicit ownership, not one ONNX copy per agent.
+Opening the CLI or starting a new SuperAgent REST core from T-Line
+automatically starts or attaches to the same watchdog when guarded
+shared_only mode is selected. Closing a CLI/T-Line session does NOT stop a
+model still serving other processes. Predictions never authorize tools.
+
+Use these commands from the SuperAgent root:
+
+    bun src/cli.tsx senopati status
+    bun src/cli.tsx senopati doctor
+    bun src/cli.tsx senopati start
+    bun src/cli.tsx senopati restart
+    bun src/cli.tsx senopati stop
+    bun src/cli.tsx senopati autostart on
+    bun src/cli.tsx senopati autostart off
+    bun src/cli.tsx senopati login status
+    bun src/cli.tsx senopati login install
+    bun src/cli.tsx senopati login remove
+
+When the compiled CLI is installed: use superagent senopati instead.
+Inside an interactive session, /senopati status and /senopati autostart
+on|off are also available. /status all shows read-only model/watchdog state.
+
+Windows current-user login autostart is installed via a checked Startup
+folder entry, NOT a Windows service or scheduler task. It can be removed
+by the login remove command. Startup is controlled by
+~/.superagent-r/senopati-lifecycle.json, defaults to on for the canonical user profile when guarded
+shared routing is enabled. Isolated CI/staging profiles default to off unless
+explicitly enabled, preventing unexpected background model processes. Change
+the setting through the CLI or slash command.
+
+The model startup lease is acquired before allocating weights. A second
+model-start attempt cannot become another owner. Watchdog recovery uses
+bounded retries and a cooldown, while graceful shutdown drains/cancels
+only model requests. A real force-kill of the *verified model-only PID*
+was followed by automatic restart in 4.85s; a later graceful restart
+also passed. The original lightweight Senopati remains the fail-closed
+fallback. No external notifications or tunnel/session kills occur.
+
+A real Windows reboot, T-Line packaged upgrade and independent natural
+human-gold release tests are not yet verified. Details and recovery
+evidence are in docs/audits/2026-10-25-senopati-v69-lifecycle-readiness.md.
+
+
+The named pipe is scoped to installation and config profile. The watchdog
+holds off replacing the model while its previous owner holds a startup
+or graceful-drain lease. Real model-only drain evidence: 48 in-flight
+requests, 12 completed and 36 safely returned no new prediction, followed
+by automatic recovery without a second ONNX owner.

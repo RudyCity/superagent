@@ -144,6 +144,22 @@ export const statusCommand: SlashCommand = {
       lines.push("TUNNELS", "- Status check: ERROR (could not inspect tunnel registry)");
     }
 
+    // Shared classifier does not own MCP or tunnel lifecycle.
+    try {
+      const {sharedSenopatiStatus}=await import("../senopatiSharedClient.js");
+      const {readSenopatiWatchdogStatus}=await import("../senopatiWatchdogStatus.js");
+      const model=await sharedSenopatiStatus();
+      const owner=readSenopatiWatchdogStatus();
+      lines.push(
+        "SENOPATI LOCAL INFERENCE",
+        "- Shared model: "+(model ? "ONLINE PID "+model.pid+" ("+model.rssMiB+" MiB)":"OFFLINE / legacy fallback"),
+        "- Watchdog: "+(owner?.alive ? "ACTIVE PID "+owner.pid:"OFFLINE"),
+        "- Classifier does not grant tool or tenant permissions",
+        "",
+      );
+    }catch {
+      lines.push("SENOPATI LOCAL INFERENCE","- Status unavailable","");
+    }
     emit(ctx, "system", lines.join("\n"));
   },
 };

@@ -1249,3 +1249,57 @@ Use `powershell -File scripts/windows-run-as-runner.ps1 -Runner '.\superagent_ru
 Set `SUPERAGENT_REQUIRE_OS_SANDBOX=1`, `SUPERAGENT_OS_RUNNER_IDENTITY=HOST\superagent_runner`, and `SUPERAGENT_OS_DENIED_PROBE_PATH=C:\restricted\existing-probe.txt` **in the launching process environment**. The SuperAgent CLI (including `--mcp-server`) refuses startup unless Windows `whoami` matches the configured identity and attempting to open the existing probe file fails with an actual permission error (`EACCES` or `EPERM`). Missing files or accessible files fail the check. T-Line's backend performs the same preflight before launching its managed SuperAgent server; spawn inherits the backend's Windows token, so its backend itself must be started under the restricted account. These checks verify one denied-file sample only, **not full isolation**, ACL completeness, or resistance to privileges gained through other processes. This does not alter ACLs or provision the Windows account. The helper `scripts/windows-run-as-runner.ps1` now accepts `-DeniedProbePath` and sets these process-level strict-mode environment variables for CLI launch.
 
 T-Line companion documentation: `../t-line/README.md` describes the inherited backend identity and strict startup check. In strict mode T-Line's managed server only starts after matching the restricted Windows identity and the denied-file probe. The full T-Line application and CDP remain separate trust boundaries.
+
+
+## Senopati V6.9 — lifecycle integration and crash recovery
+
+The optional guarded INT8 semantic-intent model is now a shared local service
+with a user-scoped watchdog and explicit ownership, not one ONNX copy per agent.
+Opening the CLI or starting a new SuperAgent REST core from T-Line
+automatically starts or attaches to the same watchdog when guarded
+shared_only mode is selected. Closing a CLI/T-Line session does NOT stop a
+model still serving other processes. Predictions never authorize tools.
+
+Use these commands from the SuperAgent root:
+
+    bun src/cli.tsx senopati status
+    bun src/cli.tsx senopati doctor
+    bun src/cli.tsx senopati start
+    bun src/cli.tsx senopati restart
+    bun src/cli.tsx senopati stop
+    bun src/cli.tsx senopati autostart on
+    bun src/cli.tsx senopati autostart off
+    bun src/cli.tsx senopati login status
+    bun src/cli.tsx senopati login install
+    bun src/cli.tsx senopati login remove
+
+When the compiled CLI is installed: use superagent senopati instead.
+Inside an interactive session, /senopati status and /senopati autostart
+on|off are also available. /status all shows read-only model/watchdog state.
+
+Windows current-user login autostart is installed via a checked Startup
+folder entry, NOT a Windows service or scheduler task. It can be removed
+by the login remove command. Startup is controlled by
+~/.superagent-r/senopati-lifecycle.json, defaults to on for the canonical user profile when guarded
+shared routing is enabled. Isolated CI/staging profiles default to off unless
+explicitly enabled, preventing unexpected background model processes. Change
+the setting through the CLI or slash command.
+
+The model startup lease is acquired before allocating weights. A second
+model-start attempt cannot become another owner. Watchdog recovery uses
+bounded retries and a cooldown, while graceful shutdown drains/cancels
+only model requests. A real force-kill of the *verified model-only PID*
+was followed by automatic restart in 4.85s; a later graceful restart
+also passed. The original lightweight Senopati remains the fail-closed
+fallback. No external notifications or tunnel/session kills occur.
+
+A real Windows reboot, T-Line packaged upgrade and independent natural
+human-gold release tests are not yet verified. Details and recovery
+evidence are in docs/audits/2026-10-25-senopati-v69-lifecycle-readiness.md.
+
+
+The named pipe is scoped to installation and config profile. The watchdog
+holds off replacing the model while its previous owner holds a startup
+or graceful-drain lease. Real model-only drain evidence: 48 in-flight
+requests, 12 completed and 36 safely returned no new prediction, followed
+by automatic recovery without a second ONNX owner.

@@ -18,6 +18,7 @@ import {
   stopSharedSenopati,
 } from "../src/core/senopatiSharedClient.js";
 import {serveSenopatiShared} from "../src/core/senopatiSharedServer.js";
+import {acquireSenopatiModelStartLease} from "../src/core/senopatiStartLease.js";
 
 const action=process.argv[2] || "status";
 const allowed=new Set(["start","serve","status","stop","enable","disable"]);
@@ -26,20 +27,32 @@ if(!allowed.has(action)){
 }
 if(action==="serve"){
   const policy=getModernPolicy();
-  if(!policy.enabled)throw new Error("Activate guarded Senopati before starting service");
-  const probe=await inferModernPredictionLocal("Tolong cari dokumentasi proyek");
-  if(!probe)throw new Error("Cannot initialize local model for shared server");
-  const service=await serveSenopatiShared(
-    async(text,precision)=>{
-      const policyNow=getModernPolicy();
-      if(!policyNow.enabled || policyNow.precision!==precision)return null;
-      return inferModernPredictionLocal(text);
-    },
-    ()=>({
-      precision:getModernPolicy().precision,
-      tokenizerEngine:modernRuntimeStatus().tokenizerEngine || "unknown",
-    }),
-  );
+  // The lease must be held BEFORE allocating the 500+ MiB model, including
+  // direct serve invocations that bypass the normal start command.
+  const lease=acquireSenopatiModelStartLease();
+  let service;
+  try {
+    if(!policy.enabled || policy.inferenceMode!=="shared_only") {
+      throw new Error("Guarded shared_only policy required for model server");
+    }
+    const existing=await sharedSenopatiStatus();
+    if(existing)throw new Error("An authenticated model owner is already online");
+    const probe=await inferModernPredictionLocal("Tolong cari dokumentasi proyek");
+    if(!probe)throw new Error("Cannot initialize local model for shared server");
+    service=await serveSenopatiShared(
+      async(text,precision)=>{
+        const policyNow=getModernPolicy();
+        if(!policyNow.enabled || policyNow.precision!==precision)return null;
+        return inferModernPredictionLocal(text);
+      },
+      ()=>({
+        precision:getModernPolicy().precision,
+        tokenizerEngine:modernRuntimeStatus().tokenizerEngine || "unknown",
+      }),
+    );
+  } finally {
+    lease.release();
+  }
   console.log("SHARED_SENOPATI_READY",JSON.stringify({
     pid:service.pid,
     transport:"local-ipc",

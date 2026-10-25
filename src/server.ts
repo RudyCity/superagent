@@ -1032,6 +1032,13 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   });
 
   server.listen(port, '127.0.0.1', () => {
+    // T-Line's SuperAgent REST core uses this same startup path. Start only
+    // the isolated shared-model watchdog; never touch T-Line/MCP/tunnels.
+    if(process.env.SUPERAGENT_CORE_WORKER!=="1") {
+      void import("./core/senopatiLifecycle.js")
+        .then(({scheduleSenopatiLifecycle})=>scheduleSenopatiLifecycle())
+        .catch(()=>{});
+    }
     // The supervisor owns public auth metadata; private workers must not
     // overwrite shared server-info or invalidate existing client tokens.
     if (process.env.SUPERAGENT_CORE_WORKER !== "1") {
