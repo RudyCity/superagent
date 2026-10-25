@@ -254,6 +254,8 @@ Phase 4b: an independent opt-in channel host can own a Muse WebSocket or Telegra
 
 Phase 4c: authenticated channel-host IPC now exposes only the explicitly supported steer, task and abort operations from the owner process; no new watcher is spawned by the core. A per-host 256-bit token is kept in owner-only local discovery metadata (not health/status), a request ID prevents concurrent duplicate dispatch for 10 minutes, and a single-flight guard rejects overlapping different mutations. Use /muse host status, /muse host steer <text> --port 7892, /muse host task <text> --port 7892 or /muse host abort [reason] --port 7892. Requires an independently running and active Muse or Telegram fallback channel host. Legacy /muse watch and /muse steer remain local. This is dispatch acknowledgment, not proof of remote delivery, and no actual bot/tunnel was contacted during tests. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
 
+Phase 4f adds an encrypted, bounded result outbox for opt-in independent Muse/Telegram channel hosts. A successful local transport send is distinct from an authenticated Muse result_ack. To resend ONLY a saved result after reconnect without repeating tools, explicitly invoke /muse host replay-result BATCH_ID --port 7892. Results are encrypted at rest using a private per-port key; do not expose or delete this key, and reconcile uncertain tool effects independently. Full LLM state resume and exactly-once remote processing are not provided. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
+
 Phase 4d adds conservative durable batch checkpointing to opt-in independent Muse/Telegram watchers. Each batch ID is durably journaled BEFORE executing any tools; result delivery transitions are journaled afterward. On restart the same batch is never replayed automatically, so uncertain tool side effects require manual reconciliation. Inspect with superagent channel-host checkpoint --port 7892 (offline-capable). The journal stores IDs/stages, NOT prompts, secrets, tool arguments or outputs, and this is not full AI state recovery or an exactly-once external transaction. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
 
 ### Hermes-Style Skill Feedback and Guided Revision
@@ -873,7 +875,7 @@ See [the migration plan](docs/plans/2026-10-22-superagent-studio-canonical-migra
 ### Studio to Code — interactive SVG / GSAP exporter (developer preview)
 
 Instead of rasterizing a scene into MP4, the same revisioned Studio composition
-can export **editable HTML with inline SVG elements and GSAP keyframe playback**.
+can export **editable HTML with inline SVG elements and a native browser timeline**.
 The HTML contains controls and supports four trigger modes: autoplay, scroll,
 click and hover.
 
@@ -890,9 +892,10 @@ route also works. The T-Line Studio editor offers an **Export Web Code** control
 
 **Currently supported:** native text, rectangle and SVG path layers, revisioned
 keyframes, timing, scale/rotation/position/opacity/stroke-dashoffset properties,
-and scene-level scroll/click/hover triggers. Animations use pinned GSAP **3.15.0**
-(and ScrollTrigger for scroll mode) loaded from jsDelivr at runtime, so exported
-HTML requires network access or an operator-provided local copy of those scripts.
+and scene-level scroll/click/hover triggers. The default output embeds a
+first-party requestAnimationFrame runtime with **no external runtime scripts or
+network access required**. The experimental legacy GSAP code adapter is not
+exposed through public CLI/API pending third-party licensing review.
 
 **Not yet supported:** automatic reverse-engineering of arbitrary video into
 editable DOM/SVG, raster/image/video/audio layers in code export, and direct

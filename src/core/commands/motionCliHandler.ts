@@ -769,7 +769,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       return 0;
     }
     if (action === "export-code") {
-      const { renderStudioCodeHtml } = await import("../motion/code/studioCodeExporter.js");
+      const { renderStudioNativeHtml } = await import("../motion/code/studioNativeCodeExporter.js");
       const { studioStorageRoot } = await import("../motion/project/projectStore.js");
       const { default: fs } = await import("node:fs/promises");
       const { default: path } = await import("node:path");
@@ -778,13 +778,13 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         throw new Error("Invalid Studio to Code trigger");
       }
       const project = await getMotionProject(workspace, projectId);
-      const html = renderStudioCodeHtml(project, trigger as "autoplay" | "scroll" | "click" | "hover");
+      const html = renderStudioNativeHtml(project, trigger as "autoplay" | "scroll" | "click" | "hover");
       const outputRoot = path.join(await studioStorageRoot(workspace, true), "code");
       await fs.mkdir(outputRoot, { recursive: true });
       const output = path.join(outputRoot, project.id + "-r" + project.revision + "-" + trigger + ".html");
       // Never overwrite an earlier export unexpectedly.
       await fs.writeFile(output, html, { flag: "wx", encoding: "utf8" });
-      emit({ status: "exported", format: "html-svg-gsap", projectId: project.id,
+      emit({ status: "exported", format: "html-svg-native", projectId: project.id,
         revision: project.revision, trigger, file: output, bytes: Buffer.byteLength(html) }, json);
       return 0;
     }

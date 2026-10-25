@@ -5,6 +5,7 @@ import path from "node:path";
 import http from "node:http";
 import vm from "node:vm";
 import { renderStudioCodeHtml } from "../src/core/motion/code/studioCodeExporter.js";
+import { renderStudioNativeHtml } from "../src/core/motion/code/studioNativeCodeExporter.js";
 import { handleMotionHttpRoute } from "../src/core/motion/motionRoutes.js";
 import { createMotionProject, getMotionProject } from "../src/core/motion/project/projectStore.js";
 import type { MotionProject } from "../src/core/motion/schema/types.js";
@@ -96,8 +97,38 @@ describe("Studio to Code deterministic vector export", () => {
       expect(response.status).toBe(200);
       expect(response.headers.get("content-disposition")).toContain("attachment;");
       expect(response.headers.get("content-type")).toContain("text/html");
-      expect(await response.text()).toContain("ScrollTrigger.min.js");
+      const html = await response.text();
+      expect(html).toContain("native browser source");
+      expect(html).toContain("const scene =");
+      expect(html).not.toContain("cdn.jsdelivr.net");
+      expect(html).not.toContain("window.gsap");
     }
+  });
+  it.each(["autoplay", "scroll", "click", "hover"] as const)(
+    "produces offline native JavaScript without GSAP or network calls for %s", trigger => {
+      const html = renderStudioNativeHtml(svgProject(), trigger);
+      expect(html).toContain("<!doctype html>");
+      expect(html).toContain('id="studio-stage"');
+      expect(html).toContain("function trackValue(track, frame)");
+      expect(html).toContain("visibilitychange");
+      expect(html).toContain('"trigger":"' + trigger + '"');
+      expect(html).not.toMatch(/<script[^>]+src=/);
+      expect(html).not.toContain("cdn.jsdelivr.net");
+      expect(html).not.toContain("window.gsap");
+      const script = html.match(/<script>([\s\S]+?)<\/script>/);
+      expect(script).not.toBeNull();
+      expect(() => new vm.Script(script![1])).not.toThrow();
+    });
+  it("escapes hostile user text in the native offline document", () => {
+    const hostile = svgProject();
+    hostile.name = "xx</script><script>globalThis.hacked=1</script>";
+    const layer = hostile.composition.layers.find(x => x.kind === "text");
+    if (!layer || layer.kind !== "text") throw new Error("Text fixture missing");
+    layer.text = "</script><script>alert(document.cookie)</script>";
+    const html = renderStudioNativeHtml(hostile);
+    expect(html).not.toContain("<script>alert(document.cookie)</script>");
+    expect(html).not.toContain("<script>globalThis.hacked=1</script>");
+    expect(html.match(/<script>/g)).toHaveLength(1);
   });
   it("rejects invalid triggers and unknown project identifiers", async () => {
     const route = base + "/api/studio/projects/" + project.id + "/code.html";

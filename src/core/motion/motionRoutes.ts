@@ -39,6 +39,7 @@ import { compileMotionTypography } from "./motionTypography.js";
 import { applyMotionEdits } from "./project/revisions.js";
 import { renderMotionPlayerHtml } from "./render/motionPreviewHtml.js";
 import { renderStudioCodeHtml, type StudioCodeTrigger } from "./code/studioCodeExporter.js";
+import { renderStudioNativeHtml } from "./code/studioNativeCodeExporter.js";
 import { subscribeMotionStudioEvents, getMotionBridgeStats } from "./motionEvents.js";
 import { exportMotionDeliverablesBundle, getMotionDeliverablesBundleManifest } from "./motionBundleExport.js";
 import { upscaleMotionComposition, upscaleMotionArtifact, getAvailableUpscaleTargets, type MotionUpscaleTarget, type MotionUpscaleMode } from "./motionUpscale.js";
@@ -660,7 +661,8 @@ export async function handleMotionHttpRoute(
         json(res, ctx, 400, { error: "Unsupported Studio to Code trigger" });
       } else {
         const source = await getMotionProject(workspace, codeExport[1]);
-        const html = renderStudioCodeHtml(source, requested as StudioCodeTrigger);
+        // The old CDN/GSAP adapter remains private pending license review.
+        const html = renderStudioNativeHtml(source, requested as StudioCodeTrigger);
         const body = Buffer.from(html, "utf8");
         if (body.length > 4 * 1024 * 1024) throw Object.assign(
           new Error("Studio code export exceeds the size limit"), { statusCode: 413 });
