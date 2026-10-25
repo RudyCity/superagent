@@ -17,6 +17,7 @@
 - React TSX generated from real CLI command and TypeScript transpiled with no diagnostics.
 - React `srcDoc` integrated into a sandboxed parent iframe in offline Chrome: click trigger advanced animation to 0.8s/10s with no JS exceptions.
 - Reproducible browser smoke script added: `python scripts/studio_code_native_browser_smoke.py --json`, which creates and cleans an isolated temp workspace, verifies offline autoplay/scroll/click/hover, sandboxed React and reduced-motion (all pass).
+- Browser parity smoke now also compares sampled SVG transforms and opacity for each exported layer against the canonical Studio `evaluateFrame()` math (passed on the default fixture). This is sampled property parity, **not** full pixel/image parity.
 - No installed-Tauri interaction E2E was claimed, and no third-party license approval has been claimed.
 
 ## Explicit remaining P0–P4 gaps

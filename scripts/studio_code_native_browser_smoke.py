@@ -41,6 +41,18 @@ def main() -> int:
 
     try:
         project = cli("new", "--name", "Offline Test")
+        eval_script = (
+            'import {getMotionProject} from "./src/core/motion/project/projectStore.ts";'
+            'import {evaluateFrame} from "./src/core/motion/timeline/evaluateFrame.ts";'
+            'const p=await getMotionProject(process.argv[1],process.argv[2]);'
+            'const frames=[0,0.25,0.5,0.75].map(v=>Math.floor(p.composition.durationFrames*v));'
+            'console.log(JSON.stringify({total:p.composition.durationFrames,samples:frames.map(frame=>('
+            '{frame,values:evaluateFrame(p,frame).layers.map(x=>x.values)}))}));'
+        )
+        expected = json.loads(subprocess.run(
+            ["bun", "-e", eval_script, "--", str(root), project["id"]],
+            cwd=repo, capture_output=True, text=True, check=True, timeout=20
+        ).stdout)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True,
                 executable_path=args.chrome, args=["--disable-extensions", "--no-first-run"])
@@ -68,6 +80,31 @@ def main() -> int:
                 assert not errors, (mode, errors)
                 assert not requests, (mode, requests)
                 assert "gsap" not in page.content().lower(), "Default exported source contains GSAP"
+                if mode == "autoplay":
+                    # Compare the exported browser engine to the canonical Studio
+                    # evaluateFrame() on 4 timeline samples and every layer.
+                    for sample in expected["samples"]:
+                        step = round(sample["frame"] / expected["total"] * 1000)
+                        if round(step * expected["total"] / 1000) != sample["frame"]:
+                            continue  # native range input has integer ticks
+                        actual = page.evaluate("""step => {
+                          const bar = document.getElementById("studio-progress");
+                          bar.value = String(step);
+                          bar.dispatchEvent(new Event("input", {bubbles:true}));
+                          return [...document.querySelectorAll("[data-studio-index]")]
+                            .map(e => ({transform:e.getAttribute("transform"), opacity:e.getAttribute("opacity")}));
+                        }""", step)
+                        for idx, values in enumerate(sample["values"]):
+                            raw = actual[idx]["transform"]
+                            assert raw, f"Missing SVG transform on layer {idx}"
+                            nums = [float(x) for x in __import__("re").findall(
+                                r"[-+]?(?:\d*\.)?\d+(?:[eE][-+]?\d+)?", raw)]
+                            reference = [values[k] for k in ("x","y","rotation","scaleX","scaleY")]
+                            assert len(nums) == len(reference), raw
+                            assert all(abs(a-b)<0.06 for a,b in zip(nums,reference)), (
+                                sample["frame"],idx,nums,reference)
+                            assert abs(float(actual[idx]["opacity"])-values["opacity"])<0.01
+                    details.append({"timeline_parity": "sampled transforms/opacity match canonical evaluator"})
                 details.append({"trigger": mode, "elapsed_seconds": seconds, "network": 0, "errors": 0})
                 page.close()
             page = browser.new_page(reduced_motion="reduce")
