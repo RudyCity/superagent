@@ -46,3 +46,6 @@ decodes are sequential, bounded subprocesses.
 - New synthetic direction-reversal fixture confirms non-monotonic motion
   generates multiple editable keyframes; missing objects still fail closed.
 - Full backend regression: 339/339 and frontend: 132/132 passed.
+- API response hygiene: absolute local `reviewPng` storage paths are
+  withheld from HTTP JSON responses; callers load QA PNG through the scoped
+  authenticated route. CLI output retains its local path for developer use.

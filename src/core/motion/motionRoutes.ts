@@ -165,7 +165,11 @@ export async function handleMotionHttpRoute(
         throw new MotionValidationError(["Expected an imported Studio video ID"]);
       const { reconstructMultiObjectStudioVideo } =
         await import("./code/videoMultiObjectReconstruction.js");
-      json(res, ctx, 201, await reconstructMultiObjectStudioVideo(workspace, body.videoId));
+      const { reviewPng: _internalPath, ...result } =
+        await reconstructMultiObjectStudioVideo(workspace, body.videoId);
+      // Clients retrieve review images through the authenticated project route.
+      // The on-disk Windows workspace path is not part of the public API.
+      json(res, ctx, 201, result);
     } else if (reconstructionReview && (method === "GET" || method === "HEAD")) {
       const source = await getMotionProject(workspace, reconstructionReview[1]);
       const requested = _url.searchParams.get("revision") ?? String(source.revision);

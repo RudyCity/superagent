@@ -78,6 +78,7 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
         projectId: string; revision: number; objects: unknown[];
         measuredForegroundIoU: number[]; interpolationCheckIoU: number[];
       };
+      expect((body as Record<string, unknown>).reviewPng).toBeUndefined();
       expect(body.objects).toHaveLength(2);
       expect(body.measuredForegroundIoU).toHaveLength(3);
       expect(body.interpolationCheckIoU).toHaveLength(2);
