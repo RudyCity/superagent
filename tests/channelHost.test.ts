@@ -1,7 +1,13 @@
 import http from "node:http";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import net from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { runChannelHost, validateChannelHostMode, handleChannelHostCliCommand, listVerifiedChannelHosts } from "../src/core/runtime/channelHost.js";
+import {
+  runChannelHost, validateChannelHostMode, handleChannelHostCliCommand,
+  listVerifiedChannelHosts, requestChannelHostIpc, validateChannelIpcCommand,
+} from "../src/core/runtime/channelHost.js";
 
 const running: http.Server[] = [];
 async function freePort(): Promise<number> {
@@ -85,6 +91,81 @@ describe("independent channel-host lifecycle", () => {
     });
     running.push(replacement.server);
   });
+  it("rejects unauthorized IPC, deduplicates retries, and never exposes its token", async () => {
+    const port = await freePort();
+    const id = "a".repeat(32);
+    const received: string[] = [];
+    const host = await runChannelHost({
+      port, wsPort: 9225, mode: "telegram-fallback",
+      config: { botToken: "fixture", groupId: "group", museBotId: "muse" },
+      startWatcher: async () => {},
+      executeIpc: async command => {
+        received.push(command.operation + ":" + command.text);
+        await new Promise(resolve => setTimeout(resolve, 50));
+        return true;
+      },
+    });
+    running.push(host.server);
+    const base = "http://127.0.0.1:" + port;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const health = await (await fetch(base + "/_channel/health")).text();
+    const discoveryFile = path.join(os.homedir(), ".superagent-r", "channel-host-" + port + ".json");
+    const discovery = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));
+    expect(discovery.ipcToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(health).not.toContain(discovery.ipcToken);
+    const payload = { operation: "steer", text: "change plan", requestId: id };
+    const unauthorized = await fetch(base + "/_channel/ipc", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(unauthorized.status).toBe(401);
+    expect(received).toHaveLength(0);
+    const sent = await Promise.all([
+      requestChannelHostIpc(port, "steer", "change plan", id),
+      requestChannelHostIpc(port, "steer", "change plan", id),
+    ]);
+    expect(sent.every(reply => reply.ok)).toBe(true);
+    expect(received).toEqual(["steer:change plan"]);
+    const different = await fetch(base + "/_channel/ipc", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + discovery.ipcToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, text: "different instruction" }),
+    });
+    expect(different.status).toBe(409);
+    expect(received).toHaveLength(1);
+    expect((await requestChannelHostIpc(port, "task", "next task")).ok).toBe(true);
+    expect((await requestChannelHostIpc(port, "abort", "")).ok).toBe(true);
+    expect(received).toEqual(["steer:change plan", "task:next task", "abort:"]);
+    // Exercise the real /muse host command path across the authenticated
+    // loopback HTTP boundary, never touching a real external Muse transport.
+    const { museCommand } = await import("../src/core/commands/museCommand.js");
+    const lines: Array<{ type: string; content: string }> = [];
+    await museCommand.execute("host steer via core --port " + port, {
+      addLine: (line: { type: string; content: string }) => { lines.push(line); },
+    } as any);
+    expect(received.at(-1)).toBe("steer:via core");
+    expect(lines.some(line => line.content.includes("acknowledged"))).toBe(true);
+  });
+
+  it("rejects malformed and excessive IPC commands and fails closed when idle", async () => {
+    expect(() => validateChannelIpcCommand({ operation: "task", text: "hello", requestId: "bad" })).toThrow();
+    expect(() => validateChannelIpcCommand({ operation: "steer", text: "", requestId: "a".repeat(32) })).toThrow();
+    expect(() => validateChannelIpcCommand({ operation: "task", text: "x".repeat(4097), requestId: "a".repeat(32) })).toThrow();
+    const port = await freePort();
+    const host = await runChannelHost({ port, wsPort: 9225, mode: "idle" });
+    running.push(host.server);
+    await expect(requestChannelHostIpc(port, "task", "hello")).rejects.toThrow(/not active/);
+    const discovery = JSON.parse(fs.readFileSync(
+      path.join(os.homedir(), ".superagent-r", "channel-host-" + port + ".json"), "utf8"));
+    const res = await fetch("http://127.0.0.1:" + port + "/_channel/ipc", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + discovery.ipcToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ operation: "task", text: "hello", requestId: "a".repeat(32) }),
+    });
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("NOT_READY");
+  });
+
   it("does not take over the core port, an existing socket or another channel port", async () => {
     await expect(runChannelHost({ port: 7888, wsPort: 9225, mode: "idle" })).rejects.toThrow();
     await expect(runChannelHost({ port: 9225, wsPort: 9225, mode: "idle" })).rejects.toThrow();

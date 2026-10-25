@@ -28,7 +28,14 @@ export interface ChannelHostHealth {
   /** Never include credentials, workspace paths, group IDs, URLs or prompts. */
   errorCode?: "START_FAILED";
 }
-interface ChannelHostDiscovery { version: 1; instanceId: string; pid: number; port: number }
+interface ChannelHostDiscovery { version: 1; instanceId: string; pid: number; port: number; ipcToken: string }
+export type ChannelHostIpcOperation = "steer" | "task" | "abort";
+export interface ChannelHostIpcRequest {
+  operation: ChannelHostIpcOperation;
+  requestId: string;
+  text: string;
+}
+export interface ChannelHostIpcResult { ok: boolean; requestId: string; code: "OK" | "NOT_READY" | "REJECTED" }
 
 const dir = () => path.join(os.homedir(), ".superagent-r");
 const statePath = (port: number) => path.join(dir(), "channel-host-" + port + ".json");
@@ -58,7 +65,8 @@ function readDiscovery(port: number): ChannelHostDiscovery {
   const item = JSON.parse(fs.readFileSync(statePath(port), "utf8")) as ChannelHostDiscovery;
   if (item.version !== 1 || item.port !== port || !validPort(port) ||
       !Number.isSafeInteger(item.pid) || item.pid < 1 ||
-      typeof item.instanceId !== "string" || !/^[a-f0-9]{32}$/.test(item.instanceId)) {
+      typeof item.instanceId !== "string" || !/^[a-f0-9]{32}$/.test(item.instanceId) ||
+      typeof item.ipcToken !== "string" || !/^[a-f0-9]{64}$/.test(item.ipcToken)) {
     throw new Error("Invalid channel host discovery");
   }
   return item;
@@ -82,7 +90,8 @@ function claimModeLease(mode: ChannelHostMode, record: ChannelHostDiscovery): ()
   const file = leasePath(mode);
   // Exclusive create: competing hosts must never poll one Telegram bot or
   // bind the same Muse socket even when their control ports differ.
-  fs.writeFileSync(file, JSON.stringify(record), { flag: "wx", mode: 0o600 });
+  const { ipcToken: _secret, ...leaseRecord } = record;
+  fs.writeFileSync(file, JSON.stringify(leaseRecord), { flag: "wx", mode: 0o600 });
   return () => {
     try {
       const contents = JSON.parse(fs.readFileSync(file, "utf8")) as ChannelHostDiscovery;
@@ -125,6 +134,48 @@ export async function listVerifiedChannelHosts(): Promise<ChannelHostHealth[]> {
   return results.filter((item): item is ChannelHostHealth => Boolean(item));
 }
 
+export function validateChannelIpcCommand(raw: unknown): ChannelHostIpcRequest {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid IPC payload");
+  const value = raw as Partial<ChannelHostIpcRequest>;
+  if (!["steer", "task", "abort"].includes(value.operation || "") ||
+      typeof value.requestId !== "string" || !/^[a-f0-9]{32}$/.test(value.requestId) ||
+      typeof value.text !== "string" || value.text.length > 4096 ||
+      value.text.includes("\0") || (value.operation !== "abort" && !value.text.trim())) {
+    throw new Error("Invalid IPC command");
+  }
+  return value as ChannelHostIpcRequest;
+}
+
+/** Core/TUI-facing client, intentionally opt-in: no automatic legacy watcher fallback. */
+export async function requestChannelHostIpc(
+  port: number, operation: ChannelHostIpcOperation, text = "",
+  requestId = crypto.randomBytes(16).toString("hex"),
+): Promise<ChannelHostIpcResult> {
+  const command = validateChannelIpcCommand({ operation, text, requestId });
+  const discovery = readDiscovery(port);
+  const health = await probeHost(port);
+  if (health.pid !== discovery.pid || health.instanceId !== discovery.instanceId ||
+      health.status !== "running" || !health.watcherActive) {
+    throw new Error("Verified remote channel watcher is not active; no IPC sent");
+  }
+  const response = await fetch("http://127.0.0.1:" + port + "/_channel/ipc", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + discovery.ipcToken,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(command),
+    signal: AbortSignal.timeout(6500),
+  });
+  const result = await response.json() as ChannelHostIpcResult;
+  if (!result || result.requestId !== requestId || typeof result.ok !== "boolean" ||
+      !["OK", "NOT_READY", "REJECTED"].includes(result.code)) {
+    throw new Error("Invalid IPC response from channel host");
+  }
+  if (response.status !== 200 || !result.ok) throw new Error("Channel IPC refused: " + result.code);
+  return result;
+}
+
 export async function runChannelHost(options: {
   port: number;
   mode: ChannelHostMode;
@@ -132,6 +183,7 @@ export async function runChannelHost(options: {
   /** Test injections: never exposed through CLI. */
   startWatcher?: (mode: ChannelHostMode, wsPort: number) => Promise<void>;
   config?: RemoteAgentConfig;
+  executeIpc?: (command: ChannelHostIpcRequest) => Promise<boolean>;
 }): Promise<{ server: http.Server; health: () => ChannelHostHealth }> {
   const { port, mode, wsPort } = options;
   if (!validPort(port) || !validPort(wsPort) || port === wsPort || port === 7888) {
@@ -146,7 +198,12 @@ export async function runChannelHost(options: {
   }
   const instanceId = crypto.randomBytes(16).toString("hex");
   const startedAt = Date.now();
-  const record: ChannelHostDiscovery = { version: 1, instanceId, pid: process.pid, port };
+  const record: ChannelHostDiscovery = {
+    version: 1, instanceId, ipcToken: crypto.randomBytes(32).toString("hex"),
+    pid: process.pid, port,
+  };
+  const processed = new Map<string, { signature: string; result: Promise<boolean>; at: number }>();
+  let executingId: string | null = null;
   let releaseLease: () => void = () => {};
   let state: ChannelHostHealth["status"] = mode === "idle" ? "idle" : "starting";
   let errorCode: ChannelHostHealth["errorCode"];
@@ -157,20 +214,91 @@ export async function runChannelHost(options: {
     const stats = watcher?.getStats();
     return {
       service: "superagent-channel-host", instanceId, pid: process.pid, port,
-      mode, status: state, watcherActive: Boolean(watcher?.isActive()),
+      mode, status: state, watcherActive: Boolean(options.executeIpc || watcher?.isActive()),
       taskActive: Boolean(stats?.activeTaskId || (stats?.queuedBatches ?? 0) > 0),
       tasksCompleted: stats?.tasksCompleted || 0, startedAt,
       ...(errorCode ? { errorCode } : {}),
     };
   };
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
-    if (req.method !== "GET" || pathname !== "/_channel/health" ||
-        (req.socket.remoteAddress !== "127.0.0.1" && req.socket.remoteAddress !== "::1")) {
+    const loopback = req.socket.remoteAddress === "127.0.0.1" || req.socket.remoteAddress === "::1";
+    const json = (statusCode: number, value: unknown) => {
+      res.writeHead(statusCode, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+      res.end(JSON.stringify(value));
+    };
+    if (!loopback) { res.writeHead(404); res.end(); return; }
+    if (req.method === "GET" && pathname === "/_channel/health") {
+      json(200, health());
+      return;
+    }
+    if (req.method !== "POST" || pathname !== "/_channel/ipc") {
       res.writeHead(404); res.end(); return;
     }
-    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-    res.end(JSON.stringify(health()));
+    const bearer = req.headers.authorization || "";
+    const wanted = "Bearer " + record.ipcToken;
+    const given = Buffer.from(bearer);
+    const expected = Buffer.from(wanted);
+    if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) {
+      json(401, { error: "Unauthorized channel IPC" });
+      req.resume();
+      return;
+    }
+    req.setTimeout(7000, () => req.destroy());
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    try {
+      for await (const chunk of req) {
+        bytes += (chunk as Buffer).length;
+        if (bytes > 8192) { json(413, { error: "Payload too large" }); return; }
+        chunks.push(chunk as Buffer);
+      }
+      const command = validateChannelIpcCommand(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+      if (state !== "running" || mode === "idle") {
+        json(409, { ok: false, code: "NOT_READY", requestId: command.requestId });
+        return;
+      }
+      const watcher = mode === "muse-ws" ? getMuseWatcher(wsPort) : getMuseWatcher(TELEGRAM_FALLBACK_KEY);
+      if (!options.executeIpc && !watcher?.isActive()) {
+        json(409, { ok: false, code: "NOT_READY", requestId: command.requestId });
+        return;
+      }
+      // Same requestId with different contents is rejected, including while
+      // the first operation is still pending. A retry never repeats delivery.
+      const signature = crypto.createHash("sha256")
+        .update(command.operation + "\0" + command.text).digest("hex");
+      const current = Date.now();
+      for (const [id, entry] of processed) {
+        if (current - entry.at > 600_000) processed.delete(id);
+      }
+      const existing = processed.get(command.requestId);
+      if (existing && existing.signature !== signature) {
+        json(409, { ok: false, code: "REJECTED", requestId: command.requestId });
+        return;
+      }
+      if (!existing && (processed.size >= 256 || executingId !== null)) {
+        json(503, { ok: false, code: "REJECTED", requestId: command.requestId });
+        return;
+      }
+      const operation = async (): Promise<boolean> => {
+        if (options.executeIpc) return options.executeIpc(command);
+        if (!watcher) return false;
+        if (command.operation === "steer") return watcher.sendSteeringMessage(command.text);
+        if (command.operation === "task") return watcher.sendTaskRequest(command.text);
+        return watcher.abortActiveBatch(command.text || "Cancelled through authenticated channel IPC");
+      };
+      if (!existing) executingId = command.requestId;
+      const result = existing?.result || Promise.resolve().then(operation).catch(() => false).finally(() => {
+        if (executingId === command.requestId) executingId = null;
+      });
+      if (!existing) processed.set(command.requestId, { signature, result, at: current });
+      const ok = await result;
+      json(ok ? 200 : 409, {
+        ok, code: ok ? "OK" : "REJECTED", requestId: command.requestId,
+      } satisfies ChannelHostIpcResult);
+    } catch {
+      if (!res.headersSent) json(400, { error: "Invalid IPC request" });
+    }
   });
   // Claim mode ownership before any listener/network side effects.
   releaseLease = claimModeLease(mode, record);

@@ -24,6 +24,58 @@ export const museCommand: SlashCommand = {
     const subcommand = (parts[0] || "").toLowerCase();
     const now = Date.now();
 
+    // /muse host status|steer|task|abort --port N
+    // Deliberately explicit: legacy local Muse watchers are not silently
+    // rerouted, started, stopped, or migrated into another process.
+    if (subcommand === "host") {
+      const action = (parts[1] || "status").toLowerCase();
+      if (action === "help") {
+        ctx.addLine({ type: "system", content:
+          "Use /muse host status, /muse host steer <text> --port 7892, " +
+          "/muse host task <task> --port 7892, or /muse host abort [reason] --port 7892. " +
+          "Requires a separately running verified channel host.", timestamp: now });
+        return;
+      }
+      const { listVerifiedChannelHosts, requestChannelHostIpc } =
+        await import("../runtime/channelHost.js");
+      if (action === "status") {
+        const hosts = await listVerifiedChannelHosts();
+        const lines = hosts.filter(host => host.mode !== "idle").map(host =>
+          host.mode + " on port " + host.port + ": " + host.status +
+          ", watcher " + (host.watcherActive ? "active" : "inactive") +
+          ", task " + (host.taskActive ? "active" : "idle"));
+        ctx.addLine({ type: "system", content:
+          lines.length ? "Independent Muse/Telegram hosts:\n" + lines.join("\n") :
+          "No verified active Muse/Telegram channel hosts. Start an opt-in channel-host process separately.",
+          timestamp: now });
+        return;
+      }
+      if (action !== "steer" && action !== "task" && action !== "abort") {
+        ctx.addLine({ type: "error", content: "Use /muse host help for supported operations.", timestamp: now });
+        return;
+      }
+      const portIndex = parts.indexOf("--port");
+      const port = portIndex < 0 ? 7892 : Number(parts[portIndex + 1]);
+      if (!Number.isInteger(port) || port < 1 || port > 65535) {
+        ctx.addLine({ type: "error", content: "Invalid --port", timestamp: now });
+        return;
+      }
+      const message = parts.slice(2).filter((_word, i) =>
+        !(portIndex >= 2 && (i + 2 === portIndex || i + 2 === portIndex + 1))).join(" ");
+      if (!message.trim() && action !== "abort") {
+        ctx.addLine({ type: "error", content: "A message is required for /muse host " + action, timestamp: now });
+        return;
+      }
+      try {
+        await requestChannelHostIpc(port, action, message);
+        ctx.addLine({ type: "system", content: "[Muse Host] " + action +
+          " acknowledged by verified channel host on port " + port + ".", timestamp: now });
+      } catch (err) {
+        ctx.addLine({ type: "error", content: "[Muse Host] " + String(err), timestamp: now });
+      }
+      return;
+    }
+
     // /muse status
     if (subcommand === "status") {
       const cfg = loadRemoteAgentConfig();
@@ -109,6 +161,10 @@ export const museCommand: SlashCommand = {
         "Usage:",
         "  /muse <task>                 - Run or coordinate a task with Muse",
         "  /muse status                 - View Muse task, watch, and WebSocket status",
+        "  /muse host status            - List independently owned channel hosts",
+        "  /muse host steer <text>      - Steer verified remote host (explicit opt-in)",
+        "  /muse host task <text>       - Request Muse task from independent host",
+        "  /muse host abort [reason]    - Abort active batch on independent host",
         "  /muse watch [dirs]           - Start watch mode for one or more workspaces",
         "  /muse watch start            - Start the Muse watcher",
         "  /muse watch stop             - Stop only the Muse watcher",
@@ -382,6 +438,10 @@ export const museCommand: SlashCommand = {
           "  /muse watch start             - Start the Muse watcher",
           "  /muse watch stop              - Stop only the Muse watcher",
           "  /muse watch status            - Show Muse watcher state",
+          "  /muse host status             - List independently owned channel hosts",
+          "  /muse host steer <text>       - Send authenticated steer IPC to remote owner",
+          "  /muse host task <text>        - Request task on independent watcher",
+          "  /muse host abort [reason]     - Abort active independent watcher batch",
           "  /muse watch add <dir>         - Add a workspace to watch",
           "  /muse watch remove <dir>      - Remove a watched workspace",
           "  /muse steer <instruction>    - Steer an active Muse task",
