@@ -25,6 +25,7 @@ import {
 } from "./transport.js";
 import { createMuseWsTransport, MuseWsServerTransport } from "./museWsTransport.js";
 import { executeBatch } from "./batchExecutor.js";
+import { MuseRecoveryOrchestrator } from "./museRecoveryOrchestrator.js";
 import { formatReadableSummary } from "./formatSummary.js";
 import { logE2E } from "../utils/unifiedLogger.js";
 import {
@@ -508,7 +509,11 @@ export class MuseWatcher {
     const journal = this.options.batchJournal;
     if (!this.isRunning || !checkpoint || !journal || !this.options.resultOutbox ||
         !this.transport.isConnected() || this.isProcessingQueue ||
-        this.batchQueue.length > 0 || this.activeBatchAborts.size > 0) return false;
+        this.batchQueue.length > 0 || this.activeBatchAborts.size > 0 ||
+        this.activeTaskId) return false;
+    const decision = new MuseRecoveryOrchestrator(journal, checkpoint, this.options.resultOutbox)
+      .assess(batchId, this.workspaces);
+    if (!decision.canRequestUntouchedResume) return false;
     const record = journal.get(batchId);
     if (!record || record.stage !== "started" || record.review ||
         this.options.resultOutbox.get(batchId)) return false;
@@ -984,6 +989,9 @@ export class MuseWatcher {
     const journal = this.options.batchJournal;
     const outbox = this.options.resultOutbox;
     if (!this.isRunning || !journal || !outbox || !this.transport.isConnected()) return false;
+    if (this.options.executionCheckpoint &&
+        !new MuseRecoveryOrchestrator(journal, this.options.executionCheckpoint, outbox)
+          .assess(batchId, this.workspaces).canRequestResultReplay) return false;
     const batch = journal.get(batchId);
     if (!batch || batch.review || batch.resultAck ||
         (batch.stage !== "result_pending" && batch.stage !== "delivered")) return false;

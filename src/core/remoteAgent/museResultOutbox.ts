@@ -138,5 +138,9 @@ export class MuseResultOutbox {
     return entry ? this.decrypt(entry, this.readKey()) : null;
   }
   digest(batchId: string): string | null { return this.entries.get(batchId)?.sha256 || null; }
+  /** Metadata only; never exposes ciphertext, outputs or decryption keys. */
+  summaries(): Array<{ batchId: string; taskId: string; sha256: string }> {
+    return [...this.entries.values()].map(({ batchId, taskId, sha256 }) => ({ batchId, taskId, sha256 }));
+  }
   count(): number { return this.entries.size; }
 }

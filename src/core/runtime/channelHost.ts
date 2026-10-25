@@ -15,6 +15,7 @@ import { getMuseWatcherStrict, TELEGRAM_FALLBACK_KEY } from "../remoteAgent/muse
 import { MuseBatchJournal, museJournalFile } from "../remoteAgent/museBatchJournal.js";
 import { MuseResultOutbox } from "../remoteAgent/museResultOutbox.js";
 import { MuseExecutionCheckpoint } from "../remoteAgent/museExecutionCheckpoint.js";
+import { MuseRecoveryOrchestrator } from "../remoteAgent/museRecoveryOrchestrator.js";
 
 export type ChannelHostMode = "idle" | "muse-ws" | "telegram-fallback";
 export interface ChannelHostHealth {
@@ -34,6 +35,8 @@ export interface ChannelHostHealth {
   resultAcknowledged?: number;
   resumableUntouchedBatches?: number;
   interruptedCallBatches?: number;
+  recoveryIntegrityBlocked?: number;
+  recoveryManualReconciliation?: number;
   /** Never include credentials, workspace paths, group IDs, URLs or prompts. */
   errorCode?: "START_FAILED";
 }
@@ -249,6 +252,9 @@ export async function runChannelHost(options: {
       ? getMuseWatcherStrict(TELEGRAM_FALLBACK_KEY)
       : mode === "muse-ws" ? getMuseWatcherStrict(wsPort) : null;
     const stats = watcher?.getStats();
+    const recovery = journal && executionCheckpoint && outbox
+      ? new MuseRecoveryOrchestrator(journal, executionCheckpoint, outbox)
+        .report(getWatchedWorkspaces(config)) : null;
     return {
       service: "superagent-channel-host", instanceId, pid: process.pid, port,
       mode, status: state, watcherActive: Boolean(options.executeIpc || watcher?.isActive()),
@@ -257,10 +263,11 @@ export async function runChannelHost(options: {
       reconciliationPending: journal?.summary().requiresReconciliation || 0,
       resultOutboxStored: outbox?.count() || 0,
       resultAcknowledged: journal?.summary().acknowledged || 0,
-      resumableUntouchedBatches: executionCheckpoint?.summaries().filter(s =>
-        s.canResumeUntouched && journal?.get(s.batchId)?.stage === "started").length || 0,
+      resumableUntouchedBatches: recovery?.counts.manual_untouched_resume || 0,
       interruptedCallBatches: executionCheckpoint?.summaries().filter(s =>
         s.started > 0 && s.finished < s.started).length || 0,
+      recoveryIntegrityBlocked: recovery?.counts.integrity_blocked || 0,
+      recoveryManualReconciliation: recovery?.counts.manual_reconciliation || 0,
       ...(errorCode ? { errorCode } : {}),
     };
   };
@@ -393,7 +400,8 @@ export async function runChannelHost(options: {
           } else {
             await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
               transportType: "telegram", fallback: true, tunnel: false,
-              batchJournal: journal || undefined, resultOutbox: outbox || undefined });
+              batchJournal: journal || undefined, resultOutbox: outbox || undefined,
+              executionCheckpoint: executionCheckpoint || undefined });
           }
         });
         await starter(mode, wsPort);
@@ -413,6 +421,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host serve --port 7892 [--mode idle|muse-ws|telegram-fallback] [--ws-port 9225]");
     console.log("superagent channel-host status --port 7892");
     console.log("superagent channel-host checkpoint --port 7892  # inspect batch/task facts offline");
+    console.log("superagent channel-host recovery --port 7892 [--batch-id ID]  # unified read-only recovery assessment");
     console.log("TUI: /muse host resume-untouched BATCH_ID --port 7892  # manual one-shot; only zero started tool calls");
     console.log("superagent channel-host reconcile --port 7892 --batch-id ID --decision effect_verified|no_effect_verified --evidence-sha256 HEX --confirm ID");
     console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
@@ -425,6 +434,25 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "recovery") {
+    // Offline classification intentionally verifies checkpoint integrity and
+    // NEVER loads a remote channel or performs tool work.
+    const batchIdx = argv.indexOf("--batch-id");
+    const id = batchIdx < 0 ? null : argv[batchIdx + 1];
+    if (id !== null && (typeof id !== "string" || !id || id.length > 256 ||
+        id.includes(String.fromCharCode(0)))) {
+      throw new Error("Invalid --batch-id");
+    }
+    const report = MuseRecoveryOrchestrator.load(port).report();
+    const batches = id ? report.batches.filter(batch => batch.batchId === id) : report.batches;
+    if (id && batches.length !== 1) throw new Error("Unknown recovery batch ID");
+    console.log("Recovery assessment for independent owner port " + port +
+      " (read-only; workspace checks require a running authorized watcher)");
+    console.log("Totals: " + JSON.stringify(report.counts));
+    for (const batch of batches) console.log("  " + JSON.stringify(batch));
+    console.log("No action was executed. Review effects before any explicit resume or result resend.");
+    return false;
+  }
   if (action === "checkpoint") {
     // Offline inspection is intentional: operator needs this AFTER a hard
     // channel-host crash. Never loads tools or starts a watcher.
@@ -474,6 +502,10 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     const releaseReviewLock = claimJournalLock(port, "review", crypto.randomBytes(16).toString("hex"));
     try {
       if (fs.existsSync(statePath(port))) throw new Error("A channel host started during reconciliation");
+      const check = MuseRecoveryOrchestrator.load(port).assess(batchId);
+      if (check.decision !== "manual_reconciliation" && check.decision !== "externally_reviewed") {
+        throw new Error("Batch is not eligible for manual evidence review: " + check.reason);
+      }
       const journal = new MuseBatchJournal(port);
       const reviewed = journal.reconcile(batchId, decision as "effect_verified" | "no_effect_verified", digest);
       console.log("Recorded external evidence review for batch " + reviewed.batchId +
@@ -496,6 +528,8 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Checkpoint reconciliation pending: " + (live.reconciliationPending ?? 0));
     console.log("Encrypted results stored: " + (live.resultOutboxStored ?? 0) +
       " | Muse application ACKs: " + (live.resultAcknowledged ?? 0));
+    console.log("Recovery integrity blocked: " + (live.recoveryIntegrityBlocked ?? 0) +
+      " | manual reconciliation: " + (live.recoveryManualReconciliation ?? 0));
     console.log("Eligible untouched batches: " + (live.resumableUntouchedBatches ?? 0) +
       " | interrupted tool batches: " + (live.interruptedCallBatches ?? 0));
     return false;
@@ -506,5 +540,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint, reconcile or help");
+  throw new Error("Expected channel-host serve, status, checkpoint, recovery, reconcile or help");
 }

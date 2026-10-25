@@ -163,6 +163,12 @@ export class MuseExecutionCheckpoint {
     resumed.workspace = entry.targetWorkspace;
     return resumed;
   }
+  /** Same workspace-boundary check as reserveUntouched, with NO mutation. */
+  isWorkspaceAuthorized(batchId: string, currentWorkspaces: string[]): boolean {
+    const entry = this.batches.get(batchId);
+    return Boolean(entry && currentWorkspaces.some(w =>
+      path.resolve(w).toLowerCase() === path.resolve(entry.targetWorkspace).toLowerCase()));
+  }
   info(batchId: string) {
     const entry = this.batches.get(batchId);
     return entry ? { batchId, taskId: entry.envelope.task_id, total: entry.envelope.calls.length,

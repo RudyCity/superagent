@@ -204,6 +204,20 @@ If ANY tool had already started, even if it finished, failed, or was read-only, 
 
 This implements encrypted command-intent preservation, durable per-call attempt metadata and a narrowly scoped safe one-shot **pre-execution** recovery—not full LLM memory serialization, continuation midway through multi-tool work, live channel-host auto-restoration, uninterrupted streams, exactly-once side effects, or automatic replay of tool outputs. Manual workspace and effect verification still matter. Tested using a simulated process-memory restart, tampered ciphertext, interrupted tool checkpoint, invalid workspace and fail-closed checkpoint write; the isolated core crash/recover smoke remains required.
 
+## Phase 4h: unified recovery policy and safe reconciliation gates
+
+The opt-in independent channel host now uses MuseRecoveryOrchestrator to classify every known batch ID from three private, owner-port-scoped stores: the Phase 4d/4e journal, Phase 4f encrypted result outbox, and Phase 4g encrypted tool execution checkpoint. It is a read-only **decision engine**, not a background recovery daemon and not a serialized LLM state. It checks agreement of task identity and call count, stage versus result presence, receipt hash versus saved result digest, integrity of encrypted stores, and whether any tool has started. Orphaned execution/output artifacts or contradictory states are classified integrity_blocked rather than guessed or replayed.
+
+To inspect after a crash, without starting a watcher or modifying state, use:
+
+    superagent channel-host recovery --port 7892 [--batch-id BATCH_ID]
+
+This offline command does not read active workspace authorization, so untouched batches are classified workspace_unverified, never unconditionally safe. An active host computes workspace-authorized counts from its configured watch list. Decisions are acknowledged, externally_reviewed, manual_result_replay, manual_untouched_resume, workspace_unverified, reservation_spent, manual_reconciliation and integrity_blocked. The CLI exposes only batch/task IDs, counts and reason codes; it does NOT print ciphertext, source tool arguments, command text, workspace paths, secrets, or full LLM prompts. The health endpoint reports aggregate integrity-blocked and manual-reconciliation counts. A corrupt/missing encryption key fails closed on load.
+
+Both existing guarded operator actions now consult this same policy: /muse host replay-result requires manual_result_replay and /muse host resume-untouched requires manual_untouched_resume **plus** their existing authenticated IPC, transport connection, idle checks, original workspace constraints and one-shot durable reservation. Offline --decision evidence reconciliation is restricted to manual_reconciliation or an idempotently externally_reviewed batch. None of these checks bypasses the Phase 4d replay tombstone or permits an uncertain, partially executed tool to run again. A result that was already ACKed cannot be replayed. Phase 4h also wires the encrypted execution checkpoint into the independent Telegram fallback owner (previously missing), and uses exact watcher-registry ownership introduced in Phase 4g.
+
+Acceptance tests: classifier matrix for fresh/partially attempted/reserved/reviewed/ACKed batches, missing outbox, mismatch/orphan/invalid receipt, offline CLI with no plaintext disclosure or write, Phase 4d-4g regression, isolated WebSocket/Telegram tests, build, and owned-process core crash/recovery. No live OAuth/MCP tunnels or remote Muse/Telegram sessions are contacted. Provider-confirmed receipts, automatic external repair, distributed transaction atomicity, active LLM context serialization and zero-downtime provider socket handover remain unimplemented.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.
