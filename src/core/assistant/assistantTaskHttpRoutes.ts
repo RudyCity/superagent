@@ -5,6 +5,7 @@ import { getRootConfigDir } from "../config/paths.js";
 import { AssistantTaskStore } from "./assistantTaskStore.js";
 import { getDetachedTaskRuntime, executeDetachedReadOnlyAgent, type DetachedTaskWorker } from "./assistantTaskRuntime.js";
 import { readDetachedTaskResult } from "./assistantTaskResults.js";
+import { prepareDetachedPatch, readDetachedPatch } from "./assistantTaskPatch.js";
 
 /**
  * Session-bound task drafts and explicit read-only worker controls for T-Line.
@@ -24,11 +25,12 @@ export async function handleAssistantTaskHttpRoute(
     readBody: (request: http.IncomingMessage) => Promise<string>;
     sendJSON: (response: http.ServerResponse, status: number, body: unknown) => void;
     detachedTaskWorker?: DetachedTaskWorker;
+    detachedPatchWorker?: DetachedTaskWorker;
   },
 ): Promise<boolean> {
   if (pathname !== "/api/assistant/tasks" &&
       pathname !== "/api/assistant/tasks/events" &&
-      !/^\/api\/assistant\/tasks\/[a-f\d-]{36}(?:\/(?:cancel|run|result))?$/.test(pathname)) return false;
+      !/^\/api\/assistant\/tasks\/[a-f\d-]{36}(?:\/(?:cancel|run|result|prepare|patch|reconcile))?$/.test(pathname)) return false;
   const { sendJSON } = dependencies;
   const respond = (status: number, data: unknown) => {
     res.setHeader("Cache-Control", "no-store");
@@ -68,7 +70,7 @@ export async function handleAssistantTaskHttpRoute(
       const tasks = await store.list(100);
       const liveTaskIds = runtime.liveIds;
       respond(200, { success: true, sessionId, tasks, executionEnabled: true,
-        executionPolicy: "read-only-explicit-run", liveTaskIds,
+        executionPolicy: "read-only-explicit-run", supportedModes: ["analysis", "patch-preview"], liveTaskIds,
         unverifiedTaskIds: tasks.filter(t => (t.status === "running" || t.status === "planning") &&
           !liveTaskIds.includes(t.taskId)).map(t => t.taskId) });
       return true;
@@ -96,8 +98,17 @@ export async function handleAssistantTaskHttpRoute(
         { error: "No verified result available" } : { success: true, taskId: task.taskId, result });
       return true;
     }
+    if (req.method === "GET" && /^\/[a-f\d-]{36}\/patch$/.test(suffix)) {
+      const task = await store.get(suffix.slice(1, 37));
+      if (!task) { respond(404, { error: "Task not found" }); return true; }
+      const patch = await readDetachedPatch(task);
+      respond(patch === null ? 404 : 200, patch === null ?
+        { error: "No verified patch available" } :
+        { success: true, taskId: task.taskId, patch });
+      return true;
+    }
     if (req.method === "POST" && (suffix === "" ||
-        /^\/[a-f\d-]{36}\/(?:cancel|run)$/.test(suffix))) {
+        /^\/[a-f\d-]{36}\/(?:cancel|run|prepare|reconcile)$/.test(suffix))) {
       const serialized = await dependencies.readBody(req);
       if (Buffer.byteLength(serialized) > 4096) {
         respond(413, { error: "Task request exceeds limit" });
@@ -136,14 +147,32 @@ export async function handleAssistantTaskHttpRoute(
         respond(409, { error: "Task missing or revision conflict" });
         return true;
       }
-      if (suffix.endsWith("/run")) {
+      if (suffix.endsWith("/reconcile")) {
+        if (runtime.liveIds.includes(taskId)) {
+          respond(409, { error: "Task worker still active; cannot reconcile" });
+          return true;
+        }
+        if (current.status !== "planning" && current.status !== "running" &&
+            current.status !== "interrupted") {
+          respond(409, { error: "Only orphaned or interrupted tasks can be reconciled" });
+          return true;
+        }
+        const task = await store.transition({ taskId, expectedRevision: current.revision,
+          status: current.status === "interrupted" ? "reconcile_required" : "interrupted" });
+        respond(200, { success: true, task, replayed: false });
+        return true;
+      }
+      if (suffix.endsWith("/run") || suffix.endsWith("/prepare")) {
         if (current.status !== "queued") {
           respond(409, { error: "Only queued drafts can be started" });
           return true;
         }
-        runtime.start(current, session.workspace, dependencies.detachedTaskWorker ?? executeDetachedReadOnlyAgent);
+        const isPatch = suffix.endsWith("/prepare");
+        runtime.start(current, session.workspace,
+          isPatch ? (dependencies.detachedPatchWorker ?? prepareDetachedPatch) :
+            (dependencies.detachedTaskWorker ?? executeDetachedReadOnlyAgent));
         respond(202, { success: true, taskId, scheduled: true,
-          executionPolicy: "read-only-explicit-run" });
+          executionPolicy: isPatch ? "isolated-patch-preview" : "read-only-explicit-run" });
         return true;
       }
       if (current.status === "queued") {

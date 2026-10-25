@@ -52,9 +52,11 @@ export function getDetachedTaskRuntime(
   };
 }
 
-export async function executeDetachedReadOnlyAgent(
-  task: AssistantTaskRecord, workspace: string, signal: AbortSignal,
-): Promise<string[]> {
+/** Model turn with a strict read-only toolset and deny-by-default approvals.
+ * Returns text only; the caller validates and persists any proposed artifact. */
+export async function generateDetachedReadOnlyText(
+  task: AssistantTaskRecord, workspace: string, signal: AbortSignal, prompt = task.title,
+): Promise<string> {
   // Keep unattended workers within a real local directory, refusing remote
   // workspace targets or symlinks that could redirect read tools unexpectedly.
   if (!path.isAbsolute(workspace) || !fs.existsSync(workspace)) {
@@ -68,8 +70,8 @@ export async function executeDetachedReadOnlyAgent(
       throw new Error("Detached analysis requires a local directory without symlink traversal");
     }
   }
-  const [{ Agent }, { superagentToolset }, { saveDetachedTaskResult }] = await Promise.all([
-    import("../agent.js"), import("../tools/toolsets.js"), import("./assistantTaskResults.js"),
+  const [{ Agent }, { superagentToolset }] = await Promise.all([
+    import("../agent.js"), import("../tools/toolsets.js"),
   ]);
   const allowed = new Set([
     "read", "read_file", "view_file", "view", "glob", "grep", "ripgrep_search",
@@ -104,16 +106,24 @@ export async function executeDetachedReadOnlyAgent(
   signal.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(abort, 5 * 60_000);
   try {
-    await agent.sendMessage(task.title, signal);
+    await agent.sendMessage(prompt, signal);
     if (signal.aborted) throw new Error("Task cancelled");
     if (agent.lastTaskOutcome !== "task_completed") {
       throw new Error("Detached task did not report verified completion");
     }
-    await saveDetachedTaskResult(task, output.trim().slice(0, 32_768));
-    return ["summary_saved"];
+    return output.trim().slice(0, 32_768);
   } finally {
     clearTimeout(timeout);
     signal.removeEventListener("abort", abort);
     agent.dispose();
   }
+}
+
+export async function executeDetachedReadOnlyAgent(
+  task: AssistantTaskRecord, workspace: string, signal: AbortSignal,
+): Promise<string[]> {
+  const result = await generateDetachedReadOnlyText(task, workspace, signal);
+  const { saveDetachedTaskResult } = await import("./assistantTaskResults.js");
+  await saveDetachedTaskResult(task, result);
+  return ["summary_saved"];
 }

@@ -147,6 +147,26 @@ describe("explicit detached read-only task route", () => {
       expect(payload.unverifiedTaskIds).toContain(task.taskId);
       expect(payload.liveTaskIds).not.toContain(task.taskId);
       expect((await store.get(task.taskId))?.status).toBe("planning");
+      const reconcileUrl = new URL("http://localhost/api/assistant/tasks/" + task.taskId +
+        "/reconcile?workspace=" + encodeURIComponent(project) + "&sessionId=" + session);
+      let reconciliation: { status: number; body: any } = { status: 0, body: null };
+      const reconcile = async (expectedRevision: number) => {
+        await handleAssistantTaskHttpRoute({
+          method: "POST", headers: { "x-client-mode": "tline", "x-workspace-path": project },
+        } as any, { setHeader: () => {} } as any, reconcileUrl.pathname, reconcileUrl, {
+          resolveSession: () => ({ sessionId: session, workspace: project, clientMode: "tline" }),
+          readBody: async () => JSON.stringify({ expectedRevision }),
+          sendJSON: (_res, status, body) => { reconciliation = { status, body }; },
+        });
+        return reconciliation;
+      };
+      expect((await reconcile(999)).status).toBe(409);
+      expect((await reconcile(2)).status).toBe(200);
+      expect(reconciliation.body.replayed).toBe(false);
+      expect((await store.get(task.taskId))?.status).toBe("interrupted");
+      expect((await reconcile(3)).status).toBe(200);
+      expect((await store.get(task.taskId))?.status).toBe("reconcile_required");
+      expect((await reconcile(4)).status).toBe(409);
     } finally {
       if (old === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
       else process.env.SUPERAGENT_CONFIG_DIR = old;
