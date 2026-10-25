@@ -273,6 +273,8 @@ Tests cover full source-to-bundle-to-new-owner namespace round trip preserving a
 
 ## Phase 4n follow-up: configure alert provider through commands (no .env required)
 
+For operator-oriented setup and troubleshooting, see the [dedicated Muse recovery alert configuration guide](../guides/muse-recovery-alert-configuration.md).
+
 Configure alert delivery per owner port using the same CLI/T-Line command domain as the independent channel host. The config is stored encrypted (AES-256-GCM), using a separate private local encryption-key file under ~/.superagent-r; both files have restrictive local permissions where supported. The CLI and T-Line status deliberately show only mode, port and whether credentials are configured, never the URL, Telegram chat ID or bot token. The per-port config and local key are included in the verified Phase 4k recovery backup. Protect that backup like all other Muse encryption keys: the local key is NOT an OS hardware-backed secret or protection from a privileged filesystem reader.
 
     superagent channel-host config status --port 7892
