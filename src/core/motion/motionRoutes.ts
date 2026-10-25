@@ -152,13 +152,22 @@ export async function handleMotionHttpRoute(
 
   try {
     if (pathname === "/api/motion" && method === "GET") {
-      json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false, capabilities: { ...MOTION_CAPABILITIES, localVoiceoverConfigured: await localVoiceoverReady() } });
+      const { localStudioTextOcrReady } = await import("./code/videoTextOcrReconstruction.js");
+      json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false,
+        capabilities: { ...MOTION_CAPABILITIES, localVoiceoverConfigured: await localVoiceoverReady(),
+          localTextOcrReady: await localStudioTextOcrReady() } });
     } else if (pathname === "/api/motion/videos" && method === "POST") {
       // Dedicated small-video upload: strictly smaller than generic 50 MB
       // import-video, because reconstruction is intentionally bounded.
       const body = await readMotionJson(req, 17_000_000);
       json(res, ctx, 201, await importMotionVideo(workspace,
         decodeMotionMediaBase64(body.base64, 12 * 1024 * 1024)));
+    } else if (pathname === "/api/motion/reconstruct/text" && method === "POST") {
+      const body = await readMotionJson(req, 1200);
+      if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId))
+        throw new MotionValidationError(["Expected an imported Studio video ID"]);
+      const { reconstructStudioTextVideo } = await import("./code/videoTextOcrReconstruction.js");
+      json(res, ctx, 201, await reconstructStudioTextVideo(workspace, body.videoId));
     } else if (pathname === "/api/motion/reconstruct/multi" && method === "POST") {
       const body = await readMotionJson(req, 1200);
       if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId))

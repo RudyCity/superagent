@@ -41,6 +41,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio import-video --file workspace/path/clip.mp4 [--workspace PATH] [--json]
   superagent studio reconstruct-video VIDEO_ID [--workspace PATH] [--json] (experimental single-vector 2D)
   superagent studio reconstruct-video-multi VIDEO_ID [--workspace PATH] [--json] (experimental 2-4 2D objects)
+  superagent studio reconstruct-video-text VIDEO_ID [--workspace PATH] [--json] (experimental local English OCR)
   superagent studio frame PROJECT_ID --frame N [--workspace PATH] [--json]
   superagent studio render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent studio jobs [--workspace PATH] [--json]
@@ -682,6 +683,12 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       const { reconstructMultiObjectStudioVideo } =
         await import("../motion/code/videoMultiObjectReconstruction.js");
       emit(await reconstructMultiObjectStudioVideo(workspace, projectId), json);
+      return 0;
+    }
+    if (action === "reconstruct-video-text") {
+      const { reconstructStudioTextVideo } =
+        await import("../motion/code/videoTextOcrReconstruction.js");
+      emit(await reconstructStudioTextVideo(workspace, projectId), json);
       return 0;
     }
     if (action === "recovery") {

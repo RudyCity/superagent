@@ -986,6 +986,29 @@ global T-Line/SuperAgent auth and workspace gate, the API routes are
 `GET /api/studio/projects/:id/reconstruction-review.png?revision=N`.
 This remains developer-preview, not an AI vision service.
 
+**Experimental local English OCR → editable Studio TextLayer (P3):**
+
+```bash
+superagent studio import-video --file path/inside/workspace/caption.mp4 --workspace . --json
+superagent studio reconstruct-video-text VIDEO_ID --workspace . --json
+superagent studio export-code NEW_PROJECT_ID --format html --workspace . --json
+```
+
+Requires `tesseract` with English `eng` data on the local OS PATH (not
+bundled with Studio/T-Line). The tool processes an imported, SHA-256-verified
+1–12 s video of stable **English caption lines on a solid background**,
+extracts three samples, and only persists a fresh Studio project if 1–3
+caption lines have high OCR confidence (≥72 per word), identical text across
+samples and stable geometry. It creates editable `text` layers and x/y
+keyframes in a revisioned project. New/disappearing/changed text, low-confidence
+results and inconsistent backgrounds **fail closed**. Text styling, font family,
+typographic metrics and color are only estimates—not visual parity. This is
+local OCR, **not semantic video understanding**. In T-Line's experimental
+Video-to-Code panel select **Editable Text (English OCR)** if an updated
+Studio backend advertises `experimentalTextOcrReconstruction`. HTTP route:
+`POST /api/studio/reconstruct/text` through existing authorization/workspace
+gate. Only English OCR data is currently supported.
+
 **Not yet supported:** general video-to-code reverse engineering, editable
 DOM/SVG reconstruction of arbitrary footage, raster/image/video/audio assets
 in the exported web code, or native per-layer React/Next.js JSX (only a
