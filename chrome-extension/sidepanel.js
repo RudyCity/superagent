@@ -37,17 +37,20 @@ let wasOffline = true;
 // Local fetch wrapper to append API token and active workspace path
 const originalFetch = window.fetch;
 window.fetch = async (url, options = {}) => {
-  options.headers = options.headers || {};
-  options.headers["X-Client-Mode"] = "chrome-extension";
-  if (apiToken) {
-    options.headers["Authorization"] = `Bearer ${apiToken}`;
+  // Never forward privileged backend headers to another origin.
+  const targetUrl = new URL(typeof url === "string" ? url : url.url, window.location.href);
+  if (targetUrl.origin !== new URL(BASE_URL).origin) {
+    return originalFetch(url, options);
   }
+  const headers = new Headers(options.headers || (url instanceof Request ? url.headers : undefined));
+  headers.set("X-Client-Mode", "chrome-extension");
+  if (apiToken) headers.set("Authorization", `Bearer ${apiToken}`);
   const activeWorkspaceText = document.getElementById("active-workspace-text");
   const workspacePath = activeWorkspaceText ? activeWorkspaceText.textContent : "";
   if (workspacePath && workspacePath !== "Not Selected") {
-    options.headers["X-Workspace-Path"] = workspacePath;
+    headers.set("X-Workspace-Path", workspacePath);
   }
-  return originalFetch(url, options);
+  return originalFetch(url, { ...options, headers });
 };
 
 // UI Elements
@@ -861,7 +864,7 @@ function setupSSE() {
 
   const proceedConnect = () => {
     const params = new URLSearchParams();
-    if (apiToken) params.set("token", apiToken);
+    // Authenticated fetch sends the bearer credential in a header, not the URL.
     if (extensionClientId) params.set("clientId", extensionClientId);
     if (extensionWindowId) params.set("windowId", extensionWindowId);
     if (window.extensionProfileName) params.set("profileName", window.extensionProfileName);
@@ -876,7 +879,7 @@ function setupSSE() {
     }
 
     const sseUrl = `${BASE_URL}/api/events?${params.toString()}`;
-    eventSource = new EventSource(sseUrl);
+    eventSource = createAuthorizedEventStream(sseUrl);
 
     eventSource.onmessage = (event) => {
       try {
@@ -1216,7 +1219,7 @@ function handleSSEEvent(data) {
 
   // Handle Browser Control Request
   else if (data.type === "browser_control_required") {
-    executeBrowserControl(data.controlId, data.action, data.target, data.value);
+    executeBrowserControl(data.controlId, data.action, data.target, data.value, data.controlToken);
   }
 }
 

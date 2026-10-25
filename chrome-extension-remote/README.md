@@ -43,5 +43,7 @@ Standalone, lightweight Chrome extension (Manifest V3) for remote controlling Go
 ```
 
 * **WebSocket Port**: `9223` (Default serverless bridge port).
+* **Token Delivery**: Loopback port `9224`; first Chrome-extension origin is paired for the CLI lifetime. Set `SUPERAGENT_REMOTE_EXTENSION_ID` to an extension ID to pin pairing more strictly. Token is cached in Chrome session storage and rotated after bridge restarts.
+* **Privacy**: Console/network monitoring is disabled by default. Enable it explicitly in the popup; monitoring attaches Chrome debugger to the active tab and detaches other tabs.
 * **Manifest Version**: Manifest V3 compliant.
 * **Permissions**: `tabs`, `activeTab`, `scripting`, `storage`, `webNavigation`, `bookmarks`, `history`, `downloads`.

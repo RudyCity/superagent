@@ -1,17 +1,14 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 
 if (!process.versions.bun) throw new Error("Extension syntax validation requires Bun");
 const transpiler = new Bun.Transpiler({ loader: "js", target: "browser" });
-const files = [
-  "chrome-extension/background.js",
-  "chrome-extension/content.js",
-  "chrome-extension/main-world.js",
-  "chrome-extension/sidepanel-browser.js",
-  "chrome-extension/sidepanel-history.js",
-  "chrome-extension/sidepanel-markdown.js",
-  "chrome-extension/sidepanel-monitor.js",
-  "chrome-extension/sidepanel.js",
-];
+const files = (await Promise.all(
+  ["chrome-extension", "chrome-extension-remote"].map(async (directory) =>
+    (await readdir(directory))
+      .filter((file) => file.endsWith(".js"))
+      .map((file) => directory + "/" + file)
+  )
+)).flat().sort();
 
 let failed = false;
 for (const file of files) {

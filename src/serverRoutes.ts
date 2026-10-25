@@ -1,4 +1,5 @@
 import http from "http";
+import crypto from "node:crypto";
 import path from "path";
 import fs from "fs";
 import { URL } from "url";
@@ -129,7 +130,7 @@ export async function handleServerRoute(
     browserInstances: Map<string, any>;
     pendingPermissions: Map<string, { resolve: (approval: boolean | "session") => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
     pendingQuestions: Map<string, { resolve: (answer: any) => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
-    pendingBrowserControls: Map<string, { resolve: (val: string) => void; reject: (err: any) => void }>;
+    pendingBrowserControls: Map<string, { resolve: (val: string) => void; reject: (err: any) => void; controlToken: string }>;
     resolveSession: (req: http.IncomingMessage, sessionId?: string, explicitWorkspace?: string) => any;
     resolveWorkspacePath: (req: http.IncomingMessage) => string | null;
     resolveClientMode: (req: http.IncomingMessage, body?: any, defaultMode?: any) => any;
@@ -247,8 +248,15 @@ export async function handleServerRoute(
       ...(resolvedWorkspace ? { workspace: resolvedWorkspace } : {}),
     });
     res.on("close", () => {
+      clearInterval(keepAliveInterval);
       sseClients.delete(res);
       sseClientContexts.delete(res);
+      const clientId = parsedUrl.searchParams.get("clientId") || "";
+      const windowId = parsedUrl.searchParams.get("windowId") || "";
+      const instanceKey = clientId && windowId ? `${clientId}:${windowId}` : "";
+      if (instanceKey && browserInstances.get(instanceKey)?.res === res) {
+        browserInstances.delete(instanceKey);
+      }
     });
 
     const clientId = parsedUrl.searchParams.get("clientId") || "";
@@ -275,11 +283,6 @@ export async function handleServerRoute(
       try { res.write(": keepalive\n\n"); } catch { clearInterval(keepAliveInterval); }
     }, 15000);
 
-    req.on("close", () => {
-      clearInterval(keepAliveInterval);
-      sseClients.delete(res);
-      if (instanceKey) browserInstances.delete(instanceKey);
-    });
     return true;
   }
 
@@ -1271,9 +1274,21 @@ export async function handleServerRoute(
   if (pathname === "/api/browser/result" && req.method === "POST") {
     const bodyStr = await readBody(req);
     const body = JSON.parse(bodyStr || "{}");
-    const { controlId, result, isError } = body;
+    const { controlId, controlToken, result, isError } = body;
 
     const resolver = pendingBrowserControls.get(controlId);
+    // Every response must carry the random, one-request-only capability
+    // delivered over the selected extension's authenticated SSE stream.
+    const submitted = typeof controlToken === "string" ? Buffer.from(controlToken) : Buffer.alloc(0);
+    const expected = resolver ? Buffer.from(resolver.controlToken) : Buffer.alloc(0);
+    if (resolver && submitted.length !== expected.length) {
+      sendJSON(res, 403, { error: "Browser control capability mismatch" });
+      return true;
+    }
+    if (resolver && !crypto.timingSafeEqual(submitted, expected)) {
+      sendJSON(res, 403, { error: "Browser control capability mismatch" });
+      return true;
+    }
     if (resolver) {
       if (isError) {
         resolver.reject(new Error(result));

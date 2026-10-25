@@ -74,14 +74,15 @@ export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise
     const chromeFlags = [
       `--remote-debugging-port=${port}`,
       `--remote-debugging-address=127.0.0.1`,
-      `--remote-allow-origins=*`,
       `--user-data-dir=${userDataDir}`,
       `--no-first-run`,
       `--no-default-browser-check`,
-      `--auto-select-desktop-capture-source="Entire screen"`,
-      `--use-fake-ui-for-media-stream`,
-      `--enable-usermedia-screen-capturing`,
     ];
+    // Never silently approve screen capture. Unattended capture requires opt-in.
+    if (process.env.SUPERAGENT_UNATTENDED_SCREEN_CAPTURE === "1") {
+      chromeFlags.push('--auto-select-desktop-capture-source="Entire screen"',
+        "--use-fake-ui-for-media-stream", "--enable-usermedia-screen-capturing");
+    }
 
     let chromeExe: string | null = null;
     if (platform === "win32") {

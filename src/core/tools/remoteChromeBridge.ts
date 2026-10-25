@@ -85,7 +85,7 @@ let tokenHttpServer: http.Server | null = null;
 async function ensureTokenHttpServer(port: number = DEFAULT_TOKEN_HTTP_PORT): Promise<string | null> {
   if (tokenHttpServer) return getBridgeToken();
   const token = loadOrCreateBridgeToken();
-  let servedOnce = false;
+  let pairedExtensionOrigin: string | null = null;
 
   await new Promise<void>((resolve) => {
     const srv = http.createServer((req, res) => {
@@ -104,25 +104,25 @@ async function ensureTokenHttpServer(port: number = DEFAULT_TOKEN_HTTP_PORT): Pr
           res.end("not_found");
           return;
         }
-        if (servedOnce) {
-          // Single-use: the token rotates per launch, so we never want
-          // to hand it out twice from the same endpoint.
-          res.writeHead(410, { "Content-Type": "text/plain" });
-          res.end("gone");
+        const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+        const pinnedExtensionId = (process.env.SUPERAGENT_REMOTE_EXTENSION_ID || "").trim();
+        if (!/^chrome-extension:\/\/[a-p]{32}$/.test(origin) ||
+            (pinnedExtensionId && origin !== "chrome-extension://" + pinnedExtensionId) ||
+            (pairedExtensionOrigin !== null && origin !== pairedExtensionOrigin)) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("extension_origin_required");
           return;
         }
-        servedOnce = true;
+        pairedExtensionOrigin = origin;
         res.writeHead(200, {
           "Content-Type": "application/json",
           "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": origin,
+          "Vary": "Origin",
         });
         res.end(JSON.stringify({ token }));
         logBridgeEvent("Token Delivered", `Token handed to extension from ${remote}.`);
-        // Self-destruct after a short delay to minimize exposure window.
-        setTimeout(() => {
-          try { srv.close(); } catch {}
-          if (tokenHttpServer === srv) tokenHttpServer = null;
-        }, 500);
+        // Reconnects from the paired extension are allowed until CLI shutdown.
       } catch (err) {
         try {
           res.writeHead(500, { "Content-Type": "text/plain" });
@@ -310,6 +310,7 @@ export function ensureRemoteChromeBridge(port: number = DEFAULT_REMOTE_WS_PORT):
       const server = new WebSocketServer({
         port,
         host: "127.0.0.1",
+        maxPayload: 16 * 1024 * 1024,
         verifyClient: (info: { origin?: string; req: { headers: http.IncomingHttpHeaders } }) => {
           // Origin gate (legacy defense — kept in addition to the new
           // post-connect handshake below so that browsers that DO send
@@ -540,13 +541,24 @@ async function sendRemoteCommandUnsafe(
   }
   commandCountWindow++;
 
-  let client = getActiveClient();
+  const selectClient = () => {
+    const open = [...connectedClients].filter((candidate) => candidate.readyState === WebSocket.OPEN);
+    if (instanceId) {
+      const matches = open.filter((candidate) => clientMetadataMap.get(candidate)?.profileId === instanceId);
+      return matches.length === 1 ? matches[0] : null;
+    }
+    return open.length === 1 ? open[0] : null;
+  };
+  let client = selectClient();
+  if (!client && connectedClients.size > 1) {
+    throw new Error("Ambiguous Remote Chrome clients; specify an exact bridge client ID.");
+  }
   if (!client) {
     const startTime = Date.now();
     const maxWait = process.env.VITEST ? 500 : 6000;
     while (!client && Date.now() - startTime < maxWait) {
       await new Promise((resolve) => setTimeout(resolve, 250));
-      client = getActiveClient();
+      client = selectClient();
     }
   }
 
@@ -640,6 +652,12 @@ export function stopRemoteChromeBridge(port?: number): Promise<void> {
       try { (tokenHttpServer as any).close(); } catch {}
       tokenHttpServer = null;
     }
+    // Rotate credentials on the next bridge generation; do not retain old
+    // credentials on disk after the bridge has shut down.
+    if (currentBridgeTokenPath) {
+      try { fs.rmSync(currentBridgeTokenPath, { force: true }); } catch {}
+    }
+    currentBridgeToken = null;
 
     if (wss) {
       const server = wss;

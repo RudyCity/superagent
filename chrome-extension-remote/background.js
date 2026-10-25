@@ -9,13 +9,11 @@ const TOKEN_HTTP_URL = `http://127.0.0.1:9224/token`;
 const HANDSHAKE_TYPE = "bridge_handshake_v1";
 const HANDSHAKE_TIMEOUT_MS = 5000;
 
-// Cached per-launch token from the CLI. The CLI serves it once at
-// `http://127.0.0.1:9224/token` (single-use, loopback-only) and writes
+// Cached per-launch token from the CLI. The CLI serves it to a paired
+// extension origin at `http://127.0.0.1:9224/token` and writes
 // it to `~/.superagent-r/bridge.token` for the duration of the launch.
-// We prefer the HTTP endpoint; if it's unavailable (e.g., the CLI is
-// not running yet), we fall back to reading the file via the extension's
-// `chrome.runtime.connectNative` (not implemented in the remote variant)
-// — and finally to cached chrome.storage.local as a last resort.
+// We prefer HTTP; after worker suspension we recover from session-only
+// Chrome storage. No native-messaging or persistent local token fallback.
 let cachedBridgeToken = null;
 let cachedBridgeTokenFetchedAt = 0;
 const BRIDGE_TOKEN_CACHE_TTL_MS = 60_000; // 1 minute
@@ -33,19 +31,20 @@ async function fetchBridgeToken() {
       if (body && typeof body.token === "string" && body.token.length > 0) {
         cachedBridgeToken = body.token;
         cachedBridgeTokenFetchedAt = now;
+        // session storage survives MV3 worker eviction but not a Chrome restart.
+        await chrome.storage.session.set({ bridgeToken: cachedBridgeToken }).catch(() => {});
         return cachedBridgeToken;
       }
     }
   } catch (e) {
     // Expected when the CLI is not running. Fall through.
   }
-  // Last resort: chrome.storage.local (populated by the user via the
-  // popup, see `setBridgeToken` in popup.js).
+  // Recover after MV3 service-worker suspension without persisting a secret to disk.
   try {
-    const stored = await chrome.storage.local.get(["bridgeToken", "bridgeTokenAt"]);
-    if (stored && typeof stored.bridgeToken === "string" && stored.bridgeToken.length > 0) {
+    const stored = await chrome.storage.session.get("bridgeToken");
+    if (typeof stored?.bridgeToken === "string" && stored.bridgeToken.length > 0) {
       cachedBridgeToken = stored.bridgeToken;
-      cachedBridgeTokenFetchedAt = stored.bridgeTokenAt || now;
+      cachedBridgeTokenFetchedAt = now;
       return cachedBridgeToken;
     }
   } catch {}
@@ -59,6 +58,16 @@ const consoleLogsBuffer = [];
 const MAX_CONSOLE_LOGS = 100;
 const networkLogsBuffer = [];
 const MAX_NETWORK_LOGS = 100;
+
+async function getBridgeClientId() {
+  const data = await chrome.storage.local.get("remoteBridgeClientId");
+  if (typeof data?.remoteBridgeClientId === "string" && data.remoteBridgeClientId) {
+    return data.remoteBridgeClientId;
+  }
+  const id = crypto.randomUUID();
+  await chrome.storage.local.set({ remoteBridgeClientId: id });
+  return id;
+}
 
 async function getActiveTab() {
   const [lastFocused] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -190,6 +199,7 @@ function connectWebSocket(force = false) {
                 JSON.stringify({
                   type: "hello",
                   source: "remote",
+                  profileId: await getBridgeClientId(),
                   userAgent: navigator.userAgent,
                   platform: navigator.platform,
                   extensionVersion: chrome.runtime.getManifest().version,
@@ -246,7 +256,12 @@ function connectWebSocket(force = false) {
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      if (event.code === 1008 && event.reason === "bad_token") {
+        cachedBridgeToken = null;
+        cachedBridgeTokenFetchedAt = 0;
+        chrome.storage.session.remove("bridgeToken").catch(() => {});
+      }
       chrome.storage.local.set({ remoteStatus: "disconnected" });
       updateBadge("disconnected");
       scheduleReconnect();
@@ -279,6 +294,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "connect" || msg.action === "reconnect") {
     currentReconnectDelay = 1000;
     connectWebSocket(true);
+    sendResponse({ ok: true });
+  } else if (msg.action === "monitoring_changed") {
+    getActiveTab().then((tab) => attachCDPListeners(tab?.id)).catch(() => {});
     sendResponse({ ok: true });
   }
 });
@@ -1102,7 +1120,7 @@ async function handleAction(action, target, value, instanceId) {
     }
 
     default:
-      return `Action '${action}' executed successfully via Superagent Remote Bridge.`;
+      throw new Error(`Unknown Remote Bridge action: '${action}'.`);
   }
 }
 
@@ -1131,15 +1149,30 @@ try {
   console.warn("onStartup listener setup failed:", e);
 }
 
-// Attach Chrome DevTools Protocol listener for console, exception & network streaming with safe error fallback
+// Debugger access is strictly opt-in and limited to the active tab.
+const monitoredTabIds = new Set();
+async function detachMonitoredTabs(exceptTabId) {
+  for (const tabId of monitoredTabIds) {
+    if (tabId === exceptTabId) continue;
+    monitoredTabIds.delete(tabId);
+    try { await chrome.debugger.detach({ tabId }); } catch {}
+  }
+}
 async function attachCDPListeners(tabId) {
   if (!tabId) return;
+  const { remoteMonitoringEnabled } = await chrome.storage.local.get("remoteMonitoringEnabled");
+  if (remoteMonitoringEnabled !== true) {
+    await detachMonitoredTabs();
+    return;
+  }
+  await detachMonitoredTabs(tabId);
   try {
     const targets = await new Promise((res) => chrome.debugger.getTargets((t) => res(t || [])));
     const target = targets.find((t) => t.tabId === tabId);
     if (target && target.attached) return; // Already attached elsewhere
 
     await chrome.debugger.attach({ tabId }, "1.3");
+    monitoredTabIds.add(tabId);
     if (chrome.runtime.lastError) {
       console.warn("CDP Attach warning:", chrome.runtime.lastError.message);
       return;
@@ -1153,7 +1186,11 @@ async function attachCDPListeners(tabId) {
   }
 }
 
+chrome.debugger.onDetach.addListener((source) => {
+  if (source.tabId) monitoredTabIds.delete(source.tabId);
+});
 chrome.debugger.onEvent.addListener((source, method, params) => {
+  if (!source.tabId || !monitoredTabIds.has(source.tabId)) return;
   if (method === "Console.messageAdded") {
     const { level, text } = params.message;
     logConsoleEvent(level, text, "console");
@@ -1177,6 +1214,7 @@ async function notifyTabState() {
       JSON.stringify({
         type: "tab_state",
         source: "remote",
+        profileId: await getBridgeClientId(),
         tabsCount: tabs.length,
         activeTab: activeTab ? { id: activeTab.id, title: activeTab.title, url: activeTab.url } : null,
       })

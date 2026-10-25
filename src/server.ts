@@ -320,7 +320,11 @@ interface PendingPrompt<T> {
 
 const pendingPermissions = new Map<string, PendingPrompt<boolean | "session">>();
 const pendingQuestions = new Map<string, PendingPrompt<any>>();
-const pendingBrowserControls = new Map<string, { resolve: (val: string) => void, reject: (err: any) => void }>();
+const pendingBrowserControls = new Map<string, {
+  resolve: (val: string) => void;
+  reject: (err: any) => void;
+  controlToken: string;
+}>();
 
 /** Max time to wait for the sidepanel client to answer a browser-control request.
  *  Without this, a dead-but-connected sidepanel would hang the caller forever. */
@@ -328,7 +332,8 @@ const BROWSER_CONTROL_TIMEOUT_MS = 15000;
 
 function executeBrowserControlOnClient(action: string, target: string, value?: string, instanceId?: string): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    const controlId = Math.random().toString(36).substring(2, 9);
+    const controlId = crypto.randomUUID();
+    const controlToken = crypto.randomBytes(32).toString("base64url");
     // Fail-fast: never leave the caller hanging if the sidepanel never answers.
     const timer = setTimeout(() => {
       if (pendingBrowserControls.delete(controlId)) {
@@ -341,46 +346,42 @@ function executeBrowserControlOnClient(action: string, target: string, value?: s
     pendingBrowserControls.set(controlId, {
       resolve: (val: string) => { clearTimeout(timer); resolve(val); },
       reject: (err: any) => { clearTimeout(timer); reject(err); },
+      controlToken,
     });
-    
+
     const event = {
       type: "browser_control_required",
       controlId,
+      controlToken,
       action,
       target,
       value: value ?? ""
     };
 
-    if (instanceId && browserInstances.has(instanceId)) {
-      const inst = browserInstances.get(instanceId)!;
-      try {
-        inst.res.write(`data: ${JSON.stringify(event)}\n\n`);
-        inst.lastActive = Date.now();
-      } catch (err) {
-        browserInstances.delete(instanceId);
-        reject(new Error(`Failed to send event to instance ${instanceId}: ${err}`));
-      }
-    } else {
-      if (browserInstances.size > 0) {
-        let bestInst: BrowserInstance | null = null;
-        let bestKey = "";
-        for (const [key, inst] of browserInstances.entries()) {
-          if (!bestInst || inst.lastActive > bestInst.lastActive) {
-            bestInst = inst;
-            bestKey = key;
-          }
-        }
-        if (bestInst) {
-          try {
-            bestInst.res.write(`data: ${JSON.stringify(event)}\n\n`);
-            bestInst.lastActive = Date.now();
-            return;
-          } catch (err) {
-            browserInstances.delete(bestKey);
-          }
-        }
-      }
-      broadcastEvent(event);
+    // Never broadcast executable browser commands to unrelated sessions or tabs.
+    // Ambiguous multi-client dispatch must fail closed until the caller selects an instance.
+    const live = [...browserInstances.entries()].filter(([, inst]) =>
+      inst.res && !inst.res.destroyed && !inst.res.writableEnded);
+    const match = instanceId
+      ? live.find(([key]) => key === instanceId)
+      : live.length === 1 ? live[0] : undefined;
+    if (!match) {
+      clearTimeout(timer);
+      pendingBrowserControls.delete(controlId);
+      reject(new Error(instanceId
+        ? "Requested Chrome extension instance is not connected."
+        : "Browser control needs exactly one connected extension; select an instance explicitly."));
+      return;
+    }
+    const [key, inst] = match;
+    try {
+      inst.res.write(`data: ${JSON.stringify(event)}\n\n`);
+      inst.lastActive = Date.now();
+    } catch (err) {
+      browserInstances.delete(key);
+      clearTimeout(timer);
+      pendingBrowserControls.delete(controlId);
+      reject(new Error(`Failed to send browser control event: ${err}`));
     }
   });
 }
@@ -408,10 +409,20 @@ function broadcastEvent(event: any) {
     normalizedEvent.event = "sessions_changed";
   }
 
+  const sensitiveTypes = new Set([
+    "agent_event", "permission_required", "question_required",
+    "plan_approval_required", "tool_progress", "browser_control_required",
+    "tline_bridge_sync", "error", "subagents_update", "superagents_update",
+  ]);
+  if (sensitiveTypes.has(normalizedEvent.type) &&
+      !normalizedEvent.sessionId && !normalizedEvent.workspace) {
+    return; // Fail closed: no recipient context for a sensitive stream.
+  }
   const data = `data: ${JSON.stringify(normalizedEvent)}\n\n`;
   
   // Log event to the server debug log file
-  logToSuperAgentServerFile(`[Broadcast Event] ${JSON.stringify(normalizedEvent).slice(0, 1000)}`);
+  // Log metadata only; event payloads can include secret browser capabilities.
+  logToSuperAgentServerFile(`[Broadcast Event] type=${String(normalizedEvent.type || "unknown")} scoped=${Boolean(normalizedEvent.sessionId || normalizedEvent.workspace)}`);
   
   if (process.env.LOG_STREAM_RESPONSE === 'true') {
     if (normalizedEvent?.event?.type === 'text_delta') {
@@ -484,59 +495,68 @@ const onEvent = (event: AgentEvent, agentRef?: Agent) => {
 };
 
 // Subscribe to active tool output streaming and broadcast it to SSE clients
-subscribeToActiveOutput((output) => {
-  broadcastEvent({
-    type: "tool_progress",
-    content: output
-  });
+subscribeToActiveOutput((_output) => {
+  // Legacy process-wide output lacks a session key. Agent-scoped events already
+  // deliver progress; do not leak unscoped tool output to other workspaces.
 });
 
 // Subscribe to subagents/superagents completion notifications to broadcast and/or resume the agent
 subscribeToSubagents(() => {
   const activeList = Array.from(subagentInstances.values());
 
-  // Broadcast subagents_update to SSE clients so frontend receives live logs & state updates
-  broadcastEvent({
-    type: "subagents_update",
-    subagents: activeList.map((inst) => ({
-      id: inst.id,
-      typeName: inst.typeName,
-      role: inst.role,
-      status: inst.status,
-      result: inst.result,
-      logs: inst.logs || [],
-      prompt: inst.prompt,
-      completedAt: inst.completedAt
-    }))
-  });
+  // Subagent results and prompts are private to the owning workspace/session.
+  for (const session of activeSessions.values()) {
+    const owned = activeList.filter((inst) => inst.parentAgent
+      ? inst.parentAgent === session.agent
+      : path.resolve(inst.agent.workingDirectory) === path.resolve(session.workspace));
+    if (!owned.length) continue;
+    broadcastEvent({
+      type: "subagents_update",
+      sessionId: session.sessionId,
+      workspace: session.workspace,
+      subagents: owned.map((inst) => ({
+        id: inst.id,
+        typeName: inst.typeName,
+        role: inst.role,
+        status: inst.status,
+        result: inst.result,
+        logs: inst.logs || [],
+        prompt: inst.prompt,
+        completedAt: inst.completedAt
+      }))
+    });
+  }
 
   activeList.forEach((inst) => {
     if (inst.status === "completed" && inst.result && !(inst as any).notified) {
       (inst as any).notified = true;
       const msg = `🤖 [SUBAGENT NOTIFICATION]: Subagent ${inst.id} (${inst.role || inst.typeName}) has completed!\nReport Summary:\n${inst.result}`;
       
-      broadcastEvent({
-        type: "agent_event",
-        event: {
-          type: "system",
-          content: msg
-        }
-      });
+      // The matching session receives this notification below.
 
       for (const session of activeSessions.values()) {
         const isMatch = inst.parentAgent
           ? session.agent === inst.parentAgent
           : path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory);
-        if (isMatch && !session.agent.isAgentRunning()) {
+        if (!isMatch) continue;
+        broadcastEvent({
+          type: "agent_event",
+          event: { type: "system", content: msg },
+          sessionId: session.sessionId,
+          workspace: session.workspace,
+        });
+        if (!session.agent.isAgentRunning()) {
           broadcastEvent({
             type: "agent_event",
-            event: {
-              type: "text",
-              content: `\n[SYSTEM TRIGGER] ${msg}\n`
-            }
+            event: { type: "text", content: `\n[SYSTEM TRIGGER] ${msg}\n` },
+            sessionId: session.sessionId,
+            workspace: session.workspace,
           });
           session.agent.sendMessage(msg).catch(err => {
-            broadcastEvent({ type: "error", message: err.message || String(err) });
+            broadcastEvent({
+              type: "error", message: err.message || String(err),
+              sessionId: session.sessionId, workspace: session.workspace,
+            });
           });
         }
       }
@@ -551,28 +571,29 @@ subscribeToSuperagents(() => {
       (inst as any).notified = true;
       const msg = `⚡ [SUPERAGENT NOTIFICATION]: Superagent ${inst.id} (${inst.role}) has completed!\nReport Summary:\n${inst.result}`;
       
-      broadcastEvent({
-        type: "agent_event",
-        event: {
-          type: "system",
-          content: msg
-        }
-      });
+      // Scoped delivery takes place in the session loop below.
 
       for (const session of activeSessions.values()) {
         const isMatch = inst.parentAgent
           ? session.agent === inst.parentAgent
           : path.resolve(session.workspace) === path.resolve(inst.agent.workingDirectory);
-        if (isMatch && !session.agent.isAgentRunning()) {
+        if (!isMatch) continue;
+        broadcastEvent({
+          type: "agent_event",
+          event: { type: "system", content: msg },
+          sessionId: session.sessionId, workspace: session.workspace,
+        });
+        if (!session.agent.isAgentRunning()) {
           broadcastEvent({
             type: "agent_event",
-            event: {
-              type: "text",
-              content: `\n[SYSTEM TRIGGER] ${msg}\n`
-            }
+            event: { type: "text", content: `\n[SYSTEM TRIGGER] ${msg}\n` },
+            sessionId: session.sessionId, workspace: session.workspace,
           });
           session.agent.sendMessage(msg).catch(err => {
-            broadcastEvent({ type: "error", message: err.message || String(err) });
+            broadcastEvent({
+              type: "error", message: err.message || String(err),
+              sessionId: session.sessionId, workspace: session.workspace,
+            });
           });
         }
       }
@@ -862,7 +883,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       return;
     }
 
-    logToSuperAgentServerFile(`[Request] ${req.method} ${req.url} (Workspace: ${req.headers["x-workspace-path"] || "none"})`);
+    logToSuperAgentServerFile(`[Request] ${req.method} ${pathname} (workspaceHeader=${Boolean(req.headers["x-workspace-path"])})`);
 
     // Auth gate for the HTTP API (OPTIONS preflight passes through)
     const isApiRoute = pathname === "/api" || pathname.startsWith("/api/");
@@ -988,7 +1009,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       console.log(`🎯 Default Client Mode: ${serverDefaultClientMode}`);
       console.log(`📂 Current Workspace: ${lastActiveWorkspace}`);
       console.log('[SERVER] Auth token saved to protected server-info (redacted).');
-      console.log(`💡 Clients must send this token via "Authorization: Bearer <token>", "x-auth-token" header, or "?token=" query parameter (for SSE).\n`);
+      console.log("💡 API clients should authenticate with Authorization: Bearer or x-auth-token headers. SSE uses authenticated fetch.\n");
     }
   });
 

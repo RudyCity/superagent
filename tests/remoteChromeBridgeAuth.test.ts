@@ -5,7 +5,7 @@
  *  - WS connections that do not present a valid handshake token are closed.
  *  - WS connections that present a wrong token are closed.
  *  - WS connections that present the correct token within the timeout are accepted.
- *  - The token-delivery HTTP endpoint is single-use, loopback-only, and 410s on the second call.
+ *  - The token-delivery HTTP endpoint is paired to one extension origin and supports reconnect.
  *
  * The actual remoteChromeBridge module pulls in browserMacroTools and other
  * browser-automation code. To keep this test isolated and fast, we exercise
@@ -26,7 +26,7 @@ let wss: WebSocketServer;
 let tokenHttp: http.Server;
 let wsPort: number;
 let tokenPort: number;
-let servedOnce = false;
+let pairedOrigin: string | null = null;
 const HANDSHAKE_TYPE = "bridge_handshake_v1";
 const HANDSHAKE_TIMEOUT_MS = 1500;
 
@@ -52,7 +52,7 @@ async function setupBridge() {
   wsPort = ports.wsPort;
   tokenPort = ports.tokenPort;
   bridgeToken = crypto.randomBytes(16).toString("base64url");
-  servedOnce = false;
+  pairedOrigin = null;
 
   // Token-delivery HTTP server (mirrors ensureTokenHttpServer in remoteChromeBridge.ts)
   await new Promise<void>((resolve) => {
@@ -66,12 +66,14 @@ async function setupBridge() {
         res.writeHead(404).end("not_found");
         return;
       }
-      if (servedOnce) {
-        res.writeHead(410).end("gone");
+      const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+      if (!/^chrome-extension:\/\/[a-p]{32}$/.test(origin) ||
+          (pairedOrigin !== null && pairedOrigin !== origin)) {
+        res.writeHead(403).end("extension_origin_required");
         return;
       }
-      servedOnce = true;
-      res.writeHead(200, { "Content-Type": "application/json" });
+      pairedOrigin = origin;
+      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": origin });
       res.end(JSON.stringify({ token: bridgeToken }));
     });
     tokenHttp.listen(tokenPort, "127.0.0.1", () => resolve());
@@ -232,15 +234,23 @@ describe("Remote Chrome Bridge — token auth (v1)", () => {
     expect(result.code).not.toBe(1008);
   });
 
-  it("token HTTP endpoint is single-use (returns 410 on second call)", async () => {
-    const first = await fetch(`http://127.0.0.1:${tokenPort}/token`);
+  it("token HTTP endpoint restricts repeated requests to the paired extension", async () => {
+    const origin = "chrome-extension://" + "a".repeat(32);
+    const first = await fetch(`http://127.0.0.1:${tokenPort}/token`, { headers: { Origin: origin } });
     expect(first.status).toBe(200);
     const body = await first.json();
     expect(typeof body.token).toBe("string");
     expect(body.token.length).toBeGreaterThan(0);
 
-    const second = await fetch(`http://127.0.0.1:${tokenPort}/token`);
-    expect(second.status).toBe(410);
+    const second = await fetch(`http://127.0.0.1:${tokenPort}/token`, { headers: { Origin: origin } });
+    expect(second.status).toBe(200);
+    expect((await second.json() as { token: string }).token).toBe(body.token);
+    const other = await fetch(`http://127.0.0.1:${tokenPort}/token`, {
+      headers: { Origin: "chrome-extension://" + "b".repeat(32) },
+    });
+    expect(other.status).toBe(403);
+    const missing = await fetch(`http://127.0.0.1:${tokenPort}/token`);
+    expect(missing.status).toBe(403);
   });
 
   it("token HTTP endpoint returns 404 for non-/token paths", async () => {

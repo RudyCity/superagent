@@ -96,13 +96,13 @@ export const launchChromeProfileTool: Tool = {
 
     const safeProfile = profileName.replace(/["'\\]/g, "");
     const safeUrl = url ? `"${url.replace(/"/g, '\\"')}"` : "";
-    const shouldFakeMedia = useFakeMediaUi ?? Boolean(remoteDebuggingPort);
+    const shouldFakeMedia = useFakeMediaUi === true;
     const captureSource = autoSelectDesktopCaptureSource ? autoSelectDesktopCaptureSource.replace(/["'\\]/g, "") : "Entire screen";
     const mediaFlags = shouldFakeMedia
       ? ` --auto-select-desktop-capture-source="${captureSource}" --use-fake-ui-for-media-stream --enable-usermedia-screen-capturing`
       : "";
     const debugFlag = remoteDebuggingPort
-      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-debugging-address=127.0.0.1 --remote-allow-origins=*${mediaFlags}`
+      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-debugging-address=127.0.0.1${mediaFlags}`
       : mediaFlags;
 
     const shouldIsolate = isolated ?? Boolean(remoteDebuggingPort);

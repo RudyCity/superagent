@@ -73,6 +73,15 @@ document.addEventListener("DOMContentLoaded", () => {
     chrome.runtime.sendMessage({ action: "connect" });
   });
 
+  const monitorToggle = document.getElementById("remote-monitoring-enabled");
+  chrome.storage.local.get("remoteMonitoringEnabled", (data) => {
+    monitorToggle.checked = data.remoteMonitoringEnabled === true;
+  });
+  monitorToggle.addEventListener("change", async () => {
+    await chrome.storage.local.set({ remoteMonitoringEnabled: monitorToggle.checked });
+    chrome.runtime.sendMessage({ action: "monitoring_changed" });
+  });
+
   pollAdvisorStatus();
   setInterval(pollAdvisorStatus, 3000);
 

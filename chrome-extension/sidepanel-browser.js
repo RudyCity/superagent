@@ -38,7 +38,10 @@ function getActiveTab(callback) {
 }
 
 // Execute browser automation control
-async function executeBrowserControl(controlId, action, target, value) {
+const browserControlTokens = new Map();
+async function executeBrowserControl(controlId, action, target, value, controlToken) {
+  if (typeof controlToken !== "string" || !controlToken) return;
+  browserControlTokens.set(controlId, controlToken);
   getActiveTab(async function (activeTab) {
     if (!activeTab) {
       sendBrowserResult(controlId, "Error: No active tab found.", true);
@@ -1536,6 +1539,7 @@ async function executeBrowserControl(controlId, action, target, value) {
 async function sendBrowserResult(controlId, result, isError) {
   if (activeChains.has(controlId)) {
     const callback = activeChains.get(controlId);
+    browserControlTokens.delete(controlId);
     callback(result, isError);
     return;
   }
@@ -1543,10 +1547,12 @@ async function sendBrowserResult(controlId, result, isError) {
     await fetch(`${BASE_URL}/api/browser/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ controlId, result, isError })
+      body: JSON.stringify({ controlId, controlToken: browserControlTokens.get(controlId), result, isError })
     });
   } catch (err) {
     console.error("Failed to send browser control result", err);
+  } finally {
+    browserControlTokens.delete(controlId);
   }
 }
 
