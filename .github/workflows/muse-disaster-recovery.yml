@@ -10,6 +10,8 @@ on:
       - "tests/muse*.test.ts"
       - "tests/channelHost.test.ts"
       - "docs/guides/muse-disaster-recovery-readiness.md"
+      - "docs/guides/muse-local-staging.md"
+      - "scripts/verify-muse-local-staging.ts"
   pull_request:
     paths:
       - ".github/workflows/muse-disaster-recovery.yml"
@@ -18,6 +20,8 @@ on:
       - "src/core/remoteAgent/muse*.ts"
       - "tests/muse*.test.ts"
       - "tests/channelHost.test.ts"
+      - "scripts/verify-muse-local-staging.ts"
+      - "docs/guides/muse-local-staging.md"
   workflow_dispatch:
 jobs:
   isolated-dr:
@@ -43,5 +47,7 @@ jobs:
         run: bun --bun x vitest run --maxWorkers=2 tests/museProductionReadiness.test.ts tests/museAlertConfigCommand.test.ts tests/museIncidentCenter.test.ts tests/museRecoveryBackup.test.ts tests/museIntegrityEnforcement.test.ts tests/museRecoveryIntegrityMonitor.test.ts tests/channelHost.test.ts
       - name: Execute isolated DR subprocess drill (never targets live hosts)
         run: bun dist/cli.js channel-host dr-drill --port 51671
+      - name: Real local-only staging host, watchdog, backup, restore and offline recovery
+        run: bun scripts/verify-muse-local-staging.ts
       - name: Verify core crash, checkpoint, drain and restart
         run: bun scripts/verify-core-supervisor.ts

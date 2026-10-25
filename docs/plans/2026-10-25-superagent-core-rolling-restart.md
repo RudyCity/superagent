@@ -271,6 +271,10 @@ IMPORTANT: This bundle includes private AES and HMAC keys, so protect access and
 
 Tests cover full source-to-bundle-to-new-owner namespace round trip preserving all replay tombstones and keys, digest tampering, absent archive or signing key, port mismatch, backup symlink/path fencing, registered owner and lock refusal, incomplete-restoration startup fence, simulated mid-copy crash, failed overwrite/rollback into occupied storage, and authenticated CLI end-to-end operations.
 
+## Phase 4o local-only staging acceptance
+
+The `bun scripts/verify-muse-local-staging.ts` harness runs a real independent channel-host process in idle mode on a random loopback port with a fresh HOME/USERPROFILE and SUPERAGENT_CONFIG_DIR under `~/.superagent-local-staging/<run>`. It creates a metadata-only journal without executing tools, explicitly disables provider alerts, authenticates host PID and instance identity, rejects unauthenticated IPC, verifies watchdog online/offline/online transitions and alert deduplication, rejects backup during an active owner, gracefully stops and restarts host, then creates and verifies an offline backup and restores it into a separate empty staging home. It retains a local report and private staging artifacts. No external notification delivery or production channel takeover occurs. The local 22-check gate PASS does not make production readiness PASS; see [local-only staging guide](../guides/muse-local-staging.md). A cross-platform CI job invokes this same script after building.
+
 ## Phase 4o: isolated disaster recovery, alert delivery proof and production release gate
 
 The independent channel-host can now run an opt-in isolated unclean child-process crash drill with durable checkpointing, anti-replay, encrypted intent preservation, backup validation, tamper rejection and safe restore. All test state is stored in an OS temporary directory and never contacts a Muse watcher, Telegram, MCP tunnel, model, or production workspace. Successful tests record only sanitized local per-port drill evidence; this is not a cryptographic external audit.
