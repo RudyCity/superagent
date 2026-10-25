@@ -759,7 +759,44 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core rollback [--port 7888]");
     console.log("superagent core drain [--port 7888]");
     console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
+    console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--stop-on-stdin]  # opt-in owned Core crash recovery");
+    console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
+    return;
+  }
+  if (action === "guard-status") {
+    const { readCoreGuardianLease } = await import("./coreGuardian.js");
+    const lease = readCoreGuardianLease(port);
+    if (!lease) {
+      console.log("Core guardian: NOT REGISTERED. No automatic Core supervisor recovery.");
+      return;
+    }
+    let verified = false;
+    try {
+      const current = await requestCoreSupervisor("status", port, 1200);
+      verified = current.publicPort === port && current.supervisorPid !== lease.pid;
+    } catch {}
+    console.log("Core guardian registration: " + (verified ?
+      "REGISTERED; supervised Core is verified" : "REGISTERED; Core unavailable or unverified") +
+      " | guardian PID " + lease.pid + " | port " + port +
+      " | mode " + lease.clientMode + ". Lease alone is not live-process proof.");
+    return;
+  }
+  if (action === "guard") {
+    const idx = argv.indexOf("--client-mode");
+    const mode = idx < 0 ? "tline" : argv[idx + 1];
+    if (mode !== "tline" && mode !== "chrome-extension") throw new Error("Invalid --client-mode");
+    const { runCoreGuardian } = await import("./coreGuardian.js");
+    const controller = argv.includes("--stop-on-stdin") ? new AbortController() : undefined;
+    if (controller) {
+      process.stdin.setEncoding("utf8");
+      process.stdin.on("data", data => {
+        if (String(data).trim() === "STOP") controller.abort();
+      });
+    }
+    const result = await runCoreGuardian({ port, clientMode: mode, signal: controller?.signal });
+    console.log("Core guardian stopped: " + result.reason + " | checkpoint recoveries: " + result.recoveries);
+    if (result.reason !== "stopped") throw new Error("Core guardian requires operator review: " + result.reason);
     return;
   }
   if (action === "start" || action === "recover") {
@@ -771,6 +808,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

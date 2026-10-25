@@ -1,5 +1,17 @@
 # Opt-in rolling restart for SuperAgent API Core (2026-10-25)
 
+## Phase 5a — opt-in owner-scoped Core Guardian (2026-10-25)
+
+An independent guardian process can start a *new*, unowned API Core supervisor only when both the Core discovery and checkpoint files are absent. It validates that the newly started supervisor PID matches its child and that a fresh durable checkpoint exists. If that same child crashes, and no other authenticated supervisor is online, it may invoke the existing Core recover path. Adoption still requires the original worker PID, generation identity, authenticated private inspection and readiness. The old worker, session affinity, public API bearer and separate T-Line transport remain intact when that worker survives. Crash-related SSE/WS disconnects still require reconnect. The guardian has a strict budget of 3 recoveries in 10 minutes and exponential backoff; it never restarts tools, takes over unsupervised servers or kills MCP/Muse/Telegram/tunnels.
+
+    superagent core guard --port 7888 [--client-mode tline|chrome-extension]
+    superagent core guard-status --port 7888
+    superagent core guard --port 7888 --stop-on-stdin
+
+Stdin STOP provides an explicit guardian-only shutdown that leaves Core/transport alive. The lease is an exclusive, operator-owned metadata file, not authenticated heartbeat, and cannot be force-adopted. An already existing Core checkpoint is intentionally incompatible with fresh guard startup. The operator must inspect old ownership and use manual Core recovery if required. Auto-relaunch guardian itself on OS restart, distributed failover, in-flight worker agent migration and full TCP stream continuity are NOT implemented.
+
+Verification: build, core guardian Vitest suite, real Windows staging script with 21 validations (private profile, random loopback Core and T-Line front door, hard-kill only the verified test-owned supervisor, restore old session, guard clean shutdown) and pre-existing core supervisor acceptance. GitHub Actions workflow is configured for Ubuntu/Windows but remote status is not yet confirmed. See [Core Guardian runbook](../guides/core-guardian-recovery.md).
+
 ## Supported implementation (phase 1)
 
 The dedicated API supervisor owns the stable public loopback REST/SSE/WebSocket port. Child core workers run on separate private loopback ports. On restart, a new worker first passes an authenticated HTTP readiness probe, then starts receiving new requests. Old workers are retained, so open SSE/WebSocket connections and subprocesses are not deliberately terminated.
