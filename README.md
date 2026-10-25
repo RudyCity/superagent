@@ -947,6 +947,10 @@ superagent studio reconstruct-video-multi VIDEO_ID --workspace . --json
 superagent studio export-code NEW_PROJECT_ID --format react --workspace . --json
 ```
 
+Optional local Chrome/FFmpeg/Pillow/Playwright smoke test:
+`python scripts/studio_video_multi_browser_smoke.py --json`.
+
+
 For **2–4 separated bright shapes on a stable dark background**, Studio
 samples three frames, separates foreground components, matches each object
 across frames and saves editable SVG layers with independent x/y keyframes.

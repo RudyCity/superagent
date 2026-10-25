@@ -23,7 +23,7 @@
 - SuperAgent compile `bun run build` passed.
 - Full Studio/Motion regression: **337/337 tests, 66 suites passed**. New tests cover component separation and assignment, two-layer end-to-end MP4, frame property alignment, fidelity PNG, disappearing-object fail closed without creating project, invalid/missing IDs, HTTP upload/route/private image validation.
 - T-Line frontend build passed. Full Studio suite **132/132 tests, 27 suites passed**, including authenticated API client tests and 3 interactive panel tests.
-- Real end-to-end CLI with an isolated generated 3-second MP4 followed by Chrome/Playwright offline HTML: **2 separate SVG shapes**, no network requests or browser JavaScript errors, timeline scrubbed to 1.5s/3.0s. Sampled foreground IoU `[0.9247, 0.9247, 0.9247]` on the synthetic two-rectangle fixture.
+- Reproducible developer QA: `python scripts/studio_video_multi_browser_smoke.py --json` generates a synthetic MP4 in a temporary workspace, runs real CLI imports/reconstruction/HTML export, opens the result in offline Chrome and destroys the workspace afterward. Latest rerun: **2 distinct SVG shapes**, timeline scrubbed to 1.5s/3.0s, no network requests or JS errors, sample foreground IoU `[0.9224, 0.9224, 0.9224]`, comparison PNG **640×568** pixels.
 - HTTP integration: invalid media rejected, valid upload -> new project -> private PNG GET/HEAD -> revision check passed.
 
 ## Not yet implemented or validated
