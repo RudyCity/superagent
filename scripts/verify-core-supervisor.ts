@@ -82,6 +82,11 @@ const owner = spawn(process.execPath, [path.join(root, "src", "cli.tsx"), "core"
 owner.once("error", () => {});
 const ownedPids = new Set<number>();
 let recoveryOwner: ReturnType<typeof spawn> | undefined;
+let transportOwner: ReturnType<typeof spawn> | undefined;
+const transportPort = await freePort();
+if (transportPort === publicPort || transportPort === 7888) {
+  throw new Error("Transport acceptance port must be separate from core and production");
+}
 const discoveryFile = path.join(os.homedir(), ".superagent-r", "core-supervisor-" + publicPort + ".json");
 const infoFile = path.join(os.homedir(), ".superagent-r", "server-info-" + publicPort + ".json");
 const checkpointFile = coreCheckpointPath(publicPort);
@@ -99,6 +104,28 @@ try {
   ownedPids.add(initial.active.pid);
 
   const initialToken = JSON.parse(fs.readFileSync(infoFile, "utf8")).authToken as string;
+  transportOwner = spawn(process.execPath, [
+    path.join(root, "src", "cli.tsx"), "transport", "start",
+    "--port", String(transportPort), "--core-port", String(publicPort),
+  ], { cwd: root, stdio: "ignore", windowsHide: true });
+  transportOwner.once("error", () => {});
+  let transportReady = false;
+  for (let i = 0; i < 70; i++) {
+    try {
+      const response = await fetch("http://127.0.0.1:" + transportPort + "/_transport/health", {
+        signal: AbortSignal.timeout(1000),
+      });
+      const health = await response.json() as { service: string; corePort: number; backendReady: boolean };
+      if (health.service === "superagent-transport-host" &&
+          health.corePort === publicPort && health.backendReady) {
+        transportReady = true;
+        break;
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  if (!transportReady) throw new Error("Independent transport host did not become healthy");
+  if (await status(transportPort, initialToken) !== 200) throw new Error("T-Line transport proxy authorization failed");
   if (await status(publicPort, initialToken) !== 200) throw new Error("Front-door proxy auth/status failed");
   if (await status(publicPort, initialToken, "/_core/internal/drain") !== 404) {
     throw new Error("Internal drain endpoint escaped onto public API port");
@@ -229,6 +256,14 @@ try {
   }
   killOwned(owner.pid ?? 0);
   await new Promise(resolve => setTimeout(resolve, 350));
+  const hostDuringOutage = await fetch("http://127.0.0.1:" + transportPort + "/_transport/health");
+  const hostHealth = await hostDuringOutage.json() as { service: string; backendReady: boolean };
+  if (hostHealth.service !== "superagent-transport-host" || hostHealth.backendReady) {
+    throw new Error("Transport host should stay online independently while the core supervisor is down");
+  }
+  if (await status(transportPort, initialToken) !== 503) {
+    throw new Error("Transport host should signal unavailable upstream while supervisor is down");
+  }
   const workerStillOnline = await status(persisted.workers.find(w => w.pid === persisted.activePid)!.port, initialToken)
     .catch(() => -1);
   let recoveryLog = "";
@@ -254,11 +289,14 @@ try {
     throw new Error("Core recovery did not verify/rebind previous worker; worker status=" +
       workerStillOnline + "; exit=" + recoveryOwner?.exitCode + "; output=" + recoveryLog.slice(-3000));
   }
+  if (await status(transportPort, initialToken) !== 200) {
+    throw new Error("Transport host failed to reconnect to recovered core listener");
+  }
   if (JSON.parse(fs.readFileSync(infoFile, "utf8")).authToken !== initialToken) {
     throw new Error("Recovery unexpectedly rotated the authenticated public token");
   }
   for (const id of [oldId, newId]) {
-    const restored = await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + id);
+    const restored = await jsonApi(transportPort, initialToken, "GET", "/api/status?sessionId=" + id);
     if (restored.status !== 200 || restored.data.sessionId !== id) {
       throw new Error("Recovery lost a pre-crash session owner: " + id);
     }
@@ -288,8 +326,9 @@ try {
   if (adoptedDrain.lastDrain?.retiredPids.length) {
     throw new Error("Recovered supervisor should not signal adopted worker processes");
   }
-  console.log("PASS isolated core: handover, guarded drain, hard supervisor crash, nonce-verified recovery + restart");
+  console.log("PASS isolated core + independent T-Line transport: handover, guarded drain, hard supervisor crash, recovery + restart");
 } finally {
+  killOwned(transportOwner?.pid ?? 0);
   killOwned(recoveryOwner?.pid ?? 0);
   killOwned(owner.pid ?? 0);
   for (const pid of ownedPids) killOwned(pid);

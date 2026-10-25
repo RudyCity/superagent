@@ -76,6 +76,18 @@ if (process.argv[2] === "memory") {
   process.exit(exitCode);
 }
 
+if (process.argv[2] === "transport") {
+  try {
+    const { handleTransportCliCommand } = await import("./core/runtime/transportHost.js");
+    const running = await handleTransportCliCommand(process.argv.slice(3));
+    if (running) await new Promise(() => {});
+    process.exit(0);
+  } catch (error) {
+    console.error("[Transport] " + String(error));
+    process.exit(1);
+  }
+}
+
 if (process.argv[2] === "core") {
   try {
     const { handleCoreCliCommand } = await import("./core/runtime/coreSupervisor.js");
@@ -235,6 +247,7 @@ Commands:
   memory            Review RMemory retention (sweep [--apply])
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   core              Manage supervised API core (start, recover, status, restart, rollback, drain)
+  transport         Run independent loopback T-Line transport host (start, status)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
   tunnel            Manage Cloudflare quick tunnels (list, start [--https], stop, status)

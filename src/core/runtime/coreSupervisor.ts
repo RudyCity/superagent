@@ -121,7 +121,9 @@ async function ready(port: number, child: ChildProcess, bearer: string): Promise
   throw new Error("New core worker did not pass HTTP readiness within 15 seconds");
 }
 
-export async function requestCoreSupervisor(action: "status" | "restart" | "rollback" | "drain", port = 7888): Promise<CoreRuntimeStatus> {
+export async function requestCoreSupervisor(
+  action: "status" | "restart" | "rollback" | "drain", port = 7888, timeoutMs = 30000,
+): Promise<CoreRuntimeStatus> {
   let info: SupervisorDiscovery;
   try { info = readDiscovery(port); }
   catch { throw new Error("No supervised core is registered on port " + port + ". Start: superagent core start --port " + port); }
@@ -129,7 +131,7 @@ export async function requestCoreSupervisor(action: "status" | "restart" | "roll
     const req = http.request({
       host: "127.0.0.1", port: info.controlPort, method: action === "status" ? "GET" : "POST",
       path: "/" + action,
-      timeout: 30000,
+      timeout: timeoutMs,
       headers: { Authorization: "Bearer " + info.controlToken },
     }, res => {
       let body = "";

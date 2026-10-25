@@ -18,6 +18,7 @@ export const coreRuntimeCommand: SlashCommand = {
           "/core drain [--port 7888]",
           "Start supervisor separately: superagent core start --port 7888",
           "If its process crashes: superagent core recover --port 7888",
+          "Separate opt-in T-Line front door: superagent transport start --port 7891 --core-port 7888",
           "Unsupervised CLI/server instances cannot be rolled automatically.",
           "Previous workers are retained; MCP, Muse, Telegram and jobs are not stopped.",
         ].join("\n"),

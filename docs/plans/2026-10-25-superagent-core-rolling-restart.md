@@ -87,6 +87,30 @@ Limits: The public TCP listener is down until the supervisor is recovered, and o
 
 Validation: bun run build; bun --bun x vitest run tests/coreSupervisorCheckpoint.test.ts tests/coreDrainInspection.test.ts tests/coreGenerationPolicy.test.ts tests/coreSessionRouting.test.ts tests/coreSupervisor.test.ts; bun scripts/verify-core-supervisor.ts.
 
+## Phase 4a: independent T-Line transport front door (opt-in)
+
+A separate Bun process can own a stable loopback REST/SSE/WebSocket listener independently of the supervised API core. This affects the opt-in T-Line frontend only. It does NOT adopt MCP, Muse, Telegram, cloudflared or connected external services. Existing MCP tunnel servers already have their own processes.
+
+To enable on unoccupied ports in separate terminals:
+- bun src/cli.tsx core start --port 7888
+- bun src/cli.tsx transport start --port 7891 --core-port 7888
+- bun src/cli.tsx transport status --port 7891
+
+Point T-Line to http://127.0.0.1:7891 instead of port 7888 when opting in. API bearer authorization remains enforced by the core API. Core restart/rollback still address backend port 7888, not frontend port 7891.
+
+Before forwarding credentials or upgraded sockets, the transport host verifies the authenticated supervisor control endpoint. If the backend is missing or occupied by an unknown process, forwarding fails closed with HTTP 503. REST request/response bodies and SSE events are streamed, and raw WebSocket upgrades are proxied. Private /_core/ and /_transport/ routes are blocked except read-only GET /_transport/health which shows frontend status, backend readiness, and open request/socket counters without bearer secrets.
+
+When the API supervisor crashes, the separate transport PID and listener remain up, but backend requests receive HTTP 503. Explicit core recover can restore the supervised backend behind the SAME T-Line listener. New client requests then succeed, and previously initialized sessions stay pinned to original workers via recovered affinity mappings.
+
+Limits: existing SSE/WebSocket TCP streams still depend on their upstream supervisor connection; those streams break on supervisor crash and must reconnect using sessionId. This host does not automatically restart the supervisor, resume agent objects, own MCP OAuth sessions, run Muse/Telegram watchers or manage cloudflared. Host and supervisor are separate long-running processes; an external Windows Service/systemd-style manager is still needed for unattended process restarts. Both listeners bind loopback only. Production deployments must ensure port access and credentials are protected.
+
+Verification:
+- bun run build
+- bun --bun x vitest run tests/transportHost.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreDrainInspection.test.ts tests/coreGenerationPolicy.test.ts tests/coreSessionRouting.test.ts tests/coreSupervisor.test.ts
+- bun scripts/verify-core-supervisor.ts
+
+Unit coverage includes REST, SSE, WebSocket upgrade handshake, backend outage, private route shielding and safe rejection of unverifiable upstreams. The isolated end-to-end scenario launches an independent transport host process, crashes only its own test supervisor, then recovers the backend while the transport PID persists. No live MCP tunnel is altered.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.
