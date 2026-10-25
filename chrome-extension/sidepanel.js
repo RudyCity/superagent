@@ -609,7 +609,8 @@ async function checkServerStatus() {
           stateChanged = true;
         }
 
-        if (data.workspace && activeWorkspaceText.textContent !== data.workspace) {
+        if (data.workspace && activeWorkspaceText.textContent !== data.workspace &&
+            !window.currentSessionId) {
           activeWorkspaceText.textContent = data.workspace;
           activeWorkspaceText.title = data.workspace;
           stateChanged = true;
@@ -885,8 +886,9 @@ function setupSSE() {
     const sseUrl = `${BASE_URL}/api/events?${params.toString()}`;
     eventSource = createAuthorizedEventStream(sseUrl);
 
-    eventSource.onopen = () => {
-      // Reconcile progress after a dropped connection or core hot-restart.
+    eventSource.onopen = (connection) => {
+      // Reconcile only after a dropped connection or core hot-restart.
+      if (!connection?.reconnected) return;
       const selectedSessionId = window.currentSessionId;
       void checkServerStatus().then(async () => {
         if (selectedSessionId !== window.currentSessionId) return;
@@ -953,6 +955,25 @@ function handleSSEEvent(data) {
   }
   const currentWsPath = activeWorkspaceText ? activeWorkspaceText.textContent : "";
   if (data.workspace && currentWsPath && currentWsPath !== "Not Selected" && data.workspace.toLowerCase() !== currentWsPath.toLowerCase()) {
+    return;
+  }
+  if (data.type === "chat_replay_gap") {
+    void loadChatHistory(window.currentSessionId);
+    void checkServerStatus();
+    return;
+  }
+  if (data.type === "chat_turn_status") {
+    if (data.turnId === window.currentTurnId) {
+      if (data.state === "queued") showSpinner("Queued...");
+      else if (data.state === "running") showSpinner("Thinking...");
+      else if (["completed", "failed", "cancelled", "interrupted"].includes(data.state)) {
+        window.isWaitingForAgentStart = false;
+        hideSpinner();
+        if (data.state !== "completed") {
+          appendMessage("system", "Chat turn: " + data.state);
+        }
+      }
+    }
     return;
   }
   if (data.type === "agent_event") {

@@ -348,6 +348,8 @@ function displayHelpInfo() {
 Available Slash Commands:
 - /help: Show this help guide.
 - /clear: Start a fresh session.
+- /turns: View durable chat turn statuses for this session.
+- /recover: Resume queued chat turns preserved after a core restart.
 - /settings: Open configuration settings modal.
 - /terminal <preset>: Execute terminal preset.
 - /goal <objective>: Launch goal agent.
@@ -420,6 +422,37 @@ window.sendChatMessage = async function() {
       renderAttachmentPreviews();
       activeInputTags = [];
       renderInputTags();
+      return;
+    }
+    if (text === "/recover") {
+      window.isWaitingForAgentStart = false;
+      hideSpinner();
+      try {
+        const res = await fetch(`${BASE_URL}/api/chat/turns/recover`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        });
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(result.error || "Cannot recover chat queue");
+        appendMessage("system", `Recovered ${result.resumed || 0} queued chat turn(s) for this session.`);
+      } catch (error) {
+        appendMessage("system", "Recovery failed: " + (error.message || String(error)));
+      }
+      return;
+    }
+    if (text === "/turns") {
+      window.isWaitingForAgentStart = false;
+      hideSpinner();
+      try {
+        const res = await fetch(`${BASE_URL}/api/chat/turns?sessionId=${encodeURIComponent(sessionId)}`);
+        const result = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(result.error || "Cannot load turn status");
+        const overview = (result.metrics || []).map(m => `${m.state}: ${m.count}`).join(", ");
+        appendMessage("system", "Chat turns — " + (overview || "no tracked turns"));
+      } catch (error) {
+        appendMessage("system", "Turn status failed: " + (error.message || String(error)));
+      }
       return;
     }
     if (text === "/settings") {
@@ -499,6 +532,7 @@ window.sendChatMessage = async function() {
   const clientMessageId = previousAttempt?.sessionId === sessionId &&
     previousAttempt?.serializedPayload === serializedPayload
     ? previousAttempt.clientMessageId : crypto.randomUUID();
+  window.currentTurnId = clientMessageId;
   window.chatSubmitPending = true;
 
   if (typeof window.lockCurrentTab === "function") {
@@ -514,6 +548,9 @@ window.sendChatMessage = async function() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Prompt rejected by backend.");
+    if (window.currentSessionId === sessionId) {
+      window.currentTurnId = data.turnId || clientMessageId;
+    }
     window.chatRetryContext = null;
     // Only discard the submitted draft after the backend acknowledges receipt.
     if (window.currentSessionId === sessionId) {
@@ -524,6 +561,7 @@ window.sendChatMessage = async function() {
     }
   } catch (err) {
     window.chatRetryContext = { sessionId, serializedPayload, clientMessageId };
+    if (window.currentTurnId === clientMessageId) window.currentTurnId = null;
     optimisticUserMessage?.remove();
     if (window.currentSessionId === sessionId) {
       chatInput.value = chatInput.value ? text + "\n" + chatInput.value : text;

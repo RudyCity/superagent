@@ -6,6 +6,7 @@ function createAuthorizedEventStream(url) {
   let retryTimer = null;
   let retryDelay = 1000;
   let lastEventId = null;
+  let hasConnected = false;
   const stream = {
     onmessage: null,
     onerror: null,
@@ -34,7 +35,10 @@ function createAuthorizedEventStream(url) {
         throw new Error("Event stream unavailable (HTTP " + response.status + ")");
       }
       retryDelay = 1000;
-      if (!closed && typeof stream.onopen === "function") stream.onopen();
+      if (!closed && typeof stream.onopen === "function") {
+        stream.onopen({ reconnected: hasConnected });
+      }
+      hasConnected = true;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";

@@ -1,0 +1,78 @@
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("../src/core/storage/historyDb.js", async () => {
+  const { Database } = await import("bun:sqlite");
+  const database = new Database(":memory:");
+  return { getHistoryDb: () => database };
+});
+const ledger = await import("../src/core/utils/chatRuntimeLedger.js");
+
+const processor = await import("../src/core/utils/chatRuntimeProcessor.js");
+
+describe("durable chat turns: SQLite ledger", () => {
+  it("processes a session's turn to completion and emits an owned final status", async () => {
+    const emitted: any[] = [];
+    const session: any = {
+      sessionId: "worker-chat", workspace: "/tmp/worker",
+      agent: {
+        lastTaskOutcome: null, isAgentRunning: () => false,
+        async sendMessage(_prompt: string) {
+          session.agent.lastTaskOutcome = "task_completed";
+        },
+      },
+    };
+    ledger.acceptChatTurn({
+      turnId: "worker-turn", sessionId: session.sessionId, workspace: session.workspace,
+      clientMode: "chrome-extension", message: "run once",
+    });
+    processor.startSessionTurnWorker(session, event => emitted.push(event));
+    await vi.waitFor(() => expect(ledger.getChatTurn("worker-turn")?.state).toBe("completed"));
+    expect(emitted.some(event => event.type === "chat_turn_status" &&
+      event.sessionId === session.sessionId && event.state === "completed")).toBe(true);
+  });
+  it("accepts a turn atomically and deduplicates across callers", () => {
+    const args = { turnId: "turn-uuid-a", sessionId: "chat-a", workspace: "D:/projects/a",
+      clientMode: "chrome-extension", message: "create a report" };
+    const first = ledger.acceptChatTurn(args);
+    expect(first.duplicate).toBe(false);
+    expect(first.turn.state).toBe("accepted");
+    const again = ledger.acceptChatTurn(args);
+    expect(again.duplicate).toBe(true);
+    expect(again.turn.turnId).toBe(args.turnId);
+    expect(() => ledger.acceptChatTurn({ ...args, message: "delete everything" })).toThrow(/conflict/);
+    expect(() => ledger.acceptChatTurn({ ...args, sessionId: "chat-b" })).toThrow(/conflict/);
+    expect(ledger.getChatTurn(args.turnId)?.message).toBe(args.message);
+  });
+  it("moves turns through running/finished and never overwrites terminal states", () => {
+    ledger.acceptChatTurn({ turnId: "turn-b", sessionId: "chat-a", workspace: "D:/projects/a",
+      clientMode: "chrome-extension", message: "two" });
+    expect(ledger.changeChatTurnState("turn-b", "running")).toBe(true);
+    expect(ledger.changeChatTurnState("turn-b", "completed")).toBe(true);
+    expect(ledger.changeChatTurnState("turn-b", "failed")).toBe(false);
+    expect(ledger.getChatTurn("turn-b")?.state).toBe("completed");
+  });
+  it("marks uncertain work interrupted, keeps unstarted queued work for explicit recovery", () => {
+    ledger.acceptChatTurn({ turnId: "turn-running", sessionId: "chat-c", workspace: "/tmp/c",
+      clientMode: "chrome-extension", message: "first" });
+    ledger.changeChatTurnState("turn-running", "running");
+    ledger.acceptChatTurn({ turnId: "turn-queued", sessionId: "chat-c", workspace: "/tmp/c",
+      clientMode: "chrome-extension", message: "second" });
+    ledger.recoverInterruptedChatTurns();
+    expect(ledger.getChatTurn("turn-running")?.state).toBe("interrupted");
+    expect(ledger.getChatTurn("turn-queued")?.state).toBe("recoverable");
+    expect(ledger.resumeRecoverableChatTurns("chat-c")).toBe(1);
+    expect(ledger.getChatTurn("turn-queued")?.state).toBe("queued");
+    expect(ledger.cancelChatSessionTurns("chat-c")).toBe(1);
+  });
+  it("persists journal IDs and scopes replay to the exact session", () => {
+    const a = ledger.appendChatEvent("chat-a", '{"type":"text","text":"alpha"}')!;
+    ledger.appendChatEvent("chat-b", '{"type":"text","text":"secret"}');
+    const c = ledger.appendChatEvent("chat-a", '{"type":"done"}')!;
+    expect(c).toBeGreaterThan(a);
+    const replay = ledger.replayChatEvents("chat-a", String(a));
+    expect(replay.events).toHaveLength(1);
+    expect(replay.events[0]).toContain("done");
+    expect(replay.events[0]).not.toContain("secret");
+    expect(ledger.replayChatEvents("chat-b", String(a)).events[0]).toContain("secret");
+  });
+});

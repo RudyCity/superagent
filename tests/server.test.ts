@@ -486,6 +486,38 @@ describe("GET /api/history (with active session)", () => {
 // POST /api/chat
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("POST /api/chat", () => {
+  it("exposes durable, session-scoped turn status without leaking prompt contents", async () => {
+    const sessionInit = await postJSON(port, "/api/init", {
+      workspace: testWorkspace, mode: "single",
+    });
+    expect(sessionInit.status).toBe(200);
+    const sessionId = sessionInit.body.sessionId;
+    const token = "dedupe-ledger-tests-0001";
+    const submit = await postJSON(port, "/api/chat", {
+      sessionId, clientMessageId: token, message: "private test prompt",
+    }, { "x-workspace-path": testWorkspace });
+    expect(submit.status).toBe(200);
+    expect(submit.body.turnId).toBe(token);
+    const read = await fetch(apiUrl(port, `/api/chat/turns?sessionId=${encodeURIComponent(sessionId)}`), {
+      headers: { ...authHeaders(), "x-workspace-path": testWorkspace },
+    });
+    expect(read.status).toBe(200);
+    const payload = await read.json() as any;
+    expect(payload.turns.some((t: any) => t.turnId === token)).toBe(true);
+    expect(payload.turns.find((t: any) => t.turnId === token)?.state).toMatch(
+      /^(accepted|queued|running|completed|failed|cancelled|interrupted)$/
+    );
+    expect(JSON.stringify(payload)).not.toContain("private test prompt");
+    const wrongWorkspace = await fetch(apiUrl(port, `/api/chat/turns?sessionId=${sessionId}`), {
+      headers: { ...authHeaders(), "x-workspace-path": path.join(os.tmpdir(), "foreign-ws") },
+    });
+    expect([400, 403]).toContain(wrongWorkspace.status);
+    const recovered = await postJSON(port, "/api/chat/turns/recover", { sessionId }, {
+      "x-workspace-path": testWorkspace,
+    });
+    expect(recovered.status).toBe(200);
+    expect(typeof recovered.body.resumed).toBe("number");
+  });
   it("requires explicit session identity for extension chat and abort", async () => {
     const headers = { "x-client-mode": "chrome-extension", "x-workspace-path": testWorkspace };
     const chat = await postJSON(port, "/api/chat", { message: "hello" }, headers);

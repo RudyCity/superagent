@@ -58,6 +58,8 @@ async function renderWorkspaceListOnly() {
 
 async function switchToWorkspace(workspacePath, mode) {
   if (!workspacePath) return;
+  const navigation = (window.chatSessionNavigationGeneration || 0) + 1;
+  window.chatSessionNavigationGeneration = navigation;
   try {
     const res = await fetch(`${BASE_URL}/api/switch-workspace`, {
       method: "POST",
@@ -65,7 +67,7 @@ async function switchToWorkspace(workspacePath, mode) {
       body: JSON.stringify({ workspace: workspacePath, mode })
     });
     const data = await res.json();
-
+    if (navigation !== window.chatSessionNavigationGeneration) return;
     if (data.success) {
       if (data.sessionId) {
         window.currentSessionId = data.sessionId;
@@ -85,6 +87,7 @@ async function switchToWorkspace(workspacePath, mode) {
 
       await saveWorkspace(data.workspace);
       await renderWorkspaceListOnly();
+      if (navigation !== window.chatSessionNavigationGeneration) return;
 
       clearChatMessages();
       await loadChatHistory(data.sessionId);

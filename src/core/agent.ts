@@ -135,6 +135,7 @@ export class Agent {
   private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;
   private isRunning = false;
+  public lastTaskOutcome: "task_completed" | "task_incomplete" | "task_failed" | "task_aborted" | null = null;
   private preparingMessage = false;
   private abortGeneration = 0;
   private readonly maxPendingMessages = 32;
@@ -618,10 +619,24 @@ export class Agent {
     let proceed: boolean;
     try {
       proceed = await RequestProcessor.processRequest(this, userInput);
+    } catch (error) {
+      // A classifier/preprocessing exception must not strand subsequent input.
+      if (generation === this.abortGeneration && this.pendingMessagesQueue.length) {
+        const next = this.pendingMessagesQueue.shift()!;
+        queueMicrotask(() => { void this.sendMessage(next).catch(() => {}); });
+      }
+      throw error;
     } finally {
       this.preparingMessage = false;
     }
-    if (generation !== this.abortGeneration) return;
+    if (generation !== this.abortGeneration) {
+      // Stop may arrive during classifier/preprocessing, before the model loop
+      // exists. The UI still requires an explicit terminal lifecycle event.
+      this.lastTaskOutcome = "task_aborted";
+      this.onEvent({ type: "text", content: "\n\n[Interrupted]" });
+      this.onEvent({ type: "done" });
+      return;
+    }
     if (externalSignal?.aborted) throw createAbortError("Agent operation aborted by caller.");
     if (!proceed) {
       const next = this.pendingMessagesQueue.shift();
@@ -636,6 +651,7 @@ export class Agent {
     if (!isTaskContinuation) this.toolDiscoveryState.reset();
 
     this.isRunning = true;
+    this.lastTaskOutcome = null;
     const messageAbortController = new AbortController();
     this.abortController = messageAbortController;
     const forwardExternalAbort = () => messageAbortController.abort();
@@ -734,6 +750,7 @@ export class Agent {
 
       }
     } finally {
+      this.lastTaskOutcome = taskOutcome;
       if (signal && onAbort) {
         signal.removeEventListener("abort", onAbort);
       }

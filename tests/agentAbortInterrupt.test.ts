@@ -50,7 +50,7 @@ describe("Agent - Abort and Instant Interruption", () => {
     }
   });
 
-  it("should instantly interrupt and fire done event when abort() is called during text streaming", async () => {
+  it("interrupts a stalled agent loop and emits done when abort() is called", async () => {
     const onEvent = vi.fn();
     const onPermission = vi.fn().mockResolvedValue(true);
     const onQuestion = vi.fn();
@@ -60,25 +60,24 @@ describe("Agent - Abort and Instant Interruption", () => {
     agent.planState = "APPROVED";
 
     let abortSignalPassed: AbortSignal | undefined;
+    const { RequestProcessor } = await import("../src/core/agent/RequestProcessor.js");
+    vi.spyOn(RequestProcessor, "processRequest").mockResolvedValue(true);
 
-    streamTextSpy.mockImplementation(({ abortSignal }: any) => {
+    // Inject at the runtime loop boundary. The previous mock attached only to
+    // one provider stream path, which can be bypassed by FastPath/classification.
+    vi.spyOn(agent as any, "runAgentLoop").mockImplementation(async () => {
+      const abortSignal = agent.getAbortSignal();
       abortSignalPassed = abortSignal;
-      return {
-        fullStream: (async function* () {
-          // Keep streaming or wait forever to simulate hang/long request
-          await new Promise<void>((resolve, reject) => {
-            if (abortSignal) {
-              abortSignal.addEventListener("abort", () => {
-                const err = new Error("AbortError");
-                err.name = "AbortError";
-                reject(err);
-              });
-            }
-          });
-          yield { type: "text-delta", textDelta: "Hello" };
-        })(),
-        usage: Promise.resolve({ promptTokens: 10, completionTokens: 10 }),
-      } as any;
+      await new Promise<void>((_resolve, reject) => {
+        const interrupted = () => {
+          const err = new Error("AbortError");
+          err.name = "AbortError";
+          reject(err);
+        };
+        if (abortSignal?.aborted) interrupted();
+        else abortSignal?.addEventListener("abort", interrupted, { once: true });
+      });
+      return "completed";
     });
 
     const sendPromise = agent.sendMessage("test message");

@@ -2,6 +2,8 @@
 
 // Fetch and Render Chat History
 async function loadChatHistory(sessionId) {
+  const generation = (window.chatHistoryLoadGeneration || 0) + 1;
+  window.chatHistoryLoadGeneration = generation;
   try {
     const targetId = sessionId || window.currentSessionId;
     const activeWorkspaceText = document.getElementById("active-workspace-text");
@@ -17,6 +19,8 @@ async function loadChatHistory(sessionId) {
 
     const res = await fetch(url, { headers });
     const data = await res.json().catch(() => null);
+    if (generation !== window.chatHistoryLoadGeneration ||
+        targetId !== window.currentSessionId) return;
     if (res.ok && data && data.success && Array.isArray(data.messages)) {
       clearChatMessages();
       renderChatHistory(data.messages);
@@ -297,6 +301,8 @@ function renderChatHistorySessionsList(sessions) {
 }
 
 async function switchChatSession(sessionId) {
+  const navigation = (window.chatSessionNavigationGeneration || 0) + 1;
+  window.chatSessionNavigationGeneration = navigation;
   const activeWorkspaceText = document.getElementById("active-workspace-text");
   const workspace = activeWorkspaceText ? activeWorkspaceText.textContent : "";
   const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
@@ -318,6 +324,7 @@ async function switchChatSession(sessionId) {
       })
     });
     const data = await res.json().catch(() => null);
+    if (navigation !== window.chatSessionNavigationGeneration) return;
     if (res.ok && data && data.success) {
       if (data.sessionId) {
         window.currentSessionId = data.sessionId;
@@ -326,6 +333,7 @@ async function switchChatSession(sessionId) {
       }
       setupSSE();
       await checkServerStatus();
+      if (navigation !== window.chatSessionNavigationGeneration) return;
       await loadChatHistory();
     } else {
       alert("Failed to switch chat session");
@@ -339,6 +347,8 @@ async function switchChatSession(sessionId) {
 }
 
 async function startNewChatSession() {
+  const navigation = (window.chatSessionNavigationGeneration || 0) + 1;
+  window.chatSessionNavigationGeneration = navigation;
   const activeWorkspaceText = document.getElementById("active-workspace-text");
   const workspace = activeWorkspaceText ? activeWorkspaceText.textContent : "";
   const modeRadio = document.querySelector('input[name="agent-mode"]:checked');
@@ -360,6 +370,7 @@ async function startNewChatSession() {
       })
     });
     const data = await res.json().catch(() => null);
+    if (navigation !== window.chatSessionNavigationGeneration) return;
     if (res.ok && data && data.success) {
       window.currentSessionId = data.sessionId || null;
       setupSSE();

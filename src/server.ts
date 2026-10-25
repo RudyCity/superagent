@@ -21,6 +21,7 @@ import { buildCorsHeaders, ensureServerAuthToken, isRequestAuthorized, isPathIns
 import { isCanonicalMotionWorkspaceAllowed } from "./core/motion/workspaceAccess.js";
 import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
 import { SessionEventReplay } from "./core/utils/sessionEventReplay.js";
+import { appendChatEvent, pruneChatRuntimeLedger, recoverInterruptedChatTurns, replayChatEvents } from "./core/utils/chatRuntimeLedger.js";
 
 // Forward lock events to connected t-line desktop clients
 lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
@@ -417,15 +418,24 @@ function broadcastEvent(event: any) {
     "agent_event", "permission_required", "question_required",
     "plan_approval_required", "tool_progress", "browser_control_required",
     "tline_bridge_sync", "error", "subagents_update", "superagents_update",
+    "chat_turn_status", "chat_replay_gap",
   ]);
   if (sensitiveTypes.has(normalizedEvent.type) &&
       !normalizedEvent.sessionId && !normalizedEvent.workspace) {
     return; // Fail closed: no recipient context for a sensitive stream.
   }
   const eventJson = JSON.stringify(normalizedEvent);
-  const data = typeof normalizedEvent.sessionId === "string"
-    ? chatEventReplay.publish(normalizedEvent.sessionId, eventJson)
-    : `data: ${eventJson}\n\n`;
+  let data = `data: ${eventJson}\n\n`;
+  if (typeof normalizedEvent.sessionId === "string") {
+    try {
+      const id = appendChatEvent(normalizedEvent.sessionId, eventJson);
+      data = id === null ? data : `id: ${id}\n${data}`;
+    } catch (error) {
+      // Temporary journal failure must not silently drop live chat progress.
+      data = chatEventReplay.publish(normalizedEvent.sessionId, eventJson);
+      console.warn("[chat] event journal unavailable; using bounded in-memory replay");
+    }
+  }
   
   // Log event to the server debug log file
   // Log metadata only; event payloads can include secret browser capabilities.
@@ -769,6 +779,11 @@ export async function runServer(port: number, silent = false, defaultClientMode:
 
   serverDefaultClientMode = defaultClientMode;
   registerQuestionHandler(onQuestion);
+  // On crash, do not transparently repeat turns that may have executed
+  // non-idempotent tool actions. Keep queued/not-yet-executed work in SQLite.
+  try { pruneChatRuntimeLedger(); recoverInterruptedChatTurns(); } catch (err: any) {
+    console.warn("[chat] turn recovery unavailable:", String(err?.message || err));
+  }
 
   try {
     purgeEmptySessions(24);
@@ -965,8 +980,19 @@ export async function runServer(port: number, silent = false, defaultClientMode:
             pendingQuestions,
             pendingBrowserControls,
             replaySessionEvents: (res: http.ServerResponse, sessionId: string, cursor?: string) => {
-              for (const event of chatEventReplay.since(sessionId, cursor)) {
-                if (!res.writableEnded) res.write(event);
+              if (cursor === undefined) return;
+              try {
+                const replay = replayChatEvents(sessionId, cursor);
+                if (replay.gap && !res.writableEnded) {
+                  res.write(`data: ${JSON.stringify({ type: "chat_replay_gap", sessionId })}\n\n`);
+                }
+                for (const event of replay.events) {
+                  if (!res.writableEnded) res.write(event);
+                }
+              } catch {
+                for (const event of chatEventReplay.since(sessionId, cursor)) {
+                  if (!res.writableEnded) res.write(event);
+                }
               }
             },
             resolveSession,

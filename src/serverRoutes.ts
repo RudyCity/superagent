@@ -1,5 +1,11 @@
 import http from "http";
 import crypto from "node:crypto";
+import {
+  acceptChatTurn, cancelChatSessionTurns, changeChatTurnState,
+  deleteChatSessionTurnData, getChatTurn, getChatTurnMetrics, listChatTurns,
+  resumeRecoverableChatTurns,
+} from "./core/utils/chatRuntimeLedger.js";
+import { startSessionTurnWorker, stopSessionTurnWorker } from "./core/utils/chatRuntimeProcessor.js";
 import path from "path";
 import fs from "fs";
 import { URL } from "url";
@@ -118,6 +124,19 @@ function sameChatWorkspace(a: string, b: string): boolean {
     /^(?:ssh:|chain:)/i.test(value) ? value.replace(/\\/g, "/").toLowerCase()
       : path.resolve(value).replace(/\\/g, "/").toLowerCase();
   return normalize(a) === normalize(b);
+}
+
+function startChatTurnRuntime(session: any, broadcastEvent: (event: any) => void): void {
+  startSessionTurnWorker(session, broadcastEvent, async (_current, queuedMessage) => {
+    if (session.clientMode === "tline") {
+      const { runWithTrustedTlineCreator } = await import("./core/channels/tlineJobCreator.js");
+      await runWithTrustedTlineCreator({
+        clientMode: "tline", sessionId: session.sessionId, workspace: session.workspace,
+      }, () => session.agent.sendMessage(queuedMessage as any));
+    } else {
+      await session.agent.sendMessage(queuedMessage as any);
+    }
+  });
 }
 
 export async function handleServerRoute(
@@ -591,6 +610,7 @@ export async function handleServerRoute(
       sessionId: session ? session.sessionId : null,
       agentActive: !!session,
       agentRunning: session ? session.agent.isAgentRunning() : false,
+      chatTurnMetrics: session ? getChatTurnMetrics(session.sessionId) : [],
       isCliSession: session ? session.isCliSession : false,
       planState: session ? session.agent.planState : "IDLE",
     });
@@ -836,10 +856,12 @@ export async function handleServerRoute(
       }
       const { deleteSessionFromDb, clearHistoryCache } = await import("./core/config.js");
       deleteSessionFromDb(sessionId);
+      deleteChatSessionTurnData(sessionId);
       clearHistoryCache();
 
       for (const [key, session] of activeSessions.entries()) {
         if (session.sessionId === sessionId) {
+          stopSessionTurnWorker(session);
           if (session.agent.isAgentRunning()) session.agent.abort();
           activeSessions.delete(key);
         }
@@ -1107,6 +1129,36 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Durable chat turn inspection; never return private prompts from metadata APIs.
+  if (pathname === "/api/chat/turns" && req.method === "GET") {
+    const requested = parsedUrl.searchParams.get("sessionId") || "";
+    const session = requested ? resolveSession(req, requested) : null;
+    if (!session) {
+      sendJSON(res, 400, { error: "Valid sessionId required" });
+      return true;
+    }
+    const turns = listChatTurns(session.sessionId, 100).map(turn => ({
+      turnId: turn.turnId, state: turn.state,
+      createdAt: turn.createdAt, startedAt: turn.startedAt,
+      finishedAt: turn.finishedAt, updatedAt: turn.updatedAt,
+      error: turn.error,
+    }));
+    sendJSON(res, 200, { success: true, sessionId: session.sessionId,
+      metrics: getChatTurnMetrics(session.sessionId), turns });
+    return true;
+  }
+  if (pathname === "/api/chat/turns/recover" && req.method === "POST") {
+    let body: any;
+    try { body = JSON.parse(await readBody(req) || "{}"); }
+    catch { sendJSON(res, 400, { error: "Invalid recovery payload" }); return true; }
+    const session = body?.sessionId ? resolveSession(req, body.sessionId) : null;
+    if (!session) { sendJSON(res, 400, { error: "Valid sessionId required" }); return true; }
+    const resumed = resumeRecoverableChatTurns(session.sessionId);
+    if (resumed) startChatTurnRuntime(session, broadcastEvent);
+    sendJSON(res, 200, { success: true, sessionId: session.sessionId, resumed });
+    return true;
+  }
+
   // Send chat message
   if (pathname === "/api/chat" && req.method === "POST") {
     let body: any;
@@ -1173,36 +1225,22 @@ export async function handleServerRoute(
       return true;
     }
     const turnId = requestedMessageId || crypto.randomUUID();
-    const receipts: Map<string, { digest: string; turnId: string; state: string }> =
-      session.chatReceipts ?? (session.chatReceipts = new Map());
-    const digest = crypto.createHash("sha256").update(JSON.stringify(parsedMessage)).digest("hex");
-    const existing = receipts.get(turnId);
-    if (existing) {
-      if (existing.digest !== digest) {
-        sendJSON(res, 409, { error: "clientMessageId already belongs to another message" });
-        return true;
-      }
-      sendJSON(res, 200, { success: true, duplicate: true, sessionId: session.sessionId, turnId, state: existing.state });
+    let accepted: ReturnType<typeof acceptChatTurn>;
+    try {
+      accepted = acceptChatTurn({
+        turnId, sessionId: session.sessionId, workspace: session.workspace,
+        clientMode: session.clientMode, message: parsedMessage,
+        queueHint: session.agent.isAgentRunning(),
+      });
+    } catch (error: any) {
+      const message = String(error?.message || error);
+      sendJSON(res, message.includes("conflict") ? 409 : message.includes("full") ? 429 : 400,
+        { error: message, sessionId: session.sessionId });
       return true;
     }
-    const state = session.agent.isAgentRunning() ? "queued" : "accepted";
-    receipts.set(turnId, { digest, turnId, state });
-    if (receipts.size > 128) receipts.delete(receipts.keys().next().value!);
-    (session.clientMode === "tline"
-      ? import("./core/channels/tlineJobCreator.js").then(({ runWithTrustedTlineCreator }) =>
-          runWithTrustedTlineCreator({
-            clientMode: "tline", sessionId: session.sessionId, workspace: session.workspace,
-          }, () => session.agent.sendMessage(parsedMessage)))
-      : session.agent.sendMessage(parsedMessage)).catch((err: any) => {
-      const receipt = receipts.get(turnId);
-      if (receipt) receipt.state = "failed";
-      broadcastEvent({
-        type: "error", message: err.message || String(err),
-        sessionId: session.sessionId, workspace: session.workspace, turnId
-      });
-    });
-
-    sendJSON(res, 200, { success: true, sessionId: session.sessionId, turnId, state });
+    if (!accepted.duplicate) startChatTurnRuntime(session, broadcastEvent);
+    sendJSON(res, 200, { success: true, duplicate: accepted.duplicate,
+      sessionId: session.sessionId, turnId, state: accepted.turn.state });
     return true;
   }
 
@@ -1505,7 +1543,11 @@ export async function handleServerRoute(
 
     // Global abort is opt-in: it is the only path that touches every session / every project.
     if (abortAll) {
-      for (const s of activeSessions.values()) s.agent.abort();
+      for (const s of activeSessions.values()) {
+        stopSessionTurnWorker(s);
+        cancelChatSessionTurns(s.sessionId);
+        s.agent.abort();
+      }
       for (const sub of subagentInstances.values()) {
         if (sub.status === "running") sub.status = "error";
       }
@@ -1529,6 +1571,8 @@ export async function handleServerRoute(
       });
       return true;
     }
+    stopSessionTurnWorker(session);
+    cancelChatSessionTurns(session.sessionId);
     session.agent.abort();
 
     // Only touch instances that belong to this session. Ownership follows parentAgent
