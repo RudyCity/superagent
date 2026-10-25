@@ -14,6 +14,7 @@ import {
 import {
   CoreSessionAffinity, CORE_ROUTING_BODY_LIMIT, inspectCoreSessionRequest,
 } from "./coreSessionRouting.js";
+import { mayRouteExplicitCoreResume } from "./coreAgentSessionCheckpoint.js";
 import {
   MAX_RETAINED_CORE_WORKERS, applyCoreRollback, mayCreateCoreGeneration,
   rollbackCandidates,
@@ -526,7 +527,23 @@ export async function runCoreSupervisor(
         ? inspectCoreSessionRequest(req.url, req.method, req.headers, bufferedBody.toString("utf8"))
         : route;
       if (!active) { res.writeHead(503); res.end("Core starting"); return; }
-      const worker = selectWorker(inspected.sessionId);
+      let worker = selectWorker(inspected.sessionId);
+      let fromDeadOwner: Generation | undefined;
+      if (worker && inspected.isSessionRegistration && inspected.sessionId &&
+          workerExited(worker) && bufferedBody && active && !workerExited(active)) {
+        let resumeBody: Record<string, unknown> = {};
+        try { resumeBody = JSON.parse(bufferedBody.toString("utf8")); } catch {}
+        if (mayRouteExplicitCoreResume({
+          id: inspected.sessionId,
+          postedResume: resumeBody.resume,
+          postedSessionId: resumeBody.sessionId,
+          oldWorkerUnavailable: true,
+          candidateDifferent: active.pid !== worker.pid,
+        })) {
+          fromDeadOwner = worker;
+          worker = active;
+        }
+      }
       if (!worker) {
         res.writeHead(503, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Session owner is no longer available; explicitly resume the session." }));
@@ -567,9 +584,13 @@ export async function runCoreSupervisor(
             return;
           }
           const recorded = Buffer.concat(chunks).toString("utf8");
-          const sessionId = sessionAffinity.registerFromResponse(
-            upstream.statusCode || 0, recorded, worker, inspected.sessionId,
-          );
+          const sessionId = fromDeadOwner && inspected.sessionId
+            ? sessionAffinity.rebindFromResponse(
+              upstream.statusCode || 0, recorded, inspected.sessionId, fromDeadOwner, worker,
+            )
+            : sessionAffinity.registerFromResponse(
+              upstream.statusCode || 0, recorded, worker, inspected.sessionId,
+            );
           if (!sessionId) {
             res.writeHead(503, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Core session affinity could not be registered safely" }));
@@ -577,6 +598,9 @@ export async function runCoreSupervisor(
           }
           try { persistCheckpoint(); }
           catch {
+            if (fromDeadOwner && sessionId) {
+              sessionAffinity.restoreRebindAfterFailedCheckpoint(sessionId, fromDeadOwner, worker);
+            }
             console.error("[core] Failed to persist session affinity checkpoint");
             res.writeHead(503, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ error: "Core session checkpoint unavailable; retry initialization" }));

@@ -6,6 +6,10 @@ import {
   resumeRecoverableChatTurns,
 } from "./core/utils/chatRuntimeLedger.js";
 import { startSessionTurnWorker, stopSessionTurnWorker } from "./core/utils/chatRuntimeProcessor.js";
+import {
+  readCoreAgentSessionReceipt, writeCoreAgentSessionReceipt,
+  noteCoreAgentSessionTurn, decideExplicitCoreSessionResume,
+} from "./core/runtime/coreAgentSessionCheckpoint.js";
 import { collectSessionOwnedAgents } from "./core/utils/sessionAgentOwnership.js";
 import path from "path";
 import fs from "fs";
@@ -1101,7 +1105,41 @@ export async function handleServerRoute(
       return true;
     }
 
-    if (resume) {
+    if (process.env.SUPERAGENT_CORE_WORKER === "1") {
+      // The supervisor can rebind a dead worker's session only after the user
+      // explicitly asks to resume that exact ID. Never silently create empty
+      // history or replay an uncertain tool turn on a different worker.
+      if (resume && (typeof resume !== "string" || resume !== sessionId || initialPrompt)) {
+        sendJSON(res, 409, { error: "Explicit resume must match sessionId and must not include initialPrompt" });
+        return true;
+      }
+      let checkpoint;
+      try { checkpoint = readCoreAgentSessionReceipt(sessionId); }
+      catch {
+        sendJSON(res, 503, { error: "Session receipt corrupt; recovery blocked" });
+        return true;
+      }
+      if (resume) {
+        const savedBundle = loadSessionFromDb(resume);
+        const saved = savedBundle.session;
+        const decision = decideExplicitCoreSessionResume({
+          receipt: checkpoint, sessionId, workspace: targetWorkspace,
+          mode: targetMode, clientMode: targetClientMode,
+          hasSavedHistory: Boolean(saved &&
+            saved.workingDirectory && sameChatWorkspace(saved.workingDirectory, targetWorkspace)),
+          historyLastModified: saved?.lastModified,
+          historyMessageCount: savedBundle.messages.length,
+          turns: getChatTurnMetrics(sessionId),
+        });
+        if (decision !== "allow") {
+          sendJSON(res, 409, { error: "Safe resume blocked: " + decision + "; review durable chat turns and history" });
+          return true;
+        }
+      } else if (checkpoint) {
+        sendJSON(res, 409, { error: "Session ID already registered; explicit verified resume required" });
+        return true;
+      }
+    } else if (resume) {
       const saved = loadSessionFromDb(resume).session;
       if (saved?.workingDirectory && !sameChatWorkspace(saved.workingDirectory, targetWorkspace)) {
         sendJSON(res, 409, { error: "Chat history belongs to a different workspace." });
@@ -1123,6 +1161,21 @@ export async function handleServerRoute(
       }
     }
 
+    if (process.env.SUPERAGENT_CORE_WORKER === "1") {
+      if (resumeWarning || agent.sessionId !== sessionId) {
+        sendJSON(res, 503, { error: "Durable history could not be restored; session not acknowledged" });
+        return true;
+      }
+      try {
+        writeCoreAgentSessionReceipt({
+          sessionId, workspace: targetWorkspace, mode: targetMode,
+          clientMode: targetClientMode,
+        });
+      } catch {
+        sendJSON(res, 503, { error: "Durable session registration failed; no session acknowledged" });
+        return true;
+      }
+    }
     activeSessions.set(sessionKey, {
       agent,
       workspace: targetWorkspace,
@@ -1275,6 +1328,14 @@ export async function handleServerRoute(
       sendJSON(res, message.includes("conflict") ? 409 : message.includes("full") ? 429 : 400,
         { error: message, sessionId: session.sessionId });
       return true;
+    }
+    if (!accepted.duplicate && process.env.SUPERAGENT_CORE_WORKER === "1" && !session.isCliSession) {
+      try { noteCoreAgentSessionTurn(session.sessionId, turnId); }
+      catch {
+        sendJSON(res, 503, { error: "Durable session turn checkpoint failed; execution not started",
+          sessionId: session.sessionId, turnId });
+        return true;
+      }
     }
     if (!accepted.duplicate) startChatTurnRuntime(session, broadcastEvent);
     sendJSON(res, 200, { success: true, duplicate: accepted.duplicate,
@@ -2703,13 +2764,43 @@ export async function handleServerRoute(
           sendJSON(res, 409, { error: "Chat history belongs to a different workspace." });
           return true;
         }
+        if (process.env.SUPERAGENT_CORE_WORKER === "1") {
+          try {
+            if (readCoreAgentSessionReceipt(reqSessionId) || saved) {
+              sendJSON(res, 409, { error: "Existing session requires explicit /api/init resume with verified history" });
+              return true;
+            }
+          } catch {
+            sendJSON(res, 503, { error: "Session receipt integrity check failed" });
+            return true;
+          }
+        }
       }
       const sessionId = reqSessionId || generateSessionId();
       const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
       agent.sessionId = sessionId;
 
-      try { await agent.loadHistory(sessionId); } catch (e) { console.debug("[serverRoutes] loadHistory failed:", (e as Error)?.message); }
-
+      let historyError = false;
+      try { await agent.loadHistory(sessionId); }
+      catch (e) {
+        historyError = true;
+        console.debug("[serverRoutes] loadHistory failed:", (e as Error)?.message);
+      }
+      if (process.env.SUPERAGENT_CORE_WORKER === "1") {
+        if (historyError || agent.sessionId !== sessionId) {
+          sendJSON(res, 503, { error: "Session init history verification failed" });
+          return true;
+        }
+        try {
+          writeCoreAgentSessionReceipt({
+            sessionId, workspace: targetWorkspace, mode: targetMode,
+            clientMode: targetClientMode,
+          });
+        } catch {
+          sendJSON(res, 503, { error: "Durable session registration failed" });
+          return true;
+        }
+      }
       session = {
         agent,
         workspace: targetWorkspace,

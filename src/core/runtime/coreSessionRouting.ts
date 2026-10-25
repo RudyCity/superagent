@@ -129,6 +129,40 @@ export class CoreSessionAffinity {
     return Boolean(sessionId && this.sessions.has(sessionId));
   }
 
+  /**
+   * Rebind ONLY a previously pinned, unavailable worker after an explicitly
+   * requested init/resume succeeds in the target worker. The supervisor
+   * validates previous worker death and explicit resume separately.
+   */
+  rebindFromResponse(
+    statusCode: number, rawBody: string, expectedId: string,
+    previous: CoreOwner, target: CoreOwner,
+  ): string | undefined {
+    if (statusCode !== 200 || rawBody.length > 16 * 1024 ||
+        !this.sessions.has(expectedId)) return;
+    const current = this.sessions.get(expectedId)!;
+    if (current.pid !== previous.pid || current.port !== previous.port ||
+        current.since !== previous.since ||
+        (current.pid === target.pid && current.port === target.port)) return;
+    let payload: unknown;
+    try { payload = JSON.parse(rawBody); } catch { return; }
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+    const response = payload as Record<string, unknown>;
+    if (response.success !== true || response.sessionId !== expectedId) return;
+    this.sessions.set(expectedId, { ...target });
+    return expectedId;
+  }
+  restoreRebindAfterFailedCheckpoint(
+    id: string, previous: CoreOwner, attemptedTarget: CoreOwner,
+  ): void {
+    const current = this.sessions.get(id);
+    if (!current || current.pid !== attemptedTarget.pid ||
+        current.port !== attemptedTarget.port || current.since !== attemptedTarget.since) {
+      throw new Error("Session mapping changed during failed checkpoint");
+    }
+    this.sessions.set(id, { ...previous });
+  }
+
   /** Only register successful, server-authorized session init responses. */
   registerFromResponse(statusCode: number, rawBody: string, owner: CoreOwner, expectedId?: string): string | undefined {
     if (statusCode < 200 || statusCode >= 300 || rawBody.length > 16 * 1024) return;

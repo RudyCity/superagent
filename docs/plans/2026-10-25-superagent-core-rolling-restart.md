@@ -1,5 +1,11 @@
 # Opt-in rolling restart for SuperAgent API Core (2026-10-25)
 
+## Phase 5c — durable supervised session receipts and explicit worker rebind
+
+Supervised API workers now atomically record scoped session metadata on /api/init and /api/switch-workspace and checkpoint accepted chat turn IDs before execution. This reuses the existing SQLite history + chat-turn ledger rather than duplicating prompts or claiming Agent memory serialization. When a pinned worker dies, normal requests still return 503. A client must explicitly POST /api/init with matching sessionId and resume, the same workspace/mode/client mode and a saved history recent enough to cover the last accepted turn. Ambiguous running/queued/interrupted/accepted turn states, corrupt or missing receipts, missing/stale history, mismatched workspace, and wrong client mode block recovery. Only a verified success receipt from a different healthy worker permits durable supervisor affinity rebind; failure to persist it restores the previous mapping. No tool is replayed. New sessions that enter through /api/switch-workspace are included in the same receipt requirements.
+
+The independent, isolated Windows stage creates three sessions, rolls the Core, hard-kills its own original worker and validates 19 fail-closed/explicit-resume checks without invoking any model, external tool or tunnel. Cross-platform CI includes the focused policy suite and real stage. Full OS-reboot LLM state recovery, arbitrary external side-effect transactions, and native desktop reconnect remain unimplemented. Read [Phase 5c operator guide](../guides/core-agent-session-recovery.md).
+
 ## Phase 5b — safe logon Core bootstrap and Windows task provisioning
 
 Core boot inspects authenticated current Core owner, durable routing checkpoints, and guardian/discovery registration. It never resets stored sessions. It performs a no-op if Core is already verified; starts a new guardian only in a pristine namespace; or attempts authenticated worker recovery when the original worker survived supervisor crash. When no worker survived (including after a full Windows reboot), the Core checkpoint remains unchanged and boot fails closed until operator reconciliation.
