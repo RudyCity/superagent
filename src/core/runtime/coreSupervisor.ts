@@ -3,6 +3,7 @@ import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
 import os from "node:os";
+import { getRootConfigDir } from "../config/paths.js";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { CoreDrainReport } from "./coreDrainInspection.js";
@@ -39,7 +40,7 @@ export interface CoreRuntimeStatus {
  * running jobs and already-established SSE/WebSocket connections. This is not
  * a restart of the interactive CLI, MCP, Muse or Telegram processes.
  */
-const stateDir = () => path.join(os.homedir(), ".superagent-r");
+const stateDir = () => getRootConfigDir();
 const statePath = (port: number) => path.join(stateDir(), "core-supervisor-" + port + ".json");
 const validPort = (port: number) => Number.isInteger(port) && port >= 1 && port <= 65535;
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
@@ -156,6 +157,12 @@ export async function runCoreSupervisor(
   recover = false,
 ): Promise<void> {
   if (!validPort(port)) throw new Error("Invalid public port");
+  if (process.env.SUPERAGENT_CORE_STAGING === "1" &&
+      (!process.env.SUPERAGENT_CONFIG_DIR ||
+       path.resolve(process.env.SUPERAGENT_CONFIG_DIR) ===
+         path.join(os.homedir(), ".superagent-r"))) {
+    throw new Error("Isolated staging requires its own SUPERAGENT_CONFIG_DIR.");
+  }
   // Fail closed when an instance is already healthy; never touch existing owners.
   try {
     await requestCoreSupervisor("status", port);
@@ -214,7 +221,10 @@ export async function runCoreSupervisor(
   async function spawnWorker(): Promise<Generation> {
     const workerPort = await reserveLoopbackPort();
     const generationId = crypto.randomBytes(16).toString("hex");
-    const drainEligible = !!active;
+    // Isolated staging owns no shared helper/tunnel and may retire all of its
+    // own workers after session/inflight/transport drain verification.
+    const staging = process.env.SUPERAGENT_CORE_STAGING === "1";
+    const drainEligible = !!active || staging;
     const entry = path.resolve(process.argv[1] || "");
     const child = spawn(process.execPath, [entry, "--server", String(workerPort), "--client-mode", clientMode], {
       cwd: process.cwd(),
@@ -231,7 +241,7 @@ export async function runCoreSupervisor(
         SUPERAGENT_CORE_TRANSPORT_ISOLATED: drainEligible ? "1" : "0",
         // Launch fixed-port vision helper only once from generation #1.
         // Subsequent workers can use the same helper without binding 8095 again.
-        SUPERAGENT_CORE_VISION_OWNER: active ? "0" : "1",
+        SUPERAGENT_CORE_VISION_OWNER: staging ? "0" : active ? "0" : "1",
         SUPERAGENT_SERVER_AUTH_TOKEN: serverToken,
       },
     });

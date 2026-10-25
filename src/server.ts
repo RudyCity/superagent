@@ -779,9 +779,15 @@ export async function runServer(port: number, silent = false, defaultClientMode:
 
   serverDefaultClientMode = defaultClientMode;
   registerQuestionHandler(onQuestion);
-  // On crash, do not transparently repeat turns that may have executed
-  // non-idempotent tool actions. Keep queued/not-yet-executed work in SQLite.
-  try { pruneChatRuntimeLedger(); recoverInterruptedChatTurns(); } catch (err: any) {
+  // A supervised core restart adds a *new* worker while original sessions
+  // remain active on their old workers. Never mark another generation's
+  // running turns interrupted by applying global crash recovery here.
+  try {
+    pruneChatRuntimeLedger();
+    if (process.env.SUPERAGENT_CORE_WORKER !== "1") {
+      recoverInterruptedChatTurns();
+    }
+  } catch (err: any) {
     console.warn("[chat] turn recovery unavailable:", String(err?.message || err));
   }
 

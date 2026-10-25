@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { validateCoreCheckpoint, type CoreSupervisorCheckpoint } from "../src/core/runtime/coreSupervisorCheckpoint.js";
+import os from "node:os";
+import path from "node:path";
+import { coreCheckpointPath, validateCoreCheckpoint, type CoreSupervisorCheckpoint } from "../src/core/runtime/coreSupervisorCheckpoint.js";
 
 function valid(): CoreSupervisorCheckpoint {
   return {
@@ -13,6 +15,18 @@ function valid(): CoreSupervisorCheckpoint {
   };
 }
 describe("supervisor checkpoint validation", () => {
+  it("keeps staging checkpoints inside a separate config profile", () => {
+    const previous = process.env.SUPERAGENT_CONFIG_DIR;
+    const dir = path.join(os.tmpdir(), "isolated-chat-core-checkpoint-profile");
+    try {
+      process.env.SUPERAGENT_CONFIG_DIR = dir;
+      expect(coreCheckpointPath(17889)).toBe(path.join(dir, "core-checkpoint-17889.json"));
+      expect(coreCheckpointPath(17889)).not.toContain(".superagent-r");
+    } finally {
+      if (previous === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR = previous;
+    }
+  });
   it("accepts metadata with original session owners", () => {
     expect(validateCoreCheckpoint(valid(), 7888).sessions[0].owner.pid).toBe(10);
   });

@@ -4,7 +4,8 @@
  * This is routing/worker metadata, not an AI transcript or process migration.
  */
 import fs from "node:fs";
-import os from "node:os";
+
+import { getRootConfigDir } from "../config/paths.js";
 import path from "node:path";
 import type { CoreOwner } from "./coreSessionRouting.js";
 import { validCoreSessionId } from "./coreSessionRouting.js";
@@ -27,7 +28,7 @@ export interface CoreSupervisorCheckpoint {
 }
 
 export const coreCheckpointPath = (port: number): string =>
-  path.join(os.homedir(), ".superagent-r", "core-checkpoint-" + port + ".json");
+  path.join(getRootConfigDir(), "core-checkpoint-" + port + ".json");
 
 const goodPort = (port: number) => Number.isInteger(port) && port > 0 && port < 65536;
 const goodPid = (pid: number) => Number.isSafeInteger(pid) && pid > 0;
