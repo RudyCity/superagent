@@ -14,6 +14,7 @@ import { getConfig } from "./base.js";
 import { getConfiguredProviders, getEffectiveMasterModel, isProviderSelfContained } from "./providers.js";
 import { loadModelConfig, getActivePreset, TierModelConfig, getSettings, getSingleAgentMode } from "./jsonConfig.js";
 import { saveModelCachesToDb, getModelCachesFromDb } from "../storage/historyDb.js";
+import { resolveModelExecutionMode } from "./executionMode.js";
 
 let legacyCacheMigrated = false;
 
@@ -870,8 +871,12 @@ export function getModelConnectionDetailsForTier(
   subagentType?: string,
   isSingleMode?: boolean
 ): ModelConnectionDetails {
-  const isMulti = !isSingleMode && !getSingleAgentMode() && (process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true");
-  const mode = isMulti ? "multi" : "single";
+  // Per-session Agent mode (passed explicitly by the caller) takes precedence
+  // over process-wide CLI flags. Multiple T-Line sessions can therefore select
+  // different master/subagent model presets without restarting the shared core.
+  const mode = resolveModelExecutionMode(isSingleMode,
+    process.argv.includes("--multi") || process.env.SUPERAGENT_MULTI === "true",
+    getSingleAgentMode());
 
   const config = loadModelConfig();
   const activePreset = getActivePreset<any>(mode);
