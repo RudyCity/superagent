@@ -229,6 +229,16 @@ try {
   check("boot_refuses_to_replay_sessions_when_every_worker_is_dead",
     deniedColdBoot.status !== 0 &&
       (deniedColdBoot.stderr + deniedColdBoot.stdout).includes("No authenticated worker survived"));
+  const auditFile = coreCheckpointPath(port);
+  const checkpointBeforeAudit = fs.readFileSync(auditFile);
+  const coldAudit = spawnSync(process.execPath, [cli, "core", "boot-audit",
+    "--port", String(port)], { cwd: workspace, env, stdio: "pipe",
+    encoding: "utf8", timeout: 12000, windowsHide: true });
+  check("cold_boot_audit_is_read_only_and_refuses_total_worker_loss",
+    coldAudit.status === 0 &&
+    coldAudit.stdout.includes('"decision": "operator_review"') &&
+    coldAudit.stdout.includes('"automaticToolReplay": false') &&
+    Buffer.compare(fs.readFileSync(auditFile), checkpointBeforeAudit) === 0);
   const report = {
     version: 1, phase: "core-guardian-local-staging", ok: true, port, frontPort,
     root, verifiedChecks: checks.length, checks,

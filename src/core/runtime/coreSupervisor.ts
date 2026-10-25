@@ -546,13 +546,17 @@ export async function runCoreSupervisor(
       }
       if (!worker) {
         res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Session owner is no longer available; explicitly resume the session." }));
+        res.end(JSON.stringify({ error: "Session owner is no longer available; explicitly resume the session.",
+          code: "SESSION_OWNER_UNAVAILABLE", requiresExplicitResume: true,
+          automaticChatReplayAllowed: false }));
         return;
       }
       if (workerExited(worker)) {
         // Do not reassign an existing session to a worker with no in-memory state.
         res.writeHead(503, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Session worker unavailable; explicitly resume the session." }));
+        res.end(JSON.stringify({ error: "Session worker unavailable; explicitly resume the session.",
+          code: "SESSION_WORKER_DEAD", requiresExplicitResume: true,
+          automaticChatReplayAllowed: false }));
         return;
       }
       const release = acquire(worker);
@@ -786,7 +790,13 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--stop-on-stdin]  # opt-in owned Core crash recovery");
     console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
     console.log("superagent core boot [--port 7888] [--client-mode tline|chrome-extension]  # safe logon/bootstrap, never resets dead worker state");
+    console.log("superagent core boot-audit [--port 7888]  # read-only cold-reboot and unfinished chat-turn assessment");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
+    return;
+  }
+  if (action === "boot-audit") {
+    const { auditCoreColdStart } = await import("./coreColdStartAudit.js");
+    console.log(JSON.stringify(await auditCoreColdStart(port), null, 2));
     return;
   }
   if (action === "boot") {
@@ -844,6 +854,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

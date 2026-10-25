@@ -61,6 +61,11 @@ describe("independent T-Line transport host", () => {
       headers: { Authorization: "Bearer secret" },
     });
     expect(response.status).toBe(503);
+    expect(response.headers.get("Retry-After")).toBe("1");
+    expect(await response.json()).toMatchObject({
+      code: "CORE_SUPERVISOR_UNAVAILABLE", retryAfterMs: 1000,
+      safeReconnectMethod: "GET", automaticChatReplayAllowed: false,
+    });
     expect(touched).toBe(0);
   });
   it("proxies the WebSocket HTTP upgrade handshake", async () => {

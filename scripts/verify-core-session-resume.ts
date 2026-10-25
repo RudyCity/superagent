@@ -134,6 +134,12 @@ try {
     return response.status===503 ? true : null;
   },18000);
   check("dead_worker_requests_fail_closed",true);
+  const deadStatus=await api(p,token,"/api/status?sessionId="+id);
+  check("reconnect_protocol_requires_explicit_resume_for_dead_worker",
+    deadStatus.status===503 &&
+    deadStatus.body.code==="SESSION_WORKER_DEAD" &&
+    deadStatus.body.requiresExplicitResume===true &&
+    deadStatus.body.automaticChatReplayAllowed===false);
   const forbidden=await api(p,token,"/api/init",{sessionId:id,workspace,mode:"single"});
   check("implicit_migration_denied",forbidden.status===503);
   const missing=await api(p,token,"/api/init",{sessionId:id,resume:id,workspace,mode:"single"});

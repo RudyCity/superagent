@@ -83,8 +83,14 @@ export async function runTransportHost(
     }
     if (privatePath(req.url)) { res.writeHead(404); res.end(); return; }
     if (!await verifyOwner(corePort)) {
-      res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-      res.end(JSON.stringify({ error: "Authenticated core supervisor unavailable" }));
+      res.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store", "Retry-After": "1" });
+      res.end(JSON.stringify({
+        error: "Authenticated core supervisor unavailable",
+        code: "CORE_SUPERVISOR_UNAVAILABLE",
+        retryAfterMs: 1000,
+        safeReconnectMethod: "GET",
+        automaticChatReplayAllowed: false,
+      }));
       req.resume();
       return;
     }
@@ -112,8 +118,14 @@ export async function runTransportHost(
         res.destroy();
         return;
       }
-      res.writeHead(503, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Core supervisor unavailable; reconnect after recovery" }));
+      res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "1", "Cache-Control": "no-store" });
+      res.end(JSON.stringify({
+        error: "Core supervisor unavailable; reconnect after recovery",
+        code: "CORE_SUPERVISOR_UNAVAILABLE",
+        retryAfterMs: 1000,
+        safeReconnectMethod: "GET",
+        automaticChatReplayAllowed: false,
+      }));
     });
     res.once("close", () => {
       if (!res.writableEnded) upstream.destroy();
