@@ -17,6 +17,7 @@ import tempfile
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chrome", default=r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+    parser.add_argument("--palette", choices=["dark", "light"], default="dark")
     parser.add_argument("--json", action="store_true")
     opts = parser.parse_args()
     try:
@@ -42,11 +43,13 @@ def main() -> int:
 
     try:
         for index in range(30):
-            image = Image.new("RGB", (160, 90), "black")
+            image = Image.new("RGB", (160, 90), "black" if opts.palette == "dark" else "#f0f0f0")
             painter = ImageDraw.Draw(image)
-            painter.rectangle((12 + index, 16, 30 + index, 35), fill="white")
+            painter.rectangle((12 + index, 16, 30 + index, 35),
+                              fill="white" if opts.palette == "dark" else "#181b3e")
             offset = 94 + round(index * .22)
-            painter.rectangle((offset, 50, offset + 20, 67), fill="#fff3aa")
+            painter.rectangle((offset, 50, offset + 20, 67),
+                              fill="#fff3aa" if opts.palette == "dark" else "#c6255e")
             image.save(root / f"frame{index:03d}.png")
         video = root / "reference.mp4"
         encoded = subprocess.run([
@@ -94,7 +97,7 @@ def main() -> int:
             assert not errors and not requests, (errors, requests)
             browser.close()
         output = {
-            "status": "pass", "objects": 2,
+            "status": "pass", "palette": opts.palette, "objects": 2,
             "measuredForegroundIoU": reconstruction["measuredForegroundIoU"],
             "interpolationCheckIoU": reconstruction["interpolationCheckIoU"],
             "trackedSamples": len(reconstruction["sampleTimes"]),

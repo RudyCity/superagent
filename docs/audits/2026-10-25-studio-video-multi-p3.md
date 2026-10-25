@@ -49,3 +49,28 @@ decodes are sequential, bounded subprocesses.
 - API response hygiene: absolute local `reviewPng` storage paths are
   withheld from HTTP JSON responses; callers load QA PNG through the scoped
   authenticated route. CLI output retains its local path for developer use.
+
+## Stable light/dark background and color handling follow-up, 2026-10-25
+
+- Segmentation now measures RGB distance from an inferred and cross-frame-validated
+  solid-color background rather than relying on a bright-luminance threshold.
+  It supports distinct dark or colored contours on either light or dark stable
+  backdrops. Trace masks and both source/output foreground IoU use the same
+  bounded background-relative classifier.
+- Video codec tolerances apply to retained fill and background colors. Corners
+  contaminated by shapes, scene cuts, changing backgrounds, and near-color
+  foreground are rejected or remain unsupported.
+- The 5–9 tracking samples reach approximately 96% of clip duration rather than
+  85%, enabling detection of objects missing late in the clip.
+- New focused tests cover dark navy and magenta objects on a light background,
+  RGB segmentation, changing backgrounds, and disappearance near the final
+  portion of a clip. Existing black-background tests remain intact.
+- Offline Chrome real CLI smoke:
+  `python scripts/studio_video_multi_browser_smoke.py --palette dark --json`
+  and `--palette light --json` both pass with 2 SVG objects, 9 keyframe
+  samples, 2 holdout checks, no JavaScript errors and no external requests.
+  Synthetic 3-frame foreground IoU was ~93% dark and ~93–94% light; these
+  are controlled fixture scores, not representative footage benchmarks.
+- Production is NOT approved: true footage segmentation, overlap, gradients,
+  OCR/vision, installed Tauri E2E, and full-frame perceptual parity remain
+  unverified.

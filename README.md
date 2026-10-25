@@ -951,14 +951,18 @@ superagent studio reconstruct-video-multi VIDEO_ID --workspace . --json
 superagent studio export-code NEW_PROJECT_ID --format react --workspace . --json
 ```
 
-Optional local Chrome/FFmpeg/Pillow/Playwright smoke test:
-`python scripts/studio_video_multi_browser_smoke.py --json`.
+Optional local Chrome/FFmpeg/Pillow/Playwright smoke tests:
+`python scripts/studio_video_multi_browser_smoke.py --palette dark --json` and
+`python scripts/studio_video_multi_browser_smoke.py --palette light --json`.
 
 
-For **2–4 separated bright shapes on a stable dark background**, Studio
-tracks 5–9 duration-bounded frames (adding samples to high-motion intervals),
-matches foreground components, and saves editable SVG layers with independent
-x/y keyframes.
+For **2–4 separated high-contrast shapes on a stable solid-color background**
+(light or dark), Studio tracks 5–9 duration-bounded frames (adding samples to
+high-motion intervals), matches foreground components using RGB contrast, and
+saves editable SVG layers with independent x/y keyframes. The original object
+colors and corner-inferred background are retained within video codec tolerance.
+Samples now reach approximately 96% of the clip duration to reject shapes that
+disappear near the end; uncertain/obstructed or changing backgrounds fail closed.
 Ambiguous matches, missing shapes or backgrounds that vary across samples
 are rejected **before** the project is created. The source is an imported,
 SHA-256-verified MP4/WebM (up to 12 MiB, 1–12 s, maximum 1280×720).

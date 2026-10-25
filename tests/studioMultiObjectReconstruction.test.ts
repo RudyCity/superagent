@@ -7,8 +7,8 @@ import { execFile } from "node:child_process";
 import { createCanvas } from "@napi-rs/canvas";
 import { importMotionVideo } from "../src/core/motion/assets/motionVideoClips.js";
 import {
-  associateStudioObjects, findStudioBrightComponents, reconstructMultiObjectStudioVideo,
-  studioBaseSampleFrames,
+  associateStudioObjects, findStudioBrightComponents, findStudioForegroundComponents,
+  reconstructMultiObjectStudioVideo, studioBaseSampleFrames,
 } from "../src/core/motion/code/videoMultiObjectReconstruction.js";
 import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
 import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
@@ -35,6 +35,7 @@ describe("multi-object reference video prototype", () => {
       expect(frames).toHaveLength(count);
       expect(frames[0]).toBe(0);
       expect(frames.at(-1)).toBeLessThan(duration);
+      expect(frames.at(-1)!).toBeGreaterThan(duration * .9);
       expect(frames.every((frame, i) => !i || frame > frames[i - 1])).toBe(true);
     }
     expect(() => studioBaseSampleFrames(29)).toThrow(/Invalid/);
@@ -59,6 +60,121 @@ describe("multi-object reference video prototype", () => {
     expect(found[1]).toMatchObject({ x: 32, y: 5, width: 13, height: 15 });
     expect(() => findStudioBrightComponents(pixels, 6000, 4000)).toThrow();
   });
+
+  it("detects dark and saturated foreground on a light solid backdrop", () => {
+    const pixels = new Uint8ClampedArray(80 * 50 * 4);
+    for (let i = 0; i < 80 * 50; i++) {
+      const at = i * 4;
+      pixels[at] = pixels[at + 1] = pixels[at + 2] = 245;
+      pixels[at + 3] = 255;
+    }
+    for (let y = 10; y < 30; y++) for (let x = 10; x < 30; x++) {
+      const i = (y * 80 + x) * 4;
+      pixels[i] = 15; pixels[i + 1] = 20; pixels[i + 2] = 45;
+    }
+    for (let y = 15; y < 35; y++) for (let x = 50; x < 70; x++) {
+      const i = (y * 80 + x) * 4;
+      pixels[i] = 215; pixels[i + 1] = 25; pixels[i + 2] = 65;
+    }
+    const components = findStudioForegroundComponents(pixels, 80, 50, [245, 245, 245]);
+    expect(components).toHaveLength(2);
+    expect(components[0]).toMatchObject({ x: 10, y: 10, width: 20, height: 20 });
+    expect(components[1]).toMatchObject({ x: 50, y: 15, width: 20, height: 20 });
+    expect(() => findStudioForegroundComponents(pixels, 80, 50, [999, 0, 0]))
+      .toThrow(/Invalid bounded/);
+  });
+
+  it("reconstructs colored and dark shapes on a stable light background to offline SVG", async () => {
+    const workspace = await ws();
+    for (let f = 0; f < 30; f++) {
+      const canvas = createCanvas(160, 90);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#f0f0f0";
+      ctx.fillRect(0, 0, 160, 90);
+      ctx.fillStyle = "#181b3e";
+      ctx.fillRect(14 + f, 15, 20, 22);
+      ctx.fillStyle = "#c6255e";
+      ctx.fillRect(102 + Math.floor(f / 5), 52, 22, 19);
+      await fs.writeFile(path.join(workspace, "light" + String(f).padStart(3, "0") + ".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-framerate", "10",
+      "-i", path.join(workspace, "light%03d.png"), "-y",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(workspace, "light.mp4"),
+    ], { timeout: 30000, maxBuffer: 4096, windowsHide: true });
+    const imported = await importMotionVideo(workspace, await fs.readFile(path.join(workspace, "light.mp4")));
+    const result = await reconstructMultiObjectStudioVideo(workspace, imported.id);
+    expect(result.objects).toHaveLength(2);
+    expect(result.measuredForegroundIoU.every(score => score >= .6)).toBe(true);
+    expect(result.interpolationCheckIoU.every(score => score >= .6)).toBe(true);
+    const reconstructed = await getMotionProject(workspace, result.projectId);
+    const bg = reconstructed.composition.background.toLowerCase();
+    expect(bg).toMatch(/^#[0-9a-f]{6}$/);
+    for (const start of [1, 3, 5])
+      expect(Math.abs(parseInt(bg.slice(start, start + 2), 16) - 240)).toBeLessThanOrEqual(8);
+    expect(reconstructed.composition.layers[0].kind).toBe("path");
+    const fill = reconstructed.composition.layers[0].fill!.toLowerCase();
+    expect(fill).toMatch(/^#[0-9a-f]{6}$/);
+    for (const [channel, value] of [[1, 24], [3, 27], [5, 62]]) {
+      const part = parseInt(fill.slice(channel, channel + 2), 16);
+      expect(Math.abs(part - value)).toBeLessThanOrEqual(25);
+    }
+    expect(renderStudioNativeHtml(reconstructed)).not.toContain("cdn.jsdelivr.net");
+  }, 65000);
+
+  it("detects an object disappearing near the final 5% of a reference clip", async () => {
+    const workspace = await ws();
+    for (let f = 0; f < 30; f++) {
+      const canvas = createCanvas(160, 90);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#f8f8f8";
+      ctx.fillRect(0, 0, 160, 90);
+      ctx.fillStyle = "#16263c";
+      ctx.fillRect(12 + f, 14, 20, 20);
+      if (f < 26) {
+        ctx.fillStyle = "#ba165a";
+        ctx.fillRect(101, 52, 20, 20);
+      }
+      await fs.writeFile(path.join(workspace, "late" + String(f).padStart(3, "0") + ".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-framerate", "10",
+      "-i", path.join(workspace, "late%03d.png"), "-y",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(workspace, "late.mp4"),
+    ], { timeout: 30000, maxBuffer: 4096, windowsHide: true });
+    const imported = await importMotionVideo(workspace,
+      await fs.readFile(path.join(workspace, "late.mp4")));
+    await expect(reconstructMultiObjectStudioVideo(workspace, imported.id))
+      .rejects.toThrow(/object count/);
+    expect(await listMotionProjects(workspace)).toEqual([]);
+  }, 65000);
+
+  it("rejects changing background colors before creating a project", async () => {
+    const workspace = await ws();
+    for (let f = 0; f < 30; f++) {
+      const canvas = createCanvas(160, 90);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = f < 12 ? "#f0f0f0" : "#111111";
+      ctx.fillRect(0, 0, 160, 90);
+      ctx.fillStyle = f < 12 ? "#161d3f" : "#e8d9c1";
+      ctx.fillRect(14 + f, 15, 20, 22);
+      ctx.fillStyle = "#c6255e";
+      ctx.fillRect(102, 52, 22, 19);
+      await fs.writeFile(path.join(workspace, "flash" + String(f).padStart(3, "0") + ".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-framerate", "10",
+      "-i", path.join(workspace, "flash%03d.png"), "-y",
+      "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(workspace, "flash.mp4"),
+    ], { timeout: 30000, maxBuffer: 4096, windowsHide: true });
+    const imported = await importMotionVideo(workspace, await fs.readFile(path.join(workspace, "flash.mp4")));
+    await expect(reconstructMultiObjectStudioVideo(workspace, imported.id))
+      .rejects.toThrow(/Background changed/);
+    expect(await listMotionProjects(workspace)).toEqual([]);
+  }, 65000);
 
   it("matches identities deterministically and rejects uncertain or mismatched assignments", () => {
     const reference = [candidate(10), candidate(120)];

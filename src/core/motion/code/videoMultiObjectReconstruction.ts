@@ -24,7 +24,7 @@ export function studioBaseSampleFrames(durationFrames: number): number[] {
   const count = durationFrames <= 120 ? 5 : durationFrames <= 240 ? 7 : 9;
   const max = durationFrames - 1;
   return Array.from({ length: count }, (_, i) =>
-    Math.round(max * .85 * i / (count - 1)));
+    Math.round(max * .96 * i / (count - 1)));
 }
 
 
@@ -55,42 +55,61 @@ interface Frame {
   width: number; height: number;
   pixels: Uint8ClampedArray;
   components: Component[];
+  background: RGB;
 }
 
 function colorHex(r: number, g: number, b: number): string {
   return "#" + [r, g, b].map(channel =>
     Math.round(Math.max(0, Math.min(255, channel))).toString(16).padStart(2, "0")).join("");
 }
-function consistentDarkBackground(frames: Frame[]): string {
-  const samples = frames.flatMap(frame => {
-    const { width, height, pixels } = frame;
-    return [0, width - 1, width * (height - 1), width * height - 1].map(index => {
-      const offset = index * 4;
-      return [pixels[offset], pixels[offset + 1], pixels[offset + 2]];
-    });
-  });
-  const averaged = [0, 1, 2].map(channel =>
-    samples.reduce((sum, rgb) => sum + rgb[channel], 0) / samples.length);
-  if (averaged.some(n => n > 85) || samples.some(rgb =>
-    rgb.some((n, channel) => Math.abs(n - averaged[channel]) > 30)))
-    throw new Error("Background is not stable and dark across sampled frames");
-  return colorHex(averaged[0], averaged[1], averaged[2]);
+type RGB = readonly [number, number, number];
+const FOREGROUND_RGB_DISTANCE = 58;
+
+function colorDistance(r: number, g: number, b: number, background: RGB): number {
+  return Math.hypot(r - background[0], g - background[1], b - background[2]);
 }
 
-/** Flood-fill isolated bright objects. Eight-neighbour segmentation at a
- * fixed threshold; no background pixels, file paths, model calls or URLs.
+/** Corner checks fail closed on camera motion, uneven backgrounds or
+ * objects touching frame corners, instead of tracing the backdrop.
  */
-export function findStudioBrightComponents(
+function frameBackground(pixels: Uint8Array | Uint8ClampedArray, width: number, height: number): RGB {
+  const corners = [0, width - 1, width * (height - 1), width * height - 1]
+    .map(index => Array.from(pixels.subarray(index * 4, index * 4 + 3)));
+  const median = [0, 1, 2].map(channel => {
+    const values = corners.map(pixel => pixel[channel]).sort((a, b) => a - b);
+    return (values[1] + values[2]) / 2;
+  }) as [number, number, number];
+  if (corners.some(pixel => colorDistance(pixel[0], pixel[1], pixel[2], median) > 42))
+    throw new Error("Background corners are inconsistent or obstructed");
+  return median;
+}
+function stableSceneBackground(frames: Frame[]): RGB {
+  const reference = frames[0].background;
+  if (frames.some(frame =>
+    colorDistance(frame.background[0], frame.background[1], frame.background[2], reference) > 35))
+    throw new Error("Background changed across sampled frames");
+  return reference;
+}
+
+/** Eight-connected foreground segmentation against a stable sampled backdrop.
+ * Works for bright/dark/saturated isolated objects when they differ in RGB
+ * from the backdrop. This is not general-purpose semantic segmentation.
+ */
+export function findStudioForegroundComponents(
   pixels: Uint8Array | Uint8ClampedArray, width: number, height: number,
+  background: RGB,
 ): Component[] {
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) ||
       width <= 0 || height <= 0 || width * height > MAX_FRAME_PIXELS ||
-      pixels.length !== width * height * 4) throw new Error("Invalid bounded decoded video frame");
+      pixels.length !== width * height * 4 ||
+      background.length !== 3 || background.some(channel => !Number.isFinite(channel) || channel < 0 || channel > 255))
+    throw new Error("Invalid bounded decoded video frame");
   const mask = new Uint8Array(width * height);
   for (let index = 0; index < mask.length; index++) {
     const pos = index * 4;
-    const luminosity = .299 * pixels[pos] + .587 * pixels[pos + 1] + .114 * pixels[pos + 2];
-    if (pixels[pos + 3] >= 64 && luminosity >= 155) mask[index] = 1;
+    if (pixels[pos + 3] >= 64 &&
+        colorDistance(pixels[pos], pixels[pos + 1], pixels[pos + 2], background) >= FOREGROUND_RGB_DISTANCE)
+      mask[index] = 1;
   }
   const result: Component[] = [];
   const queue = new Int32Array(mask.length);
@@ -118,7 +137,6 @@ export function findStudioBrightComponents(
     }
     if (tail < MIN_PIXELS) continue;
     const boxWidth = xmax - xmin + 1, boxHeight = ymax - ymin + 1;
-    // Full-frame foreground is indistinguishable from a bright background.
     if (boxWidth * boxHeight >= width * height * .55 || boxWidth < 5 || boxHeight < 5) continue;
     result.push({ x: xmin, y: ymin, width: boxWidth, height: boxHeight,
       count: tail, r: red / tail, g: green / tail, b: blue / tail });
@@ -126,6 +144,13 @@ export function findStudioBrightComponents(
       "Too many foreground components; this prototype supports at most four separated shapes");
   }
   return result.sort((a, b) => a.x - b.x || a.y - b.y);
+}
+
+/** Compatibility helper for existing black-background brightness fixtures. */
+export function findStudioBrightComponents(
+  pixels: Uint8Array | Uint8ClampedArray, width: number, height: number,
+): Component[] {
+  return findStudioForegroundComponents(pixels, width, height, [0, 0, 0]);
 }
 
 function matchingCost(a: Component, b: Component, width: number, height: number): number {
@@ -180,9 +205,10 @@ async function decodedFrame(source: string, time: number): Promise<Frame> {
   const ctx = canvas.getContext("2d");
   ctx.drawImage(image, 0, 0);
   const pixels = ctx.getImageData(0, 0, image.width, image.height).data;
-  const components = findStudioBrightComponents(pixels, image.width, image.height);
-  if (!components.length) throw new Error("Reference frame has no isolated bright foreground");
-  return { time, width: image.width, height: image.height, pixels, components };
+  const background = frameBackground(pixels, image.width, image.height);
+  const components = findStudioForegroundComponents(pixels, image.width, image.height, background);
+  if (!components.length) throw new Error("Reference frame has no isolated foreground with sufficient color contrast");
+  return { time, width: image.width, height: image.height, pixels, components, background };
 }
 
 /** A local contour (cropped around an object), not a screenshot embedded in SVG. */
@@ -194,10 +220,11 @@ function vectorObject(frame: Frame, region: Component): string {
     if (sx < 0 || sy < 0 || sx >= frame.width || sy >= frame.height) continue;
     const original = (sy * frame.width + sx) * 4;
     const destination = (y * cropWidth + x) * 4;
-    rgba[destination] = frame.pixels[original];
-    rgba[destination + 1] = frame.pixels[original + 1];
-    rgba[destination + 2] = frame.pixels[original + 2];
-    rgba[destination + 3] = frame.pixels[original + 3];
+    const foreground = frame.pixels[original + 3] >= 64 &&
+      colorDistance(frame.pixels[original], frame.pixels[original + 1],
+        frame.pixels[original + 2], frame.background) >= FOREGROUND_RGB_DISTANCE;
+    rgba[destination] = rgba[destination + 1] = rgba[destination + 2] = foreground ? 255 : 0;
+    rgba[destination + 3] = 255;
   }
   const traced = traceImageData({ width: cropWidth, height: cropHeight, data: rgba }, {
     mode: "silhouette", invert: true, threshold: 155, smooth: false,
@@ -216,6 +243,11 @@ async function compareSampledVideoAndStudio(
   project: MotionProject, decoded: Frame[], frames: number[],
 ): Promise<{ foregroundIoU: number[]; contactSheet: Buffer }> {
   const width = decoded[0].width, height = decoded[0].height;
+  const expectedBackground = [
+    parseInt(project.composition.background.slice(1, 3), 16),
+    parseInt(project.composition.background.slice(3, 5), 16),
+    parseInt(project.composition.background.slice(5, 7), 16),
+  ] as RGB;
   const header = 28;
   const contact = createCanvas(width * 2, height * decoded.length + header);
   const context = contact.getContext("2d");
@@ -235,10 +267,10 @@ async function compareSampledVideoAndStudio(
     const pixels = resultContext.getImageData(0, 0, width, height).data;
     let common = 0, union = 0;
     for (let offset = 0; offset < pixels.length; offset += 4) {
-      const original = .299 * source.pixels[offset] + .587 * source.pixels[offset + 1] +
-        .114 * source.pixels[offset + 2] >= 155;
-      const output = .299 * pixels[offset] + .587 * pixels[offset + 1] +
-        .114 * pixels[offset + 2] >= 155;
+      const original = colorDistance(source.pixels[offset], source.pixels[offset + 1],
+        source.pixels[offset + 2], source.background) >= FOREGROUND_RGB_DISTANCE;
+      const output = colorDistance(pixels[offset], pixels[offset + 1],
+        pixels[offset + 2], expectedBackground) >= FOREGROUND_RGB_DISTANCE;
       if (original || output) union++;
       if (original && output) common++;
     }
@@ -345,7 +377,7 @@ export async function reconstructMultiObjectStudioVideo(
       }
     }
     const { snapshots: frames, ordered, costs } = tracked;
-    const background = consistentDarkBackground(frames);
+    const background = colorHex(...stableSceneBackground(frames));
     const times = sampledFrames.map(frame => frame / 30);
     const layers: PathLayer[] = [];
     const objects: StudioTrackedObject[] = [];
@@ -432,7 +464,7 @@ export async function reconstructMultiObjectStudioVideo(
       interpolationCheckIoU: check?.foregroundIoU ?? [],
       reviewPng,
       limitations: [
-        "Only 2-4 separated bright shapes on a dark background; no AI vision model is used.",
+        "Only 2-4 separated high-contrast shapes on a stable solid-color background; no AI vision model is used.",
         "Only 5-9 bounded position samples estimate x/y; geometry/rotation/text/audio are not reconstructed.",
         "Crossing or overlapping objects, occlusion and unstable identities fail closed.",
         "Confidence is association-cost heuristic; review IoU covers three samples and interpolation QA up to two unsampled frames.",
