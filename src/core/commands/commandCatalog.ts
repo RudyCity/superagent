@@ -25,6 +25,14 @@ export const MUSE_TUNNEL_SUGGESTIONS = [
   "/muse tunnel guide",
 ];
 
+export const MUSE_HOST_SUGGESTIONS = [
+  "/muse host status",
+  "/muse host help",
+  "/muse host steer",
+  "/muse host task",
+  "/muse host abort",
+] as const;
+
 export const TELEGRAM_SUGGESTIONS = [
   "/telegram status",
   "/telegram doctor",

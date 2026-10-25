@@ -657,6 +657,23 @@ export class MuseWatcher {
     );
     this.options.onProgress?.(`Executing ${callsCount} tool call(s) for task ${envelope.task_id}...`);
 
+    // Claim DURABLY before any side-effecting tool invocation. A redelivered
+    // batch from any earlier process must never execute the tools again.
+    const journal = this.options.batchJournal;
+    if (journal) {
+      let claimed = false;
+      try { claimed = journal.claim(envelope.id, envelope.task_id, callsCount); }
+      catch (error) {
+        this.emitLine("error", "[Muse Watch] Checkpoint claim failed: " + String(error));
+      }
+      if (!claimed) {
+        this.activeBatchIds.delete(envelope.id);
+        this.pendingReplyMessageIds.delete(envelope.id);
+        this.emitLine("error", "[Muse Watch] Previously observed or uncheckpointed batch; manual reconciliation required. Tools NOT rerun.");
+        return;
+      }
+    }
+
     const batchAbort = new AbortController();
     this.activeBatchAborts.add(batchAbort);
     const batchSignal = this.abortController?.signal
@@ -728,6 +745,9 @@ export class MuseWatcher {
           "REMOTE-AGENT",
           `MuseWatcher batch ${envelope.id} was aborted. Skipping posting results back.`
         );
+        if (journal) {
+          try { journal.transition(envelope.id, "uncertain"); } catch {}
+        }
         return;
       }
 
@@ -760,11 +780,15 @@ export class MuseWatcher {
         `MuseWatcher completed batch ${envelope.id} with ${results.length} result(s). Posting back via transport.`
       );
 
+      // Tool work is finished, but delivery is not yet confirmed. Do not
+      // persist results or prompts, only metadata about their delivery stage.
+      journal?.transition(envelope.id, "result_pending");
       const sent = await this.transport.sendEnvelope(
         resultEnvelope,
         meta,
         this.options.onProgress
       );
+      if (sent) journal?.transition(envelope.id, "delivered");
       if (!sent) {
         this.emitLine(
           "error",

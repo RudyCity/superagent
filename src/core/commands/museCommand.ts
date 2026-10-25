@@ -165,6 +165,7 @@ export const museCommand: SlashCommand = {
         "  /muse host steer <text>      - Steer verified remote host (explicit opt-in)",
         "  /muse host task <text>       - Request Muse task from independent host",
         "  /muse host abort [reason]    - Abort active batch on independent host",
+        "  CLI: channel-host checkpoint --port 7892  - Inspect pending batch checkpoints safely",
         "  /muse watch [dirs]           - Start watch mode for one or more workspaces",
         "  /muse watch start            - Start the Muse watcher",
         "  /muse watch stop             - Stop only the Muse watcher",

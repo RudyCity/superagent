@@ -1,6 +1,7 @@
 import type { Agent } from "../agent.js";
 import type { RemoteAgentTransport } from "./config.js";
 import type { RemoteTransport, RemoteEnvelopeMeta } from "./transport.js";
+import type { MuseBatchJournal } from "./museBatchJournal.js";
 import type { TaskBatchEnvelope, TaskDoneEnvelope } from "./protocol.js";
 
 export interface MuseWatcherStats {
@@ -38,6 +39,8 @@ export interface MuseWatcherOptions {
   transportType?: RemoteAgentTransport;
   /** Marks this watcher as a Telegram fallback instance (registered under a reserved key). */
   fallback?: boolean;
+  /** Opt-in durable journal for the independently hosted Muse watcher only. */
+  batchJournal?: MuseBatchJournal;
   onProgress?: (message: string) => void;
   onLog?: (message: string) => void;
   onLine?: (line: { type: string; content: string; timestamp?: number }) => void;

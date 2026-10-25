@@ -150,6 +150,11 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse watch start": "Start the Muse watcher.",
   "/muse watch stop": "Stop only the Muse watcher.",
   "/muse watch status": "Show only Muse watcher status.",
+  "/muse host status": "Inspect verified independent Muse and Telegram channel owners.",
+  "/muse host help": "Show explicit commands to safely control an independent channel host.",
+  "/muse host steer": "Send an operator instruction to a verified independent host over authenticated IPC.",
+  "/muse host task": "Dispatch a Muse task through an independently owned channel.",
+  "/muse host abort": "Request cancellation of an active Muse batch via independent channel IPC.",
   "/muse watch add": "Add a workspace to Muse watch.",
   "/muse watch remove": "Remove a workspace from Muse watch.",
   "/muse watch --ws": "Use Muse WebSocket transport.",
@@ -751,6 +756,12 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         return getTunnelSubSuggestions(sub === "cloudflare" ? "/muse cloudflare" : "/muse tunnel", query);
       }
 
+      if (sub === "host") {
+        return filterSuggestions([
+          "/muse host status", "/muse host help", "/muse host steer",
+          "/muse host task", "/muse host abort",
+        ], query);
+      }
       if (sub === "watch") {
         const watchPossibilities = [
           "/muse watch start",
@@ -779,6 +790,11 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/muse watch start",
         "/muse watch stop",
         "/muse watch status",
+        "/muse host status",
+        "/muse host help",
+        "/muse host steer",
+        "/muse host task",
+        "/muse host abort",
         "/muse watch add",
         "/muse watch remove",
         "/muse watch --ws",

@@ -12,6 +12,7 @@ import path from "node:path";
 import { loadRemoteAgentConfig, getWatchedWorkspaces } from "../remoteAgent/config.js";
 import type { RemoteAgentConfig } from "../remoteAgent/config.js";
 import { getMuseWatcher, TELEGRAM_FALLBACK_KEY } from "../remoteAgent/museWatcherRegistry.js";
+import { MuseBatchJournal } from "../remoteAgent/museBatchJournal.js";
 
 export type ChannelHostMode = "idle" | "muse-ws" | "telegram-fallback";
 export interface ChannelHostHealth {
@@ -25,6 +26,8 @@ export interface ChannelHostHealth {
   taskActive: boolean;
   tasksCompleted: number;
   startedAt: number;
+  /** Aggregate non-delivered batches; excludes contents and IDs. */
+  reconciliationPending?: number;
   /** Never include credentials, workspace paths, group IDs, URLs or prompts. */
   errorCode?: "START_FAILED";
 }
@@ -191,6 +194,8 @@ export async function runChannelHost(options: {
   }
   const config = options.config || loadRemoteAgentConfig();
   validateChannelHostMode(mode, wsPort, config);
+  // Fail closed on invalid/tampered journal before watcher/socket startup.
+  const journal = mode !== "idle" ? new MuseBatchJournal(port) : null;
   // Fail closed on ANY existing registration, including stale metadata.
   // Never overwrite a PID record or adopt unrelated listener processes.
   if (fs.existsSync(statePath(port))) {
@@ -217,6 +222,7 @@ export async function runChannelHost(options: {
       mode, status: state, watcherActive: Boolean(options.executeIpc || watcher?.isActive()),
       taskActive: Boolean(stats?.activeTaskId || (stats?.queuedBatches ?? 0) > 0),
       tasksCompleted: stats?.tasksCompleted || 0, startedAt,
+      reconciliationPending: journal?.summary().requiresReconciliation || 0,
       ...(errorCode ? { errorCode } : {}),
     };
   };
@@ -334,10 +340,12 @@ export async function runChannelHost(options: {
           const watched = getWatchedWorkspaces(config);
           if (selected === "muse-ws") {
             await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
-              transportType: "websocket", wsPort: selectedPort, tunnel: false });
+              transportType: "websocket", wsPort: selectedPort, tunnel: false,
+              batchJournal: journal || undefined });
           } else {
             await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
-              transportType: "telegram", fallback: true, tunnel: false });
+              transportType: "telegram", fallback: true, tunnel: false,
+              batchJournal: journal || undefined });
           }
         });
         await starter(mode, wsPort);
@@ -356,6 +364,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   if (action === "help" || action === "--help") {
     console.log("superagent channel-host serve --port 7892 [--mode idle|muse-ws|telegram-fallback] [--ws-port 9225]");
     console.log("superagent channel-host status --port 7892");
+    console.log("superagent channel-host checkpoint --port 7892  # inspect unconfirmed batches offline");
     console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
     return false;
   }
@@ -366,6 +375,24 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "checkpoint") {
+    // Offline inspection is intentional: operator needs this AFTER a hard
+    // channel-host crash. Never loads tools or starts a watcher.
+    const journal = new MuseBatchJournal(port);
+    const counts = journal.summary();
+    console.log("Muse batch checkpoint on owner port " + port);
+    console.log("Delivered: " + counts.delivered + " | Needs reconciliation: " +
+      counts.requiresReconciliation + " (started " + counts.started +
+      ", result pending " + counts.resultPending + ", uncertain " + counts.uncertain + ")");
+    for (const batch of journal.list().filter(record => record.stage !== "delivered")) {
+      console.log("  " + JSON.stringify({
+        batchId: batch.batchId, taskId: batch.taskId,
+        stage: batch.stage, recordedAt: batch.recordedAt,
+      }));
+    }
+    console.log("No automatic replay. Reconcile external effects before any manual intervention.");
+    return false;
+  }
   if (action === "status") {
     const known = readDiscovery(port);
     const live = await probeHost(port);
@@ -375,6 +402,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Channel host: " + live.status + " | mode " + live.mode + " | PID " + live.pid);
     console.log("Port: " + live.port + " | watcher: " + (live.watcherActive ? "active" : "inactive"));
     console.log("Active task: " + live.taskActive + " | completed: " + live.tasksCompleted);
+    console.log("Checkpoint reconciliation pending: " + (live.reconciliationPending ?? 0));
     return false;
   }
   if (action === "serve") {
@@ -383,5 +411,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status or help");
+  throw new Error("Expected channel-host serve, status, checkpoint or help");
 }
