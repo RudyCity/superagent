@@ -96,6 +96,23 @@ export interface MotionStackEntry {
   startFrame?: number;
   durationFrames?: number;
 }
+/** Bounded, declarative Interaction Graph v1. No arbitrary JavaScript or URLs. */
+export type StudioInteractionEvent = "ready" | "click" | "mouseenter" | "mouseleave" | "focus" | "scroll";
+export type StudioInteractionAction = "play" | "pause" | "replay" | "seek";
+export interface StudioInteractionBinding {
+  id: string;
+  event: StudioInteractionEvent;
+  action: StudioInteractionAction;
+  target: "stage" | "layer";
+  layerId?: string;
+  /** 0..1 progress; allowed only for seek; scroll uses the viewport instead. */
+  progress?: number;
+}
+export interface StudioInteractionGraph {
+  version: 1;
+  bindings: StudioInteractionBinding[];
+}
+
 export interface MotionComposition {
   width: number;
   height: number;
@@ -105,6 +122,7 @@ export interface MotionComposition {
   audio?: MotionAudioTrack;
   audioTracks?: MotionAudioTrack[];
   layers: MotionLayer[];
+  interactionGraph?: StudioInteractionGraph;
   /** Declarative stack; rendered layers are the compiled result. */
   effectStack?: MotionStackEntry[];
   /** Original composition before applying the stack, used to rebuild safely. */
@@ -128,6 +146,7 @@ export type MotionEdit =
   | { type: "remove-layer"; layerId: string }
   | { type: "move-layer"; layerId: string; toIndex: number }
   | { type: "replace-composition"; composition: MotionProject["composition"] }
+  | { type: "set-interaction-graph"; graph: StudioInteractionGraph | null }
   | { type: "set-audio"; audio: MotionAudioTrack | null }
   | { type: "set-audio-tracks"; audioTracks: MotionAudioTrack[] };
 

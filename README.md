@@ -876,7 +876,7 @@ folder as a rollback copy. Both namespaces without the verified cutover marker
 remain blocked; do not manually copy, delete or merge either directory.
 See [the migration plan](docs/plans/2026-10-22-superagent-studio-canonical-migration.md).
 
-### Studio to Code — interactive SVG / GSAP exporter (developer preview)
+### Studio to Code — offline SVG and React exports (developer preview)
 
 Instead of rasterizing a scene into MP4, the same revisioned Studio composition
 can export **editable HTML with inline SVG elements and a native browser timeline**.
@@ -899,6 +899,16 @@ and refuses to overwrite a previous export of the same revision. Authenticated
 T-Line Studio clients may download the same artifact through
 `GET /api/studio/projects/:id/code.html?trigger=scroll`; the old `/api/motion`
 route also works. The T-Line Studio editor offers an **Export Web Code** control.
+
+**Interaction Rules v1:** each revisioned Studio composition may contain up
+to 12 validated `interactionGraph.bindings`, authored in T-Line's **Interaction
+Graph** panel. Allowed events are ready, click, mouseenter, mouseleave, focus and
+scroll; allowed actions are play, pause, replay and seek. The target is the stage
+or a named vector/text layer (scroll and ready are stage-only). Scroll maps
+viewport progress to timeline seek. These rules override the old single trigger
+for exported HTML and React components, while MP4 rendering remains unchanged.
+Each edit is persisted with Studio's optimistic revision guard; removing a
+referenced layer is rejected until the affected interaction is removed.
 
 **Currently supported:** native text, rectangle and SVG path layers, revisioned
 keyframes, timing, scale/rotation/position/opacity/stroke-dashoffset properties,

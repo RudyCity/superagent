@@ -38,6 +38,11 @@ export function applyMotionEdits(project: MotionProject, baseRevision: number, o
       else next.composition.audio = structuredClone(operation.audio);
       continue;
     }
+    if (operation.type === "set-interaction-graph") {
+      if (operation.graph === null) delete next.composition.interactionGraph;
+      else next.composition.interactionGraph = structuredClone(operation.graph);
+      continue;
+    }
     if (operation.type === "replace-composition") {
       next.composition = structuredClone(operation.composition);
       continue;

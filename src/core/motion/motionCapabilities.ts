@@ -10,6 +10,8 @@ export const MOTION_CAPABILITIES = Object.freeze({
   studioToCodeExport: "svg-native-html-v2",
   studioToCodeOffline: true,
   studioToCodeFormats: ["html", "react"],
+  studioInteractionRules: "declarative-bindings-v1",
+  studioInteractionRulesMax: 12,
   studioToCodeTriggers: ["autoplay", "scroll", "click", "hover"],
   studioToCodeLayerKinds: ["text", "rect", "path"],
   standaloneBrowserEditor: false,

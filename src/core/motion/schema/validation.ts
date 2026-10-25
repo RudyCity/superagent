@@ -47,6 +47,48 @@ function string(value: unknown, max: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= max;
 }
 
+export function validateStudioInteractionGraph(
+  raw: unknown,
+  layerIds: ReadonlySet<string>,
+): string[] {
+  const errors: string[] = [];
+  if (!record(raw)) return ["interactionGraph: expected object"];
+  allowedKeys(raw, ["version", "bindings"], "interactionGraph", errors);
+  if (raw.version !== 1) errors.push("interactionGraph: expected version 1");
+  if (!Array.isArray(raw.bindings) || raw.bindings.length > 12) {
+    errors.push("interactionGraph: bindings must be an array of up to 12 entries");
+    return errors;
+  }
+  const names = new Set<string>();
+  raw.bindings.forEach((value: unknown, i: number) => {
+    const at = "interactionGraph.bindings[" + i + "]";
+    if (!record(value)) { errors.push(at + ": expected object"); return; }
+    allowedKeys(value, ["id", "event", "action", "target", "layerId", "progress"], at, errors);
+    if (!string(value.id, 64) || !id.test(value.id) || names.has(value.id)) {
+      errors.push(at + ": invalid or duplicate binding id");
+    } else names.add(value.id);
+    if (!["ready", "click", "mouseenter", "mouseleave", "focus", "scroll"].includes(String(value.event)))
+      errors.push(at + ": unsupported event");
+    if (!["play", "pause", "replay", "seek"].includes(String(value.action)))
+      errors.push(at + ": unsupported action");
+    if (value.target !== "stage" && value.target !== "layer") errors.push(at + ": invalid target");
+    if (value.target === "layer" && (!string(value.layerId, 64) || !layerIds.has(String(value.layerId))))
+      errors.push(at + ": referenced layer does not exist");
+    if (value.target === "stage" && value.layerId !== undefined)
+      errors.push(at + ": stage must not specify layerId");
+    if (value.event === "ready" && value.target !== "stage")
+      errors.push(at + ": ready events must target stage");
+    if (value.event === "scroll" &&
+        (value.target !== "stage" || value.action !== "seek" || value.progress !== undefined))
+      errors.push(at + ": scroll must seek viewport progress on stage");
+    if (value.action === "seek" && value.event !== "scroll" && !finite(value.progress, 0, 1))
+      errors.push(at + ": seek requires progress between 0 and 1");
+    if (value.action !== "seek" && value.progress !== undefined)
+      errors.push(at + ": progress is only allowed for seek");
+  });
+  return errors;
+}
+
 export function validateMotionTrack(raw: unknown, durationFrames: number, at = "track"): string[] {
   const errors: string[] = [];
   if (!record(raw)) return [at + ": expected object"];
@@ -102,7 +144,7 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
   if (!record(c)) {
     errors.push("composition is required");
   } else {
-    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "audio", "audioTracks", "effectStack", "stackBase"], "composition", errors);
+    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "interactionGraph", "audio", "audioTracks", "effectStack", "stackBase"], "composition", errors);
     if (c.effectStack !== undefined || c.stackBase !== undefined) {
       if (!Array.isArray(c.effectStack) || !record(c.stackBase)) {
         errors.push("effectStack and stackBase must both be present");
@@ -232,6 +274,10 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
         }
       });
     }
+    if (c.interactionGraph !== undefined && Array.isArray(c.layers)) {
+      const ids = new Set(c.layers.filter(record).map(layer => String(layer.id)));
+      errors.push(...validateStudioInteractionGraph(c.interactionGraph, ids));
+    }
   }
   if (errors.length) throw new MotionValidationError(errors);
 }
@@ -258,6 +304,11 @@ export function validateMotionEdits(raw: unknown, durationFrames: number): asser
     if (edit.type === "set-audio") {
       allowedKeys(edit, ["type", "audio"], at, errors);
       if (edit.audio !== null) errors.push(...validateMotionAudio(edit.audio, durationFrames));
+      return;
+    }
+    if (edit.type === "set-interaction-graph") {
+      allowedKeys(edit, ["type", "graph"], at, errors);
+      if (edit.graph !== null && !record(edit.graph)) errors.push(at + ": invalid graph object");
       return;
     }
     if (edit.type === "replace-composition") {
