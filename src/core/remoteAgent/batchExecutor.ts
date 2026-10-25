@@ -27,6 +27,10 @@ export interface BatchExecutorOptions {
   onPermissionDecision?: (toolCall: any, description: string, approved: boolean) => void | Promise<void>;
   onToolStart?: (toolCall: any, description: string) => void;
   onToolEnd?: (toolCall: any, toolResult: any, description: string) => void;
+  /** Synchronous durable boundary before tool.execute. Throw to fail closed. */
+  beforeToolInvoke?: (callId: string) => void;
+  /** Durable progress metadata after a call returns, before another wave. */
+  afterToolResult?: (callId: string) => void;
 }
 
 export const MAX_TOOL_OUTPUT_CHARS = 3500;
@@ -408,6 +412,9 @@ async function executeOneCall(
     }
   };
 
+  // Conservative checkpoint: record intent before lookup, permission prompts,
+  // or invocation. Denied/unknown tools count as attempted for safe recovery.
+  options.beforeToolInvoke?.(call.id);
   emitStart();
 
   let tool = getToolByName(toolName);
@@ -658,7 +665,9 @@ export async function executeBatch(
     // Read-only calls run concurrently
     await Promise.all(
       parallelIds.map(async (id) => {
-        resultsById.set(id, await executeOneCall(callById.get(id)!, options, cwd));
+        const result = await executeOneCall(callById.get(id)!, options, cwd);
+        if (options.beforeToolInvoke) options.afterToolResult?.(id);
+        resultsById.set(id, result);
       })
     );
     // Modifying calls run sequentially (orderly permission prompts, no write conflicts)
@@ -667,7 +676,9 @@ export async function executeBatch(
         markAborted([id]);
         continue;
       }
-      resultsById.set(id, await executeOneCall(callById.get(id)!, options, cwd));
+      const result = await executeOneCall(callById.get(id)!, options, cwd);
+      if (options.beforeToolInvoke) options.afterToolResult?.(id);
+      resultsById.set(id, result);
     }
   }
 

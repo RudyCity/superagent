@@ -11,9 +11,10 @@ import os from "node:os";
 import path from "node:path";
 import { loadRemoteAgentConfig, getWatchedWorkspaces } from "../remoteAgent/config.js";
 import type { RemoteAgentConfig } from "../remoteAgent/config.js";
-import { getMuseWatcher, TELEGRAM_FALLBACK_KEY } from "../remoteAgent/museWatcherRegistry.js";
+import { getMuseWatcherStrict, TELEGRAM_FALLBACK_KEY } from "../remoteAgent/museWatcherRegistry.js";
 import { MuseBatchJournal, museJournalFile } from "../remoteAgent/museBatchJournal.js";
 import { MuseResultOutbox } from "../remoteAgent/museResultOutbox.js";
+import { MuseExecutionCheckpoint } from "../remoteAgent/museExecutionCheckpoint.js";
 
 export type ChannelHostMode = "idle" | "muse-ws" | "telegram-fallback";
 export interface ChannelHostHealth {
@@ -31,11 +32,13 @@ export interface ChannelHostHealth {
   reconciliationPending?: number;
   resultOutboxStored?: number;
   resultAcknowledged?: number;
+  resumableUntouchedBatches?: number;
+  interruptedCallBatches?: number;
   /** Never include credentials, workspace paths, group IDs, URLs or prompts. */
   errorCode?: "START_FAILED";
 }
 interface ChannelHostDiscovery { version: 1; instanceId: string; pid: number; port: number; ipcToken: string }
-export type ChannelHostIpcOperation = "steer" | "task" | "abort" | "replay_result";
+export type ChannelHostIpcOperation = "steer" | "task" | "abort" | "replay_result" | "resume_untouched";
 export interface ChannelHostIpcRequest {
   operation: ChannelHostIpcOperation;
   requestId: string;
@@ -159,11 +162,12 @@ export async function listVerifiedChannelHosts(): Promise<ChannelHostHealth[]> {
 export function validateChannelIpcCommand(raw: unknown): ChannelHostIpcRequest {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid IPC payload");
   const value = raw as Partial<ChannelHostIpcRequest>;
-  if (!["steer", "task", "abort", "replay_result"].includes(value.operation || "") ||
+  if (!["steer", "task", "abort", "replay_result", "resume_untouched"].includes(value.operation || "") ||
       typeof value.requestId !== "string" || !/^[a-f0-9]{32}$/.test(value.requestId) ||
       typeof value.text !== "string" || value.text.length > 4096 ||
       value.text.includes("\0") ||
-      (value.operation === "replay_result" && !/^[A-Za-z0-9._:-]{1,256}$/.test(value.text)) ||
+      ((value.operation === "replay_result" || value.operation === "resume_untouched") &&
+       !/^[A-Za-z0-9._:-]{1,256}$/.test(value.text)) ||
       (value.operation !== "abort" && !value.text.trim())) {
     throw new Error("Invalid IPC command");
   }
@@ -227,6 +231,7 @@ export async function runChannelHost(options: {
   }
   let journal: MuseBatchJournal | null = null;
   let outbox: MuseResultOutbox | null = null;
+  let executionCheckpoint: MuseExecutionCheckpoint | null = null;
   const instanceId = crypto.randomBytes(16).toString("hex");
   const startedAt = Date.now();
   const record: ChannelHostDiscovery = {
@@ -241,8 +246,8 @@ export async function runChannelHost(options: {
   let errorCode: ChannelHostHealth["errorCode"];
   const health = (): ChannelHostHealth => {
     const watcher = mode === "telegram-fallback"
-      ? getMuseWatcher(TELEGRAM_FALLBACK_KEY)
-      : mode === "muse-ws" ? getMuseWatcher(wsPort) : null;
+      ? getMuseWatcherStrict(TELEGRAM_FALLBACK_KEY)
+      : mode === "muse-ws" ? getMuseWatcherStrict(wsPort) : null;
     const stats = watcher?.getStats();
     return {
       service: "superagent-channel-host", instanceId, pid: process.pid, port,
@@ -252,6 +257,10 @@ export async function runChannelHost(options: {
       reconciliationPending: journal?.summary().requiresReconciliation || 0,
       resultOutboxStored: outbox?.count() || 0,
       resultAcknowledged: journal?.summary().acknowledged || 0,
+      resumableUntouchedBatches: executionCheckpoint?.summaries().filter(s =>
+        s.canResumeUntouched && journal?.get(s.batchId)?.stage === "started").length || 0,
+      interruptedCallBatches: executionCheckpoint?.summaries().filter(s =>
+        s.started > 0 && s.finished < s.started).length || 0,
       ...(errorCode ? { errorCode } : {}),
     };
   };
@@ -293,7 +302,7 @@ export async function runChannelHost(options: {
         json(409, { ok: false, code: "NOT_READY", requestId: command.requestId });
         return;
       }
-      const watcher = mode === "muse-ws" ? getMuseWatcher(wsPort) : getMuseWatcher(TELEGRAM_FALLBACK_KEY);
+      const watcher = mode === "muse-ws" ? getMuseWatcherStrict(wsPort) : getMuseWatcherStrict(TELEGRAM_FALLBACK_KEY);
       if (!options.executeIpc && !watcher?.isActive()) {
         json(409, { ok: false, code: "NOT_READY", requestId: command.requestId });
         return;
@@ -319,6 +328,7 @@ export async function runChannelHost(options: {
         if (options.executeIpc) return options.executeIpc(command);
         if (!watcher) return false;
         if (command.operation === "replay_result") return watcher.replayStoredResult(command.text);
+        if (command.operation === "resume_untouched") return watcher.resumeUntouchedBatch(command.text);
         if (command.operation === "steer") return watcher.sendSteeringMessage(command.text);
         if (command.operation === "task") return watcher.sendTaskRequest(command.text);
         return watcher.abortActiveBatch(command.text || "Cancelled through authenticated channel IPC");
@@ -343,6 +353,7 @@ export async function runChannelHost(options: {
     // Fail closed on invalid/tampered journal before watcher/socket startup.
     journal = mode !== "idle" ? new MuseBatchJournal(port) : null;
     outbox = mode !== "idle" ? new MuseResultOutbox(port) : null;
+    executionCheckpoint = mode !== "idle" ? new MuseExecutionCheckpoint(port) : null;
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(port, "127.0.0.1", () => {
@@ -377,7 +388,8 @@ export async function runChannelHost(options: {
           if (selected === "muse-ws") {
             await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
               transportType: "websocket", wsPort: selectedPort, tunnel: false,
-              batchJournal: journal || undefined, resultOutbox: outbox || undefined });
+              batchJournal: journal || undefined, resultOutbox: outbox || undefined,
+              executionCheckpoint: executionCheckpoint || undefined });
           } else {
             await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
               transportType: "telegram", fallback: true, tunnel: false,
@@ -401,6 +413,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host serve --port 7892 [--mode idle|muse-ws|telegram-fallback] [--ws-port 9225]");
     console.log("superagent channel-host status --port 7892");
     console.log("superagent channel-host checkpoint --port 7892  # inspect batch/task facts offline");
+    console.log("TUI: /muse host resume-untouched BATCH_ID --port 7892  # manual one-shot; only zero started tool calls");
     console.log("superagent channel-host reconcile --port 7892 --batch-id ID --decision effect_verified|no_effect_verified --evidence-sha256 HEX --confirm ID");
     console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
     return false;
@@ -418,6 +431,9 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     const journal = new MuseBatchJournal(port);
     const counts = journal.summary();
     console.log("Muse batch checkpoint on owner port " + port);
+    const execution = new MuseExecutionCheckpoint(port);
+    console.log("Execution checkpoints (encrypted batch inputs; only progress metadata printed):");
+    for (const item of execution.summaries()) console.log("  " + JSON.stringify(item));
     console.log("Muse application receipts: " + counts.acknowledged + " (distinct from transport sends)");
     console.log("Delivered: " + counts.delivered + " | Needs reconciliation: " +
       counts.requiresReconciliation + " | Reviewed: " + counts.reviewed +
@@ -480,6 +496,8 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Checkpoint reconciliation pending: " + (live.reconciliationPending ?? 0));
     console.log("Encrypted results stored: " + (live.resultOutboxStored ?? 0) +
       " | Muse application ACKs: " + (live.resultAcknowledged ?? 0));
+    console.log("Eligible untouched batches: " + (live.resumableUntouchedBatches ?? 0) +
+      " | interrupted tool batches: " + (live.interruptedCallBatches ?? 0));
     return false;
   }
   if (action === "serve") {

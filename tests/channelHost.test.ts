@@ -150,6 +150,12 @@ describe("independent channel-host lifecycle", () => {
     } as any);
     expect(received.at(-1)).toBe("replay_result:batch-replayed");
     expect(lines.some(line => line.content.includes("replay-result acknowledged"))).toBe(true);
+    await museCommand.execute("host resume-untouched sealed-batch --port " + port, {
+      addLine: (line: { type: string; content: string }) => { lines.push(line); },
+    } as any);
+    expect(received.at(-1)).toBe("resume_untouched:sealed-batch");
+    expect(lines.some(line => line.content.includes("resume-untouched acknowledged"))).toBe(true);
+    await expect(requestChannelHostIpc(port, "resume_untouched", "../bad-path")).rejects.toThrow(/Invalid IPC/);
     await expect(requestChannelHostIpc(port, "replay_result", "../invalid")).rejects.toThrow(/Invalid IPC/);
   });
 

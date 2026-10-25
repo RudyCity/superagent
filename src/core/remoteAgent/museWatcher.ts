@@ -500,12 +500,32 @@ export class MuseWatcher {
     }
   }
 
+  private readonly resumeReservations = new Set<string>();
+
+  /** Opt-in, one-shot manual replay ONLY when no previous call was attempted. */
+  public async resumeUntouchedBatch(batchId: string): Promise<boolean> {
+    const checkpoint = this.options.executionCheckpoint;
+    const journal = this.options.batchJournal;
+    if (!this.isRunning || !checkpoint || !journal || !this.options.resultOutbox ||
+        !this.transport.isConnected() || this.isProcessingQueue ||
+        this.batchQueue.length > 0 || this.activeBatchAborts.size > 0) return false;
+    const record = journal.get(batchId);
+    if (!record || record.stage !== "started" || record.review ||
+        this.options.resultOutbox.get(batchId)) return false;
+    const envelope = checkpoint.reserveUntouched(batchId, this.workspaces);
+    if (!envelope || envelope.id !== batchId || envelope.task_id !== record.taskId ||
+        envelope.calls.length !== record.callsCount) return false;
+    this.resumeReservations.add(batchId);
+    this.enqueueBatch(envelope);
+    return true; // queue acceptance, NOT completion or remote delivery
+  }
+
   private enqueueBatch(
     envelope: TaskBatchEnvelope,
     meta?: RemoteEnvelopeMeta
   ): void {
     const batchId = envelope.id;
-    if (batchId && this.options.batchJournal?.get(batchId)) {
+    if (batchId && this.options.batchJournal?.get(batchId) && !this.resumeReservations.has(batchId)) {
       // No automatic result replay and NEVER tool replay, even if completed
       // with errors. Explicit operator replay is an independent operation.
       this.emitLine("system", "[Muse Watch] Previously checkpointed batch " + batchId +
@@ -681,7 +701,8 @@ export class MuseWatcher {
     // Claim DURABLY before any side-effecting tool invocation. A redelivered
     // batch from any earlier process must never execute the tools again.
     const journal = this.options.batchJournal;
-    if (journal) {
+    const resumed = this.resumeReservations.delete(envelope.id);
+    if (journal && !resumed) {
       let claimed = false;
       try { claimed = journal.claim(envelope.id, envelope.task_id, callsCount); }
       catch (error) {
@@ -691,6 +712,18 @@ export class MuseWatcher {
         this.activeBatchIds.delete(envelope.id);
         this.pendingReplyMessageIds.delete(envelope.id);
         this.emitLine("error", "[Muse Watch] Previously observed or uncheckpointed batch; manual reconciliation required. Tools NOT rerun.");
+        return;
+      }
+    }
+    // Original attempt: seal the full batch intent after durable claim and
+    // before even the first permission prompt or tool call. If sealing fails,
+    // keep the claimed batch as uncertain; NEVER execute it.
+    const executionCheckpoint = this.options.executionCheckpoint;
+    if (executionCheckpoint && !resumed) {
+      try { executionCheckpoint.store(envelope, targetWs); }
+      catch (error) {
+        this.activeBatchIds.delete(envelope.id);
+        this.emitLine("error", "[Muse Watch] Cannot seal execution intent; tools blocked: " + String(error));
         return;
       }
     }
@@ -727,6 +760,12 @@ export class MuseWatcher {
         agent: this.options.agent,
         signal: batchSignal,
         autoApproveWorkspace: this.options.autoApproveWorkspace ?? true,
+        beforeToolInvoke: executionCheckpoint
+          ? (callId) => executionCheckpoint.markStarted(envelope.id, callId)
+          : undefined,
+        afterToolResult: executionCheckpoint
+          ? (callId) => executionCheckpoint.markFinished(envelope.id, callId)
+          : undefined,
         onToolStart: (toolCall, description) => {
           sendTyping();
           this.options.onToolStart?.(toolCall, description);

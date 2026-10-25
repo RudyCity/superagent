@@ -14,6 +14,14 @@ export function getMuseWatcher(port?: number): MuseWatcher | null {
   return globalMuseWatcher;
 }
 
+/**
+ * Exact registry lookup for independently owned channel hosts. Unlike the
+ * legacy getMuseWatcher(port), NEVER falls back to another global watcher.
+ */
+export function getMuseWatcherStrict(port: number): MuseWatcher | null {
+  return activeWatchers.get(port) || null;
+}
+
 export function isMuseWatcherActive(port?: number): boolean {
   if (port) {
     const watcher = activeWatchers.get(port);
