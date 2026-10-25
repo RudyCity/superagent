@@ -38,8 +38,9 @@ import { compileMotionParticles } from "./motionParticles.js";
 import { compileMotionTypography } from "./motionTypography.js";
 import { applyMotionEdits } from "./project/revisions.js";
 import { renderMotionPlayerHtml } from "./render/motionPreviewHtml.js";
-import { renderStudioCodeHtml, type StudioCodeTrigger } from "./code/studioCodeExporter.js";
+import type { StudioCodeTrigger } from "./code/studioCodeExporter.js";
 import { renderStudioNativeHtml } from "./code/studioNativeCodeExporter.js";
+import { renderStudioReactComponent } from "./code/studioReactCodeExporter.js";
 import { subscribeMotionStudioEvents, getMotionBridgeStats } from "./motionEvents.js";
 import { exportMotionDeliverablesBundle, getMotionDeliverablesBundleManifest } from "./motionBundleExport.js";
 import { upscaleMotionComposition, upscaleMotionArtifact, getAvailableUpscaleTargets, type MotionUpscaleTarget, type MotionUpscaleMode } from "./motionUpscale.js";
@@ -104,7 +105,7 @@ export async function handleMotionHttpRoute(
   const visionRepair = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-repair$/);
   const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
   const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
-  const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.html$/);
+  const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.(html|tsx)$/);
   const eventsRoute = pathname === "/api/motion/events";
   const tlineBridgeRoute = pathname === "/api/motion/tline-bridge";
   const bundleRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/bundle$/);
@@ -662,14 +663,16 @@ export async function handleMotionHttpRoute(
       } else {
         const source = await getMotionProject(workspace, codeExport[1]);
         // The old CDN/GSAP adapter remains private pending license review.
-        const html = renderStudioNativeHtml(source, requested as StudioCodeTrigger);
-        const body = Buffer.from(html, "utf8");
+        const react = codeExport[2] === "tsx";
+        const output = react ? renderStudioReactComponent(source, requested as StudioCodeTrigger)
+          : renderStudioNativeHtml(source, requested as StudioCodeTrigger);
+        const body = Buffer.from(output, "utf8");
         if (body.length > 4 * 1024 * 1024) throw Object.assign(
           new Error("Studio code export exceeds the size limit"), { statusCode: 413 });
         res.writeHead(200, {
-          "Content-Type": "text/html; charset=utf-8",
+          "Content-Type": react ? "text/plain; charset=utf-8" : "text/html; charset=utf-8",
           "Content-Length": String(body.length),
-          "Content-Disposition": 'attachment; filename="studio-' + source.id + '-r' + source.revision + '.html"',
+          "Content-Disposition": 'attachment; filename="studio-' + source.id + '-r' + source.revision + (react ? '.tsx' : '.html') + '"',
           "Cache-Control": "private, no-store",
           "X-Content-Type-Options": "nosniff",
         });

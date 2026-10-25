@@ -882,7 +882,13 @@ click and hover.
 ```bash
 superagent studio new --name "Animated hero" --workspace . --json
 superagent studio export-code STUDIO_PROJECT_ID --trigger scroll --workspace . --json
+superagent studio export-code STUDIO_PROJECT_ID --format react --trigger click --workspace . --json
 ```
+
+The CLI creates revision-scoped `.html` files (default) or a `.tsx` React/Next.js
+client component when `--format react` is selected. React output uses a
+sandboxed iframe with the exact offline HTML document; direct editable JSX
+layers remain planned.
 
 The CLI creates `.superagent/studio/code/<project-id>-r<revision>-<trigger>.html`
 and refuses to overwrite a previous export of the same revision. Authenticated

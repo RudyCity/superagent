@@ -9,6 +9,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   standaloneBrowserPlayer: true,
   studioToCodeExport: "svg-native-html-v2",
   studioToCodeOffline: true,
+  studioToCodeFormats: ["html", "react"],
   studioToCodeTriggers: ["autoplay", "scroll", "click", "hover"],
   studioToCodeLayerKinds: ["text", "rect", "path"],
   standaloneBrowserEditor: false,

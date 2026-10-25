@@ -6,6 +6,7 @@ import http from "node:http";
 import vm from "node:vm";
 import { renderStudioCodeHtml } from "../src/core/motion/code/studioCodeExporter.js";
 import { renderStudioNativeHtml } from "../src/core/motion/code/studioNativeCodeExporter.js";
+import { renderStudioReactComponent } from "../src/core/motion/code/studioReactCodeExporter.js";
 import { handleMotionHttpRoute } from "../src/core/motion/motionRoutes.js";
 import { createMotionProject, getMotionProject } from "../src/core/motion/project/projectStore.js";
 import type { MotionProject } from "../src/core/motion/schema/types.js";
@@ -129,6 +130,22 @@ describe("Studio to Code deterministic vector export", () => {
     expect(html).not.toContain("<script>alert(document.cookie)</script>");
     expect(html).not.toContain("<script>globalThis.hacked=1</script>");
     expect(html.match(/<script>/g)).toHaveLength(1);
+  });
+  it("builds a React/Next client component without third-party dependencies", () => {
+    const tsx = renderStudioReactComponent(svgProject(), "hover");
+    expect(tsx).toMatch(/^"use client";/);
+    expect(tsx).toContain('sandbox="allow-scripts"');
+    expect(tsx).toContain("srcDoc={STUDIO_OFFLINE_HTML}");
+    expect(tsx).toContain("export default function StudioAnimation");
+    expect(tsx).not.toContain("cdn.jsdelivr.net");
+    expect(tsx).not.toContain("dangerouslySetInnerHTML");
+  });
+  it("downloads TSX over the same authorized route with an explicit filename", async () => {
+    const response = await fetch(base + "/api/studio/projects/" + project.id + "/code.tsx?trigger=click");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-disposition")).toContain(".tsx");
+    expect(response.headers.get("content-type")).toContain("text/plain");
+    expect(await response.text()).toContain("StudioAnimation");
   });
   it("rejects invalid triggers and unknown project identifiers", async () => {
     const route = base + "/api/studio/projects/" + project.id + "/code.html";
