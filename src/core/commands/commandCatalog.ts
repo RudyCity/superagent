@@ -27,6 +27,9 @@ export const MUSE_TUNNEL_SUGGESTIONS = [
 
 export const MUSE_HOST_SUGGESTIONS = [
   "/muse host status",
+  "/muse host config status",
+  "/muse host config set-webhook",
+  "/muse host config disable",
   "/muse host help",
   "/muse host steer",
   "/muse host task",

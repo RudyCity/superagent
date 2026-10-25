@@ -9,6 +9,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { MuseRecoveryIntegrityEvents } from "./museRecoveryIntegrityEvents.js";
+import { loadMuseAlertConfig } from "./museAlertConfig.js";
 export type IncidentKind = "integrity" | "host_unavailable";
 export type IncidentStatus = "open" | "acknowledged" | "resolved";
 type Condition = "degraded" | "failed" | "offline" | "healthy" | "online";
@@ -72,6 +73,16 @@ export function configuredIncidentTarget(env: NodeJS.ProcessEnv = process.env): 
   if (!token || !/^\d{5,15}:[A-Za-z0-9_-]{20,}$/.test(token) ||
       !chatId || !/^-?\d{3,20}$/.test(chatId)) throw new Error("Invalid Telegram alert configuration");
   return { type: "telegram", token, chatId };
+}
+/** Explicit per-port config overrides legacy environment, including disabled. */
+export function resolvedIncidentTarget(port: number,
+  root = path.join(os.homedir(), ".superagent-r"),
+  env: NodeJS.ProcessEnv = process.env): Target | null {
+  const config = loadMuseAlertConfig(port, root);
+  if (!config) return configuredIncidentTarget(env);
+  if (config.mode === "disabled") return null;
+  if (config.mode === "webhook") return { type: "webhook", url: validateEndpoint(config.url) };
+  return { type: "telegram", token: config.token, chatId: config.chatId };
 }
 export function museIncidentsFile(port: number, root = path.join(os.homedir(), ".superagent-r")) {
   if (!validPort(port)) throw new Error("Invalid incident port");
@@ -278,13 +289,21 @@ export async function sendIncidentAlert(item: {
 export class MuseIncidentDispatcher {
   private timer: ReturnType<typeof setInterval> | null = null;
   constructor(private readonly center: MuseIncidentCenter,
-    private readonly target: Target | null = configuredIncidentTarget(),
+    private readonly target: Target | null | undefined = undefined,
     private readonly fetcher: typeof fetch = fetch) {}
   async once(): Promise<boolean> {
-    if (!this.target) return false; // disabled: retain pending until enabled
+    // Re-read config for each delivery: channel-host and watchdog need no restart.
+    // An invalid/tampered config must not fall back to environment or claim a
+    // notification that could be accidentally sent to the wrong provider.
+    let target: Target | null;
+    try {
+      target = this.target === undefined
+        ? resolvedIncidentTarget(this.center.port, this.center.root) : this.target;
+    } catch { return false; }
+    if (!target) return false; // disabled: retain pending until enabled
     const item = this.center.claim();
     if (!item) return false;
-    const ok = await sendIncidentAlert(item, this.target, this.fetcher);
+    const ok = await sendIncidentAlert(item, target, this.fetcher);
     this.center.complete(item.id, ok);
     return ok;
   }

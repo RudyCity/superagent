@@ -33,8 +33,29 @@ export const museCommand: SlashCommand = {
         ctx.addLine({ type: "system", content:
           "Use /muse host status, /muse host steer <text> --port 7892, " +
           "/muse host task <task> --port 7892, /muse host abort [reason] --port 7892, " +
+          "/muse host config status|set-webhook|disable --port 7892, " +
           "or /muse host replay-result <batch-id> --port 7892 (only stored results). " +
           "Requires a separately running verified channel host.", timestamp: now });
+        return;
+      }
+      if (action === "config") {
+        try {
+          const { handleMuseAlertConfigCommand } = await import("../runtime/museAlertConfigCommand.js");
+          // Never accept Telegram bot tokens from slash commands: they can
+          // leak into session/chat history. Use a piped terminal stdin.
+          if (["telegram", "set-telegram"].includes((parts[2] || "").toLowerCase())) {
+            ctx.addLine({ type: "error", content:
+              "Configure Telegram alerts with superagent channel-host config set-telegram --chat-id ID --token-stdin --port PORT in the OS shell. Pipe only the token; do not enter it in chat.",
+              timestamp: now });
+            return;
+          }
+          const status = await handleMuseAlertConfigCommand(parts.slice(2));
+          ctx.addLine({ type: "system", content: status, timestamp: now });
+        } catch {
+          ctx.addLine({ type: "error", content:
+            "Muse alert config failed; inspect port, HTTPS URL, permissions or configuration integrity.",
+            timestamp: now });
+        }
         return;
       }
       const { listVerifiedChannelHosts, requestChannelHostIpc } =
@@ -446,6 +467,9 @@ export const museCommand: SlashCommand = {
           "  /muse watch stop              - Stop only the Muse watcher",
           "  /muse watch status            - Show Muse watcher state",
           "  /muse host status             - List independently owned channel hosts",
+          "  /muse host config status --port 7892 - Show sanitized alert provider status",
+          "  /muse host config set-webhook https://... --port 7892 - Set alert webhook",
+          "  /muse host config disable --port 7892 - Disable external alert delivery",
           "  /muse host steer <text>       - Send authenticated steer IPC to remote owner",
           "  /muse host task <text>        - Request task on independent watcher",
           "  /muse host abort [reason]     - Abort active independent watcher batch",

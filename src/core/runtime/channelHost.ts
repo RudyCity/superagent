@@ -20,6 +20,7 @@ import { MuseRecoveryStorageLifecycle } from "../remoteAgent/museRecoveryStorage
 import { MuseRecoveryIntegrityMonitor } from "../remoteAgent/museRecoveryIntegrityMonitor.js";
 import { MuseRecoveryIntegrityEvents } from "../remoteAgent/museRecoveryIntegrityEvents.js";
 import { MuseIncidentCenter, MuseIncidentDispatcher } from "../remoteAgent/museIncidentCenter.js";
+import { handleMuseAlertConfigCommand, museAlertConfigHelp } from "./museAlertConfigCommand.js";
 import { renderMuseIncidentDashboard } from "./museIncidentDashboard.js";
 import type { IncidentSummary } from "../remoteAgent/museIncidentCenter.js";
 import type { MuseIntegritySnapshot } from "../remoteAgent/museRecoveryIntegrityMonitor.js";
@@ -510,6 +511,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host integrity --port 7892  # read-only live cached scan or offline full scan");
     console.log("superagent channel-host alerts --port 7892 [--limit 20]  # durable redacted integrity transitions");
     console.log("superagent channel-host incidents --port 7892 [--limit 20]  # local incident overview and delivery queue");
+    console.log(museAlertConfigHelp());
     console.log("Local browser dashboard: http://127.0.0.1:7892/_channel/incidents/dashboard  # read-only");
     console.log("superagent channel-host acknowledge --port 7892 --incident ID --confirm ID  # explicit operator ACK");
     console.log("superagent channel-host deliver-alerts --port 7892  # explicitly flush one opt-in alert (offline)");
@@ -530,6 +532,10 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "config") {
+    console.log(await handleMuseAlertConfigCommand(argv.slice(1)));
+    return false;
+  }
   if (action === "incidents") {
     const i = argv.indexOf("--limit");
     const limit = i < 0 ? 20 : Number(argv[i + 1]);
@@ -882,5 +888,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, integrity, alerts, incidents, acknowledge, deliver-alerts, watchdog-once, watchdog, verify-store, backup, verify-backup, restore-backup, reconcile or help");
+  throw new Error("Expected channel-host serve, status, config, checkpoint, recovery, retention, prune, archive, compact, integrity, alerts, incidents, acknowledge, deliver-alerts, watchdog-once, watchdog, verify-store, backup, verify-backup, restore-backup, reconcile or help");
 }
