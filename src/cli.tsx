@@ -76,6 +76,18 @@ if (process.argv[2] === "memory") {
   process.exit(exitCode);
 }
 
+if (process.argv[2] === "channel-host") {
+  try {
+    const { handleChannelHostCliCommand } = await import("./core/runtime/channelHost.js");
+    const serving = await handleChannelHostCliCommand(process.argv.slice(3));
+    if (serving) await new Promise(() => {});
+    process.exit(0);
+  } catch (error) {
+    console.error("[Channel Host] " + String(error));
+    process.exit(1);
+  }
+}
+
 if (process.argv[2] === "transport") {
   try {
     const { handleTransportCliCommand } = await import("./core/runtime/transportHost.js");
@@ -248,6 +260,7 @@ Commands:
   daemon            Manage background daemon & cron scheduler (start, stop, status, list, add, remove, run)
   core              Manage supervised API core (start, recover, status, restart, rollback, drain)
   transport         Run independent loopback T-Line transport host (start, status)
+  channel-host      Run independent Muse/Telegram channel owner (serve, status)
   gateway           Manage the omnichannel messaging gateway (status, enable, disable, listen, poll)
   muse              Coordinate with remote AI agent (status, config, watch [projects...], run)
   tunnel            Manage Cloudflare quick tunnels (list, start [--https], stop, status)

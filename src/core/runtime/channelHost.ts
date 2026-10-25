@@ -1,0 +1,259 @@
+/**
+ * Phase 4b: opt-in independent Muse/Telegram channel owner.
+ * This process NEVER owns/restores MCP OAuth tunnels or T-Line/core listeners.
+ * It has no unauthenticated mutation API; startup mode is explicit and
+ * non-idle modes require configuration preflight before any network I/O.
+ */
+import crypto from "node:crypto";
+import fs from "node:fs";
+import http from "node:http";
+import os from "node:os";
+import path from "node:path";
+import { loadRemoteAgentConfig, getWatchedWorkspaces } from "../remoteAgent/config.js";
+import type { RemoteAgentConfig } from "../remoteAgent/config.js";
+import { getMuseWatcher, TELEGRAM_FALLBACK_KEY } from "../remoteAgent/museWatcherRegistry.js";
+
+export type ChannelHostMode = "idle" | "muse-ws" | "telegram-fallback";
+export interface ChannelHostHealth {
+  service: "superagent-channel-host";
+  instanceId: string;
+  pid: number;
+  port: number;
+  mode: ChannelHostMode;
+  status: "idle" | "starting" | "running" | "error";
+  watcherActive: boolean;
+  taskActive: boolean;
+  tasksCompleted: number;
+  startedAt: number;
+  /** Never include credentials, workspace paths, group IDs, URLs or prompts. */
+  errorCode?: "START_FAILED";
+}
+interface ChannelHostDiscovery { version: 1; instanceId: string; pid: number; port: number }
+
+const dir = () => path.join(os.homedir(), ".superagent-r");
+const statePath = (port: number) => path.join(dir(), "channel-host-" + port + ".json");
+const leasePath = (mode: ChannelHostMode) => path.join(dir(), "channel-host-lease-" + mode + ".json");
+const validPort = (n: number) => Number.isInteger(n) && n >= 1 && n <= 65535;
+
+export function validateChannelHostMode(mode: string, wsPort: number, config: RemoteAgentConfig): ChannelHostMode {
+  if (!validPort(wsPort)) throw new Error("Invalid Muse WebSocket port");
+  if (mode === "idle") return mode;
+  if (mode === "muse-ws") {
+    if (!config.wsToken || config.wsToken.length < 16) throw new Error("Configure Muse WebSocket token first");
+    if (config.wsMode === "client") throw new Error("Channel host only supports local Muse WebSocket server mode");
+    return mode;
+  }
+  if (mode === "telegram-fallback") {
+    if (!config.botToken || !config.groupId || !config.museBotId) {
+      throw new Error("Configure Telegram bot token, group and Muse bot ID before starting");
+    }
+    return mode;
+  }
+  throw new Error("Unsupported channel-host mode");
+}
+
+function readDiscovery(port: number): ChannelHostDiscovery {
+  const stat = fs.lstatSync(statePath(port));
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024) throw new Error("Invalid channel host discovery file");
+  const item = JSON.parse(fs.readFileSync(statePath(port), "utf8")) as ChannelHostDiscovery;
+  if (item.version !== 1 || item.port !== port || !validPort(port) ||
+      !Number.isSafeInteger(item.pid) || item.pid < 1 ||
+      typeof item.instanceId !== "string" || !/^[a-f0-9]{32}$/.test(item.instanceId)) {
+    throw new Error("Invalid channel host discovery");
+  }
+  return item;
+}
+
+async function probeHost(port: number): Promise<ChannelHostHealth> {
+  const response = await fetch("http://127.0.0.1:" + port + "/_channel/health", {
+    signal: AbortSignal.timeout(1500),
+  });
+  if (!response.ok) throw new Error("Channel host unavailable");
+  const status = await response.json() as ChannelHostHealth;
+  if (status.service !== "superagent-channel-host" || status.port !== port) {
+    throw new Error("Unrecognized channel-host process");
+  }
+  return status;
+}
+
+function claimModeLease(mode: ChannelHostMode, record: ChannelHostDiscovery): () => void {
+  if (mode === "idle") return () => {};
+  fs.mkdirSync(dir(), { recursive: true });
+  const file = leasePath(mode);
+  // Exclusive create: competing hosts must never poll one Telegram bot or
+  // bind the same Muse socket even when their control ports differ.
+  fs.writeFileSync(file, JSON.stringify(record), { flag: "wx", mode: 0o600 });
+  return () => {
+    try {
+      const contents = JSON.parse(fs.readFileSync(file, "utf8")) as ChannelHostDiscovery;
+      if (contents.pid === record.pid && contents.instanceId === record.instanceId) {
+        fs.rmSync(file, { force: true });
+      }
+    } catch {}
+  };
+}
+
+function writeDiscovery(record: ChannelHostDiscovery) {
+  fs.mkdirSync(dir(), { recursive: true });
+  const file = statePath(record.port);
+  const tmp = file + "." + process.pid + ".tmp";
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(record), { encoding: "utf8", mode: 0o600, flag: "wx" });
+    fs.renameSync(tmp, file);
+    try { fs.chmodSync(file, 0o600); } catch {}
+  } finally { try { fs.rmSync(tmp, { force: true }); } catch {} }
+}
+
+/** Cross-process read-only discovery. Never trust PID records without a live
+ * loopback identity match; never expose private config or start channels. */
+export async function listVerifiedChannelHosts(): Promise<ChannelHostHealth[]> {
+  let names: string[];
+  try { names = fs.readdirSync(dir()); } catch { return []; }
+  const candidates = names.filter(name => /^channel-host-([1-9]\d{0,4})\.json$/.test(name)).slice(0, 16);
+  const results = await Promise.all(candidates.map(async name => {
+    const port = Number(name.match(/^channel-host-(\d+)\.json$/)?.[1]);
+    if (!validPort(port)) return null;
+    try {
+      const known = readDiscovery(port);
+      const live = await probeHost(port);
+      if (known.pid !== live.pid || known.instanceId !== live.instanceId ||
+          !["idle", "muse-ws", "telegram-fallback"].includes(live.mode) ||
+          !["idle", "starting", "running", "error"].includes(live.status)) return null;
+      return live;
+    } catch { return null; }
+  }));
+  return results.filter((item): item is ChannelHostHealth => Boolean(item));
+}
+
+export async function runChannelHost(options: {
+  port: number;
+  mode: ChannelHostMode;
+  wsPort: number;
+  /** Test injections: never exposed through CLI. */
+  startWatcher?: (mode: ChannelHostMode, wsPort: number) => Promise<void>;
+  config?: RemoteAgentConfig;
+}): Promise<{ server: http.Server; health: () => ChannelHostHealth }> {
+  const { port, mode, wsPort } = options;
+  if (!validPort(port) || !validPort(wsPort) || port === wsPort || port === 7888) {
+    throw new Error("Invalid or conflicting channel-host port");
+  }
+  const config = options.config || loadRemoteAgentConfig();
+  validateChannelHostMode(mode, wsPort, config);
+  // Fail closed on ANY existing registration, including stale metadata.
+  // Never overwrite a PID record or adopt unrelated listener processes.
+  if (fs.existsSync(statePath(port))) {
+    throw new Error("Channel-host registration already exists; verify the owner before manual cleanup");
+  }
+  const instanceId = crypto.randomBytes(16).toString("hex");
+  const startedAt = Date.now();
+  const record: ChannelHostDiscovery = { version: 1, instanceId, pid: process.pid, port };
+  let releaseLease: () => void = () => {};
+  let state: ChannelHostHealth["status"] = mode === "idle" ? "idle" : "starting";
+  let errorCode: ChannelHostHealth["errorCode"];
+  const health = (): ChannelHostHealth => {
+    const watcher = mode === "telegram-fallback"
+      ? getMuseWatcher(TELEGRAM_FALLBACK_KEY)
+      : mode === "muse-ws" ? getMuseWatcher(wsPort) : null;
+    const stats = watcher?.getStats();
+    return {
+      service: "superagent-channel-host", instanceId, pid: process.pid, port,
+      mode, status: state, watcherActive: Boolean(watcher?.isActive()),
+      taskActive: Boolean(stats?.activeTaskId || (stats?.queuedBatches ?? 0) > 0),
+      tasksCompleted: stats?.tasksCompleted || 0, startedAt,
+      ...(errorCode ? { errorCode } : {}),
+    };
+  };
+  const server = http.createServer((req, res) => {
+    const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
+    if (req.method !== "GET" || pathname !== "/_channel/health" ||
+        (req.socket.remoteAddress !== "127.0.0.1" && req.socket.remoteAddress !== "::1")) {
+      res.writeHead(404); res.end(); return;
+    }
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(health()));
+  });
+  // Claim mode ownership before any listener/network side effects.
+  releaseLease = claimModeLease(mode, record);
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(port, "127.0.0.1", () => {
+        server.removeListener("error", reject);
+        resolve();
+      });
+    });
+    writeDiscovery(record);
+  } catch (error) {
+    releaseLease();
+    try { server.close(); } catch {}
+    throw error;
+  }
+  const cleanup = () => {
+    try {
+      const old = readDiscovery(port);
+      if (old.pid === process.pid && old.instanceId === instanceId) fs.rmSync(statePath(port), { force: true });
+    } catch {}
+    releaseLease();
+  };
+  server.once("close", cleanup);
+  process.once("exit", cleanup);
+  if (mode !== "idle") {
+    // Do not block the health listener while transport connection is pending.
+    void (async () => {
+      try {
+        const starter = options.startWatcher || (async (selected: ChannelHostMode, selectedPort: number) => {
+          const { startMuseWatcher } = await import("../remoteAgent/museWatcherRegistry.js");
+          const watched = getWatchedWorkspaces(config);
+          if (selected === "muse-ws") {
+            await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
+              transportType: "websocket", wsPort: selectedPort, tunnel: false });
+          } else {
+            await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
+              transportType: "telegram", fallback: true, tunnel: false });
+          }
+        });
+        await starter(mode, wsPort);
+        state = "running";
+      } catch {
+        state = "error";
+        errorCode = "START_FAILED";
+      }
+    })();
+  }
+  return { server, health };
+}
+
+export async function handleChannelHostCliCommand(argv: string[]): Promise<boolean> {
+  const action = argv[0]?.toLowerCase() || "help";
+  if (action === "help" || action === "--help") {
+    console.log("superagent channel-host serve --port 7892 [--mode idle|muse-ws|telegram-fallback] [--ws-port 9225]");
+    console.log("superagent channel-host status --port 7892");
+    console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
+    return false;
+  }
+  const portIdx = argv.indexOf("--port");
+  const port = portIdx < 0 ? 7892 : Number(argv[portIdx + 1]);
+  const wsIdx = argv.indexOf("--ws-port");
+  const wsPort = wsIdx < 0 ? 9225 : Number(argv[wsIdx + 1]);
+  const modeIdx = argv.indexOf("--mode");
+  const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
+  if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "status") {
+    const known = readDiscovery(port);
+    const live = await probeHost(port);
+    if (known.pid !== live.pid || known.instanceId !== live.instanceId) {
+      throw new Error("Channel-host ownership mismatch");
+    }
+    console.log("Channel host: " + live.status + " | mode " + live.mode + " | PID " + live.pid);
+    console.log("Port: " + live.port + " | watcher: " + (live.watcherActive ? "active" : "inactive"));
+    console.log("Active task: " + live.taskActive + " | completed: " + live.tasksCompleted);
+    return false;
+  }
+  if (action === "serve") {
+    if (typeof mode !== "string") throw new Error("Missing --mode");
+    await runChannelHost({ port, wsPort, mode: mode as ChannelHostMode });
+    console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
+    return true;
+  }
+  throw new Error("Expected channel-host serve, status or help");
+}

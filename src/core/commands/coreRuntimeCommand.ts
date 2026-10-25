@@ -19,6 +19,7 @@ export const coreRuntimeCommand: SlashCommand = {
           "Start supervisor separately: superagent core start --port 7888",
           "If its process crashes: superagent core recover --port 7888",
           "Separate opt-in T-Line front door: superagent transport start --port 7891 --core-port 7888",
+          "Independent Muse/Telegram owner: superagent channel-host serve --port 7892 --mode idle",
           "Unsupervised CLI/server instances cannot be rolled automatically.",
           "Previous workers are retained; MCP, Muse, Telegram and jobs are not stopped.",
         ].join("\n"),

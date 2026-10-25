@@ -83,13 +83,17 @@ owner.once("error", () => {});
 const ownedPids = new Set<number>();
 let recoveryOwner: ReturnType<typeof spawn> | undefined;
 let transportOwner: ReturnType<typeof spawn> | undefined;
+let channelOwner: ReturnType<typeof spawn> | undefined;
+const channelPort = await freePort();
 const transportPort = await freePort();
-if (transportPort === publicPort || transportPort === 7888) {
-  throw new Error("Transport acceptance port must be separate from core and production");
+if (transportPort === publicPort || transportPort === 7888 ||
+    channelPort === publicPort || channelPort === transportPort || channelPort === 7888) {
+  throw new Error("Transport/channel acceptance ports must be separate from core and production");
 }
 const discoveryFile = path.join(os.homedir(), ".superagent-r", "core-supervisor-" + publicPort + ".json");
 const infoFile = path.join(os.homedir(), ".superagent-r", "server-info-" + publicPort + ".json");
 const checkpointFile = coreCheckpointPath(publicPort);
+const channelStateFile = path.join(os.homedir(), ".superagent-r", "channel-host-" + channelPort + ".json");
 
 try {
   let initial: Awaited<ReturnType<typeof requestCoreSupervisor>> | undefined;
@@ -104,6 +108,29 @@ try {
   ownedPids.add(initial.active.pid);
 
   const initialToken = JSON.parse(fs.readFileSync(infoFile, "utf8")).authToken as string;
+  // Independent channel host, IDLE only. Never connects to production bot or
+  // creates Muse/Cloudflare tunnels during acceptance testing.
+  channelOwner = spawn(process.execPath, [
+    path.join(root, "src", "cli.tsx"), "channel-host", "serve",
+    "--port", String(channelPort), "--mode", "idle",
+  ], { cwd: root, stdio: "ignore", windowsHide: true });
+  channelOwner.once("error", () => {});
+  let channelReady = false;
+  for (let i = 0; i < 70; i++) {
+    try {
+      const resp = await fetch("http://127.0.0.1:" + channelPort + "/_channel/health", {
+        signal: AbortSignal.timeout(1000),
+      });
+      const health = await resp.json() as { service: string; mode: string; pid: number };
+      if (resp.ok && health.service === "superagent-channel-host" &&
+          health.mode === "idle" && health.pid === channelOwner.pid) {
+        channelReady = true;
+        break;
+      }
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 150));
+  }
+  if (!channelReady) throw new Error("Independent channel host did not start in idle mode");
   transportOwner = spawn(process.execPath, [
     path.join(root, "src", "cli.tsx"), "transport", "start",
     "--port", String(transportPort), "--core-port", String(publicPort),
@@ -256,6 +283,14 @@ try {
   }
   killOwned(owner.pid ?? 0);
   await new Promise(resolve => setTimeout(resolve, 350));
+  const channelWhileCoreDown = await fetch("http://127.0.0.1:" + channelPort + "/_channel/health");
+  const channelDuringOutage = await channelWhileCoreDown.json() as {
+    service: string; mode: string; pid: number;
+  };
+  if (channelDuringOutage.service !== "superagent-channel-host" ||
+      channelDuringOutage.pid !== channelOwner?.pid || channelDuringOutage.mode !== "idle") {
+    throw new Error("Independent channel owner was stopped by supervised API core crash");
+  }
   const hostDuringOutage = await fetch("http://127.0.0.1:" + transportPort + "/_transport/health");
   const hostHealth = await hostDuringOutage.json() as { service: string; backendReady: boolean };
   if (hostHealth.service !== "superagent-transport-host" || hostHealth.backendReady) {
@@ -326,12 +361,20 @@ try {
   if (adoptedDrain.lastDrain?.retiredPids.length) {
     throw new Error("Recovered supervisor should not signal adopted worker processes");
   }
-  console.log("PASS isolated core + independent T-Line transport: handover, guarded drain, hard supervisor crash, recovery + restart");
+  if ((await fetch("http://127.0.0.1:" + channelPort + "/_channel/health")).status !== 200) {
+    throw new Error("Independent channel host died after API core recovery/restart");
+  }
+  console.log("PASS isolated core + independent T-Line/channel owners: handover, drain, hard crash, recovery + restart");
 } finally {
+  killOwned(channelOwner?.pid ?? 0);
   killOwned(transportOwner?.pid ?? 0);
   killOwned(recoveryOwner?.pid ?? 0);
   killOwned(owner.pid ?? 0);
   for (const pid of ownedPids) killOwned(pid);
+  try {
+    const registration = JSON.parse(fs.readFileSync(channelStateFile, "utf8"));
+    if (registration.pid === channelOwner?.pid) fs.rmSync(channelStateFile, { force: true });
+  } catch {}
   try { fs.rmSync(checkpointFile, { force: true }); } catch {}
   try {
     const disc = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));

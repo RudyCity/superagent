@@ -111,6 +111,26 @@ Verification:
 
 Unit coverage includes REST, SSE, WebSocket upgrade handshake, backend outage, private route shielding and safe rejection of unverifiable upstreams. The isolated end-to-end scenario launches an independent transport host process, crashes only its own test supervisor, then recovers the backend while the transport PID persists. No live MCP tunnel is altered.
 
+## Phase 4b: dedicated opt-in Muse/Telegram channel host
+
+An additional Bun process now owns an optional Muse WebSocket watcher or Telegram fallback watcher independently from the supervised API core. The host has no external listeners by default; its default mode is idle. This does not reparent any previously running watcher, live tunnel or OAuth session. Both existing MCP tunnel servers remain completely outside its lifecycle.
+
+Examples (choose free ports and run each intended process in a separate terminal):
+- bun src/cli.tsx channel-host serve --port 7892 --mode idle
+- bun src/cli.tsx channel-host status --port 7892
+- bun src/cli.tsx channel-host serve --port 7892 --mode muse-ws --ws-port 9225
+- bun src/cli.tsx channel-host serve --port 7893 --mode telegram-fallback
+
+Before enabling Muse or Telegram modes, configure their token/IDs and make sure no other CLI/TUI watcher or poller already owns the same bot or socket. Muse-ws mode launches the existing local Muse WebSocket watcher without starting a Cloudflare tunnel. External WSS exposure is managed separately and is NOT established by channel-host. Telegram-fallback mode uses the existing Muse Telegram fallback adapter with stored Telegram credentials; it is not a generic Telegram gateway host. Neither mode attaches to an existing external transport process or upgrades an already running watcher.
+
+Each host has a distinct loopback control port and exposes ONLY GET /_channel/health. No HTTP mutation operations, no secrets, no prompts, no workspace paths and no bot/group IDs are returned. A random per-instance identity is stored in an owner-only discovery record. Status across processes checks identity/PID correspondence, so stale or unrelated PID records cannot be presented as active. /status all lists verified channel hosts in a separate section; mere host presence is never treated as proof of an authenticated Muse session or successful Telegram delivery.
+
+Each non-idle mode uses an exclusive on-disk lease to prevent duplicate channel-host owners of Muse WS or the Telegram fallback even on different control ports. Stale registrations/leases fail closed. After a forced crash, verify that the original PID, listener and watcher are no longer running before any MANUAL state cleanup; the implementation never force-kills or adopts an unknown process. It also cannot prevent duplicate legacy watchers that were started outside this host: operators must stop/migrate those explicitly and separately.
+
+The acceptance smoke launches its OWN channel host in idle mode at a random loopback port, crashes/restarts only the test-owned API supervisor, verifies the channel PID/listener remains active, then cleans all test-owned processes. No test connects to a real Muse endpoint, Telegram bot, Cloudflare tunnel or MCP OAuth service. A separate configured live end-to-end Muse/Telegram handover, agent task checkpoint migration, connection replay, remote command IPC and external service-manager auto-recovery remain P4c work.
+
+Validation: bun run build; bun --bun x vitest run tests/channelHost.test.ts tests/remoteStatusService.test.ts tests/transportHost.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreDrainInspection.test.ts tests/coreGenerationPolicy.test.ts tests/coreSessionRouting.test.ts tests/coreSupervisor.test.ts; bun scripts/verify-core-supervisor.ts.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.

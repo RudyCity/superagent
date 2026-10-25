@@ -13,6 +13,7 @@ import { listActiveMcpServers, type ActiveMcpInfo } from "../mcp/mcpTunnel.js";
 import { connectedServers } from "../mcp/McpManager.js";
 import { gatewayManager } from "../gateway/gatewayManager.js";
 import { loadRemoteAgentConfig } from "./config.js";
+import { listVerifiedChannelHosts, type ChannelHostHealth } from "../runtime/channelHost.js";
 
 export interface TunnelServiceStatus {
   active: boolean;
@@ -75,6 +76,8 @@ export interface TelegramServiceStatus {
 
 export interface RemoteServiceStatusResult {
   timestamp: number;
+  /** Independent watcher owners; never treated as proof of Muse auth. */
+  channelHosts?: ChannelHostHealth[];
   anyActive: boolean;
   tunnel: TunnelServiceStatus;
   mcp: McpServiceStatus;
@@ -292,7 +295,9 @@ export async function getRemoteServiceStatus(
     } catch {}
   }
 
+  const channelHosts = service === "all" ? await listVerifiedChannelHosts() : [];
   const anyActive =
+    channelHosts.length > 0 ||
     tunnelStatus.active ||
     Boolean(tunnelStatus.otherTunnels?.length) ||
     Boolean(tunnelStatus.unclassifiedTunnels?.length) ||
@@ -305,6 +310,7 @@ export async function getRemoteServiceStatus(
     tunnel: tunnelStatus,
     mcp: mcpStatus,
     telegram: telegramStatus,
+    channelHosts,
   };
 }
 
@@ -415,6 +421,16 @@ export function formatRemoteServiceStatus(
     }
   }
 
+  if (service === "all" && status.channelHosts?.length) {
+    lines.push("");
+    lines.push("[4] Independent Channel Hosts:");
+    for (const host of status.channelHosts) {
+      lines.push("- " + host.mode + " on port " + host.port + " (PID " + host.pid +
+        ") | " + host.status + " | watcher " + (host.watcherActive ? "ACTIVE" : "INACTIVE") +
+        " | task " + (host.taskActive ? "ACTIVE" : "IDLE"));
+    }
+    lines.push("- Separate process ownership does not prove Muse authenticated session or Telegram delivery.");
+  }
   return lines.join("\n");
 }
 
