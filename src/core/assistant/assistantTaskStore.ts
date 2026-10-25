@@ -5,6 +5,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { DEFAULT_ASSISTANT_TASK_DOMAIN, validAssistantTaskDomain, type AssistantTaskDomain } from "./assistantTaskDomains.js";
 
 export const TASK_STATES = [
   "queued", "planning", "awaiting_approval", "running",
@@ -30,6 +31,7 @@ export interface AssistantTaskRecord {
   ownerId: string;
   workspaceId: string;
   title: string;
+  domain: AssistantTaskDomain;
   idempotencyKey: string;
   status: AssistantTaskState;
   revision: number;
@@ -100,9 +102,11 @@ export class AssistantTaskStore {
     for (const task of value.tasks) {
       if (task.ownerId !== this.scope.ownerId || task.workspaceId !== this.scope.workspaceId ||
           !ID_PATTERN.test(task.taskId) || !TASK_STATES.includes(task.status) ||
-          !Number.isSafeInteger(task.revision) || task.revision < 1) {
+          !Number.isSafeInteger(task.revision) || task.revision < 1 ||
+           (task.domain !== undefined && !validAssistantTaskDomain(task.domain))) {
         throw new Error("Task journal scope or schema mismatch");
       }
+      task.domain ??= DEFAULT_ASSISTANT_TASK_DOMAIN;
     }
     return value;
   }
@@ -117,7 +121,11 @@ export class AssistantTaskStore {
         handle = await fs.open(this.lockPath, "wx", 0o600);
         break;
       } catch (error: any) {
-        if (error?.code !== "EEXIST") throw error;
+        // Windows can transiently deny an exclusive lock open while another
+        // writer is releasing/renaming it. Retry briefly but never steal it.
+        const transientWindowsLock = process.platform === "win32" &&
+          (error?.code === "EPERM" || error?.code === "EACCES");
+        if (error?.code !== "EEXIST" && !transientWindowsLock) throw error;
         if (attempt === 19) throw new Error("Task journal busy; operator reconciliation required");
         // Bounded wait for ordinary concurrent submissions. Never steal a lock:
         // an abandoned writer requires explicit operator reconciliation.
@@ -149,15 +157,17 @@ export class AssistantTaskStore {
   }
 
   async create(input: {
-    goalId: string; title: string; idempotencyKey: string;
+    goalId: string; title: string; idempotencyKey: string; domain?: AssistantTaskDomain;
   }): Promise<AssistantTaskRecord> {
     validId(input.goalId, "goalId");
     validId(input.idempotencyKey, "idempotencyKey");
     const title = validTitle(input.title);
+    const domain = input.domain ?? DEFAULT_ASSISTANT_TASK_DOMAIN;
+    if (!validAssistantTaskDomain(domain)) throw new Error("Invalid assistant task domain");
     return this.mutate(snapshot => {
       const existing = snapshot.tasks.find(t => t.idempotencyKey === input.idempotencyKey);
       if (existing) {
-        if (existing.goalId !== input.goalId || existing.title !== title) {
+        if (existing.goalId !== input.goalId || existing.title !== title || existing.domain !== domain) {
           throw new Error("Idempotency key reused with conflicting task parameters");
         }
         return existing;
@@ -166,7 +176,7 @@ export class AssistantTaskStore {
       const now = Date.now();
       const task: AssistantTaskRecord = {
         taskId: randomUUID(), goalId: input.goalId, ownerId: this.scope.ownerId,
-        workspaceId: this.scope.workspaceId, title,
+        workspaceId: this.scope.workspaceId, title, domain,
         idempotencyKey: input.idempotencyKey, status: "queued",
         revision: 1, createdAt: now, updatedAt: now, evidenceIds: [],
       };

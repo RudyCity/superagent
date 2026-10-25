@@ -115,7 +115,9 @@ describe("explicit detached read-only task route", () => {
       })).status).toBe(202);
       const cancelled = await waitFor(() => store.get(task.taskId), v => v?.status === "cancelled");
       expect(cancelled?.status).toBe("cancelled");
-      expect(calls).toBe(1);
+      // A cancellation can win after the durable running claim but before
+      // the injected worker callback; either zero or one invocation is safe.
+      expect(calls).toBeLessThanOrEqual(1);
       expect((await call("/" + task.taskId + "/run", { expectedRevision: 1 })).status).toBe(409);
     } finally {
       if (old === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;

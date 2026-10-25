@@ -11,6 +11,7 @@ import { getRootConfigDir } from "../config/paths.js";
 import type { AssistantTaskRecord } from "./assistantTaskStore.js";
 import { generateDetachedReadOnlyText } from "./assistantTaskRuntime.js";
 import { saveDetachedTaskResult } from "./assistantTaskResults.js";
+import { getAssistantTaskDomain } from "./assistantTaskDomains.js";
 
 const execFileAsync = promisify(execFile);
 const MAX_PATCH_BYTES = 32_768;
@@ -115,6 +116,9 @@ export async function prepareDetachedPatch(
     "or test files, no prose. Do not modify files or run commands. Use existing lines exactly. " +
     "This patch will be verified and applied only in a detached Git worktree for review. Task: " + t.title),
 ): Promise<string[]> {
+  if (!getAssistantTaskDomain(task.domain).patchPreview) {
+    throw new Error("Patch proposal requires a coding task domain");
+  }
   await verifyWorkspace(workspace, signal);
   const proposal = await generate(task, workspace, signal);
   if (signal.aborted) throw new Error("Patch preparation cancelled");

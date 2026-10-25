@@ -55,7 +55,7 @@ describe("session-scoped isolated patch HTTP workflow", () => {
         return { status, output };
       };
       const created = await run("POST", "", {
-        goalId: "goal_1", title: "Fix sample", idempotencyKey: "first",
+        goalId: "goal_1", title: "Fix sample", idempotencyKey: "first", domain: "coding",
       });
       expect(created.status).toBe(200);
       const taskId = created.output.task.taskId;

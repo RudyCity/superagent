@@ -8,6 +8,7 @@ import path from "node:path";
 import type { AssistantTaskRecord, AssistantTaskStore } from "./assistantTaskStore.js";
 import { AssistantTaskDispatcher } from "./assistantTaskDispatcher.js";
 import { getRootConfigDir } from "../config/paths.js";
+import { getAssistantTaskDomain, taskDomainPrompt } from "./assistantTaskDomains.js";
 
 export type DetachedTaskWorker = (task: AssistantTaskRecord, workspace: string,
   signal: AbortSignal) => Promise<string[]>;
@@ -73,13 +74,9 @@ export async function generateDetachedReadOnlyText(
   const [{ Agent }, { superagentToolset }] = await Promise.all([
     import("../agent.js"), import("../tools/toolsets.js"),
   ]);
-  const allowed = new Set([
-    "read", "read_file", "view_file", "view", "glob", "grep", "ripgrep_search",
-    "list_directory", "list_dir", "find_files", "git_status", "git_diff",
-    "get_git_diff", "read_document", "search_web", "fetch_url", "search_journal",
-    "read_shared_memory", "rmemory_status", "rmemory_search", "search_history",
-    "inspect_session", "query_history", "list_tools", "describe_tool",
-  ]);
+  // Explicit user-selected capability profile. No automatic tool escalation.
+  const domain = getAssistantTaskDomain(task.domain);
+  const allowed = new Set(domain.toolNames);
   const toolset = superagentToolset.filter(tool => allowed.has(tool.name));
   // The executor also enforces the allowlist to prevent a dynamic tool from
   // evading the model-facing catalog restriction.
@@ -122,7 +119,8 @@ export async function generateDetachedReadOnlyText(
 export async function executeDetachedReadOnlyAgent(
   task: AssistantTaskRecord, workspace: string, signal: AbortSignal,
 ): Promise<string[]> {
-  const result = await generateDetachedReadOnlyText(task, workspace, signal);
+  const result = await generateDetachedReadOnlyText(task, workspace, signal,
+    taskDomainPrompt(task.domain, task.title));
   const { saveDetachedTaskResult } = await import("./assistantTaskResults.js");
   await saveDetachedTaskResult(task, result);
   return ["summary_saved"];

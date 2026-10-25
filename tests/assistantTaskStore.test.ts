@@ -68,6 +68,35 @@ describe("assistant persistent task journal", () => {
     expect(await store.list()).toHaveLength(8);
     expect((await store.eventsAfter(0)).events).toHaveLength(8);
   }));
+  it("persists each selected assistant domain and rejects idempotency domain changes", async () => fixture(async root => {
+    const store = new AssistantTaskStore(root, owner);
+    const research = await store.create({
+      goalId: "research", title: "Look up sources", idempotencyKey: "domain1", domain: "research",
+    });
+    expect(research.domain).toBe("research");
+    expect((await new AssistantTaskStore(root, owner).get(research.taskId))?.domain).toBe("research");
+    await expect(store.create({
+      goalId: "research", title: "Look up sources", idempotencyKey: "domain1", domain: "coding",
+    })).rejects.toThrow("Idempotency");
+    await expect(store.create({
+      goalId: "other", title: "Unsupported", idempotencyKey: "domain2", domain: "browser" as any,
+    })).rejects.toThrow("Invalid assistant task domain");
+  }));
+  it("opens legacy domainless v1 journals without reclassifying their tasks", async () => fixture(async root => {
+    const store = new AssistantTaskStore(root, owner);
+    const created = await store.create({
+      goalId: "legacy", title: "Old task", idempotencyKey: "old1",
+    });
+    const { readdir, writeFile } = await import("node:fs/promises");
+    const directory = path.join(root, "assistant-tasks");
+    const file = path.join(directory, (await readdir(directory))[0]);
+    const snapshot = JSON.parse(await readFile(file, "utf8"));
+    delete snapshot.tasks[0].domain;
+    await writeFile(file, JSON.stringify(snapshot));
+    expect((await new AssistantTaskStore(root, owner).get(created.taskId))?.domain).toBe("analysis");
+    // A read does not silently replace or rewrite the original journal.
+    expect((await readFile(file, "utf8"))).not.toContain('"domain"');
+  }));
   it("does not steal an unknown writer lock", async () => fixture(async root => {
     const store = new AssistantTaskStore(root, owner);
     await store.create({ goalId: "g1", title: "Task", idempotencyKey: "req" });

@@ -49,7 +49,7 @@ describe("detached coding patch proposal", () => {
       git(repo, "commit", "-qm", "test fixture");
       const store = new AssistantTaskStore(config, { ownerId: "owner", workspaceId: "project" });
       const task = await store.create({
-        goalId: "patch", idempotencyKey: "single", title: "Change sample",
+        goalId: "patch", idempotencyKey: "single", title: "Change sample", domain: "coding",
       });
       const evidence = await prepareDetachedPatch(task, repo, new AbortController().signal,
         async () => good);

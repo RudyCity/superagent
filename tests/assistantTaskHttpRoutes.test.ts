@@ -71,6 +71,25 @@ describe("session-scoped assistant metadata routes", () => {
     expect(cancelled.body.task.status).toBe("cancelled");
     expect((await call("GET", sessionId, "")).body.tasks[0].status).toBe("cancelled");
   }));
+  it("keeps a general research task scoped and refuses coding-only patch operations", async () => scenario(async call => {
+    const bad = await call("POST", sessionId, "", {
+      goalId: "g_bad", idempotencyKey: "bad_mode", title: "Search", domain: "browser",
+    });
+    expect(bad.status).toBe(400);
+    const created = await call("POST", sessionId, "", {
+      goalId: "g_research", idempotencyKey: "research1", title: "Compare sources", domain: "research",
+    });
+    expect(created.status).toBe(200);
+    expect(created.body.task.domain).toBe("research");
+    const listed = await call("GET", sessionId, "");
+    expect(listed.body.tasks[0].domain).toBe("research");
+    expect(listed.body.domains.map((d: any) => d.id)).toContain("general");
+    expect(listed.body.domains.map((d: any) => d.id)).toContain("planning");
+    expect(listed.body.domains.map((d: any) => d.id)).toContain("files");
+    expect((await call("POST", sessionId, "/" + created.body.task.taskId + "/prepare",
+      { expectedRevision: 1 })).status).toBe(409);
+    expect((await call("GET", sessionId, "")).body.tasks[0].status).toBe("queued");
+  }));
   it("rejects caller-supplied wrong session/workspace and mismatched workspace header", async () => scenario(async call => {
     expect((await call("GET", "otherSession", "")).status).toBe(403);
     expect((await call("GET", sessionId, "", {}, { workspace: "another-project" })).status).toBe(403);

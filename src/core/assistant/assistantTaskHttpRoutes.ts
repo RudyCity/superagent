@@ -6,6 +6,7 @@ import { AssistantTaskStore } from "./assistantTaskStore.js";
 import { getDetachedTaskRuntime, executeDetachedReadOnlyAgent, type DetachedTaskWorker } from "./assistantTaskRuntime.js";
 import { readDetachedTaskResult } from "./assistantTaskResults.js";
 import { prepareDetachedPatch, readDetachedPatch } from "./assistantTaskPatch.js";
+import { TASK_DOMAIN_DESCRIPTORS, DEFAULT_ASSISTANT_TASK_DOMAIN, validAssistantTaskDomain } from "./assistantTaskDomains.js";
 
 /**
  * Session-bound task drafts and explicit read-only worker controls for T-Line.
@@ -70,7 +71,9 @@ export async function handleAssistantTaskHttpRoute(
       const tasks = await store.list(100);
       const liveTaskIds = runtime.liveIds;
       respond(200, { success: true, sessionId, tasks, executionEnabled: true,
-        executionPolicy: "read-only-explicit-run", supportedModes: ["analysis", "patch-preview"], liveTaskIds,
+        executionPolicy: "read-only-explicit-run", supportedModes: ["analysis", "patch-preview"],
+        domains: TASK_DOMAIN_DESCRIPTORS.map(({ id, label, description, patchPreview }) =>
+          ({ id, label, description, patchPreview })), liveTaskIds,
         unverifiedTaskIds: tasks.filter(t => (t.status === "running" || t.status === "planning") &&
           !liveTaskIds.includes(t.taskId)).map(t => t.taskId) });
       return true;
@@ -130,8 +133,13 @@ export async function handleAssistantTaskHttpRoute(
           respond(400, { error: "Missing goalId, title or idempotencyKey" });
           return true;
         }
+        const domain = body.domain ?? DEFAULT_ASSISTANT_TASK_DOMAIN;
+        if (!validAssistantTaskDomain(domain)) {
+          respond(400, { error: "Unsupported assistant task domain" });
+          return true;
+        }
         const task = await store.create({
-          goalId: body.goalId, title: body.title, idempotencyKey: body.idempotencyKey,
+          goalId: body.goalId, title: body.title, idempotencyKey: body.idempotencyKey, domain,
         });
         respond(200, { success: true, task, executionEnabled: true,
           executionPolicy: "read-only-explicit-run" });
@@ -168,6 +176,10 @@ export async function handleAssistantTaskHttpRoute(
           return true;
         }
         const isPatch = suffix.endsWith("/prepare");
+        if (isPatch && current.domain !== "coding") {
+          respond(409, { error: "Patch proposals require a coding task" });
+          return true;
+        }
         runtime.start(current, session.workspace,
           isPatch ? (dependencies.detachedPatchWorker ?? prepareDetachedPatch) :
             (dependencies.detachedTaskWorker ?? executeDetachedReadOnlyAgent));
