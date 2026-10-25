@@ -3,11 +3,14 @@ import { createHash } from "node:crypto";
 import type { URL } from "node:url";
 import { getRootConfigDir } from "../config/paths.js";
 import { AssistantTaskStore } from "./assistantTaskStore.js";
+import { getDetachedTaskRuntime, executeDetachedReadOnlyAgent, type DetachedTaskWorker } from "./assistantTaskRuntime.js";
+import { readDetachedTaskResult } from "./assistantTaskResults.js";
 
 /**
- * Explicitly session-bound task metadata endpoints for trusted T-Line clients.
- * These endpoints NEVER spawn, execute, approve, resume, or replay an agent.
- * The server HTTP authorization and trusted workspace gate run before this.
+ * Session-bound task drafts and explicit read-only worker controls for T-Line.
+ * Only POST /:id/run can schedule a new isolated worker; GET is non-mutating.
+ * Nothing replays a previously started task after a crash or disconnect.
+ * Core HTTP auth and trusted workspace policy execute before these routes.
  */
 export async function handleAssistantTaskHttpRoute(
   req: http.IncomingMessage,
@@ -20,11 +23,12 @@ export async function handleAssistantTaskHttpRoute(
     } | null;
     readBody: (request: http.IncomingMessage) => Promise<string>;
     sendJSON: (response: http.ServerResponse, status: number, body: unknown) => void;
+    detachedTaskWorker?: DetachedTaskWorker;
   },
 ): Promise<boolean> {
   if (pathname !== "/api/assistant/tasks" &&
       pathname !== "/api/assistant/tasks/events" &&
-      !/^\/api\/assistant\/tasks\/[a-f\d-]{36}(?:\/cancel)?$/.test(pathname)) return false;
+      !/^\/api\/assistant\/tasks\/[a-f\d-]{36}(?:\/(?:cancel|run|result))?$/.test(pathname)) return false;
   const { sendJSON } = dependencies;
   const respond = (status: number, data: unknown) => {
     res.setHeader("Cache-Control", "no-store");
@@ -55,11 +59,18 @@ export async function handleAssistantTaskHttpRoute(
   }
   const ownerId = "session_" + createHash("sha256").update(sessionId).digest("hex").slice(0, 24);
   const workspaceId = createHash("sha256").update(session.workspace).digest("hex").slice(0, 24);
-  const store = new AssistantTaskStore(getRootConfigDir(), { ownerId, workspaceId });
+  const scope = { ownerId, workspaceId };
+  const store = new AssistantTaskStore(getRootConfigDir(), scope);
+  const runtime = getDetachedTaskRuntime(store, scope);
   const suffix = pathname.slice("/api/assistant/tasks".length);
   try {
     if (req.method === "GET" && suffix === "") {
-      respond(200, { success: true, sessionId, tasks: await store.list(100), executionEnabled: false });
+      const tasks = await store.list(100);
+      const liveTaskIds = runtime.liveIds;
+      respond(200, { success: true, sessionId, tasks, executionEnabled: true,
+        executionPolicy: "read-only-explicit-run", liveTaskIds,
+        unverifiedTaskIds: tasks.filter(t => (t.status === "running" || t.status === "planning") &&
+          !liveTaskIds.includes(t.taskId)).map(t => t.taskId) });
       return true;
     }
     if (req.method === "GET" && suffix === "/events") {
@@ -77,7 +88,16 @@ export async function handleAssistantTaskHttpRoute(
       respond(task ? 200 : 404, task ? { success: true, task } : { error: "Task not found" });
       return true;
     }
-    if (req.method === "POST" && (suffix === "" || /^\/[a-f\d-]{36}\/cancel$/.test(suffix))) {
+    if (req.method === "GET" && /^\/[a-f\d-]{36}\/result$/.test(suffix)) {
+      const task = await store.get(suffix.slice(1, 37));
+      if (!task) { respond(404, { error: "Task not found" }); return true; }
+      const result = await readDetachedTaskResult(task);
+      respond(result === null ? 404 : 200, result === null ?
+        { error: "No verified result available" } : { success: true, taskId: task.taskId, result });
+      return true;
+    }
+    if (req.method === "POST" && (suffix === "" ||
+        /^\/[a-f\d-]{36}\/(?:cancel|run)$/.test(suffix))) {
       const serialized = await dependencies.readBody(req);
       if (Buffer.byteLength(serialized) > 4096) {
         respond(413, { error: "Task request exceeds limit" });
@@ -102,32 +122,53 @@ export async function handleAssistantTaskHttpRoute(
         const task = await store.create({
           goalId: body.goalId, title: body.title, idempotencyKey: body.idempotencyKey,
         });
-        respond(200, { success: true, task, executionEnabled: false });
+        respond(200, { success: true, task, executionEnabled: true,
+          executionPolicy: "read-only-explicit-run" });
         return true;
       }
       if (!Number.isSafeInteger(body.expectedRevision)) {
         respond(400, { error: "Expected revision required" });
         return true;
       }
-      // Restrict this control to queued drafts; execution cancellation belongs
-      // to the real worker runtime. The revision guard catches races after read.
-      const current = await store.get(suffix.slice(1, 37));
-      if (!current || current.status !== "queued") {
-        respond(409, { error: "Only queued drafts may be cancelled" });
+      const taskId = suffix.slice(1, 37);
+      const current = await store.get(taskId);
+      if (!current || current.revision !== body.expectedRevision) {
+        respond(409, { error: "Task missing or revision conflict" });
         return true;
       }
-      const task = await store.transition({
-        taskId: suffix.slice(1, 37), expectedRevision: body.expectedRevision as number,
-        status: "cancelled",
-      });
-      respond(200, { success: true, task });
+      if (suffix.endsWith("/run")) {
+        if (current.status !== "queued") {
+          respond(409, { error: "Only queued drafts can be started" });
+          return true;
+        }
+        runtime.start(current, session.workspace, dependencies.detachedTaskWorker ?? executeDetachedReadOnlyAgent);
+        respond(202, { success: true, taskId, scheduled: true,
+          executionPolicy: "read-only-explicit-run" });
+        return true;
+      }
+      if (current.status === "queued") {
+        const cancelled = await store.transition({
+          taskId, expectedRevision: current.revision, status: "cancelled",
+        });
+        respond(200, { success: true, task: cancelled });
+        return true;
+      }
+      if (current.status === "planning" || current.status === "running") {
+        const requested = runtime.cancel(taskId);
+        respond(requested ? 202 : 409, requested ?
+          { success: true, cancellationRequested: true, taskId } :
+          { error: "Worker not owned by this core; reconcile before retry" });
+        return true;
+      }
+      respond(409, { error: "Task is not cancellable" });
       return true;
     }
     respond(405, { error: "Unsupported task action" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    if (/Invalid|Illegal transition|Idempotency|capacity|revision|Task not found|Task event/.test(message)) {
-      respond(message.includes("conflict") || message.includes("Illegal") ? 409 : 400, { error: message });
+    if (/Invalid|Illegal transition|Idempotency|capacity|revision|Task not found|Task event|not eligible/.test(message)) {
+      respond(message.includes("conflict") || message.includes("Illegal") ||
+        message.includes("not eligible") ? 409 : 400, { error: message });
     } else {
       // Neither journal internals nor arbitrary exception values cross HTTP.
       respond(503, { error: "Task journal unavailable; existing data preserved" });

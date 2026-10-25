@@ -57,7 +57,8 @@ describe("session-scoped assistant metadata routes", () => {
     const input = { goalId: "goal1", idempotencyKey: "command1", title: "Audit safely" };
     const first = await call("POST", sessionId, "", input);
     expect(first.status).toBe(200);
-    expect(first.body.executionEnabled).toBe(false);
+    expect(first.body.executionEnabled).toBe(true);
+    expect(first.body.executionPolicy).toBe("read-only-explicit-run");
     const second = await call("POST", sessionId, "", input);
     expect(second.body.task.taskId).toBe(first.body.task.taskId);
     const list = await call("GET", sessionId, "");
