@@ -21,9 +21,9 @@ export function shouldDeliverEventToClient(
   const eventWorkspace = typeof event.workspace === "string" ? event.workspace : undefined;
 
   if (eventSessionId) {
-    if (context?.sessionId) return context.sessionId === eventSessionId;
-    return Boolean(eventWorkspace && context?.workspace &&
-      normalizeWorkspaceTarget(context.workspace) === normalizeWorkspaceTarget(eventWorkspace));
+    if (!context?.sessionId || context.sessionId !== eventSessionId) return false;
+    return !eventWorkspace || !context.workspace ||
+      normalizeWorkspaceTarget(context.workspace) === normalizeWorkspaceTarget(eventWorkspace);
   }
   if (eventWorkspace) {
     return Boolean(context?.workspace &&

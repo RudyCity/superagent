@@ -45,6 +45,7 @@ window.fetch = async (url, options = {}) => {
   const headers = new Headers(options.headers || (url instanceof Request ? url.headers : undefined));
   headers.set("X-Client-Mode", "chrome-extension");
   if (apiToken) headers.set("Authorization", `Bearer ${apiToken}`);
+  if (window.currentSessionId) headers.set("X-Session-Id", window.currentSessionId);
   const activeWorkspaceText = document.getElementById("active-workspace-text");
   const workspacePath = activeWorkspaceText ? activeWorkspaceText.textContent : "";
   if (workspacePath && workspacePath !== "Not Selected") {
@@ -601,7 +602,9 @@ async function checkServerStatus() {
       if (data.workspace || data.sessionId) {
         let stateChanged = false;
 
-        if (data.sessionId && window.currentSessionId !== data.sessionId) {
+        // Never silently switch to a different server session while this panel
+        // has a selected chat; a missing session is resolved by explicit user action.
+        if (data.sessionId && !window.currentSessionId) {
           window.currentSessionId = data.sessionId;
           stateChanged = true;
         }
@@ -863,6 +866,7 @@ function setupSSE() {
   }
 
   const proceedConnect = () => {
+    if (!window.currentSessionId) return;
     const params = new URLSearchParams();
     // Authenticated fetch sends the bearer credential in a header, not the URL.
     if (extensionClientId) params.set("clientId", extensionClientId);
@@ -881,6 +885,20 @@ function setupSSE() {
     const sseUrl = `${BASE_URL}/api/events?${params.toString()}`;
     eventSource = createAuthorizedEventStream(sseUrl);
 
+    eventSource.onopen = () => {
+      // Reconcile progress after a dropped connection or core hot-restart.
+      const selectedSessionId = window.currentSessionId;
+      void checkServerStatus().then(async () => {
+        if (selectedSessionId !== window.currentSessionId) return;
+        const status = await fetch(`${BASE_URL}/api/status`).then(r => r.ok ? r.json() : null).catch(() => null);
+        if (status && !status.agentRunning && !window.chatSubmitPending &&
+            selectedSessionId === window.currentSessionId) {
+          window.isWaitingForAgentStart = false;
+          hideSpinner();
+          if (typeof loadChatHistory === "function") await loadChatHistory(selectedSessionId);
+        }
+      }).catch(() => {});
+    };
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -937,8 +955,8 @@ function handleSSEEvent(data) {
   if (data.workspace && currentWsPath && currentWsPath !== "Not Selected" && data.workspace.toLowerCase() !== currentWsPath.toLowerCase()) {
     return;
   }
-  window.isWaitingForAgentStart = false;
   if (data.type === "agent_event") {
+    window.isWaitingForAgentStart = false;
     if (typeof window.lockCurrentTab === "function") window.lockCurrentTab();
     const e = data.event;
     switch (e.type) {
@@ -1294,6 +1312,8 @@ async function resolvePlanApproval(action) {
 
 // Send Message
 async function sendChatMessage() {
+  // Single canonical sender is supplied by sidepanel-input.js (attachments/tags).
+  if (typeof window.sendChatMessage === "function") return window.sendChatMessage();
   const text = chatInput.value.trim();
   if (!text) return;
 
@@ -1346,8 +1366,17 @@ async function sendChatMessage() {
 async function abortExecution() {
   window.isWaitingForAgentStart = false;
   try {
-    await fetch(`${BASE_URL}/api/abort`, { method: "POST" });
-    appendMessage("system", "Halt signal sent to Superagent.");
+    if (!window.currentSessionId) throw new Error("No selected chat session");
+    const result = await fetch(`${BASE_URL}/api/abort`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId: window.currentSessionId }),
+    });
+    if (!result.ok) {
+      const data = await result.json().catch(() => ({}));
+      throw new Error(data.error || "Abort rejected");
+    }
+    appendMessage("system", "Halt signal sent to this chat session.");
   } catch (err) {
     alert("Failed to send abort command: " + err.message);
   }

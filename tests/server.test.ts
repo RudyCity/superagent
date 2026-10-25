@@ -70,6 +70,17 @@ describe("OPTIONS — CORS preflight", () => {
     expect(r.headers.get("access-control-allow-methods")).toContain("POST");
   });
 
+  it("allows authenticated Chrome extension client and session headers", async () => {
+    const origin = "chrome-extension://" + "a".repeat(32);
+    const res = await fetch(apiUrl(port, "/api/status"), {
+      method: "OPTIONS",
+      headers: { Origin: origin, "Access-Control-Request-Headers": "x-client-mode,x-session-id,authorization" },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBe(origin);
+    expect(res.headers.get("access-control-allow-headers")).toContain("x-session-id");
+  });
+
   it("echoes localhost origins and includes x-auth-token in allowed headers", async () => {
     const res = await fetch(apiUrl(port, "/api/status"), {
       method: "OPTIONS",
@@ -475,6 +486,53 @@ describe("GET /api/history (with active session)", () => {
 // POST /api/chat
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("POST /api/chat", () => {
+  it("requires explicit session identity for extension chat and abort", async () => {
+    const headers = { "x-client-mode": "chrome-extension", "x-workspace-path": testWorkspace };
+    const chat = await postJSON(port, "/api/chat", { message: "hello" }, headers);
+    expect(chat.status).toBe(400);
+    expect(chat.body.error).toContain("sessionId");
+    const abort = await postJSON(port, "/api/abort", {}, headers);
+    expect(abort.status).toBe(400);
+    const all = await postJSON(port, "/api/abort", { all: true }, headers);
+    expect(all.status).toBe(403);
+  });
+
+  it("keeps two chats in one workspace separate and deduplicates retry IDs", async () => {
+    const headers = { "x-client-mode": "chrome-extension", "x-workspace-path": testWorkspace };
+    const first = await postJSON(port, "/api/init",
+      { workspace: testWorkspace, mode: "single", sessionId: "chat-test-first" }, headers);
+    const second = await postJSON(port, "/api/init",
+      { workspace: testWorkspace, mode: "single", sessionId: "chat-test-second" }, headers);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const firstStatus = await fetch(apiUrl(port, "/api/status"), {
+      headers: { ...authHeaders(), ...headers, "x-session-id": first.body.sessionId },
+    });
+    const secondStatus = await fetch(apiUrl(port, "/api/status"), {
+      headers: { ...authHeaders(), ...headers, "x-session-id": second.body.sessionId },
+    });
+    expect((await firstStatus.json() as any).sessionId).toBe(first.body.sessionId);
+    expect((await secondStatus.json() as any).sessionId).toBe(second.body.sessionId);
+    const id = "client-test-dedup-12345";
+    const request = { message: "check routing", sessionId: second.body.sessionId, clientMessageId: id };
+    const sent = await postJSON(port, "/api/chat", request, headers);
+    const retry = await postJSON(port, "/api/chat", request, headers);
+    expect(sent.status).toBe(200);
+    expect(retry.status).toBe(200);
+    expect(retry.body.duplicate).toBe(true);
+    expect(retry.body.turnId).toBe(sent.body.turnId);
+    const conflicting = await postJSON(port, "/api/chat",
+      { ...request, message: "different content" }, headers);
+    expect(conflicting.status).toBe(409);
+  });
+
+  it("rejects extension SSE without a valid matching chat", async () => {
+    const headers = { ...authHeaders(), "x-client-mode": "chrome-extension", "x-workspace-path": testWorkspace };
+    const missing = await fetch(apiUrl(port, "/api/events"), { headers });
+    expect(missing.status).toBe(400);
+    const unknown = await fetch(apiUrl(port, "/api/events?sessionId=missing-chat"), { headers });
+    expect(unknown.status).toBe(404);
+  });
   it("returns 400 when no session exists for uninitialized workspace", async () => {
     const unknownWs = path.join(os.tmpdir(), "unknown-workspace-xyz");
     const { status, body } = await postJSON(

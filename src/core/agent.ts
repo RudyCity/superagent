@@ -135,6 +135,9 @@ export class Agent {
   private onQuestion: QuestionHandler;
   private abortController: AbortController | null = null;
   private isRunning = false;
+  private preparingMessage = false;
+  private abortGeneration = 0;
+  private readonly maxPendingMessages = 32;
   private pendingMessagesQueue: (string | import("./conversation.js").MessageContent)[] = [];
   private textLogBuffer = "";
   /** Flag set when completed tasks were just archived — used to inject system prompt hint */
@@ -601,16 +604,30 @@ export class Agent {
   }
 
   async sendMessage(userInput: string | import("./conversation.js").MessageContent, externalSignal?: AbortSignal): Promise<void> {
-    if (this.isRunning) {
-      const msgText = typeof userInput === "string" ? userInput : "[multimodal message]";
+    if (this.isRunning || this.preparingMessage) {
+      if (this.pendingMessagesQueue.length >= this.maxPendingMessages) {
+        throw new Error("Chat queue is full (32 messages). Wait for processing or stop this session.");
+      }
       this.pendingMessagesQueue.push(userInput);
-      this.writeToLogFile("INFO", `Message queued (agent is running): "${msgText.substring(0, 80)}..."`);
+      this.writeToLogFile("INFO", "Chat message queued in active session.");
       return;
     }
     if (externalSignal?.aborted) throw createAbortError("Agent operation aborted by caller.");
-    const proceed = await RequestProcessor.processRequest(this, userInput);
+    this.preparingMessage = true;
+    const generation = this.abortGeneration;
+    let proceed: boolean;
+    try {
+      proceed = await RequestProcessor.processRequest(this, userInput);
+    } finally {
+      this.preparingMessage = false;
+    }
+    if (generation !== this.abortGeneration) return;
     if (externalSignal?.aborted) throw createAbortError("Agent operation aborted by caller.");
-    if (!proceed) return;
+    if (!proceed) {
+      const next = this.pendingMessagesQueue.shift();
+      if (next) queueMicrotask(() => { void this.sendMessage(next).catch(() => {}); });
+      return;
+    }
 
     // Keep described schemas for a continuation, but start independent tasks with
     // discovery-only visibility. RequestProcessor is the source of truth for its
@@ -1025,27 +1042,18 @@ export class Agent {
 
   abort(): void {
     this.isPaused = false;
+    this.abortGeneration++;
     if (this.isRunning) {
       this.wasRunningBeforeAbort = true;
       setTimeout(() => {
         this.wasRunningBeforeAbort = false;
       }, 200);
     }
-    this.isRunning = false;
+    // Preserve the busy flag until this turn's finally block finishes.
     this.pendingMessagesQueue = [];
     this.abortController?.abort();
-    // Also abort any active remote agent task if running
-    import("./remoteAgent/taskRunner.js")
-      .then(({ abortActiveRemoteTask }) => {
-        abortActiveRemoteTask("Agent aborted by user").catch(() => {});
-      })
-      .catch(() => {});
-    // Also abort any active Muse Watcher batch if running
-    import("./remoteAgent/museWatcher.js")
-      .then(({ abortActiveMuseBatch }) => {
-        abortActiveMuseBatch("Agent aborted by user");
-      })
-      .catch(() => {});
+    // Global remote-task and Muse cancellation belong to their own owner-aware
+    // controllers; aborting one chat must not terminate another chat's tasks.
   }
 
   public getAbortSignal(): AbortSignal | undefined {
@@ -1053,6 +1061,9 @@ export class Agent {
   }
 
   queueMessage(message: string | import("./conversation.js").MessageContent): void {
+    if (this.pendingMessagesQueue.length >= this.maxPendingMessages) {
+      throw new Error("Chat queue is full (32 messages).");
+    }
     this.pendingMessagesQueue.push(message);
   }
 
@@ -1107,6 +1118,6 @@ export class Agent {
   }
 
   isAgentRunning(): boolean {
-    return this.isRunning;
+    return this.isRunning || this.preparingMessage;
   }
 }

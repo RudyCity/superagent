@@ -365,8 +365,12 @@ Direct Terminal Commands:
 // Override global sendChatMessage function
 window.sendChatMessage = async function() {
   const chatInput = document.getElementById("chat-input");
-  if (!chatInput) return;
-
+  if (!chatInput || window.chatSubmitPending) return;
+  const sessionId = window.currentSessionId;
+  if (!sessionId) {
+    appendMessage("system", "Select or create a chat session before sending.");
+    return;
+  }
   const text = chatInput.value.trim();
   
   if (!text && attachedFiles.length === 0 && activeInputTags.length === 0) return;
@@ -386,7 +390,7 @@ window.sendChatMessage = async function() {
     displayMessageText = text ? `${text}\n\n[${chipSummaries.join(" | ")}]` : `[${chipSummaries.join(" | ")}]`;
   }
   
-  appendMessage("user", displayMessageText);
+  const optimisticUserMessage = appendMessage("user", displayMessageText);
   scrollToBottom(true);
   showSpinner("Thinking...");
   window.isWaitingForAgentStart = true;
@@ -488,13 +492,14 @@ window.sendChatMessage = async function() {
     payloadMessage = parts;
   }
 
-  // Clear attached files list
-  attachedFiles = [];
-  renderAttachmentPreviews();
-
-  // Clear tags list
-  activeInputTags = [];
-  renderInputTags();
+  const outgoingAttachments = attachedFiles;
+  const outgoingTags = activeInputTags;
+  const serializedPayload = JSON.stringify(payloadMessage);
+  const previousAttempt = window.chatRetryContext;
+  const clientMessageId = previousAttempt?.sessionId === sessionId &&
+    previousAttempt?.serializedPayload === serializedPayload
+    ? previousAttempt.clientMessageId : crypto.randomUUID();
+  window.chatSubmitPending = true;
 
   if (typeof window.lockCurrentTab === "function") {
     window.lockCurrentTab();
@@ -505,20 +510,30 @@ window.sendChatMessage = async function() {
     const res = await fetch(`${baseUrl}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: payloadMessage })
+      body: JSON.stringify({ message: payloadMessage, sessionId, clientMessageId })
     });
-    if (!res.ok) {
-      window.isWaitingForAgentStart = false;
-      if (typeof window.unlockTab === "function") window.unlockTab();
-      const data = await res.json();
-      appendMessage("system", "Error: " + data.error);
-      hideSpinner();
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Prompt rejected by backend.");
+    window.chatRetryContext = null;
+    // Only discard the submitted draft after the backend acknowledges receipt.
+    if (window.currentSessionId === sessionId) {
+      attachedFiles = attachedFiles.filter((file) => !outgoingAttachments.includes(file));
+      activeInputTags = activeInputTags.filter((tag) => !outgoingTags.includes(tag));
+      renderAttachmentPreviews();
+      renderInputTags();
     }
   } catch (err) {
-    window.isWaitingForAgentStart = false;
-    if (typeof window.unlockTab === "function") window.unlockTab();
-    appendMessage("system", "Error: Failed to deliver prompt.");
-    hideSpinner();
+    window.chatRetryContext = { sessionId, serializedPayload, clientMessageId };
+    optimisticUserMessage?.remove();
+    if (window.currentSessionId === sessionId) {
+      chatInput.value = chatInput.value ? text + "\n" + chatInput.value : text;
+      window.isWaitingForAgentStart = false;
+      if (typeof window.unlockTab === "function") window.unlockTab();
+      appendMessage("system", "Error: " + (err.message || "Failed to deliver prompt."));
+      hideSpinner();
+    }
+  } finally {
+    window.chatSubmitPending = false;
   }
 };
 

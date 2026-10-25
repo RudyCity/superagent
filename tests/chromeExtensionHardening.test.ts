@@ -21,6 +21,7 @@ describe("Chrome extension/backend security regressions", () => {
         };
       },
       Promise,
+      URL,
       AbortController,
       TextDecoder,
       setTimeout,

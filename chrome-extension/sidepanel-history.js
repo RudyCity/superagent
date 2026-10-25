@@ -280,10 +280,10 @@ function renderChatHistorySessionsList(sessions) {
 
     item.innerHTML = `
       <div class="flex justify-between items-center text-[11px] font-medium">
-        <span class="history-name text-vscode-light truncate max-w-[170px]" title="${s.displayName}">${escapeHtml(s.displayName)}</span>
+        <span class="history-name text-vscode-light truncate max-w-[170px]" title="${escapeHtml(String(s.displayName || ""))}">${escapeHtml(String(s.displayName || ""))}</span>
         <span class="history-count text-vscode-muted text-[10px] shrink-0 font-mono">${s.messageCount} msgs</span>
       </div>
-      <div class="text-[10px] text-vscode-muted truncate" title="${s.preview}">${escapeHtml(s.preview)}</div>
+      <div class="text-[10px] text-vscode-muted truncate" title="${escapeHtml(String(s.preview || ""))}">${escapeHtml(String(s.preview || ""))}</div>
       <div class="text-[9px] text-vscode-muted/70 text-right mt-0.5 font-mono">${formattedDate}</div>
     `;
 
@@ -324,6 +324,7 @@ async function switchChatSession(sessionId) {
       } else {
         window.currentSessionId = sessionId;
       }
+      setupSSE();
       await checkServerStatus();
       await loadChatHistory();
     } else {
@@ -361,6 +362,7 @@ async function startNewChatSession() {
     const data = await res.json().catch(() => null);
     if (res.ok && data && data.success) {
       window.currentSessionId = data.sessionId || null;
+      setupSSE();
       await checkServerStatus();
       clearChatMessages();
       appendMessage("system", "New chat session started.");

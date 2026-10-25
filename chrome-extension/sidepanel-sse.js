@@ -5,9 +5,11 @@ function createAuthorizedEventStream(url) {
   let controller = null;
   let retryTimer = null;
   let retryDelay = 1000;
+  let lastEventId = null;
   const stream = {
     onmessage: null,
     onerror: null,
+    onopen: null,
     close() {
       closed = true;
       if (retryTimer) clearTimeout(retryTimer);
@@ -19,7 +21,9 @@ function createAuthorizedEventStream(url) {
     if (closed) return;
     controller = new AbortController();
     try {
-      const response = await fetch(url, {
+      const streamUrl = new URL(url);
+      if (lastEventId !== null) streamUrl.searchParams.set("lastEventId", lastEventId);
+      const response = await fetch(streamUrl.toString(), {
         method: "GET",
         headers: { "Accept": "text/event-stream" },
         cache: "no-store",
@@ -30,6 +34,7 @@ function createAuthorizedEventStream(url) {
         throw new Error("Event stream unavailable (HTTP " + response.status + ")");
       }
       retryDelay = 1000;
+      if (!closed && typeof stream.onopen === "function") stream.onopen();
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -47,8 +52,13 @@ function createAuthorizedEventStream(url) {
             .filter((line) => line.startsWith("data:"))
             .map((line) => line.slice(5).trimStart())
             .join("\n");
+          const eventId = frame.split("\n").find(line => line.startsWith("id:"));
+          if (eventId) {
+            const nextId = eventId.slice(3).trim();
+            if (/^\d+$/.test(nextId)) lastEventId = nextId;
+          }
           if (data && typeof stream.onmessage === "function") {
-            stream.onmessage({ data });
+            stream.onmessage({ data, lastEventId });
           }
         }
       }

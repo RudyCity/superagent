@@ -4,7 +4,7 @@ import fs from "fs";
 import os from "os";
 import type http from "http";
 
-const ALLOWED_ORIGIN_PATTERN = /^https?:\/\/((localhost|127\.0\.0\.1)(:\d+)?|[a-zA-Z0-9-]+\.trycloudflare\.com)$/i;
+const ALLOWED_ORIGIN_PATTERN = /^(?:https?:\/\/((localhost|127\.0\.0\.1)(:\d+)?|[a-zA-Z0-9-]+\.trycloudflare\.com)|chrome-extension:\/\/[a-p]{32})$/i;
 
 export function resolveCorsOrigin(origin: string | string[] | undefined): string | undefined {
   const value = Array.isArray(origin) ? origin[0] : origin;
@@ -14,7 +14,7 @@ export function resolveCorsOrigin(origin: string | string[] | undefined): string
 export function buildCorsHeaders(req: http.IncomingMessage): Record<string, string> {
   const headers: Record<string, string> = {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS, DELETE",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-workspace-path, x-auth-token",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, x-workspace-path, x-auth-token, x-client-mode, x-session-id",
     "Vary": "Origin"
   };
   const allowOrigin = resolveCorsOrigin(req.headers.origin as string | undefined);

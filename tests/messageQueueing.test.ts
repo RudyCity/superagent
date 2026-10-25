@@ -17,6 +17,7 @@ vi.mock("ai", () => ({
 
 const { Agent } = await import("../src/core/agent.js");
 const { streamText } = await import("ai");
+const { RequestProcessor } = await import("../src/core/agent/RequestProcessor.js");
 const jsonConfigModule = await import("../src/core/config/jsonConfig.js");
 const providersModule = await import("../src/core/config/providers.js");
 
@@ -87,5 +88,55 @@ describe("Agent – Message Queueing", () => {
     expect(userContents).toContain("first message");
     expect(userContents).toContain("second message");
     expect(userContents).toContain("third message");
+  });
+
+  it("reserves the chat turn before async classification and processes the queue serially", async () => {
+    let releaseFirst!: (value: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => { releaseFirst = resolve; });
+    const requestSpy = vi.spyOn(RequestProcessor, "processRequest")
+      .mockImplementationOnce(() => gate)
+      .mockResolvedValueOnce(false);
+    const agent = new Agent(vi.fn(), vi.fn().mockResolvedValue(false), vi.fn());
+    const first = agent.sendMessage("first");
+    const second = agent.sendMessage("second");
+    expect(agent.isAgentRunning()).toBe(true);
+    expect(requestSpy).toHaveBeenCalledTimes(1);
+    releaseFirst(false);
+    await Promise.all([first, second]);
+    await vi.waitFor(() => expect(requestSpy).toHaveBeenCalledTimes(2));
+    expect(agent.isAgentRunning()).toBe(false);
+    requestSpy.mockRestore();
+  });
+
+  it("aborts an active hung agent loop and emits done for this session", async () => {
+    const events: any[] = [];
+    const requestSpy = vi.spyOn(RequestProcessor, "processRequest").mockResolvedValue(true);
+    const agent = new Agent((event) => events.push(event), vi.fn().mockResolvedValue(false), vi.fn());
+    agent.tier = "single";
+    (agent as any).runAgentLoop = () => new Promise(() => {});
+    const pending = agent.sendMessage("hang until aborted");
+    await vi.waitFor(() => expect(agent.isAgentRunning()).toBe(true));
+    agent.abort();
+    await Promise.race([
+      pending,
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error("Abort did not settle")), 3000)),
+    ]);
+    expect(agent.isAgentRunning()).toBe(false);
+    expect(events.some((event) => event.type === "done")).toBe(true);
+    requestSpy.mockRestore();
+  });
+
+  it("abort during preprocessing cancels the reserved turn before any model execution", async () => {
+    let release!: (value: boolean) => void;
+    const gate = new Promise<boolean>((resolve) => { release = resolve; });
+    const processSpy = vi.spyOn(RequestProcessor, "processRequest").mockImplementation(() => gate);
+    const agent = new Agent(vi.fn(), vi.fn().mockResolvedValue(false), vi.fn());
+    const pending = agent.sendMessage("should never start loop");
+    expect(agent.isAgentRunning()).toBe(true);
+    agent.abort();
+    release(true);
+    await pending;
+    expect(agent.isAgentRunning()).toBe(false);
+    processSpy.mockRestore();
   });
 });

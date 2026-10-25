@@ -9,6 +9,14 @@ describe("SSE session/workspace event scope", () => {
     expect(shouldDeliverEventToClient(event, { sessionId: "session-b", workspace: "D:/projects/b" })).toBe(false);
   });
 
+  it("never falls back to workspace when an event belongs to a specific chat session", () => {
+    const event = { type: "agent_event", sessionId: "chat-a", workspace: "D:/same-project" };
+    expect(shouldDeliverEventToClient(event, { workspace: "D:/same-project" })).toBe(false);
+    expect(shouldDeliverEventToClient(event, { sessionId: "chat-b", workspace: "D:/same-project" })).toBe(false);
+    expect(shouldDeliverEventToClient(event, { sessionId: "chat-a", workspace: "D:/different" })).toBe(false);
+    expect(shouldDeliverEventToClient(event, { sessionId: "chat-a", workspace: "D:/same-project" })).toBe(true);
+  });
+
   it("allows workspace-scoped delivery only when the client has the same workspace", () => {
     const event = { type: "status", workspace: "D:/projects/a" };
     expect(shouldDeliverEventToClient(event, { workspace: "d:/projects/a/" })).toBe(true);

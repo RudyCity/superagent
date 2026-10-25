@@ -20,6 +20,7 @@ import { lockEventEmitter } from "./core/storage/sharedMemory.js";
 import { buildCorsHeaders, ensureServerAuthToken, isRequestAuthorized, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
 import { isCanonicalMotionWorkspaceAllowed } from "./core/motion/workspaceAccess.js";
 import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
+import { SessionEventReplay } from "./core/utils/sessionEventReplay.js";
 
 // Forward lock events to connected t-line desktop clients
 lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
@@ -191,7 +192,9 @@ function resolveSession(
   const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "localhost"}`);
   let wsPath = explicitWorkspace || (req.headers["x-workspace-path"] as string) || parsedUrl.searchParams.get("workspace") || "";
   const querySessionId = parsedUrl.searchParams.get("sessionId");
-  const targetSessionId = requestedSessionId || querySessionId;
+  const sessionHeader = req.headers["x-session-id"];
+  const targetSessionId = requestedSessionId || querySessionId ||
+    (typeof sessionHeader === "string" ? sessionHeader : undefined);
   const reqClientMode = resolveClientMode(req);
 
   if (wsPath) {
@@ -402,6 +405,7 @@ setBrowserControlHandler((action, target, value, instanceId) => {
   return executeBrowserControlOnClient(action, target, value, instanceId);
 });
 
+const chatEventReplay = new SessionEventReplay();
 function broadcastEvent(event: any) {
   // Normalize SSE event types for client backward compatibility
   const normalizedEvent = { ...event };
@@ -418,7 +422,10 @@ function broadcastEvent(event: any) {
       !normalizedEvent.sessionId && !normalizedEvent.workspace) {
     return; // Fail closed: no recipient context for a sensitive stream.
   }
-  const data = `data: ${JSON.stringify(normalizedEvent)}\n\n`;
+  const eventJson = JSON.stringify(normalizedEvent);
+  const data = typeof normalizedEvent.sessionId === "string"
+    ? chatEventReplay.publish(normalizedEvent.sessionId, eventJson)
+    : `data: ${eventJson}\n\n`;
   
   // Log event to the server debug log file
   // Log metadata only; event payloads can include secret browser capabilities.
@@ -462,11 +469,24 @@ function sendJSON(res: http.ServerResponse, status: number, data: any) {
 }
 
 function readBody(req: http.IncomingMessage): Promise<string> {
+  const MAX_BODY_BYTES = 32 * 1024 * 1024;
   return new Promise((resolve, reject) => {
     let body = "";
-    req.on("data", chunk => body += chunk);
-    req.on("end", () => resolve(body));
-    req.on("error", err => reject(err));
+    let size = 0;
+    let failed = false;
+    req.on("data", (chunk: Buffer) => {
+      if (failed) return;
+      size += Buffer.byteLength(chunk);
+      if (size > MAX_BODY_BYTES) {
+        failed = true;
+        req.pause();
+        reject(new Error("Request body too large"));
+        return;
+      }
+      body += chunk.toString("utf8");
+    });
+    req.on("end", () => { if (!failed) resolve(body); });
+    req.on("error", err => { if (!failed) reject(err); });
   });
 }
 
@@ -944,6 +964,11 @@ export async function runServer(port: number, silent = false, defaultClientMode:
             pendingPermissions,
             pendingQuestions,
             pendingBrowserControls,
+            replaySessionEvents: (res: http.ServerResponse, sessionId: string, cursor?: string) => {
+              for (const event of chatEventReplay.since(sessionId, cursor)) {
+                if (!res.writableEnded) res.write(event);
+              }
+            },
             resolveSession,
             resolveWorkspacePath,
             resolveClientMode,

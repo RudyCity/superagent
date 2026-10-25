@@ -113,6 +113,13 @@ function upsertSharedMemoryEntry(options: { key: string; value: string; source: 
   fs.renameSync(tempPath, sharedMemPath);
 }
 
+function sameChatWorkspace(a: string, b: string): boolean {
+  const normalize = (value: string) =>
+    /^(?:ssh:|chain:)/i.test(value) ? value.replace(/\\/g, "/").toLowerCase()
+      : path.resolve(value).replace(/\\/g, "/").toLowerCase();
+  return normalize(a) === normalize(b);
+}
+
 export async function handleServerRoute(
   req: http.IncomingMessage,
   res: http.ServerResponse,
@@ -131,6 +138,7 @@ export async function handleServerRoute(
     pendingPermissions: Map<string, { resolve: (approval: boolean | "session") => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
     pendingQuestions: Map<string, { resolve: (answer: any) => void; ownerAgent?: any; sessionId?: string; workspace: string }>;
     pendingBrowserControls: Map<string, { resolve: (val: string) => void; reject: (err: any) => void; controlToken: string }>;
+    replaySessionEvents: (res: http.ServerResponse, sessionId: string, cursor?: string) => void;
     resolveSession: (req: http.IncomingMessage, sessionId?: string, explicitWorkspace?: string) => any;
     resolveWorkspacePath: (req: http.IncomingMessage) => string | null;
     resolveClientMode: (req: http.IncomingMessage, body?: any, defaultMode?: any) => any;
@@ -153,6 +161,7 @@ export async function handleServerRoute(
     pendingPermissions,
     pendingQuestions,
     pendingBrowserControls,
+    replaySessionEvents,
     resolveSession,
     resolveWorkspacePath,
     resolveClientMode,
@@ -231,6 +240,16 @@ export async function handleServerRoute(
 
   // SSE Endpoint
   if (pathname === "/api/events" && req.method === "GET") {
+    const requestedSessionId = parsedUrl.searchParams.get("sessionId") || undefined;
+    if (resolveClientMode(req) === "chrome-extension" && !requestedSessionId) {
+      sendJSON(res, 400, { error: "SSE requires a sessionId." });
+      return true;
+    }
+    const resolvedSession = requestedSessionId ? resolveSession(req, requestedSessionId) : null;
+    if (requestedSessionId && !resolvedSession) {
+      sendJSON(res, 404, { error: "SSE session does not exist in this workspace." });
+      return true;
+    }
     res.writeHead(200, {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -239,8 +258,10 @@ export async function handleServerRoute(
     });
     try { (res.socket as any)?.setNoDelay(true); } catch {}
     sseClients.add(res);
-    const requestedSessionId = parsedUrl.searchParams.get("sessionId") || undefined;
-    const resolvedSession = resolveSession(req, requestedSessionId);
+    res.write(": connected\n\n");
+    if (resolvedSession && parsedUrl.searchParams.has("lastEventId")) {
+      replaySessionEvents(res, resolvedSession.sessionId, parsedUrl.searchParams.get("lastEventId") || undefined);
+    }
     const requestedWorkspace = parsedUrl.searchParams.get("workspace") || undefined;
     const resolvedWorkspace = requestedWorkspace ? resolveWorkspacePath(req) || undefined : resolvedSession?.workspace;
     sseClientContexts.set(res, {
@@ -668,6 +689,12 @@ export async function handleServerRoute(
     if (targetSessionId) {
       // First check SQLite database persistent storage for complete history
       const dbResult = loadSessionFromDb(targetSessionId);
+      const requestedWorkspace = resolveWorkspacePath(req);
+      if (dbResult.session?.workingDirectory && requestedWorkspace &&
+          !sameChatWorkspace(dbResult.session.workingDirectory, requestedWorkspace)) {
+        sendJSON(res, 403, { error: "Chat history belongs to a different workspace." });
+        return true;
+      }
       logE2E("SUPERAGENT-SERVER", `GET /api/history dbResult`, { targetSessionId, found: !!dbResult?.session, count: dbResult?.messages?.length });
       if (dbResult && dbResult.session && dbResult.messages.length > 0) {
         const formattedMsgs = dbResult.messages.map((m) => {
@@ -730,7 +757,8 @@ export async function handleServerRoute(
   if (pathname === "/api/history/sessions" && req.method === "GET") {
     const workspacePath = resolveWorkspacePath(req) || lastActiveWorkspace || parsedUrl.searchParams.get("workspace") || undefined;
     const queryMode = parsedUrl.searchParams.get("mode") || "all";
-    const crossSession = parsedUrl.searchParams.get("crossSession") === "true";
+    const crossSession = resolveClientMode(req) !== "chrome-extension" &&
+      parsedUrl.searchParams.get("crossSession") === "true";
     const limitParam = parsedUrl.searchParams.get("limit");
     const offsetParam = parsedUrl.searchParams.get("offset");
     const limit = limitParam ? parseInt(limitParam, 10) : undefined;
@@ -772,7 +800,7 @@ export async function handleServerRoute(
         filteredResults = rawResults.filter((r) => {
           const loaded = loadSessionFromDb(r.sessionId);
           const sessDir = loaded.session?.workingDirectory;
-          return sessDir ? normalizeAndCheckSubpath(sessDir, workspacePath) : true;
+          return sessDir ? normalizeAndCheckSubpath(sessDir, workspacePath) : false;
         });
       }
 
@@ -792,6 +820,20 @@ export async function handleServerRoute(
       return true;
     }
     try {
+      const requestedWorkspace = resolveWorkspacePath(req);
+      const stored = loadSessionFromDb(sessionId).session;
+      if (stored?.workingDirectory && requestedWorkspace &&
+          !sameChatWorkspace(stored.workingDirectory, requestedWorkspace)) {
+        sendJSON(res, 403, { error: "Cannot delete a chat from another workspace." });
+        return true;
+      }
+      const foreignActive = [...activeSessions.values()].some((session: any) =>
+        session.sessionId === sessionId && requestedWorkspace &&
+        !sameChatWorkspace(session.workspace, requestedWorkspace));
+      if (foreignActive) {
+        sendJSON(res, 403, { error: "Cannot delete a chat from another workspace." });
+        return true;
+      }
       const { deleteSessionFromDb, clearHistoryCache } = await import("./core/config.js");
       deleteSessionFromDb(sessionId);
       clearHistoryCache();
@@ -827,6 +869,11 @@ export async function handleServerRoute(
       const { saveSessionToDb, loadSessionFromDb, clearHistoryCache } = await import("./core/config.js");
       
       const existing = loadSessionFromDb(sessionId);
+      if (existing.session?.workingDirectory &&
+          !sameChatWorkspace(existing.session.workingDirectory, workspacePath)) {
+        sendJSON(res, 403, { error: "Cannot overwrite another workspace's chat." });
+        return true;
+      }
       const filePath = existing.session?.filePath || session.filePath || "";
 
       let title = session.title || session.displayName || "New Chat";
@@ -969,7 +1016,7 @@ export async function handleServerRoute(
     }
 
     if (existingSession) {
-      const sameWorkspace = existingSession.workspace.toLowerCase() === targetWorkspace.toLowerCase();
+      const sameWorkspace = sameChatWorkspace(existingSession.workspace, targetWorkspace);
       const sameMode = existingSession.mode === targetMode;
       const sameClientMode = existingSession.clientMode === targetClientMode;
       if (!sameWorkspace || !sameMode || !sameClientMode) {
@@ -992,6 +1039,14 @@ export async function handleServerRoute(
         clientMode: existingSession.clientMode
       });
       return true;
+    }
+
+    if (resume) {
+      const saved = loadSessionFromDb(resume).session;
+      if (saved?.workingDirectory && !sameChatWorkspace(saved.workingDirectory, targetWorkspace)) {
+        sendJSON(res, 409, { error: "Chat history belongs to a different workspace." });
+        return true;
+      }
     }
 
     // Do NOT abort running agents when user switches views in UI.
@@ -1054,9 +1109,22 @@ export async function handleServerRoute(
 
   // Send chat message
   if (pathname === "/api/chat" && req.method === "POST") {
-    const bodyStr = await readBody(req);
-    const body = JSON.parse(bodyStr || "{}");
+    let body: any;
+    try {
+      const bodyStr = await readBody(req);
+      body = JSON.parse(bodyStr || "{}");
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Invalid JSON object");
+    } catch (error: any) {
+      const oversized = String(error?.message || "").includes("too large");
+      sendJSON(res, oversized ? 413 : 400, { error: oversized ? "Chat payload exceeds 32 MiB" : "Invalid chat request body" });
+      return true;
+    }
     const { message, sessionId: reqSessionId } = body;
+    if (resolveClientMode(req) === "chrome-extension" &&
+        (typeof reqSessionId !== "string" || !reqSessionId.trim())) {
+      sendJSON(res, 400, { error: "Chat requires an explicit sessionId." });
+      return true;
+    }
 
     const session = resolveSession(req, reqSessionId);
     if (!session) {
@@ -1064,7 +1132,8 @@ export async function handleServerRoute(
       return true;
     }
 
-    if (!message) {
+    if (!(typeof message === "string" ? message.trim().length > 0 :
+      Array.isArray(message) && message.length > 0)) {
       sendJSON(res, 400, { error: "Empty message", sessionId: session.sessionId });
       return true;
     }
@@ -1088,45 +1157,52 @@ export async function handleServerRoute(
     }
 
     if (typeof parsedMessage === "string" && parsedMessage.startsWith("!")) {
-      const command = message.slice(1).trim();
+      const command = parsedMessage.slice(1).trim();
       if (!command) {
         sendJSON(res, 400, { error: "Empty terminal command", sessionId: session.sessionId });
         return true;
       }
-
-      (async () => {
-        const wsPath = session.workspace || lastActiveWorkspace;
-        broadcastEvent({ type: "agent_event", event: { type: "text", content: `> Executing command: ${command}\n` } });
-
-        try {
-          const { execa } = await import("execa");
-          const cp = execa(command, { cwd: wsPath, all: true, reject: false, shell: true });
-          cp.all?.on("data", (chunk) => {
-            broadcastEvent({ type: "agent_event", event: { type: "text", content: chunk.toString() } });
-          });
-          const result = await cp;
-          broadcastEvent({ type: "agent_event", event: { type: "text", content: `\n> Command finished with exit code ${result.exitCode}\n` } });
-        } catch (err: any) {
-          broadcastEvent({ type: "agent_event", event: { type: "text", content: `\n> Command failed: ${err.message}\n` } });
-        } finally {
-          broadcastEvent({ type: "agent_event", event: { type: "done", stats: { totalTimeMs: 0 } } });
-        }
-      })();
-
-      sendJSON(res, 200, { success: true, sessionId: session.sessionId });
-      return true;
+      // The chat shortcut is an agent request, never an unrestricted shell.
+      // Execution must pass through the normal permitted shell-tool policy.
+      parsedMessage = `Execute this user-requested terminal command using the authorized shell tool in the current workspace. Apply tool permission and safety policies; report the result: ${command}`;
     }
 
+    const requestedMessageId = typeof body.clientMessageId === "string" ? body.clientMessageId : "";
+    if (requestedMessageId && !/^[a-zA-Z0-9_-]{8,128}$/.test(requestedMessageId)) {
+      sendJSON(res, 400, { error: "Invalid clientMessageId" });
+      return true;
+    }
+    const turnId = requestedMessageId || crypto.randomUUID();
+    const receipts: Map<string, { digest: string; turnId: string; state: string }> =
+      session.chatReceipts ?? (session.chatReceipts = new Map());
+    const digest = crypto.createHash("sha256").update(JSON.stringify(parsedMessage)).digest("hex");
+    const existing = receipts.get(turnId);
+    if (existing) {
+      if (existing.digest !== digest) {
+        sendJSON(res, 409, { error: "clientMessageId already belongs to another message" });
+        return true;
+      }
+      sendJSON(res, 200, { success: true, duplicate: true, sessionId: session.sessionId, turnId, state: existing.state });
+      return true;
+    }
+    const state = session.agent.isAgentRunning() ? "queued" : "accepted";
+    receipts.set(turnId, { digest, turnId, state });
+    if (receipts.size > 128) receipts.delete(receipts.keys().next().value!);
     (session.clientMode === "tline"
       ? import("./core/channels/tlineJobCreator.js").then(({ runWithTrustedTlineCreator }) =>
           runWithTrustedTlineCreator({
             clientMode: "tline", sessionId: session.sessionId, workspace: session.workspace,
           }, () => session.agent.sendMessage(parsedMessage)))
       : session.agent.sendMessage(parsedMessage)).catch((err: any) => {
-      broadcastEvent({ type: "error", message: err.message || String(err) });
+      const receipt = receipts.get(turnId);
+      if (receipt) receipt.state = "failed";
+      broadcastEvent({
+        type: "error", message: err.message || String(err),
+        sessionId: session.sessionId, workspace: session.workspace, turnId
+      });
     });
 
-    sendJSON(res, 200, { success: true, sessionId: session.sessionId });
+    sendJSON(res, 200, { success: true, sessionId: session.sessionId, turnId, state });
     return true;
   }
 
@@ -1416,6 +1492,16 @@ export async function handleServerRoute(
       abortBody = rawAbortBody ? JSON.parse(rawAbortBody) : {};
     } catch {}
     const abortAll = abortBody?.all === true || parsedUrl.searchParams.get("all") === "true";
+    if (abortAll && resolveClientMode(req) === "chrome-extension") {
+      sendJSON(res, 403, { error: "Global abort is not available from a Chrome chat session." });
+      return true;
+    }
+    const requestedAbortSessionId = typeof abortBody?.sessionId === "string"
+      ? abortBody.sessionId : parsedUrl.searchParams.get("sessionId") || undefined;
+    if (resolveClientMode(req) === "chrome-extension" && !abortAll && !requestedAbortSessionId) {
+      sendJSON(res, 400, { error: "Abort requires an explicit sessionId." });
+      return true;
+    }
 
     // Global abort is opt-in: it is the only path that touches every session / every project.
     if (abortAll) {
@@ -1436,7 +1522,7 @@ export async function handleServerRoute(
       return true;
     }
 
-    const session = resolveSession(req);
+    const session = resolveSession(req, requestedAbortSessionId);
     if (!session) {
       sendJSON(res, 400, {
         error: "No matching session to abort. Pass a sessionId, an x-workspace-path header, or all=true to abort every session.",
@@ -2529,7 +2615,19 @@ export async function handleServerRoute(
       }
     }
 
+    if (session && (!sameChatWorkspace(session.workspace, targetWorkspace) ||
+        session.mode !== targetMode)) {
+      sendJSON(res, 409, { error: "Chat session belongs to another workspace or mode." });
+      return true;
+    }
     if (!session) {
+      if (reqSessionId) {
+        const saved = loadSessionFromDb(reqSessionId).session;
+        if (saved?.workingDirectory && !sameChatWorkspace(saved.workingDirectory, targetWorkspace)) {
+          sendJSON(res, 409, { error: "Chat history belongs to a different workspace." });
+          return true;
+        }
+      }
       const sessionId = reqSessionId || generateSessionId();
       const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
       agent.sessionId = sessionId;
