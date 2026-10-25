@@ -55,6 +55,7 @@
     "mammoth": "^1.12.0",
     "onnxruntime-node": "^1.14.0",
     "pdf-parse": "^2.4.5",
+    "playwright-core": "1.56.1",
     "r-memory": "git+https://github.com/RudyCity/r-memory.git#2b5de65a1aa8ece0998e3411c07a22c2b41b2713",
     "react": "^18.3.1",
     "ssh2": "^1.17.0",

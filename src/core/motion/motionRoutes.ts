@@ -108,6 +108,7 @@ export async function handleMotionHttpRoute(
   const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
   const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
   const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.(html|tsx)$/);
+  const codeVideoDownload = pathname.match(/^\/api\/motion\/code-videos\/(codevideo-[a-f0-9]{24})\.mp4$/);
   const reconstructionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/reconstruction-review\.png$/);
   const eventsRoute = pathname === "/api/motion/events";
   const tlineBridgeRoute = pathname === "/api/motion/tline-bridge";
@@ -153,9 +154,11 @@ export async function handleMotionHttpRoute(
   try {
     if (pathname === "/api/motion" && method === "GET") {
       const { localStudioTextOcrReady } = await import("./code/videoTextOcrReconstruction.js");
+      const { localStudioCodeVideoReady } = await import("./code/studioBrowserVideoRenderer.js");
       json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false,
         capabilities: { ...MOTION_CAPABILITIES, localVoiceoverConfigured: await localVoiceoverReady(),
-          localTextOcrReady: await localStudioTextOcrReady() } });
+          localTextOcrReady: await localStudioTextOcrReady(),
+          localCodeToVideoReady: await localStudioCodeVideoReady() } });
     } else if (pathname === "/api/motion/videos" && method === "POST") {
       // Dedicated small-video upload: strictly smaller than generic 50 MB
       // import-video, because reconstruction is intentionally bounded.
@@ -711,6 +714,37 @@ export async function handleMotionHttpRoute(
         "Content-Disposition": 'attachment; filename="motion-captions.srt"',
       });
       res.end(body);
+    } else if (pathname === "/api/motion/code-to-video" && method === "POST") {
+      const body = await readMotionJson(req, 2_400_000);
+      const projectId = body.projectId;
+      const html = body.html;
+      const reactTsx = body.reactTsx;
+      if ([projectId, html, reactTsx].filter(value => typeof value === "string").length !== 1)
+        throw new MotionValidationError(["Supply exactly one Studio projectId, HTML or Studio React TSX"]);
+      if (typeof projectId === "string" && !/^(?:studio|motion)-[a-f0-9]{20}$/.test(projectId))
+        throw new MotionValidationError(["Invalid code-to-video Studio projectId"]);
+      if ((typeof html === "string" || typeof reactTsx === "string") && body.trustLocalHtml !== true)
+        throw new MotionValidationError(["External HTML/Studio React TSX requires explicit trustLocalHtml=true confirmation"]);
+      const { renderStudioBrowserVideo } = await import("./code/studioBrowserVideoRenderer.js");
+      const options = {
+        width: body.width as number | undefined, height: body.height as number | undefined,
+        fps: body.fps as number | undefined,
+        durationSeconds: body.durationSeconds as number | undefined,
+      };
+      const input = typeof projectId === "string"
+        ? { project: await getMotionProject(workspace, projectId) }
+        : typeof reactTsx === "string" ? { reactTsx } : { html: html as string };
+      const { file: _localPath, ...result } = await renderStudioBrowserVideo(workspace, input, options);
+      json(res, ctx, 201, result);
+    } else if (codeVideoDownload && method === "GET") {
+      const { readStudioCodeVideo } = await import("./code/studioBrowserVideoRenderer.js");
+      const bytes = await readStudioCodeVideo(workspace, codeVideoDownload[1]);
+      res.writeHead(200, {
+        "Content-Type": "video/mp4", "Content-Length": String(bytes.length),
+        "Content-Disposition": 'attachment; filename="' + codeVideoDownload[1] + '.mp4"',
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+      });
+      res.end(bytes);
     } else if (codeExport && method === "GET") {
       const requested = _url.searchParams.get("trigger") ?? "autoplay";
       if (!["autoplay", "scroll", "click", "hover"].includes(requested)) {

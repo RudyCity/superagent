@@ -1038,6 +1038,16 @@ Reproducible offline Chrome smoke with scene changes:
 `python scripts/studio_ocr_timeline_browser_smoke.py`. Requires local
 Tesseract English data, FFmpeg, Pillow, Python Playwright, Chrome and Bun.
 
+**Studio Code → Video (developer preview):** studio-authored HTML/React wrappers or a trusted self-contained local HTML file can now be captured offline through Chromium and encoded with FFmpeg into H.264 MP4. The generated React TSX wrapper is supported via its embedded offline HTML, without compiling or running TSX; external React must first be built into standalone HTML. Choose width, height, FPS and duration (max 12 s / 300 frames, 1920×1080, no audio). Chrome/Edge/Chromium and FFmpeg must be installed locally.
+
+```bash
+superagent studio code-to-video PROJECT_ID --width 640 --height 360 --fps 12 --seconds 2 --workspace . --json
+superagent studio code-to-video --file page.html --trust-html --width 640 --height 360 --fps 12 --seconds 2 --workspace . --json
+# Or use --file studio-generated.tsx --trust-html for a Studio React export
+```
+
+Private workspace-scoped HTTP: `POST /api/studio/code-to-video` and `GET /api/studio/code-videos/:id.mp4`. T-Line adds **Code → MP4** with video preview and download. External HTML must be trusted by the user; remote content is blocked, but this is NOT an untrusted-code sandbox. No arbitrary external React TSX execution, URLs, audio, or arbitrary-JS animation parity yet. See `docs/audits/2026-10-25-studio-code-to-video.md`.
+
 **Not yet supported:** general video-to-code reverse engineering, editable
 DOM/SVG reconstruction of arbitrary footage, raster/image/video/audio assets
 in the exported web code, or native per-layer React/Next.js JSX (only a

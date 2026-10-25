@@ -75,6 +75,8 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio preview PROJECT_ID [--open] [--workspace PATH] [--json]
   superagent studio export-bundle PROJECT_ID [--workspace PATH] [--json]
   superagent studio export-code PROJECT_ID [--format html|react] [--trigger autoplay|scroll|click|hover] [--workspace PATH] [--json]
+  superagent studio code-to-video PROJECT_ID [--width 640 --height 360 --fps 12 --seconds 2] [--workspace PATH] [--json]
+  superagent studio code-to-video --file local.html --trust-html [--width 640 --height 360 --fps 12 --seconds 2] [--workspace PATH] [--json]
   superagent studio trace-image --file workspace/path/logo.png [--mode silhouette|color|outline] [--threshold N] [--simplify N] [--smooth] [--workspace PATH] [--json]
   superagent studio vectorize PROJECT_ID --layer LAYER_ID [--mode silhouette|color|outline] [--workspace PATH] [--json]
 
@@ -84,8 +86,8 @@ recovery is diagnostic/read-only unless the operator explicitly runs recover --a
 function argumentsOf(args: string[]): { action: string; positionals: string[]; opts: Map<string, string | true> } {
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
-  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--verified-copy", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--expected-pid", "--trigger", "--format", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
+  const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--verified-copy", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h", "--trust-html"]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--expected-pid", "--trigger", "--format", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width",  "--fit-width", "--fit-height", "--height", "--fps", "--seconds", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -581,6 +583,38 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
       if (action === "storage" && opts.has("--apply")) throw new Error("Use motion prune --apply for destructive maintenance");
       const days = opt(opts, "--days") === undefined ? 7 : nonnegativeInteger(opt(opts, "--days"), "--days");
       emit(await motionStorageMaintenance(workspace, { minAgeDays: days, apply: action === "prune" }), json);
+      return 0;
+    }
+    if (action === "code-to-video") {
+      const { renderStudioBrowserVideo } = await import("../motion/code/studioBrowserVideoRenderer.js");
+      const { motionWorkspaceRoot } = await import("../motion/project/projectStore.js");
+      const { default: fs } = await import("node:fs/promises");
+      const { default: path } = await import("node:path");
+      const htmlFile = opt(opts, "--file");
+      if (!!htmlFile === (positionals.length === 1))
+        throw new Error("code-to-video needs exactly one PROJECT_ID or --file");
+      const numberOption = (key: string) => opt(opts, key) === undefined ? undefined : Number(opt(opts, key));
+      const options = {
+        width: numberOption("--width"), height: numberOption("--height"),
+        fps: numberOption("--fps"), durationSeconds: numberOption("--seconds"),
+      };
+      let input: { project?: Awaited<ReturnType<typeof getMotionProject>>;
+        html?: string; reactTsx?: string };
+      if (htmlFile) {
+        if (!opts.has("--trust-html")) throw new Error("External HTML requires explicit --trust-html");
+        const root = await motionWorkspaceRoot(workspace);
+        const source = await fs.realpath(path.resolve(root, htmlFile));
+        if (!source.startsWith(root + path.sep)) throw new Error("HTML source outside Studio workspace");
+        const stat = await fs.stat(source);
+        const react = source.toLowerCase().endsWith(".tsx");
+        if (!stat.isFile() || stat.size > (react ? 2 * 1024 * 1024 : 256 * 1024))
+          throw new Error("HTML/Studio React source exceeds supported size");
+        input = react ? { reactTsx: await fs.readFile(source, "utf8") }
+          : { html: await fs.readFile(source, "utf8") };
+      } else {
+        input = { project: await getMotionProject(workspace, positionals[0]) };
+      }
+      emit(await renderStudioBrowserVideo(workspace, input, options), json);
       return 0;
     }
     if (action === "generate") {

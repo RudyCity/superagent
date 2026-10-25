@@ -195,6 +195,10 @@ export function renderStudioNativeHtml(project: MotionProject, trigger: StudioCo
     document.getElementById("studio-replay").removeEventListener("click",replay);
   }
   window.addEventListener("pagehide",destroy,{once:true});
+  // First-party deterministic frame-seeking bridge for isolated HTML/React
+  // to MP4 capture. No parent-window messaging or cross-origin access.
+  window.__studioStopCapture = () => pause();
+  window.__studioRenderAt = (seconds) => { pause(); render(seconds); };
   render(reduced ? maxTime : 0);
   if(reduced)notice.textContent="Reduced motion enabled: final frame shown; manual controls remain available.";
   else if(!scene.graph && scene.trigger==="autoplay")play();
