@@ -12,7 +12,7 @@ import path from "node:path";
 import { loadRemoteAgentConfig, getWatchedWorkspaces } from "../remoteAgent/config.js";
 import type { RemoteAgentConfig } from "../remoteAgent/config.js";
 import { getMuseWatcher, TELEGRAM_FALLBACK_KEY } from "../remoteAgent/museWatcherRegistry.js";
-import { MuseBatchJournal } from "../remoteAgent/museBatchJournal.js";
+import { MuseBatchJournal, museJournalFile } from "../remoteAgent/museBatchJournal.js";
 
 export type ChannelHostMode = "idle" | "muse-ws" | "telegram-fallback";
 export interface ChannelHostHealth {
@@ -101,6 +101,22 @@ function claimModeLease(mode: ChannelHostMode, record: ChannelHostDiscovery): ()
       if (contents.pid === record.pid && contents.instanceId === record.instanceId) {
         fs.rmSync(file, { force: true });
       }
+    } catch {}
+  };
+}
+
+/** Exclusive per-port journal lock shared by live owners and offline review.
+ * A hard crash deliberately leaves this lock; investigate owner PID before
+ * manual cleanup. It cannot silently transfer authority to another process.
+ */
+function claimJournalLock(port: number, purpose: "host" | "review", identity: string): () => void {
+  const file = museJournalFile(port) + ".review.lock";
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const token = JSON.stringify({ pid: process.pid, purpose, identity });
+  fs.writeFileSync(file, token, { flag: "wx", mode: 0o600 });
+  return () => {
+    try {
+      if (fs.readFileSync(file, "utf8") === token) fs.rmSync(file, { force: true });
     } catch {}
   };
 }
@@ -194,13 +210,17 @@ export async function runChannelHost(options: {
   }
   const config = options.config || loadRemoteAgentConfig();
   validateChannelHostMode(mode, wsPort, config);
-  // Fail closed on invalid/tampered journal before watcher/socket startup.
-  const journal = mode !== "idle" ? new MuseBatchJournal(port) : null;
   // Fail closed on ANY existing registration, including stale metadata.
   // Never overwrite a PID record or adopt unrelated listener processes.
   if (fs.existsSync(statePath(port))) {
     throw new Error("Channel-host registration already exists; verify the owner before manual cleanup");
   }
+  // The live owner and offline reconciliation share a true exclusive lock.
+  // Check early for clearer diagnostics; claim atomically before loading.
+  if (fs.existsSync(museJournalFile(port) + ".review.lock")) {
+    throw new Error("Channel-host journal is under offline reconciliation or held by another owner");
+  }
+  let journal: MuseBatchJournal | null = null;
   const instanceId = crypto.randomBytes(16).toString("hex");
   const startedAt = Date.now();
   const record: ChannelHostDiscovery = {
@@ -210,6 +230,7 @@ export async function runChannelHost(options: {
   const processed = new Map<string, { signature: string; result: Promise<boolean>; at: number }>();
   let executingId: string | null = null;
   let releaseLease: () => void = () => {};
+  let releaseJournalLock: () => void = () => {};
   let state: ChannelHostHealth["status"] = mode === "idle" ? "idle" : "starting";
   let errorCode: ChannelHostHealth["errorCode"];
   const health = (): ChannelHostHealth => {
@@ -309,6 +330,9 @@ export async function runChannelHost(options: {
   // Claim mode ownership before any listener/network side effects.
   releaseLease = claimModeLease(mode, record);
   try {
+    releaseJournalLock = claimJournalLock(port, "host", instanceId);
+    // Fail closed on invalid/tampered journal before watcher/socket startup.
+    journal = mode !== "idle" ? new MuseBatchJournal(port) : null;
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(port, "127.0.0.1", () => {
@@ -318,6 +342,7 @@ export async function runChannelHost(options: {
     });
     writeDiscovery(record);
   } catch (error) {
+    releaseJournalLock();
     releaseLease();
     try { server.close(); } catch {}
     throw error;
@@ -327,6 +352,7 @@ export async function runChannelHost(options: {
       const old = readDiscovery(port);
       if (old.pid === process.pid && old.instanceId === instanceId) fs.rmSync(statePath(port), { force: true });
     } catch {}
+    releaseJournalLock();
     releaseLease();
   };
   server.once("close", cleanup);
@@ -364,7 +390,8 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   if (action === "help" || action === "--help") {
     console.log("superagent channel-host serve --port 7892 [--mode idle|muse-ws|telegram-fallback] [--ws-port 9225]");
     console.log("superagent channel-host status --port 7892");
-    console.log("superagent channel-host checkpoint --port 7892  # inspect unconfirmed batches offline");
+    console.log("superagent channel-host checkpoint --port 7892  # inspect batch/task facts offline");
+    console.log("superagent channel-host reconcile --port 7892 --batch-id ID --decision effect_verified|no_effect_verified --evidence-sha256 HEX --confirm ID");
     console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
     return false;
   }
@@ -382,16 +409,53 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     const counts = journal.summary();
     console.log("Muse batch checkpoint on owner port " + port);
     console.log("Delivered: " + counts.delivered + " | Needs reconciliation: " +
-      counts.requiresReconciliation + " (started " + counts.started +
-      ", result pending " + counts.resultPending + ", uncertain " + counts.uncertain + ")");
+      counts.requiresReconciliation + " | Reviewed: " + counts.reviewed +
+      " (started " + counts.started + ", result pending " + counts.resultPending +
+      ", uncertain " + counts.uncertain + ")");
     for (const batch of journal.list().filter(record => record.stage !== "delivered")) {
       console.log("  " + JSON.stringify({
         batchId: batch.batchId, taskId: batch.taskId,
-        stage: batch.stage, recordedAt: batch.recordedAt,
+        stage: batch.stage, reviewed: batch.review?.outcome || "none",
+        recordedAt: batch.recordedAt,
       }));
     }
+    console.log("Task recovery facts (NOT restored LLM state or proof of delivery):");
+    for (const task of journal.taskRecovery()) console.log("  " + JSON.stringify(task));
     console.log("No automatic replay. Reconcile external effects before any manual intervention.");
     return false;
+  }
+  if (action === "reconcile") {
+    // Mutations are offline-only. A running host owns its in-memory journal;
+    // changing it from a second process would overwrite current checkpoint
+    // records. Never stop a running owner or force-remove an owner lease.
+    const batchIdx = argv.indexOf("--batch-id");
+    const decisionIdx = argv.indexOf("--decision");
+    const evidenceIdx = argv.indexOf("--evidence-sha256");
+    const confirmationIdx = argv.indexOf("--confirm");
+    const batchId = batchIdx < 0 ? "" : argv[batchIdx + 1] || "";
+    const decision = decisionIdx < 0 ? "" : argv[decisionIdx + 1] || "";
+    const digest = evidenceIdx < 0 ? "" : argv[evidenceIdx + 1] || "";
+    const confirmed = confirmationIdx < 0 ? "" : argv[confirmationIdx + 1] || "";
+    if (!batchId || confirmed !== batchId ||
+        !["effect_verified", "no_effect_verified"].includes(decision) ||
+        !/^[a-f0-9]{64}$/.test(digest)) {
+      throw new Error("Offline reconciliation requires exact --batch-id/--confirm match, --decision and a SHA-256 external evidence digest");
+    }
+    if (fs.existsSync(statePath(port))) {
+      throw new Error("A registered channel-host owner exists. Refusing offline journal mutation; inspect the owner first");
+    }
+    const releaseReviewLock = claimJournalLock(port, "review", crypto.randomBytes(16).toString("hex"));
+    try {
+      if (fs.existsSync(statePath(port))) throw new Error("A channel host started during reconciliation");
+      const journal = new MuseBatchJournal(port);
+      const reviewed = journal.reconcile(batchId, decision as "effect_verified" | "no_effect_verified", digest);
+      console.log("Recorded external evidence review for batch " + reviewed.batchId +
+        " (" + reviewed.review?.outcome + "). Execution stage remains " + reviewed.stage + ".");
+      console.log("The batch ID stays blocked from replay. No remote delivery, tool execution or model resumption was performed.");
+      return false;
+    } finally {
+      releaseReviewLock();
+    }
   }
   if (action === "status") {
     const known = readDiscovery(port);
@@ -411,5 +475,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint or help");
+  throw new Error("Expected channel-host serve, status, checkpoint, reconcile or help");
 }

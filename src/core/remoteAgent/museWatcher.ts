@@ -822,6 +822,14 @@ export class MuseWatcher {
   }
 
   private async handleTaskDone(envelope: TaskDoneEnvelope): Promise<void> {
+    // Persist observation of a remote task_done signal before publishing a
+    // local completion counter. This is not a model-state checkpoint.
+    try {
+      this.options.batchJournal?.observeTask(envelope.task_id, "done_seen");
+    } catch (error) {
+      this.emitLine("error", "[Muse Watch] Cannot checkpoint task_done observation: " + String(error));
+      return;
+    }
     this.tasksCompleted++;
     const finishedTaskId = envelope.task_id;
     if (this.activeTaskId === finishedTaskId) this.clearActiveTaskIdentity();
@@ -1026,6 +1034,9 @@ export class MuseWatcher {
       system_prompt: this.config.systemPrompt,
     };
 
+    // Record the outbound identity first. If transport fails, this remains an
+    // observation only; operators must not treat it as remote acceptance.
+    this.options.batchJournal?.observeTask(taskId, "accepted");
     const sent = await this.transport.sendEnvelope(requestEnvelope);
     if (!sent) return false;
     this.activeTaskId = taskId;
@@ -1141,6 +1152,12 @@ export class MuseWatcher {
     envelope: TaskRequestEnvelope,
     _meta?: RemoteEnvelopeMeta
   ): Promise<void> {
+    try {
+      this.options.batchJournal?.observeTask(envelope.id, "accepted");
+    } catch (error) {
+      this.emitLine("error", "[Muse Watch] Cannot checkpoint task request: " + String(error));
+      return;
+    }
     this.activeTaskId = envelope.id;
     this.activeTaskWorkspace = typeof envelope.workspace === "string" && envelope.workspace.trim()
       ? path.resolve(envelope.workspace.trim())

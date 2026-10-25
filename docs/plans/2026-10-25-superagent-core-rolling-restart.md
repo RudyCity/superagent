@@ -156,6 +156,24 @@ The independent Muse WebSocket and Telegram-fallback channel hosts now create an
 
 Boundaries: This is batch-level execution-safety metadata, NOT a full serialized agent/context checkpoint, transactionally exactly-once tool guarantee, uninterrupted streamed output, automatic tool rollback, or automatic continuation of an interrupted LLM. A crash DURING a side-effecting tool can leave uncertain external effects; operator reconciliation is required. Do not automatically create a fresh batch ID to bypass the tombstone. Existing Muse/Telegram production connections have not been live-migrated by these tests.
 
+## Phase 4e: task recovery facts and offline evidence reconciliation
+
+The opt-in independent Muse/Telegram channel host now records two additional metadata-only task signals in its existing per-port journal (backwards-compatible version 1): accepted means the watcher observed an inbound request or recorded an outbound dispatch intention, **not** that a remote brain accepted it; done_seen means the watcher received a task_done envelope, **not** that all external tool effects were confirmed. No task prompt, result summary, path, tool payload or chat transcript is checkpointed.
+
+superagent channel-host checkpoint --port 7892 now displays a grouped task projection from durable facts: number of known batches, local delivery acknowledgments, evidence-reviewed batches and batches still requiring external review. Statuses are needs_review, reviewed_no_replay, delivery_recorded and metadata_only. This is a read-only inspection and works offline after a crash; **none** of these states is a serialized agent/LLM checkpoint or authorization to resume side-effecting tools.
+
+When independent evidence of external tool effects has been checked, an **offline-only** operator action can append an immutable SHA-256 evidence reference to one existing unresolved batch:
+
+    superagent channel-host reconcile --port 7892 --batch-id BATCH_ID --decision effect_verified --evidence-sha256 64_LOWERCASE_HEX --confirm BATCH_ID
+
+Alternative decision no_effect_verified means the operator claims independent evidence that the effects did not happen. The runtime validates the digest's shape, not the underlying external evidence; it does not automatically authenticate the claim. The exact batch ID confirmation is required. The original execution stage is preserved, and review does **not** mark transport delivery, grant any tool execution, discard deduplication tombstones, or automatically retry the batch. A matching repeated review is idempotent; a conflicting review is refused.
+
+Safety rules: the command rejects a registered live or stale channel owner. Both channel host and offline review use the **same exclusive per-port checkpoint lock** (muse-batches-PORT.json.review.lock); a hard crash intentionally leaves it in place. Never delete a stale registration or lock without independently verifying the old PID/listener/watcher is gone and that no other instance owns this journal. A damaged lock or checkpoint fails closed, not force-recovered. Only the controlling OS user should have access to journal files.
+
+Test coverage: backwards compatibility with prior task-batch journals, monotonic task lifecycle state, reload after memory loss, immutable/idempotent review, bad evidence and corrupt-metadata rejection, real MuseWatcher observation with synthetic transport, offline CLI verification, exclusive-lock refusal during channel startup, and isolated supervisor crash/recover acceptance. No live Telegram/Muse bots or MCP OAuth tunnels are touched.
+
+Remaining gap: full LLM context serialization, durable output outbox and remotely acknowledged result replay, transactionally exactly-once side effects, safe distributed task resume, automated recovery after a channel-host hard crash and live transport handover are **not implemented**. This phase provides a conservative task-reconciliation view, not automatic autonomous task continuation.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.
