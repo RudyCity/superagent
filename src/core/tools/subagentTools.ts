@@ -12,6 +12,7 @@ import {
   appendCapped
 } from "./state.js";
 import { Agent, agentLocalStorage } from "../agent.js";
+import { inheritTlineChildScope, recordTlineChildToolEvent } from "../channels/tlineAgentTimeline.js";
 import { contentToString } from "../conversation.js";
 import { resolveCarriageReturns } from "../../utils/text.js";
 import fs from "fs";
@@ -502,6 +503,7 @@ export const invokeSubagentTool: Tool = {
           instance.agent.writeToLogFile("SUBAGENT_ERROR", event.message);
           notifySubagentsChanged();
         } else if (event.type === "tool_start") {
+          recordTlineChildToolEvent(agentInstance, subagentId, event);
           closeThinkingNode();
           appendCapped(logs, `${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
           isFirstNode = false;
@@ -511,6 +513,7 @@ export const invokeSubagentTool: Tool = {
           logs.push(`│\n`);
           notifySubagentsChanged();
         } else if (event.type === "tool_end") {
+          recordTlineChildToolEvent(agentInstance, subagentId, event);
           closeThinkingNode();
           const r = event.toolResult;
           const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
@@ -602,6 +605,7 @@ export const invokeSubagentTool: Tool = {
       cwd
     );
 
+    inheritTlineChildScope(parentAgent, agentInstance);
     agentInstance.delegationDepth = parentDepth + 1;
     agentInstance.tier = "subagent";
     agentInstance.subagentType = typeName;
@@ -889,6 +893,7 @@ export const sendMessageTool: Tool = {
             agentInstance.writeToLogFile("SUBAGENT_ERROR", event.message);
             notifySubagentsChanged();
           } else if (event.type === "tool_start") {
+            recordTlineChildToolEvent(agentInstance, recipientId, event);
             closeThinkingNode();
             appendCapped(logsList, `${isFirstNode ? "┌" : "├"}───[ ⚙️ TOOL CALL: ${event.toolCall.name} ]\n`);
             isFirstNode = false;
@@ -900,6 +905,7 @@ export const sendMessageTool: Tool = {
             logsList.push(`│\n`);
             notifySubagentsChanged();
           } else if (event.type === "tool_end") {
+            recordTlineChildToolEvent(agentInstance, recipientId, event);
             closeThinkingNode();
             const r = event.toolResult;
             const status = r.isError ? "🔴 FAILED" : "🟢 SUCCESS";
@@ -991,6 +997,9 @@ export const sendMessageTool: Tool = {
         cwd
       );
 
+      // Resume only the originally owned agent journal scope; never inherit
+      // from a different caller that happened to find the subagent ID.
+      inheritTlineChildScope(instance.parentAgent, agentInstance);
       // Re-setup delegation properties
       const parentAgent = agentLocalStorage.getStore();
       const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;

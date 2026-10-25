@@ -22,6 +22,7 @@ import { isCanonicalMotionWorkspaceAllowed } from "./core/motion/workspaceAccess
 import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
 import { SessionEventReplay } from "./core/utils/sessionEventReplay.js";
 import { appendChatEvent, pruneChatRuntimeLedger, recoverInterruptedChatTurns, replayChatEvents } from "./core/utils/chatRuntimeLedger.js";
+import { recordAgentTimeline, projectAgentTimelineEnvelope, bindTlineRootAgent } from "./core/channels/tlineAgentTimeline.js";
 
 // Forward lock events to connected t-line desktop clients
 lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
@@ -424,6 +425,30 @@ function broadcastEvent(event: any) {
       !normalizedEvent.sessionId && !normalizedEvent.workspace) {
     return; // Fail closed: no recipient context for a sensitive stream.
   }
+  // Event journal is T-Line-only and strictly bound to a server-owned active
+  // workspace/session pair. Never persist raw event payloads or capability tokens.
+  if (typeof normalizedEvent.sessionId === "string" &&
+      typeof normalizedEvent.workspace === "string") {
+    const owner = [...activeSessions.values()].find(session =>
+      session.clientMode === "tline" &&
+      session.sessionId === normalizedEvent.sessionId &&
+      session.workspace.toLowerCase() === normalizedEvent.workspace.toLowerCase());
+    if (owner) {
+      // Legacy live subscriptions may fall back to workspace-only ownership.
+      // Never persist a subagent from another session into this journal.
+      const journalEnvelope = normalizedEvent.type === "subagents_update"
+        ? { ...normalizedEvent, subagents: (Array.isArray(normalizedEvent.subagents)
+          ? normalizedEvent.subagents : []).filter((sa: any) => {
+          const inst = typeof sa?.id === "string" ? subagentInstances.get(sa.id) : undefined;
+          return !!inst && (inst.parentAgent === owner.agent ||
+            inst.agent?.sessionId === owner.sessionId);
+        }) } : normalizedEvent;
+      const scope = { sessionId: owner.sessionId, workspace: owner.workspace };
+      for (const item of projectAgentTimelineEnvelope(journalEnvelope)) {
+        recordAgentTimeline(scope, item);
+      }
+    }
+  }
   const eventJson = JSON.stringify(normalizedEvent);
   let data = `data: ${eventJson}\n\n`;
   if (typeof normalizedEvent.sessionId === "string") {
@@ -516,6 +541,9 @@ const onEvent = (event: AgentEvent, agentRef?: Agent) => {
   const metadata = { ...(sessionId ? { sessionId } : {}), ...(workspace ? { workspace } : {}) };
   if (session) {
     session.lastActiveTime = Date.now();
+    if (agentRef && session.clientMode === "tline") {
+      bindTlineRootAgent(agentRef, { workspace: session.workspace, sessionId: session.sessionId });
+    }
   }
   broadcastEvent({ type: "agent_event", event, ...metadata });
   // When agent finishes a turn and is waiting for plan approval, notify extension clients

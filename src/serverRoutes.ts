@@ -61,6 +61,7 @@ import { getRootConfigDir } from "./core/config/paths.js";
 import { buildCorsHeaders, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
 import { maskApiKey, isMaskedApiKey } from "./core/config.js";
 import { isPendingPromptOwner } from "./core/agent/pendingPromptOwnership.js";
+import { recordAgentTimeline } from "./core/channels/tlineAgentTimeline.js";
 import { getNormalizedProjectPath } from "./core/tools/helpers.js";
 
 /** Persist an atomic memory under a canonical project/global scope. Never trust a client-supplied project ID. */
@@ -196,6 +197,11 @@ export async function handleServerRoute(
     executeBrowserControlOnClient,
     killVisionServerProcess
   } = ctx;
+
+  if (pathname === "/api/tline/agent-timeline") {
+    const { handleTlineAgentTimelineRoute } = await import("./core/channels/tlineAgentTimelineHttp.js");
+    return handleTlineAgentTimelineRoute(req, res, pathname, parsedUrl, { resolveSession, sendJSON });
+  }
 
   // Session-scoped assistant task metadata. The outer server authentication and
   // request-local workspace policy run before this endpoint is reached.
@@ -1374,8 +1380,17 @@ export async function handleServerRoute(
       sendJSON(res, 403, { error: "Permission request belongs to a different session" });
       return true;
     }
-    pending.resolve(approval);
+    // Reject unexpected JSON values as denial. The Core permission handler
+    // accepts only true, false, or exact session authorization.
+    const decision: boolean | "session" = approval === "session" ? "session" : approval === true;
+    pending.resolve(decision);
     pendingPermissions.delete(permissionId);
+    if (session?.clientMode === "tline") {
+      recordAgentTimeline({ workspace: session.workspace, sessionId: session.sessionId }, {
+        kind: "permission_decided", actor: "main",
+        status: decision === "session" ? "approved_session" : decision === true ? "approved" : "denied",
+      });
+    }
     sendJSON(res, 200, { success: true });
     return true;
   }
