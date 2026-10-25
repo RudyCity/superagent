@@ -271,6 +271,42 @@ IMPORTANT: This bundle includes private AES and HMAC keys, so protect access and
 
 Tests cover full source-to-bundle-to-new-owner namespace round trip preserving all replay tombstones and keys, digest tampering, absent archive or signing key, port mismatch, backup symlink/path fencing, registered owner and lock refusal, incomplete-restoration startup fence, simulated mid-copy crash, failed overwrite/rollback into occupied storage, and authenticated CLI end-to-end operations.
 
+## Phase 4n: opt-in remote alerting, durable incident outbox, external watchdog and incident dashboard
+
+The independent channel-host recovery owner now has a *separate* bounded operational incident center. On startup it reconciles the Phase 4m sanitized integrity transition ledger into the per-port file 'muse-incidents-PORT.json', tracking every integrity event by monotonic sequence so a restart does not duplicate alert creation. Incident types are 'integrity' and 'host_unavailable'. The workflow is OPEN -> ACKNOWLEDGED (explicit operator confirmation) -> RESOLVED (only after verified healthy/online observation). ACK does NOT remove a recovery gate, restart a failed owner, or prove that a tool's side effect was reversed. Recovery transitions also produce notifications. The incident file and integrity ledger are included in complete Phase 4k backup/restore and verified before safe recovery; replay protection and incident delivery state therefore survive the same-port restore.
+
+**P0 — Delivery:** Alerts are disabled by default. The sole outbound options are one of:
+
+    SUPERAGENT_MUSE_ALERT_WEBHOOK_URL=https://your-alert-receiver.example/hooks/superagent
+
+or BOTH of the following, without a webhook configured:
+
+    SUPERAGENT_MUSE_ALERT_TELEGRAM_BOT_TOKEN=<bot-token>
+    SUPERAGENT_MUSE_ALERT_TELEGRAM_CHAT_ID=<numeric-chat-id>
+
+Set them only in the environment of the independently running channel host and, if needed, its separate watchdog process. No token, URL, workspace path, task ID, prompt, agent output or encrypted result is persisted in an incident or delivery file. Webhook validation requires HTTPS with a DNS hostname rather than a literal IP, no URL credentials, custom port or redirects; hostname DNS resolution is not pinned to a verified public IP, so configure only a trusted destination; Telegram targets the official HTTPS Bot API. Outgoing messages contain ONLY a generated event ID, owner port, fixed incident kind/condition and observation timestamp. The webhook 'Idempotency-Key' header lets cooperating receivers suppress re-delivery, while Telegram has no exactly-once guarantee. Avoid granting the bot administrative controls. Network traffic is never attempted during the tests and only starts after valid opt-in configuration.
+
+Durable delivery uses a per-port file and an exclusive create lock for mutations. Messages are queued before any network request, claimed via a 30-second lease, then marked sent on HTTP success or retried after bounded exponential backoff (2 seconds to 30 minutes plus deterministic jitter). On a crash after remote acceptance but before local ACK, the lease expires and the same event may be sent again: **at-least-once**, not exactly-once. The store holds at most 250 incidents and 512 notifications and refuses silent truncation when full. Corruption or a stale lock does not trigger deletion or automatic remote operations; review the local incident file and process ownership. The dispatcher stops with the channel host. Offline retry can be attempted explicitly with 'deliver-alerts' when its environment includes the selected delivery target.
+
+**P1 — Incidents and external health watchdog:** The watchdog must run in a SEPARATE process so it can detect a completely stopped/hung channel host. It verifies the discovered owner PID and instance ID against its loopback health endpoint; missing/mismatched/error/unresponsive owners are offline. It does not take over the channel socket, leases, watchers or MCP tunnels. Run it under your own process/service supervisor for continuity:
+
+    superagent channel-host watchdog --port 7892 --interval-seconds 30
+    superagent channel-host watchdog-once --port 7892
+    superagent channel-host acknowledge --port 7892 --incident INCIDENT_ID --confirm INCIDENT_ID
+
+It writes one incident per offline episode and resolves only after a verified online observation; it does not spam duplicate alarms on each poll. Running 'watchdog-once' is an explicit state-changing observation, not a read-only check. If the separate process itself crashes, there is no remote monitor or OS auto-restart unless configured independently. A manual 'acknowledge' changes only incident status, not checkpoint state.
+
+**P2 — Incident dashboard and operator views:**
+
+    superagent channel-host incidents --port 7892 [--limit 20]
+    superagent channel-host alerts --port 7892 [--limit 20]
+    superagent channel-host deliver-alerts --port 7892
+    superagent channel-host status --port 7892
+
+The running owner also exposes only on loopback 'http://127.0.0.1:7892/_channel/incidents/dashboard' (read-only HTML, auto-refresh 15 seconds, no active client scripts) and '/_channel/incidents' (read-only redacted JSON). Both contain incident IDs and fixed status enums but NEVER raw errors, external alert credentials, tool inputs or filesystem paths. The HTML includes a restrictive Content Security Policy. No remote dashboard, public endpoint or API for mutating incidents is created. Operator ACK is available only through the guarded CLI.
+
+Limitations: this is local per-port incident management, not a distributed queue, enterprise secret manager or verified on-call delivery service. A privileged local filesystem attacker can rewrite the incident JSON; receipt and delivery status are not cryptographic proof of remote receipt. Webhook hostname validation does not make an arbitrary administrator-supplied endpoint intrinsically trusted; configure only your own alert receiver. The 250/512 record limit requires operator-led archival and a future safe retention phase. Recovery checks remain authoritative independently of notification delivery (alert network failures must never cause duplicate tool execution). Tests exercise deduplication across restarts, explicit ACK, offline/online host transitions, outbound opt-in, payload redaction, retry/lease expiration, authenticated same-port backup/restore, browser/JSON read-only dashboard and absent external provider interactions.
+
 ## Phase 4m: enforced integrity gates, durable local alert history and safe recovery
 
 Phase 4m connects the Phase 4l disk integrity monitor to actual side-effect boundaries for the independent managed channel hosts. Before accepting a new Muse tool batch for execution, reserving an untouched batch for explicit resumption or replaying a previously encrypted result, the watcher invokes an optional synchronous integrityGuard injected ONLY by the independently managed owner. The channel-host authenticated IPC also performs a fresh on-disk scan immediately before accepting replay_result/resume_untouched, even for injected executor paths. A stale cached healthy response is NEVER authority to replay. The initial first new batch is allowed to create its journal only when the per-port storage is completely empty, state is not_initialized, and no prior integrity event exists; existing/orphaned journal, archive, key, restore marker or alert file forces a fresh verification or denial. Failed, degraded, stale, uninitialized (for replay/resume) and unreadable integrity assessments deny the operation without running tools or mutating recovery reservations. The abort/stop control remains operable during recovery failures. Direct watchers not using the managed owner retain their previous behavior unless an integrityGuard is explicitly supplied.

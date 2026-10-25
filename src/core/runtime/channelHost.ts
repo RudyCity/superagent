@@ -19,6 +19,9 @@ import { MuseRecoveryOrchestrator } from "../remoteAgent/museRecoveryOrchestrato
 import { MuseRecoveryStorageLifecycle } from "../remoteAgent/museRecoveryStorageLifecycle.js";
 import { MuseRecoveryIntegrityMonitor } from "../remoteAgent/museRecoveryIntegrityMonitor.js";
 import { MuseRecoveryIntegrityEvents } from "../remoteAgent/museRecoveryIntegrityEvents.js";
+import { MuseIncidentCenter, MuseIncidentDispatcher } from "../remoteAgent/museIncidentCenter.js";
+import { renderMuseIncidentDashboard } from "./museIncidentDashboard.js";
+import type { IncidentSummary } from "../remoteAgent/museIncidentCenter.js";
 import type { MuseIntegritySnapshot } from "../remoteAgent/museRecoveryIntegrityMonitor.js";
 import type { MuseRecoveryHealth } from "../remoteAgent/museRecoveryBackup.js";
 import {
@@ -49,6 +52,7 @@ export interface ChannelHostHealth {
   archivedTombstones?: number;
   /** Cached read-only full-disk verification; no paths, keys, or output text. */
   recoveryIntegrity?: MuseIntegritySnapshot;
+  incidentSummary?: IncidentSummary;
   /** Never include credentials, workspace paths, group IDs, URLs or prompts. */
   errorCode?: "START_FAILED";
 }
@@ -262,10 +266,19 @@ export async function runChannelHost(options: {
   let releaseJournalLock: () => void = () => {};
   let state: ChannelHostHealth["status"] = mode === "idle" ? "idle" : "starting";
   let errorCode: ChannelHostHealth["errorCode"];
+  const incidents = new MuseIncidentCenter(port, dir());
+  // Transport remains opt-in via an explicit environment configuration.
+  // Only redacted incident events enter this queue, never encrypted payloads.
+  const delivery = new MuseIncidentDispatcher(incidents);
   const monitor = new MuseRecoveryIntegrityMonitor(
     port, options.integrityIntervalMs ?? 60_000, dir(), options.integrityProbe,
-    event => console.warn("[Muse Recovery Integrity] owner port " + event.port +
-      " | " + event.state + " | " + event.reason),
+    event => {
+      console.warn("[Muse Recovery Integrity] owner port " + event.port +
+        " | " + event.state + " | " + event.reason);
+      try { incidents.syncIntegrity(); } catch {
+        console.warn("[Muse Recovery Integrity] sanitized incident sync failed");
+      }
+    },
   );
   const allowRecoveryOperation = (operation: "new_batch" | "resume_untouched" | "replay_result") => {
     // Re-verify disk synchronously at the actual side-effect boundary. A stale
@@ -294,6 +307,9 @@ export async function runChannelHost(options: {
       reconciliationPending: journal?.summary().requiresReconciliation || 0,
       archivedTombstones: journal?.archivedCount() || 0,
       recoveryIntegrity: monitor.snapshot(),
+      incidentSummary: (() => {
+        try { return incidents.summary(); } catch { return undefined; }
+      })(),
       resultOutboxStored: outbox?.count() || 0,
       resultAcknowledged: journal?.summary().acknowledged || 0,
       resumableUntouchedBatches: recovery?.counts.manual_untouched_resume || 0,
@@ -314,6 +330,24 @@ export async function runChannelHost(options: {
     if (!loopback) { res.writeHead(404); res.end(); return; }
     if (req.method === "GET" && pathname === "/_channel/health") {
       json(200, health());
+      return;
+    }
+    if (req.method === "GET" && (pathname === "/_channel/incidents" ||
+        pathname === "/_channel/incidents/dashboard")) {
+      try {
+        const summary = incidents.summary();
+        const list = incidents.list().slice(-50);
+        if (pathname.endsWith("/dashboard")) {
+          res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+          });
+          res.end(renderMuseIncidentDashboard(summary, list));
+        } else {
+          json(200, { summary, incidents: list });
+        }
+      } catch { json(503, { error: "Incident history unavailable" }); }
       return;
     }
     if (req.method !== "POST" || pathname !== "/_channel/ipc") {
@@ -407,6 +441,10 @@ export async function runChannelHost(options: {
     // Read-only disk scan, then periodic verification. No network calls,
     // replay, repair, or mutation; errors are classified and redacted.
     monitor.start();
+    try { incidents.syncIntegrity(); } catch {
+      console.warn("[Muse Recovery Integrity] sanitized incident sync failed on startup");
+    }
+    delivery.start();
   } catch (error) {
     releaseJournalLock();
     releaseLease();
@@ -415,6 +453,7 @@ export async function runChannelHost(options: {
   }
   const cleanup = () => {
     monitor.stop();
+    delivery.stop();
     try {
       const old = readDiscovery(port);
       if (old.pid === process.pid && old.instanceId === instanceId) fs.rmSync(statePath(port), { force: true });
@@ -470,6 +509,12 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host verify-store --port 7892  # read-only complete recovery integrity inspection");
     console.log("superagent channel-host integrity --port 7892  # read-only live cached scan or offline full scan");
     console.log("superagent channel-host alerts --port 7892 [--limit 20]  # durable redacted integrity transitions");
+    console.log("superagent channel-host incidents --port 7892 [--limit 20]  # local incident overview and delivery queue");
+    console.log("Local browser dashboard: http://127.0.0.1:7892/_channel/incidents/dashboard  # read-only");
+    console.log("superagent channel-host acknowledge --port 7892 --incident ID --confirm ID  # explicit operator ACK");
+    console.log("superagent channel-host deliver-alerts --port 7892  # explicitly flush one opt-in alert (offline)");
+    console.log("superagent channel-host watchdog-once --port 7892  # dedicated external liveness observation");
+    console.log("superagent channel-host watchdog --port 7892 [--interval-seconds 30]  # dedicated continuous liveness observer");
     console.log("superagent channel-host backup --port 7892 --destination ABSOLUTE_NEW_DIRECTORY  # offline, holds review lock");
     console.log("superagent channel-host verify-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY  # read-only");
     console.log("superagent channel-host restore-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY --confirm-port 7892  # offline EMPTY storage only");
@@ -485,6 +530,77 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "incidents") {
+    const i = argv.indexOf("--limit");
+    const limit = i < 0 ? 20 : Number(argv[i + 1]);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("Expected incident --limit 1..100");
+    const center = new MuseIncidentCenter(port);
+    const summary = center.summary();
+    console.log("Recovery incident overview: " + JSON.stringify(summary));
+    for (const item of center.list().slice(-limit)) console.log("  " + JSON.stringify(item));
+    console.log("Operator acknowledgement is separate from actual recovery; no remote commands executed.");
+    return false;
+  }
+  if (action === "acknowledge") {
+    const i = argv.indexOf("--incident");
+    const c = argv.indexOf("--confirm");
+    const id = i < 0 ? "" : argv[i + 1] || "";
+    const confirm = c < 0 ? "" : argv[c + 1] || "";
+    const result = new MuseIncidentCenter(port).acknowledge(id, confirm);
+    console.log("Incident acknowledged (not resolved): " + JSON.stringify(result));
+    return false;
+  }
+  if (action === "deliver-alerts") {
+    const center = new MuseIncidentCenter(port);
+    center.syncIntegrity();
+    const ok = await new MuseIncidentDispatcher(center).once();
+    console.log("Opt-in alert delivery: " + (ok ? "remote accepted" : "disabled, idle or deferred"));
+    console.log("Queue: " + JSON.stringify(center.summary()));
+    return false;
+  }
+  if (action === "watchdog-once" || action === "watchdog") {
+    const { observeIndependentChannelHost } = await import("./museHostWatchdog.js");
+    const observer = async () => {
+      const known = (() => { try { return readDiscovery(port); } catch { return null; } })();
+      let online = false;
+      if (known) {
+        try {
+          const live = await probeHost(port);
+          online = known.pid === live.pid && known.instanceId === live.instanceId &&
+            live.status !== "error";
+        } catch {}
+      }
+      return online;
+    };
+    const center = new MuseIncidentCenter(port);
+    const once = async () => {
+      const status = await observeIndependentChannelHost(center, observer);
+      try { center.syncIntegrity(); } catch {}
+      const dispatcher = new MuseIncidentDispatcher(center);
+      await dispatcher.once().catch(() => false);
+      console.log("External channel-host watchdog: " + (status ? "verified-online" : "offline") +
+        " | " + JSON.stringify(center.summary()));
+    };
+    if (action === "watchdog-once") {
+      await once(); return false;
+    }
+    const idx = argv.indexOf("--interval-seconds");
+    const seconds = idx < 0 ? 30 : Number(argv[idx + 1]);
+    if (!Number.isSafeInteger(seconds) || seconds < 5 || seconds > 3600) {
+      throw new Error("Watchdog interval must be 5..3600 seconds");
+    }
+    await once();
+    let running = false;
+    setInterval(() => {
+      if (running) return;
+      running = true;
+      void once().catch(() => {
+        console.warn("External watchdog observation failed (no host mutation)");
+      }).finally(() => { running = false; });
+    }, seconds * 1000);
+    console.log("External watchdog active; use process termination to stop. No host/recovery takeover.");
+    return true;
+  }
   if (action === "alerts") {
     const limitIdx = argv.indexOf("--limit");
     const limit = limitIdx < 0 ? 20 : Number(argv[limitIdx + 1]);
@@ -755,6 +871,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
       " | Muse application ACKs: " + (live.resultAcknowledged ?? 0));
     console.log("Recovery integrity blocked: " + (live.recoveryIntegrityBlocked ?? 0) +
       " | manual reconciliation: " + (live.recoveryManualReconciliation ?? 0));
+    console.log("Recovery incidents: " + JSON.stringify(live.incidentSummary || { status: "unavailable" }));
     console.log("Eligible untouched batches: " + (live.resumableUntouchedBatches ?? 0) +
       " | interrupted tool batches: " + (live.interruptedCallBatches ?? 0));
     return false;
@@ -765,5 +882,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, integrity, alerts, verify-store, backup, verify-backup, restore-backup, reconcile or help");
+  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, integrity, alerts, incidents, acknowledge, deliver-alerts, watchdog-once, watchdog, verify-store, backup, verify-backup, restore-backup, reconcile or help");
 }
