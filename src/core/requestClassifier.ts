@@ -1368,7 +1368,16 @@ export async function classifyRequest(
   try {
     const senopatiResult = await classifyWithSenopatiONNX(text, undefined, options?.onProgress);
     if (senopatiResult) {
-      return applyAssistantDomainRoute(text, senopatiResult);
+      let routed = senopatiResult;
+      try {
+        const modern = await import("./senopatiModernBert.js");
+        const policy = modern.getModernPolicy();
+        if (policy.enabled && policy.backend === "mmbert-v64-seed73") {
+          const prediction = await modern.inferModernPrediction(text);
+          routed = modern.mergeModernIntent(senopatiResult, prediction, policy.minConfidence);
+        }
+      } catch { /* fall back to the original Senopati classifier */ }
+      return applyAssistantDomainRoute(text, routed);
     }
   } catch (err: any) {
     // Graceful fallback if ONNX engine throws

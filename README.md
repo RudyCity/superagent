@@ -29,6 +29,8 @@ Superagent also pairs natively with **[t-line](https://github.com/RudyCity/t-lin
 
 SuperAgent CLI and MCP can coordinate multiple Bun agents across Chrome tabs with an atomic cross-process queue, secret session capabilities, read/write ownership checks, and session recovery. Use `superagent_chrome_cdp` with `claim_target`, then send the returned `sessionToken`, `agentId`, and `targetId` on every CDP/vision operation. Check `coordinator_status` for active sessions and queue pressure, and `release_target` when finished. The Chrome Extension bridge intentionally blocks actions while a CDP claim is active; separate profiles are required for separate browser logins.
 
+**Managed desktop browser announcements (experimental):** The local desktop's Rust process can now send a native-verified page-target registration over authenticated loopback to `POST /api/browser/managed/register`. Core verifies a currently reachable CDP target and writes a **90-second, token-free, cross-process registry entry** under the canonical CDP gateway directory; the MCP `superagent_browser_gateway` tool exposes it via `action=managed`. This is only discovery metadata: it does **not** claim, release, share, or control a tab. Agents must still call `discover` then `claim` or request owner-approved access using the existing gateway. This local announcement is not protection against another same-user process accessing an unauthenticated Chrome debugging port. No remote CDP tunnel should be opened.
+
 Complete workflow and limitations: [Multi-agent Chrome CDP sessions](docs/plans/2026-10-22-multi-agent-chrome-cdp-sessions.md).
 
 ## ✨ Key Features

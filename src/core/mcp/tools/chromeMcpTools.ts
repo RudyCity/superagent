@@ -137,7 +137,7 @@ export const CHROME_MCP_TOOL_DEFS = [
     name: "superagent_browser_gateway",
     description: "Cross-IDE Chrome CDP gateway for Codex, Antigravity, and SuperAgent MCP clients. " +
       "Client identity is derived from the authenticated MCP connection, not from agentId arguments. " +
-      "Actions: identity, discover, claim, share, request_attach, pending, approve_attach, deny_attach, " +
+      "Actions: identity, managed, discover, claim, share, request_attach, pending, approve_attach, deny_attach, " +
       "poll_attach, execute, events, wait_events, heartbeat, leave, release, policy. " +
       "Owner-approved invitations are encrypted to requesting MCP session. " +
       "Gateway-only enforcement is opt-in via SUPERAGENT_CDP_GATEWAY_ONLY=1.",
@@ -145,7 +145,7 @@ export const CHROME_MCP_TOOL_DEFS = [
       type: "object",
       properties: {
         action: { type: "string", enum: [
-          "identity", "discover", "claim", "share", "request_attach", "pending", "approve_attach", "deny_attach",
+          "identity", "managed", "discover", "claim", "share", "request_attach", "pending", "approve_attach", "deny_attach",
           "poll_attach", "execute", "events", "wait_events", "heartbeat", "leave", "release", "policy",
         ] },
         port: { type: "number", description: "Local Chrome CDP debugging port, default 9222." },

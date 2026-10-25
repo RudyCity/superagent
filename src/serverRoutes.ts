@@ -648,6 +648,34 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Local, authenticated native desktop registration. This is a short-lived
+  // directory entry, NOT a CDP owner claim or token issuance.
+  if (pathname === "/api/browser/managed/register") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    const remote = req.socket.remoteAddress;
+    if (remote !== "127.0.0.1" && remote !== "::1" && remote !== "::ffff:127.0.0.1") {
+      sendJSON(res, 403, { success: false, error: "Local desktop registration only." });
+      return true;
+    }
+    let registration: unknown;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 1200) throw new Error("Request too large.");
+      const { registerManagedBrowser } = await import("./core/tools/managedBrowserRegistry.js");
+      registration = await registerManagedBrowser(JSON.parse(raw));
+    } catch {
+      sendJSON(res, 400, { success: false, error: "Invalid or unavailable managed browser registration." });
+      return true;
+    }
+    sendJSON(res, 200, { success: true, registration });
+    return true;
+  }
+
   // Explicitly scoped browser sharing API for authenticated T-Line clients.
   // No arbitrary CDP action execution through this endpoint.
   if (pathname === "/api/browser/shared-control") {

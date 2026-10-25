@@ -1,0 +1,9 @@
+{
+  "backend": "mmbert-v64-seed73",
+  "enabled": true,
+  "minConfidence": 0.85,
+  "precision": "int8_embedding",
+  "inferenceMode": "shared_only",
+  "preserveLegacySafety": true,
+  "noAuthorizationFromModel": true
+}

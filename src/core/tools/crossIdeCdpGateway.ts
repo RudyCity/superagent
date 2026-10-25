@@ -19,6 +19,7 @@ import {
   type CdpParticipantRole,
 } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
+import { listManagedBrowserRegistrations } from "./managedBrowserRegistry.js";
 import { controlChromeCdpTool, discoverCdpPages } from "./chromeCdpTools.js";
 
 type Attachment = { agentId: string; token: string; role: "owner" | CdpParticipantRole };
@@ -144,6 +145,11 @@ export class CrossIdeCdpGateway {
     if (action === "identity") {
       return { agentId: this.agentId, clientLabel: this.label, labelTrust: "self-reported-by-MCP-client",
         authBoundary: "unique-MCP-connection", attached: [...this.capabilities.keys()] };
+    }
+    if (action === "managed") {
+      return { registrations: listManagedBrowserRegistrations(),
+        registry: "local-authenticated-announcements",
+        authorization: "NO_CDP_CLAIM; claim or approved attach is separately required" };
     }
     if (action === "discover" || action === "policy") {
       const sessions = await cdpCoordinatorStatus(action === "discover" ? validPort(input.port) : undefined);
