@@ -51,6 +51,29 @@ Acceptance: **21/21 real-stage checks**, plus unit tests; audit record retained 
 
 Cross-platform workflow: .github/workflows/core-guardian.yml (Ubuntu and Windows). Local PASS does NOT prove remote GitHub Actions succeeded.
 
+## Phase 5b: login-time boot and Windows Task Scheduler
+
+The new Core boot command is a fail-closed entry point for per-user login startup:
+
+    superagent core boot --port 7888 --client-mode tline
+
+When an authenticated Core is already running, boot does nothing. With no discovery and no checkpoint, it starts a fresh guardian. With a valid checkpoint and no active guardian lease, it attempts authenticated recovery of the original worker. A **full OS reboot destroys worker memory**: boot refuses to erase old session checkpoints or silently recreate the old agent. Bad checkpoint, wrong client mode, conflicting discovery, or leftover guardian lease also refuse unsafe recovery.
+
+Preview the Windows **per-user at-logon** task without registering anything:
+
+    bun run build
+    bun scripts/setup-core-windows-startup.ts --port 7888 --client-mode tline
+
+The preview exposes the exact Bun/CLI paths, task name, installation and inspection commands. It does not change OS scheduling, send notifications or start a Core. After verifying all paths and ownership, the **explicit operator opt-in** is:
+
+    bun scripts/setup-core-windows-startup.ts --port 7888 --client-mode tline --apply
+
+The registration uses Task Scheduler with limited user privileges, runs after the user logs on (not as a machine-wide service before login), and has bounded restart on command failure. The generated launcher contains only executable paths, no credentials; existing launcher files and scheduled tasks are never silently overwritten. **Task registration has not been run on the live system.**
+
+Staging acceptance was expanded to 26 checks: initial guardian/recovery and T-Line affinity, Core boot no-op on running owner, verified surviving-worker login recovery, and refusal to revive lost in-memory agent sessions when every worker is dead.
+
+This is not unattended full OS reboot restoration, worker LLM-state checkpointing, MCP session migration or an installed Windows Service. After a machine reboot with a stale Core checkpoint, a human must review the previous session/side-effect status before a new cold start.
+
 ## Limits still pending
 
 - OS service manager / reboot supervision of the **guardian itself** must be installed and reviewed independently; this command does not register a Windows Service.

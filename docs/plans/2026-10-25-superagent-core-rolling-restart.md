@@ -1,5 +1,11 @@
 # Opt-in rolling restart for SuperAgent API Core (2026-10-25)
 
+## Phase 5b — safe logon Core bootstrap and Windows task provisioning
+
+Core boot inspects authenticated current Core owner, durable routing checkpoints, and guardian/discovery registration. It never resets stored sessions. It performs a no-op if Core is already verified; starts a new guardian only in a pristine namespace; or attempts authenticated worker recovery when the original worker survived supervisor crash. When no worker survived (including after a full Windows reboot), the Core checkpoint remains unchanged and boot fails closed until operator reconciliation.
+
+The Windows Task Scheduler generator is preview-only by default and creates a current-user, at-logon task plan. Explicit --apply registers it without elevation, replacing existing scheduled tasks, or auto-starting live services. Task registration was NOT invoked. Existing MCP/Muse/Telegram tunnels remain outside the Core lifecycle. The isolated Windows staging smoke now validates 26 invariants including surviving-worker boot recovery and dead-worker refusal. The CI workflow adds policy tests and this staging test to Linux/Windows matrices. See [Core Guardian recovery and startup guide](../guides/core-guardian-recovery.md).
+
 ## Phase 5a — opt-in owner-scoped Core Guardian (2026-10-25)
 
 An independent guardian process can start a *new*, unowned API Core supervisor only when both the Core discovery and checkpoint files are absent. It validates that the newly started supervisor PID matches its child and that a fresh durable checkpoint exists. If that same child crashes, and no other authenticated supervisor is online, it may invoke the existing Core recover path. Adoption still requires the original worker PID, generation identity, authenticated private inspection and readiness. The old worker, session affinity, public API bearer and separate T-Line transport remain intact when that worker survives. Crash-related SSE/WS disconnects still require reconnect. The guardian has a strict budget of 3 recoveries in 10 minutes and exponential backoff; it never restarts tools, takes over unsupervised servers or kills MCP/Muse/Telegram/tunnels.

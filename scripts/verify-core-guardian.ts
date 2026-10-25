@@ -195,6 +195,40 @@ try {
   await waitFor(async () => !fs.existsSync(path.join(config, "core-guardian-" + port + ".json")) ?
     true : null, 5000);
   check("guard_lease_cleans_up_on_graceful_exit", true);
+  const bootAlreadyRunning = spawnSync(process.execPath, [cli, "core", "boot",
+    "--port", String(port)], { cwd: workspace, env, encoding: "utf8",
+      stdio: "pipe", timeout: 8000, windowsHide: true });
+  check("boot_noop_when_authenticated_owner_already_running",
+    bootAlreadyRunning.status === 0 &&
+      bootAlreadyRunning.stdout.includes("verified owner already active"));
+  const beforeBootRecovery = await getOwner(port);
+  check("boot_crash_injection_targets_owned_supervisor",
+    beforeBootRecovery.supervisorPid === recovered.supervisorPid);
+  // Simulate login-time recovery with surviving in-memory workers.
+  killOwned(recovered.supervisorPid);
+  const bootProcess = spawn(process.execPath, [cli, "core", "boot",
+    "--port", String(port)], { cwd: workspace, env, stdio: "ignore", windowsHide: true, detached: true });
+  if (!bootProcess.pid) throw new Error("No Core boot PID");
+  ownedPids.add(bootProcess.pid);
+  const bootRecovered = await waitFor(async () => {
+    const state = await getOwner(port);
+    return state.supervisorPid === bootProcess.pid && state.recovered ? state : null;
+  }, 30_000);
+  check("boot_recovers_only_authenticated_surviving_workers",
+    bootRecovered.active.pid === first.active.pid && bootRecovered.affinitySessions === 2);
+  const viaTlineAfterBoot = await api(frontPort, initialBearer, "/api/status?sessionId=" + id);
+  check("tline_routes_original_session_after_login_boot",
+    viaTlineAfterBoot.code === 200 && viaTlineAfterBoot.data?.sessionId === id);
+  // A whole-machine reboot has NO surviving workers. A checkpoint must not
+  // authorize automatic execution of a new agent as if it were the old one.
+  killOwned(bootProcess.pid);
+  killOwned(first.active.pid);
+  const deniedColdBoot = spawnSync(process.execPath, [cli, "core", "boot",
+    "--port", String(port)], { cwd: workspace, env, stdio: "pipe",
+      timeout: 12_000, encoding: "utf8", windowsHide: true });
+  check("boot_refuses_to_replay_sessions_when_every_worker_is_dead",
+    deniedColdBoot.status !== 0 &&
+      (deniedColdBoot.stderr + deniedColdBoot.stdout).includes("No authenticated worker survived"));
   const report = {
     version: 1, phase: "core-guardian-local-staging", ok: true, port, frontPort,
     root, verifiedChecks: checks.length, checks,

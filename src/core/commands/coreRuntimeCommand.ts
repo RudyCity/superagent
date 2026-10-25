@@ -17,6 +17,7 @@ export const coreRuntimeCommand: SlashCommand = {
           "/core rollback [--port 7888]",
           "/core drain [--port 7888]",
           "Start supervisor separately: superagent core start --port 7888",
+          "Safe login-time Core bootstrap: superagent core boot --port 7888",
           "Opt-in guardian for NEW owned Core only: superagent core guard --port 7888",
           "Guardian metadata status: superagent core guard-status --port 7888",
           "If its process crashes: superagent core recover --port 7888",

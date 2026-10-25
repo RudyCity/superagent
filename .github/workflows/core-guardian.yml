@@ -5,23 +5,31 @@ on:
     paths:
       - ".github/workflows/core-guardian.yml"
       - "src/core/runtime/coreGuardian.ts"
+      - "src/core/runtime/coreBoot.ts"
+      - "src/core/runtime/coreWindowsStartup.ts"
       - "src/core/runtime/coreSupervisor.ts"
       - "src/core/runtime/coreSupervisorCheckpoint.ts"
       - "src/core/runtime/transportHost.ts"
       - "src/core/commands/coreRuntimeCommand.ts"
       - "src/core/commands/commandCatalog.ts"
       - "scripts/verify-core-guardian.ts"
+      - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
+      - "tests/coreBoot.test.ts"
       - "docs/guides/core-guardian-recovery.md"
   pull_request:
     paths:
       - ".github/workflows/core-guardian.yml"
       - "src/core/runtime/coreGuardian.ts"
+      - "src/core/runtime/coreBoot.ts"
+      - "src/core/runtime/coreWindowsStartup.ts"
       - "src/core/runtime/coreSupervisor.ts"
       - "src/core/runtime/coreSupervisorCheckpoint.ts"
       - "src/core/runtime/transportHost.ts"
       - "scripts/verify-core-guardian.ts"
+      - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
+      - "tests/coreBoot.test.ts"
       - "docs/guides/core-guardian-recovery.md"
   workflow_dispatch:
 jobs:
@@ -45,7 +53,10 @@ jobs:
       - name: Build TypeScript
         run: bun run build
       - name: Unit/Core/transport regression
-        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
+      - name: Preview Windows login startup without installing scheduled tasks
+        if: runner.os == 'Windows'
+        run: bun scripts/setup-core-windows-startup.ts --port 7888
       - name: Fault-injection staging with intact T-Line front door
         run: bun scripts/verify-core-guardian.ts
       - name: Core rolling restart and crash recovery regression

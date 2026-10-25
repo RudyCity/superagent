@@ -761,7 +761,19 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
     console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--stop-on-stdin]  # opt-in owned Core crash recovery");
     console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
+    console.log("superagent core boot [--port 7888] [--client-mode tline|chrome-extension]  # safe logon/bootstrap, never resets dead worker state");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
+    return;
+  }
+  if (action === "boot") {
+    const idx = argv.indexOf("--client-mode");
+    const mode = idx < 0 ? undefined : argv[idx + 1];
+    if (mode !== undefined && mode !== "tline" && mode !== "chrome-extension") throw new Error("Invalid --client-mode");
+    const { runCoreBoot } = await import("./coreBoot.js");
+    const result = await runCoreBoot({ port, clientMode: mode });
+    // start/recover binds a long-lived process: keep it running just as the
+    // standalone core start/recover commands do. Already-running is a no-op.
+    if (result === "recovered") await new Promise<void>(() => {});
     return;
   }
   if (action === "guard-status") {
@@ -808,6 +820,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }
