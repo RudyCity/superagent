@@ -109,6 +109,12 @@ export class MuseBatchJournal {
   constructor(readonly ownerPort: number, rootDir?: string) {
     this.file = museJournalFile(ownerPort, rootDir);
     this.archive = new MuseTombstoneArchive(ownerPort, path.dirname(this.file));
+    // An interrupted restore MUST NEVER be treated as an empty journal:
+    // even if only one encrypted store has been copied, all claims stop.
+    if (fs.existsSync(path.join(path.dirname(this.file),
+        "muse-restore-" + ownerPort + ".incomplete"))) {
+      throw new Error("Incomplete Muse recovery restore; refusing all batch claims");
+    }
     if (!fs.existsSync(this.file)) {
       if (fs.existsSync(this.archive.folder) || fs.existsSync(this.archive.keyPath)) {
         throw new Error("Muse journal missing while tombstone archive exists; refusing new claims");

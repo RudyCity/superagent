@@ -17,6 +17,10 @@ import { MuseResultOutbox } from "../remoteAgent/museResultOutbox.js";
 import { MuseExecutionCheckpoint } from "../remoteAgent/museExecutionCheckpoint.js";
 import { MuseRecoveryOrchestrator } from "../remoteAgent/museRecoveryOrchestrator.js";
 import { MuseRecoveryStorageLifecycle } from "../remoteAgent/museRecoveryStorageLifecycle.js";
+import {
+  inspectMuseRecoveryStorage, makeMuseRecoveryBackup,
+  verifyMuseRecoveryBackup, restoreMuseRecoveryBackup,
+} from "../remoteAgent/museRecoveryBackup.js";
 
 export type ChannelHostMode = "idle" | "muse-ws" | "telegram-fallback";
 export interface ChannelHostHealth {
@@ -429,6 +433,10 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host prune --port 7892 --batch-id ID --confirm ID [--min-age-days 7]  # OFFLINE-only, keep journal tombstones");
     console.log("superagent channel-host archive --port 7892 [--max-batches 64]  # offline read-only final tombstone candidates");
     console.log("superagent channel-host compact --port 7892 --confirm-port 7892 [--max-batches 64]  # offline archive then shrink active journal");
+    console.log("superagent channel-host verify-store --port 7892  # read-only complete recovery integrity inspection");
+    console.log("superagent channel-host backup --port 7892 --destination ABSOLUTE_NEW_DIRECTORY  # offline, holds review lock");
+    console.log("superagent channel-host verify-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY  # read-only");
+    console.log("superagent channel-host restore-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY --confirm-port 7892  # offline EMPTY storage only");
     console.log("TUI: /muse host resume-untouched BATCH_ID --port 7892  # manual one-shot; only zero started tool calls");
     console.log("superagent channel-host reconcile --port 7892 --batch-id ID --decision effect_verified|no_effect_verified --evidence-sha256 HEX --confirm ID");
     console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
@@ -441,6 +449,48 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "verify-store" || action === "backup" ||
+      action === "verify-backup" || action === "restore-backup") {
+    const srcIdx = argv.indexOf("--source");
+    const destIdx = argv.indexOf("--destination");
+    const confirmIdx = argv.indexOf("--confirm-port");
+    const source = srcIdx < 0 ? "" : argv[srcIdx + 1] || "";
+    const destination = destIdx < 0 ? "" : argv[destIdx + 1] || "";
+    if (action === "verify-store") {
+      const result = inspectMuseRecoveryStorage(port);
+      console.log("Muse recovery storage integrity verified: " + JSON.stringify(result));
+      console.log("Read-only inspection; if a live host is mutating storage, repeat offline for a coherent snapshot.");
+      return false;
+    }
+    if (action === "verify-backup") {
+      if (!path.isAbsolute(source)) throw new Error("Absolute --source is required");
+      const result = verifyMuseRecoveryBackup(source, port);
+      console.log("Muse recovery bundle validated: " + JSON.stringify(result));
+      console.log("Bundle contains SECRET encryption keys. Integrity does not prove its freshness.");
+      return false;
+    }
+    if (action === "backup" && !path.isAbsolute(destination)) {
+      throw new Error("Absolute --destination is required");
+    }
+    if (action === "restore-backup" &&
+        (!path.isAbsolute(source) || confirmIdx < 0 || argv[confirmIdx + 1] !== String(port))) {
+      throw new Error("Restore requires absolute --source and matching --confirm-port");
+    }
+    if (fs.existsSync(statePath(port))) {
+      throw new Error("A registered channel-host owner exists; offline backup/restore refused");
+    }
+    const release = claimJournalLock(port, "review", crypto.randomBytes(16).toString("hex"));
+    try {
+      if (fs.existsSync(statePath(port))) throw new Error("Channel host started during backup/restore");
+      const result = action === "backup"
+        ? makeMuseRecoveryBackup(port, destination)
+        : restoreMuseRecoveryBackup(port, source);
+      console.log((action === "backup" ? "Muse recovery backup created and verified" :
+        "Muse recovery restored into empty per-port storage") + ": " + JSON.stringify(result));
+      console.log("Secret keys included; restrict access. No live channel or tool was started.");
+      return false;
+    } finally { release(); }
+  }
   if (action === "archive" || action === "compact") {
     const maxIdx = argv.indexOf("--max-batches");
     const limit = maxIdx < 0 ? 64 : Number(argv[maxIdx + 1]);
@@ -639,5 +689,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, reconcile or help");
+  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, verify-store, backup, verify-backup, restore-backup, reconcile or help");
 }
