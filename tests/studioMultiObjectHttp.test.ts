@@ -76,10 +76,11 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
       expect(rebuilt.status).toBe(201);
       const body = await rebuilt.json() as {
         projectId: string; revision: number; objects: unknown[];
-        measuredForegroundIoU: number[];
+        measuredForegroundIoU: number[]; interpolationCheckIoU: number[];
       };
       expect(body.objects).toHaveLength(2);
       expect(body.measuredForegroundIoU).toHaveLength(3);
+      expect(body.interpolationCheckIoU).toHaveLength(2);
       const url = base + "/projects/" + body.projectId +
         "/reconstruction-review.png?revision=" + body.revision;
       const preview = await fetch(url);

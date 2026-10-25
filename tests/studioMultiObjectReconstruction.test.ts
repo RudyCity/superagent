@@ -8,6 +8,7 @@ import { createCanvas } from "@napi-rs/canvas";
 import { importMotionVideo } from "../src/core/motion/assets/motionVideoClips.js";
 import {
   associateStudioObjects, findStudioBrightComponents, reconstructMultiObjectStudioVideo,
+  studioBaseSampleFrames,
 } from "../src/core/motion/code/videoMultiObjectReconstruction.js";
 import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
 import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
@@ -28,6 +29,18 @@ function candidate(x: number, y = 4) {
 }
 
 describe("multi-object reference video prototype", () => {
+  it("plans 5-9 strictly increasing duration-aware sample frames", () => {
+    for (const [duration, count] of [[30, 5], [90, 5], [180, 7], [300, 9]]) {
+      const frames = studioBaseSampleFrames(duration);
+      expect(frames).toHaveLength(count);
+      expect(frames[0]).toBe(0);
+      expect(frames.at(-1)).toBeLessThan(duration);
+      expect(frames.every((frame, i) => !i || frame > frames[i - 1])).toBe(true);
+    }
+    expect(() => studioBaseSampleFrames(29)).toThrow(/Invalid/);
+    expect(() => studioBaseSampleFrames(361)).toThrow(/Invalid/);
+  });
+
   it("extracts separated components and rejects unbounded frame geometry", () => {
     const pixels = new Uint8ClampedArray(60 * 40 * 4);
     for (let y = 5; y < 20; y++) {
@@ -87,11 +100,16 @@ describe("multi-object reference video prototype", () => {
     expect(built.confidence).toBeGreaterThan(.4);
     expect(built.measuredForegroundIoU).toHaveLength(3);
     expect(built.measuredForegroundIoU.every(score => score >= .38)).toBe(true);
+    expect(built.interpolationCheckIoU).toHaveLength(2);
+    expect(built.interpolationCheckIoU.every(score => score >= .38)).toBe(true);
     const preview = await fs.readFile(built.reviewPng);
     expect(preview.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
     expect(preview.length).toBeLessThan(2 * 1024 * 1024);
-    expect(built.objects.every(obj => obj.boxes.length === 3)).toBe(true);
-    expect(built.objects[0].boxes[2].x).toBeGreaterThan(built.objects[0].boxes[0].x + 30);
+    expect(built.sampleTimes.length).toBeGreaterThanOrEqual(5);
+    expect(built.sampleTimes.length).toBeLessThanOrEqual(9);
+    expect(built.objects.every(obj => obj.boxes.length === built.sampleTimes.length)).toBe(true);
+    expect(built.objects[0].boxes.at(-1)!.x)
+      .toBeGreaterThan(built.objects[0].boxes[0].x + 30);
 
     const project = await getMotionProject(workspace, built.projectId);
     expect(project.revision).toBe(2);
@@ -102,7 +120,7 @@ describe("multi-object reference video prototype", () => {
     ]);
     for (const layer of project.composition.layers) {
       expect(layer.tracks.map(track => track.property)).toEqual(["x", "y"]);
-      expect(layer.tracks.every(track => track.keyframes.length === 3)).toBe(true);
+      expect(layer.tracks.every(track => track.keyframes.length === built.sampleTimes.length)).toBe(true);
     }
     const actual = evaluateFrame(project, built.objects[0].boxes[1].frame);
     expect(actual.layers[0].values.x).toBeCloseTo(built.objects[0].boxes[1].x - 2, 0);
@@ -110,6 +128,39 @@ describe("multi-object reference video prototype", () => {
     expect(html).toContain('data-studio-id="reconstructed-object-1"');
     expect(html).toContain('data-studio-id="reconstructed-object-2"');
     expect(html).not.toContain("cdn.jsdelivr.net");
+  }, 65000);
+
+  it("tracks direction reversals with more than three editable keyframes", async () => {
+    const workspace = await ws();
+    for (let f = 0; f < 30; f++) {
+      const canvas = createCanvas(160, 90);
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#000";
+      context.fillRect(0, 0, 160, 90);
+      const oscillating = 20 + Math.round(12 * Math.sin(f * Math.PI / 8));
+      context.fillStyle = "#fff";
+      context.fillRect(oscillating, 15, 20, 20);
+      context.fillStyle = "#ffffaa";
+      context.fillRect(105, 50, 20, 18);
+      await fs.writeFile(path.join(workspace, "wave" + String(f).padStart(3, "0") + ".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg", [
+      "-hide_banner", "-loglevel", "error", "-framerate", "10",
+      "-i", path.join(workspace, "wave%03d.png"),
+      "-y", "-c:v", "libx264", "-pix_fmt", "yuv420p", path.join(workspace, "wave.mp4"),
+    ], { timeout: 30000, maxBuffer: 4096, windowsHide: true });
+    const imported = await importMotionVideo(workspace,
+      await fs.readFile(path.join(workspace, "wave.mp4")));
+    const result = await reconstructMultiObjectStudioVideo(workspace, imported.id);
+    const project = await getMotionProject(workspace, result.projectId);
+    const x = project.composition.layers[0].tracks.find(track => track.property === "x")!
+      .keyframes.map(key => key.value);
+    expect(x.length).toBeGreaterThan(3);
+    const differences = x.slice(1).map((value, i) => value - x[i]);
+    expect(differences.some(delta => delta > 3)).toBe(true);
+    expect(differences.some(delta => delta < -3)).toBe(true);
+    expect(result.interpolationCheckIoU.every(score => score >= .38)).toBe(true);
   }, 65000);
 
   it("rejects disappearing objects without creating a misleading Studio project", async () => {

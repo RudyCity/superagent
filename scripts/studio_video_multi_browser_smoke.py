@@ -62,6 +62,11 @@ def main() -> int:
         png = Path(reconstruction["reviewPng"])
         assert png.is_file() and png.stat().st_size < 2 * 1024 * 1024
         assert len(reconstruction["objects"]) == 2
+        assert 5 <= len(reconstruction["sampleTimes"]) <= 9
+        assert len(reconstruction["interpolationCheckIoU"]) == 2
+        assert all(score >= .38 for score in reconstruction["interpolationCheckIoU"])
+        assert all(len(obj["boxes"]) == len(reconstruction["sampleTimes"])
+                   for obj in reconstruction["objects"])
         assert len(reconstruction["measuredForegroundIoU"]) == 3
         assert all(score >= .38 for score in reconstruction["measuredForegroundIoU"])
         with Image.open(png) as review:
@@ -91,6 +96,8 @@ def main() -> int:
         output = {
             "status": "pass", "objects": 2,
             "measuredForegroundIoU": reconstruction["measuredForegroundIoU"],
+            "interpolationCheckIoU": reconstruction["interpolationCheckIoU"],
+            "trackedSamples": len(reconstruction["sampleTimes"]),
             "reviewPngDimensions": size, "browserTimeline": clock,
             "browserErrors": len(errors), "networkRequests": len(requests),
         }

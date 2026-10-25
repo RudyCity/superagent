@@ -16,6 +16,17 @@ const MIN_PIXELS = 30;
 const MAX_OBJECTS = 4;
 const TARGET_WIDTH = 320;
 const MAX_FRAME_PIXELS = 320 * 720;
+const MAX_TRACKED_SAMPLES = 9;
+
+export function studioBaseSampleFrames(durationFrames: number): number[] {
+  if (!Number.isSafeInteger(durationFrames) || durationFrames < 30 || durationFrames > 360)
+    throw new Error("Invalid bounded frame duration");
+  const count = durationFrames <= 120 ? 5 : durationFrames <= 240 ? 7 : 9;
+  const max = durationFrames - 1;
+  return Array.from({ length: count }, (_, i) =>
+    Math.round(max * .85 * i / (count - 1)));
+}
+
 
 export interface StudioTrackedObject {
   id: string;
@@ -31,6 +42,7 @@ export interface StudioMultiObjectReconstruction {
   dimensions: { width: number; height: number };
   confidence: number;
   measuredForegroundIoU: number[];
+  interpolationCheckIoU: number[];
   reviewPng: string;
   limitations: string[];
 }
@@ -272,32 +284,69 @@ export async function reconstructMultiObjectStudioVideo(
       w / h < .25 || w / h > 4)
       throw new Error("Multi-object reconstruction accepts 1-12 s, 32-1280x32-720 sources only");
 
-    const times = [0, duration * .5, duration * .85];
-    const frames: Frame[] = [];
-    for (const time of times) frames.push(await decodedFrame(source, time));
-    if (frames.some(f => f.width !== frames[0].width || f.height !== frames[0].height))
-      throw new Error("Reference frames changed dimensions");
-    if (frames[0].components.length < 2)
-      throw new Error("Multi-object prototype requires 2-4 isolated bright objects");
-
-    const background = consistentDarkBackground(frames);
-    const ordered: Component[][] = [frames[0].components];
-    const costs: number[][] = [];
-    for (let i = 1; i < frames.length; i++) {
-      const previous = ordered[i - 1];
-      const matched = associateStudioObjects(previous, frames[i].components, frames[i].width, frames[i].height);
-      const next = matched.indices.map(idx => frames[i].components[idx]);
-      for (let j = 0; j < next.length; j++) {
-        const previousArea = previous[j].width * previous[j].height;
-        const ratio = next[j].width * next[j].height / previousArea;
-        if (ratio < .65 || ratio > 1.5)
-          throw new Error("Foreground geometry changed too much for safe tracking");
-      }
-      costs.push(matched.costs);
-      ordered.push(next);
-    }
     const totalFrames = Math.max(30, Math.round(duration * 30));
-    const sampledFrames = times.map(time => Math.min(totalFrames - 1, Math.round(time * 30)));
+    let sampledFrames = studioBaseSampleFrames(totalFrames);
+    const decoded = new Map<number, Frame>();
+    async function loadFrame(index: number): Promise<Frame> {
+      const cached = decoded.get(index);
+      if (cached) return cached;
+      // All frame indices are bounded by the probed duration.
+      const sample = await decodedFrame(source, index / 30);
+      decoded.set(index, sample);
+      return sample;
+    }
+    async function associateSamples(indices: number[]) {
+      // Never spawn 9 FFmpeg processes simultaneously on small desktop PCs.
+      const snapshots: Frame[] = [];
+      for (const index of indices) snapshots.push(await loadFrame(index));
+      if (snapshots.some(f => f.width !== snapshots[0].width || f.height !== snapshots[0].height))
+        throw new Error("Reference frames changed dimensions");
+      if (snapshots[0].components.length < 2)
+        throw new Error("Multi-object prototype requires 2-4 isolated bright objects");
+      const ordered: Component[][] = [snapshots[0].components];
+      const costs: number[][] = [];
+      for (let i = 1; i < snapshots.length; i++) {
+        const previous = ordered[i - 1];
+        const matched = associateStudioObjects(previous, snapshots[i].components,
+          snapshots[i].width, snapshots[i].height);
+        const next = matched.indices.map(idx => snapshots[i].components[idx]);
+        for (let j = 0; j < next.length; j++) {
+          const previousArea = previous[j].width * previous[j].height;
+          const ratio = next[j].width * next[j].height / previousArea;
+          if (ratio < .65 || ratio > 1.5)
+            throw new Error("Foreground geometry changed too much for safe tracking");
+        }
+        costs.push(matched.costs);
+        ordered.push(next);
+      }
+      return { snapshots, ordered, costs };
+    }
+    // First track 5-9 duration-scaled frames; refine high-motion intervals.
+    // Tracking stays bounded to at most 9 decoded samples even on busy clips.
+    let tracked = await associateSamples(sampledFrames);
+    if (sampledFrames.length < MAX_TRACKED_SAMPLES) {
+      const width = tracked.snapshots[0].width, height = tracked.snapshots[0].height;
+      const candidates: Array<{ midpoint: number; score: number }> = [];
+      for (let i = 1; i < sampledFrames.length; i++) {
+        const score = Math.max(...tracked.ordered[i].map((obj, j) => {
+          const prior = tracked.ordered[i - 1][j];
+          return Math.hypot((obj.x - prior.x) / width, (obj.y - prior.y) / height);
+        }));
+        const midpoint = Math.round((sampledFrames[i - 1] + sampledFrames[i]) / 2);
+        if (score >= .035 && midpoint !== sampledFrames[i - 1] &&
+            midpoint !== sampledFrames[i]) candidates.push({ midpoint, score });
+      }
+      candidates.sort((a, b) => b.score - a.score || a.midpoint - b.midpoint);
+      const added = candidates.slice(0, MAX_TRACKED_SAMPLES - sampledFrames.length)
+        .map(candidate => candidate.midpoint);
+      if (added.length > 0) {
+        sampledFrames = [...sampledFrames, ...added].sort((a, b) => a - b);
+        tracked = await associateSamples(sampledFrames);
+      }
+    }
+    const { snapshots: frames, ordered, costs } = tracked;
+    const background = consistentDarkBackground(frames);
+    const times = sampledFrames.map(frame => frame / 30);
     const layers: PathLayer[] = [];
     const objects: StudioTrackedObject[] = [];
     for (let j = 0; j < ordered[0].length; j++) {
@@ -339,11 +388,29 @@ export async function reconstructMultiObjectStudioVideo(
       createdAt: now, updatedAt: now, composition,
     };
     validateMotionProject(expected);
-    const review = await compareSampledVideoAndStudio(expected, frames, sampledFrames);
-    // Fail before writing a project if tracing has produced a misleading or
-    // visually unrelated foreground. The threshold is intentionally modest.
+    // Three-frame contact sheet remains stable for the existing authenticated
+    // API/UI while all 5-9 samples influence editable position tracks.
+    const reviewIndices = [0, Math.floor((frames.length - 1) / 2), frames.length - 1];
+    const review = await compareSampledVideoAndStudio(expected,
+      reviewIndices.map(index => frames[index]),
+      reviewIndices.map(index => sampledFrames[index]));
+    // Probe two midpoints which were *not* used as reconstruction keyframes:
+    // failures expose interpolation drift hidden by on-sample mask tests.
+    const gaps = sampledFrames.slice(1).map((last, i) => {
+      const start = sampledFrames[i];
+      return { width: last - start, midpoint: Math.round((start + last) / 2) };
+    }).filter(gap => gap.width > 2 && !sampledFrames.includes(gap.midpoint))
+      .sort((a, b) => b.width - a.width || a.midpoint - b.midpoint)
+      .slice(0, 2);
+    const checkFrames = gaps.map(gap => gap.midpoint).sort((a, b) => a - b);
+    const check = checkFrames.length > 0
+      ? await compareSampledVideoAndStudio(expected,
+        await Promise.all(checkFrames.map(loadFrame)), checkFrames)
+      : null;
     if (review.foregroundIoU.some(score => score < .38))
       throw new Error("Vector reconstruction failed minimum sampled foreground fidelity");
+    if (check && check.foregroundIoU.some(score => score < .38))
+      throw new Error("Vector reconstruction failed out-of-sample interpolation fidelity");
     const project = await createMotionProject(workspace, "Multiple reconstructed vector objects");
     const saved = await updateMotionProject(workspace, project.id, project.revision,
       [{ type: "replace-composition", composition }]);
@@ -362,12 +429,13 @@ export async function reconstructMultiObjectStudioVideo(
       dimensions: { width: frames[0].width, height: frames[0].height },
       confidence: Number(Math.max(.1, Math.min(.75, .75 - average)).toFixed(2)),
       measuredForegroundIoU: review.foregroundIoU,
+      interpolationCheckIoU: check?.foregroundIoU ?? [],
       reviewPng,
       limitations: [
         "Only 2-4 separated bright shapes on a dark background; no AI vision model is used.",
-        "Three sampled frames estimate x/y movement only; geometry/rotation/text/audio are not reconstructed.",
+        "Only 5-9 bounded position samples estimate x/y; geometry/rotation/text/audio are not reconstructed.",
         "Crossing or overlapping objects, occlusion and unstable identities fail closed.",
-        "Confidence is association-cost heuristic; foreground IoU measures only three sampled binary masks.",
+        "Confidence is association-cost heuristic; review IoU covers three samples and interpolation QA up to two unsampled frames.",
       ],
     };
   } finally {

@@ -952,13 +952,16 @@ Optional local Chrome/FFmpeg/Pillow/Playwright smoke test:
 
 
 For **2–4 separated bright shapes on a stable dark background**, Studio
-samples three frames, separates foreground components, matches each object
-across frames and saves editable SVG layers with independent x/y keyframes.
+tracks 5–9 duration-bounded frames (adding samples to high-motion intervals),
+matches foreground components, and saves editable SVG layers with independent
+x/y keyframes.
 Ambiguous matches, missing shapes or backgrounds that vary across samples
 are rejected **before** the project is created. The source is an imported,
 SHA-256-verified MP4/WebM (up to 12 MiB, 1–12 s, maximum 1280×720).
 
-The result returns three **foreground mask IoU** measurements and saves an
+The result returns three **foreground mask IoU** measurements, plus up to
+two independent **out-of-sample interpolation IoU** checks. Poor matches
+are rejected before project creation. It saves an
 original-vs-Studio comparison PNG at
 `.superagent/studio/code/<project-id>-r<revision>-multi-review.png`
 (or the verified legacy Studio storage root). Values describe only three
