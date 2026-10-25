@@ -39,6 +39,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio import-audio --file workspace/path/clip.wav [--workspace PATH] [--json]
   superagent studio import-font --file workspace/path/font.ttf --family "BrandFont" [--workspace PATH] [--json]
   superagent studio import-video --file workspace/path/clip.mp4 [--workspace PATH] [--json]
+  superagent studio reconstruct-video VIDEO_ID [--workspace PATH] [--json] (experimental single-vector 2D)
   superagent studio frame PROJECT_ID --frame N [--workspace PATH] [--json]
   superagent studio render PROJECT_ID [--width EVEN_NUMBER] [--detach] [--workspace PATH] [--json]
   superagent studio jobs [--workspace PATH] [--json]
@@ -671,6 +672,11 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
     }
     if (positionals.length !== 1) throw new Error(action + " requires exactly one project or job ID");
     const projectId = positionals[0];
+    if (action === "reconstruct-video") {
+      const { reconstructSimpleStudioVideo } = await import("../motion/code/videoReferenceReconstruction.js");
+      emit(await reconstructSimpleStudioVideo(workspace, projectId), json);
+      return 0;
+    }
     if (action === "recovery") {
       emit(await inspectMotionJob(workspace, projectId), json);
       return 0;

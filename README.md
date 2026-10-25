@@ -919,6 +919,24 @@ first-party requestAnimationFrame runtime with **no external runtime scripts or
 network access required**. The experimental legacy GSAP code adapter is not
 exposed through public CLI/API pending third-party licensing review.
 
+**Experimental reference video reconstruction (CLI only):**
+
+```bash
+superagent studio import-video --file path/inside/workspace/clip.mp4 --workspace . --json
+superagent studio reconstruct-video VIDEO_ID --workspace . --json
+superagent studio export-code NEW_PROJECT_ID --format html --workspace . --json
+```
+
+This bounded, deterministic P3 prototype decodes three sample frames of an
+already-imported, SHA-256 verified 1–12-second MP4/WebM; for a single dominant
+**bright silhouette on a dark background** it traces SVG geometry, infers
+linear x/y keyframes and saves a new revisioned Studio project. It refuses
+unstable foreground contours instead of inventing scene content. It does NOT
+reconstruct arbitrary real-world footage or text, audio, multi-object motion,
+3D graphics, rotation, occlusion, or original source code. Its reported
+confidence measures heuristic contour stability—not pixel-level fidelity.
+It does not call an AI model or external provider.
+
 **Not yet supported:** automatic reverse-engineering of arbitrary video into
 editable DOM/SVG, raster/image/video/audio layers in code export, and direct
 React/Next.js component generation. Unsupported assets are rejected instead
