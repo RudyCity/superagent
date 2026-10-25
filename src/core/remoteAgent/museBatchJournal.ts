@@ -10,6 +10,10 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { MuseTombstoneArchive } from "./museTombstoneArchive.js";
+import type { MuseArchiveDescriptor } from "./museTombstoneArchive.js";
+import type { MuseResultOutbox } from "./museResultOutbox.js";
+import type { MuseExecutionCheckpoint } from "./museExecutionCheckpoint.js";
 
 export type MuseBatchStage = "started" | "result_pending" | "delivered" | "uncertain";
 export type MuseReconciliationOutcome = "effect_verified" | "no_effect_verified";
@@ -53,6 +57,7 @@ interface MuseJournalData {
   ownerPort: number;
   batches: MuseBatchRecord[];
   taskSignals?: MuseTaskSignal[];
+  archives?: MuseArchiveDescriptor[];
 }
 export interface MuseJournalSummary {
   started: number;
@@ -62,6 +67,7 @@ export interface MuseJournalSummary {
   reviewed: number;
   acknowledged: number;
   requiresReconciliation: number;
+  archived: number;
 }
 const MAX_RECORDS = 1000;
 const evidenceOk = (value: string) => typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
@@ -97,9 +103,18 @@ export class MuseBatchJournal {
   private readonly file: string;
   private batches = new Map<string, MuseBatchRecord>();
   private taskSignals = new Map<string, MuseTaskSignal>();
+  private readonly archive: MuseTombstoneArchive;
+  private archives: MuseArchiveDescriptor[] = [];
+  private archived = new Map<string, MuseBatchRecord>();
   constructor(readonly ownerPort: number, rootDir?: string) {
     this.file = museJournalFile(ownerPort, rootDir);
-    if (!fs.existsSync(this.file)) return;
+    this.archive = new MuseTombstoneArchive(ownerPort, path.dirname(this.file));
+    if (!fs.existsSync(this.file)) {
+      if (fs.existsSync(this.archive.folder) || fs.existsSync(this.archive.keyPath)) {
+        throw new Error("Muse journal missing while tombstone archive exists; refusing new claims");
+      }
+      return;
+    }
     const stat = fs.lstatSync(this.file);
     if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_FILE_BYTES) {
       throw new Error("Invalid Muse batch checkpoint file");
@@ -128,11 +143,21 @@ export class MuseBatchJournal {
       }
       this.batches.set(record.batchId, record);
     }
+    this.archives = parsed.archives || [];
+    for (const record of this.archive.read(this.archives)) {
+      if (!validateRecord(record) || record.stage !== "delivered" ||
+          !record.resultAck || record.payloadReleasedAt === undefined ||
+          this.archived.has(record.batchId) || this.batches.has(record.batchId)) {
+        throw new Error("Corrupted or overlapping Muse archived tombstone");
+      }
+      this.archived.set(record.batchId, record);
+    }
   }
   private save(): void {
     const document: MuseJournalData = {
       version: 1, ownerPort: this.ownerPort, batches: [...this.batches.values()],
       taskSignals: [...this.taskSignals.values()],
+      archives: this.archives,
     };
     const serialized = JSON.stringify(document);
     if (Buffer.byteLength(serialized) > MAX_FILE_BYTES) throw new Error("Muse checkpoint storage limit reached");
@@ -151,13 +176,63 @@ export class MuseBatchJournal {
       try { fs.rmSync(temporary, { force: true }); } catch {}
     }
   }
+  /**
+   * Offline only. Requires an independently enforced exclusive journal lock
+   * plus a proof that ALL encrypted payloads are absent for these exact IDs.
+   * Archive segment is DURABLY WRITTEN before the journal is compacted; a crash
+   * before journal save leaves every original ID in the active journal.
+   */
+  archiveFinalized(
+    batchIds: string[],
+    outbox: MuseResultOutbox,
+    execution: MuseExecutionCheckpoint,
+  ): { archived: number; segment: string } {
+    if (!Array.isArray(batchIds) || batchIds.length === 0 ||
+        batchIds.length > MuseTombstoneArchive.maxPerSegment ||
+        new Set(batchIds).size !== batchIds.length) {
+      throw new Error("Archive requires 1..64 distinct batch IDs");
+    }
+    if (outbox.port !== this.ownerPort || execution.port !== this.ownerPort) {
+      throw new Error("Archive owner identity mismatch");
+    }
+    const records: MuseBatchRecord[] = [];
+    for (const id of batchIds) {
+      const record = this.batches.get(id);
+      if (!record || record.stage !== "delivered" || !record.resultAck ||
+          record.payloadReleasedAt === undefined ||
+          outbox.digest(id) !== null || execution.info(id) !== null) {
+        throw new Error("Archive requires finalized ACK and already-released encrypted payloads");
+      }
+      records.push({ ...record, resultAck: { ...record.resultAck } });
+    }
+    // Segment cannot be referenced unless it has been written and fsynced.
+    const descriptor = this.archive.append(records, this.archives);
+    const beforeManifest = this.archives;
+    this.archives = [...this.archives, descriptor];
+    for (const record of records) {
+      this.batches.delete(record.batchId);
+      this.archived.set(record.batchId, record);
+    }
+    try { this.save(); }
+    catch (err) {
+      this.archives = beforeManifest;
+      for (const record of records) {
+        this.batches.set(record.batchId, record);
+        this.archived.delete(record.batchId);
+      }
+      throw err;
+    }
+    return { archived: records.length, segment: descriptor.name };
+  }
+  archivedCount(): number { return this.archived.size; }
+
   /** Returns false for every previously observed ID: do not repeat tools. */
   claim(batchId: string, taskId: string, callsCount: number): boolean {
     if (!idOk(batchId) || !idOk(taskId) ||
         !Number.isSafeInteger(callsCount) || callsCount < 0 || callsCount > 1000) {
       throw new Error("Invalid batch checkpoint identity");
     }
-    if (this.batches.has(batchId)) return false;
+    if (this.batches.has(batchId) || this.archived.has(batchId)) return false;
     if (this.batches.size >= MAX_RECORDS) throw new Error("Muse checkpoint record cap reached; reconcile/archive manually");
     const now = Date.now();
     this.batches.set(batchId, {
@@ -307,7 +382,7 @@ export class MuseBatchJournal {
     }));
   }
   get(batchId: string): MuseBatchRecord | undefined {
-    const record = this.batches.get(batchId);
+    const record = this.batches.get(batchId) || this.archived.get(batchId);
     return record ? { ...record,
       ...(record.review ? { review: { ...record.review } } : {}),
       ...(record.resultAck ? { resultAck: { ...record.resultAck } } : {}) } : undefined;
@@ -321,6 +396,7 @@ export class MuseBatchJournal {
     const reviewed = [...this.batches.values()].filter(record => !!record.review).length;
     const acknowledged = [...this.batches.values()].filter(record => !!record.resultAck).length;
     return { started, resultPending, delivered, uncertain, reviewed, acknowledged,
-      requiresReconciliation: started + resultPending + uncertain - reviewed };
+      requiresReconciliation: started + resultPending + uncertain - reviewed,
+      archived: this.archived.size };
   }
 }

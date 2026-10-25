@@ -38,6 +38,7 @@ export interface ChannelHostHealth {
   interruptedCallBatches?: number;
   recoveryIntegrityBlocked?: number;
   recoveryManualReconciliation?: number;
+  archivedTombstones?: number;
   /** Never include credentials, workspace paths, group IDs, URLs or prompts. */
   errorCode?: "START_FAILED";
 }
@@ -262,6 +263,7 @@ export async function runChannelHost(options: {
       taskActive: Boolean(stats?.activeTaskId || (stats?.queuedBatches ?? 0) > 0),
       tasksCompleted: stats?.tasksCompleted || 0, startedAt,
       reconciliationPending: journal?.summary().requiresReconciliation || 0,
+      archivedTombstones: journal?.archivedCount() || 0,
       resultOutboxStored: outbox?.count() || 0,
       resultAcknowledged: journal?.summary().acknowledged || 0,
       resumableUntouchedBatches: recovery?.counts.manual_untouched_resume || 0,
@@ -425,6 +427,8 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host recovery --port 7892 [--batch-id ID]  # unified read-only recovery assessment");
     console.log("superagent channel-host retention --port 7892 [--batch-id ID] [--min-age-days 7]  # dry-run ACKed payload release");
     console.log("superagent channel-host prune --port 7892 --batch-id ID --confirm ID [--min-age-days 7]  # OFFLINE-only, keep journal tombstones");
+    console.log("superagent channel-host archive --port 7892 [--max-batches 64]  # offline read-only final tombstone candidates");
+    console.log("superagent channel-host compact --port 7892 --confirm-port 7892 [--max-batches 64]  # offline archive then shrink active journal");
     console.log("TUI: /muse host resume-untouched BATCH_ID --port 7892  # manual one-shot; only zero started tool calls");
     console.log("superagent channel-host reconcile --port 7892 --batch-id ID --decision effect_verified|no_effect_verified --evidence-sha256 HEX --confirm ID");
     console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
@@ -437,6 +441,52 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "archive" || action === "compact") {
+    const maxIdx = argv.indexOf("--max-batches");
+    const limit = maxIdx < 0 ? 64 : Number(argv[maxIdx + 1]);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 64) {
+      throw new Error("Expected --max-batches between 1 and 64");
+    }
+    const select = (journal: MuseBatchJournal, outbox: MuseResultOutbox, execution: MuseExecutionCheckpoint) =>
+      journal.list().filter(record => record.stage === "delivered" &&
+        !!record.resultAck && record.payloadReleasedAt !== undefined &&
+        outbox.digest(record.batchId) === null && execution.info(record.batchId) === null).slice(0, limit);
+    if (action === "archive") {
+      const journal = new MuseBatchJournal(port);
+      const selected = select(journal, new MuseResultOutbox(port), new MuseExecutionCheckpoint(port));
+      console.log("Tombstone archive preview: owner " + port + " | existing archived IDs " + journal.archivedCount());
+      for (const record of selected) console.log("  " + JSON.stringify({
+        batchId: record.batchId, taskId: record.taskId, stage: record.stage,
+      }));
+      console.log("Eligible: " + selected.length + " | no state changed | journal replay protection retained");
+      return false;
+    }
+    const confirmIdx = argv.indexOf("--confirm-port");
+    if (confirmIdx < 0 || argv[confirmIdx + 1] !== String(port)) {
+      throw new Error("Offline compaction requires exact --confirm-port matching --port");
+    }
+    if (fs.existsSync(statePath(port))) {
+      throw new Error("A registered channel-host owner exists; refusing offline tombstone compaction");
+    }
+    const unlock = claimJournalLock(port, "review", crypto.randomBytes(16).toString("hex"));
+    try {
+      if (fs.existsSync(statePath(port))) throw new Error("Channel host started during compaction");
+      const journal = new MuseBatchJournal(port);
+      const outbox = new MuseResultOutbox(port);
+      const execution = new MuseExecutionCheckpoint(port);
+      const selected = select(journal, outbox, execution);
+      if (!selected.length) {
+        console.log("No finalized ACK tombstones eligible for archive. Nothing modified.");
+        return false;
+      }
+      const done = journal.archiveFinalized(selected.map(row => row.batchId), outbox, execution);
+      console.log("Archived " + done.archived + " finalized batch tombstone(s) in " + done.segment +
+        ". Replay is still blocked for archived IDs.");
+      console.log("Active journal IDs: " + journal.list().length +
+        " | authenticated archived tombstones: " + journal.archivedCount());
+      return false;
+    } finally { unlock(); }
+  }
   if (action === "retention" || action === "prune") {
     const batchIdx = argv.indexOf("--batch-id");
     const confirmIdx = argv.indexOf("--confirm");
@@ -488,7 +538,10 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
       throw new Error("Invalid --batch-id");
     }
     const report = MuseRecoveryOrchestrator.load(port).report();
-    const batches = id ? report.batches.filter(batch => batch.batchId === id) : report.batches;
+    const batches = id
+      ? (new MuseBatchJournal(port).get(id)
+        ? [MuseRecoveryOrchestrator.load(port).assess(id)] : [])
+      : report.batches;
     if (id && batches.length !== 1) throw new Error("Unknown recovery batch ID");
     console.log("Recovery assessment for independent owner port " + port +
       " (read-only; workspace checks require a running authorized watcher)");
@@ -507,6 +560,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Execution checkpoints (encrypted batch inputs; only progress metadata printed):");
     for (const item of execution.summaries()) console.log("  " + JSON.stringify(item));
     console.log("Muse application receipts: " + counts.acknowledged + " (distinct from transport sends)");
+    console.log("Authenticated archived replay tombstones: " + counts.archived);
     console.log("Delivered: " + counts.delivered + " | Needs reconciliation: " +
       counts.requiresReconciliation + " | Reviewed: " + counts.reviewed +
       " (started " + counts.started + ", result pending " + counts.resultPending +
@@ -570,6 +624,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Port: " + live.port + " | watcher: " + (live.watcherActive ? "active" : "inactive"));
     console.log("Active task: " + live.taskActive + " | completed: " + live.tasksCompleted);
     console.log("Checkpoint reconciliation pending: " + (live.reconciliationPending ?? 0));
+    console.log("Authenticated archived replay tombstones: " + (live.archivedTombstones ?? 0));
     console.log("Encrypted results stored: " + (live.resultOutboxStored ?? 0) +
       " | Muse application ACKs: " + (live.resultAcknowledged ?? 0));
     console.log("Recovery integrity blocked: " + (live.recoveryIntegrityBlocked ?? 0) +
@@ -584,5 +639,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, reconcile or help");
+  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, reconcile or help");
 }
