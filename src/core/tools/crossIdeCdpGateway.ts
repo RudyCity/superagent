@@ -19,10 +19,16 @@ import {
   type CdpParticipantRole,
 } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
-import { listManagedBrowserRegistrations } from "./managedBrowserRegistry.js";
+import {
+  browserFingerprintForPort, currentManagedBrowserFingerprint,
+  listVerifiedManagedBrowserRegistrations,
+} from "./managedBrowserRegistry.js";
 import { controlChromeCdpTool, discoverCdpPages } from "./chromeCdpTools.js";
 
-type Attachment = { agentId: string; token: string; role: "owner" | CdpParticipantRole };
+type Attachment = {
+  agentId: string; token: string; role: "owner" | CdpParticipantRole;
+  browserFingerprint?: string;
+};
 type Sealed = { key: string; iv: string; tag: string; cipher: string };
 type Request = {
   id: string; port: number; targetId: string; generation: string;
@@ -132,8 +138,9 @@ export class CrossIdeCdpGateway {
     if (!a) throw new Error("Not attached to tab: claim or request access first.");
     return a;
   }
-  private remember(port: number, targetId: string, token: string, role: Attachment["role"]) {
-    this.capabilities.set(port + ":" + targetId, { agentId: this.agentId, token, role });
+  private remember(port: number, targetId: string, token: string,
+      role: Attachment["role"], browserFingerprint?: string) {
+    this.capabilities.set(port + ":" + targetId, { agentId: this.agentId, token, role, browserFingerprint });
   }
   private async event(name: string, key: string) {
     const row = { time: new Date().toISOString(), event: name, actor: this.agentId, key: key.slice(0, 16) };
@@ -147,7 +154,7 @@ export class CrossIdeCdpGateway {
         authBoundary: "unique-MCP-connection", attached: [...this.capabilities.keys()] };
     }
     if (action === "managed") {
-      return { registrations: listManagedBrowserRegistrations(),
+      return { registrations: await listVerifiedManagedBrowserRegistrations(),
         registry: "local-authenticated-announcements",
         authorization: "NO_CDP_CLAIM; claim or approved attach is separately required" };
     }
@@ -180,8 +187,9 @@ export class CrossIdeCdpGateway {
       const pages = await discoverCdpPages(port);
       if (!pages.some(p => p.targetId === targetId)) throw new Error("CDP target not found; choose a discovered tab.");
       const existing = this.capabilities.get(port + ":" + targetId);
+      const browserFingerprint = await currentManagedBrowserFingerprint(port, targetId);
       const claim = await claimCdpTarget(port, targetId, this.agentId, existing?.token);
-      this.remember(port, targetId, claim.sessionToken, "owner");
+      this.remember(port, targetId, claim.sessionToken, "owner", browserFingerprint || undefined);
       await this.event("ide_claim", claim.key);
       return { status: "owner", session: claimWithoutToken(claim) };
     }
@@ -252,13 +260,18 @@ export class CrossIdeCdpGateway {
         const invitationToken = openFor(this.keys.privateKey, r.sealed, r.id);
         const invitation = await joinCdpTarget(port, targetId, this.agentId,
           r.inviteId || "", invitationToken);
-        this.remember(port, targetId, invitation.sessionToken, r.role);
+        const browserFingerprint = await currentManagedBrowserFingerprint(port, targetId);
+        this.remember(port, targetId, invitation.sessionToken, r.role, browserFingerprint || undefined);
         await rm(requestPath(r.id), { force: true });
         await this.event("ide_attach_joined", current.key);
         return { status: "attached", role: r.role, session: claimWithoutToken(invitation) };
       });
     }
     const attached = this.lookup(port, targetId);
+    if (action !== "release" && attached.browserFingerprint &&
+        await browserFingerprintForPort(port) !== attached.browserFingerprint) {
+      throw new Error("Managed browser generation changed; release stale claim and pair again.");
+    }
     if (action === "share") {
       if (attached.role !== "owner") throw new Error("Owner role required.");
       return setCdpSharing(port, targetId, this.agentId, attached.token, Boolean(input.enabled));
