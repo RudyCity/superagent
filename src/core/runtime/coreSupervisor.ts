@@ -791,7 +791,41 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
     console.log("superagent core boot [--port 7888] [--client-mode tline|chrome-extension]  # safe logon/bootstrap, never resets dead worker state");
     console.log("superagent core boot-audit [--port 7888]  # read-only cold-reboot and unfinished chat-turn assessment");
+    console.log("superagent core evidence-snapshot [--port 7888]  # offline private backup; does NOT restart or clear state");
+    console.log("superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID  # one-shot GET-only T-Line probe");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
+    return;
+  }
+  if (action === "reconnect-check") {
+    const frontIdx = argv.indexOf("--front-port");
+    const coreIdx = argv.indexOf("--core-port");
+    const idIdx = argv.indexOf("--session-id");
+    const frontPort = Number(argv[frontIdx + 1]);
+    const corePort = Number(argv[coreIdx + 1]);
+    const sessionId = argv[idIdx + 1];
+    if (frontIdx < 0 || coreIdx < 0 || idIdx < 0 ||
+        !validPort(frontPort) || !validPort(corePort) || frontPort === corePort ||
+        !sessionId) throw new Error("Require --front-port, --core-port and --session-id");
+    const { readCoreCheckpoint } = await import("./coreSupervisorCheckpoint.js");
+    const { newTlineReconnectState } = await import("./tlineReconnectPolicy.js");
+    const { probeTlineSessionOnce } = await import("./tlineReconnectProbe.js");
+    const bearer = readCoreCheckpoint(corePort).serverToken;
+    const result = await probeTlineSessionOnce({
+      frontDoor: "http://127.0.0.1:" + frontPort + "/",
+      bearer, state: newTlineReconnectState(sessionId),
+    });
+    console.log(JSON.stringify({
+      phase: result.state.phase, reason: result.state.reason,
+      frontDoorReady: result.frontDoorReady, coreReady: result.coreReady,
+      sessionVerified: result.sessionVerified, issuedMethods: result.issuedMethods,
+      automaticChatReplayAllowed: false,
+    }, null, 2));
+    return;
+  }
+  if (action === "evidence-snapshot") {
+    const { createCoreRecoveryEvidence } = await import("./coreRecoveryEvidence.js");
+    const result = await createCoreRecoveryEvidence(port);
+    console.log(JSON.stringify(result, null, 2));
     return;
   }
   if (action === "boot-audit") {
@@ -854,6 +888,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

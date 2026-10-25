@@ -178,6 +178,15 @@ try {
   const recoveredViaTline = await api(frontPort, initialBearer, "/api/status?sessionId=" + id);
   check("tline_proxy_routes_recovered_session",
     recoveredViaTline.code === 200 && recoveredViaTline.data?.sessionId === id);
+  const reconnectProbe = spawnSync(process.execPath, [cli, "core", "reconnect-check",
+    "--front-port", String(frontPort), "--core-port", String(port),
+    "--session-id", id], { cwd: workspace, env, stdio: "pipe",
+      encoding: "utf8", timeout: 10_000, windowsHide: true });
+  check("tline_cli_reconnect_check_uses_only_get_and_verifies_session",
+    reconnectProbe.status === 0 &&
+    reconnectProbe.stdout.includes('"sessionVerified": true') &&
+    reconnectProbe.stdout.includes('"issuedMethods": [') &&
+    reconnectProbe.stdout.includes('"automaticChatReplayAllowed": false'));
   const newSession = await api(port, initialBearer, "/api/init", {
     sessionId: id + "_new", mode: "single", workspace,
   });
@@ -238,6 +247,22 @@ try {
     coldAudit.status === 0 &&
     coldAudit.stdout.includes('"decision": "operator_review"') &&
     coldAudit.stdout.includes('"automaticToolReplay": false') &&
+    Buffer.compare(fs.readFileSync(auditFile), checkpointBeforeAudit) === 0);
+  const evidence = spawnSync(process.execPath, [cli, "core", "evidence-snapshot",
+    "--port", String(port)], { cwd: workspace, env, stdio: "pipe",
+      encoding: "utf8", timeout: 22_000, windowsHide: true });
+  const evidenceData = evidence.status === 0 ?
+    JSON.parse(evidence.stdout) as {
+      folder: string; restartAuthorized: boolean; toolReplayAuthorized: boolean;
+      database: { integrity: string }; files: Array<{ name: string }>;
+    } : null;
+  check("cold_evidence_snapshot_verified_without_restarting_or_erasing",
+    evidenceData &&
+    evidenceData.restartAuthorized === false &&
+    evidenceData.toolReplayAuthorized === false &&
+    evidenceData.database.integrity === "ok" &&
+    evidenceData.files.some(file => file.name === "core-checkpoint.json") &&
+    fs.existsSync(path.join(evidenceData.folder, "manifest.json")) &&
     Buffer.compare(fs.readFileSync(auditFile), checkpointBeforeAudit) === 0);
   const report = {
     version: 1, phase: "core-guardian-local-staging", ok: true, port, frontPort,

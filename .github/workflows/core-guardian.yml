@@ -6,6 +6,8 @@ on:
       - ".github/workflows/core-guardian.yml"
       - "src/core/runtime/coreGuardian.ts"
       - "src/core/runtime/coreColdStartAudit.ts"
+      - "src/core/runtime/coreRecoveryEvidence.ts"
+      - "src/core/runtime/tlineReconnectProbe.ts"
       - "src/core/runtime/coreColdStartPolicy.ts"
       - "src/core/runtime/tlineReconnectPolicy.ts"
       - "src/core/runtime/coreBoot.ts"
@@ -23,16 +25,21 @@ on:
       - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
       - "tests/corePhase5d.test.ts"
+      - "tests/corePhase5e.test.ts"
+      - "tests/corePhase5e.test.ts"
       - "tests/coreAgentSessionCheckpoint.test.ts"
       - "tests/coreBoot.test.ts"
       - "docs/guides/core-guardian-recovery.md"
       - "docs/guides/core-agent-session-recovery.md"
       - "docs/guides/core-phase5d-restart-safety.md"
+      - "docs/guides/core-phase5e-evidence-and-reconnect.md"
   pull_request:
     paths:
       - ".github/workflows/core-guardian.yml"
       - "src/core/runtime/coreGuardian.ts"
       - "src/core/runtime/coreColdStartAudit.ts"
+      - "src/core/runtime/coreRecoveryEvidence.ts"
+      - "src/core/runtime/tlineReconnectProbe.ts"
       - "src/core/runtime/coreColdStartPolicy.ts"
       - "src/core/runtime/tlineReconnectPolicy.ts"
       - "src/core/runtime/coreBoot.ts"
@@ -53,6 +60,7 @@ on:
       - "docs/guides/core-guardian-recovery.md"
       - "docs/guides/core-agent-session-recovery.md"
       - "docs/guides/core-phase5d-restart-safety.md"
+      - "docs/guides/core-phase5e-evidence-and-reconnect.md"
   workflow_dispatch:
 jobs:
   core-guardian:
@@ -75,7 +83,7 @@ jobs:
       - name: Build TypeScript
         run: bun run build
       - name: Unit/Core/transport regression
-        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/corePhase5d.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/corePhase5d.test.ts tests/corePhase5e.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
       - name: Preview Windows login startup without installing scheduled tasks
         if: runner.os == 'Windows'
         run: bun scripts/setup-core-windows-startup.ts --port 7888

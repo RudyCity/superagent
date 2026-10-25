@@ -1,5 +1,11 @@
 # Opt-in rolling restart for SuperAgent API Core (2026-10-25)
 
+## Phase 5e — offline recovery evidence snapshot and runnable T-Line session probes
+
+The Core now provides an offline-only private recovery snapshot command (superagent core evidence-snapshot --port 7888). This refuses an authenticated online owner or unexpected listener, and creates immutable evidence under the owner's recovery-evidence directory. It verifies SHA-256 hashes for checkpoint/discovery/guardian/receipt copies, snapshots SQLite history consistently through read-only VACUUM INTO, checks SQLite integrity and publishes a private manifest only when the copy is validated. Credentials, conversation content and metadata in the evidence directory are **sensitive** and must never be publicly shared. Existing checkpoints and live processes are not changed, and the snapshot never authorizes startup or tool replay.
+
+The CLI also supports a one-shot, GET-only T-Line session check (superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID). It verifies a local transport health endpoint and the exact session using an existing Core bearer without echoing secrets; no chat/tool POST is sent. Staging fault-injection now covers both new commands on a real isolated T-Line front door, along with the existing supervisor/worker crash recovery and total-worker-loss refusal. The reusable policy and one-shot probe do not constitute a fully installed native desktop reconnect UI or live websocket resubscription. See [Phase 5e operator guide](../guides/core-phase5e-evidence-and-reconnect.md).
+
 ## Phase 5d — read-only cold-boot audit and reconnect safety contract
 
 Core now exposes the read-only command superagent core boot-audit --port 7888. It checks authenticated supervisor status, an unexpected TCP listener, checkpoint/discovery/guardian lease, persisted session receipts, and the existing SQLite chat-turn table through a separate read-only connection. Unknown or corrupt state never becomes a zero count; valid checkpoint plus dead/unknown workers always requires operator review. The audit cannot remove any checkpoint or send signals, and always reports automaticToolReplay=false. Actual boot remains fail-closed after a full OS reboot until side effects and old owners can be reconciled.

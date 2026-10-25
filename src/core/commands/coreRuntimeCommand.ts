@@ -19,6 +19,8 @@ export const coreRuntimeCommand: SlashCommand = {
           "Start supervisor separately: superagent core start --port 7888",
           "Safe login-time Core bootstrap: superagent core boot --port 7888",
           "Inspect cold reboot blockers without changing processes: superagent core boot-audit --port 7888",
+          "Snapshot offline recovery evidence (private, credentials inside): superagent core evidence-snapshot --port 7888",
+          "Read-only T-Line reconnect check: superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID",
           "Opt-in guardian for NEW owned Core only: superagent core guard --port 7888",
           "Guardian metadata status: superagent core guard-status --port 7888",
           "If its process crashes: superagent core recover --port 7888",
