@@ -11,13 +11,15 @@ import os from "node:os";
 import path from "node:path";
 import { inspectMuseRecoveryStorage } from "./museRecoveryBackup.js";
 import type { MuseRecoveryHealth } from "./museRecoveryBackup.js";
+import { MuseRecoveryIntegrityEvents } from "./museRecoveryIntegrityEvents.js";
 
 export type MuseIntegrityState = "not_initialized" | "healthy" | "degraded" | "failed" | "stale";
 export type MuseIntegrityReason =
   | "NO_JOURNAL_YET"
   | "VALIDATED"
   | "STORAGE_CHECK_FAILED"
-  | "CHECK_OVERDUE";
+  | "CHECK_OVERDUE"
+  | "ALERT_LEDGER_INVALID";
 
 export type MuseIntegritySnapshot = {
   state: MuseIntegrityState;
@@ -32,6 +34,8 @@ export type MuseIntegritySnapshot = {
   archivedTombstones: number | null;
   encryptedResults: number | null;
   encryptedIntents: number | null;
+  durableAlertCount: number;
+  lastAlertAt: number | null;
 };
 
 /** Per-port, read-only integrity verification; test-only scan injection. */
@@ -46,18 +50,23 @@ export class MuseRecoveryIntegrityMonitor {
   private consecutiveFailures = 0;
   private counts: MuseRecoveryHealth | null = null;
   private readonly root: string;
+  private readonly events: MuseRecoveryIntegrityEvents;
+  private durableAlertCount = 0;
+  private lastAlertAt: number | null = null;
 
   constructor(
     readonly port: number,
     readonly intervalMs = 60_000,
     root = path.join(os.homedir(), ".superagent-r"),
     private readonly probe: (port: number, root: string) => MuseRecoveryHealth = inspectMuseRecoveryStorage,
+    private readonly notify?: (event: { port: number; state: "degraded" | "failed" | "healthy"; reason: MuseIntegrityReason }) => void,
   ) {
     if (!Number.isInteger(port) || port < 1 || port > 65535 ||
         !Number.isSafeInteger(intervalMs) || intervalMs < 100 || intervalMs > 86_400_000) {
       throw new Error("Invalid recovery monitoring options");
     }
     this.root = root;
+    this.events = new MuseRecoveryIntegrityEvents(port, root);
   }
 
   /** Missing journal is normal for a fresh owner, but NEVER if artifacts exist. */
@@ -71,6 +80,7 @@ export class MuseRecoveryIntegrityMonitor {
       "muse-tombstones-" + this.port + ".key",
       "muse-tombstones-" + this.port,
       "muse-restore-" + this.port + ".incomplete",
+      "muse-integrity-" + this.port + ".jsonl",
     ];
     try {
       const stat = fs.lstatSync(this.root);
@@ -91,6 +101,12 @@ export class MuseRecoveryIntegrityMonitor {
     this.totalChecks++;
     this.lastCheckAt = now;
     try {
+      const history = this.events.read(); // malformed events are a hard integrity fault
+      if (history.length >= MuseRecoveryIntegrityEvents.maxEvents) {
+        throw new Error("Integrity event ledger at retention cap");
+      }
+      this.durableAlertCount = history.length;
+      this.lastAlertAt = history.at(-1)?.observedAt ?? null;
       if (this.uninitialized()) {
         this.state = "not_initialized";
         this.reason = "NO_JOURNAL_YET";
@@ -107,12 +123,40 @@ export class MuseRecoveryIntegrityMonitor {
         this.consecutiveFailures = 0;
         this.counts = result;
       }
+      if (this.state === "healthy" && history.length &&
+          history.at(-1)?.state !== "healthy") {
+        const record = this.events.append(now, "healthy", "VALIDATED");
+        this.durableAlertCount++;
+        this.lastAlertAt = record.observedAt;
+        try { this.notify?.({ port: this.port, state: "healthy", reason: "VALIDATED" }); } catch {}
+      }
     } catch {
       this.totalFailures++;
+      // Preserve an already confirmed FAIL state across an owner restart.
+      // A new process cannot downgrade a durable failure to a "first warning".
+      if (this.consecutiveFailures === 0) {
+        try {
+          if (this.events.read().at(-1)?.state === "failed") this.consecutiveFailures = 1;
+        } catch { /* the ledger itself is invalid; deny below */ }
+      }
       this.consecutiveFailures++;
       this.state = this.consecutiveFailures >= 2 ? "failed" : "degraded";
       this.reason = "STORAGE_CHECK_FAILED";
       this.counts = null;
+      try {
+        const history = this.events.read();
+        this.durableAlertCount = history.length;
+        this.lastAlertAt = history.at(-1)?.observedAt ?? null;
+        if (history.at(-1)?.state !== this.state) {
+          const record = this.events.append(now, this.state, "STORAGE_CHECK_FAILED");
+          this.durableAlertCount++;
+          this.lastAlertAt = record.observedAt;
+          try { this.notify?.({ port: this.port, state: this.state as "degraded" | "failed", reason: "STORAGE_CHECK_FAILED" }); } catch {}
+        }
+      } catch {
+        this.state = "failed";
+        this.reason = "ALERT_LEDGER_INVALID";
+      }
     }
     return this.snapshot(now);
   }
@@ -134,6 +178,8 @@ export class MuseRecoveryIntegrityMonitor {
       archivedTombstones: state === "healthy" ? this.counts?.archived ?? null : null,
       encryptedResults: state === "healthy" ? this.counts?.encryptedResults ?? null : null,
       encryptedIntents: state === "healthy" ? this.counts?.encryptedIntents ?? null : null,
+      durableAlertCount: this.durableAlertCount,
+      lastAlertAt: this.lastAlertAt,
     };
   }
 

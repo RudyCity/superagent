@@ -93,6 +93,11 @@ describe("independent channel-host lifecycle", () => {
   });
   it("rejects unauthorized IPC, deduplicates retries, and never exposes its token", async () => {
     const port = await freePort();
+    // Integrity-enforced host recovery IPC now requires real durable journal
+    // evidence even with a fake transport/executor.
+    const checkpointFile = path.join(os.homedir(), ".superagent-r", "muse-batches-" + port + ".json");
+    fs.mkdirSync(path.dirname(checkpointFile), { recursive: true });
+    fs.writeFileSync(checkpointFile, JSON.stringify({ version: 1, ownerPort: port, batches: [] }));
     const id = "a".repeat(32);
     const received: string[] = [];
     const host = await runChannelHost({
@@ -157,6 +162,7 @@ describe("independent channel-host lifecycle", () => {
     expect(lines.some(line => line.content.includes("resume-untouched acknowledged"))).toBe(true);
     await expect(requestChannelHostIpc(port, "resume_untouched", "../bad-path")).rejects.toThrow(/Invalid IPC/);
     await expect(requestChannelHostIpc(port, "replay_result", "../invalid")).rejects.toThrow(/Invalid IPC/);
+    fs.rmSync(checkpointFile, { force: true });
   });
 
   it("rejects malformed and excessive IPC commands and fails closed when idle", async () => {

@@ -14,6 +14,7 @@ import { MuseBatchJournal, museJournalFile } from "./museBatchJournal.js";
 import { MuseResultOutbox } from "./museResultOutbox.js";
 import { MuseExecutionCheckpoint } from "./museExecutionCheckpoint.js";
 import { MuseRecoveryOrchestrator } from "./museRecoveryOrchestrator.js";
+import { MuseRecoveryIntegrityEvents } from "./museRecoveryIntegrityEvents.js";
 
 const NAME = "recovery-bundle.json";
 const MAX_FILES = 520;
@@ -39,6 +40,7 @@ const safeItemName = (name: string, port: number) =>
     "muse-execution-" + port + ".json",
     "muse-execution-" + port + ".json.key",
     "muse-tombstones-" + port + ".key",
+    "muse-integrity-" + port + ".jsonl",
   ].includes(name) ||
   new RegExp("^muse-tombstones-" + port + "/[a-f0-9]{32}\\.json$").test(name);
 
@@ -64,6 +66,8 @@ function collect(root: string, port: number): { health: MuseRecoveryHealth; name
   const j = museJournalFile(port, root);
   if (!fs.existsSync(j)) throw new Error("No durable Muse journal; backup/restore validation refused");
   const journal = new MuseBatchJournal(port, root);
+  // Alert history is part of the trusted per-port recovery evidence.
+  new MuseRecoveryIntegrityEvents(port, root).read();
   const results = new MuseResultOutbox(port, root);
   const intents = new MuseExecutionCheckpoint(port, root);
   const integrityBlocked = new MuseRecoveryOrchestrator(journal, intents, results)
@@ -83,6 +87,7 @@ function collect(root: string, port: number): { health: MuseRecoveryHealth; name
     "muse-execution-" + port + ".json",
     "muse-execution-" + port + ".json.key",
     "muse-tombstones-" + port + ".key",
+    "muse-integrity-" + port + ".jsonl",
   ];
   for (const name of existing) if (fs.existsSync(path.join(root, name))) names.push(name);
   for (const item of payload.archives || []) names.push("muse-tombstones-" + port + "/" + item.name);
@@ -208,6 +213,7 @@ export function restoreMuseRecoveryBackup(port: number, source: string,
     "muse-execution-" + port + ".json",
     "muse-execution-" + port + ".json.key",
     "muse-tombstones-" + port + ".key",
+    "muse-integrity-" + port + ".jsonl",
   ];
   if (candidates.some(name => fs.existsSync(path.join(root, name))) ||
       fs.existsSync(path.join(root, "muse-tombstones-" + port))) {

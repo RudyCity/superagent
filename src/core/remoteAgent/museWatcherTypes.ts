@@ -47,6 +47,8 @@ export interface MuseWatcherOptions {
   resultOutbox?: MuseResultOutbox;
   /** Encrypted execution intent plus durable per-call start boundaries. */
   executionCheckpoint?: MuseExecutionCheckpoint;
+  /** Optional independent-host disk integrity gate, checked BEFORE recovery or new tool batch side effects. */
+  integrityGuard?: (operation: "new_batch" | "resume_untouched" | "replay_result") => boolean;
   onProgress?: (message: string) => void;
   onLog?: (message: string) => void;
   onLine?: (line: { type: string; content: string; timestamp?: number }) => void;

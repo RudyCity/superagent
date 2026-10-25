@@ -505,6 +505,9 @@ export class MuseWatcher {
 
   /** Opt-in, one-shot manual replay ONLY when no previous call was attempted. */
   public async resumeUntouchedBatch(batchId: string): Promise<boolean> {
+    try {
+      if (this.options.integrityGuard && !this.options.integrityGuard("resume_untouched")) return false;
+    } catch { return false; }
     const checkpoint = this.options.executionCheckpoint;
     const journal = this.options.batchJournal;
     if (!this.isRunning || !checkpoint || !journal || !this.options.resultOutbox ||
@@ -707,6 +710,17 @@ export class MuseWatcher {
     // batch from any earlier process must never execute the tools again.
     const journal = this.options.batchJournal;
     const resumed = this.resumeReservations.delete(envelope.id);
+    if (this.options.integrityGuard) {
+      let verified = false;
+      try { verified = this.options.integrityGuard(resumed ? "resume_untouched" : "new_batch"); }
+      catch { verified = false; }
+      if (!verified) {
+        this.activeBatchIds.delete(envelope.id);
+        this.pendingReplyMessageIds.delete(envelope.id);
+        this.emitLine("error", "[Muse Watch] Recovery storage integrity check blocked tool execution.");
+        return;
+      }
+    }
     if (journal && !resumed) {
       let claimed = false;
       try { claimed = journal.claim(envelope.id, envelope.task_id, callsCount); }
@@ -986,6 +1000,9 @@ export class MuseWatcher {
 
   /** Explicit resend of the SAME encrypted result without executing tools. */
   public async replayStoredResult(batchId: string): Promise<boolean> {
+    try {
+      if (this.options.integrityGuard && !this.options.integrityGuard("replay_result")) return false;
+    } catch { return false; }
     const journal = this.options.batchJournal;
     const outbox = this.options.resultOutbox;
     if (!this.isRunning || !journal || !outbox || !this.transport.isConnected()) return false;

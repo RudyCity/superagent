@@ -18,6 +18,7 @@ import { MuseExecutionCheckpoint } from "../remoteAgent/museExecutionCheckpoint.
 import { MuseRecoveryOrchestrator } from "../remoteAgent/museRecoveryOrchestrator.js";
 import { MuseRecoveryStorageLifecycle } from "../remoteAgent/museRecoveryStorageLifecycle.js";
 import { MuseRecoveryIntegrityMonitor } from "../remoteAgent/museRecoveryIntegrityMonitor.js";
+import { MuseRecoveryIntegrityEvents } from "../remoteAgent/museRecoveryIntegrityEvents.js";
 import type { MuseIntegritySnapshot } from "../remoteAgent/museRecoveryIntegrityMonitor.js";
 import type { MuseRecoveryHealth } from "../remoteAgent/museRecoveryBackup.js";
 import {
@@ -263,7 +264,20 @@ export async function runChannelHost(options: {
   let errorCode: ChannelHostHealth["errorCode"];
   const monitor = new MuseRecoveryIntegrityMonitor(
     port, options.integrityIntervalMs ?? 60_000, dir(), options.integrityProbe,
+    event => console.warn("[Muse Recovery Integrity] owner port " + event.port +
+      " | " + event.state + " | " + event.reason),
   );
+  const allowRecoveryOperation = (operation: "new_batch" | "resume_untouched" | "replay_result") => {
+    // Re-verify disk synchronously at the actual side-effect boundary. A stale
+    // "healthy" cache cannot authorize a replay after the disk was corrupted.
+    const verdict = monitor.check();
+    if (verdict.state === "healthy") return true;
+    // A freshly bootstrapped managed owner must be allowed to write its FIRST
+    // journal reservation; archive/key/restore/event orphans fail verification.
+    return operation === "new_batch" &&
+      verdict.state === "not_initialized" &&
+      verdict.durableAlertCount === 0;
+  };
   const health = (): ChannelHostHealth => {
     const watcher = mode === "telegram-fallback"
       ? getMuseWatcherStrict(TELEGRAM_FALLBACK_KEY)
@@ -351,6 +365,8 @@ export async function runChannelHost(options: {
         return;
       }
       const operation = async (): Promise<boolean> => {
+        if ((command.operation === "replay_result" || command.operation === "resume_untouched") &&
+            !allowRecoveryOperation(command.operation)) return false;
         if (options.executeIpc) return options.executeIpc(command);
         if (!watcher) return false;
         if (command.operation === "replay_result") return watcher.replayStoredResult(command.text);
@@ -419,12 +435,14 @@ export async function runChannelHost(options: {
             await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
               transportType: "websocket", wsPort: selectedPort, tunnel: false,
               batchJournal: journal || undefined, resultOutbox: outbox || undefined,
-              executionCheckpoint: executionCheckpoint || undefined });
+              executionCheckpoint: executionCheckpoint || undefined,
+              integrityGuard: allowRecoveryOperation });
           } else {
             await startMuseWatcher({ workspace: watched[0] || process.cwd(), workspaces: watched,
               transportType: "telegram", fallback: true, tunnel: false,
               batchJournal: journal || undefined, resultOutbox: outbox || undefined,
-              executionCheckpoint: executionCheckpoint || undefined });
+              executionCheckpoint: executionCheckpoint || undefined,
+              integrityGuard: allowRecoveryOperation });
           }
         });
         await starter(mode, wsPort);
@@ -451,6 +469,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host compact --port 7892 --confirm-port 7892 [--max-batches 64]  # offline archive then shrink active journal");
     console.log("superagent channel-host verify-store --port 7892  # read-only complete recovery integrity inspection");
     console.log("superagent channel-host integrity --port 7892  # read-only live cached scan or offline full scan");
+    console.log("superagent channel-host alerts --port 7892 [--limit 20]  # durable redacted integrity transitions");
     console.log("superagent channel-host backup --port 7892 --destination ABSOLUTE_NEW_DIRECTORY  # offline, holds review lock");
     console.log("superagent channel-host verify-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY  # read-only");
     console.log("superagent channel-host restore-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY --confirm-port 7892  # offline EMPTY storage only");
@@ -466,6 +485,22 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "alerts") {
+    const limitIdx = argv.indexOf("--limit");
+    const limit = limitIdx < 0 ? 20 : Number(argv[limitIdx + 1]);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error("Integrity alert limit must be 1..100");
+    }
+    const events = new MuseRecoveryIntegrityEvents(port).read();
+    console.log("Muse recovery integrity durable event count: " + events.length);
+    for (const item of events.slice(-limit)) {
+      console.log("  " + JSON.stringify({
+        seq: item.seq, observedAt: item.observedAt, state: item.state, reason: item.reason,
+      }));
+    }
+    console.log("Read-only status transitions; no private checkpoint contents or tool work.");
+    return false;
+  }
   if (action === "integrity") {
     if (fs.existsSync(statePath(port))) {
       const known = readDiscovery(port);
@@ -709,6 +744,8 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Active task: " + live.taskActive + " | completed: " + live.tasksCompleted);
     console.log("Checkpoint reconciliation pending: " + (live.reconciliationPending ?? 0));
     console.log("Authenticated archived replay tombstones: " + (live.archivedTombstones ?? 0));
+    console.log("Durable recovery integrity events: " + (live.recoveryIntegrity?.durableAlertCount ?? 0) +
+      " | last transition: " + (live.recoveryIntegrity?.lastAlertAt ?? "none"));
     console.log("Recovery storage integrity: " +
       (live.recoveryIntegrity?.state || "unavailable") +
       " | reason: " + (live.recoveryIntegrity?.reason || "CHECK_OVERDUE") +
@@ -728,5 +765,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, integrity, verify-store, backup, verify-backup, restore-backup, reconcile or help");
+  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, archive, compact, integrity, alerts, verify-store, backup, verify-backup, restore-backup, reconcile or help");
 }
