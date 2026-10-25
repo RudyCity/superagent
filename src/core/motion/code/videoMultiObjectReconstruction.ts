@@ -392,6 +392,101 @@ async function compareSampledVideoAndStudio(
   return { foregroundIoU: quality, metrics, contactSheet: png, diffSheet: diffPng };
 }
 
+/**
+ * P8: explicit read-only evidence for a rejected imported clip. The caller
+ * supplies a timeline frame (usually parsed from the P6 validation error).
+ * Returns only three scaled frames, component bounding boxes, and a bounded
+ * contact PNG. No Studio project, silent approval, or tracking overrides.
+ */
+export interface StudioOcclusionEvidence {
+  status: "review-only";
+  frame: number;
+  dimensions: { width: number; height: number };
+  observations: Array<{
+    frame: number; timeSeconds: number; objectCount: number;
+    objects: Array<{x:number;y:number;width:number;height:number;color:string}>;
+  }>;
+  previewPngBase64: string;
+  note: string;
+}
+export async function inspectStudioOcclusionEvidence(
+  workspace: string, videoId: string, frame: number,
+): Promise<StudioOcclusionEvidence> {
+  if (!/^video-[a-f0-9]{64}$/.test(videoId) ||
+      !Number.isSafeInteger(frame) || frame < 0 || frame >= 360)
+    throw new MotionValidationError(["Invalid imported video ID or evidence frame"]);
+  const bytes = await readMotionVideo(workspace,videoId);
+  if (bytes.length > 12*1024*1024)
+    throw new MotionValidationError(["Occlusion evidence limited to 12 MiB source clips"]);
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(),"studio-occlusion-evidence-"));
+  try {
+    const source=path.join(tmp,bytes[0] === 0x1a ? "source.webm" : "source.mp4");
+    await fs.writeFile(source,bytes,{mode:0o600});
+    const probe=await execute("ffprobe",[
+      "-v","error","-show_entries","format=duration:stream=codec_type,width,height",
+      "-of","json",source,
+    ],{timeout:10000,maxBuffer:32768,windowsHide:true});
+    const meta=JSON.parse(String(probe.stdout));
+    const duration=Number(meta.format?.duration);
+    const stream=meta.streams?.find((item:{codec_type?:string})=>item.codec_type==="video");
+    const w=Number(stream?.width),h=Number(stream?.height);
+    if (!(duration>=1 && duration<=12) || !(w>=32 && w<=1280 && h>=32 && h<=720) ||
+        w/h<.25 || w/h>4)
+      throw new MotionValidationError(["Evidence supports only bounded 1–12 second reference videos"]);
+    const totalFrames=Math.max(30,Math.round(duration*30));
+    if (frame>=totalFrames)
+      throw new MotionValidationError(["Evidence frame exceeds source timeline"]);
+    // Conservative two-frame ~0.4s window; avoid FFmpeg end-of-stream seeks.
+    const safeEnd=Math.max(0,totalFrames-4);
+    const indices=[Math.max(0,frame-12),Math.min(frame,safeEnd),
+      Math.min(safeEnd,frame+12)];
+    const samples: Frame[]=[];
+    for(const index of indices) samples.push(await decodedFrame(source,index/30));
+    if(samples.some(item=>item.width!==samples[0].width ||
+      item.height!==samples[0].height))
+      throw new MotionValidationError(["Evidence reference frame dimensions changed"]);
+    const width=samples[0].width,height=samples[0].height;
+    const header=28;
+    const canvas=createCanvas(width*3,height+header),ctx=canvas.getContext("2d");
+    ctx.fillStyle="#101827";ctx.fillRect(0,0,canvas.width,canvas.height);
+    const observations= samples.map((sample,index)=>{
+      const objects=sample.components.slice(0,4).map(object=>({
+        x:object.x,y:object.y,width:object.width,height:object.height,
+        color:colorHex(object.r,object.g,object.b),
+      }));
+      const image=ctx.createImageData(width,height);
+      image.data.set(sample.pixels);
+      ctx.putImageData(image,index*width,header);
+      ctx.font="bold 11px Arial";
+      ctx.fillStyle="#ffffff";
+      ctx.fillText(["Before","Flagged","After"][index]+" · F"+indices[index]+
+        " · "+sample.components.length+" components",index*width+6,18);
+      ctx.strokeStyle="#ffbe46";ctx.lineWidth=1;
+      objects.forEach((object,i)=>{
+        ctx.strokeRect(index*width+object.x+.5,header+object.y+.5,
+          object.width,object.height);
+        ctx.fillStyle="#ffbe46";
+        ctx.font="10px Arial";
+        ctx.fillText(String(i+1),index*width+object.x+2,header+object.y+11);
+      });
+      return {
+        frame:indices[index],
+        timeSeconds:Number((indices[index]/30).toFixed(3)),
+        objectCount:sample.components.length,objects,
+      };
+    });
+    const png=await canvas.encode("png");
+    if(png.length<24 || png.length>2*1024*1024)
+      throw new MotionValidationError(["Occlusion evidence PNG exceeded safe limits"]);
+    return {
+      status:"review-only",frame:indices[1],dimensions:{width,height},
+      observations,previewPngBase64:png.toString("base64"),
+      note:"Read-only evidence. Object numbers refer to local frame components, not persistent identities. "+
+        "Do not assume reconstruction or hidden-object recovery from these screenshots.",
+    };
+  } finally { await fs.rm(tmp,{recursive:true,force:true}); }
+}
+
 /** Experimental multiple-object video → editable SVG paths and keyframes.
  * No calls to an AI model. Rejects changing object counts, unstable area,
  * ambiguous identity matches and clips beyond tight resource limits.

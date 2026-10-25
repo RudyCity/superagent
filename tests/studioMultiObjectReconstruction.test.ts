@@ -9,6 +9,7 @@ import { importMotionVideo } from "../src/core/motion/assets/motionVideoClips.js
 import {
   associateStudioObjects, findStudioBrightComponents, findStudioForegroundComponents,
   reconstructMultiObjectStudioVideo, studioBaseSampleFrames, studioBoundedRotationSamples,
+  inspectStudioOcclusionEvidence,
 } from "../src/core/motion/code/videoMultiObjectReconstruction.js";
 import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
 import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
@@ -175,6 +176,15 @@ describe("multi-object reference video prototype", () => {
       await fs.readFile(path.join(workspace,"occluded.mp4")));
     await expect(reconstructMultiObjectStudioVideo(workspace,imported.id))
       .rejects.toThrow(/transient occlusion|object disappearance/);
+    expect(await listMotionProjects(workspace)).toEqual([]);
+    const evidence=await inspectStudioOcclusionEvidence(workspace,imported.id,54);
+    expect(evidence.status).toBe("review-only");
+    expect(evidence.observations.map(item=>item.objectCount)).toEqual([2,1,2]);
+    expect(evidence.observations.map(item=>item.frame)).toEqual([42,54,66]);
+    expect(Buffer.from(evidence.previewPngBase64,"base64").subarray(0,8).toString("hex"))
+      .toBe("89504e470d0a1a0a");
+    expect(evidence.previewPngBase64.length).toBeLessThan(2*1024*1024*4/3);
+    expect(JSON.stringify(evidence)).not.toContain(workspace);
     expect(await listMotionProjects(workspace)).toEqual([]);
   },65000);
 

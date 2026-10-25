@@ -69,6 +69,27 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
       });
       expect(invalid.status).toBe(400);
       expect(await listMotionProjects(ws)).toHaveLength(0);
+      const noEvidence = await fetch(base + "/reconstruct/multi/evidence",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({videoId:"../outside",frame:42}),
+      });
+      expect(noEvidence.status).toBe(400);
+      const evidenceResponse = await fetch(base + "/reconstruct/multi/evidence",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({videoId:media.id,frame:42}),
+      });
+      expect(evidenceResponse.status).toBe(200);
+      const evidence = await evidenceResponse.json() as {
+        status:string;observations:Array<{frame:number;objectCount:number}>;
+        previewPngBase64:string;
+      };
+      expect(evidence.status).toBe("review-only");
+      expect(evidence.observations).toHaveLength(3);
+      expect(evidence.observations.every(observation=>observation.objectCount===2)).toBe(true);
+      expect(Buffer.from(evidence.previewPngBase64,"base64").subarray(0,8).toString("hex"))
+        .toBe("89504e470d0a1a0a");
+      expect(JSON.stringify(evidence)).not.toContain(ws);
+      expect(await listMotionProjects(ws)).toHaveLength(0);
       const rebuilt = await fetch(base + "/reconstruct/multi", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ videoId: media.id }),

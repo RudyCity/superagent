@@ -180,6 +180,16 @@ export async function handleMotionHttpRoute(
         throw new MotionValidationError(["Expected an imported Studio video ID"]);
       const { reconstructStudioTextVideo } = await import("./code/videoTextOcrReconstruction.js");
       json(res, ctx, 201, await reconstructStudioTextVideo(workspace, body.videoId));
+    } else if (pathname === "/api/motion/reconstruct/multi/evidence" && method === "POST") {
+      const body = await readMotionJson(req, 1200);
+      if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId) ||
+          !Number.isSafeInteger(body.frame) || (body.frame as number) < 0 ||
+          (body.frame as number) >= 360)
+        throw new MotionValidationError(["Expected an imported Studio video ID and valid frame"]);
+      const { inspectStudioOcclusionEvidence } =
+        await import("./code/videoMultiObjectReconstruction.js");
+      json(res, ctx, 200, await inspectStudioOcclusionEvidence(
+        workspace,body.videoId,body.frame as number));
     } else if (pathname === "/api/motion/reconstruct/multi" && method === "POST") {
       const body = await readMotionJson(req, 1200);
       if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId))
