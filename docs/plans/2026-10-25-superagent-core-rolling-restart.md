@@ -271,6 +271,22 @@ IMPORTANT: This bundle includes private AES and HMAC keys, so protect access and
 
 Tests cover full source-to-bundle-to-new-owner namespace round trip preserving all replay tombstones and keys, digest tampering, absent archive or signing key, port mismatch, backup symlink/path fencing, registered owner and lock refusal, incomplete-restoration startup fence, simulated mid-copy crash, failed overwrite/rollback into occupied storage, and authenticated CLI end-to-end operations.
 
+## Phase 4l: continuous read-only recovery integrity health & observability
+
+Independent Muse/Telegram channel hosts now run MuseRecoveryIntegrityMonitor at startup and every 60 seconds for the lifetime of their server. The monitor reopens the on-disk, owner-port-specific journal, verifies every referenced SHA-256/HMAC tombstone segment, authenticates/decrypts sealed outbox and execution checkpoint files, and checks cross-store identity and receipt consistency through the Phase 4k inspector. It never contacts Muse, Telegram or a model, never retries tools or mutates checkpoint storage, and never starts/stops a watcher based on inspection results. The timer is unreferenced and canceled on host close; if the process is down, no background monitoring exists.
+
+The loopback GET /_channel/health includes a cached recoveryIntegrity object with redacted fields: state, reason, lastCheckAt, lastHealthyAt, nextCheckAt, totalChecks, totalFailures, consecutiveFailures and previous successful active/archive/outbox/intent counts. All raw exceptions and private paths are discarded. A new, empty per-port storage without any checkpoint artifacts is not_initialized (not an integrity failure). A fully verified scan is healthy. The first consecutive failed scan is degraded; second and later failed scans are failed. A successful scan resets consecutiveFailures. If the last check is older than 3 configured intervals, the snapshot is stale with CHECK_OVERDUE, not an outdated healthy claim. No check writes an external alert or logs secrets. Transient concurrent writes in a live host can produce degraded status: repeat the full inspection while offline for definitive diagnosis.
+
+Operator views:
+
+    superagent channel-host status --port 7892
+    superagent channel-host integrity --port 7892
+    superagent channel-host verify-store --port 7892
+
+status displays the last cached verification with its age and failure count. integrity is read-only and uses the authenticated live-owner health endpoint (without triggering a new scan), or performs a full offline inspection if no owner is registered. verify-store remains the explicit synchronous integrity check and refuses invalid stores. A failed/degraded report is an *alert for human inspection*, not a promise that arbitrary already-running remote tool operations are atomically halted. Direct agent/tool processing, distributed durable alarms, off-host alert delivery, automatic failover and scheduled backup creation are not added in this phase.
+
+Tests cover pristine storage, valid journals, tampered archived content, detection after startup, missing journal with orphaned encrypted key, transitions from degraded to failed to healthy, stale monitoring timestamps, timer start/stop, health redaction and read-only CLI inspection. No existing two MCP tunnels, external Muse watcher or real Telegram bot is modified or restarted.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.
