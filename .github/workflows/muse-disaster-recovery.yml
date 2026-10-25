@@ -1,0 +1,47 @@
+name: Muse Disaster Recovery Release Gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/muse-disaster-recovery.yml"
+      - "src/core/runtime/channelHost.ts"
+      - "src/core/runtime/muse*.ts"
+      - "src/core/remoteAgent/muse*.ts"
+      - "tests/muse*.test.ts"
+      - "tests/channelHost.test.ts"
+      - "docs/guides/muse-disaster-recovery-readiness.md"
+  pull_request:
+    paths:
+      - ".github/workflows/muse-disaster-recovery.yml"
+      - "src/core/runtime/channelHost.ts"
+      - "src/core/runtime/muse*.ts"
+      - "src/core/remoteAgent/muse*.ts"
+      - "tests/muse*.test.ts"
+      - "tests/channelHost.test.ts"
+  workflow_dispatch:
+jobs:
+  isolated-dr:
+    name: Isolated DR / anti-replay on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install pinned dependencies
+        run: bun install --frozen-lockfile
+      - name: Build
+        run: bun run build
+      - name: Isolated recovery, backup, watchdog, alert and readiness regression
+        run: bun --bun x vitest run --maxWorkers=2 tests/museProductionReadiness.test.ts tests/museAlertConfigCommand.test.ts tests/museIncidentCenter.test.ts tests/museRecoveryBackup.test.ts tests/museIntegrityEnforcement.test.ts tests/museRecoveryIntegrityMonitor.test.ts tests/channelHost.test.ts
+      - name: Execute isolated DR subprocess drill (never targets live hosts)
+        run: bun dist/cli.js channel-host dr-drill --port 51671
+      - name: Verify core crash, checkpoint, drain and restart
+        run: bun scripts/verify-core-supervisor.ts

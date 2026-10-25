@@ -517,6 +517,11 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host deliver-alerts --port 7892  # explicitly flush one opt-in alert (offline)");
     console.log("superagent channel-host watchdog-once --port 7892  # dedicated external liveness observation");
     console.log("superagent channel-host watchdog --port 7892 [--interval-seconds 30]  # dedicated continuous liveness observer");
+    console.log("superagent channel-host watchdog-supervise --port 7892 [--interval-seconds 30]  # bounded crash-restart of watchdog only");
+    console.log("superagent channel-host alert-test --port 7892 --confirm-send  # real provider HTTP test, opt-in outbound");
+    console.log("superagent channel-host readiness --port 7892 [--backup ABSOLUTE_BUNDLE] [--json]  # read-only PASS/WARN/FAIL");
+    console.log("superagent channel-host recovery-wizard --port 7892 [--backup ABSOLUTE_BUNDLE]  # read-only steps");
+    console.log("superagent channel-host dr-drill --port 7892  # safe isolated temporary recovery drill");
     console.log("superagent channel-host backup --port 7892 --destination ABSOLUTE_NEW_DIRECTORY  # offline, holds review lock");
     console.log("superagent channel-host verify-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY  # read-only");
     console.log("superagent channel-host restore-backup --port 7892 --source ABSOLUTE_BUNDLE_DIRECTORY --confirm-port 7892  # offline EMPTY storage only");
@@ -581,6 +586,8 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     const center = new MuseIncidentCenter(port);
     const once = async () => {
       const status = await observeIndependentChannelHost(center, observer);
+      const { writeMuseWatchdogHeartbeat } = await import("./museWatchdogSupervisor.js");
+      writeMuseWatchdogHeartbeat(port, status);
       try { center.syncIntegrity(); } catch {}
       const dispatcher = new MuseIncidentDispatcher(center);
       await dispatcher.once().catch(() => false);
@@ -606,6 +613,63 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     }, seconds * 1000);
     console.log("External watchdog active; use process termination to stop. No host/recovery takeover.");
     return true;
+  }
+  if (action === "alert-test") {
+    if (!argv.includes("--confirm-send")) {
+      throw new Error("External alert test requires --confirm-send (will make one outbound HTTP request)");
+    }
+    const { probeMuseAlertDelivery } = await import("./museAlertProbe.js");
+    const sent = await probeMuseAlertDelivery(port);
+    console.log(sent ? "Alert TEST: HTTP accepted; this does NOT prove operator receipt." :
+      "Alert TEST: no configured target or HTTP delivery failed. No incident was invented.");
+    if (!sent) throw new Error("External alert test not accepted");
+    return false;
+  }
+  if (action === "readiness" || action === "recovery-wizard") {
+    const { evaluateMuseReadiness } = await import("./museReadiness.js");
+    const idx = argv.indexOf("--backup");
+    const maxAgeIdx = argv.indexOf("--max-backup-age-hours");
+    const backup = idx < 0 ? undefined : argv[idx + 1];
+    if (idx >= 0 && (!backup || !path.isAbsolute(backup))) {
+      throw new Error("Readiness --backup must be an absolute path");
+    }
+    const maxAge = maxAgeIdx < 0 ? undefined : Number(argv[maxAgeIdx + 1]);
+    const owner = (await listVerifiedChannelHosts()).find(host => host.port === port);
+    const report = evaluateMuseReadiness({
+      port, backup, maximumBackupAgeHours: maxAge,
+      host: owner ? { verified: true, mode: owner.mode, status: owner.status } : { verified: false },
+    });
+    if (argv.includes("--json")) console.log(JSON.stringify(report));
+    else {
+      console.log("Muse production readiness: " + report.status + " | score " +
+        report.score + "/100 | port " + port + " | PASS " + report.counts.pass +
+        " WARN " + report.counts.warn + " FAIL " + report.counts.fail);
+      for (const check of report.checks) console.log("  [" + check.severity + "] " +
+        check.id + ": " + check.code + " | " + check.guidance);
+      if (action === "recovery-wizard") console.log(
+        "Operator-only: fix underlying faults, then re-run readiness. Never auto-restore, clear locks, restart a channel owner or replay a started tool.");
+    }
+    if (argv.includes("--strict") && report.status !== "PASS") {
+      throw new Error("Production readiness strict gate: " + report.status);
+    }
+    return false;
+  }
+  if (action === "dr-drill") {
+    const { runMuseDisasterRecoveryDrill } = await import("./museDisasterRecoveryDrill.js");
+    const report = await runMuseDisasterRecoveryDrill(port);
+    console.log("Isolated Muse DR drill: " + JSON.stringify(report));
+    if (!report.ok) throw new Error("Isolated Muse DR drill failed");
+    const { storeMuseDrillEvidence } = await import("./museDrillEvidence.js");
+    storeMuseDrillEvidence(port, report.checks.length);
+    console.log("Sanitized drill PASS evidence recorded for port " + port + ". No live owner, tunnel or tool was touched.");
+    return false;
+  }
+  if (action === "watchdog-supervise") {
+    const idx = argv.indexOf("--interval-seconds");
+    const interval = idx < 0 ? 30 : Number(argv[idx + 1]);
+    const { runMuseWatchdogSupervisorCli } = await import("./museWatchdogSupervisor.js");
+    await runMuseWatchdogSupervisorCli(port, interval);
+    return false;
   }
   if (action === "alerts") {
     const limitIdx = argv.indexOf("--limit");
@@ -888,5 +952,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, config, checkpoint, recovery, retention, prune, archive, compact, integrity, alerts, incidents, acknowledge, deliver-alerts, watchdog-once, watchdog, verify-store, backup, verify-backup, restore-backup, reconcile or help");
+  throw new Error("Expected channel-host serve, status, config, checkpoint, recovery, retention, prune, archive, compact, integrity, alerts, incidents, acknowledge, deliver-alerts, alert-test, readiness, recovery-wizard, dr-drill, watchdog-supervise, watchdog-once, watchdog, verify-store, backup, verify-backup, restore-backup, reconcile or help");
 }

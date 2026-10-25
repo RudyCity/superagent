@@ -266,9 +266,11 @@ export class MuseIncidentCenter {
 /** Redacted transport payload independent of any encrypted recovery data. */
 export async function sendIncidentAlert(item: {
   id: string; port: number; kind: IncidentKind; condition: Condition; observedAt: number;
+  test?: boolean;
 }, target: Target, fetcher: typeof fetch = fetch): Promise<boolean> {
   const event = { version: 1, event_id: item.id, port: item.port, kind: item.kind,
-    condition: item.condition, observed_at: item.observedAt };
+    condition: item.condition, observed_at: item.observedAt,
+    ...(item.test ? { test: true } : {}) };
   try {
     const response = target.type === "webhook"
       ? await fetcher(target.url, {
@@ -279,7 +281,8 @@ export async function sendIncidentAlert(item: {
       : await fetcher("https://api.telegram.org/bot" + target.token + "/sendMessage", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: target.chatId,
-            text: "SuperAgent recovery alert\n" + JSON.stringify(event),
+            text: (item.test ? "SuperAgent TEST alert (delivery validation)\n" :
+              "SuperAgent recovery alert\n") + JSON.stringify(event),
             disable_web_page_preview: true }),
           redirect: "error", signal: AbortSignal.timeout(5000),
         });

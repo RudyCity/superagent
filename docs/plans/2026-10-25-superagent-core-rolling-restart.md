@@ -271,6 +271,20 @@ IMPORTANT: This bundle includes private AES and HMAC keys, so protect access and
 
 Tests cover full source-to-bundle-to-new-owner namespace round trip preserving all replay tombstones and keys, digest tampering, absent archive or signing key, port mismatch, backup symlink/path fencing, registered owner and lock refusal, incomplete-restoration startup fence, simulated mid-copy crash, failed overwrite/rollback into occupied storage, and authenticated CLI end-to-end operations.
 
+## Phase 4o: isolated disaster recovery, alert delivery proof and production release gate
+
+The independent channel-host can now run an opt-in isolated unclean child-process crash drill with durable checkpointing, anti-replay, encrypted intent preservation, backup validation, tamper rejection and safe restore. All test state is stored in an OS temporary directory and never contacts a Muse watcher, Telegram, MCP tunnel, model, or production workspace. Successful tests record only sanitized local per-port drill evidence; this is not a cryptographic external audit.
+
+Read-only readiness reports PASS/WARN/FAIL and a heuristic 0-100 score across host identity, recovery storage, incident queue, provider configuration, approved alert delivery proof, watchdog heartbeat, drill evidence and optionally supplied verified backup age/integrity. Strict readiness fails on any WARN/FAIL, and the operator wizard prints safe steps without repairing a journal. Real HTTP alert tests require explicit --confirm-send and a trusted configured target, and do not prove human receipt. A standalone watchdog-supervise parent may restart only its own watchdog child up to five times per ten minutes; supervising that parent across OS reboot remains an operator responsibility.
+
+    superagent channel-host dr-drill --port 7892
+    superagent channel-host readiness --port 7892 --backup ABSOLUTE_BUNDLE [--json] [--strict]
+    superagent channel-host recovery-wizard --port 7892 [--backup ABSOLUTE_BUNDLE]
+    superagent channel-host alert-test --port 7892 --confirm-send
+    superagent channel-host watchdog-supervise --port 7892 --interval-seconds 30
+
+Cross-platform GitHub workflow: .github/workflows/muse-disaster-recovery.yml (Linux/Windows build, tests, isolated drill, supervisor smoke). Live production failover and external delivery are not claimed without staging/real provider verification. See the [Phase 4o operator runbook](../guides/muse-disaster-recovery-readiness.md).
+
 ## Phase 4n follow-up: configure alert provider through commands (no .env required)
 
 For operator-oriented setup and troubleshooting, see the [dedicated Muse recovery alert configuration guide](../guides/muse-recovery-alert-configuration.md).
