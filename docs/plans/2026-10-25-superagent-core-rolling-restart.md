@@ -174,6 +174,20 @@ Test coverage: backwards compatibility with prior task-batch journals, monotonic
 
 Remaining gap: full LLM context serialization, durable output outbox and remotely acknowledged result replay, transactionally exactly-once side effects, safe distributed task resume, automated recovery after a channel-host hard crash and live transport handover are **not implemented**. This phase provides a conservative task-reconciliation view, not automatic autonomous task continuation.
 
+## Phase 4f: encrypted result outbox and explicit application-level receipts
+
+An explicitly managed independent Muse/Telegram channel host now pairs its conservative batch journal with a bounded AES-256-GCM encrypted result outbox. The outbox index is stored at ~/.superagent-r/muse-results-PORT.json and a private 32-byte encryption key at the corresponding .json.key file. Plaintext tool results, model prompts, or credentials are NOT persisted to the previous checkpoint journal. The encrypted outbox does persist tool-result data; secure the host user's filesystem and protect both files. The storage is capped at 64 encrypted results and 96 KB serialized result bytes per item; exhaustion fails closed. File writes use exclusive temporary files, fsync and atomic rename where available. A missing/corrupt index or key fails closed; key rotation/secure archive lifecycle is not yet implemented.
+
+Before sending each managed task_result, the host durably encrypts the complete result envelope, writes a stable SHA-256 digest into the outgoing task_result.result_sha256 field, and transitions the journal to result_pending. A successful local send changes the earlier journal stage to delivered; **this alone is not a remote delivery receipt**. To confirm application receipt, the authenticated Muse peer must return:
+
+    {"v":1,"kind":"result_ack","id":"<batch ID>","task_id":"<task ID>","result_sha256":"<received 64-char lowercase sha256>"}
+
+The host only accepts this from its existing authenticated transport, and verifies the saved batch ID, task ID and encrypted-outbox digest before appending a durable receipt to the journal. Telegram ingress must match the configured Muse bot; ordinary Telegram users cannot send result_ack. Legacy clients do not have to send result_ack to remain compatible, but will remain unacknowledged.
+
+**No automatic replay:** a repeated task_batch never re-runs side-effecting tools and never automatically resends results. To deliberately resend the exact result ciphertext after reconnect, use /muse host replay-result BATCH_ID --port 7892, only while its channel owner and transport are active. IPC requires its existing private bearer credential; replay is rejected if an ACK, external evidence review, stored result or appropriate checkpoint stage is missing. The original result ID/digest are reused. This is AT-LEAST-ONCE result delivery, not exactly-once application processing; the remote receiver must deduplicate stable result IDs. If the full result cannot be encrypted within limits, no result is sent and the already-executed batch remains subject to manual reconciliation.
+
+The owner status now reports encrypted result count, pending reconciliations, and application-level ACK count without output text. Offline checkpoint CLI shows ACK count. Tests cover encryption and tamper detection, oversized-result rejection, process-memory restart and exact result-only replay, spoofed and mismatched ACK rejection, remote receipt persistence, and the explicit authenticated /muse host IPC path. No external Muse or Telegram provider was contacted. Full LLM context resumption, remote execution control-plane handover, end-to-end production acknowledgment validation, automated retry schedules, and durable outbox retention/pruning remain outside scope.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.

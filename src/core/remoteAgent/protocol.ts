@@ -51,6 +51,16 @@ export interface TaskResultEnvelope {
   id: string;
   task_id: string;
   results: BatchToolResult[];
+  /** Optional SHA-256 digest of the persisted result envelope excluding this field. */
+  result_sha256?: string;
+}
+/** Muse application-level acknowledgment, distinct from local transport send. */
+export interface ResultAckEnvelope {
+  v: 1;
+  kind: "result_ack";
+  id: string;
+  task_id: string;
+  result_sha256: string;
 }
 
 export interface TaskDoneEnvelope {
@@ -195,6 +205,7 @@ COMMUNICATION PROTOCOL (JSON envelopes, v: 1):
    When you need to inspect files, edit code, or run commands, reply with:
    {"v": 1, "kind": "task_batch", "id": "batch_<uuid>", "task_id": "<task_id>", "calls": [{"id": "c1", "tool": "run_command", "args": {"command": "git status"}}]}
    Multi-Project Watch: When Superagent is watching multiple projects, you can target a specific project by adding "workspace": "<path>" or "project": "<name>" in the batch envelope, or specifying "cwd" or file path in individual tool call arguments. Superagent executes calls within the matching workspace.
+   Managed channel-host result receipts: a task_result may include result_sha256 (64 lowercase hex chars). After accepting the complete result, send {"v":1,"kind":"result_ack","id":"<same batch ID>","task_id":"<same task ID>","result_sha256":"<received digest>"}. Do not ACK results you did not receive. Duplicate result delivery never justifies repeating tool calls.
 5. Completion (task_done):
    When the task is complete, reply with:
    {"v": 1, "kind": "task_done", "task_id": "<task_id>", "summary": "<formatted markdown summary>"}
@@ -216,6 +227,7 @@ export type RemoteAgentEnvelope =
   | TaskRequestEnvelope
   | TaskBatchEnvelope
   | TaskResultEnvelope
+  | ResultAckEnvelope
   | TaskDoneEnvelope
   | ChatEnvelope
   | SessionResetEnvelope
@@ -481,6 +493,7 @@ export function validateEnvelope(
     "task_request",
     "task_batch",
     "task_result",
+    "result_ack",
     "task_done",
     "chat",
     "session_reset",
@@ -505,7 +518,7 @@ export function validateEnvelope(
     senderId !== undefined &&
     context?.museBotId !== undefined &&
     context.museBotId !== "" &&
-    (envelope.kind === "task_batch" || envelope.kind === "task_done")
+    (envelope.kind === "task_batch" || envelope.kind === "task_done" || envelope.kind === "result_ack")
   ) {
     if (String(senderId) !== String(context.museBotId)) {
       return {
@@ -594,6 +607,20 @@ export function validateEnvelope(
       }
       if (!Array.isArray(envelope.results)) {
         return { valid: false, error: "task_result missing valid 'results' array" };
+      }
+      if (envelope.result_sha256 !== undefined &&
+          (typeof envelope.result_sha256 !== "string" || !/^[a-f0-9]{64}$/.test(envelope.result_sha256))) {
+        return { valid: false, error: "task_result has invalid result_sha256" };
+      }
+      break;
+    }
+
+    case "result_ack": {
+      if (typeof envelope.id !== "string" || !envelope.id ||
+          typeof envelope.task_id !== "string" || !envelope.task_id ||
+          typeof envelope.result_sha256 !== "string" ||
+          !/^[a-f0-9]{64}$/.test(envelope.result_sha256)) {
+        return { valid: false, error: "result_ack requires id, task_id and SHA-256 digest" };
       }
       break;
     }

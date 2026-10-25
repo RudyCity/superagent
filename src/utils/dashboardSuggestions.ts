@@ -155,6 +155,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/muse host steer": "Send an operator instruction to a verified independent host over authenticated IPC.",
   "/muse host task": "Dispatch a Muse task through an independently owned channel.",
   "/muse host abort": "Request cancellation of an active Muse batch via independent channel IPC.",
+  "/muse host replay-result": "Explicitly resend a previously encrypted result; never repeat tool execution.",
   "/muse watch add": "Add a workspace to Muse watch.",
   "/muse watch remove": "Remove a workspace from Muse watch.",
   "/muse watch --ws": "Use Muse WebSocket transport.",
@@ -759,7 +760,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       if (sub === "host") {
         return filterSuggestions([
           "/muse host status", "/muse host help", "/muse host steer",
-          "/muse host task", "/muse host abort",
+          "/muse host task", "/muse host abort", "/muse host replay-result",
         ], query);
       }
       if (sub === "watch") {
@@ -795,6 +796,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/muse host steer",
         "/muse host task",
         "/muse host abort",
+        "/muse host replay-result",
         "/muse watch add",
         "/muse watch remove",
         "/muse watch --ws",

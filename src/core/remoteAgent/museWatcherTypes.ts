@@ -2,6 +2,7 @@ import type { Agent } from "../agent.js";
 import type { RemoteAgentTransport } from "./config.js";
 import type { RemoteTransport, RemoteEnvelopeMeta } from "./transport.js";
 import type { MuseBatchJournal } from "./museBatchJournal.js";
+import type { MuseResultOutbox } from "./museResultOutbox.js";
 import type { TaskBatchEnvelope, TaskDoneEnvelope } from "./protocol.js";
 
 export interface MuseWatcherStats {
@@ -41,6 +42,8 @@ export interface MuseWatcherOptions {
   fallback?: boolean;
   /** Opt-in durable journal for the independently hosted Muse watcher only. */
   batchJournal?: MuseBatchJournal;
+  /** Paired encrypted result outbox for explicitly managed channel hosts. */
+  resultOutbox?: MuseResultOutbox;
   onProgress?: (message: string) => void;
   onLog?: (message: string) => void;
   onLine?: (line: { type: string; content: string; timestamp?: number }) => void;

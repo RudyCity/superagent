@@ -460,7 +460,7 @@ export class MuseClient {
 
             // Security: Only Muse bot is authorized to trigger task batches or completion
             if (
-              (envelope.kind === "task_batch" || envelope.kind === "task_done") &&
+              (envelope.kind === "task_batch" || envelope.kind === "task_done" || envelope.kind === "result_ack") &&
               !isMuseSender
             ) {
               logE2E("REMOTE-AGENT", `Update ${updateId}: rejected unauthorized ${envelope.kind} from non-Muse sender ${senderId}`);

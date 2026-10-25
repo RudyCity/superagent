@@ -32,7 +32,8 @@ export const museCommand: SlashCommand = {
       if (action === "help") {
         ctx.addLine({ type: "system", content:
           "Use /muse host status, /muse host steer <text> --port 7892, " +
-          "/muse host task <task> --port 7892, or /muse host abort [reason] --port 7892. " +
+          "/muse host task <task> --port 7892, /muse host abort [reason] --port 7892, " +
+          "or /muse host replay-result <batch-id> --port 7892 (only stored results). " +
           "Requires a separately running verified channel host.", timestamp: now });
         return;
       }
@@ -50,7 +51,7 @@ export const museCommand: SlashCommand = {
           timestamp: now });
         return;
       }
-      if (action !== "steer" && action !== "task" && action !== "abort") {
+      if (action !== "steer" && action !== "task" && action !== "abort" && action !== "replay-result") {
         ctx.addLine({ type: "error", content: "Use /muse host help for supported operations.", timestamp: now });
         return;
       }
@@ -67,7 +68,7 @@ export const museCommand: SlashCommand = {
         return;
       }
       try {
-        await requestChannelHostIpc(port, action, message);
+        await requestChannelHostIpc(port, action === "replay-result" ? "replay_result" : action, message);
         ctx.addLine({ type: "system", content: "[Muse Host] " + action +
           " acknowledged by verified channel host on port " + port + ".", timestamp: now });
       } catch (err) {
@@ -165,6 +166,7 @@ export const museCommand: SlashCommand = {
         "  /muse host steer <text>      - Steer verified remote host (explicit opt-in)",
         "  /muse host task <text>       - Request Muse task from independent host",
         "  /muse host abort [reason]    - Abort active batch on independent host",
+        "  /muse host replay-result <batch-id> --port 7892 - Explicit resend of encrypted saved result; NEVER reruns tools",
         "  CLI: channel-host checkpoint --port 7892  - Inspect pending batch checkpoints safely",
         "  /muse watch [dirs]           - Start watch mode for one or more workspaces",
         "  /muse watch start            - Start the Muse watcher",

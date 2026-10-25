@@ -30,10 +30,11 @@ export interface MuseTaskRecoveryState {
   batches: number;
   delivered: number;
   reviewed: number;
+  acknowledged: number;
   requiringReview: number;
   lastObservedAt: number;
   /** Does NOT mean the agent/LLM can be resumed from this snapshot. */
-  status: "needs_review" | "reviewed_no_replay" | "delivery_recorded" | "metadata_only";
+  status: "needs_review" | "reviewed_no_replay" | "delivery_recorded" | "remote_acknowledged" | "metadata_only";
 }
 export interface MuseBatchRecord {
   batchId: string;
@@ -43,6 +44,7 @@ export interface MuseBatchRecord {
   recordedAt: number;
   updatedAt: number;
   review?: MuseBatchReview;
+  resultAck?: { sha256: string; receivedAt: number };
 }
 interface MuseJournalData {
   version: 1;
@@ -56,6 +58,7 @@ export interface MuseJournalSummary {
   delivered: number;
   uncertain: number;
   reviewed: number;
+  acknowledged: number;
   requiresReconciliation: number;
 }
 const MAX_RECORDS = 1000;
@@ -79,7 +82,10 @@ function validateRecord(raw: MuseBatchRecord): boolean {
       evidenceOk(raw.review.evidenceSha256) &&
       Number.isSafeInteger(raw.review.reviewedAt) &&
       raw.review.reviewedAt >= raw.recordedAt &&
-      raw.review.reviewedAt <= raw.updatedAt)));
+      raw.review.reviewedAt <= raw.updatedAt)) &&
+    (!raw.resultAck || ((raw.stage === "delivered" || raw.stage === "result_pending") &&
+      evidenceOk(raw.resultAck.sha256) && Number.isSafeInteger(raw.resultAck.receivedAt) &&
+      raw.resultAck.receivedAt >= raw.recordedAt && raw.resultAck.receivedAt <= raw.updatedAt)));
 }
 export class MuseBatchJournal {
   private readonly file: string;
@@ -166,6 +172,21 @@ export class MuseBatchJournal {
     try { this.save(); }
     catch (error) { this.batches.set(batchId, old); throw error; }
   }
+  /** Authenticated Muse result_ack: not a transport send confirmation. */
+  acknowledgeResult(batchId: string, taskId: string, digest: string): boolean {
+    if (!idOk(batchId) || !idOk(taskId) || !evidenceOk(digest)) return false;
+    const record = this.batches.get(batchId);
+    if (!record || record.taskId !== taskId || record.review ||
+        (record.stage !== "result_pending" && record.stage !== "delivered")) return false;
+    if (record.resultAck) return record.resultAck.sha256 === digest;
+    const before = { ...record };
+    record.resultAck = { sha256: digest, receivedAt: Date.now() };
+    record.updatedAt = Math.max(record.updatedAt, record.resultAck.receivedAt);
+    try { this.save(); }
+    catch (err) { this.batches.set(batchId, before); throw err; }
+    return true;
+  }
+
   /**
    * External evidence review changes the recovery classification only. It is
    * never permission to replay a prior batch ID or declare remote delivery.
@@ -222,7 +243,7 @@ export class MuseBatchJournal {
     for (const signal of this.taskSignals.values()) {
       groups.set(signal.taskId, {
         taskId: signal.taskId, phase: signal.phase, batches: 0,
-        delivered: 0, reviewed: 0, requiringReview: 0,
+        delivered: 0, reviewed: 0, acknowledged: 0, requiringReview: 0,
         lastObservedAt: signal.observedAt, status: "metadata_only",
       });
     }
@@ -230,11 +251,12 @@ export class MuseBatchJournal {
       let task = groups.get(batch.taskId);
       if (!task) {
         task = { taskId: batch.taskId, phase: "batch_only", batches: 0,
-          delivered: 0, reviewed: 0, requiringReview: 0,
+          delivered: 0, reviewed: 0, acknowledged: 0, requiringReview: 0,
           lastObservedAt: 0, status: "metadata_only" };
         groups.set(batch.taskId, task);
       }
       task.batches++;
+      if (batch.resultAck) task.acknowledged++;
       if (batch.stage === "delivered") task.delivered++;
       else if (batch.review) task.reviewed++;
       else task.requiringReview++;
@@ -244,6 +266,7 @@ export class MuseBatchJournal {
       ...task,
       status: task.requiringReview > 0 ? "needs_review" :
         task.reviewed > 0 ? "reviewed_no_replay" :
+        task.acknowledged > 0 && task.acknowledged === task.batches ? "remote_acknowledged" :
         task.delivered > 0 ? "delivery_recorded" : "metadata_only",
     }));
   }
@@ -251,11 +274,14 @@ export class MuseBatchJournal {
   list(): MuseBatchRecord[] {
     return [...this.batches.values()].map(record => ({
       ...record, ...(record.review ? { review: { ...record.review } } : {}),
+      ...(record.resultAck ? { resultAck: { ...record.resultAck } } : {}),
     }));
   }
   get(batchId: string): MuseBatchRecord | undefined {
     const record = this.batches.get(batchId);
-    return record ? { ...record, ...(record.review ? { review: { ...record.review } } : {}) } : undefined;
+    return record ? { ...record,
+      ...(record.review ? { review: { ...record.review } } : {}),
+      ...(record.resultAck ? { resultAck: { ...record.resultAck } } : {}) } : undefined;
   }
   summary(): MuseJournalSummary {
     const stages = [...this.batches.values()].map(record => record.stage);
@@ -264,7 +290,8 @@ export class MuseBatchJournal {
     const delivered = stages.filter(stage => stage === "delivered").length;
     const uncertain = stages.filter(stage => stage === "uncertain").length;
     const reviewed = [...this.batches.values()].filter(record => !!record.review).length;
-    return { started, resultPending, delivered, uncertain, reviewed,
+    const acknowledged = [...this.batches.values()].filter(record => !!record.resultAck).length;
+    return { started, resultPending, delivered, uncertain, reviewed, acknowledged,
       requiresReconciliation: started + resultPending + uncertain - reviewed };
   }
 }

@@ -31,6 +31,7 @@ export const MUSE_HOST_SUGGESTIONS = [
   "/muse host steer",
   "/muse host task",
   "/muse host abort",
+  "/muse host replay-result",
 ] as const;
 
 export const TELEGRAM_SUGGESTIONS = [

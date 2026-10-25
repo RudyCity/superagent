@@ -10,6 +10,7 @@ import {
   TaskRequestEnvelope,
   TaskBatchEnvelope,
   TaskResultEnvelope,
+  ResultAckEnvelope,
   TaskDoneEnvelope,
   ChatEnvelope,
   SessionResetEnvelope,
@@ -455,6 +456,19 @@ export class MuseWatcher {
         break;
       }
 
+      case "result_ack": {
+        // Telegram sender checks and authenticated WS session are enforced in
+        // the transports before delivery. Direct/no-origin calls are refused.
+        if (!this.options.batchJournal || !this.options.resultOutbox ||
+            meta?.transport !== this.transport.type ||
+            (meta.transport === "websocket" && !meta.connectionId)) break;
+        const ack = envelope as ResultAckEnvelope;
+        if (this.options.resultOutbox.digest(ack.id) !== ack.result_sha256) break;
+        if (this.options.batchJournal.acknowledgeResult(ack.id, ack.task_id, ack.result_sha256)) {
+          this.emitLine("system", "[Muse Watch] Verified application-level result receipt for batch " + ack.id);
+        }
+        break;
+      }
       case "task_done": {
         this.enqueueDone(envelope as TaskDoneEnvelope);
         break;
@@ -491,6 +505,13 @@ export class MuseWatcher {
     meta?: RemoteEnvelopeMeta
   ): void {
     const batchId = envelope.id;
+    if (batchId && this.options.batchJournal?.get(batchId)) {
+      // No automatic result replay and NEVER tool replay, even if completed
+      // with errors. Explicit operator replay is an independent operation.
+      this.emitLine("system", "[Muse Watch] Previously checkpointed batch " + batchId +
+        " refused for automatic replay; inspect the result outbox.");
+      return;
+    }
     if (batchId) {
       // 1. If this batch is currently in progress (in queue or executing):
       if (this.activeBatchIds.has(batchId)) {
@@ -780,11 +801,14 @@ export class MuseWatcher {
         `MuseWatcher completed batch ${envelope.id} with ${results.length} result(s). Posting back via transport.`
       );
 
-      // Tool work is finished, but delivery is not yet confirmed. Do not
-      // persist results or prompts, only metadata about their delivery stage.
+      // In managed hosts only, seal the exact result BEFORE send. Never send
+      // if the encryption/persistence step fails: the batch will stay started
+      // for manual reconciliation, without any re-execution.
+      const stored = this.options.resultOutbox?.put(resultEnvelope);
+      const outgoing = stored?.result || resultEnvelope;
       journal?.transition(envelope.id, "result_pending");
       const sent = await this.transport.sendEnvelope(
-        resultEnvelope,
+        outgoing,
         meta,
         this.options.onProgress
       );
@@ -802,7 +826,7 @@ export class MuseWatcher {
         if (extraReplyIds) {
           for (const extraId of extraReplyIds) {
             if (extraId !== meta?.messageId) {
-              await this.transport.sendEnvelope(resultEnvelope, { messageId: extraId }).catch(() => {});
+              await this.transport.sendEnvelope(outgoing, { messageId: extraId }).catch(() => {});
             }
           }
         }
@@ -914,6 +938,22 @@ export class MuseWatcher {
     }
 
     return true;
+  }
+
+  /** Explicit resend of the SAME encrypted result without executing tools. */
+  public async replayStoredResult(batchId: string): Promise<boolean> {
+    const journal = this.options.batchJournal;
+    const outbox = this.options.resultOutbox;
+    if (!this.isRunning || !journal || !outbox || !this.transport.isConnected()) return false;
+    const batch = journal.get(batchId);
+    if (!batch || batch.review || batch.resultAck ||
+        (batch.stage !== "result_pending" && batch.stage !== "delivered")) return false;
+    const result = outbox.get(batchId);
+    if (!result || result.task_id !== batch.taskId ||
+        result.result_sha256 !== outbox.digest(batchId)) return false;
+    const sent = await this.transport.sendEnvelope(result, undefined, this.options.onProgress);
+    if (sent && batch.stage === "result_pending") journal.transition(batchId, "delivered");
+    return sent;
   }
 
   public hasActiveBatch(): boolean {

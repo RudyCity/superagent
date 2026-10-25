@@ -145,6 +145,12 @@ describe("independent channel-host lifecycle", () => {
     } as any);
     expect(received.at(-1)).toBe("steer:via core");
     expect(lines.some(line => line.content.includes("acknowledged"))).toBe(true);
+    await museCommand.execute("host replay-result batch-replayed --port " + port, {
+      addLine: (line: { type: string; content: string }) => { lines.push(line); },
+    } as any);
+    expect(received.at(-1)).toBe("replay_result:batch-replayed");
+    expect(lines.some(line => line.content.includes("replay-result acknowledged"))).toBe(true);
+    await expect(requestChannelHostIpc(port, "replay_result", "../invalid")).rejects.toThrow(/Invalid IPC/);
   });
 
   it("rejects malformed and excessive IPC commands and fails closed when idle", async () => {
