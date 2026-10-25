@@ -13,6 +13,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   studioInteractionRules: "declarative-bindings-v1",
   studioInteractionRulesMax: 12,
   experimentalVideoVectorReconstruction: "single-bright-silhouette-3-frames-cli-only",
+  experimentalMultiVectorReconstruction: "two-to-four-bright-separated-objects-api-v1",
   studioToCodeTriggers: ["autoplay", "scroll", "click", "hover"],
   studioToCodeLayerKinds: ["text", "rect", "path"],
   standaloneBrowserEditor: false,

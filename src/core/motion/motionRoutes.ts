@@ -24,6 +24,8 @@ import { motionSceneSrt } from "./director/motionCaptions.js";
 import { localVoiceoverReady } from "./director/localVoiceover.js";
 import { importMotionAsset, readMotionAsset } from "./assets/motionAssets.js";
 import { importMotionAudio, readMotionAudio } from "./assets/motionAudio.js";
+import { importMotionVideo } from "./assets/motionVideoClips.js";
+import { studioStorageRoot } from "./project/projectStore.js";
 import { decodeMotionMediaBase64 } from "./assets/motionInput.js";
 import { summarizeMotionWav } from "./assets/motionWaveform.js";
 import { effectRegistry, EFFECT_CATEGORIES, type EffectCategory } from "./effects/index.js";
@@ -106,6 +108,7 @@ export async function handleMotionHttpRoute(
   const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
   const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
   const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.(html|tsx)$/);
+  const reconstructionReview = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/reconstruction-review\.png$/);
   const eventsRoute = pathname === "/api/motion/events";
   const tlineBridgeRoute = pathname === "/api/motion/tline-bridge";
   const bundleRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/bundle$/);
@@ -150,6 +153,38 @@ export async function handleMotionHttpRoute(
   try {
     if (pathname === "/api/motion" && method === "GET") {
       json(res, ctx, 200, { apiVersion: 1, video: "h264-mp4", detachedJobs: true, studio: false, capabilities: { ...MOTION_CAPABILITIES, localVoiceoverConfigured: await localVoiceoverReady() } });
+    } else if (pathname === "/api/motion/videos" && method === "POST") {
+      // Dedicated small-video upload: strictly smaller than generic 50 MB
+      // import-video, because reconstruction is intentionally bounded.
+      const body = await readMotionJson(req, 17_000_000);
+      json(res, ctx, 201, await importMotionVideo(workspace,
+        decodeMotionMediaBase64(body.base64, 12 * 1024 * 1024)));
+    } else if (pathname === "/api/motion/reconstruct/multi" && method === "POST") {
+      const body = await readMotionJson(req, 1200);
+      if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId))
+        throw new MotionValidationError(["Expected an imported Studio video ID"]);
+      const { reconstructMultiObjectStudioVideo } =
+        await import("./code/videoMultiObjectReconstruction.js");
+      json(res, ctx, 201, await reconstructMultiObjectStudioVideo(workspace, body.videoId));
+    } else if (reconstructionReview && (method === "GET" || method === "HEAD")) {
+      const source = await getMotionProject(workspace, reconstructionReview[1]);
+      const requested = _url.searchParams.get("revision") ?? String(source.revision);
+      if (!/^[1-9][0-9]{0,8}$/.test(requested) || Number(requested) > source.revision)
+        throw new MotionValidationError(["Invalid Studio reconstruction review revision"]);
+      const root = await studioStorageRoot(workspace);
+      const file = path.join(root, "code", source.id + "-r" + requested + "-multi-review.png");
+      const stats = await fs.lstat(file);
+      if (!stats.isFile() || stats.isSymbolicLink() || stats.size < 24 ||
+          stats.size > 2 * 1024 * 1024) throw new Error("Invalid Studio review PNG");
+      const buffer = await fs.readFile(file);
+      if (buffer.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a")
+        throw new Error("Invalid Studio review PNG bytes");
+      res.writeHead(200, {
+        "Content-Type": "image/png", "Content-Length": String(buffer.length),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+      });
+      res.end(method === "HEAD" ? undefined : buffer);
     } else if (pathname === "/api/motion/assets" && method === "POST") {
       const body = await readMotionJson(req, 1_600_000);
       json(res, ctx, 201, await importMotionAsset(workspace, decodeMotionMediaBase64(body.base64, 1024 * 1024)));

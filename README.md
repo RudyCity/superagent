@@ -921,7 +921,7 @@ first-party requestAnimationFrame runtime with **no external runtime scripts or
 network access required**. The experimental legacy GSAP code adapter is not
 exposed through public CLI/API pending third-party licensing review.
 
-**Experimental reference video reconstruction (CLI only):**
+**Experimental single-object reference video reconstruction (CLI only):**
 
 ```bash
 superagent studio import-video --file path/inside/workspace/clip.mp4 --workspace . --json
@@ -939,9 +939,40 @@ reconstruct arbitrary real-world footage or text, audio, multi-object motion,
 confidence measures heuristic contour stability—not pixel-level fidelity.
 It does not call an AI model or external provider.
 
-**Not yet supported:** automatic reverse-engineering of arbitrary video into
-editable DOM/SVG, raster/image/video/audio layers in code export, and direct
-React/Next.js component generation. Unsupported assets are rejected instead
+**Experimental multi-object video reconstruction (P3 prototype):**
+
+```bash
+superagent studio import-video --file path/inside/workspace/clip.mp4 --workspace . --json
+superagent studio reconstruct-video-multi VIDEO_ID --workspace . --json
+superagent studio export-code NEW_PROJECT_ID --format react --workspace . --json
+```
+
+For **2–4 separated bright shapes on a stable dark background**, Studio
+samples three frames, separates foreground components, matches each object
+across frames and saves editable SVG layers with independent x/y keyframes.
+Ambiguous matches, missing shapes or backgrounds that vary across samples
+are rejected **before** the project is created. The source is an imported,
+SHA-256-verified MP4/WebM (up to 12 MiB, 1–12 s, maximum 1280×720).
+
+The result returns three **foreground mask IoU** measurements and saves an
+original-vs-Studio comparison PNG at
+`.superagent/studio/code/<project-id>-r<revision>-multi-review.png`
+(or the verified legacy Studio storage root). Values describe only three
+sampled high-contrast masks, not motion or color fidelity across the full
+video. The original video is never embedded in the exported code.
+
+The T-Line editor also exposes a capability-gated **Video → Editable Studio
+Code** panel to upload an authorized video, run this prototype, inspect the
+three-frame comparison and open the newly created Studio project. Behind the
+global T-Line/SuperAgent auth and workspace gate, the API routes are
+`POST /api/studio/videos`, `POST /api/studio/reconstruct/multi`, and
+`GET /api/studio/projects/:id/reconstruction-review.png?revision=N`.
+This remains developer-preview, not an AI vision service.
+
+**Not yet supported:** general video-to-code reverse engineering, editable
+DOM/SVG reconstruction of arbitrary footage, raster/image/video/audio assets
+in the exported web code, or native per-layer React/Next.js JSX (only a
+sandboxed TSX wrapper is generated). Unsupported assets are rejected instead
 of silently omitted. The existing MP4/WebM/GIF renderer is unchanged. Review
 GSAP's standard license before redistributing its runtime with products.
 
