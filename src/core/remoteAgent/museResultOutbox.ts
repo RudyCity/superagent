@@ -137,6 +137,21 @@ export class MuseResultOutbox {
     const entry = this.entries.get(batchId);
     return entry ? this.decrypt(entry, this.readKey()) : null;
   }
+  /**
+   * Drop ciphertext ONLY after the journal durably stored an ACK-bound
+   * payload-release tombstone. The caller supplies the persisted ACK digest.
+   * An absent entry is an idempotent no-op after partial cleanup.
+   */
+  releaseAcknowledgedPayload(batchId: string, ackSha256: string): boolean {
+    if (!validId(batchId) || !digestOk(ackSha256)) throw new Error("Invalid cleanup identity");
+    const entry = this.entries.get(batchId);
+    if (!entry) return false;
+    if (entry.sha256 !== ackSha256) throw new Error("Cleanup result digest mismatch");
+    this.entries.delete(batchId);
+    try { this.save(); }
+    catch (err) { this.entries.set(batchId, entry); throw err; }
+    return true;
+  }
   digest(batchId: string): string | null { return this.entries.get(batchId)?.sha256 || null; }
   /** Metadata only; never exposes ciphertext, outputs or decryption keys. */
   summaries(): Array<{ batchId: string; taskId: string; sha256: string }> {

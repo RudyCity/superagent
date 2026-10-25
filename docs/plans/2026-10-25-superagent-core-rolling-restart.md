@@ -218,6 +218,23 @@ Both existing guarded operator actions now consult this same policy: /muse host 
 
 Acceptance tests: classifier matrix for fresh/partially attempted/reserved/reviewed/ACKed batches, missing outbox, mismatch/orphan/invalid receipt, offline CLI with no plaintext disclosure or write, Phase 4d-4g regression, isolated WebSocket/Telegram tests, build, and owned-process core crash/recovery. No live OAuth/MCP tunnels or remote Muse/Telegram sessions are contacted. Provider-confirmed receipts, automatic external repair, distributed transaction atomicity, active LLM context serialization and zero-downtime provider socket handover remain unimplemented.
 
+## Phase 4i: safe recovery-storage lifecycle (ACK-only offline payload pruning)
+
+Phase 4i adds an **explicit offline storage lifecycle**, without automatic deletion or weakening Phase 4d deduplication. The private journal retains its complete batch ID, task identity, stage, evidence review, ACK digest, timestamps and permanent replay-blocking tombstone. The journal now fsyncs temporary snapshot content before atomic rename when the filesystem supports it. No journal tombstones or task signals are ever pruned; the earlier 1,000-record/750 KB journal limit remains a deliberate fail-closed limit until separately engineered immutable tombstone archival.
+
+Encrypted result outbox and encrypted execution-intent payloads can be removed ONLY after a valid application-level Muse result_ack has been durably recorded, its SHA-256 matches the stored result, and a minimum receipt-retention period has elapsed. **Default: 7 days from ACK**. Never prune an unacknowledged, inconsistent, externally reviewed, or still-uncertain batch. Use these two CLI commands:
+
+    superagent channel-host retention --port 7892 [--batch-id BATCH_ID] [--min-age-days 7]
+    superagent channel-host prune --port 7892 --batch-id BATCH_ID --confirm BATCH_ID [--min-age-days 7]
+
+The retention command is a read-only dry run and prints only identifiers and metadata, never encrypted tool arguments or raw results. Prune requires exact repeated batch-ID confirmation, a valid receipt, age eligibility, no registered owner (even if stale), and the same exclusive .review.lock as live channel-host/reconciliation. The operator can explicitly override the default retention with --min-age-days 0; this bypasses the age wait, not the ACK/identity/owner checks. It must be used deliberately, not scheduled as an automatic background task.
+
+**Crash ordering:** Phase 4i first persists payloadReleasedAt to the existing journal record, bound to its immutable result ACK digest. Only after that write succeeds may it remove the encrypted result, followed by the encrypted execution intent. A crash between any two steps leaves cleanup_incomplete; rerunning the same confirmed prune safely completes the remaining deletions. Phase 4h recovery now accepts a missing result payload only if that journal cleanup marker and prior result ACK exist. Every other missing result/digest mismatch still fails closed. Old process memories, filesystem backups, swap data and encryption keys are not securely erased; pruning limits current checkpoint payload retention, not all historical copies.
+
+Storage remains bounded (outbox: 64 records; encrypted execution intents: 64 batches); pruning acknowledged records frees those two payload capacities for the next authorized channel-host startup (pruning requires the current host to be offline). The key files remain available for encrypted-store validation; a missing store plus orphaned key still fails closed. ACK is proof of result receipt only, NOT independent confirmation of external side effects or serialized LLM restoration. Journals remain bounded and can eventually refuse new batch IDs; safe long-term tombstone compaction/archive and unattended cleanup are separate future work.
+
+Verification includes ACK age rules, explicit zero-day override, refusal of mismatched ACKs/unacknowledged work, fail-closed live/stale owner and shared-lock exclusion, no-plaintext dry runs, reload after cleanup, and simulated crashes after the journal tombstone and after the outbox deletion. Existing WebSocket, Telegram, core-supervisor, T-Line isolation and crash/restart suites must also pass. No running MCP tunnel, Muse/Telegram production bot or external service is restarted during validation.
+
 ## Future phase: independent transport host
 
 Move persistent MCP OAuth/session transport, Muse/T-Line sockets and gateway into a dedicated host; build durable agent checkpoints and session ownership with verified reconnect, PID fingerprints, idle draining and rollback tests. Full zero-downtime runtime restart is not guaranteed yet.

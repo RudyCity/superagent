@@ -45,6 +45,8 @@ export interface MuseBatchRecord {
   updatedAt: number;
   review?: MuseBatchReview;
   resultAck?: { sha256: string; receivedAt: number };
+  /** Durable ACK-bound cleanup tombstone; result bytes may no longer exist. */
+  payloadReleasedAt?: number;
 }
 interface MuseJournalData {
   version: 1;
@@ -85,7 +87,11 @@ function validateRecord(raw: MuseBatchRecord): boolean {
       raw.review.reviewedAt <= raw.updatedAt)) &&
     (!raw.resultAck || ((raw.stage === "delivered" || raw.stage === "result_pending") &&
       evidenceOk(raw.resultAck.sha256) && Number.isSafeInteger(raw.resultAck.receivedAt) &&
-      raw.resultAck.receivedAt >= raw.recordedAt && raw.resultAck.receivedAt <= raw.updatedAt)));
+      raw.resultAck.receivedAt >= raw.recordedAt && raw.resultAck.receivedAt <= raw.updatedAt))) &&
+    (raw.payloadReleasedAt === undefined || (
+      !!raw.resultAck && Number.isSafeInteger(raw.payloadReleasedAt) &&
+      raw.payloadReleasedAt >= raw.resultAck.receivedAt &&
+      raw.payloadReleasedAt <= raw.updatedAt));
 }
 export class MuseBatchJournal {
   private readonly file: string;
@@ -134,7 +140,11 @@ export class MuseBatchJournal {
     fs.mkdirSync(parent, { recursive: true });
     const temporary = this.file + "." + process.pid + ".tmp";
     try {
-      fs.writeFileSync(temporary, serialized, { flag: "wx", mode: 0o600 });
+      const fd = fs.openSync(temporary, "wx", 0o600);
+      try {
+        fs.writeFileSync(fd, serialized);
+        fs.fsyncSync(fd);
+      } finally { fs.closeSync(fd); }
       fs.renameSync(temporary, this.file);
       try { fs.chmodSync(this.file, 0o600); } catch {}
     } finally {
@@ -185,6 +195,25 @@ export class MuseBatchJournal {
     try { this.save(); }
     catch (err) { this.batches.set(batchId, before); throw err; }
     return true;
+  }
+
+  /**
+   * Persist ACK-bound payload-release authority BEFORE deleting ciphertext.
+   * This is an immutable deduplication tombstone; it never permits reexecution.
+   * Repeating after a partial disk failure is safe and does not renew the age.
+   */
+  markPayloadReleased(batchId: string, expectedSha256: string): MuseBatchRecord {
+    const existing = this.batches.get(batchId);
+    if (!existing || !existing.resultAck ||
+        !evidenceOk(expectedSha256) || existing.resultAck.sha256 !== expectedSha256 ||
+        existing.review) throw new Error("Payload release requires matching authenticated result ACK");
+    if (existing.payloadReleasedAt !== undefined) return this.get(batchId)!;
+    const before = { ...existing };
+    existing.payloadReleasedAt = Math.max(Date.now(), existing.resultAck.receivedAt);
+    existing.updatedAt = Math.max(existing.updatedAt, existing.payloadReleasedAt);
+    try { this.save(); }
+    catch (err) { this.batches.set(batchId, before); throw err; }
+    return this.get(batchId)!;
   }
 
   /**

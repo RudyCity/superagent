@@ -16,6 +16,7 @@ import { MuseBatchJournal, museJournalFile } from "../remoteAgent/museBatchJourn
 import { MuseResultOutbox } from "../remoteAgent/museResultOutbox.js";
 import { MuseExecutionCheckpoint } from "../remoteAgent/museExecutionCheckpoint.js";
 import { MuseRecoveryOrchestrator } from "../remoteAgent/museRecoveryOrchestrator.js";
+import { MuseRecoveryStorageLifecycle } from "../remoteAgent/museRecoveryStorageLifecycle.js";
 
 export type ChannelHostMode = "idle" | "muse-ws" | "telegram-fallback";
 export interface ChannelHostHealth {
@@ -422,6 +423,8 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("superagent channel-host status --port 7892");
     console.log("superagent channel-host checkpoint --port 7892  # inspect batch/task facts offline");
     console.log("superagent channel-host recovery --port 7892 [--batch-id ID]  # unified read-only recovery assessment");
+    console.log("superagent channel-host retention --port 7892 [--batch-id ID] [--min-age-days 7]  # dry-run ACKed payload release");
+    console.log("superagent channel-host prune --port 7892 --batch-id ID --confirm ID [--min-age-days 7]  # OFFLINE-only, keep journal tombstones");
     console.log("TUI: /muse host resume-untouched BATCH_ID --port 7892  # manual one-shot; only zero started tool calls");
     console.log("superagent channel-host reconcile --port 7892 --batch-id ID --decision effect_verified|no_effect_verified --evidence-sha256 HEX --confirm ID");
     console.log("Opt-in independent Muse/Telegram owner. No external channel starts in idle mode. Never owns MCP tunnels.");
@@ -434,6 +437,47 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   const modeIdx = argv.indexOf("--mode");
   const mode = modeIdx < 0 ? "idle" : argv[modeIdx + 1];
   if (!validPort(port)) throw new Error("Invalid --port");
+  if (action === "retention" || action === "prune") {
+    const batchIdx = argv.indexOf("--batch-id");
+    const confirmIdx = argv.indexOf("--confirm");
+    const ageIdx = argv.indexOf("--min-age-days");
+    const batchId = batchIdx < 0 ? "" : argv[batchIdx + 1] || "";
+    const confirm = confirmIdx < 0 ? "" : argv[confirmIdx + 1] || "";
+    const age = ageIdx < 0 ? 7 : Number(argv[ageIdx + 1]);
+    if (!Number.isSafeInteger(age) || age < 0 || age > 3650) {
+      throw new Error("Invalid --min-age-days: expected integer 0..3650");
+    }
+    if (batchIdx >= 0 && (!batchId || batchId.length > 256 ||
+        batchId.includes(String.fromCharCode(0)))) throw new Error("Invalid --batch-id");
+    if (action === "retention") {
+      const lifecycle = MuseRecoveryStorageLifecycle.load(port);
+      const plan = lifecycle.plan(age).filter(a => !batchId || a.batchId === batchId);
+      if (batchId && plan.length !== 1) throw new Error("Unknown retention batch ID");
+      console.log("Encrypted payload retention dry run: owner port " + port +
+        " | minimum ACK age " + age + " day(s)");
+      for (const item of plan) console.log("  " + JSON.stringify(item));
+      console.log("No storage was modified. ACK-bound cleanup keeps all journal IDs.");
+      return false;
+    }
+    if (!batchId || confirm !== batchId) {
+      throw new Error("Prune requires exact --batch-id and --confirm, with an authenticated ACK");
+    }
+    // Same exclusive owner lock as host/reconcile; no live or stale owner
+    // registration is ever overwritten or forcibly adopted.
+    if (fs.existsSync(statePath(port))) {
+      throw new Error("A registered channel-host owner exists. Refusing offline payload pruning");
+    }
+    const release = claimJournalLock(port, "review", crypto.randomBytes(16).toString("hex"));
+    try {
+      if (fs.existsSync(statePath(port))) throw new Error("A channel host started during pruning");
+      const lifecycle = MuseRecoveryStorageLifecycle.load(port);
+      const result = lifecycle.pruneOne(batchId, age);
+      console.log("ACK-bound encrypted payload cleanup recorded for batch " + result.batchId +
+        " | outbox: " + result.releasedResult + " | execution intent: " + result.releasedIntent);
+      console.log("Journal tombstone and external evidence remain preserved. No tool or channel was invoked.");
+      return false;
+    } finally { release(); }
+  }
   if (action === "recovery") {
     // Offline classification intentionally verifies checkpoint integrity and
     // NEVER loads a remote channel or performs tool work.
@@ -540,5 +584,5 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     console.log("Independent channel host listening on http://127.0.0.1:" + port + " (" + mode + ")");
     return true;
   }
-  throw new Error("Expected channel-host serve, status, checkpoint, recovery, reconcile or help");
+  throw new Error("Expected channel-host serve, status, checkpoint, recovery, retention, prune, reconcile or help");
 }

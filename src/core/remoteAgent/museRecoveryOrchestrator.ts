@@ -92,7 +92,11 @@ export class MuseRecoveryOrchestrator {
     if (result && result.taskId !== journal.taskId) {
       return make("integrity_blocked", "result_outbox_identity_mismatch");
     }
-    if (journal.resultAck && (!result || journal.resultAck.sha256 !== result.sha256)) {
+    if (journal.payloadReleasedAt !== undefined && !journal.resultAck) {
+      return make("integrity_blocked", "cleanup_marker_without_receipt");
+    }
+    if (journal.resultAck && ((!result && journal.payloadReleasedAt === undefined) ||
+        (result && journal.resultAck.sha256 !== result.sha256))) {
       return make("integrity_blocked", "receipt_outbox_mismatch");
     }
     if (result && journal.stage !== "result_pending" && journal.stage !== "delivered") {
@@ -102,7 +106,8 @@ export class MuseRecoveryOrchestrator {
       return make("integrity_blocked", "review_conflicts_with_receipt");
     }
     if (journal.review) return make("externally_reviewed", "immutable_external_effect_review");
-    if (journal.resultAck) return make("acknowledged", "authenticated_peer_receipt");
+    if (journal.resultAck) return make("acknowledged", journal.payloadReleasedAt === undefined
+      ? "authenticated_peer_receipt" : "acknowledged_payload_release_recorded");
     if (result) return make("manual_result_replay", "encrypted_result_available_unacknowledged");
     if (journal.stage !== "started") {
       return make("manual_reconciliation", "result_absent_or_effects_uncertain");

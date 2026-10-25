@@ -163,6 +163,18 @@ export class MuseExecutionCheckpoint {
     resumed.workspace = entry.targetWorkspace;
     return resumed;
   }
+  /**
+   * Remove encrypted instructions only after the ACK-bound journal cleanup
+   * marker is durable. This never clears a batch tombstone or retry marker.
+   */
+  releaseAcknowledgedIntent(batchId: string): boolean {
+    const entry = this.batches.get(batchId);
+    if (!entry) return false;
+    this.batches.delete(batchId);
+    try { this.save(); }
+    catch (err) { this.batches.set(batchId, entry); throw err; }
+    return true;
+  }
   /** Same workspace-boundary check as reserveUntouched, with NO mutation. */
   isWorkspaceAuthorized(batchId: string, currentWorkspaces: string[]): boolean {
     const entry = this.batches.get(batchId);
