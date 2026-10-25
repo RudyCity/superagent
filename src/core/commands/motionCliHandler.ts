@@ -70,6 +70,7 @@ const usage = `SuperAgent Studio (developer preview)
   superagent studio beat-sync PROJECT_ID --base-revision N --target-layer LAYER_ID [--audio-track 0] [--intensity 0.35] [--workspace PATH] [--json]
   superagent studio preview PROJECT_ID [--open] [--workspace PATH] [--json]
   superagent studio export-bundle PROJECT_ID [--workspace PATH] [--json]
+  superagent studio export-code PROJECT_ID [--trigger autoplay|scroll|click|hover] [--workspace PATH] [--json]
   superagent studio trace-image --file workspace/path/logo.png [--mode silhouette|color|outline] [--threshold N] [--simplify N] [--smooth] [--workspace PATH] [--json]
   superagent studio vectorize PROJECT_ID --layer LAYER_ID [--mode silhouette|color|outline] [--workspace PATH] [--json]
 
@@ -80,7 +81,7 @@ function argumentsOf(args: string[]): { action: string; positionals: string[]; o
   const opts = new Map<string, string | true>();
   const positionals: string[] = [];
   const boolean = new Set(["--json", "--detach", "--supervised", "--once", "--watch", "--ack-stale", "--apply", "--verified-copy", "--wait", "--burn-captions", "--auto-narrate", "--open", "--smooth", "--invert", "--kinetic", "--sheen", "--audio-visualizer", "--no-fit", "--no-subs", "--voiceover", "--help", "-h"]);
-  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--expected-pid", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
+  const valid = new Set(["--workspace", "-w", "--prompt", "--style", "--art-direction", "--aspect-ratio", "--palette", "--code", "--lang", "--type", "--accent", "--device", "--title", "--url", "--badge", "--kpi-value", "--progress", "--chart", "--chart-title", "--voice", "--product", "--tagline", "--install", "--image-asset", "--scene-images", "--audio-asset", "--audio-gain", "--audio-loop", "--voiceover-text", "--voiceover-gain", "--auto-narrate", "--burn-captions", "--name", "--base-revision", "--layer", "--text", "--frame", "--width", "--file", "--edits-json", "--edits-file", "--days", "--min-age-seconds", "--limit", "--interval-ms", "--expected-pid", "--trigger", "--category", "--search", "--family", "--effect", "--preset", "--intensity", "--params-json", "--start-frame", "--duration-frames", "--ratios", "--target-layer", "--audio-track", "--headline", "--subtitle", "--mode", "--threshold", "--simplify", "--min-area", "--fill", "--stroke", "--stroke-width", "--fit-width", "--fit-height", ...boolean]);
   for (let i = 1; i < args.length; i++) {
     const value = args[i];
     if (!value.startsWith("-")) { positionals.push(value); continue; }
@@ -765,6 +766,26 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
         opened,
         hasRenderedVideo: Boolean(latestJob?.status === "completed"),
       }, json);
+      return 0;
+    }
+    if (action === "export-code") {
+      const { renderStudioCodeHtml } = await import("../motion/code/studioCodeExporter.js");
+      const { studioStorageRoot } = await import("../motion/project/projectStore.js");
+      const { default: fs } = await import("node:fs/promises");
+      const { default: path } = await import("node:path");
+      const trigger = opt(opts, "--trigger") ?? "autoplay";
+      if (!["autoplay", "scroll", "click", "hover"].includes(trigger)) {
+        throw new Error("Invalid Studio to Code trigger");
+      }
+      const project = await getMotionProject(workspace, projectId);
+      const html = renderStudioCodeHtml(project, trigger as "autoplay" | "scroll" | "click" | "hover");
+      const outputRoot = path.join(await studioStorageRoot(workspace, true), "code");
+      await fs.mkdir(outputRoot, { recursive: true });
+      const output = path.join(outputRoot, project.id + "-r" + project.revision + "-" + trigger + ".html");
+      // Never overwrite an earlier export unexpectedly.
+      await fs.writeFile(output, html, { flag: "wx", encoding: "utf8" });
+      emit({ status: "exported", format: "html-svg-gsap", projectId: project.id,
+        revision: project.revision, trigger, file: output, bytes: Buffer.byteLength(html) }, json);
       return 0;
     }
     if (action === "export-bundle") {

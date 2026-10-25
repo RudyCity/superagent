@@ -870,6 +870,36 @@ folder as a rollback copy. Both namespaces without the verified cutover marker
 remain blocked; do not manually copy, delete or merge either directory.
 See [the migration plan](docs/plans/2026-10-22-superagent-studio-canonical-migration.md).
 
+### Studio to Code — interactive SVG / GSAP exporter (developer preview)
+
+Instead of rasterizing a scene into MP4, the same revisioned Studio composition
+can export **editable HTML with inline SVG elements and GSAP keyframe playback**.
+The HTML contains controls and supports four trigger modes: autoplay, scroll,
+click and hover.
+
+```bash
+superagent studio new --name "Animated hero" --workspace . --json
+superagent studio export-code STUDIO_PROJECT_ID --trigger scroll --workspace . --json
+```
+
+The CLI creates `.superagent/studio/code/<project-id>-r<revision>-<trigger>.html`
+and refuses to overwrite a previous export of the same revision. Authenticated
+T-Line Studio clients may download the same artifact through
+`GET /api/studio/projects/:id/code.html?trigger=scroll`; the old `/api/motion`
+route also works. The T-Line Studio editor offers an **Export Web Code** control.
+
+**Currently supported:** native text, rectangle and SVG path layers, revisioned
+keyframes, timing, scale/rotation/position/opacity/stroke-dashoffset properties,
+and scene-level scroll/click/hover triggers. Animations use pinned GSAP **3.15.0**
+(and ScrollTrigger for scroll mode) loaded from jsDelivr at runtime, so exported
+HTML requires network access or an operator-provided local copy of those scripts.
+
+**Not yet supported:** automatic reverse-engineering of arbitrary video into
+editable DOM/SVG, raster/image/video/audio layers in code export, and direct
+React/Next.js component generation. Unsupported assets are rejected instead
+of silently omitted. The existing MP4/WebM/GIF renderer is unchanged. Review
+GSAP's standard license before redistributing its runtime with products.
+
 ### Motion Studio (developer preview)
 
 Motion Studio stores revision-checked scenes and media inside the selected **local workspace**. The native editor is delivered by the separate T-Line Desktop project; no independent browser Studio or live packaged-Tauri integration is implied by the backend API.

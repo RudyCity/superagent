@@ -38,6 +38,7 @@ import { compileMotionParticles } from "./motionParticles.js";
 import { compileMotionTypography } from "./motionTypography.js";
 import { applyMotionEdits } from "./project/revisions.js";
 import { renderMotionPlayerHtml } from "./render/motionPreviewHtml.js";
+import { renderStudioCodeHtml, type StudioCodeTrigger } from "./code/studioCodeExporter.js";
 import { subscribeMotionStudioEvents, getMotionBridgeStats } from "./motionEvents.js";
 import { exportMotionDeliverablesBundle, getMotionDeliverablesBundleManifest } from "./motionBundleExport.js";
 import { upscaleMotionComposition, upscaleMotionArtifact, getAvailableUpscaleTargets, type MotionUpscaleTarget, type MotionUpscaleMode } from "./motionUpscale.js";
@@ -102,6 +103,7 @@ export async function handleMotionHttpRoute(
   const visionRepair = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/vision-repair$/);
   const captions = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/captions\.srt$/);
   const player = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/(?:player|preview)$/);
+  const codeExport = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/code\.html$/);
   const eventsRoute = pathname === "/api/motion/events";
   const tlineBridgeRoute = pathname === "/api/motion/tline-bridge";
   const bundleRoute = pathname.match(/^\/api\/motion\/projects\/((?:studio|motion)-[a-f0-9]{20})\/bundle$/);
@@ -652,6 +654,25 @@ export async function handleMotionHttpRoute(
         "Content-Disposition": 'attachment; filename="motion-captions.srt"',
       });
       res.end(body);
+    } else if (codeExport && method === "GET") {
+      const requested = _url.searchParams.get("trigger") ?? "autoplay";
+      if (!["autoplay", "scroll", "click", "hover"].includes(requested)) {
+        json(res, ctx, 400, { error: "Unsupported Studio to Code trigger" });
+      } else {
+        const source = await getMotionProject(workspace, codeExport[1]);
+        const html = renderStudioCodeHtml(source, requested as StudioCodeTrigger);
+        const body = Buffer.from(html, "utf8");
+        if (body.length > 4 * 1024 * 1024) throw Object.assign(
+          new Error("Studio code export exceeds the size limit"), { statusCode: 413 });
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Content-Length": String(body.length),
+          "Content-Disposition": 'attachment; filename="studio-' + source.id + '-r' + source.revision + '.html"',
+          "Cache-Control": "private, no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(body);
+      }
     } else if (player && method === "GET") {
       const projectItem = await getMotionProject(workspace, player[1]);
       const allJobs = await listMotionJobs(workspace);
