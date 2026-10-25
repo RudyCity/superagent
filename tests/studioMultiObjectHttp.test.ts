@@ -77,6 +77,9 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
       const body = await rebuilt.json() as {
         projectId: string; revision: number; objects: unknown[];
         measuredForegroundIoU: number[]; interpolationCheckIoU: number[];
+        timelineValidation: {status: string; minimumForegroundIoU: number;
+          meanForegroundIoU: number; minIdentityGap: number; note: string;
+          checks: Array<{frame:number; identityGap:number; foregroundIoU:number}> };
         parityReport: Array<{ frame:number; sampleType:string;
           foregroundIoU:number; foregroundPrecision:number;
           foregroundRecall:number; foregroundF1:number; rgbMeanAbsoluteError:number }>;
@@ -86,6 +89,13 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
       expect(body.objects).toHaveLength(2);
       expect(body.measuredForegroundIoU).toHaveLength(3);
       expect(body.interpolationCheckIoU).toHaveLength(2);
+      expect(body.timelineValidation.status).toBe("passed-sampled");
+      expect(body.timelineValidation.checks.length).toBeGreaterThanOrEqual(14);
+      expect(body.timelineValidation.checks.length).toBeLessThanOrEqual(20);
+      expect(body.timelineValidation.minimumForegroundIoU).toBeGreaterThanOrEqual(.38);
+      expect(body.timelineValidation.minIdentityGap).toBeGreaterThan(.045);
+      expect(body.timelineValidation.checks.every(c=>c.identityGap>.045 && c.foregroundIoU>=.38))
+        .toBe(true);
       expect(body.parityReport).toHaveLength(5);
       expect(body.parityReport.filter(frame=>frame.sampleType==='holdout')).toHaveLength(2);
       expect(body.parityReport.map(frame=>frame.frame)).toEqual(

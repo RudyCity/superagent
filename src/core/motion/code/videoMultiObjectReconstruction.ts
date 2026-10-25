@@ -8,8 +8,9 @@ import { readMotionVideo } from "../assets/motionVideoClips.js";
 import { traceImageData } from "../vector/imageTracer.js";
 import { createMotionProject, motionWorkspaceRoot, studioStorageRoot, updateMotionProject } from "../project/projectStore.js";
 import { renderMotionSvg } from "../runtime/frameSvg.js";
-import { validateMotionProject } from "../schema/validation.js";
+import { MotionValidationError, validateMotionProject } from "../schema/validation.js";
 import { measureStudioVideoFrameParity, studioForegroundDiffPixels, type StudioFrameParity } from "./studioVideoParityMetrics.js";
+import { studioTimelineProbeFrames } from "./studioTimelineProbes.js";
 import type { MotionComposition, MotionProject, MotionTrack, PathLayer } from "../schema/types.js";
 
 const execute = promisify(execFile);
@@ -110,6 +111,14 @@ export interface StudioMultiObjectReconstruction {
   measuredForegroundIoU: number[];
   interpolationCheckIoU: number[];
   parityReport: Array<{ frame: number; sampleType: "keyframe" | "holdout" } & StudioFrameParity>;
+  timelineValidation: {
+    status: "passed-sampled";
+    checks: Array<{ frame: number; identityGap: number } & StudioFrameParity>;
+    minimumForegroundIoU: number;
+    meanForegroundIoU: number;
+    minIdentityGap: number;
+    note: string;
+  };
   reviewPng: string;
   diffPng: string;
   limitations: string[];
@@ -550,6 +559,76 @@ export async function reconstructMultiObjectStudioVideo(
       throw new Error("Vector reconstruction failed minimum sampled foreground fidelity");
     if (check && check.foregroundIoU.some(score => score < .38))
       throw new Error("Vector reconstruction failed out-of-sample interpolation fidelity");
+
+    // P6: test independent temporal probes BEFORE creating a Studio project.
+    // A transient merge, object disappearance, ambiguous re-identification
+    // or poor SVG interpolation is rejected rather than silently inventing
+    // an identity through an occluded interval.
+    const probeIndices = studioTimelineProbeFrames(totalFrames, sampledFrames);
+    const timelineChecks: Array<{frame:number; identityGap:number} & StudioFrameParity> = [];
+    const renderBackground = [
+      parseInt(background.slice(1,3),16),
+      parseInt(background.slice(3,5),16),
+      parseInt(background.slice(5,7),16),
+    ] as RGB;
+    for (const frameIndex of probeIndices) {
+      const reference = await loadFrame(frameIndex);
+      if (reference.components.length !== ordered[0].length)
+        throw new MotionValidationError([
+          "Video-to-Code possible transient occlusion or object disappearance at frame " +
+          frameIndex + ": foreground count changed; manual review required",
+        ]);
+      const later = sampledFrames.findIndex(sample => sample > frameIndex);
+      const right = later < 0 ? sampledFrames.length - 1 : later;
+      const left = later < 0 ? right - 1 : Math.max(0, right - 1);
+      const duration = sampledFrames[right] - sampledFrames[left];
+      const fraction = Math.max(0, Math.min(1,
+        (frameIndex - sampledFrames[left]) / Math.max(1,duration)));
+      const predicted = ordered[left].map((prior, index) => {
+        const next = ordered[right][index];
+        const blend = (a:number,b:number) => a + (b-a)*fraction;
+        return { ...prior, x:blend(prior.x,next.x), y:blend(prior.y,next.y),
+          width:blend(prior.width,next.width), height:blend(prior.height,next.height),
+          r:blend(prior.r,next.r), g:blend(prior.g,next.g), b:blend(prior.b,next.b) };
+      });
+      let identityGap: number;
+      try {
+        identityGap = associateStudioObjects(predicted,reference.components,
+          reference.width,reference.height).gap;
+      } catch {
+        throw new MotionValidationError([
+          "Video-to-Code ambiguous object re-identification at frame " +
+          frameIndex + "; manual review required",
+        ]);
+      }
+      const raster = await loadImage(Buffer.from(renderMotionSvg(expected,frameIndex)));
+      const canvas = createCanvas(reference.width,reference.height);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(raster,0,0,reference.width,reference.height);
+      const score = measureStudioVideoFrameParity(reference.pixels,
+        ctx.getImageData(0,0,reference.width,reference.height).data,
+        reference.width,reference.height,reference.background,renderBackground,
+        FOREGROUND_RGB_DISTANCE);
+      if (score.foregroundIoU < .38)
+        throw new MotionValidationError([
+          "Video-to-Code timeline drift at frame " + frameIndex +
+          " (foreground IoU " + score.foregroundIoU + "); manual review required",
+        ]);
+      timelineChecks.push({frame:frameIndex,
+        identityGap:Number(identityGap.toFixed(4)), ...score});
+    }
+    const minIoU = Math.min(...timelineChecks.map(c=>c.foregroundIoU));
+    const minGap = Math.min(...timelineChecks.map(c=>c.identityGap));
+    const timelineValidation = {
+      status:"passed-sampled" as const,
+      checks: timelineChecks,
+      minimumForegroundIoU:minIoU,
+      meanForegroundIoU:Number((timelineChecks.reduce((n,c)=>n+c.foregroundIoU,0) /
+        timelineChecks.length).toFixed(4)),
+      minIdentityGap:Number(minGap.toFixed(4)),
+      note:"Sampled temporal checks only; short events between probes may be missed. " +
+        "Occlusion recovery and all-frame equivalence are not supported.",
+    };
     const project = await createMotionProject(workspace, "Multiple reconstructed vector objects");
     const saved = await updateMotionProject(workspace, project.id, project.revision,
       [{ type: "replace-composition", composition }]);
@@ -571,6 +650,7 @@ export async function reconstructMultiObjectStudioVideo(
       confidence: Number(Math.max(.1, Math.min(.75, .75 - average)).toFixed(2)),
       measuredForegroundIoU: review.foregroundIoU,
       interpolationCheckIoU: check?.foregroundIoU ?? [],
+      timelineValidation,
       parityReport: [
         ...review.metrics.map((metrics, index) => ({
           frame: sampledFrames[reviewIndices[index]], sampleType: "keyframe" as const, ...metrics,
@@ -583,7 +663,7 @@ export async function reconstructMultiObjectStudioVideo(
       limitations: [
         "Only 2-4 separated high-contrast shapes on a stable solid-color background; no AI vision model is used.",
         "Only 5–9 bounded samples estimate x/y/scale and optional ±32-degree rotation for distinctive near-horizontal shapes; arbitrary rotations, deformable shapes, text/audio are not reconstructed.",
-        "Crossing or overlapping objects, occlusion and unstable identities fail closed.",
+        "Crossing or overlapping objects and occlusion are checked at supplementary timeline probes but are not reconstructed; events between probes may be missed.",
         "Confidence is association-cost heuristic; per-frame IoU, precision, recall and RGB pixel error cover three keyframes plus up to two unseen holdouts, not every frame.",
       ],
     };

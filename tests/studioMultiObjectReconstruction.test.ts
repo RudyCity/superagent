@@ -153,6 +153,31 @@ describe("multi-object reference video prototype", () => {
     expect(await listMotionProjects(workspace)).toEqual([]);
   }, 65000);
 
+  it("rejects transient occlusion between the original five parity checks without saving a fake project", async () => {
+    const workspace = await ws();
+    for (let f=0;f<30;f++) {
+      const canvas=createCanvas(160,90);
+      const ctx=canvas.getContext("2d");
+      ctx.fillStyle="#101010";ctx.fillRect(0,0,160,90);
+      // Objects join only on original video frames 17-19 (timeline frames
+      // 51-59): the five P5 QA frames do not cover this transient overlap.
+      const occluded=f>=17&&f<=19;
+      ctx.fillStyle="#ffcc66";ctx.fillRect(occluded?52:18,18,22,20);
+      ctx.fillStyle="#22ddff";ctx.fillRect(occluded?64:101,18,22,20);
+      await fs.writeFile(path.join(workspace,"occlude"+String(f).padStart(3,"0")+".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg",["-hide_banner","-loglevel","error","-framerate","10",
+      "-i",path.join(workspace,"occlude%03d.png"),"-y","-c:v","libx264",
+      "-pix_fmt","yuv420p",path.join(workspace,"occluded.mp4")],
+      {timeout:30000,maxBuffer:4096,windowsHide:true});
+    const imported=await importMotionVideo(workspace,
+      await fs.readFile(path.join(workspace,"occluded.mp4")));
+    await expect(reconstructMultiObjectStudioVideo(workspace,imported.id))
+      .rejects.toThrow(/transient occlusion|object disappearance/);
+    expect(await listMotionProjects(workspace)).toEqual([]);
+  },65000);
+
   it("rejects changing background colors before creating a project", async () => {
     const workspace = await ws();
     for (let f = 0; f < 30; f++) {
@@ -217,6 +242,12 @@ describe("multi-object reference video prototype", () => {
     expect(built.objects).toHaveLength(2);
     expect(built.confidence).toBeGreaterThan(.4);
     expect(built.measuredForegroundIoU).toHaveLength(3);
+    expect(built.timelineValidation.status).toBe("passed-sampled");
+    expect(built.timelineValidation.checks.length).toBeGreaterThanOrEqual(14);
+    expect(built.timelineValidation.checks.length).toBeLessThanOrEqual(20);
+    expect(built.timelineValidation.checks.at(-1)!.frame).toBeGreaterThanOrEqual(85);
+    expect(built.timelineValidation.minimumForegroundIoU).toBeGreaterThan(.38);
+    expect(built.timelineValidation.minIdentityGap).toBeGreaterThan(.045);
     expect(built.measuredForegroundIoU.every(score => score >= .38)).toBe(true);
     expect(built.interpolationCheckIoU).toHaveLength(2);
     expect(built.interpolationCheckIoU.every(score => score >= .38)).toBe(true);
