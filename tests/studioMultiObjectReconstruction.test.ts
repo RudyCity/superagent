@@ -237,7 +237,7 @@ describe("multi-object reference video prototype", () => {
       "reconstructed-object-1", "reconstructed-object-2",
     ]);
     for (const layer of project.composition.layers) {
-      expect(layer.tracks.map(track => track.property)).toEqual(["x", "y"]);
+      expect(layer.tracks.map(track => track.property)).toEqual(["x", "y", "scaleX", "scaleY"]);
       expect(layer.tracks.every(track => track.keyframes.length === built.sampleTimes.length)).toBe(true);
     }
     const actual = evaluateFrame(project, built.objects[0].boxes[1].frame);
@@ -255,6 +255,47 @@ describe("multi-object reference video prototype", () => {
     expect(jsx).not.toContain("<iframe");
     expect(jsx).toContain("SCENE_LAYERS:");
     expect(() => transformSync(jsx, {loader: "tsx", format: "esm"})).not.toThrow();
+  }, 65000);
+
+  it("tracks bounded object resize as editable scaleX/scaleY, preserving sampled and holdout parity", async () => {
+    const workspace = await ws();
+    for (let frame = 0; frame < 30; frame++) {
+      const canvas = createCanvas(160, 90);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#101010";
+      ctx.fillRect(0, 0, 160, 90);
+      ctx.fillStyle = "#fff4d9";
+      ctx.fillRect(18 + Math.floor(frame / 4), 13,
+        16 + Math.round(frame * .4), 17 + Math.round(frame * .36));
+      ctx.fillStyle = "#40cfff";
+      ctx.fillRect(106, 55, 19, 18);
+      await fs.writeFile(path.join(workspace,"scale"+String(frame).padStart(3,"0")+".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg", ["-hide_banner", "-loglevel", "error", "-framerate", "10",
+      "-i", path.join(workspace,"scale%03d.png"), "-y", "-c:v", "libx264",
+      "-pix_fmt", "yuv420p", path.join(workspace,"scale.mp4"),
+    ], {timeout:30000,maxBuffer:4096,windowsHide:true});
+    const media = await importMotionVideo(workspace,await fs.readFile(path.join(workspace,"scale.mp4")));
+    const result = await reconstructMultiObjectStudioVideo(workspace,media.id);
+    const project = await getMotionProject(workspace,result.projectId);
+    const growing = project.composition.layers[0];
+    expect(growing.tracks.map(track=>track.property)).toEqual(["x","y","scaleX","scaleY"]);
+    expect(growing.tracks.find(track=>track.property==="scaleX")?.keyframes.at(-1)?.value).toBeGreaterThan(1.3);
+    expect(growing.tracks.find(track=>track.property==="scaleY")?.keyframes.at(-1)?.value).toBeGreaterThan(1.3);
+    expect(result.parityReport).toHaveLength(5);
+    expect(result.parityReport.filter(item=>item.sampleType==="holdout")).toHaveLength(2);
+    expect(result.parityReport.every(item=>item.foregroundIoU>.5 &&
+      item.foregroundPrecision>.5 && item.foregroundRecall>.5 &&
+      item.foregroundF1>.6 && item.rgbMeanAbsoluteError<.15)).toBe(true);
+    const end = result.objects[0].boxes.at(-1)!;
+    const evaluated = evaluateFrame(project,end.frame).layers[0].values;
+    expect(evaluated.scaleX).toBeGreaterThan(1.3);
+    expect(evaluated.scaleY).toBeGreaterThan(1.3);
+    const jsx = renderStudioEditableReactComponent(project);
+    expect(jsx).toContain('"property":"scaleX"');
+    expect(jsx).toContain('"property":"scaleY"');
+    expect(() => transformSync(jsx,{loader:"tsx",format:"esm"})).not.toThrow();
   }, 65000);
 
   it("tracks direction reversals with more than three editable keyframes", async () => {

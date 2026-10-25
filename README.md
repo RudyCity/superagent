@@ -252,6 +252,8 @@ Phase 3b: /core drain (or superagent core drain) checks retained API workers twi
 
 Phase 3c: superagent core recover --port 7888 restores the opt-in API supervisor after a crash. A protected checkpoint retains session-to-worker ownership and the stable public API token; recovery verifies original worker identities before reattachment and refuses unverified sessions. New API generations can still be rolled. Existing SSE/WebSocket TCP connections must reconnect after supervisor crash; this does NOT migrate agent memory or make MCP/OAuth/Telegram/Muse zero-downtime. Isolated verification: bun scripts/verify-core-supervisor.ts. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
 
+**Phase 5b — safe Core logon bootstrap (Windows):** The new Core boot command checks authenticated ownership and saved routing checkpoints. It no-ops on a live Core, starts a fresh guardian only when the namespace is empty, or authenticates surviving workers before checkpoint recovery. Full-machine reboot with dead workers stays blocked for operator reconciliation, not silently rerun. Preview the user-level Windows Task Scheduler task with bun scripts/setup-core-windows-startup.ts --port 7888 (no changes); installing it requires explicit --apply and was NOT performed in this work. Staging verifies 26 crash/boot/session checks. See [Core Guardian recovery and startup guide](docs/guides/core-guardian-recovery.md).
+
 **Phase 5a — opt-in Core Guardian:** An independent guardian can start ONLY a fresh, unowned supervised API Core and recover that same verified child after a hard supervisor crash using authenticated durable checkpoint adoption (max 3 recoveries per 10 minutes). The original worker, sessions and separate T-Line transport remain alive if their processes survive; SSE/WS connections through a crashed supervisor still need reconnect. Use superagent core guard --port 7888, check superagent core guard-status --port 7888, or run the isolated 21-check Windows stage with bun scripts/verify-core-guardian.ts. No MCP/Muse/Telegram process is restarted or adopted. Existing cores are NOT automatically adopted; no Windows Service/reboot manager was installed. See [Core Guardian runbook](docs/guides/core-guardian-recovery.md). GitHub Actions Linux/Windows gate is included, but remote CI is not yet verified.
 
 Phase 4a: opt-in T-Line REST/SSE/WebSocket frontend now runs in its own persistent loopback process, independently of the API core supervisor. Start a supervised core with superagent core start --port 7888, then in another terminal run superagent transport start --port 7891 --core-port 7888. Point T-Line to http://127.0.0.1:7891 and inspect it with superagent transport status --port 7891. The host authenticates supervisor ownership before forwarding bearer credentials, proxies REST/SSE/WS, and remains reachable during core supervisor outage with HTTP 503 until explicit recovery. Existing SSE/WS streams still require reconnect after a supervisor crash. This does not restart or migrate MCP/Muse/Telegram transports. See docs/plans/2026-10-25-superagent-core-rolling-restart.md.
@@ -1057,6 +1059,18 @@ superagent studio code-to-video --file page.html --trust-html --width 640 --heig
 ```
 
 Private workspace-scoped HTTP: `POST /api/studio/code-to-video` and `GET /api/studio/code-videos/:id.mp4`. T-Line adds **Code → MP4** with video preview and download. External HTML must be trusted by the user; remote content is blocked, but this is NOT an untrusted-code sandbox. No arbitrary external React TSX execution, URLs, browser-generated audio capture, or arbitrary-JS animation parity yet. Optional canonical Studio WAV audio assets can be muxed as AAC into Code-to-Video MP4 (`--audio-asset AUDIO_ID`). A bounded in-process queue supports `POST /api/studio/code-to-video/jobs`, `GET /api/studio/code-to-video/jobs/:id` and `POST /api/studio/code-to-video/jobs/:id/cancel`; up to 1 active and 3 queued, with frame progress and cancellation. Queued/running/cancelling jobs are persisted as **metadata only** in workspace Studio storage. Completed MP4 IDs, status and progress survive backend restart, but in-flight jobs from a previous process are marked **interrupted** and NEVER automatically replayed. Query `GET /api/studio/code-to-video/jobs` for the last 20 jobs and open any previously completed MP4 by opaque ID; restart recovery is not a durable multi-process worker or automatic retry. The Studio editor includes recent-job history, MP4 reopen and explicit interruption warnings. See `docs/audits/2026-10-25-studio-code-to-video.md`.
+
+**Video-to-Code P5 (bounded scale + visual parity):** The 2–4-object
+high-contrast video tracker now emits editable `x/y/scaleX/scaleY`
+keyframes, including center-anchor compensation for objects that grow/shrink
+(up to 0.5–2× observed bounding dimensions). The API adds
+`parityReport` across three source-vs-Studio keyframe comparisons and two
+unsampled holdout frames: foreground IoU, precision, recall, F1 and normalized
+RGB error. T-Line displays these in an expandable per-frame parity table,
+while preserving the existing private source/reconstruction preview.
+Overlaps, occlusion, rotation, deformable shapes, arbitrary videos and full
+frame-by-frame perceptual parity remain unsupported. Technical QA:
+`docs/audits/2026-10-25-studio-p5-scale-parity.md`.
 
 **Video → editable React JSX (P4 developer preview):** The experimental video
 vector/OCR reconstruction can now export actual editable React/Next.js SVG

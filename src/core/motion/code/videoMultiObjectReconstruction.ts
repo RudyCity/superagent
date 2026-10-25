@@ -9,6 +9,7 @@ import { traceImageData } from "../vector/imageTracer.js";
 import { createMotionProject, motionWorkspaceRoot, studioStorageRoot, updateMotionProject } from "../project/projectStore.js";
 import { renderMotionSvg } from "../runtime/frameSvg.js";
 import { validateMotionProject } from "../schema/validation.js";
+import { measureStudioVideoFrameParity, type StudioFrameParity } from "./studioVideoParityMetrics.js";
 import type { MotionComposition, MotionProject, MotionTrack, PathLayer } from "../schema/types.js";
 
 const execute = promisify(execFile);
@@ -28,6 +29,36 @@ export function studioBaseSampleFrames(durationFrames: number): number[] {
 }
 
 
+/**
+ * Reconcile a contour sampled from the first frame with the observed bounding
+ * rectangle at a later frame. Studio scales SVG paths around their world-space
+ * layer center; adjusting the animation x/y keeps the silhouette anchored to
+ * the observed bounding box rather than drifting as its dimensions change.
+ *
+ * This is bounded axis-aligned box scaling, not deformable shape tracking.
+ */
+export function studioTrackedObjectTransform(
+  initial: { width: number; height: number },
+  observed: { x: number; y: number; width: number; height: number },
+): { x: number; y: number; scaleX: number; scaleY: number } {
+  if (![initial.width, initial.height, observed.width, observed.height,
+    observed.x, observed.y].every(Number.isFinite) ||
+    initial.width < 5 || initial.height < 5 ||
+    observed.width < 5 || observed.height < 5)
+    throw new Error("Invalid Studio tracked object dimensions");
+  const scaleX = observed.width / initial.width;
+  const scaleY = observed.height / initial.height;
+  if (scaleX < .5 || scaleX > 2 || scaleY < .5 || scaleY > 2)
+    throw new Error("Shape scale exceeded safe bounded tracking range");
+  // Native Studio path contour has 2px transparent margin on each side.
+  const paddedWidth = initial.width + 4, paddedHeight = initial.height + 4;
+  return {
+    x: observed.x - 2 - (1 - scaleX) * paddedWidth / 2,
+    y: observed.y - 2 - (1 - scaleY) * paddedHeight / 2,
+    scaleX, scaleY,
+  };
+}
+
 export interface StudioTrackedObject {
   id: string;
   boxes: Array<{ frame: number; x: number; y: number; width: number; height: number }>;
@@ -43,6 +74,7 @@ export interface StudioMultiObjectReconstruction {
   confidence: number;
   measuredForegroundIoU: number[];
   interpolationCheckIoU: number[];
+  parityReport: Array<{ frame: number; sampleType: "keyframe" | "holdout" } & StudioFrameParity>;
   reviewPng: string;
   limitations: string[];
 }
@@ -241,7 +273,7 @@ function vectorObject(frame: Frame, region: Component): string {
  */
 async function compareSampledVideoAndStudio(
   project: MotionProject, decoded: Frame[], frames: number[],
-): Promise<{ foregroundIoU: number[]; contactSheet: Buffer }> {
+): Promise<{ foregroundIoU: number[]; metrics: StudioFrameParity[]; contactSheet: Buffer }> {
   const width = decoded[0].width, height = decoded[0].height;
   const expectedBackground = [
     parseInt(project.composition.background.slice(1, 3), 16),
@@ -258,6 +290,7 @@ async function compareSampledVideoAndStudio(
   context.fillText("Video source (sampled)", 8, 19);
   context.fillText("Studio SVG reconstruction", width + 8, 19);
   const quality: number[] = [];
+  const metrics: StudioFrameParity[] = [];
   for (let index = 0; index < decoded.length; index++) {
     const source = decoded[index];
     const image = await loadImage(Buffer.from(renderMotionSvg(project, frames[index])));
@@ -265,17 +298,11 @@ async function compareSampledVideoAndStudio(
     const resultContext = result.getContext("2d");
     resultContext.drawImage(image, 0, 0, width, height);
     const pixels = resultContext.getImageData(0, 0, width, height).data;
-    let common = 0, union = 0;
-    for (let offset = 0; offset < pixels.length; offset += 4) {
-      const original = colorDistance(source.pixels[offset], source.pixels[offset + 1],
-        source.pixels[offset + 2], source.background) >= FOREGROUND_RGB_DISTANCE;
-      const output = colorDistance(pixels[offset], pixels[offset + 1],
-        pixels[offset + 2], expectedBackground) >= FOREGROUND_RGB_DISTANCE;
-      if (original || output) union++;
-      if (original && output) common++;
-    }
-    if (!union) throw new Error("Video comparison had no visible foreground");
-    quality.push(Number((common / union).toFixed(4)));
+    const parity = measureStudioVideoFrameParity(
+      source.pixels, pixels, width, height, source.background, expectedBackground,
+      FOREGROUND_RGB_DISTANCE);
+    quality.push(parity.foregroundIoU);
+    metrics.push(parity);
     const originalCanvas = createCanvas(width, height);
     const originalContext = originalCanvas.getContext("2d");
     const frameImage = originalContext.createImageData(width, height);
@@ -286,7 +313,7 @@ async function compareSampledVideoAndStudio(
   }
   const png = await contact.encode("png");
   if (png.length > 2 * 1024 * 1024) throw new Error("Studio comparison PNG exceeded safe size limit");
-  return { foregroundIoU: quality, contactSheet: png };
+  return { foregroundIoU: quality, metrics, contactSheet: png };
 }
 
 /** Experimental multiple-object video → editable SVG paths and keyframes.
@@ -383,10 +410,11 @@ export async function reconstructMultiObjectStudioVideo(
     const objects: StudioTrackedObject[] = [];
     for (let j = 0; j < ordered[0].length; j++) {
       const first = ordered[0][j];
-      const track = (axis: "x" | "y"): MotionTrack => ({
+      const transforms = ordered.map(set => studioTrackedObjectTransform(first, set[j]));
+      const track = (axis: "x" | "y" | "scaleX" | "scaleY"): MotionTrack => ({
         property: axis,
-        keyframes: ordered.map((set, index) => ({
-          frame: sampledFrames[index], value: set[j][axis], easing: "linear" as const,
+        keyframes: transforms.map((transform, index) => ({
+          frame: sampledFrames[index], value: transform[axis], easing: "linear" as const,
         })),
       });
       const id = "reconstructed-object-" + (j + 1);
@@ -396,10 +424,8 @@ export async function reconstructMultiObjectStudioVideo(
         rotation: 0, opacity: 1,
         fill: colorHex(first.r, first.g, first.b), fillRule: "evenodd",
         d: vectorObject(frames[0], first),
-        tracks: [track("x"), track("y")],
+        tracks: [track("x"), track("y"), track("scaleX"), track("scaleY")],
       });
-      // local crop has a two-pixel margin, so compensate in animated coordinates.
-      layers[j].tracks.forEach(t => t.keyframes.forEach(k => { k.value -= 2; }));
       objects.push({
         id, boxes: ordered.map((set, i) => ({
           frame: sampledFrames[i], x: set[j].x, y: set[j].y,
@@ -462,12 +488,20 @@ export async function reconstructMultiObjectStudioVideo(
       confidence: Number(Math.max(.1, Math.min(.75, .75 - average)).toFixed(2)),
       measuredForegroundIoU: review.foregroundIoU,
       interpolationCheckIoU: check?.foregroundIoU ?? [],
+      parityReport: [
+        ...review.metrics.map((metrics, index) => ({
+          frame: sampledFrames[reviewIndices[index]], sampleType: "keyframe" as const, ...metrics,
+        })),
+        ...(check?.metrics ?? []).map((metrics, index) => ({
+          frame: checkFrames[index], sampleType: "holdout" as const, ...metrics,
+        })),
+      ].sort((a, b) => a.frame - b.frame),
       reviewPng,
       limitations: [
         "Only 2-4 separated high-contrast shapes on a stable solid-color background; no AI vision model is used.",
-        "Only 5-9 bounded position samples estimate x/y; geometry/rotation/text/audio are not reconstructed.",
+        "Only 5–9 bounded samples estimate x/y and axis-aligned scaleX/scaleY; rotation, deformable shapes, text and audio are not reconstructed.",
         "Crossing or overlapping objects, occlusion and unstable identities fail closed.",
-        "Confidence is association-cost heuristic; review IoU covers three samples and interpolation QA up to two unsampled frames.",
+        "Confidence is association-cost heuristic; per-frame IoU, precision, recall and RGB pixel error cover three keyframes plus up to two unseen holdouts, not every frame.",
       ],
     };
   } finally {

@@ -77,11 +77,21 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
       const body = await rebuilt.json() as {
         projectId: string; revision: number; objects: unknown[];
         measuredForegroundIoU: number[]; interpolationCheckIoU: number[];
+        parityReport: Array<{ frame:number; sampleType:string;
+          foregroundIoU:number; foregroundPrecision:number;
+          foregroundRecall:number; foregroundF1:number; rgbMeanAbsoluteError:number }>;
       };
       expect((body as Record<string, unknown>).reviewPng).toBeUndefined();
       expect(body.objects).toHaveLength(2);
       expect(body.measuredForegroundIoU).toHaveLength(3);
       expect(body.interpolationCheckIoU).toHaveLength(2);
+      expect(body.parityReport).toHaveLength(5);
+      expect(body.parityReport.filter(frame=>frame.sampleType==='holdout')).toHaveLength(2);
+      expect(body.parityReport.map(frame=>frame.frame)).toEqual(
+        [...body.parityReport.map(frame=>frame.frame)].sort((a,b)=>a-b));
+      expect(body.parityReport.every(frame=>frame.foregroundIoU>=.38 &&
+        frame.foregroundPrecision>0 && frame.foregroundRecall>0 &&
+        frame.foregroundF1>0 && frame.rgbMeanAbsoluteError>=0)).toBe(true);
       const url = base + "/projects/" + body.projectId +
         "/reconstruction-review.png?revision=" + body.revision;
       const preview = await fetch(url);
