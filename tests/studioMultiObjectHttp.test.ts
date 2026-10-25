@@ -130,6 +130,38 @@ describe("Studio multi reconstruction HTTP workflow (behind global auth gate)", 
         "/reconstruction-diff.png?revision=999999999")).status).toBe(400);
       const original = await fetch(base + "/projects/" + body.projectId);
       expect(original.status).toBe(200);
+      const before = await original.json() as {revision:number;composition:{
+        layers:Array<{id:string;tracks:Array<{property:string;keyframes:Array<{
+          frame:number;value:number;easing?:string
+        }>}>}>}};
+      const layer = before.composition.layers.find(item=>item.id==="reconstructed-object-1")!;
+      const xTrack = layer.tracks.find(track=>track.property==="x")!;
+      const nextKeys = [...xTrack.keyframes.map(key=>({...key})),
+        {frame:16,value:xTrack.keyframes[0].value+4,easing:"linear"}]
+        .sort((a,b)=>a.frame-b.frame);
+      const correction = {baseRevision:before.revision,edits:[{
+        type:"set-track",layerId:layer.id,track:{property:"x",keyframes:nextKeys},
+      }]};
+      const saved = await fetch(base + "/projects/" + body.projectId + "/edits", {
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(correction),
+      });
+      expect(saved.status).toBe(200);
+      const adjusted = await saved.json() as {revision:number;composition:{
+        layers:Array<{id:string;tracks:Array<{property:string;keyframes:Array<{
+          frame:number;value:number
+        }>}>}>}};
+      expect(adjusted.revision).toBe(before.revision+1);
+      expect(adjusted.composition.layers.find(l=>l.id===layer.id)?.tracks
+        .find(t=>t.property==="x")?.keyframes.some(key=>key.frame===16)).toBe(true);
+      const stale = await fetch(base + "/projects/" + body.projectId + "/edits", {
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(correction),
+      });
+      expect(stale.status).not.toBe(200);
+      const verified = await fetch(base + "/projects/" + body.projectId);
+      expect((await verified.json() as {revision:number}).revision)
+        .toBe(adjusted.revision);
     } finally {
       server.closeAllConnections();
       if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
