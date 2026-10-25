@@ -16,7 +16,10 @@ export interface CoreSessionRequest {
   parseBody: boolean;
 }
 
-const BODY_SESSION_PATHS = new Set(["/api/init", "/api/chat", "/api/switch-workspace"]);
+const BODY_SESSION_PATHS = new Set([
+  "/api/init", "/api/chat", "/api/switch-workspace",
+  "/api/abort", "/api/chat/turns/recover",
+]);
 const REGISTRATION_PATHS = new Set(["/api/init", "/api/switch-workspace"]);
 export const CORE_ROUTING_BODY_LIMIT = 1024 * 1024;
 const MAX_SESSION_ID_LENGTH = 256;
@@ -60,15 +63,28 @@ export function inspectCoreSessionRequest(
       }
     } catch {}
   }
-  const headerId = headers["x-superagent-session-id"];
-  const sessionId = firstValue(
-    Array.isArray(headerId) ? headerId[0] : headerId,
-    url.searchParams.get("sessionId"),
-    pathname === "/api/history" ? url.searchParams.get("id") : undefined,
-    body.sessionId,
-    pathname === "/api/init" ? body.resume : undefined,
-    pathname === "/api/switch-workspace" ? body.id : undefined,
+  const explicitHeader = headers["x-superagent-session-id"];
+  const extensionHeader = headers["x-session-id"];
+  const headerId = firstValue(
+    Array.isArray(explicitHeader) ? explicitHeader[0] : explicitHeader,
+    Array.isArray(extensionHeader) ? extensionHeader[0] : extensionHeader,
   );
+  let historySession: string | undefined;
+  if (pathname.startsWith("/api/history/session/")) {
+    try {
+      historySession = decodeURIComponent(
+        pathname.slice("/api/history/session/".length).replace(/\/export$/, ""));
+    } catch {
+      // Invalid URL encoding is not a valid routing session identity.
+    }
+  }
+  // Registration must be bound to the *new or resumed* session in its body,
+  // never an inherited header from a previously selected Side Panel chat.
+  const sessionId = isPost && REGISTRATION_PATHS.has(pathname)
+    ? firstValue(body.sessionId, pathname === "/api/init" ? body.resume : body.id,
+      url.searchParams.get("sessionId"))
+    : firstValue(url.searchParams.get("sessionId"), headerId, historySession,
+      pathname === "/api/history" ? url.searchParams.get("id") : undefined, body.sessionId);
   return {
     sessionId,
     pathname,

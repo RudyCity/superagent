@@ -589,7 +589,13 @@ export async function runCoreSupervisor(
       else req.pipe(proxy);
     };
 
-    if (!route.parseBody) { forward(); return; }
+    // Session-bound requests already identify their worker in the URL/header.
+    // Do not buffer multimodal chat uploads (up to the backend's 32 MiB limit)
+    // just to inspect JSON. Registration still needs its response/ID matching.
+    if (!route.parseBody || route.sessionId && !route.isSessionRegistration) {
+      forward();
+      return;
+    }
 
     // Only inspect bounded JSON bodies on session-bearing endpoints.
     // Other endpoints retain request streaming and are never buffered.

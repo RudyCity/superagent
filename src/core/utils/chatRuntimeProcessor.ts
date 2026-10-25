@@ -27,6 +27,8 @@ export function startSessionTurnWorker(
   executeTurn: (session: SessionTurnRuntime, message: unknown) => Promise<void> =
     (current, message) => current.agent.sendMessage(message),
 ): void {
+  // Keep a single processor alive even if an abort invalidates its generation.
+  // The processor's finally callback restarts accepted turns *after* settling.
   if (processors.has(session)) return;
   const generation = generations.get(session) || 0;
   generations.set(session, generation);
@@ -56,7 +58,8 @@ export function startSessionTurnWorker(
         await executeTurn(session, next.message);
         const outcome = session.agent.lastTaskOutcome;
         const state = outcome === "task_aborted" ? "cancelled" :
-          outcome === "task_failed" ? "failed" : "completed";
+          outcome === "task_failed" ? "failed" :
+          outcome === "task_incomplete" ? "interrupted" : "completed";
         if (changeChatTurnState(next.turnId, state)) emit(emitEvent, session, next, state);
       } catch (error: any) {
         if (changeChatTurnState(next.turnId, "failed", String(error?.message || error))) {
@@ -75,9 +78,13 @@ export function startSessionTurnWorker(
   }).finally(() => {
     if (processors.get(session)?.promise === promise) processors.delete(session);
     // New accepts arriving in the final microtask are enqueued after the current loop.
-    if (listChatTurns(session.sessionId, 128).some(t => t.state === "accepted" || t.state === "queued") &&
-        generations.get(session) === generation) {
-      startSessionTurnWorker(session, emitEvent, executeTurn);
+    try {
+      if (listChatTurns(session.sessionId, 128).some(t => t.state === "accepted" || t.state === "queued")) {
+        startSessionTurnWorker(session, emitEvent, executeTurn);
+      }
+    } catch (error) {
+      // During shutdown the history SQLite handle may already be closed.
+      console.warn("[chat-turn-worker] Post-turn queue inspection unavailable");
     }
   });
 }

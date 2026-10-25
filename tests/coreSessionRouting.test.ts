@@ -12,6 +12,17 @@ describe("core worker session affinity", () => {
     expect(inspectCoreSessionRequest("/api/switch-workspace", "POST", {}, '{"id":"s123"}').sessionId).toBe("s123");
     expect(inspectCoreSessionRequest("/api/history?id=s123", "GET", {}).sessionId).toBe("s123");
     expect(inspectCoreSessionRequest("/api/status", "GET", {"x-superagent-session-id":"s123"}).sessionId).toBe("s123");
+    expect(inspectCoreSessionRequest("/api/status", "GET", {"x-session-id":"s123"}).sessionId).toBe("s123");
+    expect(inspectCoreSessionRequest("/api/chat", "POST", {"x-session-id":"s123"}).sessionId).toBe("s123");
+    expect(inspectCoreSessionRequest("/api/abort", "POST", {}, '{"sessionId":"s123"}').sessionId).toBe("s123");
+    expect(inspectCoreSessionRequest("/api/chat/turns/recover", "POST", {}, '{"sessionId":"s123"}').sessionId).toBe("s123");
+    expect(inspectCoreSessionRequest("/api/history/session/s123", "DELETE", {}).sessionId).toBe("s123");
+    expect(inspectCoreSessionRequest("/api/history/session/s123/export", "GET", {}).sessionId).toBe("s123");
+    expect(inspectCoreSessionRequest("/api/history/session/%ZZ", "DELETE", {}).sessionId).toBeUndefined();
+    expect(inspectCoreSessionRequest("/api/init", "POST",
+      {"x-session-id":"old-session"}, '{"workspace":"/workspace","resume":false}').sessionId).toBeUndefined();
+    expect(inspectCoreSessionRequest("/api/init", "POST",
+      {"x-session-id":"old-session"}, '{"workspace":"/workspace","resume":"new-session"}').sessionId).toBe("new-session");
     expect(inspectCoreSessionRequest("/api/events?sessionId=%0Ax", "GET", {}).sessionId).toBeUndefined();
     expect(inspectCoreSessionRequest("/api/chat", "POST", {}, "not json").sessionId).toBeUndefined();
     expect(CORE_ROUTING_BODY_LIMIT).toBe(1024 * 1024);

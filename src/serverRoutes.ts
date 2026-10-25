@@ -6,6 +6,7 @@ import {
   resumeRecoverableChatTurns,
 } from "./core/utils/chatRuntimeLedger.js";
 import { startSessionTurnWorker, stopSessionTurnWorker } from "./core/utils/chatRuntimeProcessor.js";
+import { collectSessionOwnedAgents } from "./core/utils/sessionAgentOwnership.js";
 import path from "path";
 import fs from "fs";
 import { URL } from "url";
@@ -1575,40 +1576,34 @@ export async function handleServerRoute(
     cancelChatSessionTurns(session.sessionId);
     session.agent.abort();
 
-    // Only touch instances that belong to this session. Ownership follows parentAgent
-    // (including nested subagents); instances without a parent fall back to workspace match.
-    const ownedAgents = new Set<any>([session.agent]);
-    const isOwned = (inst: any): boolean => {
-      if (inst.parentAgent) return ownedAgents.has(inst.parentAgent);
-      const wd = inst.agent?.workingDirectory;
-      return typeof wd === "string" && path.resolve(session.workspace) === path.resolve(wd);
-    };
-    let grew = true;
-    while (grew) {
-      grew = false;
-      for (const inst of [...superagentInstances.values(), ...subagentInstances.values()]) {
-        if (inst.agent && !ownedAgents.has(inst.agent) && isOwned(inst)) {
-          ownedAgents.add(inst.agent);
-          grew = true;
-        }
+    // Only terminate exact child agents of this chat. A shared workspace is
+    // never proof of ownership: independent sessions often run in the same cwd.
+    const ownedAgents = collectSessionOwnedAgents(session.agent, session.sessionId,
+      [...superagentInstances.values(), ...subagentInstances.values()]);
+    for (const sub of subagentInstances.values()) {
+      if (sub.status === "running" && sub.agent && ownedAgents.has(sub.agent)) {
+        sub.agent.abort();
+        sub.status = "error";
       }
     }
-    for (const sub of subagentInstances.values()) {
-      if (sub.status === "running" && sub.agent && ownedAgents.has(sub.agent)) sub.status = "error";
-    }
     for (const superInst of superagentInstances.values()) {
-      if (superInst.status === "running" && superInst.agent && ownedAgents.has(superInst.agent)) superInst.status = "terminated";
+      if (superInst.status === "running" && superInst.agent && ownedAgents.has(superInst.agent)) {
+        superInst.agent.abort();
+        superInst.status = "terminated";
+      }
     }
 
-    // Cancel only prompts owned by this session; never orphan prompts from other projects.
+    // Cancel only prompts owned by this session and its nested child agents.
     for (const [id, pending] of pendingPermissions) {
-      if (pending.ownerAgent === session.agent || pending.sessionId === session.sessionId) {
+      if (pending.ownerAgent && ownedAgents.has(pending.ownerAgent) ||
+          pending.sessionId === session.sessionId) {
         pending.resolve(false);
         pendingPermissions.delete(id);
       }
     }
     for (const [id, pending] of pendingQuestions) {
-      if (pending.ownerAgent === session.agent || pending.sessionId === session.sessionId) {
+      if (pending.ownerAgent && ownedAgents.has(pending.ownerAgent) ||
+          pending.sessionId === session.sessionId) {
         pending.resolve(null);
         pendingQuestions.delete(id);
       }
