@@ -19,6 +19,7 @@
 import type http from "node:http";
 import { randomToken, type McpOAuthStoreContract } from "./mcpOAuthStore.js";
 import { sha256Hex, constantTimeEqual } from "./mcpAuth.js";
+import {isAllowedOAuthRedirectUri} from "./mcpOAuthRedirect.js";
 import { recordMcpOAuthAudit, type McpOAuthAuditStage } from "./mcpOAuthAudit.js";
 
 export const OAUTH_SCOPES = ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"];
@@ -176,10 +177,8 @@ async function handleOAuthRouteInternal(
     if (!redirectUris.length) {
       return json(400, { error: "invalid_redirect_uri", error_description: "redirect_uris array is required" });
     }
-    for (const r of redirectUris) {
-      if (typeof r !== "string" || (!/^https:\/\//.test(r) && !/^http:\/\/127\.0\.0\.1/.test(r) && !/^http:\/\/localhost/.test(r)) || r.includes("#")) {
-        return json(400, { error: "invalid_redirect_uri", error_description: "redirect_uris must be https or loopback URIs without fragments" });
-      }
+    if (redirectUris.length>16 || redirectUris.some(r=>!isAllowedOAuthRedirectUri(r))) {
+      return json(400, { error: "invalid_redirect_uri", error_description: "redirect_uris must be https or exact http loopback URIs without fragments" });
     }
     const clientId = typeof params["client_id"] === "string" && params["client_id"].trim()
       ? params["client_id"].trim()
@@ -232,11 +231,8 @@ async function handleOAuthRouteInternal(
     if (!clientId || !redirectUri || !codeChallenge) {
       return json(400, { error: "invalid_request", error_description: "client_id, redirect_uri, and code_challenge are required" });
     }
-    if (!/^https:\/\//.test(redirectUri) && !/^http:\/\/127\.0\.0\.1/.test(redirectUri) && !/^http:\/\/localhost/.test(redirectUri)) {
-      return json(400, { error: "invalid_request", error_description: "redirect_uri must be https (or http loopback)" });
-    }
-    if (redirectUri.includes("#")) {
-      return json(400, { error: "invalid_request", error_description: "redirect_uri must not contain fragments" });
+    if (!isAllowedOAuthRedirectUri(redirectUri)) {
+      return json(400, { error: "invalid_request", error_description: "redirect_uri must be https or exact http loopback without fragments" });
     }
     // RFC 8707 Resource validation:
     const canonicalResource = `${base}/mcp`;

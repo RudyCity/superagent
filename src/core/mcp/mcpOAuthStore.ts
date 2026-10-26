@@ -14,6 +14,7 @@
 
 import crypto from "node:crypto";
 import { sha256Hex } from "./mcpAuth.js";
+import {isAllowedOAuthRedirectUri} from "./mcpOAuthRedirect.js";
 
 export interface PendingAuthorizationRequest {
   /** Internal request id (not exposed to the client). */
@@ -146,13 +147,14 @@ export class McpOAuthStore {
     if (!clientId || !Array.isArray(redirectUris) || redirectUris.length === 0) {
       throw new Error("clientId and at least one redirectUri are required");
     }
+    if (redirectUris.length>16) throw new Error("Too many redirect URIs");
+    if (this.clients.has(clientId))
+      throw new Error("client_id already registered; existing client cannot be overwritten");
     for (const uri of redirectUris) {
-      if (typeof uri !== "string" || uri.includes("#")) {
-        throw new Error("redirect_uri must be a valid URI without fragments");
-      }
-      if (!/^https:\/\//.test(uri) && !/^http:\/\/127\.0\.0\.1/.test(uri) && !/^http:\/\/localhost/.test(uri)) {
-        throw new Error("redirect_uri must use https (or http loopback)");
-      }
+      if (typeof uri==="string" && uri.includes("#"))
+        throw new Error("redirect_uri must not contain a fragment");
+      if (!isAllowedOAuthRedirectUri(uri))
+        throw new Error("redirect_uri must use https (or exact http loopback)");
     }
     const client: RegisteredClient = {
       clientId,

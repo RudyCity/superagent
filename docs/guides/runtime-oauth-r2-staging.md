@@ -24,3 +24,17 @@ Staging validation:
 The stage harness launches a newly isolated issuer process, tests metadata and DCR, stops only a PID verified to own the unique temporary port, and starts it again to verify client registration persisted with no redirect escalation and no changes to active production listener PIDs.
 
 **Still required for production R2:** certified service-account DPAPI/keystore recovery and Windows ACL access probe, atomic durable transactions (prefer SQLite for token rotations), explicit migration key-backup/restore controls, external TLS ingress, OAuth consent UX and rate limits, an independent authenticated health/drain control plane for OAuth owner, external-client PKCE/refresh/revoke E2E across a real tunnel. Until these gates pass, the R7 cutover policy MUST remain blocked.
+
+### Redirect and client identity hardening (2026-10-26)
+
+Dynamic registration, authorization and store-side client registration now
+use one parsed redirect-URI validator. HTTP callback URIs are allowed only
+for the actual loopback hosts localhost, 127.0.0.1 and [::1]; a similarly
+prefixed attacker hostname is refused. HTTPS callback URIs must not carry
+embedded user credentials, fragments, backslashes or control characters.
+Registration refuses duplicate client IDs rather than replacing an existing
+client's approved callback destinations and bounds the redirect URI count.
+Negative tests: tests/mcpOAuthRedirectSecurityR2.test.ts. CI runs them on
+Windows and Linux. This protects client metadata but is not a public issuer
+deployment certificate; client authorization and external TLS still require
+review.
