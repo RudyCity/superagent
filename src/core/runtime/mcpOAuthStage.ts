@@ -28,7 +28,8 @@ export async function runIndependentOAuthStage(args:string[]):Promise<void>{
   if(!/^[a-f0-9]{64}$/.test(approval))
     throw new Error("Missing private stage-only OAuth consent secret");
   const issuer="http://127.0.0.1:"+port;
-  const store=new McpDurableOAuthStore(root,issuer);
+  const store=new McpDurableOAuthStore(root,issuer,
+    {keyMode:process.platform==="win32"?"windows-dpapi":"raw-test"});
   const handle=await startMcpHttpServer({
     port,allowDangerous:false,lockSafeTools:true,toolExposure:"gateway",
     authMode:"oauth",oauthStore:store,

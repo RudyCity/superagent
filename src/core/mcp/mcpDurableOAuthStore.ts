@@ -8,6 +8,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {McpOAuthStore,type OAuthStateSnapshot} from "./mcpOAuthStore.js";
+import {protectNewIssuerKey,unprotectNewIssuerKey,
+  type ProtectedIssuerKey} from "./mcpWindowsDpapiKey.js";
 interface Envelope {version:1;payload:OAuthStateSnapshot;mac:string}
 function safeFile(file:string) {
   const s=fs.lstatSync(file);
@@ -18,7 +20,8 @@ export class McpDurableOAuthStore extends McpOAuthStore {
   private readonly key:Buffer;
   private readonly statePath:string;
   private unusable=false;
-  constructor(profile:string,private readonly issuer:string) {
+  constructor(profile:string,private readonly issuer:string,
+    options:{keyMode?:"raw-test"|"windows-dpapi"}={}) {
     super();
     if(!/^https:\/\/[^\s/#?]+/.test(issuer)&&
        !/^http:\/\/127\.0\.0\.1:\d{4,5}$/.test(issuer))
@@ -26,15 +29,37 @@ export class McpDurableOAuthStore extends McpOAuthStore {
     const dir=fs.realpathSync(profile);
     const stat=fs.lstatSync(dir);
     if(!stat.isDirectory()||stat.isSymbolicLink())throw new Error("Invalid OAuth profile");
-    const keyPath=path.join(dir,"oauth-state.key"),statePath=path.join(dir,"oauth-state.json");
+    // Never silently persist a plaintext issuer signing key. The legacy
+    // test-only format requires an explicit, isolated staging/test choice.
+    const keyMode=options.keyMode??"windows-dpapi";
+    if(keyMode!=="raw-test"&&keyMode!=="windows-dpapi")
+      throw new Error("Unknown OAuth key protection mode");
+    if(keyMode==="raw-test"&&process.env.NODE_ENV!=="test"&&
+       process.env.SUPERAGENT_MCP_OAUTH_STAGING!=="1")
+      throw new Error("Plain OAuth staging key is forbidden outside isolated tests");
+    const rawPath=path.join(dir,"oauth-state.key");
+    const protectedPath=path.join(dir,"oauth-state.key.dpapi");
+    const keyPath=keyMode==="windows-dpapi"?protectedPath:rawPath;
+    const foreignKeyPath=keyMode==="windows-dpapi"?rawPath:protectedPath;
+    const statePath=path.join(dir,"oauth-state.json");
     this.statePath=statePath;
+    if(fs.existsSync(foreignKeyPath))
+      throw new Error("Issuer key format mismatch; no automatic downgrade or migration");
     const hasKey=fs.existsSync(keyPath),hasState=fs.existsSync(statePath);
     if(hasState&&!hasKey)throw new Error("OAuth issuer key missing; refusing state reset");
     if(!hasKey){
-      fs.writeFileSync(keyPath,crypto.randomBytes(32),{mode:0o600,flag:"wx"});
+      const key=crypto.randomBytes(32);
+      try {
+        fs.writeFileSync(keyPath,
+          keyMode==="windows-dpapi"?
+            JSON.stringify(protectNewIssuerKey(key)):key,
+          {mode:0o600,flag:"wx"});
+      }finally{key.fill(0);}
     }
     safeFile(keyPath);
-    const key=fs.readFileSync(keyPath);
+    const key=keyMode==="windows-dpapi"?
+      unprotectNewIssuerKey(JSON.parse(fs.readFileSync(keyPath,"utf8")) as ProtectedIssuerKey):
+      fs.readFileSync(keyPath);
     if(key.length!==32)throw new Error("Invalid OAuth state key");
     this.key=key;
     if(hasState){

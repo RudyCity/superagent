@@ -112,6 +112,9 @@ const owners=[6789,7888,9877].map(p=>[p,old?.get(p)] as const);
 try {
   await launch();
   check("isolated_new_oauth_pid",current?.pid && readListenerOwners()?.get(port)===current.pid);
+  if(process.platform==="win32")check("issuer_key_uses_windows_current_user_dpapi",
+    fs.existsSync(path.join(dir,"oauth-state.key.dpapi"))&&
+    !fs.existsSync(path.join(dir,"oauth-state.key")));
   const m=await (await fetch(issuer+"/.well-known/oauth-protected-resource")).json() as {resource:string};
   check("independent_resource_metadata",m.resource===issuer+"/mcp");
   const reg=await fetch(issuer+"/oauth/register",{
