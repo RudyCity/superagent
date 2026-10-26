@@ -27,3 +27,25 @@ describe("R3 ingress owner hard boundary",()=>{
    })).rejects.toThrow();
  });
 });
+
+describe("R3 ingress proxy header trust",()=>{
+ it("does not forward untrusted proxy identity or hop-by-hop headers",async()=>{
+   const {sanitizedMcpIngressHeaders}=await import("../src/core/runtime/mcpIngressStage.js");
+   const result=sanitizedMcpIngressHeaders({
+     host:"attacker.invalid","x-forwarded-host":"attacker.invalid",
+     "x-forwarded-proto":"https","x-real-ip":"192.0.2.1",
+     forwarded:"for=attacker.invalid","proxy-authorization":"secret",
+     connection:"close",upgrade:"websocket",
+     authorization:"Bearer test-token","mcp-session-id":"session",
+     "content-type":"application/json",
+   },51001);
+   expect(result).toMatchObject({host:"127.0.0.1:51001",
+     authorization:"Bearer test-token","mcp-session-id":"session",
+     "content-type":"application/json"});
+   expect(result).not.toHaveProperty("x-forwarded-host");
+   expect(result).not.toHaveProperty("forwarded");
+   expect(result).not.toHaveProperty("x-real-ip");
+   expect(result).not.toHaveProperty("proxy-authorization");
+   expect(result).not.toHaveProperty("connection");
+ });
+});

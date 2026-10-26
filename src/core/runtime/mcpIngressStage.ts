@@ -22,6 +22,30 @@ export function isPermittedMcpIngressPath(method:string,path:string):boolean{
      "/.well-known/openid-configuration"].includes(pathname);
   return false;
 }
+/**
+ * The private ingress is not a trusted public edge: ignore client-supplied
+ * routing / forwarded identity and hop-by-hop headers before proxying.
+ * Preserve OAuth bearer, MCP session and content headers unchanged.
+ */
+const STRIP_INGRESS_HEADERS=new Set([
+  "forwarded","connection","keep-alive","te","trailer","upgrade",
+  "transfer-encoding","proxy-authorization","proxy-authenticate",
+  "proxy-connection",
+]);
+export function sanitizedMcpIngressHeaders(
+  incoming:http.IncomingHttpHeaders,targetPort:number,
+):http.OutgoingHttpHeaders {
+  const headers:http.OutgoingHttpHeaders={host:"127.0.0.1:"+targetPort};
+  for(const [key,value] of Object.entries(incoming)){
+    const lower=key.toLowerCase();
+    if(lower==="host"||STRIP_INGRESS_HEADERS.has(lower)||
+       lower.startsWith("x-forwarded-")||lower.startsWith("proxy-")||
+       lower.startsWith("x-original-")||lower.startsWith("x-real-"))
+      continue;
+    if(value!==undefined)headers[lower]=value;
+  }
+  return headers;
+}
 export interface StagingIngressProof {
   ingressPort:number;targetPort:number;targetPid:number;
   ownerPid:number;protocol:"private_loopback_proxy";publicTunnelStarted:false;
@@ -43,11 +67,7 @@ export async function startVerifiedMcpIngress(input:{
     if(!isPermittedMcpIngressPath(req.method||"",url)){
       res.writeHead(404,{"Cache-Control":"no-store"});res.end();return;
     }
-    const cleanHeaders:http.OutgoingHttpHeaders={
-      ...req.headers,host:"127.0.0.1:"+targetPort
-    };
-    delete cleanHeaders["proxy-authorization"];
-    delete cleanHeaders["proxy-connection"];
+    const cleanHeaders=sanitizedMcpIngressHeaders(req.headers,targetPort);
     const upstream=http.request({
       hostname:"127.0.0.1",port:targetPort,path:url,
       method:req.method,headers:cleanHeaders,timeout:5000,

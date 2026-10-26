@@ -47,3 +47,12 @@ The gate never imports old OAuth tokens, authorizes an automatic endpoint change
 Production R2: OS protected credential/key store (Windows DPAPI or supported native keystore) and durable transactional OAuth state/rotation, auditable client registration controls, TLS issuer identity and backup/restore. R3: provider-specific independently owned ingress/tunnel with live issuer parity, authenticated proxy trust and drain. R4: installed T-Line desktop E2E. R5: opt-in separate per-owner Windows reboot/autostart drill on a test system. R6: actual extended soak, Linux/Windows CI completion and security threat model. R7: human-controlled client reauthorization and reversible public routing, confirmed 0 active legacy sessions and 0 ambiguous tool effects, then separate Core 7888 cutover. None of these may be misrepresented as completed on production by green local tests.
 
 Status labels: R2 staging functioning, R3 staging functioning, R4 source/backend contract verified, R5 safety preflight implemented, R6 partial automated staging evidence, R7 real-time blocker audit implemented; production release blocked.
+
+### R3 private-ingress proxy trust hardening (2026-10-26)
+
+The private staging ingress now strips untrusted forwarded/original/real client
+identity and hop-by-hop proxy headers, replacing Host with the kernel-verified
+loopback target. OAuth bearer, MCP session and content headers remain intact.
+R3 negative tests and the 20-check independent OAuth/ingress process smoke pass.
+This change does not provision TLS, resolve public issuer parity, or permit
+production tunnel cutover.
