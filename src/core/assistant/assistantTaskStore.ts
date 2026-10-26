@@ -8,13 +8,14 @@ import path from "node:path";
 import { DEFAULT_ASSISTANT_TASK_DOMAIN, validAssistantTaskDomain, type AssistantTaskDomain } from "./assistantTaskDomains.js";
 
 export const TASK_STATES = [
-  "queued", "planning", "awaiting_approval", "running",
+  "queued", "paused", "planning", "awaiting_approval", "running",
   "completed", "failed", "cancelled", "interrupted", "reconcile_required",
 ] as const;
 export type AssistantTaskState = typeof TASK_STATES[number];
 
 const transitions: Record<AssistantTaskState, readonly AssistantTaskState[]> = {
-  queued: ["planning", "cancelled"],
+  queued: ["paused", "planning", "cancelled"],
+  paused: ["queued", "cancelled"],
   planning: ["awaiting_approval", "running", "failed", "cancelled", "interrupted"],
   awaiting_approval: ["running", "cancelled", "failed", "interrupted"],
   running: ["completed", "failed", "cancelled", "interrupted", "reconcile_required"],
@@ -38,6 +39,8 @@ export interface AssistantTaskRecord {
   createdAt: number;
   updatedAt: number;
   evidenceIds: string[];
+  /** Exact prior attempt; metadata only. Never grants implicit execution. */
+  retryOfTaskId?: string;
 }
 export interface AssistantTaskEvent {
   seq: number;
@@ -103,7 +106,8 @@ export class AssistantTaskStore {
       if (task.ownerId !== this.scope.ownerId || task.workspaceId !== this.scope.workspaceId ||
           !ID_PATTERN.test(task.taskId) || !TASK_STATES.includes(task.status) ||
           !Number.isSafeInteger(task.revision) || task.revision < 1 ||
-           (task.domain !== undefined && !validAssistantTaskDomain(task.domain))) {
+          (task.retryOfTaskId !== undefined && !ID_PATTERN.test(task.retryOfTaskId)) ||
+          (task.domain !== undefined && !validAssistantTaskDomain(task.domain))) {
         throw new Error("Task journal scope or schema mismatch");
       }
       task.domain ??= DEFAULT_ASSISTANT_TASK_DOMAIN;
@@ -179,6 +183,43 @@ export class AssistantTaskStore {
         workspaceId: this.scope.workspaceId, title, domain,
         idempotencyKey: input.idempotencyKey, status: "queued",
         revision: 1, createdAt: now, updatedAt: now, evidenceIds: [],
+      };
+      snapshot.tasks.push(task);
+      this.append(snapshot, task);
+      return task;
+    });
+  }
+
+  /** An explicit new draft cloned from a terminal attempt. This operation
+   * only writes metadata; the worker must still receive a separate Run.
+   * Source checks and idempotency are atomic under the scope journal lock. */
+  async retryAsDraft(input: {
+    taskId: string; expectedRevision: number; idempotencyKey: string;
+  }): Promise<AssistantTaskRecord> {
+    validId(input.taskId, "taskId");
+    validId(input.idempotencyKey, "idempotencyKey");
+    if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1)
+      throw new Error("Invalid revision");
+    return this.mutate(snapshot => {
+      const source = snapshot.tasks.find(t => t.taskId === input.taskId);
+      if (!source || source.revision !== input.expectedRevision)
+        throw new Error("Task revision conflict");
+      if (!["failed", "cancelled", "reconcile_required"].includes(source.status))
+        throw new Error("Only terminal reviewed tasks can be retried as drafts");
+      const existing = snapshot.tasks.find(t => t.idempotencyKey === input.idempotencyKey);
+      if (existing) {
+        if (existing.retryOfTaskId !== source.taskId)
+          throw new Error("Idempotency key reused for another task");
+        return existing;
+      }
+      if (snapshot.tasks.length >= MAX_TASKS) throw new Error("Task capacity reached");
+      const now = Date.now();
+      const task: AssistantTaskRecord = {
+        taskId: randomUUID(), goalId: source.goalId, ownerId: this.scope.ownerId,
+        workspaceId: this.scope.workspaceId, title: source.title,
+        domain: source.domain, idempotencyKey: input.idempotencyKey,
+        status: "queued", revision: 1, createdAt: now, updatedAt: now,
+        evidenceIds: [], retryOfTaskId: source.taskId,
       };
       snapshot.tasks.push(task);
       this.append(snapshot, task);

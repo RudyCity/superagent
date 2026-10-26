@@ -82,6 +82,69 @@ describe("assistant persistent task journal", () => {
       goalId: "other", title: "Unsupported", idempotencyKey: "domain2", domain: "browser" as any,
     })).rejects.toThrow("Invalid assistant task domain");
   }));
+  it("persists a paused pre-execution checkpoint and resumes only to an unstarted draft", async () =>
+    fixture(async root => {
+      const store = new AssistantTaskStore(root, owner);
+      const draft = await store.create({ goalId: "g_checkpoint", title: "Plan report",
+        idempotencyKey: "pause_one" });
+      const paused = await store.transition({
+        taskId: draft.taskId, expectedRevision: draft.revision, status: "paused",
+      });
+      expect(paused.status).toBe("paused");
+      const restarted = new AssistantTaskStore(root, owner);
+      expect((await restarted.get(draft.taskId))?.status).toBe("paused");
+      await expect(restarted.transition({
+        taskId: draft.taskId, expectedRevision: paused.revision, status: "planning",
+      })).rejects.toThrow("Illegal transition");
+      await expect(restarted.transition({
+        taskId: draft.taskId, expectedRevision: draft.revision, status: "queued",
+      })).rejects.toThrow("revision conflict");
+      const resumed = await restarted.transition({
+        taskId: draft.taskId, expectedRevision: paused.revision, status: "queued",
+      });
+      expect(resumed.revision).toBe(3);
+      expect((await store.eventsAfter(0)).events.map(e => e.status))
+        .toEqual(["queued", "paused", "queued"]);
+      expect((await store.get(draft.taskId))?.status).toBe("queued");
+    }));
+  it("clones only terminal attempts to unique, unstarted, idempotent retry drafts", async () =>
+    fixture(async root => {
+      const store = new AssistantTaskStore(root, owner);
+      const source = await store.create({ goalId: "retry_goal", title: "Check logs",
+        idempotencyKey: "old_attempt", domain: "research" });
+      await expect(store.retryAsDraft({
+        taskId: source.taskId, expectedRevision: source.revision, idempotencyKey: "retry1",
+      })).rejects.toThrow("terminal reviewed");
+      const planning = await store.transition({ taskId: source.taskId,
+        expectedRevision: source.revision, status: "planning" });
+      const running = await store.transition({ taskId: source.taskId,
+        expectedRevision: planning.revision, status: "running" });
+      const failed = await store.transition({ taskId: source.taskId,
+        expectedRevision: running.revision, status: "failed" });
+      await expect(store.retryAsDraft({taskId: source.taskId,
+        expectedRevision: running.revision, idempotencyKey: "retry1"}))
+        .rejects.toThrow("revision conflict");
+      const created = await store.retryAsDraft({taskId: source.taskId,
+        expectedRevision: failed.revision, idempotencyKey: "retry1"});
+      const replay = await new AssistantTaskStore(root, owner).retryAsDraft({
+        taskId: source.taskId, expectedRevision: failed.revision, idempotencyKey: "retry1",
+      });
+      expect(created.taskId).not.toBe(source.taskId);
+      expect(replay.taskId).toBe(created.taskId);
+      expect(created.retryOfTaskId).toBe(source.taskId);
+      expect(created.domain).toBe("research");
+      expect(created.status).toBe("queued");
+      expect(created.revision).toBe(1);
+      expect(created.evidenceIds).toEqual([]);
+      expect((await store.eventsAfter(0)).events.at(-1)?.taskId).toBe(created.taskId);
+      const foreign = new AssistantTaskStore(root, {ownerId:"other",workspaceId:owner.workspaceId});
+      await expect(foreign.retryAsDraft({taskId:source.taskId,
+        expectedRevision:failed.revision,idempotencyKey:"retry_other"}))
+        .rejects.toThrow("revision conflict");
+      await expect(store.retryAsDraft({taskId:source.taskId,
+        expectedRevision:failed.revision,idempotencyKey:"old_attempt"}))
+        .rejects.toThrow("Idempotency");
+    }));
   it("opens legacy domainless v1 journals without reclassifying their tasks", async () => fixture(async root => {
     const store = new AssistantTaskStore(root, owner);
     const created = await store.create({

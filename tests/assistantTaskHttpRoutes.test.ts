@@ -124,6 +124,70 @@ describe("session-scoped assistant metadata routes", () => {
     expect(rejected.status).toBe(409);
     expect((await store.get(planning.taskId))?.status).toBe("running");
   }));
+  it("exposes exact-scope checkpoint and manual pause/resume without running a worker", async () =>
+    scenario(async call => {
+      const created = await call("POST", sessionId, "", {
+        goalId: "cp_goal", title: "Check task", idempotencyKey: "cp_draft",
+      });
+      const id = created.body.task.taskId;
+      const checkpoint = await call("GET", sessionId, "/" + id + "/checkpoint");
+      expect(checkpoint.body.checkpoint).toBe("draft-boundary");
+      expect(checkpoint.body.executionResumptionSupported).toBe(false);
+      const paused = await call("POST", sessionId, "/" + id + "/pause", {
+        expectedRevision: 1,
+      });
+      expect(paused.status).toBe(200);
+      expect(paused.body.task.status).toBe("paused");
+      expect(paused.body.executed).toBe(false);
+      expect((await call("POST", sessionId, "/" + id + "/run",
+        { expectedRevision: 2 })).status).toBe(409);
+      expect((await call("POST", "session_other", "/" + id + "/resume",
+        { expectedRevision: 2 })).status).toBe(409);
+      expect((await call("POST", sessionId, "/" + id + "/resume",
+        { expectedRevision: 1 })).status).toBe(409);
+      const resumed = await call("POST", sessionId, "/" + id + "/resume",
+        { expectedRevision: 2 });
+      expect(resumed.body.task.status).toBe("queued");
+      expect(resumed.body.task.revision).toBe(3);
+      expect(resumed.body.executed).toBe(false);
+      expect((await call("GET", sessionId, "/events")).body.events.map((e:any) => e.status))
+        .toEqual(["queued","paused","queued"]);
+    }));
+  it("retries failed work only as a separate draft with explicit idempotency", async () =>
+    scenario(async call => {
+      const original = await call("POST", sessionId, "", {
+        goalId:"retry_goal", title:"Research", idempotencyKey:"first", domain:"research",
+      });
+      const id = original.body.task.taskId;
+      const ownerId = "session_" + createHash("sha256").update(sessionId).digest("hex").slice(0,24);
+      const workspaceId = createHash("sha256").update(workspace).digest("hex").slice(0,24);
+      const store = new AssistantTaskStore(process.env.SUPERAGENT_CONFIG_DIR!, { ownerId, workspaceId });
+      const planning = await store.transition({taskId:id, expectedRevision:1, status:"planning"});
+      const running = await store.transition({taskId:id, expectedRevision:planning.revision,status:"running"});
+      const failed = await store.transition({taskId:id, expectedRevision:running.revision,status:"failed"});
+      const operation = "/" + id + "/retry";
+      expect((await call("POST", sessionId, operation, {
+        expectedRevision:failed.revision, idempotencyKey: "bad/path",
+      })).status).toBe(400);
+      const retry = await call("POST", sessionId, operation, {
+        expectedRevision:failed.revision, idempotencyKey:"retry_once",
+      });
+      expect(retry.status).toBe(200);
+      expect(retry.body.executed).toBe(false);
+      expect(retry.body.task.retryOfTaskId).toBe(id);
+      expect(retry.body.task.status).toBe("queued");
+      const again = await call("POST", sessionId, operation, {
+        expectedRevision:failed.revision,idempotencyKey:"retry_once",
+      });
+      expect(again.body.task.taskId).toBe(retry.body.task.taskId);
+      expect((await call("POST", "session_other", operation, {
+        expectedRevision:failed.revision,idempotencyKey:"other_retry",
+      })).status).toBe(409);
+      const preview = await call("GET", sessionId, "/" + id + "/checkpoint");
+      expect(preview.body.checkpoint).toBe("manual-review-only");
+      expect(preview.body.executionResumptionSupported).toBe(false);
+      expect((await store.list()).filter(task => task.retryOfTaskId === id)).toHaveLength(1);
+    }));
   it("blocks unsafe mutation and unknown transition", async () => scenario(async call => {
     const created = await call("POST", sessionId, "", {
       goalId: "goal1", idempotencyKey: "id1", title: "Review",

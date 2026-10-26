@@ -31,7 +31,7 @@ export async function handleAssistantTaskHttpRoute(
 ): Promise<boolean> {
   if (pathname !== "/api/assistant/tasks" &&
       pathname !== "/api/assistant/tasks/events" &&
-      !/^\/api\/assistant\/tasks\/[a-f\d-]{36}(?:\/(?:cancel|run|result|prepare|patch|reconcile))?$/.test(pathname)) return false;
+      !/^\/api\/assistant\/tasks\/[a-f\d-]{36}(?:\/(?:cancel|run|result|prepare|patch|reconcile|pause|resume|retry|checkpoint))?$/.test(pathname)) return false;
   const { sendJSON } = dependencies;
   const respond = (status: number, data: unknown) => {
     res.setHeader("Cache-Control", "no-store");
@@ -71,7 +71,7 @@ export async function handleAssistantTaskHttpRoute(
       const tasks = await store.list(100);
       const liveTaskIds = runtime.liveIds;
       respond(200, { success: true, sessionId, tasks, executionEnabled: true,
-        executionPolicy: "read-only-explicit-run", supportedModes: ["analysis", "patch-preview"],
+        executionPolicy: "read-only-explicit-run", supportedModes: ["analysis", "patch-preview", "draft-checkpoint"],
         domains: TASK_DOMAIN_DESCRIPTORS.map(({ id, label, description, patchPreview }) =>
           ({ id, label, description, patchPreview })), liveTaskIds,
         unverifiedTaskIds: tasks.filter(t => (t.status === "running" || t.status === "planning") &&
@@ -93,6 +93,19 @@ export async function handleAssistantTaskHttpRoute(
       respond(task ? 200 : 404, task ? { success: true, task } : { error: "Task not found" });
       return true;
     }
+    if (req.method === "GET" && /^\/[a-f\d-]{36}\/checkpoint$/.test(suffix)) {
+      const task = await store.get(suffix.slice(1, 37));
+      if (!task) { respond(404, { error: "Task not found" }); return true; }
+      respond(200, {
+        success: true, taskId: task.taskId, revision: task.revision, status: task.status,
+        updatedAt: task.updatedAt, retryOfTaskId: task.retryOfTaskId,
+        checkpoint: task.status === "paused" || task.status === "queued"
+          ? "draft-boundary" : "manual-review-only",
+        canResumeWithoutExecution: task.status === "paused",
+        executionResumptionSupported: false,
+      });
+      return true;
+    }
     if (req.method === "GET" && /^\/[a-f\d-]{36}\/result$/.test(suffix)) {
       const task = await store.get(suffix.slice(1, 37));
       if (!task) { respond(404, { error: "Task not found" }); return true; }
@@ -111,7 +124,7 @@ export async function handleAssistantTaskHttpRoute(
       return true;
     }
     if (req.method === "POST" && (suffix === "" ||
-        /^\/[a-f\d-]{36}\/(?:cancel|run|prepare|reconcile)$/.test(suffix))) {
+        /^\/[a-f\d-]{36}\/(?:cancel|run|prepare|reconcile|pause|resume|retry)$/.test(suffix))) {
       const serialized = await dependencies.readBody(req);
       if (Buffer.byteLength(serialized) > 4096) {
         respond(413, { error: "Task request exceeds limit" });
@@ -155,6 +168,40 @@ export async function handleAssistantTaskHttpRoute(
         respond(409, { error: "Task missing or revision conflict" });
         return true;
       }
+      if (suffix.endsWith("/pause") || suffix.endsWith("/resume")) {
+        const pause = suffix.endsWith("/pause");
+        if (runtime.liveIds.includes(taskId)) {
+          respond(409, { error: "Task already submitted to dispatcher; cannot pause/resume" });
+          return true;
+        }
+        if (current.status !== (pause ? "queued" : "paused")) {
+          respond(409, { error: pause ? "Only unstarted drafts can be paused" :
+            "Only paused drafts can be resumed" });
+          return true;
+        }
+        const task = await store.transition({
+          taskId, expectedRevision: current.revision, status: pause ? "paused" : "queued",
+        });
+        respond(200, { success: true, task, executed: false,
+          checkpoint: "draft-boundary" });
+        return true;
+      }
+      if (suffix.endsWith("/retry")) {
+        if (runtime.liveIds.includes(taskId)) {
+          respond(409, { error: "Original worker still active; cannot create retry draft" });
+          return true;
+        }
+        if (typeof body.idempotencyKey !== "string" ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.idempotencyKey)) {
+          respond(400, { error: "Explicit retry idempotency key required" });
+          return true;
+        }
+        const task = await store.retryAsDraft({
+          taskId, expectedRevision: current.revision, idempotencyKey: body.idempotencyKey,
+        });
+        respond(200, { success: true, task, executed: false, retryOfTaskId: taskId });
+        return true;
+      }
       if (suffix.endsWith("/reconcile")) {
         if (runtime.liveIds.includes(taskId)) {
           respond(409, { error: "Task worker still active; cannot reconcile" });
@@ -187,7 +234,7 @@ export async function handleAssistantTaskHttpRoute(
           executionPolicy: isPatch ? "isolated-patch-preview" : "read-only-explicit-run" });
         return true;
       }
-      if (current.status === "queued") {
+      if (current.status === "queued" || current.status === "paused") {
         const cancelled = await store.transition({
           taskId, expectedRevision: current.revision, status: "cancelled",
         });
