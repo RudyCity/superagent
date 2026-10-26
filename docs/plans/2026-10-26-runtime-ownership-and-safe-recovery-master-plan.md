@@ -245,3 +245,12 @@ T-Line key references:
 - docs/guides/core-reconnect-phase5e.md
 
 **Change policy:** Inspect Git status before each batch; stage and commit only authored files. Preserve concurrent assistant-task changes and unrelated untracked files. Before any production cutover, new consent/maintenance approval must explicitly identify old/new issuer, client reauthorization plan, affected endpoints, operator rollback and observability evidence.
+
+## Engineering checkpoint — 2026-10-26
+
+See docs/guides/runtime-r0-r7-2026-10-26-evidence.md for reproducible tests,
+commit-backed improvements, local installer hashes and the remaining actual
+Windows/production certificates. R2/R3 staging, R4 source + native package
+build, R5 fail-closed recovery policy, and R6/R7 offline gates have advanced.
+The live production release gate remains BLOCKED. No existing MCP/Core
+listener, OAuth credentials, tunnels or installed desktop binary were replaced.
