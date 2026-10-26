@@ -13,6 +13,17 @@
 
 ## 1. Decision and fastest safe path
 
+**Architecture simplification (2026-10-26):** Maintain exactly ONE
+normal primary SuperAgent runtime used by ONE T-Line backend. The
+second SuperAgent profile is **temporary and testing-only**, not an
+extra permanent T-Line backend. Test owners are stopped and checked
+after isolated acceptance; the new independently owned stack becomes
+the sole primary only after R6/R7 approval. See
+[Primary and temporary test profile](../guides/runtime-primary-and-temporary-test-profile.md).
+T-Line commit `bd82d89` added a startup-only target choice and
+source-level tests (25/25) plus a 9/9 real Core-stage probe. Installed
+desktop certification and production cutover remain BLOCKED.
+
 **Decision:** keep the legacy Core/MCP owners serving existing clients, activate
 an independently owned next-generation stack in a separate private profile,
 complete real installed-desktop and new OAuth client journeys against it,

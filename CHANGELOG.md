@@ -1,3 +1,8 @@
+## [1.14.42] - 2026-10-26
+### Documentation
+- Clarified the single-primary SuperAgent deployment topology with a bounded isolated test profile, no second persistent T-Line backend, and required test cleanup/owner checks. Synced the execution roadmap with the T-Line startup-only target selection and its actual local staging acceptance results.
+- This documentation update does not perform a live cutover, register startup jobs, terminate any owner, copy OAuth sessions or certify installed desktop use.
+
 ## [1.14.41] - 2026-10-26
 ### Runtime safety acceptance
 - Extended the real isolated Core/MCP process acceptance to replace only the test-owned MCP owner while Core remains available. An existing MCP session must be rejected with HTTP 404 after restart, and a newly initialized session must get a different ID. Verified 24/24 live checks and release of both test ports after cleanup.
