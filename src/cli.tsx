@@ -176,6 +176,16 @@ For full login help:
 
 if (process.argv[2] === "mcp") {
   const sub = process.argv[3]?.toLowerCase();
+  if (sub === "owner-sandbox") {
+    try {
+      const { runIsolatedMcpOwner } = await import("./core/runtime/mcpOwnerSandbox.js");
+      await runIsolatedMcpOwner(process.argv.slice(4));
+      await new Promise(() => {});
+    } catch (error) {
+      console.error("[MCP owner sandbox] " + String(error));
+      process.exit(1);
+    }
+  }
   if (sub === "register") {
     const { registerToAgyConfig } = await import("./core/mcp/mcpRegistration.js");
     const res = registerToAgyConfig();

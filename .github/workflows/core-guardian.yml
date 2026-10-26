@@ -10,6 +10,9 @@ on:
       - "src/core/runtime/coreColdReconciliation.ts"
       - "src/core/runtime/coreRecoveryCasebook.ts"
       - "src/core/runtime/coreRecoveryCanary.ts"
+      - "src/core/runtime/coreMcpOwnershipAudit.ts"
+      - "src/core/runtime/mcpOwnerSandbox.ts"
+      - "src/cli.tsx"
       - "src/core/runtime/coreServiceLifecycle.ts"
       - "src/core/runtime/coreLifecycleObserver.ts"
       - "src/core/runtime/coreChannelRecovery.ts"
@@ -29,11 +32,13 @@ on:
       - "scripts/verify-core-guardian.ts"
       - "scripts/verify-core-recovery-5g-j.ts"
       - "scripts/verify-core-approved-canary.ts"
+      - "scripts/verify-core-mcp-owner-split.ts"
       - "scripts/verify-core-session-resume.ts"
       - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
       - "tests/coreRecoveryPhase5gToJ.test.ts"
       - "tests/coreRecoveryCasebookObserver.test.ts"
+      - "tests/coreMcpOwnershipAudit.test.ts"
       - "tests/corePhase5d.test.ts"
       - "tests/corePhase5e.test.ts"
       - "tests/corePhase5e.test.ts"
@@ -46,6 +51,7 @@ on:
       - "docs/guides/core-recovery-phase5g-to-5j.md"
       - "docs/guides/core-recovery-phase5k-casebook-observer.md"
       - "docs/guides/core-recovery-phase5l-isolated-canary.md"
+      - "docs/guides/core-mcp-ownership-phase5m.md"
   pull_request:
     paths:
       - ".github/workflows/core-guardian.yml"
@@ -55,6 +61,9 @@ on:
       - "src/core/runtime/coreColdReconciliation.ts"
       - "src/core/runtime/coreRecoveryCasebook.ts"
       - "src/core/runtime/coreRecoveryCanary.ts"
+      - "src/core/runtime/coreMcpOwnershipAudit.ts"
+      - "src/core/runtime/mcpOwnerSandbox.ts"
+      - "src/cli.tsx"
       - "src/core/runtime/coreServiceLifecycle.ts"
       - "src/core/runtime/coreLifecycleObserver.ts"
       - "src/core/runtime/coreChannelRecovery.ts"
@@ -72,11 +81,13 @@ on:
       - "scripts/verify-core-guardian.ts"
       - "scripts/verify-core-recovery-5g-j.ts"
       - "scripts/verify-core-approved-canary.ts"
+      - "scripts/verify-core-mcp-owner-split.ts"
       - "scripts/verify-core-session-resume.ts"
       - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
       - "tests/coreRecoveryPhase5gToJ.test.ts"
       - "tests/coreRecoveryCasebookObserver.test.ts"
+      - "tests/coreMcpOwnershipAudit.test.ts"
       - "tests/corePhase5d.test.ts"
       - "tests/coreAgentSessionCheckpoint.test.ts"
       - "tests/coreBoot.test.ts"
@@ -87,6 +98,7 @@ on:
       - "docs/guides/core-recovery-phase5g-to-5j.md"
       - "docs/guides/core-recovery-phase5k-casebook-observer.md"
       - "docs/guides/core-recovery-phase5l-isolated-canary.md"
+      - "docs/guides/core-mcp-ownership-phase5m.md"
   workflow_dispatch:
 jobs:
   core-guardian:
@@ -109,7 +121,7 @@ jobs:
       - name: Build TypeScript
         run: bun run build
       - name: Unit/Core/transport regression
-        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreRecoveryPhase5gToJ.test.ts tests/coreRecoveryCasebookObserver.test.ts tests/corePhase5d.test.ts tests/corePhase5e.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreRecoveryPhase5gToJ.test.ts tests/coreRecoveryCasebookObserver.test.ts tests/coreMcpOwnershipAudit.test.ts tests/corePhase5d.test.ts tests/corePhase5e.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
       - name: Preview Windows login startup without installing scheduled tasks
         if: runner.os == 'Windows'
         run: bun scripts/setup-core-windows-startup.ts --port 7888
@@ -123,3 +135,6 @@ jobs:
         run: bun scripts/verify-core-recovery-5g-j.ts --cycles 2
       - name: Explicitly approved isolated Core canary and safe owner cleanup
         run: bun scripts/verify-core-approved-canary.ts
+      - name: Independent Core and authenticated MCP HTTP owner listener test
+        if: runner.os == 'Windows'
+        run: bun scripts/verify-core-mcp-owner-split.ts
