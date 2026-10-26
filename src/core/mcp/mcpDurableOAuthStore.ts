@@ -19,6 +19,7 @@ function safeFile(file:string) {
 export class McpDurableOAuthStore extends McpOAuthStore {
   private readonly key:Buffer;
   private readonly statePath:string;
+  private lastCommittedMac:string|null=null;
   private unusable=false;
   constructor(profile:string,private readonly issuer:string,
     options:{keyMode?:"raw-test"|"windows-dpapi"}={}) {
@@ -74,6 +75,7 @@ export class McpDurableOAuthStore extends McpOAuthStore {
          !crypto.timingSafeEqual(Buffer.from(expected,"hex"),Buffer.from(envelope.mac,"hex")))
          throw new Error("Tampered OAuth issuer state; refuse restart");
       this.restoreSnapshot(envelope.payload,issuer);
+      this.lastCommittedMac=envelope.mac;
     }else this.flush();
   }
   private sign(payload:OAuthStateSnapshot):string {
@@ -87,13 +89,43 @@ export class McpDurableOAuthStore extends McpOAuthStore {
     const snapshot=this.exportSnapshot(this.issuer);
     const envelope:Envelope={version:1,payload:snapshot,mac:this.sign(snapshot)};
     const tmp=this.statePath+"."+process.pid+"."+crypto.randomUUID()+".tmp";
+    const lock=this.statePath+".writer-lock";
+    let lockFd:number|undefined;
     try{
-      // Never overwrite a symlink or unexpectedly shared state file.
-      if(fs.existsSync(this.statePath))safeFile(this.statePath);
-      fs.writeFileSync(tmp,JSON.stringify(envelope),{flag:"wx",mode:0o600});
+      // Exclusive create is the short-lived single-writer transaction gate.
+      // A crash leaving a lock means operator reconciliation, not auto-deletion.
+      lockFd=fs.openSync(lock,"wx",0o600);
+      // A second store instance cannot overwrite a more recent token rotation.
+      if(fs.existsSync(this.statePath)){
+        safeFile(this.statePath);
+        if(!this.lastCommittedMac)
+          throw new Error("OAuth state appeared after issuer initialization");
+        let existing:Envelope;
+        try{existing=JSON.parse(fs.readFileSync(this.statePath,"utf8"))}
+        catch{throw new Error("Unreadable OAuth writer state");}
+        if(existing.version!==1||!existing.payload||
+           existing.mac!==this.lastCommittedMac)
+          throw new Error("Stale OAuth writer: issuer state changed");
+        if(this.sign(existing.payload)!==existing.mac)
+          throw new Error("OAuth state integrity mismatch; refusal to overwrite");
+      } else if(this.lastCommittedMac) {
+        throw new Error("OAuth state disappeared after issuer initialization");
+      }
+      const fd=fs.openSync(tmp,"wx",0o600);
+      try {
+        fs.writeFileSync(fd,JSON.stringify(envelope));
+        fs.fsyncSync(fd);
+      }finally{fs.closeSync(fd)}
       fs.renameSync(tmp,this.statePath);
+      this.lastCommittedMac=envelope.mac;
     }catch(e){this.unusable=true;throw e}
-    finally{try{fs.rmSync(tmp,{force:true})}catch{}}
+    finally{
+      try{fs.rmSync(tmp,{force:true})}catch{}
+      if(lockFd!==undefined){
+        try{fs.closeSync(lockFd)}catch{}
+        try{fs.rmSync(lock,{force:true})}catch{}
+      }
+    }
   }
   override registerClient(...p:Parameters<McpOAuthStore["registerClient"]>){
     this.assertUsable();const r=super.registerClient(...p);this.flush();return r;

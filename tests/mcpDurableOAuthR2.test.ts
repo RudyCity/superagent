@@ -47,6 +47,30 @@ describe("R2 durable new-only OAuth issuer",()=>{
   expect(post.revokeToken(rotated.accessToken)).toBe(true);
   expect(new McpDurableOAuthStore(p,issuer,{keyMode:"raw-test"}).verifyAccessToken(rotated.accessToken)).toBeNull();
  });
+ it("refuses stale concurrent writers and orphan lock instead of overwriting token state",()=>{
+  const p=profile();
+  const first=new McpDurableOAuthStore(p,issuer,{keyMode:"raw-test"});
+  const stale=new McpDurableOAuthStore(p,issuer,{keyMode:"raw-test"});
+  first.registerClient("first",[uri]);
+  expect(()=>stale.registerClient("second",[uri])).toThrow(/Stale OAuth writer/);
+  expect(()=>stale.verifyAccessToken("not-a-token")).toThrow(/persistence failed/);
+  const good=new McpDurableOAuthStore(p,issuer,{keyMode:"raw-test"});
+  expect(good.getClient("first")).toBeDefined();
+  expect(good.getClient("second")).toBeUndefined();
+  const lock=path.join(p,"oauth-state.json.writer-lock");
+  fs.writeFileSync(lock,"orphaned",{flag:"wx"});
+  expect(()=>good.registerClient("third",[uri])).toThrow();
+  expect(fs.existsSync(lock)).toBe(true);
+  expect(new McpDurableOAuthStore(p,issuer,{keyMode:"raw-test"}).getClient("third")).toBeUndefined();
+ });
+ it("blocks writers if the persisted payload changed without a valid MAC",()=>{
+  const p=profile(),s=new McpDurableOAuthStore(p,issuer,{keyMode:"raw-test"});
+  const file=path.join(p,"oauth-state.json");
+  const old=fs.readFileSync(file,"utf8");
+  fs.writeFileSync(file,old.replace('"clients":[]','"clients":[{"clientId":"injected"}]'));
+  expect(()=>s.registerClient("safe",[uri])).toThrow(/integrity mismatch/);
+  expect(fs.readFileSync(file,"utf8")).toContain("injected");
+ });
  it("fails closed on modified snapshot, deleted key or foreign issuer",()=>{
   const p=profile();
   const s=new McpDurableOAuthStore(p,issuer,{keyMode:"raw-test"});
