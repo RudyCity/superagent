@@ -1,3 +1,8 @@
+## [1.14.46] - 2026-10-26
+### Python MCP package GitHub link
+- Corrected the MCP tunnel startup/status output to display the GitHub URL of the standalone Python package, along with a copy-ready one-shot `uv tool install` Git command, separately from the runtime MCP endpoint URL.
+- Documented the dedicated `python-mcp-client` source branch and added URL/installation rendering assertions. The live MCP owner, OAuth bootstrap codes, and Bearer tokens remain unchanged.
+
 ## [1.14.45] - 2026-10-26
 ### Python MCP tunnel connection hints
 - Show the copy-ready Python MCP client URL, PowerShell one-shot OAuth login, and stdio bridge command in both terminal and interactive MCP tunnel startup output and in existing tunnel status.

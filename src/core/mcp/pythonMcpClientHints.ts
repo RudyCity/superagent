@@ -6,6 +6,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** Dedicated GitHub branch with the installable Python package at its root. */
+export const PYTHON_MCP_GITHUB_REF = "python-mcp-client";
+export const PYTHON_MCP_GITHUB_URL = `https://github.com/RudyCity/superagent/tree/${PYTHON_MCP_GITHUB_REF}`;
+export const PYTHON_MCP_GIT_INSTALL = `git+https://github.com/RudyCity/superagent.git@${PYTHON_MCP_GITHUB_REF}`;
+
 export interface PythonMcpClientEndpoint {
   publicUrl: string;
   localUrl: string;
@@ -50,6 +55,11 @@ export function formatPythonMcpClientHints(
   const setup = `$env:SUPERAGENT_MCP_URL=${quotePowerShell(usableUrl)}; $env:SUPERAGENT_MCP_AUTH=${quotePowerShell(auth)}; ${command} ${auth === "oauth" ? "login" : "doctor"}`;
 
   return [
+    "",
+    "Python MCP Client (GitHub):",
+    `  Package URL : ${PYTHON_MCP_GITHUB_URL}`,
+    `  Install PS  : uv tool install ${quotePowerShell(PYTHON_MCP_GIT_INSTALL)}`,
+    "  Remote package installation requires GitHub access and uv on the client machine.",
     "",
     "Python MCP Client (copy/paste):",
     `  MCP URL     : ${usableUrl}${publicHttpsMcp ? "" : " (local machine only)"}`,

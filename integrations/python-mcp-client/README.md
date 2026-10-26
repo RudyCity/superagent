@@ -2,6 +2,18 @@
 
 Installable Python MCP client and local stdio bridge to SuperAgent's existing remote MCP server. It forwards live tool names, input schemas, results, and error flags rather than defining a second tool registry.
 
+## GitHub package
+
+GitHub source: https://github.com/RudyCity/superagent/tree/python-mcp-client
+
+One-shot Python package installation on a machine with `uv` and access to the repository:
+
+```powershell
+uv tool install 'git+https://github.com/RudyCity/superagent.git@python-mcp-client'
+```
+
+The GitHub source URL points to a dedicated branch containing **this Python package at the repository root**, not the temporary MCP tunnel endpoint. Inside the full SuperAgent repository, its original source remains under `integrations/python-mcp-client/`.
+
 ## Install
 
 Requires Python 3.11+ and a reachable Streamable HTTP MCP endpoint. Install from the SuperAgent repository root:
@@ -19,7 +31,7 @@ superagent mcp tunnel start --provider cloudflare --mcp-auth oauth
 superagent mcp tunnel status
 ```
 
-The successful tunnel startup log and `superagent mcp tunnel status` (or `/mcp tunnel status`) now include a `Python MCP Client (copy/paste)` section with the live MCP URL, a **PowerShell one-shot** command that runs this bundled Python project with `uv run` and initiates OAuth login, and the subsequent `stdio bridge` command. You can copy the entire one-shot line without manually replacing `YOUR-HOST`. It does not embed OAuth bootstrap codes or Bearer tokens. The user must still grant OAuth consent in the browser. Cloudflare quick-tunnel hostnames can change after a restart, so always copy the latest URL. OpenAI private tunnel IDs are not MCP HTTP URLs; when no public HTTPS `/mcp` URL is available, only a local-loopback URL is shown with an explicit warning.
+The successful tunnel startup log and `superagent mcp tunnel status` (or `/mcp tunnel status`) show the GitHub Python package URL and one-shot installation command first, followed by a separate `Python MCP Client (copy/paste)` section with the live MCP endpoint URL, a **PowerShell login command** that uses the bundled local Python project with `uv run`, and the subsequent `stdio bridge` command. You can copy the entire one-shot line without manually replacing `YOUR-HOST`. It does not embed OAuth bootstrap codes or Bearer tokens. The user must still grant OAuth consent in the browser. Cloudflare quick-tunnel hostnames can change after a restart, so always copy the latest URL. OpenAI private tunnel IDs are not MCP HTTP URLs; when no public HTTPS `/mcp` URL is available, only a local-loopback URL is shown with an explicit warning.
 
 ## OAuth PKCE (recommended)
 

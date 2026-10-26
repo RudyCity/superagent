@@ -91,11 +91,10 @@ graph TD
 ## 🔄 Real-time Codebase Sync Status
 
 <!-- RECENT_SYNC_LOG_START -->
-### 🕒 Last Sync Event: 2026-10-26 13:24:48 UTC (Multi-Workspace: superagent, t-line)
+### 🕒 Last Sync Event: 2026-10-26 13:36:11 UTC (Multi-Workspace: superagent, t-line)
 | Modified Source File | Impacted Wiki Section | Change Trigger |
 |:---|:---|:---|
 | `README.md` | [00-index.md](./00-index.md) | Project README overview or usage guidance modified |
 | `package.json` | [01-architecture-overview.md](./01-architecture-overview.md) | Dependencies or Workspace Structure modified |
-| `src/core/mcp/mcpTunnel.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | MCP tool schema, registry, or transport contract modified |
 | `src/core/mcp/pythonMcpClientHints.ts` | [03-api-and-contracts.md](./03-api-and-contracts.md) | MCP tool schema, registry, or transport contract modified |
 <!-- RECENT_SYNC_LOG_END -->

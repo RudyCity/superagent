@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPythonMcpClientHints } from "../src/core/mcp/pythonMcpClientHints.js";
+import { formatPythonMcpClientHints, PYTHON_MCP_GITHUB_URL, PYTHON_MCP_GIT_INSTALL } from "../src/core/mcp/pythonMcpClientHints.js";
 
 describe("MCP tunnel Python client copy-ready instructions", () => {
   const oauth = {
@@ -12,6 +12,11 @@ describe("MCP tunnel Python client copy-ready instructions", () => {
     const lines = formatPythonMcpClientHints(oauth, "D:\\Projects\\SuperAgent Workspace\\integrations\\python-mcp-client");
     const output = lines.join("\n");
     expect(output).toContain("MCP URL     : https://example.trycloudflare.com/mcp");
+    expect(PYTHON_MCP_GITHUB_URL).toBe("https://github.com/RudyCity/superagent/tree/python-mcp-client");
+    expect(PYTHON_MCP_GIT_INSTALL).toBe("git+https://github.com/RudyCity/superagent.git@python-mcp-client");
+    expect(output).toContain(`Package URL : ${PYTHON_MCP_GITHUB_URL}`);
+    expect(output).toContain(`Install PS  : uv tool install '${PYTHON_MCP_GIT_INSTALL}'`);
+    expect(output.indexOf("Package URL")).toBeLessThan(output.indexOf("MCP URL"));
     expect(output).toContain("$env:SUPERAGENT_MCP_URL='https://example.trycloudflare.com/mcp'");
     expect(output).toContain("$env:SUPERAGENT_MCP_AUTH='oauth'");
     expect(output).toContain("uv run --project 'D:\\Projects\\SuperAgent Workspace\\integrations\\python-mcp-client' superagent-mcp-python login");

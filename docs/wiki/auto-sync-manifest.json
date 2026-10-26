@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-10-26T13:24:48.826Z",
+  "lastSync": "2026-10-26T13:36:11.470Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -51,17 +51,9 @@
   "lastModifiedFiles": [
     "[superagent] CHANGELOG.md",
     "[superagent] README.md",
-    "[superagent] docs/wiki/00-index.md",
     "[superagent] docs/wiki/03-api-and-contracts.md",
-    "[superagent] docs/wiki/auto-sync-manifest.json",
-    "[superagent] docs/wiki/wiki-rmemory-chunks.json",
     "[superagent] integrations/python-mcp-client/README.md",
     "[superagent] package.json",
-    "[superagent] src/core/commands/mcpCliHandler.ts",
-    "[superagent] src/core/commands/mcpCommand.ts",
-    "[superagent] src/core/mcp/mcpTunnel.ts",
-    "[superagent] tests/commandDomainSeparation.test.ts",
-    "[superagent] tests/mcpTunnelState.test.ts",
     "[superagent] src/core/mcp/pythonMcpClientHints.ts",
     "[superagent] tests/pythonMcpClientHints.test.ts"
   ],
