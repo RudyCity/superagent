@@ -33,6 +33,7 @@ describe("detached assistant execution step evidence",()=>{
     expect(content).not.toContain("PRIVATE_PROVIDER_CAPABILITY_A");
     expect(content).not.toContain("Research private material");
     expect(JSON.parse(content).events).toHaveLength(2);
+    // No raw adapter result is persisted in legacy or receipt records.
   }));
   it("durably records preparation between tool request and tool completion",async()=>fixture(async(root,task)=>{
     const started=await recordExecutionStep(task,{callId:"preflight_receipt",tool:"read",phase:"started"},root);
@@ -49,8 +50,42 @@ describe("detached assistant execution step evidence",()=>{
     const settled=await readExecutionCheckpoint(task,root);
     expect(settled.incomplete).toBe(0);
     expect(settled.preparedCount).toBe(1);
-    expect(settled.manualReviewRequired).toBe(false);
+    expect(settled.manualReviewRequired).toBe(true);
+    expect(settled.missingReceipts).toBe(1); // older preflight without adapter receipt
     expect(settled.steps.map(x=>x.phase)).toEqual(["started","prepared","finished"]);
+  }));
+  it("records unique executor receipts after preparation, without provider authority",async()=>fixture(async(root,task)=>{
+    await recordExecutionStep(task,{callId:"local_1",tool:"read",phase:"started"},root);
+    await recordExecutionStep(task,{callId:"local_1",tool:"read",phase:"prepared"},root);
+    const receipt=await recordExecutionStep(task,{callId:"local_1",tool:"read",phase:"receipted"},root);
+    expect(receipt.receiptRef).toMatch(/^[a-f0-9]{24}$/);
+    expect(receipt.receiptProof).toBe("local_adapter");
+    await recordExecutionStep(task,{callId:"local_1",tool:"read",phase:"finished"},root);
+    const state=await readExecutionCheckpoint(task,root);
+    expect(state.receiptCount).toBe(1);
+    expect(state.missingReceipts).toBe(0);
+    expect(state.manualReviewRequired).toBe(false);
+    expect(state.steps.map(x=>x.phase)).toEqual(["started","prepared","receipted","finished"]);
+    await expect(recordExecutionStep(task,{callId:"local_1",tool:"read",phase:"receipted"},root))
+      .rejects.toThrow("Executor receipt");
+    await expect(recordExecutionStep(task,{callId:"local_1",tool:"read",phase:"started"},root))
+      .rejects.toThrow("Duplicate tool call");
+    // Reopening the persisted journal does not reset the duplicate-call fence.
+    expect((await readExecutionCheckpoint({...task},root)).receiptCount).toBe(1);
+  }));
+  it("keeps external adapter receipts unverified after observed completion",async()=>fixture(async(root,base)=>{
+    const task={...base,domain:"research" as const};
+    await recordExecutionStep(task,{callId:"remote_1",tool:"web_search",phase:"started"},root);
+    await recordExecutionStep(task,{callId:"remote_1",tool:"web_search",phase:"prepared"},root);
+    const receipt=await recordExecutionStep(task,{callId:"remote_1",tool:"web_search",phase:"receipted"},root);
+    expect(receipt.receiptProof).toBe("external_adapter");
+    await recordExecutionStep(task,{callId:"remote_1",tool:"web_search",phase:"finished"},root);
+    const state=await readExecutionCheckpoint(task,root);
+    expect(state.receiptCount).toBe(1);
+    expect(state.missingReceipts).toBe(0);
+    expect(state.externalUnverified).toBe(1);
+    expect(state.manualReviewRequired).toBe(true);
+    expect(state.executionResumptionSupported).toBe(false);
   }));
   it("refuses a preflight for an unexpected tool, or one without a start event",async()=>fixture(async(root,task)=>{
     await expect(recordExecutionStep(task,{callId:"missing",tool:"read",phase:"prepared"},root))

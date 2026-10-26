@@ -19,13 +19,16 @@ describe("detached tool pre-execution checkpoint barrier", () => {
     const clear=setDetachedToolPreflight(agent,async call=>{
       expect(call).toEqual({id:"call_authorized_1",name:"read"});
       timeline.push("durable-preflight");
+    },async call=>{
+      expect(call).toEqual({id:"call_authorized_1",name:"read",isError:false});
+      timeline.push("durable-receipt");
     });
     try {
       const result=await agentLocalStorage.run(agent as any, async()=>
         executeToolCall({id:"call_authorized_1",name:"read",args:{filePaths:[]}},
           process.cwd(),undefined,[tool]));
       expect(result.isError).not.toBe(true);
-      expect(timeline.indexOf("durable-preflight")).toBeLessThan(timeline.indexOf("adapter"));
+      expect(timeline).toEqual(["durable-preflight","adapter","durable-receipt"]);
       expect(tool.execute).toHaveBeenCalledOnce();
     } finally {clear();}
   });
@@ -42,6 +45,22 @@ describe("detached tool pre-execution checkpoint barrier", () => {
           process.cwd(),undefined,[tool]));
       expect(result.isError).toBe(true);
       expect(adapter).not.toHaveBeenCalled();
+    } finally {clear();}
+  });
+  it("fails closed after adapter returned when its receipt cannot be persisted", async () => {
+    const adapter=vi.fn(async()=> "already-read");
+    const tool={name:"read",execute:adapter};
+    const agent={tier:"single",delegationDepth:0,getActiveTools:async()=>[tool]};
+    const order:string[]=[];
+    const clear=setDetachedToolPreflight(agent,async()=>{order.push("preflight");},
+      async()=>{order.push("receipt-failed");throw Error("Simulated storage failure");});
+    try {
+      const result=await agentLocalStorage.run(agent as any,async()=>
+        executeToolCall({id:"call_receipt_failure",name:"read",args:{filePaths:[]}},
+          process.cwd(),undefined,[tool]));
+      expect(result.isError).toBe(true);
+      expect(order).toEqual(["preflight","receipt-failed"]);
+      expect(adapter).toHaveBeenCalledOnce();
     } finally {clear();}
   });
   it("does not install process-wide gates or alter ordinary agents", async () => {

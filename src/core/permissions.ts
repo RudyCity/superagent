@@ -5,7 +5,7 @@ import type { ToolCall, ToolResult } from "./conversation.js";
 import { getRootConfigDir } from "./config.js";
 import { agentLocalStorage } from "./agent.js";
 import { runEventHooks } from "./tools/dynamicHooks.js";
-import { runDetachedToolPreflight } from "./assistant/assistantToolPreflight.js";
+import { runDetachedToolPreflight, runDetachedToolReceipt } from "./assistant/assistantToolPreflight.js";
 import { workspaceMode } from "./ssh/workspaceMode.js";
 import { workspaceChainManager } from "./workspace/WorkspaceChainManager.js";
 
@@ -1441,6 +1441,11 @@ export async function executeToolCall(
     const result = await tool.execute(toolCall.args, cwd, signal);
     await runEventHooks("post_tool", { toolName: toolCall.name, args: toolCall.args, result, cwd });
     const isError = isErrorLikeToolResult(result);
+    // Durable executor receipt after adapter completion and hooks, but before
+    // returning success. Missing receipt is NOT evidence of remote failure.
+    await runDetachedToolReceipt(currentAgent, {
+      id: toolCall.id, name: toolCall.name, isError,
+    });
     if (isError) {
       try {
         const { appendMasterLog, appendToolsErrorLog } = await getStateModule();

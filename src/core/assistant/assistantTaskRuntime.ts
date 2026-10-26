@@ -133,6 +133,13 @@ export async function generateDetachedReadOnlyText(
     await recordExecutionStep(task, {
       callId: call.id, tool: call.name, phase: "prepared",
     });
+  }, async call => {
+    // Never persist raw adapter output or claim that an external provider
+    // committed its side effects merely because its adapter returned.
+    await recordExecutionStep(task, {
+      callId: call.id, tool: call.name, phase: "receipted",
+      isError: call.isError,
+    });
   });
   const abort = () => agent.abort();
   stopOnRecordingFailure = abort;

@@ -3,7 +3,7 @@
  * raw tool-call identifier, or execution capability is serialized.
  * A missing matching end or any external observation is never replay-safe.
  */
-import { createHash, randomUUID } from "node:crypto";
+import { createHash, randomUUID, randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { getRootConfigDir } from "../config/paths.js";
@@ -11,11 +11,14 @@ import type { AssistantTaskRecord } from "./assistantTaskStore.js";
 import { getAssistantTaskDomain } from "./assistantTaskDomains.js";
 
 export type StepEffect = "local_read" | "external_unverified" | "unknown";
-export type StepPhase = "started" | "prepared" | "finished";
+export type StepPhase = "started" | "prepared" | "receipted" | "finished";
+export type ReceiptProof = "local_adapter" | "external_adapter";
 export type StepOutcome = "completed" | "failed" | "unverified";
 export interface AssistantExecutionStep {
   seq: number; at: number; callRef: string; tool: string;
   phase: StepPhase; effect: StepEffect; outcome?: StepOutcome;
+  /** Executor receipt, NOT provider-confirmed external settlement. */
+  receiptRef?: string; receiptProof?: ReceiptProof;
 }
 type Ledger = { schemaVersion: 1; taskId: string; nextSeq: number; events: AssistantExecutionStep[] };
 const MAX_STEPS = 256;
@@ -31,7 +34,8 @@ function filename(task: AssistantTaskRecord, root: string) {
 }
 function validate(ledger: Ledger, task: AssistantTaskRecord) {
   const allowedLedgerKeys = new Set(["schemaVersion","taskId","nextSeq","events"]);
-  const allowedEventKeys = new Set(["seq","at","callRef","tool","phase","effect","outcome"]);
+  const allowedEventKeys = new Set(["seq","at","callRef","tool","phase","effect","outcome",
+    "receiptRef","receiptProof"]);
   if (!ledger || typeof ledger !== "object" ||
       Object.keys(ledger).some(key => !allowedLedgerKeys.has(key)) ||
       ledger.schemaVersion !== 1 || ledger.taskId !== task.taskId ||
@@ -49,11 +53,17 @@ function validate(ledger: Ledger, task: AssistantTaskRecord) {
         !Number.isSafeInteger(event.at) || event.at < 0 ||
         !CALL_REF.test(event.callRef) ||
         !(event.tool === "other" || allowed.has(event.tool)) ||
-        !["started","prepared","finished"].includes(event.phase) ||
+        !["started","prepared","receipted","finished"].includes(event.phase) ||
         !["local_read","external_unverified","unknown"].includes(event.effect) ||
         (event.outcome !== undefined && !["completed","failed","unverified"].includes(event.outcome)) ||
         (event.phase !== "finished" && event.outcome !== undefined) ||
-        (event.phase === "finished" && event.outcome === undefined)) {
+        (event.phase === "finished" && event.outcome === undefined) ||
+        (event.phase === "receipted" &&
+          (!event.receiptRef || !CALL_REF.test(event.receiptRef) ||
+            event.receiptProof !==
+              (event.effect === "local_read" ? "local_adapter" : "external_adapter"))) ||
+        (event.phase !== "receipted" &&
+          (event.receiptRef !== undefined || event.receiptProof !== undefined))) {
       throw new Error("Execution step journal event invalid");
     }
     const earlier = lifecycle.get(event.callRef);
@@ -61,8 +71,11 @@ function validate(ledger: Ledger, task: AssistantTaskRecord) {
         (event.phase === "prepared" && (earlier?.phase !== "started" ||
           earlier.tool !== event.tool || earlier.effect !== event.effect ||
           event.effect === "unknown")) ||
+        (event.phase === "receipted" &&
+          (earlier?.phase !== "prepared" || earlier.tool !== event.tool ||
+            earlier.effect !== event.effect)) ||
         (event.phase === "finished" && (!earlier ||
-          !["started","prepared"].includes(earlier.phase) ||
+          !["started","prepared","receipted"].includes(earlier.phase) ||
           earlier.tool !== event.tool || earlier.effect !== event.effect))) {
       throw new Error("Execution step journal lifecycle mismatch");
     }
@@ -150,10 +163,17 @@ export async function recordExecutionStep(
     if (step.phase==="prepared" &&
         (last?.phase !== "started" || last.tool !== tool || effect === "unknown"))
       throw Error("Pre-execution checkpoint missing or unapproved tool");
+    if (step.phase==="receipted" &&
+        (last?.phase !== "prepared" || last.tool !== tool || effect === "unknown"))
+      throw Error("Executor receipt requires prepared tool");
     if (step.phase==="finished" &&
-        (!last || !["started","prepared"].includes(last.phase) || last.tool !== tool))
+        (!last || !["started","prepared","receipted"].includes(last.phase) || last.tool !== tool))
       throw Error("Unmatched tool completion; manual review required");
     written={seq:ledger.nextSeq++,at:Date.now(),callRef,tool,phase:step.phase,effect,
+      ...(step.phase==="receipted" ? {
+        receiptRef: randomBytes(12).toString("hex"),
+        receiptProof: effect==="local_read" ? "local_adapter" as const : "external_adapter" as const,
+      } : {}),
       ...(step.phase==="finished" ? {outcome:step.isError?"failed":
         effect==="local_read"?"completed":"unverified"} : {})};
     ledger.events.push(written);
@@ -164,7 +184,8 @@ export async function readExecutionCheckpoint(task: AssistantTaskRecord,
   root=getRootConfigDir()): Promise<{
     schemaVersion:1; taskId:string; steps:AssistantExecutionStep[];
     incomplete:number; externalUnverified:number; preparedCount:number;
-    unpreparedCount:number; missingHistory:boolean; manualReviewRequired:boolean;
+    unpreparedCount:number; receiptCount:number; missingReceipts:number;
+    missingHistory:boolean; manualReviewRequired:boolean;
     executionResumptionSupported:false;
   }> {
   const ledger=await load(task,root);
@@ -172,12 +193,14 @@ export async function readExecutionCheckpoint(task: AssistantTaskRecord,
   const latest=new Map<string,StepPhase>();
   let externalUnverified=0;
   let unpreparedCount=0;
+  let missingReceipts=0;
   for(const event of ledger.events) {
     const previous=latest.get(event.callRef);
     if(event.phase!=="finished") unfinished.add(event.callRef);
     else {
       unfinished.delete(event.callRef);
-      if(previous!=="prepared") unpreparedCount++;
+      if(previous!=="prepared" && previous!=="receipted") unpreparedCount++;
+      if(previous!=="receipted") missingReceipts++;
       if(event.outcome==="unverified") externalUnverified++;
     }
     latest.set(event.callRef,event.phase);
@@ -189,9 +212,11 @@ export async function readExecutionCheckpoint(task: AssistantTaskRecord,
       (task.status==="cancelled" && task.revision>2));
   const incomplete=unfinished.size;
   const preparedCount=ledger.events.filter(x=>x.phase==="prepared").length;
+  const receiptCount=ledger.events.filter(x=>x.phase==="receipted").length;
   return {schemaVersion:1,taskId:task.taskId,steps:ledger.events,
-    incomplete,externalUnverified,preparedCount,unpreparedCount,missingHistory,
-    manualReviewRequired:missingHistory || unpreparedCount>0 ||
+    incomplete,externalUnverified,preparedCount,unpreparedCount,
+    receiptCount,missingReceipts,missingHistory,
+    manualReviewRequired:missingHistory || unpreparedCount>0 || missingReceipts>0 ||
       incomplete>0 || externalUnverified>0 ||
       ledger.events.some(x=>x.effect==="unknown" || x.outcome==="failed"),
     executionResumptionSupported:false};
