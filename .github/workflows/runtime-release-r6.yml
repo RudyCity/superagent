@@ -1,0 +1,55 @@
+name: Runtime Security and Release Gates R6
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/runtime-release-r6.yml"
+      - "src/core/mcp/**"
+      - "src/core/runtime/**"
+      - "tests/runtimeSecurityMatrixR6.test.ts"
+      - "tests/runtimeReleaseGateR5R7.test.ts"
+      - "scripts/verify-runtime-security-release-r6.ts"
+      - "scripts/verify-independent-oauth-stage.ts"
+      - "docs/guides/runtime-r6-security-release-certification.md"
+  pull_request:
+    paths:
+      - ".github/workflows/runtime-release-r6.yml"
+      - "src/core/mcp/**"
+      - "src/core/runtime/**"
+      - "tests/runtimeSecurityMatrixR6.test.ts"
+      - "tests/runtimeReleaseGateR5R7.test.ts"
+      - "scripts/verify-runtime-security-release-r6.ts"
+      - "scripts/verify-independent-oauth-stage.ts"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release-safety:
+    name: Security / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Build TypeScript
+        run: bun run build
+      - name: R1–R7 cross-domain adversarial regression
+        run: bun --bun x vitest run --maxWorkers=2 tests/runtimeSecurityMatrixR6.test.ts tests/runtimeReleaseGateR5R7.test.ts tests/mcpDurableOAuthR2.test.ts tests/mcpIngressStageR3.test.ts tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts tests/mcpOAuthStore.test.ts tests/mcpOAuthRoutes.test.ts tests/mcpOAuthHttpE2E.test.ts tests/mcpOAuthResourceScope.test.ts tests/mcpOAuthProxyBoundary.test.ts
+      - name: Non-mutating release evidence (must remain blocked)
+        run: bun scripts/verify-runtime-security-release-r6.ts
+      - name: Independent OAuth and ingress staging, no public tunnel
+        if: runner.os == 'Windows'
+        run: bun scripts/verify-independent-oauth-stage.ts
+      - name: Verified MCP owner lifecycle staging
+        if: runner.os == 'Windows'
+        run: bun scripts/verify-managed-mcp-lifecycle.ts
+      - name: Core/MCP independent PID staging
+        if: runner.os == 'Windows'
+        run: bun scripts/verify-core-mcp-owner-split.ts
