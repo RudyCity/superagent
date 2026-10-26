@@ -40,7 +40,7 @@ export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
   }:undefined;
   const handle=await startMcpHttpServer({
     port,bearerToken:token,authMode:"static-bearer",
-    allowDangerous:false,toolExposure:"gateway",
+    allowDangerous:false,lockSafeTools:true,toolExposure:"gateway",
     maxSessions:2,sessionIdleTimeoutMs:30_000,sessionMaxLifetimeMs:120_000,
     auditLogPath:path.join(root,"mcp-sandbox-audit.jsonl"),
     publicBaseUrl:"http://127.0.0.1:"+port,

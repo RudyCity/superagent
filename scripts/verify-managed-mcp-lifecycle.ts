@@ -49,7 +49,8 @@ try{
   started=true;
   assert("persistent_owner_authenticated_and_verified",owner.state==="ready"&&owner.ownerPid>0&&owner.ownerPid===owner.listenerPid);
   assert("private_generation_handshake_required",owner.ownerControlAuthenticated===true&&
-    owner.activeSessions===0&&owner.inFlightRequests===0&&owner.draining===false);
+    owner.processBirthVerified===true&&owner.activeSessions===0&&
+    owner.inFlightRequests===0&&owner.draining===false);
   const firstPid=owner.ownerPid;
   result=exec(["status","--port",String(port)]);
   const status=JSON.parse(result.stdout);

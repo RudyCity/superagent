@@ -40,6 +40,7 @@ import {
   type McpAuthMode,
   type McpIdentity,
 } from "./mcpAuth.js";
+import { R1_OWNER_TOOLS } from "./mcpSafeOwnerPolicy.js";
 import {
   McpSessionRegistry,
   type McpSessionEntry,
@@ -304,6 +305,8 @@ export interface McpHttpServerOptions {
    * private, staged owner lifecycle.
    */
   ownerControlToken?: string;
+  /** Hard ceiling for independent safe-tool owners, immune to global YOLO. */
+  lockSafeTools?: boolean;
   /** Immutable generation start timestamp, verified against private lease. */
   ownerStartedAt?: number;
 }
@@ -355,7 +358,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     publicHostname = undefined;
   }
 
-  const allowedTools = opts.allowDangerous ? undefined : getDefaultSafeTools();
+  const allowedTools = opts.lockSafeTools || opts.ownerControlToken
+    ? [...R1_OWNER_TOOLS]
+    : opts.allowDangerous ? undefined : getDefaultSafeTools();
   const auditLogPath = opts.auditLogPath || path.join(os.homedir(), ".superagent-r", "mcp-audit.log");
   const audit = createMcpAuditLogger(auditLogPath);
 
@@ -368,6 +373,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     idleTimeoutMs: opts.sessionIdleTimeoutMs,
     maxLifetimeMs: opts.sessionMaxLifetimeMs,
   });
+  if (opts.lockSafeTools && opts.allowDangerous !== false) {
+    throw new Error("Safe-only MCP cannot enable dangerous tools");
+  }
   if (opts.ownerControlToken && (!/^[a-f0-9]{64}$/.test(opts.ownerControlToken) ||
       opts.ownerControlToken === opts.bearerToken || authMode !== "static-bearer" ||
       opts.allowDangerous !== false ||
@@ -641,6 +649,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           onToolCall: sessionAudit,
           authMode,
           allowDangerous: opts.allowDangerous,
+          lockSafeTools: Boolean(opts.ownerControlToken || opts.lockSafeTools),
           getIdentity: () => identity,
           workspace: process.cwd(),
         } as McpServerOptions);
@@ -698,6 +707,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         onToolCall: sessionAudit,
         authMode,
         allowDangerous: opts.allowDangerous,
+        lockSafeTools: Boolean(opts.ownerControlToken || opts.lockSafeTools),
         getIdentity: () => identity,
         workspace: process.cwd(),
       } as McpServerOptions);

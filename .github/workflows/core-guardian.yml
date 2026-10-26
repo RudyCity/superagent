@@ -14,6 +14,10 @@ on:
       - "src/core/runtime/runtimeOwnershipContract.ts"
       - "src/core/runtime/mcpOwnerSandbox.ts"
       - "src/core/runtime/mcpOwnerControl.ts"
+      - "src/core/runtime/mcpProcessBirth.ts"
+      - "src/core/mcp/mcpSafeOwnerPolicy.ts"
+      - "src/core/mcp/mcpToolPolicy.ts"
+      - "src/core/mcp/superagentMcpServer.ts"
       - "src/core/mcp/mcpHttpTransport.ts"
       - "src/core/runtime/mcpOwnerStagingLease.ts"
       - "src/core/runtime/mcpOwnerLifecycle.ts"
@@ -48,6 +52,8 @@ on:
       - "tests/coreMcpOwnershipAudit.test.ts"
       - "tests/runtimeOwnershipContract.test.ts"
       - "tests/mcpOwnerControlR1.test.ts"
+      - "tests/mcpProcessBirthR1.test.ts"
+      - "tests/mcpSafeOwnerR1.test.ts"
       - "tests/mcpOwnerLifecyclePhase5n.test.ts"
       - "tests/corePhase5d.test.ts"
       - "tests/corePhase5e.test.ts"
@@ -78,6 +84,10 @@ on:
       - "src/core/runtime/runtimeOwnershipContract.ts"
       - "src/core/runtime/mcpOwnerSandbox.ts"
       - "src/core/runtime/mcpOwnerControl.ts"
+      - "src/core/runtime/mcpProcessBirth.ts"
+      - "src/core/mcp/mcpSafeOwnerPolicy.ts"
+      - "src/core/mcp/mcpToolPolicy.ts"
+      - "src/core/mcp/superagentMcpServer.ts"
       - "src/core/mcp/mcpHttpTransport.ts"
       - "src/core/runtime/mcpOwnerStagingLease.ts"
       - "src/core/runtime/mcpOwnerLifecycle.ts"
@@ -110,6 +120,8 @@ on:
       - "tests/coreMcpOwnershipAudit.test.ts"
       - "tests/runtimeOwnershipContract.test.ts"
       - "tests/mcpOwnerControlR1.test.ts"
+      - "tests/mcpProcessBirthR1.test.ts"
+      - "tests/mcpSafeOwnerR1.test.ts"
       - "tests/mcpOwnerLifecyclePhase5n.test.ts"
       - "tests/corePhase5d.test.ts"
       - "tests/coreAgentSessionCheckpoint.test.ts"
@@ -147,7 +159,7 @@ jobs:
       - name: Build TypeScript
         run: bun run build
       - name: Unit/Core/transport regression
-        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreRecoveryPhase5gToJ.test.ts tests/coreRecoveryCasebookObserver.test.ts tests/coreMcpOwnershipAudit.test.ts tests/runtimeOwnershipContract.test.ts tests/mcpOwnerControlR1.test.ts tests/mcpOwnerLifecyclePhase5n.test.ts tests/corePhase5d.test.ts tests/corePhase5e.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreRecoveryPhase5gToJ.test.ts tests/coreRecoveryCasebookObserver.test.ts tests/coreMcpOwnershipAudit.test.ts tests/runtimeOwnershipContract.test.ts tests/mcpOwnerControlR1.test.ts tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts tests/mcpOwnerLifecyclePhase5n.test.ts tests/corePhase5d.test.ts tests/corePhase5e.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
       - name: Preview Windows login startup without installing scheduled tasks
         if: runner.os == 'Windows'
         run: bun scripts/setup-core-windows-startup.ts --port 7888

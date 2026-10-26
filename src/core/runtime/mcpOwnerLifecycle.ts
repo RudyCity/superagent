@@ -16,7 +16,8 @@ import {
 } from "./mcpOwnerStagingLease.js";
 import { readListenerOwners, auditCoreMcpOwnership } from "./coreMcpOwnershipAudit.js";
 import { assessMcpOAuthMigration } from "./mcpOAuthMigrationPolicy.js";
-import { probePrivateMcpOwner, type PrivateMcpOwnerStatus } from "./mcpOwnerControl.js";
+import { probePrivateMcpOwner } from "./mcpOwnerControl.js";
+import { verifyWindowsProcessBirth } from "./mcpProcessBirth.js";
 
 const STAGING=path.join(os.homedir(),".superagent-local-staging");
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -65,6 +66,22 @@ function sanitizedEnv(profile:string,bearer:string):NodeJS.ProcessEnv{
   env.SUPERAGENT_SESSION_ID="";
   return env;
 }
+export interface McpOwnerHost {
+  /** Each operation checks the exact same private owner lease, listener PID,
+   * and authenticated generation; no alternative daemon is created here. */
+  readonly mode:"staging_safe_only";
+  capabilities(): {
+    version:1; privateAuth:true; authenticatedHealth:true; gracefulDrain:true;
+    safeToolsOnly:true; externalIngressAttachment:false; oauthIssuer:false;
+    processBirthAttestation:"windows_kernel";
+  };
+  /** Explicitly unsupported until the separately authorized R3 ingress owner. */
+  attachExternalIngress(provider:string):Promise<never>;
+  status(port:number):Promise<ManagedMcpStatus>;
+  start(port:number,approval:string,cli:string):Promise<ManagedMcpStatus>;
+  drain(port:number,approval:string):Promise<ManagedMcpStatus>;
+  stop(port:number,approval:string):Promise<ManagedMcpStatus>;
+}
 export type ManagedMcpStatus={
   version:1;port:number;profileConfigured:boolean;
   state:"absent"|"ready"|"unverified"|"blocked";
@@ -72,6 +89,7 @@ export type ManagedMcpStatus={
   authentication:"static-bearer-local-only";
   canStopWithoutProcessSignal:boolean;
   ownerControlAuthenticated:boolean;
+  processBirthVerified:boolean;
   activeSessions:number|null;
   inFlightRequests:number|null;
   draining:boolean|null;
@@ -85,6 +103,7 @@ export async function inspectManagedMcp(port:number):Promise<ManagedMcpStatus>{
     ownerPid:null as number|null,listenerPid:null as number|null,
     authentication:"static-bearer-local-only" as const,
     canStopWithoutProcessSignal:false,ownerControlAuthenticated:false,
+    processBirthVerified:false,
     activeSessions:null as number|null,inFlightRequests:null as number|null,
     draining:null as boolean|null,
     unresolvedExternalEffects:"unknown" as const,
@@ -101,12 +120,15 @@ export async function inspectManagedMcp(port:number):Promise<ManagedMcpStatus>{
   if(lease.port!==port)return {...base,profileConfigured:true,state:"blocked"};
   const osPid=readListenerOwners()?.get(port);
   const authenticated=osPid===lease.pid ? await probePrivateMcpOwner(lease):null;
-  const verified=!stop && osPid===lease.pid && authenticated!==null &&
+  const processBirthVerified=authenticated!==null && osPid===lease.pid &&
+    verifyWindowsProcessBirth(lease.pid,lease.createdAt)==="matched";
+  const verified=!stop && processBirthVerified &&
     await probeMcpUnauthorized(port);
   return {...base,profileConfigured:true,ownerPid:lease.pid,
     listenerPid:osPid&&osPid>0?osPid:null,
     state:verified?"ready":stop?"blocked":"unverified",
     ownerControlAuthenticated:authenticated!==null,
+    processBirthVerified,
     activeSessions:authenticated?.activeSessions??null,
     inFlightRequests:authenticated?.inFlightRequests??null,
     draining:authenticated?.draining??null,
@@ -155,8 +177,9 @@ async function drainManaged(port:number,approve:string):Promise<ManagedMcpStatus
     throw new Error("Cannot drain an unverified MCP owner");
   const profile=path.join(STAGING,"managed-mcp-owner-"+port);
   const lease=readManagedMcpLease(profile);
-  if(!lease||lease.pid!==prior.ownerPid||!ownsListener(port,lease.pid))
-    throw new Error("MCP owner changed before drain");
+  if(!lease||lease.pid!==prior.ownerPid||!ownsListener(port,lease.pid)||
+     verifyWindowsProcessBirth(lease.pid,lease.createdAt)!=="matched")
+    throw new Error("MCP owner changed or process birth was not verified before drain");
   const status=await probePrivateMcpOwner(lease,"drain");
   if(!status||!status.draining)
     throw new Error("MCP owner did not acknowledge drain");
@@ -170,8 +193,9 @@ async function stopManaged(port:number,approve:string):Promise<ManagedMcpStatus>
     throw new Error("MCP drain not verified or sessions remain; no process signal or stop request");
   const profile=path.join(STAGING,"managed-mcp-owner-"+port);
   const lease=readManagedMcpLease(profile);
-  if(!lease||lease.pid!==prior.ownerPid||!ownsListener(port,lease.pid))
-    throw new Error("MCP owner changed during stop verification");
+  if(!lease||lease.pid!==prior.ownerPid||!ownsListener(port,lease.pid)||
+     verifyWindowsProcessBirth(lease.pid,lease.createdAt)!=="matched")
+    throw new Error("MCP owner changed or process birth was not verified during stop");
   requestOwnedMcpStop(profile,lease);
   for(let i=0;i<40;i++){
     await pause(250);
@@ -180,6 +204,20 @@ async function stopManaged(port:number,approve:string):Promise<ManagedMcpStatus>
   }
   throw new Error("Managed MCP did not acknowledge stop; left owner untouched");
 }
+export const stagingMcpOwnerHost: McpOwnerHost = {
+  mode:"staging_safe_only",
+  capabilities:()=>({
+    version:1,privateAuth:true,authenticatedHealth:true,
+    gracefulDrain:true,safeToolsOnly:true,
+    externalIngressAttachment:false,oauthIssuer:false,
+    processBirthAttestation:"windows_kernel",
+  }),
+  attachExternalIngress:async()=>{throw new Error("External MCP ingress requires a separately verified R3 owner");},
+  status:inspectManagedMcp,
+  start:startManaged,
+  drain:drainManaged,
+  stop:stopManaged,
+};
 export async function handleMcpOwnerLifecycle(argv:string[],cli:string):Promise<unknown>{
   const action=argv[0]||"plan";
   const {port}=options(argv);
@@ -202,11 +240,11 @@ export async function handleMcpOwnerLifecycle(argv:string[],cli:string):Promise<
       drainCommand:"superagent mcp lifecycle drain --port "+port+" --approve DRAIN_STAGING_MCP_OWNER",
       stopCommand:"superagent mcp lifecycle stop --port "+port+" --approve STOP_STAGING_MCP_OWNER"};
   }
-  if(action==="status")return await inspectManagedMcp(port);
+  if(action==="status")return await stagingMcpOwnerHost.status(port);
   const i=argv.indexOf("--approve");
   const approve=i<0?"":argv[i+1];
-  if(action==="start")return await startManaged(port,approve,cli);
-  if(action==="drain")return await drainManaged(port,approve);
-  if(action==="stop")return await stopManaged(port,approve);
+  if(action==="start")return await stagingMcpOwnerHost.start(port,approve,cli);
+  if(action==="drain")return await stagingMcpOwnerHost.drain(port,approve);
+  if(action==="stop")return await stagingMcpOwnerHost.stop(port,approve);
   throw new Error("Usage: superagent mcp lifecycle plan|start|status|drain|stop --port PORT");
 }

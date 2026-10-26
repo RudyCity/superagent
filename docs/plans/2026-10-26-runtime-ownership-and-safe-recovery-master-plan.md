@@ -101,6 +101,8 @@ Each owner has independent private config, process identity, discovery, health, 
 **Deliverable:** production-shaped independent MCP host behind private loopback, with static-bearer staging first.
 **DoD:** Owner start/stop survives CLI exit, doesn't spawn a model or tunnel implicitly, refuses duplicate owners, cannot stop other PID, and runs in its own process in repeatable Windows staging.
 
+**Implementation status, 2026-10-26:** R1.1–R1.5 are implemented and locally validated for the **Windows isolated static-bearer staging MCP owner**, including owner host facade, nonce + kernel listener PID + process-birth attestation, hard safe-only dispatch and workspace boundary, authenticated health, drain and graceful stop. Production OAuth and external ingress remain separate R2/R3 tasks; no R7 cutover authorization is implied. Runbook: docs/guides/runtime-owner-r1-private-health-drain.md.
+
 ### R2 / P0 — Independently deployable OAuth issuer & credential lifecycle
 **Owners:** Security + MCP.
 - R2.1 Extract OAuthStore interface from current in-memory implementation; keep it as reference and implement a pluggable local durable provider only for new credentials if ADR authorizes it.

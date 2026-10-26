@@ -190,6 +190,7 @@ import {
   gatewayTextResult,
 } from "./mcpToolGateway.js";
 import { getMcpToolExposure } from "./mcpToolExposure.js";
+import { canUnlockMcpDangerousTools, isR1OwnerToolCallAllowed } from "./mcpSafeOwnerPolicy.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, PRIVILEGED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
 export type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -550,7 +551,10 @@ export async function notifyMcpToolsListChanged(): Promise<void> {
 
 
 export function createSuperagentMcpServer(options: McpServerOptions = {}): Server {
-  const { allowedTools, onToolCall, authMode = "static-bearer", allowDangerous, getIdentity, workspace, toolExposure = getMcpToolExposure().mode } = options;
+  const { allowedTools, onToolCall, authMode = "static-bearer", allowDangerous, lockSafeTools = false, getIdentity, workspace, toolExposure = getMcpToolExposure().mode } = options;
+  if (lockSafeTools && (allowDangerous || !allowedTools)) {
+    throw new Error("Safe-only MCP owner requires an explicit allowlist and must disable dangerous tools");
+  }
   const version = getSuperAgentVersion();
   const server = new Server(
     {
@@ -558,13 +562,13 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       version: version || "1.5.26",
     },
     {
-      capabilities: {
-        tools: {
-          listChanged: true,
-        },
-        resources: {},
-        prompts: {},
-      },
+      capabilities: lockSafeTools
+        ? { tools: { listChanged: true } }
+        : {
+            tools: { listChanged: true },
+            resources: {},
+            prompts: {},
+          },
     }
   );
 
@@ -576,7 +580,9 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   };
 
   // Register Standard MCP Resources & Prompts
-  registerResourcesAndPrompts(server, { authMode, getIdentity });
+  if (!lockSafeTools) {
+    registerResourcesAndPrompts(server, { authMode, getIdentity });
+  }
 
   const getAuthorizedMcpTools = () => {
     const allTools = MCP_TOOL_DEFINITIONS;
@@ -584,7 +590,9 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     // If allowDangerous is true OR CLI YOLO mode is active ("scoped" | "full"),
     // dangerous tools are dynamically unlocked for discovery.
     const yoloState = getYoloModeState();
-    const isDangerousUnlocked = Boolean(allowDangerous || yoloState !== "off");
+    const isDangerousUnlocked = canUnlockMcpDangerousTools({
+      lockSafeTools, allowDangerous: Boolean(allowDangerous), yoloState,
+    });
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     // OAuth tool discovery must reflect the CURRENT token, not local YOLO
     // configuration. A revoked/read-only token must not see write tools.
@@ -601,6 +609,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       (t) => !DISABLED_MCP_TOOLS.has(t.name)
         && canDiscoverRead
         && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
+        && (!lockSafeTools || MCP_TOOL_CLASSIFICATION[t.name] === "safe")
         && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || canDiscoverDangerous)
         && (!PRIVILEGED_MCP_TOOLS.has(t.name) || canDiscoverAdmin)
     );
@@ -987,10 +996,17 @@ function extractMcpResultText(result: unknown): string {
     const toolName = String((request.params as any)?.name || "");
     const rawArgs = (request.params as any)?.arguments || {};
     const yoloState = getYoloModeState();
-    const isDangerousUnlocked = Boolean(allowDangerous || yoloState !== "off");
+    const isDangerousUnlocked = canUnlockMcpDangerousTools({
+      lockSafeTools, allowDangerous: Boolean(allowDangerous), yoloState,
+    });
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     const level = MCP_TOOL_CLASSIFICATION[toolName];
     const isDangerous = level === "dangerous";
+    if (lockSafeTools && (level !== "safe" || PRIVILEGED_MCP_TOOLS.has(toolName) ||
+        !isR1OwnerToolCallAllowed(toolName, rawArgs as Record<string,unknown>, scopedWorkspaceAnchor))) {
+      throw new McpError(ErrorCode.InvalidRequest,
+        "Safe-only MCP owner forbids unknown, dangerous, and administrative tool calls.");
+    }
     let effectiveProjectId: string | null = activeProjectId;
     let effectiveWs =
       (rawArgs.workspace as string) ||

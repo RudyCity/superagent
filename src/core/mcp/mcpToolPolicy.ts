@@ -195,6 +195,8 @@ export interface McpServerOptions {
   authMode?: "static-bearer" | "oauth";
   /** If true, explicitly allow dangerous tools regardless of YOLO mode (e.g. CLI flag --allow-dangerous). */
   allowDangerous?: boolean;
+  /** Hard cap: this MCP instance NEVER unlocks dangerous tools via ambient YOLO, including gateway recursion. */
+  lockSafeTools?: boolean;
   /** Optional getter for active client identity (OAuth scopes / subject). */
   getIdentity?: () => { mode: "static-bearer" | "oauth"; subject: string; scopes?: string[]; credentialHash?: string } | null;
   /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */

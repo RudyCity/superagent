@@ -33,6 +33,21 @@ Do not issue commands against 6789, 7888, 7892 or 9877; production ports are exp
 
 Tests cover opt-in route hiding, rejected client bearer, generation mismatch, rejected drain without control credentials, live initialized session preservation, rejected new sessions while draining, eventual session DELETE, explicit approvals, duplicate ownership, graceful owner exit and unchanged production listeners.
 
-Further R1 acceptance required: consolidate the operator-facing host contract and any existing dedicated-host prototypes into one entrypoint; audit deeply nested gateway permissions for profile/workspace read/write/admin capabilities; strengthen OS process-birth attestation beyond nonce+timestamp. R2 production OAuth issuer, R3 public tunnel owner and R7 cutover are separate, later milestones.
+## R1 completion addendum — verified staging owner
+
+R1.1 and R1.2: The existing mcpOwnerLifecycle.ts exposes ONE typed McpOwnerHost interface and stagingMcpOwnerHost facade to status, start, drain, and stop the same existing owner process. Capabilities are versioned, private-auth only, and explicitly mark external ingress and OAuth as unsupported. There is no additional daemon or silently adopted provider.
+
+R1.3: The owner must pass all three attestations before a ready/drain/stop decision: private nonce-bound generation probe (PID, exact port, start timestamp), Windows kernel TCP owner PID and Windows Get-Process kernel birth timestamp. A stale PID, missing PowerShell or reused PID fails closed. The private staging lease uses exclusive-create semantics and stops only through its original private nonce request; process signals are not sent.
+
+R1.4: Safe-only policy is immutable at the MCP dispatch layer. It cannot be unlocked by machine-wide scoped/full YOLO mode, even after launch. A narrowed explicit read-only tool catalog excludes global project listing, global config and administrator tools, denies arbitrary remote project IDs and workspace/path traversal, resolves symlinks against the private owner workspace, and recursively checks nested tool_execute targets. Resources and Prompts are not advertised by this restricted owner. Legacy non-staging MCP hosts retain their existing behavior.
+
+R1.5: Authenticated status, generation identity, counters and drain behavior are live and covered by unit and real-process acceptance tests. In-flight external tool outcomes remain "unknown", not a false promise of exactly-once effects.
+
+This completes **R1 acceptance for the isolated Windows staging safe-tool owner**, NOT the unimplemented R2 production OAuth issuer, R3 public tunnel ownership, T-Line native rollout, system-wide task scheduling or R7 manual client migration. Do not use the staging owner as a privileged/unrestricted production MCP deployment.
+
+Additional validation:
+
+    bun --bun x vitest run --maxWorkers=2 tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts tests/mcpGatewayHttp.test.ts tests/mcpProjectAccessPolicy.test.ts
+    bun scripts/verify-managed-mcp-lifecycle.ts
 
 **Master roadmap:** `docs/plans/2026-10-26-runtime-ownership-and-safe-recovery-master-plan.md`.
