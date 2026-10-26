@@ -795,6 +795,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core reconcile --snapshot PATH  # offline read-only turn/receipt evidence; NEVER authorizes restart");
     console.log("superagent core lifecycle-plan  # inspect service separation without installing OS tasks");
     console.log("superagent core ownership-audit [--port 7888]  # read-only Core / MCP TCP owner comparison");
+    console.log("superagent core ownership-inventory [--port 7888]  # versioned R0 topology contract, no restart authorization");
     console.log("superagent core recovery-cases --snapshot PATH [--limit 100] [--offset 0]  # anonymized offline per-session review");
     console.log("superagent core recovery-canary --snapshot PATH --target-port PORT [--approve START_ISOLATED_CANARY]  # fresh isolated canary; never imports old sessions");
     console.log("superagent core lifecycle-observe [--port 7888] [--samples 3]  # bounded authenticated GET-only health samples");
@@ -881,6 +882,11 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log(JSON.stringify(report, null, 2));
     return;
   }
+  if (action === "ownership-inventory") {
+    const { captureRuntimeOwnership } = await import("./runtimeOwnershipContract.js");
+    console.log(JSON.stringify(await captureRuntimeOwnership(port),null,2));
+    return;
+  }
   if (action === "ownership-audit") {
     const { auditCoreMcpOwnership } = await import("./coreMcpOwnershipAudit.js");
     console.log(JSON.stringify(await auditCoreMcpOwnership({corePort:port}),null,2));
@@ -957,6 +963,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, recovery-cases, recovery-canary, ownership-audit, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, recovery-cases, recovery-canary, ownership-audit, ownership-inventory, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

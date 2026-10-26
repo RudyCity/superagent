@@ -54,30 +54,52 @@ export function readListenerOwners(): Map<number,number>|null {
 export function parseWindowsListenerOwners(text:string):Map<number,number>{
   return parseNetstat(text);
 }
-function readMcpStates():Array<{port:number;pid:number;authMode:"oauth"|"static-bearer"|"unknown"}>{
-  const dir=path.join(os.homedir(),".superagent-r");
+export interface McpRecordedProcess {
+  port:number;pid:number;authMode:"oauth"|"static-bearer"|"unknown";
+}
+export interface McpStateInventory {
+  records:McpRecordedProcess[];
+  rejected:number;
+  directory:"present"|"absent"|"unverified";
+}
+/** Discover MCP state files without suppressing corrupt or untrusted entries.
+ * Do not output their paths or any public URL/credentials in the report.
+ */
+export function readMcpStateInventory(dir=path.join(os.homedir(),".superagent-r")):McpStateInventory {
   // MCP state files intentionally live in the shared real-user directory,
   // not in transient supervised worker profiles. Only read them; no cleanup.
   let entries:string[];
-  try{
-    if(!fs.lstatSync(dir).isDirectory())return [];
-    entries=fs.readdirSync(dir).filter(n=>/^mcp-\d{4,5}\.json$/.test(n));
-  }catch{return [];}
-  if(entries.length>256)throw new Error("Too many MCP state files to audit safely");
-  const out:Array<{port:number;pid:number;authMode:"oauth"|"static-bearer"|"unknown"}>=[];
+  try {
+    const stat=fs.lstatSync(dir);
+    if(!stat.isDirectory() || stat.isSymbolicLink())
+      return {records:[],rejected:1,directory:"unverified"};
+    entries=fs.readdirSync(dir);
+  } catch(e) {
+    if((e as NodeJS.ErrnoException).code==="ENOENT")
+      return {records:[],rejected:0,directory:"absent"};
+    return {records:[],rejected:1,directory:"unverified"};
+  }
+  const matching=entries.filter(n=>/^mcp-\d{4,5}\.json$/.test(n));
+  if(matching.length>256)throw new Error("Too many MCP state files to audit safely");
+  const records:McpRecordedProcess[]=[];
+  let rejected=0;
   for(const name of entries){
+    // mcp-tool-exposure.json and other named config files are NOT server
+    // registrations. Only numeric-looking state records are candidates.
+    if(!/^mcp-\d/i.test(name))continue;
+    if(!/^mcp-\d{4,5}\.json$/.test(name)) {rejected++;continue;}
     try{
       const f=path.join(dir,name),stat=fs.lstatSync(f);
-      if(!stat.isFile()||stat.isSymbolicLink()||stat.size>16*1024)continue;
+      if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size>16*1024) {rejected++;continue;}
       const state=JSON.parse(fs.readFileSync(f,"utf8")) as Record<string,unknown>;
       const port=Number(name.slice(4,-5));
       if(!validPort(port)||state.port!==port||
-         !Number.isSafeInteger(state.pid)||Number(state.pid)<=0)continue;
-      out.push({port,pid:Number(state.pid),authMode:state.authMode==="oauth"?"oauth":
+         !Number.isSafeInteger(state.pid)||Number(state.pid)<=0) {rejected++;continue;}
+      records.push({port,pid:Number(state.pid),authMode:state.authMode==="oauth"?"oauth":
         state.authMode==="static-bearer"?"static-bearer":"unknown"});
-    }catch{continue;}
+    }catch{rejected++;}
   }
-  return out.sort((a,b)=>a.port-b.port);
+  return {records:records.sort((a,b)=>a.port-b.port),rejected,directory:"present"};
 }
 export async function auditCoreMcpOwnership(input:{
   corePort?:number; listeners?:Map<number,number>|null;
@@ -101,7 +123,7 @@ export async function auditCoreMcpOwnership(input:{
         core.status==="not_listening"?"absent":"unverified";
     }catch{registration="unverified";}
   }
-  const entries=input.mcps??readMcpStates();
+  const entries=input.mcps??readMcpStateInventory().records;
   const mcp=entries.map(s=>{
     const pid=listeners?.get(s.port);
     const identity:McpProcessEvidence["identity"]=!listeners?"unverified":
