@@ -76,3 +76,25 @@ OAuth key, corrupt owner records and malformed effect counts. Fail-closed
 predicates never authorize production restart, session restoration or tool
 replay. This is a policy test, NOT a physical Windows reboot, task registration
 or proof of successful recovery after power loss.
+
+### R5 startup-registration safety hardening (2026-10-26)
+
+The per-user Task Scheduler helper remains **PREVIEW ONLY** by default.
+Its `--apply` mode now refuses all legacy ports 6789/7888/9877 and
+requires a pre-existing isolated staging profile inside
+`~/.superagent-local-staging/<dedicated-profile>`, passed as `--profile`.
+The launcher explicitly sets `SUPERAGENT_CONFIG_DIR` to that profile,
+`SUPERAGENT_CORE_STAGING=1`, and disables auto-start of the local model.
+A registration is refused when OS port ownership cannot be read, another
+process owns the port, an identically named task exists or Task Scheduler
+cannot be queried, or the isolated cold-start audit cannot prove a fully
+empty fresh namespace. A second listener check occurs just before task
+registration. The guard does not create a Windows task itself; it only
+permits the existing `--apply` path to proceed.
+
+Read-only preview:
+`bun scripts/setup-core-windows-startup.ts --port 7903 --profile <absolute-existing-private-stage-directory>`
+No task was registered in the 2026-10-26 engineering verification.
+Real reboot/power loss and production startup/cutover remain separate
+uncertified operator-held tasks. Tests:
+`tests/coreWindowsStartupRegistrationR5.test.ts`.

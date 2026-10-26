@@ -18,6 +18,7 @@ function goodWindowsPath(value: string): boolean {
 export function createCoreWindowsStartupPlan(options: {
   port: number; cliFile: string; bunExecutable: string; launcherFile: string;
   clientMode?: "tline" | "chrome-extension";
+  isolatedStageProfile?: string;
 }): CoreWindowsStartupPlan {
   const { port, cliFile, bunExecutable, launcherFile } = options;
   if (!Number.isInteger(port) || port < 1024 || port > 65535 ||
@@ -26,7 +27,9 @@ export function createCoreWindowsStartupPlan(options: {
       !cliFile.toLowerCase().endsWith(".js") ||
       !bunExecutable.toLowerCase().endsWith(".exe") ||
       !launcherFile.toLowerCase().endsWith(".ps1") ||
-      !["tline", "chrome-extension"].includes(options.clientMode ?? "tline")) {
+      !["tline", "chrome-extension"].includes(options.clientMode ?? "tline")||
+      options.isolatedStageProfile!==undefined &&
+      !goodWindowsPath(options.isolatedStageProfile)) {
     throw new Error("Invalid Windows Core startup plan options");
   }
   const taskName = "SuperAgent-Core-Boot-" + port;
@@ -35,6 +38,11 @@ export function createCoreWindowsStartupPlan(options: {
   // no cmd.exe, password, bearer token or downloaded component is involved.
   const launcherContent = [
     "$ErrorActionPreference = 'Stop'",
+    ...(options.isolatedStageProfile ? [
+      "$env:SUPERAGENT_CONFIG_DIR = " + psString(options.isolatedStageProfile),
+      "$env:SUPERAGENT_CORE_STAGING = '1'",
+      "$env:SUPERAGENT_SENOPATI_AUTOSTART = '0'",
+    ] : []),
     "& " + psString(bunExecutable) + " " + psString(cliFile) +
       " core boot --port " + port + " --client-mode " + mode,
     "exit $LASTEXITCODE",

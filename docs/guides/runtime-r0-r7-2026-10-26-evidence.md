@@ -94,3 +94,20 @@ The monitoring policy adds eight negative tests. Re-run of the expanded
 cross-domain R6 suite on 2026-10-26 passed 18/18 test files (122/122
 individual tests). The current R6 owner-monitor implementation remains
 read-only, foreground-only and never sets productionCertified=true.
+
+## R5 startup hardening follow-up
+
+`--apply` on `setup-core-windows-startup.ts` is now guarded by an
+isolated profile, legacy-port exclusion, Task Scheduler task absence,
+live OS listener absence and an empty cold-start namespace. The staging
+launcher explicitly targets its separate SUPERAGENT_CONFIG_DIR.
+Existing production Core 7888 and MCP 6789 were not restarted;
+no logon task was installed by this work.
+
+Build after R5 startup guard changes: SuperAgent 1.14.36 compiled
+successfully and 20/20 cross-domain Vitest suites passed (136/136 tests).
+A real isolated staging --profile preview on port 7903 was performed
+without creating any launcher or Scheduled Task. An actual --apply attempt
+for legacy 7888 with no staging profile was refused before any OS mutation.
+These results do not replace Windows reboot verification or the final
+production installation certificate.
