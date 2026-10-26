@@ -48,6 +48,8 @@ try{
   const owner=JSON.parse(result.stdout);
   started=true;
   assert("persistent_owner_authenticated_and_verified",owner.state==="ready"&&owner.ownerPid>0&&owner.ownerPid===owner.listenerPid);
+  assert("private_generation_handshake_required",owner.ownerControlAuthenticated===true&&
+    owner.activeSessions===0&&owner.inFlightRequests===0&&owner.draining===false);
   const firstPid=owner.ownerPid;
   result=exec(["status","--port",String(port)]);
   const status=JSON.parse(result.stdout);
@@ -58,6 +60,16 @@ try{
   assert("stop_without_explicit_approval_refused",result.status!==0);
   result=exec(["status","--port",String(port)]);
   assert("owner_remains_healthy_after_denied_stop",JSON.parse(result.stdout).state==="ready");
+  result=exec(["stop","--port",String(port),"--approve","STOP_STAGING_MCP_OWNER"]);
+  assert("stop_requires_separate_verified_drain",result.status!==0);
+  result=exec(["drain","--port",String(port),"--approve","NO"]);
+  assert("unauthorized_drain_refused",result.status!==0);
+  result=exec(["drain","--port",String(port),"--approve","DRAIN_STAGING_MCP_OWNER"]);
+  if(result.status!==0)throw new Error("MCP drain failed: "+result.stderr.slice(-900));
+  const drained=JSON.parse(result.stdout);
+  assert("drain_authenticated_and_quiescent",drained.state==="ready"&&
+    drained.draining===true&&drained.activeSessions===0&&
+    drained.inFlightRequests===0&&drained.canStopWithoutProcessSignal===true);
   assert("lease_is_private_and_does_not_contain_token",
     fs.readFileSync(path.join(profile,"managed-owner.json"),"utf8").includes("managed_mcp_staging")&&
     !fs.readFileSync(path.join(profile,"managed-owner.json"),"utf8").includes("bearerToken"));
@@ -86,8 +98,10 @@ try{
     const s=exec(["status","--port",String(port)]);
     if(s.status===0){
       try{
-        if(JSON.parse(s.stdout).state==="ready")
+        if(JSON.parse(s.stdout).state==="ready") {
+          exec(["drain","--port",String(port),"--approve","DRAIN_STAGING_MCP_OWNER"]);
           exec(["stop","--port",String(port),"--approve","STOP_STAGING_MCP_OWNER"]);
+        }
       }catch{}
     }
   }

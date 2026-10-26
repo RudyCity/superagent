@@ -298,6 +298,14 @@ export interface McpHttpServerOptions {
   sessionMaxLifetimeMs?: number;
   /** Host/Origin validation policy (defense in depth). */
   hostOriginPolicy?: McpHostOriginPolicy;
+  /**
+   * INTERNAL loopback owner management, opt-in only. Never enabled for a
+   * public OAuth issuer or reused as an MCP client bearer. Only used by the
+   * private, staged owner lifecycle.
+   */
+  ownerControlToken?: string;
+  /** Immutable generation start timestamp, verified against private lease. */
+  ownerStartedAt?: number;
 }
 
 export interface McpHttpServerHandle {
@@ -360,9 +368,30 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     idleTimeoutMs: opts.sessionIdleTimeoutMs,
     maxLifetimeMs: opts.sessionMaxLifetimeMs,
   });
+  if (opts.ownerControlToken && (!/^[a-f0-9]{64}$/.test(opts.ownerControlToken) ||
+      opts.ownerControlToken === opts.bearerToken || authMode !== "static-bearer" ||
+      opts.allowDangerous !== false ||
+      !Number.isSafeInteger(opts.ownerStartedAt) || opts.ownerStartedAt! <= 0)) {
+    throw new Error("Private owner control must be isolated from MCP client authentication");
+  }
+  // Existing MCP/OAuth instances without ownerControlToken are unchanged.
+  let ownerDraining = false;
+  let inFlightMcpRequests = 0;
 
   const httpServer = http.createServer(async (req, res) => {
     try {
+      const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
+      // The opt-in private owner must count in-progress initialize and tool
+      // requests; zero registered sessions does not imply a quiescent host.
+      if (opts.ownerControlToken && (pathname === MCP_HTTP_PATH || pathname === "/")) {
+        inFlightMcpRequests++;
+        let finished = false;
+        const settle = () => {
+          if (!finished) { finished = true; inFlightMcpRequests--; }
+        };
+        res.once("finish", settle);
+        res.once("close", settle);
+      }
       // 1. Host validation (before everything else).
       if (!isHostAllowed(req.headers["host"], publicHostname, policy.allowedHosts)) {
         res.writeHead(400, { "Content-Type": "application/json" });
@@ -375,6 +404,42 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         res.end(JSON.stringify({ error: "origin not allowed" }));
         return;
       }
+      if (pathname === "/_internal/owner/status" || pathname === "/_internal/owner/drain") {
+        // Route must remain completely undiscoverable on legacy instances.
+        // The listener itself is always bound to 127.0.0.1.
+        if (!opts.ownerControlToken) {
+          res.writeHead(404, { "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
+        if (!isAuthorized(req, opts.ownerControlToken)) {
+          res.writeHead(401, { "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
+        const expectedMethod = pathname.endsWith("/status") ? "GET" : "POST";
+        if (req.method !== expectedMethod) {
+          res.writeHead(405, { "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
+        if (expectedMethod === "POST") ownerDraining = true;
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify({
+          version: 1, kind: "private_mcp_owner",
+          port: opts.port, pid: process.pid, startedAt: opts.ownerStartedAt,
+          mode: "static-bearer-local",
+          draining: ownerDraining, activeSessions: registry.size,
+          inFlightRequests: inFlightMcpRequests,
+          // Number of unresolved external tool effects is NOT tracked by
+          // the transport and must never be incorrectly reported as zero.
+          inflightToolEffects: "unknown",
+          safeToolsOnly: opts.allowDangerous === false,
+          oauthEnabled: authMode === "oauth",
+          publicTunnelStarted: false,
+        }));
+        return;
+      }
       // OAuth discovery/authorization/token endpoints are public by design
       // (RFC 8414 / RFC 9728). They never require the MCP access token.
       if (oauthRoutesConfig) {
@@ -385,7 +450,6 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           return;
         }
       }
-      const pathname = new URL(req.url || "/", "http://127.0.0.1").pathname;
       if (pathname !== MCP_HTTP_PATH && pathname !== "/") {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "not found" }));
@@ -459,6 +523,13 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
 
       const sessionIdHeader = req.headers["mcp-session-id"];
       const requestSessionId = typeof sessionIdHeader === "string" ? sessionIdHeader : undefined;
+      if (ownerDraining && req.method === "POST" && !requestSessionId) {
+        // No new stateless calls or initialize requests after drain. Requests
+        // for already-bound sessions can finish normally until deleted/expired.
+        res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
+        res.end(JSON.stringify({ error: "MCP owner draining: new requests disabled" }));
+        return;
+      }
 
       // Session servers capture the initialization identity in getIdentity().
       // Bind them to the *exact* current credential, not just OAuth client_id:
@@ -547,6 +618,11 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
 
       const isInit = isInitializePayload(rb.body);
       if (isInit) {
+        if (ownerDraining) {
+          res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
+          res.end(JSON.stringify({ error: "MCP owner draining: new sessions disabled" }));
+          return;
+        }
         if (registry.isFull()) {
           res.writeHead(503, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "too many concurrent MCP sessions" }));

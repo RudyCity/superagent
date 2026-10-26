@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { startMcpHttpServer } from "../mcp/mcpHttpTransport.js";
+import { probePrivateMcpOwner } from "./mcpOwnerControl.js";
 import {
   assertManagedMcpPort, cleanOwnMcpLease, matchesOwnedMcpStop,
   writeOwnedMcpLease, type ManagedMcpLease,
@@ -32,6 +33,11 @@ export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
   const token=process.env.SUPERAGENT_MCP_OWNER_STAGING_BEARER||"";
   if(!/^[a-f0-9]{64}$/.test(token))throw new Error("MCP staging requires a private 256-bit bearer");
   const managed=process.env.SUPERAGENT_MCP_OWNER_STAGING_MANAGED==="1";
+  const lease:ManagedMcpLease|undefined=managed?{
+    version:1,kind:"managed_mcp_staging",pid:process.pid,port,
+    nonce:crypto.randomBytes(32).toString("hex"),createdAt:Date.now(),
+    auth:"private_bearer",modelAutostart:false,publicTunnel:false,
+  }:undefined;
   const handle=await startMcpHttpServer({
     port,bearerToken:token,authMode:"static-bearer",
     allowDangerous:false,toolExposure:"gateway",
@@ -39,16 +45,11 @@ export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
     auditLogPath:path.join(root,"mcp-sandbox-audit.jsonl"),
     publicBaseUrl:"http://127.0.0.1:"+port,
     hostOriginPolicy:{allowNoOrigin:true,allowedOrigins:[]},
+    ...(lease?{ownerControlToken:lease.nonce,ownerStartedAt:lease.createdAt}:{}),
   });
-  let lease:ManagedMcpLease|undefined;
   let interval:NodeJS.Timeout|undefined;
   try {
-    if(managed){
-      lease={version:1,kind:"managed_mcp_staging",pid:process.pid,port,
-        nonce:crypto.randomBytes(32).toString("hex"),createdAt:Date.now(),
-        auth:"private_bearer",modelAutostart:false,publicTunnel:false};
-      writeOwnedMcpLease(root,lease);
-    }
+    if(lease)writeOwnedMcpLease(root,lease);
   }catch(error){
     await handle.close();
     throw error;
@@ -79,7 +80,14 @@ export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
   if(lease){
     interval=setInterval(()=>{
       try {
-        if(matchesOwnedMcpStop(root,lease!))void shutdown();
+        if(matchesOwnedMcpStop(root,lease!)) {
+          // An already-accepted MCP request or session may still be active.
+          // A previously approved stop is not permission to drop its work.
+          void probePrivateMcpOwner(lease!).then(s=>{
+            if(s?.draining && s.activeSessions===0 &&
+               s.inFlightRequests===0)void shutdown();
+          });
+        }
       } catch{
         // An untrusted/corrupt marker must not authorize shutdown.
       }
