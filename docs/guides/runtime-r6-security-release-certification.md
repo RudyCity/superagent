@@ -45,3 +45,31 @@ The read-only release-evidence command reports BLOCKED unless live independent o
 | Cutover | Maintenance window, operator approval and tested reverse routing | Not authorized |
 
 Forward roadmap: docs/plans/2026-10-26-runtime-ownership-and-safe-recovery-master-plan.md R2–R7. The current release gate intentionally does not include any auto-takeover action.
+
+## Read-only short / extended process observation (2026-10-26)
+
+Use `bun scripts/observe-runtime-soak-r6.ts 6 2` on the staging / Windows
+host for a six-second minimum observed window (two-second nominal sample
+interval). The command samples OS listener PID ownership on ports 7888,
+6789 and 9877, working set, cumulative process CPU seconds and OS handle
+counts. It only runs netstat and Get-Process; no process signals,
+credentials, OAuth requests, session creation, external notifications or
+route changes. It emits a machine-readable JSON report to stdout without
+writing private process details to shared folders.
+
+For an operator-supervised long observation, the foreground command accepts
+a duration in seconds (up to 259200, 72h) and sample interval (1–30s);
+run within a managed terminal and explicitly preserve the JSON result.
+There is NO built-in background scheduler, persistent storage, or alerting.
+If the terminal exits, no completion may be claimed. Before long sessions
+choose a 30-second interval to limit in-memory accumulation. A result is
+`incomplete` when the requested observation window is not covered,
+`unstable` when PIDs change, samples have large gaps, CPU counters
+regress or process metrics are missing; otherwise
+`observed_window_complete` means **only this interval** was observed.
+Any result always has productionCertified=false and never permits a
+restart, cutover or token import. A stable 24–72h observation still must
+be combined with installed desktop, TLS/keystore and operator certification.
+
+Negative tests: tests/runtimeReadOnlySoakR6.test.ts. CI exercises the
+assessment policy; it never assumes running Core/MCP listeners in CI.

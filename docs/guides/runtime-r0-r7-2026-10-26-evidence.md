@@ -78,3 +78,19 @@ After rebuilding SuperAgent 1.14.36, the expanded local cross-domain
 security suite reported 17/17 files and 114/114 tests passing.
 No physical reboot, real hot-backup consistency, OS ACL certification,
 public ingress TLS, installed desktop E2E or live migration is implied.
+
+## R6 short live OS monitoring follow-up
+
+A new foreground read-only monitor
+`scripts/observe-runtime-soak-r6.ts` observes kernel PID identities and
+CPU/working-set/handle counters of existing local Core and MCP listeners,
+without HTTP writes, signals or tunnel operations. During the brief
+2026-10-26 observation, kernel PIDs stayed at 13424 for Core 7888 and
+MCP 6789, and 10060 for MCP 9877. This short sample does NOT count as
+a 24–72-hour production soak, and does not certify an independent owner.
+Read-only assessor: `src/core/runtime/runtimeReadOnlySoakR6.ts`.
+
+The monitoring policy adds eight negative tests. Re-run of the expanded
+cross-domain R6 suite on 2026-10-26 passed 18/18 test files (122/122
+individual tests). The current R6 owner-monitor implementation remains
+read-only, foreground-only and never sets productionCertified=true.
