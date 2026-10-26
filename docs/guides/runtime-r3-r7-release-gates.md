@@ -67,3 +67,12 @@ blocks a migration review. Even a parity success is only a metadata review
 candidate: it does not prove TLS ownership, real provider connectivity,
 live sessions, approved cutover, or allow endpoint mutation. Tests live at
 tests/mcpPublicIssuerParityR3.test.ts and run in the R6 CI matrix.
+
+### R5 cold-recovery adversarial matrix
+
+tests/runtimeColdRecoveryMatrixR5.test.ts covers reboot uncertainty, unknown
+external effects, stale/reused Windows PIDs, dead checkpoint workers, missing
+OAuth key, corrupt owner records and malformed effect counts. Fail-closed
+predicates never authorize production restart, session restoration or tool
+replay. This is a policy test, NOT a physical Windows reboot, task registration
+or proof of successful recovery after power loss.
