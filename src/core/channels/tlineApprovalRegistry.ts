@@ -2,7 +2,7 @@
  * The owning Core prompt remains the authority; these records are observations.
  * Never persist raw tool arguments, approval IDs or description in the journal.
  */
-export type ApprovalState = 'pending' | 'approved' | 'approved_session' | 'denied' | 'expired';
+export type ApprovalState = 'pending' | 'approved' | 'approved_session' | 'denied' | 'expired' | 'cancelled';
 export type ApprovalRecord = {
   permissionId: string; sessionId: string; workspace: string;
   state: ApprovalState; requestedAt: number; updatedAt: number; expiresAt: number;
@@ -30,7 +30,7 @@ export function registerTlineApproval(permissionId: string, sessionId: string, w
   pruneTlineApprovals();
 }
 export function decideTlineApproval(permissionId: string, sessionId: string, workspace: string,
-  decision: 'approved' | 'approved_session' | 'denied'): ApprovalRecord | null {
+  decision: 'approved' | 'approved_session' | 'denied' | 'cancelled'): ApprovalRecord | null {
   const record = entries.get(permissionId);
   if (!record || record.sessionId !== sessionId ||
       record.workspace.toLowerCase() !== workspace.toLowerCase() ||
@@ -38,6 +38,13 @@ export function decideTlineApproval(permissionId: string, sessionId: string, wor
   if (record.expiresAt <= Date.now()) { record.state = 'expired'; return null; }
   record.state = decision; record.updatedAt = Date.now();
   return { ...record };
+}
+// Aborting a session settles historical UI state; it never resolves/executes a
+// pending tool itself (the owning server does that independently).
+export function cancelTlineApproval(permissionId: string, sessionId?: string,
+  workspace?: string): boolean {
+  return !!sessionId && !!workspace &&
+    !!decideTlineApproval(permissionId, sessionId, workspace, 'cancelled');
 }
 export function getTlineApproval(permissionId: string) { return entries.get(permissionId); }
 export function listTlineApprovals(sessionId: string, workspace: string) {

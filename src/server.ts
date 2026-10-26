@@ -688,7 +688,8 @@ function getPromptOwner(ownerAgent?: Agent): { sessionId?: string; workspace: st
 
 const onPermission = (toolCall: any, description: string, ownerAgent: Agent) => {
   return new Promise<boolean | "session">((resolve) => {
-    const permissionId = Math.random().toString(36).substring(2, 9);
+    // Cryptographic uniqueness avoids colliding active permission prompts.
+    const permissionId = crypto.randomUUID();
     const owner = getPromptOwner(ownerAgent);
     pendingPermissions.set(permissionId, { resolve, ownerAgent, ...owner });
     const session = [...activeSessions.values()].find(item =>

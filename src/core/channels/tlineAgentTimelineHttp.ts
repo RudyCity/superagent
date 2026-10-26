@@ -5,6 +5,9 @@ import type http from "node:http";
 import type { URL } from "node:url";
 import { readAgentTimeline } from "./tlineAgentTimeline.js";
 const SESSION = /^[a-zA-Z0-9_-]{1,128}$/;
+// Bound concurrent journal readers; streams are read-only but still consume sockets.
+const activeJournalStreams = new Set<http.ServerResponse>();
+const MAX_JOURNAL_STREAMS = 24;
 export async function handleTlineAgentTimelineRoute(
   req: http.IncomingMessage, res: http.ServerResponse,
   pathname: string, url: URL,
@@ -45,6 +48,11 @@ export async function handleTlineAgentTimelineRoute(
       deps.sendJSON(res, 200, { success: true, sessionId, ...result });
       return true;
     }
+    if (activeJournalStreams.size >= MAX_JOURNAL_STREAMS) {
+      fail(429, "Too many concurrent timeline streams");
+      return true;
+    }
+    activeJournalStreams.add(res);
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-store, no-transform",
@@ -58,26 +66,45 @@ export async function handleTlineAgentTimelineRoute(
     let sending = false;
     const tick = () => {
       if (closed || sending || res.destroyed || res.writableEnded) return;
+      if ((res.writableLength || 0) > 256 * 1024) {
+        // Slow consumers reconnect by cursor; never grow an unbounded buffer.
+        closed = true; activeJournalStreams.delete(res);
+        clearInterval(timer); res.end();
+        return;
+      }
       sending = true;
       try {
+        // A revoked/deleted session loses access even on a previously-open socket.
+        const owner = deps.resolveSession(req, sessionId, workspace);
+        if (!owner || owner.clientMode !== "tline" ||
+            owner.sessionId !== sessionId ||
+            owner.workspace.toLowerCase() !== workspace.toLowerCase()) {
+          closed = true;
+          activeJournalStreams.delete(res);
+          clearInterval(timer);
+          res.end();
+          return;
+        }
         const page = readAgentTimeline(scope, nextCursor, 100);
-        if (page.gap) res.write("event: gap\\ndata: {}\\n\\n");
+        if (page.gap) res.write("event: gap\ndata: {}\n\n");
         for (const event of page.events) {
-          res.write("id: " + event.seq + "\\ndata: " + JSON.stringify(event) + "\\n\\n");
+          res.write("id: " + event.seq + "\ndata: " + JSON.stringify(event) + "\n\n");
         }
         nextCursor = page.nextCursor;
         if (Date.now() - lastHeartbeat > 15000) {
-          res.write(": heartbeat\\n\\n");
+          res.write(": heartbeat\n\n");
           lastHeartbeat = Date.now();
         }
       } catch {
-        res.write("event: unavailable\\ndata: {}\\n\\n");
-        closed = true; clearInterval(timer); res.end();
+        res.write("event: unavailable\ndata: {}\n\n");
+        closed = true; activeJournalStreams.delete(res); clearInterval(timer); res.end();
       } finally { sending = false; }
     };
     const timer = setInterval(tick, 1000);
     timer.unref?.();
-    res.on("close", () => { closed = true; clearInterval(timer); });
+    res.on("close", () => {
+      closed = true; activeJournalStreams.delete(res); clearInterval(timer);
+    });
     tick();
   } catch {
     fail(503, "Agent timeline journal unavailable");

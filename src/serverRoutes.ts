@@ -63,7 +63,7 @@ import { maskApiKey, isMaskedApiKey } from "./core/config.js";
 import { isPendingPromptOwner } from "./core/agent/pendingPromptOwnership.js";
 import { recordAgentTimeline } from "./core/channels/tlineAgentTimeline.js";
 import { readSenopatiReadiness } from "./core/senopatiReadiness.js";
-import { decideTlineApproval, getTlineApproval, listTlineApprovals } from "./core/channels/tlineApprovalRegistry.js";
+import { cancelTlineApproval, decideTlineApproval, getTlineApproval, listTlineApprovals } from "./core/channels/tlineApprovalRegistry.js";
 import { getNormalizedProjectPath } from "./core/tools/helpers.js";
 
 /** Persist an atomic memory under a canonical project/global scope. Never trust a client-supplied project ID. */
@@ -199,6 +199,18 @@ export async function handleServerRoute(
     executeBrowserControlOnClient,
     killVisionServerProcess
   } = ctx;
+
+  // An explicit abort settles the read-only UI registry as well as the real
+  // pending permission promise. Never turn historical metadata into authority.
+  const markCancelledTlinePermission = (
+    id: string, pending: { sessionId?: string; workspace: string },
+  ) => {
+    if (cancelTlineApproval(id, pending.sessionId, pending.workspace)) {
+      recordAgentTimeline({ workspace: pending.workspace, sessionId: pending.sessionId! }, {
+        kind: "permission_decided", actor: "main", status: "cancelled",
+      });
+    }
+  };
 
   if (pathname === "/api/tline/agent-timeline" ||
       pathname === "/api/tline/agent-timeline/stream") {
@@ -1446,6 +1458,7 @@ export async function handleServerRoute(
       session.agent.abort();
       for (const [id, pending] of pendingPermissions) {
         if (pending.ownerAgent === session.agent || pending.sessionId === session.sessionId) {
+          markCancelledTlinePermission(id, pending);
           pending.resolve(false);
           pendingPermissions.delete(id);
         }
@@ -1697,7 +1710,10 @@ export async function handleServerRoute(
       for (const superInst of superagentInstances.values()) {
         if (superInst.status === "running") superInst.status = "terminated";
       }
-      for (const pending of pendingPermissions.values()) pending.resolve(false);
+      for (const [id, pending] of pendingPermissions) {
+        markCancelledTlinePermission(id, pending);
+        pending.resolve(false);
+      }
       for (const pending of pendingQuestions.values()) pending.resolve(null);
       pendingPermissions.clear();
       pendingQuestions.clear();
@@ -1739,6 +1755,7 @@ export async function handleServerRoute(
     for (const [id, pending] of pendingPermissions) {
       if (pending.ownerAgent && ownedAgents.has(pending.ownerAgent) ||
           pending.sessionId === session.sessionId) {
+        markCancelledTlinePermission(id, pending);
         pending.resolve(false);
         pendingPermissions.delete(id);
       }

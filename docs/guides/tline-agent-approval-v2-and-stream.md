@@ -10,6 +10,12 @@ Date: 2026-10-26. Applies only to verified T-Line sessions.
 - Core restart invalidates active pending permission promises. **Never resume/approve them using old metadata.** Agent cancel and detached task reconciliation retain their existing CAS/ownership rules.
 - Native provider E2E is still necessary, especially Core restart during pending approval and stream disconnect/reconnect.
 
+## Hardening follow-up (2026-10-26)
+- Fixed SSE framing to emit real newline delimiters; tests now parse complete protocol frames, not just substring IDs.
+- Core rechecks session ownership throughout each stream and closes on revocation, limits streams to 24 concurrent connections, and bounds pending output to 256 KiB.
+- T-Line approval prompt IDs now use UUIDs. An explicit session abort or rejected plan transitions a pending T-Line request to `cancelled` and logs only sanitized journal metadata.
+- Old events do not authorize tools; a cancelled or expired permission cannot be reopened as approved.
+
 Core build/tests:
 ```sh
 bun run build
