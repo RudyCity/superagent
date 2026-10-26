@@ -567,6 +567,10 @@ superagent muse watch ./frontend ./backend --tunnel
 superagent muse "find all unhandled promise rejections in src"
 ```
 
+#### Python MCP Client and stdio Bridge
+
+Install the independent Python client in `integrations/python-mcp-client/` to use an existing authenticated SuperAgent Streamable HTTP endpoint from Python apps or any host supporting local stdio MCP commands. It forwards live tools, resources, and prompts; OAuth PKCE login and Bearer modes are supported. See [Python MCP client setup](integrations/python-mcp-client/README.md). The bridge does not launch a second SuperAgent runtime.
+
 #### Connecting Grok.com (Custom MCP)
 
 Grok.com supports custom remote MCP connectors via public HTTPS Streamable HTTP. Start Cloudflare with OAuth and safe tools:

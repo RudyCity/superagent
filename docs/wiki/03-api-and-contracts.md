@@ -4,6 +4,10 @@ This document catalogs all user interfaces, CLI commands, tool interfaces, WebSo
 
 ---
 
+## Python MCP Client (external integration)
+
+An installable Python 3.11+ client and local stdio bridge lives at [`integrations/python-mcp-client/`](../../integrations/python-mcp-client/README.md). It consumes an existing SuperAgent Streamable HTTP `/mcp` endpoint and exposes dynamically authorized tools, resources, and prompts through stdio for compatible host applications. OAuth PKCE and static Bearer credentials are supported; the bridge does not own or restart Core/MCP services. The endpoint URL, authorization scope and optional Bearer token are supplied by the client environment, separate from SuperAgent model configuration.
+
 ## 1. CLI Commands & Arguments
 
 ### Terminal Launch Flags

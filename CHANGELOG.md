@@ -1,3 +1,9 @@
+## [1.14.44] - 2026-10-26
+### Python MCP client integration
+- Added an installable Python MCP client and stdio bridge to existing SuperAgent Streamable HTTP endpoints, forwarding tool schemas/results, resources, and prompts.
+- Added OAuth PKCE browser approval and per-endpoint token storage, Bearer auth, read-only scope defaults, config validation, in-memory protocol tests and compatibility documentation.
+- External client only: does not launch or replace production MCP owners, migrate tokens, or waive R0–R7 release gates.
+
 ## [1.14.43] - 2026-10-26
 ### Agent guidance
 - Clarified the single primary SuperAgent runtime and one T-Line backend architecture, including temporary staging isolation, authenticated independent Core/MCP/OAuth owners, fail-closed T-Line runtime selection, process identity safeguards and R0-R7 production release gates.

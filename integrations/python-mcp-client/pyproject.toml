@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "superagent-mcp-client"
+version = "0.1.0"
+description = "Python MCP client and stdio bridge for remote SuperAgent MCP endpoints"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["mcp>=2.0,<3.0"]
+
+[project.scripts]
+superagent-mcp-python = "superagent_mcp_client.__main__:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["superagent_mcp_client"]

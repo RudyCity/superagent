@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-10-20T21:22:25.163Z",
+  "lastSync": "2026-10-26T12:30:03.681Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -51,30 +51,20 @@
   "lastModifiedFiles": [
     "[superagent] CHANGELOG.md",
     "[superagent] README.md",
-    "[superagent] docs/plans/2026-10-20-superagent-motion-studio-implementation-plan.md",
-    "[superagent] src/core/commands/motionCliHandler.ts",
-    "[superagent] src/core/commands/motionCommand.ts",
-    "[superagent] src/core/mcp/mcpWorkspacePolicy.ts",
-    "[superagent] src/core/mcp/tools/motionMcpTools.ts",
-    "[superagent] src/core/motion/motionRoutes.ts",
-    "[superagent] src/core/motion/render/ffmpegEncoder.ts",
-    "[superagent] src/core/project/projectAccessPolicy.ts",
-    "[superagent] tests/motionMcpIntegration.test.ts",
-    "[superagent] tests/motionRoutes.test.ts",
-    "[superagent] tests/motionSlashCommand.test.ts",
-    "[superagent] tests/motionVideo.test.ts",
-    "[superagent] .superagent/",
-    "[superagent] docs/plans/2026-10-21-superagent-chrome-cdp-terminal-optimization-plan.md",
-    "[superagent] docs/reviews/2026-10-20-motion-studio-codebase-audit.md",
-    "[superagent] src/core/motion/assets/motionInput.ts",
-    "[superagent] src/core/motion/motionCapabilities.ts",
-    "[superagent] tests/motionAuthoringParity.test.ts"
+    "[superagent] docs/wiki/00-index.md",
+    "[superagent] docs/wiki/01-architecture-overview.md",
+    "[superagent] docs/wiki/03-api-and-contracts.md",
+    "[superagent] docs/wiki/auto-sync-manifest.json",
+    "[superagent] docs/wiki/wiki-rmemory-chunks.json",
+    "[superagent] package.json",
+    "[superagent] integrations/",
+    "[superagent] tests/python_mcp_client/"
   ],
   "impactSummary": {
-    "architecture": false,
+    "architecture": true,
     "domainData": false,
-    "apiContracts": true,
-    "features": true,
+    "apiContracts": false,
+    "features": false,
     "devops": false,
     "onboarding": false,
     "index": true

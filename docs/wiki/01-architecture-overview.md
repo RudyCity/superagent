@@ -4,6 +4,10 @@ Superagent is designed around a multi-tier agent architecture, strict filesystem
 
 ---
 
+## External MCP Python Adapter
+
+The optional Python client under [`integrations/python-mcp-client/`](../../integrations/python-mcp-client/README.md) connects to the already-owned SuperAgent Streamable HTTP MCP endpoint. Its stdio bridge presents live, authorized tools, resources and prompts to compatible host processes without cloning the MCP registry or creating another Core/MCP owner. Remote connections use the existing OAuth PKCE or Bearer policy. This is a client-side packaging boundary, not a new production service.
+
 ## 1. 3-Tier Multi-Agent Hierarchy
 
 When running in multi-agent mode (`superagent --multi`), the system distributes responsibilities across three distinct tiers:
