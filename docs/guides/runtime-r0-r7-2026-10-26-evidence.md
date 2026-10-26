@@ -10,11 +10,11 @@ external notifications, Scheduled Task registration or client cutover.
 | Phase | Verified evidence | Unresolved production evidence |
 | --- | --- | --- |
 | R0/R1 | R1 independent MCP owner and permission boundary at a6991a0c; R0 background/master plan reviewed | Never adopt live legacy owner without authentic ownership |
-| R2 | Independent loopback OAuth owner, PKCE S256/refresh rotation, restart persistence, Windows CurrentUser DPAPI; writer lock and immutable client ID/redirect validation | Certified transactional credential store, production ACL/key backup & restore, consent hardening, public OAuth client E2E |
+| R2 | Independent loopback OAuth owner, PKCE S256/refresh rotation, restart persistence, Windows CurrentUser DPAPI; writer lock, immutable client ID/redirect validation, offline paired-key/snapshot staging restore rehearsal | Certified transactional credential store, production ACL/key backup & restore, consent hardening, public OAuth client E2E |
 | R3 | Separate loopback ingress PID, OS target owner verification, forwarded-header filtering, negative endpoint tests; exact public issuer/resource parity assessment | Public TLS tunnel with identical discovery/resource issuer, edge identity verification and safe reverse route |
 | R4 | Supervised-external T-Line source guards; unavailable port never spawns replacement; native 1.3.728 MSI and NSIS packages successfully built | Installer installation and native two-workspace/session/reconnect E2E on a test Windows profile |
 | R5 | Core per-user logon Scheduled Task PREVIEW for 7888 and 7892, six negative cold recovery tests, all production restart/replay decisions denied | Real Windows reboot / power loss and stale PID, owner recovery, checkpoint, task persistence exercises |
-| R6 | 16 test suites, 106 Vitest tests passing in SuperAgent; T-Line 6 suites/17 tests passing; CI security matrix configured for Windows/Linux | Actual remote CI execution, OS-keystore ACL/certificate checks, 24–72h soak, signed operator review |
+| R6 | 17 test suites, 114 Vitest tests passing in SuperAgent; T-Line 6 suites/17 tests passing; CI security matrix configured for Windows/Linux | Actual remote CI execution, OS-keystore ACL/certificate checks, 24–72h soak, signed operator review |
 | R7 | SHA-256-fingerprinted client-by-client, PKCE/audience/refresh/drain/rollback evidence gate, always read-only | External client reauthorization, legacy session drain, external tool reconciliation and reversible individually authorized migration |
 
 The independently launched local OAuth + ingress smoke script reported 20/20
@@ -62,3 +62,19 @@ installer runtime validation. Existing installation has not been changed.
 Read-only audit: bun src/cli.tsx core rollout-audit --port 7888
 Live inventory: bun src/cli.tsx core ownership-inventory --port 7888
 OAuth private stage: bun scripts/verify-independent-oauth-stage.ts
+
+## R2 additional offline staging recovery verification (follow-up)
+
+Added src/core/mcp/mcpOAuthStageBackupR2.ts and
+tests/mcpOAuthStageBackupR2.test.ts. The helper accepts only directories
+beneath ~/.superagent-local-staging, refuses lock-held snapshots, live
+Windows loopback listeners, reusing existing destinations, symlinks/hard
+links and mismatched key/issuer/checksum material. The paired snapshot
+and protected key can be restored into a fresh staging profile and
+refresh-token rotation remains valid using the same Windows user DPAPI.
+No legacy or production OAuth file is read or exported by this helper.
+
+After rebuilding SuperAgent 1.14.36, the expanded local cross-domain
+security suite reported 17/17 files and 114/114 tests passing.
+No physical reboot, real hot-backup consistency, OS ACL certification,
+public ingress TLS, installed desktop E2E or live migration is implied.

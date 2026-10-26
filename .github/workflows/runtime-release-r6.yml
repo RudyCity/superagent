@@ -11,6 +11,7 @@ on:
       - "tests/runtimeClientMigrationR7.test.ts"
       - "tests/mcpPublicIssuerParityR3.test.ts"
       - "tests/mcpOAuthRedirectSecurityR2.test.ts"
+      - "tests/mcpOAuthStageBackupR2.test.ts"
       - "tests/runtimeColdRecoveryMatrixR5.test.ts"
       - "scripts/verify-runtime-security-release-r6.ts"
       - "scripts/verify-independent-oauth-stage.ts"
@@ -25,6 +26,7 @@ on:
       - "tests/runtimeClientMigrationR7.test.ts"
       - "tests/mcpPublicIssuerParityR3.test.ts"
       - "tests/mcpOAuthRedirectSecurityR2.test.ts"
+      - "tests/mcpOAuthStageBackupR2.test.ts"
       - "tests/runtimeColdRecoveryMatrixR5.test.ts"
       - "scripts/verify-runtime-security-release-r6.ts"
       - "scripts/verify-independent-oauth-stage.ts"
@@ -49,7 +51,7 @@ jobs:
       - name: Build TypeScript
         run: bun run build
       - name: R1–R7 cross-domain adversarial regression
-        run: bun --bun x vitest run --maxWorkers=2 tests/runtimeSecurityMatrixR6.test.ts tests/runtimeReleaseGateR5R7.test.ts tests/runtimeColdRecoveryMatrixR5.test.ts tests/runtimeClientMigrationR7.test.ts tests/mcpDurableOAuthR2.test.ts tests/mcpWindowsDpapiR2.test.ts tests/mcpIngressStageR3.test.ts tests/mcpPublicIssuerParityR3.test.ts tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts tests/mcpOAuthStore.test.ts tests/mcpOAuthRoutes.test.ts tests/mcpOAuthRedirectSecurityR2.test.ts tests/mcpOAuthHttpE2E.test.ts tests/mcpOAuthResourceScope.test.ts tests/mcpOAuthProxyBoundary.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 tests/runtimeSecurityMatrixR6.test.ts tests/runtimeReleaseGateR5R7.test.ts tests/runtimeColdRecoveryMatrixR5.test.ts tests/runtimeClientMigrationR7.test.ts tests/mcpDurableOAuthR2.test.ts tests/mcpWindowsDpapiR2.test.ts tests/mcpIngressStageR3.test.ts tests/mcpPublicIssuerParityR3.test.ts tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts tests/mcpOAuthStore.test.ts tests/mcpOAuthRoutes.test.ts tests/mcpOAuthRedirectSecurityR2.test.ts tests/mcpOAuthStageBackupR2.test.ts tests/mcpOAuthHttpE2E.test.ts tests/mcpOAuthResourceScope.test.ts tests/mcpOAuthProxyBoundary.test.ts
       - name: Non-mutating release evidence (must remain blocked)
         run: bun scripts/verify-runtime-security-release-r6.ts
       - name: Independent OAuth and ingress staging, no public tunnel

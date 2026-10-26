@@ -38,3 +38,34 @@ Negative tests: tests/mcpOAuthRedirectSecurityR2.test.ts. CI runs them on
 Windows and Linux. This protects client metadata but is not a public issuer
 deployment certificate; client authorization and external TLS still require
 review.
+
+### Paired snapshot + DPAPI-key recovery rehearsal (R2 follow-up)
+
+The isolated offline stage now includes
+src/core/mcp/mcpOAuthStageBackupR2.ts with
+backupOfflineNewOAuthStageR2 and restoreOfflineNewOAuthStageR2.
+These functions are intentionally scoped to *fresh directories under*
+~/.superagent-local-staging; they cannot overwrite any existing target,
+operate on production ~/.superagent-r, import legacy OAuth data, or
+re-key an issuer. They require the original issuer, exact key mode and
+matching SHA-256 checksums. The store itself verifies the snapshot HMAC
+and key; each copied file is created with wx and fsync before publishing
+the new stage directory. Symbolic/multiple hard links, a writer-lock,
+tampering and mixed key modes fail closed. For loopback issuers on
+Windows, a live TCP listener also refuses backup.
+
+On Windows the key material remains wrapped in CurrentUser DPAPI; a
+backup made for one Windows account cannot automatically be recovered
+by another. It is still a sensitive local backup: keep the entire
+paired bundle inside a private stage profile, restrict OS access, and
+delete test artifacts after verification. BACK UP ONLY AFTER STOPPING
+THE TEST-OWNED ISSUER. A quick file checksum or absence of a lock is
+not proof that a public/HTTPS issuer has drained all active writes.
+Hot backup, SQL transactional guarantees, real storage snapshots,
+cross-account key recovery, Windows ACL certification and production
+issuer rollout are not authorized by this rehearsal.
+
+Verification: bun --bun x vitest run tests/mcpOAuthStageBackupR2.test.ts
+The suite exercises a full OAuth refresh-token restoration, DPAPI on
+Windows, live-loopback exclusion, corrupt backup, existing target,
+wrong issuer, writer lock and out-of-scope directories.
