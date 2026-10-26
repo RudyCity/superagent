@@ -10,7 +10,8 @@ function fixture(test:(file:string,write:(overrides?:Record<string,unknown>)=>vo
   const write=(overrides:Record<string,unknown>={})=>{
     fs.writeFileSync(file,JSON.stringify({
       version:1,pid:process.pid,nonce:"a".repeat(32),
-      updatedAt:Date.now(),modelPid:12345,healthy:true,...overrides,
+      updatedAt:Date.now(),modelPid:12345,healthy:true,
+       configuredPrecision:"int8_embedding",...overrides,
     }));
   };
   try {test(file,write);} finally {fs.rmSync(dir,{recursive:true,force:true});}
@@ -48,6 +49,14 @@ describe("Senopati watchdog status fail-closed freshness",()=>{
       expect(readSenopatiWatchdogStatus(file)).toMatchObject({
         alive:false,heartbeatFresh:true,healthy:false,
       });
+    });
+  });
+  it("fails closed for missing or invalid precision metadata",()=>{
+    fixture((file,write)=>{
+      write({configuredPrecision:null});
+      expect(readSenopatiWatchdogStatus(file)?.configuredPrecision).toBeNull();
+      write({configuredPrecision:"untrusted"});
+      expect(readSenopatiWatchdogStatus(file)?.configuredPrecision).toBeNull();
     });
   });
   it("refuses invalid owner metadata",()=>{

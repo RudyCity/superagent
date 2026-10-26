@@ -3,9 +3,10 @@ import {projectSenopatiReadiness} from "../src/core/senopatiReadiness.js";
 import type {SenopatiWatchdogHealth} from "../src/core/senopatiWatchdogStatus.js";
 
 const policy={enabled:true,backend:"mmbert-v64-seed73" as const,
-  inferenceMode:"shared_only" as const};
+  inferenceMode:"shared_only" as const,precision:"int8_embedding" as const};
 const watch:SenopatiWatchdogHealth={
-  pid:123,alive:true,heartbeatFresh:true,modelPid:456,healthy:true,updatedAt:1000,
+  pid:123,alive:true,heartbeatFresh:true,modelPid:456,healthy:true,
+  updatedAt:1000,configuredPrecision:"int8_embedding",
 };
 describe("read-only inference status for CLI and T-Line",()=>{
   it("shows last-known healthy without granting execution or replay",()=>{
@@ -18,6 +19,7 @@ describe("read-only inference status for CLI and T-Line",()=>{
   it.each([
     null,{...watch,alive:false},{...watch,heartbeatFresh:false},
     {...watch,healthy:false},{...watch,modelPid:null},
+    {...watch,configuredPrecision:null},{...watch,configuredPrecision:"fp32" as const},
   ])("degrades safely for missing, stale, dead or incomplete ownership",owner=>{
     const result=projectSenopatiReadiness(policy,owner);
     expect(result.phase).toBe("degraded");

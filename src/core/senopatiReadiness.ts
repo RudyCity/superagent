@@ -15,7 +15,7 @@ export interface SenopatiReadiness {
   toolAuthorizationFromModel:false;
 }
 export function projectSenopatiReadiness(
-  policy:Pick<ModernPolicy,"enabled"|"backend"|"inferenceMode">,
+  policy:Pick<ModernPolicy,"enabled"|"backend"|"inferenceMode"|"precision">,
   watch:SenopatiWatchdogHealth|null,
 ):SenopatiReadiness {
   const enabled=policy.enabled && policy.backend==="mmbert-v64-seed73" &&
@@ -24,7 +24,8 @@ export function projectSenopatiReadiness(
     toolAuthorizationFromModel:false as const};
   if(!enabled)return {phase:"disabled",reason:"policy-disabled",
     fallback:"legacy-active",...shared};
-  if(!watch?.alive || !watch.heartbeatFresh || !watch.healthy || !watch.modelPid)
+  if(!watch?.alive || !watch.heartbeatFresh || !watch.healthy ||
+      !watch.modelPid || watch.configuredPrecision!==policy.precision)
     return {phase:"degraded",reason:"no-fresh-healthy-watchdog",
       fallback:"legacy-active",...shared};
   return {phase:"healthy",reason:"watchdog-last-known-healthy",

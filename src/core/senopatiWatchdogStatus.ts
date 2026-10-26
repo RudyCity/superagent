@@ -6,6 +6,7 @@ import {getRootConfigDir} from "./config/paths.js";
 export type SenopatiWatchdogHealth={
  pid:number; alive:boolean; heartbeatFresh:boolean;
  modelPid:number|null; healthy:boolean; updatedAt:number;
+  configuredPrecision:"fp32"|"int8_embedding"|"int4_embedding"|null;
 };
 export function readSenopatiWatchdogStatus(
  registry=path.join(getRootConfigDir(),"ipc","senopati-watchdog.json"),
@@ -27,6 +28,8 @@ export function readSenopatiWatchdogStatus(
   return {
    pid:data.pid,alive:alive&&heartbeatFresh,heartbeatFresh,
    modelPid:Number.isSafeInteger(data.modelPid)&&data.modelPid>0?data.modelPid:null,
+    configuredPrecision:["fp32","int8_embedding","int4_embedding"]
+      .includes(data.configuredPrecision) ? data.configuredPrecision : null,
    healthy:data.healthy===true && alive && heartbeatFresh,updatedAt:data.updatedAt,
   };
  }catch{return null;}

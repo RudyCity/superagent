@@ -10,6 +10,8 @@ import {spawn} from "node:child_process";
 import crypto from "node:crypto";
 import {getPackageRootDir,getRootConfigDir} from "./config/paths.js";
 import {getModernPolicy, type ModernPolicy} from "./senopatiModernBert.js";
+import type {SenopatiWatchdogHealth} from "./senopatiWatchdogStatus.js";
+import type {SharedHealth} from "./senopatiSharedClient.js";
 
 export type SenopatiLifecycleResult =
   "disabled" | "not-configured" | "already-running" | "started" | "launch-failed";
@@ -100,13 +102,21 @@ export async function startSenopatiLifecycle(
  try{return await startupPromise;}
  finally{startupPromise=null;}
 }
+export function isSenopatiSharedOwnerHealthy(
+  watch:SenopatiWatchdogHealth|null,model:SharedHealth|null,precision:string,
+):boolean {
+  return Boolean(watch?.alive && watch.healthy && watch.heartbeatFresh &&
+    watch.configuredPrecision===precision && watch.modelPid &&
+    model && model.pid===watch.modelPid && model.precision===precision);
+}
 async function watchdogIsHealthy(precision:string):Promise<boolean>{
  const {readSenopatiWatchdogStatus}=await import("./senopatiWatchdogStatus.js");
  const owner=readSenopatiWatchdogStatus();
- if(!owner?.alive)return false;
+ if(!owner?.alive || !owner.healthy || !owner.heartbeatFresh ||
+    owner.configuredPrecision!==precision || !owner.modelPid)return false;
  const {sharedSenopatiStatus}=await import("./senopatiSharedClient.js");
  const model=await sharedSenopatiStatus();
- return Boolean(model && model.precision===precision);
+ return isSenopatiSharedOwnerHealthy(owner,model,precision);
 }
 async function spawnWatchdogLauncher():Promise<boolean>{
  const root=getPackageRootDir();
