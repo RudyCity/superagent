@@ -98,3 +98,27 @@ unknown versions or missing fields fail closed. The isolated Windows
 owner verification now requires this contract (17/17 checks).
 The managed MCP lease port policy additionally protects observed 6759.
 Installed native T-Line and Core owner persistence/reboot remain OPEN.
+
+
+## G1A P1-A.5 — independent MCP owner replacement and fresh session
+
+A later revision of the isolated Windows live verifier completed
+**24/24** checks, with a test-only MCP process replacement during
+an authenticated Core supervisor session. Test Core port 55449
+remained owned and reachable; the MCP owner for test port 55450
+changed from PID 48100 to PID 54680. The original initialized MCP
+session ID returned **HTTP 404** following the replacement, even
+when the test reused its bearer. A freshly initialized MCP session
+succeeded with a distinct ID. This proves the old in-memory session
+was not silently adopted by the new staging MCP owner; it does NOT
+prove reconciling already accepted external tool effects.
+Both temporary staging TCP listeners were verified released after
+the test. Operator-only local report:
+`~/.superagent-local-staging/core-mcp-owner-IWLYRx/report.json`.
+No production listener, token, external client or tunnel was changed.
+
+**G1A still open:** stage processes kept running under an actual
+operator-owned lifecycle, stable readiness under installed T-Line,
+adversarial old-PID adoption and long observation. The checklist
+marks P1-A.5 as an isolated stage acceptance, not production
+certification.

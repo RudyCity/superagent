@@ -1,3 +1,8 @@
+## [1.14.41] - 2026-10-26
+### Runtime safety acceptance
+- Extended the real isolated Core/MCP process acceptance to replace only the test-owned MCP owner while Core remains available. An existing MCP session must be rejected with HTTP 404 after restart, and a newly initialized session must get a different ID. Verified 24/24 live checks and release of both test ports after cleanup.
+- Updated the P1–P4 execution checklist and G1A evidence. This does not authorize a production MCP process restart, OAuth token reuse, public tunnel cutover or replay of unknown tool effects.
+
 ## [1.14.40] - 2026-10-26
 ### Security and integration
 - Added a versioned, authenticated Core supervisor ownership contract on the private status channel. It declares Core-only process authority, no MCP lifecycle ownership, and explicit-only session replay.

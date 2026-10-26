@@ -190,3 +190,16 @@ identical compiled font asset; making the sync compare content and
 skip redundant writes recovered the full build successfully. This
 is engineering evidence only, not a Core/MCP long-running service
 certificate or a public HTTPS deployment.
+
+
+## G1A P1-A.5 independent MCP restart follow-up
+
+Added full MCP session lifecycle across an isolated MCP process
+replacement to the real Core/MCP split verifier. It now expects the
+old MCP session to fail precisely with HTTP 404 after the owned
+MCP process changes OS PID, verifies a fresh initialize returns a
+distinct session, checks the Core owner remained untouched, and
+confirms the protected legacy PID snapshots do not change.
+Repeat execution passed 24/24 Windows staging checks. The test
+ports 55449 and 55450 were checked after cleanup and had no
+remaining TCP listeners. Stage only, not production reauthorization.

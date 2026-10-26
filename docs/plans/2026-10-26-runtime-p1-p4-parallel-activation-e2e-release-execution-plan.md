@@ -153,7 +153,7 @@ owner list recorded. Release state remains blocked.
   tool exposure, permission gate at execution, and project isolation.
 - [x] **P1-A.4** Restart only the test-owned Core worker; confirm MCP
   remains reachable with the SAME authenticated owner PID and credentials.
-- [ ] **P1-A.5** Restart only the test-owned MCP; confirm Core remains
+- [x] **P1-A.5** Restart only the test-owned MCP; confirm Core remains
   alive and clients must initialize fresh MCP sessions as appropriate.
 - [ ] **P1-A.6** Test stale owner, duplicate port, reused PID, missing
   nonce and unverifiable process start; none may adopt/kill a legacy owner.
@@ -183,6 +183,17 @@ opt-in verifier rejects mismatched contract versions/roles or policies.
 P1-A.3 remains partial until installed desktop E2E and persistent
 authenticated owner readiness are demonstrated. Protected staging
 port denylist includes the observed legacy 6759.
+
+**P1-A.5 real stage result (2026-10-26):** The independent MCP
+owner was replaced on its kernel-verified isolated port while Core
+supervisor/worker stayed reachable. A pre-restart MCP session was
+rejected with HTTP 404 after owner replacement; a new initialize
+created a distinct session. 24/24 separate owner/restart checks passed.
+MCP changed from PID 48100 to 54680 on test port 55450; Core
+test port 55449 stayed live during MCP replacement. Both test
+listeners were verified released after the run. This does not
+authorize replacement of any legacy MCP owner, and it does not
+certify long-running stage operations or installed T-Line.
 
 **G1A exit:** verified distinct Core/MCP kernel PIDs, authenticated owner
 identities, independent failure/recovery, unchanged legacy listeners.

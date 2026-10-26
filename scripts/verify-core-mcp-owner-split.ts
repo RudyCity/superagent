@@ -207,6 +207,69 @@ try{
     mcpAfterRestart.status===400);
   check("legacy_core_and_all_mcp_listeners_unchanged_after_core_restart",
     protectedListenersUnchanged(readListenerOwners()));
+  // P1-A.5: prove the independently test-owned MCP can be replaced
+  // without restarting Core or silently adopting the old MCP session.
+  const mcpRpc=async (oldSession?:string)=>{
+    const response=await fetch("http://127.0.0.1:"+mcpPort+"/mcp",{
+      method:"POST",signal:AbortSignal.timeout(3500),
+      headers:{
+        Authorization:"Bearer "+bearer,
+        "Content-Type":"application/json",
+        Accept:"application/json, text/event-stream",
+        ...(oldSession?{"mcp-session-id":oldSession}:{})
+      },
+      body:JSON.stringify(oldSession
+        ? {jsonrpc:"2.0",id:2,method:"tools/list",params:{}}
+        : {jsonrpc:"2.0",id:1,method:"initialize",params:{
+          protocolVersion:"2024-11-05",capabilities:{},
+          clientInfo:{name:"independent-canary",version:"1"}
+        }})
+    });
+    const sessionId=response.headers.get("mcp-session-id");
+    await response.text();
+    return {status:response.status,sessionId};
+  };
+  const originalSession=await mcpRpc();
+  check("stage_mcp_session_initialized",
+    originalSession.status===200 && !!originalSession.sessionId);
+  const originalMcpPid=mcp.pid;
+  check("stage_mcp_restart_owner_matches_kernel",
+    readListenerOwners()?.get(mcpPort)===originalMcpPid &&
+    core.pid!==originalMcpPid && protectedListenersUnchanged(readListenerOwners()));
+  stopOwned(mcp,mcpPort);
+  await eventually(async()=>readListenerOwners()?.has(mcpPort)===false ? true:null,16000);
+  check("stage_mcp_stopped_independently_of_core",
+    readListenerOwners()?.get(corePort)===core.pid &&
+    readListenerOwners()?.get(mcpPort)===undefined);
+  mcp=spawn(process.execPath,[entry,"mcp","owner-sandbox","--port",String(mcpPort)],{
+    cwd:workspace,
+    env:{...isolated(mcpProfile),SUPERAGENT_MCP_OWNER_STAGING_BEARER:bearer},
+    windowsHide:true,stdio:["ignore","pipe","pipe"],
+  });
+  if(!mcp.pid)throw Error("Failed to start fresh staging MCP owner");
+  mcp.stderr?.on("data",c=>{mcpLog=(mcpLog+String(c)).slice(-1200)});
+  await eventually(async()=>{
+    if(!childAlive(mcp!))throw Error("Fresh staging MCP owner exited: "+mcpLog);
+    if(readListenerOwners()?.get(mcpPort)!==mcp?.pid)return null;
+    try{
+      const response=await fetch("http://127.0.0.1:"+mcpPort+"/mcp",{
+        method:"GET",signal:AbortSignal.timeout(1300)
+      });
+      return response.status===401?true:null;
+    }catch{return null}
+  });
+  check("fresh_stage_mcp_owner_has_different_pid",
+    mcp.pid!==originalMcpPid && mcp.pid!==core.pid);
+  const stale=await mcpRpc(originalSession.sessionId!);
+  check("previous_stage_mcp_session_is_not_restored",
+    stale.status===404 && !stale.sessionId);
+  const fresh=await mcpRpc();
+  check("fresh_mcp_session_requires_new_initialization",
+    fresh.status===200 && !!fresh.sessionId &&
+    fresh.sessionId!==originalSession.sessionId);
+  check("core_supervisor_kept_running_during_mcp_restart",
+    readListenerOwners()?.get(corePort)===core.pid &&
+    protectedListenersUnchanged(readListenerOwners()));
   check("stage_mcp_has_no_public_tunnel_or_oauth_state",
     !fs.existsSync(path.join(mcpProfile,"mcp-"+mcpPort+".json")));
   check("legacy_core_and_all_mcp_listeners_unchanged_before_cleanup",
@@ -215,6 +278,9 @@ try{
     ok:true,verifiedChecks:checks.length,checks,corePort,mcpPort,
     corePid:core.pid,mcpPid:mcp.pid,workerPid:coreOwner.active.pid,
     restartedWorkerPid:restarted.active.pid,
+    oldMcpPid:originalMcpPid,restartedMcpPid:mcp.pid,
+    previousMcpSessionRejectedWith404:stale.status===404,
+    newMcpSessionInitialized:true,
     coreWorkerRestartInStaging:true,mcpOwnerUnchangedThroughRestart:true,
     publicTunnelCreated:false,oauthMigrated:false,toolsCalled:0,
     productionCutoverAuthorized:false,createdAt:Date.now()};
