@@ -9,6 +9,7 @@ on:
       - "src/core/runtime/coreRecoveryEvidence.ts"
       - "src/core/runtime/coreColdReconciliation.ts"
       - "src/core/runtime/coreRecoveryCasebook.ts"
+      - "src/core/runtime/coreRecoveryCanary.ts"
       - "src/core/runtime/coreServiceLifecycle.ts"
       - "src/core/runtime/coreLifecycleObserver.ts"
       - "src/core/runtime/coreChannelRecovery.ts"
@@ -27,6 +28,7 @@ on:
       - "src/core/commands/commandCatalog.ts"
       - "scripts/verify-core-guardian.ts"
       - "scripts/verify-core-recovery-5g-j.ts"
+      - "scripts/verify-core-approved-canary.ts"
       - "scripts/verify-core-session-resume.ts"
       - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
@@ -43,6 +45,7 @@ on:
       - "docs/guides/core-phase5e-evidence-and-reconnect.md"
       - "docs/guides/core-recovery-phase5g-to-5j.md"
       - "docs/guides/core-recovery-phase5k-casebook-observer.md"
+      - "docs/guides/core-recovery-phase5l-isolated-canary.md"
   pull_request:
     paths:
       - ".github/workflows/core-guardian.yml"
@@ -51,6 +54,7 @@ on:
       - "src/core/runtime/coreRecoveryEvidence.ts"
       - "src/core/runtime/coreColdReconciliation.ts"
       - "src/core/runtime/coreRecoveryCasebook.ts"
+      - "src/core/runtime/coreRecoveryCanary.ts"
       - "src/core/runtime/coreServiceLifecycle.ts"
       - "src/core/runtime/coreLifecycleObserver.ts"
       - "src/core/runtime/coreChannelRecovery.ts"
@@ -67,6 +71,7 @@ on:
       - "src/core/runtime/transportHost.ts"
       - "scripts/verify-core-guardian.ts"
       - "scripts/verify-core-recovery-5g-j.ts"
+      - "scripts/verify-core-approved-canary.ts"
       - "scripts/verify-core-session-resume.ts"
       - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
@@ -81,6 +86,7 @@ on:
       - "docs/guides/core-phase5e-evidence-and-reconnect.md"
       - "docs/guides/core-recovery-phase5g-to-5j.md"
       - "docs/guides/core-recovery-phase5k-casebook-observer.md"
+      - "docs/guides/core-recovery-phase5l-isolated-canary.md"
   workflow_dispatch:
 jobs:
   core-guardian:
@@ -115,3 +121,5 @@ jobs:
         run: bun scripts/verify-core-supervisor.ts
       - name: Bounded recovery reconciliation, independent channels and chaos matrix
         run: bun scripts/verify-core-recovery-5g-j.ts --cycles 2
+      - name: Explicitly approved isolated Core canary and safe owner cleanup
+        run: bun scripts/verify-core-approved-canary.ts

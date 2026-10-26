@@ -795,6 +795,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core reconcile --snapshot PATH  # offline read-only turn/receipt evidence; NEVER authorizes restart");
     console.log("superagent core lifecycle-plan  # inspect service separation without installing OS tasks");
     console.log("superagent core recovery-cases --snapshot PATH [--limit 100] [--offset 0]  # anonymized offline per-session review");
+    console.log("superagent core recovery-canary --snapshot PATH --target-port PORT [--approve START_ISOLATED_CANARY]  # fresh isolated canary; never imports old sessions");
     console.log("superagent core lifecycle-observe [--port 7888] [--samples 3]  # bounded authenticated GET-only health samples");
     console.log("superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID  # one-shot GET-only T-Line probe");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
@@ -824,6 +825,28 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
       sessionVerified: result.sessionVerified, issuedMethods: result.issuedMethods,
       automaticChatReplayAllowed: false,
     }, null, 2));
+    return;
+  }
+  if (action === "recovery-canary") {
+    const idx=argv.indexOf("--snapshot");
+    const targetIdx=argv.indexOf("--target-port");
+    const approveIdx=argv.indexOf("--approve");
+    const folder=idx<0?undefined:argv[idx+1];
+    const target=targetIdx<0?undefined:Number(argv[targetIdx+1]);
+    if(!folder || target===undefined) throw new Error("Usage: superagent core recovery-canary --snapshot PATH --target-port PORT [--approve START_ISOLATED_CANARY]");
+    const {preflightIsolatedCoreCanary,runIsolatedCoreCanary}=await import("./coreRecoveryCanary.js");
+    if(approveIdx<0) {
+      console.log(JSON.stringify({
+        ...(await preflightIsolatedCoreCanary(folder,target)),
+        canaryStarted:false,approvalRequired:"START_ISOLATED_CANARY",
+        oldSessionsRestored:false,toolReplayAuthorized:false,
+      },null,2));
+      return;
+    }
+    const result=await runIsolatedCoreCanary({
+      snapshotFolder:folder,targetPort:target,approved:argv[approveIdx+1],
+    });
+    console.log(JSON.stringify(result,null,2));
     return;
   }
   if (action === "recovery-cases") {
@@ -928,6 +951,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, recovery-cases, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, recovery-cases, recovery-canary, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }
