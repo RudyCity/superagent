@@ -1,5 +1,11 @@
 # Opt-in rolling restart for SuperAgent API Core (2026-10-25)
 
+## Phase 5k — actionable per-session recovery cases and read-only lifecycle observation
+
+The recovery casebook builds an anonymized inventory from a verified, offline Phase 5e snapshot. It correlates private owner-scoped receipts, durable session rows and chat-turn state counts using only read-only SQLite and SHA-256 session references. The command superagent core recovery-cases --snapshot PATH --limit 100 --offset 0 reports explicit review requirements, missing histories and ambiguous turns without revealing user messages, paths or session IDs. Pagination indicates if more cases remain; excessive inventories fail closed. It never authorizes restart or replay.
+
+The Core lifecycle observer takes a bounded number of authenticated, read-only status samples and verifies stable supervisor ownership. A PID change, failed sample or stale control discovery is not treated as a verified owner and cannot trigger a process restart. Command: superagent core lifecycle-observe --port 7888 --samples 3. This does not install or alter Windows services. Both diagnostics have dedicated fault and regression tests, plus the existing isolated Guardian/worker staging suite. See [Phase 5k operator guide](../guides/core-recovery-phase5k-casebook-observer.md). No full OS reboot memory restoration or automatic external side-effect reconciliation is claimed.
+
 ## Phase 5g–5j — offline reconciliation, lifecycle/channel separation and bounded hardening
 
 Phase 5g adds a read-only command, superagent core reconcile --snapshot PATH, which verifies the existing private Phase 5e evidence manifest, SHA-256 hashes and SQLite integrity. It summarizes persisted session count and incomplete/unknown chat turns. The report always denies restart/tool replay and requires external side-effect reconciliation by a human; it never deletes a checkpoint or assumes a completed chat turn equals exactly-once external effects.

@@ -794,6 +794,8 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core evidence-snapshot [--port 7888]  # offline private backup; does NOT restart or clear state");
     console.log("superagent core reconcile --snapshot PATH  # offline read-only turn/receipt evidence; NEVER authorizes restart");
     console.log("superagent core lifecycle-plan  # inspect service separation without installing OS tasks");
+    console.log("superagent core recovery-cases --snapshot PATH [--limit 100] [--offset 0]  # anonymized offline per-session review");
+    console.log("superagent core lifecycle-observe [--port 7888] [--samples 3]  # bounded authenticated GET-only health samples");
     console.log("superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID  # one-shot GET-only T-Line probe");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
     return;
@@ -822,6 +824,26 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
       sessionVerified: result.sessionVerified, issuedMethods: result.issuedMethods,
       automaticChatReplayAllowed: false,
     }, null, 2));
+    return;
+  }
+  if (action === "recovery-cases") {
+    const idx = argv.indexOf("--snapshot");
+    const folder = idx < 0 ? undefined : argv[idx + 1];
+    const limitIdx = argv.indexOf("--limit");
+    const limit = limitIdx < 0 ? 100 : Number(argv[limitIdx + 1]);
+    const offsetIdx = argv.indexOf("--offset");
+    const offset = offsetIdx < 0 ? 0 : Number(argv[offsetIdx + 1]);
+    if (!folder) throw new Error("Usage: superagent core recovery-cases --snapshot PATH [--limit 100] [--offset 0]");
+    const { createCoreRecoveryCasebook } = await import("./coreRecoveryCasebook.js");
+    const report = createCoreRecoveryCasebook(folder, limit, offset);
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  if (action === "lifecycle-observe") {
+    const idx = argv.indexOf("--samples");
+    const samples = idx < 0 ? 3 : Number(argv[idx + 1]);
+    const { observeCoreLifecycle } = await import("./coreLifecycleObserver.js");
+    console.log(JSON.stringify(await observeCoreLifecycle({ port, samples }), null, 2));
     return;
   }
   if (action === "reconcile") {
@@ -906,6 +928,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, lifecycle-plan, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, recovery-cases, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }
