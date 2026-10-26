@@ -605,7 +605,7 @@ export const invokeSubagentTool: Tool = {
       cwd
     );
 
-    inheritTlineChildScope(parentAgent, agentInstance);
+    inheritTlineChildScope(parentAgent, agentInstance, subagentId);
     agentInstance.delegationDepth = parentDepth + 1;
     agentInstance.tier = "subagent";
     agentInstance.subagentType = typeName;
@@ -999,7 +999,7 @@ export const sendMessageTool: Tool = {
 
       // Resume only the originally owned agent journal scope; never inherit
       // from a different caller that happened to find the subagent ID.
-      inheritTlineChildScope(instance.parentAgent, agentInstance);
+      inheritTlineChildScope(instance.parentAgent, agentInstance, recipientId);
       // Re-setup delegation properties
       const parentAgent = agentLocalStorage.getStore();
       const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;

@@ -63,6 +63,7 @@ import { maskApiKey, isMaskedApiKey } from "./core/config.js";
 import { isPendingPromptOwner } from "./core/agent/pendingPromptOwnership.js";
 import { recordAgentTimeline } from "./core/channels/tlineAgentTimeline.js";
 import { readSenopatiReadiness } from "./core/senopatiReadiness.js";
+import { decideTlineApproval, getTlineApproval, listTlineApprovals } from "./core/channels/tlineApprovalRegistry.js";
 import { getNormalizedProjectPath } from "./core/tools/helpers.js";
 
 /** Persist an atomic memory under a canonical project/global scope. Never trust a client-supplied project ID. */
@@ -199,9 +200,25 @@ export async function handleServerRoute(
     killVisionServerProcess
   } = ctx;
 
-  if (pathname === "/api/tline/agent-timeline") {
+  if (pathname === "/api/tline/agent-timeline" ||
+      pathname === "/api/tline/agent-timeline/stream") {
     const { handleTlineAgentTimelineRoute } = await import("./core/channels/tlineAgentTimelineHttp.js");
     return handleTlineAgentTimelineRoute(req, res, pathname, parsedUrl, { resolveSession, sendJSON });
+  }
+
+  if (pathname === "/api/tline/approvals") {
+    if (req.method !== "GET") { sendJSON(res, 405, { error: "GET required" }); return true; }
+    const sessionId = parsedUrl.searchParams.get("sessionId");
+    const workspace = parsedUrl.searchParams.get("workspace");
+    const session = sessionId && workspace ? resolveSession(req, sessionId, workspace) : null;
+    if (!session || session.clientMode !== "tline" || session.workspace !== workspace ||
+        session.sessionId !== sessionId || req.headers["x-workspace-path"] !== workspace ||
+        req.headers["x-client-mode"] !== "tline") {
+      sendJSON(res, 403, { error: "Exact active T-Line owner required" }); return true;
+    }
+    res.setHeader("Cache-Control", "no-store");
+    sendJSON(res, 200, { success: true, sessionId, approvals: listTlineApprovals(sessionId!, workspace!) });
+    return true;
   }
 
   // Session-scoped assistant task metadata. The outer server authentication and
@@ -1387,6 +1404,14 @@ export async function handleServerRoute(
     // Reject unexpected JSON values as denial. The Core permission handler
     // accepts only true, false, or exact session authorization.
     const decision: boolean | "session" = approval === "session" ? "session" : approval === true;
+    if (session?.clientMode === "tline") {
+      const tracked = getTlineApproval(permissionId);
+      if (tracked && !decideTlineApproval(permissionId, session.sessionId, session.workspace,
+          decision === "session" ? "approved_session" : decision === true ? "approved" : "denied")) {
+        sendJSON(res, 409, { success: false, error: "Approval already decided or expired" });
+        return true;
+      }
+    }
     pending.resolve(decision);
     pendingPermissions.delete(permissionId);
     if (session?.clientMode === "tline") {

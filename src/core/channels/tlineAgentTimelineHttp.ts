@@ -14,7 +14,8 @@ export async function handleTlineAgentTimelineRoute(
     sendJSON: (res: http.ServerResponse, status: number, data: any) => void;
   },
 ): Promise<boolean> {
-  if (pathname !== "/api/tline/agent-timeline") return false;
+  const stream = pathname === "/api/tline/agent-timeline/stream";
+  if (!stream && pathname !== "/api/tline/agent-timeline") return false;
   res.setHeader("Cache-Control", "no-store");
   const fail = (code: number, message: string) => {
     deps.sendJSON(res, code, { success: false, error: message });
@@ -37,9 +38,47 @@ export async function handleTlineAgentTimelineRoute(
     fail(403, "Active session/workspace not verified");
     return true;
   }
+  const scope = { workspace: session.workspace, sessionId };
   try {
-    const result = readAgentTimeline({ workspace: session.workspace, sessionId }, Number(cursorRaw));
-    deps.sendJSON(res, 200, { success: true, sessionId, ...result });
+    const result = readAgentTimeline(scope, Number(cursorRaw));
+    if (!stream) {
+      deps.sendJSON(res, 200, { success: true, sessionId, ...result });
+      return true;
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-store, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    try { (res.socket as any)?.setNoDelay(true); } catch {}
+    let nextCursor = Number(cursorRaw);
+    let closed = false;
+    let lastHeartbeat = Date.now();
+    let sending = false;
+    const tick = () => {
+      if (closed || sending || res.destroyed || res.writableEnded) return;
+      sending = true;
+      try {
+        const page = readAgentTimeline(scope, nextCursor, 100);
+        if (page.gap) res.write("event: gap\\ndata: {}\\n\\n");
+        for (const event of page.events) {
+          res.write("id: " + event.seq + "\\ndata: " + JSON.stringify(event) + "\\n\\n");
+        }
+        nextCursor = page.nextCursor;
+        if (Date.now() - lastHeartbeat > 15000) {
+          res.write(": heartbeat\\n\\n");
+          lastHeartbeat = Date.now();
+        }
+      } catch {
+        res.write("event: unavailable\\ndata: {}\\n\\n");
+        closed = true; clearInterval(timer); res.end();
+      } finally { sending = false; }
+    };
+    const timer = setInterval(tick, 1000);
+    timer.unref?.();
+    res.on("close", () => { closed = true; clearInterval(timer); });
+    tick();
   } catch {
     fail(503, "Agent timeline journal unavailable");
   }

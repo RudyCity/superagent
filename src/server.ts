@@ -23,6 +23,7 @@ import { shouldDeliverEventToClient } from "./core/utils/sessionEventScope.js";
 import { SessionEventReplay } from "./core/utils/sessionEventReplay.js";
 import { appendChatEvent, pruneChatRuntimeLedger, recoverInterruptedChatTurns, replayChatEvents } from "./core/utils/chatRuntimeLedger.js";
 import { recordAgentTimeline, projectAgentTimelineEnvelope, bindTlineRootAgent } from "./core/channels/tlineAgentTimeline.js";
+import { registerTlineApproval } from "./core/channels/tlineApprovalRegistry.js";
 
 // Forward lock events to connected t-line desktop clients
 lockEventEmitter.on("tline_bridge_sync", (syncPayload) => {
@@ -690,6 +691,20 @@ const onPermission = (toolCall: any, description: string, ownerAgent: Agent) => 
     const permissionId = Math.random().toString(36).substring(2, 9);
     const owner = getPromptOwner(ownerAgent);
     pendingPermissions.set(permissionId, { resolve, ownerAgent, ...owner });
+    const session = [...activeSessions.values()].find(item =>
+      item.agent === ownerAgent && item.clientMode === "tline" &&
+      item.sessionId === owner.sessionId &&
+      item.workspace.toLowerCase() === owner.workspace.toLowerCase());
+    if (session) registerTlineApproval(permissionId, session.sessionId, session.workspace, () => {
+      const pending = pendingPermissions.get(permissionId);
+      if (pending && pending.ownerAgent === ownerAgent) {
+        pendingPermissions.delete(permissionId);
+        pending.resolve(false); // Expiration never becomes implicit approval.
+        recordAgentTimeline({ workspace: session.workspace, sessionId: session.sessionId }, {
+          kind: "permission_decided", actor: "main", status: "expired",
+        });
+      }
+    });
     broadcastEvent({
       type: "permission_required",
       permissionId,

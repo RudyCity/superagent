@@ -12,7 +12,7 @@ export type AgentTimelineKind =
   "permission_decided" | "agent_done";
 export type AgentTimelineEvent = {
   seq: number; at: number; kind: AgentTimelineKind; actor: string;
-  tool?: string; status?: string;
+  tool?: string; status?: string; callId?: string; parent?: string;
 };
 type StoredJournal = { version: 1; scope: string; nextSeq: number; events: AgentTimelineEvent[] };
 type Scope = { workspace: string; sessionId: string };
@@ -20,25 +20,38 @@ export const AGENT_TIMELINE_MAX = 400;
 // Only the authenticated T-Line server can bind a root agent. Delegated
 // children inherit that precise scope, never a guessed workspace path.
 const agentScopes = new WeakMap<object, Scope>();
+const agentActors = new WeakMap<object, string>();
+const agentParents = new WeakMap<object, string>();
+const hashedCall = (input: unknown) => typeof input === "string" && input.length > 0 && input.length < 256
+  ? createHash("sha256").update(input).digest("hex").slice(0, 20) : undefined;
 export function bindTlineRootAgent(agent: object, scope: Scope) {
-  if (validScope(scope)) agentScopes.set(agent, { ...scope });
+  if (validScope(scope)) {
+    agentScopes.set(agent, { ...scope });
+    agentActors.set(agent, "main");
+  }
 }
-export function inheritTlineChildScope(parent: object | null | undefined, child: object): boolean {
+export function inheritTlineChildScope(parent: object | null | undefined, child: object,
+  childId?: string): boolean {
   if (!parent) return false;
   const scope = agentScopes.get(parent);
   if (!scope) return false;
   agentScopes.set(child, scope);
+  const parentActor = agentActors.get(parent);
+  if (parentActor) agentParents.set(child, parentActor);
+  if (childId) agentActors.set(child, actorId(childId) || "main");
   return true;
 }
 export function recordTlineChildToolEvent(
   child: object, agentId: string, event: {
-    type: string; toolCall?: { name?: string }; toolResult?: { name?: string; isError?: boolean };
+    type: string; toolCall?: { name?: string; id?: string }; toolResult?: { name?: string; isError?: boolean; toolCallId?: string };
   },
 ): boolean {
   const scope = agentScopes.get(child);
   if (!scope || (event.type !== "tool_start" && event.type !== "tool_end")) return false;
   return recordAgentTimeline(scope, {
     kind: event.type, actor: agentId,
+    parent: agentParents.get(child),
+    callId: event.type === "tool_start" ? event.toolCall?.id : event.toolResult?.toolCallId,
     tool: event.type === "tool_start" ? event.toolCall?.name : event.toolResult?.name,
     status: event.type === "tool_start" ? "running" : event.toolResult?.isError ? "failed" : "completed",
   });
@@ -70,7 +83,7 @@ const KINDS = new Set<AgentTimelineKind>([
 ]);
 const ALLOWED_STATUS = new Set([
   "running", "completed", "failed", "error", "cancelled", "terminated", "queued",
-  "approved", "approved_session", "denied", "finished", "unknown",
+  "approved", "approved_session", "denied", "expired", "finished", "unknown",
 ]);
 let testRoot: string | undefined;
 export function setAgentTimelineRootForTests(root?: string) { testRoot = root; }
@@ -94,7 +107,9 @@ const validEvent = (e: any): e is AgentTimelineEvent =>
   Number.isSafeInteger(e.at) && e.at > 0 && KINDS.has(e.kind) &&
   (e.actor === "main" || /^sub:[a-f0-9]{20}$/.test(e.actor)) &&
   (e.tool === undefined || safeName(e.tool, "") === e.tool) &&
-  (e.status === undefined || ALLOWED_STATUS.has(e.status));
+  (e.status === undefined || ALLOWED_STATUS.has(e.status)) &&
+  (e.callId === undefined || /^[a-f0-9]{20}$/.test(e.callId)) &&
+  (e.parent === undefined || e.parent === "main" || /^sub:[a-f0-9]{20}$/.test(e.parent));
 function load(scope: Scope): StoredJournal {
   const empty: StoredJournal = { version: 1, scope: scopeHash(scope), nextSeq: 1, events: [] };
   const file = localFile(scope);
@@ -115,7 +130,8 @@ function ensureDir() {
   if (fs.lstatSync(base()).isSymbolicLink()) throw Error("Journal directory is a symlink");
 }
 export function recordAgentTimeline(
-  scope: Scope, input: { kind: AgentTimelineKind; actor?: string; tool?: unknown; status?: unknown },
+  scope: Scope, input: { kind: AgentTimelineKind; actor?: string; tool?: unknown;
+    status?: unknown; callId?: unknown; parent?: string },
 ): boolean {
   if (!validScope(scope) || !KINDS.has(input.kind)) return false;
   let lock: number | undefined;
@@ -134,6 +150,9 @@ export function recordAgentTimeline(
         seq: record.nextSeq, at: Date.now(), kind: input.kind, actor,
         ...(input.tool === undefined ? {} : { tool: safeName(input.tool, "tool") }),
         ...(input.status === undefined ? {} : { status: safeStatus(input.status) }),
+        ...(hashedCall(input.callId) ? { callId: hashedCall(input.callId) } : {}),
+        ...(input.parent === "main" || /^sub:[a-f0-9]{20}$/.test(input.parent || "")
+          ? { parent: input.parent } : {}),
       };
       // Repeated subagent snapshots often only change logs. Don't invent state transitions.
       if (input.kind === "subagent_status" && record.events.some(e =>
@@ -174,17 +193,18 @@ export function readAgentTimeline(scope: Scope, cursor: number, limit = 100): {
   return { schemaVersion: 1, events, nextCursor: events.at(-1)?.seq || cursor, gap };
 }
 export function projectAgentTimelineEnvelope(raw: any): Array<{
-  kind: AgentTimelineKind; actor?: string; tool?: unknown; status?: unknown
+  kind: AgentTimelineKind; actor?: string; tool?: unknown; status?: unknown; callId?: unknown
 }> {
   if (!raw || typeof raw !== "object") return [];
   if (raw.type === "agent_event" && raw.event && typeof raw.event === "object") {
     const ev = raw.event;
     if (ev.type === "tool_start") return [{
-      kind: "tool_start", actor: "main", tool: ev.toolCall?.name,
+      kind: "tool_start", actor: "main", tool: ev.toolCall?.name, callId: ev.toolCall?.id,
       status: "running",
     }];
     if (ev.type === "tool_end") return [{
       kind: "tool_end", actor: "main", tool: ev.toolResult?.name || ev.toolCall?.name,
+      callId: ev.toolResult?.toolCallId || ev.toolCall?.id,
       status: ev.toolResult?.isError === true ? "failed" : "completed",
     }];
     if (ev.type === "done" || ev.type === "goal_done") return [
