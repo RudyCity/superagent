@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
@@ -11,6 +12,7 @@ import { renderMotionSvg } from "../runtime/frameSvg.js";
 import { MotionValidationError, validateMotionProject } from "../schema/validation.js";
 import { measureStudioVideoFrameParity, studioForegroundDiffPixels, type StudioFrameParity } from "./studioVideoParityMetrics.js";
 import { studioTimelineProbeFrames } from "./studioTimelineProbes.js";
+import { validateStudioOcclusionMapping } from "./studioOcclusionIdentityMapping.js";
 import type { MotionComposition, MotionProject, MotionTrack, PathLayer } from "../schema/types.js";
 
 const execute = promisify(execFile);
@@ -112,7 +114,7 @@ export interface StudioMultiObjectReconstruction {
   interpolationCheckIoU: number[];
   parityReport: Array<{ frame: number; sampleType: "keyframe" | "holdout" } & StudioFrameParity>;
   timelineValidation: {
-    status: "passed-sampled";
+    status: "passed-sampled" | "manual-recovery-reviewed";
     checks: Array<{ frame: number; identityGap: number } & StudioFrameParity>;
     minimumForegroundIoU: number;
     meanForegroundIoU: number;
@@ -121,6 +123,7 @@ export interface StudioMultiObjectReconstruction {
   };
   reviewPng: string;
   diffPng: string;
+  recovery?: { frame:number; manuallyConfirmed:boolean; mergedProbeFrames:number[]; flaggedForegroundIoU:number };
   limitations: string[];
 }
 interface Component {
@@ -487,13 +490,36 @@ export async function inspectStudioOcclusionEvidence(
   } finally { await fs.rm(tmp,{recursive:true,force:true}); }
 }
 
+export interface StudioRecoveryRequest {
+  frame:number; beforeToAfter:number[]; previewOnly:boolean;
+  candidateToken?:string; acknowledgement?:"APPROVE_MANUAL_RECOVERY";
+}
+export interface StudioRecoveryCandidate {
+  status:"recovery-candidate"; frame:number; beforeToAfter:number[];
+  token:string; mergedProbeFrames:number[]; flaggedForegroundIoU:number;
+  previewPngBase64:string; note:string;
+}
+
 /** Experimental multiple-object video → editable SVG paths and keyframes.
  * No calls to an AI model. Rejects changing object counts, unstable area,
  * ambiguous identity matches and clips beyond tight resource limits.
  */
 export async function reconstructMultiObjectStudioVideo(
-  workspace: string, videoId: string,
-): Promise<StudioMultiObjectReconstruction> {
+  workspace:string, videoId:string,
+):Promise<StudioMultiObjectReconstruction>;
+export async function reconstructMultiObjectStudioVideo(
+  workspace:string, videoId:string, recovery:StudioRecoveryRequest,
+):Promise<StudioMultiObjectReconstruction | StudioRecoveryCandidate>;
+export async function reconstructMultiObjectStudioVideo(
+  workspace:string, videoId:string, recovery?:StudioRecoveryRequest,
+):Promise<StudioMultiObjectReconstruction | StudioRecoveryCandidate> {
+  if(recovery && (!Number.isSafeInteger(recovery.frame) || recovery.frame<0 ||
+      recovery.frame>=360 || !Array.isArray(recovery.beforeToAfter) ||
+      typeof recovery.previewOnly!=="boolean" ||
+      (!recovery.previewOnly && (
+        recovery.acknowledgement!=="APPROVE_MANUAL_RECOVERY" ||
+        !/^[a-f0-9]{64}$/.test(recovery.candidateToken??"")))))
+    throw new MotionValidationError(["Recovery requires bounded frame, explicit mapping and reviewed approval token"]);
   const bytes = await readMotionVideo(workspace, videoId);
   if (bytes.length > 12 * 1024 * 1024)
     throw new Error("Multi-object reconstruction limited to 12 MiB imported videos");
@@ -575,6 +601,8 @@ export async function reconstructMultiObjectStudioVideo(
       }
     }
     const { snapshots: frames, ordered, costs } = tracked;
+    if(recovery && recovery.frame>=totalFrames)
+      throw new MotionValidationError(["Recovery frame outside the source video"]);
     const background = colorHex(...stableSceneBackground(frames));
     const times = sampledFrames.map(frame => frame / 30);
     const layers: PathLayer[] = [];
@@ -631,6 +659,48 @@ export async function reconstructMultiObjectStudioVideo(
       createdAt: now, updatedAt: now, composition,
     };
     validateMotionProject(expected);
+    let recoveryInfo:{frame:number;beforeToAfter:number[]}|undefined;
+    if(recovery) {
+      const beforeFrame=Math.max(0,recovery.frame-12);
+      const afterFrame=Math.min(totalFrames-4,recovery.frame+12);
+      if(beforeFrame>=recovery.frame || afterFrame<=recovery.frame)
+        throw new MotionValidationError(["Recovery requires visible frames before and after"]);
+      const before=await loadFrame(beforeFrame);
+      const during=await loadFrame(recovery.frame);
+      const after=await loadFrame(afterFrame);
+      if(before.components.length!==objects.length ||
+        after.components.length!==objects.length ||
+        during.components.length!==objects.length-1)
+        throw new MotionValidationError(["Recovery supports only a short N-to-N-minus-one-to-N foreground merge"]);
+      const valid=validateStudioOcclusionMapping(
+        before.components.map(c=>({...c,color:colorHex(c.r,c.g,c.b)})),
+        after.components.map(c=>({...c,color:colorHex(c.r,c.g,c.b)})),
+        recovery.beforeToAfter,before.width,before.height);
+      // Verify user mappings agree with both visible-side associations.
+      const assigned=(at:number,observed:Frame)=>{
+        const rightAt=sampledFrames.findIndex(f=>f>at);
+        const right=rightAt<0?sampledFrames.length-1:rightAt;
+        const left=Math.max(0,right-1);
+        const t=Math.max(0,Math.min(1,(at-sampledFrames[left])/
+          Math.max(1,sampledFrames[right]-sampledFrames[left])));
+        const model=ordered[left].map((c,i)=>{
+          const n=ordered[right][i];
+          const lerp=(a:number,b:number)=>a+(b-a)*t;
+          return {...c,x:lerp(c.x,n.x),y:lerp(c.y,n.y),
+            width:lerp(c.width,n.width),height:lerp(c.height,n.height)};
+        });
+        return associateStudioObjects(model,observed.components,observed.width,observed.height).indices;
+      };
+      let beforeIds:number[],afterIds:number[];
+      try{
+        beforeIds=assigned(beforeFrame,before);afterIds=assigned(afterFrame,after);
+      }catch{
+        throw new MotionValidationError(["Object identity remains ambiguous on visible frames"]);
+      }
+      if(beforeIds.some((idx,i)=>valid.beforeToAfter[idx]!==afterIds[i]))
+        throw new MotionValidationError(["Manual mapping contradicts measured visible identity"]);
+      recoveryInfo={frame:recovery.frame,beforeToAfter:valid.beforeToAfter};
+    }
     // Three-frame contact sheet remains stable for the existing authenticated
     // API/UI while all 5-9 samples influence editable position tracks.
     const reviewIndices = [0, Math.floor((frames.length - 1) / 2), frames.length - 1];
@@ -661,6 +731,7 @@ export async function reconstructMultiObjectStudioVideo(
     // an identity through an occluded interval.
     const probeIndices = studioTimelineProbeFrames(totalFrames, sampledFrames);
     const timelineChecks: Array<{frame:number; identityGap:number} & StudioFrameParity> = [];
+    const mergedProbeFrames:number[]=[];
     const renderBackground = [
       parseInt(background.slice(1,3),16),
       parseInt(background.slice(3,5),16),
@@ -668,6 +739,23 @@ export async function reconstructMultiObjectStudioVideo(
     ] as RGB;
     for (const frameIndex of probeIndices) {
       const reference = await loadFrame(frameIndex);
+      if(reference.components.length!==ordered[0].length && recoveryInfo &&
+        reference.components.length===ordered[0].length-1 &&
+        Math.abs(frameIndex-recoveryInfo.frame)<=9) {
+        const raster=await loadImage(Buffer.from(renderMotionSvg(expected,frameIndex)));
+        const stage=createCanvas(reference.width,reference.height);
+        const ctx=stage.getContext("2d");
+        ctx.drawImage(raster,0,0,reference.width,reference.height);
+        const overlap=measureStudioVideoFrameParity(reference.pixels,
+          ctx.getImageData(0,0,reference.width,reference.height).data,
+          reference.width,reference.height,reference.background,
+          [parseInt(background.slice(1,3),16),parseInt(background.slice(3,5),16),
+            parseInt(background.slice(5,7),16)] as RGB,FOREGROUND_RGB_DISTANCE);
+        if(overlap.foregroundIoU<.38)
+          throw new MotionValidationError(["Merged-mask candidate disagrees with visible pixels at frame "+frameIndex]);
+        mergedProbeFrames.push(frameIndex);
+        continue;
+      }
       if (reference.components.length !== ordered[0].length)
         throw new MotionValidationError([
           "Video-to-Code possible transient occlusion or object disappearance at frame " +
@@ -712,19 +800,70 @@ export async function reconstructMultiObjectStudioVideo(
       timelineChecks.push({frame:frameIndex,
         identityGap:Number(identityGap.toFixed(4)), ...score});
     }
+    let flaggedForegroundIoU=0;
+    if(recoveryInfo) {
+      // Independent dense probes around the merge, beyond the 20 ordinary
+      // P6 timeline positions. Do not mistake a long or complex occlusion for
+      // a small recoverable crossing.
+      for(let at=recoveryInfo.frame-9;at<=recoveryInfo.frame+9;at+=3) {
+        if(at<0 || at>=totalFrames-3) continue;
+        const reference=await loadFrame(at);
+        if(reference.components.length===ordered[0].length) continue;
+        if(reference.components.length!==ordered[0].length-1)
+          throw new MotionValidationError(["Unsupported object count near manual occlusion at frame "+at]);
+        const image=await loadImage(Buffer.from(renderMotionSvg(expected,at)));
+        const layerCanvas=createCanvas(reference.width,reference.height);
+        const ctx=layerCanvas.getContext("2d");
+        ctx.drawImage(image,0,0,reference.width,reference.height);
+        const measure=measureStudioVideoFrameParity(reference.pixels,
+          ctx.getImageData(0,0,reference.width,reference.height).data,
+          reference.width,reference.height,reference.background,renderBackground,
+          FOREGROUND_RGB_DISTANCE);
+        if(measure.foregroundIoU<.38)
+          throw new MotionValidationError(["Dense manual recovery QA failed at frame "+at]);
+        if(!mergedProbeFrames.includes(at))mergedProbeFrames.push(at);
+      }
+      mergedProbeFrames.sort((a,b)=>a-b);
+      if(mergedProbeFrames.length<1 || mergedProbeFrames.length>5)
+        throw new MotionValidationError(["Recovery requires 1–5 visible merged probes"]);
+      const visual=await compareSampledVideoAndStudio(expected,
+        [await loadFrame(recoveryInfo.frame)],[recoveryInfo.frame]);
+      flaggedForegroundIoU=visual.foregroundIoU[0];
+      if(flaggedForegroundIoU<.38)
+        throw new MotionValidationError(["Recovered mask fails flagged-frame fidelity"]);
+      const token=crypto.createHash("sha256").update(videoId).update(JSON.stringify({
+        frame:recoveryInfo.frame,mapping:recoveryInfo.beforeToAfter,
+        sampledFrames,mergedProbeFrames,flaggedForegroundIoU,
+      })).digest("hex");
+      if(recovery!.previewOnly) {
+        return {
+          status:"recovery-candidate",frame:recoveryInfo.frame,
+          beforeToAfter:recoveryInfo.beforeToAfter,token,mergedProbeFrames,
+          flaggedForegroundIoU,previewPngBase64:visual.contactSheet.toString("base64"),
+          note:"Preview only. Identity mapping is explicit, and sampled visible masks pass. "+
+            "Invisible geometry has not been recovered from the source.",
+        };
+      }
+      if(recovery!.candidateToken!==token)
+        throw new MotionValidationError(["Recovery preview changed; review the candidate again"]);
+    }
     const minIoU = Math.min(...timelineChecks.map(c=>c.foregroundIoU));
     const minGap = Math.min(...timelineChecks.map(c=>c.identityGap));
     const timelineValidation = {
-      status:"passed-sampled" as const,
+      status:recoveryInfo?"manual-recovery-reviewed" as const:"passed-sampled" as const,
       checks: timelineChecks,
       minimumForegroundIoU:minIoU,
       meanForegroundIoU:Number((timelineChecks.reduce((n,c)=>n+c.foregroundIoU,0) /
         timelineChecks.length).toFixed(4)),
       minIdentityGap:Number(minGap.toFixed(4)),
-      note:"Sampled temporal checks only; short events between probes may be missed. " +
-        "Occlusion recovery and all-frame equivalence are not supported.",
+      note:recoveryInfo
+        ? "Manually approved interpolated layers through a short merge; hidden pixels are not recovered."
+        : "Sampled temporal checks only; short events between probes may be missed. " +
+          "Occlusion recovery and all-frame equivalence are not supported.",
     };
-    const project = await createMotionProject(workspace, "Multiple reconstructed vector objects");
+    const project = await createMotionProject(workspace,
+      recoveryInfo ? "Manual occlusion recovery (inferred motion)" :
+        "Multiple reconstructed vector objects");
     const saved = await updateMotionProject(workspace, project.id, project.revision,
       [{ type: "replace-composition", composition }]);
     const root = await studioStorageRoot(workspace, true);
@@ -737,6 +876,16 @@ export async function reconstructMultiObjectStudioVideo(
     await fs.writeFile(reviewPng, review.contactSheet, { flag: "wx", mode: 0o600 });
     const diffPng = path.join(code, saved.id + "-r" + saved.revision + "-multi-diff.png");
     await fs.writeFile(diffPng, review.diffSheet, { flag: "wx", mode: 0o600 });
+    if(recoveryInfo) {
+      const auditPath=path.join(code,saved.id+"-r"+saved.revision+"-multi-recovery.json");
+      await fs.writeFile(auditPath,JSON.stringify({
+        version:1,sourceVideoId:videoId,projectId:saved.id,revision:saved.revision,
+        frame:recoveryInfo.frame,beforeToAfter:recoveryInfo.beforeToAfter,
+        mergedProbeFrames,flaggedForegroundIoU,
+        label:"Manual approval of inferred motion; hidden objects not recovered from pixels",
+        timestamp:new Date().toISOString(),
+      },null,2),{flag:"wx",mode:0o600});
+    }
     const average = costs.flat().reduce((sum, n) => sum + n, 0) / costs.flat().length;
     return {
       status: "experimental-multi", projectId: saved.id, revision: saved.revision, objects,
@@ -746,6 +895,8 @@ export async function reconstructMultiObjectStudioVideo(
       measuredForegroundIoU: review.foregroundIoU,
       interpolationCheckIoU: check?.foregroundIoU ?? [],
       timelineValidation,
+      ...(recoveryInfo?{recovery:{frame:recoveryInfo.frame,
+        manuallyConfirmed:true,mergedProbeFrames,flaggedForegroundIoU}}:{}),
       parityReport: [
         ...review.metrics.map((metrics, index) => ({
           frame: sampledFrames[reviewIndices[index]], sampleType: "keyframe" as const, ...metrics,

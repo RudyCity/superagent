@@ -11,7 +11,7 @@ import {
   reconstructMultiObjectStudioVideo, studioBaseSampleFrames, studioBoundedRotationSamples,
   inspectStudioOcclusionEvidence,
 } from "../src/core/motion/code/videoMultiObjectReconstruction.js";
-import { getMotionProject, listMotionProjects } from "../src/core/motion/project/projectStore.js";
+import { getMotionProject, listMotionProjects, studioStorageRoot } from "../src/core/motion/project/projectStore.js";
 import { evaluateFrame } from "../src/core/motion/timeline/evaluateFrame.js";
 import { renderStudioNativeHtml } from "../src/core/motion/code/studioNativeCodeExporter.js";
 import { renderStudioEditableReactComponent } from "../src/core/motion/code/studioEditableReactExporter.js";
@@ -186,6 +186,64 @@ describe("multi-object reference video prototype", () => {
     expect(evidence.previewPngBase64.length).toBeLessThan(2*1024*1024*4/3);
     expect(JSON.stringify(evidence)).not.toContain(workspace);
     expect(await listMotionProjects(workspace)).toEqual([]);
+  },65000);
+
+  it("previews and explicitly approves a short verifiable merge without bypassing standard P6 checks",async()=>{
+    const workspace=await ws();
+    for(let f=0;f<30;f++){
+      const canvas=createCanvas(160,90),ctx=canvas.getContext("2d");
+      ctx.fillStyle="#101010";ctx.fillRect(0,0,160,90);
+      ctx.fillStyle="#ffcc66";ctx.fillRect(35,18,20,20);
+      ctx.fillStyle="#22ddff";ctx.fillRect(f>=17&&f<=19?54:70,18,20,20);
+      await fs.writeFile(path.join(workspace,"merge"+String(f).padStart(3,"0")+".png"),
+        await canvas.encode("png"));
+    }
+    await run("ffmpeg",["-hide_banner","-loglevel","error","-framerate","10",
+      "-i",path.join(workspace,"merge%03d.png"),"-y","-c:v","libx264",
+      "-pix_fmt","yuv420p",path.join(workspace,"merge.mp4")],
+      {timeout:30000,maxBuffer:4096,windowsHide:true});
+    const media=await importMotionVideo(workspace,await fs.readFile(path.join(workspace,"merge.mp4")));
+    await expect(reconstructMultiObjectStudioVideo(workspace,media.id))
+      .rejects.toThrow(/occlusion/);
+    const {validateStudioOcclusionMapping}=await import("../src/core/motion/code/studioOcclusionIdentityMapping.js");
+    const evidence=await inspectStudioOcclusionEvidence(workspace,media.id,54);
+    const checked=validateStudioOcclusionMapping(
+      evidence.observations[0].objects,evidence.observations[2].objects,[0,1],
+      evidence.dimensions.width,evidence.dimensions.height);
+    expect(checked.beforeToAfter).toEqual([0,1]);
+    const candidate=await reconstructMultiObjectStudioVideo(workspace,media.id,{
+      frame:54,beforeToAfter:[0,1],previewOnly:true,
+    });
+    expect(candidate.status).toBe("recovery-candidate");
+    if(candidate.status!=="recovery-candidate") throw new Error("Missing candidate");
+    expect(candidate.flaggedForegroundIoU).toBeGreaterThan(.38);
+    expect(candidate.mergedProbeFrames.length).toBeGreaterThan(0);
+    expect(await listMotionProjects(workspace)).toEqual([]);
+    await expect(reconstructMultiObjectStudioVideo(workspace,media.id,{
+      frame:54,beforeToAfter:[0,1],previewOnly:false,
+      candidateToken:"0".repeat(64),acknowledgement:"APPROVE_MANUAL_RECOVERY",
+    })).rejects.toThrow(/changed/);
+    expect(await listMotionProjects(workspace)).toEqual([]);
+    const committed=await reconstructMultiObjectStudioVideo(workspace,media.id,{
+      frame:54,beforeToAfter:[0,1],previewOnly:false,
+      candidateToken:candidate.token,acknowledgement:"APPROVE_MANUAL_RECOVERY",
+    });
+    expect(committed.status).toBe("experimental-multi");
+    if(committed.status!=="experimental-multi") throw new Error("Missing approved reconstruction");
+    expect(committed.recovery?.manuallyConfirmed).toBe(true);
+    expect(committed.timelineValidation.status).toBe("manual-recovery-reviewed");
+    expect((await listMotionProjects(workspace)).length).toBe(1);
+    const root=await studioStorageRoot(workspace);
+    const marker=await fs.readFile(path.join(root,"code",
+      committed.projectId+"-r"+committed.revision+"-multi-recovery.json"),"utf8");
+    expect(JSON.parse(marker)).toMatchObject({
+      frame:54,beforeToAfter:[0,1],sourceVideoId:media.id,
+      projectId:committed.projectId,
+    });
+    expect(marker).toContain("hidden objects not recovered");
+    expect(marker).not.toContain(workspace);
+    expect((await getMotionProject(workspace,committed.projectId)).name)
+      .toContain("inferred motion");
   },65000);
 
   it("rejects changing background colors before creating a project", async () => {

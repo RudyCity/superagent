@@ -190,6 +190,27 @@ export async function handleMotionHttpRoute(
         await import("./code/videoMultiObjectReconstruction.js");
       json(res, ctx, 200, await inspectStudioOcclusionEvidence(
         workspace,body.videoId,body.frame as number));
+    } else if (pathname === "/api/motion/reconstruct/multi/recovery" && method === "POST") {
+      const body=await readMotionJson(req,1600);
+      if(typeof body.videoId!=="string" || !/^video-[a-f0-9]{64}$/.test(body.videoId) ||
+        !Number.isSafeInteger(body.frame) || !Array.isArray(body.beforeToAfter) ||
+        body.beforeToAfter.length<2 || body.beforeToAfter.length>4 ||
+        typeof body.previewOnly!=="boolean")
+        throw new MotionValidationError(["Recovery requires a local video, frame, user mapping and preview/approval mode"]);
+      const {reconstructMultiObjectStudioVideo} =
+        await import("./code/videoMultiObjectReconstruction.js");
+      const result=await reconstructMultiObjectStudioVideo(workspace,body.videoId,{
+        frame:body.frame as number,beforeToAfter:body.beforeToAfter as number[],
+        previewOnly:body.previewOnly,candidateToken:typeof body.candidateToken==="string"
+          ? body.candidateToken:undefined,
+        acknowledgement:body.acknowledgement==="APPROVE_MANUAL_RECOVERY"
+          ? "APPROVE_MANUAL_RECOVERY":undefined,
+      });
+      if(result.status==="recovery-candidate") json(res,ctx,200,result);
+      else {
+        const {reviewPng:_review,diffPng:_diff,...publicResult}=result;
+        json(res,ctx,201,publicResult);
+      }
     } else if (pathname === "/api/motion/reconstruct/multi" && method === "POST") {
       const body = await readMotionJson(req, 1200);
       if (typeof body.videoId !== "string" || !/^video-[a-f0-9]{64}$/.test(body.videoId))

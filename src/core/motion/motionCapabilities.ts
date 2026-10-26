@@ -21,6 +21,7 @@ export const MOTION_CAPABILITIES = Object.freeze({
   experimentalVideoVectorReconstruction: "single-bright-silhouette-3-frames-cli-only",
   experimentalMultiVectorReconstruction: "two-to-four-bright-separated-objects-api-v1",
   experimentalOcclusionEvidence: "three-frame-review-only-no-reconstruction-v1",
+  experimentalOcclusionRecovery: "manual-mapping-token-confirmed-short-merge-v1",
   experimentalTextOcrReconstruction: "local-english-stable-captions-v1",
   experimentalTextOcrTimeline: "local-english-caption-timeline-v1",
   studioToCodeTriggers: ["autoplay", "scroll", "click", "hover"],
