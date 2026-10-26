@@ -423,6 +423,10 @@ export async function withCdpGatewayRegistryLock<T>(fn: () => Promise<T>): Promi
   try { return await fn(); } finally { await done(); }
 }
 export const cdpGatewayRoot = () => join(dir(), "gateway");
+/** Use the same per-target queue when native human ownership changes. */
+export async function withCdpTargetCoordination<T>(port: number, targetId: string, fn: () => Promise<T>): Promise<T> {
+  return guarded(port, targetId, {}, async () => fn());
+}
 export async function withCdpTargetRead<T>(port: number, targetId: string, opts: CdpAccess, fn: () => Promise<T>): Promise<T> {
   return guarded(port, targetId, opts, async key => {
     const current = await load(key);
@@ -456,6 +460,8 @@ export async function withCdpTargetWrite<T>(
       throw new Error("No active CDP claim for agent. Run claim_target.");
     }
     try {
+      const { assertManagedAgentMayWrite } = await import("./managedBrowserControl.js");
+      await assertManagedAgentMayWrite(port, targetId);
       const result = await cdpExecutionScope.run({
         revision: current?.revision ?? 0, mode: current?.mode === "shared" ? "shared" : "isolated",
       }, fn);

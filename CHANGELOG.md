@@ -1,3 +1,8 @@
+## [1.14.43] - 2026-10-26
+### Agent guidance
+- Clarified the single primary SuperAgent runtime and one T-Line backend architecture, including temporary staging isolation, authenticated independent Core/MCP/OAuth owners, fail-closed T-Line runtime selection, process identity safeguards and R0-R7 production release gates.
+- Added a small root AGENTS.md pointer to the canonical .agents/AGENTS.md so tooling that discovers root agent rules uses the same single source of truth. No live processes, scheduled tasks, OAuth credentials or client routes changed.
+
 ## [1.14.42] - 2026-10-26
 ### Documentation
 - Clarified the single-primary SuperAgent deployment topology with a bounded isolated test profile, no second persistent T-Line backend, and required test cleanup/owner checks. Synced the execution roadmap with the T-Line startup-only target selection and its actual local staging acceptance results.

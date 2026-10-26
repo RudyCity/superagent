@@ -21,6 +21,27 @@ This file contains key information about the project for AI agents to study and 
 - **Technology Stack**: Node.js, TypeScript, React, Ink (Terminal UI Components), Vercel AI SDK, Execa, Vitest
 - **Desktop Client Integration (t-line)**: Superagent integrates with [t-line](file:///D:/backup%20from%20pc%20asus/Documents%20Development/t-line), which is the desktop version of the superagent CLI. This is supported via a client/server bridge mode (`superagent --server [port] --client-mode tline`).
 
+## Runtime Ownership and T-Line Integration (2026-10-26)
+
+**Mandatory deployment contract for all new Core, MCP, OAuth, desktop and recovery work:**
+
+- **ONE primary SuperAgent runtime stack** serves normal CLI and T-Line use. Its Core, MCP and OAuth services may have **separate authenticated OS process owners**; "one runtime" does **not** mean forcing them into one shared PID. Normal T-Line operation runs **ONE T-Line backend**, never an additional backend for staging.
+- **Testing is temporary, not a second permanent environment**: use a fresh, existing private child profile beneath `~/.superagent-local-staging/` and separate loopback ports owned by the test run. Stop verified test-owned processes and release listeners after a bounded test; preserve evidence, and do not delete a profile while process/effect ownership is uncertain. Do not install persistent Windows tasks, tunnels, or alternate T-Line services as a test shortcut.
+- **Startup-only T-Line target selection**: T-Line uses `TLINE_SUPERAGENT_RUNTIME=primary|testing`, `TLINE_SUPERAGENT_CORE_PORT`, `TLINE_SUPERAGENT_OWNER_MODE=supervised-external` (testing only), and a matching `SUPERAGENT_CONFIG_DIR`. This is a Core routing/bootstrap exception to the provider/model configuration policy below: model credentials and settings still belong in JSON, not environment variables.
+- **No hot-switch or hidden fallback**: never reroute active chats, MCP sessions, approvals, WebSockets or external tool actions between primary and testing. The test Core must already exist and pass the private authenticated owner contract; if missing/unverifiable, fail closed without launching or taking over a new owner. Before changing runtime at startup, drain/finish active work and independently verify its target identity.
+- **Protect existing listeners and owners**: 6759, 6789, 7888 and 9877 are known legacy/protected ports (not a complete permanent port list). Always inspect the current OS listener PID and process birth identity and authenticate private owner readiness. A PID file, an old snapshot, a responsive HTTP port or a missing listener does NOT grant adoption/kill permission. Never signal/restart/stop the shared production Core/MCP PID from a test or use PID-only termination.
+- **MCP and OAuth isolation**: Core restarts must not implicitly restart the independent MCP owner; an MCP replacement must invalidate old in-memory sessions and require fresh initialization. No implicit POST/tool replay, legacy OAuth token import or session-ID reuse. Default tools remain safe-scoped and require permission checks at execution.
+- **Release gates stay enforced**: R0–R7 `blocked` means NO automatic production cutover. Public HTTPS/TLS, isolated OS keystore/ACL, installed native desktop E2E, Windows recovery, extended soak, rollback and explicit per-client PKCE reauthorization/operator approval require genuine evidence. Passing staging unit tests does not certify production.
+- **Reuse existing modules/components first**: extend the existing Core supervisor, MCP owner lifecycle, T-Line routing and UI components rather than introducing duplicate registries, daemons, providers, state stores or selectors. Keep one source of truth per domain. Never stage/commit unrelated worktree changes from other agents.
+- **Verification and commits**: for each change, run focused tests and `bun run build` when source changes; capture real OS evidence for lifecycle claims. Commit only explicitly related files; update version/changelog and evidence/plan documents as required by the repository policy. A passing build is not an installed-desktop certification.
+
+**Canonical references:** `docs/guides/runtime-primary-and-temporary-test-profile.md`,
+`docs/plans/2026-10-26-runtime-p1-p4-parallel-activation-e2e-release-execution-plan.md`,
+`docs/guides/runtime-r0-r7-2026-10-26-evidence.md`.
+T-Line implements the other side in `backend/src/superAgentRuntimeTarget.ts`,
+`backend/src/superAgentCoreOwnership.ts` and
+`docs/guides/single-superagent-runtime-target.md` in its own repository.
+
 ## 3-Tier Multi-Agent Architecture
 
 Superagent supports a full 3-tier agent hierarchy activated via `superagent --multi`:

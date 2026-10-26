@@ -719,6 +719,32 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Native desktop-only control handoff, protected by the existing Core bearer
+  // authentication and loopback binding. The Rust caller proves live ownership.
+  if (pathname === "/api/browser/managed/control") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    const remote = req.socket.remoteAddress;
+    if (remote !== "127.0.0.1" && remote !== "::1" && remote !== "::ffff:127.0.0.1") {
+      sendJSON(res, 403, { success: false, error: "Local desktop control only." });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 1200) throw new Error("Oversized control request.");
+      const { setManagedBrowserControl } = await import("./core/tools/managedBrowserControl.js");
+      const state = await setManagedBrowserControl(JSON.parse(raw));
+      sendJSON(res, 200, { success: true, ...state });
+    } catch {
+      sendJSON(res, 409, { success: false, error: "Browser control handoff failed: live identity or registration unavailable." });
+    }
+    return true;
+  }
+
   // Explicitly scoped browser sharing API for authenticated T-Line clients.
   // No arbitrary CDP action execution through this endpoint.
   if (pathname === "/api/browser/shared-control") {
