@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { getRootConfigDir, ensureGlobalConfigDir } from "./paths.js";
 import { switchActiveProvider } from "./providers.js";
-import { loadModelConfig, getActivePreset, savePreset, setActivePresetId, setActivePreset } from "./jsonConfig.js";
+import { loadModelConfig, getActivePreset, savePreset, deletePreset, setActivePresetId, setActivePreset } from "./jsonConfig.js";
 import type { ProviderProfile } from "./jsonConfig.js";
 
 export type PresetMode = "multi" | "single";
@@ -314,7 +314,103 @@ export function saveModelPreset(name: string, description: string, models?: Reco
   }
 
   writePresetsFile(fileData);
+  try {
+    const jsonPreset = convertModelPresetToJSON(newPreset, targetMode);
+    savePreset(targetMode, jsonPreset);
+  } catch {}
   return getCustomPresetsPath();
+}
+
+/**
+ * Convert a CLI ModelPreset (from model-presets.json with flat MODEL_* keys)
+ * into a structured JSONModelPreset object suitable for model-config.json and UI consumption.
+ */
+export function convertModelPresetToStructured(preset: ModelPreset, mode: PresetMode): any {
+  const parseModel = (val: string, keyName?: string) => {
+    if (!val) return undefined;
+    let res: any;
+    const atIndex = val.indexOf("@");
+    if (atIndex > 0) {
+      res = { providerProfileId: val.substring(0, atIndex), model: val.substring(atIndex + 1) };
+    } else {
+      // Backward compatibility: legacy presets used `:` as the separator.
+      const colonIndex = val.indexOf(":");
+      if (colonIndex > 0 && !val.substring(0, colonIndex).includes("/")) {
+        res = { providerProfileId: val.substring(0, colonIndex), model: val.substring(colonIndex + 1) };
+      } else {
+        res = { providerProfileId: "", model: val };
+      }
+    }
+    if (keyName && preset.models[`${keyName}_VISION`] !== undefined) {
+      res.supportsVision = preset.models[`${keyName}_VISION`] === "true";
+    }
+    return res;
+  };
+
+  const singleMainKey = preset.models.MODEL_SINGLE_SUPERAGENT
+    ? "MODEL_SINGLE_SUPERAGENT"
+    : preset.models.MODEL_SINGLE
+    ? "MODEL_SINGLE"
+    : preset.models.MODEL
+    ? "MODEL"
+    : "";
+  const singleMain = singleMainKey ? preset.models[singleMainKey] : "";
+  const superagentKey = singleMain ? singleMainKey : "MODEL_MULTI_SUPERAGENT";
+  const superagentVal = singleMain || preset.models.MODEL_MULTI_SUPERAGENT || "";
+
+  const subagentDefaultKey = preset.models.MODEL_SINGLE_SUBAGENT
+    ? "MODEL_SINGLE_SUBAGENT"
+    : "MODEL_MULTI_SUBAGENT";
+  const subagentDefaultVal = preset.models.MODEL_SINGLE_SUBAGENT || preset.models.MODEL_MULTI_SUBAGENT || "";
+
+  const newPreset: any = {
+    superagent: parseModel(superagentVal, superagentKey),
+    subagentDefault: parseModel(subagentDefaultVal, subagentDefaultKey),
+    subagentDetails: {},
+    ...preset.models,
+  };
+
+  if (mode === "multi") {
+    newPreset.master = parseModel(preset.models.MODEL_MULTI_MASTER || "", "MODEL_MULTI_MASTER");
+  }
+
+  // Parse subagent-specific overrides
+  for (const [key, val] of Object.entries(preset.models)) {
+    if (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
+      if (key.endsWith("_VISION")) continue;
+      const type = key.replace(/^MODEL_(MULTI|SINGLE)_SUBAGENT_/, "").toLowerCase();
+      newPreset.subagentDetails[type] = parseModel(val, key);
+    }
+  }
+
+  return newPreset;
+}
+
+export function convertModelPresetToJSON(preset: ModelPreset, mode: PresetMode) {
+  const targetName = preset.name.toLowerCase().trim();
+  return {
+    id: targetName,
+    name: preset.name,
+    description: preset.description || "",
+    models: convertModelPresetToStructured(preset, mode),
+  };
+}
+
+/**
+ * Synchronize presets defined in model-presets.json into model-config.json.
+ * Resolves drift between CLI presets and on-disk config.
+ */
+export function syncPresetsToModelConfig(): void {
+  try {
+    const fileData = readPresetsFile();
+    for (const mode of ["multi", "single"] as const) {
+      for (const preset of fileData[mode] || []) {
+        if (!preset || !preset.name) continue;
+        const jsonPreset = convertModelPresetToJSON(preset, mode);
+        savePreset(mode, jsonPreset);
+      }
+    }
+  } catch {}
 }
 
 /**
@@ -346,73 +442,8 @@ export function applyModelPreset(name: string, mode?: PresetMode, persist: boole
     throw new Error(`Model preset "${name}" not found in ${targetMode}-agent presets.`);
   }
 
-  // Parse preset models into tier config format.
-  // Use `@` as the profile/model separator to avoid ambiguity with model names
-  // that themselves contain `:`, e.g. openrouter/nex-agi/nex-n2-pro:free.
-  const parseModel = (val: string, keyName?: string) => {
-    if (!val) return undefined;
-    let res: any;
-    const atIndex = val.indexOf("@");
-    if (atIndex > 0) {
-      res = { providerProfileId: val.substring(0, atIndex), model: val.substring(atIndex + 1) };
-    } else {
-      // Backward compatibility: legacy presets used `:` as the separator.
-      const colonIndex = val.indexOf(":");
-      if (colonIndex > 0 && !val.substring(0, colonIndex).includes("/")) {
-        res = { providerProfileId: val.substring(0, colonIndex), model: val.substring(colonIndex + 1) };
-      } else {
-        res = { providerProfileId: "", model: val };
-      }
-    }
-    if (keyName && preset.models[`${keyName}_VISION`] !== undefined) {
-      res.supportsVision = preset.models[`${keyName}_VISION`] === "true";
-    }
-    return res;
-  };
-
-  // Build new preset models from the legacy MODEL_* format
-  const singleMainKey = preset.models.MODEL_SINGLE_SUPERAGENT
-    ? "MODEL_SINGLE_SUPERAGENT"
-    : preset.models.MODEL_SINGLE
-    ? "MODEL_SINGLE"
-    : preset.models.MODEL
-    ? "MODEL"
-    : "";
-  const singleMain = singleMainKey ? preset.models[singleMainKey] : "";
-  const superagentKey = singleMain ? singleMainKey : "MODEL_MULTI_SUPERAGENT";
-  const superagentVal = singleMain || preset.models.MODEL_MULTI_SUPERAGENT || "";
-
-  const subagentDefaultKey = preset.models.MODEL_SINGLE_SUBAGENT
-    ? "MODEL_SINGLE_SUBAGENT"
-    : "MODEL_MULTI_SUBAGENT";
-  const subagentDefaultVal = preset.models.MODEL_SINGLE_SUBAGENT || preset.models.MODEL_MULTI_SUBAGENT || "";
-
-  const newPreset: any = {
-    superagent: parseModel(superagentVal, superagentKey),
-    subagentDefault: parseModel(subagentDefaultVal, subagentDefaultKey),
-    subagentDetails: {},
-  };
-
-  if (targetMode === "multi") {
-    newPreset.master = parseModel(preset.models.MODEL_MULTI_MASTER || "", "MODEL_MULTI_MASTER");
-  }
-
-  // Parse subagent-specific overrides
-  for (const [key, val] of Object.entries(preset.models)) {
-    if (key.startsWith("MODEL_MULTI_SUBAGENT_") || key.startsWith("MODEL_SINGLE_SUBAGENT_")) {
-      if (key.endsWith("_VISION")) continue;
-      const type = key.replace(/^MODEL_(MULTI|SINGLE)_SUBAGENT_/, "").toLowerCase();
-      newPreset.subagentDetails[type] = parseModel(val, key);
-    }
-  }
-
   // Wrap into proper JSONModelPreset structure and apply to model-config.json
-  const jsonPreset = {
-    id: targetName,
-    name: preset.name,
-    description: preset.description || "",
-    models: newPreset,
-  };
+  const jsonPreset = convertModelPresetToJSON(preset, targetMode);
   const shouldPersist = persist ?? false;
   if (shouldPersist) {
     savePreset(targetMode, jsonPreset);
@@ -480,6 +511,9 @@ export function deleteModelPreset(name: string, mode?: PresetMode): string {
 
   section.splice(existingIdx, 1);
   writePresetsFile(fileData);
+  try {
+    deletePreset(targetMode, presetName);
+  } catch {}
   return getCustomPresetsPath();
 }
 
@@ -511,5 +545,9 @@ export function updateModelPreset(name: string, description: string, models?: Re
   };
 
   writePresetsFile(fileData);
+  try {
+    const jsonPreset = convertModelPresetToJSON(section[existingIdx], targetMode);
+    savePreset(targetMode, jsonPreset);
+  } catch {}
   return getCustomPresetsPath();
 }

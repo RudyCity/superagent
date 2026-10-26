@@ -28,6 +28,8 @@ import {
   applyModelPreset,
   saveModelPreset,
   deleteModelPreset,
+  convertModelPresetToJSON,
+  syncPresetsToModelConfig,
   savePreset,
   deletePreset,
   getProviders,
@@ -2482,22 +2484,35 @@ export async function handleServerRoute(
       cliMulti = getModelPresets("multi") || [];
     } catch (e) {}
 
-    const mergePresets = (configList: any[], cliList: any[]) => {
+    syncPresetsToModelConfig();
+    const mergePresets = (configList: any[], cliList: any[], mode: "single" | "multi") => {
       const map = new Map<string, any>();
-      for (const p of cliList) {
-        if (p && p.name) map.set(p.name, { ...p, id: p.id || p.name });
-      }
       for (const p of configList) {
         if (p && (p.name || p.id)) {
-          const key = p.name || p.id;
-          map.set(key, { ...map.get(key), ...p, id: p.id || p.name });
+          const key = (p.id || p.name).toLowerCase();
+          map.set(key, { ...p, id: p.id || p.name });
+        }
+      }
+      for (const p of cliList) {
+        if (p && p.name) {
+          const key = (p.id || p.name).toLowerCase();
+          const structured = convertModelPresetToJSON(p, mode);
+          const existing = map.get(key) || {};
+          map.set(key, {
+            ...existing,
+            ...structured,
+            id: structured.id,
+            name: p.name,
+            description: p.description || existing.description || "",
+            models: structured.models,
+          });
         }
       }
       return Array.from(map.values());
     };
 
-    const singlePresets = mergePresets(configSingle, cliSingle);
-    const multiPresets = mergePresets(configMulti, cliMulti);
+    const singlePresets = mergePresets(configSingle, cliSingle, "single");
+    const multiPresets = mergePresets(configMulti, cliMulti, "multi");
     const activeSinglePresetId = getActivePresetId("single");
     const activeMultiPresetId = getActivePresetId("multi");
     const trustedDirectories = getTrustedDirectories();
@@ -2520,8 +2535,8 @@ export async function handleServerRoute(
       const body = JSON.parse(bodyStr || "{}");
       if (body.settings) updateSettings(body.settings);
       if (body.activePresetId) {
-        if (body.activePresetId.single) applyModelPreset(body.activePresetId.single, "single");
-        if (body.activePresetId.multi) applyModelPreset(body.activePresetId.multi, "multi");
+        if (body.activePresetId.single) applyModelPreset(body.activePresetId.single, "single", true);
+        if (body.activePresetId.multi) applyModelPreset(body.activePresetId.multi, "multi", true);
       }
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
@@ -2539,11 +2554,14 @@ export async function handleServerRoute(
         sendJSON(res, 400, { error: "mode and presetId are required" });
         return true;
       }
-      applyModelPreset(presetId, mode as "single" | "multi");
+      applyModelPreset(presetId, mode as "single" | "multi", true);
       const config = loadModelConfig();
       sendJSON(res, 200, {
         success: true,
-        activePresetId: config.activePresetId,
+        activePresetId: {
+          single: getActivePresetId("single"),
+          multi: getActivePresetId("multi")
+        },
         activeProviderProfileId: deriveActiveProviderId()
       });
     } catch (err: any) {
