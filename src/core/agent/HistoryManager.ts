@@ -75,13 +75,15 @@ export class HistoryManager {
   public static async saveHistory(agent: Agent): Promise<void> {
     let historyPath = (agent as any).currentHistoryFilePath;
     if (!historyPath) {
-      historyPath = agent.resolveHistoryFilePath(false);
+      historyPath = agent.resolveHistoryFilePath(agent.sessionId || false);
       (agent as any).currentHistoryFilePath = historyPath;
     }
     if (agent.tier === "master" || agent.tier === "single") {
       process.env.SUPERAGENT_SESSION_PATH = historyPath;
     }
-    agent.sessionId = path.basename(historyPath, ".json");
+    if (!agent.sessionId && historyPath) {
+      agent.sessionId = path.basename(historyPath, ".json");
+    }
     bindBrainToSession(agent);
 
     try {
@@ -98,13 +100,15 @@ export class HistoryManager {
   public static saveHistorySync(agent: Agent): void {
     let historyPath = (agent as any).currentHistoryFilePath;
     if (!historyPath) {
-      historyPath = agent.resolveHistoryFilePath(false);
+      historyPath = agent.resolveHistoryFilePath(agent.sessionId || false);
       (agent as any).currentHistoryFilePath = historyPath;
     }
     if (agent.tier === "master" || agent.tier === "single") {
       process.env.SUPERAGENT_SESSION_PATH = historyPath;
     }
-    agent.sessionId = path.basename(historyPath, ".json");
+    if (!agent.sessionId && historyPath) {
+      agent.sessionId = path.basename(historyPath, ".json");
+    }
     bindBrainToSession(agent);
 
     const wsIdentifier = getCurrentWorkspaceIdentifier(agent.workingDirectory);

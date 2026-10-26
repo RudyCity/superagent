@@ -32,4 +32,20 @@ describe("SSE session/workspace event scope", () => {
   it("keeps intentionally global events available to every client", () => {
     expect(shouldDeliverEventToClient({ type: "superagent-sessions-changed" })).toBe(true);
   });
+
+  it("preserves explicit agent sessionId across history path resolution", async () => {
+    const { PathResolver } = await import("../src/core/agent/PathResolver.js");
+    const mockAgent: any = {
+      sessionId: "sess_custom_preserve_999",
+      workingDirectory: process.cwd(),
+      isMultiAgent: false,
+      tier: "single",
+    };
+    mockAgent.resolveHistoryFilePath = (resume: any) => PathResolver.resolveHistoryFilePath(mockAgent, resume);
+    mockAgent.getCurrentHistoryFilePath = () => PathResolver.getCurrentHistoryFilePath(mockAgent);
+
+    const historyPath = PathResolver.getCurrentHistoryFilePath(mockAgent);
+    expect(mockAgent.sessionId).toBe("sess_custom_preserve_999");
+    expect(historyPath.endsWith("sess_custom_preserve_999.json")).toBe(true);
+  });
 });

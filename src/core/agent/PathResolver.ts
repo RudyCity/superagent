@@ -120,7 +120,9 @@ export class PathResolver {
       } catch {}
     }
 
-    const sessionId = generateSessionId();
+    const sessionId = (typeof autoResume === "string" && autoResume.trim() !== "")
+      ? autoResume.trim()
+      : (agent.sessionId || generateSessionId());
     const sessionDir = path.join(historyDir, sessionId);
     return path.join(sessionDir, `${sessionId}.json`);
 
@@ -129,13 +131,13 @@ export class PathResolver {
   public static getCurrentHistoryFilePath(agent: Agent): string {
     let current = (agent as any).currentHistoryFilePath;
     if (!current) {
-      current = this.resolveHistoryFilePath(agent, false);
+      current = this.resolveHistoryFilePath(agent, agent.sessionId || false);
       (agent as any).currentHistoryFilePath = current;
     }
     if (agent.tier === "master" || agent.tier === "single") {
       process.env.SUPERAGENT_SESSION_PATH = current;
     }
-    if (current) {
+    if (current && !agent.sessionId) {
       agent.sessionId = path.basename(current, ".json");
     }
     return current;

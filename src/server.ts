@@ -537,7 +537,10 @@ function getSessionForAgent(agentRef?: Agent): AgentSession | undefined {
 // Global Agent Event Handlers
 const onEvent = (event: AgentEvent, agentRef?: Agent) => {
   const session = getSessionForAgent(agentRef);
-  const sessionId = agentRef?.sessionId || session?.sessionId;
+  const sessionId = session?.sessionId || agentRef?.sessionId;
+  if (session?.sessionId && agentRef && agentRef.sessionId !== session.sessionId) {
+    agentRef.sessionId = session.sessionId;
+  }
   const workspace = session?.workspace || agentRef?.workingDirectory;
   const metadata = { ...(sessionId ? { sessionId } : {}), ...(workspace ? { workspace } : {}) };
   if (session) {

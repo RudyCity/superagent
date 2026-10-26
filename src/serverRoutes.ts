@@ -1217,6 +1217,7 @@ export async function handleServerRoute(
     // Do NOT abort running agents when user switches views in UI.
     const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
     agent.sessionId = sessionId;
+    (agent as any).currentHistoryFilePath = agent.resolveHistoryFilePath(sessionId);
 
     let resumeWarning: string | undefined;
     if (resume) {
@@ -2884,6 +2885,7 @@ export async function handleServerRoute(
       const sessionId = reqSessionId || generateSessionId();
       const agent = await createAgentForMode(targetWorkspace, targetMode, targetClientMode);
       agent.sessionId = sessionId;
+      (agent as any).currentHistoryFilePath = agent.resolveHistoryFilePath(sessionId);
 
       let historyError = false;
       try { await agent.loadHistory(sessionId); }
