@@ -81,7 +81,10 @@ export async function handleSenopatiCliCommand(args:string[]):Promise<number>{
    ]);
    const policy=getModernPolicy();
    const healthy=Boolean(
-    model && watchdog?.alive && model.precision===policy.precision &&
+    model && watchdog?.alive && watchdog.healthy &&
+    watchdog.modelPid===model.pid &&
+    model.precision===policy.precision && policy.enabled &&
+    policy.backend==="mmbert-v64-seed73" &&
     policy.inferenceMode==="shared_only");
    const report={
     mode:action,healthy,
@@ -95,6 +98,7 @@ export async function handleSenopatiCliCommand(args:string[]):Promise<number>{
     lifecycleFile:senopatiLifecycleConfigPath(),
     windowsLogon:senopatiWindowsStartupStatus(),
     toolExecutionAllowedByClassifier:false,
+    inferenceReadiness:(await import("../senopatiReadiness.js")).readSenopatiReadiness(),
    };
    output(report);
    return action==="doctor"&&!healthy?2:0;

@@ -62,6 +62,7 @@ import { buildCorsHeaders, isPathInsideOrEqual } from "./core/utils/serverSecuri
 import { maskApiKey, isMaskedApiKey } from "./core/config.js";
 import { isPendingPromptOwner } from "./core/agent/pendingPromptOwnership.js";
 import { recordAgentTimeline } from "./core/channels/tlineAgentTimeline.js";
+import { readSenopatiReadiness } from "./core/senopatiReadiness.js";
 import { getNormalizedProjectPath } from "./core/tools/helpers.js";
 
 /** Persist an atomic memory under a canonical project/global scope. Never trust a client-supplied project ID. */
@@ -630,6 +631,9 @@ export async function handleServerRoute(
       sessionId: session ? session.sessionId : null,
       agentActive: !!session,
       agentRunning: session ? session.agent.isAgentRunning() : false,
+      // Last-known inference health only; absence never disconnects a valid
+      // T-Line session or triggers automatic replay of a chat/action.
+      senopatiInference: readSenopatiReadiness(),
       chatTurnMetrics: session ? getChatTurnMetrics(session.sessionId) : [],
       isCliSession: session ? session.isCliSession : false,
       planState: session ? session.agent.planState : "IDLE",

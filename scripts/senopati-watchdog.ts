@@ -15,7 +15,7 @@ import {spawn} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {getRootConfigDir} from "../src/core/config/paths.js";
 import {getModernPolicy} from "../src/core/senopatiModernBert.js";
-import {sharedSenopatiStatus} from "../src/core/senopatiSharedClient.js";
+import {sharedSenopatiStatus,readSharedCredentials} from "../src/core/senopatiSharedClient.js";
 import {modelStartLeaseBlocksNewModel} from "../src/core/senopatiStartLease.js";
 import {readSenopatiWatchdogStatus} from "../src/core/senopatiWatchdogStatus.js";
 import {
@@ -152,12 +152,17 @@ async function worker():Promise<void>{
       const health=await sharedSenopatiStatus();
       const incompatible=Boolean(shouldRun && health &&
                                  health.precision!==policy.precision);
-      const isHealthy=Boolean(health && health.precision===policy.precision);
+      const isHealthy=Boolean(shouldRun && health && health.precision===policy.precision);
       // A different precision is an operator-controlled handoff, NOT a
       // missing process. Never spin up duplicates or stop a healthy owner.
       // A model owner is still loading or draining (or its lock is
       // untrusted): do not race it or exhaust the restart budget.
-      const replacementBlocked=modelStartLeaseBlocksNewModel();
+      // An authenticated registry with a live but unresponsive owner might
+      // represent stalled native ONNX. Never kill or replace an unknown live
+      // process (including PID reuse); require explicit operator review.
+      const claimed=health?null:readSharedCredentials();
+      const unresponsiveOwner=Boolean(claimed && pidAlive(claimed.pid));
+      const replacementBlocked=modelStartLeaseBlocksNewModel() || unresponsiveOwner;
       const decision=decideSenopatiRestart(
         state,Date.now(),shouldRun && !incompatible && !replacementBlocked,isHealthy);
       state=decision.state;
@@ -172,6 +177,9 @@ async function worker():Promise<void>{
       }else if(incompatible){
         record.lastStartOk=false;
         record.lastError="precision-mismatch-needs-explicit-reload";
+      }else if(unresponsiveOwner){
+        record.lastStartOk=false;
+        record.lastError="unresponsive-model-owner-needs-operator-review";
       }else if(replacementBlocked){
         record.lastError="model-start-or-drain-lease-active";
       }
@@ -223,6 +231,9 @@ async function main(){
   if(action==="start"){
     const existing=statusRecord();
     if(existing && pidAlive(existing.pid)){
+      if(!readSenopatiWatchdogStatus(lockPath)?.alive){
+        throw new Error("Watchdog owner PID exists but heartbeat is stale; inspect manually");
+      }
       console.log("SENOPATI_WATCHDOG_ALREADY_ACTIVE",existing.pid);
       return;
     }

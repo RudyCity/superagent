@@ -6,6 +6,10 @@ export const SENOPATI_WATCH_FAILURE_THRESHOLD=2;
 export const SENOPATI_WATCH_WINDOW_MS=10*60_000;
 export const SENOPATI_WATCH_MAX_RESTARTS=4;
 export const SENOPATI_WATCH_COOLDOWN_MS=10*60_000;
+// Spread successive model bootstrap attempts to avoid a crash-loop CPU/RAM
+// storm. The cooldown above remains the hard cap at four attempts per window.
+export const SENOPATI_WATCH_BACKOFF_BASE_MS=2_000;
+export const SENOPATI_WATCH_BACKOFF_MAX_MS=30_000;
 export type SenopatiWatchState={
   failedChecks:number;
   restartTimestamps:number[];
@@ -40,6 +44,18 @@ export function decideSenopatiRestart(
     return {state:{failedChecks:0,restartTimestamps:timestamps,
       circuitOpenUntilMs:nowMs+SENOPATI_WATCH_COOLDOWN_MS},
       restart:false,breakerOpen:true};
+  }
+  const last=timestamps.at(-1);
+  if(last!==undefined){
+    const delay=Math.min(SENOPATI_WATCH_BACKOFF_MAX_MS,
+      SENOPATI_WATCH_BACKOFF_BASE_MS*2**(timestamps.length-1));
+    // Keep consecutive-check threshold met while waiting; never create
+    // additional attempts because of rapid polling or clock regression.
+    if(nowMs<last+delay){
+      return {state:{failedChecks:Math.min(failures,SENOPATI_WATCH_FAILURE_THRESHOLD),
+        restartTimestamps:timestamps,circuitOpenUntilMs:0},
+        restart:false,breakerOpen:false};
+    }
   }
   return {state:{failedChecks:0,restartTimestamps:[...timestamps,nowMs],
     circuitOpenUntilMs:0},restart:true,breakerOpen:false};

@@ -13,6 +13,7 @@ export interface TlineProbeResult {
   frontDoorReady: boolean;
   coreReady: boolean;
   sessionVerified: boolean;
+  inferencePhase?: "healthy" | "degraded" | "disabled" | "unknown";
   issuedMethods: readonly ["GET"] | readonly ["GET", "GET"];
 }
 const localBase = (url: string): string => {
@@ -79,6 +80,15 @@ export async function probeTlineSessionOnce(input: {
       nextRetryAt: undefined, reason: "SESSION_NOT_BOUND_NO_REPLAY" }
     : classifyTlineReconnectResponse(input.state, session.status,
       typeof body.code === "string" ? body.code : undefined);
+  const readiness=body.senopatiInference;
+  const inferencePhase=readiness && typeof readiness==="object" &&
+      !Array.isArray(readiness) &&
+      ["healthy","degraded","disabled"].includes(
+        String((readiness as Record<string,unknown>).phase)) ?
+      (readiness as {phase:"healthy"|"degraded"|"disabled"}).phase : "unknown";
+  // The classifier is optional. A degraded model must not turn an authenticated,
+  // healthy chat session into a disconnected session or replay any action.
   return { state: phase, frontDoorReady: true, coreReady: true,
-    sessionVerified: phase.phase === "connected", issuedMethods: ["GET", "GET"] };
+    sessionVerified: phase.phase === "connected",inferencePhase,
+    issuedMethods: ["GET", "GET"] };
 }
