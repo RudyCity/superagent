@@ -5,6 +5,7 @@ import type { ToolCall, ToolResult } from "./conversation.js";
 import { getRootConfigDir } from "./config.js";
 import { agentLocalStorage } from "./agent.js";
 import { runEventHooks } from "./tools/dynamicHooks.js";
+import { runDetachedToolPreflight } from "./assistant/assistantToolPreflight.js";
 import { workspaceMode } from "./ssh/workspaceMode.js";
 import { workspaceChainManager } from "./workspace/WorkspaceChainManager.js";
 
@@ -1426,6 +1427,16 @@ export async function executeToolCall(
   }
 
   try {
+    // Detached tasks must durably journal a pre-execution receipt before any
+    // tool or pre-tool hook can perform work. No callback = generic agent.
+    await runDetachedToolPreflight(currentAgent, {
+      id: toolCall.id, name: toolCall.name,
+    });
+    if (signal?.aborted) {
+      const err = Error("AbortError");
+      err.name = "AbortError";
+      throw err;
+    }
     await runEventHooks("pre_tool", { toolName: toolCall.name, args: toolCall.args, cwd });
     const result = await tool.execute(toolCall.args, cwd, signal);
     await runEventHooks("post_tool", { toolName: toolCall.name, args: toolCall.args, result, cwd });

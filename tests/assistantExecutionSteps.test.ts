@@ -25,13 +25,40 @@ describe("detached assistant execution step evidence",()=>{
     expect(end.outcome).toBe("completed");
     const again=await readExecutionCheckpoint(task,root);
     expect(again.incomplete).toBe(0);
-    expect(again.manualReviewRequired).toBe(false);
+    expect(again.manualReviewRequired).toBe(true);
+    expect(again.unpreparedCount).toBe(1); // Phase 2A had no preflight proof.
     expect(again.executionResumptionSupported).toBe(false);
     const folder=path.join(root,"assistant-execution-steps");
     const content=await readFile(path.join(folder,(await readdir(folder))[0]),"utf8");
     expect(content).not.toContain("PRIVATE_PROVIDER_CAPABILITY_A");
     expect(content).not.toContain("Research private material");
     expect(JSON.parse(content).events).toHaveLength(2);
+  }));
+  it("durably records preparation between tool request and tool completion",async()=>fixture(async(root,task)=>{
+    const started=await recordExecutionStep(task,{callId:"preflight_receipt",tool:"read",phase:"started"},root);
+    const prepared=await recordExecutionStep(task,{callId:"preflight_receipt",tool:"read",phase:"prepared"},root);
+    expect(prepared.seq).toBe(started.seq+1);
+    expect(prepared.callRef).toBe(started.callRef);
+    const simulatedCrash=await readExecutionCheckpoint(task,root);
+    expect(simulatedCrash.preparedCount).toBe(1);
+    expect(simulatedCrash.incomplete).toBe(1);
+    expect(simulatedCrash.manualReviewRequired).toBe(true);
+    await expect(recordExecutionStep(task,{callId:"preflight_receipt",tool:"read",phase:"prepared"},root))
+      .rejects.toThrow("Pre-execution checkpoint");
+    await recordExecutionStep(task,{callId:"preflight_receipt",tool:"read",phase:"finished"},root);
+    const settled=await readExecutionCheckpoint(task,root);
+    expect(settled.incomplete).toBe(0);
+    expect(settled.preparedCount).toBe(1);
+    expect(settled.manualReviewRequired).toBe(false);
+    expect(settled.steps.map(x=>x.phase)).toEqual(["started","prepared","finished"]);
+  }));
+  it("refuses a preflight for an unexpected tool, or one without a start event",async()=>fixture(async(root,task)=>{
+    await expect(recordExecutionStep(task,{callId:"missing",tool:"read",phase:"prepared"},root))
+      .rejects.toThrow("Pre-execution");
+    await recordExecutionStep(task,{callId:"tool_forged",tool:"shell_exec",phase:"started"},root);
+    await expect(recordExecutionStep(task,{callId:"tool_forged",tool:"shell_exec",phase:"prepared"},root))
+      .rejects.toThrow("Pre-execution");
+    expect((await readExecutionCheckpoint(task,root)).manualReviewRequired).toBe(true);
   }));
   it("fails closed for an incomplete started step after a simulated restart",async()=>fixture(async(root,task)=>{
     await recordExecutionStep(task,{callId:"unsettled",tool:"read",phase:"started"},root);

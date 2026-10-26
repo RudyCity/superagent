@@ -10,6 +10,7 @@ import { AssistantTaskDispatcher } from "./assistantTaskDispatcher.js";
 import { getRootConfigDir } from "../config/paths.js";
 import { getAssistantTaskDomain, taskDomainPrompt } from "./assistantTaskDomains.js";
 import { recordExecutionStep } from "./assistantExecutionSteps.js";
+import { setDetachedToolPreflight } from "./assistantToolPreflight.js";
 
 export type DetachedTaskWorker = (task: AssistantTaskRecord, workspace: string,
   signal: AbortSignal) => Promise<string[]>;
@@ -123,6 +124,16 @@ export async function generateDetachedReadOnlyText(
   agent.restrictHeadlessTools = true;
   agent.headlessAllowedTools = allowed;
   agent.sessionId = "sess_detached_" + task.taskId.replace(/-/g, "");
+  // Executed by the *tool execution boundary* before pre_tool hooks and
+  // tool.execute. A failed durable prepare blocks the action entirely.
+  const clearPreflight = setDetachedToolPreflight(agent, async call => {
+    await recordQueue;
+    if (recordingFailure) throw Error("Tool observation failed before preflight");
+    if (signal.aborted) throw Error("Task cancelled before tool execution");
+    await recordExecutionStep(task, {
+      callId: call.id, tool: call.name, phase: "prepared",
+    });
+  });
   const abort = () => agent.abort();
   stopOnRecordingFailure = abort;
   signal.addEventListener("abort", abort, { once: true });
@@ -137,6 +148,7 @@ export async function generateDetachedReadOnlyText(
     }
     return output.trim().slice(0, 32_768);
   } finally {
+    clearPreflight();
     clearTimeout(timeout);
     signal.removeEventListener("abort", abort);
     agent.dispose();

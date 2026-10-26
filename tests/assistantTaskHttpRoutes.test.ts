@@ -170,8 +170,14 @@ describe("session-scoped assistant metadata routes", () => {
       expect((await call("POST", sessionId, operation, {
         expectedRevision:failed.revision, idempotencyKey: "bad/path",
       })).status).toBe(400);
+      const unreviewed = await call("POST", sessionId, operation, {
+        expectedRevision:failed.revision, idempotencyKey:"retry_once",
+      });
+      expect(unreviewed.status).toBe(409);
+      expect(unreviewed.body.reviewRequired).toBe(true);
       const retry = await call("POST", sessionId, operation, {
         expectedRevision:failed.revision, idempotencyKey:"retry_once",
+        acknowledgeUnverifiedEffects:true,expectedEvidenceSeq:0,
       });
       expect(retry.status).toBe(200);
       expect(retry.body.executed).toBe(false);
@@ -179,6 +185,7 @@ describe("session-scoped assistant metadata routes", () => {
       expect(retry.body.task.status).toBe("queued");
       const again = await call("POST", sessionId, operation, {
         expectedRevision:failed.revision,idempotencyKey:"retry_once",
+        acknowledgeUnverifiedEffects:true,expectedEvidenceSeq:0,
       });
       expect(again.body.task.taskId).toBe(retry.body.task.taskId);
       expect((await call("POST", "session_other", operation, {
