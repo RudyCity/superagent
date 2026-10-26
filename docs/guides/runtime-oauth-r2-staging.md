@@ -69,3 +69,14 @@ Verification: bun --bun x vitest run tests/mcpOAuthStageBackupR2.test.ts
 The suite exercises a full OAuth refresh-token restoration, DPAPI on
 Windows, live-loopback exclusion, corrupt backup, existing target,
 wrong issuer, writer lock and out-of-scope directories.
+
+
+### 2026-10-26 private staging repeat (new client)
+
+Re-ran the independent OAuth + ingress HTTP scenario after the Core/MCP
+isolation tests: 20/20 checks passed. The script now guards actual
+current legacy MCP port 6759 as well as 6789, 7888 and 9877;
+absent ports must remain absent through the stage. Isolated stage
+port 64261 was released after verification. Public TLS, dedicated
+service-account ACL, hardened transactional state and actual
+external consumer authorization are still release blockers.

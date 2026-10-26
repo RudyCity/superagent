@@ -21,7 +21,7 @@ async function unused(){
  });
 }
 let port=await unused();
-while([6789,7888,7892,9877].includes(port))port=await unused();
+while([6759,6789,7888,7892,9877].includes(port))port=await unused();
 const issuer="http://127.0.0.1:"+port;
 const env={...process.env,SUPERAGENT_CONFIG_DIR:dir,
   SUPERAGENT_CORE_STAGING:"1",SUPERAGENT_SENOPATI_AUTOSTART:"0",
@@ -63,7 +63,7 @@ async function launch(){
 }
 async function launchIngress(){
   ingressPort=await unused();
-  while(ingressPort===port||[6789,7888,7892,9877].includes(ingressPort))
+  while(ingressPort===port||[6759,6789,7888,7892,9877].includes(ingressPort))
     ingressPort=await unused();
   ingress=spawn(process.execPath,[cli,"mcp","ingress-stage",
     "--listen-port",String(ingressPort),
@@ -108,7 +108,9 @@ async function stop(){
    throw Error("Test process did not exit; no unrelated process killed");
 }
 const old=readListenerOwners();
-const owners=[6789,7888,9877].map(p=>[p,old?.get(p)] as const);
+// Capture the current 6759 OAuth listener too; a stale historical 6789
+// record is not authority to adopt a port or copy any old credential.
+const owners=[6759,6789,7888,9877].map(p=>[p,old?.get(p)??null] as const);
 try {
   await launch();
   check("isolated_new_oauth_pid",current?.pid && readListenerOwners()?.get(port)===current.pid);
@@ -196,7 +198,9 @@ try {
   check("registration_survives_restart_but_redirect_immutable",bad.status===400);
   check("no_legacy_oauth_files_imported",!fs.readdirSync(dir).some(x=>x==="mcp-6789.json"||x==="mcp-9877.json"));
   const after=readListenerOwners();
-  check("all_production_listener_pids_unchanged",owners.every(([p,pid])=>pid===undefined||after?.get(p)===pid));
+  check("all_production_listener_pids_unchanged",
+    old!==null&&after!==null &&
+    owners.every(([p,pid])=>(after.get(p)??null)===pid));
   console.log(JSON.stringify({ok:true,phase:"R2_independent_oauth_staging",
     checks,verifiedChecks:checks.length,port,oauthTokenImported:false,
     productionCutover:false,publicIngress:false},null,2));

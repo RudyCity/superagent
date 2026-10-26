@@ -212,6 +212,19 @@ bun scripts/verify-independent-oauth-stage.ts
 bun --bun x vitest run tests/mcpOAuthStageBackupR2.test.ts tests/mcpPublicIssuerParityR3.test.ts tests/mcpIngressStageR3.test.ts
 ```
 
+**P1-B isolated acceptance update (2026-10-26):** 20/20 live HTTP
+staging checks passed against a newly registered loopback-only OAuth
+client. This includes S256 PKCE, explicit owner consent, bad verifier
+rejection, DPAPI CurrentUser staging key, a distinct ingress PID,
+private owner endpoint rejection, issuer restart with durable refresh,
+rotated-token replay rejection and MCP initialization after restart.
+The current live legacy OAuth listener at port 6759 is additionally
+protected by kernel PID baseline checks. These tests establish a
+reproducible **partial P1-B.2/P1-B.5 staging slice**, not completion:
+public HTTPS, production ACL and transactional storage, tool invocation,
+revocation/reauthorization and real external client remain open.
+Issuer stage port 64261 was verified released after testing.
+
 **G1B exit:** external test client authenticates with an independent
 public HTTPS issuer and a scoped MCP session; refresh/revoke/restart and
 public metadata parity verified. Retain real TLS/OS secret evidence.

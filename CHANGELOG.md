@@ -1,3 +1,7 @@
+## [1.14.39] - 2026-10-26
+### Tests
+- Strengthened the independent OAuth/ingress staging verifier to preserve all observed legacy Core/MCP listener ownership, including current MCP OAuth port 6759 and the absent/stale 6789 listener. Verified 20/20 live OAuth HTTP checks and private stage port cleanup; updated P1-B evidence without claiming public HTTPS certification or client cutover.
+
 ## [1.14.38] - 2026-10-26
 ### Added
 - P1-A isolated Core/MCP owner evidence: extended the existing split-owner live acceptance to authentically restart only the test-owned Core worker, confirm the supervisor and MCP listener PIDs remain stable, verify MCP bearer authorization still works and fail if any legacy Core/MCP listener changes. The owner-lifecycle test now also protects the observed legacy MCP port 6759.

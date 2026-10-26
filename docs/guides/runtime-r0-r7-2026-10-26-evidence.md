@@ -150,3 +150,23 @@ Final local regression after source and documentation changes:
 SuperAgent 1.14.38 built successfully; 20 R1–R7 test files,
 136/136 tests passed. This is not remote CI, an installed desktop
 certification or an authorization to change legacy endpoints.
+
+
+## New issuer and independent ingress P1-B staging continuation
+
+On 2026-10-26 `bun scripts/verify-independent-oauth-stage.ts`
+passed all 20 real HTTP staging checks using a new test client and
+isolated DPAPI CurrentUser issuer state. It verified client
+registration, S256 PKCE/consent/token exchange, independent ingress
+owner PID, private owner control excluded from ingress, issuer
+restart, refresh persistence, rotated refresh replay rejection,
+immutable redirect and MCP initialize with the restarted issuer.
+The new canary port 64261 was verified released after the test.
+
+The verifier now explicitly protects all observed legacy listener
+ports (6759, 6789, 7888, 9877), including a missing/stale 6789
+listener: the before/after kernel listener map must be identical.
+No OAuth credential was imported, no public TLS ingress or tunnel
+was created, and no existing client was reauthorized or migrated.
+G1B remains BLOCKED pending real HTTPS, hardened credentials,
+permissioned external client E2E and rollback.
