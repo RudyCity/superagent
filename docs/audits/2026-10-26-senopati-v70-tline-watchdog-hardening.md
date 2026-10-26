@@ -33,3 +33,11 @@ No external alerts or provider access. No implicit chat replay, tool authorizati
 - Exponential backoff and owner-stall handling have unit/code verification but a real hung ONNX native model cannot be safely injected on a running shared production-model process.
 - No Windows OS reboot, multi-hour soak, independently adjudicated natural safety-gold review, or complete production SLO certification was performed.
 - Reconnect health probes remain GET-only; no implicit resume/POST or ambiguous turn replay.
+
+## Local non-disruptive activation evidence (26 October 2026)
+
+- The pre-update watchdog PID 22204 was stopped using its own owner-controlled model-safe stop command. It confirmed the shared model remained running. Its successor watchdog PID **30908** started with a fresh heartbeat.
+- The shared model remained PID **10988** throughout the watchdog handover, `int8_embedding`, native Rust tokenizer. The 8-request/2-concurrent synthetic burst passed **8/8** (P95 approximately 143 ms).
+- A subsequent non-destructive 12-sample/11.037-second soak passed **12/12** owner/health checks and **4/4** synthetic retrieve inferences. RSS observed 579–580 MiB, end-to-start delta 0 MiB.
+- A fresh `senopati doctor` reported healthy and matching watchdog/model owners. The existing CLI PID 13424, port 7888, and OAuth MCP listener port 6789 remained online. External services were not restarted.
+- **Rollout limit:** Port 7891 had no T-Line transport listener at inspection time. The currently running global SuperAgent core is an installed `dist/cli.js` build and was not restarted/rebuilt. The new `GET /api/status` inference field is committed to source and tested, but **not yet verified on the live installed core or packaged T-Line GUI**.
