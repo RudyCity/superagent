@@ -104,6 +104,8 @@ Each owner has independent private config, process identity, discovery, health, 
 **Implementation status, 2026-10-26:** R1.1–R1.5 are implemented and locally validated for the **Windows isolated static-bearer staging MCP owner**, including owner host facade, nonce + kernel listener PID + process-birth attestation, hard safe-only dispatch and workspace boundary, authenticated health, drain and graceful stop. Production OAuth and external ingress remain separate R2/R3 tasks; no R7 cutover authorization is implied. Runbook: docs/guides/runtime-owner-r1-private-health-drain.md.
 
 ### R2 / P0 — Independently deployable OAuth issuer & credential lifecycle
+
+**Implementation update, 2026-10-26:** An independent opt-in NEW OAuth issuer for isolated loopback staging, with a pluggable OAuth state contract, hash-only/HMAC-protected persisted state, client registration, PKCE S256, refreshed tokens and revocation surviving a simulated process restart, is implemented and validated. It is not certified for production secret storage, transactional durability or public TLS; client migration remains forbidden. Guide: docs/guides/runtime-oauth-r2-staging.md.
 **Owners:** Security + MCP.
 - R2.1 Extract OAuthStore interface from current in-memory implementation; keep it as reference and implement a pluggable local durable provider only for new credentials if ADR authorizes it.
 - R2.2 Define issuer/resource identity and TLS/host/redirect/PKCE contract; register clients intentionally. Validate OAuth metadata, challenge, scope boundaries, refresh-token rotation atomicity and replay revocation across process restarts.
@@ -115,6 +117,8 @@ Each owner has independent private config, process identity, discovery, health, 
 **DoD:** New issuer metadata and resource consistent, PKCE negative tests pass, old credential refresh fails when revoked, newly issued authorization records behave correctly after a controlled issuer restart according to chosen storage ADR; no legacy token import.
 
 ### R3 / P0 — Separate tunnel/ingress owner from MCP HTTP and Core
+
+**Implementation update, 2026-10-26:** Separate loopback ingress process with exact kernel PID attachment and route restrictions is running in Windows staging; an ingress restart does not terminate the OAuth owner. The public provider/TLS tunneling contract and live issuer parity are still OPEN, so no public cutover may occur.
 **Owners:** Transport.
 - R3.1 Introduce a tunnel/ingress attachment contract targeting a verified private MCP owner, never a path or localhost port alone.
 - R3.2 Separate existing provider subprocess management from in-process activeServers map in mcpTunnel.ts; retain provider-specific authentication, lifecycle evidence and rollback. No implicit tunnel ownership based on JSON PID.
@@ -126,6 +130,8 @@ Each owner has independent private config, process identity, discovery, health, 
 **DoD:** Restarting a *test-owned Core* doesn't change independent MCP owner PID, HTTP auth, tunnel target or client session. Killing/disrupting a test-owned ingress does not corrupt OAuth state; no production tunnel switched.
 
 ### R4 / P0 — Core + T-Line supervised routing contract
+
+**Implementation update, 2026-10-26:** T-Line backend has explicit supervised-external opt-in, kernel TCP PID vs private Core supervisor owner verification, and a guard against falling back to spawning legacy 7888. Backend and frontend builds/tests passed. Installed native T-Line E2E remains OPEN.
 **Owners:** Runtime + Desktop.
 - R4.1 T-Line must choose Core endpoint from a verified capability/identity manifest and retain per-workspace/session binding. It cannot auto-spawn on an unknown or external-managed port.
 - R4.2 Refactor remaining legacy eager-autostart paths: default 7888 backward compatible until operator opt-in; supervised mode uses explicitly selected verified port and does not takeover old process.
@@ -137,6 +143,8 @@ Each owner has independent private config, process identity, discovery, health, 
 **DoD:** Multiple workspace sessions and approvals survive Core worker rolling restart where supported; no wrong-session routing, prompt duplication, or MCP PID changes. Unsupervised legacy API never killed.
 
 ### R5 / P1 — Windows lifecycle and crash/reboot recovery
+
+**Implementation update, 2026-10-26:** Added fail-closed multi-owner reboot preflight; existing Core Windows per-user task provisioning was validated in PREVIEW mode only. Hardware reboot, task installation and production session recovery remain OPEN and require a dedicated staging machine / operator approval.
 **Owners:** Runtime + release.
 - R5.1 Plan a single opt-in Windows launcher/service arrangement per owner (Core supervisor, MCP owner, tunnel ingress, T-Line front door); no implicit machine-wide service installation.
 - R5.2 Model dependency startup independently: Core can restart while MCP stays connected; MCP OAuth failure does not reset Core; tunnel reconnect does not invent a new issuer identity.
@@ -148,6 +156,8 @@ Each owner has independent private config, process identity, discovery, health, 
 **DoD:** Safe reboot staging drill, correct non-adoption of stale PIDs, no cross-service kill, no secrets in logs, no unverified task replay.
 
 ### R6 / P1 — Security, chaos and desktop release gates
+
+**Implementation update, 2026-10-26:** Extended Windows staging canary covers real new-issuer PKCE, refresh/replay/restart, two independently owned ingress+OAuth processes, owner PID and production listener preservation. Added CI workflow coverage. Real remote CI run, threat-model remediation, installed desktop and long soak remain OPEN.
 **Owners:** QA + Security.
 - R6.1 Threat-model OAuth PKCE/DCR/redirect/issuer/resource attacks, scope escalation through gateway, replay after refresh rotation, corrupted storage and local unauthorized process control.
 - R6.2 Automatic tests in isolated profiles: token issuance/revocation, bad redirects, wrong resource, split-owner crash, client disconnect, concurrency, T-Line WS/SSE rejoin, rollbacks and failure-injection.
@@ -158,6 +168,8 @@ Each owner has independent private config, process identity, discovery, health, 
 **DoD:** No P0 open, no client unexpectedly routed to foreign workspace, negative auth tests green, last known good binaries/leases restorable. Label unsupported scenarios rather than claiming “zero downtime”.
 
 ### R7 / P2, explicitly manual — Staged client migration and optional Core cutover
+
+**Implementation update, 2026-10-26:** Added read-only SuperAgent Core rollout audit command for port 7888 reporting exact live blockers with no process or token mutation. Live output remains BLOCKED by shared Core 7888/MCP 6789 PID plus unverified production OAuth/client sessions, keystore/TLS, drain, rollback, desktop and soak. No production client reauthorization or cutover was performed. Guide: docs/guides/runtime-r3-r7-release-gates.md.
 **Owners:** Human operator + release.
 - R7.1 Deploy new OAuth issuer/ingress in parallel on a *new* endpoint, reauthorize canary clients and inspect external tool/approval outcomes.
 - R7.2 Drain legacy MCP sessions; verify live clients, connection and outbound operation counts reach zero (or operator accepts a documented maintenance interruption).

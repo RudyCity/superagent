@@ -104,6 +104,27 @@ export type ExchangeParams = {
   resource?: string;
 };
 
+/** Persisted new-issuer state contains hashes only, never raw bearer values. */
+export interface OAuthStateSnapshot {
+  schemaVersion:1;issuer:string;savedAt:number;
+  clients:RegisteredClient[];
+  requests:PendingAuthorizationRequest[];
+  codes:AuthorizationCodeRecord[];
+  access:TokenRecord[];
+  refresh:TokenRecord[];
+}
+export interface McpOAuthStoreContract {
+  registerClient: McpOAuthStore["registerClient"];
+  getClient: McpOAuthStore["getClient"];
+  createAuthorizationRequest: McpOAuthStore["createAuthorizationRequest"];
+  getAuthorizationRequest: McpOAuthStore["getAuthorizationRequest"];
+  approveAuthorizationRequest: McpOAuthStore["approveAuthorizationRequest"];
+  exchangeCode: McpOAuthStore["exchangeCode"];
+  verifyAccessToken: McpOAuthStore["verifyAccessToken"];
+  rotateRefreshToken: McpOAuthStore["rotateRefreshToken"];
+  revokeToken: McpOAuthStore["revokeToken"];
+  cleanupExpired: McpOAuthStore["cleanupExpired"];
+}
 export class McpOAuthStore {
   private authRequests = new Map<string, PendingAuthorizationRequest>();
   private codes = new Map<string, AuthorizationCodeRecord>();
@@ -370,6 +391,62 @@ export class McpOAuthStore {
       if (now > r.expiresAt) { this.refreshTokens.delete(k); removed++; }
     }
     return removed;
+  }
+
+  /** State persistence is explicitly opt-in for a NEW isolated issuer only.
+   * Token and code values remain hashed; pending request IDs are internal.
+   */
+  exportSnapshot(issuer:string):OAuthStateSnapshot {
+    if(!issuer)throw new Error("Issuer identity required");
+    return {schemaVersion:1,issuer,savedAt:Date.now(),
+      clients:[...this.clients.values()].map(x=>({...x})),
+      requests:[...this.authRequests.values()].map(x=>({...x})),
+      codes:[...this.codes.values()].map(x=>({...x})),
+      access:[...this.accessTokens.values()].map(x=>({...x})),
+      refresh:[...this.refreshTokens.values()].map(x=>({...x}))};
+  }
+  restoreSnapshot(snapshot:OAuthStateSnapshot,issuer:string):void {
+    if(snapshot.schemaVersion!==1||snapshot.issuer!==issuer||
+      !Number.isSafeInteger(snapshot.savedAt)||
+      !Array.isArray(snapshot.clients)||!Array.isArray(snapshot.requests)||
+      !Array.isArray(snapshot.codes)||!Array.isArray(snapshot.access)||
+      !Array.isArray(snapshot.refresh)||snapshot.clients.length>10000||
+      snapshot.requests.length>10000||snapshot.codes.length>10000||
+      snapshot.access.length>50000||snapshot.refresh.length>50000)
+      throw new Error("Corrupt or foreign OAuth issuer state");
+    const unique=<T>(rows:T[],key:(row:T)=>string,valid:(row:T)=>boolean)=>{
+      const result=new Map<string,T>();
+      for(const row of rows){
+        if(!row||!valid(row))throw new Error("Invalid persisted OAuth record");
+        const id=key(row);
+        if(result.has(id))throw new Error("Duplicate persisted OAuth record");
+        result.set(id,row);
+      }
+      return result;
+    };
+    const validToken=(t:TokenRecord)=>typeof t.tokenHash==="string"&&
+      /^[a-f0-9]{64}$/.test(t.tokenHash)&&typeof t.clientId==="string"&&
+      Array.isArray(t.scope)&&Number.isSafeInteger(t.expiresAt)&&
+      Number.isSafeInteger(t.createdAt)&&typeof t.revoked==="boolean";
+    const clients=unique(snapshot.clients,x=>x.clientId,
+      x=>typeof x.clientId==="string"&&x.clientId.length>0&&
+      Array.isArray(x.redirectUris)&&x.redirectUris.length>0&&
+      x.redirectUris.every(u=>typeof u==="string"));
+    const requests=unique(snapshot.requests,x=>x.requestId,
+      x=>typeof x.requestId==="string"&&x.requestId.length>=12&&
+      clients.has(x.clientId)&&typeof x.redirectUri==="string"&&
+      Number.isSafeInteger(x.expiresAt)&&Array.isArray(x.scope));
+    const codes=unique(snapshot.codes,x=>x.codeHash,
+      x=>/^[a-f0-9]{64}$/.test(x.codeHash)&&clients.has(x.clientId)&&
+      typeof x.redirectUri==="string"&&Number.isSafeInteger(x.expiresAt)&&
+      typeof x.used==="boolean"&&Array.isArray(x.scope));
+    const access=unique(snapshot.access,x=>x.tokenHash,
+      x=>validToken(x)&&clients.has(x.clientId));
+    const refresh=unique(snapshot.refresh,x=>x.tokenHash,
+      x=>validToken(x)&&clients.has(x.clientId));
+    // All input validated before touching in-memory live maps.
+    this.clients=clients;this.authRequests=requests;this.codes=codes;
+    this.accessTokens=access;this.refreshTokens=refresh;
   }
 
   /** Test hook: clear all state. */

@@ -19,6 +19,13 @@ on:
       - "src/core/mcp/mcpToolPolicy.ts"
       - "src/core/mcp/superagentMcpServer.ts"
       - "src/core/mcp/mcpHttpTransport.ts"
+      - "src/core/mcp/mcpOAuthStore.ts"
+      - "src/core/mcp/mcpDurableOAuthStore.ts"
+      - "src/core/runtime/mcpOAuthStage.ts"
+      - "src/core/runtime/mcpIngressStage.ts"
+      - "src/core/runtime/mcpIngressCli.ts"
+      - "src/core/runtime/runtimeColdRecoveryR5.ts"
+      - "src/core/runtime/runtimeReleaseGateR7.ts"
       - "src/core/runtime/mcpOwnerStagingLease.ts"
       - "src/core/runtime/mcpOwnerLifecycle.ts"
       - "src/core/runtime/mcpOAuthMigrationPolicy.ts"
@@ -44,6 +51,7 @@ on:
       - "scripts/verify-core-approved-canary.ts"
       - "scripts/verify-core-mcp-owner-split.ts"
       - "scripts/verify-managed-mcp-lifecycle.ts"
+      - "scripts/verify-independent-oauth-stage.ts"
       - "scripts/verify-core-session-resume.ts"
       - "scripts/setup-core-windows-startup.ts"
       - "tests/coreGuardian.test.ts"
@@ -54,6 +62,9 @@ on:
       - "tests/mcpOwnerControlR1.test.ts"
       - "tests/mcpProcessBirthR1.test.ts"
       - "tests/mcpSafeOwnerR1.test.ts"
+      - "tests/mcpDurableOAuthR2.test.ts"
+      - "tests/mcpIngressStageR3.test.ts"
+      - "tests/runtimeReleaseGateR5R7.test.ts"
       - "tests/mcpOwnerLifecyclePhase5n.test.ts"
       - "tests/corePhase5d.test.ts"
       - "tests/corePhase5e.test.ts"
@@ -71,6 +82,8 @@ on:
       - "docs/guides/core-mcp-phase5n-managed-owner.md"
       - "docs/guides/runtime-ownership-r0-contract.md"
       - "docs/guides/runtime-owner-r1-private-health-drain.md"
+      - "docs/guides/runtime-oauth-r2-staging.md"
+      - "docs/guides/runtime-r3-r7-release-gates.md"
   pull_request:
     paths:
       - ".github/workflows/core-guardian.yml"
@@ -137,6 +150,8 @@ on:
       - "docs/guides/core-mcp-phase5n-managed-owner.md"
       - "docs/guides/runtime-ownership-r0-contract.md"
       - "docs/guides/runtime-owner-r1-private-health-drain.md"
+      - "docs/guides/runtime-oauth-r2-staging.md"
+      - "docs/guides/runtime-r3-r7-release-gates.md"
   workflow_dispatch:
 jobs:
   core-guardian:
@@ -159,7 +174,7 @@ jobs:
       - name: Build TypeScript
         run: bun run build
       - name: Unit/Core/transport regression
-        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreRecoveryPhase5gToJ.test.ts tests/coreRecoveryCasebookObserver.test.ts tests/coreMcpOwnershipAudit.test.ts tests/runtimeOwnershipContract.test.ts tests/mcpOwnerControlR1.test.ts tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts tests/mcpOwnerLifecyclePhase5n.test.ts tests/corePhase5d.test.ts tests/corePhase5e.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 tests/coreGuardian.test.ts tests/coreRecoveryPhase5gToJ.test.ts tests/coreRecoveryCasebookObserver.test.ts tests/coreMcpOwnershipAudit.test.ts tests/runtimeOwnershipContract.test.ts tests/mcpOwnerControlR1.test.ts tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts tests/mcpDurableOAuthR2.test.ts tests/mcpIngressStageR3.test.ts tests/runtimeReleaseGateR5R7.test.ts tests/mcpOwnerLifecyclePhase5n.test.ts tests/corePhase5d.test.ts tests/corePhase5e.test.ts tests/coreAgentSessionCheckpoint.test.ts tests/coreBoot.test.ts tests/coreSupervisor.test.ts tests/coreSupervisorCheckpoint.test.ts tests/coreSessionRouting.test.ts tests/coreGenerationPolicy.test.ts tests/coreDrainInspection.test.ts tests/transportHost.test.ts
       - name: Preview Windows login startup without installing scheduled tasks
         if: runner.os == 'Windows'
         run: bun scripts/setup-core-windows-startup.ts --port 7888
@@ -179,3 +194,8 @@ jobs:
       - name: Managed independent MCP owner lifecycle with private stop handshake
         if: runner.os == 'Windows'
         run: bun scripts/verify-managed-mcp-lifecycle.ts
+      - name: Independent OAuth issuer and ingress, negative PKCE, restart and no-cutover
+        if: runner.os == 'Windows'
+        run: bun scripts/verify-independent-oauth-stage.ts
+      - name: Read-only release blocker report
+        run: bun dist/cli.js core rollout-audit --port 7888

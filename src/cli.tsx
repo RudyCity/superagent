@@ -176,6 +176,27 @@ For full login help:
 
 if (process.argv[2] === "mcp") {
   const sub = process.argv[3]?.toLowerCase();
+  if (sub === "ingress-stage") {
+    try {
+      const { runMcpIngressStage } = await import("./core/runtime/mcpIngressCli.js");
+      await runMcpIngressStage(process.argv.slice(4));
+      await new Promise(() => {});
+    } catch (error) {
+      console.error("[MCP ingress stage] "+String(error));
+      process.exit(1);
+    }
+  }
+  if (sub === "oauth-stage") {
+    try {
+      const { runIndependentOAuthStage } = await import("./core/runtime/mcpOAuthStage.js");
+      await runIndependentOAuthStage(process.argv.slice(4));
+      await new Promise(() => {});
+    } catch (error) {
+      console.error("[MCP OAuth stage] " + String(error));
+      process.exit(1);
+    }
+    // The explicitly staged OAuth server lives until its owner closes it.
+  }
   if (sub === "lifecycle") {
     try {
       const { handleMcpOwnerLifecycle } = await import("./core/runtime/mcpOwnerLifecycle.js");

@@ -17,14 +17,14 @@
  */
 
 import type http from "node:http";
-import { McpOAuthStore, randomToken } from "./mcpOAuthStore.js";
+import { randomToken, type McpOAuthStoreContract } from "./mcpOAuthStore.js";
 import { sha256Hex, constantTimeEqual } from "./mcpAuth.js";
 import { recordMcpOAuthAudit, type McpOAuthAuditStage } from "./mcpOAuthAudit.js";
 
 export const OAUTH_SCOPES = ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"];
 
 export interface McpOAuthRoutesConfig {
-  store: McpOAuthStore;
+  store: McpOAuthStoreContract;
   /** Public base URL, e.g. https://xxx.trycloudflare.com (no trailing slash). */
   publicBaseUrl: string;
   /** SHA-256 hex of the one-time bootstrap approval code. */

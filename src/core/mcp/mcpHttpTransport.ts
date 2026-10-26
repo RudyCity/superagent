@@ -276,6 +276,8 @@ export interface McpOAuthServerConfig {
 
 export interface McpHttpServerOptions {
   port: number;
+  /** New independent issuer only; legacy production defaults to in-memory. */
+  oauthStore?: McpOAuthStore;
   /**
    * Static bearer token. Required in static-bearer mode (the default);
    * ignored in oauth mode.
@@ -332,13 +334,14 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     if (!opts.oauth?.publicBaseUrl || !opts.oauth?.bootstrapCodeHash) {
       throw new Error("OAuth mode requires opts.oauth.publicBaseUrl and opts.oauth.bootstrapCodeHash.");
     }
-    oauthStore = new McpOAuthStore();
+    oauthStore = opts.oauthStore ?? new McpOAuthStore();
     oauthRoutesConfig = {
       store: oauthStore,
       publicBaseUrl: opts.oauth.publicBaseUrl,
       bootstrapCodeHash: opts.oauth.bootstrapCodeHash,
     };
   } else {
+    if (opts.oauthStore) throw new Error("OAuth store supplied to non-OAuth listener");
     if (!opts.bearerToken || opts.bearerToken.length < 32) {
       throw new Error("MCP bearer token must be at least 32 characters (use generateMcpBearerToken()).");
     }
