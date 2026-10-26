@@ -1,5 +1,15 @@
 # Opt-in rolling restart for SuperAgent API Core (2026-10-25)
 
+## Phase 5g–5j — offline reconciliation, lifecycle/channel separation and bounded hardening
+
+Phase 5g adds a read-only command, superagent core reconcile --snapshot PATH, which verifies the existing private Phase 5e evidence manifest, SHA-256 hashes and SQLite integrity. It summarizes persisted session count and incomplete/unknown chat turns. The report always denies restart/tool replay and requires external side-effect reconciliation by a human; it never deletes a checkpoint or assumes a completed chat turn equals exactly-once external effects.
+
+Phase 5h adds superagent core lifecycle-plan and owner-scoped service failure policy. Core Guardian and supervisor require authenticated ownership and repeated unhealthy samples before guarded recovery is even suggested. T-Line front door/channel host have independent process owners. MCP, Muse and Telegram are explicitly out of Core restart scope. The Windows per-user login task remains preview/opt-in and was NOT installed.
+
+Phase 5i specifies per-channel recovery decisions for T-Line, web chat, MCP OAuth, Muse and Telegram. Missing verified credentials, unresolved tool results or lost original sessions deny automatic adoption. T-Line can request user-approved explicit session recovery only after server-side history checks; external channel sessions need their own authenticated continuity procedures. Live agent/subagent objects and OAuth connections are not migrated.
+
+Phase 5j adds a bounded multi-cycle staging harness under scripts/verify-core-recovery-5g-j.ts, policy fault-matrix tests and CI coverage. It composes local isolated Guardian/Core/T-Line crash fault injection with explicit no-replay session recovery. This is NOT a 24–72h production soak, native packaged Tauri E2E, or certified full OS reboot restoration. See [Phase 5g–5j safe recovery runbook](../guides/core-recovery-phase5g-to-5j.md).
+
 ## Phase 5e — offline recovery evidence snapshot and runnable T-Line session probes
 
 The Core now provides an offline-only private recovery snapshot command (superagent core evidence-snapshot --port 7888). This refuses an authenticated online owner or unexpected listener, and creates immutable evidence under the owner's recovery-evidence directory. It verifies SHA-256 hashes for checkpoint/discovery/guardian/receipt copies, snapshots SQLite history consistently through read-only VACUUM INTO, checks SQLite integrity and publishes a private manifest only when the copy is validated. Credentials, conversation content and metadata in the evidence directory are **sensitive** and must never be publicly shared. Existing checkpoints and live processes are not changed, and the snapshot never authorizes startup or tool replay.

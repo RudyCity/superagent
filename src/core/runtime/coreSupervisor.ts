@@ -792,6 +792,8 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core boot [--port 7888] [--client-mode tline|chrome-extension]  # safe logon/bootstrap, never resets dead worker state");
     console.log("superagent core boot-audit [--port 7888]  # read-only cold-reboot and unfinished chat-turn assessment");
     console.log("superagent core evidence-snapshot [--port 7888]  # offline private backup; does NOT restart or clear state");
+    console.log("superagent core reconcile --snapshot PATH  # offline read-only turn/receipt evidence; NEVER authorizes restart");
+    console.log("superagent core lifecycle-plan  # inspect service separation without installing OS tasks");
     console.log("superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID  # one-shot GET-only T-Line probe");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
     return;
@@ -820,6 +822,22 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
       sessionVerified: result.sessionVerified, issuedMethods: result.issuedMethods,
       automaticChatReplayAllowed: false,
     }, null, 2));
+    return;
+  }
+  if (action === "reconcile") {
+    const idx = argv.indexOf("--snapshot");
+    const folder = idx < 0 ? undefined : argv[idx + 1];
+    if (!folder) throw new Error("Usage: superagent core reconcile --snapshot PATH");
+    const { reconcileCoreRecoveryEvidence } = await import("./coreColdReconciliation.js");
+    const report = reconcileCoreRecoveryEvidence(folder);
+    if (report.port !== port && argv.includes("--port"))
+      throw new Error("Snapshot port differs from selected --port");
+    console.log(JSON.stringify(report, null, 2));
+    return;
+  }
+  if (action === "lifecycle-plan") {
+    const { buildCoreLifecyclePlan } = await import("./coreServiceLifecycle.js");
+    console.log(JSON.stringify(buildCoreLifecyclePlan(), null, 2));
     return;
   }
   if (action === "evidence-snapshot") {
@@ -888,6 +906,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, lifecycle-plan, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }
