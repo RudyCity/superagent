@@ -56,3 +56,14 @@ loopback target. OAuth bearer, MCP session and content headers remain intact.
 R3 negative tests and the 20-check independent OAuth/ingress process smoke pass.
 This change does not provision TLS, resolve public issuer parity, or permit
 production tunnel cutover.
+
+### R3 exact public issuer/resource metadata parity preflight
+
+A new read-only check in src/core/runtime/mcpPublicIssuerParityR3.ts
+compares observed OAuth discovery and protected-resource metadata to an
+explicit new public HTTPS issuer, including PKCE S256, resource audience,
+registration/authorize/token URLs and the protected MCP resource. Mismatch
+blocks a migration review. Even a parity success is only a metadata review
+candidate: it does not prove TLS ownership, real provider connectivity,
+live sessions, approved cutover, or allow endpoint mutation. Tests live at
+tests/mcpPublicIssuerParityR3.test.ts and run in the R6 CI matrix.
