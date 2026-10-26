@@ -77,7 +77,14 @@ let core:ChildProcess|undefined,mcp:ChildProcess|undefined;
 let corePort=0,mcpPort=0;
 let coreLog="",mcpLog="";
 const baseline=readListenerOwners();
-const oldMcpPid=baseline?.get(6789);
+const protectedPorts=[6759,6789,7888,9877] as const;
+const baselineProtected=protectedPorts.map(port=>({
+  port,pid:baseline?.get(port)??null,
+}));
+function protectedListenersUnchanged(owners:Map<number,number>|null|undefined){
+  return baseline!==null && owners!==null && owners!==undefined &&
+    baselineProtected.every(({port,pid})=>(owners.get(port)??null)===pid);
+}
 try{
   corePort=await port();mcpPort=await port();
   while(mcpPort===corePort)mcpPort=await port();
@@ -147,13 +154,58 @@ try{
     check("os_listener_mcp_owned_by_independent_pid",owners?.get(mcpPort)===mcp.pid);
   }
   check("core_mcp_independent_processes",core.pid!==mcp.pid);
+  // P1-A.4 real isolated failure test: restart ONLY our authenticated
+  // Core worker while keeping the independent MCP owner and its bearer
+  // unchanged. The supervisor remains the same OS process.
+  const originalCoreWorkerPid=coreOwner.active.pid;
+  const beforeRestartOwners=readListenerOwners();
+  check("restart_preflight_staging_owners_authenticated_and_os_matched",
+    beforeRestartOwners?.get(corePort)===core.pid &&
+    beforeRestartOwners?.get(mcpPort)===mcp.pid &&
+    corePort!==7888 && mcpPort!==6789 && mcpPort!==9877);
+  const discovery=JSON.parse(fs.readFileSync(
+    path.join(coreProfile,"core-supervisor-"+corePort+".json"),"utf8")) as {
+      publicPort:number;supervisorPid:number;controlPort:number;controlToken:string;
+    };
+  if(discovery.publicPort!==corePort || discovery.supervisorPid!==core.pid ||
+     !Number.isSafeInteger(discovery.controlPort) ||
+     !/^[a-f0-9]{64}$/.test(discovery.controlToken))
+    throw new Error("Test Core discovery identity is not authenticated");
+  const restartedResponse=await fetch(
+    "http://127.0.0.1:"+discovery.controlPort+"/restart",{
+      method:"POST",headers:{Authorization:"Bearer "+discovery.controlToken},
+      signal:AbortSignal.timeout(35000),
+    });
+  if(restartedResponse.status!==200)
+    throw new Error("Test-owned Core worker restart refused: "+restartedResponse.status);
+  const restarted=await restartedResponse.json() as {
+    supervisorPid:number;publicPort:number;active:{pid:number;port:number};
+  };
+  check("isolated_core_worker_rolling_restarted",
+    restarted.supervisorPid===core.pid && restarted.publicPort===corePort &&
+    restarted.active?.pid>0 && restarted.active.pid!==originalCoreWorkerPid);
+  const afterRestartOwners=readListenerOwners();
+  check("core_supervisor_pid_unchanged_after_worker_restart",
+    afterRestartOwners?.get(corePort)===core.pid);
+  check("independent_mcp_owner_pid_unchanged_after_core_restart",
+    afterRestartOwners?.get(mcpPort)===mcp.pid);
+  const mcpAfterRestart=await fetch("http://127.0.0.1:"+mcpPort+"/mcp",{
+    method:"GET",headers:{Authorization:"Bearer "+bearer},
+    signal:AbortSignal.timeout(1500),
+  });
+  check("independent_mcp_authentication_survives_core_restart",
+    mcpAfterRestart.status===400);
+  check("legacy_core_and_all_mcp_listeners_unchanged_after_core_restart",
+    protectedListenersUnchanged(readListenerOwners()));
   check("stage_mcp_has_no_public_tunnel_or_oauth_state",
     !fs.existsSync(path.join(mcpProfile,"mcp-"+mcpPort+".json")));
-  check("production_mcp_owner_untouched_before_cleanup",
-    oldMcpPid===undefined||owners?.get(6789)===oldMcpPid);
+  check("legacy_core_and_all_mcp_listeners_unchanged_before_cleanup",
+    protectedListenersUnchanged(readListenerOwners()));
   const report={phase:"core-mcp-independent-ownership",
     ok:true,verifiedChecks:checks.length,checks,corePort,mcpPort,
     corePid:core.pid,mcpPid:mcp.pid,workerPid:coreOwner.active.pid,
+    restartedWorkerPid:restarted.active.pid,
+    coreWorkerRestartInStaging:true,mcpOwnerUnchangedThroughRestart:true,
     publicTunnelCreated:false,oauthMigrated:false,toolsCalled:0,
     productionCutoverAuthorized:false,createdAt:Date.now()};
   fs.writeFileSync(path.join(root,"report.json"),JSON.stringify(report,null,2),{

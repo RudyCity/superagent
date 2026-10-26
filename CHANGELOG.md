@@ -1,3 +1,8 @@
+## [1.14.38] - 2026-10-26
+### Added
+- P1-A isolated Core/MCP owner evidence: extended the existing split-owner live acceptance to authentically restart only the test-owned Core worker, confirm the supervisor and MCP listener PIDs remain stable, verify MCP bearer authorization still works and fail if any legacy Core/MCP listener changes. The owner-lifecycle test now also protects the observed legacy MCP port 6759.
+- Recorded the new G0/P1-A baseline, 16/16 independent owner/restart checks, 17/17 managed MCP lifecycle checks and isolated listener release in the execution plan and evidence guide. Included stage scripts in the R6 CI path filter. No production cutover or automatic restart is authorized.
+
 ## [1.14.37] - 2026-10-26
 ### Documentation
 - Added the P1–P4 parallel runtime activation and end-to-end release execution plan (`docs/plans/2026-10-26-runtime-p1-p4-parallel-activation-e2e-release-execution-plan.md`) with 43 acceptance tasks, five delegated workstreams, G0–G4 release gates, new independent OAuth/ingress staging, installed desktop certification, Windows recovery, and reversible client-by-client migration.

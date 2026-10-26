@@ -18,6 +18,8 @@ on:
       - "tests/runtimeReadOnlySoakR6.test.ts"
       - "scripts/verify-runtime-security-release-r6.ts"
       - "scripts/verify-independent-oauth-stage.ts"
+      - "scripts/verify-core-mcp-owner-split.ts"
+      - "scripts/verify-managed-mcp-lifecycle.ts"
       - "scripts/observe-runtime-soak-r6.ts"
       - "scripts/setup-core-windows-startup.ts"
       - "docs/guides/runtime-r6-security-release-certification.md"
@@ -38,6 +40,8 @@ on:
       - "tests/runtimeReadOnlySoakR6.test.ts"
       - "scripts/verify-runtime-security-release-r6.ts"
       - "scripts/verify-independent-oauth-stage.ts"
+      - "scripts/verify-core-mcp-owner-split.ts"
+      - "scripts/verify-managed-mcp-lifecycle.ts"
       - "scripts/observe-runtime-soak-r6.ts"
       - "scripts/setup-core-windows-startup.ts"
   workflow_dispatch:

@@ -141,17 +141,17 @@ owner list recorded. Release state remains blocked.
 
 ### P1-A — Owner split and authenticated readiness
 
-- [ ] **P1-A.1** Run existing owner lifecycle and split tests. Reuse R1
+- [x] **P1-A.1** Run existing owner lifecycle and split tests. Reuse R1
   host/lifecycle, Core supervisor, OS kernel PID/process-birth proof and
   private authenticated owner health. Patch failures instead of creating
   competing supervisors.
-- [ ] **P1-A.2** Launch test-owned Core and MCP on distinct, nonlegacy
+- [x] **P1-A.2** Launch test-owned Core and MCP on distinct, nonlegacy
   ports, OS PIDs, process generations, private profiles, leases and
   credential domains. Prefer existing canary Core port 7892 only if
   authenticated test ownership is established again.
 - [ ] **P1-A.3** Verify authenticated capability/version handshake, safe
   tool exposure, permission gate at execution, and project isolation.
-- [ ] **P1-A.4** Restart only the test-owned Core worker; confirm MCP
+- [x] **P1-A.4** Restart only the test-owned Core worker; confirm MCP
   remains reachable with the SAME authenticated owner PID and credentials.
 - [ ] **P1-A.5** Restart only the test-owned MCP; confirm Core remains
   alive and clients must initialize fresh MCP sessions as appropriate.
@@ -165,6 +165,17 @@ bun scripts/verify-managed-mcp-lifecycle.ts
 bun scripts/verify-core-mcp-owner-split.ts
 bun --bun x vitest run tests/mcpSafeOwnerR1.test.ts tests/mcpProcessBirthR1.test.ts
 ```
+
+**P1-A staging evidence (2026-10-26):** P1-A.1, P1-A.2 and
+P1-A.4 passed as *short-lived isolated canaries only*: 16/16 split and
+worker restart checks, 17/17 managed MCP lifecycle checks, plus 26/26
+focused policy tests. Stage Core supervisor PID 47276, MCP owner PID
+49828, Core worker changed from PID 49612 to 39212 while the MCP
+owner PID/authentication stayed stable; test-only ports 62532/62533 were
+released after the run. No public ingress or client cutover occurred.
+More evidence: `docs/guides/runtime-p1a-stage-acceptance-2026-10-26.md`.
+Remaining for G1A: persistent operator-supervised private owner canary,
+formal capability handshake into T-Line and full P1-A.3/A.5/A.6 acceptance.
 
 **G1A exit:** verified distinct Core/MCP kernel PIDs, authenticated owner
 identities, independent failure/recovery, unchanged legacy listeners.

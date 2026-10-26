@@ -33,7 +33,7 @@ function exec(args:string[],timeout=18000){
   });
 }
 const baseline=readListenerOwners();
-const savedProd=[6789,7888,9877].map(p=>[p,baseline?.get(p)] as const);
+const savedProd=[6759,6789,7888,9877].map(p=>[p,baseline?.get(p)] as const);
 let port=await unused();
 while([6789,7888,7892,9877].includes(port)||
       fs.existsSync(path.join(root,"managed-mcp-owner-"+port))) port=await unused();

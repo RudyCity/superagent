@@ -111,3 +111,42 @@ without creating any launcher or Scheduled Task. An actual --apply attempt
 for legacy 7888 with no staging profile was refused before any OS mutation.
 These results do not replace Windows reboot verification or the final
 production installation certificate.
+
+
+## G0 -> P1-A independent restart proof (later 2026-10-26 snapshot)
+
+The read-only inventory no longer matched the previous shared-PID
+snapshot: Core 7888 was an unauthenticated PID 38608, MCP OAuth 6759
+was PID 45176, MCP OAuth 9877 was PID 10060, and 6789 had a stale
+state record without a TCP listener. This is a temporal observation,
+NOT proof that either old owner is safe to stop or transfer. The global
+R6/R7 gate still reports BLOCKED; no authenticated production Core
+supervisor, external OAuth session drain or public ingress certificate
+was obtained.
+
+SuperAgent 1.14.37 local Windows build passed. Repeated isolated
+Core/MCP acceptance at test-owned Core 62532 and MCP 62533 verified
+16/16 checks: separate PID 47276/49828, authenticated private Core
+supervisor, bearer-only MCP, test Core worker roll from 49612 to
+39212, unchanged MCP PID and authorization after the roll, and
+unchanged legacy listeners (6759/6789/7888/9877). After cleanup both
+ephemeral listeners were verified released. Managed MCP owner
+lifecycle independently passed 17/17 checks, including authenticated
+generation, duplicate owner refusal, drain and graceful stop without
+a process signal; the private owner release was confirmed. Five
+focused policy test files passed 26/26 cases.
+
+This establishes isolated staging P1-A.1/A.2/A.4 evidence. It does
+NOT establish durable standalone services, independent public OAuth
+ownership, a running desktop integration or production certification.
+The ephemeral canary is intentionally torn down, not left in the
+background; no installed startup task or production process was touched.
+The operator-held stage report was written under
+`~/.superagent-local-staging/core-mcp-owner-EFTYhn/report.json`.
+The new execution plan tracks the remaining stages.
+
+
+Final local regression after source and documentation changes:
+SuperAgent 1.14.38 built successfully; 20 R1–R7 test files,
+136/136 tests passed. This is not remote CI, an installed desktop
+certification or an authorization to change legacy endpoints.
