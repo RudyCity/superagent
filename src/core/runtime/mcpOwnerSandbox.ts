@@ -6,12 +6,16 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import { startMcpHttpServer } from "../mcp/mcpHttpTransport.js";
+import {
+  assertManagedMcpPort, cleanOwnMcpLease, matchesOwnedMcpStop,
+  writeOwnedMcpLease, type ManagedMcpLease,
+} from "./mcpOwnerStagingLease.js";
 export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
   const idx=args.indexOf("--port");
   const port=idx<0?NaN:Number(args[idx+1]);
-  if(!Number.isInteger(port)||port<1024||port>65535||port===7888||port===7892)
-    throw new Error("Isolated MCP owner requires a distinct non-production local port");
+  assertManagedMcpPort(port);
   if(args.some(x=>/^(--allow-dangerous|--oauth|--tunnel|--provider|--public|--yolo)$/i.test(x)))
     throw new Error("Isolated MCP owner forbids dangerous tools and external tunnels");
   if(process.env.SUPERAGENT_MCP_OWNER_STAGING!=="1"||
@@ -27,6 +31,7 @@ export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
   if(!stat.isDirectory()||stat.isSymbolicLink()) throw new Error("Unsafe staging profile");
   const token=process.env.SUPERAGENT_MCP_OWNER_STAGING_BEARER||"";
   if(!/^[a-f0-9]{64}$/.test(token))throw new Error("MCP staging requires a private 256-bit bearer");
+  const managed=process.env.SUPERAGENT_MCP_OWNER_STAGING_MANAGED==="1";
   const handle=await startMcpHttpServer({
     port,bearerToken:token,authMode:"static-bearer",
     allowDangerous:false,toolExposure:"gateway",
@@ -35,6 +40,19 @@ export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
     publicBaseUrl:"http://127.0.0.1:"+port,
     hostOriginPolicy:{allowNoOrigin:true,allowedOrigins:[]},
   });
+  let lease:ManagedMcpLease|undefined;
+  let interval:NodeJS.Timeout|undefined;
+  try {
+    if(managed){
+      lease={version:1,kind:"managed_mcp_staging",pid:process.pid,port,
+        nonce:crypto.randomBytes(32).toString("hex"),createdAt:Date.now(),
+        auth:"private_bearer",modelAutostart:false,publicTunnel:false};
+      writeOwnedMcpLease(root,lease);
+    }
+  }catch(error){
+    await handle.close();
+    throw error;
+  }
   // Do not persist token, active-mcp state or public tunnel metadata.
   console.log(JSON.stringify({
     type:"isolated_mcp_owner_ready",pid:process.pid,port:handle.port,
@@ -45,9 +63,27 @@ export async function runIsolatedMcpOwner(args:string[]):Promise<true>{
   const shutdown=async()=>{
     if(stopping)return;
     stopping=true;
-    try{await handle.close();}finally{process.exit(0);}
+    if(interval)clearInterval(interval);
+    try{await handle.close();}
+    finally{
+      if(lease) {
+        try{cleanOwnMcpLease(root,lease);}catch{
+          // Preserve malformed markers for operator review, never delete them.
+        }
+      }
+      process.exit(0);
+    }
   };
   process.once("SIGTERM",()=>{void shutdown();});
   process.once("SIGINT",()=>{void shutdown();});
+  if(lease){
+    interval=setInterval(()=>{
+      try {
+        if(matchesOwnedMcpStop(root,lease!))void shutdown();
+      } catch{
+        // An untrusted/corrupt marker must not authorize shutdown.
+      }
+    },300);
+  }
   return true;
 }

@@ -1,5 +1,11 @@
 # Opt-in rolling restart for SuperAgent API Core (2026-10-25)
 
+## Phase 5n — managed MCP owner lifecycle and OAuth migration gates
+
+The staging-only managed MCP owner can now survive the launching CLI, publish a private PID/nonce lease, prove ownership through Windows TCP LISTENING PID plus unauthenticated HTTP 401, and stop gracefully through a nonce-bound private request with **no process kill**. Commands: superagent mcp lifecycle plan|start|status|stop --port PORT, with explicit and distinct start/stop approval phrases. The owner is local static-bearer safe-tool mode without OAuth issuer, public tunnel or model autostart. Startup refuses already occupied or protected production ports and duplicate/unverified owner state.
+
+The OAuth migration policy explicitly blocks adoption of the in-memory legacy tokens/clients until a separately authenticated OAuth issuer, intentional client reauthorization, zero ambiguous external tool effects, verified rollback and operator approval exist. Even successful evidence means manual reconnect candidacy, NOT automatic production cutover. In the Windows staging drill, MCP ownership outlived its launching CLI and stopped through an authenticated nonce handshake while production port PIDs stayed intact. This does NOT install a Windows boot task or transfer any OAuth session. See [Phase 5n runbook](../guides/core-mcp-phase5n-managed-owner.md).
+
 ## Phase 5m — verified Core/MCP TCP ownership and independent MCP staging owner
 
 Read-only core ownership-audit --port 7888 cross-checks Windows kernel TCP LISTENING owner PID against each MCP port's saved state, without trusting a PID recorded only in a file. On 26 October 2026 the live audit found unsupervised Core 7888 and MCP OAuth 6789 sharing PID 13424, while MCP OAuth 9877 belonged to PID 10060. Therefore shared_owner_do_not_cutover is mandatory: restarting the old Core owner would interrupt MCP 6789. No process signal, OAuth transfer or checkpoint deletion was made.

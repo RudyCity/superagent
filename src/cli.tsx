@@ -176,6 +176,19 @@ For full login help:
 
 if (process.argv[2] === "mcp") {
   const sub = process.argv[3]?.toLowerCase();
+  if (sub === "lifecycle") {
+    try {
+      const { handleMcpOwnerLifecycle } = await import("./core/runtime/mcpOwnerLifecycle.js");
+      const result = await handleMcpOwnerLifecycle(
+        process.argv.slice(4), process.argv[1] || "",
+      );
+      console.log(JSON.stringify(result, null, 2));
+      process.exit(0);
+    } catch (error) {
+      console.error("[MCP lifecycle] " + String(error));
+      process.exit(1);
+    }
+  }
   if (sub === "owner-sandbox") {
     try {
       const { runIsolatedMcpOwner } = await import("./core/runtime/mcpOwnerSandbox.js");
