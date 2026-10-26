@@ -2,6 +2,7 @@
 **Audit date:** 2026-10-26
 **Scope:** SuperAgent CLI/API Core, independent MCP HTTP/OAuth owners, tunnels and T-Line desktop/backend integration.
 **Status:** Research and implementation plan ONLY. No production cutover, credential migration, scheduled-task installation or restart authorized by this document.
+**Current P1–P4 execution checklist:** [Independent runtime activation and E2E release](2026-10-26-runtime-p1-p4-parallel-activation-e2e-release-execution-plan.md).
 
 ## 1. Decision / executive summary
 

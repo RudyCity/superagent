@@ -1,3 +1,9 @@
+## [1.14.37] - 2026-10-26
+### Documentation
+- Added the P1–P4 parallel runtime activation and end-to-end release execution plan (`docs/plans/2026-10-26-runtime-p1-p4-parallel-activation-e2e-release-execution-plan.md`) with 43 acceptance tasks, five delegated workstreams, G0–G4 release gates, new independent OAuth/ingress staging, installed desktop certification, Windows recovery, and reversible client-by-client migration.
+- Added the SuperAgent ACP Server implementation plan (`docs/plans/2026-10-25-superagent-acp-server-implementation-plan.md`) specifying SDK-based Agent Client Protocol (v1) architecture, connection-scoped session management, and Agent event mapping.
+- Linked the P1–P4 execution plan from the existing R0–R7 architecture master plan. No production process, tunnel, token, Scheduled Task or client route is changed by this documentation release.
+
 ## [1.14.36] - 2026-10-25
 ### Added
 - Motion Upscale Engine & 4K UHD Render Support (`src/core/motion/motionUpscale.ts`, `src/core/motion/motionRoutes.ts`, `src/core/motion/render/ffmpegEncoder.ts`, `src/core/motion/motionResize.ts`, `src/core/tools/motionAgentTools.ts`, `src/core/tools/toolsets.ts`, `tests/motionUpscale.test.ts`, `package.json`):
