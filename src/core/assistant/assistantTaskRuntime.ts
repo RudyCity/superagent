@@ -9,6 +9,7 @@ import type { AssistantTaskRecord, AssistantTaskStore } from "./assistantTaskSto
 import { AssistantTaskDispatcher } from "./assistantTaskDispatcher.js";
 import { getRootConfigDir } from "../config/paths.js";
 import { getAssistantTaskDomain, taskDomainPrompt } from "./assistantTaskDomains.js";
+import { recordExecutionStep } from "./assistantExecutionSteps.js";
 
 export type DetachedTaskWorker = (task: AssistantTaskRecord, workspace: string,
   signal: AbortSignal) => Promise<string[]>;
@@ -81,8 +82,31 @@ export async function generateDetachedReadOnlyText(
   // The executor also enforces the allowlist to prevent a dynamic tool from
   // evading the model-facing catalog restriction.
   let output = "";
+  let recordingFailure: Error | null = null;
+  let recordQueue: Promise<void> = Promise.resolve();
+  let stopOnRecordingFailure: () => void = () => {};
   const agent = new Agent(
     event => {
+      if ((event.type === "tool_start" || event.type === "tool_end") && !recordingFailure) {
+        const callId = event.type === "tool_start"
+          ? event.toolCall.id : event.toolResult.toolCallId || event.toolCall?.id;
+        const tool = event.type === "tool_start"
+          ? event.toolCall.name : event.toolResult.name || event.toolCall?.name;
+        if (typeof callId !== "string" || typeof tool !== "string") {
+          recordingFailure = Error("Tool observation missing safe correlation");
+          stopOnRecordingFailure();
+        } else {
+          recordQueue = recordQueue.then(async () => {
+            await recordExecutionStep(task, {
+              callId, tool, phase: event.type === "tool_start" ? "started" : "finished",
+              isError: event.type === "tool_end" && event.toolResult.isError === true,
+            });
+          }).catch(() => {
+            recordingFailure = Error("Execution checkpoint journal failed; manual review required");
+            stopOnRecordingFailure();
+          });
+        }
+      }
       if (event.type === "text" && typeof event.content === "string" && output.length < 32_768) {
         output += event.content.slice(0, 32_768 - output.length);
       }
@@ -100,10 +124,13 @@ export async function generateDetachedReadOnlyText(
   agent.headlessAllowedTools = allowed;
   agent.sessionId = "sess_detached_" + task.taskId.replace(/-/g, "");
   const abort = () => agent.abort();
+  stopOnRecordingFailure = abort;
   signal.addEventListener("abort", abort, { once: true });
   const timeout = setTimeout(abort, 5 * 60_000);
   try {
-    await agent.sendMessage(prompt, signal);
+    try { await agent.sendMessage(prompt, signal); }
+    finally { await recordQueue; }
+    if (recordingFailure) throw Error("Execution checkpoint incomplete; manual review required");
     if (signal.aborted) throw new Error("Task cancelled");
     if (agent.lastTaskOutcome !== "task_completed") {
       throw new Error("Detached task did not report verified completion");

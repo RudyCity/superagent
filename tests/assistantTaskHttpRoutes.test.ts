@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { AssistantTaskStore } from "../src/core/assistant/assistantTaskStore.js";
+import { recordExecutionStep } from "../src/core/assistant/assistantExecutionSteps.js";
 import path from "node:path";
 import os from "node:os";
 import type http from "node:http";
@@ -187,6 +188,62 @@ describe("session-scoped assistant metadata routes", () => {
       expect(preview.body.checkpoint).toBe("manual-review-only");
       expect(preview.body.executionResumptionSupported).toBe(false);
       expect((await store.list()).filter(task => task.retryOfTaskId === id)).toHaveLength(1);
+    }));
+  it("serves sanitized execution steps only for owning sessions and never enables tool replay", async () =>
+    scenario(async call => {
+      const created = await call("POST", sessionId, "", {
+        goalId:"step_read", title:"Inspect", idempotencyKey:"step_observation", domain:"analysis",
+      });
+      const task=created.body.task;
+      const root=process.env.SUPERAGENT_CONFIG_DIR!;
+      await recordExecutionStep(task,{callId:"private-worker-tool-id",tool:"read",phase:"started"},root);
+      const checkpoint=await call("GET", sessionId, "/" + task.taskId + "/checkpoint");
+      expect(checkpoint.status).toBe(200);
+      expect(checkpoint.body.execution.incomplete).toBe(1);
+      expect(checkpoint.body.execution.manualReviewRequired).toBe(true);
+      expect(checkpoint.body.execution.steps).toHaveLength(1);
+      expect(checkpoint.body.execution.steps[0].tool).toBe("read");
+      expect(JSON.stringify(checkpoint.body)).not.toContain("private-worker-tool-id");
+      expect(checkpoint.body.executionResumptionSupported).toBe(false);
+      expect(checkpoint.body.execution.executionResumptionSupported).toBe(false);
+      expect((await call("GET", "session_other", "/" + task.taskId + "/checkpoint")).status)
+        .toBe(404);
+      expect((await call("POST", sessionId, "/" + task.taskId + "/resume",
+        {expectedRevision:task.revision})).status).toBe(409);
+      const list=await call("GET",sessionId,"");
+      expect(JSON.stringify(list.body.tasks)).not.toContain("private-worker-tool-id");
+    }));
+  it("requires current reviewed step evidence before retrying unverified external work", async () =>
+    scenario(async call => {
+      const created=await call("POST",sessionId,"",{
+        goalId:"external_retry",title:"Research report",idempotencyKey:"external_first",domain:"research",
+      });
+      const task=created.body.task;
+      const ownerId="session_"+createHash("sha256").update(sessionId).digest("hex").slice(0,24);
+      const workspaceId=createHash("sha256").update(workspace).digest("hex").slice(0,24);
+      const store=new AssistantTaskStore(process.env.SUPERAGENT_CONFIG_DIR!,{ownerId,workspaceId});
+      const planning=await store.transition({taskId:task.taskId,expectedRevision:1,status:"planning"});
+      const running=await store.transition({taskId:task.taskId,expectedRevision:planning.revision,status:"running"});
+      const failed=await store.transition({taskId:task.taskId,expectedRevision:running.revision,status:"failed"});
+      const root=process.env.SUPERAGENT_CONFIG_DIR!;
+      await recordExecutionStep(task,{callId:"external-tool",tool:"web_search",phase:"started"},root);
+      await recordExecutionStep(task,{callId:"external-tool",tool:"web_search",phase:"finished"},root);
+      const url="/"+task.taskId+"/retry";
+      const draft={expectedRevision:failed.revision,idempotencyKey:"new_after_external"};
+      const without=await call("POST",sessionId,url,draft);
+      expect(without.status).toBe(409);
+      expect(without.body.reviewRequired).toBe(true);
+      expect((await call("POST",sessionId,url,{...draft,acknowledgeUnverifiedEffects:true,
+        expectedEvidenceSeq:1})).status).toBe(409);
+      expect((await call("POST",sessionId,url,{...draft,acknowledgeUnverifiedEffects:false,
+        expectedEvidenceSeq:2})).status).toBe(409);
+      const approved=await call("POST",sessionId,url,{...draft,acknowledgeUnverifiedEffects:true,
+        expectedEvidenceSeq:2});
+      expect(approved.status).toBe(200);
+      expect(approved.body.executed).toBe(false);
+      expect(approved.body.task.status).toBe("queued");
+      expect(approved.body.task.retryOfTaskId).toBe(task.taskId);
+      expect((await store.list()).filter(x=>x.retryOfTaskId===task.taskId)).toHaveLength(1);
     }));
   it("blocks unsafe mutation and unknown transition", async () => scenario(async call => {
     const created = await call("POST", sessionId, "", {

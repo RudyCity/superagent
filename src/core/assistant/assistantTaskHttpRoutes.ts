@@ -5,6 +5,7 @@ import { getRootConfigDir } from "../config/paths.js";
 import { AssistantTaskStore } from "./assistantTaskStore.js";
 import { getDetachedTaskRuntime, executeDetachedReadOnlyAgent, type DetachedTaskWorker } from "./assistantTaskRuntime.js";
 import { readDetachedTaskResult } from "./assistantTaskResults.js";
+import { readExecutionCheckpoint } from "./assistantExecutionSteps.js";
 import { prepareDetachedPatch, readDetachedPatch } from "./assistantTaskPatch.js";
 import { TASK_DOMAIN_DESCRIPTORS, DEFAULT_ASSISTANT_TASK_DOMAIN, validAssistantTaskDomain } from "./assistantTaskDomains.js";
 
@@ -71,7 +72,7 @@ export async function handleAssistantTaskHttpRoute(
       const tasks = await store.list(100);
       const liveTaskIds = runtime.liveIds;
       respond(200, { success: true, sessionId, tasks, executionEnabled: true,
-        executionPolicy: "read-only-explicit-run", supportedModes: ["analysis", "patch-preview", "draft-checkpoint"],
+        executionPolicy: "read-only-explicit-run", supportedModes: ["analysis", "patch-preview", "draft-checkpoint", "execution-step-observation"],
         domains: TASK_DOMAIN_DESCRIPTORS.map(({ id, label, description, patchPreview }) =>
           ({ id, label, description, patchPreview })), liveTaskIds,
         unverifiedTaskIds: tasks.filter(t => (t.status === "running" || t.status === "planning") &&
@@ -96,13 +97,14 @@ export async function handleAssistantTaskHttpRoute(
     if (req.method === "GET" && /^\/[a-f\d-]{36}\/checkpoint$/.test(suffix)) {
       const task = await store.get(suffix.slice(1, 37));
       if (!task) { respond(404, { error: "Task not found" }); return true; }
+      const execution = await readExecutionCheckpoint(task);
       respond(200, {
         success: true, taskId: task.taskId, revision: task.revision, status: task.status,
         updatedAt: task.updatedAt, retryOfTaskId: task.retryOfTaskId,
         checkpoint: task.status === "paused" || task.status === "queued"
           ? "draft-boundary" : "manual-review-only",
         canResumeWithoutExecution: task.status === "paused",
-        executionResumptionSupported: false,
+        executionResumptionSupported: false, execution,
       });
       return true;
     }
@@ -195,6 +197,18 @@ export async function handleAssistantTaskHttpRoute(
             !/^[a-zA-Z0-9_-]{1,128}$/.test(body.idempotencyKey)) {
           respond(400, { error: "Explicit retry idempotency key required" });
           return true;
+        }
+        // A manual review acknowledgement must reference the latest safe
+        // observation snapshot. This is not authority to replay old tools.
+        const evidence = await readExecutionCheckpoint(current);
+        if (evidence.manualReviewRequired) {
+          const latestSeq = evidence.steps.at(-1)?.seq ?? 0;
+          if (body.acknowledgeUnverifiedEffects !== true ||
+              body.expectedEvidenceSeq !== latestSeq) {
+            respond(409, { error: "Review the latest execution checkpoint before retrying",
+              reviewRequired: true, latestEvidenceSeq: latestSeq });
+            return true;
+          }
         }
         const task = await store.retryAsDraft({
           taskId, expectedRevision: current.revision, idempotencyKey: body.idempotencyKey,
