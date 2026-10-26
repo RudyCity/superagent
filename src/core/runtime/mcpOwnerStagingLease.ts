@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-export const MANAGED_MCP_PORTS_FORBIDDEN = new Set([6789, 7888, 7892, 9877]);
+export const MANAGED_MCP_PORTS_FORBIDDEN = new Set([6759, 6789, 7888, 7892, 9877]);
 export const APPROVE_MANAGED_MCP = "START_STAGING_MCP_OWNER";
 export interface ManagedMcpLease {
   version:1; kind:"managed_mcp_staging"; pid:number;port:number;nonce:string;

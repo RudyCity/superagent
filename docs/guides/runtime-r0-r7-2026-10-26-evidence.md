@@ -170,3 +170,23 @@ No OAuth credential was imported, no public TLS ingress or tunnel
 was created, and no existing client was reauthorized or migrated.
 G1B remains BLOCKED pending real HTTPS, hardened credentials,
 permissioned external client E2E and rollback.
+
+
+## G1A Core-only versioned ownership handshake (2026-10-26)
+
+SuperAgent 1.14.40 now reports an explicit private control-plane
+ownerContract v1 (Core supervisor role, no MCP lifecycle ownership,
+explicit-only replay). The real isolated split owner verifier passed
+17/17 checks with this contract; managed MCP stage separately passed
+17/17 lifecycle checks. Protected port 6759 was added to the staging
+owner denylist. Source-level T-Line opt-in owner checks passed 18/18
+tests and reject forged/unsupported owner-contract versions and
+incompatible replay/MCP policies. No installed T-Line E2E is implied.
+
+The R1–R7 combined local Vitest regression passed 22/22 test files
+(145/145 tests). SuperAgent TypeScript passed. A repeat full
+SuperAgent build exposed a Windows EUNKNOWN on overwriting an
+identical compiled font asset; making the sync compare content and
+skip redundant writes recovered the full build successfully. This
+is engineering evidence only, not a Core/MCP long-running service
+certificate or a public HTTPS deployment.

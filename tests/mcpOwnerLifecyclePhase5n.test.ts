@@ -27,7 +27,7 @@ function fixture(){
 describe("Phase 5n owner persisted lease and stop nonce",()=>{
  it("rejects production ports and symlinked/foreign profiles",()=>{
   expect(APPROVE_MANAGED_MCP).toBe("START_STAGING_MCP_OWNER");
-  for(const p of [6789,7888,7892,9877,0,65536]){
+  for(const p of [6759,6789,7888,7892,9877,0,65536]){
    expect(()=>assertManagedMcpPort(p)).toThrow();
   }
   const {root,dir}=fixture();

@@ -21,6 +21,13 @@ import {
 } from "./coreGenerationPolicy.js";
 
 export interface CoreRuntimeStatus {
+  /** R4 opt-in desktop attestation. A PID match alone grants no control. */
+  ownerContract?: {
+    version: 1;
+    role: "core-supervisor";
+    mcpLifecycle: "not-owned";
+    replayPolicy: "explicit-resume-only";
+  };
   supervisorPid: number;
   publicPort: number;
   active: { pid: number; port: number; since: number };
@@ -262,6 +269,10 @@ export async function runCoreSupervisor(
   function status(): CoreRuntimeStatus {
     if (!active) throw new Error("No healthy core worker");
     return {
+      ownerContract: {
+        version: 1, role: "core-supervisor",
+        mcpLifecycle: "not-owned", replayPolicy: "explicit-resume-only",
+      },
       supervisorPid: process.pid,
       publicPort: port,
       active: { pid: active.pid, port: active.port, since: active.since },

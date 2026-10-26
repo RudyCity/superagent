@@ -177,6 +177,13 @@ More evidence: `docs/guides/runtime-p1a-stage-acceptance-2026-10-26.md`.
 Remaining for G1A: persistent operator-supervised private owner canary,
 formal capability handshake into T-Line and full P1-A.3/A.5/A.6 acceptance.
 
+**G1A owner protocol follow-up:** The versioned private Core-only contract
+now passes 17/17 real local Core/MCP owner checks. The T-Line backend
+opt-in verifier rejects mismatched contract versions/roles or policies.
+P1-A.3 remains partial until installed desktop E2E and persistent
+authenticated owner readiness are demonstrated. Protected staging
+port denylist includes the observed legacy 6759.
+
 **G1A exit:** verified distinct Core/MCP kernel PIDs, authenticated owner
 identities, independent failure/recovery, unchanged legacy listeners.
 

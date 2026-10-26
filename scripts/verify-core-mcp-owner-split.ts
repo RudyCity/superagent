@@ -120,12 +120,22 @@ try{
         signal:AbortSignal.timeout(1500),
       });
       if(res.status!==200)return null;
-      const body=await res.json() as {supervisorPid:number;publicPort:number;active:{pid:number}};
+      const body=await res.json() as {
+        supervisorPid:number;publicPort:number;active:{pid:number};
+        ownerContract?:{version:number;role:string;mcpLifecycle:string;replayPolicy:string};
+      };
+      const contract=body.ownerContract;
       return body.supervisorPid===core?.pid&&body.publicPort===corePort&&
-        body.active?.pid>0?body:null;
+        body.active?.pid>0&&contract?.version===1&&
+        contract.role==="core-supervisor"&&
+        contract.mcpLifecycle==="not-owned"&&
+        contract.replayPolicy==="explicit-resume-only"?body:null;
     }catch{return null;}
   });
   check("authenticated_test_core_and_worker",coreOwner.supervisorPid===core.pid);
+  check("versioned_core_only_owner_contract",
+    coreOwner.ownerContract?.version===1 &&
+    coreOwner.ownerContract.mcpLifecycle==="not-owned");
   mcp=spawn(process.execPath,[entry,"mcp","owner-sandbox","--port",String(mcpPort)],{
     cwd:workspace,
     env:{...isolated(mcpProfile),SUPERAGENT_MCP_OWNER_STAGING_BEARER:bearer},

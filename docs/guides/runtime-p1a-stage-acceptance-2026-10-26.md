@@ -83,3 +83,18 @@ bun --bun x vitest run --maxWorkers=2 tests/runtimeOwnershipContract.test.ts tes
 bun src/cli.tsx core ownership-inventory --port 7888
 bun src/cli.tsx core rollout-audit --port 7888
 ```
+
+
+## G1A versioned Core-only owner handshake update
+
+New Core private authenticated `GET /status` includes
+`ownerContract: { version: 1, role: "core-supervisor",
+mcpLifecycle: "not-owned", replayPolicy: "explicit-resume-only" }`.
+The contract conveys Core process authority but does not authorize
+stopping/restarting MCP, automatic tool replay or production cutover.
+The separate T-Line backend opt-in mode requires exact matching fields
+alongside kernel listener PID, private bearer and active worker presence;
+unknown versions or missing fields fail closed. The isolated Windows
+owner verification now requires this contract (17/17 checks).
+The managed MCP lease port policy additionally protects observed 6759.
+Installed native T-Line and Core owner persistence/reboot remain OPEN.

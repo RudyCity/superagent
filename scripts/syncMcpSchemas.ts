@@ -42,7 +42,16 @@ const distFonts = path.join(repo, "dist", "core", "motion", "assets", "fonts");
 if (fs.existsSync(srcFonts)) {
   fs.mkdirSync(distFonts, { recursive: true });
   for (const file of fs.readdirSync(srcFonts)) {
-    fs.copyFileSync(path.join(srcFonts, file), path.join(distFonts, file));
+    const source = path.join(srcFonts, file);
+    const target = path.join(distFonts, file);
+    if (!fs.statSync(source).isFile()) continue;
+    // Windows may deny an unnecessary overwrite when a renderer has the
+    // exact same destination font open. Compare contents before copying:
+    // different or unreadable targets still fail rather than hiding errors.
+    if (fs.existsSync(target) &&
+        fs.statSync(source).size === fs.statSync(target).size &&
+        fs.readFileSync(source).equals(fs.readFileSync(target))) continue;
+    fs.copyFileSync(source, target);
   }
 }
 

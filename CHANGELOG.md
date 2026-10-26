@@ -1,3 +1,9 @@
+## [1.14.40] - 2026-10-26
+### Security and integration
+- Added a versioned, authenticated Core supervisor ownership contract on the private status channel. It declares Core-only process authority, no MCP lifecycle ownership, and explicit-only session replay.
+- The private Core/MCP staging verifier now checks the contract against a real independently started Core supervisor, and the managed MCP stage refuses the newly observed protected OAuth port 6759. No legacy process or public endpoint is modified.
+- Made compiled font asset sync idempotent so an already-identical destination file is not overwritten on Windows. Changed assets still require a successful copy; the previously blocked full build now passes.
+
 ## [1.14.39] - 2026-10-26
 ### Tests
 - Strengthened the independent OAuth/ingress staging verifier to preserve all observed legacy Core/MCP listener ownership, including current MCP OAuth port 6759 and the absent/stale 6789 listener. Verified 20/20 live OAuth HTTP checks and private stage port cleanup; updated P1-B evidence without claiming public HTTPS certification or client cutover.
