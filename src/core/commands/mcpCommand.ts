@@ -451,6 +451,7 @@ export const mcpCommand: SlashCommand = {
             oauthPublicBaseUrl,
           });
 
+          const { formatPythonMcpClientHints } = await import("../mcp/pythonMcpClientHints.js");
           if (info.tunnelProvider === "openai") {
             const lines = [
               "OpenAI Secure MCP Tunnel Online!",
@@ -468,6 +469,7 @@ export const mcpCommand: SlashCommand = {
                 `  - ${info.bootstrapCode}`,
               );
             }
+            lines.push(...formatPythonMcpClientHints(info));
             lines.push(
               "",
               "Responses API tool definition:",
@@ -510,6 +512,7 @@ export const mcpCommand: SlashCommand = {
                 `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
               );
             }
+            lines.push(...formatPythonMcpClientHints(info));
             ctx.addLine({
               type: "system",
               content: lines.join("\n"),

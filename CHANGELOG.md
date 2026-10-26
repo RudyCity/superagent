@@ -1,3 +1,9 @@
+## [1.14.45] - 2026-10-26
+### Python MCP tunnel connection hints
+- Show the copy-ready Python MCP client URL, PowerShell one-shot OAuth login, and stdio bridge command in both terminal and interactive MCP tunnel startup output and in existing tunnel status.
+- Use one shared formatter; provide a loopback-only warning for opaque private tunnel IDs, avoid embedding bootstrap/Bearer secrets, validate printed URLs, and keep running tunnel ownership unchanged.
+- Add focused rendering/security regressions and update the connection guide. Correct old Muse-domain stop instructions in MCP status output.
+
 ## [1.14.44] - 2026-10-26
 ### Python MCP client integration
 - Added an installable Python MCP client and stdio bridge to existing SuperAgent Streamable HTTP endpoints, forwarding tool schemas/results, resources, and prompts.

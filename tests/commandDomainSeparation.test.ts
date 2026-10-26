@@ -135,5 +135,9 @@ describe("command domain separation", () => {
     expect(output).toContain("mock-bootstrap-code-12345");
     expect(output).toContain("One-time bootstrap approval code");
     expect(output).toContain("Auth Mode    : oauth");
+    expect(output).toContain("Python MCP Client (copy/paste):");
+    expect(output).toContain("MCP URL     : https://example.trycloudflare.com/mcp");
+    expect(output).toContain("One-shot PS : $env:SUPERAGENT_MCP_URL='https://example.trycloudflare.com/mcp'");
+    expect(output).toContain("superagent-mcp-python login");
   });
 });

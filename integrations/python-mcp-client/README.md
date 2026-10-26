@@ -19,7 +19,7 @@ superagent mcp tunnel start --provider cloudflare --mcp-auth oauth
 superagent mcp tunnel status
 ```
 
-Use the actual public HTTPS URL ending in `/mcp` from status. Cloudflare quick-tunnel hostnames can change after a restart.
+The successful tunnel startup log and `superagent mcp tunnel status` (or `/mcp tunnel status`) now include a `Python MCP Client (copy/paste)` section with the live MCP URL, a **PowerShell one-shot** command that runs this bundled Python project with `uv run` and initiates OAuth login, and the subsequent `stdio bridge` command. You can copy the entire one-shot line without manually replacing `YOUR-HOST`. It does not embed OAuth bootstrap codes or Bearer tokens. The user must still grant OAuth consent in the browser. Cloudflare quick-tunnel hostnames can change after a restart, so always copy the latest URL. OpenAI private tunnel IDs are not MCP HTTP URLs; when no public HTTPS `/mcp` URL is available, only a local-loopback URL is shown with an explicit warning.
 
 ## OAuth PKCE (recommended)
 

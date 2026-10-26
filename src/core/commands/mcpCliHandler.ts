@@ -321,6 +321,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
           openAiProfile: profile,
         });
 
+        const { formatPythonMcpClientHints } = await import("../mcp/pythonMcpClientHints.js");
         if (info.tunnelProvider === "openai") {
           const lines = [
             "OpenAI Secure MCP Tunnel Online!",
@@ -338,6 +339,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
               `  - ${info.bootstrapCode}`,
             );
           }
+          lines.push(...formatPythonMcpClientHints(info));
           lines.push(
             "",
             "Responses API tool definition:",
@@ -378,6 +380,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
               `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
             );
           }
+          lines.push(...formatPythonMcpClientHints(info));
           lines.push(
             "",
             "Tunnel is active and serving traffic. Press Ctrl+C to stop.",

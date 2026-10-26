@@ -8,6 +8,8 @@ This document catalogs all user interfaces, CLI commands, tool interfaces, WebSo
 
 An installable Python 3.11+ client and local stdio bridge lives at [`integrations/python-mcp-client/`](../../integrations/python-mcp-client/README.md). It consumes an existing SuperAgent Streamable HTTP `/mcp` endpoint and exposes dynamically authorized tools, resources, and prompts through stdio for compatible host applications. OAuth PKCE and static Bearer credentials are supported; the bridge does not own or restart Core/MCP services. The endpoint URL, authorization scope and optional Bearer token are supplied by the client environment, separate from SuperAgent model configuration.
 
+Both `superagent mcp tunnel start` and `/mcp tunnel start`, plus their `tunnel status` views, display copy-ready Python MCP client URL and one-shot PowerShell login instructions, along with the stdio bridge command. The one-shot command resolves the local packaged client when the repository includes it. A private OpenAI tunnel ID is never treated as an HTTPS MCP endpoint; fallback URLs are loopback-only. Bootstrap and Bearer secrets are not embedded in the generated one-shot command.
+
 ## 1. CLI Commands & Arguments
 
 ### Terminal Launch Flags

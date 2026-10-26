@@ -569,7 +569,7 @@ superagent muse "find all unhandled promise rejections in src"
 
 #### Python MCP Client and stdio Bridge
 
-Install the independent Python client in `integrations/python-mcp-client/` to use an existing authenticated SuperAgent Streamable HTTP endpoint from Python apps or any host supporting local stdio MCP commands. It forwards live tools, resources, and prompts; OAuth PKCE login and Bearer modes are supported. See [Python MCP client setup](integrations/python-mcp-client/README.md). The bridge does not launch a second SuperAgent runtime.
+Install the independent Python client in `integrations/python-mcp-client/` to use an existing authenticated SuperAgent Streamable HTTP endpoint from Python apps or any host supporting local stdio MCP commands. It forwards live tools, resources, and prompts; OAuth PKCE login and Bearer modes are supported. The MCP tunnel startup output and `tunnel status` now display a copy-ready Python MCP URL, PowerShell one-shot login command, and stdio bridge command (secrets excluded). See [Python MCP client setup](integrations/python-mcp-client/README.md). The bridge does not launch a second SuperAgent runtime.
 
 #### Connecting Grok.com (Custom MCP)
 

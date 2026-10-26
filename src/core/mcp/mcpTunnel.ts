@@ -45,6 +45,7 @@ import {
   type OpenAiTunnelStatus,
 } from "./openaiTunnelClient.js";
 import { getOpenAiMcpTunnelConfig } from "./openaiMcpTunnelConfig.js";
+import { formatPythonMcpClientHints } from "./pythonMcpClientHints.js";
 
 export const DEFAULT_MCP_PORT = 9227;
 export type McpTunnelProvider = "cloudflare" | "openai";
@@ -620,7 +621,7 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
     return [
       "Active MCP Servers: NONE ACTIVE",
       "No active MCP servers found.",
-      "Run '/muse tunnel start --mcp' for Cloudflare, or '/muse tunnel start --mcp --provider openai --tunnel-id <id>' for OpenAI Secure MCP Tunnel.",
+      "Run '/mcp tunnel start --provider cloudflare' for Cloudflare, or '/mcp tunnel start --provider openai --tunnel-id <id>' for OpenAI Secure MCP Tunnel.",
     ].join("\n");
   }
 
@@ -645,12 +646,17 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
     if (s.workspace) {
       lines.push(`   - Workspace  : ${s.workspace}`);
     }
+    lines.push(...formatPythonMcpClientHints({
+      publicUrl: s.publicUrl,
+      localUrl: s.localUrl,
+      authMode,
+    }));
   });
   lines.push(
     "",
     "Commands:",
-    "  Stop MCP server      : /muse tunnel stop --mcp-port <port>",
-    "  Stop all incl. MCP   : /muse tunnel stop all",
+    "  Stop MCP server (owner only): /mcp tunnel stop --port <port>",
+    "  Refresh listing             : /mcp tunnel status",
   );
   return lines.join("\n");
 }

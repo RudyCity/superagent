@@ -1,0 +1,68 @@
+import { describe, expect, it } from "vitest";
+import { formatPythonMcpClientHints } from "../src/core/mcp/pythonMcpClientHints.js";
+
+describe("MCP tunnel Python client copy-ready instructions", () => {
+  const oauth = {
+    publicUrl: "https://example.trycloudflare.com/mcp",
+    localUrl: "http://127.0.0.1:9227/mcp",
+    authMode: "oauth" as const,
+  };
+
+  it("prints a public MCP URL and a complete PowerShell one-shot setup", () => {
+    const lines = formatPythonMcpClientHints(oauth, "D:\\Projects\\SuperAgent Workspace\\integrations\\python-mcp-client");
+    const output = lines.join("\n");
+    expect(output).toContain("MCP URL     : https://example.trycloudflare.com/mcp");
+    expect(output).toContain("$env:SUPERAGENT_MCP_URL='https://example.trycloudflare.com/mcp'");
+    expect(output).toContain("$env:SUPERAGENT_MCP_AUTH='oauth'");
+    expect(output).toContain("uv run --project 'D:\\Projects\\SuperAgent Workspace\\integrations\\python-mcp-client' superagent-mcp-python login");
+    expect(output).toContain("Stdio bridge:");
+    expect(output).toContain("superagent-mcp-python serve");
+    expect(output).not.toContain("http://127.0.0.1:9227/mcp");
+  });
+
+  it("escapes PowerShell single quotes in package paths", () => {
+    const output = formatPythonMcpClientHints(oauth, "D:\\O'Neil Projects\\python").join("\n");
+    expect(output).toContain("uv run --project 'D:\\O''Neil Projects\\python'");
+  });
+
+  it("never embeds bootstrap secrets or bearer tokens in generated command", () => {
+    const output = formatPythonMcpClientHints(
+      { ...oauth, authMode: "static-bearer" },
+      null,
+    ).join("\n");
+    expect(output).toContain("$env:SUPERAGENT_MCP_AUTH='bearer'");
+    expect(output).toContain("superagent-mcp-python doctor");
+    expect(output).toContain("set SUPERAGENT_MCP_TOKEN privately");
+    expect(output).not.toContain("SUPERAGENT_MCP_TOKEN=");
+    expect(output).not.toContain("bootstrap approval code");
+  });
+
+  it("uses loopback for an opaque private tunnel ID and marks it as local-only", () => {
+    const output = formatPythonMcpClientHints({
+      publicUrl: "openai-tunnel://tunnel_0123456789abcdef",
+      localUrl: "http://127.0.0.1:9227/mcp",
+      authMode: "oauth",
+    }, null).join("\n");
+    expect(output).toContain("MCP URL     : http://127.0.0.1:9227/mcp (local machine only)");
+    expect(output).toContain("No public HTTPS /mcp endpoint advertised");
+    expect(output).not.toContain("openai-tunnel://");
+  });
+
+  it("rejects unsafe endpoints and credentials in URLs rather than copying them", () => {
+    const result = formatPythonMcpClientHints({
+      publicUrl: "https://user:password@example.com/mcp",
+      localUrl: "http://external-host.example.com/mcp",
+      authMode: "oauth",
+    }, null);
+    expect(result).toEqual([]);
+    expect(formatPythonMcpClientHints({
+      ...oauth, publicUrl: "https://example.com/mcp?token=secret",
+    }, null).join("\n")).not.toContain("secret");
+  });
+
+  it("allows the already installed local executable without a repository folder", () => {
+    const output = formatPythonMcpClientHints(oauth, null).join("\n");
+    expect(output).toContain("superagent-mcp-python login");
+    expect(output).toContain("Install first: uv tool install");
+  });
+});

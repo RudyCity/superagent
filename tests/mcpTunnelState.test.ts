@@ -102,6 +102,7 @@ describe("mcpTunnel disk state (cross-workspace listing)", () => {
   it("formatActiveMcpServers renders section header and NONE ACTIVE", () => {
     const empty = formatActiveMcpServers([]);
     expect(empty).toContain("Active MCP Servers: NONE ACTIVE");
+    expect(empty).toContain("/mcp tunnel start --provider cloudflare");
     const out = formatActiveMcpServers([
       {
         ...sampleState({ workspace: "D:\\ws2" }),
@@ -109,6 +110,11 @@ describe("mcpTunnel disk state (cross-workspace listing)", () => {
       },
     ]);
     expect(out).toContain("Active MCP Servers (1):");
+    expect(out).toContain("Python MCP Client (copy/paste):");
+    expect(out).toContain("MCP URL     : https://example.trycloudflare.com/mcp");
+    expect(out).toContain("One-shot PS :");
+    expect(out).toContain("/mcp tunnel stop --port <port>");
+    expect(out).not.toContain("/muse tunnel stop");
     expect(out).toContain(`Port ${TEST_PORT}`);
     expect(out).toContain("D:\\ws2");
   });
