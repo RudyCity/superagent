@@ -15,6 +15,7 @@ import {
   type StartMcpTunnelOptions,
 } from "../mcp/mcpTunnel.js";
 import { formatPythonMcpClientHints } from "../mcp/pythonMcpClientHints.js";
+import { describeMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
 import { verifyWindowsProcessBirth } from "./mcpProcessBirth.js";
 
@@ -426,6 +427,7 @@ export function formatManagedMcpTunnelStartup(result: ManagedMcpTunnelStartResul
   if (info.authMode === "oauth") {
     lines.push(
       `- Discovery    : ${info.oauthDiscoveryUrl}`,
+      `- OAuth state  : ${describeMcpOAuthStore({ persistent: info.oauthStatePersistent === true, reason: info.oauthStateReason })}`,
       ...(info.tunnelProvider === "cloudflare"
         ? [`- Scopes       : mcp:tools${info.dangerous ? " mcp:tools:write" : ""}`,
            `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,

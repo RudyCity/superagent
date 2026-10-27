@@ -212,6 +212,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
       if (wantMcp) {
         const { startMcpTunnel, listActiveMcpServers } = await import("../mcp/mcpTunnel.js");
+        const { describeMcpOAuthStore } = await import("../mcp/mcpOAuthPersistentStore.js");
         if (listActiveMcpServers().some((m) => m.port === mcpPort)) {
           console.log(`[MCP Tunnel] MCP server is ALREADY ACTIVE on port ${mcpPort}.`);
           return;
@@ -239,6 +240,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
           if (mcpInfo.authMode === "oauth") {
             mcpLines.push(
               `  Discovery     : ${mcpInfo.oauthDiscoveryUrl}`,
+              `  OAuth state   : ${describeMcpOAuthStore({ persistent: mcpInfo.oauthStatePersistent === true, reason: mcpInfo.oauthStateReason })}`,
               `  Scopes        : mcp:tools${mcpInfo.dangerous ? " mcp:tools:write" : ""}`,
               toolModeLine,
               `  Audit log     : ${mcpInfo.auditLogPath}`,

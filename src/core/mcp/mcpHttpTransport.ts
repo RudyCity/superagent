@@ -36,7 +36,9 @@ import {
   extractBearerToken,
   verifyStaticBearer,
   buildBearerChallenge,
+  classifyAuthHeader,
   sha256Hex,
+  type McpAuthHeaderKind,
   type McpAuthMode,
   type McpIdentity,
 } from "./mcpAuth.js";
@@ -70,6 +72,24 @@ export function generateMcpBearerToken(): string {
 
 export function isAuthorized(req: http.IncomingMessage, expectedToken: string): boolean {
   return verifyStaticBearer(extractBearerToken(req), expectedToken);
+}
+
+/**
+ * Safe diagnostics for a rejected endpoint probe. Records whether a credential
+ * was presented and an irreversible correlation prefix (first 12 hex chars of
+ * SHA-256), which distinguishes "client sent no token" from "client sent a token
+ * this owner never issued" without ever logging the credential.
+ */
+export function describeUnauthorizedRequest(req: http.IncomingMessage): {
+  authHeader: McpAuthHeaderKind;
+  credentialHashPrefix?: string;
+} {
+  const authHeader = classifyAuthHeader(req);
+  const presented = authHeader === "bearer" ? extractBearerToken(req) : null;
+  return {
+    authHeader,
+    ...(presented ? { credentialHashPrefix: sha256Hex(presented).slice(0, 12) } : {}),
+  };
 }
 
 // summarizeArgs moved to mcpLogSanitizer.ts (redacting version).
@@ -560,6 +580,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
             stage: "mcp.endpoint_probe",
             method: req.method,
             statusCode: 401,
+            ...describeUnauthorizedRequest(req),
           });
         }
         // HEAD must never return a body, while keeping authentication discovery

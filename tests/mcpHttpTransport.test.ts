@@ -7,6 +7,7 @@ import {
   getDefaultSafeTools,
   generateMcpBearerToken,
   createMcpAuditLogger,
+  describeUnauthorizedRequest,
   startMcpHttpServer,
   MCP_HTTP_PATH,
   type McpHttpServerHandle,
@@ -22,6 +23,17 @@ describe("mcpHttpTransport", () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/);
     expect(b).toMatch(/^[0-9a-f]{64}$/);
     expect(a).not.toBe(b);
+  });
+
+  it("describes rejected probes without leaking the credential", () => {
+    const req = (authorization?: string) =>
+      ({ headers: authorization === undefined ? {} : { authorization } }) as any;
+    expect(describeUnauthorizedRequest(req())).toEqual({ authHeader: "absent" });
+    expect(describeUnauthorizedRequest(req("Basic abc"))).toEqual({ authHeader: "other" });
+    const bearer = describeUnauthorizedRequest(req("bearer secret-token-value"));
+    expect(bearer.authHeader).toBe("bearer");
+    expect(bearer.credentialHashPrefix).toMatch(/^[a-f0-9]{12}$/);
+    expect(JSON.stringify(bearer)).not.toContain("secret-token-value");
   });
 
   it("classifies exec_command as dangerous and read_file as safe", () => {

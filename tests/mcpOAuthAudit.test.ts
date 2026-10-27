@@ -55,6 +55,33 @@ describe("MCP OAuth audit diagnostics", () => {
     expect(current.statusCode).toBe(200);
   });
 
+  it("persists validated auth diagnostics for rejected probes only", () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-oauth-audit-auth-"));
+    const filePath = path.join(tempDir, "audit.jsonl");
+    const log = createMcpOAuthAuditLogger(filePath);
+
+    log({
+      stage: "mcp.endpoint_probe",
+      method: "POST",
+      statusCode: 401,
+      authHeader: "bearer",
+      credentialHashPrefix: "abcdef012345",
+    });
+    log({
+      stage: "mcp.endpoint_probe",
+      method: "POST",
+      statusCode: 401,
+      authHeader: "Bearer" as any,
+      credentialHashPrefix: "not-a-hash" as any,
+    });
+
+    const events = fs.readFileSync(filePath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(events[0].authHeader).toBe("bearer");
+    expect(events[0].credentialHashPrefix).toBe("abcdef012345");
+    expect(events[1]).not.toHaveProperty("authHeader");
+    expect(events[1]).not.toHaveProperty("credentialHashPrefix");
+  });
+
   it("does not throw when the audit path is unavailable", () => {
     const log = createMcpOAuthAuditLogger(path.join(os.tmpdir(), "not-a-directory", "subdir", "audit.jsonl"));
     expect(() => log({

@@ -62,15 +62,37 @@ The audit file logs only timestamp, process ID, a fixed stage name, HTTP method,
 
 | Last recorded stage | What it means / what to inspect |
 |---|---|
-| **mcp.endpoint_probe** with 401 | Gemini reached the endpoint but is not yet authenticated. Inspect the **WWW-Authenticate** resource-metadata URL and the discovery route. |
-| **oauth.protected_resource_metadata** | Gemini found the protected-resource metadata. Check that it advertises the correct **/mcp** resource and authorization server. |
+| **mcp.endpoint_probe** with 401 | The client reached the endpoint without an accepted credential. Each probe also records `authHeader` (`absent`, `bearer`, or `other`) and, when a Bearer value was presented, an irreversible `credentialHashPrefix` (first 12 hex characters of SHA-256). Use them to separate "client sent no token" from "client sent a token this owner never issued"; the credential itself is never logged. |
+| **oauth.protected_resource_metadata** | The client found the protected-resource metadata. Check that it advertises the correct **/mcp** resource and authorization server. |
 | **oauth.authorization_server_metadata** | Authorization-server discovery was reached. Check the advertised authorize, token and registration endpoints. |
 | **oauth.client_registration** | The server received a dynamic client registration request. |
 | **oauth.authorization_request** / **oauth.authorization_decision** | The OAuth authorization page was opened and/or approved. |
 | **oauth.token_request** | The token endpoint was contacted. A successful status indicates the token endpoint returned success; it does not alone prove MCP initialization. |
 | **mcp.initialize** | The authenticated MCP session initialization reached SuperAgent. |
-| **mcp.tools_list** | Gemini requested tool discovery. |
-| **mcp.tools_call** | Gemini called a tool. |
+| **mcp.tools_list** | The client requested tool discovery. |
+| **mcp.tools_call** | The client called a tool. |
+
+### 4. Tokens survive an owner restart
+
+In OAuth mode the tunnel owner keeps issuer state in an issuer-scoped directory
+under `~/.superagent-r/mcp-oauth/issuer-<hash>/`, protected with Windows DPAPI
+(CurrentUser). Access and refresh tokens therefore stay valid when the owner
+restarts **with the same public URL**, so connected clients do not have to be
+re-authorized.
+
+- A rotated public URL is a different issuer and gets a different directory; old
+  tokens are not reused and the client must be pointed at the new URL.
+- Client registrations, authorization codes, and tokens are persisted as hashes
+  only; raw credentials are never written.
+- On hosts without DPAPI, or when the issuer state directory cannot be loaded,
+  the owner reports `OAuth state: in-memory (...)` in its startup output and
+  falls back to the previous behavior. Re-authorize clients after every restart
+  in that case.
+- A **401 with `authHeader: "absent"`** immediately after `oauth.token_request`
+  means the client never attached its token; a **401 with a repeated
+  `credentialHashPrefix`** means it keeps replaying a token this owner no longer
+  knows (typically cached against a previous issuer). Remove and re-add the
+  client connection, then retry.
 
 The MCP endpoint supports HEAD probing. An unauthenticated HEAD /mcp returns a 401 response with WWW-Authenticate and no body, which lets a client discover OAuth without allocating an MCP session. An authenticated HEAD returns 204 with no body and no session allocation. Both the root and path-specific RFC 9728 metadata routes are supported.
 

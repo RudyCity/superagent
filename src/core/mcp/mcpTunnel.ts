@@ -46,6 +46,11 @@ import {
 } from "./openaiTunnelClient.js";
 import { getOpenAiMcpTunnelConfig } from "./openaiMcpTunnelConfig.js";
 import { formatPythonMcpClientHints } from "./pythonMcpClientHints.js";
+import {
+  createPersistentMcpOAuthStore,
+  describeMcpOAuthStore,
+  type McpOAuthPersistenceFallback,
+} from "./mcpOAuthPersistentStore.js";
 
 export const DEFAULT_MCP_PORT = 9227;
 export type McpTunnelProvider = "cloudflare" | "openai";
@@ -68,6 +73,10 @@ interface ActiveMcp {
   openAiTunnelId?: string;
   openAiStatus?: OpenAiTunnelStatus;
   oauthPublicBaseUrl?: string;
+  /** True when OAuth tokens survive an owner restart for the same issuer. */
+  oauthStatePersistent?: boolean;
+  /** Why OAuth state fell back to memory (never contains credentials). */
+  oauthStateReason?: McpOAuthPersistenceFallback;
 }
 
 const activeServers = new Map<number, ActiveMcp>();
@@ -96,6 +105,10 @@ export interface McpTunnelInfo {
   adminUrl?: string;
   /** Whether tunnel-client has reported ready. */
   ready?: boolean;
+  /** True when OAuth access/refresh tokens survive an owner restart. */
+  oauthStatePersistent?: boolean;
+  /** Why OAuth state is in-memory instead of persistent. */
+  oauthStateReason?: McpOAuthPersistenceFallback;
 }
 
 /** Disk-persisted MCP server state. NEVER contains the bearer token or credentials. */
@@ -114,6 +127,8 @@ export interface McpServerState {
   adminUrl?: string;
   /** Public OAuth issuer URL; never includes credentials. */
   oauthPublicBaseUrl?: string;
+  /** True when OAuth tokens survive an owner restart for this issuer. */
+  oauthStatePersistent?: boolean;
 }
 
 /** Full info for one active MCP server, including cross-workspace ones. */
@@ -167,6 +182,7 @@ export function readMcpStateFile(filePath: string): McpServerState | null {
       openAiTunnelId: s.openAiTunnelId,
       adminUrl: s.adminUrl,
       oauthPublicBaseUrl: s.oauthPublicBaseUrl,
+      oauthStatePersistent: s.oauthStatePersistent === true,
     };
   } catch {
     return null;
@@ -323,6 +339,9 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
               return { publicBaseUrl: oauthPublicBaseUrl!, bootstrapCodeHash: bc.codeHash };
             })()
           : undefined;
+      const oauthSelection = authMode === "oauth"
+        ? createPersistentMcpOAuthStore({ issuer: oauthPublicBaseUrl! })
+        : undefined;
 
       const handle = await startMcpHttpServer({
         port,
@@ -331,6 +350,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         auditLogPath: opts.auditLogPath,
         authMode,
         oauth,
+        oauthStore: oauthSelection?.store,
         publicBaseUrl: oauthPublicBaseUrl || `http://127.0.0.1:${port}`,
         ownerControlToken: opts.ownerControlToken,
         ownerStartedAt: opts.ownerStartedAt,
@@ -355,6 +375,8 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         tunnelProvider: "openai",
         openAiTunnelId: tunnelId,
         oauthPublicBaseUrl,
+        oauthStatePersistent: oauthSelection?.persistent ?? false,
+        oauthStateReason: oauthSelection?.reason,
       };
       activeServers.set(port, active);
       createdServer = true;
@@ -396,6 +418,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
       openAiTunnelId: tunnelId,
       oauthPublicBaseUrl,
       adminUrl: openAiStatus.adminUrl,
+      oauthStatePersistent: active.oauthStatePersistent === true,
     });
 
     return {
@@ -412,6 +435,8 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
       openAiTunnelId: tunnelId,
       adminUrl: openAiStatus.adminUrl,
       ready: openAiStatus.ready,
+      oauthStatePersistent: active.oauthStatePersistent === true,
+      oauthStateReason: active.oauthStateReason,
     };
   }
 
@@ -478,6 +503,9 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
               return { publicBaseUrl: publicBaseClean, bootstrapCodeHash: bc.codeHash };
             })()
           : undefined;
+      const oauthSelection = authMode === "oauth"
+        ? createPersistentMcpOAuthStore({ issuer: publicBaseClean })
+        : undefined;
       const handle = await startMcpHttpServer({
         port,
         bearerToken,
@@ -485,6 +513,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         auditLogPath: opts.auditLogPath,
         authMode,
         oauth,
+        oauthStore: oauthSelection?.store,
         publicBaseUrl: publicBaseClean,
         ownerControlToken: opts.ownerControlToken,
         ownerStartedAt: opts.ownerStartedAt,
@@ -506,6 +535,8 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         ownsTunnel: createdTunnel,
         bootstrapCode,
         tunnelProvider: "cloudflare",
+        oauthStatePersistent: oauthSelection?.persistent ?? false,
+        oauthStateReason: oauthSelection?.reason,
       };
       activeServers.set(port, active);
       createdServer = true;
@@ -541,6 +572,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
     workspace: process.cwd(),
     authMode,
     tunnelProvider: "cloudflare",
+    oauthStatePersistent: active.oauthStatePersistent === true,
   });
 
   return {
@@ -554,6 +586,8 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
     bootstrapCode: active.bootstrapCode,
     oauthDiscoveryUrl: authMode === "oauth" ? `${publicBaseClean}/.well-known/oauth-authorization-server` : undefined,
     tunnelProvider: "cloudflare",
+    oauthStatePersistent: active.oauthStatePersistent === true,
+    oauthStateReason: active.oauthStateReason,
   };
 }
 
@@ -659,6 +693,9 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
     );
     if (s.openAiTunnelId) {
       lines.push(`   - Tunnel ID  : ${s.openAiTunnelId}`);
+    }
+    if (authMode === "oauth") {
+      lines.push(`   - OAuth state : ${describeMcpOAuthStore({ persistent: s.oauthStatePersistent === true })}`);
     }
     if (s.adminUrl) {
       lines.push(`   - Admin UI   : ${s.adminUrl}`);

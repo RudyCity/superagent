@@ -1,3 +1,11 @@
+## [1.14.54] - 2026-10-27
+### MCP OAuth persistence and rejected-probe diagnostics
+- Persist production MCP tunnel OAuth state per issuer so access and refresh tokens survive an owner restart while the public URL is unchanged, removing the "authentication succeeded, action discovery failed" loop caused by every restart invalidating all tokens. Hosts without Windows DPAPI, unsupported issuers, or an unreadable issuer state directory fall back to the previous in-memory behavior and report it in the startup output.
+- Reuse the existing R2 durable store instead of adding a second state format: state remains hash-only with a DPAPI-protected HMAC key, is scoped by issuer hash so a rotated quick-tunnel URL never inherits old tokens, and expired records are pruned at owner start.
+- Accept case-insensitive `Bearer` authorization schemes and extra whitespace (RFC 6750) when parsing MCP requests.
+- Record `authHeader` (`absent`/`bearer`/`other`) and an irreversible `credentialHashPrefix` on rejected `/mcp` probes so operators can distinguish "client sent no token" from "client replayed a token this owner never issued"; credentials are never logged.
+- Document the persistence/restart matrix and the new audit fields for ChatGPT and Gemini connector setup.
+
 ## [1.14.53] - 2026-10-27
 ### Independent MCP tunnel owner
 - Change both `/mcp tunnel start` and `superagent mcp tunnel start` to launch the MCP HTTP/OAuth+tunnel stack in a detached dedicated owner process instead of creating it inside the running Core process.

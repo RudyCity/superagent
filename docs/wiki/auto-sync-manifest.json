@@ -37,7 +37,7 @@
       "updatedAt": "2026-08-15T02:09:42.094Z"
     }
   },
-  "lastSync": "2026-10-26T13:36:11.470Z",
+  "lastSync": "2026-10-27T07:14:13.614Z",
   "workspaces": [
     {
       "name": "superagent",
@@ -50,18 +50,38 @@
   ],
   "lastModifiedFiles": [
     "[superagent] CHANGELOG.md",
-    "[superagent] README.md",
-    "[superagent] docs/wiki/03-api-and-contracts.md",
-    "[superagent] integrations/python-mcp-client/README.md",
+    "[superagent] docs/guides/mcp-google-gemini-remote-connectors.md",
+    "[superagent] docs/remote-agent-setup.md",
     "[superagent] package.json",
-    "[superagent] src/core/mcp/pythonMcpClientHints.ts",
-    "[superagent] tests/pythonMcpClientHints.test.ts"
+    "[superagent] src/core/mcp/mcpAuth.ts",
+    "[superagent] src/core/mcp/mcpHttpTransport.ts",
+    "[superagent] src/core/mcp/mcpOAuthAudit.ts",
+    "[superagent] src/core/mcp/mcpTunnel.ts",
+    "[superagent] src/core/remoteAgent/museCli.ts",
+    "[superagent] src/core/runtime/mcpManagedTunnelOwner.ts",
+    "[superagent] tests/mcpAuth.test.ts",
+    "[superagent] tests/mcpHttpTransport.test.ts",
+    "[superagent] tests/mcpOAuthAudit.test.ts",
+    "[superagent] build/",
+    "[superagent] build_t42.ps1",
+    "[superagent] find_fuzz.ps1",
+    "[superagent] fuzz_t42.ps1",
+    "[superagent] p41_msg_stage.txt",
+    "[superagent] p41_stage_repro.rdy",
+    "[superagent] p41h_probe.rdy",
+    "[superagent] p41h_probe_esc.rdy",
+    "[superagent] p42_stage.rdy",
+    "[superagent] src/core/mcp/mcpOAuthPersistentStore.ts",
+    "[superagent] suite_t42.ps1",
+    "[superagent] t42_commit_msg.txt",
+    "[superagent] t42_patch.py",
+    "[superagent] tests/mcpOAuthPersistentStore.test.ts"
   ],
   "impactSummary": {
     "architecture": true,
     "domainData": false,
     "apiContracts": true,
-    "features": false,
+    "features": true,
     "devops": false,
     "onboarding": false,
     "index": true

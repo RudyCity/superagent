@@ -9,6 +9,7 @@ import {
   extractBearerToken,
   buildBearerChallenge,
   authorizeStaticBearer,
+  classifyAuthHeader,
   sha256Hex,
 } from "../src/core/mcp/mcpAuth.js";
 
@@ -54,6 +55,34 @@ describe("extractBearerToken", () => {
   });
   it("returns null for non-bearer schemes", () => {
     expect(extractBearerToken(reqWithAuth("Basic abc"))).toBeNull();
+  });
+  it("accepts a lowercase scheme (RFC 6750 schemes are case-insensitive)", () => {
+    expect(extractBearerToken(reqWithAuth("bearer tok123"))).toBe("tok123");
+    expect(extractBearerToken(reqWithAuth("BEARER tok123"))).toBe("tok123");
+  });
+  it("tolerates extra whitespace and tabs", () => {
+    expect(extractBearerToken(reqWithAuth("Bearer    tok123"))).toBe("tok123");
+    expect(extractBearerToken(reqWithAuth("  bearer\ttok123  "))).toBe("tok123");
+  });
+  it("never returns a valid token for concatenated duplicate headers", () => {
+    const extracted = extractBearerToken(reqWithAuth("Bearer a, Bearer b"));
+    expect(verifyStaticBearer(extracted, "a")).toBe(false);
+    expect(verifyStaticBearer(extracted, "b")).toBe(false);
+  });
+});
+
+describe("classifyAuthHeader", () => {
+  it("reports an absent header", () => {
+    expect(classifyAuthHeader(reqWithAuth(undefined))).toBe("absent");
+    expect(classifyAuthHeader(reqWithAuth("   "))).toBe("absent");
+  });
+  it("reports the bearer scheme case-insensitively", () => {
+    expect(classifyAuthHeader(reqWithAuth("Bearer abc"))).toBe("bearer");
+    expect(classifyAuthHeader(reqWithAuth("bearer abc"))).toBe("bearer");
+  });
+  it("reports other schemes", () => {
+    expect(classifyAuthHeader(reqWithAuth("Basic abc"))).toBe("other");
+    expect(classifyAuthHeader(reqWithAuth("bearertoken"))).toBe("other");
   });
 });
 

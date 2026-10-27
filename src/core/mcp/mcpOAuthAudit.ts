@@ -9,6 +9,11 @@ const ROTATED_AUDIT_LOG_COUNT = 1;
  * OAuth diagnostics intentionally persist only a small allow-list of fields.
  * Request URLs, query strings, request bodies, client IDs, state, codes, and
  * credentials must never be passed through to this logger.
+ *
+ * For rejected endpoint probes the logger may also record whether the client
+ * presented an Authorization header ("absent" | "bearer" | "other") plus the
+ * first 12 hex characters of SHA-256(credential). The prefix is irreversible
+ * and exists only to correlate retries; the credential itself is never stored.
  */
 export type McpOAuthAuditStage =
   | "oauth.protected_resource_metadata"
@@ -22,11 +27,17 @@ export type McpOAuthAuditStage =
   | "mcp.tools_list"
   | "mcp.tools_call";
 
+export type McpAuthHeaderDiagnostic = "absent" | "bearer" | "other";
+
 export interface McpOAuthAuditEvent {
   stage: McpOAuthAuditStage;
   method: "GET" | "POST" | "HEAD" | "DELETE";
   statusCode: number;
   durationMs?: number;
+  /** Presence/scheme of the Authorization header; never the credential. */
+  authHeader?: McpAuthHeaderDiagnostic;
+  /** Irreversible SHA-256 prefix used only to correlate repeated attempts. */
+  credentialHashPrefix?: string;
 }
 
 const ALLOWED_STAGES = new Set<McpOAuthAuditStage>([
@@ -52,6 +63,14 @@ export function createMcpOAuthAuditLogger(
       if (!["GET", "POST", "HEAD", "DELETE"].includes(method)) return;
       if (!Number.isInteger(event.statusCode) || event.statusCode < 100 || event.statusCode > 599) return;
       fs.mkdirSync(path.dirname(logPath), { recursive: true });
+      const authHeader =
+        event.authHeader === "absent" || event.authHeader === "bearer" || event.authHeader === "other"
+          ? event.authHeader
+          : undefined;
+      const credentialHashPrefix =
+        typeof event.credentialHashPrefix === "string" && /^[a-f0-9]{8,16}$/.test(event.credentialHashPrefix)
+          ? event.credentialHashPrefix
+          : undefined;
       const safeEvent = {
         timestamp: new Date().toISOString(),
         pid: process.pid,
@@ -61,6 +80,8 @@ export function createMcpOAuthAuditLogger(
         ...(typeof event.durationMs === "number" && Number.isFinite(event.durationMs)
           ? { durationMs: Math.max(0, Math.round(event.durationMs)) }
           : {}),
+        ...(authHeader ? { authHeader } : {}),
+        ...(credentialHashPrefix ? { credentialHashPrefix } : {}),
       };
       try {
         if (fs.statSync(logPath).size >= MAX_AUDIT_LOG_BYTES) {

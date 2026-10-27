@@ -634,3 +634,22 @@ To resolve this:
 2. Paste the one-time **bootstrap approval code** displayed in your Superagent terminal console.
 3. Click **Approve**.
 4. ChatGPT exchanges the authorization code via PKCE, retrieves the access token, and loads all available Superagent MCP tools.
+
+### 12.5 Restarts, Token Lifetime and "Action Discovery Failed"
+
+The startup banner reports `OAuth state: persistent (issuer-scoped)` when tokens
+are kept across restarts. In that mode a restarted owner still accepts the
+already-issued ChatGPT/Gemini token, so no re-authorization is needed while the
+public URL stays the same.
+
+- A **new quick-tunnel URL** is a different issuer. Update the client to the new
+  `/mcp` URL and authorize again; old tokens are not reused.
+- `OAuth state: in-memory (...)` means the host cannot persist issuer state (for
+  example, no Windows DPAPI). In that mode every owner restart invalidates the
+  tokens, and the client must be disconnected and re-added.
+- If a client still reports *"authentication succeeded, action discovery
+  failed"*, check `~/.superagent-r/mcp-oauth-audit.jsonl`. A `401` probe carrying
+  `"authHeader":"absent"` after a successful `oauth.token_request` means the
+  client never attached its token; a repeated `credentialHashPrefix` means it
+  keeps replaying a token the owner does not know. Disconnect and re-add the
+  client connection, then retry.

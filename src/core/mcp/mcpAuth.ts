@@ -39,12 +39,30 @@ export function sha256Hex(data: string): string {
   return crypto.createHash("sha256").update(data, "utf8").digest("hex");
 }
 
-/** Extract the raw bearer token from an Authorization header (no validation). */
+/**
+ * Authorization scheme classification for diagnostics. It never contains the
+ * credential: only whether a header was present and whether it used the Bearer
+ * scheme. Scheme matching is case-insensitive per RFC 6750.
+ */
+export type McpAuthHeaderKind = "absent" | "bearer" | "other";
+
+/**
+ * Extract the raw bearer token from an Authorization header (no validation).
+ * The scheme is case-insensitive (RFC 6750) and extra whitespace is tolerated,
+ * because clients differ on "Bearer" vs "bearer" and on spacing.
+ */
 export function extractBearerToken(req: http.IncomingMessage): string | null {
   const header = req.headers["authorization"];
   if (typeof header !== "string") return null;
-  const m = /^Bearer\s+(.+)$/.exec(header.trim());
+  const m = /^bearer[ \t]+(\S(?:.*\S)?)$/i.exec(header.trim());
   return m ? m[1].trim() : null;
+}
+
+/** Classify an Authorization header without exposing the credential. */
+export function classifyAuthHeader(req: http.IncomingMessage): McpAuthHeaderKind {
+  const header = req.headers["authorization"];
+  if (typeof header !== "string" || !header.trim()) return "absent";
+  return /^\s*bearer(?:[ \t]|$)/i.test(header) ? "bearer" : "other";
 }
 
 /** Constant-time string comparison (length check is not secret). */
