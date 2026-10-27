@@ -87,6 +87,12 @@ describe("MCP tunnel Python client copy-ready instructions", () => {
     expect(output).toContain("Connect a remote MCP-capable host directly");
     expect(output).toContain("Remote stdio   : superagent-mcp-python serve");
     expect(output).toContain("server-local uv --project path");
+    expect(output).toContain("MCP permission boundary");
+    expect(output).toContain("YOLO OFF        : Read-only safe tools");
+    expect(output).toContain("Scoped YOLO     : Write/execute only within authorized workspace scope");
+    expect(output).toContain("Full YOLO       : Broader write/execute paths");
+    expect(output).toContain("--allow-dangerous does NOT turn YOLO on");
+    expect(output).toContain("/yolo off relocks dangerous MCP tools");
     expect(output).toContain(`Install first: uv tool install '${PYTHON_MCP_GIT_INSTALL}'`);
   });
 

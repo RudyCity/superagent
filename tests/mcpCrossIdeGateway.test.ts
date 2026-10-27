@@ -18,6 +18,7 @@ afterEach(() => {
 });
 describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
   test("gateway discovery works with dangerous tool enabled, without caller-supplied agentId", async () => {
+    setYoloMode(true);
     const mcp = createSuperagentMcpServer({ toolExposure: "gateway", allowDangerous: true });
     try {
       const tools = await list(mcp);
@@ -33,6 +34,7 @@ describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
     } finally { await mcp.close(); }
   });
   test("MCP-only enforcement blocks cached direct CDP/vision tool calls, but not gateway identity", async () => {
+    setYoloMode(true);
     process.env.SUPERAGENT_CDP_GATEWAY_ONLY = "1";
     const mcp = createSuperagentMcpServer({ toolExposure: "full", allowDangerous: true });
     try {

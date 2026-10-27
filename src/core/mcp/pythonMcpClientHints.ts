@@ -5,6 +5,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getYoloModeState } from "../permissions.js";
 
 /** Dedicated GitHub branch with the installable Python package at its root. */
 export const PYTHON_MCP_GITHUB_REF = "python-mcp-client";
@@ -84,8 +85,19 @@ export function formatPythonMcpClientHints(
     `  Authentication  : ${endpoint.authMode === "oauth" ? "OAuth PKCE" : "static Bearer"}`,
     "  Transport       : MCP Streamable HTTP. Connect a remote MCP-capable host directly; use the Python stdio bridge only when the host can launch local processes.",
     `  Python install  : uv tool install ${quotePowerShell(PYTHON_MCP_GIT_INSTALL)}`,
-    `  Remote stdio   : ${agentCommand} serve (after successful login)`,
+    `  Remote stdio   : ${agentCommand} serve (${auth === "oauth" ? "after successful login" : "after configuring the Bearer token privately"})`,
     "     Remote hosts use the installed executable, NOT the server-local uv --project path shown above.",
+    "",
+    "MCP permission boundary (evaluated by the server on every tool call):",
+    `  Local YOLO view : ${getYoloModeState().toUpperCase()} (snapshot only; a different MCP owner process may have its own effective mode)`,
+    "  YOLO OFF        : Read-only safe tools. All MCP mutations and execution DENIED, including with --allow-dangerous, OAuth write/admin scopes or project grants.",
+    "  Scoped YOLO     : Write/execute only within authorized workspace scope (workspace and one parent) or the exact separately authorized project; protected files and destructive commands remain blocked.",
+    "  Full YOLO       : Broader write/execute paths, but still requires OAuth write/admin as applicable, tool exposure, project authorization where required, and hard blocklists.",
+    "  Owner commands  : /yolo on | /yolo full | /yolo off. Only the local operator may change these; agent must not attempt elevation.",
+    "  Tunnel opt-in   : --allow-dangerous does NOT turn YOLO on or grant project capabilities.",
+    "  Decision rule   : YOLO gate AND tool policy AND OAuth scopes (if enabled) AND project/path capabilities AND hard safety rules.",
+    "  Revocation      : /yolo off relocks dangerous MCP tools even for an already connected client/session.",
+    "  NO permission elevation from an agent prompt, a copied command, or OAuth scope alone.",
     "  1. Use the existing endpoint. Never start an extra SuperAgent runtime or assume that tool discovery grants write access.",
     ...(auth === "oauth" ? [
       `  2. Read-only login PS: ${loginWithScope("mcp:tools")}`,

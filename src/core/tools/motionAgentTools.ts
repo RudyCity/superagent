@@ -271,22 +271,37 @@ export const studioEditProjectTool: Tool = {
     const expectedRev = Number(args.expectedRevision);
     const edits = (args.edits || []) as any[];
     const summary = (args.summary as string) || "Applied Studio edits";
-    const updated = await updateMotionProject(cwd, studioId, expectedRev, edits);
-    const receipt = {
-      operationId: `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      actor: "assistant",
-      studioId,
-      projectName: updated.name,
-      revisionBefore: expectedRev,
-      revisionAfter: updated.revision,
-      summary,
-      affectedEntities: {
-        layers: edits.map(e => e.layerId).filter(Boolean),
-      },
-      reversible: true,
-    };
-    return JSON.stringify(receipt);
+    try {
+      const updated = await updateMotionProject(cwd, studioId, expectedRev, edits);
+      const receipt = {
+        success: true,
+        operationId: `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        actor: "assistant",
+        studioId,
+        projectName: updated.name,
+        revisionBefore: expectedRev,
+        revisionAfter: updated.revision,
+        summary,
+        affectedEntities: {
+          layers: edits.map(e => e.layerId).filter(Boolean),
+        },
+        reversible: true,
+      };
+      return JSON.stringify(receipt);
+    } catch (err: any) {
+      if (err.name === "MotionRevisionConflict" || err.message?.includes("revision conflict")) {
+        return JSON.stringify({
+          success: false,
+          conflict: true,
+          error: "Revision conflict",
+          message: err.message,
+          expectedRevision: expectedRev,
+          suggestion: "Inspect the latest project revision to rebase edits on human changes.",
+        });
+      }
+      throw err;
+    }
   },
 };
 

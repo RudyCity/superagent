@@ -51,6 +51,31 @@ Tokens and dynamic client registration details are stored in a per-endpoint-and-
 
 Read-only `mcp:tools` is the default scope. Opt in to `mcp:tools mcp:tools:write` only for trusted write workflows with explicit owner permission; admin additionally requires write. Actual tool access also depends on the SuperAgent server exposure policy and project grants.
 
+## YOLO authorization modes (server-side enforcement)
+
+OAuth scopes and project access grants are never permission overrides. Every MCP
+tool call, including calls through the compact tool gateway and existing client
+sessions, is re-authorized against the local owner's **current** YOLO mode:
+
+| Owner mode | MCP tool policy |
+| --- | --- |
+| `/yolo off` | Read-only: dangerous write, execute, admin, and similar tool calls are hidden and denied, even if `--allow-dangerous`, OAuth write/admin and project grant are present. |
+| `/yolo on` (Scoped) | Dangerous tools may run only within the owner workspace and one-parent scope, or an explicitly granted/registered project where the router permits it. Protected files, destructive commands and project-grant creation still have separate guards. |
+| `/yolo full` (Full) | Broader path permissions, **not** permission-free operation: OAuth scope, active tool exposure, hard blocklists, registered-project authorization where required and audit remain enforced. |
+
+Changing to `/yolo off` or downgrading to Scoped is effective for the next
+tool invocation, including clients already connected before the change.
+Independent MCP owners re-read the persisted permission mode rather than
+retaining a stale in-process Full YOLO decision. A missing/unreadable mode fails
+closed to OFF. A tunnel flag or agent instruction cannot enable YOLO: only the
+authorized local operator should change mode.
+
+For OAuth, dangerous tools require `mcp:tools:write`; project-grant/registry
+administration also requires `mcp:tools:admin`. The latter is not enough
+for grant creation without locally enabled Full YOLO and explicit owner
+approval. Grants are identity-specific and never silently inherited by
+another Python client ID.
+
 ## Project grants and write access
 
 The MCP tunnel startup and status output includes an agent-ready access workflow.

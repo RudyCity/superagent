@@ -382,6 +382,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
   });
 
   it("revoking only admin scope immediately hides and blocks project administration", async () => {
+    setYoloMode(true);
     let scopes = ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"];
     const events: any[] = [];
     const server = createSuperagentMcpServer({
@@ -415,6 +416,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
   });
 
   it("OAuth discovery updates when the same client loses write scope", async () => {
+    setYoloMode(true);
     let scopes = ["mcp:tools", "mcp:tools:write"];
     const server = createSuperagentMcpServer({
       toolExposure: "full", // Test direct-tool policy; production defaults to gateway.

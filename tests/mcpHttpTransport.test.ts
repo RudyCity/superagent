@@ -13,6 +13,7 @@ import {
 } from "../src/core/mcp/mcpHttpTransport.js";
 
 import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { setYoloMode } from "../src/core/permissions.js";
 
 describe("mcpHttpTransport", () => {
   it("generates 64-char hex bearer tokens", () => {
@@ -236,12 +237,14 @@ describe("mcpHttpTransport", () => {
     let token: string;
 
     beforeAll(async () => {
+      setYoloMode(true);
       token = generateMcpBearerToken();
       handle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: true, toolExposure: "full" });
     }, 30000);
 
     afterAll(async () => {
       await handle.close();
+      setYoloMode(false);
     });
 
     it("includes exec_command when opted in", async () => {
@@ -374,6 +377,7 @@ describe("per-session transport isolation", () => {
   });
 
   it("persists workspace switches for one initialized session without changing another session", async () => {
+    setYoloMode(true);
     const testHandle = await startMcpHttpServer({ port: 0, bearerToken: token, allowDangerous: true });
     const testUrl = `http://127.0.0.1:${testHandle.port}${MCP_HTTP_PATH}`;
     const root = fs.mkdtempSync(path.join(process.cwd(), ".tmp-mcp-session-workspaces-"));
@@ -449,6 +453,7 @@ describe("per-session transport isolation", () => {
       removeProject(projectIdB);
       fs.rmSync(root, { recursive: true, force: true });
       await testHandle.close();
+      setYoloMode(false);
     }
   });
 

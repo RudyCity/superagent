@@ -114,6 +114,7 @@ describe("static MCP gateway catalog", () => {
   });
 
   it("reflects OAuth scope revocation immediately, without stale cached gateway discovery", async () => {
+    setYoloMode(true);
     let scopes = ["mcp:tools", "mcp:tools:read", "mcp:tools:write", "mcp:tools:admin"];
     const server = createSuperagentMcpServer({
       toolExposure: "gateway",

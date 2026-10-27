@@ -6,7 +6,7 @@ import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { registerProject, removeProject, updateProject } from "../src/core/project/projectRegistry.js";
 import { hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
-import { setFullYoloMode } from "../src/core/permissions.js";
+import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 let configDir: string;
 let previousConfigDir: string | undefined;
@@ -66,6 +66,7 @@ describe("independent multi-project operations through the MCP dispatcher", () =
     const granted = await call("superagent_grant_project_access", { projectId: projectBId, capabilities: ["read"] });
     expect(granted.isError).toBeFalsy();
     setFullYoloMode(false);
+    setYoloMode(true); // Revocation is a dangerous MCP operation; OFF is read-only.
 
     const initiallyReadable = await call("superagent_list_files", { projectId: projectBId });
     expect(initiallyReadable.isError).toBeFalsy();
@@ -120,6 +121,7 @@ describe("independent multi-project operations through the MCP dispatcher", () =
     expect(grant.isError).toBeFalsy();
     expect(hasProjectAccess(identity, projectBId, "read")).toBe(true);
     setFullYoloMode(false);
+    setYoloMode(true);
 
     const readB = await call({
       method: "tools/call",
@@ -202,6 +204,7 @@ describe("independent multi-project operations through the MCP dispatcher", () =
     });
     expect(grantWrite.isError).toBeFalsy();
     setFullYoloMode(false);
+    setYoloMode(true);
 
     const writeB = await call({
       method: "tools/call",

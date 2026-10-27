@@ -635,7 +635,7 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
       `   - Provider   : ${providerName}`,
       `   - Public URL : ${s.publicUrl}`,
       `   - Local URL  : ${s.localUrl}`,
-      `   - Auth mode  : ${authMode} | Tool mode: ${toolMode}`,
+      `   - Auth mode  : ${authMode} | Tool exposure configured: ${toolMode} (effective permissions depend on YOLO, OAuth and grants)`,
     );
     if (s.openAiTunnelId) {
       lines.push(`   - Tunnel ID  : ${s.openAiTunnelId}`);

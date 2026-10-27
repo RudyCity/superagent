@@ -610,7 +610,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         && canDiscoverRead
         && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
         && (!lockSafeTools || MCP_TOOL_CLASSIFICATION[t.name] === "safe")
-        && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || canDiscoverDangerous)
+        // YOLO OFF is always read-only; --allow-dangerous, OAuth and grants cannot bypass it.
+        && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || (yoloState !== "off" && canDiscoverDangerous))
         && (!PRIVILEGED_MCP_TOOLS.has(t.name) || canDiscoverAdmin)
     );
     return tools;
@@ -1086,6 +1087,20 @@ function extractMcpResultText(result: unknown): string {
         throw new McpError(ErrorCode.InvalidRequest,
           "Tool requires OAuth " + requiredScope + " scope; local dangerous/YOLO mode cannot elevate token permissions.");
       }
+    }
+    // Re-evaluate the local YOLO state on EVERY invocation, including gateway
+    // recursion and pre-existing MCP sessions. Explicit tunnel opt-in is only
+    // tool exposure, never a substitute for locally enabled YOLO.
+    if (isDangerous && yoloState === "off") {
+      const reason = "YOLO OFF denies MCP write/execute tools even with --allow-dangerous, OAuth write/admin scopes, or project grants. Enable /yolo on locally for scoped access or /yolo full locally for broader access.";
+      auditContext.authorizationDecision = "denied";
+      auditContext.errorCode = "yolo_off";
+      emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
+      emitMcpActivity({
+        type: "tool_call", tool: toolName, args: {}, ok: false, error: reason,
+        durationMs: 0, timestamp: Date.now(), workspace: activeWorkspace,
+      });
+      throw new McpError(ErrorCode.InvalidRequest, reason);
     }
     const registryManagementTools = new Set([
       "superagent_list_projects", "superagent_get_project", "superagent_register_project",

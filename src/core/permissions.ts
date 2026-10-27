@@ -843,30 +843,11 @@ function readPersistedYoloState(): "off" | "scoped" | "full" | null {
 }
 
 export function isYoloMode(): boolean {
-  if (_isFullYoloMode || _isYoloMode) return true;
-  const persisted = readPersistedYoloState();
-  if (persisted === "full") {
-    _isFullYoloMode = true;
-    _isYoloMode = true;
-    return true;
-  }
-  if (persisted === "scoped") {
-    _isFullYoloMode = false;
-    _isYoloMode = true;
-    return true;
-  }
-  return false;
+  return getYoloModeState() !== "off";
 }
 
 export function isFullYoloMode(): boolean {
-  if (_isFullYoloMode) return true;
-  const persisted = readPersistedYoloState();
-  if (persisted === "full") {
-    _isFullYoloMode = true;
-    _isYoloMode = true;
-    return true;
-  }
-  return false;
+  return getYoloModeState() === "full";
 }
 
 export function setYoloMode(enabled: boolean): void {
@@ -886,20 +867,14 @@ export function setFullYoloMode(enabled: boolean): void {
 }
 
 export function getYoloModeState(): "off" | "scoped" | "full" {
-  if (_isFullYoloMode) return "full";
-  if (_isYoloMode) return "scoped";
-  const persisted = readPersistedYoloState();
-  if (persisted === "full") {
-    _isFullYoloMode = true;
-    _isYoloMode = true;
-    return "full";
-  }
-  if (persisted === "scoped") {
-    _isFullYoloMode = false;
-    _isYoloMode = true;
-    return "scoped";
-  }
-  return "off";
+  // Independent MCP owners MUST observe a newer /yolo off or downgrade from
+  // another process. In-memory flags are only a mirror of persisted authority.
+  // A missing/corrupt/unreadable state fails closed to OFF rather than retaining
+  // a stale FULL grant from this process.
+  const persisted = readPersistedYoloState() ?? "off";
+  _isFullYoloMode = persisted === "full";
+  _isYoloMode = persisted !== "off";
+  return persisted;
 }
 
 /**
@@ -922,7 +897,7 @@ export function isPathWithinYoloScope(
   workspacePath: string | string[],
   baseCwd?: string
 ): boolean {
-  if (_isFullYoloMode) {
+  if (getYoloModeState() === "full") {
     return true;
   }
   const rawWorkspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];
@@ -951,7 +926,7 @@ export function isToolCallWithinYoloScope(
   toolCall: { name: string; args?: Record<string, unknown> },
   workspacePath: string | string[]
 ): boolean {
-  if (_isFullYoloMode) {
+  if (getYoloModeState() === "full") {
     return true;
   }
   const rawWorkspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];

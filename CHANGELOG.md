@@ -1,3 +1,9 @@
+## [1.14.49] - 2026-10-27
+### MCP per-call YOLO privilege enforcement
+- Require an actively enabled local YOLO mode before MCP dangerous tool discovery/execution; explicit tunnel opt-in, OAuth write/admin scopes and project grants cannot elevate YOLO OFF.
+- Re-read persisted YOLO mode so long-lived and independently owned MCP sessions observe downgrades and fail closed on missing/corrupt mode files; maintain scoped/full boundaries and hard authorization layers.
+- Extend startup/status Python handoff with the OFF/Scoped/Full access matrix and configured-vs-effective exposure warning, and add security regression coverage for cached sessions and gateway routing.
+
 ## [1.14.48] - 2026-10-27
 ### Portable Python MCP agent handoff
 - Use the installed `superagent-mcp-python` executable in all remote agent handoff steps and explicitly warn that server-local `uv run --project` paths cannot be copied to another machine.
