@@ -8,7 +8,6 @@ vendor/*
 tests/temp-home-*/
 tests/temp-home*
 tests/.superagent-r/
-graphify-out/
 .fastcontext/
 .grok/
 Notepad++/
