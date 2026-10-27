@@ -923,12 +923,36 @@ export function encodeSenopatiTokens(
 /**
  * Lazily initialize and cache the Senopati ONNX inference session.
  */
+let loadingProgressListeners: Set<(event: any) => void> = new Set();
+
 export async function getSenopatiSession(onProgress?: (event: any) => void): Promise<{
   session: any;
   vocab: { vocab_size: number; word2id: Record<string, number> };
 } | null> {
+  let progressCb = onProgress;
+  if (!progressCb) {
+    try {
+      const { getProgressCallback } = await import("./tools/state.js");
+      const cb = getProgressCallback();
+      if (cb) progressCb = cb;
+    } catch {}
+  }
+
   if (senopatiBundle) {
+    if (progressCb) {
+      try {
+        progressCb({
+          type: "model_load",
+          modelName: "senopati_onnx",
+          status: "loaded",
+        });
+      } catch {}
+    }
     return senopatiBundle;
+  }
+
+  if (progressCb) {
+    loadingProgressListeners.add(progressCb);
   }
 
   if (senopatiLoadingPromise) {
@@ -942,12 +966,14 @@ export async function getSenopatiSession(onProgress?: (event: any) => void): Pro
     }
 
     try {
-      if (onProgress) {
-        onProgress({
-          type: "model_load",
-          modelName: "senopati_onnx",
-          status: "loading",
-        });
+      for (const listener of loadingProgressListeners) {
+        try {
+          listener({
+            type: "model_load",
+            modelName: "senopati_onnx",
+            status: "loading",
+          });
+        } catch {}
       }
 
       const ortModule = await import("onnxruntime-node");
@@ -965,18 +991,21 @@ export async function getSenopatiSession(onProgress?: (event: any) => void): Pro
       senopatiVocab = vocab;
       senopatiBundle = { session, vocab };
 
-      if (onProgress) {
-        onProgress({
-          type: "model_load",
-          modelName: "senopati_onnx",
-          status: "loaded",
-        });
+      for (const listener of loadingProgressListeners) {
+        try {
+          listener({
+            type: "model_load",
+            modelName: "senopati_onnx",
+            status: "loaded",
+          });
+        } catch {}
       }
 
       return senopatiBundle;
     } catch {
       return null;
     } finally {
+      loadingProgressListeners.clear();
       senopatiLoadingPromise = null;
     }
   })();
@@ -1332,6 +1361,15 @@ export async function classifyRequest(
     ? userInput
     : (userInput as any[]).map((p: any) => p.type === "text" ? p.text : "").join(" ");
 
+  let progressCb = options?.onProgress;
+  if (!progressCb) {
+    try {
+      const { getProgressCallback } = await import("./tools/state.js");
+      const cb = getProgressCallback();
+      if (cb) progressCb = cb;
+    } catch {}
+  }
+
   const trimmedText = text.trim();
 
   // If input is empty/whitespace, classify as conversation immediately (no neural pass needed)
@@ -1357,7 +1395,7 @@ export async function classifyRequest(
 
     // Secondary local classification for low-confidence heuristic results
     if (!options?.skipLLM) {
-      return applyAssistantDomainRoute(text, await classifyWithLLM(text, model, heuristicResult, options?.onProgress));
+      return applyAssistantDomainRoute(text, await classifyWithLLM(text, model, heuristicResult, progressCb));
     }
 
     // Fallback to heuristic when local model is unavailable or skipped
@@ -1366,7 +1404,7 @@ export async function classifyRequest(
 
   // DEFAULT ROUTE: PURE SENOPATI SYSTEM-1 ONNX NEURAL CLASSIFIER (REGEX DISABLED)
   try {
-    const senopatiResult = await classifyWithSenopatiONNX(text, undefined, options?.onProgress);
+    const senopatiResult = await classifyWithSenopatiONNX(text, undefined, progressCb);
     if (senopatiResult) {
       let routed = senopatiResult;
       try {

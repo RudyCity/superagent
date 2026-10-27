@@ -22,7 +22,7 @@ import {
   extractErrorStatusCode,
 } from "./AgentUtils.js";
 import { cleanThinkingTags } from "./FastPath.js";
-import { isInformationalRequest, isAutoSeededSingleTask, MAX_TEXT_ONLY_CONTINUATIONS } from "./ChecklistContinuationGuard.js";
+import { isInformationalRequest, isAutoSeededSingleTask, MAX_TEXT_ONLY_CONTINUATIONS, isNeedsInputOrLimitation, isRepetitiveNarration } from "./ChecklistContinuationGuard.js";
 
 async function handleUnavailableTool(
   rawMsg: string,
@@ -839,12 +839,16 @@ export class LoopIterationProcessor {
       if (textContent.trim()) {
         const isEarlyIteration = i < 3;
         const hasActionNarration = /\b(let me|i will|i'll|going to|will check|will search|will look|will inspect|will find|checking|searching|inspecting|examining|scanning|investigating|mencari|memeriksa|mengecek|saya akan|mari kita|mari periksa|sedang mencari)\b/i.test(textContent);
-        const { isNeedsInputOrLimitation } = await import("./ChecklistContinuationGuard.js");
+        const previousAssistantTexts = (agent.getConversationMessages ? agent.getConversationMessages() : agent.conversation.getMessages())
+          .filter((message: any) => message.role === "assistant")
+          .map((message: any) => contentToString(message.content));
+        const isRepetitive = isRepetitiveNarration(textContent, previousAssistantTexts);
         const needsInputOrBlocked = isNeedsInputOrLimitation(textContent);
         const isPlanningText =
           isEarlyIteration &&
           !isInformational &&
           !needsInputOrBlocked &&
+          !isRepetitive &&
           hasActionNarration &&
           textContent.trim().length > 0 &&
           textContent.trim().length < 600 &&
@@ -877,7 +881,7 @@ export class LoopIterationProcessor {
             const isUserQuestion = isInformational || isAutoSeededSingleTask(taskContent, latestUserText);
 
             if (pendingItems.length > 0 && !isUserQuestion && !needsInputOrBlocked && !(agent.goalMode && goalComplete)) {
-              if (agent.textOnlyContinuationNudges >= MAX_TEXT_ONLY_CONTINUATIONS || i >= maxIterations - 1) {
+              if (isRepetitive || agent.textOnlyContinuationNudges >= MAX_TEXT_ONLY_CONTINUATIONS || i >= maxIterations - 1) {
                 agent.writeToLogFile("WARN", `Stopping checklist auto-continuation after ${agent.textOnlyContinuationNudges} text-only nudges at iteration ${i}; checklist is still unfinished.`);
                 agent.onEvent({ type: "text", content: `\n\n⚠️ Auto-continuation stopped because the checklist is unfinished and no progress was detected. Please review pending tasks or continue manually.\n` });
                 agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);

@@ -32,7 +32,7 @@ import { allTasksCompleted, archiveCompletedTasks, getTaskHistoryPath } from "./
 import { beginAgentTaskEvidence, finishAgentTaskEvidence } from "./selfdev/taskEvidence.js";
 import { createCheckpoint } from "./checkpoints.js";
 import { RealtimeAdvisor } from "./advisor.js";
-import { updateProcessActivity, appendProcessLog } from "./tools/state.js";
+import { updateProcessActivity, appendProcessLog, runWithProgressCallback } from "./tools/state.js";
 
 import { PathResolver } from "./agent/PathResolver.js";
 import { HistoryManager } from "./agent/HistoryManager.js";
@@ -617,7 +617,11 @@ export class Agent {
     const generation = this.abortGeneration;
     let proceed: boolean;
     try {
-      proceed = await RequestProcessor.processRequest(this, userInput);
+      proceed = await agentLocalStorage.run(this, () =>
+        runWithProgressCallback((ev: any) => this.onEvent(ev), () =>
+          RequestProcessor.processRequest(this, userInput)
+        )
+      );
     } catch (error) {
       // A classifier/preprocessing exception must not strand subsequent input.
       if (generation === this.abortGeneration && this.pendingMessagesQueue.length) {

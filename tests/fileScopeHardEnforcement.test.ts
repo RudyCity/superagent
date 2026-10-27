@@ -138,4 +138,184 @@ describe("Delegated fileScope hard enforcement (DEEP-02)", () => {
     );
     expect(deniedArgTrav.allowed).toBe(false);
   });
+
+  it("denies absolute path shell probes outside delegated fileScope (DEEP-02 independent audit probe)", () => {
+    const agentScope = ["src/core/agent/**"];
+    const agentCwd = "src/core/agent";
+    const absPackageJson = path.join(workspaceRoot, "package.json");
+
+    // 1. Direct POSIX-style command referencing absolute package.json
+    const probePosix = validateToolCallAgainstFileScope(
+      agentScope,
+      { id: "probe-1", name: "run_command", args: { command: `cat "${absPackageJson}"`, cwd: agentCwd } },
+      workspaceRoot
+    );
+    expect(probePosix.allowed).toBe(false);
+    expect(probePosix.reason).toMatch(/outside allowed fileScope/);
+
+    // 2. Windows cmd type referencing absolute package.json with drive letter & quotes
+    const probeCmd = validateToolCallAgainstFileScope(
+      agentScope,
+      { id: "probe-2", name: "run_command", args: { command: `type "${absPackageJson}"`, cwd: agentCwd } },
+      workspaceRoot
+    );
+    expect(probeCmd.allowed).toBe(false);
+    expect(probeCmd.reason).toMatch(/outside allowed fileScope/);
+
+    // 3. PowerShell Get-Content referencing absolute package.json
+    const probePwsh = validateToolCallAgainstFileScope(
+      agentScope,
+      { id: "probe-3", name: "run_command", args: { command: `Get-Content -Path '${absPackageJson}'`, cwd: agentCwd } },
+      workspaceRoot
+    );
+    expect(probePwsh.allowed).toBe(false);
+    expect(probePwsh.reason).toMatch(/outside allowed fileScope/);
+
+    // 4. Git Bash style path: /c/... or /d/...
+    const gitBashDrive = (process.platform === "win32"
+      ? `/${absPackageJson[0].toLowerCase()}/${absPackageJson.slice(3).replace(/\\/g, "/")}`
+      : absPackageJson);
+    const probeGitBash = validateToolCallAgainstFileScope(
+      agentScope,
+      { id: "probe-4", name: "run_command", args: { command: `cat ${gitBashDrive}`, cwd: agentCwd } },
+      workspaceRoot
+    );
+    expect(probeGitBash.allowed).toBe(false);
+    expect(probeGitBash.reason).toMatch(/outside allowed fileScope/);
+  });
+
+  it("denies shell redirection escaping fileScope", () => {
+    // Redirection to traversal path
+    const res1 = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "redir-1", name: "run_command", args: { command: "echo data > ../other/secret.txt", cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(res1.allowed).toBe(false);
+    expect(res1.reason).toMatch(/outside allowed fileScope/);
+
+    // Redirection to absolute outside path
+    const outsideFile = path.join(tmpBase, "leak.txt");
+    const res2 = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "redir-2", name: "run_command", args: { command: `echo leak >> "${outsideFile}"`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(res2.allowed).toBe(false);
+
+    // PowerShell Out-File redirection
+    const res3 = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "redir-3", name: "run_command", args: { command: `Get-Process | Out-File -FilePath "${outsideFile}"`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(res3.allowed).toBe(false);
+
+    // Pipeline tee redirection
+    const res4 = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "redir-4", name: "run_command", args: { command: `ls | tee "${outsideFile}"`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(res4.allowed).toBe(false);
+
+    // Allow standard null sink redirection
+    const resNull = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "redir-null", name: "run_command", args: { command: "ls > /dev/null 2>&1", cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(resNull.allowed).toBe(true);
+  });
+
+  it("denies nested shell commands and encoded execution", () => {
+    const absPackageJson = path.join(workspaceRoot, "package.json");
+
+    // bash -c nested
+    const resBash = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "nest-1", name: "run_command", args: { command: `bash -c "cat ${absPackageJson}"`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(resBash.allowed).toBe(false);
+
+    // cmd.exe /c nested
+    const resCmd = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "nest-2", name: "run_command", args: { command: `cmd.exe /c "type ${absPackageJson}"`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(resCmd.allowed).toBe(false);
+
+    // powershell -Command nested
+    const resPs = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "nest-3", name: "run_command", args: { command: `powershell -Command "Get-Content ${absPackageJson}"`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(resPs.allowed).toBe(false);
+
+    // Encoded PowerShell execution (fail closed)
+    const resEnc = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "nest-4", name: "run_command", args: { command: "powershell -EncodedCommand aW52b2tl...", cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(resEnc.allowed).toBe(false);
+    expect(resEnc.reason).toMatch(/Encoded shell commands/);
+  });
+
+  it("denies script invocations outside fileScope", () => {
+    const outsideScript = path.join(tmpBase, "run.js");
+
+    const resNode = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "script-1", name: "run_command", args: { command: `node "${outsideScript}"`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(resNode.allowed).toBe(false);
+
+    const resPy = validateToolCallAgainstFileScope(
+      fileScope,
+      { id: "script-2", name: "run_command", args: { command: `python ../other/test.py`, cwd: "src/auth" } },
+      workspaceRoot
+    );
+    expect(resPy.allowed).toBe(false);
+  });
+
+  it("integrates with ToolExecutor.executeTools to block delegated fileScope shell escapes", async () => {
+    const { ToolExecutor } = await import("../src/core/agent/ToolExecutor.js");
+    const absPackageJson = path.join(workspaceRoot, "package.json");
+
+    const events: any[] = [];
+    const mockAgent: any = {
+      fileScope: ["src/core/agent/**"],
+      workingDirectory: workspaceRoot,
+      worktreePath: workspaceRoot,
+      getActiveTools: async () => [],
+      onEvent: (ev: any) => events.push(ev),
+    };
+
+    const toolCalls = [
+      {
+        id: "call-tool-exec-probe",
+        name: "run_command",
+        args: { command: `cat "${absPackageJson}"`, cwd: "src/core/agent" },
+      },
+    ];
+
+    const results = await ToolExecutor.executeTools(
+      mockAgent,
+      toolCalls,
+      [],
+      [],
+      false,
+      "system prompt"
+    );
+
+    expect(results).toHaveLength(1);
+    expect(results[0].isError).toBe(true);
+    expect(results[0].result).toContain("Access denied by delegated fileScope");
+    expect(results[0].result).toContain("package.json");
+  });
 });

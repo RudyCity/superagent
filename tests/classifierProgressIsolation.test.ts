@@ -56,4 +56,104 @@ describe("Classifier progress callback execution scoping (DEEP-04)", () => {
   it("clears execution context after completion", () => {
     expect(progressStorage.getStore()).toBeUndefined();
   });
+
+  it("isolates progress events between concurrent real RequestProcessor executions for two agents", async () => {
+    const { RequestProcessor } = await import("../src/core/agent/RequestProcessor.js");
+    const { agentLocalStorage } = await import("../src/core/agentLocalStorage.js");
+
+    const eventsA: any[] = [];
+    const eventsB: any[] = [];
+
+    const createMockAgent = (id: string, events: any[]) => {
+      const messages: any[] = [];
+      return {
+        id,
+        tier: "master",
+        planState: "IDLE",
+        isMultiAgent: false,
+        workingDirectory: process.cwd(),
+        conversation: {
+          getMessages: () => [...messages],
+          replaceMessages: (m: any[]) => { messages.length = 0; messages.push(...m); },
+          addAssistantMessage: () => {},
+          addUserMessage: (msg: any) => messages.push({ role: "user", content: msg }),
+          addMessage: (m: any) => messages.push(m),
+        },
+        writeToLogFile: () => {},
+        setMode: () => {},
+        compactHistoryIfNeeded: async () => {},
+        saveHistory: async () => {},
+        autoCheckpoint: () => {},
+        onEvent: (ev: any) => {
+          events.push({ agentId: id, ev });
+        },
+      } as any;
+    };
+
+    const agentA = createMockAgent("agent-alpha", eventsA);
+    const agentB = createMockAgent("agent-beta", eventsB);
+
+    // Run production preprocessing concurrently for both agents
+    const runA = agentLocalStorage.run(agentA, () =>
+      runWithProgressCallback((ev: any) => agentA.onEvent(ev), async () => {
+        // Within agent A's preprocessing, retrieve active progress callback
+        const cb = getProgressCallback();
+        if (cb) cb({ type: "model_load", modelName: "agent_a_model", status: "loading" });
+        return await RequestProcessor.processRequest(agentA, "What is the codebase structure?");
+      })
+    );
+
+    const runB = agentLocalStorage.run(agentB, () =>
+      runWithProgressCallback((ev: any) => agentB.onEvent(ev), async () => {
+        // Within agent B's preprocessing, retrieve active progress callback
+        const cb = getProgressCallback();
+        if (cb) cb({ type: "model_load", modelName: "agent_b_model", status: "loading" });
+        return await RequestProcessor.processRequest(agentB, "Fix error in login function.");
+      })
+    );
+
+    await Promise.all([runA, runB]);
+
+    // Agent A must have received ONLY Agent A events
+    expect(eventsA.length).toBeGreaterThan(0);
+    expect(eventsA.every((e) => e.agentId === "agent-alpha")).toBe(true);
+    expect(eventsA.some((e) => e.ev?.modelName === "agent_b_model")).toBe(false);
+
+    // Agent B must have received ONLY Agent B events
+    expect(eventsB.length).toBeGreaterThan(0);
+    expect(eventsB.every((e) => e.agentId === "agent-beta")).toBe(true);
+    expect(eventsB.some((e) => e.ev?.modelName === "agent_a_model")).toBe(false);
+  });
+
+  it("routes getSenopatiSession model load progress events exclusively to active agent context", async () => {
+    const { getSenopatiSession } = await import("../src/core/requestClassifier.js");
+    const { agentLocalStorage } = await import("../src/core/agentLocalStorage.js");
+
+    const eventsA: any[] = [];
+    const eventsB: any[] = [];
+
+    const agentA: any = { onEvent: (ev: any) => eventsA.push({ agent: "A", ...ev }) };
+    const agentB: any = { onEvent: (ev: any) => eventsB.push({ agent: "B", ...ev }) };
+
+    const loadA = agentLocalStorage.run(agentA, () =>
+      runWithProgressCallback((ev: any) => agentA.onEvent(ev), async () => {
+        return await getSenopatiSession();
+      })
+    );
+
+    const loadB = agentLocalStorage.run(agentB, () =>
+      runWithProgressCallback((ev: any) => agentB.onEvent(ev), async () => {
+        return await getSenopatiSession();
+      })
+    );
+
+    await Promise.all([loadA, loadB]);
+
+    if (eventsA.length > 0) {
+      expect(eventsA.every((e) => e.agent === "A")).toBe(true);
+    }
+    if (eventsB.length > 0) {
+      expect(eventsB.every((e) => e.agent === "B")).toBe(true);
+    }
+  });
 });

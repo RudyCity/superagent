@@ -163,4 +163,47 @@ describe("Concurrency limiter limits and safe lease ownership (DEEP-05)", () => 
     limiter.release(leaseReal);
     expect(fs.existsSync(leaseReal!.lockPath)).toBe(false);
   });
+
+  it("maintains waiter hygiene under sustained contention without unbounded queue growth or lost wakeups (NEW-01)", async () => {
+    // Acquire slot with limit 1
+    const lease1 = await limiter.acquire(1);
+    expect(lease1).not.toBeNull();
+
+    // Spawn 3 concurrent contenders waiting on the single slot
+    const acquiredOrder: string[] = [];
+
+    const contender = (id: string) => async () => {
+      const lease = await limiter.acquire(1);
+      if (lease) {
+        acquiredOrder.push(id);
+        limiter.release(lease);
+      }
+    };
+
+    const c1 = contender("C1")();
+    const c2 = contender("C2")();
+    const c3 = contender("C3")();
+
+    // Let them wait across multiple timer intervals (550ms = ~5 iterations of 100ms timers)
+    await new Promise((r) => setTimeout(r, 550));
+
+    // Under old behavior, 3 contenders waiting for 5 intervals accumulated 15+ stale callbacks.
+    // Under NEW-01 hygiene, processQueue only holds active waiting entries (<= 3).
+    const queueLen = limiter.getQueueLength();
+    expect(queueLen).toBeLessThanOrEqual(3);
+
+    // Release slot 1 to unblock contenders
+    limiter.release(lease1);
+
+    // All contenders must acquire without lost wakeups
+    await Promise.all([c1, c2, c3]);
+
+    expect(acquiredOrder).toHaveLength(3);
+    expect(acquiredOrder).toContain("C1");
+    expect(acquiredOrder).toContain("C2");
+    expect(acquiredOrder).toContain("C3");
+
+    // Queue must be fully drained
+    expect(limiter.getQueueLength()).toBe(0);
+  });
 });

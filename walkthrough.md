@@ -56,3 +56,80 @@ bun run build
 ```
 - TypeScript check (`tsc`) completed with **0 errors**.
 - MCP Chrome schemas synchronized cleanly.
+
+
+---
+
+# Post-Audit Core Remediation (2026-10-28)
+
+Following the independent re-audit at `T-Line docs/audits/2026-10-28-post-agy-independent-reaudit.md`, the remaining Core vulnerabilities have been resolved:
+
+### 1. P0 DEEP-02: Delegated fileScope Shell Boundary
+- **Vulnerability**: While file API tools blocked direct path escapes, `validateToolCallAgainstFileScope` did not check shell commands referencing outside-scope absolute paths, redirection, or nested shells.
+- **Remediation**:
+  - Implemented `validateShellCommandString` in `src/core/agent/fileScopeGuard.ts` with cross-platform tokenization for cmd.exe, PowerShell, and POSIX shells.
+  - Enforced effective cwd validation within delegated `fileScope`.
+  - Added detection of absolute paths (Windows drive letters `C:\`, Git Bash `/c/`, UNC `\\`, Unix absolute `/`, PowerShell provider paths).
+  - Intercepted file redirection operators (`>`, `>>`, `<`, `2>`, `&>`, `| Out-File`, `| Set-Content`, `| tee`) and validated target paths against `fileScope` (allowing standard null sinks `nul`, `/dev/null`).
+  - Intercepted file manipulation commands (`cat`, `type`, `Get-Content`, `Set-Content`, `cp`, `mv`, `del`, `rm`) and script execution (`node`, `python`, `powershell -File`, `bash`, `sh`).
+  - Added fail-closed denial on obfuscated/encoded commands (`-enc`, `-EncodedCommand`).
+  - Added recursive unwrapping and validation of nested shells (`bash -c`, `cmd /c`, `powershell -Command`, `eval`).
+  - Added regression test suites and verified that the direct independent probe (`fileScope = ['src/core/agent/**']`, `cwd = 'src/core/agent'`, command referencing absolute `package.json`) is now hard-denied across POSIX, CMD, and PowerShell syntaxes.
+
+### 2. P1 DEEP-04: Production Classifier Progress Routing
+- **Vulnerability**: Production `RequestProcessor.processRequest` ran before `agentLocalStorage.run`, did not pass `onProgress` to `classifyRequest`, and `runWithProgressCallback` had no production call site.
+- **Remediation**:
+  - In `src/core/agent.ts`, wrapped `RequestProcessor.processRequest` in both `agentLocalStorage.run(this, ...)` and `runWithProgressCallback((ev) => this.onEvent(ev), ...)`.
+  - In `src/core/agent/RequestProcessor.ts`, explicitly passed `onProgress: (event: any) => agent.onEvent(event)` to `classifyRequest`.
+  - In `src/core/requestClassifier.ts`, wired `options?.onProgress ?? getProgressCallback()` through `classifyRequest`, `classifyWithSenopatiONNX`, and `getSenopatiSession`.
+  - Added regression tests in `tests/classifierProgressIsolation.test.ts` verifying concurrent execution of `RequestProcessor.processRequest` for two distinct agents with zero cross-routing of model load or progress events.
+
+### 3. P2 NEW-01: Concurrency Waiter Queue Hygiene
+- **Vulnerability**: `SharedConcurrencyLimiter.acquire` pushed a wake callback on every 100ms interval; if the timer fired normally, the callback was not removed, causing stale callback accumulation under contention.
+- **Remediation**:
+  - Implemented self-cancelling and self-removing waiter callbacks in `src/core/rateLimiter.ts`: when the 100ms timer fires, it splices itself out of `this.processQueue`.
+  - On `release()`, active waiters are popped and resolved cleanly.
+  - Added regression test asserting `processQueue.length` remains strictly bounded by active contender count (does not grow over time) and zero wakeups are lost.
+
+### 4. P1/P2 DEEP-07: Repetitive Narration Wiring
+- **Remediation**:
+  - Wired `isRepetitiveNarration` into `src/core/agent/LoopIterationProcessor.ts` by collecting previous assistant message content and detecting repetition loops.
+  - Suppressed planning continuation nudges when repetitive narration is detected without tool progress.
+  - In checklist enforcement, terminated auto-continuation immediately if the model loops on repetitive narration.
+  - Added unit and edge case tests in `tests/checklistContinuationGuard.test.ts`.
+
+---
+
+## Verification Results
+
+### Build
+- `bun run build`: **PASS** (0 TypeScript errors; MCP Chrome schemas synced).
+
+### Targeted Test Suites (7 suites)
+```
+bun test tests/fastPathTerminalOutcome.test.ts \
+         tests/chatRuntimeLedger.test.ts \
+         tests/fileScopeHardEnforcement.test.ts \
+         tests/subagentPermissionsAndQuestions.test.ts \
+         tests/classifierProgressIsolation.test.ts \
+         tests/concurrencyLimiterSafeOwnership.test.ts \
+         tests/checklistContinuationGuard.test.ts
+```
+**Outcome**: **53 pass**, **0 fail** (179 assertions).
+
+### Regression Test Suites (2 suites)
+```
+bun test tests/agentAbortInterrupt.test.ts tests/permissions.test.ts
+```
+**Outcome**: **45 pass**, **0 fail** (88 assertions).
+
+### Total Focused & Regression Suites
+**98 passed, 0 failed** across 9 test files (267 assertions).
+
+### Direct Adversarial Probe (DEEP-02)
+- Target: `package.json` in workspace root.
+- Scope: `['src/core/agent/**']`, `cwd: 'src/core/agent'`.
+- Outcome:
+  - POSIX `cat`: **DENIED** (`{"allowed":false}`)
+  - CMD `type`: **DENIED** (`{"allowed":false}`)
+  - PowerShell `Get-Content`: **DENIED** (`{"allowed":false}`)

@@ -266,13 +266,31 @@ export class SharedConcurrencyLimiter {
       }
 
       await new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, 100);
-        this.processQueue.push(() => {
-          clearTimeout(timer);
+        let timer: any = null;
+        let settled = false;
+
+        const wake = () => {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          const idx = this.processQueue.indexOf(wake);
+          if (idx !== -1) {
+            this.processQueue.splice(idx, 1);
+          }
           resolve();
-        });
+        };
+
+        timer = setTimeout(() => {
+          wake();
+        }, 100);
+
+        this.processQueue.push(wake);
       });
     }
+  }
+
+  public getQueueLength(): number {
+    return this.processQueue.length;
   }
 
   public release(lease?: ConcurrencyLease | null): void {
@@ -313,9 +331,12 @@ export class SharedConcurrencyLimiter {
       }
     } catch {}
 
-    const next = this.processQueue.shift();
-    if (next) {
-      next();
+    while (this.processQueue.length > 0) {
+      const next = this.processQueue.shift();
+      if (next) {
+        next();
+        break;
+      }
     }
   }
 }

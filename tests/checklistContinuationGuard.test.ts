@@ -56,7 +56,18 @@ describe("checklist continuation guard", () => {
   });
 
   it("detects repetitive text narration loops", () => {
-    const prev = ["I will search the codebase for the file now."];
+    const prev = [
+      "Let me examine the code in src/core/agent.ts.",
+      "I will search the codebase for the file now.",
+    ];
+    // Exact match
+    expect(isRepetitiveNarration("I will search the codebase for the file now.", prev)).toBe(true);
+    // Case and punctuation insensitive match
+    expect(isRepetitiveNarration("i will search the codebase for the file now!", prev)).toBe(true);
+    // Repetitive narration embedded with minor filler
+    expect(isRepetitiveNarration("Okay, I will search the codebase for the file now.", prev)).toBe(true);
+    // Empty previous messages
+    expect(isRepetitiveNarration("I will search the codebase for the file now.", [])).toBe(false);
     expect(isRepetitiveNarration("I will search the codebase for the file now.", prev)).toBe(true);
     expect(isRepetitiveNarration("I found the following 3 files: a, b, c.", prev)).toBe(false);
   });

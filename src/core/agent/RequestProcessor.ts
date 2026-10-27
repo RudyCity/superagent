@@ -89,6 +89,7 @@ export class RequestProcessor {
               confidenceThreshold: settings.classifierConfidenceThreshold ?? "high",
               customKeywords: settings.classifierKeywords as any,
               skipLLM: agent.planState !== "IDLE",
+              onProgress: (event: any) => agent.onEvent(event),
             });
             agent.currentClassification = classification;
             agent.writeToLogFile("INFO", `Request classified: category=${classification.category}, confidence=${classification.confidence}, heuristicOnly=${classification.heuristicOnly}, tokens=${classification.classificationTokens}, reason=${classification.reason}`);

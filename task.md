@@ -1,30 +1,31 @@
-# Tasks: 2026-10-28 Algorithm Remediation
+# Tasks: 2026-10-28 Post-Audit Core Remediation
 
-- [x] Inspect current code across all 7 priority clusters
-- [x] Cluster 1 (P0 DEEP-01): FastPath terminal outcome & chatRuntimeProcessor fail-closed
-  - [x] Update `src/core/agent/FastPath.ts` explicit terminal outcomes
-  - [x] Update `src/core/utils/chatRuntimeProcessor.ts` fail-closed logic
-  - [x] Add regression tests in `tests/chatRuntimeLedger.test.ts` and `tests/fastPathTerminalOutcome.test.ts`
-- [x] Cluster 2 (P0 DEEP-02): Delegated fileScope hard enforcement
-  - [x] Implement fileScope enforcement in subagent execution & tool layer (`src/core/agent/fileScopeGuard.ts` and `ToolExecutor.ts`)
-  - [x] Implement path canonicalization, traversal checks, symlink handling, shell command interception
-  - [x] Add positive & negative regression tests in `tests/fileScopeHardEnforcement.test.ts`
-- [x] Cluster 3 (P1 DEEP-03): Permissions & approval inheritance
-  - [x] Replace broad subagent auto-approval with parent/scoped permission inheritance
-  - [x] Preserve provenance and audit trail
-  - [x] Add regression tests for subagent permission checks in `tests/subagentPermissionsAndQuestions.test.ts`
-- [x] Cluster 4 (P1 DEEP-04): Classifier progress routing
-  - [x] Replace singleton `globalProgressCallback` with execution-scoped routing (`progressStorage` in `state.ts`)
-  - [x] Add tests for concurrent isolation of classifier progress in `tests/classifierProgressIsolation.test.ts`
-- [x] Cluster 5 (P1 DEEP-05): Concurrency limiter 0..N & safe lease ownership
-  - [x] Update `SharedConcurrencyLimiter` in `src/core/rateLimiter.ts` to support 0..N slots
-  - [x] Replace arbitrary 60s lock stealing with lease/heartbeat/ownership check
-  - [x] Add tests for concurrency limits 0, 1, 2, 3 and long-running holders in `tests/concurrencyLimiterSafeOwnership.test.ts`
-- [x] Cluster 6 (P1 DEEP-07): Text-only checklist nudge loop prevention
-  - [x] Guard against no-progress narration loops and preserve needs-input / limitations in `ChecklistContinuationGuard.ts` and `LoopIterationProcessor.ts`
-  - [x] Add tests for conversation skip, action narration, needs-input, and no-progress cap in `tests/checklistContinuationGuard.test.ts`
-- [x] Cluster 7 (P2 DEEP-11): Subagent question explicit needs-input state
-  - [x] Remove silent `options[0]` fallback in `subagentTools.ts` and `superagentTools.ts`
-  - [x] Return explicit needs-input / failure state (`[NEEDS_INPUT]` error and waiting status)
-  - [x] Add tests for subagent questions without UI handler in `tests/subagentPermissionsAndQuestions.test.ts`
-- [x] Final verification, full test suite run with Bun, and documentation
+- [x] P0 (DEEP-02): Delegated fileScope shell escape remediation
+  - [x] Implement platform-aware shell command validator in `src/core/agent/fileScopeGuard.ts` (cmd.exe, PowerShell, POSIX)
+  - [x] Enforce effective cwd within fileScope
+  - [x] Detect absolute paths outside scope (Windows drive paths, Git Bash `/c/`, UNC, Unix absolute)
+  - [x] Intercept redirection operators (`>`, `>>`, `<`, `2>`, `Out-File`, `Set-Content`, `tee`)
+  - [x] Intercept file manipulation commands (`cat`, `type`, `Get-Content`, `Set-Content`, `cp`, `mv`, `del`, `rm`)
+  - [x] Intercept script invocations (`node`, `python`, `powershell`, `bash`, `sh`) and executable paths
+  - [x] Detect and fail closed on uninspectable encoded commands (`-enc`, `-EncodedCommand`)
+  - [x] Unpack and recursively validate nested shell invocations (`bash -c`, `cmd /c`, `powershell -c`)
+  - [x] Add regression tests in `tests/fileScopeHardEnforcement.test.ts` including direct independent probe and ToolExecutor integration
+- [x] P1 (DEEP-04): Classifier progress isolation wired through production preprocessing
+  - [x] Wrap `RequestProcessor.processRequest` in `agentLocalStorage.run` and `runWithProgressCallback` in `src/core/agent.ts`
+  - [x] Pass `onProgress: (ev) => agent.onEvent(ev)` from `RequestProcessor.processRequest` to `classifyRequest` in `src/core/agent/RequestProcessor.ts`
+  - [x] Wire `onProgress` fallback via `getProgressCallback()` in `src/core/requestClassifier.ts` (`classifyRequest`, `classifyWithSenopatiONNX`, `getSenopatiSession`)
+  - [x] Add regression test in `tests/classifierProgressIsolation.test.ts` testing concurrent real `RequestProcessor.processRequest`
+- [x] P2 (NEW-01): Concurrency waiter hygiene in SharedConcurrencyLimiter
+  - [x] Update `SharedConcurrencyLimiter.acquire` in `src/core/rateLimiter.ts` to remove expired waiters on timeout
+  - [x] Ensure `release()` pops and wakes active waiters without accumulating stale callbacks
+  - [x] Add regression tests in `tests/concurrencyLimiterSafeOwnership.test.ts` asserting bounded waiter queue length under contention and no lost wakeups
+- [x] P1/P2 (DEEP-07): No-progress helper completeness (wire `isRepetitiveNarration`)
+  - [x] Wire `isRepetitiveNarration` into `src/core/agent/LoopIterationProcessor.ts`
+  - [x] Suppress planning nudge and break checklist continuation on repetitive text narration
+  - [x] Add regression tests in `tests/checklistContinuationGuard.test.ts`
+- [x] Verification, full test suite run with Bun, and documentation
+  - [x] Run `bun run build`
+  - [x] Run 90 focused tests + new regression tests
+  - [x] Verify direct adversarial probe
+  - [x] Update `walkthrough.md`
+  - [x] Git commit and push only modified files
