@@ -85,6 +85,8 @@ describe("MCP tunnel Python client copy-ready instructions", () => {
     expect(output).toContain("grants are NOT transferred");
     expect(output).toContain("never assume a write-only login inherits grants");
     expect(output).toContain("Connect a remote MCP-capable host directly");
+    expect(output).toContain("Remote stdio   : superagent-mcp-python serve");
+    expect(output).toContain("server-local uv --project path");
     expect(output).toContain(`Install first: uv tool install '${PYTHON_MCP_GIT_INSTALL}'`);
   });
 

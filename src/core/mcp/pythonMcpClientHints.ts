@@ -53,8 +53,11 @@ export function formatPythonMcpClientHints(
     ? `uv run --project ${quotePowerShell(projectDirectory)} superagent-mcp-python`
     : "superagent-mcp-python";
   const setup = `$env:SUPERAGENT_MCP_URL=${quotePowerShell(usableUrl)}; $env:SUPERAGENT_MCP_AUTH=${quotePowerShell(auth)}; ${auth === "oauth" ? "$env:SUPERAGENT_MCP_SCOPE='mcp:tools'; " : ""}${command} ${auth === "oauth" ? "login" : "doctor"}`;
+  // Agent handoff commands must work on a DIFFERENT machine after uv tool install.
+  // The local uv --project path above is only valid on the SuperAgent owner machine.
+  const agentCommand = "superagent-mcp-python";
   const loginWithScope = (scope: string): string =>
-    `$env:SUPERAGENT_MCP_URL=${quotePowerShell(usableUrl)}; $env:SUPERAGENT_MCP_AUTH='oauth'; $env:SUPERAGENT_MCP_SCOPE=${quotePowerShell(scope)}; ${command} login`;
+    `$env:SUPERAGENT_MCP_URL=${quotePowerShell(usableUrl)}; $env:SUPERAGENT_MCP_AUTH='oauth'; $env:SUPERAGENT_MCP_SCOPE=${quotePowerShell(scope)}; ${agentCommand} login`;
   const sampleGrant = '{"projectId":"YOUR_PROJECT_ID","capabilities":["read","write"]}';
 
   return [
@@ -81,6 +84,8 @@ export function formatPythonMcpClientHints(
     `  Authentication  : ${endpoint.authMode === "oauth" ? "OAuth PKCE" : "static Bearer"}`,
     "  Transport       : MCP Streamable HTTP. Connect a remote MCP-capable host directly; use the Python stdio bridge only when the host can launch local processes.",
     `  Python install  : uv tool install ${quotePowerShell(PYTHON_MCP_GIT_INSTALL)}`,
+    `  Remote stdio   : ${agentCommand} serve (after successful login)`,
+    "     Remote hosts use the installed executable, NOT the server-local uv --project path shown above.",
     "  1. Use the existing endpoint. Never start an extra SuperAgent runtime or assume that tool discovery grants write access.",
     ...(auth === "oauth" ? [
       `  2. Read-only login PS: ${loginWithScope("mcp:tools")}`,
@@ -91,9 +96,9 @@ export function formatPythonMcpClientHints(
     ] : [
       "  2. Supply the one-time Bearer token privately on the client host. OAuth scopes do not apply to static-bearer authentication.",
     ]),
-    `  5. Verify connection : ${command} doctor`,
-    `  6. Discover projects : ${command} call superagent_list_projects --args '{}'`,
-    `  7. Check my grants   : ${command} call superagent_list_project_access --args '{}'`,
+    `  5. Verify connection : ${agentCommand} doctor`,
+    `  6. Discover projects : ${agentCommand} call superagent_list_projects --args '{}'`,
+    `  7. Check my grants   : ${agentCommand} call superagent_list_project_access --args '{}'`,
     "  8. Choose the exact projectId returned by superagent_list_projects (not the workspace path).",
     `  9. Grant tool        : superagent_grant_project_access ${sampleGrant}`,
     "     Only execute step 9 with explicit owner approval. It requires admin+write OAuth scopes (OAuth mode), dangerous tool exposure, and locally enabled Full YOLO.",

@@ -1,3 +1,7 @@
+## [1.14.48] - 2026-10-27
+### Portable Python MCP agent handoff
+- Use the installed `superagent-mcp-python` executable in all remote agent handoff steps and explicitly warn that server-local `uv run --project` paths cannot be copied to another machine.
+
 ## [1.14.47] - 2026-10-27
 ### Agent-ready Python MCP OAuth and project grant guidance
 - Expanded the shared tunnel startup/status Python client instructions with copy-ready read, write, and admin OAuth login commands, live endpoint, project discovery, grant verification, and the grant-tool argument shape.
