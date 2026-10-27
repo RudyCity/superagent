@@ -8,6 +8,7 @@ type DelegateJobsModule = typeof import("../src/core/tools/cliBridgeDelegateJobs
 const configDir = path.join(os.tmpdir(), `superagent-cli-bridge-jobs-${process.pid}`);
 const originalConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
 const originalMaxJobs = process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
+const originalCapacityDir = process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR;
 let delegateJobs: DelegateJobsModule;
 
 function options(script: string, timeoutMs = 10_000): Parameters<DelegateJobsModule["startDelegateJob"]>[0] {
@@ -33,6 +34,7 @@ async function waitForTerminal(jobId: string, maxWaitMs = 8_000) {
 
 beforeAll(async () => {
   process.env.SUPERAGENT_CONFIG_DIR = configDir;
+  process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR = path.join(configDir, "test-capacity");
   await fs.rm(configDir, { recursive: true, force: true });
   delegateJobs = await import("../src/core/tools/cliBridgeDelegateJobs.js");
 });
@@ -46,10 +48,32 @@ afterEach(async () => {
 afterAll(async () => {
   if (originalConfigDir === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
   else process.env.SUPERAGENT_CONFIG_DIR = originalConfigDir;
+  if (originalCapacityDir === undefined) delete process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR;
+  else process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR = originalCapacityDir;
   await fs.rm(configDir, { recursive: true, force: true });
 });
 
 describe("CLI Bridge background delegation jobs", () => {
+  it("marks AGY permission denial as blocked despite exit code zero", async () => {
+    const script = [
+      'console.log("warning: --mode auto is not available for this account; continuing in the default mode.");',
+      'console.log(JSON.stringify({event:"step_update",step_update:{state:"ERROR",step_type:"tool",tool_info:{error:{message:"permission check failed: user denied permission to run command"}}}}));',
+      'console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"",denied_actions:[{action:"command"}]}}));',
+    ].join("");
+    const started = await delegateJobs.startDelegateJob({ ...options(script), cliAlias: "agy" });
+    const finished = await waitForTerminal(started.jobId);
+    expect(finished.exitCode).toBe(0);
+    expect(finished.status).toBe("permission_blocked");
+    expect(finished.completionState).toBe("permission_blocked");
+    expect(finished.permissionWarning).toMatch(/request-review/);
+    expect(finished.error).toMatch(/permissions.allow/);
+    const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
+    const report = String(await cliBridgeTool.execute({ action: "delegate.get", jobId: started.jobId }, process.cwd()));
+    expect(report).toContain("Status: permission_blocked");
+    expect(report).toContain("Mode warning:");
+    expect(report).toContain("Permission blocked.");
+  }, 15_000);
+
   it("returns promptly and makes a long-running job pollable until logs are complete", async () => {
     const started = await delegateJobs.startDelegateJob(options(
       'console.log("job-started"); setTimeout(() => { console.log("job-finished"); }, 250);',

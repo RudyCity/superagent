@@ -21,11 +21,12 @@ import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsS
 import { classifyDelegateRecovery, type DelegateRecoveryDiagnostic } from "./cliBridgeRecovery.js";
 import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
 import { getTlineCreatorForJob } from "../channels/tlineJobCreator.js";
+import { inspectAgyBridgeLine, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
 import { readBoundedLogTail, redactCliBridgeOutput, summarizedPrompt } from "./cliBridgeObservability.js";
 import { acquireCliBridgeCapacity, releaseCliBridgeCapacity, type CliBridgeCapacityLease } from "./cliBridgeCapacity.js";
 
 export type DelegateJobStatus =
-  | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed";
+  | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed" | "permission_blocked";
 
 export interface DelegateJob {
   jobId: string;
@@ -40,7 +41,10 @@ export interface DelegateJob {
   promptDigest?: string;
   capacitySlot?: number;
   /** Exit zero alone means unverified process completion. */
-  completionState?: "pending" | "artifacts_verified" | "unverified" | "artifact_verification_failed" | "failed" | "timed_out" | "cancelled" | "interrupted";
+  completionState?: "pending" | "artifacts_verified" | "unverified" | "artifact_verification_failed" | "failed" | "timed_out" | "cancelled" | "interrupted" | "permission_blocked";
+  /** Diagnostic only: no permission escalation or automatic retries. */
+  permissionWarning?: string;
+  permissionFailure?: string;
   artifactEvidence?: ArtifactEvidence[];
   pid: number | null;
   /** Server-internal provenance; never populated from tool args or user prompt. */
@@ -194,6 +198,9 @@ function updateOutput(job: DelegateJob, chunk: Buffer | string): void {
     const parts = merged.split(/\r?\n/);
     progressFragments.set(job.jobId, parts.pop()?.slice(-4096) ?? "");
     for (const part of parts) {
+      const signal = inspectAgyBridgeLine(part);
+      if (signal.modeWarning) job.permissionWarning = signal.modeWarning;
+      if (signal.permissionDenied) job.permissionFailure = signal.permissionDenied;
       if (part.length > 65536 || !part.trimStart().startsWith("{")) continue;
       try {
         const record = JSON.parse(part) as Record<string, any>;
@@ -245,12 +252,25 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
   try {
     const result = await proc;
     if (result?.all && typeof result.all === "string") updateOutput(job, result.all);
+    // A final NDJSON record may arrive without a trailing newline.
+    if (job.cliAlias === "agy") {
+      const lastLine = progressFragments.get(job.jobId);
+      if (lastLine) {
+        const signal = inspectAgyBridgeLine(lastLine);
+        if (signal.modeWarning) job.permissionWarning = signal.modeWarning;
+        if (signal.permissionDenied) job.permissionFailure = signal.permissionDenied;
+      }
+    }
     job.exitCode = typeof result?.exitCode === "number" ? result.exitCode : null;
     job.timedOut = result?.timedOut === true;
     if (job.timedOut) killProcessTree(job.jobId, proc);
     if (cancellationRequested.has(job.jobId)) job.status = "cancelled";
     else if (job.timedOut) job.status = "timed_out";
-    else if (job.exitCode === 0) {
+    else if (job.permissionFailure) {
+      job.status = "permission_blocked";
+      job.completionState = "permission_blocked";
+      job.error = job.permissionFailure + " " + AGY_PERMISSION_RECOVERY;
+    } else if (job.exitCode === 0) {
       const baseline = artifactBaselines.get(job.jobId);
       if (!baseline?.length) {
         job.status = "succeeded";

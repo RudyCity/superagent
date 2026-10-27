@@ -1,3 +1,9 @@
+## [1.14.51] - 2026-10-27
+### Headless delegated CLI permission diagnostics
+- Detect AGY account-mode downgrade and structured tool permission denials, including final denied actions with exit code zero; classify blocked jobs as failures instead of reporting false success.
+- Report actionable scoped-permission recovery hints through CLI Bridge status, synchronous output, and unified task projections without automatically increasing permissions or retrying rejected commands.
+- Isolate bridge concurrency capacity during tests, add headless failure regression tests and document operator-approved recovery procedure.
+
 ## [1.14.50] - 2026-10-27
 ### Canonical Python MCP client package on main
 - Verified the standalone Python branch has eight byte-identical non-README files in `main`; `main` retains the newer permission documentation.

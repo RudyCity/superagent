@@ -1,0 +1,6 @@
+print(len('/* b'))
+print(len('a /*b'))
+print(len('a / b'))
+print(len('xy /*'))
+t = 'a /* b'
+print('[' + t + ']')

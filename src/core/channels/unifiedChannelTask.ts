@@ -49,7 +49,7 @@ function daemonStatus(status: DaemonRunRecord["status"]): UnifiedTaskStatus {
 function cliStatus(status: DelegateJob["status"]): UnifiedTaskStatus {
   switch (status) {
     case "succeeded": return "succeeded";
-    case "failed": case "timed_out": case "verification_failed": return "failed";
+    case "failed": case "timed_out": case "verification_failed": case "permission_blocked": return "failed";
     case "cancelled": return "cancelled";
     case "interrupted": return "interrupted";
     case "starting": return "queued";
@@ -79,7 +79,7 @@ export function projectCliDelegate(job: DelegateJob): UnifiedChannelTask {
     sessionId: null, projectId: null, workspace: job.workspaceRoot ?? job.cwd,
     status: cliStatus(job.status),
     evidence: job.completionState === "artifacts_verified" ? "verified" :
-      job.completionState === "artifact_verification_failed" || job.completionState === "failed" ?
+      job.completionState === "artifact_verification_failed" || job.completionState === "failed" || job.completionState === "permission_blocked" ?
         "failed" : "unverified",
     authorization: "workspace_scoped", notification: "not_configured",
     summary: summary(job.error ?? job.outputTail),

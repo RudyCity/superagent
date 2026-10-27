@@ -1,0 +1,100 @@
+# Task 42 repro: arrow function sugar (=>) lowers to lambda
+# =============================================================================
+# JS/TS-style arrow functions as pure sugar over the existing lambda
+# machinery (same closure/upvalue pipeline, KI-28 line stamping uses the
+# '=>' token line). Forms: x => expr, (x) => expr, (x, y) => expr,
+# () => expr. '=>' must not disturb '==' or '>=' lexing. Bare-identifier
+# params only in v1 (no defaults, no annotations, no block bodies).
+# =============================================================================
+
+ok = 0
+total = 0
+
+def check(name, cond):
+    global ok, total
+    total = total + 1
+    if cond:
+        ok = ok + 1
+        print("PASS:", name)
+    else:
+        print("FAIL:", name)
+
+def apply(f, x):
+    return f(x)
+
+# --- 1. single bare param, no parens ------------------------------------------
+f = x => x * 2
+check("x => x * 2", f(21) == 42)
+
+# --- 2. two params, parenthesized ----------------------------------------------
+add = (a, b) => a + b
+check("(a, b) => a + b", add(2, 3) == 5)
+
+# --- 3. zero params -------------------------------------------------------------
+g = () => 99
+check("() => 99", g() == 99)
+
+# --- 4. single param WITH parens -------------------------------------------------
+sq = (n) => n * n
+check("(n) => n * n", sq(7) == 49)
+
+# --- 5. currying (nested arrows) -------------------------------------------------
+adder = a => b => a + b
+check("currying a => b => a + b", adder(1)(2) == 3)
+
+# --- 6. inline callback -----------------------------------------------------------
+check("inline callback", apply(x => x + 1, 41) == 42)
+
+# --- 7. arrow returning a tuple ----------------------------------------------------
+pair = () => (1, 2)
+t = pair()
+check("arrow returns tuple", t[0] == 1 and t[1] == 2)
+
+# --- 8. comparison body --------------------------------------------------------------
+gt10 = x => x > 10
+check("comparison body true", gt10(11) == True)
+check("comparison body false", gt10(9) == False)
+
+# --- 9. conditional body --------------------------------------------------------------
+adj = x => x if x % 2 else x + 1
+check("conditional body even", adj(4) == 5)
+check("conditional body odd", adj(3) == 3)
+
+# --- 10. arrows in a list, called via subscript -----------------------------------------
+fns = [x => x + 1, x => x * 10]
+check("list of arrows [0]", fns[0](5) == 6)
+check("list of arrows [1]", fns[1](5) == 50)
+
+# --- 11. def returning arrow (closure capture) -------------------------------------------
+def makeAdder(n):
+    return x => x + n
+plus10 = makeAdder(10)
+check("def returns arrow, captures n", plus10(1) == 11)
+
+# --- 12. lexing negatives: == and >= untouched ---------------------------------------------
+check("== still equality", 2 == 2)
+check(">= still gte", 5 >= 5)
+check("> not arrow", (3 > 2) == True)
+
+# --- 13. lambda still works (regression) -----------------------------------------------------
+l = lambda x: x + 1
+check("lambda regression", l(1) == 2)
+
+# --- 14. arrow body using outer local via def --------------------------------------------------
+def run():
+    base = 100
+    f2 = x => x + base
+    return f2(1)
+check("arrow closure over local", run() == 101)
+
+# --- 15. zero-param arrow in call position ------------------------------------------------------
+def schedule(task):
+    return task()
+check("zero-param arrow passed", schedule(() => 7) == 7)
+
+# --- 16. precedence: body is full expression -----------------------------------------------------
+mix = x => x * 2 + 1
+check("body grabs x*2+1", mix(5) == 11)
+
+print("SUMMARY:", ok, "/", total)
+assert ok == total

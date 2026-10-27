@@ -100,6 +100,7 @@ import { resolveExpectedArtifacts, artifactClaimIdentity } from "./cliBridgeArti
 import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
 import { projectCliDelegate } from "../channels/unifiedChannelTask.js";
 import { listCliBridgeCapacity } from "./cliBridgeCapacity.js";
+import { inspectAgyBridgeOutput, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
@@ -423,6 +424,7 @@ export const cliBridgeTool: Tool = {
             "Silent >60s (not proof of a hang): " + silent.length,
             "Missing owner heartbeat >60s: " + stalledOwners.length,
             "Completion unverified: " + current.filter(job => job.completionState === "unverified").length,
+            "Permission blocked: " + current.filter(job => job.status === "permission_blocked").length,
             ...active.map(job => "- " + job.jobId + " | " + job.status +
               " | stage=" + (job.currentStage ?? "no progress event") +
               " | output=" + job.outputBytes + " bytes"),
@@ -747,7 +749,10 @@ function formatDelegateResult(
   taskSummary?: string
 ): string {
   const lines: string[] = [];
+  const permission = result.cliAlias === "agy" ? inspectAgyBridgeOutput((result.output || "") + "\n" + (result.stderr || "")) : {};
   lines.push(`Delegated to ${result.cliAlias} (exit=${result.exitCode ?? "?"}, ${result.durationMs}ms${result.timedOut ? ", TIMED OUT" : ""})`);
+  if (permission.permissionDenied) lines.push("Status: PERMISSION_BLOCKED — " + permission.permissionDenied + " " + AGY_PERMISSION_RECOVERY);
+  if (permission.modeWarning) lines.push("Mode warning: " + permission.modeWarning);
   if (extraArgs.length > 0) {
     lines.push(`Extra args: ${JSON.stringify(extraArgs)}`);
   }
@@ -870,6 +875,7 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
         ? " (no CLI output; not proof of a hang)" : ""),
     "Working directory: " + job.cwd,
     "Log: " + job.logPath,
+    job.permissionWarning ? "Mode warning: " + job.permissionWarning : "",
     job.error ? "Error: " + job.error : "",
     "",
     "Recent output:",
