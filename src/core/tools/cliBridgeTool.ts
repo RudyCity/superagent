@@ -204,7 +204,7 @@ export const cliBridgeTool: Tool = {
       permissionMode: {
         type: "string",
         enum: ["accept-edits", "plan", "auto", "full-auto"],
-        description: "AGY default is accept-edits; full-auto explicitly enables unrestricted CLI permissions.",
+        description: "AGY permission policy: 'accept-edits' (default, prompts for shell commands which blocks in headless mode), 'plan', 'auto', or 'full-auto' (passes --dangerously-skip-permissions to enable unrestricted shell execution for autonomous background tasks).",
       },
       wait: { type: "boolean", description: "For delegate only, false starts a pollable background job." },
       idempotencyKey: { type: "string", description: "Avoid duplicate background dispatch." },

@@ -35,8 +35,8 @@ The `cli_bridge` tool enables Superagent to offload tasks to external AI CLI ass
 |---|---|---|
 | `list` | Discover installed CLI binaries on system PATH | None |
 | `profile.list` | List built-in and user-configured CLI profiles | None |
-| `delegate` | Run a short synchronous task and return the final output | `cli`, `prompt`, `cwd`, `skills`, `timeoutMs`, `system`, `args` |
-| `delegate.start` | Start a long-running background job and return its `jobId` | `cli`, `prompt`, `cwd`, `skills`, `timeoutMs`, `system`, `args` |
+| `delegate` | Run a short synchronous task and return the final output | `cli`, `prompt`, `cwd`, `permissionMode`, `skills`, `timeoutMs`, `system`, `args` |
+| `delegate.start` | Start a long-running background job and return its `jobId` | `cli`, `prompt`, `cwd`, `permissionMode`, `skills`, `timeoutMs`, `system`, `args` |
 | `delegate.jobs` | List retained background jobs and their states | None |
 | `delegate.get` | Inspect a job's state, duration, and recent output | `jobId` |
 | `delegate.tail` | Read the recent lines from the job's full log | `jobId`, `tailLimit` |
@@ -107,9 +107,29 @@ Example: Delegating code analysis & rewrite with multiple reference directories 
 ```
 
 Why `delegate` is preferred for coding tasks:
-- Headless execution automatically passes `--dangerously-skip-permissions`, preventing tool execution blocks.
 - The process receives the full prompt and begins execution immediately without waiting for stdin EOF.
 - Real-time streaming output is captured and displayed in the terminal UI.
+- Supports configurable permission policies via `permissionMode`.
+
+#### Permission Policies & Headless Delegation (`permissionMode`)
+
+When delegating background jobs (`delegate.start`) or running non-interactive commands with external CLIs like AGY, configure `permissionMode`:
+
+- **`accept-edits` (Default)**: Allows direct file editing within the workspace. However, arbitrary shell commands will request user review, which cannot be prompted in headless background mode; this causes unapproved commands to terminate with `status: permission_blocked` (`denied_actions`).
+- **`full-auto`**: Explicitly passes `--dangerously-skip-permissions` to the external CLI. **Use this for autonomous background tasks** (such as builds, test suites, or full repository audits) that require executing shell commands without being blocked.
+- **`auto`**: Standard autonomous execution where supported by the underlying CLI account.
+- **`plan`**: Read-only planning mode without executing mutations.
+
+Example with `full-auto`:
+```json
+{
+  "action": "delegate.start",
+  "cli": "agy",
+  "prompt": "Audit and run tests across all MCP modules",
+  "permissionMode": "full-auto",
+  "cwd": "D:\\project"
+}
+```
 
 ---
 

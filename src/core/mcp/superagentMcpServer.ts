@@ -260,7 +260,7 @@ export const MCP_TOOL_DEFINITIONS = [
     },
     {
       name: "superagent_cli_bridge",
-      description: "Delegate tasks to installed AI CLIs via short synchronous runs, pollable long background jobs or interactive sessions. Supports status, log tail, verification and cancellation.",
+      description: "Delegate tasks to installed AI CLIs via short synchronous runs, pollable long background jobs or interactive sessions. Supports status, log tail, verification and cancellation. For autonomous background tasks requiring shell execution, set permissionMode='full-auto' to avoid headless permission_blocked errors.",
       inputSchema: {
         type: "object",
         properties: {
@@ -294,7 +294,7 @@ export const MCP_TOOL_DEFINITIONS = [
           expectedArtifacts: { type: "array", items: { type: "string" }, description: "1–12 relative workspace artifact paths checked by SHA-256 on completion." },
           timeoutMs: { type: "number", minimum: 1000, maximum: 7200000 },
           wait: { type: "boolean", description: "For delegate only: false starts a pollable job; true waits for CLI exit." },
-          permissionMode: { type: "string", enum: ["accept-edits", "plan", "auto", "full-auto"], description: "AGY permission policy. full-auto explicitly opts in to unrestricted CLI permissions." },
+          permissionMode: { type: "string", enum: ["accept-edits", "plan", "auto", "full-auto"], description: "AGY permission policy: 'accept-edits' (default, prompts for shell commands which causes headless background jobs to be permission_blocked), 'plan', 'auto', or 'full-auto' (passes --dangerously-skip-permissions to allow unrestricted autonomous shell execution in background jobs)." },
           conversationId: { type: "string" },
           idleTimeoutMs: { type: "number", minimum: 0 },
           setIdleTimeoutMs: { type: "number", minimum: 0 },
