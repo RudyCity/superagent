@@ -346,24 +346,44 @@ export const mcpCommand: SlashCommand = {
           port = parsed;
         }
         const { listActiveMcpServers, stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+        const { stopManagedMcpTunnelOwner, startManagedMcpTunnelOwner, formatManagedMcpTunnelStartup } =
+          await import("../runtime/mcpManagedTunnelOwner.js");
         const active = listActiveMcpServers().find((server) => server.port === port);
-        if (active?.pid && active.pid !== process.pid) {
-          ctx.addLine({ type: "error", content: "MCP tunnel on port " + port + " is owned by PID " + active.pid + ". Stop/restart it from its owning SuperAgent instance.", timestamp: now });
-          return;
-        }
         const restartArgs = [...rawArgs];
-        const hasProvider = restartArgs.includes("--provider") || restartArgs.includes("--openai") || restartArgs.includes("--openai-tunnel") || restartArgs.includes("--tunnel-id");
+        const hasProvider = restartArgs.includes("--provider") || restartArgs.includes("--openai") ||
+          restartArgs.includes("--openai-tunnel") || restartArgs.includes("--tunnel-id");
         if (active && !hasProvider) {
           restartArgs.push("--provider", active.tunnelProvider || "cloudflare");
-          if (active.tunnelProvider === "openai" && active.openAiTunnelId) restartArgs.push("--tunnel-id", active.openAiTunnelId);
+          if (active.tunnelProvider === "openai" && active.openAiTunnelId) {
+            restartArgs.push("--tunnel-id", active.openAiTunnelId);
+          }
         }
         if (active?.authMode && !restartArgs.includes("--mcp-auth")) restartArgs.push("--mcp-auth", active.authMode);
         if (active?.oauthPublicBaseUrl && !restartArgs.includes("--oauth-public-url")) {
           restartArgs.push("--oauth-public-url", active.oauthPublicBaseUrl);
         }
-        if (active?.toolMode === "dangerous" && !restartArgs.includes("--allow-dangerous")) restartArgs.push("--allow-dangerous");
-        if (active) await stopMcpTunnel(port);
-        await mcpCommand.execute("tunnel start " + restartArgs.join(" "), ctx);
+        if (active?.toolMode === "dangerous" && !restartArgs.includes("--allow-dangerous")) {
+          restartArgs.push("--allow-dangerous");
+        }
+        try {
+          if (active?.pid && active.pid !== process.pid) {
+            const stopped = await stopManagedMcpTunnelOwner(port);
+            if (!stopped.stopped) {
+              ctx.addLine({
+                type: "system",
+                content: `MCP owner PID ${active.pid} is draining; ${stopped.activeSessions} session(s) and ${stopped.inFlightRequests} request(s) remain. Restart was not forced.`,
+                timestamp: Date.now(),
+              });
+              return;
+            }
+          } else if (active) {
+            await stopMcpTunnel(port);
+          }
+          const started = await startManagedMcpTunnelOwner(restartArgs, process.argv[1] || "");
+          ctx.addLine({ type: "system", content: formatManagedMcpTunnelStartup(started), timestamp: Date.now() });
+        } catch (err: any) {
+          ctx.addLine({ type: "error", content: `Failed to restart MCP tunnel: ${err.message}`, timestamp: Date.now() });
+        }
         return;
       }
 
@@ -371,158 +391,47 @@ export const mcpCommand: SlashCommand = {
         const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
         let port = 9227;
         if (portIdx !== -1 && rawArgs[portIdx + 1]) {
-          const parsed = parseInt(rawArgs[portIdx + 1], 10);
-          if (parsed > 0) port = parsed;
+          const parsed = Number.parseInt(rawArgs[portIdx + 1], 10);
+          if (Number.isInteger(parsed) && parsed > 0 && parsed < 65536) port = parsed;
         }
-        const { stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
-        await stopMcpTunnel(port);
-        ctx.addLine({
-          type: "system",
-          content: `MCP tunnel on port ${port} stopped.`,
-          timestamp: Date.now(),
-        });
+        const { listActiveMcpServers, stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+        const active = listActiveMcpServers().find((server) => server.port === port);
+        try {
+          if (active?.pid && active.pid !== process.pid) {
+            const { stopManagedMcpTunnelOwner } = await import("../runtime/mcpManagedTunnelOwner.js");
+            const result = await stopManagedMcpTunnelOwner(port);
+            if (!result.stopped) {
+              ctx.addLine({
+                type: "system",
+                content: `MCP owner PID ${active.pid} is draining; ${result.activeSessions} session(s) and ${result.inFlightRequests} request(s) remain. It was not killed.`,
+                timestamp: Date.now(),
+              });
+              return;
+            }
+          } else {
+            await stopMcpTunnel(port);
+          }
+          ctx.addLine({ type: "system", content: `MCP tunnel on port ${port} stopped gracefully.`, timestamp: Date.now() });
+        } catch (err: any) {
+          ctx.addLine({ type: "error", content: `Failed to stop MCP tunnel: ${err.message}`, timestamp: Date.now() });
+        }
         return;
       }
 
       if (tunnelAction === "start") {
-        const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
-        let port = 9227;
-        if (portIdx !== -1 && rawArgs[portIdx + 1]) {
-          const parsed = parseInt(rawArgs[portIdx + 1], 10);
-          if (parsed > 0) port = parsed;
-        }
-        const providerIdx = rawArgs.findIndex((a) => a === "--provider");
-        const wantOpenAi = rawArgs.some((a) => a === "--openai" || a === "--openai-tunnel");
-        // Leave provider unset unless explicitly selected: startMcpTunnel can honor
-        // OPENAI_MCP_TUNNEL_ID instead of this command forcing Cloudflare by default.
-        let provider: "cloudflare" | "openai" | undefined = wantOpenAi ? "openai" : undefined;
-        if (providerIdx !== -1) {
-          const p = rawArgs[providerIdx + 1]?.toLowerCase();
-          if (p !== "openai" && p !== "cloudflare") {
-            ctx.addLine({
-              type: "error",
-              content: `Unsupported MCP tunnel provider "${rawArgs[providerIdx + 1] || "(missing)"}". Supported providers: cloudflare, openai. See /mcp tunnel providers.`,
-              timestamp: now,
-            });
-            return;
-          }
-          provider = p;
-        }
-        const tunnelIdIdx = rawArgs.findIndex((a) => a === "--tunnel-id");
-        let tunnelId: string | undefined;
-        if (tunnelIdIdx !== -1) {
-          const candidate = rawArgs[tunnelIdIdx + 1];
-          if (candidate && !candidate.startsWith("--")) tunnelId = candidate.trim();
-          provider = "openai";
-        }
-        const apiKeyIdx = rawArgs.findIndex((a) => a === "--api-key" || a === "--control-plane-key");
-        const apiKey = apiKeyIdx !== -1 ? rawArgs[apiKeyIdx + 1]?.trim() : undefined;
-        const profileIdx = rawArgs.findIndex((a) => a === "--profile");
-        const profile = profileIdx !== -1 ? rawArgs[profileIdx + 1]?.trim() : undefined;
-        const oauthPublicUrlIdx = rawArgs.findIndex((a) => a === "--oauth-public-url");
-        const oauthPublicBaseUrl = oauthPublicUrlIdx !== -1 ? rawArgs[oauthPublicUrlIdx + 1]?.trim() : undefined;
-        const allowDangerous = rawArgs.some((a) => a === "--allow-dangerous");
-        const authModeIdx = rawArgs.findIndex((a) => a === "--mcp-auth" || a === "--auth");
-        let authMode: "static-bearer" | "oauth" | undefined;
-        if (authModeIdx !== -1 && rawArgs[authModeIdx + 1]) {
-          const mode = rawArgs[authModeIdx + 1].toLowerCase();
-          if (mode === "oauth" || mode === "static-bearer") {
-            authMode = mode;
-          } else {
-            ctx.addLine({
-              type: "error",
-              content: `Invalid --mcp-auth value "${rawArgs[authModeIdx + 1]}". Use static-bearer or oauth.`,
-              timestamp: now,
-            });
-            return;
-          }
-        }
-
-        const { startMcpTunnel } = await import("../mcp/mcpTunnel.js");
         try {
-          const info = await startMcpTunnel({
-            port,
-            allowDangerous,
-            authMode,
-            tunnelProvider: provider,
-            tunnelId,
-            openAiApiKey: apiKey,
-            openAiProfile: profile,
-            oauthPublicBaseUrl,
+          const { startManagedMcpTunnelOwner, formatManagedMcpTunnelStartup } =
+            await import("../runtime/mcpManagedTunnelOwner.js");
+          const started = await startManagedMcpTunnelOwner(rawArgs, process.argv[1] || "");
+          ctx.addLine({
+            type: "system",
+            content: formatManagedMcpTunnelStartup(started),
+            timestamp: Date.now(),
           });
-
-          const { formatPythonMcpClientHints } = await import("../mcp/pythonMcpClientHints.js");
-          if (info.tunnelProvider === "openai") {
-            const lines = [
-              "OpenAI Secure MCP Tunnel Online!",
-              `- Tunnel ID    : ${info.openAiTunnelId}`,
-              `- Local MCP URL: ${info.localUrl}`,
-              info.adminUrl ? `- Admin UI     : ${info.adminUrl}` : "",
-              `- Auth Mode    : ${info.authMode}`,
-              `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-            ];
-            if (info.authMode === "oauth") {
-              lines.push(
-                `- Discovery    : ${info.oauthDiscoveryUrl}`,
-                "",
-                "One-time bootstrap approval code (shown ONCE, never stored):",
-                `  - ${info.bootstrapCode}`,
-              );
-            }
-            lines.push(...formatPythonMcpClientHints(info));
-            lines.push(
-              "",
-              "Responses API tool definition:",
-              JSON.stringify({
-                model: "gpt-4o",
-                input: "Use the private MCP server to answer my request.",
-                tools: [{ type: "mcp", server_label: "superagent_mcp", tunnel_id: info.openAiTunnelId }],
-              }, null, 2),
-            );
-            ctx.addLine({
-              type: "system",
-              content: lines.filter(Boolean).join("\n"),
-              timestamp: Date.now(),
-            });
-          } else {
-            const lines = [
-              "MCP via Cloudflare Tunnel Online!",
-              `- Endpoint     : ${info.publicUrl}`,
-              `- Local URL    : ${info.localUrl}`,
-              `- Auth Mode    : ${info.authMode}`,
-            ];
-            if (info.authMode === "oauth") {
-              lines.push(
-                `- Discovery    : ${info.oauthDiscoveryUrl}`,
-                `- Scopes       : mcp:tools${info.dangerous ? " mcp:tools:write" : ""}`,
-                `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-                `- Audit Log    : ${info.auditLogPath}`,
-                "",
-                "One-time bootstrap approval code (shown ONCE, never stored):",
-                `  - ${info.bootstrapCode}`,
-                "",
-                "Client setup (e.g. ChatGPT / Gemini):",
-                `  1. Set MCP server URL to: ${info.publicUrl}`,
-                "  2. Authentication: OAuth",
-                "  3. Open browser authorization page when prompted and paste the bootstrap code above to approve.",
-              );
-            } else {
-              lines.push(
-                `- Bearer Token : ${info.bearerToken}`,
-                `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-              );
-            }
-            lines.push(...formatPythonMcpClientHints(info));
-            ctx.addLine({
-              type: "system",
-              content: lines.join("\n"),
-              timestamp: Date.now(),
-            });
-          }
         } catch (err: any) {
           ctx.addLine({
             type: "error",
-            content: `Failed to start MCP tunnel: ${err.message}`,
+            content: `Failed to start independent MCP tunnel owner: ${err.message}`,
             timestamp: Date.now(),
           });
         }

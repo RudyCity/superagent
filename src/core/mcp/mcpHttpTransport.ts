@@ -302,11 +302,17 @@ export interface McpHttpServerOptions {
   /** Host/Origin validation policy (defense in depth). */
   hostOriginPolicy?: McpHostOriginPolicy;
   /**
-   * INTERNAL loopback owner management, opt-in only. Never enabled for a
-   * public OAuth issuer or reused as an MCP client bearer. Only used by the
-   * private, staged owner lifecycle.
+   * INTERNAL loopback owner management, opt-in only. The control credential is
+   * never reused as an MCP client bearer and owner routes require a loopback
+   * Host header even when the MCP listener is exposed through a tunnel.
    */
   ownerControlToken?: string;
+  /** Staging remains safe-only by default; managed-tunnel is explicit. */
+  ownerControlMode?: "static-bearer-local" | "managed-tunnel";
+  /** Whether this owner is attached to an external/public MCP ingress. */
+  ownerPublicTunnelStarted?: boolean;
+  /** Graceful stop callback used only after drain + zero sessions/requests. */
+  ownerStopHandler?: () => void | Promise<void>;
   /** Hard ceiling for independent safe-tool owners, immune to global YOLO. */
   lockSafeTools?: boolean;
   /** Immutable generation start timestamp, verified against private lease. */
@@ -361,7 +367,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     publicHostname = undefined;
   }
 
-  const allowedTools = opts.lockSafeTools || opts.ownerControlToken
+  const allowedTools = opts.lockSafeTools
     ? [...R1_OWNER_TOOLS]
     : opts.allowDangerous ? undefined : getDefaultSafeTools();
   const auditLogPath = opts.auditLogPath || path.join(os.homedir(), ".superagent-r", "mcp-audit.log");
@@ -379,11 +385,21 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
   if (opts.lockSafeTools && opts.allowDangerous !== false) {
     throw new Error("Safe-only MCP cannot enable dangerous tools");
   }
-  if (opts.ownerControlToken && (!/^[a-f0-9]{64}$/.test(opts.ownerControlToken) ||
-      opts.ownerControlToken === opts.bearerToken || authMode !== "static-bearer" ||
-      opts.allowDangerous !== false ||
-      !Number.isSafeInteger(opts.ownerStartedAt) || opts.ownerStartedAt! <= 0)) {
+  const ownerMode = opts.ownerControlMode ?? "static-bearer-local";
+  if (opts.ownerControlToken && (
+      !/^[a-f0-9]{64}$/.test(opts.ownerControlToken) ||
+      opts.ownerControlToken === opts.bearerToken ||
+      !Number.isSafeInteger(opts.ownerStartedAt) || opts.ownerStartedAt! <= 0 ||
+      (ownerMode === "static-bearer-local" &&
+        (authMode !== "static-bearer" || opts.allowDangerous !== false))
+    )) {
     throw new Error("Private owner control must be isolated from MCP client authentication");
+  }
+  if (!opts.ownerControlToken && (opts.ownerControlMode || opts.ownerStopHandler || opts.ownerPublicTunnelStarted)) {
+    throw new Error("MCP owner-control metadata requires a private control token");
+  }
+  if (ownerMode === "managed-tunnel" && opts.ownerControlToken && !opts.ownerStopHandler) {
+    throw new Error("Managed MCP tunnel owner requires a graceful stop handler");
   }
   // Existing MCP/OAuth instances without ownerControlToken are unchanged.
   let ownerDraining = false;
@@ -415,10 +431,23 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         res.end(JSON.stringify({ error: "origin not allowed" }));
         return;
       }
-      if (pathname === "/_internal/owner/status" || pathname === "/_internal/owner/drain") {
-        // Route must remain completely undiscoverable on legacy instances.
-        // The listener itself is always bound to 127.0.0.1.
+      if (pathname === "/_internal/owner/status" ||
+          pathname === "/_internal/owner/drain" ||
+          pathname === "/_internal/owner/stop") {
+        // Owner-control is intentionally reachable only through a loopback Host
+        // header. A public tunnel forwards its public Host and therefore cannot
+        // use this route even if a control token were somehow disclosed.
         if (!opts.ownerControlToken) {
+          res.writeHead(404, { "Cache-Control": "no-store" });
+          res.end();
+          return;
+        }
+        const ownerHost = String(req.headers["host"] || "").toLowerCase();
+        const expectedLoopbackHosts = new Set([
+          `127.0.0.1:${opts.port}`,
+          `localhost:${opts.port}`,
+        ]);
+        if (!expectedLoopbackHosts.has(ownerHost)) {
           res.writeHead(404, { "Cache-Control": "no-store" });
           res.end();
           return;
@@ -428,27 +457,50 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           res.end();
           return;
         }
-        const expectedMethod = pathname.endsWith("/status") ? "GET" : "POST";
-        if (req.method !== expectedMethod) {
+        const isStatus = pathname.endsWith("/status");
+        if (req.method !== (isStatus ? "GET" : "POST")) {
           res.writeHead(405, { "Cache-Control": "no-store" });
           res.end();
           return;
         }
-        if (expectedMethod === "POST") ownerDraining = true;
-        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
-        res.end(JSON.stringify({
+        if (pathname.endsWith("/drain")) ownerDraining = true;
+        if (pathname.endsWith("/stop")) {
+          if (!opts.ownerStopHandler) {
+            res.writeHead(404, { "Cache-Control": "no-store" });
+            res.end();
+            return;
+          }
+          if (!ownerDraining || registry.size !== 0 || inFlightMcpRequests !== 0) {
+            res.writeHead(409, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+            res.end(JSON.stringify({
+              error: "owner must be drained with zero sessions and requests before stop",
+              draining: ownerDraining,
+              activeSessions: registry.size,
+              inFlightRequests: inFlightMcpRequests,
+            }));
+            return;
+          }
+        }
+        const ownerStatus = {
           version: 1, kind: "private_mcp_owner",
           port: opts.port, pid: process.pid, startedAt: opts.ownerStartedAt,
-          mode: "static-bearer-local",
+          mode: ownerMode,
           draining: ownerDraining, activeSessions: registry.size,
           inFlightRequests: inFlightMcpRequests,
           // Number of unresolved external tool effects is NOT tracked by
           // the transport and must never be incorrectly reported as zero.
-          inflightToolEffects: "unknown",
-          safeToolsOnly: opts.allowDangerous === false,
+          inflightToolEffects: "unknown" as const,
+          safeToolsOnly: Boolean(opts.lockSafeTools || opts.allowDangerous === false),
           oauthEnabled: authMode === "oauth",
-          publicTunnelStarted: false,
-        }));
+          publicTunnelStarted: Boolean(opts.ownerPublicTunnelStarted),
+        };
+        res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+        res.end(JSON.stringify(ownerStatus));
+        if (pathname.endsWith("/stop")) {
+          setImmediate(() => {
+            void Promise.resolve(opts.ownerStopHandler?.()).catch(() => {});
+          });
+        }
         return;
       }
       // OAuth discovery/authorization/token endpoints are public by design
@@ -652,7 +704,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           onToolCall: sessionAudit,
           authMode,
           allowDangerous: opts.allowDangerous,
-          lockSafeTools: Boolean(opts.ownerControlToken || opts.lockSafeTools),
+          lockSafeTools: Boolean(opts.lockSafeTools),
           getIdentity: () => identity,
           workspace: process.cwd(),
         } as McpServerOptions);

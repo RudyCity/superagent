@@ -205,6 +205,16 @@ export interface StartMcpTunnelOptions {
   oauthPublicBaseUrl?: string;
   /** Whether to run in stateless embedded stub mode for testing. */
   embeddedStub?: boolean;
+  /** Private loopback lifecycle credential for a detached managed owner. */
+  ownerControlToken?: string;
+  /** Owner generation timestamp used for process-birth attestation. */
+  ownerStartedAt?: number;
+  /** Explicit lifecycle profile; managed-tunnel is never inferred implicitly. */
+  ownerControlMode?: "static-bearer-local" | "managed-tunnel";
+  /** Whether the owner is attached to an external/public ingress. */
+  ownerPublicTunnelStarted?: boolean;
+  /** Invoked only after authenticated drain and zero active sessions/requests. */
+  ownerStopHandler?: () => void | Promise<void>;
 }
 
 /** A tunnel ID is not an OAuth issuer. Never infer the issuer from a forwarded Host header. */
@@ -322,6 +332,11 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         authMode,
         oauth,
         publicBaseUrl: oauthPublicBaseUrl || `http://127.0.0.1:${port}`,
+        ownerControlToken: opts.ownerControlToken,
+        ownerStartedAt: opts.ownerStartedAt,
+        ownerControlMode: opts.ownerControlMode,
+        ownerPublicTunnelStarted: opts.ownerPublicTunnelStarted,
+        ownerStopHandler: opts.ownerStopHandler,
         hostOriginPolicy: {
           allowedOrigins: opts.allowedOrigins,
           allowNoOrigin: opts.allowNoOrigin,
@@ -333,7 +348,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         handle,
         bearerToken,
         auditLogPath: opts.auditLogPath ?? "default",
-        startedAt: prev?.startedAt ?? Date.now(),
+        startedAt: prev?.pid === process.pid ? prev.startedAt : (opts.ownerStartedAt ?? Date.now()),
         authMode,
         ownsTunnel: false,
         bootstrapCode,
@@ -471,6 +486,11 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         authMode,
         oauth,
         publicBaseUrl: publicBaseClean,
+        ownerControlToken: opts.ownerControlToken,
+        ownerStartedAt: opts.ownerStartedAt,
+        ownerControlMode: opts.ownerControlMode,
+        ownerPublicTunnelStarted: opts.ownerPublicTunnelStarted,
+        ownerStopHandler: opts.ownerStopHandler,
         hostOriginPolicy: {
           allowedOrigins: opts.allowedOrigins,
           allowNoOrigin: opts.allowNoOrigin,
@@ -481,7 +501,7 @@ export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<
         handle,
         bearerToken,
         auditLogPath: opts.auditLogPath ?? "default",
-        startedAt: prev?.startedAt ?? Date.now(),
+        startedAt: prev?.pid === process.pid ? prev.startedAt : (opts.ownerStartedAt ?? Date.now()),
         authMode,
         ownsTunnel: createdTunnel,
         bootstrapCode,

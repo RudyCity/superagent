@@ -107,7 +107,7 @@ describe("R1 private authenticated MCP owner health and drain",()=>{
       expect((await probePrivateMcpOwner(profile))?.inFlightRequests).toBe(0);
     }finally{await server.close();}
   });
-  it("never enables owner control on dangerous or OAuth server modes",async()=>{
+  it("never enables staging owner control on dangerous or OAuth server modes",async()=>{
     const token=generateMcpBearerToken(),control=generateMcpBearerToken();
     await expect(startMcpHttpServer({port:0,bearerToken:token,
       allowDangerous:true,ownerControlToken:control,ownerStartedAt:Date.now()}))
@@ -117,5 +117,40 @@ describe("R1 private authenticated MCP owner health and drain",()=>{
       oauth:{publicBaseUrl:"https://issuer.example",bootstrapCodeHash:"a".repeat(64)},
       ownerControlToken:control,ownerStartedAt:Date.now()}))
       .rejects.toThrow(/isolated/);
+  });
+  it("allows explicit managed-tunnel owner control for OAuth and graceful stop",async()=>{
+    const port=await availablePort(),control=generateMcpBearerToken(),startedAt=Date.now();
+    let stopped=false;
+    const server=await startMcpHttpServer({
+      port,authMode:"oauth",allowDangerous:true,
+      oauth:{publicBaseUrl:"https://issuer.example",bootstrapCodeHash:"b".repeat(64)},
+      ownerControlToken:control,ownerStartedAt:startedAt,
+      ownerControlMode:"managed-tunnel",ownerPublicTunnelStarted:true,
+      ownerStopHandler:()=>{stopped=true;},
+      auditLogPath:path.join(os.tmpdir(),"mcp-managed-owner-"+crypto.randomUUID()+".jsonl"),
+    });
+    try{
+      const base="http://127.0.0.1:"+port+"/_internal/owner/";
+      const headers={Authorization:"Bearer "+control,Host:"127.0.0.1:"+port};
+      const status=await fetch(base+"status",{headers});
+      expect(status.status).toBe(200);
+      expect(await status.json()).toMatchObject({
+        kind:"private_mcp_owner",pid:process.pid,port,startedAt,
+        mode:"managed-tunnel",oauthEnabled:true,publicTunnelStarted:true,
+        safeToolsOnly:false,draining:false,
+      });
+      const publicHost=await fetch(base+"status",{headers:{
+        Authorization:"Bearer "+control,Host:"issuer.example",
+      }});
+      expect(publicHost.status).toBe(404);
+      const earlyStop=await fetch(base+"stop",{method:"POST",headers});
+      expect(earlyStop.status).toBe(409);
+      const drain=await fetch(base+"drain",{method:"POST",headers});
+      expect(drain.status).toBe(200);
+      const stop=await fetch(base+"stop",{method:"POST",headers});
+      expect(stop.status).toBe(200);
+      await new Promise(resolve=>setImmediate(resolve));
+      expect(stopped).toBe(true);
+    }finally{await server.close();}
   });
 });

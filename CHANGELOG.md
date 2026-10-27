@@ -1,3 +1,11 @@
+## [1.14.53] - 2026-10-27
+### Independent MCP tunnel owner
+- Change both `/mcp tunnel start` and `superagent mcp tunnel start` to launch the MCP HTTP/OAuth+tunnel stack in a detached dedicated owner process instead of creating it inside the running Core process.
+- Add authenticated loopback-only owner status/drain/stop control with PID, kernel-listener and Windows process-birth verification; cross-process stop/restart drains sessions and never force-kills an unrelated owner.
+- Keep the existing staging owner safe-only by default; OAuth/dangerous/public ingress owner control is available only through the explicit internal `managed-tunnel` profile.
+- Verify live Windows Cloudflare static-bearer and OAuth owners on isolated ports: independent PID start, graceful stop, OAuth owner restart to a new PID, and unchanged production Core/MCP listeners.
+- Production legacy Core/MCP ownership is intentionally not migrated by this release; existing clients must still be reauthorized before retiring a shared legacy owner.
+
 ## [1.14.52] - 2026-10-27
 ### Core and OAuth process separation verification
 - Verify isolated independent OAuth and ingress with real PKCE/consent/refresh/restart coverage, and validate supervised Core/MCP rolling restarts while preserving the legacy production owner.

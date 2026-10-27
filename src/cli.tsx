@@ -197,6 +197,19 @@ if (process.argv[2] === "mcp") {
     }
     // The explicitly staged OAuth server lives until its owner closes it.
   }
+  if (sub === "tunnel-owner") {
+    try {
+      const { runManagedMcpTunnelOwner } = await import("./core/runtime/mcpManagedTunnelOwner.js");
+      await runManagedMcpTunnelOwner(process.argv.slice(4));
+    } catch (error) {
+      if (typeof process.send === "function") {
+        process.send({ type: "mcp-tunnel-owner-error", pid: process.pid,
+          error: error instanceof Error ? error.message : String(error) });
+      }
+      console.error("[MCP tunnel owner] " + String(error));
+      process.exit(1);
+    }
+  }
   if (sub === "lifecycle") {
     try {
       const { handleMcpOwnerLifecycle } = await import("./core/runtime/mcpOwnerLifecycle.js");
