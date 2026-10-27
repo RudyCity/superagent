@@ -575,11 +575,27 @@ export const invokeSubagentTool: Tool = {
           }
         }
       },
-      // Permission: block destructive commands via Senopati Neural Guardrail, auto-approve everything else
-      async (toolCall, _desc) => {
-        const cmd = (toolCall.args.command as string || "").trim();
-        const isDestructive = await isDestructiveCommand(cmd);
-        return !isDestructive;
+      // Permission: inherit parent approval or fail closed, block destructive commands
+      async (toolCall, desc) => {
+        const cmd = (toolCall.args?.command as string || "").trim();
+        if (cmd && (await isDestructiveCommand(cmd))) {
+          appendMasterLog(`[PERMISSION_DENIED] Destructive command blocked for Subagent ${subagentId} (${role}): "${cmd}"`);
+          return false;
+        }
+        const provenance = `[Subagent ${subagentId} (${role}) via parent ${parentAgent?.sessionId || "root"}]`;
+        appendMasterLog(`[PERMISSION_REQUEST] ${provenance} requests permission for ${toolCall.name}: ${desc}`);
+        if (parentAgent && typeof (parentAgent as any).onPermission === "function") {
+          try {
+            const approved = await (parentAgent as any).onPermission(toolCall, `${provenance} ${desc}`);
+            appendMasterLog(`[PERMISSION_RESULT] ${provenance} ${toolCall.name}: ${approved ? "APPROVED" : "DENIED"}`);
+            return approved === "session" ? true : !!approved;
+          } catch (err: any) {
+            appendMasterLog(`[PERMISSION_ERROR] ${provenance} failed to resolve parent permission: ${err.message}`);
+            return false;
+          }
+        }
+        appendMasterLog(`[PERMISSION_DENIED] ${provenance} no parent permission handler available; failing closed.`);
+        return false;
       },
       async (question, options = []) => {
         const master = getMasterAgent();
@@ -598,7 +614,13 @@ export const invokeSubagentTool: Tool = {
         if (handler) {
           return handler(`[Subagent ${subagentId} (${role})]: ${question}`, options);
         }
-        return options[0] || "";
+        const qStr = typeof question === "string" ? question : JSON.stringify(question);
+        appendMasterLog(`[NEEDS_INPUT] Subagent ${subagentId} (${role}) question unhandled: ${qStr}`);
+        const inst = subagentInstances.get(subagentId);
+        if (inst) inst.status = "waiting";
+        throw new Error(
+          `[NEEDS_INPUT] No active user interface or master orchestrator is available to answer question: "${qStr}". Execution paused pending user input.`
+        );
       },
       resolvedPrompt,
       toolset,
@@ -606,6 +628,10 @@ export const invokeSubagentTool: Tool = {
     );
 
     inheritTlineChildScope(parentAgent, agentInstance, subagentId);
+    const fileScopeList = args.fileScope && Array.isArray(args.fileScope) && args.fileScope.length > 0
+      ? Object.freeze([...(args.fileScope as string[])])
+      : undefined;
+    agentInstance.fileScope = fileScopeList;
     agentInstance.delegationDepth = parentDepth + 1;
     agentInstance.tier = "subagent";
     agentInstance.subagentType = typeName;
@@ -626,6 +652,7 @@ export const invokeSubagentTool: Tool = {
       logs,
       parentId,
       historyFilePath: agentInstance.getCurrentHistoryFilePath(),
+      fileScope: fileScopeList,
     };
 
     subagentInstances.set(subagentId, instance);
@@ -967,11 +994,27 @@ export const sendMessageTool: Tool = {
             }
           }
         },
-        // Permission: block destructive commands via Senopati Neural Guardrail, auto-approve everything else
-        async (toolCall, _desc) => {
-          const cmd = (toolCall.args.command as string || "").trim();
-          const isDestructive = await isDestructiveCommand(cmd);
-          return !isDestructive;
+        // Permission: inherit parent approval or fail closed, block destructive commands
+        async (toolCall, desc) => {
+          const cmd = (toolCall.args?.command as string || "").trim();
+          if (cmd && (await isDestructiveCommand(cmd))) {
+            appendMasterLog(`[PERMISSION_DENIED] Destructive command blocked for Subagent ${recipientId} (${role}): "${cmd}"`);
+            return false;
+          }
+          const provenance = `[Subagent ${recipientId} (${role}) via parent ${instance.parentAgent?.sessionId || "root"}]`;
+          appendMasterLog(`[PERMISSION_REQUEST] ${provenance} requests permission for ${toolCall.name}: ${desc}`);
+          if (instance.parentAgent && typeof (instance.parentAgent as any).onPermission === "function") {
+            try {
+              const approved = await (instance.parentAgent as any).onPermission(toolCall, `${provenance} ${desc}`);
+              appendMasterLog(`[PERMISSION_RESULT] ${provenance} ${toolCall.name}: ${approved ? "APPROVED" : "DENIED"}`);
+              return approved === "session" ? true : !!approved;
+            } catch (err: any) {
+              appendMasterLog(`[PERMISSION_ERROR] ${provenance} failed to resolve parent permission: ${err.message}`);
+              return false;
+            }
+          }
+          appendMasterLog(`[PERMISSION_DENIED] ${provenance} no parent permission handler available; failing closed.`);
+          return false;
         },
         async (question, options = []) => {
           const master = getMasterAgent();
@@ -990,7 +1033,12 @@ export const sendMessageTool: Tool = {
           if (handler) {
             return handler(`[Subagent ${recipientId} (${role})]: ${question}`, options);
           }
-          return options[0] || "";
+          const qStr = typeof question === "string" ? question : JSON.stringify(question);
+          appendMasterLog(`[NEEDS_INPUT] Subagent ${recipientId} (${role}) question unhandled: ${qStr}`);
+          instance.status = "waiting";
+          throw new Error(
+            `[NEEDS_INPUT] No active user interface or master orchestrator is available to answer question: "${qStr}". Execution paused pending user input.`
+          );
         },
         systemPrompt,
         toolset,
@@ -1000,6 +1048,9 @@ export const sendMessageTool: Tool = {
       // Resume only the originally owned agent journal scope; never inherit
       // from a different caller that happened to find the subagent ID.
       inheritTlineChildScope(instance.parentAgent, agentInstance, recipientId);
+      if (instance.fileScope && instance.fileScope.length > 0) {
+        agentInstance.fileScope = instance.fileScope;
+      }
       // Re-setup delegation properties
       const parentAgent = agentLocalStorage.getStore();
       const parentDepth = parentAgent ? parentAgent.delegationDepth : 0;

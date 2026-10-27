@@ -1,0 +1,58 @@
+# Walkthrough: 2026-10-28 Algorithm Remediation
+
+## Executive Summary
+This remediation addresses the critical algorithm vulnerabilities identified in the 2026-10-28 re-audit across 7 priority clusters:
+1. **P0 DEEP-01 (FastPath false-success)**: Explicit terminal outcomes on FastPath completion, throw/network failure, and abort; fail-closed behavior in `chatRuntimeProcessor` preventing null/unknown outcomes from completing; deduplicated single-emission of terminal states.
+2. **P0 DEEP-02 (Delegated fileScope hard enforcement)**: Hard code enforcement of immutable `fileScope` boundary via `fileScopeGuard.ts` and `ToolExecutor.ts` before tool execution and YOLO bypass; canonicalization of Windows paths, traversal (`../`) checks, symlink/reparse escape detection, and shell command/chdir interception.
+3. **P1 DEEP-03 (Permissions & approval inheritance)**: Elimination of broad subagent auto-approval; full parent permission inheritance with provenance tracking (`[Subagent ... via parent ...]`) and fail-closed authorization.
+4. **P1 DEEP-04 (Classifier progress execution scoping)**: Replacement of mutable shared singleton `globalProgressCallback` with execution-scoped `progressStorage` (`AsyncLocalStorage`) and active agent event routing, preventing cross-contamination between concurrent sessions.
+5. **P1 DEEP-05 (Concurrency 0..N & safe lease ownership)**: Support for concurrency limits `0` (unlimited), `1`, `2`, `3`, ..., `N`; elimination of arbitrary 60s lock theft for live owner processes; caller-owned lease verification with periodic heartbeat.
+6. **P1 DEEP-07 (Text-only checklist continuation guard)**: Preservation of needs-input, permission, and limitation responses from being forced into repeated narration nudges; hard cap preventing no-progress loops; reset of continuation counters upon real tool execution.
+7. **P2 DEEP-11 (Subagent question handling)**: Elimination of silent `options[0]` fallback when no master/UI handler exists; explicit `[NEEDS_INPUT]` error and waiting state.
+
+---
+
+## Key File Modifications
+
+| Component | Files Modified / Created | Summary of Changes |
+|-----------|--------------------------|---------------------|
+| **DEEP-01** | `src/core/agent/FastPath.ts`<br>`src/core/utils/chatRuntimeProcessor.ts`<br>`tests/fastPathTerminalOutcome.test.ts`<br>`tests/chatRuntimeLedger.test.ts` | Sets explicit `lastTaskOutcome` (`task_completed`, `task_aborted`, `task_failed`). `chatRuntimeProcessor` maps null/unknown outcomes to `failed` and records failure reason in ledger. |
+| **DEEP-02** | `src/core/agent/fileScopeGuard.ts` (new)<br>`src/core/agent.ts`<br>`src/core/agent/ToolExecutor.ts`<br>`src/core/tools/types.ts`<br>`src/core/tools/subagentTools.ts`<br>`tests/fileScopeHardEnforcement.test.ts` (new) | Canonicalizes paths and verifies every file/shell tool call against immutable `fileScope` before YOLO or permission bypass. Intercepts `cd`, relative traversals, and symlinks. |
+| **DEEP-03** | `src/core/tools/subagentTools.ts`<br>`src/core/tools/superagentTools.ts`<br>`tests/subagentPermissionsAndQuestions.test.ts` (new) | Replaces `return !isDestructive` with parent permission delegation, provenance logging, and fail-closed authorization. |
+| **DEEP-04** | `src/core/tools/state.ts`<br>`src/core/agent.ts`<br>`tests/classifierProgressIsolation.test.ts` (new) | Scopes progress callbacks via `AsyncLocalStorage<ProgressCallback>` and `agentLocalStorage`; removes agent global callback overwrite. |
+| **DEEP-05** | `src/core/rateLimiter.ts`<br>`src/core/agent/LoopIterationProcessor.ts`<br>`src/core/agent/HistoryCompactor.ts`<br>`src/core/masterAgent.ts`<br>`src/core/agent/criticAgent.ts`<br>`src/core/agent/promptOptimizer.ts`<br>`src/core/commands/settingsCommand.ts`<br>`tests/concurrencyLimiterSafeOwnership.test.ts` (new) | `SharedConcurrencyLimiter` manages `0..N` slots with `ConcurrencyLease`, heartbeat timer, and alive-process validation. Locks held by live processes >60s are never deleted. Callers release only caller-owned leases. |
+| **DEEP-07** | `src/core/agent/ChecklistContinuationGuard.ts`<br>`src/core/agent/LoopIterationProcessor.ts`<br>`tests/checklistContinuationGuard.test.ts` | Added `isNeedsInputOrLimitation` and `isRepetitiveNarration`. Suppresses checklist/planning nudges when agent requests input, permission, or reports blockers. Resets nudge count on tool success. |
+| **DEEP-11** | `src/core/tools/subagentTools.ts`<br>`src/core/tools/superagentTools.ts`<br>`tests/subagentPermissionsAndQuestions.test.ts` (new) | Replaced `return options[0]` with explicit `[NEEDS_INPUT]` throw and subagent status transition to `waiting`. |
+
+---
+
+## Test Verification Results
+
+All tests executed via `bun test`:
+
+### Targeted Test Suites
+```
+bun test tests/fastPathTerminalOutcome.test.ts \
+         tests/chatRuntimeLedger.test.ts \
+         tests/fileScopeHardEnforcement.test.ts \
+         tests/subagentPermissionsAndQuestions.test.ts \
+         tests/classifierProgressIsolation.test.ts \
+         tests/concurrencyLimiterSafeOwnership.test.ts \
+         tests/checklistContinuationGuard.test.ts
+```
+**Outcome**:
+- **45 passed**, **0 failed** across 7 test files (135 assertions).
+
+### Regression Test Suites
+```
+bun test tests/subagentPermissions.test.ts tests/agentAbortInterrupt.test.ts tests/permissions.test.ts
+```
+**Outcome**:
+- **45 passed**, **0 failed** across 2 test files (88 assertions).
+
+### Build Verification
+```
+bun run build
+```
+- TypeScript check (`tsc`) completed with **0 errors**.
+- MCP Chrome schemas synchronized cleanly.

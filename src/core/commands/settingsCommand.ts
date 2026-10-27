@@ -194,7 +194,7 @@ export const settingsCommand: SlashCommand = {
       content: [
         "┌───[ ⚙️ SUPERAGENT SETTINGS ]",
         "│ ",
-        `│ • Concurrency Limit  : ${s.concurrencyLimit === 1 ? "1 (enabled)" : "0 (disabled)"}`,
+        `│ • Concurrency Limit  : ${s.concurrencyLimit > 0 ? `${s.concurrencyLimit} (active)` : "0 (unlimited/disabled)"}`,
         `│ • Rate Limit (RPM)   : ${s.rateLimitRpm === 0 ? "0 (disabled)" : `${s.rateLimitRpm} RPM`}`,
         `│ • Limit Capacity     : ${s.rateLimitCapacity}`,
         `│ • Streaming          : ${s.disableStreaming ? "DISABLED" : "ENABLED"}`,
@@ -259,24 +259,25 @@ export const settingConcurrencyCommand: SlashCommand = {
     if (!val) {
       ctx.addLine({
         type: "system",
-        content: `Usage: /setting-concurrency <0|1>\nCurrent value: ${getSettings().concurrencyLimit === 1 ? "1 (enabled)" : "0 (disabled)"}`,
+        content: `Usage: /setting-concurrency <number>\nCurrent value: ${getSettings().concurrencyLimit > 0 ? `${getSettings().concurrencyLimit} (active)` : "0 (unlimited/disabled)"}`,
         timestamp: now,
       });
       return;
     }
-    if (val !== "0" && val !== "1") {
+    const parsedNum = parseInt(val, 10);
+    if (isNaN(parsedNum) || parsedNum < 0) {
       ctx.addLine({
         type: "error",
-        content: "Invalid value. Must be 0 (disabled) or 1 (enabled).",
+        content: "Invalid value. Must be a non-negative number (0 for unlimited).",
         timestamp: now,
       });
       return;
     }
     try {
-      updateSettings({ concurrencyLimit: parseInt(val, 10) });
+      updateSettings({ concurrencyLimit: parsedNum });
       ctx.addLine({
         type: "system",
-        content: `✓ Concurrency limit set to: ${val === "1" ? "1 (enabled)" : "0 (disabled)"}`,
+        content: `✓ Concurrency limit set to: ${parsedNum > 0 ? `${parsedNum} (active)` : "0 (unlimited/disabled)"}`,
         timestamp: now,
       });
     } catch (err: any) {

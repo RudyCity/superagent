@@ -82,6 +82,72 @@ describe("durable chat turns: SQLite ledger", () => {
       expect(ledger.getChatTurn("incomplete-turn")?.state).toBe("interrupted"));
   });
 
+  it("fails closed on null or unknown agent task outcome", async () => {
+    const emitted: any[] = [];
+    const session: any = {
+      sessionId: "failclosed-chat", workspace: "/tmp/failclosed",
+      agent: {
+        lastTaskOutcome: null, isAgentRunning: () => false,
+        async sendMessage() {
+          // Leaves lastTaskOutcome as null or sets unknown string
+          session.agent.lastTaskOutcome = null;
+        },
+      },
+    };
+    ledger.acceptChatTurn({ turnId: "null-outcome-turn", sessionId: session.sessionId,
+      workspace: session.workspace, clientMode: "chrome-extension", message: "null outcome" });
+    processor.startSessionTurnWorker(session, event => emitted.push(event));
+    await vi.waitFor(() =>
+      expect(ledger.getChatTurn("null-outcome-turn")?.state).toBe("failed"));
+    const turn = ledger.getChatTurn("null-outcome-turn");
+    expect(turn?.state).toBe("failed");
+    expect(turn?.error).toContain("unexpected/null outcome");
+    const terminalEmits = emitted.filter(e => e.type === "chat_turn_status" && e.turnId === "null-outcome-turn" && ["completed", "failed", "cancelled", "interrupted"].includes(e.state));
+    expect(terminalEmits).toHaveLength(1);
+    expect(terminalEmits[0].state).toBe("failed");
+  });
+
+  it("handles aborted task outcome as cancelled", async () => {
+    const emitted: any[] = [];
+    const session: any = {
+      sessionId: "aborted-chat", workspace: "/tmp/aborted",
+      agent: {
+        lastTaskOutcome: null, isAgentRunning: () => false,
+        async sendMessage() {
+          session.agent.lastTaskOutcome = "task_aborted";
+        },
+      },
+    };
+    ledger.acceptChatTurn({ turnId: "aborted-outcome-turn", sessionId: session.sessionId,
+      workspace: session.workspace, clientMode: "chrome-extension", message: "aborted outcome" });
+    processor.startSessionTurnWorker(session, event => emitted.push(event));
+    await vi.waitFor(() =>
+      expect(ledger.getChatTurn("aborted-outcome-turn")?.state).toBe("cancelled"));
+    const terminalEmits = emitted.filter(e => e.type === "chat_turn_status" && e.turnId === "aborted-outcome-turn" && ["completed", "failed", "cancelled", "interrupted"].includes(e.state));
+    expect(terminalEmits).toHaveLength(1);
+    expect(terminalEmits[0].state).toBe("cancelled");
+  });
+
+  it("handles failed task outcome as failed with single terminal emission", async () => {
+    const emitted: any[] = [];
+    const session: any = {
+      sessionId: "failed-chat", workspace: "/tmp/failed",
+      agent: {
+        lastTaskOutcome: null, isAgentRunning: () => false,
+        async sendMessage() {
+          session.agent.lastTaskOutcome = "task_failed";
+        },
+      },
+    };
+    ledger.acceptChatTurn({ turnId: "failed-outcome-turn", sessionId: session.sessionId,
+      workspace: session.workspace, clientMode: "chrome-extension", message: "failed outcome" });
+    processor.startSessionTurnWorker(session, event => emitted.push(event));
+    await vi.waitFor(() =>
+      expect(ledger.getChatTurn("failed-outcome-turn")?.state).toBe("failed"));
+    const terminalEmits = emitted.filter(e => e.type === "chat_turn_status" && e.turnId === "failed-outcome-turn" && ["completed", "failed", "cancelled", "interrupted"].includes(e.state));
+    expect(terminalEmits).toHaveLength(1);
+  });
+
   it("accepts a turn atomically and deduplicates across callers", () => {
     const args = { turnId: "turn-uuid-a", sessionId: "chat-a", workspace: "D:/projects/a",
       clientMode: "chrome-extension", message: "create a report" };

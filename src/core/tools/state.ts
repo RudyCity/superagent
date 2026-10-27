@@ -531,16 +531,32 @@ export function appendMasterLog(msg: string) {
   }
 }
 
-// ─── Global Progress Callbacks ────────────────────────────────────────────────
+// ─── Execution-Scoped Progress Callbacks (DEEP-04) ───────────────────────────
+import { AsyncLocalStorage } from "node:async_hooks";
+import { agentLocalStorage } from "../agentLocalStorage.js";
+
 export type ProgressCallback = (event: any) => void;
-let globalProgressCallback: ProgressCallback | null = null;
+export const progressStorage = new AsyncLocalStorage<ProgressCallback>();
+let fallbackProgressCallback: ProgressCallback | null = null;
+
+export function runWithProgressCallback<T>(callback: ProgressCallback, fn: () => T): T {
+  return progressStorage.run(callback, fn);
+}
 
 export function registerProgressCallback(callback: ProgressCallback) {
-  globalProgressCallback = callback;
+  fallbackProgressCallback = callback;
 }
 
 export function getProgressCallback(): ProgressCallback | null {
-  return globalProgressCallback;
+  const scoped = progressStorage.getStore();
+  if (scoped) return scoped;
+
+  const active = agentLocalStorage.getStore();
+  if (active && typeof active.onEvent === "function") {
+    return (event: any) => active.onEvent(event);
+  }
+
+  return fallbackProgressCallback;
 }
 
 // ─── Tools Error Log ─────────────────────────────────────────────────────────

@@ -49,6 +49,8 @@ export class FastPath {
     userInput: string | import("../conversation.js").MessageContent
   ): Promise<void> {
     (agent as any).isRunning = true;
+    agent.lastTaskOutcome = null;
+    let taskOutcome: "task_completed" | "task_incomplete" | "task_failed" | "task_aborted" = "task_failed";
     (agent as any).abortController = new AbortController();
     const signal = (agent as any).abortController.signal;
     let onAbort: (() => void) | undefined;
@@ -65,15 +67,15 @@ export class FastPath {
       }
     });
 
-    agent.writeToLogFile("INFO", `Agent execution started (fast-path, tier: ${agent.tier})`);
-    agent.writeToLogFile("USER", typeof userInput === "string" ? userInput : "[multimodal message]");
-
-    agent.conversation.addUserMessage(userInput);
-    await agent.compactHistoryIfNeeded();
-    await agent.saveHistory();
-    (agent as any).autoCheckpoint("User message");
-
     try {
+      agent.writeToLogFile("INFO", `Agent execution started (fast-path, tier: ${agent.tier})`);
+      agent.writeToLogFile("USER", typeof userInput === "string" ? userInput : "[multimodal message]");
+
+      agent.conversation.addUserMessage(userInput);
+      await agent.compactHistoryIfNeeded();
+      await agent.saveHistory();
+      (agent as any).autoCheckpoint("User message");
+
       await Promise.race([
         (async () => {
           const modelInstance = agent.getModel();
@@ -352,15 +354,18 @@ CLASSIFICATION: Conversational message. Respond naturally and concisely. No tool
           }
           await agent.saveHistory();
           agent.writeToLogFile("ASSISTANT", textContent);
+          taskOutcome = "task_completed";
         })(),
         abortPromise,
       ]);
     } catch (err: unknown) {
       const { formatError } = await import("./AgentEvents.js");
       if (err instanceof Error && err.name === "AbortError") {
+        taskOutcome = "task_aborted";
         agent.onEvent({ type: "text", content: "\n\n[Interrupted]" });
         await agent.saveHistory();
       } else {
+        taskOutcome = "task_failed";
         const { isContextLengthExceeded, parseContextLimitTokens, getAgentActiveModelName } = await import("./AgentUtils.js");
         if (isContextLengthExceeded(err)) {
           try {
@@ -392,6 +397,7 @@ CLASSIFICATION: Conversational message. Respond naturally and concisely. No tool
         await agent.saveHistory();
       }
     } finally {
+      agent.lastTaskOutcome = taskOutcome;
       if (signal && onAbort) {
         signal.removeEventListener("abort", onAbort);
       }

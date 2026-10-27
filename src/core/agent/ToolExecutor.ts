@@ -198,6 +198,26 @@ export class ToolExecutor {
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
 
+      if (agent.fileScope && agent.fileScope.length > 0) {
+        const { validateToolCallAgainstFileScope } = await import("./fileScopeGuard.js");
+        const scopeCheck = validateToolCallAgainstFileScope(
+          agent.fileScope,
+          tc,
+          agent.worktreePath || agent.workingDirectory
+        );
+        if (!scopeCheck.allowed) {
+          const blocked: ToolResult = {
+            toolCallId: tc.id,
+            name: tc.name,
+            result: `Error: Access denied by delegated fileScope. ${scopeCheck.reason || "Operation touches files outside allowed scope."}`,
+            isError: true,
+          };
+          toolResults.push(blocked);
+          agent.onEvent({ type: "tool_end", toolResult: blocked, description });
+          continue;
+        }
+      }
+
       const blockedRoot = blockedYoloToolCall(tc.args, agent.worktreePath || agent.workingDirectory);
       if (blockedRoot) {
         const denied: ToolResult = { toolCallId: tc.id, name: tc.name, result: `Access denied by YOLO blocklist: ${blockedRoot}`, isError: true };

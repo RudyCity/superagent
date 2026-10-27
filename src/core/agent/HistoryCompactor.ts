@@ -283,11 +283,11 @@ ${formatted}`;
     let result;
 
     while (true) {
-      let concurrencyAcquired = false;
+      let concurrencyLease: any = null;
       try {
-        if (getSettings().concurrencyLimit === 1) {
-          await concurrencyLimiter.acquire();
-          concurrencyAcquired = true;
+        const concurrencyLimit = getSettings().concurrencyLimit ?? 0;
+        if (concurrencyLimit > 0) {
+          concurrencyLease = await concurrencyLimiter.acquire(concurrencyLimit);
         }
         await rateLimiter.acquire(1);
 
@@ -340,8 +340,9 @@ ${formatted}`;
           }
         });
       } finally {
-        if (concurrencyAcquired) {
-          concurrencyLimiter.release();
+        if (concurrencyLease) {
+          concurrencyLimiter.release(concurrencyLease);
+          concurrencyLease = null;
         }
       }
     }

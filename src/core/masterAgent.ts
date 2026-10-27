@@ -80,11 +80,11 @@ ${linesAfter}
 Provide the resolved code for the CONFLICT HUNK only. Output ONLY the resolved code block. Do not include markdown code block syntax (like \`\`\`), explanation, or preamble.`;
 
     // Shared rate limiting check
-    let concurrencyAcquired = false;
+    let concurrencyLease: any = null;
     try {
-      if (getSettings().concurrencyLimit === 1) {
-        await concurrencyLimiter.acquire();
-        concurrencyAcquired = true;
+      const concurrencyLimit = getSettings().concurrencyLimit ?? 0;
+      if (concurrencyLimit > 0) {
+        concurrencyLease = await concurrencyLimiter.acquire(concurrencyLimit);
       }
       await rateLimiter.acquire(1);
 
@@ -101,8 +101,9 @@ Provide the resolved code for the CONFLICT HUNK only. Output ONLY the resolved c
       const resolvedBlock = text.trim();
       content = content.substring(0, hunk.startIndex) + resolvedBlock + "\n" + content.substring(hunk.endIndex);
     } finally {
-      if (concurrencyAcquired) {
-        concurrencyLimiter.release();
+      if (concurrencyLease) {
+        concurrencyLimiter.release(concurrencyLease);
+        concurrencyLease = null;
       }
     }
   }

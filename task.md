@@ -1,16 +1,30 @@
-# Tasks
-- [x] Audit git status, commit history, and plan docs for Phase 2
-- [x] Audit replay harness safety boundaries, path/symlink checks, budgets, timeout/cancellation, cleanup, syntax checks
-- [x] Audit model adapter tool exposure and provider/model configuration
-- [x] Audit lifecycle promotion gates, immutable version binding, checksum semantics
-- [x] Audit per-version/workspace metrics and feedback
-- [x] Audit test coverage and failure modes (run safe focused tests)
-- [x] Identify gaps before real configured-provider end-to-end smoke test
-- [x] Prioritize next phase recommendations
-- [x] Create audit review at docs/reviews/2026-10-19-superagent-phase-2-independent-review.md
+# Tasks: 2026-10-28 Algorithm Remediation
 
-## Concise Superagent Project Audit
-- [/] Verify overall repository health and key architectural components
-- [ ] Summarize code quality and testing posture
-- [ ] Identify potential risks and suggestions
-- [ ] Deliver structured markdown summary report
+- [x] Inspect current code across all 7 priority clusters
+- [x] Cluster 1 (P0 DEEP-01): FastPath terminal outcome & chatRuntimeProcessor fail-closed
+  - [x] Update `src/core/agent/FastPath.ts` explicit terminal outcomes
+  - [x] Update `src/core/utils/chatRuntimeProcessor.ts` fail-closed logic
+  - [x] Add regression tests in `tests/chatRuntimeLedger.test.ts` and `tests/fastPathTerminalOutcome.test.ts`
+- [x] Cluster 2 (P0 DEEP-02): Delegated fileScope hard enforcement
+  - [x] Implement fileScope enforcement in subagent execution & tool layer (`src/core/agent/fileScopeGuard.ts` and `ToolExecutor.ts`)
+  - [x] Implement path canonicalization, traversal checks, symlink handling, shell command interception
+  - [x] Add positive & negative regression tests in `tests/fileScopeHardEnforcement.test.ts`
+- [x] Cluster 3 (P1 DEEP-03): Permissions & approval inheritance
+  - [x] Replace broad subagent auto-approval with parent/scoped permission inheritance
+  - [x] Preserve provenance and audit trail
+  - [x] Add regression tests for subagent permission checks in `tests/subagentPermissionsAndQuestions.test.ts`
+- [x] Cluster 4 (P1 DEEP-04): Classifier progress routing
+  - [x] Replace singleton `globalProgressCallback` with execution-scoped routing (`progressStorage` in `state.ts`)
+  - [x] Add tests for concurrent isolation of classifier progress in `tests/classifierProgressIsolation.test.ts`
+- [x] Cluster 5 (P1 DEEP-05): Concurrency limiter 0..N & safe lease ownership
+  - [x] Update `SharedConcurrencyLimiter` in `src/core/rateLimiter.ts` to support 0..N slots
+  - [x] Replace arbitrary 60s lock stealing with lease/heartbeat/ownership check
+  - [x] Add tests for concurrency limits 0, 1, 2, 3 and long-running holders in `tests/concurrencyLimiterSafeOwnership.test.ts`
+- [x] Cluster 6 (P1 DEEP-07): Text-only checklist nudge loop prevention
+  - [x] Guard against no-progress narration loops and preserve needs-input / limitations in `ChecklistContinuationGuard.ts` and `LoopIterationProcessor.ts`
+  - [x] Add tests for conversation skip, action narration, needs-input, and no-progress cap in `tests/checklistContinuationGuard.test.ts`
+- [x] Cluster 7 (P2 DEEP-11): Subagent question explicit needs-input state
+  - [x] Remove silent `options[0]` fallback in `subagentTools.ts` and `superagentTools.ts`
+  - [x] Return explicit needs-input / failure state (`[NEEDS_INPUT]` error and waiting status)
+  - [x] Add tests for subagent questions without UI handler in `tests/subagentPermissionsAndQuestions.test.ts`
+- [x] Final verification, full test suite run with Bun, and documentation

@@ -71,6 +71,7 @@ export interface SubagentInstance {
   historyFilePath?: string;
   speed?: number;
   violations?: ViolationRecord[];
+  fileScope?: readonly string[];
 }
 
 export interface SuperagentInstance {

@@ -4,6 +4,8 @@ import {
   isAutoSeededSingleTask,
   isTransientContinuationNudge,
   MAX_TEXT_ONLY_CONTINUATIONS,
+  isNeedsInputOrLimitation,
+  isRepetitiveNarration,
 } from "../src/core/agent/ChecklistContinuationGuard.js";
 
 describe("checklist continuation guard", () => {
@@ -40,5 +42,22 @@ describe("checklist continuation guard", () => {
     expect(isAutoSeededSingleTask("# Tasks\r\n\r\n- [/] lanjut\r\n", "lanjut")).toBe(true);
     expect(isAutoSeededSingleTask("# Tasks\n\n- [/] fix loop\n- [ ] add tests\n", "fix loop")).toBe(false);
     expect(isAutoSeededSingleTask("# Tasks\n\n- [ ] fix loop\n", "fix loop")).toBe(false);
+  });
+
+  it("detects needs-input, permission, and limitation responses", () => {
+    expect(isNeedsInputOrLimitation("Please provide your API key to continue.")).toBe(true);
+    expect(isNeedsInputOrLimitation("Waiting for your confirmation on whether to overwrite.")).toBe(true);
+    expect(isNeedsInputOrLimitation("This action requires your permission before running.")).toBe(true);
+    expect(isNeedsInputOrLimitation("Cannot proceed because the target port is blocked.")).toBe(true);
+    expect(isNeedsInputOrLimitation("Which option would you prefer: 1 or 2?")).toBe(true);
+    expect(isNeedsInputOrLimitation("Would you like me to proceed with the deletion?")).toBe(true);
+    expect(isNeedsInputOrLimitation("I will search the repository for all instances of FastPath.")).toBe(false);
+    expect(isNeedsInputOrLimitation("Let me check the implementation in src/core/agent.ts.")).toBe(false);
+  });
+
+  it("detects repetitive text narration loops", () => {
+    const prev = ["I will search the codebase for the file now."];
+    expect(isRepetitiveNarration("I will search the codebase for the file now.", prev)).toBe(true);
+    expect(isRepetitiveNarration("I found the following 3 files: a, b, c.", prev)).toBe(false);
   });
 });

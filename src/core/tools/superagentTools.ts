@@ -618,11 +618,27 @@ export const invokeSuperagentTool: Tool = {
           }
         }
       },
-      // Permission handler: auto-approve but never approve destructive commands (Senopati Neural Guardrail)
-      async (_toolCall, _desc) => {
-        const cmd = (_toolCall.args.command as string || "").trim();
-        const isDestructive = await isDestructiveCommand(cmd);
-        return !isDestructive;
+      // Permission handler: inherit parent approval or fail closed, block destructive commands
+      async (toolCall, desc) => {
+        const cmd = (toolCall.args?.command as string || "").trim();
+        if (cmd && (await isDestructiveCommand(cmd))) {
+          appendMasterLog(`[PERMISSION_DENIED] Destructive command blocked for Superagent "${role}": "${cmd}"`);
+          return false;
+        }
+        const provenance = `[Superagent "${role}" via parent ${parentAgent?.sessionId || "root"}]`;
+        appendMasterLog(`[PERMISSION_REQUEST] ${provenance} requests permission for ${toolCall.name}: ${desc}`);
+        if (parentAgent && typeof (parentAgent as any).onPermission === "function") {
+          try {
+            const approved = await (parentAgent as any).onPermission(toolCall, `${provenance} ${desc}`);
+            appendMasterLog(`[PERMISSION_RESULT] ${provenance} ${toolCall.name}: ${approved ? "APPROVED" : "DENIED"}`);
+            return approved === "session" ? true : !!approved;
+          } catch (err: any) {
+            appendMasterLog(`[PERMISSION_ERROR] ${provenance} failed to resolve parent permission: ${err.message}`);
+            return false;
+          }
+        }
+        appendMasterLog(`[PERMISSION_DENIED] ${provenance} no parent permission handler available; failing closed.`);
+        return false;
       },
       // Question handler: route to Master Agent LLM for answering
       async (question, options = []) => {
@@ -643,7 +659,11 @@ export const invokeSuperagentTool: Tool = {
         if (handler) {
           return handler(`[Superagent "${role}"]: ${question}`, options);
         }
-        return options[0] ?? "";
+        const qStr = typeof question === "string" ? question : JSON.stringify(question);
+        appendMasterLog(`[NEEDS_INPUT] Superagent "${role}" question unhandled: ${qStr}`);
+        throw new Error(
+          `[NEEDS_INPUT] No active user interface or master orchestrator is available to answer question: "${qStr}". Execution paused pending user input.`
+        );
       },
       systemPrompt,
       superagentToolset,
@@ -1740,11 +1760,27 @@ export const sendMessageToSuperagentTool: Tool = {
             }
           }
         },
-        // Permission handler: auto-approve but never approve destructive commands (Senopati Neural Guardrail)
-        async (_toolCall, _desc) => {
-          const cmd = (_toolCall.args.command as string || "").trim();
-          const isDestructive = await isDestructiveCommand(cmd);
-          return !isDestructive;
+        // Permission handler: inherit parent approval or fail closed, block destructive commands
+        async (toolCall, desc) => {
+          const cmd = (toolCall.args?.command as string || "").trim();
+          if (cmd && (await isDestructiveCommand(cmd))) {
+            appendMasterLog(`[PERMISSION_DENIED] Destructive command blocked for Superagent "${role}": "${cmd}"`);
+            return false;
+          }
+          const provenance = `[Superagent "${role}" via parent ${inst.parentAgent?.sessionId || "root"}]`;
+          appendMasterLog(`[PERMISSION_REQUEST] ${provenance} requests permission for ${toolCall.name}: ${desc}`);
+          if (inst.parentAgent && typeof (inst.parentAgent as any).onPermission === "function") {
+            try {
+              const approved = await (inst.parentAgent as any).onPermission(toolCall, `${provenance} ${desc}`);
+              appendMasterLog(`[PERMISSION_RESULT] ${provenance} ${toolCall.name}: ${approved ? "APPROVED" : "DENIED"}`);
+              return approved === "session" ? true : !!approved;
+            } catch (err: any) {
+              appendMasterLog(`[PERMISSION_ERROR] ${provenance} failed to resolve parent permission: ${err.message}`);
+              return false;
+            }
+          }
+          appendMasterLog(`[PERMISSION_DENIED] ${provenance} no parent permission handler available; failing closed.`);
+          return false;
         },
         async (question, options = []) => {
           const master = getMasterAgent();

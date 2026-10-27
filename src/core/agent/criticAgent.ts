@@ -77,11 +77,11 @@ ${testOutput}
 }
 Output ONLY raw JSON string. No markdown block formatting (\`\`\`), preamble, or explanations.`;
 
-      let concurrencyAcquired = false;
+      let concurrencyLease: any = null;
       try {
-        if (getSettings().concurrencyLimit === 1) {
-          await concurrencyLimiter.acquire();
-          concurrencyAcquired = true;
+        const concurrencyLimit = getSettings().concurrencyLimit ?? 0;
+        if (concurrencyLimit > 0) {
+          concurrencyLease = await concurrencyLimiter.acquire(concurrencyLimit);
         }
         await rateLimiter.acquire(1);
 
@@ -117,8 +117,9 @@ Output ONLY raw JSON string. No markdown block formatting (\`\`\`), preamble, or
       } catch (err: any) {
         warnings.push(`LLM critique skipped/failed: ${err.message}`);
       } finally {
-        if (concurrencyAcquired) {
-          concurrencyLimiter.release();
+        if (concurrencyLease) {
+          concurrencyLimiter.release(concurrencyLease);
+          concurrencyLease = null;
         }
       }
     }

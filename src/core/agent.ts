@@ -87,6 +87,8 @@ export class Agent {
   public delegationDepth = 0;
   /** Agent tier in the 3-tier hierarchy: master | superagent | subagent */
   public tier: AgentTier = "master";
+  /** Immutable allowed path patterns for delegated subagents (fileScope) */
+  public fileScope?: readonly string[];
   /** Whether the agent is running in multi-agent orchestrator mode */
   public isMultiAgent: boolean = false;
   /** For superagents: absolute path to the isolated git worktree */
@@ -311,10 +313,7 @@ export class Agent {
     this.onPermission = onPermission;
     this.onQuestion = onQuestion;
 
-    // Register this agent's event handler for progress updates from utilities
-    import("./tools/state.js").then(({ registerProgressCallback }) => {
-      registerProgressCallback((event) => this.onEvent(event));
-    }).catch(() => {});
+    // Agent progress is routed via execution-scoped context (DEEP-04)
 
     // Asynchronously pre-load/warm up the local 51M classifier model in the background
     if (process.env.NODE_ENV !== "test") {

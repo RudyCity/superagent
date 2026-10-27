@@ -57,10 +57,23 @@ export function startSessionTurnWorker(
       try {
         await executeTurn(session, next.message);
         const outcome = session.agent.lastTaskOutcome;
-        const state = outcome === "task_aborted" ? "cancelled" :
-          outcome === "task_failed" ? "failed" :
-          outcome === "task_incomplete" ? "interrupted" : "completed";
-        if (changeChatTurnState(next.turnId, state)) emit(emitEvent, session, next, state);
+        const state = outcome === "task_completed" ? "completed" :
+          outcome === "task_aborted" ? "cancelled" :
+          outcome === "task_incomplete" ? "interrupted" : "failed";
+        const failureReason = outcome === "task_failed"
+          ? "Agent execution reported failure"
+          : outcome !== "task_completed" && outcome !== "task_aborted" && outcome !== "task_incomplete"
+            ? `Agent ended with unexpected/null outcome: ${String(outcome)}`
+            : undefined;
+        if (changeChatTurnState(next.turnId, state, failureReason)) {
+          if (state === "failed") {
+            emitEvent({
+              type: "error", sessionId: session.sessionId, workspace: session.workspace,
+              turnId: next.turnId, message: failureReason || "Chat turn failed",
+            });
+          }
+          emit(emitEvent, session, next, state);
+        }
       } catch (error: any) {
         if (changeChatTurnState(next.turnId, "failed", String(error?.message || error))) {
           emitEvent({

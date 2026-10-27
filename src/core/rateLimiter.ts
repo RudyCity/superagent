@@ -142,92 +142,177 @@ export class SharedRateLimiter {
   }
 }
 
+export interface ConcurrencyLease {
+  leaseId: string;
+  slot: number;
+  pid: number;
+  lockPath: string;
+  heartbeatTimer?: any;
+}
+
 export class SharedConcurrencyLimiter {
-  private lockPath: string;
+  private baseLockDir: string;
   private processQueue: (() => void)[] = [];
-  private processLocked = false;
+  private activeLeases = new Map<string, ConcurrencyLease>();
 
   constructor() {
-    const root = getRootConfigDir();
-    this.lockPath = path.join(root, "concurrency.lock");
+    this.baseLockDir = getRootConfigDir();
   }
 
-  public async acquire(): Promise<void> {
-    // Bypass in test suites (except when specifically testing the concurrency limiter)
-    if (process.env.VITEST === "true" && process.env.SUPERAGENT_TEST_LIMITS !== "true") {
-      return;
+  private getSlotPath(slot: number, limit: number): string {
+    if (limit === 1 && slot === 0) {
+      return path.join(this.baseLockDir, "concurrency.lock");
+    }
+    return path.join(this.baseLockDir, `concurrency_slot_${slot}.lock`);
+  }
+
+  private isProcessAlive(pid: number): boolean {
+    if (isNaN(pid) || pid <= 0) return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e: any) {
+      return e.code === "EPERM";
+    }
+  }
+
+  public async acquire(limitArg?: number): Promise<ConcurrencyLease | null> {
+    let limit = limitArg;
+    if (limit === undefined) {
+      try {
+        limit = getSettings()?.concurrencyLimit ?? 0;
+      } catch {
+        limit = 0;
+      }
     }
 
-    if (this.processLocked) {
+    // 0 = unlimited / disabled
+    if (limit <= 0) {
+      return null;
+    }
+
+    // Bypass in test suites unless explicitly requested
+    const isTest = (process.env.VITEST === "true" || process.env.BUN_TEST === "1") && process.env.SUPERAGENT_TEST_LIMITS !== "true";
+    if (isTest) {
+      return null;
+    }
+
+    const leaseId = `lease_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+    while (true) {
+      for (let slot = 0; slot < limit; slot++) {
+        const slotPath = this.getSlotPath(slot, limit);
+        try {
+          const fd = fs.openSync(slotPath, "wx");
+          const payload = JSON.stringify({
+            leaseId,
+            pid: process.pid,
+            slot,
+            acquiredAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+          fs.writeSync(fd, payload);
+          fs.closeSync(fd);
+
+          const heartbeatTimer = setInterval(() => {
+            try {
+              if (fs.existsSync(slotPath)) {
+                const now = Date.now();
+                fs.utimesSync(slotPath, now / 1000, now / 1000);
+              }
+            } catch {}
+          }, 5000);
+          if (heartbeatTimer.unref) heartbeatTimer.unref();
+
+          const lease: ConcurrencyLease = {
+            leaseId,
+            slot,
+            pid: process.pid,
+            lockPath: slotPath,
+            heartbeatTimer,
+          };
+          this.activeLeases.set(leaseId, lease);
+          return lease;
+        } catch (err: any) {
+          if (err.code === "ENOENT") {
+            try {
+              fs.mkdirSync(path.dirname(slotPath), { recursive: true });
+            } catch {}
+            continue;
+          }
+
+          if (err.code === "EEXIST") {
+            try {
+              const content = fs.readFileSync(slotPath, "utf-8").trim();
+              let ownerPid = NaN;
+              if (content.startsWith("{")) {
+                const parsed = JSON.parse(content);
+                ownerPid = parsed.pid;
+              } else {
+                ownerPid = parseInt(content, 10);
+              }
+
+              const alive = this.isProcessAlive(ownerPid);
+              // DEEP-05: Never delete a live owner lock merely because >60s.
+              // Only clean up if the process is DEAD.
+              if (!alive) {
+                try {
+                  fs.unlinkSync(slotPath);
+                } catch {}
+              }
+            } catch {}
+          }
+        }
+      }
+
       await new Promise<void>((resolve) => {
-        this.processQueue.push(resolve);
+        const timer = setTimeout(resolve, 100);
+        this.processQueue.push(() => {
+          clearTimeout(timer);
+          resolve();
+        });
       });
     }
-    this.processLocked = true;
-
-    const start = Date.now();
-    while (true) {
-      try {
-        // wx: Open file for writing, fail if it exists
-        const fd = fs.openSync(this.lockPath, "wx");
-        fs.writeSync(fd, String(process.pid));
-        fs.closeSync(fd);
-        return;
-      } catch (err: any) {
-        // Self-heal if parent directory does not exist
-        if (err.code === "ENOENT") {
-          try {
-            fs.mkdirSync(path.dirname(this.lockPath), { recursive: true });
-            continue;
-          } catch {}
-        }
-        // If file exists, check if it's stale (older than 60 seconds or process is dead)
-        if (err.code === "EEXIST") {
-          try {
-            const content = fs.readFileSync(this.lockPath, "utf-8").trim();
-            const pid = parseInt(content, 10);
-            let isAlive = false;
-            if (!isNaN(pid) && pid > 0) {
-              try {
-                process.kill(pid, 0);
-                isAlive = true;
-              } catch (e: any) {
-                isAlive = e.code === "EPERM";
-              }
-            }
-            const stat = fs.statSync(this.lockPath);
-            if (!isAlive || Date.now() - stat.mtimeMs > 60000) {
-              this.releaseFileLock(); // Remove stale lock
-              continue;
-            }
-          } catch {}
-        }
-        // Wait and retry
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        // Timeout check to prevent infinite loop (safety backup)
-        if (Date.now() - start > 90000) {
-          this.releaseFileLock();
-        }
-      }
-    }
   }
 
-  private releaseFileLock(): void {
-    try {
-      if (fs.existsSync(this.lockPath)) {
-        fs.unlinkSync(this.lockPath);
+  public release(lease?: ConcurrencyLease | null): void {
+    if (!lease) {
+      // Legacy fallback: release first active lease owned by this process
+      const first = this.activeLeases.values().next().value;
+      if (first) {
+        this.release(first);
       }
-    } catch {}
-  }
-
-  public release(): void {
-    // Bypass in test suites (except when specifically testing the concurrency limiter)
-    if (process.env.VITEST === "true" && process.env.SUPERAGENT_TEST_LIMITS !== "true") {
       return;
     }
 
-    this.releaseFileLock();
-    this.processLocked = false;
+    if (lease.heartbeatTimer) {
+      clearInterval(lease.heartbeatTimer);
+    }
+
+    this.activeLeases.delete(lease.leaseId);
+
+    // Only release lock file if owned by this lease
+    try {
+      if (fs.existsSync(lease.lockPath)) {
+        const content = fs.readFileSync(lease.lockPath, "utf-8").trim();
+        let shouldUnlink = false;
+        if (content.startsWith("{")) {
+          const parsed = JSON.parse(content);
+          if (parsed.leaseId === lease.leaseId && parsed.pid === lease.pid) {
+            shouldUnlink = true;
+          }
+        } else {
+          const pid = parseInt(content, 10);
+          if (pid === lease.pid) {
+            shouldUnlink = true;
+          }
+        }
+        if (shouldUnlink) {
+          fs.unlinkSync(lease.lockPath);
+        }
+      }
+    } catch {}
+
     const next = this.processQueue.shift();
     if (next) {
       next();

@@ -122,10 +122,10 @@ export class LoopIterationProcessor {
     const isTest = !!process.env.VITEST;
     const isAnthropic = !isTest && modelInstance && (modelInstance.provider === "anthropic" || (typeof modelInstance.provider === "string" && modelInstance.provider.includes("anthropic")));
 
-    let concurrencyAcquired = false;
-    if (getSettings().concurrencyLimit === 1) {
-      await concurrencyLimiter.acquire();
-      concurrencyAcquired = true;
+    let concurrencyLease: any = null;
+    const concurrencyLimit = getSettings().concurrencyLimit ?? 0;
+    if (concurrencyLimit > 0) {
+      concurrencyLease = await concurrencyLimiter.acquire(concurrencyLimit);
     }
     await rateLimiter.acquire(1);
 
@@ -800,8 +800,9 @@ export class LoopIterationProcessor {
         }
       }
     } finally {
-      if (concurrencyAcquired) {
-        concurrencyLimiter.release();
+      if (concurrencyLease) {
+        concurrencyLimiter.release(concurrencyLease);
+        concurrencyLease = null;
       }
     }
 
@@ -838,9 +839,13 @@ export class LoopIterationProcessor {
       if (textContent.trim()) {
         const isEarlyIteration = i < 3;
         const hasActionNarration = /\b(let me|i will|i'll|going to|will check|will search|will look|will inspect|will find|checking|searching|inspecting|examining|scanning|investigating|mencari|memeriksa|mengecek|saya akan|mari kita|mari periksa|sedang mencari)\b/i.test(textContent);
+        const { isNeedsInputOrLimitation } = await import("./ChecklistContinuationGuard.js");
+        const needsInputOrBlocked = isNeedsInputOrLimitation(textContent);
         const isPlanningText =
           isEarlyIteration &&
-          !isInformational && hasActionNarration &&
+          !isInformational &&
+          !needsInputOrBlocked &&
+          hasActionNarration &&
           textContent.trim().length > 0 &&
           textContent.trim().length < 600 &&
           !/\?$/.test(textContent.trim());
@@ -871,13 +876,10 @@ export class LoopIterationProcessor {
             const pendingItems = tasks.filter((t) => t.status === " " || t.status === "/");
             const isUserQuestion = isInformational || isAutoSeededSingleTask(taskContent, latestUserText);
 
-            if (pendingItems.length > 0 && !isUserQuestion && !(agent.goalMode && goalComplete)) {
+            if (pendingItems.length > 0 && !isUserQuestion && !needsInputOrBlocked && !(agent.goalMode && goalComplete)) {
               if (agent.textOnlyContinuationNudges >= MAX_TEXT_ONLY_CONTINUATIONS || i >= maxIterations - 1) {
                 agent.writeToLogFile("WARN", `Stopping checklist auto-continuation after ${agent.textOnlyContinuationNudges} text-only nudges at iteration ${i}; checklist is still unfinished.`);
-                agent.onEvent({ type: "text", content: `
-
-⚠️ Auto-continue dihentikan karena checklist belum selesai dan tidak ada progres. Periksa tugas atau lanjutkan secara manual.
-` });
+                agent.onEvent({ type: "text", content: `\n\n⚠️ Auto-continuation stopped because the checklist is unfinished and no progress was detected. Please review pending tasks or continue manually.\n` });
                 agent.conversation.addAssistantMessage(textContent, undefined, undefined, reasoningContent);
                 await agent.saveHistory();
                 return { shouldBreak: true, goalStatus: "incomplete", taskIncomplete: true };
@@ -932,6 +934,9 @@ Do NOT stop, give up, or return conversational greetings. Immediately execute th
       finalSystemPrompt,
       signal
     );
+    if (toolResults.length > 0 && !toolResults.every(r => r.isError)) {
+      agent.textOnlyContinuationNudges = 0;
+    }
 
     agent.conversation.addAssistantMessage(
       textContent,
