@@ -5,6 +5,10 @@
 import {assessMcpOAuthMigration} from "./mcpOAuthMigrationPolicy.js";
 import type {RuntimeOwnershipContract} from "./runtimeOwnershipContract.js";
 import {captureRuntimeOwnership} from "./runtimeOwnershipContract.js";
+import {
+  inspectLiveRuntimeSecurity,
+  readRuntimeProductionCertificate,
+} from "./runtimeProductionCertificate.js";
 export interface RuntimeRolloutEvidence {
   topology:Pick<RuntimeOwnershipContract,
     "ownershipTopology"|"core"|"mcp">;
@@ -51,8 +55,11 @@ export function assessRuntimeRollout(e:RuntimeRolloutEvidence):RuntimeRolloutDec
   if(!e.extendedSoakVerified)blockers.push("EXTENDED_SOAK_NOT_CERTIFIED");
   if(e.topology.core.state!=="verified_supervisor")
     blockers.push("CORE_SUPERVISOR_IDENTITY_NOT_VERIFIED");
-  if(e.topology.mcp.some(m=>!m.authenticationVerified||!m.sessionsDrainVerified))
-    blockers.push("MCP_AUTHENTICATION_OR_DRAIN_NOT_VERIFIED");
+  // Current independent owners must be authenticated and OS-correlated, but
+  // must NOT be put into drain merely to pass a health audit. Legacy-session
+  // drain is represented separately by legacyMcpSessions.
+  if(e.topology.mcp.length===0||e.topology.mcp.some(m=>!m.authenticationVerified))
+    blockers.push("MCP_AUTHENTICATION_NOT_VERIFIED");
   return {version:1,phase:"R6_R7_release_gate",
     status:blockers.length?"blocked":"manual_cutover_review_candidate",
     blockers:[...new Set(blockers)],
@@ -63,27 +70,20 @@ export function assessRuntimeRollout(e:RuntimeRolloutEvidence):RuntimeRolloutDec
 }
 export async function inspectLiveRuntimeRollout(corePort=7888):Promise<RuntimeRolloutDecision> {
  const ownership=await captureRuntimeOwnership(corePort);
- const authenticatedOAuth=ownership.mcp.filter(m=>
-   m.authMode==="oauth"&&m.state==="os_pid_correlated_only"&&
-   m.authenticationVerified&&m.publicTunnelVerified);
- const independentOwnerVerified=authenticatedOAuth.length>0;
- const noSharedLegacyOwner=ownership.ownershipTopology!=="shared_owner_do_not_cutover"&&
-   independentOwnerVerified;
- // Fail closed for certification evidence we cannot prove from a local owner
- // probe. Unlike the previous implementation, do not fabricate "owner
- // unverified" when the authenticated managed-owner control channel succeeds.
+ const live=await inspectLiveRuntimeSecurity(ownership,corePort);
+ const cert=readRuntimeProductionCertificate(corePort);
  return assessRuntimeRollout({
    topology:ownership,
-   privateOAuthIssuerVerified:independentOwnerVerified,
-   windowsKeystoreAndAclVerified:false,
-   liveIssuerTlsVerified:false,
-   separateIngressVerified:independentOwnerVerified,
-   desktopNativeE2EVerified:false,
-   extendedSoakVerified:false,
-   oauthClientsReauthorized:false,
-   legacyMcpSessions:noSharedLegacyOwner?0:null,
-   pendingExternalEffects:null,
-   reversibleClientRoutingVerified:false,
-   operatorApprovalForLiveCutover:false,
+   privateOAuthIssuerVerified:live.privateOAuthIssuerVerified,
+   windowsKeystoreAndAclVerified:live.windowsKeystoreAndAclVerified,
+   liveIssuerTlsVerified:live.liveIssuerTlsVerified,
+   separateIngressVerified:live.separateIngressVerified,
+   desktopNativeE2EVerified:cert?.tline.passed===true,
+   extendedSoakVerified:cert?.soak.passed===true,
+   oauthClientsReauthorized:live.oauthClientsReauthorized,
+   legacyMcpSessions:live.legacyMcpSessions,
+   pendingExternalEffects:live.pendingExternalEffects,
+   reversibleClientRoutingVerified:cert?.rollback.passed===true,
+   operatorApprovalForLiveCutover:Boolean(cert?.operatorApprovedAt),
  });
 }

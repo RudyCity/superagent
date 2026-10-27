@@ -66,11 +66,16 @@ describe("R6 release gate adversarial matrix",()=>{
     }});
     expect(shared.status).toBe("blocked");
     expect(shared.blockers).toContain("LEGACY_CORE_AND_MCP_SHARE_PROCESS");
-    const unknownMcp=assessRuntimeRollout({...verified,topology:{
+    const activeNotDrained=assessRuntimeRollout({...verified,topology:{
       ...verified.topology,
       mcp:[{...verified.topology.mcp[0],sessionsDrainVerified:false}],
     }});
-    expect(unknownMcp.blockers).toContain("MCP_AUTHENTICATION_OR_DRAIN_NOT_VERIFIED");
+    expect(activeNotDrained.blockers).not.toContain("MCP_AUTHENTICATION_NOT_VERIFIED");
+    const unauthenticatedMcp=assessRuntimeRollout({...verified,topology:{
+      ...verified.topology,
+      mcp:[{...verified.topology.mcp[0],authenticationVerified:false}],
+    }});
+    expect(unauthenticatedMcp.blockers).toContain("MCP_AUTHENTICATION_NOT_VERIFIED");
   });
 });
 const goodBoot:RuntimeColdRecoveryEvidence={
