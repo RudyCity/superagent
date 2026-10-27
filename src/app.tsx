@@ -3629,11 +3629,13 @@ export function App({
                   </Box>
                 );
               })()}
-              <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
-                └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
-                  {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : isMuseWatcherActive() ? "👁️ COMM_LINK: MUSE WATCH (CONTROLLED BY MUSE)" : isMuseRunnerActive() ? "⌨️ COMM_LINK: MUSE REMOTE RUNNER" : "⌨️ COMM_LINK: ACTIVE"}
-                </Text> ]
-              </Text>
+              {(activeWizard || isMuseWatcherActive() || isMuseRunnerActive()) && (
+                <Text color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
+                  └───[ <Text bold color={scrollOffset > 0 ? "yellow" : activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>
+                    {activeWizard ? `⚙️ WIZARD: ${activeWizard.type.toUpperCase()} (Step ${activeWizard.step})` : isMuseWatcherActive() ? "👁️ COMM_LINK: MUSE WATCH (CONTROLLED BY MUSE)" : "⌨️ COMM_LINK: MUSE REMOTE RUNNER"}
+                  </Text> ]
+                </Text>
+              )}
               <Box flexDirection="row">
                 <Text color={activeWizard ? getWizardBorderColor(activeWizard) : isProcessing ? "gray" : "gray"}>│ ❯ </Text>
                 <Box flexDirection="column" flexGrow={1}>

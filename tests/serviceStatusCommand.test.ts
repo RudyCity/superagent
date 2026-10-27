@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   listActiveTunnels: vi.fn(),
   stopQuickTunnel: vi.fn(),
   stopOwnedMuseTunnel: vi.fn(),
+  readManagedMcpTunnelLease: vi.fn(),
+  stopManagedMcpTunnelOwner: vi.fn(),
 }));
 
 vi.mock("../src/core/remoteAgent/config.js", () => ({
@@ -49,6 +51,10 @@ vi.mock("../src/core/remoteAgent/cloudflareTunnel.js", () => ({
 }));
 vi.mock("../src/core/remoteAgent/museWatcherTunnel.js", () => ({
   stopOwnedMuseTunnel: mocks.stopOwnedMuseTunnel,
+}));
+vi.mock("../src/core/runtime/mcpManagedTunnelOwner.js", () => ({
+  readManagedMcpTunnelLease: mocks.readManagedMcpTunnelLease,
+  stopManagedMcpTunnelOwner: mocks.stopManagedMcpTunnelOwner,
 }));
 
 function context() {
@@ -87,6 +93,8 @@ describe("aggregate service status and stop-all", () => {
     ]);
     mocks.stopQuickTunnel.mockResolvedValue(true);
     mocks.stopOwnedMuseTunnel.mockResolvedValue(true);
+    mocks.readManagedMcpTunnelLease.mockReturnValue(null);
+    mocks.stopManagedMcpTunnelOwner.mockResolvedValue({ stopped: true, draining: true, activeSessions: 0, inFlightRequests: 0 });
   });
 
 
@@ -131,5 +139,27 @@ describe("aggregate service status and stop-all", () => {
     expect(output).toContain("owned by PID");
     expect(output).toContain("ownership cannot be verified");
     expect(output).toContain("Saved Telegram/MCP configuration was not deleted");
+  });
+
+  it("stops independent managed MCP tunnel owners when lease matches PID", async () => {
+    mocks.listActiveMcpServers.mockReturnValue([
+      { port: 9229, pid: 4567, tunnelProvider: "cloudflare", authMode: "oauth" },
+    ]);
+    mocks.readManagedMcpTunnelLease.mockReturnValue({
+      version: 1,
+      kind: "managed_mcp_tunnel_owner",
+      pid: 4567,
+      port: 9229,
+      nonce: "a".repeat(64),
+      createdAt: Date.now(),
+      workspace: "/test",
+    });
+    mocks.stopManagedMcpTunnelOwner.mockResolvedValue({ stopped: true, draining: true, activeSessions: 0, inFlightRequests: 0 });
+    const { ctx, lines } = context();
+    await stopAllManagedServices(ctx);
+    const output = lines.at(-1)?.content || "";
+
+    expect(mocks.stopManagedMcpTunnelOwner).toHaveBeenCalledWith(9229, { force: true });
+    expect(output).toContain("STOPPED (managed owner PID 4567)");
   });
 });

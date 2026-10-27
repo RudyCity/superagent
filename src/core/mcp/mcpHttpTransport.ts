@@ -390,6 +390,15 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
   const allowedTools = opts.lockSafeTools
     ? [...R1_OWNER_TOOLS]
     : opts.allowDangerous ? undefined : getDefaultSafeTools();
+  // A safe-only lock is coherent only when an allowlist exists and dangerous
+  // tools are disabled. Owner-controlled listeners keep that lock for stateless
+  // requests, but combining it with `--allow-dangerous` made
+  // createSuperagentMcpServer throw, so every non-initialize POST without an
+  // mcp-session-id returned 500 (clients reported "action discovery failed").
+  // Only lock the combinations that can actually be enforced.
+  const ownerStatelessLockSafeTools =
+    Boolean(opts.lockSafeTools) ||
+    (Boolean(opts.ownerControlToken) && !opts.allowDangerous);
   const auditLogPath = opts.auditLogPath || path.join(os.homedir(), ".superagent-r", "mcp-audit.log");
   const audit = createMcpAuditLogger(auditLogPath);
 
@@ -490,7 +499,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
             res.end();
             return;
           }
-          if (!ownerDraining || registry.size !== 0 || inFlightMcpRequests !== 0) {
+          const stopUrl = new URL(req.url || "/", "http://127.0.0.1");
+          const isForced = stopUrl.searchParams.get("force") === "1" || stopUrl.searchParams.get("force") === "true";
+          if (!isForced && (!ownerDraining || registry.size !== 0 || inFlightMcpRequests !== 0)) {
             res.writeHead(409, { "Content-Type": "application/json", "Cache-Control": "no-store" });
             res.end(JSON.stringify({
               error: "owner must be drained with zero sessions and requests before stop",
@@ -569,7 +580,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         };
       }
       if (!identity) {
-        const challenge = buildBearerChallenge(protectedResourceMetadataUrl(metadataBase));
+        const challenge = buildBearerChallenge(protectedResourceMetadataUrl(metadataBase), {
+          invalidToken: classifyAuthHeader(req) === "bearer",
+        });
         res.writeHead(challenge.statusCode, {
           "Content-Type": "application/json",
           "Cache-Control": "no-store",
@@ -783,7 +796,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         onToolCall: sessionAudit,
         authMode,
         allowDangerous: opts.allowDangerous,
-        lockSafeTools: Boolean(opts.ownerControlToken || opts.lockSafeTools),
+        lockSafeTools: ownerStatelessLockSafeTools,
         getIdentity: () => identity,
         workspace: process.cwd(),
       } as McpServerOptions);

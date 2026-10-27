@@ -161,7 +161,7 @@ function cleanManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
 
 function requestOwner(
   lease: ManagedMcpTunnelLease,
-  operation: "status" | "drain" | "stop",
+  operation: "status" | "drain" | "stop" | "stop?force=1",
 ): Promise<{ statusCode: number; body: Record<string, unknown> | null }> {
   return new Promise((resolve) => {
     let settled = false;
@@ -253,14 +253,20 @@ export async function startManagedMcpTunnelOwner(
   if (!stat.isFile() || stat.isSymbolicLink()) {
     throw new Error("Managed MCP tunnel requires a real SuperAgent CLI entry file");
   }
-  const child = fork(entry, ["mcp", "tunnel-owner", ...args], {
+  const useWindowsTrampoline = process.platform === "win32";
+  const child = fork(entry, ["mcp", useWindowsTrampoline ? "tunnel-launcher" : "tunnel-owner", ...args], {
     execPath: process.execPath,
     cwd: process.cwd(),
     detached: true,
     stdio: ["ignore", "ignore", "ignore", "ipc"],
-    env: { ...process.env, SUPERAGENT_MCP_TUNNEL_OWNER_CHILD: "1" },
+    env: {
+      ...process.env,
+      ...(useWindowsTrampoline
+        ? { SUPERAGENT_MCP_TUNNEL_LAUNCHER_CHILD: "1" }
+        : { SUPERAGENT_MCP_TUNNEL_OWNER_CHILD: "1" }),
+    },
   });
-  if (!child.pid) throw new Error("Managed MCP tunnel owner spawn returned no PID");
+  if (!child.pid) throw new Error("Managed MCP tunnel owner launcher returned no PID");
 
   return await new Promise<ManagedMcpTunnelStartResult>((resolve, reject) => {
     let settled = false;
@@ -277,11 +283,11 @@ export async function startManagedMcpTunnelOwner(
       else resolve(result!);
     };
     const timer = setTimeout(() => {
-      done(new Error(`MCP owner PID ${child.pid} did not report ready state within startup timeout; inspect status before retrying`));
+      done(new Error(`MCP owner launcher PID ${child.pid} did not report ready state within startup timeout; inspect status before retrying`));
     }, START_TIMEOUT_MS);
     child.once("error", (error) => done(error));
     child.once("exit", (code) => {
-      if (!settled) done(new Error(`MCP owner exited before ready (code ${code ?? "unknown"})`));
+      if (!settled) done(new Error(`MCP owner launcher exited before ready (code ${code ?? "unknown"})`));
     });
     child.on("message", (message: unknown) => {
       if (!message || typeof message !== "object") return;
@@ -290,9 +296,14 @@ export async function startManagedMcpTunnelOwner(
         done(new Error(m.error || "Managed MCP tunnel owner failed"));
         return;
       }
-      if (m.type !== "mcp-tunnel-owner-ready" || m.pid !== child.pid || !m.info) return;
+      if (m.type !== "mcp-tunnel-owner-ready" || !Number.isSafeInteger(m.pid) || !m.pid || !m.info) return;
+      if (!useWindowsTrampoline && m.pid !== child.pid) {
+        done(new Error("MCP owner ready PID did not match spawned process"));
+        return;
+      }
+      const ownerPid = m.pid;
       const lease = readManagedMcpTunnelLease(port);
-      if (!lease || lease.pid !== child.pid) {
+      if (!lease || lease.pid !== ownerPid) {
         done(new Error("MCP owner reported ready without a matching private lease"));
         return;
       }
@@ -302,9 +313,100 @@ export async function startManagedMcpTunnelOwner(
         done(error instanceof Error ? error : new Error(String(error)));
         return;
       }
-      done(undefined, { pid: child.pid!, info: m.info });
+      done(undefined, { pid: ownerPid, info: m.info });
     });
   });
+}
+
+/**
+ * Windows-only short-lived trampoline. The Core may invoke /mcp tunnel start,
+ * but the long-lived owner must not remain in Core's live process tree:
+ *
+ * Core -> launcher (temporary) -> MCP owner (long-lived)
+ *
+ * The launcher waits for the owner's authenticated ready lease, forwards the
+ * one-time startup payload over IPC, disconnects from the owner and exits.
+ * Windows then sees the owner with a dead launcher parent rather than Core as
+ * its direct parent, so later Core tree cleanup cannot sweep the MCP owner.
+ */
+export async function runManagedMcpTunnelLauncher(args: string[]): Promise<never> {
+  if (process.platform !== "win32" ||
+      process.env.SUPERAGENT_MCP_TUNNEL_LAUNCHER_CHILD !== "1" ||
+      typeof process.send !== "function") {
+    throw new Error("mcp tunnel-launcher is an internal Windows child-process command");
+  }
+  const entry = path.resolve(process.argv[1] || "");
+  const stat = fs.lstatSync(entry);
+  if (!stat.isFile() || stat.isSymbolicLink()) {
+    throw new Error("MCP tunnel launcher requires a real SuperAgent CLI entry file");
+  }
+  const owner = fork(entry, ["mcp", "tunnel-owner", ...args], {
+    execPath: process.execPath,
+    cwd: process.cwd(),
+    detached: true,
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
+    env: {
+      ...process.env,
+      SUPERAGENT_MCP_TUNNEL_LAUNCHER_CHILD: "0",
+      SUPERAGENT_MCP_TUNNEL_OWNER_CHILD: "1",
+    },
+  });
+  if (!owner.pid) throw new Error("MCP tunnel launcher could not create owner PID");
+
+  let settled = false;
+  const finish = (message: unknown, exitCode: number) => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timer);
+    owner.removeAllListeners("message");
+    owner.removeAllListeners("error");
+    owner.removeAllListeners("exit");
+    try { owner.disconnect(); } catch {}
+    owner.unref();
+    const exit = () => process.exit(exitCode);
+    if (typeof process.send === "function" && process.connected) {
+      process.send(message, () => exit());
+      const fallback = setTimeout(exit, 500);
+      fallback.unref();
+    } else {
+      exit();
+    }
+  };
+  const timer = setTimeout(() => {
+    finish({
+      type: "mcp-tunnel-owner-error",
+      pid: owner.pid,
+      error: "MCP owner did not report ready before launcher timeout",
+    }, 1);
+  }, START_TIMEOUT_MS);
+  owner.once("error", (error) => finish({
+    type: "mcp-tunnel-owner-error",
+    pid: owner.pid,
+    error: error.message,
+  }, 1));
+  owner.once("exit", (code) => {
+    if (!settled) finish({
+      type: "mcp-tunnel-owner-error",
+      pid: owner.pid,
+      error: `MCP owner exited before ready (code ${code ?? "unknown"})`,
+    }, 1);
+  });
+  owner.on("message", (message: unknown) => {
+    if (!message || typeof message !== "object") return;
+    const m = message as { type?: string; pid?: number };
+    if (m.type !== "mcp-tunnel-owner-ready" && m.type !== "mcp-tunnel-owner-error") return;
+    if (m.pid !== owner.pid) {
+      finish({
+        type: "mcp-tunnel-owner-error",
+        pid: owner.pid,
+        error: "MCP owner launcher received mismatched child PID",
+      }, 1);
+      return;
+    }
+    finish(message, m.type === "mcp-tunnel-owner-ready" ? 0 : 1);
+  });
+  await new Promise<never>(() => {});
+  throw new Error("unreachable");
 }
 
 export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
@@ -365,7 +467,10 @@ export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
   throw new Error("unreachable");
 }
 
-export async function stopManagedMcpTunnelOwner(port: number): Promise<{
+export async function stopManagedMcpTunnelOwner(
+  port: number,
+  options?: { force?: boolean },
+): Promise<{
   stopped: boolean;
   draining: boolean;
   activeSessions: number;
@@ -381,7 +486,7 @@ export async function stopManagedMcpTunnelOwner(port: number): Promise<{
     status = await probeManagedMcpTunnelOwner(lease, "drain");
     if (!status?.draining) throw new Error("Managed MCP tunnel owner did not acknowledge drain");
   }
-  if (status.activeSessions > 0 || status.inFlightRequests > 0) {
+  if (!options?.force && (status.activeSessions > 0 || status.inFlightRequests > 0)) {
     return {
       stopped: false,
       draining: true,
@@ -389,17 +494,29 @@ export async function stopManagedMcpTunnelOwner(port: number): Promise<{
       inFlightRequests: status.inFlightRequests,
     };
   }
-  const stop = await requestOwner(lease, "stop");
-  if (stop.statusCode !== 200) {
+  const stopOperation = options?.force ? "stop?force=1" : "stop";
+  const stop = await requestOwner(lease, stopOperation);
+  if (stop.statusCode !== 200 && !options?.force) {
     throw new Error(`Managed MCP tunnel owner refused stop (HTTP ${stop.statusCode || "unreachable"})`);
   }
-  const deadline = Date.now() + STOP_TIMEOUT_MS;
+  const deadline = Date.now() + (options?.force ? 2000 : STOP_TIMEOUT_MS);
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 200));
     const listenerPid = readListenerOwners()?.get(port);
     if (!listenerPid && !fs.existsSync(ownerLeasePath(port))) {
       return { stopped: true, draining: true, activeSessions: 0, inFlightRequests: 0 };
     }
+  }
+  if (options?.force) {
+    try { process.kill(lease.pid, "SIGTERM"); } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const listenerPid = readListenerOwners()?.get(port);
+    if (listenerPid === lease.pid) {
+      try { process.kill(lease.pid, "SIGKILL"); } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 200));
+    }
+    cleanManagedMcpTunnelLease(lease);
+    return { stopped: true, draining: true, activeSessions: 0, inFlightRequests: 0 };
   }
   throw new Error("Managed MCP tunnel owner did not complete graceful stop");
 }

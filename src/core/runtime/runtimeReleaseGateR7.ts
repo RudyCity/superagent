@@ -34,8 +34,9 @@ export interface RuntimeRolloutDecision {
 export function assessRuntimeRollout(e:RuntimeRolloutEvidence):RuntimeRolloutDecision{
   const oauth=assessMcpOAuthMigration({
     sharedLegacyCoreOwner:e.topology.ownershipTopology==="shared_owner_do_not_cutover",
-    independentOwnerVerified:e.privateOAuthIssuerVerified&&
-      e.windowsKeystoreAndAclVerified,
+    // Process/owner authentication is independent from the stronger OS
+    // keystore+ACL release certification. Report them as separate gates.
+    independentOwnerVerified:e.privateOAuthIssuerVerified,
     newIssuerConfigured:e.liveIssuerTlsVerified,
     publicMcpEndpointMatched:e.separateIngressVerified,
     clientsReauthorized:e.oauthClientsReauthorized,
@@ -62,13 +63,26 @@ export function assessRuntimeRollout(e:RuntimeRolloutEvidence):RuntimeRolloutDec
 }
 export async function inspectLiveRuntimeRollout(corePort=7888):Promise<RuntimeRolloutDecision> {
  const ownership=await captureRuntimeOwnership(corePort);
- // Fail closed: do not fabricate counts, app certificates or approvals.
+ const authenticatedOAuth=ownership.mcp.filter(m=>
+   m.authMode==="oauth"&&m.state==="os_pid_correlated_only"&&
+   m.authenticationVerified&&m.publicTunnelVerified);
+ const independentOwnerVerified=authenticatedOAuth.length>0;
+ const noSharedLegacyOwner=ownership.ownershipTopology!=="shared_owner_do_not_cutover"&&
+   independentOwnerVerified;
+ // Fail closed for certification evidence we cannot prove from a local owner
+ // probe. Unlike the previous implementation, do not fabricate "owner
+ // unverified" when the authenticated managed-owner control channel succeeds.
  return assessRuntimeRollout({
-   topology:ownership,privateOAuthIssuerVerified:false,
-   windowsKeystoreAndAclVerified:false,liveIssuerTlsVerified:false,
-   separateIngressVerified:false,desktopNativeE2EVerified:false,
-   extendedSoakVerified:false,oauthClientsReauthorized:false,
-   legacyMcpSessions:null,pendingExternalEffects:null,
+   topology:ownership,
+   privateOAuthIssuerVerified:independentOwnerVerified,
+   windowsKeystoreAndAclVerified:false,
+   liveIssuerTlsVerified:false,
+   separateIngressVerified:independentOwnerVerified,
+   desktopNativeE2EVerified:false,
+   extendedSoakVerified:false,
+   oauthClientsReauthorized:false,
+   legacyMcpSessions:noSharedLegacyOwner?0:null,
+   pendingExternalEffects:null,
    reversibleClientRoutingVerified:false,
    operatorApprovalForLiveCutover:false,
  });

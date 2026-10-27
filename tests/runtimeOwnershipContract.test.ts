@@ -70,34 +70,53 @@ describe("R0 versioned runtime ownership contract",()=>{
   expect(r.blockers).toContain("CORE_SUPERVISOR_PID_MISMATCH");
   expect(r.ownershipTopology).toBe("unverified_do_not_cutover");
  });
- it("treats valid independent supervised and MCP PIDs as review-only",async()=>{
-  const listeners=new Map([[7888,101],[6789,202]]);
-  const r=await assessRuntimeOwnership({...base,
-    listenerBefore:listeners,listenerAfter:listeners,
-    stateInventory:{...inventory,records:[{port:6789,pid:202,authMode:"oauth"}]},
-    authenticatedCore:{publicPort:7888,supervisorPid:101,activePid:103},
+  it("treats valid independent supervised and MCP PIDs as review-only",async()=>{
+   const listeners=new Map([[7888,101],[6789,202]]);
+   const r=await assessRuntimeOwnership({...base,
+     listenerBefore:listeners,listenerAfter:listeners,
+     stateInventory:{...inventory,records:[{port:6789,pid:202,authMode:"oauth"}]},
+     authenticatedCore:{publicPort:7888,supervisorPid:101,activePid:103},
+   });
+   expect(r.core.state).toBe("verified_supervisor");
+   expect(r.ownershipTopology).toBe("separate_owners_needs_operator_review");
+   expect(r.blockers).toContain("MCP_OAUTH_AND_DRAIN_STATE_NOT_AUTHENTICATED");
+   expect(r.canStopMcp).toBe(false);
   });
-  expect(r.core.state).toBe("verified_supervisor");
-  expect(r.ownershipTopology).toBe("separate_owners_needs_operator_review");
-  expect(r.blockers).toContain("MCP_OAUTH_AND_DRAIN_STATE_NOT_AUTHENTICATED");
-  expect(r.canStopMcp).toBe(false);
- });
- it("never upgrades to safe on kernel PID reuse, race, or missing netstat",async()=>{
-  for(const before of [null,new Map([[7888,909],[6789,13424]])]){
-    const r=await assessRuntimeOwnership({...base,listenerBefore:before,
-      authenticatedCore:{publicPort:7888,supervisorPid:13424,activePid:100}});
-    expect(r.listenerSamplesStable).toBe(false);
-    expect(r.core.state).toBe("unverified");
-    expect(r.blockers).toContain("KERNEL_LISTENER_EVIDENCE_UNSTABLE_OR_UNAVAILABLE");
-  }
- });
- it("reports rejected MCP discovery records and missing owner lists instead of silently ignoring",async()=>{
-  const r=await assessRuntimeOwnership({...base,
-    stateInventory:{directory:"unverified",rejected:4,records:[]}});
-  expect(r.stateFiles).toEqual({directory:"unverified",rejected:4});
-  expect(r.blockers).toContain("MCP_STATE_FILES_MALFORMED_OR_UNREADABLE");
-  expect(r.blockers).toContain("NO_AUTHENTICATED_MCP_OWNER_INVENTORY");
- });
+  it("authenticates a managed MCP owner without requiring it to drain",async()=>{
+   const listeners=new Map([[7888,101],[6789,202]]);
+   const r=await assessRuntimeOwnership({...base,
+     listenerBefore:listeners,listenerAfter:listeners,
+     stateInventory:{directory:"present",rejected:0,records:[{
+       port:6789,pid:202,authMode:"oauth",oauthStatePersistent:true,
+     }]},
+     authenticatedCore:{publicPort:7888,supervisorPid:101,activePid:103},
+     authenticatedMcp:new Map([[6789,{
+       port:6789,pid:202,oauthEnabled:true,publicTunnelStarted:true,
+       draining:false,activeSessions:1,inFlightRequests:0,
+     }]]),
+   });
+   expect(r.mcp[0]).toMatchObject({
+     authenticationVerified:true,sessionsDrainVerified:false,
+     publicTunnelVerified:true,oauthStatePersistent:true,
+   });
+   expect(r.blockers).toContain("MCP_OAUTH_AND_DRAIN_STATE_NOT_AUTHENTICATED");
+  });
+  it("never upgrades to safe on kernel PID reuse, race, or missing netstat",async()=>{
+   for(const before of [null,new Map([[7888,909],[6789,13424]])]){
+     const r=await assessRuntimeOwnership({...base,listenerBefore:before,
+       authenticatedCore:{publicPort:7888,supervisorPid:13424,activePid:100}});
+     expect(r.listenerSamplesStable).toBe(false);
+     expect(r.core.state).toBe("unverified");
+     expect(r.blockers).toContain("KERNEL_LISTENER_EVIDENCE_UNSTABLE_OR_UNAVAILABLE");
+   }
+  });
+  it("reports rejected MCP discovery records and missing owner lists instead of silently ignoring",async()=>{
+   const r=await assessRuntimeOwnership({...base,
+     stateInventory:{directory:"unverified",rejected:4,records:[]}});
+   expect(r.stateFiles).toEqual({directory:"unverified",rejected:4});
+   expect(r.blockers).toContain("MCP_STATE_FILES_MALFORMED_OR_UNREADABLE");
+   expect(r.blockers).toContain("NO_AUTHENTICATED_MCP_OWNER_INVENTORY");
+  });
  it("rejects inconsistent, duplicated and forged MCP process records",async()=>{
   await expect(assessRuntimeOwnership({...base,
     stateInventory:{...inventory,records:[inventory.records[0],inventory.records[0]]},

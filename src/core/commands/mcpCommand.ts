@@ -349,7 +349,8 @@ export const mcpCommand: SlashCommand = {
         const { stopManagedMcpTunnelOwner, startManagedMcpTunnelOwner, formatManagedMcpTunnelStartup } =
           await import("../runtime/mcpManagedTunnelOwner.js");
         const active = listActiveMcpServers().find((server) => server.port === port);
-        const restartArgs = [...rawArgs];
+        const hasForce = rawArgs.includes("--force") || rawArgs.includes("-f");
+        const restartArgs = rawArgs.filter((a) => a !== "--force" && a !== "-f");
         const hasProvider = restartArgs.includes("--provider") || restartArgs.includes("--openai") ||
           restartArgs.includes("--openai-tunnel") || restartArgs.includes("--tunnel-id");
         if (active && !hasProvider) {
@@ -367,11 +368,11 @@ export const mcpCommand: SlashCommand = {
         }
         try {
           if (active?.pid && active.pid !== process.pid) {
-            const stopped = await stopManagedMcpTunnelOwner(port);
+            const stopped = await stopManagedMcpTunnelOwner(port, { force: hasForce });
             if (!stopped.stopped) {
               ctx.addLine({
                 type: "system",
-                content: `MCP owner PID ${active.pid} is draining; ${stopped.activeSessions} session(s) and ${stopped.inFlightRequests} request(s) remain. Restart was not forced.`,
+                content: `MCP owner PID ${active.pid} is draining; ${stopped.activeSessions} session(s) and ${stopped.inFlightRequests} request(s) remain. Restart was not forced (pass --force to force restart).`,
                 timestamp: Date.now(),
               });
               return;
@@ -388,6 +389,7 @@ export const mcpCommand: SlashCommand = {
       }
 
       if (tunnelAction === "stop") {
+        const hasForce = rawArgs.includes("--force") || rawArgs.includes("-f");
         const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
         let port = 9227;
         if (portIdx !== -1 && rawArgs[portIdx + 1]) {
@@ -399,11 +401,11 @@ export const mcpCommand: SlashCommand = {
         try {
           if (active?.pid && active.pid !== process.pid) {
             const { stopManagedMcpTunnelOwner } = await import("../runtime/mcpManagedTunnelOwner.js");
-            const result = await stopManagedMcpTunnelOwner(port);
+            const result = await stopManagedMcpTunnelOwner(port, { force: hasForce });
             if (!result.stopped) {
               ctx.addLine({
                 type: "system",
-                content: `MCP owner PID ${active.pid} is draining; ${result.activeSessions} session(s) and ${result.inFlightRequests} request(s) remain. It was not killed.`,
+                content: `MCP owner PID ${active.pid} is draining; ${result.activeSessions} session(s) and ${result.inFlightRequests} request(s) remain. It was not killed (pass --force to force stop).`,
                 timestamp: Date.now(),
               });
               return;

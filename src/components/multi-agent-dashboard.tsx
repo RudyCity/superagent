@@ -3,8 +3,7 @@ import { execa } from "execa";
 import { Box, Text, useInput, useApp } from "ink";
 import ChatTextInput, { ChatTextInputRef } from "./ChatTextInput.js";
 import fs from "fs/promises";
-import { readFileSync, existsSync } from "fs";
-import { fileURLToPath } from "url";
+import { existsSync } from "fs";
 import { 
   subagentInstances, 
   subscribeToSubagents, 
@@ -41,7 +40,8 @@ import {
   getModelPresets,
   applyModelPreset,
   getEffectiveMasterModel,
-  getSettings
+  getSettings,
+  getSuperAgentVersion
 } from "../core/config.js";
 import { contentToString } from "../core/conversation.js";
 import ImageAttachmentBar from "./ImageAttachmentBar.js";
@@ -90,17 +90,8 @@ import { useVisionStatus } from "../hooks/useVisionStatus.js";
 import { useChecklistAutoHide } from "../hooks/useChecklistAutoHide.js";
 
 
-// Read version from package.json
-const __mdFilename = fileURLToPath(import.meta.url);
-const __mdDirname = path.dirname(__mdFilename);
-let multiVersion = "1.1.0";
-try {
-  const pkgPath = path.join(__mdDirname, "..", "..", "package.json");
-  const pkg = JSON.parse(readFileSync(pkgPath, "utf8"));
-  multiVersion = pkg.version;
-} catch (e) {
-  // fallback
-}
+// Read version from the single package metadata reader.
+const multiVersion = getSuperAgentVersion();
 
 export interface AgentSession {
   id: string;
@@ -1420,7 +1411,8 @@ export function MultiAgentDashboard({
           <Box flexDirection="column" justifyContent="center">
             <Box flexDirection="row" alignItems="center">
               <Text color="red" bold>S U P E R</Text>
-              <Text color="white" bold>A G E N T</Text>
+              <Text color="white" bold>  A G E N T</Text>
+              <Text color="cyan" bold>  R</Text>
               <Text color="gray"> • </Text>
               <Text color="yellow" bold>MULTI-AGENT SYSTEM v{multiVersion}</Text>
               <Text color="gray"> • </Text>

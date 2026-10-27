@@ -1,23 +1,10 @@
 import React from "react";
 import { Box, Text } from "ink";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { execSync } from "child_process";
+import { getSettings, getSuperAgentVersion } from "../core/config.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-let version = "1.1.0";
-try {
-  const pkgPath = path.join(__dirname, "..", "..", "package.json");
-  const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-  version = pkg.version;
-} catch (e) {
-  // fallback
-}
-
-import { getSettings } from "../core/config.js";
+// Single source of truth for the displayed version (BOM-safe package read).
+const version = getSuperAgentVersion();
 
 function isGitRepo(): boolean {
   try {
@@ -59,13 +46,15 @@ export function Banner({ classifierStatus, embeddingStatus, workspacePath }: Ban
         {/* Info Column */}
         <Box flexDirection="column" justifyContent="center">
           <Box flexDirection="row" marginBottom={1} alignItems="center">
-            <Text color="white" bold>SuperAgent</Text>
-            <Text color="gray"> · R</Text>
-            <Text dimColor>  v{version}</Text>
+            <Text color="red" bold>S U P E R</Text>
+            <Text color="white" bold>  A G E N T</Text>
+            <Text color="cyan" bold>  R</Text>
+            <Text color="gray"> ● </Text>
+            <Text color="yellow" bold>v{version}</Text>
           </Box>
           <Box flexDirection="row">
             <Text dimColor>Type your query or </Text>
-            <Text color="white">/help</Text>
+            <Text bold color="cyan">/help</Text>
             <Text dimColor> to explore commands</Text>
           </Box>
         </Box>

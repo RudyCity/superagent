@@ -180,10 +180,26 @@ export async function stopAllManagedServices(ctx: SlashCommandContext): Promise<
   const handledMcpPorts = new Set<number>();
   try {
     const { listActiveMcpServers, stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
+    const { readManagedMcpTunnelLease, stopManagedMcpTunnelOwner } = await import("../runtime/mcpManagedTunnelOwner.js");
     const mcpServers = listActiveMcpServers();
     for (const server of mcpServers) {
       handledMcpPorts.add(server.port);
       if (server.pid !== process.pid) {
+        let lease = null;
+        try { lease = readManagedMcpTunnelLease(server.port); } catch {}
+        if (lease && lease.pid === server.pid) {
+          try {
+            const stopped = await stopManagedMcpTunnelOwner(server.port, { force: true });
+            if (stopped.stopped) {
+              outcomes.push(`MCP tunnel port ${server.port}: STOPPED (managed owner PID ${server.pid}).`);
+            } else {
+              outcomes.push(`MCP tunnel port ${server.port}: DRAINING (PID ${server.pid}; ${stopped.activeSessions} session(s) remain).`);
+            }
+          } catch (error) {
+            outcomes.push(`MCP tunnel port ${server.port}: ERROR — ${error instanceof Error ? error.message : String(error)}`);
+          }
+          continue;
+        }
         outcomes.push(`MCP tunnel port ${server.port}: SKIPPED (owned by PID ${server.pid}; stop it from that instance).`);
         continue;
       }
@@ -221,7 +237,11 @@ export async function stopAllManagedServices(ctx: SlashCommandContext): Promise<
     for (const tunnel of mcpTunnels) {
       if (handledMcpPorts.has(tunnel.port)) {
         const server = (await import("../mcp/mcpTunnel.js")).listActiveMcpServers().find((entry) => entry.port === tunnel.port);
-        if (server && server.pid !== process.pid) continue;
+        if (server && server.pid !== process.pid) {
+          let lease = null;
+          try { lease = (await import("../runtime/mcpManagedTunnelOwner.js")).readManagedMcpTunnelLease(tunnel.port); } catch {}
+          if (!lease) continue;
+        }
       }
       try {
         const stopped = await stopQuickTunnel(tunnel.port, "mcp-http");

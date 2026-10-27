@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -107,6 +108,25 @@ describe("cold boot evidence auditor", () => {
     expect(report.snapshot.persistedReceipts).toBe(0);
     expect(report.snapshot.ambiguousTurns).toBe(0);
     expect(fs.readdirSync(dir)).toEqual(filesBefore);
+  });
+  it("treats passive session receipts as reconciled metadata, not pending effects", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "core-cold-audit-"));
+    roots.push(dir);
+    process.env.SUPERAGENT_CONFIG_DIR = dir;
+    const sessionId = "sess_passive_receipt_123";
+    const digest = crypto.createHash("sha256").update(sessionId).digest("hex");
+    const bucket = path.join(dir, "core-session-receipts", digest.slice(0, 2));
+    fs.mkdirSync(bucket, { recursive: true });
+    fs.writeFileSync(path.join(bucket, digest + ".json"), JSON.stringify({
+      version: 1, sessionId, workspace: "D:\\safe", mode: "single",
+      clientMode: "tline", createdAt: Date.now(),
+    }));
+    const report = await auditCoreColdStart(59721);
+    expect(report.snapshot.persistedReceipts).toBe(1);
+    expect(report.snapshot.receiptsWithAcceptedTurn).toBe(0);
+    expect(report.snapshot.sessionReceiptsReconciled).toBe(true);
+    expect(report.snapshot.externalEffectsReconciled).toBe(true);
+    expect(report.assessment.decision).toBe("fresh_guard_allowed");
   });
   it("reports existing checkpoint as unsafe instead of deleting it", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "core-cold-audit-"));

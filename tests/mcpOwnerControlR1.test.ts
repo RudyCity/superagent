@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import http from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -139,9 +140,13 @@ describe("R1 private authenticated MCP owner health and drain",()=>{
         mode:"managed-tunnel",oauthEnabled:true,publicTunnelStarted:true,
         safeToolsOnly:false,draining:false,
       });
-      const publicHost=await fetch(base+"status",{headers:{
-        Authorization:"Bearer "+control,Host:"issuer.example",
-      }});
+      const publicHost = await new Promise<{ status: number }>((resolve) => {
+        const req = http.get({
+          hostname: "127.0.0.1", port, path: "/_internal/owner/status",
+          headers: { Authorization: "Bearer " + control, Host: "issuer.example" },
+        }, (res) => resolve({ status: res.statusCode || 0 }));
+        req.end();
+      });
       expect(publicHost.status).toBe(404);
       const earlyStop=await fetch(base+"stop",{method:"POST",headers});
       expect(earlyStop.status).toBe(409);
@@ -151,6 +156,46 @@ describe("R1 private authenticated MCP owner health and drain",()=>{
       expect(stop.status).toBe(200);
       await new Promise(resolve=>setImmediate(resolve));
       expect(stopped).toBe(true);
+    }finally{await server.close();}
+  });
+  it("serves stateless tool discovery for a dangerous managed-tunnel owner",async()=>{
+    // Regression: owner-controlled listeners forced the safe-only lock onto the
+    // stateless MCP path, which throws when --allow-dangerous is set. Every
+    // non-initialize POST without an mcp-session-id then returned 500, so
+    // clients reported "authentication succeeded, action discovery failed".
+    const port=await availablePort(),control=generateMcpBearerToken(),startedAt=Date.now();
+    const server=await startMcpHttpServer({
+      port,authMode:"oauth",allowDangerous:true,toolExposure:"gateway",
+      oauth:{publicBaseUrl:"https://issuer.example",bootstrapCodeHash:"c".repeat(64)},
+      ownerControlToken:control,ownerStartedAt:startedAt,
+      ownerControlMode:"managed-tunnel",ownerPublicTunnelStarted:true,
+      ownerStopHandler:()=>{},
+      auditLogPath:path.join(os.tmpdir(),"mcp-r1-stateless-"+crypto.randomUUID()+".jsonl"),
+    });
+    try{
+      const store=server.oauthStore;
+      expect(store).toBeTruthy();
+      if(!store) return;
+      const clientId="stateless-owner-client",redirectUri="https://chatgpt.com/callback";
+      store.registerClient(clientId,[redirectUri]);
+      const verifier=crypto.randomBytes(32).toString("base64url");
+      const challenge=crypto.createHash("sha256").update(verifier).digest("base64url");
+      const resource="https://issuer.example/mcp";
+      const pending=store.createAuthorizationRequest({clientId,redirectUri,
+        codeChallenge:challenge,codeChallengeMethod:"S256",
+        scope:["mcp:tools"],resource,state:"stateless-state"});
+      const approved=store.approveAuthorizationRequest(pending.requestId,true);
+      expect(approved.ok).toBe(true);
+      if(!approved.ok) return;
+      const exchange=store.exchangeCode({code:approved.code,clientId,redirectUri,
+        codeVerifier:verifier,resource});
+      expect(exchange.ok).toBe(true);
+      if(!exchange.ok) return;
+      const response=await fetch("http://127.0.0.1:"+port+"/mcp",{method:"POST",
+        headers:headers(exchange.accessToken),
+        body:JSON.stringify({jsonrpc:"2.0",id:7,method:"tools/list",params:{}})});
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain("superagent_tool_search");
     }finally{await server.close();}
   });
 });

@@ -10,5 +10,10 @@ Core target at startup. **Never hot-switch active sessions, stop legacy
 owners from staging or migrate OAuth credentials without the R0-R7
 release gates and operator approval.**
 
+**Pre-flight git check:** Always run `git status` before starting any task.
+If uncommitted modifications or untracked files are present, another agent
+is actively performing repairs or modifications—never overwrite, revert,
+or stage unrelated changes.
+
 Keep this root entry short; update `.agents/AGENTS.md` as the
 single source of truth rather than duplicating its rules here.

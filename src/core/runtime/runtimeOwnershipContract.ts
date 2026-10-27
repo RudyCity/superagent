@@ -9,11 +9,24 @@ import { readListenerOwners, readMcpStateInventory, auditCoreMcpOwnership,
   type McpRecordedProcess, type McpStateInventory,
   type CoreMcpOwnershipAssessment } from "./coreMcpOwnershipAudit.js";
 import { requestCoreSupervisor } from "./coreSupervisor.js";
+import {
+  readManagedMcpTunnelLease,
+  probeManagedMcpTunnelOwner,
+} from "./mcpManagedTunnelOwner.js";
 
 export interface AuthenticatedCoreObservation {
   publicPort: number;
   supervisorPid: number;
   activePid: number;
+}
+export interface AuthenticatedMcpObservation {
+  port: number;
+  pid: number;
+  oauthEnabled: boolean;
+  publicTunnelStarted: boolean;
+  draining: boolean;
+  activeSessions: number;
+  inFlightRequests: number;
 }
 export interface RuntimeOwnershipEvidence {
   corePort: number;
@@ -21,6 +34,7 @@ export interface RuntimeOwnershipEvidence {
   listenerAfter: Map<number,number>|null;
   stateInventory: McpStateInventory;
   authenticatedCore: AuthenticatedCoreObservation|null;
+  authenticatedMcp?: Map<number,AuthenticatedMcpObservation>;
 }
 export interface RuntimeOwnershipContract {
   schemaVersion: 1;
@@ -34,8 +48,10 @@ export interface RuntimeOwnershipContract {
     port:number; recordedPid:number; listenerPid:number|null;
     state:"os_pid_correlated_only"|"stale_state"|"unknown";
     authMode:"oauth"|"static-bearer"|"unknown";
-    authenticationVerified:false;
-    sessionsDrainVerified:false;
+    authenticationVerified:boolean;
+    sessionsDrainVerified:boolean;
+    publicTunnelVerified:boolean;
+    oauthStatePersistent:boolean;
   }>;
   stateFiles: {directory:McpStateInventory["directory"]; rejected:number};
   ownershipTopology: CoreMcpOwnershipAssessment["decision"];
@@ -94,11 +110,20 @@ export async function assessRuntimeOwnership(e:RuntimeOwnershipEvidence):Promise
   });
   const mcp=e.stateInventory.records.map(s=>{
     const osPid=pidAt(e.listenerAfter,s.port);
+    const observed=e.authenticatedMcp?.get(s.port);
+    const authModeMatches=observed!==undefined &&
+      ((s.authMode==="oauth"&&observed.oauthEnabled) ||
+       (s.authMode==="static-bearer"&&!observed.oauthEnabled));
+    const authenticationVerified=Boolean(stable&&osPid===s.pid&&observed&&
+      observed.pid===s.pid&&observed.port===s.port&&authModeMatches);
+    const sessionsDrainVerified=Boolean(authenticationVerified&&observed?.draining&&
+      observed.activeSessions===0&&observed.inFlightRequests===0);
     return {port:s.port,recordedPid:s.pid,listenerPid:osPid,
       state:(!stable||e.listenerAfter===null)?"unknown" as const:
         osPid===s.pid?"os_pid_correlated_only" as const:"stale_state" as const,
-      authMode:s.authMode,authenticationVerified:false as const,
-      sessionsDrainVerified:false as const};
+      authMode:s.authMode,authenticationVerified,sessionsDrainVerified,
+      publicTunnelVerified:Boolean(authenticationVerified&&observed?.publicTunnelStarted),
+      oauthStatePersistent:s.oauthStatePersistent===true};
   });
   const blockers:string[]=[];
   if(!stable)blockers.push("KERNEL_LISTENER_EVIDENCE_UNSTABLE_OR_UNAVAILABLE");
@@ -112,7 +137,8 @@ export async function assessRuntimeOwnership(e:RuntimeOwnershipEvidence):Promise
     blockers.push("MCP_OS_LISTENER_NOT_MATCHED_TO_STATE");
   // Block on actual kernel PID-sharing even if an MCP state file is stale.
   if(osCore!==null&&mcp.some(x=>x.listenerPid===osCore))blockers.push("CORE_AND_MCP_SHARE_KERNEL_PID");
-  blockers.push("MCP_OAUTH_AND_DRAIN_STATE_NOT_AUTHENTICATED");
+  if(mcp.some(x=>!x.authenticationVerified||!x.sessionsDrainVerified))
+    blockers.push("MCP_OAUTH_AND_DRAIN_STATE_NOT_AUTHENTICATED");
   blockers.push("NO_PRODUCTION_CUTOVER_AUTHORIZATION");
   return {schemaVersion:1,mode:"read_only_inventory",
     core:{port:e.corePort,listenerPid:osCore,state:coreState,
@@ -128,6 +154,9 @@ export async function captureRuntimeOwnership(corePort=7888, sources?:{
   listenerOwners?:()=>Map<number,number>|null;
   mcpInventory?:()=>McpStateInventory;
   authenticatedCore?:()=>Promise<AuthenticatedCoreObservation|null>;
+  authenticatedMcp?:(
+    records:McpRecordedProcess[],
+  )=>Promise<Map<number,AuthenticatedMcpObservation>>;
 }):Promise<RuntimeOwnershipContract>{
   const listenerOwners=sources?.listenerOwners??readListenerOwners;
   const mcpInventory=sources?.mcpInventory??readMcpStateInventory;
@@ -137,15 +166,34 @@ export async function captureRuntimeOwnership(corePort=7888, sources?:{
       return {publicPort:s.publicPort,supervisorPid:s.supervisorPid,activePid:s.active.pid};
     }catch{return null;}
   });
+  const readMcp=sources?.authenticatedMcp??(async(records:McpRecordedProcess[])=>{
+    const out=new Map<number,AuthenticatedMcpObservation>();
+    await Promise.all(records.map(async record=>{
+      try {
+        const lease=readManagedMcpTunnelLease(record.port);
+        if(!lease||lease.pid!==record.pid)return;
+        const status=await probeManagedMcpTunnelOwner(lease);
+        if(!status||status.pid!==record.pid||status.port!==record.port)return;
+        out.set(record.port,{
+          port:status.port,pid:status.pid,oauthEnabled:status.oauthEnabled,
+          publicTunnelStarted:status.publicTunnelStarted,draining:status.draining,
+          activeSessions:status.activeSessions,inFlightRequests:status.inFlightRequests,
+        });
+      }catch{}
+    }));
+    return out;
+  });
   // No snapshots, PID signals, token reads in output or mutations. Sample both
-  // sides of the authenticated control probe to catch an owner replacement.
+  // sides of the authenticated control probes to catch an owner replacement.
   const before=listenerOwners();
   const inventory=mcpInventory();
   let core:AuthenticatedCoreObservation|null=null;
+  let mcp=new Map<number,AuthenticatedMcpObservation>();
   try{core=await readCore();}catch{}
+  try{mcp=await readMcp(inventory.records);}catch{}
   const after=listenerOwners();
   return await assessRuntimeOwnership({
     corePort,listenerBefore:before,listenerAfter:after,
-    stateInventory:inventory,authenticatedCore:core,
+    stateInventory:inventory,authenticatedCore:core,authenticatedMcp:mcp,
   });
 }

@@ -16,7 +16,12 @@ export interface CoreColdSnapshot {
   workers: CoreColdWorkerEvidence;
   /** null = unavailable, never interpret unknown as 0. */
   ambiguousTurns: number | null;
+  /** Durable session metadata files, not external tool-effect receipts. */
   persistedReceipts: number | null;
+  /** Number of session receipts that reference an accepted turn, when audited. */
+  receiptsWithAcceptedTurn?: number | null;
+  /** True only when every receipt is structurally valid and passive/safely classified. */
+  sessionReceiptsReconciled?: boolean;
   externalEffectsReconciled: boolean;
 }
 export interface CoreColdAssessment {
@@ -47,7 +52,11 @@ export function assessCoreColdStart(s: CoreColdSnapshot): CoreColdAssessment {
       !Number.isSafeInteger(s.persistedReceipts) || s.persistedReceipts < 0)
     return result("blocked", "DURABLE_EVIDENCE_UNAVAILABLE");
   if (s.ambiguousTurns > 0) return result("operator_review", "UNRESOLVED_CHAT_TURNS");
-  if (s.persistedReceipts > 0) return result("operator_review", "ORPHANED_SESSION_RECEIPTS");
+  // Session receipts are durable routing/resume metadata. Their existence alone
+  // is not evidence of an outstanding external side effect. Older snapshots
+  // without reconciliation metadata remain fail-closed.
+  if (s.persistedReceipts > 0 && s.sessionReceiptsReconciled !== true)
+    return result("operator_review", "SESSION_RECEIPTS_REQUIRE_RECONCILIATION");
   if (!s.externalEffectsReconciled) return result("operator_review", "SIDE_EFFECT_REVIEW_REQUIRED");
   return result("fresh_guard_allowed", "CLEAN_AND_VERIFIED_NAMESPACE");
 }

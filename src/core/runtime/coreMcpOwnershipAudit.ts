@@ -56,6 +56,8 @@ export function parseWindowsListenerOwners(text:string):Map<number,number>{
 }
 export interface McpRecordedProcess {
   port:number;pid:number;authMode:"oauth"|"static-bearer"|"unknown";
+  /** True only when the active owner persisted issuer-scoped OAuth state. */
+  oauthStatePersistent?: boolean;
 }
 export interface McpStateInventory {
   records:McpRecordedProcess[];
@@ -96,7 +98,9 @@ export function readMcpStateInventory(dir=path.join(os.homedir(),".superagent-r"
       if(!validPort(port)||state.port!==port||
          !Number.isSafeInteger(state.pid)||Number(state.pid)<=0) {rejected++;continue;}
       records.push({port,pid:Number(state.pid),authMode:state.authMode==="oauth"?"oauth":
-        state.authMode==="static-bearer"?"static-bearer":"unknown"});
+        state.authMode==="static-bearer"?"static-bearer":"unknown",
+        ...(state.oauthStatePersistent===true?{oauthStatePersistent:true}:{}),
+      });
     }catch{rejected++;}
   }
   return {records:records.sort((a,b)=>a.port-b.port),rejected,directory:"present"};

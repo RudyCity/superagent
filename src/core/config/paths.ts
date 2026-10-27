@@ -55,9 +55,11 @@ export function getSuperAgentVersion(): string {
   try {
     const pkgPath = path.join(getPackageRootDir(), "package.json");
     if (fs.existsSync(pkgPath)) {
-      const content = fs.readFileSync(pkgPath, "utf-8");
+      // A UTF-8 BOM (common after PowerShell/.NET edits) makes JSON.parse throw
+      // and silently degraded the header/API version to the fallback below.
+      const content = fs.readFileSync(pkgPath, "utf-8").replace(/^\uFEFF/, "");
       const pkg = JSON.parse(content);
-      return pkg.version || "1.2.520";
+      if (pkg.version) return String(pkg.version);
     }
   } catch {}
   return "1.2.520";

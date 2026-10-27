@@ -1,3 +1,11 @@
+## [1.14.55] - 2026-10-27
+### MCP stateless discovery fix and RFC 6750 challenges
+- Fix independent MCP owners running with dangerous tools enabled returning `500` for every request that arrives without an `mcp-session-id` (`tools/list`, `tools/call`, `resources/read`, and other stateless posts). Owner control was forcing the safe-only lock onto the stateless path, but that lock is invalid once `--allow-dangerous` is set: `createSuperagentMcpServer` threw and the transport answered a generic `500`, which clients surfaced as "authentication succeeded, action discovery failed". Stateful `initialize` sessions were unaffected, which made the failure look client-specific.
+- Apply the owner safe-only lock to stateless requests only when an explicit allowlist exists and dangerous tools are disabled, so safe owners keep the ceiling and dangerous owners keep working discovery.
+- Omit `error="invalid_token"` from the `WWW-Authenticate` challenge when the request carried no credential (RFC 6750 section 3.1) and keep it only when a presented token is rejected, so clients stop treating a freshly issued token as invalid.
+- Add regression coverage for stateless tool discovery on a dangerous managed-tunnel owner and for both challenge shapes.
+- Add `--force` flag to `/mcp tunnel restart` and `/mcp tunnel stop` to force-kill draining MCP owners with remaining active sessions, and allow `/stop all` to stop verified managed MCP tunnel owners via authenticated lease check.
+
 ## [1.14.54] - 2026-10-27
 ### MCP OAuth persistence and rejected-probe diagnostics
 - Persist production MCP tunnel OAuth state per issuer so access and refresh tokens survive an owner restart while the public URL is unchanged, removing the "authentication succeeded, action discovery failed" loop caused by every restart invalidating all tokens. Hosts without Windows DPAPI, unsupported issuers, or an unreadable issuer state directory fall back to the previous in-memory behavior and report it in the startup output.

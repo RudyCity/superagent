@@ -93,6 +93,12 @@ describe("buildBearerChallenge", () => {
     expect(c.statusCode).toBe(401);
     expect(c.headers["WWW-Authenticate"]).toContain("Bearer");
     expect(c.headers["WWW-Authenticate"]).toContain(`resource_metadata="${meta}"`);
+    // RFC 6750 §3.1: no error code when the request carried no credential.
+    expect(c.headers["WWW-Authenticate"]).not.toContain("error=");
+  });
+  it("reports invalid_token only when a rejected credential was presented", () => {
+    const meta = "https://example.trycloudflare.com/.well-known/oauth-protected-resource";
+    const c = buildBearerChallenge(meta, { invalidToken: true });
     expect(c.headers["WWW-Authenticate"]).toContain('error="invalid_token"');
   });
 });

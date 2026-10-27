@@ -81,13 +81,23 @@ export function verifyStaticBearer(provided: string | null, expected: string): b
 /**
  * Standards-shaped Bearer challenge (RFC 6750 + RFC 9728).
  * Points the client at the protected-resource metadata URL for discovery.
+ *
+ * RFC 6750 §3.1: when the request carried no authentication information the
+ * challenge SHOULD NOT include an error code. Only report `invalid_token` when
+ * a credential was actually presented and rejected, otherwise clients may
+ * treat a token they just obtained as invalid and restart authorization.
  */
-export function buildBearerChallenge(protectedResourceMetadataUrl: string): McpAuthChallenge {
+export function buildBearerChallenge(
+  protectedResourceMetadataUrl: string,
+  options: { invalidToken?: boolean } = {}
+): McpAuthChallenge {
   const wwwAuth =
     "Bearer resource_metadata=\"" +
     protectedResourceMetadataUrl +
-    '\", error="invalid_token", ' +
-    'error_description="Valid Bearer token required"';
+    "\"" +
+    (options.invalidToken
+      ? ', error="invalid_token", error_description="Valid Bearer token required"'
+      : "");
   return {
     statusCode: 401,
     headers: { "WWW-Authenticate": wwwAuth },
@@ -117,5 +127,5 @@ export function authorizeStaticBearer(
       },
     };
   }
-  return { ok: false, challenge: buildBearerChallenge(protectedResourceMetadataUrl) };
+  return { ok: false, challenge: buildBearerChallenge(protectedResourceMetadataUrl, { invalidToken: Boolean(provided) }) };
 }

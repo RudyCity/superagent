@@ -798,7 +798,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core rollback [--port 7888]");
     console.log("superagent core drain [--port 7888]");
     console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
-    console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--stop-on-stdin]  # opt-in owned Core crash recovery");
+    console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--adopt-running] [--stop-on-stdin]  # opt-in owned Core crash recovery");
     console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
     console.log("superagent core boot [--port 7888] [--client-mode tline|chrome-extension]  # safe logon/bootstrap, never resets dead worker state");
     console.log("superagent core boot-audit [--port 7888]  # read-only cold-reboot and unfinished chat-turn assessment");
@@ -946,12 +946,15 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     let verified = false;
     try {
       const current = await requestCoreSupervisor("status", port, 1200);
-      verified = current.publicPort === port && current.supervisorPid !== lease.pid;
+      verified = current.publicPort === port && current.supervisorPid !== lease.pid &&
+        (lease.supervisorPid === undefined || current.supervisorPid === lease.supervisorPid);
     } catch {}
     console.log("Core guardian registration: " + (verified ?
       "REGISTERED; supervised Core is verified" : "REGISTERED; Core unavailable or unverified") +
       " | guardian PID " + lease.pid + " | port " + port +
-      " | mode " + lease.clientMode + ". Lease alone is not live-process proof.");
+      " | mode " + lease.clientMode +
+      (lease.ownership ? " | ownership " + lease.ownership : "") +
+      ". Lease alone is not live-process proof.");
     return;
   }
   if (action === "guard") {
@@ -966,7 +969,12 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
         if (String(data).trim() === "STOP") controller.abort();
       });
     }
-    const result = await runCoreGuardian({ port, clientMode: mode, signal: controller?.signal });
+    const result = await runCoreGuardian({
+      port,
+      clientMode: mode,
+      signal: controller?.signal,
+      adoptRunning: argv.includes("--adopt-running"),
+    });
     console.log("Core guardian stopped: " + result.reason + " | checkpoint recoveries: " + result.recoveries);
     if (result.reason !== "stopped") throw new Error("Core guardian requires operator review: " + result.reason);
     return;

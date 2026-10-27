@@ -13,6 +13,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { getRootConfigDir } from "../config/paths.js";
 import { coreCheckpointPath, readCoreCheckpoint } from "./coreSupervisorCheckpoint.js";
 import { requestCoreSupervisor } from "./coreSupervisor.js";
+import { auditCoreMcpOwnership, readListenerOwners } from "./coreMcpOwnershipAudit.js";
 
 export type CoreGuardianPolicy = { maxRecoveries: number; windowMs: number; backoffMs: number };
 export const DEFAULT_CORE_GUARDIAN_POLICY: CoreGuardianPolicy = {
@@ -44,7 +45,8 @@ export function coreGuardianFile(port: number): string {
   return path.join(getRootConfigDir(), "core-guardian-" + port + ".json");
 }
 type GuardianLease = { version: 1; port: number; pid: number;
-  instanceId: string; startedAt: number; clientMode: "tline" | "chrome-extension" };
+  instanceId: string; startedAt: number; clientMode: "tline" | "chrome-extension";
+  supervisorPid?: number; ownership?: "spawned" | "adopted" };
 export function readCoreGuardianLease(port: number): GuardianLease | null {
   const file = coreGuardianFile(port);
   let stat: fs.Stats;
@@ -63,7 +65,10 @@ export function readCoreGuardianLease(port: number): GuardianLease | null {
       !Number.isSafeInteger(data.pid) || data.pid <= 0 ||
       !/^[a-f0-9]{32}$/.test(data.instanceId) ||
       !Number.isSafeInteger(data.startedAt) || data.startedAt <= 0 ||
-      !["tline", "chrome-extension"].includes(data.clientMode)) {
+      !["tline", "chrome-extension"].includes(data.clientMode) ||
+      (data.supervisorPid !== undefined &&
+        (!Number.isSafeInteger(data.supervisorPid) || data.supervisorPid <= 0)) ||
+      (data.ownership !== undefined && !["spawned", "adopted"].includes(data.ownership))) {
     throw new Error("Core guardian lease invalid");
   }
   return data;
@@ -91,6 +96,7 @@ export async function runCoreGuardian(options: {
   policy?: CoreGuardianPolicy;
   entry?: string;
   signal?: AbortSignal;
+  adoptRunning?: boolean;
 }): Promise<{ reason: "stopped" | "refused" | "budget_exhausted"; recoveries: number }> {
   const { port } = options;
   const clientMode = options.clientMode ?? "tline";
@@ -104,90 +110,169 @@ export async function runCoreGuardian(options: {
   const stat = fs.lstatSync(dir);
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error("Unsafe Core guardian directory");
 
-  if (fs.existsSync(coreCheckpointPath(port)) ||
-      fs.existsSync(path.join(dir, "core-supervisor-" + port + ".json"))) {
-    throw new Error("Existing Core checkpoint/discovery; guardian cannot adopt it. Inspect ownership and use explicit core recover.");
+  const adoptRunning = options.adoptRunning === true;
+  const checkpointExists = fs.existsSync(coreCheckpointPath(port));
+  const discoveryPath = path.join(dir, "core-supervisor-" + port + ".json");
+  const discoveryExists = fs.existsSync(discoveryPath);
+  let adoptedStatus: Awaited<ReturnType<typeof requestCoreSupervisor>> | null = null;
+  let checkpointFloorSavedAt = 0;
+
+  if (adoptRunning) {
+    if (!checkpointExists || !discoveryExists) {
+      throw new Error("Guardian attach requires existing supervised Core checkpoint and discovery");
+    }
+    adoptedStatus = await requestCoreSupervisor("status", port, 1200);
+    if (adoptedStatus.publicPort !== port || adoptedStatus.supervisorPid <= 0) {
+      throw new Error("Guardian attach could not authenticate existing Core supervisor");
+    }
+    const listeners = readListenerOwners();
+    if (!listeners || listeners.get(port) !== adoptedStatus.supervisorPid) {
+      throw new Error("Guardian attach requires kernel listener PID to match authenticated supervisor");
+    }
+    const ownership = await auditCoreMcpOwnership({
+      corePort: port, listeners, coreRegistration: "supervised",
+    });
+    if (ownership.decision === "shared_owner_do_not_cutover") {
+      throw new Error("Guardian attach refused: Core still shares a kernel PID with MCP");
+    }
+    const checkpoint = readCoreCheckpoint(port);
+    if (checkpoint.clientMode !== clientMode ||
+        checkpoint.activePid !== adoptedStatus.active.pid ||
+        !checkpoint.workers.some(worker => worker.pid === adoptedStatus!.active.pid)) {
+      throw new Error("Guardian attach checkpoint does not match authenticated Core worker");
+    }
+    checkpointFloorSavedAt = checkpoint.savedAt;
+  } else {
+    if (checkpointExists || discoveryExists) {
+      throw new Error("Existing Core checkpoint/discovery; guardian cannot adopt it without --adopt-running.");
+    }
+    try {
+      await requestCoreSupervisor("status", port, 900);
+      throw new Error("An active Core supervisor exists; guardian refuses takeover");
+    } catch (error) {
+      if (String(error).includes("guardian refuses takeover")) throw error;
+    }
   }
-  try {
-    await requestCoreSupervisor("status", port, 900);
-    throw new Error("An active Core supervisor exists; guardian refuses takeover");
-  } catch (error) {
-    if (String(error).includes("guardian refuses takeover")) throw error;
-  }
+
   const leaseFile = coreGuardianFile(port);
   const lease: GuardianLease = {
     version: 1, port, pid: process.pid,
     instanceId: crypto.randomBytes(16).toString("hex"), startedAt: Date.now(), clientMode,
+    ...(adoptedStatus
+      ? { supervisorPid: adoptedStatus.supervisorPid, ownership: "adopted" as const }
+      : { ownership: "spawned" as const }),
   };
   fs.writeFileSync(leaseFile, JSON.stringify(lease), { flag: "wx", mode: 0o600 });
+  const persistLease = () => {
+    const tmp = leaseFile + "." + process.pid + ".tmp";
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(lease), { flag: "wx", mode: 0o600 });
+      fs.renameSync(tmp, leaseFile);
+    } finally {
+      try { fs.rmSync(tmp, { force: true }); } catch {}
+    }
+  };
   let stopping = Boolean(options.signal?.aborted);
   const onStop = () => { stopping = true; };
   options.signal?.addEventListener("abort", onStop);
   process.once("SIGINT", onStop);
   process.once("SIGTERM", onStop);
+
   const spawnChild = (action: "start" | "recover") => {
     const child = spawn(process.execPath, [entry, "core", action, "--port", String(port),
       "--client-mode", clientMode], {
       stdio: process.env.SUPERAGENT_CORE_STAGING === "1" ? "inherit" : "ignore",
       windowsHide: true, detached: true, cwd: process.cwd(), env: process.env,
     });
-    // Core owns its own listener and workers, independent of guardian lifetime.
     child.unref();
     return child;
   };
+
   const exits: number[] = [];
   let child: ChildProcess | undefined;
   let verifiedInitialOwner = false;
   let recoveries = 0;
+  let ownedPid = adoptedStatus?.supervisorPid ?? 0;
+
   try {
-    child = spawnChild("start");
-    if (!child.pid) throw new Error("Core child process did not start");
-    let ownedPid = child.pid;
-    try {
-      await identifyChild(port, ownedPid);
-      const checkpoint = readCoreCheckpoint(port);
-      if (!checkpoint.workers.length || checkpoint.clientMode !== clientMode) {
-        throw new Error("Initial Core checkpoint invalid");
-      }
+    if (adoptedStatus) {
       verifiedInitialOwner = true;
-    } catch (error) {
-      console.warn("[Core guardian] Initial Core process could not be verified: " + String(error));
-      return { reason: "refused", recoveries };
+    } else {
+      child = spawnChild("start");
+      if (!child.pid) throw new Error("Core child process did not start");
+      ownedPid = child.pid;
+      try {
+        await identifyChild(port, ownedPid);
+        const checkpoint = readCoreCheckpoint(port);
+        if (!checkpoint.workers.length || checkpoint.clientMode !== clientMode) {
+          throw new Error("Initial Core checkpoint invalid");
+        }
+        checkpointFloorSavedAt = checkpoint.savedAt;
+        verifiedInitialOwner = true;
+        lease.supervisorPid = ownedPid;
+        persistLease();
+      } catch (error) {
+        console.warn("[Core guardian] Initial Core process could not be verified: " + String(error));
+        return { reason: "refused", recoveries };
+      }
     }
+
     while (!stopping) {
-      while (!stopping && child.exitCode === null && child.signalCode === null) {
-        await pause(250);
+      if (child) {
+        while (!stopping && child.exitCode === null && child.signalCode === null) {
+          await pause(250);
+        }
+      } else {
+        let failures = 0;
+        while (!stopping && failures < 4) {
+          try {
+            const status = await requestCoreSupervisor("status", port, 900);
+            if (status.supervisorPid !== ownedPid) return { reason: "refused", recoveries };
+            failures = 0;
+          } catch {
+            failures++;
+          }
+          if (!stopping) await pause(250);
+        }
       }
       if (stopping) return { reason: "stopped", recoveries };
-      const childWasOwned = child.pid === ownedPid;
+
+      const currentChildWasOwned = child ? child.pid === ownedPid : Boolean(ownedPid);
       const now = Date.now();
       for (let i = exits.length - 1; i >= 0; i--) {
         if (now - exits[i] > policy.windowMs) exits.splice(i, 1);
       }
+
       let foreignOwnerOnline = false;
-      try { await requestCoreSupervisor("status", port, 1200); foreignOwnerOnline = true; }
-      catch {}
+      try {
+        const live = await requestCoreSupervisor("status", port, 1200);
+        foreignOwnerOnline = live.publicPort === port;
+      } catch {}
+
       let checkpointVerified = false;
       try {
         const cp = readCoreCheckpoint(port);
         checkpointVerified = cp.workers.length > 0 && cp.clientMode === clientMode &&
-          cp.savedAt >= lease.startedAt;
+          cp.savedAt >= checkpointFloorSavedAt;
       } catch {}
+
       const decision = decideCoreGuardianRecovery({
         guardianStopping: stopping, verifiedInitialOwner,
-        currentChildWasOwned: childWasOwned, checkpointVerified,
+        currentChildWasOwned, checkpointVerified,
         foreignOwnerOnline, recentAttempts: exits.length,
       }, policy);
       if (decision !== "recover") {
         return { reason: exits.length >= policy.maxRecoveries ?
           "budget_exhausted" : "refused", recoveries };
       }
+
       exits.push(now);
       const delay = Math.min(30_000, policy.backoffMs *
         2 ** Math.min(exits.length - 1, 6));
       console.warn("[Core guardian] Owned Core supervisor exited; attempting authenticated checkpoint recovery");
       await pause(delay);
       if (stopping) return { reason: "stopped", recoveries };
+
       child = spawnChild("recover");
       if (!child.pid) return { reason: "refused", recoveries };
       ownedPid = child.pid;
@@ -195,14 +280,15 @@ export async function runCoreGuardian(options: {
       try {
         const ready = await identifyChild(port, ownedPid);
         if (!ready.recovered) return { reason: "refused", recoveries };
+        checkpointFloorSavedAt = readCoreCheckpoint(port).savedAt;
+        lease.supervisorPid = ownedPid;
+        persistLease();
       } catch {
         return { reason: "refused", recoveries };
       }
     }
     return { reason: "stopped", recoveries };
   } finally {
-    // Never stop an API Core child, existing sessions or external services
-    // merely because the guardian is being stopped.
     options.signal?.removeEventListener("abort", onStop);
     process.off("SIGINT", onStop);
     process.off("SIGTERM", onStop);

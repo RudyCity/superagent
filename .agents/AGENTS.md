@@ -1,5 +1,15 @@
 # Project-Scoped Rules (Superagent Workspace)
 
+## Pre-Flight Git Check & Concurrent Agent Safety
+
+- **Mandatory Git Status Pre-Flight Check**: Always run `git status` before beginning any task, investigation, code modification, or test execution.
+- **Concurrent Agent Detection**: If uncommitted modifications, staged changes, or untracked files are present that you did not introduce, assume another agent is actively performing repairs, tests, or feature implementations in the workspace.
+- **Strict Non-Interference Rules**:
+  - **Never Overwrite or Discard**: NEVER run `git restore`, `git checkout`, `git clean -fd`, or overwrite uncommitted files belonging to another agent.
+  - **No Broad Staging**: NEVER use blanket staging commands like `git add .` or `git add -A`. Stage ONLY the exact files explicitly modified for your assigned task.
+  - **Preserve Concurrent Work**: Do not refactor, auto-format, or touch files that another agent has modified or is actively working on.
+  - **Worktree Isolation**: If your task requires extensive changes, clean builds, or test isolation while another agent is working on the main working tree, use isolated git worktrees (`superagent` tier or git worktree commands) to prevent collisions.
+
 ## Response Formatting
 
 - **Readable & Structured Markdown Formatting**: Use clean GitHub-flavored markdown formatting (including headings `##`/`###`, bold highlights `**text**`, bullet points, code blocks, and tables where appropriate) to make responses well-structured, clear, and easy to read. Avoid plain, unformatted walls of text.
@@ -133,6 +143,7 @@ Master Agent  (orchestrator)
 - **Bridge kit** (`bridge/`): sanitized publishable copy of the Muse-side WS bridge (`listener.py`, `bridge.sh`, `hooks/`, `bridges.json.example`, `SETUP.md`). Keep in sync with the live instance (`~/workspace/ws-bridge/` on the Muse machine) — never copy it raw, it contains real URLs/tokens.
 
 ## Coding Guidelines & Constraints
+- **Pre-Flight Git Check & Concurrent Agent Safety**: Always run `git status` before beginning any work. Uncommitted modifications, unstaged edits, or active untracked files indicate another agent is currently performing repairs or changes. Never revert (`git restore`/`git checkout`), overwrite, reformat, or bulk-stage (`git add .`) files modified by other agents.
 - **Language — English Only**: All user-facing text strings, UI labels, log messages, comments, variable names, documentation, and any other text content MUST be written in English. No exceptions.
 - **Shell Commands**: On Windows, the actual shell is auto-detected (Git Bash is preferred over PowerShell). If using PowerShell, use `;` to separate commands instead of `&&`. Git Bash supports `&&` normally. The system prompt reports the detected shell accurately.
 - **Strict Naming Rules**: Do NOT mention proprietary brand names like "Claude Code" or generic "CLI" terms in user-facing documentation or UI descriptions. Refer to the project as a terminal-based AI coding assistant.

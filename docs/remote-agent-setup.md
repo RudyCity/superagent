@@ -653,3 +653,8 @@ public URL stays the same.
   client never attached its token; a repeated `credentialHashPrefix` means it
   keeps replaying a token the owner does not know. Disconnect and re-add the
   client connection, then retry.
+- Owners started with `--allow-dangerous` now answer stateless requests
+  (`tools/list`, `tools/call`, `resources/read` without an `mcp-session-id`)
+  with `200` instead of `500`. If discovery still fails and the audit shows no
+  `mcp.tools_list` entry at all, the request never reached the endpoint with a
+  token, so re-add the connector instead of restarting the owner.

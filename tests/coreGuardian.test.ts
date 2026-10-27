@@ -56,8 +56,11 @@ describe("bounded, owner-scoped Core guardian", () => {
     fs.writeFileSync(file, "invalid");
     expect(() => readCoreGuardianLease(port)).toThrow();
     fs.writeFileSync(file, JSON.stringify({ version: 1, port, pid: 12,
-      instanceId: "a".repeat(32), startedAt: 123, clientMode: "tline" }));
-    expect(readCoreGuardianLease(port)).toMatchObject({ port, pid: 12, clientMode: "tline" });
+      instanceId: "a".repeat(32), startedAt: 123, clientMode: "tline",
+      supervisorPid: 44, ownership: "adopted" }));
+    expect(readCoreGuardianLease(port)).toMatchObject({
+      port, pid: 12, clientMode: "tline", supervisorPid: 44, ownership: "adopted",
+    });
     fs.rmSync(file);
     const target = path.join(root, "target.json");
     fs.writeFileSync(target, JSON.stringify({}));
