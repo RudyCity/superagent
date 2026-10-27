@@ -1,3 +1,9 @@
+## [1.14.50] - 2026-10-27
+### Canonical Python MCP client package on main
+- Verified the standalone Python branch has eight byte-identical non-README files in `main`; `main` retains the newer permission documentation.
+- Redirected tunnel installation hints, package documentation and tests to `main#subdirectory=integrations/python-mcp-client` without removing Python functionality.
+- Preserved the separate-history standalone branch unchanged as a recovery backup rather than force-merging unrelated Git roots.
+
 ## [1.14.49] - 2026-10-27
 ### MCP per-call YOLO privilege enforcement
 - Require an actively enabled local YOLO mode before MCP dangerous tool discovery/execution; explicit tunnel opt-in, OAuth write/admin scopes and project grants cannot elevate YOLO OFF.

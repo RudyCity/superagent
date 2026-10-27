@@ -7,10 +7,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getYoloModeState } from "../permissions.js";
 
-/** Dedicated GitHub branch with the installable Python package at its root. */
-export const PYTHON_MCP_GITHUB_REF = "python-mcp-client";
-export const PYTHON_MCP_GITHUB_URL = `https://github.com/RudyCity/superagent/tree/${PYTHON_MCP_GITHUB_REF}`;
-export const PYTHON_MCP_GIT_INSTALL = `git+https://github.com/RudyCity/superagent.git@${PYTHON_MCP_GITHUB_REF}`;
+/** Canonical Python package lives in this main-branch subdirectory. */
+export const PYTHON_MCP_GITHUB_REF = "main";
+export const PYTHON_MCP_PACKAGE_PATH = "integrations/python-mcp-client";
+export const PYTHON_MCP_GITHUB_URL = `https://github.com/RudyCity/superagent/tree/${PYTHON_MCP_GITHUB_REF}/${PYTHON_MCP_PACKAGE_PATH}`;
+export const PYTHON_MCP_GIT_INSTALL = `git+https://github.com/RudyCity/superagent.git@${PYTHON_MCP_GITHUB_REF}#subdirectory=${PYTHON_MCP_PACKAGE_PATH}`;
 
 export interface PythonMcpClientEndpoint {
   publicUrl: string;

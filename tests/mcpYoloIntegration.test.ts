@@ -85,8 +85,9 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     }
 
     expect(errorThrown).not.toBeNull();
-    expect(errorThrown.message).toContain("blocked by MCP tool allowlist");
-    expect(errorThrown.message).toContain("/yolo or /yolo full");
+    expect(errorThrown.message).toContain("YOLO OFF denies MCP write/execute");
+    expect(errorThrown.message).toContain("/yolo on");
+    expect(errorThrown.message).toContain("/yolo full");
   });
 
   it("activating Scoped YOLO dynamically exposes dangerous tools in tools/list", async () => {
@@ -306,7 +307,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
     }
 
     expect(errorThrown).not.toBeNull();
-    expect(errorThrown.message).toContain("blocked by MCP tool allowlist");
+    expect(errorThrown.message).toContain("YOLO OFF denies MCP write/execute");
   });
 
   it("server advertises tools.listChanged capability", () => {
@@ -457,7 +458,7 @@ describe("MCP and YOLO Mode Dynamic Integration", () => {
       params: { name: "superagent_write_files",
         arguments: { files: [{ filePath: targetFile, content: "authorized" }] } },
     };
-    await expect(handler(request, {})).rejects.toThrow(/blocked by MCP tool allowlist/i);
+    await expect(handler(request, {})).rejects.toThrow(/YOLO OFF denies MCP write\/execute/i);
     setFullYoloMode(true);
     const result = await handler(request, {});
     expect(result.isError).toBeFalsy();

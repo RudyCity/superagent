@@ -4,15 +4,15 @@ Installable Python MCP client and local stdio bridge to SuperAgent's existing re
 
 ## GitHub package
 
-GitHub source: https://github.com/RudyCity/superagent/tree/python-mcp-client
+Canonical GitHub source: https://github.com/RudyCity/superagent/tree/main/integrations/python-mcp-client
 
 One-shot Python package installation on a machine with `uv` and access to the repository:
 
 ```powershell
-uv tool install 'git+https://github.com/RudyCity/superagent.git@python-mcp-client'
+uv tool install 'git+https://github.com/RudyCity/superagent.git@main#subdirectory=integrations/python-mcp-client'
 ```
 
-The GitHub source URL points to a dedicated branch containing **this Python package at the repository root**, not the temporary MCP tunnel endpoint. Inside the full SuperAgent repository, its original source remains under `integrations/python-mcp-client/`.
+The `main` branch is the **single source of truth** for this package. The `#subdirectory=integrations/python-mcp-client` selector locates its `pyproject.toml`. The old `python-mcp-client` branch is retained unchanged as a historical backup, not the source for new installations. The Python API and bridge behavior remain unchanged.
 
 ## Install
 

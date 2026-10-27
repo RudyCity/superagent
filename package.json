@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.49",
+  "version": "1.14.50",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
