@@ -1,7 +1,7 @@
 import type { Tool } from "./types.js";
 import { generateMotionFromPrompt, reviseMotionFromPrompt } from "../motion/director/directorService.js";
 import { getMotionJob } from "../motion/jobs/motionJobs.js";
-import { getMotionProject, updateMotionProject } from "../motion/motionService.js";
+import { getMotionProject, updateMotionProject, listMotionProjects } from "../motion/motionService.js";
 import { inspectMotionQuality } from "../motion/director/motionQuality.js";
 import { upscaleMotionComposition, upscaleMotionArtifact, getAvailableUpscaleTargets, type MotionUpscaleTarget, type MotionUpscaleMode } from "../motion/motionUpscale.js";
 
@@ -187,3 +187,135 @@ export const studioUpscaleTool: Tool = {
     return JSON.stringify(parsed);
   },
 };
+
+export const studioListProjectsTool: Tool = {
+  name: "studio_list_projects",
+  description: "List all SuperAgent Studio projects available in the current workspace, including their ID, name, revision, and canvas dimensions.",
+  parameters: { type: "object", properties: {} },
+  async execute(_args, cwd) {
+    const projects = await listMotionProjects(cwd);
+    return JSON.stringify({
+      projects: projects.map(p => ({
+        studioId: p.id,
+        name: p.name,
+        revision: p.revision,
+      })),
+    });
+  },
+};
+
+export const studioInspectProjectTool: Tool = {
+  name: "studio_inspect_project",
+  description: "Inspect the detailed composition structure of a SuperAgent Studio project: canvas dimensions, framerate, duration, layers, properties, and audio tracks.",
+  parameters: {
+    type: "object",
+    properties: {
+      studioId: { type: "string", description: "Studio project ID to inspect." },
+    },
+    required: ["studioId"],
+  },
+  async execute(args, cwd) {
+    const project = await getMotionProject(cwd, args.studioId as string);
+    return JSON.stringify({
+      studioId: project.id,
+      name: project.name,
+      revision: project.revision,
+      composition: {
+        width: project.composition.width,
+        height: project.composition.height,
+        fps: project.composition.fps,
+        durationFrames: project.composition.durationFrames,
+        background: project.composition.background,
+        layerCount: project.composition.layers.length,
+        layers: project.composition.layers.map(l => ({
+          id: l.id,
+          kind: l.kind,
+          ...(l.kind === "text" ? { text: (l as any).text, fontSize: (l as any).fontSize } : {}),
+          x: l.x,
+          y: l.y,
+          width: l.width,
+          height: l.height,
+          opacity: l.opacity,
+          tracks: l.tracks.map(t => ({ property: t.property, keyframeCount: t.keyframes.length })),
+        })),
+        audioTracks: (project.composition.audioTracks || (project.composition.audio ? [project.composition.audio] : [])).map(a => ({
+          assetId: a.assetId,
+          startFrame: a.startFrame,
+          volume: a.volume,
+          role: a.role,
+        })),
+      },
+    });
+  },
+};
+
+export const studioEditProjectTool: Tool = {
+  name: "studio_edit_project",
+  description: "Apply atomic, revision-guarded edit operations to an existing SuperAgent Studio project (e.g. set-layer-properties, insert-layer, remove-layer, replace-composition). Returns a verifiable change receipt with before/after revision numbers.",
+  parameters: {
+    type: "object",
+    properties: {
+      studioId: { type: "string", description: "Studio project ID to edit." },
+      expectedRevision: { type: "integer", description: "Expected current project revision for optimistic concurrency control." },
+      edits: {
+        type: "array",
+        items: { type: "object" },
+        description: "Array of revisioned edit operations (e.g. { type: 'set-layer-properties', layerId: '...', properties: { ... } }).",
+      },
+      summary: { type: "string", description: "Brief summary of the changes performed for receipt attribution." },
+    },
+    required: ["studioId", "expectedRevision", "edits"],
+  },
+  async execute(args, cwd) {
+    const studioId = args.studioId as string;
+    const expectedRev = Number(args.expectedRevision);
+    const edits = (args.edits || []) as any[];
+    const summary = (args.summary as string) || "Applied Studio edits";
+    const updated = await updateMotionProject(cwd, studioId, expectedRev, edits);
+    const receipt = {
+      operationId: `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      actor: "assistant",
+      studioId,
+      projectName: updated.name,
+      revisionBefore: expectedRev,
+      revisionAfter: updated.revision,
+      summary,
+      affectedEntities: {
+        layers: edits.map(e => e.layerId).filter(Boolean),
+      },
+      reversible: true,
+    };
+    return JSON.stringify(receipt);
+  },
+};
+
+export const studioDesktopFocusTool: Tool = {
+  name: "studio_desktop_focus",
+  description: "Direct the local T-Line desktop Studio editor to focus a project, seek playhead to a timecode/frame, or highlight a specific layer/clip in the UI without arbitrary shell or DOM commands.",
+  parameters: {
+    type: "object",
+    properties: {
+      studioId: { type: "string", description: "Optional project ID to switch to in the Studio tab." },
+      layerId: { type: "string", description: "Optional layer ID to select in the property inspector." },
+      clipId: { type: "string", description: "Optional clip ID to highlight on the timeline." },
+      frame: { type: "integer", description: "Optional frame number to scrub playhead to." },
+      timeSeconds: { type: "number", description: "Optional timecode in seconds to seek to." },
+      panel: { type: "string", enum: ["media", "inspector", "timeline", "effects", "audio"], description: "Optional editor panel to activate." },
+    },
+  },
+  async execute(args) {
+    return JSON.stringify({
+      action: "studio_control_action",
+      type: "focus_studio",
+      studioId: args.studioId,
+      layerId: args.layerId,
+      clipId: args.clipId,
+      frame: args.frame,
+      timeSeconds: args.timeSeconds,
+      panel: args.panel,
+      message: `Studio desktop view updated for project ${args.studioId || "active"}`,
+    });
+  },
+};
+

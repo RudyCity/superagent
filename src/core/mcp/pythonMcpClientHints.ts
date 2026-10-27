@@ -52,7 +52,10 @@ export function formatPythonMcpClientHints(
   const command = projectDirectory
     ? `uv run --project ${quotePowerShell(projectDirectory)} superagent-mcp-python`
     : "superagent-mcp-python";
-  const setup = `$env:SUPERAGENT_MCP_URL=${quotePowerShell(usableUrl)}; $env:SUPERAGENT_MCP_AUTH=${quotePowerShell(auth)}; ${command} ${auth === "oauth" ? "login" : "doctor"}`;
+  const setup = `$env:SUPERAGENT_MCP_URL=${quotePowerShell(usableUrl)}; $env:SUPERAGENT_MCP_AUTH=${quotePowerShell(auth)}; ${auth === "oauth" ? "$env:SUPERAGENT_MCP_SCOPE='mcp:tools'; " : ""}${command} ${auth === "oauth" ? "login" : "doctor"}`;
+  const loginWithScope = (scope: string): string =>
+    `$env:SUPERAGENT_MCP_URL=${quotePowerShell(usableUrl)}; $env:SUPERAGENT_MCP_AUTH='oauth'; $env:SUPERAGENT_MCP_SCOPE=${quotePowerShell(scope)}; ${command} login`;
+  const sampleGrant = '{"projectId":"YOUR_PROJECT_ID","capabilities":["read","write"]}';
 
   return [
     "",
@@ -65,12 +68,45 @@ export function formatPythonMcpClientHints(
     `  MCP URL     : ${usableUrl}${publicHttpsMcp ? "" : " (local machine only)"}`,
     `  One-shot PS : ${setup}`,
     `  Stdio bridge: ${command} serve`,
-    ...(projectDirectory ? [] : ["  Install first: uv tool install ./integrations/python-mcp-client (from the repository root)"]),
+    ...(projectDirectory ? [] : [`  Install first: uv tool install ${quotePowerShell(PYTHON_MCP_GIT_INSTALL)}`]),
     ...(auth === "bearer"
       ? ["  Before one-shot: set SUPERAGENT_MCP_TOKEN privately using the server owner's one-time token; not included in this output."]
       : ["  OAuth: approve in the browser using the separate one-time bootstrap code; it is not embedded in commands."]),
     ...(!publicHttpsMcp
       ? ["  No public HTTPS /mcp endpoint advertised; the private tunnel ID is not a Python MCP URL."]
       : []),
+    "",
+    "Python MCP access / grant workflow (copy to your AI agent):",
+    `  Existing server : ${usableUrl}`,
+    `  Authentication  : ${endpoint.authMode === "oauth" ? "OAuth PKCE" : "static Bearer"}`,
+    "  Transport       : MCP Streamable HTTP. Connect a remote MCP-capable host directly; use the Python stdio bridge only when the host can launch local processes.",
+    `  Python install  : uv tool install ${quotePowerShell(PYTHON_MCP_GIT_INSTALL)}`,
+    "  1. Use the existing endpoint. Never start an extra SuperAgent runtime or assume that tool discovery grants write access.",
+    ...(auth === "oauth" ? [
+      `  2. Read-only login PS: ${loginWithScope("mcp:tools")}`,
+      `  3. Write login PS    : ${loginWithScope("mcp:tools mcp:tools:write")}`,
+      `  4. Admin login PS    : ${loginWithScope("mcp:tools mcp:tools:write mcp:tools:admin")}`,
+      "     Run only ONE login line for the privileges actually needed. Approve OAuth in the owner-controlled browser; the approval code must not be sent to the agent.",
+      "     Read = inspect; write = modify enabled tools; admin = privileged project registry and grant tools. Each scope requires owner consent.",
+    ] : [
+      "  2. Supply the one-time Bearer token privately on the client host. OAuth scopes do not apply to static-bearer authentication.",
+    ]),
+    `  5. Verify connection : ${command} doctor`,
+    `  6. Discover projects : ${command} call superagent_list_projects --args '{}'`,
+    `  7. Check my grants   : ${command} call superagent_list_project_access --args '{}'`,
+    "  8. Choose the exact projectId returned by superagent_list_projects (not the workspace path).",
+    `  9. Grant tool        : superagent_grant_project_access ${sampleGrant}`,
+    "     Only execute step 9 with explicit owner approval. It requires admin+write OAuth scopes (OAuth mode), dangerous tool exposure, and locally enabled Full YOLO.",
+    "     Capabilities REPLACE the prior grant on this project; supply ALL desired values (read, write, execute, git, worktree, planning, chain).",
+    "     The grant affects only the authenticated MCP client ID; another agent/client needs its own authorized grant.",
+    "     The Python client caches OAuth credentials per endpoint AND scope. Re-login under a different scope may register another client ID; grants are NOT transferred.",
+    "     Continue using the identity that received the grant; never assume a write-only login inherits grants from an admin login.",
+    " 10. Re-check superagent_list_project_access; verify the chosen projectId and write capability are present.",
+    " 11. Invoke the required MCP write tool with its documented input schema and exact projectId. Check its result; do not assume success.",
+    "     If denied: check granted OAuth scopes, the active tunnel tool policy (FULL vs SAFE), local YOLO boundary, and project grant.",
+    "     An OAuth scope alone never bypasses workspace restrictions, protected paths, or owner-controlled permissions.",
+    ...(auth === "oauth" ? [] : [
+      "     Do not paste Bearer tokens into this handoff or commit them to source control.",
+    ]),
   ];
 }

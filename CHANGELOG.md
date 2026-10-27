@@ -1,3 +1,9 @@
+## [1.14.47] - 2026-10-27
+### Agent-ready Python MCP OAuth and project grant guidance
+- Expanded the shared tunnel startup/status Python client instructions with copy-ready read, write, and admin OAuth login commands, live endpoint, project discovery, grant verification, and the grant-tool argument shape.
+- Separated OAuth scopes from project capabilities, documented owner approval/Full YOLO/dangerous-tool gates, warned that switching scope can change the Python client ID (and lose grants), and kept tokens and bootstrap approvals out of agent handoffs.
+- Added rendering/security regression checks and updated the Python client guide without changing active tunnel ownership or credentials.
+
 ## [1.14.46] - 2026-10-26
 ### Python MCP package GitHub link
 - Corrected the MCP tunnel startup/status output to display the GitHub URL of the standalone Python package, along with a copy-ready one-shot `uv tool install` Git command, separately from the runtime MCP endpoint URL.

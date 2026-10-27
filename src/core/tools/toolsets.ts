@@ -7,7 +7,20 @@
  */
 
 import { Tool } from "./types.js";
-import { studioGenerateTool, studioReviseTool, studioStatusTool, studioUpscaleTool, motionGenerateTool, motionReviseTool, motionStatusTool, motionUpscaleTool } from "./motionAgentTools.js";
+import {
+  studioGenerateTool,
+  studioReviseTool,
+  studioStatusTool,
+  studioUpscaleTool,
+  studioListProjectsTool,
+  studioInspectProjectTool,
+  studioEditProjectTool,
+  studioDesktopFocusTool,
+  motionGenerateTool,
+  motionReviseTool,
+  motionStatusTool,
+  motionUpscaleTool,
+} from "./motionAgentTools.js";
 import {
   readTool,
 
@@ -238,6 +251,10 @@ export const superagentToolset: Tool[] = [
   studioReviseTool,
   studioStatusTool,
   studioUpscaleTool,
+  studioListProjectsTool,
+  studioInspectProjectTool,
+  studioEditProjectTool,
+  studioDesktopFocusTool,
   motionGenerateTool,
   motionReviseTool,
   motionStatusTool,

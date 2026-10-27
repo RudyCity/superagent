@@ -70,4 +70,30 @@ describe("MCP tunnel Python client copy-ready instructions", () => {
     expect(output).toContain("superagent-mcp-python login");
     expect(output).toContain("Install first: uv tool install");
   });
+
+  it("explains OAuth write/admin consent and project grants as separate steps", () => {
+    const output = formatPythonMcpClientHints(oauth, null).join("\n");
+    expect(output).toContain("$env:SUPERAGENT_MCP_SCOPE='mcp:tools'");
+    expect(output).toContain("$env:SUPERAGENT_MCP_SCOPE='mcp:tools mcp:tools:write'");
+    expect(output).toContain("$env:SUPERAGENT_MCP_SCOPE='mcp:tools mcp:tools:write mcp:tools:admin'");
+    expect(output).toContain("superagent_list_projects");
+    expect(output).toContain("superagent_list_project_access");
+    expect(output).toContain('superagent_grant_project_access {"projectId":"YOUR_PROJECT_ID","capabilities":["read","write"]}');
+    expect(output).toContain("locally enabled Full YOLO");
+    expect(output).toContain("Capabilities REPLACE the prior grant");
+    expect(output).toContain("another agent/client needs its own");
+    expect(output).toContain("grants are NOT transferred");
+    expect(output).toContain("never assume a write-only login inherits grants");
+    expect(output).toContain("Connect a remote MCP-capable host directly");
+    expect(output).toContain(`Install first: uv tool install '${PYTHON_MCP_GIT_INSTALL}'`);
+  });
+
+  it("does not suggest OAuth login commands for static Bearer connections", () => {
+    const output = formatPythonMcpClientHints({ ...oauth, authMode: "static-bearer" }, null).join("\n");
+    expect(output).not.toContain("Read-only login PS:");
+    expect(output).not.toContain("Write login PS");
+    expect(output).not.toContain("Admin login PS");
+    expect(output).toContain("OAuth scopes do not apply to static-bearer authentication");
+    expect(output).not.toContain("SUPERAGENT_MCP_TOKEN=");
+  });
 });

@@ -1,7 +1,19 @@
 import fs from "fs";
 import path from "path";
 import { Tool } from "./types.js";
-import { studioGenerateTool, studioReviseTool, studioStatusTool, motionGenerateTool, motionReviseTool, motionStatusTool } from "./motionAgentTools.js";
+import {
+  studioGenerateTool,
+  studioReviseTool,
+  studioStatusTool,
+  studioUpscaleTool,
+  studioListProjectsTool,
+  studioInspectProjectTool,
+  studioEditProjectTool,
+  studioDesktopFocusTool,
+  motionGenerateTool,
+  motionReviseTool,
+  motionStatusTool,
+} from "./motionAgentTools.js";
 import { registerSubagentType } from "./state.js";
 import {
   masterToolset,

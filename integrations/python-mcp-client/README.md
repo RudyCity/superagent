@@ -51,6 +51,49 @@ Tokens and dynamic client registration details are stored in a per-endpoint-and-
 
 Read-only `mcp:tools` is the default scope. Opt in to `mcp:tools mcp:tools:write` only for trusted write workflows with explicit owner permission; admin additionally requires write. Actual tool access also depends on the SuperAgent server exposure policy and project grants.
 
+## Project grants and write access
+
+The MCP tunnel startup and status output includes an agent-ready access workflow.
+An OAuth login with `mcp:tools:write` lets a trusted client use exposed write tools,
+but **does not** grant access to every registered project. Project grants are
+bound to the authenticated MCP identity and selected by a stable `projectId`.
+
+Choose the least privilege needed. The project registry and grant tools require
+`mcp:tools:admin` **in addition** to `mcp:tools:write` when using OAuth.
+Only the owner should approve these credentials in the browser.
+
+```powershell
+$env:SUPERAGENT_MCP_SCOPE = "mcp:tools mcp:tools:write mcp:tools:admin"
+superagent-mcp-python login
+superagent-mcp-python call superagent_list_projects --args '{}'
+superagent-mcp-python call superagent_list_project_access --args '{}'
+```
+
+To grant the connected identity access to a particular project, first find its
+actual `projectId` from the project list. With explicit owner consent, the
+server must expose dangerous tools and have **Full YOLO enabled locally**:
+
+```powershell
+superagent-mcp-python call superagent_grant_project_access --args '{"projectId":"YOUR_PROJECT_ID","capabilities":["read","write"]}'
+superagent-mcp-python call superagent_list_project_access --args '{}'
+```
+
+`superagent_grant_project_access` **replaces** the current capabilities for
+the same identity and project. Include every required capability (`read`,
+`write`, `execute`, `git`, `worktree`, `planning`, `chain`); do not blindly
+grant all of them. The agent should then call tools with this exact
+`projectId`, inspect the tool schema, and verify each result.
+
+Project grants are tied to the authenticated OAuth **client ID**. The Python
+client caches registrations and tokens separately per endpoint **and scope**.
+Changing the requested scope may create a different client ID, so the earlier
+grant will **not** automatically transfer to a new write-only login. Continue
+using the owner-approved identity that actually received the grant, and never
+assume a new authorization is an automatic downgrade that preserves access.
+No scope or grant bypasses protected paths or the server policy. Never
+forward owner approval codes, tokens, or cached credential files to agents.
+
+---
 ## Existing static Bearer tunnel
 
 For a SuperAgent tunnel started in `static-bearer` mode:
