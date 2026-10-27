@@ -1,3 +1,0 @@
-print(len('\x2f* b'))
-print(len('/\x2a b'))
-print(len('\' + 'x2f'))
