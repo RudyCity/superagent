@@ -1,5 +1,5 @@
 import { MOTION_SCHEMA_VERSION } from "./types.js";
-import type { MotionEdit, MotionKeyframe, MotionProject, MotionTrack } from "./types.js";
+import type { MotionEdit, MotionKeyframe, MotionMultiTrack, MotionProject, MotionTrack, MotionTrackClip } from "./types.js";
 import { MOTION_FONT_FAMILIES } from "./fontCatalog.js";
 import { isAllowedMotionFont } from "../assets/motionFonts.js";
 
@@ -12,6 +12,7 @@ export class MotionValidationError extends Error {
 
 const color = /^#[0-9a-fA-F]{6}$/;
 const id = /^[a-z][a-z0-9-]{1,63}$/;
+const clipTrackId = /^[a-zA-Z0-9_-]{1,128}$/;
 const propertyNames = new Set(["x", "y", "opacity", "rotation", "scale", "scaleX", "scaleY", "strokeDashoffset"]);
 const easingNames = new Set([
   "linear",
@@ -128,6 +129,75 @@ export function validateMotionAudio(raw: unknown, durationFrames: number): strin
   return errors;
 }
 
+export function validateMotionMultiTracks(raw: unknown, durationFrames: number): string[] {
+  const errors: string[] = [];
+  if (!Array.isArray(raw)) return ["tracks: expected array"];
+  if (raw.length > 32) return ["tracks: maximum 32 tracks allowed"];
+  const trackIds = new Set<string>();
+  const clipIds = new Set<string>();
+
+  raw.forEach((track: unknown, tIdx: number) => {
+    const at = "tracks[" + tIdx + "]";
+    if (!record(track)) { errors.push(at + ": expected object"); return; }
+    allowedKeys(track, ["id", "name", "kind", "index", "muted", "locked", "clips"], at, errors);
+    if (!string(track.id, 128) || !clipTrackId.test(track.id) || trackIds.has(track.id)) {
+      errors.push(at + ": invalid or duplicate track id");
+    } else trackIds.add(track.id);
+
+    if (!string(track.name, 120)) errors.push(at + ": name must be 1-120 characters");
+    if (track.kind !== "video" && track.kind !== "audio") errors.push(at + ": invalid track kind");
+    if (track.index !== undefined && !integer(track.index, 0, 100)) errors.push(at + ": invalid track index");
+    if (typeof track.muted !== "boolean") errors.push(at + ": muted must be boolean");
+    if (typeof track.locked !== "boolean") errors.push(at + ": locked must be boolean");
+
+    if (!Array.isArray(track.clips)) {
+      errors.push(at + ": clips must be an array");
+      return;
+    }
+    if (track.clips.length > 200) {
+      errors.push(at + ": maximum 200 clips allowed per track");
+      return;
+    }
+
+    track.clips.forEach((clip: unknown, cIdx: number) => {
+      const cAt = at + ".clips[" + cIdx + "]";
+      if (!record(clip)) { errors.push(cAt + ": expected object"); return; }
+      allowedKeys(clip, [
+        "id", "trackId", "layerId", "assetId", "kind", "name",
+        "startFrame", "durationFrames", "trimInFrames", "trimOutFrames",
+        "volume", "opacity", "speed"
+      ], cAt, errors);
+
+      if (!string(clip.id, 128) || !clipTrackId.test(clip.id) || clipIds.has(clip.id)) {
+        errors.push(cAt + ": invalid or duplicate clip id");
+      } else clipIds.add(clip.id);
+
+      if (!string(clip.trackId, 128) || clip.trackId !== track.id) {
+        errors.push(cAt + ": clip trackId must match enclosing track id");
+      }
+      if (clip.layerId !== undefined && (!string(clip.layerId, 64) || !id.test(clip.layerId))) {
+        errors.push(cAt + ": invalid layerId");
+      }
+      if (clip.assetId !== undefined && typeof clip.assetId !== "string") {
+        errors.push(cAt + ": invalid assetId");
+      }
+      if (!["video", "audio", "text", "image", "graphic"].includes(String(clip.kind))) {
+        errors.push(cAt + ": invalid clip kind");
+      }
+      if (!string(clip.name, 120)) errors.push(cAt + ": name must be 1-120 characters");
+      if (!integer(clip.startFrame, 0, 216000)) errors.push(cAt + ": invalid startFrame");
+      if (!integer(clip.durationFrames, 1, 216000)) errors.push(cAt + ": invalid durationFrames");
+      if (!integer(clip.trimInFrames, 0, 216000)) errors.push(cAt + ": invalid trimInFrames");
+      if (!integer(clip.trimOutFrames, 0, 216000)) errors.push(cAt + ": invalid trimOutFrames");
+      if (clip.volume !== undefined && !finite(clip.volume, 0, 2)) errors.push(cAt + ": invalid volume");
+      if (clip.opacity !== undefined && !finite(clip.opacity, 0, 1)) errors.push(cAt + ": invalid opacity");
+      if (clip.speed !== undefined && !finite(clip.speed, 0.1, 10)) errors.push(cAt + ": invalid speed");
+    });
+  });
+
+  return errors;
+}
+
 export function validateMotionProject(raw: unknown): asserts raw is MotionProject {
   const errors: string[] = [];
   if (!record(raw)) throw new MotionValidationError(["project must be an object"]);
@@ -144,7 +214,7 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
   if (!record(c)) {
     errors.push("composition is required");
   } else {
-    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "interactionGraph", "audio", "audioTracks", "effectStack", "stackBase"], "composition", errors);
+    allowedKeys(c, ["width", "height", "fps", "durationFrames", "background", "layers", "tracks", "interactionGraph", "audio", "audioTracks", "effectStack", "stackBase"], "composition", errors);
     if (c.effectStack !== undefined || c.stackBase !== undefined) {
       if (!Array.isArray(c.effectStack) || !record(c.stackBase)) {
         errors.push("effectStack and stackBase must both be present");
@@ -194,6 +264,9 @@ export function validateMotionProject(raw: unknown): asserts raw is MotionProjec
       if (!Array.isArray(c.audioTracks) || c.audioTracks.length > 4) errors.push("audioTracks must have at most 4 clips");
       else c.audioTracks.forEach((track: unknown, index: number) =>
         errors.push(...validateMotionAudio(track, c.durationFrames as number).map(issue => "audioTracks[" + index + "]: " + issue)));
+    }
+    if (c.tracks !== undefined) {
+      errors.push(...validateMotionMultiTracks(c.tracks, Number(c.durationFrames) || 216000));
     }
     if (!record(c.fps) || !integer(c.fps.numerator, 1, 240000) || !integer(c.fps.denominator, 1, 1001) ||
       Number(c.fps.numerator) / Number(c.fps.denominator) > 240 || Number(c.fps.numerator) / Number(c.fps.denominator) < 1) {
@@ -314,6 +387,41 @@ export function validateMotionEdits(raw: unknown, durationFrames: number): asser
     if (edit.type === "replace-composition") {
       allowedKeys(edit, ["type", "composition"], at, errors);
       if (!record(edit.composition)) errors.push(at + ": composition must be an object");
+      return;
+    }
+    if (edit.type === "set-tracks") {
+      allowedKeys(edit, ["type", "tracks"], at, errors);
+      errors.push(...validateMotionMultiTracks(edit.tracks, durationFrames));
+      return;
+    }
+    if (edit.type === "split-clip") {
+      allowedKeys(edit, ["type", "trackId", "clipId", "splitFrame"], at, errors);
+      if (!string(edit.trackId, 128) || !clipTrackId.test(edit.trackId)) errors.push(at + ": invalid trackId");
+      if (!string(edit.clipId, 128) || !clipTrackId.test(edit.clipId)) errors.push(at + ": invalid clipId");
+      if (!integer(edit.splitFrame, 0, durationFrames)) errors.push(at + ": invalid splitFrame");
+      return;
+    }
+    if (edit.type === "trim-clip") {
+      allowedKeys(edit, ["type", "trackId", "clipId", "deltaIn", "deltaOut"], at, errors);
+      if (!string(edit.trackId, 128) || !clipTrackId.test(edit.trackId)) errors.push(at + ": invalid trackId");
+      if (!string(edit.clipId, 128) || !clipTrackId.test(edit.clipId)) errors.push(at + ": invalid clipId");
+      if (!finite(edit.deltaIn, -216000, 216000)) errors.push(at + ": invalid deltaIn");
+      if (!finite(edit.deltaOut, -216000, 216000)) errors.push(at + ": invalid deltaOut");
+      return;
+    }
+    if (edit.type === "move-clip") {
+      allowedKeys(edit, ["type", "fromTrackId", "toTrackId", "clipId", "newStartFrame"], at, errors);
+      if (!string(edit.fromTrackId, 128) || !clipTrackId.test(edit.fromTrackId)) errors.push(at + ": invalid fromTrackId");
+      if (!string(edit.toTrackId, 128) || !clipTrackId.test(edit.toTrackId)) errors.push(at + ": invalid toTrackId");
+      if (!string(edit.clipId, 128) || !clipTrackId.test(edit.clipId)) errors.push(at + ": invalid clipId");
+      if (!integer(edit.newStartFrame, 0, 216000)) errors.push(at + ": invalid newStartFrame");
+      return;
+    }
+    if (edit.type === "delete-clip") {
+      allowedKeys(edit, ["type", "trackId", "clipId", "ripple"], at, errors);
+      if (!string(edit.trackId, 128) || !clipTrackId.test(edit.trackId)) errors.push(at + ": invalid trackId");
+      if (!string(edit.clipId, 128) || !clipTrackId.test(edit.clipId)) errors.push(at + ": invalid clipId");
+      if (edit.ripple !== undefined && typeof edit.ripple !== "boolean") errors.push(at + ": ripple must be boolean");
       return;
     }
     if (!string(edit.layerId, 64) || !id.test(edit.layerId)) errors.push(at + ": invalid layerId");

@@ -6,6 +6,7 @@ import { validateMotionProject } from "../schema/validation.js";
 import { applyMotionEdits } from "./revisions.js";
 import { resolveMotionAssets } from "../assets/motionAssets.js";
 import { resolveMotionAudioTracks } from "../assets/motionAudio.js";
+import { emitMotionStudioEvent } from "../motionEvents.js";
 import type { MotionEdit } from "../schema/types.js";
 
 const idPattern = /^[a-z][a-z0-9-]{1,63}$/;
@@ -257,6 +258,7 @@ export async function createMotionProject(workspace: string, name: string): Prom
   validateMotionProject(project);
   const dir = await motionStorageDir(root, true);
   await fs.writeFile(path.join(dir, id + ".json"), JSON.stringify(project, null, 2) + "\n", { flag: "wx", mode: 0o600 });
+  emitMotionStudioEvent({ type: "project.created", workspace: root, projectId: id, revision: 1 });
   return project;
 }
 
@@ -382,6 +384,7 @@ export async function updateMotionProject(
         await handle.sync();
       } finally { await handle.close(); }
       await fs.rename(tmp, file);
+      emitMotionStudioEvent({ type: "project.updated", workspace, projectId: id, revision: next.revision });
       // Noncritical pruning never rolls back an already committed edit.
       await pruneMotionHistory(workspace, id).catch(() => {});
     } finally {

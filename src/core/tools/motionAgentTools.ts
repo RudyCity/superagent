@@ -211,12 +211,14 @@ export const studioInspectProjectTool: Tool = {
     type: "object",
     properties: {
       studioId: { type: "string", description: "Studio project ID to inspect." },
+      projectId: { type: "string", description: "Alias for studioId." },
     },
-    required: ["studioId"],
   },
   async execute(args, cwd) {
-    const project = await getMotionProject(cwd, args.studioId as string);
+    const projId = (args.projectId || args.studioId) as string;
+    const project = await getMotionProject(cwd, projId);
     return JSON.stringify({
+      projectId: project.id,
       studioId: project.id,
       name: project.name,
       revision: project.revision,
@@ -238,6 +240,7 @@ export const studioInspectProjectTool: Tool = {
           opacity: l.opacity,
           tracks: l.tracks.map(t => ({ property: t.property, keyframeCount: t.keyframes.length })),
         })),
+        tracks: project.composition.tracks,
         audioTracks: (project.composition.audioTracks || (project.composition.audio ? [project.composition.audio] : [])).map(a => ({
           assetId: a.assetId,
           startFrame: a.startFrame,
@@ -249,46 +252,78 @@ export const studioInspectProjectTool: Tool = {
   },
 };
 
+const studioOperationCache = new Map<string, { result: any; timestamp: number }>();
+function pruneStudioOperationCache(): void {
+  const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
+  for (const [key, value] of studioOperationCache.entries()) {
+    if (value.timestamp < tenMinutesAgo) studioOperationCache.delete(key);
+  }
+}
+
 export const studioEditProjectTool: Tool = {
   name: "studio_edit_project",
-  description: "Apply atomic, revision-guarded edit operations to an existing SuperAgent Studio project (e.g. set-layer-properties, insert-layer, remove-layer, replace-composition). Returns a verifiable change receipt with before/after revision numbers.",
+  description: "Apply atomic, revision-guarded edit operations to an existing SuperAgent Studio project (e.g. set-layer-properties, insert-layer, remove-layer, replace-composition, set-tracks, split-clip, trim-clip, move-clip, delete-clip). Returns a verifiable change receipt with before/after revision numbers.",
   parameters: {
     type: "object",
     properties: {
-      studioId: { type: "string", description: "Studio project ID to edit." },
+      projectId: { type: "string", description: "Studio project ID to edit." },
+      studioId: { type: "string", description: "Alias for projectId." },
       expectedRevision: { type: "integer", description: "Expected current project revision for optimistic concurrency control." },
       edits: {
         type: "array",
         items: { type: "object" },
-        description: "Array of revisioned edit operations (e.g. { type: 'set-layer-properties', layerId: '...', properties: { ... } }).",
+        description: "Array of revisioned edit operations.",
       },
       summary: { type: "string", description: "Brief summary of the changes performed for receipt attribution." },
+      operationId: { type: "string", description: "Optional client idempotency key to prevent double execution." },
     },
-    required: ["studioId", "expectedRevision", "edits"],
+    required: ["expectedRevision", "edits"],
   },
   async execute(args, cwd) {
-    const studioId = args.studioId as string;
+    pruneStudioOperationCache();
+    const projectId = (args.projectId || args.studioId) as string;
+    const workspace = (args.workspacePath as string) || (args.workspace as string) || cwd || process.cwd();
+    if (!projectId) {
+      return JSON.stringify({ success: false, error: "Missing projectId or studioId" });
+    }
+    const opId = (args.operationId as string) || `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    if (studioOperationCache.has(opId)) {
+      const cached = studioOperationCache.get(opId)!;
+      return JSON.stringify(cached.result);
+    }
     const expectedRev = Number(args.expectedRevision);
     const edits = (args.edits || []) as any[];
     const summary = (args.summary as string) || "Applied Studio edits";
     try {
-      const updated = await updateMotionProject(cwd, studioId, expectedRev, edits);
+      const updated = await updateMotionProject(workspace, projectId, expectedRev, edits);
       const receipt = {
-        success: true,
-        operationId: `op-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        operationId: opId,
+        status: "applied" as const,
         timestamp: new Date().toISOString(),
-        actor: "assistant",
-        studioId,
+        actor: "assistant" as const,
+        projectId,
+        studioId: projectId,
         projectName: updated.name,
+        revision: updated.revision,
         revisionBefore: expectedRev,
         revisionAfter: updated.revision,
         summary,
         affectedEntities: {
           layers: edits.map(e => e.layerId).filter(Boolean),
+          tracks: edits.filter(e => e.trackId).map(e => e.trackId),
+          clips: edits.filter(e => e.clipId).map(e => e.clipId),
         },
         reversible: true,
       };
-      return JSON.stringify(receipt);
+      const responsePayload = {
+        success: true,
+        receipt,
+        projectId,
+        studioId: projectId,
+        revision: updated.revision,
+      };
+      studioOperationCache.set(opId, { result: responsePayload, timestamp: Date.now() });
+      return JSON.stringify(responsePayload);
     } catch (err: any) {
       if (err.name === "MotionRevisionConflict" || err.message?.includes("revision conflict")) {
         return JSON.stringify({
@@ -305,13 +340,75 @@ export const studioEditProjectTool: Tool = {
   },
 };
 
+export const studioClipEditTool: Tool = {
+  name: "studio_clip_edit",
+  description: "Perform dedicated timeline clip editing (split, trim, move, delete) on a SuperAgent Studio multi-track timeline with optimistic concurrency control and idempotency.",
+  parameters: {
+    type: "object",
+    properties: {
+      projectId: { type: "string", description: "Studio project ID to edit." },
+      studioId: { type: "string", description: "Alias for projectId." },
+      expectedRevision: { type: "integer", description: "Expected current project revision." },
+      operation: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["split", "trim", "move", "delete"], description: "Clip operation type." },
+          trackId: { type: "string", description: "Target track ID." },
+          clipId: { type: "string", description: "Target clip ID." },
+          splitFrame: { type: "integer", description: "For split: timeline frame where the clip is divided." },
+          deltaIn: { type: "number", description: "For trim: frames to adjust clip in-point." },
+          deltaOut: { type: "number", description: "For trim: frames to adjust clip out-point." },
+          fromTrackId: { type: "string", description: "For move: source track ID." },
+          toTrackId: { type: "string", description: "For move: destination track ID." },
+          newStartFrame: { type: "integer", description: "For move: new start frame on target track." },
+          ripple: { type: "boolean", description: "For delete: if true, close gap by shifting subsequent clips." },
+        },
+        required: ["type"],
+      },
+      summary: { type: "string", description: "Summary of the clip edit for receipt attribution." },
+      operationId: { type: "string", description: "Optional client idempotency key." },
+    },
+    required: ["expectedRevision", "operation"],
+  },
+  async execute(args, cwd) {
+    const projectId = (args.projectId || args.studioId) as string;
+    if (!projectId) {
+      return JSON.stringify({ success: false, error: "Missing projectId or studioId" });
+    }
+    const op = args.operation as any;
+    let edit: any;
+    if (op.type === "split") {
+      edit = { type: "split-clip", trackId: op.trackId, clipId: op.clipId, splitFrame: op.splitFrame };
+    } else if (op.type === "trim") {
+      edit = { type: "trim-clip", trackId: op.trackId, clipId: op.clipId, deltaIn: op.deltaIn || 0, deltaOut: op.deltaOut || 0 };
+    } else if (op.type === "move") {
+      edit = { type: "move-clip", fromTrackId: op.fromTrackId || op.trackId, toTrackId: op.toTrackId || op.trackId, clipId: op.clipId, newStartFrame: op.newStartFrame };
+    } else if (op.type === "delete") {
+      edit = { type: "delete-clip", trackId: op.trackId, clipId: op.clipId, ripple: !!op.ripple };
+    } else {
+      return JSON.stringify({ success: false, error: "Unsupported clip operation: " + op.type });
+    }
+    const workspace = (args.workspacePath as string) || (args.workspace as string) || cwd || process.cwd();
+    return studioEditProjectTool.execute({
+      projectId,
+      workspacePath: workspace,
+      expectedRevision: args.expectedRevision,
+      edits: [edit],
+      summary: args.summary || `Clip ${op.type} on track ${op.trackId || op.fromTrackId}`,
+      operationId: args.operationId,
+    }, workspace);
+  },
+};
+
 export const studioDesktopFocusTool: Tool = {
   name: "studio_desktop_focus",
   description: "Direct the local T-Line desktop Studio editor to focus a project, seek playhead to a timecode/frame, or highlight a specific layer/clip in the UI without arbitrary shell or DOM commands.",
   parameters: {
     type: "object",
     properties: {
-      studioId: { type: "string", description: "Optional project ID to switch to in the Studio tab." },
+      projectId: { type: "string", description: "Project ID to switch to in the Studio tab." },
+      studioId: { type: "string", description: "Alias for projectId." },
+      workspacePath: { type: "string", description: "Optional target workspace path (defaults to current workspace)." },
       layerId: { type: "string", description: "Optional layer ID to select in the property inspector." },
       clipId: { type: "string", description: "Optional clip ID to highlight on the timeline." },
       frame: { type: "integer", description: "Optional frame number to scrub playhead to." },
@@ -319,18 +416,55 @@ export const studioDesktopFocusTool: Tool = {
       panel: { type: "string", enum: ["media", "inspector", "timeline", "effects", "audio"], description: "Optional editor panel to activate." },
     },
   },
-  async execute(args) {
+  async execute(args, cwd) {
+    const projectId = (args.projectId || args.studioId) as string | undefined;
+    const workspacePath = (args.workspacePath as string) || cwd || "";
+
+    let typedAction: any;
+    if (args.clipId || args.layerId) {
+      typedAction = {
+        type: "select_clip",
+        workspacePath,
+        projectId: projectId || "active",
+        clipId: args.clipId as string | undefined,
+        layerId: args.layerId as string | undefined,
+      };
+    } else if (args.frame !== undefined || args.timeSeconds !== undefined) {
+      typedAction = {
+        type: "seek_timecode",
+        workspacePath,
+        projectId: projectId || "active",
+        frame: args.frame as number | undefined,
+        timeSeconds: args.timeSeconds as number | undefined,
+      };
+    } else if (args.panel) {
+      typedAction = {
+        type: "select_panel",
+        workspacePath,
+        panel: args.panel as string,
+      };
+    } else if (projectId) {
+      typedAction = {
+        type: "open_project",
+        workspacePath,
+        projectId,
+      };
+    } else {
+      typedAction = {
+        type: "focus_studio",
+        workspacePath,
+        projectId,
+      };
+    }
+
     return JSON.stringify({
-      action: "studio_control_action",
-      type: "focus_studio",
-      studioId: args.studioId,
-      layerId: args.layerId,
-      clipId: args.clipId,
-      frame: args.frame,
-      timeSeconds: args.timeSeconds,
-      panel: args.panel,
-      message: `Studio desktop view updated for project ${args.studioId || "active"}`,
+      success: true,
+      delivery: "dispatched",
+      workspacePath,
+      projectId: projectId || undefined,
+      studioId: projectId || undefined,
+      action: typedAction,
+      message: `Studio desktop view updated for project ${projectId || "active"}`,
     });
   },
 };
-

@@ -1,5 +1,5 @@
 /**
- * Declarative SuperAgent Studio schema v1. Browser-safe: no filesystem or process dependencies.
+ * Declarative SuperAgent Studio schema v1 & v2. Browser-safe: no filesystem or process dependencies.
  * No arbitrary JavaScript, external URLs, fonts or plugins are permitted in a scene.
  */
 export const MOTION_SCHEMA_VERSION = 1 as const;
@@ -87,6 +87,33 @@ export interface MotionAudioTrack {
   role?: "music" | "voiceover";
 }
 
+/** Canonical NLE multi-track clip representation v2 */
+export interface MotionTrackClip {
+  id: string;
+  trackId: string;
+  layerId?: string;
+  assetId?: string;
+  kind: "video" | "audio" | "text" | "image" | "graphic";
+  name: string;
+  startFrame: number;
+  durationFrames: number;
+  trimInFrames: number;
+  trimOutFrames: number;
+  volume?: number;
+  opacity?: number;
+  speed?: number;
+}
+
+export interface MotionMultiTrack {
+  id: string;
+  name: string;
+  kind: "video" | "audio";
+  index: number;
+  muted: boolean;
+  locked: boolean;
+  clips: MotionTrackClip[];
+}
+
 export interface MotionStackEntry {
   id: string;
   effectId: string;
@@ -122,6 +149,8 @@ export interface MotionComposition {
   audio?: MotionAudioTrack;
   audioTracks?: MotionAudioTrack[];
   layers: MotionLayer[];
+  /** Canonical NLE clip and track layout v2 */
+  tracks?: MotionMultiTrack[];
   interactionGraph?: StudioInteractionGraph;
   /** Declarative stack; rendered layers are the compiled result. */
   effectStack?: MotionStackEntry[];
@@ -148,7 +177,12 @@ export type MotionEdit =
   | { type: "replace-composition"; composition: MotionProject["composition"] }
   | { type: "set-interaction-graph"; graph: StudioInteractionGraph | null }
   | { type: "set-audio"; audio: MotionAudioTrack | null }
-  | { type: "set-audio-tracks"; audioTracks: MotionAudioTrack[] };
+  | { type: "set-audio-tracks"; audioTracks: MotionAudioTrack[] }
+  | { type: "set-tracks"; tracks: MotionMultiTrack[] }
+  | { type: "split-clip"; trackId: string; clipId: string; splitFrame: number }
+  | { type: "trim-clip"; trackId: string; clipId: string; deltaIn: number; deltaOut: number }
+  | { type: "move-clip"; fromTrackId: string; toTrackId: string; clipId: string; newStartFrame: number }
+  | { type: "delete-clip"; trackId: string; clipId: string; ripple?: boolean };
 
 export interface EvaluatedLayer {
   layer: MotionLayer;

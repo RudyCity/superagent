@@ -74,6 +74,30 @@ export function evaluateFrame(project: MotionProject, frame: number): EvaluatedF
           values.scaleY = val;
         }
       }
+      if (project.composition.tracks && project.composition.tracks.length > 0) {
+        const associatedTracks = project.composition.tracks.filter(t =>
+          t.clips.some(c => c.layerId === layer.id)
+        );
+        if (associatedTracks.length > 0) {
+          const hasActiveClip = associatedTracks.some(t =>
+            !t.muted && t.clips.some(c =>
+              c.layerId === layer.id &&
+              frame >= c.startFrame &&
+              frame < c.startFrame + c.durationFrames
+            )
+          );
+          if (!hasActiveClip) {
+            values.opacity = 0;
+          } else {
+            const activeClip = associatedTracks
+              .flatMap(t => t.clips)
+              .find(c => c.layerId === layer.id && frame >= c.startFrame && frame < c.startFrame + c.durationFrames);
+            if (activeClip && typeof activeClip.opacity === "number") {
+              values.opacity = values.opacity * activeClip.opacity;
+            }
+          }
+        }
+      }
       return { layer, values };
     }),
   };

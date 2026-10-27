@@ -47,6 +47,84 @@ export function applyMotionEdits(project: MotionProject, baseRevision: number, o
       next.composition = structuredClone(operation.composition);
       continue;
     }
+    if (operation.type === "set-tracks") {
+      next.composition.tracks = structuredClone(operation.tracks);
+      continue;
+    }
+    if (operation.type === "split-clip") {
+      if (!next.composition.tracks) throw new Error("No tracks found in composition");
+      const track = next.composition.tracks.find(t => t.id === operation.trackId);
+      if (!track) throw new Error("Track not found: " + operation.trackId);
+      const clipIndex = track.clips.findIndex(c => c.id === operation.clipId);
+      if (clipIndex < 0) throw new Error("Clip not found: " + operation.clipId);
+      const clip = track.clips[clipIndex];
+      const relFrame = operation.splitFrame - clip.startFrame;
+      if (relFrame <= 0 || relFrame >= clip.durationFrames) {
+        throw new Error("splitFrame must be strictly inside clip duration");
+      }
+      const firstDuration = relFrame;
+      const secondDuration = clip.durationFrames - relFrame;
+      const firstClip = {
+        ...structuredClone(clip),
+        durationFrames: firstDuration,
+      };
+      const secondClip = {
+        ...structuredClone(clip),
+        id: `${clip.id}-s${next.revision}`,
+        name: `${clip.name} (Part 2)`,
+        startFrame: operation.splitFrame,
+        durationFrames: secondDuration,
+        trimInFrames: clip.trimInFrames + firstDuration,
+      };
+      track.clips.splice(clipIndex, 1, firstClip, secondClip);
+      continue;
+    }
+    if (operation.type === "trim-clip") {
+      if (!next.composition.tracks) throw new Error("No tracks found in composition");
+      const track = next.composition.tracks.find(t => t.id === operation.trackId);
+      if (!track) throw new Error("Track not found: " + operation.trackId);
+      const clip = track.clips.find(c => c.id === operation.clipId);
+      if (!clip) throw new Error("Clip not found: " + operation.clipId);
+      const newDuration = clip.durationFrames - operation.deltaIn + operation.deltaOut;
+      if (newDuration < 1) throw new Error("Trim would result in non-positive duration");
+      clip.startFrame += operation.deltaIn;
+      clip.durationFrames = newDuration;
+      clip.trimInFrames = Math.max(0, clip.trimInFrames + operation.deltaIn);
+      clip.trimOutFrames = Math.max(0, clip.trimOutFrames + operation.deltaOut);
+      continue;
+    }
+    if (operation.type === "move-clip") {
+      if (!next.composition.tracks) throw new Error("No tracks found in composition");
+      const fromTrack = next.composition.tracks.find(t => t.id === operation.fromTrackId);
+      if (!fromTrack) throw new Error("Source track not found: " + operation.fromTrackId);
+      const toTrack = next.composition.tracks.find(t => t.id === operation.toTrackId);
+      if (!toTrack) throw new Error("Destination track not found: " + operation.toTrackId);
+      const clipIndex = fromTrack.clips.findIndex(c => c.id === operation.clipId);
+      if (clipIndex < 0) throw new Error("Clip not found: " + operation.clipId);
+      const [clip] = fromTrack.clips.splice(clipIndex, 1);
+      clip.trackId = operation.toTrackId;
+      clip.startFrame = Math.max(0, operation.newStartFrame);
+      toTrack.clips.push(clip);
+      toTrack.clips.sort((a, b) => a.startFrame - b.startFrame);
+      continue;
+    }
+    if (operation.type === "delete-clip") {
+      if (!next.composition.tracks) throw new Error("No tracks found in composition");
+      const track = next.composition.tracks.find(t => t.id === operation.trackId);
+      if (!track) throw new Error("Track not found: " + operation.trackId);
+      const clipIndex = track.clips.findIndex(c => c.id === operation.clipId);
+      if (clipIndex < 0) throw new Error("Clip not found: " + operation.clipId);
+      const [deletedClip] = track.clips.splice(clipIndex, 1);
+      if (operation.ripple) {
+        const shift = deletedClip.durationFrames;
+        for (const c of track.clips) {
+          if (c.startFrame > deletedClip.startFrame) {
+            c.startFrame = Math.max(0, c.startFrame - shift);
+          }
+        }
+      }
+      continue;
+    }
     if (operation.type === "add-layer") {
       const index = operation.index ?? next.composition.layers.length;
       if (index < 0 || index > next.composition.layers.length) throw new Error("Motion insertion index outside layer range");

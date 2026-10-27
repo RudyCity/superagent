@@ -9,6 +9,7 @@ import {
   studioListProjectsTool,
   studioInspectProjectTool,
   studioEditProjectTool,
+  studioClipEditTool,
   studioDesktopFocusTool,
   motionGenerateTool,
   motionReviseTool,
