@@ -99,7 +99,7 @@ import {
 import { resolveExpectedArtifacts, artifactClaimIdentity } from "./cliBridgeArtifactEvidence.js";
 import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
 import { projectCliDelegate } from "../channels/unifiedChannelTask.js";
-import { listCliBridgeCapacity } from "./cliBridgeCapacity.js";
+import { listDetailedCapacitySlots, recoverProvenOrphanSlot } from "./cliBridgeCapacity.js";
 import { inspectAgyBridgeOutput, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
@@ -116,6 +116,7 @@ const ACTIONS = [
   "delegate.claims",
   "delegate.recovery",
   "delegate.slots",
+  "delegate.recover-slot",
   "delegate.retry",
   "delegate.health",
   "session.create",
@@ -354,6 +355,10 @@ export const cliBridgeTool: Tool = {
         description:
           "Timeout in milliseconds. Defaults: 300_000 for blocking delegate, 1_800_000 (30 minutes) for delegate.start, and 120_000 for session.send. Delegation timeout range is 1000..7200000 (2 hours). Background jobs are polled by job id without keeping the MCP request open.",
       },
+      slot: {
+        type: "number",
+        description: "Capacity slot index (0 to 11) for action=delegate.recover-slot.",
+      },
     },
     required: ["action"],
   },
@@ -405,13 +410,43 @@ export const cliBridgeTool: Tool = {
         case "delegate.claims":
           return await handleDelegateClaims(args, cwd);
 
-        case "delegate.recovery":
+        case "delegate.recovery": {
+          // Detailed recovery diagnostics remain job-scoped so the existing
+          // workspace authorization check can prevent cross-project metadata
+          // disclosure. Host-wide slot diagnostics are intentionally summary-only.
           return await handleDelegateRecovery(String(args.jobId ?? "").trim(), cwd);
+        }
         case "delegate.slots": {
           const cap = Math.min(12, Math.max(1, Number.parseInt(process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS ?? "4", 10) || 4));
-          const slots = await listCliBridgeCapacity(cap);
-          return "CLI Bridge host-wide capacity (occupied slots may require manual recovery):\n" +
-            slots.map(slot => "  " + slot.index + ": " + (slot.occupied ? "occupied" : "available")).join("\n");
+          const detailed = await listDetailedCapacitySlots(cap);
+          const occupiedCount = detailed.filter(s => s.occupied).length;
+          const availableCount = detailed.filter(s => !s.occupied).length;
+          const recoverableCount = detailed.filter(s => s.recoverable).length;
+          let text = `CLI Bridge host-wide capacity: ${cap} total slots (${occupiedCount} occupied, ${availableCount} available, ${recoverableCount} recoverable)\n`;
+          for (const s of detailed) {
+            // Capacity is host-wide and may contain another project's work.
+            // Never expose foreign job IDs, PIDs, paths, or workspace digests.
+            text += `  Slot ${s.index}: ${s.state} (${s.occupied ? "occupied" : "available"}`;
+            if (s.recoverable) text += ", recoverable";
+            text += ")\n";
+          }
+          return text.trimEnd();
+        }
+        case "delegate.recover-slot": {
+          const slotRaw = args.slot ?? args.slotIndex ?? args.index;
+          if (slotRaw === undefined || slotRaw === null || slotRaw === "") {
+            return "Error: 'slot' (slot index number) is required for action=delegate.recover-slot.";
+          }
+          const slotIndex = Number.parseInt(String(slotRaw), 10);
+          if (!Number.isSafeInteger(slotIndex) || slotIndex < 0 || slotIndex >= 12) {
+            return `Error: Invalid slot index '${slotRaw}'. Must be an integer between 0 and 11.`;
+          }
+          try {
+            const res = await recoverProvenOrphanSlot(slotIndex);
+            return `Successfully recovered capacity slot ${slotIndex}: ${res.reason}`;
+          } catch (err) {
+            return `Recovery rejected: ${err instanceof Error ? err.message : String(err)}`;
+          }
         }
         case "delegate.health": {
           const current = (await listDelegateJobs()).filter(job => delegateJobVisibleToWorkspace(job, cwd));

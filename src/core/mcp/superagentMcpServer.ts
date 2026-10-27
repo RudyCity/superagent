@@ -267,7 +267,7 @@ export const MCP_TOOL_DEFINITIONS = [
           action: { type: "string", enum: [
             "list", "profile.list", "delegate", "delegate.start", "delegate.jobs", "delegate.get",
             "delegate.tail", "delegate.read", "delegate.cancel", "delegate.claims", "delegate.recovery",
-            "delegate.slots", "delegate.retry", "delegate.health",
+            "delegate.slots", "delegate.recover-slot", "delegate.retry", "delegate.health",
             "session.create", "session.send", "session.list", "session.kill", "session.get",
             "session.resume", "session.respond", "session.export", "session.config",
             "session.tail", "session.read", "session.detach",
@@ -282,6 +282,7 @@ export const MCP_TOOL_DEFINITIONS = [
           projectId: { type: "string", description: "Authorized registered project ID." },
           workspace: { type: "string", description: "Optional workspace path." },
           jobId: { type: "string", description: "Job ID for delegate.get/tail/cancel/recovery/retry." },
+          slot: { type: "number", minimum: 0, maximum: 11, description: "Host capacity slot index for delegate.recover-slot." },
           idempotencyKey: { type: "string", description: "Optional safe identifier to prevent duplicate background dispatch within an authorized workspace." },
           sessionId: { type: "string", description: "Session ID for session.* operations." },
           args: { type: "array", items: { type: "string" }, description: "CLI flags; AGY permission flags are controlled by permissionMode." },

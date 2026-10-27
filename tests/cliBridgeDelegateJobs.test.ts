@@ -474,6 +474,39 @@ describe("CLI Bridge background delegation jobs", () => {
     }
   }, 16_000);
 
+  it("does not let a stale foreign active shard consume this runtime's admission count", async () => {
+    const { persistJobShard, jobShardPath } = await import("../src/core/tools/cliBridgeJobStore.js");
+    const foreign = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-foreign-admission-"));
+    const id = "clj_" + Date.now() + "_aabbccdd";
+    const dir = path.join(configDir, "cli-bridge", "delegations");
+    const previousMax = process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
+    try {
+      process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = "1";
+      await persistJobShard(dir, {
+        jobId: id, cliAlias: "foreign-stale", binary: process.execPath,
+        cwd: foreign, workspaceRoot: foreign, ownerPid: 2147483000,
+        pid: 2147483001, status: "running", completionState: "pending",
+        startedAt: Date.now(), updatedAt: Date.now(), exitCode: null,
+        timedOut: false, timeoutMs: 5000,
+        outputTail: "", outputBytes: 0, logPath: path.join(foreign, "stale.log"),
+      });
+      // Force the foreign shard into this process's read-only cache. It must
+      // remain visible as evidence but must not count as an in-process running
+      // reservation; the atomic host capacity slot is authoritative.
+      await delegateJobs.listDelegateJobs();
+      const started = await delegateJobs.startDelegateJob(options(
+        'console.log("local-admission-ok")', 5000));
+      const finished = await waitForTerminal(started.jobId);
+      expect(finished.status).toBe("succeeded");
+      expect(finished.outputTail).toContain("local-admission-ok");
+    } finally {
+      if (previousMax === undefined) delete process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
+      else process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = previousMax;
+      await fs.rm(jobShardPath(dir, id), { recursive: true, force: true }).catch(() => {});
+      await fs.rm(foreign, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
   it("flags a foreign record whose PID was reused without mutating its persisted state", async () => {
     const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
     const { persistJobShard, loadJobShards, jobShardPath } = await import("../src/core/tools/cliBridgeJobStore.js");

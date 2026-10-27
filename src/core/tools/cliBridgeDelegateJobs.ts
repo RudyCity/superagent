@@ -23,7 +23,7 @@ import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
 import { getTlineCreatorForJob } from "../channels/tlineJobCreator.js";
 import { inspectAgyBridgeLine, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
 import { readBoundedLogTail, redactCliBridgeOutput, summarizedPrompt } from "./cliBridgeObservability.js";
-import { acquireCliBridgeCapacity, releaseCliBridgeCapacity, type CliBridgeCapacityLease } from "./cliBridgeCapacity.js";
+import { acquireCliBridgeCapacity, releaseCliBridgeCapacity, updateCliBridgeCapacity, type CliBridgeCapacityLease } from "./cliBridgeCapacity.js";
 
 export type DelegateJobStatus =
   | "starting" | "running" | "cancelling" | "succeeded" | "failed" | "timed_out" | "cancelled" | "interrupted" | "verification_failed" | "permission_blocked";
@@ -135,8 +135,14 @@ function getStoragePath(): string { return path.join(getStorageDir(), STORAGE_FI
 function activeStatus(status: DelegateJobStatus): boolean {
   return status === "starting" || status === "running" || status === "cancelling";
 }
+/**
+ * This counter is only the in-process admission reservation. Foreign persisted
+ * jobs are read-only evidence and may be stale after their owner crashed.
+ * Host-wide concurrency is enforced authoritatively by atomic capacity slots.
+ */
 function activeJobCount(): number {
-  return [...jobs.values()].filter((job) => activeStatus(job.status)).length;
+  return [...jobs.values()].filter((job) =>
+    ownedJobIds.has(job.jobId) && activeStatus(job.status)).length;
 }
 function maxConcurrentJobs(): number {
   const configured = Number.parseInt(process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS ?? "", 10);
@@ -409,7 +415,11 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
       jobCrossProcessClaims.set(jobId, await acquireCrossProcessArtifactClaims(claimKeys, jobId));
       artifactBaselines.set(jobId, await snapshotExpectedArtifacts(artifactFiles, job.workspaceRoot ?? job.cwd));
     }
-    const lease = await acquireCliBridgeCapacity(cap, jobId);
+    const lease = await acquireCliBridgeCapacity(cap, jobId, {
+      ownerProcessIdentity: job.ownerProcessIdentity,
+      cliAlias: opts.cliAlias,
+      workspaceDigest: job.workspaceRoot ? crypto.createHash("sha256").update(job.workspaceRoot).digest("hex").slice(0, 16) : undefined,
+    });
     capacityLeases.set(jobId, lease);
     job.capacitySlot = lease.index;
     await fs.mkdir(logDir, { recursive: true });
@@ -454,6 +464,10 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   job.pid = typeof proc.pid === "number" ? proc.pid : null;
   job.status = "running";
   job.updatedAt = Date.now();
+  const initialLease = capacityLeases.get(jobId);
+  if (initialLease && job.pid) {
+    void updateCliBridgeCapacity(initialLease, { childPid: job.pid });
+  }
   // Preserve multi-byte characters even when a subprocess writes them across chunks.
   const wireOutput = (stream: any) => {
     const decoder = new StringDecoder("utf8");
@@ -477,6 +491,10 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   const pulse = setInterval(() => {
     if (!activeStatus(job.status)) return;
     job.heartbeatAt = Date.now();
+    const currentLease = capacityLeases.get(jobId);
+    if (currentLease) {
+      void updateCliBridgeCapacity(currentLease, { heartbeatAt: job.heartbeatAt });
+    }
     void persistJobs().catch(() => {});
   }, 20_000);
   pulse.unref?.();
@@ -488,6 +506,10 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   void readProcessStartIdentity(job.pid).then(async identity => {
     if (!identity || !activeStatus(job.status)) return;
     job.childProcessIdentity = identity;
+    const currentLease = capacityLeases.get(job.jobId);
+    if (currentLease) {
+      void updateCliBridgeCapacity(currentLease, { childProcessIdentity: identity });
+    }
     await persistJobs().catch(() => {});
   }).catch(() => {});
 

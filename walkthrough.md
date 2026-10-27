@@ -133,3 +133,79 @@ bun test tests/agentAbortInterrupt.test.ts tests/permissions.test.ts
   - POSIX `cat`: **DENIED** (`{"allowed":false}`)
   - CMD `type`: **DENIED** (`{"allowed":false}`)
   - PowerShell `Get-Content`: **DENIED** (`{"allowed":false}`)
+
+
+---
+
+# Milestone M1 — Reliable Parallel Capacity (2026-10-28)
+
+## Executive Summary
+
+Milestone M1 establishes reliable parallel execution capacity for the CLI Bridge multi-agent runtime in accordance with `docs/plans/2026-10-28-superagent-cli-bridge-multi-agent-runtime-master-plan.md`. It eliminates PID-only slot assumptions, introduces a rigorous 6-state fail-closed stale-slot classifier, enforces live owner and surviving descendant protection, adds safe operator/automatic orphan recovery, and proves full 4-agent AGY parallel execution on Windows.
+
+---
+
+## Key File Modifications
+
+| Component | Files Modified / Created | Summary of Changes |
+|-----------|--------------------------|---------------------|
+| **Stale-Slot Classifier (M1.2)** | `src/core/tools/cliBridgeRecovery.ts` | Added `classifyCapacitySlot` with 6 explicit states (`active_verified`, `owner_alive_child_alive`, `owner_dead_child_alive_review_required`, `owner_dead_child_dead_recoverable`, `identity_mismatch_blocked`, `corrupt_blocked`). Strictly enforces `recoverable = (state === "owner_dead_child_dead_recoverable")`. Detects PID reuse on owner and child processes via process birth timestamps (`Win32_Process.CreationDate.Ticks`). |
+| **Capacity Management & Orphan Recovery (M1.3)** | `src/core/tools/cliBridgeCapacity.ts` | Extended slot `owner.json` metadata with `ownerProcessIdentity`, `childPid`, `childProcessIdentity`, `cliAlias`, `workspaceDigest`, `heartbeatAt`. Implemented `inspectCapacitySlot`, `listDetailedCapacitySlots`, `recoverProvenOrphanSlot`, `updateCliBridgeCapacity`, and automatic orphan recovery in `acquireCliBridgeCapacity`. |
+| **Background Job Integration (M1.1 / M1.3)** | `src/core/tools/cliBridgeDelegateJobs.ts` | Records `ownerProcessIdentity` during slot acquisition; updates slot metadata with `childPid` upon subprocess spawn; updates `heartbeatAt` during periodic bridge pulses; updates `childProcessIdentity` once OS CIM probe resolves. |
+| **Tool Layer & Operator Actions (M1.3)** | `src/core/tools/cliBridgeTool.ts`, `src/core/mcp/superagentMcpServer.ts` | Added privacy-safe host-wide `delegate.slots` summary and explicit `delegate.recover-slot`. Host summaries never expose foreign job IDs, PIDs, paths, or workspace digests. Detailed `delegate.recovery` remains job-scoped behind existing workspace authorization. MCP schema now exposes the new recovery action/slot field. |
+| **Regression Test Suite (M1.4 / M1.6)** | `tests/cliBridgeCapacityRecovery.test.ts`, `tests/cliBridgeDelegateJobs.test.ts` | Covers fail-closed legacy child evidence, PID reuse, live-owner protection, concurrent recovery race safety, privacy-safe slot reporting, stale foreign-shard admission, safe orphan recovery, and 4-worker concurrency. M1.7 Git-worktree concurrency remains open. |
+
+---
+
+## Live Host Audit & Verification Evidence
+
+### 1. Live Host Slot Inspection (M1.1 / M1.5)
+- Queried production capacity root (`C:\Users\USER\AppData\Local\Temp\superagent-cli-bridge-capacity-v1`).
+- Verified that slots occupied by active processes (owner Bun PID 41424, start identity `win:639286916904160640`; child PIDs 46164, 38660, 24676, 35316) were accurately classified as `active_verified` with `recoverable: false`.
+- Enforced strict live owner protection: zero active sessions were killed or stolen. Slots 2 and 3 naturally finished their work and cleanly transitioned to `available`.
+
+### 2. 4-Worker AGY Concurrency Probe (M1.6)
+- Executed 4 concurrent AGY background delegations (`--mode plan`) under CLI Bridge orchestrator. The probe used isolated capacity/config roots; it did **not** create four Git worktrees, so M1.7 remains open:
+  - **AGY Alpha**: Job `clj_1793138836610_2bbfa7b3`, Slot 0, PID 42932, duration 14,375ms, exitCode 0 (`AGY_PROBE_Alpha_OK`).
+  - **AGY Beta**: Job `clj_1793138836610_253329e2`, Slot 1, PID 5368, duration 19,447ms, exitCode 0 (`AGY_PROBE_Beta_OK`).
+  - **AGY Gamma**: Job `clj_1793138836594_20380909`, Slot 2, PID 44176, duration 14,299ms, exitCode 0 (`AGY_PROBE_Gamma_OK`).
+  - **AGY Delta**: Job `clj_1793138836610_bd1596ca`, Slot 3, PID 43288, duration 13,834ms, exitCode 0 (`AGY_PROBE_Delta_OK`).
+- Mid-run observation verified all 4 slots concurrently in `active_verified` state with separate child PIDs.
+- Post-run observation verified all 4 slots cleanly returned to `available`.
+
+---
+
+## Independent Audit Corrections
+
+The delegated AGY implementation was not accepted without review. The independent audit found and fixed:
+
+- foreign job/PID metadata leakage in host-wide slot diagnostics;
+- false `4/4` admission caused by stale foreign active shards being counted as local reservations;
+- fail-open legacy leases where a missing child PID was incorrectly equivalent to a dead child;
+- concurrent orphan-recovery TOCTOU risk;
+- lease metadata update races;
+- missing external MCP schema for `delegate.recover-slot`;
+- an incorrect M1.7 completion claim (the 4-AGY probe did not use four Git worktrees).
+
+### Final Audit Test Matrix
+```
+bun test tests/cliBridgeCapacityRecovery.test.ts \
+         tests/cliBridgeDelegateJobs.test.ts \
+         tests/cliBridgeTool.test.ts \
+         tests/cliBridgeHardening.test.ts \
+         tests/cliBridgeRecovery.test.ts \
+         tests/cliBridgeProcessIdentity.test.ts \
+         tests/cliBridgeWorkspaceIsolation.test.ts \
+         tests/cliBridgeCrossProcessClaims.test.ts
+```
+**Outcome**: **114 passed**, **0 failed** (**502 assertions**).
+
+A fresh independent real-AGY acceptance probe then launched four simultaneous AGY jobs through the updated CLI Bridge. Mid-run all four slots were `active_verified` with distinct child PIDs; all four jobs exited 0 and all four slots returned to `available`.
+
+### Build Verification
+```
+bun run build
+```
+- TypeScript check (`tsc`): **PASS** (0 errors).
+- Package: `superagent@1.14.55` built cleanly with Bun 1.4.2.
+- MCP Chrome schemas synchronized: 0 differences.

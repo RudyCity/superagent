@@ -29,3 +29,47 @@
   - [x] Verify direct adversarial probe
   - [x] Update `walkthrough.md`
   - [x] Git commit and push only modified files
+
+
+---
+
+## Milestone M1 — Reliable Parallel Capacity
+
+- [x] **M1.1** Inspect occupied slots using process birth identity
+  - [x] Query capacity directory `superagent-cli-bridge-capacity-v1`
+  - [x] Correlate slot leases with OS process identity (Win32_Process CreationDate ticks)
+  - [x] Determine ownership and liveness of active processes and child CLIs
+- [x] **M1.2** Implement fail-closed stale-slot classifier
+  - [x] Define `CapacitySlotState` (6 states: `active_verified`, `owner_alive_child_alive`, `owner_dead_child_alive_review_required`, `owner_dead_child_dead_recoverable`, `identity_mismatch_blocked`, `corrupt_blocked`)
+  - [x] Implement `classifyCapacitySlot` in `src/core/tools/cliBridgeRecovery.ts`
+  - [x] Ensure fail-closed evaluation on PID reuse, unknown PID, or corrupt metadata
+- [x] **M1.3** Implement safe orphan-slot recovery
+  - [x] Extend slot metadata with `ownerProcessIdentity`, `childPid`, `childProcessIdentity`, `heartbeatAt` in `src/core/tools/cliBridgeCapacity.ts`
+  - [x] Implement `inspectCapacitySlot`, `listDetailedCapacitySlots`, and `recoverProvenOrphanSlot`
+  - [x] Add `delegate.slots` and `delegate.recover-slot` actions in `src/core/tools/cliBridgeTool.ts`
+  - [x] Add optional automatic recovery in `acquireCliBridgeCapacity` strictly for proven orphans
+- [x] **M1.4** Add regression tests in `tests/cliBridgeCapacityRecovery.test.ts`
+  - [x] Test PID reuse detection (returns `identity_mismatch_blocked`, blocks recovery)
+  - [x] Test live owner protection (returns `owner_alive_child_alive`/`active_verified`, blocks theft/recovery)
+  - [x] Test orphan recovery (returns `owner_dead_child_dead_recoverable`, successfully recovers slot)
+  - [x] Test dead owner with surviving child (returns `owner_dead_child_alive_review_required`, protects child)
+  - [x] Test terminal-job stale lease cleanup (recovers lingering lease when owner and child are dead)
+  - [x] Test corrupt/malformed metadata fail-closed behavior
+  - [x] Test `delegate.slots` and `delegate.recover-slot` tool actions
+- [x] **M1.5** Recover only slots proven orphaned on host
+  - [x] Audit live host slots (Slots 0 and 1 active_verified, Slots 2 and 3 available)
+  - [x] Protect live owners and children; confirm zero active processes killed or stolen
+- [x] **M1.6** Run 4 simultaneous read-only probes
+  - [x] Concurrently dispatch 4 real AGY background jobs (`--mode plan`)
+  - [x] Verify distinct capacity slots 0, 1, 2, 3 and distinct PIDs (44176, 42932, 5368, 43288)
+  - [x] Verify concurrent `active_verified` state, exit code 0, and clean lease release
+- [ ] **M1.7** Run four isolated Git-worktree coding probes
+  - [ ] Create four distinct worktrees/branches from one pinned base SHA
+  - [ ] Verify non-overlapping edits/tests can run concurrently without shared-workspace mutation
+  - [ ] Record resulting branch/commit provenance and clean worktree teardown
+- [x] **M1.8** Verification, build, and documentation
+  - [x] Independent audit: 114 passed, 0 failed across 8 CLI Bridge suites (502 assertions)
+  - [x] Run `bun run build` (clean TypeScript compilation, 0 errors)
+  - [x] Re-prove 4 real AGY workers concurrently after audit fixes; all four slots released cleanly
+  - [x] Update `docs/plans/2026-10-28-superagent-cli-bridge-multi-agent-runtime-master-plan.md` evidence section
+  - [x] Update `walkthrough.md` with AGY implementation plus independent audit corrections

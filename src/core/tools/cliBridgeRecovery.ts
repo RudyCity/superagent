@@ -105,3 +105,274 @@ export function classifyDelegateRecovery(
     reason,
   };
 }
+
+
+// ─── Slot recovery classification ──────────────────────────────────────────
+
+export type CapacitySlotState =
+  | "available"
+  | "active_verified"
+  | "owner_alive_child_alive"
+  | "owner_dead_child_alive_review_required"
+  | "owner_dead_child_dead_recoverable"
+  | "identity_mismatch_blocked"
+  | "corrupt_blocked";
+
+export interface SlotOwnerMetadata {
+  token: string;
+  jobId: string;
+  pid: number;
+  ownerProcessIdentity?: string;
+  childPid?: number;
+  childProcessIdentity?: string;
+  cliAlias?: string;
+  workspaceDigest?: string;
+  acquiredAt: number;
+  heartbeatAt?: number;
+}
+
+export interface SlotClassificationInput {
+  readonly exists: boolean;
+  readonly isDir?: boolean;
+  readonly isSymlink?: boolean;
+  readonly ownerData?: Partial<SlotOwnerMetadata> | null;
+  readonly corruptReason?: string;
+  readonly ownerPidObservation?: PidObservation;
+  readonly ownerIdentityObservation?: string | null;
+  readonly childPidObservation?: PidObservation;
+  readonly childIdentityObservation?: string | null;
+  readonly jobStatus?: string | null;
+  readonly ownedByCurrentRuntime?: boolean;
+}
+
+export interface CapacitySlotClassification {
+  readonly state: CapacitySlotState;
+  readonly occupied: boolean;
+  readonly recoverable: boolean;
+  readonly reason: string;
+  readonly ownerPidObservation: PidObservation;
+  readonly ownerIdentityComparison: ProcessIdentityComparison;
+  readonly childPidObservation: PidObservation;
+  readonly childIdentityComparison: ProcessIdentityComparison;
+}
+
+/**
+ * Evaluates whether an occupied or unoccupied capacity slot can safely be
+ * acquired or recovered. Fails closed on PID reuse, active descendants,
+ * missing process identity, or corrupt metadata.
+ */
+export function classifyCapacitySlot(input: SlotClassificationInput): CapacitySlotClassification {
+  if (!input.exists) {
+    return {
+      state: "available",
+      occupied: false,
+      recoverable: false,
+      reason: "Capacity slot is unoccupied and available.",
+      ownerPidObservation: "pid_absent",
+      ownerIdentityComparison: "unknown",
+      childPidObservation: "pid_absent",
+      childIdentityComparison: "unknown",
+    };
+  }
+
+  if (input.isDir === false || input.isSymlink === true) {
+    return {
+      state: "corrupt_blocked",
+      occupied: true,
+      recoverable: false,
+      reason: "Capacity slot entry is not a regular directory or is a symbolic link.",
+      ownerPidObservation: "unknown",
+      ownerIdentityComparison: "unknown",
+      childPidObservation: "unknown",
+      childIdentityComparison: "unknown",
+    };
+  }
+
+  if (!input.ownerData || input.corruptReason) {
+    return {
+      state: "corrupt_blocked",
+      occupied: true,
+      recoverable: false,
+      reason: input.corruptReason || "Slot owner metadata is unparseable or missing.",
+      ownerPidObservation: "unknown",
+      ownerIdentityComparison: "unknown",
+      childPidObservation: "unknown",
+      childIdentityComparison: "unknown",
+    };
+  }
+
+  const { ownerData } = input;
+  const ownerPid = typeof ownerData.pid === "number" && Number.isSafeInteger(ownerData.pid) && ownerData.pid > 0
+    ? ownerData.pid
+    : null;
+  const childPid = typeof ownerData.childPid === "number" && Number.isSafeInteger(ownerData.childPid) && ownerData.childPid > 0
+    ? ownerData.childPid
+    : null;
+
+  if (!ownerData.token || typeof ownerData.token !== "string" || !ownerData.jobId || ownerPid === null) {
+    return {
+      state: "corrupt_blocked",
+      occupied: true,
+      recoverable: false,
+      reason: "Slot owner metadata is missing required token, valid owner PID, or jobId.",
+      ownerPidObservation: "unknown",
+      ownerIdentityComparison: "unknown",
+      childPidObservation: "unknown",
+      childIdentityComparison: "unknown",
+    };
+  }
+
+  if (input.ownedByCurrentRuntime) {
+    return {
+      state: "active_verified",
+      occupied: true,
+      recoverable: false,
+      reason: "Slot is actively held and owned by the current runtime process handle.",
+      ownerPidObservation: "pid_present_unverified",
+      ownerIdentityComparison: "matched_unverified",
+      childPidObservation: childPid ? (input.childPidObservation ?? observeProcessId(childPid)) : "unknown",
+      childIdentityComparison: "unknown",
+    };
+  }
+
+  const ownerPidObs = input.ownerPidObservation ?? observeProcessId(ownerPid);
+  const childPidObs = input.childPidObservation ?? (childPid !== null ? observeProcessId(childPid) : "pid_absent");
+  const ownerIdComp = compareProcessStartIdentity(ownerData.ownerProcessIdentity, input.ownerIdentityObservation);
+  const childIdComp = compareProcessStartIdentity(ownerData.childProcessIdentity, input.childIdentityObservation);
+
+  if (ownerPidObs === "pid_present_unverified" && ownerIdComp === "mismatch") {
+    return {
+      state: "identity_mismatch_blocked",
+      occupied: true,
+      recoverable: false,
+      reason: "Owner PID is present but process start identity differs from saved owner (suspected PID reuse); do not signal or unlock.",
+      ownerPidObservation: ownerPidObs,
+      ownerIdentityComparison: ownerIdComp,
+      childPidObservation: childPidObs,
+      childIdentityComparison: childIdComp,
+    };
+  }
+
+  if (childPidObs === "pid_present_unverified" && childIdComp === "mismatch") {
+    return {
+      state: "identity_mismatch_blocked",
+      occupied: true,
+      recoverable: false,
+      reason: "Child PID is present but process start identity differs from saved child (suspected PID reuse); do not signal or unlock.",
+      ownerPidObservation: ownerPidObs,
+      ownerIdentityComparison: ownerIdComp,
+      childPidObservation: childPidObs,
+      childIdentityComparison: childIdComp,
+    };
+  }
+
+  if (ownerPidObs === "pid_present_unverified") {
+    if (childPidObs === "pid_present_unverified") {
+      const state = (ownerIdComp === "matched_unverified" && childIdComp === "matched_unverified")
+        ? "active_verified"
+        : "owner_alive_child_alive";
+      return {
+        state,
+        occupied: true,
+        recoverable: false,
+        reason: "Both owner process and child process are alive in the OS; slot is actively occupied.",
+        ownerPidObservation: ownerPidObs,
+        ownerIdentityComparison: ownerIdComp,
+        childPidObservation: childPidObs,
+        childIdentityComparison: childIdComp,
+      };
+    }
+
+    return {
+      state: ownerIdComp === "matched_unverified" ? "active_verified" : "owner_alive_child_alive",
+      occupied: true,
+      recoverable: false,
+      reason: "Owner process is alive; slot is reserved and cannot be cleaned up.",
+      ownerPidObservation: ownerPidObs,
+      ownerIdentityComparison: ownerIdComp,
+      childPidObservation: childPidObs,
+      childIdentityComparison: childIdComp,
+    };
+  }
+
+  if (ownerPidObs === "pid_absent") {
+    // A missing child PID is not evidence that no CLI child (or detached
+    // descendant) ever existed. Legacy/incomplete leases therefore fail closed
+    // unless a persisted terminal job state independently proves the bridge
+    // observed completion.
+    if (childPid === null) {
+      const terminalJob = typeof input.jobStatus === "string" &&
+        !["starting", "running", "cancelling"].includes(input.jobStatus);
+      if (terminalJob) {
+        return {
+          state: "owner_dead_child_dead_recoverable",
+          occupied: true,
+          recoverable: true,
+          reason: "Owner is gone and the persisted job state is terminal; stale capacity metadata is safe to recover.",
+          ownerPidObservation: ownerPidObs,
+          ownerIdentityComparison: ownerIdComp,
+          childPidObservation: "unknown",
+          childIdentityComparison: "unknown",
+        };
+      }
+      return {
+        state: "corrupt_blocked",
+        occupied: true,
+        recoverable: false,
+        reason: "Owner is absent but no child PID or terminal job evidence was recorded; child state is unknown and recovery is blocked.",
+        ownerPidObservation: ownerPidObs,
+        ownerIdentityComparison: ownerIdComp,
+        childPidObservation: "unknown",
+        childIdentityComparison: "unknown",
+      };
+    }
+
+    if (childPidObs === "pid_present_unverified") {
+      return {
+        state: "owner_dead_child_alive_review_required",
+        occupied: true,
+        recoverable: false,
+        reason: "Owner process has exited but CLI child process is still running; manual review required to avoid killing active work.",
+        ownerPidObservation: ownerPidObs,
+        ownerIdentityComparison: ownerIdComp,
+        childPidObservation: childPidObs,
+        childIdentityComparison: childIdComp,
+      };
+    }
+
+    if (childPidObs === "pid_absent") {
+      return {
+        state: "owner_dead_child_dead_recoverable",
+        occupied: true,
+        recoverable: true,
+        reason: "Both recorded owner process and CLI child process have exited; slot is a proven orphan and safe to recover.",
+        ownerPidObservation: ownerPidObs,
+        ownerIdentityComparison: ownerIdComp,
+        childPidObservation: childPidObs,
+        childIdentityComparison: childIdComp,
+      };
+    }
+
+    return {
+      state: "corrupt_blocked",
+      occupied: true,
+      recoverable: false,
+      reason: "Owner is absent but child process state could not be determined; failing closed.",
+      ownerPidObservation: ownerPidObs,
+      ownerIdentityComparison: ownerIdComp,
+      childPidObservation: childPidObs,
+      childIdentityComparison: childIdComp,
+    };
+  }
+
+  return {
+    state: "corrupt_blocked",
+    occupied: true,
+    recoverable: false,
+    reason: "Owner process liveness could not be determined; failing closed.",
+    ownerPidObservation: ownerPidObs,
+    ownerIdentityComparison: ownerIdComp,
+    childPidObservation: childPidObs,
+    childIdentityComparison: childIdComp,
+  };
+}
