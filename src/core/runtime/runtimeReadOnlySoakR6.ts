@@ -32,15 +32,24 @@ export interface RuntimeSoakAssessment {
 const PORTS=[7888,6789,9877] as const;
 export function assessRuntimeReadOnlySoak(
   samples:SoakObservation[], requestedSeconds:number, maxGapMs=20000,
+  observedPorts:readonly number[]=PORTS,
 ):RuntimeSoakAssessment {
   if(!Number.isSafeInteger(requestedSeconds)||requestedSeconds<1||
      !Number.isSafeInteger(maxGapMs)||maxGapMs<1000)
     throw Error("Invalid observation duration/interval");
+  // A production sampler must use the actually registered MCP ports, never
+  // silently classify absent historical ports as unstable or omit Core.
+  const PORTS_IN_WINDOW=[...observedPorts];
+  if(PORTS_IN_WINDOW.length<2||PORTS_IN_WINDOW.length>257||
+     !PORTS_IN_WINDOW.includes(7888)||
+     new Set(PORTS_IN_WINDOW).size!==PORTS_IN_WINDOW.length||
+     PORTS_IN_WINDOW.some(p=>!Number.isSafeInteger(p)||p<1024||p>65535))
+    throw Error("Invalid observed Core/MCP port inventory");
   const blockers:string[]=[];
   const owners:Record<string,number|null>={};
   const peaks:Record<string,number|null>={};
   const handles:Record<string,number|null>={};
-  for(const port of PORTS){owners[port]=null;peaks[port]=null;handles[port]=null;}
+  for(const port of PORTS_IN_WINDOW){owners[port]=null;peaks[port]=null;handles[port]=null;}
   let unstable=false;
   for(let i=0;i<samples.length;i++){
     const current=samples[i];
@@ -50,7 +59,7 @@ export function assessRuntimeReadOnlySoak(
     if(i&&current.atMs-samples[i-1].atMs>maxGapMs){
       blockers.push("OBSERVATION_GAP");unstable=true;
     }
-    for(const port of PORTS){
+    for(const port of PORTS_IN_WINDOW){
       const matches=current.processes.filter(p=>p.port===port);
       if(matches.length!==1){blockers.push("PORT_OBSERVATION_MISSING_"+port);unstable=true;continue;}
       const p=matches[0],key=String(port);

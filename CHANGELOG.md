@@ -1,3 +1,11 @@
+## [1.14.52] - 2026-10-27
+### Core and OAuth process separation verification
+- Verify isolated independent OAuth and ingress with real PKCE/consent/refresh/restart coverage, and validate supervised Core/MCP rolling restarts while preserving the legacy production owner.
+- Update obsolete OAuth HTTP test assertions to honor the existing YOLO OFF tool-permission ceiling without changing authorization policy.
+- Make read-only runtime observation discover current MCP listener ports from authenticated local state/OS PID correlation, rejecting corrupt or stale inventories instead of sampling old hard-coded ports.
+- Add dynamic-port regression tests and P1-P5 evidence recording unresolved independent production OAuth, client reauthorization, native desktop, extended soak, and approved cutover gates.
+- No OAuth token transfer, production service restart, external route mutation, or client migration was performed.
+
 ## [1.14.51] - 2026-10-27
 ### Headless delegated CLI permission diagnostics
 - Detect AGY account-mode downgrade and structured tool permission denials, including final denied actions with exit code zero; classify blocked jobs as failures instead of reporting false success.

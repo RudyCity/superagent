@@ -73,5 +73,22 @@ describe("R6 read-only Windows runtime observation",()=>{
   expect(d.status).toBe("observed_window_complete");
   expect(d.productionCertified).toBe(false);
   expect(d.cutoverAllowed).toBe(false);
+  });
+  it("observes the current MCP owner port rather than a retired historical port",()=>{
+    const current=(atMs:number):SoakObservation=>({atMs,processes:[7888,8873].map(port=>({
+      port,pid:19728,cpuSeconds:10+atMs/1000,workingSetBytes:4000000,handles:200,
+    }))});
+    const d=assessRuntimeReadOnlySoak([current(0),current(6000)],6,20000,[7888,8873]);
+    expect(d.status).toBe("observed_window_complete");
+    expect(d.portOwners).toEqual({"7888":19728,"8873":19728});
+    expect(d.blockers).toEqual([]);
+    expect(d.productionCertified).toBe(false);
+    expect(d.restartAllowed).toBe(false);
+    expect(d.cutoverAllowed).toBe(false);
+  });
+  it("rejects arbitrary or untrusted monitored port sets",()=>{
+    expect(()=>assessRuntimeReadOnlySoak([],6,20000,[7888,7888])).toThrow(/inventory/);
+    expect(()=>assessRuntimeReadOnlySoak([],6,20000,[8873])).toThrow(/inventory/);
+    expect(()=>assessRuntimeReadOnlySoak([],6,20000,[7888,99999])).toThrow(/inventory/);
+  });
  });
-});

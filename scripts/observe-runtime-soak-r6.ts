@@ -6,7 +6,7 @@
 import os from "node:os";
 import {execFileSync} from "node:child_process";
 import {performance} from "node:perf_hooks";
-import {readListenerOwners} from "../src/core/runtime/coreMcpOwnershipAudit.js";
+import {readListenerOwners,readMcpStateInventory} from "../src/core/runtime/coreMcpOwnershipAudit.js";
 import {assessRuntimeReadOnlySoak,
   type SoakObservation,type SoakProcessObservation}
   from "../src/core/runtime/runtimeReadOnlySoakR6.js";
@@ -18,7 +18,17 @@ if(!Number.isSafeInteger(seconds)||seconds<2||seconds>259200||
    interval>seconds)
   throw Error("Usage: bun scripts/observe-runtime-soak-r6.ts [seconds:2..259200] [intervalSeconds:1..30]");
 if(process.platform!=="win32")throw Error("Windows OS metrics required for this R6 observation");
-const ports=[7888,6789,9877];
+// Pin the current registered local MCP owners; historical port numbers are
+// not evidence of an active listener. Refuse missing, corrupt or stale registry.
+const inventory=readMcpStateInventory();
+const initially=readListenerOwners();
+if(!initially||inventory.directory!=="present"||inventory.rejected>0||
+   inventory.records.length===0||
+   inventory.records.some(p=>initially.get(p.port)!==p.pid))
+  throw Error("MCP owner inventory absent, corrupt or OS PID mismatch; refusing observation");
+const ports=[7888,...inventory.records.map(r=>r.port)];
+if(!initially.has(7888)||new Set(ports).size!==ports.length)
+  throw Error("Core listener missing or MCP registry overlaps Core");
 const sleep=(ms:number)=>new Promise<void>(resolve=>setTimeout(resolve,ms));
 function osMetrics(pids:number[]):Map<number,{cpuSeconds:number;workingSetBytes:number;handles:number}>{
   const unique=[...new Set(pids.filter(x=>Number.isSafeInteger(x)&&x>0))];
@@ -65,8 +75,9 @@ while(performance.now()-start<seconds*1000){
   await sleep(Math.min(interval*1000,Math.max(0,start+seconds*1000-performance.now())));
   samples.push(capture());
 }
-const report=assessRuntimeReadOnlySoak(samples,seconds,maxGapMs);
+const report=assessRuntimeReadOnlySoak(samples,seconds,maxGapMs,ports);
 console.log(JSON.stringify({...report,
+  observedPorts:ports,inventoryOrigin:"local_recorded_mcp_with_os_pid_match",
   machineCpuCount:os.cpus().length,
   requestedSeconds:seconds,
   intervalSeconds:interval,
