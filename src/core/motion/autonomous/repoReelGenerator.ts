@@ -65,7 +65,7 @@ export async function inspectWorkspaceRepository(workspace: string): Promise<{
 
   // 3. Git log
   try {
-    const { stdout } = await execa("git", ["log", "-n", "3", "--oneline"], { cwd: workspace });
+    const { stdout } = await execa("git", ["log", "-n", "3", "--oneline"], { cwd: workspace, windowsHide: true });
     const logLines = stdout.split("\n").filter(Boolean);
     for (const l of logLines) {
       // Strip commit hash

@@ -24,7 +24,7 @@ export async function isUvInstalledGlobally(): Promise<boolean> {
   }
   const isWin = process.platform === "win32";
   try {
-    await execa(isWin ? "where.exe" : "which", ["uv"]);
+    await execa(isWin ? "where.exe" : "which", ["uv"], { windowsHide: true });
     cachedUvInstalledGlobally = true;
   } catch {
     cachedUvInstalledGlobally = false;
@@ -71,7 +71,7 @@ export async function ensureUvInstalled(onProgress?: DownloadProgressCallback): 
         "ByPass",
         "-c",
         "irm https://astral.sh/uv/install.ps1 | iex"
-      ]);
+      ], { windowsHide: true });
     } else {
       await execa("curl", ["-sSf", "https://astral.sh/uv/install.sh", "|", "sh"], { shell: true });
     }
@@ -92,11 +92,11 @@ export async function isPythonInstalled(): Promise<boolean> {
   }
   const isWin = process.platform === "win32";
   try {
-    await execa(isWin ? "where.exe" : "which", ["python"]);
+    await execa(isWin ? "where.exe" : "which", ["python"], { windowsHide: true });
     cachedPythonInstalled = true;
   } catch {
     try {
-      await execa(isWin ? "where.exe" : "which", ["python3"]);
+      await execa(isWin ? "where.exe" : "which", ["python3"], { windowsHide: true });
       cachedPythonInstalled = true;
     } catch {
       cachedPythonInstalled = false;
@@ -127,7 +127,7 @@ export async function ensurePythonInstalled(onProgress?: DownloadProgressCallbac
       uvCmd = getLocalUvPath();
     }
 
-    await execa(uvCmd, ["python", "install"]);
+    await execa(uvCmd, ["python", "install"], { windowsHide: true });
 
     cachedPythonInstalled = true;
     updateSystemCheckCache({ python: true });
@@ -159,7 +159,7 @@ export async function isPaddleOcrAvailable(): Promise<boolean> {
     await execa(pythonCmd, [
       "-c",
       "import sys\ntry:\n import paddleocr, pdf2image\nexcept:\n import pytesseract, pypdfium2",
-    ]);
+    ], { windowsHide: true });
     cachedPaddleOcrInstalled = true;
   } catch {
     cachedPaddleOcrInstalled = false;
@@ -195,7 +195,7 @@ export async function ensurePaddleOcrInstalled(onProgress?: DownloadProgressCall
       "pypdfium2",
       "pdf2image",
       "pillow",
-    ]);
+    ], { windowsHide: true });
 
     cachedPaddleOcrInstalled = true;
     if (onProgress) onProgress(0, 0, "done");

@@ -3,6 +3,11 @@ import path from "path";
 import crypto from "crypto";
 import { execa } from "execa";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../config/jsonConfig.js";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+
+function headlessOpts<T extends Record<string, any>>(opts?: T, caller = "cliBridgeWorktreeManager") {
+  return applyProcessIntent(opts ?? ({} as T), "headless", { caller, executable: "git" });
+}
 
 export interface CreateWorktreeOptions {
   repoRoot: string;
@@ -66,10 +71,10 @@ export function ensureWorktreeIgnored(repoRoot: string, ignoreName: string = ".w
  * Parses `git worktree list --porcelain` into structured WorktreeEntry items.
  */
 export async function listIsolatedWorktrees(repoRoot: string): Promise<WorktreeEntry[]> {
-  const result = await execa("git", ["worktree", "list", "--porcelain"], {
+  const result = await execa("git", ["worktree", "list", "--porcelain"], headlessOpts({
     cwd: repoRoot,
     reject: false,
-  });
+  }));
 
   if (!result.stdout || result.exitCode !== 0) {
     return [];
@@ -123,10 +128,10 @@ export async function createIsolatedWorktree(options: CreateWorktreeOptions): Pr
   const repoRoot = path.resolve(options.repoRoot);
 
   // Verify that repoRoot is a valid git repository
-  const revParseCheck = await execa("git", ["rev-parse", "--is-inside-work-tree"], {
+  const revParseCheck = await execa("git", ["rev-parse", "--is-inside-work-tree"], headlessOpts({
     cwd: repoRoot,
     reject: false,
-  });
+  }));
   if (revParseCheck.exitCode !== 0) {
     throw new Error(`Directory is not a valid git repository: ${repoRoot}`);
   }
@@ -134,15 +139,15 @@ export async function createIsolatedWorktree(options: CreateWorktreeOptions): Pr
   // Determine base commit SHA (pinned or current HEAD)
   let baseCommitSha = options.baseCommitSha;
   if (!baseCommitSha) {
-    const headRes = await execa("git", ["rev-parse", "HEAD"], { cwd: repoRoot });
+    const headRes = await execa("git", ["rev-parse", "HEAD"], headlessOpts({ cwd: repoRoot }));
     baseCommitSha = headRes.stdout.trim();
   }
 
   // Validate base commit SHA exists
-  const commitCheck = await execa("git", ["cat-file", "-e", `${baseCommitSha}^{commit}`], {
+  const commitCheck = await execa("git", ["cat-file", "-e", `${baseCommitSha}^{commit}`], headlessOpts({
     cwd: repoRoot,
     reject: false,
-  });
+  }));
   if (commitCheck.exitCode !== 0) {
     throw new Error(`Base commit SHA does not exist: ${baseCommitSha}`);
   }
@@ -162,10 +167,10 @@ export async function createIsolatedWorktree(options: CreateWorktreeOptions): Pr
   const addResult = await execa(
     "git",
     ["worktree", "add", targetDir, "-b", sanitizedBranch, baseCommitSha],
-    {
+    headlessOpts({
       cwd: repoRoot,
       reject: false,
-    }
+    })
   );
 
   if (addResult.exitCode !== 0) {
@@ -234,10 +239,10 @@ export async function removeIsolatedWorktree(options: {
       args.push("--force");
     }
 
-    const removeRes = await execa("git", args, {
+    const removeRes = await execa("git", args, headlessOpts({
       cwd: repoRoot,
       reject: false,
-    });
+    }));
 
     // If directory still exists on disk, clean up with retry
     if (fs.existsSync(targetDir)) {
@@ -250,14 +255,14 @@ export async function removeIsolatedWorktree(options: {
   }
 
   // Prune worktree metadata in git
-  await execa("git", ["worktree", "prune"], { cwd: repoRoot, reject: false });
+  await execa("git", ["worktree", "prune"], headlessOpts({ cwd: repoRoot, reject: false }));
 
   // Delete branch if requested
   if (options.deleteBranch && options.branchName) {
-    await execa("git", ["branch", "-D", options.branchName], {
+    await execa("git", ["branch", "-D", options.branchName], headlessOpts({
       cwd: repoRoot,
       reject: false,
-    });
+    }));
   }
 }
 
@@ -271,9 +276,9 @@ export async function getWorktreeCommitProvenance(
   const targetDir = path.resolve(worktreePath);
 
   const [headRes, branchRes, statusRes] = await Promise.all([
-    execa("git", ["rev-parse", "HEAD"], { cwd: targetDir }),
-    execa("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: targetDir, reject: false }),
-    execa("git", ["status", "--porcelain"], { cwd: targetDir, reject: false }),
+    execa("git", ["rev-parse", "HEAD"], headlessOpts({ cwd: targetDir })),
+    execa("git", ["rev-parse", "--abbrev-ref", "HEAD"], headlessOpts({ cwd: targetDir, reject: false })),
+    execa("git", ["status", "--porcelain"], headlessOpts({ cwd: targetDir, reject: false })),
   ]);
 
   const headSha = headRes.stdout.trim();
@@ -284,10 +289,10 @@ export async function getWorktreeCommitProvenance(
   const commitMessages: string[] = [];
 
   if (baseCommitSha) {
-    const logRes = await execa("git", ["log", `${baseCommitSha}..HEAD`, "--oneline"], {
+    const logRes = await execa("git", ["log", `${baseCommitSha}..HEAD`, "--oneline"], headlessOpts({
       cwd: targetDir,
       reject: false,
-    });
+    }));
     if (logRes.exitCode === 0 && logRes.stdout.trim().length > 0) {
       const lines = logRes.stdout.split(/\r?\n/).filter((l) => l.trim().length > 0);
       commitCount = lines.length;
@@ -314,10 +319,10 @@ export async function verifyMainRepoCleanliness(repoRoot: string): Promise<{
   isClean: boolean;
   statusOutput: string;
 }> {
-  const res = await execa("git", ["status", "--porcelain"], {
+  const res = await execa("git", ["status", "--porcelain"], headlessOpts({
     cwd: path.resolve(repoRoot),
     reject: false,
-  });
+  }));
 
   return {
     isClean: res.stdout.trim().length === 0,

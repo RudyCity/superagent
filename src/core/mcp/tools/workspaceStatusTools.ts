@@ -10,7 +10,7 @@ export async function handleGetWorkspace(projectInfo?: ProjectWorkspaceInfo): Pr
   if (!projectInfo) {
     try {
       const { execSync } = await import("child_process");
-      branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8" }).trim();
+      branch = execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8", windowsHide: true }).trim();
     } catch {}
   }
 

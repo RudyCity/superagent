@@ -2,6 +2,11 @@ import chalk from "chalk";
 import { execa } from "execa";
 import path from "path";
 import fs from "fs";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+
+function headlessGitOpts(cwd: string) {
+  return applyProcessIntent({ cwd, reject: false }, "headless", { caller: "GitUtils", executable: "git", cwd });
+}
 
 interface GitFileDiff {
   added: number;
@@ -13,7 +18,7 @@ export type GitSnapshot = Record<string, GitFileDiff>;
 
 export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | null> {
   try {
-    const { stdout: isGit } = await execa("git", ["rev-parse", "--is-inside-work-tree"], { cwd, reject: false });
+    const { stdout: isGit } = await execa("git", ["rev-parse", "--is-inside-work-tree"], headlessGitOpts(cwd));
     if (isGit.trim() !== "true") {
       return null;
     }
@@ -22,12 +27,12 @@ export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | nul
 
     // Get tracked changes relative to HEAD (or fallback to working/staged diff if no HEAD)
     let numstat = "";
-    const headResult = await execa("git", ["diff", "HEAD", "--numstat"], { cwd, reject: false });
+    const headResult = await execa("git", ["diff", "HEAD", "--numstat"], headlessGitOpts(cwd));
     if (headResult.exitCode === 0 && headResult.stdout) {
       numstat = headResult.stdout;
     } else {
-      const diffWorking = await execa("git", ["diff", "--numstat"], { cwd, reject: false });
-      const diffStaged = await execa("git", ["diff", "--cached", "--numstat"], { cwd, reject: false });
+      const diffWorking = await execa("git", ["diff", "--numstat"], headlessGitOpts(cwd));
+      const diffStaged = await execa("git", ["diff", "--cached", "--numstat"], headlessGitOpts(cwd));
       numstat = [diffWorking.stdout, diffStaged.stdout].filter(Boolean).join("\n");
     }
 
@@ -50,7 +55,7 @@ export async function captureGitSnapshot(cwd: string): Promise<GitSnapshot | nul
     }
 
     // Get untracked files
-    const { stdout: untracked } = await execa("git", ["ls-files", "--others", "--exclude-standard"], { cwd, reject: false });
+    const { stdout: untracked } = await execa("git", ["ls-files", "--others", "--exclude-standard"], headlessGitOpts(cwd));
     const untrackedFiles = untracked.split("\n").map(f => f.trim()).filter(Boolean);
 
     if (untrackedFiles.length > 100) {

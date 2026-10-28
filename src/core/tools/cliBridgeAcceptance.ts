@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
 
 export interface AcceptanceArtifactRequirement {
   path: string;
@@ -360,20 +361,20 @@ export async function runVerificationCommands(
 
     try {
       const res = useShell
-        ? await execa(execFile, {
+        ? await execa(execFile, applyProcessIntent({
             cwd,
             shell: true,
             timeout: cappedTimeout,
             env: safeEnv,
             reject: false,
-          })
-        : await execa(execFile, execArgs, {
+          }, "headless", { caller: "cliBridgeAcceptance.runVerificationCommands.shell", executable: execFile, cwd }))
+        : await execa(execFile, execArgs, applyProcessIntent({
             cwd,
             shell: false,
             timeout: cappedTimeout,
             env: safeEnv,
             reject: false,
-          });
+          }, "headless", { caller: "cliBridgeAcceptance.runVerificationCommands.argv", executable: execFile, args: execArgs, cwd }));
 
       const rawOutput = `${res.stdout || ""}\n${res.stderr || ""}`.trim();
       const outputTail = redactSecrets(rawOutput.slice(-500));
@@ -427,15 +428,15 @@ export async function verifyGitDiffConstraints(
 ): Promise<{ passed: boolean; changedFiles: string[]; failureReason?: string }> {
   try {
     const baseCommit = gitDiffReq.baseCommitSha || "HEAD";
-    const res = await execa("git", ["diff", "--name-only", baseCommit], {
+    const res = await execa("git", ["diff", "--name-only", baseCommit], applyProcessIntent({
       cwd,
       reject: false,
-    });
+    }, "headless", { caller: "cliBridgeAcceptance.verifyGitDiffConstraints.diff", executable: "git", cwd }));
 
-    const statusRes = await execa("git", ["status", "--porcelain"], {
+    const statusRes = await execa("git", ["status", "--porcelain"], applyProcessIntent({
       cwd,
       reject: false,
-    });
+    }, "headless", { caller: "cliBridgeAcceptance.verifyGitDiffConstraints.status", executable: "git", cwd }));
 
     const diffFiles = res.stdout ? res.stdout.split(/\r?\n/).filter(Boolean) : [];
     const untrackedFiles = statusRes.stdout

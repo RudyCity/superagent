@@ -47,7 +47,7 @@ export async function isOfficeCliInstalledGlobally(): Promise<boolean> {
   }
   const isWin = process.platform === "win32";
   try {
-    await execa(isWin ? "where.exe" : "which", ["officecli"]);
+    await execa(isWin ? "where.exe" : "which", ["officecli"], { windowsHide: true });
     cachedOfficeCliInstalledGlobally = true;
   } catch {
     cachedOfficeCliInstalledGlobally = false;

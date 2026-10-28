@@ -2,6 +2,11 @@ import fs from "fs";
 import path from "path";
 import { execa } from "execa";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "./config/jsonConfig.js";
+import { applyProcessIntent } from "./process/processSpawnPolicy.js";
+
+function headlessGitOpts(cwd: string) {
+  return applyProcessIntent({ cwd }, "headless", { caller: "workspaceIsolation", executable: "git", cwd });
+}
 
 /**
  * Ensures the project-local .gitignore ignores the .worktrees directory
@@ -26,7 +31,7 @@ export function ensureGitIgnore(cwd: string = process.cwd()): void {
  */
 export async function pruneWorktrees(cwd: string = process.cwd()): Promise<void> {
   try {
-    await execa("git", ["worktree", "prune"], { cwd });
+    await execa("git", ["worktree", "prune"], headlessGitOpts(cwd));
   } catch (err) {
     // Ignore error if git is not initialized
   }
@@ -53,9 +58,7 @@ export async function setupWorkspaceForSession(
 
   // 1. Create the Git Worktree
   // We check out a new branch
-  await execa("git", ["worktree", "add", workspacePath, "-b", branchName], {
-    cwd: process.cwd(),
-  });
+  await execa("git", ["worktree", "add", workspacePath, "-b", branchName], headlessGitOpts(process.cwd()));
 
   // 1.5 Trust the directory and configure Git safe.directory to prevent ownership issues
   addTrustedDirectory(workspacePath);
@@ -86,9 +89,7 @@ export async function cleanupWorkspaceForSession(
   if (fs.existsSync(workspacePath)) {
     try {
       // Remove worktree
-      await execa("git", ["worktree", "remove", workspacePath, "--force"], {
-        cwd: process.cwd(),
-      });
+      await execa("git", ["worktree", "remove", workspacePath, "--force"], headlessGitOpts(process.cwd()));
     } catch (err) {
       // Ignore cleanup error if already removed
     }
@@ -96,9 +97,7 @@ export async function cleanupWorkspaceForSession(
 
   try {
     // Delete the branch
-    await execa("git", ["branch", "-D", branchName], {
-      cwd: process.cwd(),
-    });
+    await execa("git", ["branch", "-D", branchName], headlessGitOpts(process.cwd()));
   } catch (err) {
     // Ignore branch deletion errors
   }

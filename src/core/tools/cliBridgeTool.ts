@@ -1249,6 +1249,7 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
     "Working directory: " + job.cwd,
     "Log: " + job.logPath,
     job.permissionWarning ? "Mode warning: " + job.permissionWarning : "",
+    job.permissionRecoveryWarning ? "Permission recovery: " + job.permissionRecoveryWarning : "",
     job.error ? "Error: " + job.error : "",
     "",
     "Recent output:",

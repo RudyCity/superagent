@@ -1,6 +1,11 @@
 import fs from "fs";
 import path from "path";
 import { execa } from "execa";
+import { applyProcessIntent } from "./process/processSpawnPolicy.js";
+
+function headlessOpts<T extends Record<string, any>>(opts: T, caller = "masterAgent") {
+  return applyProcessIntent(opts, "headless", { caller });
+}
 import { generateText } from "ai";
 import { rateLimiter, concurrencyLimiter } from "./rateLimiter.js";
 import { getSettings } from "./config.js";
@@ -288,13 +293,13 @@ async function diffSanityCheck(cwd: string, branchName: string): Promise<string[
     // Get the diff between the merge base and the branch (expected changes)
     const { stdout: branchDiff } = await execa(
       "git", ["diff", "--stat", `HEAD...${branchName}`],
-      { cwd }
+      headlessOpts({ cwd })
     );
 
     // Get the staged diff (what merge actually produced)
     const { stdout: stagedDiff } = await execa(
       "git", ["diff", "--stat", "--cached"],
-      { cwd }
+      headlessOpts({ cwd })
     );
 
     // Parse line counts from --stat output
@@ -355,7 +360,7 @@ async function runProjectValidation(cwd: string): Promise<{ errors: string[]; wa
     if (pkg.scripts.build) {
       try {
         // bun/pnpm/yarn use `run build`; npm uses `run build` too — all consistent
-        await execa(pm, ["run", "build"], { cwd, timeout: 120000 });
+        await execa(pm, ["run", "build"], headlessOpts({ cwd, timeout: 120000 }));
       } catch (err: any) {
         errors.push(`Build failed (${pm}): ${err.message?.substring(0, 300) || "unknown error"}`);
       }
@@ -365,7 +370,7 @@ async function runProjectValidation(cwd: string): Promise<{ errors: string[]; wa
       try {
         // npm uses `npm test`; others use `<pm> run test` or `<pm> test`
         const testArgs = pm === "npm" ? ["test"] : ["run", "test"];
-        await execa(pm, testArgs, { cwd, timeout: 120000 });
+        await execa(pm, testArgs, headlessOpts({ cwd, timeout: 120000 }));
       } catch (err: any) {
         errors.push(`Tests failed (${pm}): ${err.message?.substring(0, 300) || "unknown error"}`);
       }
@@ -373,7 +378,7 @@ async function runProjectValidation(cwd: string): Promise<{ errors: string[]; wa
 
     if (pkg.scripts.lint) {
       try {
-        await execa(pm, ["run", "lint"], { cwd, timeout: 60000 });
+        await execa(pm, ["run", "lint"], headlessOpts({ cwd, timeout: 60000 }));
       } catch (err: any) {
         // Lint failures are warnings, not hard errors
         warnings.push(`Lint warnings (${pm}): ${err.message?.substring(0, 200) || "unknown"}`);
@@ -446,7 +451,7 @@ export async function validatePostMerge(
 
       let diffText = "";
       try {
-        const { stdout } = await execa("git", ["diff", `HEAD...${branchName}`], { cwd });
+        const { stdout } = await execa("git", ["diff", `HEAD...${branchName}`], headlessOpts({ cwd }));
         diffText = stdout;
       } catch {}
 
@@ -649,7 +654,7 @@ export class MasterAgent {
     try {
       // Pre-check: is the branch already an ancestor of HEAD?
       try {
-        await execa("git", ["merge-base", "--is-ancestor", branchName, "HEAD"], { cwd });
+        await execa("git", ["merge-base", "--is-ancestor", branchName, "HEAD"], headlessOpts({ cwd }));
         return "already-merged";
       } catch (ancestorErr: any) {
         if (ancestorErr.exitCode !== 1) {
@@ -658,7 +663,7 @@ export class MasterAgent {
       }
 
       // Run git merge without committing
-      await execa("git", ["merge", "--no-commit", branchName], { cwd });
+      await execa("git", ["merge", "--no-commit", branchName], headlessOpts({ cwd }));
 
       // ── Post-merge validation BEFORE commit ────────────────────────────
       const validation = await validatePostMerge(cwd, branchName, targetFiles, this.model);
@@ -675,11 +680,11 @@ export class MasterAgent {
         console.error(`[MERGE VALIDATION FAIL] ${this.lastMergeErrors.join("\n")}`);
 
         try {
-          await execa("git", ["merge", "--abort"], { cwd });
+          await execa("git", ["merge", "--abort"], headlessOpts({ cwd }));
         } catch (abortErr) {
           // If abort fails, try reset
           try {
-            await execa("git", ["reset", "--merge"], { cwd });
+            await execa("git", ["reset", "--merge"], headlessOpts({ cwd }));
           } catch {}
         }
 
@@ -695,7 +700,7 @@ export class MasterAgent {
       }
 
       // Validation passed — commit the merge
-      await execa("git", ["commit", "-m", `Merge branch '${branchName}' via Master Agent`], { cwd });
+      await execa("git", ["commit", "-m", `Merge branch '${branchName}' via Master Agent`], headlessOpts({ cwd }));
       if (instance) await this.aggregateSuperagentReport(instance, cwd);
       return "merged";
 
@@ -704,7 +709,7 @@ export class MasterAgent {
       let isConflict = false;
       let conflictedFiles: string[] = [];
       try {
-        const { stdout } = await execa("git", ["diff", "--name-only", "--diff-filter=U"], { cwd });
+        const { stdout } = await execa("git", ["diff", "--name-only", "--diff-filter=U"], headlessOpts({ cwd }));
         if (stdout.trim().length > 0) {
           isConflict = true;
           conflictedFiles = stdout.trim().split("\n").filter(Boolean);
@@ -733,11 +738,11 @@ export class MasterAgent {
         if (allResolved) {
           // Line-based resolution succeeded — validate before committing
           try {
-            await execa("git", ["add", "-A"], { cwd });
+            await execa("git", ["add", "-A"], headlessOpts({ cwd }));
 
             const validation = await validatePostMerge(cwd, branchName, targetFiles, this.model);
             if (validation.valid) {
-              await execa("git", ["commit", "-m", `Merge branch '${branchName}' (line-based resolution) via Master Agent`], { cwd });
+              await execa("git", ["commit", "-m", `Merge branch '${branchName}' (line-based resolution) via Master Agent`], headlessOpts({ cwd }));
               this.lastMergeWarnings = [
                 ...validation.warnings,
                 `Used line-based conflict resolution for: ${resolvedFiles.join(", ")}`,
@@ -782,12 +787,12 @@ export class MasterAgent {
               // Commit summary (--oneline) — compact list of what changed
               const { stdout: commitLog } = await execa(
                 "git", ["log", "--oneline", `HEAD...${branchName}`],
-                { cwd, timeout: 15000 }
+                headlessOpts({ cwd, timeout: 15000 })
               );
               // Patch diff — the actual code changes per commit
               const { stdout: patchLog } = await execa(
                 "git", ["log", "-p", "--no-color", `HEAD...${branchName}`],
-                { cwd, timeout: 15000 }
+                headlessOpts({ cwd, timeout: 15000 })
               );
               const raw = `Commit summary:\n${commitLog}\n\nPatch diff:\n${patchLog}`;
               // Cap at 3000 characters to prevent context overflow (Task 12)
@@ -865,10 +870,10 @@ Instructions:
 
             if (allMarkersResolved) {
               console.log("[INFO] Conflict-resolver subagent successfully removed all conflict markers. Verifying post-merge...");
-              await execa("git", ["add", "-A"], { cwd });
+              await execa("git", ["add", "-A"], headlessOpts({ cwd }));
               const validation = await validatePostMerge(cwd, branchName, targetFiles, this.model);
               if (validation.valid) {
-                await execa("git", ["commit", "-m", `Merge branch '${branchName}' (resolved via conflict-resolver subagent) via Master Agent`], { cwd });
+                await execa("git", ["commit", "-m", `Merge branch '${branchName}' (resolved via conflict-resolver subagent) via Master Agent`], headlessOpts({ cwd }));
                 this.lastMergeWarnings = [
                   ...validation.warnings,
                   `Resolved conflicts via subagent for: ${conflictedFiles.join(", ")}`,
@@ -901,10 +906,10 @@ Instructions:
         }
 
         try {
-          await execa("git", ["merge", "--abort"], { cwd });
+          await execa("git", ["merge", "--abort"], headlessOpts({ cwd }));
         } catch (abortErr) {
           try {
-            await execa("git", ["reset", "--merge"], { cwd });
+            await execa("git", ["reset", "--merge"], headlessOpts({ cwd }));
           } catch {}
         }
 
@@ -918,10 +923,10 @@ Instructions:
         console.error(`[MERGE ERROR] ${this.lastMergeErrors.join("\n")}`);
 
         try {
-          await execa("git", ["merge", "--abort"], { cwd });
+          await execa("git", ["merge", "--abort"], headlessOpts({ cwd }));
         } catch {
           try {
-            await execa("git", ["reset", "--merge"], { cwd });
+            await execa("git", ["reset", "--merge"], headlessOpts({ cwd }));
           } catch {}
         }
 

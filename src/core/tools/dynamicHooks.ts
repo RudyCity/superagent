@@ -3,6 +3,7 @@ import path from "path";
 import { execa } from "execa";
 import { Tool } from "./types.js";
 import { resolveWindowsShell, formatCommandForPowerShell } from "./helpers.js";
+import { applyProcessIntent, traceChildProcess } from "../process/processSpawnPolicy.js";
 import { loadModelConfig, mutateModelConfig } from "../config/jsonConfig.js";
 import { registry } from "../commands/registry.js";
 import { SlashCommand } from "../commands/types.js";
@@ -49,7 +50,7 @@ export async function executeHookCommand(
     }
   }
   const execDir = hookDir && fs.existsSync(hookDir) ? hookDir : cwd;
-  const result = await execa(cmd, {
+  const hookExecOpts = applyProcessIntent({
     shell: shellPath,
     cwd: execDir,
     env: {
@@ -62,7 +63,18 @@ export async function executeHookCommand(
     input: stdinInput ?? "",
     reject: true,
     timeout: timeoutMs,
-  });
+  }, "headless");
+  const result = await traceChildProcess(
+    execa(cmd, hookExecOpts),
+    {
+      caller: "dynamicHooks.executeHookCommand",
+      executable: String(shellPath),
+      args: [cmd],
+      cwd: execDir,
+      intent: "headless",
+      options: hookExecOpts,
+    }
+  );
   return {
     stdout: result.stdout || "",
     stderr: result.stderr || "",

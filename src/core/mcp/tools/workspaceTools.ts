@@ -7,6 +7,7 @@ import path from "path";
 import { execa } from "execa";
 import { StringDecoder } from "node:string_decoder";
 import { createCommandLog } from "../../tools/commandLogger.js";
+import { applyProcessIntent, traceChildProcess } from "../../process/processSpawnPolicy.js";
 import { rollingCommandOutput, readCommandOutputPage } from "../../tools/commandOutputPaging.js";
 import { McpToolResult } from "../types.js";
 
@@ -176,16 +177,8 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
     cmdLogger = createCommandLog(formattedCommand, String(targetCwd));
     const capture = rollingCommandOutput();
     const decoder = new StringDecoder("utf8");
-    const proc = execa(formattedCommand, {
-      shell: shellPath,
-      cwd: targetCwd,
-      timeout: timeoutMs,
-      reject: false,
-      buffer: false,
-      all: true,
-      stdin: "ignore",
-      env: unbufferedEnv,
-    });
+    const mcpExecOpts = applyProcessIntent({ shell: shellPath, cwd: targetCwd, timeout: timeoutMs, reject: false, buffer: false, all: true, stdin: "ignore" as const, env: unbufferedEnv }, "headless");
+    const proc = traceChildProcess(execa(formattedCommand, mcpExecOpts), { caller: "workspaceTools.handleExecCommand", executable: String(shellPath), args: [formattedCommand], cwd: String(targetCwd), intent: "headless", options: mcpExecOpts });
     childPid = proc.pid;
     const record = (data: Buffer | string) => {
       const chunk = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));

@@ -5,6 +5,10 @@ import path from "path";
 import fs from "fs";
 import { Tool, BackgroundTask } from "./types.js";
 import { getGlobalConfigDir, getRootConfigDir, getWorkspaceTasksLogDir } from "../config.js";
+import {
+  applyProcessIntent,
+  traceChildProcess,
+} from "../process/processSpawnPolicy.js";
 import { 
   formatCommandForPowerShell, 
   truncateOutput, 
@@ -202,15 +206,26 @@ export const bashTool: Tool = {
       clearActiveToolOutput();
       const capture = rollingCommandOutput();
       const decoder = new StringDecoder("utf8");
-      const proc = execa(command, {
+      const bashExecOpts = applyProcessIntent({
         shell: shellPath,
         cwd,
         reject: false,
         buffer: false,
         all: true,
         env: unbufferedEnv,
-        stdin: "ignore",
-      });
+        stdin: "ignore" as const,
+      }, "headless");
+      const proc = traceChildProcess(
+        execa(command, bashExecOpts),
+        {
+          caller: "shellTools.bash",
+          executable: String(shellPath),
+          args: [command],
+          cwd,
+          intent: "headless",
+          options: bashExecOpts,
+        }
+      );
 
       let abortPromiseReject: ((err: any) => void) | undefined;
       const abortPromise = new Promise<never>((_, reject) => {
@@ -389,15 +404,26 @@ export const runCommandTool: Tool = {
       clearActiveToolOutput();
       const capture = rollingCommandOutput();
       const decoder = new StringDecoder("utf8");
-      const proc = execa(command, {
+      const runCmdOpts = applyProcessIntent({
         shell: shellPath,
         cwd: targetCwd,
         reject: false,
         buffer: false,
         all: true,
         env: unbufferedEnv,
-        stdin: "ignore",
-      });
+        stdin: "ignore" as const,
+      }, "headless");
+      const proc = traceChildProcess(
+        execa(command, runCmdOpts),
+        {
+          caller: "shellTools.run_command",
+          executable: String(shellPath),
+          args: [command],
+          cwd: targetCwd,
+          intent: "headless",
+          options: runCmdOpts,
+        }
+      );
 
       let abortPromiseReject: ((err: any) => void) | undefined;
       const abortPromise = new Promise<never>((_, reject) => {
@@ -651,13 +677,24 @@ export const runBackgroundProcessTool: Tool = {
         }
       }
 
-      currentProc = execa(finalCommand, {
+      const bgOpts = applyProcessIntent({
         shell: shellPath,
         cwd: targetCwd,
         reject: false,
         all: true,
         env: augmentWindowsEnvPath({ ...process.env, PYTHONUNBUFFERED: "1" }),
-      });
+      }, "headless");
+      currentProc = traceChildProcess(
+        execa(finalCommand, bgOpts),
+        {
+          caller: "shellTools.run_background_process",
+          executable: String(shellPath),
+          args: [finalCommand],
+          cwd: targetCwd,
+          intent: "headless",
+          options: bgOpts,
+        }
+      );
 
       let currentTask: BackgroundTask;
       if (!task) {

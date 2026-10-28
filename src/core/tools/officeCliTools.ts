@@ -80,6 +80,7 @@ export const officeCliTool: Tool = {
         cwd,
         reject: false,
         signal,
+        windowsHide: true,
       });
 
       if (stderr && !stdout) {

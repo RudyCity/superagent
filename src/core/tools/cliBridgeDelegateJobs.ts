@@ -3,12 +3,17 @@
  * These jobs return quickly, run concurrently, persist metadata, and log all output.
  */
 import { execa } from "execa";
-import { spawn } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getRootConfigDir } from "../config/paths.js";
+import {
+  applyProcessIntent,
+  resolveWindowsDirectExecutable,
+  spawnHiddenTaskkill,
+  traceChildProcess,
+} from "../process/processSpawnPolicy.js";
 import {
   resolveExpectedArtifacts, snapshotExpectedArtifacts, inspectExpectedArtifacts, artifactClaimIdentity,
   type ArtifactBaseline, type ArtifactEvidence,
@@ -87,6 +92,11 @@ export interface DelegateJob {
   /** Diagnostic only: no permission escalation or automatic retries. */
   permissionWarning?: string;
   permissionFailure?: string;
+  /** Earlier denial was superseded by a clean terminal AGY result. */
+  permissionRecovered?: boolean;
+  permissionRecoveryWarning?: string;
+  /** Sticky when the terminal AGY result itself declares denied_actions. */
+  finalPermissionFailure?: boolean;
   artifactEvidence?: ArtifactEvidence[];
   pid: number | null;
   /** Server-internal provenance; never populated from tool args or user prompt. */
@@ -479,6 +489,23 @@ function queueLog(jobId: string, logPath: string, chunk: string): void {
   void next.catch(() => {});
 }
 
+function applyAgyPermissionSignal(job: DelegateJob, signal: ReturnType<typeof inspectAgyBridgeLine>): void {
+  if (signal.modeWarning) job.permissionWarning = signal.modeWarning;
+  if (signal.finalPermissionDenied) {
+    job.finalPermissionFailure = true;
+    job.permissionFailure = signal.finalPermissionDenied;
+    job.permissionRecovered = false;
+    job.permissionRecoveryWarning = undefined;
+    return;
+  }
+  if (signal.permissionDenied) job.permissionFailure = signal.permissionDenied;
+  if (signal.finalResult && !job.finalPermissionFailure && job.permissionFailure) {
+    job.permissionRecovered = true;
+    job.permissionRecoveryWarning = `Earlier AGY permission denial was superseded by a clean final result: ${job.permissionFailure}`;
+    job.permissionFailure = undefined;
+  }
+}
+
 function updateOutput(job: DelegateJob, chunk: Buffer | string): void {
   const raw = chunk.toString();
   if (job.cliAlias === "agy") {
@@ -487,8 +514,7 @@ function updateOutput(job: DelegateJob, chunk: Buffer | string): void {
     progressFragments.set(job.jobId, parts.pop()?.slice(-4096) ?? "");
     for (const part of parts) {
       const signal = inspectAgyBridgeLine(part);
-      if (signal.modeWarning) job.permissionWarning = signal.modeWarning;
-      if (signal.permissionDenied) job.permissionFailure = signal.permissionDenied;
+      applyAgyPermissionSignal(job, signal);
       if (part.length > 65536 || !part.trimStart().startsWith("{")) continue;
       try {
         const record = JSON.parse(part) as Record<string, any>;
@@ -518,7 +544,7 @@ function killProcessTree(jobId: string, proc: any): void {
   if (!proc) return;
   const pid = typeof proc.pid === "number" ? proc.pid : jobs.get(jobId)?.pid;
   if (process.platform === "win32" && pid) {
-    try { spawn("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", windowsHide: true }).on("error", () => {}); } catch {}
+    spawnHiddenTaskkill(pid, true, "cliBridgeDelegateJobs.killProcessTree");
   } else if (pid) {
     try { process.kill(-pid, "SIGTERM"); } catch { try { proc.kill?.("SIGTERM"); } catch {} }
   } else {
@@ -528,7 +554,7 @@ function killProcessTree(jobId: string, proc: any): void {
   if (oldTimer) clearTimeout(oldTimer);
   const timer = setTimeout(() => {
     if (process.platform === "win32" && pid) {
-      try { spawn("taskkill", ["/F", "/T", "/PID", String(pid)], { stdio: "ignore", windowsHide: true }).on("error", () => {}); } catch {}
+      spawnHiddenTaskkill(pid, true, "cliBridgeDelegateJobs.killProcessTreeDelayed");
     } else if (pid) {
       try { process.kill(-pid, "SIGKILL"); } catch { try { proc.kill?.("SIGKILL"); } catch {} }
     }
@@ -580,8 +606,7 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
       const lastLine = progressFragments.get(job.jobId);
       if (lastLine) {
         const signal = inspectAgyBridgeLine(lastLine);
-        if (signal.modeWarning) job.permissionWarning = signal.modeWarning;
-        if (signal.permissionDenied) job.permissionFailure = signal.permissionDenied;
+        applyAgyPermissionSignal(job, signal);
       }
     }
     job.exitCode = typeof result?.exitCode === "number" ? result.exitCode : null;
@@ -837,7 +862,9 @@ async function launchJobExecution(
   }
 
   let runArgs = opts.args ? [...opts.args] : [];
-  if ((opts.binary === "agy" || opts.binary.toLowerCase().endsWith("agy.exe")) && opts.prompt) {
+  const binaryBase = path.basename(opts.binary).toLowerCase();
+  const isAgyBinary = binaryBase === "agy" || binaryBase === "agy.exe" || binaryBase === "agy.cmd" || binaryBase === "agy.bat";
+  if (isAgyBinary && opts.prompt) {
     const hasPrint = runArgs.includes("-p") || runArgs.includes("--print") || runArgs.includes("-i");
     if (!hasPrint) {
       const mode = opts.roleProfile === "reviewer" || opts.roleProfile === "architect" ? "plan" : "accept-edits";
@@ -846,12 +873,24 @@ async function launchJobExecution(
   }
 
   let proc: any;
+  const resolvedJobBinary = resolveWindowsDirectExecutable(opts.binary, opts.env ?? process.env);
   try {
-    proc = execa(opts.binary, runArgs, {
+    const jobExecOpts = applyProcessIntent({
       cwd: job.cwd, all: true, buffer: false, reject: false,
       env: opts.env ?? process.env, input: opts.prompt, timeout: opts.timeoutMs,
-      forceKillAfterDelay: 5_000, windowsHide: true, detached: process.platform !== "win32",
-    });
+      forceKillAfterDelay: 5_000, detached: process.platform !== "win32",
+    }, "headless");
+    proc = traceChildProcess(
+      execa(resolvedJobBinary, runArgs, jobExecOpts),
+      {
+        caller: "cliBridgeDelegateJobs.launchDelegateJob",
+        executable: resolvedJobBinary,
+        args: runArgs,
+        cwd: job.cwd,
+        intent: "headless",
+        options: jobExecOpts,
+      }
+    );
   } catch (error) {
     job.status = "failed";
     job.completionState = "failed";

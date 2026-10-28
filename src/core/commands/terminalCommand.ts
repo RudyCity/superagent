@@ -19,6 +19,10 @@ import {
 } from "../tools.js";
 import { killProcessTree } from "../tools/shellTools.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
+import {
+  applyProcessIntent,
+  traceChildProcess,
+} from "../process/processSpawnPolicy.js";
 function normalizeCwd(cwdPath: string): string {
   if (process.platform === "win32") {
     const msysMatch = cwdPath.match(/^\/([a-zA-Z])($|\/.*)/);
@@ -278,13 +282,26 @@ export const terminalCommand: SlashCommand = {
           shellPath = "powershell.exe";
         }
 
-        const proc = execa(commandStr, {
+        // Product contract: `/terminal bg <command>` is explicitly a headless background
+        // execution path and must NEVER open a visible Windows console window.
+        const bgTermOpts = applyProcessIntent({
           shell: shellPath,
           cwd: runCwd,
           env: runEnv,
           reject: false,
           all: true,
-        });
+        }, "headless");
+        const proc = traceChildProcess(
+          execa(commandStr, bgTermOpts),
+          {
+            caller: "terminalCommand.bg",
+            executable: String(shellPath),
+            args: [commandStr],
+            cwd: runCwd,
+            intent: "headless",
+            options: bgTermOpts,
+          }
+        );
 
         const task: BackgroundTask = {
           id: taskId,
@@ -495,13 +512,26 @@ export const terminalCommand: SlashCommand = {
         let shellExe: string | boolean = true;
         if (process.platform === "win32") shellExe = "powershell.exe";
 
-        const proc = execa(commandStr, {
+        // The underlying log-writer runner stays headless; the visible terminal
+        // window for `/terminal <command>` is opened explicitly by `viewerProc` below.
+        const fgRunnerOpts = applyProcessIntent({
           shell: shellExe,
           cwd: runCwd,
           env: runEnv,
           reject: false,
           all: true,
-        });
+        }, "headless");
+        const proc = traceChildProcess(
+          execa(commandStr, fgRunnerOpts),
+          {
+            caller: "terminalCommand.foregroundRunner",
+            executable: String(shellExe),
+            args: [commandStr],
+            cwd: runCwd,
+            intent: "headless",
+            options: fgRunnerOpts,
+          }
+        );
 
         const task: BackgroundTask = {
           id: taskId,
@@ -567,10 +597,22 @@ export const terminalCommand: SlashCommand = {
             const viewerScriptPath = path.join(logDir, `${taskId}-viewer.ps1`);
             fsCb.writeFileSync(viewerScriptPath, viewerScript, "utf8");
 
+            // Product contract: foreground `/terminal <command>` intentionally opens a
+            // visible OS terminal window for the user. Preserve `visibleTerminal` intent.
+            const viewerOpts = applyProcessIntent(
+              { detached: true, stdio: "ignore" as const, windowsVerbatimArguments: true, reject: false },
+              "visibleTerminal",
+              {
+                caller: "terminalCommand.visibleViewer",
+                executable: "cmd.exe",
+                args: ["/c", `start /wait "${safeTitle}"`],
+                cwd: runCwd,
+              }
+            );
             const viewerProc = execa(
               "cmd.exe",
               ["/c", `start /wait "${safeTitle}" /D "${safeCwd}" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${viewerScriptPath}"`],
-              { detached: true, stdio: "ignore", windowsVerbatimArguments: true, reject: false }
+              viewerOpts
             );
             const handleViewerExit = () => {
               if (!task.hasExited) {

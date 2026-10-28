@@ -6,6 +6,11 @@ import { execa } from "execa";
 import { logE2E } from "../utils/unifiedLogger.js";
 import { loadRemoteAgentConfig, updateRemoteAgentConfig } from "./config.js";
 import { scrubSecrets } from "./contextSanitizer.js";
+import { applyProcessIntent, execHiddenTaskkillSync, traceChildProcess } from "../process/processSpawnPolicy.js";
+
+function headlessOpts<T extends Record<string, any>>(opts?: T, caller = "cloudflareTunnel") {
+  return applyProcessIntent(opts ?? ({} as T), "headless", { caller });
+}
 
 export type TunnelServiceKind = "muse-websocket" | "mcp-http" | "superagent-http" | "unknown";
 
@@ -298,14 +303,14 @@ export function isOwnQuickTunnelProcessSync(pid: number, localUrl: string): bool
     if (process.platform === "win32") {
       cmdline = execSync(
         `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -eq ${pid} } | Select-Object -ExpandProperty CommandLine"`,
-        { encoding: "utf-8", timeout: 2500, stdio: ["ignore", "pipe", "ignore"] }
+        headlessOpts({ encoding: "utf-8" as const, timeout: 2500, stdio: ["ignore", "pipe", "ignore"] }, "cloudflareTunnel.isOwnQuickTunnelProcessSync.win")
       );
     } else if (process.platform === "darwin") {
-      cmdline = execSync(`ps -p ${pid} -o command=`, {
-        encoding: "utf-8",
+      cmdline = execSync(`ps -p ${pid} -o command=`, headlessOpts({
+        encoding: "utf-8" as const,
         timeout: 2500,
         stdio: ["ignore", "pipe", "ignore"],
-      });
+      }, "cloudflareTunnel.isOwnQuickTunnelProcessSync.mac"));
     } else {
       cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf-8").replace(/\0/g, " ");
     }
@@ -331,24 +336,24 @@ async function readProcessCommandLine(pid: number): Promise<string> {
           "-Command",
           `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object -ExpandProperty CommandLine`,
         ],
-        { timeout: 3000, reject: false }
+        headlessOpts({ timeout: 3000, reject: false }, "cloudflareTunnel.readProcessCommandLine.win")
       );
       return stdout || "";
     }
     if (process.platform === "darwin") {
-      const { stdout } = await execa("ps", ["-p", String(pid), "-o", "command="], {
+      const { stdout } = await execa("ps", ["-p", String(pid), "-o", "command="], headlessOpts({
         timeout: 3000,
         reject: false,
-      });
+      }, "cloudflareTunnel.readProcessCommandLine.mac"));
       return stdout || "";
     }
     try {
       return fs.readFileSync(`/proc/${pid}/cmdline`, "utf-8").replace(/\0/g, " ");
     } catch {
-      const { stdout } = await execa("ps", ["-p", String(pid), "-o", "args="], {
+      const { stdout } = await execa("ps", ["-p", String(pid), "-o", "args="], headlessOpts({
         timeout: 3000,
         reject: false,
-      });
+      }, "cloudflareTunnel.readProcessCommandLine.linux"));
       return stdout || "";
     }
   } catch {
@@ -381,7 +386,7 @@ export async function findCloudflaredBinary(): Promise<string | null> {
 
   // 1. Try system PATH
   try {
-    const { stdout } = await execa(cmd, ["cloudflared"]);
+    const { stdout } = await execa(cmd, ["cloudflared"], headlessOpts({}, "cloudflareTunnel.findCloudflaredBinary"));
     const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
     if (lines.length > 0 && fs.existsSync(lines[0])) {
       return lines[0];
@@ -590,10 +595,21 @@ export class CloudflareTunnelManager {
     return new Promise<TunnelMetadata>((resolve, reject) => {
       let isResolved = false;
 
-      const child = spawn(binary, ["tunnel", "--url", localTarget], {
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-      });
+      const child = traceChildProcess(
+        spawn(
+          binary,
+          ["tunnel", "--url", localTarget],
+          headlessOpts({
+            stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"],
+          }, "cloudflareTunnel.startQuickTunnel")
+        ),
+        {
+          caller: "cloudflareTunnel.startQuickTunnel",
+          executable: binary,
+          args: ["tunnel", "--url", localTarget],
+          intent: "headless",
+        }
+      );
 
       this.activeProcesses.set(port, child);
       this.currentProcess = child;
@@ -602,9 +618,7 @@ export class CloudflareTunnelManager {
         try {
           if (child && child.pid && !child.killed) {
             if (process.platform === "win32") {
-              try {
-                execSync(`taskkill /pid ${child.pid} /T /F`, { stdio: "ignore" });
-              } catch {
+              if (!execHiddenTaskkillSync(child.pid, true, 3000, "cloudflareTunnel.exitHandler")) {
                 child.kill();
               }
             } else {
@@ -754,8 +768,9 @@ export class CloudflareTunnelManager {
         if (proc && !expectedServiceKind) {
           try {
             if (proc.pid && process.platform === "win32") {
-              try { execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: "ignore" }); }
-              catch { proc.kill("SIGTERM"); }
+              if (!execHiddenTaskkillSync(proc.pid, true, 3000, "cloudflareTunnel.stopPending")) {
+                proc.kill("SIGTERM");
+              }
             } else {
               proc.kill("SIGTERM");
             }
@@ -790,9 +805,7 @@ export class CloudflareTunnelManager {
         try {
           if (proc.pid) {
             if (process.platform === "win32") {
-              try {
-                execSync(`taskkill /pid ${proc.pid} /T /F`, { stdio: "ignore" });
-              } catch {
+              if (!execHiddenTaskkillSync(proc.pid, true, 3000, "cloudflareTunnel.stopQuickTunnel")) {
                 proc.kill("SIGTERM");
               }
             } else {
@@ -826,7 +839,7 @@ export class CloudflareTunnelManager {
           ) {
             if (process.platform === "win32") {
               try {
-                await execa("taskkill", ["/pid", String(persisted.pid), "/T", "/F"]);
+                await execa("taskkill", ["/pid", String(persisted.pid), "/T", "/F"], headlessOpts({}, "cloudflareTunnel.stopPersisted"));
               } catch {
                 process.kill(persisted.pid, "SIGTERM");
               }
@@ -1127,21 +1140,21 @@ export function buildMuseConnectionPrompt(opts: BuildMusePromptOptions): string 
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     if (process.platform === "win32") {
-      await execa("powershell", ["-NoProfile", "-Command", "Set-Clipboard", "-Value", "$input"], {
+      await execa("powershell", ["-NoProfile", "-Command", "Set-Clipboard", "-Value", "$input"], headlessOpts({
         input: text,
         timeout: 2000,
         reject: false,
-      });
+      }, "cloudflareTunnel.copyTextToClipboard.win"));
       return true;
     } else if (process.platform === "darwin") {
-      await execa("pbcopy", [], { input: text, timeout: 2000, reject: false });
+      await execa("pbcopy", [], headlessOpts({ input: text, timeout: 2000, reject: false }, "cloudflareTunnel.copyTextToClipboard.mac"));
       return true;
     } else if (process.platform === "linux") {
       try {
-        await execa("wl-copy", [], { input: text, timeout: 1500, reject: false });
+        await execa("wl-copy", [], headlessOpts({ input: text, timeout: 1500, reject: false }, "cloudflareTunnel.copyTextToClipboard.wl"));
         return true;
       } catch {
-        await execa("xclip", ["-selection", "clipboard"], { input: text, timeout: 1500, reject: false });
+        await execa("xclip", ["-selection", "clipboard"], headlessOpts({ input: text, timeout: 1500, reject: false }, "cloudflareTunnel.copyTextToClipboard.xclip"));
         return true;
       }
     }

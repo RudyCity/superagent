@@ -73,7 +73,7 @@ export async function checkBinaryAvailability(name: "bun" | "node" | "git" | "py
   let available = false;
   try {
     const { execa } = await import("execa");
-    await execa(isWin ? "where.exe" : "which", [name]);
+    await execa(isWin ? "where.exe" : "which", [name], { windowsHide: true });
     available = true;
   } catch {
     available = false;

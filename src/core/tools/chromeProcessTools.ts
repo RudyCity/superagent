@@ -4,6 +4,7 @@ import { promisify } from "util";
 import { Tool } from "./types.js";
 import { detectChromeProfiles } from "./chromeProfileTools.js";
 import { runPsEncoded } from "./chromeCommon.js";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
 import { assertNoExternalBrowserMutation, withBrowserLifecycleOperation } from "./chromeCdpSessionManager.js";
 
 const execAsync = promisify(exec);
@@ -319,10 +320,10 @@ async function enrichWindowsTabs(browsers: ChromeBrowserInfo[]): Promise<void> {
 
 /** Scan running Chrome browser processes on macOS/Linux via ps. */
 async function scanPosixBrowsers(): Promise<ChromeBrowserInfo[]> {
-  const { stdout } = await execAsync("ps -ax -o pid,lstart,command", {
+  const { stdout } = await execAsync("ps -ax -o pid,lstart,command", applyProcessIntent({
     maxBuffer: 10 * 1024 * 1024,
     timeout: SCAN_TIMEOUT_MS,
-  });
+  }, "headless", { caller: "chromeProcessTools.scanPosixBrowsers", executable: "ps" }));
   const out: ChromeBrowserInfo[] = [];
   for (const line of stdout.split("\n")) {
     const m = line.match(
@@ -467,9 +468,9 @@ export const closeChromeProfileTool: Tool = {
             // A global lifecycle lock prevents new claims until all process
             // termination calls have returned (no check-then-kill race).
             if (os.platform() === "win32") {
-              await execAsync(`taskkill /F /PID ${b.pid}`, { timeout: 10000 });
+              await execAsync(`taskkill /F /PID ${b.pid}`, applyProcessIntent({ timeout: 10000 }, "headless", { caller: "chromeProcessTools.closeChromeProfile.win", executable: "taskkill" }));
             } else {
-              await execAsync(`kill ${b.pid}`, { timeout: 10000 });
+              await execAsync(`kill ${b.pid}`, applyProcessIntent({ timeout: 10000 }, "headless", { caller: "chromeProcessTools.closeChromeProfile.posix", executable: "kill" }));
             }
             killed.push(b.pid);
           } catch (err: any) {

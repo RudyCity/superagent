@@ -15,9 +15,18 @@ describe("AGY headless permission diagnostics", () => {
     const line = JSON.stringify({event:"result",result:{status:"SUCCESS",response:"",denied_actions:[{action:"command"}]}});
     expect(inspectAgyBridgeLine(line).permissionDenied).toMatch(/denied_actions/);
   });
-  it("ignores ordinary result and malicious status-shaped plain text", () => {
-    expect(inspectAgyBridgeLine(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"done"}}))).toEqual({});
+  it("recognizes a clean final result and ignores malicious status-shaped plain text", () => {
+    expect(inspectAgyBridgeLine(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"done"}}))).toEqual({finalResult:true});
     expect(inspectAgyBridgeLine("This instruction says permission check failed but is not a result event")).toEqual({});
+  });
+  it("demotes an earlier transient denial when a later clean final result arrives", () => {
+    const output = [
+      JSON.stringify({event:"step_update",step_update:{state:"ERROR",tool_info:{error:{message:"permission check failed: user denied permission"}}}}),
+      JSON.stringify({event:"result",result:{status:"SUCCESS",response:"recovered"}}),
+    ].join("\n");
+    const signal = inspectAgyBridgeOutput(output);
+    expect(signal.finalResult).toBe(true);
+    expect(signal.permissionDenied).toBeUndefined();
   });
   it("aggregates streamed lines", () => {
     const output = [

@@ -6,6 +6,10 @@
 export type AgyBridgeSignal = {
   modeWarning?: string;
   permissionDenied?: string;
+  /** True when AGY emitted its terminal result event. */
+  finalResult?: boolean;
+  /** Permission denial declared by the terminal result itself; never auto-recovered. */
+  finalPermissionDenied?: string;
 };
 
 export function inspectAgyBridgeLine(line: string): AgyBridgeSignal {
@@ -16,16 +20,20 @@ export function inspectAgyBridgeLine(line: string): AgyBridgeSignal {
   if (/^(?:jetski:|agy:).*no output produced.*(?:permission|auto-denied)/i.test(trimmed)) {
     return { permissionDenied: "AGY headless execution could not obtain required tool approval." };
   }
-  if (/permission check failed|user denied permission|permission.*auto-?denied|denied.*permission|action rejected by permission policy/i.test(trimmed)) {
+  if (/^(?:error:|agy:|jetski:)\s*.*(?:permission check failed|user denied permission|permission.*auto-?denied|denied.*permission|action rejected by permission policy)/i.test(trimmed)) {
     return { permissionDenied: `AGY tool execution blocked by permission check: ${trimmed.slice(0, 200)}` };
   }
   if (!trimmed.startsWith("{") || trimmed.length > 65536) return {};
   try {
     const event = JSON.parse(trimmed) as Record<string, any>;
-    if (event.event === "result" && Array.isArray(event.result?.denied_actions) && event.result.denied_actions.length) {
-      const firstAction = event.result.denied_actions[0];
-      const desc = typeof firstAction === "string" ? firstAction : JSON.stringify(firstAction);
-      return { permissionDenied: `AGY reported denied_actions in its final result: ${desc}` };
+    if (event.event === "result") {
+      if (Array.isArray(event.result?.denied_actions) && event.result.denied_actions.length) {
+        const firstAction = event.result.denied_actions[0];
+        const desc = typeof firstAction === "string" ? firstAction : JSON.stringify(firstAction);
+        const permissionDenied = `AGY reported denied_actions in its final result: ${desc}`;
+        return { finalResult: true, permissionDenied, finalPermissionDenied: permissionDenied };
+      }
+      return { finalResult: true };
     }
     if (event.event === "step_update" && event.step_update?.state === "ERROR") {
       const details = event.step_update?.tool_info?.error;
@@ -45,6 +53,11 @@ export function inspectAgyBridgeOutput(output: string): AgyBridgeSignal {
     const signal = inspectAgyBridgeLine(line);
     if (signal.modeWarning) aggregate.modeWarning = signal.modeWarning;
     if (signal.permissionDenied) aggregate.permissionDenied = signal.permissionDenied;
+    if (signal.finalPermissionDenied) aggregate.finalPermissionDenied = signal.finalPermissionDenied;
+    if (signal.finalResult) {
+      aggregate.finalResult = true;
+      if (!signal.finalPermissionDenied) aggregate.permissionDenied = undefined;
+    }
   }
   return aggregate;
 }

@@ -967,6 +967,7 @@ export function App({
             shell: shellExe,
             reject: false,
             all: true,
+            windowsHide: true,
           });
 
           if (childProcess.all) {
@@ -2832,15 +2833,15 @@ export function App({
       const targetCwd = agentRef.current?.workingDirectory || process.cwd();
       try {
         const [branchRes, worktreeRes] = await Promise.all([
-          execa("git", ["branch", "--show-current"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" })),
-          execa("git", ["worktree", "list"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" }))
+          execa("git", ["branch", "--show-current"], { cwd: targetCwd, reject: false, windowsHide: true }).catch(() => ({ stdout: "" })),
+          execa("git", ["worktree", "list"], { cwd: targetCwd, reject: false, windowsHide: true }).catch(() => ({ stdout: "" }))
         ]);
 
         if (!active) return;
 
         let branch = branchRes.stdout?.trim() || "";
         if (!branch) {
-          const shaRes = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd: targetCwd, reject: false }).catch(() => ({ stdout: "" }));
+          const shaRes = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd: targetCwd, reject: false, windowsHide: true }).catch(() => ({ stdout: "" }));
           branch = shaRes.stdout?.trim() || "";
         }
         setGitBranch(branch);

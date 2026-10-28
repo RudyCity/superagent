@@ -105,7 +105,7 @@ export class LocalProjectProvider implements ProjectProvider {
         cwd: workspace,
         encoding: "utf8",
         timeout: 3000,
-        stdio: ["ignore", "pipe", "ignore"],
+        stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
       }).trim() || undefined;
     } catch {
       // A non-Git directory is valid as a project workspace.
@@ -182,7 +182,7 @@ export class LocalProjectProvider implements ProjectProvider {
         cwd: root,
         encoding: "utf8",
         timeout: Math.max(250, Math.min(5000, options.timeoutMs ?? 2000)),
-        stdio: ["ignore", "pipe", "ignore"],
+        stdio: ["ignore", "pipe", "ignore"], windowsHide: true,
       });
       addCheck("git_repository", "passed", "Git repository detected.", gitCheckAt);
     } catch {

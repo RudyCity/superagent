@@ -39,7 +39,7 @@ export async function getGitSha(cwd?: string): Promise<string | undefined> {
   try {
     const res = await execa("git", ["rev-parse", "--short", "HEAD"], {
       cwd: cwd || process.cwd(),
-      reject: false,
+      reject: false, windowsHide: true,
     });
     return res.stdout.trim() || undefined;
   } catch {

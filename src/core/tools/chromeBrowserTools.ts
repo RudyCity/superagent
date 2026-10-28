@@ -6,6 +6,7 @@ import { promisify } from "util";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath, detectChromeProfiles } from "./chromeProfileTools.js";
 import { callBrowser, NO_BROWSER_CONTROL_CONNECTION_MSG, withTimeout } from "./chromeCommon.js";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
 // PERF: `remoteChromeBridge` pulls in the `ws` websocket library and a
 // per-module HTTP server. It is only needed when a tool *actually* runs
 // — not at module-import time, when we are just constructing the
@@ -130,7 +131,7 @@ export const launchChromeProfileTool: Tool = {
     }
 
     try {
-      await execAsync(cmd, { timeout: 15000 });
+      await execAsync(cmd, applyProcessIntent({ timeout: 15000 }, "headless", { caller: "chromeBrowserTools.launchChromeProfile", executable: "chrome" }));
       const isolatedNote = resolvedDataDir ? ` (isolated debug profile: \`${resolvedDataDir}\`)` : "";
       const baseMsg = `Launched Chrome with profile \`${safeProfile}\`${isolatedNote}${remoteDebuggingPort ? ` (CDP port ${remoteDebuggingPort})` : ""}${url ? ` opening \`${url}\`` : ""}.`;
       if (remoteDebuggingPort) {

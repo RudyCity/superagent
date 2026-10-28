@@ -39,7 +39,7 @@ export async function ensureTunnelClientInstalled(onProgress?: DownloadProgressC
     try {
       await execa(process.versions.bun ? process.execPath : "bun", ["add", "-g", "@openai/tunnel-client"], {
         stdio: "ignore",
-        timeout: 45000,
+        timeout: 45000, windowsHide: true,
       });
     } catch (bunErr: any) {
       await logSetupDebug(`bun add -g @openai/tunnel-client exited with: ${bunErr?.message || bunErr}`);

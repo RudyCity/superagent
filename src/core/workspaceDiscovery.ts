@@ -80,7 +80,7 @@ async function walkDirectory(
  */
 async function isGitRepo(dir: string): Promise<boolean> {
   try {
-    await execAsync("git rev-parse --is-inside-work-tree", { cwd: dir });
+    await execAsync("git rev-parse --is-inside-work-tree", { cwd: dir, windowsHide: true });
     return true;
   } catch {
     return false;
@@ -95,6 +95,7 @@ async function getGitFiles(dir: string): Promise<string[]> {
     const { stdout } = await execAsync("git ls-files --cached --others --exclude-standard", {
       cwd: dir,
       maxBuffer: 10 * 1024 * 1024,
+      windowsHide: true,
     });
     return stdout.split(/\r?\n/).filter((line) => line.trim() !== "");
   } catch {

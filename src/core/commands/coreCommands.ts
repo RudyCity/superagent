@@ -291,7 +291,7 @@ export const initCommand: SlashCommand = {
     let gitInitialized = false;
 
     try {
-      const { stdout } = await execa("git", ["rev-parse", "--is-inside-work-tree"], { cwd, reject: false });
+      const { stdout } = await execa("git", ["rev-parse", "--is-inside-work-tree"], { cwd, reject: false, windowsHide: true });
       if (stdout?.trim() === "true") {
         gitStatus = "ACTIVE";
       }
@@ -300,7 +300,7 @@ export const initCommand: SlashCommand = {
     if (gitStatus !== "ACTIVE") {
       ctx.addLine({ type: "system", content: "🔧 Git not detected. Initializing repository...", timestamp: now });
       try {
-        await execa("git", ["init"], { cwd });
+        await execa("git", ["init"], { cwd, windowsHide: true });
         gitStatus = "INITIALIZED";
         gitInitialized = true;
 
@@ -332,11 +332,11 @@ export const initCommand: SlashCommand = {
 
     if (gitStatus === "ACTIVE" || gitStatus === "INITIALIZED") {
       try {
-        const { stdout: branch } = await execa("git", ["branch", "--show-current"], { cwd, reject: false });
+        const { stdout: branch } = await execa("git", ["branch", "--show-current"], { cwd, reject: false, windowsHide: true });
         gitBranch = branch?.trim() || "(detached)";
       } catch {}
       try {
-        const { stdout: sha } = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd, reject: false });
+        const { stdout: sha } = await execa("git", ["rev-parse", "--short", "HEAD"], { cwd, reject: false, windowsHide: true });
         gitSha = sha?.trim() || (gitInitialized ? "(no commits yet)" : "unknown");
       } catch {
         gitSha = gitInitialized ? "(no commits yet)" : "unknown";
@@ -835,7 +835,7 @@ export const securityCommand: SlashCommand = {
         const { platform, userInfo } = await import("node:os");
         const user = userInfo().username;
         const expected = process.env.SUPERAGENT_OS_RUNNER_IDENTITY?.trim();
-        const actual = process.platform === "win32" ? (await import("node:child_process")).execFileSync("whoami.exe", [], { encoding: "utf8", timeout: 3000 }).trim() : user;
+        const actual = process.platform === "win32" ? (await import("node:child_process")).execFileSync("whoami.exe", [], { encoding: "utf8", timeout: 3000, windowsHide: true }).trim() : user;
         const identityVerified = Boolean(expected && actual.toLowerCase() === expected.toLowerCase());
         const mode = platform() === "win32" ? "Windows" : platform();
         if (op === "enable" || op === "disable") return say(`OS sandbox ${op} refused: no isolated runner process/token is provisioned. Configure a separate non-admin Windows account and ACLs, then rerun /security sandbox doctor. This command never pretends an application toggle provides OS isolation.`);

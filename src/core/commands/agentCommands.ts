@@ -75,7 +75,7 @@ export const worktreeCommand: SlashCommand = {
       });
       ctx.setIsProcessing?.(true);
       try {
-        const result = await execa("git", ["worktree", "list"]);
+        const result = await execa("git", ["worktree", "list"], { windowsHide: true });
         const lines = result.stdout.trim().split("\n").filter(Boolean);
         const formatted = [
           "┌───[ 📁 GIT WORKTREES ]",
@@ -111,7 +111,7 @@ export const worktreeCommand: SlashCommand = {
       });
       ctx.setIsProcessing?.(true);
       try {
-        await execa("git", ["worktree", "prune"]);
+        await execa("git", ["worktree", "prune"], { windowsHide: true });
         ctx.addLine({
           type: "system",
           content: "Stale git worktrees pruned successfully.",
@@ -150,11 +150,11 @@ export const worktreeCommand: SlashCommand = {
         const cleanedTarget = target.replace("--force", "").replace("-f", "").trim();
         removeArgs.push(cleanedTarget);
         
-        await execa("git", removeArgs);
+        await execa("git", removeArgs, { windowsHide: true });
         
         // Prune after removal
         try {
-          await execa("git", ["worktree", "prune"]);
+          await execa("git", ["worktree", "prune"], { windowsHide: true });
         } catch {}
 
         ctx.addLine({

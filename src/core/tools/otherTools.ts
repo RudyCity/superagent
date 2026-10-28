@@ -8,6 +8,11 @@ import { killProcessTree } from "./shellTools.js";
 import { ensureAndroidCliInstalled } from "../androidSetup.js";
 import { formatUnknownActionError, detectInteractivePrompt, tryStatSync } from "./helpers.js";
 import { workspaceMode } from "../ssh/workspaceMode.js";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+
+function headlessOpts<T extends Record<string, any>>(opts?: T, caller = "otherTools") {
+  return applyProcessIntent(opts ?? ({} as T), "headless", { caller });
+}
 
 export { askQuestionTool, scheduleTool } from "./interactionTools.js";
 
@@ -241,40 +246,40 @@ export const gitActionTool: Tool = {
 
     try {
       if (action === "status") {
-        const { stdout } = await execa("git", ["status", "--porcelain"], { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", ["status", "--porcelain"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.status"));
         return stdout || "Clean working tree.";
       }
       if (action === "diff") {
-        const { stdout } = await execa("git", ["diff"], { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", ["diff"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.diff"));
         const truncateOutput = (await import("./helpers.js")).truncateOutput;
         return truncateOutput(stdout, 120) || "No unstaged changes.";
       }
       if (action === "commit") {
         const message = args.message as string;
         if (!message) return "Error: Commit message is required.";
-        await execa("git", ["add", "-A"], { cwd, cancelSignal: signal });
-        const { stdout } = await execa("git", ["commit", "-m", message], { cwd, cancelSignal: signal });
+        await execa("git", ["add", "-A"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.add"));
+        const { stdout } = await execa("git", ["commit", "-m", message], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.commit"));
         return stdout;
       }
       if (action === "log") {
         const limit = (args.limit as number) || 5;
-        const { stdout } = await execa("git", ["log", `-${limit}`, "--oneline"], { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", ["log", `-${limit}`, "--oneline"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.log"));
         return stdout;
       }
       if (action === "add") {
         const targets = files.length > 0 ? files : ["-A"];
-        await execa("git", ["add", ...targets], { cwd, cancelSignal: signal });
+        await execa("git", ["add", ...targets], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.addTargets"));
         return `Successfully staged files: ${targets.join(", ")}`;
       }
       if (action === "restore") {
         if (files.length === 0) {
           return "Error: The 'files' parameter is required for the restore action.";
         }
-        await execa("git", ["restore", ...files], { cwd, cancelSignal: signal });
+        await execa("git", ["restore", ...files], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.restore"));
         return `Successfully restored files: ${files.join(", ")}`;
       }
       if (action === "clean") {
-        const { stdout } = await execa("git", ["clean", "-fd"], { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", ["clean", "-fd"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.git.clean"));
         return stdout || "Cleaned untracked files/directories successfully.";
       }
       return "Unknown git action.";
@@ -308,18 +313,18 @@ export const screenshotTool: Tool = {
           $graphics.Dispose();
           $bmp.Dispose();
         `.replace(/\n/s, " ");
-        await execa("powershell.exe", ["-Command", psCommand], { cancelSignal: signal });
+        await execa("powershell.exe", ["-Command", psCommand], headlessOpts({ cancelSignal: signal }, "otherTools.screenshotTool.ps"));
         return `Screenshot successfully captured: ${outputPath}`;
       } else if (process.platform === "darwin") {
-        await execa("screencapture", ["-x", outputPath], { cancelSignal: signal });
+        await execa("screencapture", ["-x", outputPath], headlessOpts({ cancelSignal: signal }, "otherTools.screenshotTool.mac"));
         return `Screenshot successfully captured: ${outputPath}`;
       } else if (process.platform === "linux") {
         try {
-          await execa("scrot", [outputPath], { cancelSignal: signal });
+          await execa("scrot", [outputPath], headlessOpts({ cancelSignal: signal }, "otherTools.screenshotTool.scrot"));
           return `Screenshot successfully captured: ${outputPath}`;
         } catch {
           try {
-            await execa("gnome-screenshot", ["-f", outputPath], { cancelSignal: signal });
+            await execa("gnome-screenshot", ["-f", outputPath], headlessOpts({ cancelSignal: signal }, "otherTools.screenshotTool.gnome"));
             return `Screenshot successfully captured: ${outputPath}`;
           } catch (err: any) {
             return `Failed to capture screenshot on Linux: scrot or gnome-screenshot must be installed.`;
@@ -437,7 +442,7 @@ export const playwrightScreenshotTool: Tool = {
     const bunCommand = process.versions.bun ? process.execPath : "bun";
     try {
       await fs.mkdir(path.dirname(targetOutputPath), { recursive: true });
-      await execa(bunCommand, ["x", ...cmdArgs], { cwd, cancelSignal: signal });
+      await execa(bunCommand, ["x", ...cmdArgs], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.playwright.screenshot"));
       return `Playwright screenshot successfully captured and saved to: ${targetOutputPath}`;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -449,8 +454,8 @@ export const playwrightScreenshotTool: Tool = {
       ) {
         try {
           const browserType = (args.browser as string)?.trim() || "chromium";
-          await execa(bunCommand, ["x", "playwright", "install", browserType], { cwd, cancelSignal: signal });
-          await execa(bunCommand, ["x", ...cmdArgs], { cwd, cancelSignal: signal });
+          await execa(bunCommand, ["x", "playwright", "install", browserType], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.playwright.install"));
+          await execa(bunCommand, ["x", ...cmdArgs], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.playwright.screenshot"));
           return `Playwright screenshot successfully captured and saved to: ${targetOutputPath}`;
         } catch (installErr: unknown) {
           const installMessage = installErr instanceof Error ? installErr.message : String(installErr);
@@ -500,11 +505,7 @@ export const androidCliTool: Tool = {
     const fullCommand = isWin ? `& ${exe} ${subCommand}` : `${exe} ${subCommand}`;
     try {
       clearActiveToolOutput();
-      const proc = execa(fullCommand, {
-        cwd,
-        shell: isWin ? "powershell.exe" : true,
-        all: true,
-      });
+      const proc = execa(fullCommand, headlessOpts({ cwd, shell: isWin ? "powershell.exe" : true, all: true }, "otherTools.androidCliTool"));
 
       const abortHandler = () => {
         killProcessTree(proc.pid);
@@ -870,12 +871,12 @@ export const gitWorktreeTool: Tool = {
 
     try {
       if (action === "list") {
-        const { stdout } = await execa("git", ["worktree", "list"], { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", ["worktree", "list"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.gitWorktree.list"));
         return stdout || "No Git worktrees found.";
       }
 
       if (action === "prune") {
-        const { stdout } = await execa("git", ["worktree", "prune"], { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", ["worktree", "prune"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.gitWorktree.prune"));
         return stdout || "Git worktrees pruned successfully.";
       }
 
@@ -888,7 +889,7 @@ export const gitWorktreeTool: Tool = {
         if (branch) {
           argsList.push(branch);
         }
-        const { stdout } = await execa("git", argsList, { cwd, cancelSignal: signal });
+        const { stdout } = await execa("git", argsList, headlessOpts({ cwd, cancelSignal: signal }, "otherTools.gitWorktree.action"));
         return stdout || `Worktree added at ${absolutePath}`;
       }
 
@@ -902,12 +903,12 @@ export const gitWorktreeTool: Tool = {
           argsList.push("--force");
         }
         try {
-          const { stdout } = await execa("git", argsList, { cwd, cancelSignal: signal });
+          const { stdout } = await execa("git", argsList, headlessOpts({ cwd, cancelSignal: signal }, "otherTools.gitWorktree.action"));
           return stdout || `Worktree at ${absolutePath} removed successfully.`;
         } catch (err: any) {
           const message = err instanceof Error ? err.message : String(err);
           if (force && /not a working tree/i.test(message)) {
-            const { stdout } = await execa("git", ["worktree", "prune"], { cwd, cancelSignal: signal });
+            const { stdout } = await execa("git", ["worktree", "prune"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.gitWorktree.prune"));
             return stdout
               ? `Worktree metadata pruned after stale remove.\n${stdout}`
               : "Worktree metadata pruned after stale remove.";
@@ -920,7 +921,7 @@ export const gitWorktreeTool: Tool = {
               maxRetries: 3,
               retryDelay: 100,
             });
-            const { stdout } = await execa("git", ["worktree", "prune"], { cwd, cancelSignal: signal });
+            const { stdout } = await execa("git", ["worktree", "prune"], headlessOpts({ cwd, cancelSignal: signal }, "otherTools.gitWorktree.prune"));
             return stdout
               ? `Worktree directory removed with filesystem fallback: ${absolutePath}\n${stdout}`
               : `Worktree directory removed with filesystem fallback: ${absolutePath}`;

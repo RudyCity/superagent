@@ -58,7 +58,7 @@ export const installCommand: SlashCommand = {
         const result = await execa("bunx", ["skills", "add", ...parsedArgs], {
           shell,
           cwd: process.cwd(),
-          reject: false,
+          reject: false, windowsHide: true,
         });
         if (result.failed) {
           ctx.addLine({

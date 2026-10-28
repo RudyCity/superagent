@@ -148,7 +148,7 @@ export function writeSubagentReport(
  */
 function getGitBranch(cwd: string): string {
   try {
-    return execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"] }).trim();
+    return execSync("git rev-parse --abbrev-ref HEAD", { cwd, encoding: "utf-8", stdio: ["pipe", "pipe", "ignore"], windowsHide: true }).trim();
   } catch {
     return "";
   }

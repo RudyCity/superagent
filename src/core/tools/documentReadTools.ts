@@ -132,10 +132,11 @@ async function parseDocumentBuffer(
       try {
         await fs.writeFile(tmp, buffer);
         const { execa } = await import("execa");
-        const result = await execa(bin, ["view", "text", tmp], {
+        const { applyProcessIntent } = await import("../process/processSpawnPolicy.js");
+        const result = await execa(bin, ["view", "text", tmp], applyProcessIntent({
           cancelSignal: signal,
           timeout: OFFICE_CLI_TIMEOUT,
-        });
+        }, "headless", { caller: "documentReadTools.officecli", executable: bin }));
         const stdout = String(result.stdout ?? "");
         if (stdout && stdout.trim()) {
           return `--- Document Content (${path.basename(resolvedPath)} via OfficeCLI) ---\n\n${stdout}`;

@@ -178,7 +178,7 @@ export const killVisionServerProcess = () => {
     try {
       if (process.platform === "win32") {
         try {
-          execSync(`taskkill /F /T /PID ${visionServerProcess.pid}`, { stdio: "ignore" });
+          execSync(`taskkill /F /T /PID ${visionServerProcess.pid}`, { stdio: "ignore", windowsHide: true });
         } catch {}
       } else {
         visionServerProcess.kill();
@@ -888,7 +888,7 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     try {
       const { execa } = await import("execa");
       const scriptPath = path.join(getPackageRootDir(), "scripts", "vision_server.py");
-      visionServerProcess = execa("python", [scriptPath, "8095"]);
+      visionServerProcess = execa("python", [scriptPath, "8095"], { windowsHide: true });
       if (!silent) {
         console.log("🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
       }

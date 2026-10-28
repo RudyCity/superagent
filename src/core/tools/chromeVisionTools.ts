@@ -63,7 +63,7 @@ async function findPython(): Promise<string | null> {
   for (const cmd of candidates) {
     try {
       await new Promise<void>((resolve, reject) => {
-        execFile(cmd, ["--version"], { timeout: 5000 }, (err: any) => {
+        execFile(cmd, ["--version"], { timeout: 5000, windowsHide: true }, (err: any) => {
           err ? reject(err) : resolve();
         });
       });
@@ -664,7 +664,7 @@ path = hf_hub_download(repo_id="racineai/UI-DETR-1", filename="model.pth")
 print(f"UI-DETR-1 model cached at: {path}")
 `;
   return new Promise((resolve, reject) => {
-    execFile(python, ["-c", code], { timeout: 10 * 60 * 1000 }, (err: any, stdout: string, stderr: string) => {
+    execFile(python, ["-c", code], { timeout: 10 * 60 * 1000, windowsHide: true }, (err: any, stdout: string, stderr: string) => {
       if (err) reject(new Error(`UI-DETR setup failed: ${err.message}\n${stderr}`));
       else resolve(`UI-DETR-1 weights verified and ready.\n${stdout.trim()}`);
     });

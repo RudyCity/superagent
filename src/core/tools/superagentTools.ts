@@ -11,6 +11,11 @@ import path from "path";
 import fs from "fs";
 import fsAsync from "fs/promises";
 import { execa } from "execa";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+
+function headlessOpts<T extends Record<string, any>>(opts?: T, caller = "superagentTools") {
+  return applyProcessIntent(opts ?? ({} as T), "headless", { caller });
+}
 import { killProcessTree } from "./shellTools.js";
 import { detectInteractivePrompt, formatUnknownActionError } from "./helpers.js";
 import { Tool, SuperagentInstance } from "./types.js";
@@ -159,7 +164,7 @@ async function runStreamedVerification(
   let outputAccum = "";
   let interactiveWarning: string | null = null;
 
-  const proc = execa(pm, args, { cwd, all: true });
+  const proc = execa(pm, args, headlessOpts({ cwd, all: true }, "superagentTools.runStreamedVerification"));
 
   const abortHandler = () => {
     killProcessTree(proc.pid);
@@ -415,7 +420,7 @@ export const invokeSuperagentTool: Tool = {
       
       // Safety check: warn if there are uncommitted changes in the parent worktree
       try {
-        const { stdout } = await execa("git", ["status", "--porcelain"], { cwd });
+        const { stdout } = await execa("git", ["status", "--porcelain"], headlessOpts({ cwd }, "superagentTools.gitStatus"));
         if (stdout.trim().length > 0) {
           appendMasterLog(`[WARN] Patch mode: Parent worktree has uncommitted changes. This may cause conflicts.`);
         }
@@ -449,11 +454,11 @@ export const invokeSuperagentTool: Tool = {
       } else {
         try {
           // Try creating from the specified base ref
-          await execa("git", ["worktree", "add", "-b", branch, worktreePath, baseRef], { cwd });
+          await execa("git", ["worktree", "add", "-b", branch, worktreePath, baseRef], headlessOpts({ cwd }, "superagentTools.worktreeAddNew"));
         } catch {
           try {
             // Branch might already exist — try without -b
-            await execa("git", ["worktree", "add", worktreePath, branch], { cwd });
+            await execa("git", ["worktree", "add", worktreePath, branch], headlessOpts({ cwd }, "superagentTools.worktreeAddExisting"));
           } catch (err2: any) {
             return `Error: Failed to create git worktree for branch "${branch}" at "${worktreePath}" (baseRef: ${baseRef}): ${err2.message}`;
           }
@@ -767,10 +772,10 @@ export const invokeSuperagentTool: Tool = {
             if (peer && !failedPeers.some((f) => f.name === peer.role)) {
               appendMasterLog(`[INFO] Merging dependency branch "${peer.branch}" into "${branch}" for Superagent "${role}"...`);
               try {
-                await execa("git", ["merge", "--no-commit", peer.branch], { cwd: worktreePath });
+                await execa("git", ["merge", "--no-commit", peer.branch], headlessOpts({ cwd: worktreePath }, "superagentTools.mergeDep"));
               } catch (mergeErr: any) {
                 try {
-                  await execa("git", ["merge", "--abort"], { cwd: worktreePath });
+                  await execa("git", ["merge", "--abort"], headlessOpts({ cwd: worktreePath }, "superagentTools.mergeAbort"));
                 } catch {
                   // Best-effort abort; nothing to restore if no merge was in progress
                 }
@@ -1165,7 +1170,7 @@ export const mergeSuperagentsTool: Tool = {
         const { stdout } = await execa(
           "git",
           ["diff", "--name-only", `HEAD...${inst.branch}`],
-          { cwd }
+          headlessOpts({ cwd }, "superagentTools.diffBranch")
         );
         changedFiles = stdout.split("\n").filter(Boolean);
       } catch {
@@ -1184,7 +1189,7 @@ export const mergeSuperagentsTool: Tool = {
         // Cleanup worktree (never delete main workspace directory in patch mode)
         if (cleanup && inst.worktreePath && !isMainWorkspacePath(inst.worktreePath, cwd) && fs.existsSync(inst.worktreePath)) {
           try {
-            await execa("git", ["worktree", "remove", inst.worktreePath, "--force"], { cwd });
+            await execa("git", ["worktree", "remove", inst.worktreePath, "--force"], headlessOpts({ cwd }, "superagentTools.worktreeRemoveInst"));
             results.push(`     Worktree removed: ${inst.worktreePath}`);
           } catch (err: any) {
             results.push(`     Worktree remove failed: ${err.message}`);
@@ -1231,7 +1236,7 @@ async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: 
     try {
       // Cooldown delay for Windows file handles
       await new Promise((resolve) => setTimeout(resolve, 200));
-      await execa("git", ["worktree", "remove", worktreePath, "--force"], { cwd });
+      await execa("git", ["worktree", "remove", worktreePath, "--force"], headlessOpts({ cwd }, "superagentTools.worktreeRemove"));
       logs.push(`[CLEANUP] Worktree removed successfully: ${worktreePath}\n`);
       removed = true;
     } catch (err: any) {
@@ -1244,7 +1249,7 @@ async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: 
       }
       if (removed) {
         try {
-          await execa("git", ["worktree", "prune"], { cwd });
+          await execa("git", ["worktree", "prune"], headlessOpts({ cwd }, "superagentTools.worktreePrune"));
           logs.push(`[CLEANUP] Worktree directory force removed and pruned.\n`);
         } catch {
           // Prune is best-effort; the directory itself was already removed
@@ -1255,7 +1260,7 @@ async function cleanupWorktreeRobust(worktreePath: string, logs: string[], cwd: 
   }
   if (removed && branch) {
     try {
-      await execa("git", ["branch", "-D", branch], { cwd });
+      await execa("git", ["branch", "-D", branch], headlessOpts({ cwd }, "superagentTools.branchDelete"));
       logs.push(`[CLEANUP] Branch deleted: ${branch}\n`);
       appendMasterLog(`[INFO] Deleted orphaned feature branch "${branch}".`);
     } catch (branchErr: any) {
@@ -1524,7 +1529,7 @@ export const manageSuperagentsTool: Tool = {
       removeRegistryEntries(removedIds);
 
       try {
-        await execa("git", ["worktree", "prune"], { cwd });
+        await execa("git", ["worktree", "prune"], headlessOpts({ cwd }, "superagentTools.worktreePruneOrphan"));
       } catch {
         // Prune is best-effort (may not be inside a git repo)
       }

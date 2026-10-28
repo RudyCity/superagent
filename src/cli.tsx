@@ -265,7 +265,7 @@ if (process.env.SUPERAGENT_REQUIRE_OS_SANDBOX === "1") {
   const expected = process.env.SUPERAGENT_OS_RUNNER_IDENTITY?.trim();
   let actual = "";
   try {
-    if (process.platform === "win32") actual = execFileSync("whoami.exe", [], { encoding: "utf8", timeout: 3000 }).trim();
+    if (process.platform === "win32") actual = execFileSync("whoami.exe", [], { encoding: "utf8", timeout: 3000, windowsHide: true }).trim();
   } catch {}
   if (!expected || actual.toLowerCase() !== expected.toLowerCase()) {
     process.stderr.write("OS sandbox required: Windows process identity does not match SUPERAGENT_OS_RUNNER_IDENTITY; refusing to start.\n");

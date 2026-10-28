@@ -205,7 +205,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
         // Git initialize inside hook directory
         let gitInitSuccess = false;
         try {
-          await execa("git", ["init"], { cwd: hookDir });
+          await execa("git", ["init"], { cwd: hookDir, windowsHide: true });
           gitInitSuccess = true;
         } catch (gitErr: any) {
           ctx.addLine({
@@ -224,7 +224,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
               content: "Running bun install to bootstrap dependencies...",
               timestamp: Date.now(),
             });
-            await execa("bun", ["install"], { cwd: hookDir });
+            await execa("bun", ["install"], { cwd: hookDir, windowsHide: true });
             npmInstallSuccess = true;
           } catch (npmErr: any) {
             ctx.addLine({

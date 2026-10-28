@@ -75,7 +75,7 @@ export async function isAndroidCliInstalledGlobally(): Promise<boolean> {
   }
   const isWin = process.platform === "win32";
   try {
-    await execa(isWin ? "where.exe" : "which", ["android"]);
+    await execa(isWin ? "where.exe" : "which", ["android"], { windowsHide: true });
     cachedAndroidCliGlobally = true;
   } catch {
     cachedAndroidCliGlobally = false;
@@ -114,7 +114,7 @@ export async function isRgInstalledGlobally(): Promise<boolean> {
   }
   const isWin = process.platform === "win32";
   try {
-    await execa(isWin ? "where.exe" : "which", ["rg"]);
+    await execa(isWin ? "where.exe" : "which", ["rg"], { windowsHide: true });
     cachedRgInstalledGlobally = true;
   } catch {
     cachedRgInstalledGlobally = false;
@@ -195,7 +195,7 @@ export async function ensureRgInstalled(onProgress?: DownloadProgressCallback): 
     await fs.mkdir(tempExtractDir, { recursive: true });
 
     if (isWin) {
-      await execa(`powershell.exe`, ["-Command", `Expand-Archive -Path '${tempFile}' -DestinationPath '${tempExtractDir}' -Force`]);
+      await execa(`powershell.exe`, ["-Command", `Expand-Archive -Path '${tempFile}' -DestinationPath '${tempExtractDir}' -Force`], { windowsHide: true });
       const files = await fs.readdir(tempExtractDir, { recursive: true });
       const rgExe = files.find(f => f.endsWith("rg.exe"));
       if (rgExe) {
@@ -204,7 +204,7 @@ export async function ensureRgInstalled(onProgress?: DownloadProgressCallback): 
         await fs.rename(fullSrc, fullDest);
       }
     } else {
-      await execa("tar", ["-xzf", tempFile, "-C", tempExtractDir]);
+      await execa("tar", ["-xzf", tempFile, "-C", tempExtractDir], { windowsHide: true });
       const files = await fs.readdir(tempExtractDir, { recursive: true });
       const rgBin = files.find(f => f.endsWith("rg") && !f.includes("."));
       if (rgBin) {
@@ -240,7 +240,7 @@ export async function isCurlInstalledGlobally(): Promise<boolean> {
   }
   const isWin = process.platform === "win32";
   try {
-    await execa(isWin ? "where.exe" : "which", ["curl"]);
+    await execa(isWin ? "where.exe" : "which", ["curl"], { windowsHide: true });
     cachedCurlInstalledGlobally = true;
   } catch {
     cachedCurlInstalledGlobally = false;
@@ -295,7 +295,7 @@ export async function ensureCurlInstalled(onProgress?: DownloadProgressCallback)
       const tempExtractDir = path.join(os.tmpdir(), "curl-extract");
       await fs.mkdir(tempExtractDir, { recursive: true });
 
-      await execa(`powershell.exe`, ["-Command", `Expand-Archive -Path '${tempFile}' -DestinationPath '${tempExtractDir}' -Force`]);
+      await execa(`powershell.exe`, ["-Command", `Expand-Archive -Path '${tempFile}' -DestinationPath '${tempExtractDir}' -Force`], { windowsHide: true });
       const files = await fs.readdir(tempExtractDir, { recursive: true });
       const curlExe = files.find(f => f.endsWith("curl.exe"));
       if (curlExe) {
@@ -353,7 +353,7 @@ export async function ensureAndroidCliInstalled(onProgress?: DownloadProgressCal
       if (onProgress) {
         onProgress(0, 0, "extracting");
       }
-      await execa(tempCmd, { shell: true });
+      await execa(tempCmd, { shell: true, windowsHide: true });
       
       try {
         await fs.unlink(tempCmd);
@@ -373,7 +373,7 @@ export async function ensureAndroidCliInstalled(onProgress?: DownloadProgressCal
       if (onProgress) {
         onProgress(0, 0, "extracting");
       }
-      await execa(tempSh, { shell: true });
+      await execa(tempSh, { shell: true, windowsHide: true });
 
       try {
         await fs.unlink(tempSh);
@@ -501,7 +501,7 @@ async function buildRmemoryDist(projectRoot: string): Promise<void> {
   }
 
   await logSetupDebug("Building r-memory (tsc) to produce dist/ entrypoint and types...");
-  await execa(process.versions.bun ? process.execPath : "bun", ["x", "tsc"], { cwd: pkgDir });
+  await execa(process.versions.bun ? process.execPath : "bun", ["x", "tsc"], { cwd: pkgDir, windowsHide: true });
   await logSetupDebug("r-memory build finished.");
 }
 
@@ -535,7 +535,7 @@ export async function ensureRmemoryInstalled(onProgress?: DownloadProgressCallba
 
     const bunCommand = process.versions.bun ? process.execPath : "bun";
     await logSetupDebug("Installing r-memory with Bun (Git repository)");
-    await execa(bunCommand, ["add", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot });
+    await execa(bunCommand, ["add", "git+https://github.com/RudyCity/r-memory.git"], { cwd: projectRoot, windowsHide: true });
 
     // Fresh installs ship without dist/ too — build immediately.
     await buildRmemoryDist(projectRoot);

@@ -1987,7 +1987,7 @@ export async function handleServerRoute(
     }
     try {
       const { execa } = await import("execa");
-      const { stdout } = await execa("git", ["ls-files"], { cwd: wsPath, reject: false });
+      const { stdout } = await execa("git", ["ls-files"], { cwd: wsPath, reject: false, windowsHide: true });
       const files = stdout.split("\n").filter(Boolean);
       sendJSON(res, 200, { success: true, files });
     } catch (err: any) {
@@ -2056,7 +2056,7 @@ export async function handleServerRoute(
         const isMac = process.platform === "darwin";
         const command = isWindows ? "cmd" : (isMac ? "open" : "xdg-open");
         const args = isWindows ? ["/c", "start", '""', fullPath] : [fullPath];
-        await execa(command, args, { shell: isWindows });
+        await execa(command, args, { shell: isWindows, windowsHide: true });
         sendJSON(res, 200, { success: true });
       } else {
         sendJSON(res, 404, { error: "File not found" });
@@ -2076,7 +2076,7 @@ export async function handleServerRoute(
     }
     try {
       const { execa } = await import("execa");
-      const { stdout } = await execa("git", ["status", "--porcelain"], { cwd: wsPath, reject: false });
+      const { stdout } = await execa("git", ["status", "--porcelain"], { cwd: wsPath, reject: false, windowsHide: true });
       const changes = stdout.split("\n").filter(Boolean).map(line => ({
         status: line.slice(0, 2).trim(),
         filepath: line.slice(3).trim()
@@ -3376,7 +3376,7 @@ export async function handleServerRoute(
     }
     try {
       const { execa } = await import("execa");
-      const result = await execa("git", ["worktree", "list"], { cwd: wsPath, reject: false });
+      const result = await execa("git", ["worktree", "list"], { cwd: wsPath, reject: false, windowsHide: true });
       if (result.failed) {
         sendJSON(res, 200, { success: true, worktrees: [] });
         return true;
@@ -3405,7 +3405,7 @@ export async function handleServerRoute(
     }
     try {
       const { execa } = await import("execa");
-      await execa("git", ["worktree", "prune"], { cwd: wsPath });
+      await execa("git", ["worktree", "prune"], { cwd: wsPath, windowsHide: true });
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message });
@@ -3430,8 +3430,8 @@ export async function handleServerRoute(
       const args = ["worktree", "remove"];
       if (force) args.push("--force");
       args.push(targetPath);
-      await execa("git", args, { cwd: wsPath });
-      await execa("git", ["worktree", "prune"], { cwd: wsPath });
+      await execa("git", args, { cwd: wsPath, windowsHide: true });
+      await execa("git", ["worktree", "prune"], { cwd: wsPath, windowsHide: true });
       sendJSON(res, 200, { success: true });
     } catch (err: any) {
       sendJSON(res, 500, { error: err.message });
@@ -3624,8 +3624,8 @@ export async function handleServerRoute(
       
       if (checkpoint.gitSha) {
         const { execa } = await import("execa");
-        await execa("git", ["stash", "--include-untracked"], { cwd: session.workspace, reject: false });
-        await execa("git", ["checkout", checkpoint.gitSha], { cwd: session.workspace, reject: false });
+        await execa("git", ["stash", "--include-untracked"], { cwd: session.workspace, reject: false, windowsHide: true });
+        await execa("git", ["checkout", checkpoint.gitSha], { cwd: session.workspace, reject: false, windowsHide: true });
       }
       sendJSON(res, 200, { success: true, checkpoint });
     } catch (err: any) {
@@ -3985,6 +3985,7 @@ export async function handleServerRoute(
         env: runEnv,
         reject: false,
         all: true,
+        windowsHide: true,
       });
 
       const { notifyTasksChanged } = await import("./core/tools/state.js");
@@ -4071,7 +4072,8 @@ export async function handleServerRoute(
       const result = await execa("bunx", ["skills", "add", "-y", name], {
         shell,
         cwd: process.cwd(),
-        reject: false
+        reject: false,
+        windowsHide: true,
       });
       if (result.failed) {
         sendJSON(res, 500, { error: result.stderr || result.stdout || "Failed to install skill" });

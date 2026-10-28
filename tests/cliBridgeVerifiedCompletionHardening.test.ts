@@ -131,7 +131,6 @@ describe("Milestones M2–M8: CLI Bridge Verified Completion Hardening", () => {
     });
 
     it("never injects full-auto into background AGY fallback without explicit authorization", async () => {
-      const oldPath = process.env.PATH;
       const fakeAgy = path.join(testWorkspace, process.platform === "win32" ? "agy.cmd" : "agy");
       const argsFile = path.join(testWorkspace, "agy-args.txt");
       if (process.platform === "win32") {
@@ -140,11 +139,10 @@ describe("Milestones M2–M8: CLI Bridge Verified Completion Hardening", () => {
         await fs.writeFile(fakeAgy, "#!/bin/sh\nprintf \'%s\\n\' \"$*\" > agy-args.txt\nexit 0\n", "utf8");
         await fs.chmod(fakeAgy, 0o755);
       }
-      process.env.PATH = testWorkspace + path.delimiter + (oldPath ?? "");
       try {
         const job = await startDelegateJob({
           cliAlias: "agy",
-          binary: "agy",
+          binary: fakeAgy,
           prompt: "safe fallback",
           cwd: testWorkspace,
           workspaceRoot: testWorkspace,
@@ -161,7 +159,7 @@ describe("Milestones M2–M8: CLI Bridge Verified Completion Hardening", () => {
         expect(invokedArgs).toContain("accept-edits");
         expect(invokedArgs).not.toContain("--dangerously-skip-permissions");
       } finally {
-        process.env.PATH = oldPath;
+        // No global PATH mutation: the explicit fake AGY path is isolated to this test.
       }
     });
 

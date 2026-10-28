@@ -12,6 +12,10 @@ import { execa } from "execa";
 import { Tool } from "./types.js";
 import { killProcessTree } from "./shellTools.js";
 import { backgroundTasks, notifyTasksChanged } from "./state.js";
+import {
+  applyProcessIntent,
+  execHiddenTaskkillSync,
+} from "../process/processSpawnPolicy.js";
 
 export interface PortProcessInfo {
   pid: number;
@@ -90,10 +94,10 @@ export async function getProcessDetails(pid: number): Promise<{
   if (process.platform === "win32") {
     try {
       const psCmd = `Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
-      const res = await execa("powershell", ["-NoProfile", "-Command", psCmd], {
+      const res = await execa("powershell", ["-NoProfile", "-Command", psCmd], applyProcessIntent({
         timeout: 3000,
         reject: false,
-      });
+      }, "headless", { caller: "processInspectionTools.getProcessDetails.cim", executable: "powershell" }));
       if (res.stdout && res.stdout.trim().startsWith("{")) {
         const parsed = JSON.parse(res.stdout.trim());
         return {
@@ -105,10 +109,10 @@ export async function getProcessDetails(pid: number): Promise<{
     } catch {}
 
     try {
-      const res = await execa("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+      const res = await execa("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], applyProcessIntent({
         timeout: 2000,
         reject: false,
-      });
+      }, "headless", { caller: "processInspectionTools.getProcessDetails.tasklist", executable: "tasklist" }));
       const lines = res.stdout.trim().split(/\r?\n/).filter(Boolean);
       if (lines.length > 0 && !lines[0].toLowerCase().includes("no tasks")) {
         const parts = lines[0].split('","').map((s) => s.replace(/^"|"$/g, ""));
@@ -142,10 +146,10 @@ export async function getProcessDetails(pid: number): Promise<{
     } catch {}
 
     try {
-      const res = await execa("ps", ["-p", String(pid), "-o", "comm=,args="], {
+      const res = await execa("ps", ["-p", String(pid), "-o", "comm=,args="], applyProcessIntent({
         timeout: 2000,
         reject: false,
-      });
+      }, "headless", { caller: "processInspectionTools.getProcessDetails.ps", executable: "ps" }));
       const line = res.stdout.trim();
       if (line) {
         const parts = line.split(/\s+/);
@@ -177,10 +181,10 @@ export async function inspectPort(port: number): Promise<PortInspectionResult> {
 
   if (process.platform === "win32") {
     try {
-      const res = await execa("netstat", ["-ano", "-p", "tcp"], {
+      const res = await execa("netstat", ["-ano", "-p", "tcp"], applyProcessIntent({
         timeout: 5000,
         reject: false,
-      });
+      }, "headless", { caller: "processInspectionTools.inspectPort.netstat", executable: "netstat" }));
       const lines = res.stdout.split(/\r?\n/);
       const portRegex = new RegExp(`^\\s*TCP\\s+(\\S+:${port})\\s+\\S+\\s+LISTENING\\s+(\\d+)`, "i");
 
@@ -200,10 +204,10 @@ export async function inspectPort(port: number): Promise<PortInspectionResult> {
     if (pidsWithAddr.length === 0) {
       try {
         const psCmd = `Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -Property LocalAddress,LocalPort,OwningProcess | ConvertTo-Json`;
-        const res = await execa("powershell", ["-NoProfile", "-Command", psCmd], {
+        const res = await execa("powershell", ["-NoProfile", "-Command", psCmd], applyProcessIntent({
           timeout: 4000,
           reject: false,
-        });
+        }, "headless", { caller: "processInspectionTools.inspectPort.netTcp", executable: "powershell" }));
         if (res.stdout && res.stdout.trim()) {
           const raw = JSON.parse(res.stdout.trim());
           const items = Array.isArray(raw) ? raw : [raw];
@@ -222,10 +226,10 @@ export async function inspectPort(port: number): Promise<PortInspectionResult> {
   } else {
     // macOS / Linux via lsof or ss
     try {
-      const res = await execa("lsof", ["-iTCP:" + port, "-sTCP:LISTEN", "-n", "-P", "-Fp"], {
+      const res = await execa("lsof", ["-iTCP:" + port, "-sTCP:LISTEN", "-n", "-P", "-Fp"], applyProcessIntent({
         timeout: 3000,
         reject: false,
-      });
+      }, "headless", { caller: "processInspectionTools.inspectPort.lsof", executable: "lsof" }));
       const lines = res.stdout.split(/\r?\n/);
       for (const line of lines) {
         if (line.startsWith("p")) {
@@ -239,10 +243,10 @@ export async function inspectPort(port: number): Promise<PortInspectionResult> {
 
     if (pidsWithAddr.length === 0) {
       try {
-        const res = await execa("ss", ["-lptn", `sport = :${port}`], {
+        const res = await execa("ss", ["-lptn", `sport = :${port}`], applyProcessIntent({
           timeout: 3000,
           reject: false,
-        });
+        }, "headless", { caller: "processInspectionTools.inspectPort.ss", executable: "ss" }));
         const match = /pid=(\d+)/.exec(res.stdout);
         if (match) {
           const pid = parseInt(match[1], 10);
@@ -344,9 +348,7 @@ export async function freePort(
   // Fallback targeted taskkill on Windows if still listening
   if (!isReleased && force && process.platform === "win32") {
     for (const proc of killed) {
-      try {
-        execSync(`taskkill /F /PID ${proc.pid}`, { stdio: "ignore" });
-      } catch {}
+      execHiddenTaskkillSync(proc.pid, false, 3000, "processInspectionTools.freePort");
     }
     await new Promise((r) => setTimeout(r, 300));
     const finalCheck = await inspectPort(port);
@@ -437,10 +439,10 @@ export async function searchProcesses(
       try {
         const escapedQuery = clean.replace(/'/g, "''").replace(/`/g, "``");
         const psCmd = `Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*${escapedQuery}*' -or $_.CommandLine -like '*${escapedQuery}*' } | Select-Object -First ${limit} ProcessId,Name,CommandLine | ConvertTo-Json`;
-        const res = await execa("powershell", ["-NoProfile", "-Command", psCmd], {
+        const res = await execa("powershell", ["-NoProfile", "-Command", psCmd], applyProcessIntent({
           timeout: 4000,
           reject: false,
-        });
+        }, "headless", { caller: "processInspectionTools.inspectPort.netTcp", executable: "powershell" }));
         if (res.stdout && res.stdout.trim()) {
           const raw = JSON.parse(res.stdout.trim());
           const items = Array.isArray(raw) ? raw : [raw];
@@ -461,7 +463,7 @@ export async function searchProcesses(
       } catch {}
     } else {
       try {
-        const res = await execa("ps", ["aux"], { timeout: 3000, reject: false });
+        const res = await execa("ps", ["aux"], applyProcessIntent({ timeout: 3000, reject: false }, "headless", { caller: "processInspectionTools.searchProcesses.ps", executable: "ps" }));
         const lines = res.stdout.split(/\r?\n/);
         for (const line of lines) {
           if (line.toLowerCase().includes(lowerQuery) && !line.includes("ps aux")) {
@@ -520,9 +522,7 @@ export async function killSpecificProcess(
     killProcessTree(pid);
 
     if (force && process.platform === "win32") {
-      try {
-        execSync(`taskkill /F /PID ${pid}`, { stdio: "ignore" });
-      } catch {}
+      execHiddenTaskkillSync(pid, false, 3000, "processInspectionTools.killSpecificProcess");
     }
 
     return {

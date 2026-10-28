@@ -10,6 +10,7 @@ import os from "os";
 import fs from "fs";
 import net from "net";
 import { browserControlHandler } from "./browserMacroTools.js";
+import { applyProcessIntent } from "../process/processSpawnPolicy.js";
 
 const execAsync = promisify(exec);
 
@@ -205,9 +206,12 @@ export interface RunPsOpts {
 export async function runPsEncoded(psScript: string, opts: RunPsOpts = {}): Promise<string> {
   const encoded = Buffer.from(psScript, "utf16le").toString("base64");
   const ni = opts.nonInteractive ? " -NonInteractive" : "";
-  const { stdout } = await execAsync(`powershell.exe -NoProfile${ni} -EncodedCommand ${encoded}`, {
-    maxBuffer: opts.maxBuffer ?? 10 * 1024 * 1024,
-    timeout: opts.timeout ?? 30000,
-  });
+  const { stdout } = await execAsync(
+    `powershell.exe -NoProfile${ni} -EncodedCommand ${encoded}`,
+    applyProcessIntent({
+      maxBuffer: opts.maxBuffer ?? 10 * 1024 * 1024,
+      timeout: opts.timeout ?? 30000,
+    }, "headless", { caller: "chromeCommon.runPsEncoded", executable: "powershell.exe" })
+  );
   return stdout;
 }

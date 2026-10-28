@@ -82,7 +82,7 @@ function showRmemoryWindow(ctx: any) {
       const viewerProc = execa(
         "cmd.exe",
         ["/c", `start /wait "${safeTitle}" /D "${safeCwd}" powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${viewerScriptPath}"`],
-        { detached: true, stdio: "ignore", windowsVerbatimArguments: true, reject: false }
+        { detached: true, stdio: "ignore", windowsVerbatimArguments: true, reject: false, windowsHide: false } // Intentional visible terminal viewer for /setting-rmemory show
       );
 
       activeViewerProcess = viewerProc;

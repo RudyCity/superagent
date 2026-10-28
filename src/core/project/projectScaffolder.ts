@@ -261,7 +261,7 @@ export async function createInstantProject(
   // Initialize Git repository if requested
   if (options.initGit !== false) {
     try {
-      await execa("git", ["init"], { cwd: targetDir, reject: false });
+      await execa("git", ["init"], { cwd: targetDir, reject: false, windowsHide: true });
     } catch {}
   }
 

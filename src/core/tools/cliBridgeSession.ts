@@ -27,7 +27,6 @@
 
 import { execa } from "execa";
 import { StringDecoder } from "node:string_decoder";
-import { spawn } from "child_process";
 import { EventEmitter } from "events";
 import fs from "fs/promises";
 import fsSync from "fs";
@@ -36,6 +35,12 @@ import crypto from "crypto";
 import { summarizedPrompt, redactCliBridgeOutput } from "./cliBridgeObservability.js";
 import { getRootConfigDir } from "../config/paths.js";
 import { appendActiveToolOutput } from "./state.js";
+import {
+  applyProcessIntent,
+  resolveWindowsDirectExecutable,
+  spawnHiddenTaskkill,
+  traceChildProcess,
+} from "../process/processSpawnPolicy.js";
 import {
   saveSessionRecord,
   saveSessionRecordSync,
@@ -394,8 +399,8 @@ function killHandle(h: any): void {
         h.kill?.("SIGTERM");
       } catch {}
       try {
-        // Last resort: spawn kill
-        spawn("taskkill", ["/F", "/T", "/PID", String(h.pid)], { stdio: "ignore" }).on("error", () => {});
+        // Last resort: hidden taskkill
+        spawnHiddenTaskkill(Number(h.pid), true, "cliBridgeSession.killHandle");
       } catch {}
     }
   } catch {
@@ -462,7 +467,15 @@ export async function detectAvailableClis(): Promise<CliDescriptor[]> {
         let found: string | undefined;
         for (const cand of candidateNames) {
           try {
-            const { stdout } = await execa(cmd, [cand], { reject: false });
+            const { stdout } = await execa(
+              cmd,
+              [cand],
+              applyProcessIntent(
+                { reject: false },
+                "headless",
+                { caller: "cliBridgeSession.detectAvailableClis", executable: cmd, args: [cand] }
+              )
+            );
             const line = (stdout || "").split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
             if (line) {
               found = line;
@@ -558,8 +571,9 @@ export async function runDelegate(opts: {
   ];
 
   let proc: any;
+  const resolvedBinary = resolveWindowsDirectExecutable(opts.binary, opts.env ?? process.env);
   try {
-    proc = execa(opts.binary, argv, {
+    const delegateOpts = applyProcessIntent({
       cwd: opts.cwd,
       all: true,
       buffer: false,
@@ -567,7 +581,18 @@ export async function runDelegate(opts: {
       env: opts.env ?? process.env,
       input: opts.prompt, // also feed stdin in case CLI reads from it
       timeout,
-    });
+    }, "headless");
+    proc = traceChildProcess(
+      execa(resolvedBinary, argv, delegateOpts),
+      {
+        caller: "cliBridgeSession.runDelegate",
+        executable: resolvedBinary,
+        args: argv,
+        cwd: opts.cwd,
+        intent: "headless",
+        options: delegateOpts,
+      }
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {
@@ -745,21 +770,33 @@ export async function createSession(opts: {
   );
 
   let proc: any;
+  const resolvedSessionBinary = resolveWindowsDirectExecutable(opts.binary, opts.env ?? process.env);
   try {
     // Use execa to spawn — it correctly handles Windows .cmd/.bat files and
     // paths with spaces (child_process.spawn with shell:true has quoting
     // issues that break on paths like "D:\Program Files\...").
     // We expose the same surface (stdio streams, pid) by reading from the
     // returned ExecaChildProcess.
-    const child = execa(opts.binary, opts.args ?? [], {
+    const sessionOpts = applyProcessIntent({
       cwd: opts.cwd,
       env: opts.env ?? process.env,
       reject: false,
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
+      stdin: "pipe" as const,
+      stdout: "pipe" as const,
+      stderr: "pipe" as const,
       all: false,
-    });
+    }, "capturedInteractive");
+    const child = traceChildProcess(
+      execa(resolvedSessionBinary, opts.args ?? [], sessionOpts),
+      {
+        caller: "cliBridgeSession.createSession",
+        executable: resolvedSessionBinary,
+        args: opts.args ?? [],
+        cwd: opts.cwd,
+        intent: "capturedInteractive",
+        options: sessionOpts,
+      }
+    );
     proc = child;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import fsSync from "fs";
 import path from "path";
 import { execSync } from "child_process";
+import { applyProcessIntent, execHiddenTaskkillSync } from "../process/processSpawnPolicy.js";
 import ts from "typescript";
 
 interface WindowsShellResult {
@@ -58,7 +59,7 @@ export function resolveWindowsShell(): WindowsShellResult {
 
   // Try checking PATH for bash.exe using 'where'
   try {
-    const whereBash = execSync("where bash", { stdio: [] }).toString().trim().split(/\r?\n/)[0];
+    const whereBash = execSync("where bash", applyProcessIntent({ stdio: [] }, "headless", { caller: "helpers.resolveWindowsShell", executable: "where", args: ["bash"] })).toString().trim().split(/\r?\n/)[0];
     if (whereBash && fsSync.existsSync(whereBash)) {
       cachedShell = { shellPath: whereBash, isBash: true };
       return cachedShell;
@@ -468,7 +469,9 @@ export function killProcessTree(pid: number | undefined): void {
   if (!pid || pid === process.pid) return;
   if (process.platform === "win32") {
     try {
-      execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", timeout: 3000 });
+      if (!execHiddenTaskkillSync(pid, true, 3000, "helpers.killProcessTree")) {
+        throw new Error("taskkill failed");
+      }
     } catch {
       try {
         process.kill(pid, "SIGKILL");
@@ -478,7 +481,7 @@ export function killProcessTree(pid: number | undefined): void {
     }
   } else {
     try {
-      execSync(`pkill -P ${pid}`, { stdio: "ignore", timeout: 3000 });
+      execSync(`pkill -P ${pid}`, applyProcessIntent({ stdio: "ignore" as const, timeout: 3000 }, "headless", { caller: "helpers.killProcessTree.pkill", executable: "pkill", args: ["-P", String(pid)] }));
       process.kill(pid, "SIGKILL");
     } catch {
       try {

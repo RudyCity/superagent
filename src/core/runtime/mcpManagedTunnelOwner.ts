@@ -259,6 +259,7 @@ export async function startManagedMcpTunnelOwner(
     cwd: process.cwd(),
     detached: true,
     stdio: ["ignore", "ignore", "ignore", "ipc"],
+    ...({ windowsHide: true } as any),
     env: {
       ...process.env,
       ...(useWindowsTrampoline
@@ -345,6 +346,7 @@ export async function runManagedMcpTunnelLauncher(args: string[]): Promise<never
     cwd: process.cwd(),
     detached: true,
     stdio: ["ignore", "ignore", "ignore", "ipc"],
+    ...({ windowsHide: true } as any),
     env: {
       ...process.env,
       SUPERAGENT_MCP_TUNNEL_LAUNCHER_CHILD: "0",

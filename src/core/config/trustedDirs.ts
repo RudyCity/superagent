@@ -42,11 +42,11 @@ export async function ensureDirectoryTrusted(dirPath: string, cwd: string = proc
     const normalizedPath = resolvedPath.replace(/\\/g, "/");
 
     // Check if it's already in safe.directory to avoid duplicates
-    const { stdout } = await execa("git", ["config", "--global", "--get-all", "safe.directory"], { cwd, reject: false });
+    const { stdout } = await execa("git", ["config", "--global", "--get-all", "safe.directory"], { cwd, reject: false, windowsHide: true });
     const safeDirectories = stdout.split(/\r?\n/).map(d => d.trim().replace(/\\/g, "/"));
 
     if (!safeDirectories.includes(normalizedPath)) {
-      await execa("git", ["config", "--global", "--add", "safe.directory", normalizedPath], { cwd });
+      await execa("git", ["config", "--global", "--add", "safe.directory", normalizedPath], { cwd, windowsHide: true });
     }
   } catch (err) {
     // Ignore config errors

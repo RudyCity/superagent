@@ -809,7 +809,7 @@ export async function handleMotionCliCommand(args: string[]): Promise<number> {
           const { execa } = await import("execa");
           const openTarget = `file://${path.resolve(previewFilePath).replace(/\\/g, "/")}`;
           if (process.platform === "win32") {
-            await execa("cmd", ["/c", "start", "", openTarget], { stdio: "ignore", detached: true });
+            await execa("cmd", ["/c", "start", "", openTarget], { stdio: "ignore", detached: true, windowsHide: true });
           } else if (process.platform === "darwin") {
             await execa("open", [openTarget], { stdio: "ignore", detached: true });
           } else {

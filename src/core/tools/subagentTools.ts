@@ -430,7 +430,8 @@ export const invokeSubagentTool: Tool = {
         let changedFiles: string[] = [];
         try {
           const { execa } = await import("execa");
-          const { stdout } = await execa("git", ["diff", "--name-only", "HEAD"], { cwd });
+          const { applyProcessIntent } = await import("../process/processSpawnPolicy.js");
+          const { stdout } = await execa("git", ["diff", "--name-only", "HEAD"], applyProcessIntent({ cwd }, "headless", { caller: "subagentTools.gitDiff", executable: "git", cwd }));
           changedFiles = stdout.split("\n").filter(Boolean);
         } catch {}
 

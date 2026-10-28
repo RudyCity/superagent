@@ -17,6 +17,7 @@ import os from "os";
 import http from "http";
 
 import { killProcessTree } from "../tools/helpers.js";
+import { applyProcessIntent, traceChildProcess } from "../process/processSpawnPolicy.js";
 import { getOpenAiMcpTunnelConfig } from "./openaiMcpTunnelConfig.js";
 
 export interface OpenAiTunnelOptions {
@@ -218,7 +219,7 @@ export function findTunnelClientBinary(customPath?: string): string | null {
   // Check PATH via which / where
   try {
     const cmd = isWin ? `where.exe ${binaryName}` : `which ${binaryName}`;
-    const output = execSync(cmd, { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const output = execSync(cmd, applyProcessIntent({ encoding: "utf-8" as const, stdio: ["ignore", "pipe", "ignore"] }, "headless", { caller: "openaiTunnelClient.findTunnelClientBinary", executable: cmd })).trim();
     if (output) {
       const firstLine = output.split(/\r?\n/)[0].trim();
       if (firstLine && fs.existsSync(firstLine)) {
@@ -384,10 +385,10 @@ export async function runTunnelClientDoctor(opts: {
         opts.healthListenAddr || "127.0.0.1:0",
         "--explain",
       ];
-      const child = spawn(binary, doctorArgs, {
+      const child = traceChildProcess(spawn(binary, doctorArgs, applyProcessIntent({
         env,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+        stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"],
+      }, "headless")), { caller: "openaiTunnelClient.runTunnelClientDoctor", executable: binary, args: doctorArgs, intent: "headless" });
 
       let stdout = "";
       let stderr = "";
@@ -596,11 +597,11 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
     }
     return value;
   };
-  const child = spawn(binary, args, {
+  const child = traceChildProcess(spawn(binary, args, applyProcessIntent({
     env,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"],
     detached: false,
-  });
+  }, "headless")), { caller: "openaiTunnelClient.startOpenAiMcpTunnel", executable: binary, args, intent: "headless" });
 
   child.stdout?.on("data", (chunk) => {
     const output = chunk.toString();

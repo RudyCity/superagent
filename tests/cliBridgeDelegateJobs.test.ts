@@ -74,6 +74,21 @@ describe("CLI Bridge background delegation jobs", () => {
     expect(report).toContain("Permission blocked.");
   }, 15_000);
 
+  it("recovers from an earlier AGY permission denial when a later clean final result supersedes it", async () => {
+    const script = [
+      'console.log(JSON.stringify({event:"step_update",step_update:{state:"ERROR",step_type:"tool",tool_info:{error:{message:"permission check failed: user denied permission to run command"}}}}));',
+      'console.log(JSON.stringify({event:"result",result:{status:"SUCCESS",response:"completed through an alternate path"}}));',
+    ].join("");
+    const started = await delegateJobs.startDelegateJob({ ...options(script), cliAlias: "agy" });
+    const finished = await waitForTerminal(started.jobId);
+    expect(finished.exitCode).toBe(0);
+    expect(finished.status).toBe("succeeded");
+    expect(finished.completionState).toBe("unverified");
+    expect(finished.permissionFailure).toBeUndefined();
+    expect(finished.permissionRecovered).toBe(true);
+    expect(finished.permissionRecoveryWarning).toMatch(/superseded by a clean final result/);
+  }, 15_000);
+
   it("returns promptly and makes a long-running job pollable until logs are complete", async () => {
     const started = await delegateJobs.startDelegateJob(options(
       'console.log("job-started"); setTimeout(() => { console.log("job-finished"); }, 250);',

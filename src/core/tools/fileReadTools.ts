@@ -500,6 +500,7 @@ export const ripgrepSearchTool: Tool = {
             {
               reject: false,
               cancelSignal: signal,
+              windowsHide: true,
             }
           );
 

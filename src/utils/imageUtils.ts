@@ -241,7 +241,7 @@ async function readClipboardWindows(): Promise<ImageAttachment | null> {
   try {
     const { stdout } = await execFileAsync("powershell.exe", [
       "-sta", "-NoProfile", "-NonInteractive", "-Command", script,
-    ], { timeout: 8000 });
+    ], { timeout: 8000, windowsHide: true });
     result = stdout.trim();
   } catch {
     return null;
@@ -280,7 +280,7 @@ async function readClipboardMacOS(): Promise<ImageAttachment | null> {
 
   // Try pngpaste first (brew install pngpaste)
   try {
-    await execFileAsync("pngpaste", [tmpFile], { timeout: 5000 });
+    await execFileAsync("pngpaste", [tmpFile], { timeout: 5000, windowsHide: true });
     const buf = await fs.readFile(tmpFile);
     await fs.unlink(tmpFile).catch(() => {});
     return {
@@ -306,7 +306,7 @@ async function readClipboardMacOS(): Promise<ImageAttachment | null> {
   ].join("\n");
 
   try {
-    await execFileAsync("osascript", ["-e", script], { timeout: 8000 });
+    await execFileAsync("osascript", ["-e", script], { timeout: 8000, windowsHide: true });
     const buf = await fs.readFile(tmpFile);
     await fs.unlink(tmpFile).catch(() => {});
     return {
@@ -332,7 +332,7 @@ async function readClipboardLinux(): Promise<ImageAttachment | null> {
     const { stdout } = await execFileAsync(
       "wl-paste",
       ["--type", "image/png", "--no-newline"],
-      { timeout: 5000, encoding: "buffer" } as any,
+      { timeout: 5000, encoding: "buffer", windowsHide: true } as any,
     );
     if (stdout && (stdout as Buffer).byteLength > 0) {
       const buf = stdout as unknown as Buffer;
@@ -353,7 +353,7 @@ async function readClipboardLinux(): Promise<ImageAttachment | null> {
     const { stdout } = await execFileAsync(
       "xclip",
       ["-selection", "clipboard", "-t", "image/png", "-o"],
-      { timeout: 5000, encoding: "buffer" } as any,
+      { timeout: 5000, encoding: "buffer", windowsHide: true } as any,
     );
     if (stdout && (stdout as Buffer).byteLength > 0) {
       const buf = stdout as unknown as Buffer;
@@ -374,7 +374,7 @@ async function readClipboardLinux(): Promise<ImageAttachment | null> {
     await execFileAsync(
       "xsel",
       ["--clipboard", "--output"],
-      { timeout: 5000 },
+      { timeout: 5000, windowsHide: true },
     );
     // xsel doesn't support image/png output natively — fall through
   } catch {

@@ -11,6 +11,7 @@ function isGitRepo(): boolean {
     execSync("git rev-parse --is-inside-work-tree", {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
     });
     return true;
   } catch {

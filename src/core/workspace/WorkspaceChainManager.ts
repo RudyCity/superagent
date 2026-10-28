@@ -407,6 +407,7 @@ class WorkspaceChainManagerClass {
         shell: true,
         timeout: timeoutMs,
         reject: false,
+        windowsHide: true,
       });
       return {
         stdout: result.stdout || "",

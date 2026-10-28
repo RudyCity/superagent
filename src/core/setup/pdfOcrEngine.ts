@@ -105,7 +105,7 @@ print(json.dumps(res))
 `;
 
   try {
-    const { stdout } = await execa(pythonCmd, ["-c", script], { timeout: 10000 });
+    const { stdout } = await execa(pythonCmd, ["-c", script], { timeout: 10000, windowsHide: true });
     status.pythonAvailable = true;
     const parsed = JSON.parse(stdout.trim());
     status.paddleOcrAvailable = !!parsed.paddle;
@@ -266,7 +266,7 @@ if __name__ == "__main__":
   try {
     const { stdout } = await execa(pythonCmd, ["-c", script], {
       cancelSignal: signal,
-      timeout: 180000,
+      timeout: 180000, windowsHide: true,
     });
 
     const parsed = JSON.parse(stdout.trim());

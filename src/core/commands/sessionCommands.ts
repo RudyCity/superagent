@@ -321,8 +321,8 @@ export const checkpointCommand: SlashCommand = {
         if (checkpoint.gitSha) {
           const targetCwd = ctx.agent?.workingDirectory || process.cwd();
           try {
-            await execa("git", ["stash", "--include-untracked"], { cwd: targetCwd, reject: false });
-            const checkoutRes = await execa("git", ["checkout", checkpoint.gitSha], { cwd: targetCwd, reject: false });
+            await execa("git", ["stash", "--include-untracked"], { cwd: targetCwd, reject: false, windowsHide: true });
+            const checkoutRes = await execa("git", ["checkout", checkpoint.gitSha], { cwd: targetCwd, reject: false, windowsHide: true });
             if (checkoutRes.failed) {
               ctx.addLine({
                 type: "error",
