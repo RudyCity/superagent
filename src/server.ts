@@ -842,6 +842,11 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     purgeEmptySessions(24);
   } catch {}
 
+  try {
+    const { bootstrapProcessSupervisorOnStartup } = await import("./core/process/processSupervisor.js");
+    await bootstrapProcessSupervisorOnStartup({ workspaceRoot: process.cwd(), silent });
+  } catch {}
+
   // Idle workspace session harvesting. Non-CLI sessions are reclaimed after
   // 30 min of inactivity; CLI-attached sessions get a longer 2h grace window
   // because they may simply be paused by a human at the terminal, but they

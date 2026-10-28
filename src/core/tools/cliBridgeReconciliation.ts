@@ -32,19 +32,40 @@ function checkpointRoot(): string {
   return process.env.SUPERAGENT_CLI_BRIDGE_CHECKPOINTS_DIR || path.join(os.tmpdir(), "superagent-cli-bridge-checkpoints-v1");
 }
 
+const CANONICAL_JOB_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+
+export function isValidJobId(jobId: unknown): jobId is string {
+  return typeof jobId === "string" && CANONICAL_JOB_ID_REGEX.test(jobId);
+}
+
+function resolveSecureCheckpointPath(jobId: string): string {
+  if (!isValidJobId(jobId)) {
+    throw new Error(`Invalid canonical jobId format: "${String(jobId)}". Must match ${CANONICAL_JOB_ID_REGEX}`);
+  }
+  const root = path.resolve(checkpointRoot());
+  const resolved = path.resolve(root, `${jobId}.json`);
+  if (!resolved.startsWith(root + path.sep)) {
+    throw new Error(`Path containment violation: checkpoint path for "${jobId}" escapes checkpoint root`);
+  }
+  return resolved;
+}
+
 export async function writeJobCheckpoint(checkpoint: JobCheckpoint): Promise<string> {
-  const root = checkpointRoot();
+  const file = resolveSecureCheckpointPath(checkpoint.jobId);
+  const root = path.dirname(file);
   await fs.mkdir(root, { recursive: true });
-  const file = path.join(root, `${checkpoint.jobId}.json`);
-  const tmp = path.join(root, `${checkpoint.jobId}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString("hex")}.tmp`);
+  const tmp = path.join(
+    root,
+    `.tmp.${checkpoint.jobId}.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString("hex")}`
+  );
   await fs.writeFile(tmp, JSON.stringify(checkpoint, null, 2), "utf8");
   await fs.rename(tmp, file);
   return file;
 }
 
 export async function readJobCheckpoint(jobId: string): Promise<JobCheckpoint | null> {
-  const file = path.join(checkpointRoot(), `${jobId}.json`);
   try {
+    const file = resolveSecureCheckpointPath(jobId);
     const raw = await fs.readFile(file, "utf8");
     return JSON.parse(raw);
   } catch {

@@ -121,6 +121,12 @@ export async function runCli() {
     }
   }
 
+  // M3 Crash-safe Process Supervisor startup reconciliation (once-per-owner, P0-1)
+  try {
+    const { bootstrapProcessSupervisorOnStartup } = await import("./core/process/processSupervisor.js");
+    await bootstrapProcessSupervisorOnStartup({ workspaceRoot: process.cwd() });
+  } catch {}
+
   // Purge empty draft sessions in background on startup
   try {
     const { purgeEmptySessions } = await import("./core/config.js");

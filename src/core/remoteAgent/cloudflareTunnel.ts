@@ -621,6 +621,7 @@ export class CloudflareTunnelManager {
         launchIntent: "headless",
         lifecycle: "persistent",
         cleanupPolicy: "keep_alive",
+        systemScope: "global",
       }).then(async (reg) => {
         cfTunnelRecordId = reg.recordId;
         if (child.pid) {

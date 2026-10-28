@@ -221,12 +221,16 @@ export async function reconcileStartupProcesses(
   for (const record of allRecords) {
     const callerWs = options.callerWorkspaceRoot;
     const recordWs = record.ownership?.workspaceRoot;
-    const isForeign = Boolean(callerWs && recordWs && callerWs !== recordWs);
 
-    // If a caller workspace was requested, filter out or mask foreign workspace records
-    if (callerWs && isForeign) {
+    // Strict multi-tenant workspace boundary (P0-2):
+    // When callerWorkspaceRoot is specified, require EXACT match to record.ownership.workspaceRoot.
+    // Records without workspaceRoot (missing/unspecified/ownerless) and records from other workspaces
+    // MUST be completely omitted from all scoped entries, counts, owner probes, and checkpoint reads.
+    if (callerWs && recordWs !== callerWs) {
       continue;
     }
+
+    const isForeign = Boolean(callerWs && recordWs && callerWs !== recordWs);
 
     report.totalRecords++;
 
@@ -383,7 +387,7 @@ export async function reconcileStartupProcesses(
       }
     }
 
-    // 5. Job-Level Crash Reconciliation: Interrupted Mutating Jobs Check
+    // 5. Job-Level Crash Reconciliation: Interrupted Mutating Jobs Check (P1-1)
     if (record.ownership?.jobId) {
       const jobId = record.ownership.jobId;
       try {
@@ -393,38 +397,85 @@ export async function reconcileStartupProcesses(
           checkpoint?.lastEvent?.startsWith("verifier_") ||
           checkpoint?.verificationState === "verifying";
 
-        if (classification !== "currently_owned_live" && (hadMutatingWrite || wasVerifying)) {
-          // Mutating operation interrupted or outcome uncertain
-          jobAssessment = {
-            jobId,
-            previousStatus: checkpoint?.lastEvent ?? "in_progress",
-            reconciledStatus: "unknown_outcome_review_required",
-            hasMutatingWrite: true,
-            requiresReview: true,
-            eligibleForRetry: false,
-            reason: wasVerifying
-              ? "Process crashed during verifier execution. Verification outcome uncertain; operator review required."
-              : "Process crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.",
-          };
+        const isCleanTerminal =
+          isRecordTerminal(record.state) &&
+          (record.exitCode === 0 || record.terminalObservation?.exitCode === 0);
 
-          report.mutatingJobsRequiringReview++;
-          report.jobAssessments.push(jobAssessment);
+        const isAuthoritativelyVerified =
+          isCleanTerminal &&
+          (checkpoint?.verificationState === "verified" ||
+            checkpoint?.verificationState === "artifacts_verified" ||
+            checkpoint?.lastEvent === "verified_succeeded");
 
-          if (recommendedSafeAction !== "investigate_identity") {
-            recommendedSafeAction = "review";
-          }
-          reason += ` Interrupted mutating job '${jobId}' requires review: unknown_outcome_review_required.`;
+        const isAuthoritativelyFailed =
+          isRecordTerminal(record.state) &&
+          (checkpoint?.verificationState === "verification_failed" ||
+            checkpoint?.lastEvent === "verified_failed" ||
+            (record.exitCode !== null && record.exitCode !== 0) ||
+            (record.terminalObservation?.exitCode !== null &&
+              record.terminalObservation?.exitCode !== 0));
 
-          // Optionally persist this status into the job checkpoint so future checks stay fail-closed
-          if (options.persistInterruptedMutations && checkpoint) {
-            try {
-              await persistCheckpoint({
-                ...checkpoint,
-                lastEvent: "reconciled_unknown_outcome_review_required",
-                verificationState: "unknown_outcome_review_required",
-              });
-            } catch {
-              // Best-effort
+        if (classification !== "currently_owned_live") {
+          if (isAuthoritativelyVerified) {
+            // Completed job verified with authoritative proof; NOT unknown outcome
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "verified_succeeded",
+              reconciledStatus: "succeeded",
+              hasMutatingWrite: hadMutatingWrite,
+              requiresReview: false,
+              eligibleForRetry: false,
+              reason: "Terminal mutating job completed and was successfully verified with authoritative proof.",
+            };
+            report.jobAssessments.push(jobAssessment);
+          } else if (isAuthoritativelyFailed && !wasVerifying) {
+            // Proven failure; outcome is definitive, not unknown
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "failed",
+              reconciledStatus:
+                checkpoint?.verificationState === "verification_failed"
+                  ? "verification_failed"
+                  : "failed",
+              hasMutatingWrite: hadMutatingWrite,
+              requiresReview: false,
+              eligibleForRetry: false,
+              reason: "Terminal mutating job failed definitively with recorded exit code or verification failure.",
+            };
+            report.jobAssessments.push(jobAssessment);
+          } else if (hadMutatingWrite || wasVerifying) {
+            // Mutating operation interrupted mid-flight, verifier crashed, or outcome uncertain
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "in_progress",
+              reconciledStatus: "unknown_outcome_review_required",
+              hasMutatingWrite: true,
+              requiresReview: true,
+              eligibleForRetry: false,
+              reason: wasVerifying
+                ? "Process crashed during verifier execution. Verification outcome uncertain; operator review required."
+                : "Process crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.",
+            };
+
+            report.mutatingJobsRequiringReview++;
+            report.jobAssessments.push(jobAssessment);
+
+            if (recommendedSafeAction !== "investigate_identity") {
+              recommendedSafeAction = "review";
+            }
+            reason += ` Interrupted mutating job '${jobId}' requires review: unknown_outcome_review_required.`;
+
+            // Optionally persist this status into the job checkpoint so future checks stay fail-closed
+            if (options.persistInterruptedMutations && checkpoint) {
+              try {
+                await persistCheckpoint({
+                  ...checkpoint,
+                  lastEvent: "reconciled_unknown_outcome_review_required",
+                  verificationState: "unknown_outcome_review_required",
+                });
+              } catch {
+                // Best-effort
+              }
             }
           }
         }

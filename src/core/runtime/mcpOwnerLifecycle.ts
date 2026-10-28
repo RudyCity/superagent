@@ -163,6 +163,7 @@ async function startManaged(port:number,approve:string,cli:string):Promise<Manag
       launchIntent: "headless",
       lifecycle: "persistent",
       cleanupPolicy: "lease_managed",
+      systemScope: "global",
     });
     mcpRecordId = reg.recordId;
   } catch {}

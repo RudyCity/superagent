@@ -113,6 +113,7 @@ export class MuseWatchdogSupervisor {
           launchIntent: "headless",
           lifecycle: "persistent",
           cleanupPolicy: "keep_alive",
+          systemScope: "global",
         });
         watchdogRecordId = reg.recordId;
       } catch {}

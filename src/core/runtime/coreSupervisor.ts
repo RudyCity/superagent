@@ -244,6 +244,7 @@ export async function runCoreSupervisor(
         launchIntent: "headless",
         lifecycle: "persistent",
         cleanupPolicy: "lease_managed",
+        systemScope: "global",
       });
       workerRecordId = reg.recordId;
     } catch {}

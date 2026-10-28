@@ -132,6 +132,7 @@ async function spawnWatchdogLauncher():Promise<boolean>{
    launchIntent: "headless",
    lifecycle: "ephemeral",
    cleanupPolicy: "caller_owned",
+    systemScope: "global",
   });
   launcherRecordId = reg.recordId;
  } catch {}

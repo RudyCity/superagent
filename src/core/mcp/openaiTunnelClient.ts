@@ -608,6 +608,7 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
       launchIntent: "headless",
       lifecycle: "persistent",
       cleanupPolicy: "keep_alive",
+      systemScope: "global",
     });
     tunnelProcRecordId = reg.recordId;
   } catch {}

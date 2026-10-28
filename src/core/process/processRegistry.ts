@@ -63,6 +63,7 @@ export interface ProcessRecordOwnership {
   sessionId?: string;
   jobId?: string;
   taskId?: string;
+  systemScope?: "global" | "workspace";
 }
 
 export interface ProcessTerminalObservation {
@@ -174,7 +175,7 @@ export class ProcessRegistry {
   private saveQueue: Promise<void> = Promise.resolve();
 
   constructor(options: ProcessRegistryOptions = {}) {
-    this.storagePath = options.storagePath ?? getDefaultRegistryFilePath();
+    this.storagePath = path.resolve(options.storagePath ?? getDefaultRegistryFilePath());
     this.maxRecords = options.maxRecords ?? DEFAULT_MAX_REGISTRY_RECORDS;
   }
 
@@ -243,18 +244,7 @@ export class ProcessRegistry {
           this.corruptionReason = "Corrupted record in registry: missing or invalid recordId";
           return { success: false, error: this.corruptionReason };
         }
-        // Backward-compatible schema evolution: assign safe defaults if lifecycle or parentCreationIdentity missing
-        // Legacy records without lifecycle are REPORT ONLY. Never infer cleanup
-        // eligibility from executable names, component labels or job identifiers.
-        const lifecycle: ProcessLifecycle =
-          ["ephemeral", "job", "session", "persistent", "external"].includes(item.lifecycle)
-            ? item.lifecycle as ProcessLifecycle : "unknown";
-
-        const normalized: ProcessRecord = {
-          ...item,
-          lifecycle,
-          parentCreationIdentity: item.parentCreationIdentity ?? null,
-        };
+        const normalized = this.normalizeLoadedRecord(item);
         this.records.set(item.recordId, normalized);
       }
 
@@ -269,11 +259,180 @@ export class ProcessRegistry {
     }
   }
 
+  private normalizeLoadedRecord(item: any): ProcessRecord {
+    const lifecycle: ProcessLifecycle =
+      ["ephemeral", "job", "session", "persistent", "external"].includes(item.lifecycle)
+        ? (item.lifecycle as ProcessLifecycle)
+        : "unknown";
+
+    return {
+      ...item,
+      lifecycle,
+      parentCreationIdentity: item.parentCreationIdentity ?? null,
+    };
+  }
+
   /**
-   * Persists the current registry state to disk atomically using a temporary file.
-   * Compaction is applied to ensure bounded retention of terminal records.
-   * If the registry is in a corrupt state, saves are strictly rejected to avoid
-   * overwriting evidence or corrupting state.
+   * Reconciles a local record with an on-disk record.
+   * Monotonic terminal invariant (P0-3 / P1-3):
+   * Terminal state ("exited", "failed", "terminated") ALWAYS wins over active states.
+   * No stale resurrection is ever permitted.
+   */
+  private reconcileRecordPair(local: ProcessRecord, disk: ProcessRecord): ProcessRecord {
+    const isTerminal = (s: ProcessState) =>
+      s === "exited" || s === "failed" || s === "terminated";
+    const diskTerminal = isTerminal(disk.state);
+    const localTerminal = isTerminal(local.state);
+
+    let state: ProcessState;
+    let exitCode: number | null;
+    let signal: string | null;
+    let exitedAt: number | undefined;
+    let terminalObservation = local.terminalObservation || disk.terminalObservation;
+
+    if (diskTerminal && !localTerminal) {
+      // Disk is terminal, local is not: disk terminal state wins monotonically (no resurrection)
+      state = disk.state;
+      exitCode = disk.exitCode;
+      signal = disk.signal;
+      exitedAt = disk.exitedAt;
+      terminalObservation = disk.terminalObservation || terminalObservation;
+    } else if (localTerminal && !diskTerminal) {
+      // Local is terminal, disk is not: local terminal state wins monotonically
+      state = local.state;
+      exitCode = local.exitCode;
+      signal = local.signal;
+      exitedAt = local.exitedAt;
+      terminalObservation = local.terminalObservation || terminalObservation;
+    } else {
+      // Both terminal or both non-terminal: later updatedAt wins the state
+      const localTime = local.updatedAt || local.registeredAt || 0;
+      const diskTime = disk.updatedAt || disk.registeredAt || 0;
+      if (diskTime > localTime) {
+        state = disk.state;
+        exitCode = disk.exitCode;
+        signal = disk.signal;
+        exitedAt = disk.exitedAt;
+        terminalObservation = disk.terminalObservation || terminalObservation;
+      } else {
+        state = local.state;
+        exitCode = local.exitCode;
+        signal = local.signal;
+        exitedAt = local.exitedAt;
+        terminalObservation = local.terminalObservation || terminalObservation;
+      }
+    }
+
+    return {
+      ...disk,
+      ...local,
+      state,
+      exitCode,
+      signal,
+      exitedAt,
+      terminalObservation,
+      recordId: local.recordId,
+      pid: local.pid ?? disk.pid,
+      creationIdentity: local.creationIdentity || disk.creationIdentity,
+      parentCreationIdentity: local.parentCreationIdentity || disk.parentCreationIdentity,
+      startedAt: local.startedAt ?? disk.startedAt,
+      registeredAt: Math.min(local.registeredAt, disk.registeredAt || local.registeredAt),
+      updatedAt: Math.max(local.updatedAt || 0, disk.updatedAt || 0),
+      heartbeatAt: Math.max(local.heartbeatAt || 0, disk.heartbeatAt || 0) || undefined,
+      ownership: local.ownership || disk.ownership,
+      lifecycle: local.lifecycle !== "unknown" ? local.lifecycle : disk.lifecycle,
+      cleanupPolicy: local.cleanupPolicy || disk.cleanupPolicy,
+    };
+  }
+
+  /**
+   * Cross-process exclusive mutual exclusion lock for registry persistence.
+   * Uses OS-level exclusive file creation flag 'wx' (O_CREAT | O_EXCL).
+   * Enforces fail-closed stale-lock recovery by verifying owner PID liveness.
+   */
+  private async withRegistryLock<T>(fn: () => Promise<T>, timeoutMs = 15_000): Promise<T> {
+    const lockPath = `${this.storagePath}.lock`;
+    const targetDir = path.dirname(this.storagePath);
+    await fsp.mkdir(targetDir, { recursive: true });
+    const startTime = Date.now();
+    let lockHandle: fsp.FileHandle | null = null;
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        lockHandle = await fsp.open(lockPath, "wx", 0o600);
+        await lockHandle.writeFile(
+          JSON.stringify({
+            pid: process.pid,
+            createdAt: Date.now(),
+            token: crypto.randomBytes(4).toString("hex"),
+          })
+        );
+        await lockHandle.sync();
+        break;
+      } catch (err: any) {
+        if (err.code === "EEXIST") {
+          let isStale = false;
+          try {
+            const raw = await fsp.readFile(lockPath, "utf8");
+            const data = JSON.parse(raw);
+            if (typeof data.pid === "number") {
+              try {
+                process.kill(data.pid, 0);
+              } catch (killErr: any) {
+                if (killErr.code === "ESRCH") {
+                  isStale = true;
+                }
+              }
+            }
+            if (!isStale && Date.now() - (data.createdAt || 0) > 8_000) {
+              try {
+                process.kill(data.pid, 0);
+              } catch (kErr: any) {
+                if (kErr.code === "ESRCH") isStale = true;
+              }
+            }
+          } catch {
+            try {
+              const stat = await fsp.stat(lockPath);
+              if (Date.now() - stat.mtimeMs > 8_000) {
+                isStale = true;
+              }
+            } catch {}
+          }
+
+          if (isStale) {
+            await fsp.unlink(lockPath).catch(() => {});
+            continue;
+          }
+
+          const delay = 10 + Math.floor(Math.random() * 25);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    if (!lockHandle) {
+      throw new Error(`Timed out waiting for process registry lock: ${lockPath}`);
+    }
+
+    try {
+      return await fn();
+    } finally {
+      try {
+        await lockHandle.close();
+      } catch {}
+      try {
+        await fsp.unlink(lockPath);
+      } catch {}
+    }
+  }
+
+  /**
+   * Persists the current registry state to disk atomically using an exclusive
+   * cross-process lock, re-read and merge-by-record-id, and safe atomic replacement.
+   * If the registry is in a corrupt state, saves are strictly rejected.
    */
   public save(): Promise<void> {
     const operation = this.saveQueue.then(() => this.persistSnapshot());
@@ -286,48 +445,103 @@ export class ProcessRegistry {
       throw new Error(`Cannot persist registry: registry is marked corrupt (${this.corruptionReason}). Fail-closed.`);
     }
 
-    this.compact();
+    await this.withRegistryLock(async () => {
+      // Re-read on-disk records before writing to reconcile with concurrent writers (P0-3)
+      if (fs.existsSync(this.storagePath)) {
+        try {
+          const content = await fsp.readFile(this.storagePath, "utf8");
+          const trimmed = content.trim();
+          if (trimmed) {
+            let parsed: any;
+            try {
+              parsed = JSON.parse(trimmed);
+            } catch (jsonErr) {
+              this.isCorrupt = true;
+              this.corruptionReason = `Corrupted JSON encountered during locked re-read: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`;
+              throw new Error(`Cannot persist registry: registry on disk is corrupt. Fail-closed.`);
+            }
 
-    const data: ProcessRegistryData = {
-      version: 1,
-      updatedAt: Date.now(),
-      runtimeGeneration: getRuntimeGeneration(),
-      records: Array.from(this.records.values()),
-    };
+            if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.records)) {
+              this.isCorrupt = true;
+              this.corruptionReason = "Schema violation encountered during locked re-read";
+              throw new Error(`Cannot persist registry: registry on disk has schema violation. Fail-closed.`);
+            }
 
-    const targetDir = path.dirname(this.storagePath);
-    await fsp.mkdir(targetDir, { recursive: true });
+            // Merge disk records into memory
+            for (const item of parsed.records) {
+              if (!item || typeof item !== "object" || !item.recordId) {
+                this.isCorrupt = true;
+                this.corruptionReason = "Corrupt record in registry: missing or invalid recordId";
+                throw new Error("Cannot persist registry: record on disk is corrupt. Fail-closed.");
+              }
+              const diskRecord = this.normalizeLoadedRecord(item);
+              const localRecord = this.records.get(item.recordId);
+              if (!localRecord) {
+                this.records.set(item.recordId, diskRecord);
+              } else {
+                const merged = this.reconcileRecordPair(localRecord, diskRecord);
+                this.records.set(item.recordId, merged);
+              }
+            }
+          }
+        } catch (readErr) {
+          if (this.isCorrupt) throw readErr;
+          // If reading failed due to non-corruption reasons (e.g. file vanished), proceed with local records
+        }
+      }
 
-    const serialized = JSON.stringify(data, null, 2);
-    const tempFile = path.join(
-      targetDir,
-      `.tmp.proc_reg.${process.pid}.${Date.now()}.${crypto.randomBytes(3).toString("hex")}`
-    );
+      this.compact();
 
-    try {
-      await fsp.writeFile(tempFile, serialized, "utf8");
+      const data: ProcessRegistryData = {
+        version: 1,
+        updatedAt: Date.now(),
+        runtimeGeneration: getRuntimeGeneration(),
+        records: Array.from(this.records.values()),
+      };
+
+      const targetDir = path.dirname(this.storagePath);
+      await fsp.mkdir(targetDir, { recursive: true });
+
+      const serialized = JSON.stringify(data, null, 2);
+      const tempFile = path.join(
+        targetDir,
+        `.tmp.proc_reg.${process.pid}.${Date.now()}.${crypto.randomBytes(4).toString("hex")}`
+      );
+
       try {
-        await fsp.rename(tempFile, this.storagePath);
-      } catch (renameErr) {
-        // Windows cannot always replace an existing file with rename. Keep this
-        // fallback serialized so concurrent saves cannot race the replacement.
-        if (process.platform === "win32") {
+        await fsp.writeFile(tempFile, serialized, "utf8");
+
+        let renamed = false;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            await fsp.rename(tempFile, this.storagePath);
+            renamed = true;
+            break;
+          } catch (renameErr) {
+            if (process.platform === "win32") {
+              await new Promise((r) => setTimeout(r, 15 * (attempt + 1)));
+              continue;
+            }
+            throw renameErr;
+          }
+        }
+
+        if (!renamed && process.platform === "win32") {
+          // Fallback replacement on Windows inside exclusive lock
           try {
             await fsp.unlink(this.storagePath);
           } catch {}
           await fsp.rename(tempFile, this.storagePath);
-        } else {
-          throw renameErr;
         }
+      } catch (err) {
+        try {
+          if (fs.existsSync(tempFile)) {
+            await fsp.unlink(tempFile);
+          }
+        } catch {}
+        throw err;
       }
-    } catch (err) {
-      try {
-        if (fs.existsSync(tempFile)) {
-          await fsp.unlink(tempFile);
-        }
-      } catch {}
-      throw err;
-    }
+    });
   }
 
   /**
@@ -379,9 +593,23 @@ export class ProcessRegistry {
     const existing = this.records.get(recordId);
     if (!existing) return undefined;
 
+    // Monotonic terminal lifecycle (P1-3):
+    // A record in terminal state ("exited", "failed", "terminated") must NEVER regress
+    // back to "running" or "registered".
+    const isTerminal =
+      existing.state === "exited" ||
+      existing.state === "failed" ||
+      existing.state === "terminated";
+
+    const resolvedState =
+      isTerminal && (patch.state === "running" || patch.state === "registered")
+        ? existing.state
+        : (patch.state ?? existing.state);
+
     const updated: ProcessRecord = {
       ...existing,
       ...patch,
+      state: resolvedState,
       recordId: existing.recordId, // immutable
       updatedAt: Date.now(),
     };

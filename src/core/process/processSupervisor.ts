@@ -64,6 +64,7 @@ export interface RegisterProcessOptions {
   sessionId?: string;
   jobId?: string;
   taskId?: string;
+  systemScope?: "global" | "workspace";
 }
 
 export interface ProcessExitObservation {
@@ -98,6 +99,7 @@ export interface ProcessDiagnosticEntry {
     jobId?: string;
     taskId?: string;
     isForeignWorkspace?: boolean;
+    systemScope?: "global" | "workspace";
   };
   ownershipStatus: ProcessOwnershipCheckResult["status"];
   isOwnedByCurrentRuntime: boolean;
@@ -179,6 +181,7 @@ export class ProcessSupervisor {
       sessionId: options.sessionId,
       jobId: options.jobId,
       taskId: options.taskId,
+      systemScope: options.systemScope ?? (options.workspaceRoot ? "workspace" : "global"),
     };
 
     const lifecycle: ProcessLifecycle =
@@ -241,10 +244,19 @@ export class ProcessSupervisor {
     const existing = this.registry.getRecord(recordId);
     if (!existing) return null;
 
+    // MONOTONIC TERMINAL LIFECYCLE (P1-3):
+    // If the process has already reached a terminal state ('exited', 'failed', 'terminated'),
+    // an asynchronous or late spawn observation must NEVER resurrect it back to 'running'.
+    const isTerminal =
+      existing.state === "exited" ||
+      existing.state === "failed" ||
+      existing.state === "terminated";
+
     const now = Date.now();
+    const validPid = typeof pid === "number" && !isNaN(pid) && pid > 0 ? pid : existing.pid;
     const updated = this.registry.updateRecord(recordId, {
-      pid,
-      state: "running",
+      pid: validPid,
+      state: isTerminal ? existing.state : "running",
       startedAt: existing.startedAt ?? now,
       updatedAt: now,
       creationIdentity: options?.creationIdentity ?? existing.creationIdentity,
@@ -257,8 +269,8 @@ export class ProcessSupervisor {
     }
 
     // If creation identity wasn't explicitly supplied, resolve asynchronously via OS probe
-    if (!options?.creationIdentity && typeof pid === "number" && pid > 0) {
-      void readProcessStartIdentity(pid)
+    if (!options?.creationIdentity && typeof validPid === "number" && validPid > 0) {
+      void readProcessStartIdentity(validPid)
         .then(async (identity) => {
           if (identity) {
             await this.recordProcessIdentity(recordId, identity);
@@ -301,6 +313,16 @@ export class ProcessSupervisor {
    */
   public async recordProcessHeartbeat(recordId: string): Promise<void> {
     await this.initialize();
+
+    const existing = this.registry.getRecord(recordId);
+    if (
+      !existing ||
+      existing.state === "exited" ||
+      existing.state === "failed" ||
+      existing.state === "terminated"
+    ) {
+      return;
+    }
 
     const now = Date.now();
     this.registry.updateRecord(recordId, {
@@ -386,8 +408,10 @@ export class ProcessSupervisor {
       if (filter.component && record.component !== filter.component) continue;
       if (filter.state && record.state !== filter.state) continue;
 
-      if (filter.filterByWorkspaceRoot && record.ownership?.workspaceRoot) {
-        if (record.ownership.workspaceRoot !== filter.filterByWorkspaceRoot) {
+      // Strict workspace filtering (P1-4): require exact match to requested workspace.
+      // Omit ownerless/missing-root records when filtering by workspace.
+      if (filter.filterByWorkspaceRoot) {
+        if (!record.ownership?.workspaceRoot || record.ownership.workspaceRoot !== filter.filterByWorkspaceRoot) {
           continue;
         }
       }
@@ -411,18 +435,22 @@ export class ProcessSupervisor {
         unverifiedPidCount++;
       }
 
-      // Workspace privacy guard
+      // Workspace privacy guard (P1-4):
+      // Mask any record that does not match callerWorkspaceRoot (including ownerless records)
       const callerWs = filter.callerWorkspaceRoot;
       const recordWs = record.ownership?.workspaceRoot;
-      const isForeign = Boolean(callerWs && recordWs && callerWs !== recordWs);
+      const isForeign = Boolean(callerWs && recordWs !== callerWs);
 
       const ownership: ProcessDiagnosticEntry["ownership"] = {
         workspaceId: record.ownership?.workspaceId,
         taskId: record.ownership?.taskId,
         jobId: isForeign ? "[foreign_job]" : record.ownership?.jobId,
         sessionId: isForeign ? "[foreign_session]" : record.ownership?.sessionId,
+        systemScope: record.ownership?.systemScope,
         workspaceRoot: isForeign
-          ? `[foreign_workspace:${crypto.createHash("sha256").update(recordWs!).digest("hex").slice(0, 8)}]`
+          ? (recordWs
+              ? `[foreign_workspace:${crypto.createHash("sha256").update(recordWs).digest("hex").slice(0, 8)}]`
+              : "[unspecified_workspace]")
           : recordWs,
         isForeignWorkspace: isForeign,
       };
@@ -457,7 +485,7 @@ export class ProcessSupervisor {
       runtimeGeneration: getRuntimeGeneration(),
       isCorrupt,
       corruptionReason,
-      totalTracked: allRecords.length,
+      totalTracked: filter.filterByWorkspaceRoot ? entries.length : allRecords.length,
       activeOwnedCount,
       historicalCount,
       terminalCount,
@@ -470,6 +498,7 @@ export class ProcessSupervisor {
 
 // Global process supervisor singleton
 let globalProcessSupervisor: ProcessSupervisor | null = null;
+let hasBootstrappedSupervisor = false;
 
 export function getProcessSupervisor(options?: ProcessRegistryOptions): ProcessSupervisor {
   if (!globalProcessSupervisor) {
@@ -478,6 +507,58 @@ export function getProcessSupervisor(options?: ProcessRegistryOptions): ProcessS
   return globalProcessSupervisor;
 }
 
+export interface BootstrapProcessSupervisorOptions {
+  workspaceRoot?: string;
+  silent?: boolean;
+}
+
+/**
+ * Executes safe, once-per-owner runtime startup reconciliation (P0-1).
+ * Strictly scoped to the active workspace to prevent foreign workspace enumeration.
+ * Completely non-destructive: zero automatic cleanup, zero process kill, zero prompt replay.
+ */
+export async function bootstrapProcessSupervisorOnStartup(
+  options: BootstrapProcessSupervisorOptions = {}
+): Promise<ProcessReconciliationReport | null> {
+  const supervisor = getProcessSupervisor();
+  if (hasBootstrappedSupervisor) {
+    return supervisor.getLastReconciliationReport();
+  }
+  hasBootstrappedSupervisor = true;
+
+  try {
+    await supervisor.initialize();
+    const targetWs = options.workspaceRoot ?? process.cwd();
+    const report = await supervisor.reconcileOnStartup({
+      callerWorkspaceRoot: targetWs,
+    });
+
+    if (report.isCorrupt && !options.silent) {
+      console.warn(
+        `[ProcessSupervisor] Warning: Process registry file is corrupt (${report.corruptionReason}). Process supervision is operating in safe fail-closed mode.`
+      );
+    } else if (report.mutatingJobsRequiringReview > 0 && !options.silent) {
+      console.warn(
+        `[ProcessSupervisor] Alert: Startup reconciliation detected ${report.mutatingJobsRequiringReview} interrupted mutating job(s) requiring operator review ('unknown_outcome_review_required'). Zero prompt replay executed.`
+      );
+    }
+
+    return report;
+  } catch (err: any) {
+    if (!options.silent) {
+      console.warn(
+        `[ProcessSupervisor] Non-fatal startup reconciliation error: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    return supervisor.getLastReconciliationReport();
+  }
+}
+
 export function resetProcessSupervisorForTest(): void {
   globalProcessSupervisor = null;
+  hasBootstrappedSupervisor = false;
+}
+
+export function resetSupervisorBootstrapForTest(): void {
+  resetProcessSupervisorForTest();
 }
