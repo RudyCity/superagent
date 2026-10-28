@@ -16,17 +16,23 @@ export function inspectAgyBridgeLine(line: string): AgyBridgeSignal {
   if (/^(?:jetski:|agy:).*no output produced.*(?:permission|auto-denied)/i.test(trimmed)) {
     return { permissionDenied: "AGY headless execution could not obtain required tool approval." };
   }
+  if (/permission check failed|user denied permission|permission.*auto-?denied|denied.*permission|action rejected by permission policy/i.test(trimmed)) {
+    return { permissionDenied: `AGY tool execution blocked by permission check: ${trimmed.slice(0, 200)}` };
+  }
   if (!trimmed.startsWith("{") || trimmed.length > 65536) return {};
   try {
     const event = JSON.parse(trimmed) as Record<string, any>;
     if (event.event === "result" && Array.isArray(event.result?.denied_actions) && event.result.denied_actions.length) {
-      return { permissionDenied: "AGY reported denied_actions in its final result." };
+      const firstAction = event.result.denied_actions[0];
+      const desc = typeof firstAction === "string" ? firstAction : JSON.stringify(firstAction);
+      return { permissionDenied: `AGY reported denied_actions in its final result: ${desc}` };
     }
     if (event.event === "step_update" && event.step_update?.state === "ERROR") {
       const details = event.step_update?.tool_info?.error;
       const message = String(details?.message ?? "");
-      if (/permission check failed|user denied permission|permission.*auto.denied|denied.*permission/i.test(message)) {
-        return { permissionDenied: "AGY reported a denied tool permission (check delegate.tail for the exact action)." };
+      if (/permission check failed|user denied permission|permission.*auto-?denied|denied.*permission|action rejected by permission policy/i.test(message)) {
+        const toolName = event.step_update?.tool_info?.name ? ` for tool '${event.step_update.tool_info.name}'` : "";
+        return { permissionDenied: `AGY reported a denied tool permission${toolName}: ${message}` };
       }
     }
   } catch { /* Untrusted/non-JSON output is not a status signal. */ }

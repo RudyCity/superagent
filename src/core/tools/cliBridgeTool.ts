@@ -88,6 +88,7 @@ import fs from "fs";
 import { readCliLogPage } from "./cliBridgeObservability.js";
 import path from "path";
 import { canonicalCliWorkspace, resolveAuthorizedDelegateCwd, delegateJobVisibleToWorkspace, cliSessionVisibleToWorkspace, cliArtifactPathVisibleToWorkspace } from "./cliBridgeWorkspaceScope.js";
+import { normalizePublicAcceptanceContract, AcceptanceContractValidationError } from "./cliBridgeAcceptanceContract.js";
 import {
   startDelegateJob,
   listDelegateJobs,
@@ -101,6 +102,22 @@ import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.
 import { projectCliDelegate } from "../channels/unifiedChannelTask.js";
 import { listDetailedCapacitySlots, recoverProvenOrphanSlot } from "./cliBridgeCapacity.js";
 import { inspectAgyBridgeOutput, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
+import { listRoleProfiles, getRoleProfile } from "./cliBridgeRoleProfiles.js";
+import {
+  createDagGraph,
+  saveDagGraph,
+  loadDagGraph,
+  listDags,
+  executeDagGraph,
+  runSpeculativeWorkflow,
+  runConsensusWorkflow,
+  type CreateDagOptions,
+  type SpeculativeCandidateSpec,
+  type ReviewerSpec,
+} from "./cliBridgeDag.js";
+import { registerActiveDag, cancelActiveDag } from "./cliBridgeOrchestrationFeed.js";
+import type { JobPriority } from "./cliBridgeScheduler.js";
+import type { ResourceClaimRequest } from "./cliBridgeResourceClaims.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
@@ -132,6 +149,14 @@ const ACTIONS = [
   "session.read",   // persisted complete logs
   "session.detach", // v1.5.17
   "profile.list",
+  "role.list",
+  "dag.create",
+  "dag.start",
+  "dag.get",
+  "dag.list",
+  "dag.cancel",
+  "speculative.run",
+  "consensus.review",
 ] as const;
 
 type Action = (typeof ACTIONS)[number];
@@ -359,6 +384,95 @@ export const cliBridgeTool: Tool = {
         type: "number",
         description: "Capacity slot index (0 to 11) for action=delegate.recover-slot.",
       },
+      priority: {
+        type: "number",
+        description: "Priority score (1-100, default 50). Higher priority jobs jump ahead in the priority queue.",
+      },
+      resourceClass: {
+        type: "string",
+        enum: ["light", "normal", "heavy", "exclusive"],
+        description: "Resource intensity class for adaptive scheduling (light, normal, heavy, exclusive).",
+      },
+      role: {
+        type: "string",
+        description: "Agent role profile alias (e.g. 'architect', 'coder', 'tester', 'reviewer', 'researcher') applying role instructions, timeout, and worktree policies.",
+      },
+      worktree: {
+        type: "boolean",
+        description: "If true, executes the job in an isolated Git worktree with unique branch and commit provenance, keeping the main checkout clean.",
+      },
+      baseCommitSha: {
+        type: "string",
+        description: "Base commit SHA for creating the isolated worktree.",
+      },
+      branchName: {
+        type: "string",
+        description: "Optional custom branch name for the isolated worktree.",
+      },
+      acceptanceContract: {
+        type: "object",
+        description:
+          "Acceptance criteria for delegate.start. Supports artifacts[] (relative path, mustExist, minBytes, expectedSha256), gitDiff (maxChangedFiles, prohibitedPaths, requireCommit, baseCommitSha), and typed verifier commands (tests, build, commands) using { kind: 'npm-script'|'bun-script'|'binary'|'git-status'|'git-diff', name/executable, args }. Exit 0 without accepted proof remains UNVERIFIED.",
+        properties: {
+          artifacts: {
+            type: "array", minItems: 1, maxItems: 12,
+            items: { type: "object", properties: {
+              path: { type: "string" }, mustExist: { type: "boolean" }, minBytes: { type: "number" }, expectedSha256: { type: "string" },
+            }, required: ["path"] },
+          },
+          gitDiff: { type: "object", properties: {
+            maxChangedFiles: { type: "number" }, prohibitedPaths: { type: "array", items: { type: "string" } }, requireCommit: { type: "boolean" }, baseCommitSha: { type: "string" },
+          } },
+          tests: {
+            type: "array", maxItems: 8,
+            items: { anyOf: [{ type: "string" }, { type: "object" }] },
+            description: "Authorized typed test verification commands.",
+          },
+          build: {
+            type: "array", maxItems: 8,
+            items: { anyOf: [{ type: "string" }, { type: "object" }] },
+            description: "Authorized typed build verification commands.",
+          },
+          commands: {
+            type: "array", maxItems: 8,
+            items: { anyOf: [{ type: "string" }, { type: "object" }] },
+            description: "Authorized typed general verification commands.",
+          },
+          customVerifier: {
+            anyOf: [{ type: "string" }, { type: "object" }],
+            description: "Authorized typed custom verification command.",
+          },
+        },
+      },
+      resourceClaims: {
+        type: "array",
+        items: { type: "string" },
+        description: "Relative file paths to lock with atomic cross-process mutexes before starting the job.",
+      },
+      queueIfBusy: {
+        type: "boolean",
+        description: "If true, queues the job in durable priority queue instead of failing immediately when capacity slots or quotas are full.",
+      },
+      graphId: {
+        type: "string",
+        description: "DAG graph ID for action=dag.start / dag.get / dag.cancel.",
+      },
+      dag: {
+        type: "object",
+        description: "DAG definition object for action=dag.create containing name, nodes array, maxFanOut, and failFast.",
+      },
+      candidates: {
+        type: "array",
+        description: "Candidate specifications array for action=speculative.run.",
+      },
+      reviewers: {
+        type: "array",
+        description: "Reviewer specifications array for action=consensus.review.",
+      },
+      diff: {
+        type: "string",
+        description: "Diff or patch string to review for action=consensus.review.",
+      },
     },
     required: ["action"],
   },
@@ -453,13 +567,27 @@ export const cliBridgeTool: Tool = {
           const active = current.filter(job => ["starting", "running", "cancelling"].includes(job.status));
           const silent = active.filter(job => Date.now() - (job.lastOutputAt ?? job.startedAt) > 60_000);
           const stalledOwners = active.filter(job => Date.now() - (job.heartbeatAt ?? job.startedAt) > 60_000);
+          let slotWarning = "";
+          try {
+            const { listDetailedCapacitySlots } = await import("./cliBridgeCapacity.js");
+            const slots = await listDetailedCapacitySlots();
+            const occupied = slots.filter(s => s.occupied);
+            if (active.length === 0 && occupied.length > 0) {
+              slotWarning = `WARNING: Active jobs in workspace = 0, but host capacity has ${occupied.length} occupied slot(s). Leases may be held by other instances or require orphan inspection via delegate.slots / delegate.recovery.`;
+            }
+          } catch {}
           return ["CLI Bridge project job health:",
             "Jobs retained: " + current.length,
             "Active: " + active.length,
             "Silent >60s (not proof of a hang): " + silent.length,
             "Missing owner heartbeat >60s: " + stalledOwners.length,
+            "Verified: " + current.filter(job => job.completionState === "verified").length,
+            "Artifacts verified (legacy file-change proof): " + current.filter(job => job.completionState === "artifacts_verified").length,
             "Completion unverified: " + current.filter(job => job.completionState === "unverified").length,
+            "Verification failed: " + current.filter(job => job.status === "verification_failed" || job.completionState === "verification_failed" || job.completionState === "artifact_verification_failed").length,
             "Permission blocked: " + current.filter(job => job.status === "permission_blocked").length,
+            "Review required: " + current.filter(job => job.status === "unknown_outcome_review_required" || job.completionState === "unknown_outcome_review_required" || job.completionState === "interrupted").length,
+            ...(slotWarning ? [slotWarning] : []),
             ...active.map(job => "- " + job.jobId + " | " + job.status +
               " | stage=" + (job.currentStage ?? "no progress event") +
               " | output=" + job.outputBytes + " bytes"),
@@ -514,6 +642,156 @@ export const cliBridgeTool: Tool = {
 
         case "profile.list":
           return handleProfileList();
+
+        case "role.list": {
+          const roles = listRoleProfiles();
+          const lines = [`Available Agent Role Profiles (${roles.length}):`];
+          for (const r of roles) {
+            lines.push(`  • ${r.roleId.padEnd(12)} - ${r.title} [CLI: ${r.cliAlias}, Mode: ${r.permissionMode}, Resource: ${r.resourceClass}, Worktree: ${r.worktreePolicy}]`);
+            lines.push(`               ${r.description}`);
+          }
+          return lines.join("\n");
+        }
+
+        case "dag.create": {
+          const options = (args.dag ?? args) as any;
+          if (!options.nodes || !Array.isArray(options.nodes)) {
+            return "Error: 'nodes' array is required for action=dag.create.";
+          }
+          const dag = createDagGraph({
+            name: String(options.name ?? "CLI-Bridge-DAG"),
+            workspaceRoot: canonicalCliWorkspace(cwd),
+            nodes: options.nodes,
+            maxFanOut: options.maxFanOut !== undefined ? Number(options.maxFanOut) : undefined,
+            failFast: options.failFast !== undefined ? Boolean(options.failFast) : undefined,
+          });
+          await saveDagGraph(dag);
+          registerActiveDag(dag);
+          return [
+            `Created DAG workflow: ${dag.graphId} (${dag.name})`,
+            `Nodes: ${Object.keys(dag.nodes).length}`,
+            `Status: ${dag.status}`,
+            `Execute with action=dag.start, graphId=${dag.graphId}`,
+          ].join("\n");
+        }
+
+        case "dag.start": {
+          const graphId = String(args.graphId ?? "").trim();
+          if (!graphId) return "Error: 'graphId' is required for action=dag.start.";
+          const dag = await loadDagGraph(graphId);
+          if (!dag) return `Error: DAG '${graphId}' not found.`;
+          registerActiveDag(dag);
+          if (args.wait === true) {
+            await executeDagGraph(dag, { signal });
+            return [
+              `Completed DAG workflow: ${dag.graphId} (${dag.name})`,
+              `Final status: ${dag.status}`,
+              `Nodes summary: ${Object.values(dag.nodes).map(n => `${n.id}=${n.status}`).join(", ")}`,
+            ].join("\n");
+          } else {
+            void executeDagGraph(dag).catch(console.error);
+            return [
+              `Started execution of DAG workflow: ${dag.graphId} (${dag.name})`,
+              `Status: running`,
+              `Poll progress with action=dag.get, graphId=${dag.graphId}`,
+            ].join("\n");
+          }
+        }
+
+        case "dag.get": {
+          const graphId = String(args.graphId ?? "").trim();
+          if (!graphId) return "Error: 'graphId' is required for action=dag.get.";
+          const dag = await loadDagGraph(graphId);
+          if (!dag) return `Error: DAG '${graphId}' not found.`;
+          const lines = [
+            `DAG Workflow: ${dag.graphId} (${dag.name})`,
+            `Status: ${dag.status}`,
+            `Created: ${new Date(dag.createdAt).toISOString()}`,
+            dag.startedAt ? `Started: ${new Date(dag.startedAt).toISOString()}` : "",
+            dag.completedAt ? `Completed: ${new Date(dag.completedAt).toISOString()}` : "",
+            `Nodes (${Object.keys(dag.nodes).length}):`,
+          ].filter(Boolean);
+          for (const node of Object.values(dag.nodes)) {
+            lines.push(`  - ${node.id} [${node.status}] ${node.roleId ? `role=${node.roleId} ` : ""}${node.jobId ? `job=${node.jobId} ` : ""}${node.result?.verificationState ? `verif=${node.result.verificationState} ` : ""}`);
+            if (node.result?.error) lines.push(`      Error: ${node.result.error}`);
+            if (node.result?.verdict) lines.push(`      Verdict: ${node.result.verdict} (${node.result.verdictReason ?? ""})`);
+          }
+          return lines.join("\n");
+        }
+
+        case "dag.list": {
+          const dags = await listDags(canonicalCliWorkspace(cwd));
+          if (dags.length === 0) return "No DAG workflows found in this workspace.";
+          const lines = [`DAG Workflows in workspace (${dags.length}):`];
+          for (const d of dags) {
+            lines.push(`  • ${d.graphId} - ${d.name} [Status: ${d.status}, Nodes: ${Object.keys(d.nodes).length}, Created: ${new Date(d.createdAt).toISOString()}]`);
+          }
+          return lines.join("\n");
+        }
+
+        case "dag.cancel": {
+          const graphId = String(args.graphId ?? "").trim();
+          if (!graphId) return "Error: 'graphId' is required for action=dag.cancel.";
+          const dag = await loadDagGraph(graphId);
+          if (dag && dag.workspaceRoot && path.resolve(dag.workspaceRoot).toLowerCase() !== path.resolve(cwd).toLowerCase()) {
+            return "Error: unauthorized; DAG belongs to a different workspace.";
+          }
+          cancelActiveDag(graphId);
+          if (dag) {
+            dag.status = "cancelled";
+            dag.completedAt = Date.now();
+            for (const node of Object.values(dag.nodes)) {
+              if (node.status === "running" && node.jobId) {
+                await cancelDelegateJob(node.jobId).catch(() => {});
+                node.status = "cancelled";
+              } else if (node.status === "pending") {
+                node.status = "cancelled";
+              }
+            }
+            await saveDagGraph(dag);
+          }
+          return `Cancelled DAG workflow: ${graphId}`;
+        }
+
+        case "speculative.run": {
+          const candidates = args.candidates as SpeculativeCandidateSpec[] | undefined;
+          if (!candidates || !Array.isArray(candidates) || candidates.length === 0) {
+            return "Error: 'candidates' array is required for action=speculative.run.";
+          }
+          const result = await runSpeculativeWorkflow(candidates, canonicalCliWorkspace(cwd), {
+            timeoutMs: args.timeoutMs !== undefined ? Number(args.timeoutMs) : undefined,
+          });
+          return [
+            "Speculative execution finished:",
+            `Winner: ${result.winnerId ?? "none (all candidates failed verification)"}`,
+            `Losers: ${result.loserIds.join(", ") || "none"}`,
+            result.winnerJob ? `Winner Job: ${result.winnerJob.jobId} [status=${result.winnerJob.status}, proof=${result.winnerJob.completionState}]` : "",
+          ].filter(Boolean).join("\n");
+        }
+
+        case "consensus.review": {
+          const reviewers = args.reviewers as ReviewerSpec[] | undefined;
+          const diff = String(args.diff ?? "").trim();
+          if (!reviewers || !Array.isArray(reviewers) || reviewers.length === 0) {
+            return "Error: 'reviewers' array is required for action=consensus.review.";
+          }
+          if (!diff) {
+            return "Error: 'diff' is required for action=consensus.review.";
+          }
+          const result = await runConsensusWorkflow(diff, reviewers, canonicalCliWorkspace(cwd), {
+            timeoutMs: args.timeoutMs !== undefined ? Number(args.timeoutMs) : undefined,
+          });
+          const lines = [
+            "Consensus review completed:",
+            `Consensus verdict: ${result.consensusVerdict} (Agreement ratio: ${Math.round(result.agreementRatio * 100)}%)`,
+            `Votes: ${JSON.stringify(result.votes)}`,
+            "Individual reviewer verdicts:",
+          ];
+          for (const v of result.verdicts) {
+            lines.push(`  - ${v.agentId}: ${v.verdict} (${v.reason ?? ""})`);
+          }
+          return lines.join("\n");
+        }
 
         default:
           return formatUnknownActionError(action, [...ACTIONS]);
@@ -701,10 +979,13 @@ async function handleDelegate(
   }
 
   // v1.5.16: Apply the profile's prompt template with system (if any).
+  const roleProf = typeof args.role === "string" ? getRoleProfile(args.role.trim()) : undefined;
+  const roleSystem = roleProf?.systemInstructions;
   const rawSystemPrompt = args.system ? String(args.system) : undefined;
+  const combinedSystemPrompt = [rawSystemPrompt, roleSystem].filter(Boolean).join("\n\n") || undefined;
   const fullSystemPrompt = artifactContext
-    ? (rawSystemPrompt ? `${rawSystemPrompt}\n\n${artifactContext}` : artifactContext)
-    : rawSystemPrompt;
+    ? (combinedSystemPrompt ? `${combinedSystemPrompt}\n\n${artifactContext}` : artifactContext)
+    : combinedSystemPrompt;
   const tpl = profile?.defaultPromptTemplate ?? "{system}\n\n{prompt}";
   const composedPrompt = applyPromptTemplate(tpl, { system: fullSystemPrompt ?? "", prompt });
 
@@ -742,6 +1023,31 @@ async function handleDelegate(
       abortError.name = "AbortError";
       throw abortError;
     }
+    let mappedPriority: JobPriority | undefined;
+    if (typeof args.priority === "string" && ["critical", "high", "normal", "low"].includes(args.priority)) {
+      mappedPriority = args.priority as JobPriority;
+    } else if (typeof args.priority === "number") {
+      mappedPriority = args.priority >= 80 ? "critical" : args.priority >= 60 ? "high" : args.priority >= 30 ? "normal" : "low";
+    }
+
+    const normalizedClaims: ResourceClaimRequest[] | undefined = Array.isArray(args.resourceClaims)
+      ? args.resourceClaims.map((c: any) =>
+          typeof c === "string"
+            ? { type: "file" as const, target: c, mode: "exclusive" as const }
+            : c
+        )
+      : undefined;
+
+    let acceptanceContract;
+    try {
+      acceptanceContract = normalizePublicAcceptanceContract(args.acceptanceContract);
+    } catch (error) {
+      if (error instanceof AcceptanceContractValidationError) {
+        return "Error: invalid acceptanceContract: " + error.message;
+      }
+      throw error;
+    }
+
     const job = await startDelegateJob({
       cliAlias: desc.alias,
       binary: desc.binary,
@@ -752,6 +1058,15 @@ async function handleDelegate(
       idempotencyKey: typeof args.idempotencyKey === "string" ? args.idempotencyKey : undefined,
       args: [...combinedArgs, composedPrompt],
       timeoutMs: timeoutMs ?? 30 * 60 * 1000,
+      priority: mappedPriority,
+      resourceClass: typeof args.resourceClass === "string" ? (args.resourceClass as any) : undefined,
+      roleProfile: typeof args.role === "string" ? args.role.trim() : undefined,
+      worktree: args.worktree !== undefined ? Boolean(args.worktree) : undefined,
+      baseCommitSha: typeof args.baseCommitSha === "string" ? args.baseCommitSha.trim() : undefined,
+      branchName: typeof args.branchName === "string" ? args.branchName.trim() : undefined,
+      acceptanceContract,
+      resourceClaims: normalizedClaims,
+      queueIfBusy: args.queueIfBusy !== undefined ? Boolean(args.queueIfBusy) : undefined,
     });
     return formatStartedDelegateJob(job, composedPrompt);
   }
@@ -814,6 +1129,10 @@ function formatStartedDelegateJob(job: Awaited<ReturnType<typeof startDelegateJo
     "Status: " + job.status,
     "Completion proof: " + (job.completionState ?? "unverified"),
     "Expected artifacts: " + (job.expectedArtifacts?.join(", ") || "(none; exit 0 is not proof)"),
+    "Role profile: " + (job.roleProfile ?? "(none)"),
+    "Worktree: " + (job.worktreePath ?? "none (in-place)"),
+    "Priority: " + (job.priority ?? 50),
+    "Resource class: " + (job.resourceClass ?? "normal"),
     "CLI: " + job.cliAlias + " | PID: " + (job.pid ?? "starting") + " | Timeout: " + job.timeoutMs + "ms",
     "Working directory: " + job.cwd,
     "Prompt: " + prompt.slice(0, 180) + (prompt.length > 180 ? "…" : ""),
@@ -868,12 +1187,23 @@ async function handleDelegateRecovery(jobId: string, callerWorkspace: string): P
   ].join("\n");
 }
 
+function taskOutcomeLabel(job: { status: string; completionState?: string }): string {
+  const proof = job.completionState ?? "unverified";
+  if (proof === "verified") return "VERIFIED";
+  if (proof === "artifacts_verified") return "ARTIFACTS_VERIFIED";
+  if (proof === "permission_blocked" || job.status === "permission_blocked") return "PERMISSION_BLOCKED";
+  if (proof === "verification_failed" || proof === "artifact_verification_failed" || job.status === "verification_failed") return "VERIFICATION_FAILED";
+  if (proof === "unknown_outcome_review_required" || job.status === "unknown_outcome_review_required" || proof === "interrupted") return "REVIEW_REQUIRED";
+  if (job.status === "succeeded" && proof === "unverified") return "PROCESS_OK / UNVERIFIED";
+  return job.status.toUpperCase();
+}
+
 async function handleDelegateJobs(callerWorkspace: string): Promise<string> {
   const jobs = (await listDelegateJobs()).filter(job => delegateJobVisibleToWorkspace(job, callerWorkspace));
   if (jobs.length === 0) return "No CLI Bridge background delegation jobs yet.";
   const lines = ["CLI Bridge background jobs (" + jobs.length + " retained):"];
   for (const job of jobs) {
-    lines.push("- " + job.jobId + " | " + job.status + " | proof=" + (job.completionState ?? "unverified") + " | cli=" + job.cliAlias + " | pid=" + (job.pid ?? "-") + " | exit=" + (job.exitCode ?? "-") + " | duration=" + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms");
+    lines.push("- " + job.jobId + " | outcome=" + taskOutcomeLabel(job) + " | process=" + job.status + " | proof=" + (job.completionState ?? "unverified") + " | cli=" + job.cliAlias + " | pid=" + (job.pid ?? "-") + " | exit=" + (job.exitCode ?? "-") + " | duration=" + (job.durationMs ?? (Date.now() - job.startedAt)) + "ms");
     lines.push("  cwd: " + job.cwd);
     lines.push("  log: " + job.logPath);
   }
@@ -887,8 +1217,16 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
   return [
     "CLI Bridge job: " + job.jobId,
     "Status: " + job.status,
+    "Task outcome: " + taskOutcomeLabel(job),
+    "Process status: " + job.status,
     "Unified channel status: " + projectCliDelegate(job).status,
     "Completion proof: " + (job.completionState ?? "unverified"),
+    "Role profile: " + (job.roleProfile ?? "(none)"),
+    "Worktree: " + (job.worktreePath ?? "none (in-place)"),
+    "Priority: " + (job.priority ?? 50),
+    "Resource class: " + (job.resourceClass ?? "normal"),
+    "Acceptance contract: " + (job.acceptanceContract ? JSON.stringify(job.acceptanceContract) : "(none)"),
+    "Verification state: " + (job.verificationResult?.state ?? "(none)"),
     "Artifact evidence: " + (job.artifactEvidence?.map(item =>
       [item.path, item.state, item.sha256 ? "sha256=" + item.sha256 : "", item.bytes === undefined ? "" : "bytes=" + item.bytes].filter(Boolean).join(" ")
     ).join("; ") || "(none)"),

@@ -3439,6 +3439,115 @@ export async function handleServerRoute(
     return true;
   }
 
+  // ─── Multi-Agent Orchestration Endpoints (M6) ──────────────────────────────
+  if (pathname === "/api/orchestration/status" && req.method === "GET") {
+    const wsPath = resolveWorkspacePath(req);
+    try {
+      const { getOrchestrationLiveStatus } = await import("./core/tools/cliBridgeOrchestrationFeed.js");
+      const feed = await getOrchestrationLiveStatus(wsPath || undefined);
+      sendJSON(res, 200, { success: true, ...feed });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/orchestration/metrics" && req.method === "GET") {
+    const wsPath = resolveWorkspacePath(req);
+    try {
+      const { getOrchestrationMetrics } = await import("./core/tools/cliBridgeOrchestrationFeed.js");
+      const metrics = await getOrchestrationMetrics(wsPath || undefined);
+      sendJSON(res, 200, { success: true, metrics });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/orchestration/dags" && req.method === "GET") {
+    const wsPath = resolveWorkspacePath(req);
+    try {
+      const { listActiveDags } = await import("./core/tools/cliBridgeOrchestrationFeed.js");
+      sendJSON(res, 200, { success: true, dags: listActiveDags(wsPath || undefined) });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/orchestration/dag" && req.method === "POST") {
+    const wsPath = resolveWorkspacePath(req);
+    try {
+      const bodyStr = await readBody(req);
+      const payload = JSON.parse(bodyStr || "{}");
+      const { createDagGraph, executeDagGraph } = await import("./core/tools/cliBridgeDag.js");
+      const { registerActiveDag } = await import("./core/tools/cliBridgeOrchestrationFeed.js");
+
+      const workspaceRoot = payload.workspaceRoot || wsPath || process.cwd();
+
+      const dag = createDagGraph({
+        name: payload.name || "TLine-DAG",
+        workspaceRoot,
+        nodes: payload.nodes || [],
+        maxFanOut: payload.maxFanOut,
+        failFast: payload.failFast,
+      });
+
+      registerActiveDag(dag);
+      if (payload.autoStart !== false) {
+        void executeDagGraph(dag).catch(console.error);
+      }
+      sendJSON(res, 201, { success: true, dag });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/orchestration/dag/cancel" && req.method === "POST") {
+    try {
+      const bodyStr = await readBody(req);
+      const payload = JSON.parse(bodyStr || "{}");
+      const { cancelActiveDag } = await import("./core/tools/cliBridgeOrchestrationFeed.js");
+      const { loadDagGraph, saveDagGraph } = await import("./core/tools/cliBridgeDag.js");
+      const { cancelDelegateJob } = await import("./core/tools/cliBridgeDelegateJobs.js");
+      if (!payload.graphId) {
+        sendJSON(res, 400, { success: false, error: "graphId is required" });
+        return true;
+      }
+      const dag = await loadDagGraph(payload.graphId);
+      if (!dag) {
+        sendJSON(res, 404, { success: false, error: `DAG '${payload.graphId}' not found` });
+        return true;
+      }
+      const callerWorkspace = payload.workspaceRoot || resolveWorkspacePath(req) || (req.headers["x-superagent-workspace"] as string);
+      if (!callerWorkspace) {
+        sendJSON(res, 400, { success: false, error: "Caller workspace context is required to cancel DAG" });
+        return true;
+      }
+      if (dag.workspaceRoot && path.resolve(dag.workspaceRoot).toLowerCase() !== path.resolve(callerWorkspace).toLowerCase()) {
+        sendJSON(res, 403, { success: false, error: "Unauthorized: DAG belongs to a different workspace" });
+        return true;
+      }
+      cancelActiveDag(payload.graphId);
+      dag.status = "cancelled";
+      dag.completedAt = Date.now();
+      for (const node of Object.values(dag.nodes)) {
+        if (node.status === "running" && node.jobId) {
+          await cancelDelegateJob(node.jobId).catch(() => {});
+          node.status = "cancelled";
+        } else if (node.status === "pending") {
+          node.status = "cancelled";
+        }
+      }
+      await saveDagGraph(dag);
+      sendJSON(res, 200, { success: true, message: `DAG ${payload.graphId} cancelled` });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || String(err) });
+    }
+    return true;
+  }
+
   // ─── Checkpoints Endpoints ──────────────────────────────────────────────────
   if (pathname === "/api/checkpoints" && req.method === "GET") {
     const session = resolveSession(req);
