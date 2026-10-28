@@ -749,6 +749,206 @@ export async function handleServerRoute(
 
   // Explicitly scoped browser sharing API for authenticated T-Line clients.
   // No arbitrary CDP action execution through this endpoint.
+    // Secure Human Takeover API & UI (Milestone M3)
+  if (pathname.startsWith("/api/browser/takeover/")) {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    // Serve local installed noVNC ESM modules, never arbitrary filesystem paths.
+    // The HTTP listener remains loopback only and the parent auth gate limits
+    // this bootstrap to local Host+socket. Remote proxying is disabled.
+    if (pathname.startsWith("/api/browser/takeover/vendor/")) {
+      if (req.method !== "GET") { sendJSON(res, 405, { error: "GET required." }); return true; }
+      const relative = pathname.slice("/api/browser/takeover/vendor/".length);
+      if (!/^[a-zA-Z0-9_./-]+$/.test(relative) || relative.includes("..") ||
+          !(relative.startsWith("core/") || relative.startsWith("vendor/")) || !relative.endsWith(".js")) {
+        sendJSON(res, 403, { error: "Invalid noVNC module path." }); return true;
+      }
+      try {
+        const fsp = await import("node:fs/promises");
+        const pathLib = await import("node:path");
+        const fileUrl = await import("node:url");
+        const root = process.env.SUPERAGENT_NOVNC_ASSETS_DIR ||
+          pathLib.dirname(pathLib.dirname(fileUrl.fileURLToPath(import.meta.resolve("@novnc/novnc"))));
+        const filePath = pathLib.resolve(root, relative);
+        if (!filePath.startsWith(pathLib.resolve(root) + pathLib.sep)) {
+          sendJSON(res, 403, { error: "Forbidden asset." }); return true;
+        }
+        const content = await fsp.readFile(filePath);
+        res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+        res.end(content);
+      } catch {
+        sendJSON(res, 404, { error: "noVNC modules not installed. Install the distro novnc package." });
+      }
+      return true;
+    }
+
+    // UI Landing Page
+    if (pathname === "/api/browser/takeover/ui") {
+      if (req.method !== "GET") {
+        sendJSON(res, 405, { success: false, error: "GET required." });
+        return true;
+      }
+      const sessionId = parsedUrl.searchParams.get("sessionId") || "";
+      const token = parsedUrl.searchParams.get("token") || "";
+      if (!sessionId || !/^[a-f0-9-]{36}$/.test(sessionId)) {
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("Invalid or missing sessionId.");
+        return true;
+      }
+      try {
+        const { loadTakeoverSession, renderTakeoverHtml } = await import("./core/browserTakeover/index.js");
+        const session = await loadTakeoverSession(sessionId);
+        if (!session) {
+          res.writeHead(404, { "Content-Type": "text/plain" });
+          res.end("Takeover session not found.");
+          return true;
+        }
+        const { getTakeoverSessionManager } = await import("./core/browserTakeover/index.js");
+        const allowed = await getTakeoverSessionManager().verifyInvitation(sessionId, token);
+        if (!allowed) {
+          res.writeHead(403, { "Content-Type": "text/plain", "Cache-Control": "no-store" });
+          res.end("Invalid or expired takeover invitation.");
+          return true;
+        }
+        const html = renderTakeoverHtml(session, token);
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(html);
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end(`Internal Error: ${err.message || String(err)}`);
+      }
+      return true;
+    }
+
+    // Operator-only authenticated retrieval, never included in agent outputs.
+    // The global Core bearer auth gate is mandatory for this route; local
+    // sockets alone do not grant permission to read invitation secrets.
+    if (pathname === "/api/browser/takeover/pending") {
+      if (req.method !== "GET") {
+        sendJSON(res, 405, { success: false, error: "GET required." }); return true;
+      }
+      const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+      if (!local || !/^(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(String(req.headers.host || ""))) {
+        sendJSON(res, 403, { success: false, error: "Local operator only." }); return true;
+      }
+      const { getTakeoverSessionManager } = await import("./core/browserTakeover/index.js");
+      const invitations = await getTakeoverSessionManager().listPendingInvitations();
+      sendJSON(res, 200, { success: true, invitations });
+      return true;
+    }
+
+    // Request new takeover session
+    if (pathname === "/api/browser/takeover/request") {
+      if (req.method !== "POST") {
+        sendJSON(res, 405, { success: false, error: "POST required." });
+        return true;
+      }
+      try {
+        const raw = await readBody(req);
+        if (raw.length > 2048) throw new Error("Request too large.");
+        const body = JSON.parse(raw);
+        const { getTakeoverSessionManager } = await import("./core/browserTakeover/index.js");
+        const manager = getTakeoverSessionManager();
+        const invitation = await manager.requestTakeover(body);
+        sendJSON(res, 200, { success: true, ...invitation });
+      } catch (err: any) {
+        sendJSON(res, 400, { success: false, error: err.message || "Failed to create takeover session." });
+      }
+      return true;
+    }
+
+    // Inspect session public status
+    if (pathname === "/api/browser/takeover/session") {
+      if (req.method !== "GET") {
+        sendJSON(res, 405, { success: false, error: "GET required." });
+        return true;
+      }
+      const sessionId = parsedUrl.searchParams.get("sessionId") || "";
+      if (!sessionId || !/^[a-f0-9-]{36}$/.test(sessionId)) {
+        sendJSON(res, 400, { success: false, error: "Valid sessionId required." });
+        return true;
+      }
+      try {
+        const { loadTakeoverSession, sanitizePublicSession } = await import("./core/browserTakeover/index.js");
+        const session = await loadTakeoverSession(sessionId);
+        if (!session) {
+          sendJSON(res, 404, { success: false, error: "Session not found." });
+          return true;
+        }
+        sendJSON(res, 200, { success: true, session: sanitizePublicSession(session) });
+      } catch (err: any) {
+        sendJSON(res, 500, { success: false, error: err.message || "Failed to load session." });
+      }
+      return true;
+    }
+
+    // Redeem one-time invitation nonce
+    if (pathname === "/api/browser/takeover/redeem") {
+      if (req.method !== "POST") {
+        sendJSON(res, 405, { success: false, error: "POST required." });
+        return true;
+      }
+      try {
+        const raw = await readBody(req);
+        if (raw.length > 1024) throw new Error("Request too large.");
+        const body = JSON.parse(raw);
+        const { getTakeoverSessionManager, sanitizePublicSession } = await import("./core/browserTakeover/index.js");
+        const manager = getTakeoverSessionManager();
+        const { session, authorized, operatorToken, vncPassword } = await manager.redeemInvitation(body);
+        sendJSON(res, 200, { success: true, authorized, operatorToken, vncPassword, session: sanitizePublicSession(session) });
+      } catch (err: any) {
+        sendJSON(res, 400, { success: false, error: err.message || "Failed to redeem invitation." });
+      }
+      return true;
+    }
+
+    // Return to agent & verify
+    if (pathname === "/api/browser/takeover/return") {
+      if (req.method !== "POST") {
+        sendJSON(res, 405, { success: false, error: "POST required." });
+        return true;
+      }
+      try {
+        const raw = await readBody(req);
+        if (raw.length > 2048) throw new Error("Request too large.");
+        const body = JSON.parse(raw);
+        const { getTakeoverSessionManager } = await import("./core/browserTakeover/index.js");
+        const manager = getTakeoverSessionManager();
+        await manager.requestReturn(body);
+        const result = await manager.verifyAndResume(body.sessionId);
+        sendJSON(res, 200, { success: result.resumed, ...result });
+      } catch (err: any) {
+        sendJSON(res, 400, { success: false, error: err.message || "Failed to return control to agent." });
+      }
+      return true;
+    }
+
+    // Cancel takeover
+    if (pathname === "/api/browser/takeover/cancel") {
+      if (req.method !== "POST") {
+        sendJSON(res, 405, { success: false, error: "POST required." });
+        return true;
+      }
+      try {
+        const raw = await readBody(req);
+        if (raw.length > 1024) throw new Error("Request too large.");
+        const body = JSON.parse(raw);
+        const { getTakeoverSessionManager, sanitizePublicSession } = await import("./core/browserTakeover/index.js");
+        const manager = getTakeoverSessionManager();
+        const session = await manager.cancelTakeover(body);
+        sendJSON(res, 200, { success: true, session: sanitizePublicSession(session) });
+      } catch (err: any) {
+        sendJSON(res, 400, { success: false, error: err.message || "Failed to cancel takeover." });
+      }
+      return true;
+    }
+
+    sendJSON(res, 404, { success: false, error: "Unknown takeover route." });
+    return true;
+  }
+
   if (pathname === "/api/browser/shared-control") {
     if (req.method !== "POST") {
       sendJSON(res, 405, { error: "POST required." });
