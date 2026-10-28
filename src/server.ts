@@ -985,7 +985,20 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       res.end();
       return;
     }
-    if (isApiRoute && !isRequestAuthorized(req, parsedUrl)) {
+    // Local-only invitation bootstrap uses per-session cryptographic capabilities,
+    // never the long-lived Core server token. Reverse proxies are NOT authorized by
+    // default; this exception is restricted to local socket and loopback Host.
+    const takeoverLocal = (req.socket.remoteAddress === "127.0.0.1" ||
+      req.socket.remoteAddress === "::1" || req.socket.remoteAddress === "::ffff:127.0.0.1") &&
+      /^(?:127\.0\.0\.1|localhost)(?::\d+)?$/i.test(String(req.headers.host || ""));
+    const localInvitationRoute = takeoverLocal && (
+      (pathname === "/api/browser/takeover/ui" && req.method === "GET") ||
+      (pathname === "/api/browser/takeover/redeem" && req.method === "POST") ||
+      (pathname === "/api/browser/takeover/return" && req.method === "POST") ||
+      (pathname === "/api/browser/takeover/cancel" && req.method === "POST") ||
+      (pathname.startsWith("/api/browser/takeover/vendor/") && req.method === "GET")
+    );
+    if (isApiRoute && !localInvitationRoute && !isRequestAuthorized(req, parsedUrl)) {
       sendJSON(res, 401, { error: "Unauthorized" });
       return;
     }
@@ -1081,6 +1094,21 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     if (!silent) {
       console.error("[Server Error]", err);
     }
+  });
+
+    server.on("upgrade", async (req, socket, head) => {
+    const parsedUrl = new URL(req.url || "", `http://${req.headers.host || "127.0.0.1"}`);
+    if (parsedUrl.pathname === "/api/browser/takeover/ws") {
+      try {
+        const { getTakeoverWebsocketProxy } = await import("./core/browserTakeover/index.js");
+        const proxy = getTakeoverWebsocketProxy();
+        await proxy.handleUpgrade(req, socket as any, head, isRequestAuthorized);
+      } catch {
+        socket.destroy();
+      }
+      return;
+    }
+    socket.destroy();
   });
 
   server.listen(port, '127.0.0.1', () => {

@@ -11,6 +11,7 @@ import fs from "fs";
 import net from "net";
 import { browserControlHandler } from "./browserMacroTools.js";
 import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+import { getBrowserProcessManager } from "../browserRuntime/browserProcessManager.js";
 
 const execAsync = promisify(exec);
 
@@ -40,20 +41,21 @@ export async function isCdpPortListening(port = 9222, timeoutMs = 250): Promise<
   return null;
 }
 
-let cdpStartInFlight: Promise<boolean> | null = null;
-
 /**
  * Ensure Chrome is running with remote debugging port enabled.
  * If port is not responding, auto-launches Chrome in isolated debug profile
  * (~/.superagent-r/chrome-debug-profile) with remote debugging active.
+ * Delegates to canonical BrowserProcessManager for ownership tracking and cross-platform mode selection.
  */
 export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise<boolean> {
   if (
-    process.env.NODE_ENV === "test" ||
-    process.env.VITEST === "true" ||
-    process.env.SUPERAGENT_CDP_AUTO_LAUNCH === "0" ||
-    port !== 9222
+    (process.env.NODE_ENV === "test" || process.env.VITEST === "true") &&
+    process.env.SUPERAGENT_ALLOW_TEST_BROWSER_LAUNCH !== "1"
   ) {
+    return false;
+  }
+
+  if (process.env.SUPERAGENT_CDP_AUTO_LAUNCH === "0" || port !== 9222) {
     return false;
   }
 
@@ -61,80 +63,15 @@ export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise
     return true;
   }
 
-  if (cdpStartInFlight) {
-    return await cdpStartInFlight;
-  }
-
-  cdpStartInFlight = (async () => {
-    const platform = os.platform();
-    const userDataDir = path.join(os.homedir(), ".superagent-r", "chrome-debug-profile");
-    try {
-      fs.mkdirSync(userDataDir, { recursive: true });
-    } catch {}
-
-    const chromeFlags = [
-      `--remote-debugging-port=${port}`,
-      `--remote-debugging-address=127.0.0.1`,
-      `--user-data-dir=${userDataDir}`,
-      `--no-first-run`,
-      `--no-default-browser-check`,
-    ];
-    // Never silently approve screen capture. Unattended capture requires opt-in.
-    if (process.env.SUPERAGENT_UNATTENDED_SCREEN_CAPTURE === "1") {
-      chromeFlags.push('--auto-select-desktop-capture-source="Entire screen"',
-        "--use-fake-ui-for-media-stream", "--enable-usermedia-screen-capturing");
-    }
-
-    let chromeExe: string | null = null;
-    if (platform === "win32") {
-      const candidates = [
-        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-        path.join(process.env.LOCALAPPDATA || "", "Google", "Chrome", "Application", "chrome.exe"),
-        path.join(process.env.PROGRAMFILES || "", "Google", "Chrome", "Application", "chrome.exe"),
-        path.join(process.env["PROGRAMFILES(X86)"] || "", "Google", "Chrome", "Application", "chrome.exe"),
-      ];
-      for (const c of candidates) {
-        if (c && fs.existsSync(c)) {
-          chromeExe = c;
-          break;
-        }
-      }
-    } else if (platform === "darwin") {
-      const macPath = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
-      if (fs.existsSync(macPath)) chromeExe = macPath;
-    }
-
-    if (!chromeExe) {
-      chromeExe = platform === "win32" ? "chrome.exe" : "google-chrome";
-    }
-
-    try {
-      const child = spawn(chromeExe, chromeFlags, {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-      });
-      child.unref();
-
-      const deadline = Date.now() + 4500;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 250));
-        if (await isCdpPortListening(port)) {
-          return true;
-        }
-      }
-    } catch {
-      return false;
-    }
-    return false;
-  })();
-
-  try {
-    return await cdpStartInFlight;
-  } finally {
-    cdpStartInFlight = null;
-  }
+  const manager = getBrowserProcessManager();
+  const useFakeMediaUi = process.env.SUPERAGENT_UNATTENDED_SCREEN_CAPTURE === "1";
+  return await manager.ensureBrowserRunning({
+    host,
+    port,
+    mode: "auto",
+    useFakeMediaUi,
+    autoSelectDesktopCaptureSource: useFakeMediaUi ? "Entire screen" : undefined,
+  });
 }
 
 /** Exact user-facing message when the extension bridge is absent (standard variant). */

@@ -6,6 +6,12 @@ import { promisify } from "util";
 import { Tool } from "./types.js";
 import { getChromeUserDataPath, detectChromeProfiles } from "./chromeProfileTools.js";
 import { callBrowser, NO_BROWSER_CONTROL_CONNECTION_MSG, withTimeout } from "./chromeCommon.js";
+import {
+  getBrowserProcessManager,
+  probeLinuxDisplayEnvironment,
+  discoverBrowserExecutable,
+  type BrowserRuntimeMode,
+} from "../browserRuntime/index.js";
 import { applyProcessIntent } from "../process/processSpawnPolicy.js";
 // PERF: `remoteChromeBridge` pulls in the `ws` websocket library and a
 // per-module HTTP server. It is only needed when a tool *actually* runs
@@ -73,6 +79,15 @@ export const launchChromeProfileTool: Tool = {
         type: "boolean",
         description: "Whether to bypass screen sharing and webcam/mic prompts with fake media UI (default true when remoteDebuggingPort is specified).",
       },
+      enableLocalHumanTakeover: {
+        type: "boolean",
+        description: "Linux virtual-display only: explicitly start locally password-protected VNC + noVNC for manual human takeover (disabled by default; remote access remains disabled).",
+      },
+      mode: {
+        type: "string",
+        enum: ["auto", "headless", "headed", "virtual-display"],
+        description: "Browser execution mode: 'auto' (default; selects headless on displayless Linux, headed on desktop), 'headless' (Chromium --headless=new with CDP), 'headed' (visible browser window; requires DISPLAY/Wayland on Linux), or 'virtual-display' (reserved for Milestone M2).",
+      },
     },
   },
   execute: async ({
@@ -83,6 +98,8 @@ export const launchChromeProfileTool: Tool = {
     isolated,
     autoSelectDesktopCaptureSource,
     useFakeMediaUi,
+    enableLocalHumanTakeover = false,
+    mode = "auto",
   }: {
     profileName?: string;
     url?: string;
@@ -91,27 +108,60 @@ export const launchChromeProfileTool: Tool = {
     isolated?: boolean;
     autoSelectDesktopCaptureSource?: string;
     useFakeMediaUi?: boolean;
+    enableLocalHumanTakeover?: boolean;
+    mode?: BrowserRuntimeMode;
   }) => {
     const platform = os.platform();
-    let cmd = "";
-
     const safeProfile = profileName.replace(/["'\\]/g, "");
     const safeUrl = url ? `"${url.replace(/"/g, '\\"')}"` : "";
-    const shouldFakeMedia = useFakeMediaUi === true;
-    const captureSource = autoSelectDesktopCaptureSource ? autoSelectDesktopCaptureSource.replace(/["'\\]/g, "") : "Entire screen";
-    const mediaFlags = shouldFakeMedia
-      ? ` --auto-select-desktop-capture-source="${captureSource}" --use-fake-ui-for-media-stream --enable-usermedia-screen-capturing`
-      : "";
-    const debugFlag = remoteDebuggingPort
-      ? ` --remote-debugging-port=${Number(remoteDebuggingPort)} --remote-debugging-address=127.0.0.1${mediaFlags}`
-      : mediaFlags;
 
-    const shouldIsolate = isolated ?? Boolean(remoteDebuggingPort);
+    // Fail-fast checks for reserved / unsupported modes
+    if (mode === "virtual-display") {
+      if (platform !== "linux") {
+        return `Failed to launch Chrome: Virtual display mode (Xvfb/minimal WM) is only supported on Linux. On ${platform}, use 'headed' or 'headless' mode.`;
+      }
+    }
+
+    if (platform === "linux" && mode === "headed") {
+      const display = probeLinuxDisplayEnvironment();
+      if (!display.hasDisplay) {
+        return "Failed to launch Chrome: Cannot launch Chrome in 'headed' mode on Linux because neither DISPLAY nor WAYLAND_DISPLAY is set. Use 'headless' mode or provide an active display server.";
+      }
+    }
+
+    const shouldIsolate = isolated ?? Boolean(remoteDebuggingPort || mode === "virtual-display");
     let resolvedDataDir = userDataDir;
     if (shouldIsolate && !resolvedDataDir) {
       resolvedDataDir = path.join(os.homedir(), ".superagent-r", "chrome-debug-profile");
     }
 
+    // When remote debugging port is requested, use canonical BrowserProcessManager
+    if (remoteDebuggingPort || mode === "virtual-display") {
+      try {
+        const manager = getBrowserProcessManager();
+        const instance = await manager.launchBrowser({
+          port: Number(remoteDebuggingPort || 9222),
+          mode,
+          userDataDir: resolvedDataDir,
+          profileName: safeProfile,
+          url: url || undefined,
+          autoSelectDesktopCaptureSource,
+          useFakeMediaUi,
+          virtualDisplay: mode === "virtual-display" && enableLocalHumanTakeover
+            ? { enableLocalVnc: true, enableLocalNoVnc: true }
+            : undefined,
+        });
+
+        const isolatedNote = instance.userDataDir ? ` (isolated debug profile: \`${instance.userDataDir}\`)` : "";
+        const displayNote = instance.virtualDisplay ? ` on virtual display \`${instance.virtualDisplay.displayStr}\`` : "";
+        const baseMsg = `Launched Chrome in \`${instance.resolvedMode}\` mode with profile \`${safeProfile}\`${isolatedNote}${displayNote} (CDP port ${instance.port}, PID ${instance.pid})${url ? ` opening \`${url}\`` : ""}.`;
+        return `${baseMsg} NEXT_ACTION: Chrome is ready for automation. Call control_chrome_cdp(command: 'list_targets') or control_chrome_cdp(command: 'navigate', url: '...') immediately to execute the user's task. Do NOT stop or write manual guides for the user.`;
+      } catch (err: any) {
+        return `Failed to launch Chrome with profile \`${safeProfile}\`: ${err.message || String(err)}`;
+      }
+    }
+
+    // Standard launch without remote debugging port
     if (resolvedDataDir) {
       try {
         await fs.mkdir(resolvedDataDir, { recursive: true });
@@ -122,22 +172,23 @@ export const launchChromeProfileTool: Tool = {
       ? ` --user-data-dir="${resolvedDataDir.replace(/\\/g, "/")}" --no-first-run --no-default-browser-check`
       : "";
 
+    let cmd = "";
     if (platform === "win32") {
-      cmd = `start "" chrome --profile-directory="${safeProfile}"${dataDirFlag}${debugFlag} ${safeUrl}`;
+      cmd = `start "" chrome --profile-directory="${safeProfile}"${dataDirFlag} ${safeUrl}`;
     } else if (platform === "darwin") {
-      cmd = `open -a "Google Chrome" --args --profile-directory="${safeProfile}"${dataDirFlag}${debugFlag} ${safeUrl}`;
+      cmd = `open -a "Google Chrome" --args --profile-directory="${safeProfile}"${dataDirFlag} ${safeUrl}`;
     } else {
-      cmd = `google-chrome --profile-directory="${safeProfile}"${dataDirFlag}${debugFlag} ${safeUrl} &`;
+      const discovery = discoverBrowserExecutable();
+      const exe = discovery.executable;
+      const isHeadless = mode === "headless" || (mode === "auto" && !probeLinuxDisplayEnvironment().hasDisplay);
+      const headlessFlag = isHeadless ? " --headless=new --disable-gpu" : "";
+      cmd = `${exe} --profile-directory="${safeProfile}"${dataDirFlag}${headlessFlag} ${safeUrl} &`;
     }
 
     try {
       await execAsync(cmd, applyProcessIntent({ timeout: 15000 }, "headless", { caller: "chromeBrowserTools.launchChromeProfile", executable: "chrome" }));
       const isolatedNote = resolvedDataDir ? ` (isolated debug profile: \`${resolvedDataDir}\`)` : "";
-      const baseMsg = `Launched Chrome with profile \`${safeProfile}\`${isolatedNote}${remoteDebuggingPort ? ` (CDP port ${remoteDebuggingPort})` : ""}${url ? ` opening \`${url}\`` : ""}.`;
-      if (remoteDebuggingPort) {
-        return `${baseMsg} NEXT_ACTION: Chrome is ready for automation. Call control_chrome_cdp(command: 'list_targets') or control_chrome_cdp(command: 'navigate', url: '...') immediately to execute the user's task. Do NOT stop or write manual guides for the user.`;
-      }
-      return baseMsg;
+      return `Launched Chrome with profile \`${safeProfile}\`${isolatedNote}${url ? ` opening \`${url}\`` : ""}.`;
     } catch (err: any) {
       return `Failed to launch Chrome with profile \`${safeProfile}\`: ${err.message || String(err)}`;
     }
@@ -392,5 +443,225 @@ export const captureTabFullpagePdfTool: Tool = {
       noConnMsg: NO_BROWSER_CONTROL_CONNECTION_MSG,
       emptyFallback: `Successfully captured tab ${mode}.`,
     });
+  },
+};
+
+
+export const browserRuntimeStatusTool: Tool = {
+  name: "browser_runtime_status",
+  description: "Inspect active Chromium/Chrome browser runtime health, listening CDP port, process ownership PID, and target count.",
+  parameters: {
+    type: "object",
+    properties: {
+      port: {
+        type: "integer",
+        description: "CDP remote debugging port to inspect (default: 9222).",
+      },
+    },
+  },
+  execute: async ({ port = 9222 }: { port?: number }) => {
+    try {
+      const manager = getBrowserProcessManager();
+      const health = await manager.checkHealth(Number(port));
+      const lines = [
+        `### Browser Runtime Health (Port ${health.port})`,
+        `**Status**: ${health.status === "healthy" ? "🟢 Healthy" : health.status === "stopped" ? "⚪ Stopped" : "🔴 Unhealthy"}`,
+        `**Listening**: ${health.listening ? "Yes (127.0.0.1:" + health.port + ")" : "No"}`,
+      ];
+      if (health.pid) lines.push(`**PID**: ${health.pid}`);
+      if (health.recordId) lines.push(`**Supervisor Record**: \`${health.recordId}\``);
+      if (health.mode) lines.push(`**Configured Mode**: \`${health.mode}\``);
+      if (health.resolvedMode) lines.push(`**Active Mode**: \`${health.resolvedMode}\``);
+      if (health.browserVersion) lines.push(`**Browser**: ${health.browserVersion}`);
+      if (health.targetCount !== undefined) lines.push(`**Open Targets**: ${health.targetCount}`);
+      if (health.uptimeMs !== undefined) lines.push(`**Uptime**: ${Math.floor(health.uptimeMs / 1000)}s`);
+      if (health.virtualDisplay) {
+        lines.push(`**Virtual Display**: \`${health.virtualDisplay.display}\` (Socket: ${health.virtualDisplay.xSocketActive ? "Active" : "Missing"})`);
+        lines.push(`**Xvfb**: ${health.virtualDisplay.xvfbRunning ? "Running" : "Stopped"}, **WM**: ${health.virtualDisplay.wmRunning ? "Running" : "Stopped"}`);
+        if (health.virtualDisplay.vncPort) {
+          lines.push(`**Local VNC**: ${health.virtualDisplay.vncRunning ? "Listening" : "Stopped"} on 127.0.0.1:${health.virtualDisplay.vncPort}`);
+        }
+        if (health.virtualDisplay.noVncPort) {
+          lines.push(`**Local noVNC**: ${health.virtualDisplay.noVncRunning ? "Listening" : "Stopped"} on 127.0.0.1:${health.virtualDisplay.noVncPort}`);
+        }
+      }
+      if (health.error) lines.push(`**Error / Warning**: ${health.error}`);
+      return lines.join("\n");
+    } catch (err: any) {
+      return `Failed to inspect browser runtime: ${err.message || String(err)}`;
+    }
+  },
+};
+
+export const stopBrowserRuntimeTool: Tool = {
+  name: "stop_browser_runtime",
+  description: "Gracefully terminate an owned Chromium/Chrome browser runtime instance on a given CDP port after verifying process ownership.",
+  parameters: {
+    type: "object",
+    properties: {
+      port: {
+        type: "integer",
+        description: "CDP port of the owned browser to terminate (default: 9222).",
+      },
+    },
+  },
+  execute: async ({ port = 9222 }: { port?: number }) => {
+    try {
+      const manager = getBrowserProcessManager();
+      const res = await manager.stopBrowser({ port: Number(port) });
+      return res.success
+        ? `Stopped browser on port ${port}: ${res.reason}`
+        : `Could not stop browser on port ${port}: ${res.reason}`;
+    } catch (err: any) {
+      return `Failed to stop browser runtime on port ${port}: ${err.message || String(err)}`;
+    }
+  },
+};
+
+
+export const requestHumanTakeoverTool: Tool = {
+  name: "request_human_takeover",
+  description: "Pauses an automated browser task and requests secure human-in-the-loop takeover on a specific Chrome CDP target tab (e.g. when encountering CAPTCHAs, OTP verification, Google sign-in, or manual approval). Automatically installs a verified human hold on the CDP target before issuing an invitation, fencing all agent mutations until explicit Return to Agent.",
+  parameters: {
+    type: "object",
+    properties: {
+      targetId: {
+        type: "string",
+        description: "Explicit CDP targetId of the tab requiring human intervention.",
+      },
+      reason: {
+        type: "string",
+        description: "Reason for requesting human takeover (e.g. 'CAPTCHA verification', 'Google 2FA prompt', 'Payment approval').",
+      },
+      port: {
+        type: "integer",
+        description: "Optional CDP port (defaults to 9222 or active port).",
+      },
+      targetUrl: {
+        type: "string",
+        description: "Optional sanitized URL of the target page.",
+      },
+    },
+    required: ["targetId", "reason"],
+  },
+  execute: async ({
+    targetId,
+    reason,
+    port,
+    targetUrl,
+  }: {
+    targetId?: string;
+    reason?: string;
+    port?: number;
+    targetUrl?: string;
+  }) => {
+    if (!targetId || !reason) {
+      return "Failed to request human takeover: targetId and reason are required.";
+    }
+    try {
+      const {
+        getTakeoverSessionManager,
+        buildTakeoverNotificationPayload,
+        formatTakeoverCliAlert,
+      } = await import("../browserTakeover/index.js");
+
+      const manager = getTakeoverSessionManager();
+      const invitation = await manager.requestTakeover({
+        targetId,
+        reason,
+        port: port ? Number(port) : undefined,
+        targetUrl,
+      });
+
+      const payload = buildTakeoverNotificationPayload(invitation);
+      const alertBox = formatTakeoverCliAlert(payload);
+
+      return "Human hold installed. A human operator must retrieve the one-time invitation through the authenticated local Core control channel. Invitation secrets are not exposed to agents.";
+    } catch (err: any) {
+      return `Failed to request human takeover: ${err.message || String(err)}`;
+    }
+  },
+};
+
+export const takeoverStatusTool: Tool = {
+  name: "takeover_status",
+  description: "Inspects the status, state machine phase, and verification details of human takeover sessions.",
+  parameters: {
+    type: "object",
+    properties: {
+      sessionId: {
+        type: "string",
+        description: "Optional specific session UUID to inspect. If omitted, lists recent sessions.",
+      },
+    },
+  },
+  execute: async ({ sessionId }: { sessionId?: string }) => {
+    try {
+      const {
+        loadTakeoverSession,
+        listTakeoverSessions,
+        sanitizePublicSession,
+      } = await import("../browserTakeover/index.js");
+
+      if (sessionId) {
+        const session = await loadTakeoverSession(sessionId);
+        if (!session) return `Takeover session '${sessionId}' not found.`;
+        return JSON.stringify(sanitizePublicSession(session), null, 2);
+      }
+
+      const sessions = await listTakeoverSessions();
+      if (sessions.length === 0) return "No active or recent human takeover sessions.";
+      const publicSessions = sessions.slice(0, 10).map(sanitizePublicSession);
+      return JSON.stringify(publicSessions, null, 2);
+    } catch (err: any) {
+      return `Failed to inspect takeover status: ${err.message || String(err)}`;
+    }
+  },
+};
+
+export const returnToAgentTool: Tool = {
+  name: "return_to_agent",
+  description: "Completes the human takeover handoff: revokes remote input, revalidates live browser identity and tab generation, and if verified, releases the human hold and resumes agent automation.",
+  parameters: {
+    type: "object",
+    properties: {
+      sessionId: {
+        type: "string",
+        description: "UUID of the takeover session to return and verify.",
+      },
+      actor: {
+        type: "string",
+        description: "Identifier of the actor initiating the return (default: 'operator').",
+      },
+      notes: {
+        type: "string",
+        description: "Optional verification notes or challenge outcome summary.",
+      },
+    },
+    required: ["sessionId"],
+  },
+  execute: async ({
+    sessionId,
+    actor = "operator",
+    notes,
+  }: {
+    sessionId?: string;
+    actor?: string;
+    notes?: string;
+  }) => {
+    if (!sessionId) {
+      return "Failed to return control to agent: sessionId is required.";
+    }
+    try {
+      const { getTakeoverSessionManager } = await import("../browserTakeover/index.js");
+      const manager = getTakeoverSessionManager();
+
+      // An agent must never be able to lift a human hold. The human must
+      // redeem the invite and explicitly approve Return using an operator token.
+      return "Human hold remains active. Only the authorized human takeover UI can return control to the agent.";
+
+    } catch (err: any) {
+      return `Failed to return control to agent: ${err.message || String(err)}`;
+    }
   },
 };
