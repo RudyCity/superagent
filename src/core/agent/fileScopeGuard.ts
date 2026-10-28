@@ -291,6 +291,164 @@ export function extractToolCallFilePaths(tc: ToolCall): string[] {
 }
 
 /**
+ * Resolves an environment variable name against process.env and standard system fallbacks.
+ */
+export function resolveEnvironmentVariable(varName: string): string | undefined {
+  const trimmed = varName.trim();
+  if (!trimmed) return undefined;
+
+  // Direct match
+  if (process.env[trimmed] !== undefined) {
+    return process.env[trimmed];
+  }
+
+  // Case-insensitive match on Windows or fallback
+  const lower = trimmed.toLowerCase();
+  for (const [k, v] of Object.entries(process.env)) {
+    if (k.toLowerCase() === lower && v !== undefined) {
+      return v;
+    }
+  }
+
+  // Standard system/user directory fallbacks
+  if (lower === "home") {
+    return os.homedir();
+  }
+  if (lower === "userprofile") {
+    return process.env.USERPROFILE || os.homedir();
+  }
+  if (lower === "windir" || lower === "systemroot") {
+    return process.env.WINDIR || process.env.SystemRoot || (process.platform === "win32" ? "C:\\Windows" : undefined);
+  }
+  if (lower === "temp" || lower === "tmp") {
+    return os.tmpdir();
+  }
+
+  return undefined;
+}
+
+const POWERSHELL_BUILTIN_VARS = new Set([
+  "true",
+  "false",
+  "null",
+  "this",
+  "args",
+  "_",
+  "psversiontable",
+  "lastexitcode",
+  "erroractionpreference",
+  "pid",
+  "host",
+  "profile",
+  "input",
+  "output",
+  "pshome",
+]);
+
+/**
+ * Expands and validates environment variables within a shell command string.
+ * Supports:
+ * - PowerShell $env:VAR and ${env:VAR}
+ * - PowerShell env: provider references
+ * - cmd.exe %VAR% and !VAR!
+ * - POSIX $HOME, ${VAR}, and $VAR
+ * - Tilde (~) expansion
+ */
+export function expandEnvironmentVariables(
+  str: string,
+  effectiveCwd: string,
+  workspaceRoot: string
+): {
+  expanded: string;
+  unresolved: string[];
+} {
+  let expanded = str;
+  const unresolved: string[] = [];
+
+  // 1. PowerShell ${env:VAR}
+  expanded = expanded.replace(/\$\{env:([a-zA-Z0-9_()]+)\}/gi, (match, varName) => {
+    const val = resolveEnvironmentVariable(varName);
+    if (val === undefined) {
+      unresolved.push(match);
+      return match;
+    }
+    return val;
+  });
+
+  // 2. PowerShell $env:VAR
+  expanded = expanded.replace(/\$env:([a-zA-Z0-9_]+)/gi, (match, varName) => {
+    const val = resolveEnvironmentVariable(varName);
+    if (val === undefined) {
+      unresolved.push(match);
+      return match;
+    }
+    return val;
+  });
+
+  // 3. PowerShell env:VAR (e.g. Get-Item env:WINDIR or Join-Path env:WINDIR)
+  expanded = expanded.replace(/(?:^|(?<=[\s"'(,]))env:([a-zA-Z0-9_]+)\b/gi, (match, varName) => {
+    const val = resolveEnvironmentVariable(varName);
+    if (val === undefined) {
+      unresolved.push(match);
+      return match;
+    }
+    return val;
+  });
+
+  // 4. cmd %VAR%
+  expanded = expanded.replace(/%([a-zA-Z_][a-zA-Z0-9_()#$@.-]*)%/g, (match, varName) => {
+    const val = resolveEnvironmentVariable(varName);
+    if (val === undefined) {
+      unresolved.push(match);
+      return match;
+    }
+    return val;
+  });
+
+  // 5. cmd !VAR! (delayed expansion)
+  expanded = expanded.replace(/!([a-zA-Z_][a-zA-Z0-9_()#$@.-]*)!/g, (match, varName) => {
+    const val = resolveEnvironmentVariable(varName);
+    if (val === undefined) {
+      unresolved.push(match);
+      return match;
+    }
+    return val;
+  });
+
+  // 6. POSIX ${VAR}
+  expanded = expanded.replace(/\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}/g, (match, varName) => {
+    const val = resolveEnvironmentVariable(varName);
+    if (val === undefined) {
+      unresolved.push(match);
+      return match;
+    }
+    return val;
+  });
+
+  // 7. POSIX $VAR (excluding PowerShell builtins)
+  expanded = expanded.replace(/(?:^|(?<=[\s"'`=:(/]))\$([a-zA-Z_][a-zA-Z0-9_]*)/g, (match, varName) => {
+    const lower = varName.toLowerCase();
+    if (POWERSHELL_BUILTIN_VARS.has(lower)) {
+      return match;
+    }
+    const val = resolveEnvironmentVariable(varName);
+    if (val === undefined) {
+      unresolved.push(match);
+      return match;
+    }
+    return val;
+  });
+
+  // 8. Tilde ~ expansion (e.g. ~ or ~/path or ~\path)
+  expanded = expanded.replace(/(?:^|(?<=[\s"'>|&;=]))~([\\/][^\s"'`;&|<>]*)?(?=[\s"'`;&|<>]|$)/g, (match, rest) => {
+    const home = os.homedir();
+    return `${home}${rest || ""}`;
+  });
+
+  return { expanded, unresolved };
+}
+
+/**
  * Recursively validates a shell command string against delegated fileScope.
  * Covers cmd.exe, PowerShell, and POSIX shells with fail-closed semantics.
  */
@@ -300,7 +458,7 @@ export function validateShellCommandString(
   fileScope: readonly string[],
   workspaceRoot: string
 ): { allowed: boolean; reason?: string } {
-  const trimmed = cmd.trim();
+  let trimmed = cmd.trim();
   if (!trimmed) return { allowed: true };
 
   // 1. Fail-closed on obfuscated/encoded commands
@@ -311,6 +469,24 @@ export function validateShellCommandString(
       reason: `Encoded shell commands (-enc/-EncodedCommand) cannot be verified against delegated fileScope.`,
     };
   }
+
+  // 1b. Fail-closed on dynamic command substitution: $(...) or `...`
+  if (/\$\([^)]+\)/.test(trimmed) || /`[^`\r\n]+`/.test(trimmed)) {
+    return {
+      allowed: false,
+      reason: `Dynamic command substitution ($() or backticks) cannot be verified against delegated fileScope: "${trimmed}"`,
+    };
+  }
+
+  // 1c. Expand environment variables across the command string (PowerShell $env:VAR, cmd %VAR%, POSIX $HOME, ~)
+  const { expanded, unresolved } = expandEnvironmentVariables(trimmed, effectiveCwd, workspaceRoot);
+  if (unresolved.length > 0) {
+    return {
+      allowed: false,
+      reason: `Shell command references unverified environment variable "${unresolved.join(", ")}" which cannot be proven inside fileScope: "${trimmed}"`,
+    };
+  }
+  trimmed = expanded;
 
   // 2. Unpack and recursively validate nested shells
   // POSIX: bash -c "...", sh -c '...'
@@ -357,6 +533,12 @@ export function validateShellCommandString(
   const cdMatches = trimmed.matchAll(/\b(?:cd|chdir|pushd|Set-Location|sl)\s+((?:"[^"]+")|(?:'[^']+')|(?:`[^`]+`)|(?:[^\s;&|\n\r]+))/gi);
   for (const m of cdMatches) {
     let targetDir = stripQuotes(m[1]);
+    if (/[$%!~]/.test(targetDir)) {
+      return {
+        allowed: false,
+        reason: `Directory change target "${targetDir}" contains dynamic or unverified variable which cannot be proven inside fileScope: "${trimmed}"`,
+      };
+    }
     if (targetDir === "~" || targetDir.startsWith("~/") || targetDir.startsWith("~\\")) {
       targetDir = path.resolve(os.homedir(), targetDir.replace(/^~[\\/]?/, ""));
     } else if (!path.isAbsolute(targetDir)) {
@@ -371,11 +553,62 @@ export function validateShellCommandString(
     }
   }
 
+  // 3b. PowerShell Join-Path validation
+  const joinPathMatches = trimmed.matchAll(/\bJoin-Path\b([^;&|\r\n]+)/gi);
+  for (const jm of joinPathMatches) {
+    const argsStr = jm[1];
+    const tokenRegex = /(?:"([^"]+)"|'([^']+)'|([^\s]+))/g;
+    let tok: RegExpExecArray | null;
+    const pathParts: string[] = [];
+    while ((tok = tokenRegex.exec(argsStr)) !== null) {
+      const raw = tok[1] ?? tok[2] ?? tok[3];
+      if (!raw) continue;
+      if (raw.startsWith("-")) {
+        const eqIdx = raw.search(/[=:]/);
+        if (eqIdx !== -1) {
+          pathParts.push(stripQuotes(raw.slice(eqIdx + 1)));
+        } else if (/^-(?:Path|ChildPath|LiteralPath)$/i.test(raw)) {
+          const nextTok = tokenRegex.exec(argsStr);
+          if (nextTok) {
+            const nextRaw = nextTok[1] ?? nextTok[2] ?? nextTok[3];
+            if (nextRaw) pathParts.push(stripQuotes(nextRaw));
+          }
+        }
+        continue;
+      }
+      pathParts.push(stripQuotes(raw));
+    }
+    for (const p of pathParts) {
+      if (/[$%!~]/.test(p)) {
+        return {
+          allowed: false,
+          reason: `Join-Path operand "${p}" contains dynamic or unverified variable which cannot be proven inside fileScope: "${trimmed}"`,
+        };
+      }
+    }
+    if (pathParts.length > 0) {
+      const combined = path.resolve(effectiveCwd, ...pathParts);
+      const check = isPathInScope(combined, fileScope, workspaceRoot);
+      if (!check.inScope) {
+        return {
+          allowed: false,
+          reason: `Join-Path target "${combined}" escapes allowed fileScope [${fileScope.join(", ")}]: "${trimmed}"`,
+        };
+      }
+    }
+  }
+
   // 4. Shell Redirections: >, >>, <, 2>, 2>>, &>
   const redirMatches = trimmed.matchAll(/(?:>>|>|<|2>>|2>|&>)\s*((?:"[^"]+")|(?:'[^']+')|(?:`[^`]+`)|(?:[^\s;&|<>()\n\r]+))/g);
   for (const rm of redirMatches) {
     const rawTarget = stripQuotes(rm[1]);
     if (!rawTarget || isStandardSink(rawTarget)) continue;
+    if (/[$%!~]/.test(rawTarget)) {
+      return {
+        allowed: false,
+        reason: `Shell redirection target "${rawTarget}" contains dynamic or unverified variable which cannot be proven inside fileScope.`,
+      };
+    }
     const target = normalizeGitBashDrivePath(rawTarget);
     const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(effectiveCwd, target);
     const check = isPathInScope(resolved, fileScope, workspaceRoot);
@@ -392,6 +625,12 @@ export function validateShellCommandString(
   for (const psm of psRedirMatches) {
     const rawTarget = stripQuotes(psm[1]);
     if (!rawTarget || isStandardSink(rawTarget)) continue;
+    if (/[$%!~]/.test(rawTarget)) {
+      return {
+        allowed: false,
+        reason: `PowerShell output target "${rawTarget}" contains dynamic or unverified variable which cannot be proven inside fileScope.`,
+      };
+    }
     const target = normalizeGitBashDrivePath(rawTarget);
     const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(effectiveCwd, target);
     const check = isPathInScope(resolved, fileScope, workspaceRoot);
@@ -408,6 +647,12 @@ export function validateShellCommandString(
   for (const tm of teeMatches) {
     const rawTarget = stripQuotes(tm[1]);
     if (!rawTarget || isStandardSink(rawTarget)) continue;
+    if (/[$%!~]/.test(rawTarget)) {
+      return {
+        allowed: false,
+        reason: `Tee output target "${rawTarget}" contains dynamic or unverified variable which cannot be proven inside fileScope.`,
+      };
+    }
     const target = normalizeGitBashDrivePath(rawTarget);
     const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(effectiveCwd, target);
     const check = isPathInScope(resolved, fileScope, workspaceRoot);
@@ -420,7 +665,7 @@ export function validateShellCommandString(
   }
 
   // 5. Windows absolute paths: C:\..., D:/..., quoted or unquoted
-  const winAbsMatches = trimmed.matchAll(/(?:"([a-zA-Z]:\\[^"]*|[a-zA-Z]:\/[^"]*)"|'([a-zA-Z]:\\[^']*|[a-zA-Z]:\/[^']*)'|(?:\b|\s|^)([a-zA-Z]:\\[^\s;,|&<>()]+|[a-zA-Z]:\/[^\s;,|&<>()]+))/g);
+  const winAbsMatches = trimmed.matchAll(/(?:"([a-zA-Z]:\\[^"]*|[a-zA-Z]:\/[^"]*)"|'([a-zA-Z]:\\[^']*|[a-zA-Z]:\/[^']*)'|(?:\b|\s|^)([a-zA-Z]:\\[^\s;,|&<>()"'\`]+|[a-zA-Z]:\/[^\s;,|&<>()"'\`]+))/g);
   for (const wm of winAbsMatches) {
     const rawPath = wm[1] ?? wm[2] ?? wm[3];
     if (rawPath) {
@@ -436,7 +681,7 @@ export function validateShellCommandString(
   }
 
   // 6. UNC paths: \\server\share\... or //server/share/...
-  const uncMatches = trimmed.matchAll(/(?:"(\\\\[^"]+|\/\/[^"]+)"|'(\\\\[^']+|\/\/[^']+)'|(?:\b|\s|^)(\\\\[^\s;,|&<>()]+|\/\/[^\s;,|&<>()]+))/g);
+  const uncMatches = trimmed.matchAll(/(?:"(\\\\[^"]+|\/\/[^"]+)"|'(\\\\[^']+|\/\/[^']+)'|(?:^|[\s"'>|&;=])(\\\\[^\s;,|&<>()"'\`]+|\/\/[^\s;,|&<>()"'\`]+))/g);
   for (const unc of uncMatches) {
     const rawPath = unc[1] ?? unc[2] ?? unc[3];
     if (rawPath && !isUrl(rawPath)) {
@@ -451,7 +696,7 @@ export function validateShellCommandString(
   }
 
   // 7. Git Bash / MSYS2 drive absolute paths: /c/..., /d/...
-  const gitBashMatches = trimmed.matchAll(/(?:"(\/[a-zA-Z]\/[^"]*)"|'(\/[a-zA-Z]\/[^']*)'|(?:\b|\s|^)(\/[a-zA-Z]\/[^\s;,|&<>()]+))/g);
+  const gitBashMatches = trimmed.matchAll(/(?:"(\/[a-zA-Z]\/[^"]*)"|'(\/[a-zA-Z]\/[^']*)'|(?:^|[\s"'>|&;=])(\/[a-zA-Z]\/[^\s;,|&<>()"'\`]+))/g);
   for (const gm of gitBashMatches) {
     const rawPath = gm[1] ?? gm[2] ?? gm[3];
     if (rawPath && !isUrl(rawPath)) {
@@ -467,7 +712,7 @@ export function validateShellCommandString(
   }
 
   // 8. Unix absolute paths: /etc/..., /var/..., /tmp/..., etc.
-  const unixAbsMatches = trimmed.matchAll(/(?:"(\/[^"]+)"|'(\/[^']+)'|(?:\b|\s|^)(\/[a-zA-Z0-9_\-\.\/]+))/g);
+  const unixAbsMatches = trimmed.matchAll(/(?:"(\/[^"]+)"|'(\/[^']+)'|(?:^|[\s"'>|&;=])(\/[a-zA-Z0-9_\-\.\/]+))/g);
   for (const um of unixAbsMatches) {
     const rawPath = um[1] ?? um[2] ?? um[3];
     if (!rawPath || isStandardSink(rawPath) || isUrl(rawPath)) continue;
@@ -518,6 +763,12 @@ export function validateShellCommandString(
         if (eqIdx !== -1) {
           const val = stripQuotes(rawArg.slice(eqIdx + 1));
           if (val && !isStandardSink(val) && !isUrl(val)) {
+            if (/[$%!~]/.test(val)) {
+              return {
+                allowed: false,
+                reason: `File operation argument "${val}" contains dynamic or unverified variable which cannot be proven inside fileScope.`,
+              };
+            }
             const resolved = path.isAbsolute(val) ? path.normalize(val) : path.resolve(effectiveCwd, val);
             const check = isPathInScope(resolved, fileScope, workspaceRoot);
             if (!check.inScope) {
@@ -531,6 +782,12 @@ export function validateShellCommandString(
         continue;
       }
       if (isStandardSink(rawArg) || isUrl(rawArg)) continue;
+      if (/[$%!~]/.test(rawArg)) {
+        return {
+          allowed: false,
+          reason: `File operation target "${rawArg}" contains dynamic or unverified variable which cannot be proven inside fileScope [${fileScope.join(", ")}].`,
+        };
+      }
       const target = normalizeGitBashDrivePath(rawArg);
       const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(effectiveCwd, target);
       const check = isPathInScope(resolved, fileScope, workspaceRoot);
@@ -565,6 +822,12 @@ export function validateShellCommandString(
         }
         continue;
       }
+      if (/[$%!~]/.test(raw)) {
+        return {
+          allowed: false,
+          reason: `Script execution target "${raw}" contains dynamic or unverified variable which cannot be proven inside fileScope.`,
+        };
+      }
       const target = normalizeGitBashDrivePath(raw);
       const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(effectiveCwd, target);
       const check = isPathInScope(resolved, fileScope, workspaceRoot);
@@ -578,12 +841,18 @@ export function validateShellCommandString(
     }
   }
 
-  // PowerShell -File script.ps1
+  // 12. PowerShell -File script.ps1
   const psFileRegex = /\b(?:powershell|pwsh)(?:\.exe)?\s+(?:-File|-f)\s+(?:["']([^"']+)["']|([^\s;&|]+))/gi;
   let psFileMatch: RegExpExecArray | null;
   while ((psFileMatch = psFileRegex.exec(trimmed)) !== null) {
     const raw = psFileMatch[1] ?? psFileMatch[2];
     if (raw) {
+      if (/[$%!~]/.test(raw)) {
+        return {
+          allowed: false,
+          reason: `PowerShell script file "${raw}" contains dynamic or unverified variable which cannot be proven inside fileScope.`,
+        };
+      }
       const target = normalizeGitBashDrivePath(raw);
       const resolved = path.isAbsolute(target) ? path.normalize(target) : path.resolve(effectiveCwd, target);
       const check = isPathInScope(resolved, fileScope, workspaceRoot);

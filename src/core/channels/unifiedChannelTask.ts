@@ -52,8 +52,9 @@ function cliStatus(status: DelegateJob["status"]): UnifiedTaskStatus {
     case "failed": case "timed_out": case "verification_failed": case "permission_blocked": return "failed";
     case "cancelled": return "cancelled";
     case "interrupted": return "interrupted";
-    case "starting": return "queued";
+    case "starting": case "queued": return "queued";
     case "running": case "cancelling": return "running";
+    default: return "failed";
   }
 }
 

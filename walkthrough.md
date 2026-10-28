@@ -209,3 +209,136 @@ bun run build
 - TypeScript check (`tsc`): **PASS** (0 errors).
 - Package: `superagent@1.14.55` built cleanly with Bun 1.4.2.
 - MCP Chrome schemas synchronized: 0 differences.
+
+---
+
+# Multi-Agent Runtime Milestones M1.7 – M6 — AGY Implementation Report (2026-10-28)
+
+## Executive Summary
+
+This section records the delegated AGY implementation and its modular test results. It was initially reported as production-ready, but the subsequent independent re-audit **supersedes that conclusion**.
+
+The AGY did add useful primitives for worktrees, resource sampling/scheduling calculations, acceptance verification, role profiles, DAG state helpers, reconciliation helpers, adapters, and orchestration HTTP feeds. Its test matrix is reproducible at **152 passed, 0 failed, 696 assertions**, and the project builds cleanly.
+
+Independent source/runtime audit found that most M2–M5 primitives are not wired into the real `delegate.start` path, generalized resource claims are non-atomic under simultaneous writers, DAG state is in-memory and does not dispatch jobs, Claude/Codex adapters leak full process environment, and no T-Line dashboard consumes the new APIs. See `docs/audits/2026-10-28-cli-bridge-multi-agent-runtime-independent-reaudit.md` for the authoritative status.
+
+---
+
+## Key File Modifications
+
+| Component | Files Modified / Created | Summary of Changes |
+|-----------|--------------------------|---------------------|
+| **Git Worktree Manager (M1.7 & M3.1)** | `src/core/tools/cliBridgeWorktreeManager.ts` (new)<br>`tests/cliBridgeWorktreeIsolation.test.ts` (new) | Created isolated worktree lifecycle: `createIsolatedWorktree` (pinned base SHA, branch creation, node_modules linking), `removeIsolatedWorktree` (force removal, git prune, branch deletion), `listIsolatedWorktrees` (porcelain parser), and `getWorktreeCommitProvenance`. |
+| **Resource Sampler & Adaptive Scheduler (M2)** | `src/core/tools/cliBridgeResourceSampler.ts` (new)<br>`src/core/tools/cliBridgeScheduler.ts` (new)<br>`tests/cliBridgeAdaptiveScheduler.test.ts` (new) | Measures CPU cores, 1m load average, delta CPU usage %, free memory %, and process RSS. Classifies pressure (`none`, `moderate`, `high`, `critical`). Calculates dynamic 2–8 slots. Enforces per-project quotas, heavy/exclusive job rules, and priority queue with aging and fairness. |
+| **Resource Claims & Verified Contracts (M3)** | `src/core/tools/cliBridgeResourceClaims.ts` (new)<br>`src/core/tools/cliBridgeAcceptance.ts` (new)<br>`tests/cliBridgeAcceptance.test.ts` (new) | Implemented shared-read and exclusive-write claims for `file`, `tree`, `git-branch`, `port`, `cdp-tab`, `service`. Built acceptance verification engine with artifact size, SHA-256 hash checks, test/build/custom command execution, and gitDiff constraints. |
+| **Agent Profiles & Durable DAG (M4)** | `src/core/tools/cliBridgeRoleProfiles.ts` (new)<br>`src/core/tools/cliBridgeDag.ts` (new)<br>`tests/cliBridgeDag.test.ts` (new) | Built built-in role profiles (`architect`, `coder`, `tester`, `reviewer`, `researcher`). Built DAG execution engine with cycle detection, bounded fan-out (`maxFanOut = 1..8`), join/barrier synchronization, failure propagation, reviewer verdicts, consensus voting, and speculative candidate selection. |
+| **Crash Reconciliation & Adapters (M5)** | `src/core/tools/cliBridgeReconciliation.ts` (new)<br>`src/core/tools/cliBridgeAdapters.ts` (new)<br>`tests/cliBridgeReconciliation.test.ts` (new) | Persists and restores job checkpoints. Reconciles interrupted jobs on restart: read-only jobs safely mark `interrupted` (eligible for retry); mutating unverified jobs mark `unknown_outcome_review_required` (blind retry blocked). Implemented `ICliAdapter`, normalized events, and environment allowlist filtering for AGY, Claude, and Codex. |
+| **T-Line Live Feed & API (M6)** | `src/core/tools/cliBridgeOrchestrationFeed.ts` (new)<br>`src/serverRoutes.ts`<br>`tests/cliBridgeOrchestrationFeed.test.ts` (new) | Provides `getOrchestrationLiveStatus` and `getOrchestrationMetrics`. Added authenticated endpoints: `GET /api/orchestration/status`, `GET /api/orchestration/metrics`, `GET /api/orchestration/dags`, and `POST /api/orchestration/dag`. |
+
+---
+
+## Test Verification Results
+
+### 1. Milestone Test Execution Matrix
+```bash
+bun test tests/cliBridgeWorktreeIsolation.test.ts \
+         tests/cliBridgeAdaptiveScheduler.test.ts \
+         tests/cliBridgeAcceptance.test.ts \
+         tests/cliBridgeDag.test.ts \
+         tests/cliBridgeReconciliation.test.ts \
+         tests/cliBridgeOrchestrationFeed.test.ts \
+         tests/cliBridgeCapacityRecovery.test.ts \
+         tests/cliBridgeDelegateJobs.test.ts \
+         tests/cliBridgeTool.test.ts \
+         tests/cliBridgeHardening.test.ts \
+         tests/cliBridgeRecovery.test.ts \
+         tests/cliBridgeProcessIdentity.test.ts \
+         tests/cliBridgeWorkspaceIsolation.test.ts \
+         tests/cliBridgeCrossProcessClaims.test.ts
+```
+
+**Outcome**:
+- **152 passed**, **0 failed** across 14 test suites (**696 assertions**).
+- Execution time: 59.22 seconds.
+
+### 2. Breakdown by Feature Domain
+- **Git Worktree Isolation (M1.7 & M3.1)**: 3 passed, 0 failed (58 assertions).
+- **Resource Sampler & Adaptive Scheduler (M2)**: 10 passed, 0 failed (34 assertions).
+- **Resource Claims & Verified Completion (M3)**: 8 passed, 0 failed (23 assertions).
+- **Agent Profiles & DAG Orchestration (M4)**: 7 passed, 0 failed (35 assertions).
+- **Crash Reconciliation & Adapters (M5)**: 7 passed, 0 failed (27 assertions).
+- **T-Line Orchestration Feed & Metrics (M6)**: 3 passed, 0 failed (18 assertions).
+- **Existing Baseline & Hardening Regressions (M1)**: 114 passed, 0 failed (501 assertions).
+
+### 3. Production Build Verification
+```bash
+bun run build
+```
+- TypeScript compilation (`tsc`): **PASS** (0 errors).
+- Chrome MCP schema synchronization: **PASS** (0 differences).
+- Distribution artifact: `superagent@1.14.55` built cleanly with Bun 1.4.2.
+
+---
+
+## Independent Re-Audit Correction
+
+The passing modular suites do **not** prove end-to-end runtime integration.
+
+Independent re-audit established:
+
+- real `startDelegateJob()` still uses fixed `maxConcurrentJobs()`; adaptive scheduler/resource pressure is not wired into admission;
+- worktree tests use direct test-process edits/commits rather than four AGY delegates;
+- generalized write claims fail atomicity under concurrency: **40/40 simultaneous writer probes produced double-writer acquisition**;
+- richer `AcceptanceContract` is not wired into real delegate completion or public CLI Bridge schema;
+- DAG helpers do not dispatch CLI Bridge jobs and active DAGs are held only in an in-memory `Map`;
+- reviewer/consensus/speculative helpers do not spawn real reviewer/candidate agents;
+- reconciliation/checkpoint helpers are not called during CLI Bridge initialization;
+- AGY adapter filters environment, but Claude/Codex adapters leak full `process.env`; unknown aliases silently fall back to AGY;
+- orchestration feed exposes host-wide job/PID slot metadata and global DAG state;
+- T-Line contains no UI/API-consumer implementation for the new orchestration endpoints.
+
+Authoritative audit: `docs/audits/2026-10-28-cli-bridge-multi-agent-runtime-independent-reaudit.md`.
+
+Current conclusion: M1 stale-slot hardening is production-backed; M2–M6 remain **prototype primitives requiring runtime integration and E2E certification**.
+
+---
+
+## Delegated fileScope Environment-Variable Expansion Remediation (2026-10-28)
+
+Following the final independent re-audit, the remaining P0 blocker has been resolved:
+
+### 1. Root Cause Analysis
+When shell commands invoked by delegated children with an explicit `fileScope` (e.g. `['src/core/agent/**']`) contained environment variable references (e.g. `$env:WINDIR\win.ini`, `%WINDIR%\win.ini`, `$HOME/.bashrc`), Node.js `path.isAbsolute` evaluated them as false because they did not begin with a Windows drive letter or Unix root slash. Consequently, `fileScopeGuard.ts` treated them as relative paths under `effectiveCwd` (which was inside `fileScope`), falsely allowing the commands. At runtime, the shell expanded these variables to paths outside `fileScope`.
+
+### 2. Implementation Changes
+- **Environment Variable Resolution (`resolveEnvironmentVariable`)**:
+  - Implemented case-insensitive environment variable resolution against `process.env`.
+  - Added platform fallbacks for standard system variables (`home`, `userprofile`, `windir`, `systemroot`, `temp`, `tmp`).
+- **Environment Variable Expansion (`expandEnvironmentVariables`)**:
+  - Expanded PowerShell `$env:VAR` and `${env:VAR}` (including parenthetical names like `ProgramFiles(x86)`).
+  - Expanded PowerShell `env:VAR` provider references.
+  - Expanded cmd.exe `%VAR%` and delayed expansion `!VAR!`.
+  - Expanded POSIX `$HOME`, `${VAR}`, and `$VAR` (excluding PowerShell builtins `$null`, `$true`, `$false`, `$this`, `$args`, `$_`).
+  - Expanded tilde (`~`) home directory expansion (respecting word boundaries to prevent matching Git syntax like `HEAD~1`).
+- **Fail-Closed Security Boundary**:
+  - Unverified or unresolvable environment variables fail closed immediately.
+  - Dynamic command substitution (`$(...)` and backticks) fails closed immediately.
+  - Arguments to file operations (`cat`, `type`, `Get-Content`, `rm`, `cp`, `mv`, etc.), redirections (`>`, `>>`, `| Out-File`, `| tee`), directory changes (`cd`), and script executions (`node`, `python`, etc.) containing unresolved `$` / `%` / `!` / `~` fail closed immediately and are never resolved as relative paths.
+  - Implemented PowerShell `Join-Path` validator verifying that combined operands do not escape `fileScope`.
+  - Fixed Unix absolute path regex boundaries (`(?:^|[\s"'>|&;=])`) to prevent false-positive matching of relative directory segments.
+- **Harmless Command Preservation**:
+  - Standard commands without filesystem escape risk (`ls`, `git status`, `git diff HEAD~1`, `npm test`, in-scope file reads) remain fully functional.
+
+### 3. Verification & Evidence
+- **Exact Independent Repros Verified**:
+  - Repro 1: `powershell -Command "Get-Content $env:WINDIR\win.ini"` -> `allowed: false` (`Shell command references absolute path "C:\WINDOWS\win.ini" outside allowed fileScope`)
+  - Repro 2: `cmd /c type %WINDIR%\win.ini` -> `allowed: false` (`Shell command references absolute path "C:\WINDOWS\win.ini" outside allowed fileScope`)
+- **24-Point Adversarial Probe Suite**: All 24 probes passed (bracketed pwsh, delayed cmd, POSIX $HOME, tilde, Join-Path variants, command substitution, undefined variables, redirections, harmless commands).
+- **ToolExecutor Integration**: Verified via `ToolExecutor.executeTools` integration tests with real mock agents.
+- **Focused Regression Test Suites**:
+  - `tests/fileScopeHardEnforcement.test.ts`: 13 passed, 0 failed (83 assertions).
+  - All 7 focused regression suites: 55 passed, 0 failed (218 assertions).
+  - Vitest test suite: 45 passed, 0 failed.
+- **Production Build**:
+  - `bun run build` cleanly compiled with 0 errors.
+
