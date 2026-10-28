@@ -67,6 +67,10 @@ describe("CDP coordinator optimizations P0–P2", () => {
   test("unknown and mutating terminal commands do not use read-only guard", () => {
     expect(classifyCdpCommand("snapshot")).toBe("read");
     expect(classifyCdpCommand("shared_snapshot")).toBe("read");
+    expect(classifyCdpCommand("read_workspace")).toBe("read");
+    expect(classifyCdpCommand("read_accessibility_tree")).toBe("read");
+    expect(classifyCdpCommand("inspect_frames")).toBe("read");
+    expect(classifyCdpCommand("capture_dom_snapshot")).toBe("read");
     expect(classifyCdpCommand("get_dialogs", { clear: true })).toBe("write");
     expect(classifyCdpCommand("clear_terminal_sessions")).toBe("write");
     expect(classifyCdpCommand("execute_terminal")).toBe("write");

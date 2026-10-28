@@ -48,6 +48,18 @@ import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, 
   setCdpSharing, inviteCdpAgent, joinCdpTarget, leaveCdpTarget, revokeCdpAgent, handoverCdpTarget, getCdpParticipation,
   type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
+import {
+  detectGoogleWorkspaceApp,
+  buildWorkspaceReadRoute,
+  buildWorkspaceReadExpression,
+  INSPECT_FRAMES_JS,
+  paginateWorkspaceValue,
+  detectWorkspaceFailure,
+  WORKSPACE_FAILURE_DETECTION_JS,
+  type GoogleWorkspaceApp,
+  type DocsVerificationScopes,
+  type WorkspaceFailureReason,
+} from "./googleWorkspaceReader.js";
 
 /**
  * Test hooks — read lazily so unit tests can point the tool at a mock CDP
@@ -496,6 +508,176 @@ async function cdpSend(target: CdpTarget, method: string, params: Record<string,
   });
 }
 
+async function waitForCdpDocumentReady(target: CdpTarget, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const r = await cdpSend(target, "Runtime.evaluate", {
+        expression: READY_STATE_JS,
+        returnByValue: true,
+      });
+      const state = r?.result?.value;
+      if (state === "complete" || state === "interactive") return;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+}
+
+async function openTemporaryCdpReadTarget(url: string): Promise<CdpTarget> {
+  const res: any = await httpPutJson("/json/new?" + encodeURIComponent(url));
+  const id = res && res.id ? String(res.id) : "";
+  if (!id) throw new Error("Chrome did not return a target id for the temporary Workspace read tab.");
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    const pages = await listPageTargets();
+    const target = pages.find((t) => t.id === id);
+    if (target) {
+      await waitForCdpDocumentReady(target, 5000);
+      const contentDeadline = Date.now() + 8000;
+      while (Date.now() < contentDeadline) {
+        try {
+          const probe = await cdpSend(target, "Runtime.evaluate", {
+            expression: "(() => ({ body: String(document.body && document.body.innerText || '').length, frames: document.querySelectorAll('iframe').length, tables: document.querySelectorAll('table').length }))()",
+            returnByValue: true,
+          });
+          const state = probe?.result?.value;
+          if (state && (Number(state.body) > 100 || Number(state.frames) > 0 || Number(state.tables) > 0)) break;
+        } catch {}
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      return target;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  throw new Error("Temporary Workspace read tab did not become available.");
+}
+
+async function closeTemporaryCdpReadTarget(target: CdpTarget | null): Promise<void> {
+  if (!target) return;
+  try {
+    await httpPutJson("/json/close/" + target.id);
+  } catch {}
+  closeCdpConnection(target.webSocketDebuggerUrl, "Temporary Workspace read tab closed.");
+}
+
+function axNamesFromTree(tree: any): string[] {
+  const nodes = Array.isArray(tree?.nodes) ? tree.nodes : [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const node of nodes) {
+    const role = String(node?.role?.value || "");
+    if (!["StaticText", "InlineTextBox", "heading", "paragraph", "link", "cell"].includes(role)) continue;
+    const name = String(node?.name?.value || "").replace(/\s+/g, " ").trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+  }
+  return out;
+}
+
+async function enrichDocsWithAccessibility(target: CdpTarget, value: any): Promise<any> {
+  try {
+    await cdpSend(target, "Accessibility.enable", {});
+    const tree = await cdpSend(target, "Accessibility.getFullAXTree", {});
+    const names = axNamesFromTree(tree);
+    const axText = names.join("\n");
+    if (axText) {
+      value.axText = axText;
+      if (axText.length > String(value.bodyText || "").length) value.bodyText = axText;
+    }
+
+    const pagesSeen = new Set<number>();
+    let pageCount = Number(value.pageCount || 0);
+    for (const name of names) {
+      const re = /\b(?:page\s*)?(\d+)\s+(?:of|dari)\s+(\d+)\b/ig;
+      let match: RegExpExecArray | null;
+      while ((match = re.exec(name))) {
+        pagesSeen.add(Number(match[1]));
+        pageCount = Math.max(pageCount, Number(match[2]));
+      }
+      const onPage = name.match(/\bon page\s+(\d+)\b/i);
+      if (onPage) pagesSeen.add(Number(onPage[1]));
+    }
+    value.pageCount = pageCount || undefined;
+    value.pagesSeen = Array.from(pagesSeen).filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+    value.pagesRead = value.pagesSeen.length || (pageCount === 1 && value.bodyText ? 1 : 0);
+    value.completeCandidate = Boolean(pageCount > 0 && value.pagesRead >= pageCount);
+    if (!value.completeCandidate) {
+      value.warnings = [
+        ...(Array.isArray(value.warnings) ? value.warnings : []),
+        pageCount > 1
+          ? "Docs preview content was extracted, but all pages were not independently observed through the accessibility tree."
+          : "Docs completeness could not be proven from the current preview/accessibility representation.",
+      ];
+    }
+  } catch (error: any) {
+    value.completeCandidate = false;
+    value.warnings = [
+      ...(Array.isArray(value.warnings) ? value.warnings : []),
+      "Accessibility traversal unavailable: " + (error?.message || String(error)),
+    ];
+  }
+  return value;
+}
+
+async function fetchDocsTextExport(target: CdpTarget, originalUrl: string): Promise<string | null> {
+  try {
+    if ((await listCdpSessions()).some((session) => session.port === cdpPort())) return null;
+    const url = new URL(originalUrl);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const dIndex = parts.indexOf("d");
+    const documentId = dIndex >= 0 ? parts[dIndex + 1] : "";
+    if (!documentId) return null;
+    const uIndex = parts.indexOf("u");
+    const accountPrefix =
+      uIndex >= 0 && /^\d+$/.test(parts[uIndex + 1] || "")
+        ? "/u/" + parts[uIndex + 1]
+        : (url.searchParams.get("authuser") && /^\d+$/.test(url.searchParams.get("authuser") || "")
+          ? "/u/" + url.searchParams.get("authuser")
+          : "");
+
+    const cookieResp = await cdpSend(target, "Network.getCookies", {
+      urls: ["https://docs.google.com/", "https://accounts.google.com/"],
+    });
+    const cookies = Array.isArray(cookieResp?.cookies) ? cookieResp.cookies : [];
+    const cookieHeader = cookies
+      .filter((c: any) => c && c.name && c.value)
+      .map((c: any) => String(c.name) + "=" + String(c.value))
+      .join("; ");
+    if (!cookieHeader) return null;
+
+    const exportUrl =
+      "https://docs.google.com/document" +
+      accountPrefix +
+      "/d/" +
+      encodeURIComponent(documentId) +
+      "/export?format=txt";
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    let response: Response;
+    try {
+      response = await fetch(exportUrl, {
+        headers: {
+          Cookie: cookieHeader,
+          "User-Agent": "Mozilla/5.0",
+        },
+        redirect: "follow",
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!response.ok) return null;
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("text/plain")) return null;
+    const text = await response.text();
+    return text.trim() ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 export const _cdpTestHooks = {
   connectionCount: (): number => cdpConnections.size,
   closeAll: (): void => {
@@ -529,7 +711,7 @@ export const controlChromeCdpTool: Tool = {
         type: "string",
         enum: [
           "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status",
-          "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
+          "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
@@ -539,7 +721,7 @@ export const controlChromeCdpTool: Tool = {
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (extract visible text/headings/alerts/emails). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. select_option: {"index": 5, "option": "Paket Basic"} or {"selector": "[role=combobox]", "option": "Yes"}. check_form: {"selector": "form"} (pre-flight check for missing required fields & submit readiness). drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (generic visible text/headings/alerts/frames). read_workspace: {} (structured Google Docs/Sheets/Slides/Drive/Forms reader with verification). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. select_option: {"index": 5, "option": "Paket Basic"} or {"selector": "[role=combobox]", "option": "Yes"}. check_form: {"selector": "form"} (pre-flight check for missing required fields & submit readiness). drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
       url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
       index: { type: "number", description: "Optional top-level element index for click/type or terminal index for read/write_terminal." },
@@ -603,7 +785,7 @@ export const controlChromeCdpTool: Tool = {
       expectedRevision: { type: "number", description: "Optimistic tab revision. Reject stale writes." },
       queue_wait_ms: { type: "number", description: "Maximum time to wait in the per-tab queue (0-120000ms)." },
       includeImageData: { type: "boolean", description: "Include screenshot data inline; disabled by default." }, includeValues: { type: "boolean", description: "Expose sensitive cookie values; disabled by default." }, includeBase64: { type: "boolean", description: "Include bounded PDF base64; disabled by default." },
- max_chars: { type: "number", description: "Bounded page/audit report output." }, max_links: { type: "number", description: "Maximum links returned by read_page." }, limit: { type: "number", description: "Maximum debug events returned (1-300)." }
+      gid: { type: "number", description: "read_workspace: optional Google Sheets gid override for reading a specific sheet tab." }, all_sheets: { type: "boolean", description: "read_workspace: read all sheets in the workbook rather than only the active sheet." }, rich_blocks: { type: "boolean", description: "read_workspace: for Google Docs, extract ordered rich blocks (paragraphs, headings, lists, images, tables) preserving image anchors and positions." }, cursor: { type: "number", description: "read_workspace/read_accessibility_tree pagination cursor." }, max_items: { type: "number", description: "read_workspace/read_accessibility_tree maximum structured items per page." }, max_chars: { type: "number", description: "Bounded page/audit report output." }, max_links: { type: "number", description: "Maximum links returned by read_page." }, limit: { type: "number", description: "Maximum debug events returned (1-300)." }
     },
     required: ["command"],
   },
@@ -630,7 +812,7 @@ export const controlChromeCdpTool: Tool = {
     const convenienceKeys = [
       "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
+      "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -937,6 +1119,277 @@ export const controlChromeCdpTool: Tool = {
             `Use click/type with {"index": N}.\n${entries.map((e) => formatSnapshotEntry(e, compact)).join("\n")}`;
           return await attachScreenshotIfRequested(cdpSend, target, payload, snapshotResult, false);
         }
+        case "inspect_frames": {
+          const target = await pickTarget(targetId);
+          const res: any = await cdpSend(target, "Runtime.evaluate", {
+            expression: INSPECT_FRAMES_JS,
+            returnByValue: true,
+            awaitPromise: true,
+          });
+          return JSON.stringify({ frames: res?.result?.value || [] }, null, 2);
+        }
+        case "read_accessibility_tree": {
+          const target = await pickTarget(targetId);
+          await cdpSend(target, "Accessibility.enable", {});
+          const tree = await cdpSend(target, "Accessibility.getFullAXTree", {});
+          const names = axNamesFromTree(tree);
+          const cursor = Math.max(0, Math.floor(Number(payload.cursor || 0)));
+          const requested = Number(payload.max_items ?? payload.maxItems ?? 100);
+          const maxItems = Number.isFinite(requested) ? Math.max(1, Math.min(500, Math.floor(requested))) : 100;
+          const page = names.slice(cursor, cursor + maxItems);
+          const nextCursor = cursor + page.length < names.length ? cursor + page.length : null;
+          return JSON.stringify({
+            status: nextCursor === null ? "verified" : "partial",
+            nodeCount: Array.isArray(tree?.nodes) ? tree.nodes.length : 0,
+            namedTextCount: names.length,
+            cursor,
+            nextCursor,
+            hasMore: nextCursor !== null,
+            names: page,
+          }, null, 2);
+        }
+        case "capture_dom_snapshot": {
+          const target = await pickTarget(targetId);
+          const snap = await cdpSend(target, "DOMSnapshot.captureSnapshot", {
+            computedStyles: [],
+            includePaintOrder: false,
+            includeDOMRects: false,
+            includeBlendedBackgroundColors: false,
+            includeTextColorOpacities: false,
+          });
+          const docs = Array.isArray(snap?.documents) ? snap.documents : [];
+          const strings = Array.isArray(snap?.strings) ? snap.strings : [];
+          return JSON.stringify({
+            status: "verified",
+            documents: docs.length,
+            nodeCounts: docs.map((d: any) => Array.isArray(d?.nodes?.nodeType) ? d.nodes.nodeType.length : 0),
+            layoutCounts: docs.map((d: any) => Array.isArray(d?.layout?.nodeIndex) ? d.layout.nodeIndex.length : 0),
+            stringTableSize: strings.length,
+            sampleStrings: strings.filter((x: any) => typeof x === "string" && x.trim()).slice(0, 100),
+          }, null, 2);
+        }
+        case "read_workspace": {
+          const original = await pickTarget(targetId);
+          const initialFailure = detectWorkspaceFailure(original);
+          if (initialFailure.failed) {
+            return JSON.stringify({
+              kind: "google_workspace",
+              status: "failed",
+              complete: false,
+              failed: true,
+              reason: initialFailure.reason,
+              error: initialFailure.message,
+              url: original.url,
+              title: original.title,
+              warnings: [initialFailure.message],
+            }, null, 2);
+          }
+          const app = detectGoogleWorkspaceApp(original.url);
+          if (app === "unknown") {
+            return "control_chrome_cdp: read_workspace supports Google Docs, Sheets, Slides, Drive, and Forms URLs. Use read_page for generic websites.";
+          }
+          const allSheets = Boolean(payload.all_sheets ?? payload.allSheets ?? (args as any).all_sheets ?? (args as any).allSheets);
+          const route = buildWorkspaceReadRoute(original.url, payload.gid as string | number | null | undefined);
+          let working = original;
+          let temporary: CdpTarget | null = null;
+          try {
+
+            const isRichBlocksRequested = Boolean(
+              payload.rich_blocks ?? payload.richBlocks ?? (args as any).rich_blocks ?? (args as any).richBlocks
+            );
+            if (app === "docs" && !isRichBlocksRequested) {
+              const exportedText = await fetchDocsTextExport(original, original.url);
+              if (exportedText) {
+                const docsScopes: DocsVerificationScopes = {
+                  text_content: "verified",
+                  block_order: "unavailable",
+                  image_order: "unavailable",
+                  image_anchor: "unavailable",
+                  image_binary: "unavailable",
+                  tables: "not_read",
+                  headings: "not_read",
+                  lists: "not_read",
+                  captions: "unavailable",
+                  comments: "not_read",
+                  suggestions: "not_read",
+                  drawings: "not_read",
+                  footnotes: "not_read",
+                  document_tabs: "not_read",
+                  images: "not_read",
+                };
+                const value = paginateWorkspaceValue({
+                  kind: "google_docs",
+                  source: "authenticated_export_txt",
+                  verificationScope: "text_content",
+                  verificationScopes: docsScopes,
+                  title: original.title,
+                  originalUrl: original.url,
+                  readUrl: original.url,
+                  routeSource: "authenticated_export_txt",
+                  bodyText: exportedText,
+                  completeCandidate: true,
+                  warnings: [
+                    "Text content verified through authenticated Google Docs export; rich formatting, tables, images, drawings, comments, suggestions, and footnotes are outside this verification scope and marked not_read.",
+                  ],
+                }, payload.cursor, payload.max_items ?? payload.maxItems, payload.max_chars ?? payload.maxChars);
+                return JSON.stringify(value, null, 2);
+              }
+            }
+            if (route && route.source !== "current" && route.url !== original.url) {
+              temporary = await openTemporaryCdpReadTarget(route.url);
+              working = temporary;
+            }
+
+            try {
+              const probeFail: any = await cdpSend(working, "Runtime.evaluate", {
+                expression: WORKSPACE_FAILURE_DETECTION_JS,
+                returnByValue: true,
+              });
+              const fState = probeFail?.result?.value;
+              if (fState && fState.failed) {
+                return JSON.stringify({
+                  kind: `google_${app}`,
+                  status: "failed",
+                  complete: false,
+                  failed: true,
+                  reason: fState.reason,
+                  error: fState.message,
+                  url: working.url,
+                  title: working.title,
+                  warnings: [fState.message],
+                }, null, 2);
+              }
+            } catch {}
+
+            if (app === "sheets") {
+              const sheetDeadline = Date.now() + 8000;
+              let sheetReady = false;
+              while (Date.now() < sheetDeadline) {
+                try {
+                  const probe = await cdpSend(working, "Runtime.evaluate", {
+                    expression: "(() => Array.from(document.querySelectorAll('iframe')).some(f => { try { return !!(f.contentDocument && f.contentDocument.querySelectorAll('tr').length > 1); } catch { return false; } }))()",
+                    returnByValue: true,
+                  });
+                  if (probe?.result?.value === true) {
+                    sheetReady = true;
+                    break;
+                  }
+                } catch {}
+                await new Promise((resolve) => setTimeout(resolve, 150));
+              }
+              if (!sheetReady) {
+                const failDetect = detectWorkspaceFailure({ url: working.url, title: working.title });
+                if (failDetect.failed) {
+                  return JSON.stringify({
+                    kind: "google_sheets",
+                    status: "failed",
+                    complete: false,
+                    failed: true,
+                    reason: failDetect.reason,
+                    error: failDetect.message,
+                    url: working.url,
+                    title: working.title,
+                    warnings: [failDetect.message],
+                  }, null, 2);
+                }
+              }
+            }
+
+            if (app === "docs") {
+              try {
+                const support = await cdpSend(working, "Runtime.evaluate", {
+                  expression: "(() => Array.from(document.querySelectorAll('a,[role=button]')).some(e => /turn on screen reader support|aktifkan dukungan pembaca layar/i.test(String(e.innerText || e.getAttribute('aria-label') || ''))))()",
+                  returnByValue: true,
+                });
+                if (support?.result?.value === true) {
+                  await cdpSend(working, "Input.dispatchKeyEvent", { type: "rawKeyDown", key: "z", code: "KeyZ", modifiers: 3 });
+                  await cdpSend(working, "Input.dispatchKeyEvent", { type: "keyUp", key: "z", code: "KeyZ", modifiers: 3 });
+                  await new Promise((resolve) => setTimeout(resolve, 500));
+                }
+              } catch {}
+            }
+
+            const evalRes: any = await cdpSend(working, "Runtime.evaluate", {
+              expression: buildWorkspaceReadExpression(app as GoogleWorkspaceApp, { allSheets }),
+              returnByValue: true,
+              awaitPromise: true,
+            });
+            let value: any = evalRes?.result?.value;
+            if (!value || typeof value !== "object") {
+              throw new Error("Workspace extractor returned no structured value.");
+            }
+            if (value.failed === true || value.status === "failed") {
+              return JSON.stringify(value, null, 2);
+            }
+            if (app === "docs") {
+              value = await enrichDocsWithAccessibility(working, value);
+              const exportedText = await fetchDocsTextExport(original, original.url);
+              if (exportedText) {
+                if (!value.blocks || value.blocks.length === 0) {
+                  value.bodyText = exportedText;
+                  value.source = "authenticated_export_txt";
+                  value.verificationScope = "text_content";
+                  value.verificationScopes = {
+                    text_content: "verified",
+                    block_order: "unavailable",
+                    image_order: "unavailable",
+                    image_anchor: "unavailable",
+                    image_binary: "unavailable",
+                    tables: "not_read",
+                    headings: "not_read",
+                    lists: "not_read",
+                    captions: "unavailable",
+                    comments: "not_read",
+                    suggestions: "not_read",
+                    drawings: "not_read",
+                    footnotes: "not_read",
+                    document_tabs: "not_read",
+                    images: "not_read",
+                  };
+                  value.completeCandidate = true;
+                  value.warnings = [
+                    "Text content verified through authenticated Google Docs export; rich formatting, tables, images, drawings, comments, suggestions, and footnotes are outside this verification scope and marked not_read.",
+                  ];
+                } else {
+                  if (value.verificationScopes) {
+                    value.verificationScopes.text_content = "verified";
+                  }
+                }
+              }
+              if (isRichBlocksRequested && value.blocks && value.blocks.length > 0) {
+                value.verificationScope = "rich_blocks";
+              }
+            }
+            value.originalUrl = original.url;
+            value.readUrl = working.url;
+            value.routeSource = route?.source || "current";
+            const paged = paginateWorkspaceValue(
+              value,
+              payload.cursor,
+              payload.max_items ?? payload.maxItems,
+              payload.max_chars ?? payload.maxChars
+            );
+            return JSON.stringify(paged, null, 2);
+          } catch (err: any) {
+            const errMsg = String(err?.message || err);
+            let reason: WorkspaceFailureReason = "google_error";
+            if (/target closed|session closed|websocket|connection/i.test(errMsg)) reason = "target_closed";
+            else if (/timeout/i.test(errMsg)) reason = "timeout";
+            return JSON.stringify({
+              kind: `google_${app}`,
+              status: "failed",
+              complete: false,
+              failed: true,
+              reason,
+              error: errMsg,
+              url: working ? working.url : original.url,
+              title: working ? working.title : original.title,
+              warnings: [errMsg],
+            }, null, 2);
+          } finally {
+            await closeTemporaryCdpReadTarget(temporary);
+          }
+        }
         case "read_page": {
           const target = await pickTarget(targetId);
           const res: any = await cdpSend(target, "Runtime.evaluate", {
@@ -954,6 +1407,7 @@ export const controlChromeCdpTool: Tool = {
           const nativeDialogs = getRecentDialogs(target.id).map(formatDialogEntry);
           const alerts = [...nativeDialogs, ...domAlerts];
           const bodyText: string = String(data.bodyText || "").trim();
+          const sourceBodyLength = Number(data.bodyLength ?? bodyText.length);
           const links: Array<{ text: string; href: string }> = Array.isArray(data.links) ? data.links : [];
 
           const sections: string[] = [];
@@ -963,7 +1417,13 @@ export const controlChromeCdpTool: Tool = {
           if (alerts.length > 0) sections.push(`Alerts / Status:\n` + alerts.map((a) => `- ${a}`).join("\n"));
           const requestedChars = Number(payload.max_chars ?? payload.maxChars ?? 5000);
           const maxChars = Number.isFinite(requestedChars) ? Math.max(500, Math.min(20000, Math.floor(requestedChars))) : 5000;
-          sections.push(bodyText ? `Visible Content:\n${truncate(bodyText, maxChars)}` : `Visible Content: (no visible text)`);
+          const clipped = bodyText.length > maxChars ? bodyText.slice(0, maxChars) : bodyText;
+          sections.push(clipped ? `Visible Content:\n${clipped}` : `Visible Content: (no visible text)`);
+          if (bodyText.length > maxChars) {
+            sections.push(`Read Status: [PARTIAL] returned ${maxChars} of ${bodyText.length} extracted characters. Retry with a larger max_chars (up to 20000) or use read_workspace pagination for Google Workspace content.`);
+          } else {
+            sections.push(`Read Status: [VERIFIED_VISIBLE_DOM] ${bodyText.length} extracted characters${sourceBodyLength !== bodyText.length ? ` (source reports ${sourceBodyLength})` : ""}. Same-origin frames: ${Number(data.sameOriginFrames || 0)}; cross-origin frames: ${Number(data.crossOriginFrames || 0)}.`);
+          }
           const requestedLinks = Number(payload.max_links ?? payload.maxLinks ?? 20);
           const maxLinks = Number.isFinite(requestedLinks) ? Math.max(0, Math.min(30, Math.floor(requestedLinks))) : 20;
           if (links.length > 0 && maxLinks > 0) {

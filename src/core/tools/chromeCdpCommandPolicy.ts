@@ -8,7 +8,7 @@ const admin = new Set([
   "leave_target", "revoke_agent", "handover_target", "session_participants", "heartbeat_session",
 ]);
 const reads = new Set([
-  "snapshot", "shared_snapshot", "read_page", "extract_links", "wait_for",
+  "snapshot", "shared_snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "extract_links", "wait_for",
   "check_form", "read_terminal", "read_terminal_delta", "list_terminal_sessions",
   "monitor_terminal_agents", "watch_terminal", "get_dialogs", "screenshot", "pdf",
   "get_cursor", "get_cookies", "page_audit", "accessibility_audit", "seo_audit",

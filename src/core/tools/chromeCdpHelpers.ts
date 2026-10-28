@@ -103,7 +103,7 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
     const t = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim();
     return t.slice(0, 140);
   }
-  const elements = els.filter(visible).slice(0, 120).map((el, i) => {
+  const elements = els.filter(visible).map((el, i) => {
     const roleAttr = el.getAttribute('role') || undefined;
     const isDis = el.disabled || el.getAttribute('aria-disabled') === 'true' || undefined;
     const expAttr = el.getAttribute('aria-expanded');
@@ -140,8 +140,15 @@ export const SNAPSHOT_JS = `/*cdp-snapshot-walk*/(() => {
   const hasForm = (formInputs.length >= 2 && !hasModal) || Boolean(document.querySelector('form, [data-form], #form'));
   const hasTable = Boolean(document.querySelector('table, [role="table"], [role="grid"], tbody tr'));
 
+  const workspacePath = window.location.pathname || '';
+  const workspaceHost = window.location.hostname || '';
   let viewMode = 'general_view';
-  if (hasModal) viewMode = 'modal_view';
+  if (workspaceHost === 'docs.google.com' && workspacePath.includes('/document/')) viewMode = 'google_docs_editor';
+  else if (workspaceHost === 'docs.google.com' && workspacePath.includes('/spreadsheets/')) viewMode = 'google_sheets_editor';
+  else if (workspaceHost === 'docs.google.com' && workspacePath.includes('/presentation/')) viewMode = 'google_slides_editor';
+  else if (workspaceHost === 'docs.google.com' && workspacePath.includes('/forms/')) viewMode = 'google_forms';
+  else if (workspaceHost === 'drive.google.com') viewMode = 'google_drive';
+  else if (hasModal) viewMode = 'modal_view';
   else if (hasDrawer) viewMode = 'drawer_view';
   else if (hasForm && (!hasTable || formInputs.length >= 3)) viewMode = 'form_view';
   else if (hasTable) viewMode = 'table_list_view';
@@ -175,13 +182,35 @@ export const READ_PAGE_JS = `/*cdp-read-page*/(() => {
     .filter(t => t.length > 0)
     .slice(0, 5);
 
-  let bodyText = "";
-  if (document.body) {
-    const clone = document.body.cloneNode(true);
+  function cleanText(v) {
+    return String(v || "").replace(/\\r\\n/g, "\\n").replace(/\\n{3,}/g, "\\n\\n").trim();
+  }
+  function readDocumentText(doc) {
+    if (!doc || !doc.body) return "";
+    const clone = doc.body.cloneNode(true);
     const unneeded = clone.querySelectorAll('script, style, noscript, svg, iframe');
     unneeded.forEach(el => el.remove());
-    bodyText = (clone.innerText || "").replace(/\\r\\n/g, "\\n").replace(/\\n{3,}/g, "\\n\\n").trim();
+    return cleanText(clone.innerText || "");
   }
+  let bodyText = readDocumentText(document);
+  let sameOriginFrames = 0;
+  let crossOriginFrames = 0;
+  const frameTexts = [];
+  for (const frame of Array.from(document.querySelectorAll('iframe'))) {
+    try {
+      const doc = frame.contentDocument;
+      if (doc && doc.body) {
+        sameOriginFrames++;
+        const text = readDocumentText(doc);
+        if (text) frameTexts.push(text);
+      } else {
+        crossOriginFrames++;
+      }
+    } catch (e) {
+      crossOriginFrames++;
+    }
+  }
+  if (frameTexts.length > 0) bodyText = cleanText([bodyText, ...frameTexts].filter(Boolean).join("\\n\\n"));
 
   const links = Array.from(document.querySelectorAll('a[href]'))
     .map(a => {
@@ -198,8 +227,15 @@ export const READ_PAGE_JS = `/*cdp-read-page*/(() => {
   const hasForm = (editableInputs.length >= 2 && !hasModal) || Boolean(document.querySelector('form, [data-form], #form'));
   const hasTable = Boolean(document.querySelector('table, [role="table"], [role="grid"], tbody tr'));
 
+  const workspacePath = window.location.pathname || '';
+  const workspaceHost = window.location.hostname || '';
   let viewMode = 'general_view';
-  if (hasModal) viewMode = 'modal_view';
+  if (workspaceHost === 'docs.google.com' && workspacePath.includes('/document/')) viewMode = 'google_docs_editor';
+  else if (workspaceHost === 'docs.google.com' && workspacePath.includes('/spreadsheets/')) viewMode = 'google_sheets_editor';
+  else if (workspaceHost === 'docs.google.com' && workspacePath.includes('/presentation/')) viewMode = 'google_slides_editor';
+  else if (workspaceHost === 'docs.google.com' && workspacePath.includes('/forms/')) viewMode = 'google_forms';
+  else if (workspaceHost === 'drive.google.com') viewMode = 'google_drive';
+  else if (hasModal) viewMode = 'modal_view';
   else if (hasDrawer) viewMode = 'drawer_view';
   else if (hasForm && (!hasTable || editableInputs.length >= 3)) viewMode = 'form_view';
   else if (hasTable) viewMode = 'table_list_view';
@@ -210,7 +246,10 @@ export const READ_PAGE_JS = `/*cdp-read-page*/(() => {
     headings,
     alerts,
     viewMode,
-    bodyText: bodyText.slice(0, 7000),
+    bodyText,
+    bodyLength: bodyText.length,
+    sameOriginFrames,
+    crossOriginFrames,
     links
   };
 })()`;
