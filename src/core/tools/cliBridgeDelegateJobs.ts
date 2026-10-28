@@ -48,6 +48,7 @@ import {
 } from "./cliBridgeAcceptance.js";
 import { getRoleProfile, type AgentRoleProfile } from "./cliBridgeRoleProfiles.js";
 import { writeJobCheckpoint, readJobCheckpoint, reconcileJobOnRestart, type JobCheckpoint } from "./cliBridgeReconciliation.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 
 export type DelegateJobStatus =
   | "queued"
@@ -144,6 +145,7 @@ export interface DelegateJob {
   evidenceCount?: number;
   verifiedAt?: number;
   failureReason?: string;
+  processRecordId?: string;
 }
 
 export function isProcessSuccessful(job: Pick<DelegateJob, "status" | "exitCode">): boolean {
@@ -722,6 +724,13 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     job.endedAt = Date.now();
     job.updatedAt = job.endedAt;
     job.durationMs = job.endedAt - job.startedAt;
+    if (job.processRecordId) {
+      void getProcessSupervisor().recordProcessExit(job.processRecordId, {
+        exitCode: job.exitCode,
+        signal: null,
+        source: "cliBridgeDelegateJobs.finishJob",
+      }).catch(() => {});
+    }
     job.pid = null;
     job.processState = job.status;
     job.verificationState = job.verificationResult?.state ?? job.completionState ?? "unverified";
@@ -856,6 +865,13 @@ async function launchJobExecution(
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
     job.durationMs = job.endedAt - job.startedAt;
+    if (job.processRecordId) {
+      void getProcessSupervisor().recordProcessExit(job.processRecordId, {
+        exitCode: job.exitCode,
+        signal: null,
+        source: "cliBridgeDelegateJobs.finishJob",
+      }).catch(() => {});
+    }
     job.updatedAt = job.endedAt;
     await persistJobs().catch(() => {});
     throw error;
@@ -874,6 +890,18 @@ async function launchJobExecution(
 
   let proc: any;
   const resolvedJobBinary = resolveWindowsDirectExecutable(opts.binary, opts.env ?? process.env);
+  try {
+    const reg = await getProcessSupervisor().registerProcess({
+      component: "cli_bridge",
+      jobId: job.jobId,
+      workspaceRoot: job.workspaceRoot ?? job.cwd,
+      executable: resolvedJobBinary,
+      args: runArgs,
+      launchIntent: "headless",
+      cleanupPolicy: "caller_owned",
+    });
+    job.processRecordId = reg.recordId;
+  } catch {}
   try {
     const jobExecOpts = applyProcessIntent({
       cwd: job.cwd, all: true, buffer: false, reject: false,
@@ -902,6 +930,13 @@ async function launchJobExecution(
     job.error = error instanceof Error ? error.message : String(error);
     job.endedAt = Date.now();
     job.durationMs = job.endedAt - job.startedAt;
+    if (job.processRecordId) {
+      void getProcessSupervisor().recordProcessExit(job.processRecordId, {
+        exitCode: job.exitCode,
+        signal: null,
+        source: "cliBridgeDelegateJobs.finishJob",
+      }).catch(() => {});
+    }
     job.updatedAt = job.endedAt;
     await persistJobs().catch(() => {});
     throw error;
@@ -911,6 +946,9 @@ async function launchJobExecution(
   job.pid = typeof proc.pid === "number" ? proc.pid : null;
   job.status = "running";
   job.updatedAt = Date.now();
+  if (job.processRecordId && job.pid) {
+    void getProcessSupervisor().recordProcessSpawn(job.processRecordId, job.pid).catch(() => {});
+  }
   const initialLease = capacityLeases.get(job.jobId);
   if (initialLease && job.pid) {
     void updateCliBridgeCapacity(initialLease, { childPid: job.pid });
@@ -939,6 +977,9 @@ async function launchJobExecution(
   const pulse = setInterval(() => {
     if (!activeStatus(job.status)) return;
     job.heartbeatAt = Date.now();
+    if (job.processRecordId) {
+      void getProcessSupervisor().recordProcessHeartbeat(job.processRecordId).catch(() => {});
+    }
     const currentLease = capacityLeases.get(job.jobId);
     if (currentLease) {
       void updateCliBridgeCapacity(currentLease, { heartbeatAt: job.heartbeatAt });
@@ -951,6 +992,9 @@ async function launchJobExecution(
   void readProcessStartIdentity(job.pid).then(async identity => {
     if (!identity || !activeStatus(job.status)) return;
     job.childProcessIdentity = identity;
+    if (job.processRecordId) {
+      void getProcessSupervisor().recordProcessIdentity(job.processRecordId, identity).catch(() => {});
+    }
     const currentLease = capacityLeases.get(job.jobId);
     if (currentLease) {
       void updateCliBridgeCapacity(currentLease, { childProcessIdentity: identity });

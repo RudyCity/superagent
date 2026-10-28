@@ -41,6 +41,7 @@ import { rollingCommandOutput } from "./commandOutputPaging.js";
 import { agentLocalStorage } from "../agentLocalStorage.js";
 import { classifyVerificationCommand, queueTaskVerificationEvidence } from "../selfdev/taskEvidence.js";
 import net from "net";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 
 function queueVerificationEvidence(command: string, toolName: "bash" | "run_command", exitCode: unknown): void {
   if (typeof exitCode !== "number" || !Number.isSafeInteger(exitCode)) return;
@@ -206,6 +207,18 @@ export const bashTool: Tool = {
       clearActiveToolOutput();
       const capture = rollingCommandOutput();
       const decoder = new StringDecoder("utf8");
+      let procRecordId: string | undefined;
+      try {
+        const reg = await getProcessSupervisor().registerProcess({
+          component: "shell_tool",
+          executable: String(shellPath),
+          args: [command],
+          workspaceRoot: cwd,
+          launchIntent: "headless",
+          cleanupPolicy: "caller_owned",
+        });
+        procRecordId = reg.recordId;
+      } catch {}
       const bashExecOpts = applyProcessIntent({
         shell: shellPath,
         cwd,
@@ -256,6 +269,9 @@ export const bashTool: Tool = {
         signal.addEventListener("abort", abortHandler, { once: true });
       }
 
+      if (procRecordId && proc.pid) {
+        void getProcessSupervisor().recordProcessSpawn(procRecordId, proc.pid).catch(() => {});
+      }
       let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
         const text = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));
@@ -277,6 +293,12 @@ export const bashTool: Tool = {
         let output = capture.preview(cmdLogger.id).trim();
         if (!interactiveWarning) queueVerificationEvidence(rawCommand, "bash", result.exitCode);
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
+        if (procRecordId) {
+          void getProcessSupervisor().recordProcessExit(procRecordId, {
+            exitCode: exitCodeNum,
+            source: "shellTools.exec",
+          }).catch(() => {});
+        }
         cmdLogger.end(exitCodeNum, interactiveWarning || undefined);
         output = formatOutputWithLogReference(output, 100, cmdLogger.logPath);
         
@@ -404,6 +426,18 @@ export const runCommandTool: Tool = {
       clearActiveToolOutput();
       const capture = rollingCommandOutput();
       const decoder = new StringDecoder("utf8");
+      let procRecordId: string | undefined;
+      try {
+        const reg = await getProcessSupervisor().registerProcess({
+          component: "shell_tool",
+          executable: String(shellPath),
+          args: [command],
+          workspaceRoot: targetCwd,
+          launchIntent: "headless",
+          cleanupPolicy: "caller_owned",
+        });
+        procRecordId = reg.recordId;
+      } catch {}
       const runCmdOpts = applyProcessIntent({
         shell: shellPath,
         cwd: targetCwd,
@@ -454,6 +488,9 @@ export const runCommandTool: Tool = {
         signal.addEventListener("abort", abortHandler, { once: true });
       }
 
+      if (procRecordId && proc.pid) {
+        void getProcessSupervisor().recordProcessSpawn(procRecordId, proc.pid).catch(() => {});
+      }
       let interactiveWarning: string | null = null;
       proc.all?.on("data", (data) => {
         const text = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));
@@ -475,6 +512,12 @@ export const runCommandTool: Tool = {
         let output = capture.preview(cmdLogger.id).trim();
         if (!interactiveWarning) queueVerificationEvidence(rawCommand, "run_command", result.exitCode);
         const exitCodeNum = typeof result.exitCode === "number" ? result.exitCode : 0;
+        if (procRecordId) {
+          void getProcessSupervisor().recordProcessExit(procRecordId, {
+            exitCode: exitCodeNum,
+            source: "shellTools.exec",
+          }).catch(() => {});
+        }
         cmdLogger.end(exitCodeNum, interactiveWarning || undefined);
         output = formatOutputWithLogReference(output, 100, cmdLogger.logPath);
 
@@ -684,6 +727,19 @@ export const runBackgroundProcessTool: Tool = {
         all: true,
         env: augmentWindowsEnvPath({ ...process.env, PYTHONUNBUFFERED: "1" }),
       }, "headless");
+      let bgProcRecordId: string | undefined;
+      try {
+        const reg = await getProcessSupervisor().registerProcess({
+          component: "background_task",
+          taskId,
+          executable: String(shellPath),
+          args: [finalCommand],
+          workspaceRoot: targetCwd,
+          launchIntent: "headless",
+          cleanupPolicy: "caller_owned",
+        });
+        bgProcRecordId = reg.recordId;
+      } catch {}
       currentProc = traceChildProcess(
         execa(finalCommand, bgOpts),
         {
@@ -696,6 +752,9 @@ export const runBackgroundProcessTool: Tool = {
         }
       );
 
+      if (bgProcRecordId && currentProc.pid) {
+        void getProcessSupervisor().recordProcessSpawn(bgProcRecordId, currentProc.pid).catch(() => {});
+      }
       let currentTask: BackgroundTask;
       if (!task) {
         currentTask = {
@@ -736,6 +795,12 @@ export const runBackgroundProcessTool: Tool = {
         exitCode = code;
         currentTask.hasExited = true;
         currentTask.exitCode = code;
+        if (bgProcRecordId) {
+          void getProcessSupervisor().recordProcessExit(bgProcRecordId, {
+            exitCode: code,
+            source: "shellTools.run_background_process",
+          }).catch(() => {});
+        }
         const exitMsg = `\n[Process exited with code ${code}]`;
         appendCapped(currentTask.output, exitMsg);
         try {
