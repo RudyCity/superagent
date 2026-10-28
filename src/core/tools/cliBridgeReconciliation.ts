@@ -152,7 +152,7 @@ export async function reconcileJobOnRestart(
   }
 
   // Child is dead
-  const hadMutatingWrite = job.hasMutatingWrite ?? checkpoint?.hasMutatingWrite ?? false;
+  const hadMutatingWrite = !(job.hasMutatingWrite === false || (checkpoint !== null && checkpoint !== undefined && checkpoint.hasMutatingWrite === false));
 
   if (hadMutatingWrite) {
     // If unknown mutating side effects occurred before crash, require manual review
@@ -162,7 +162,10 @@ export async function reconcileJobOnRestart(
       reconciledStatus: "unknown_outcome_review_required",
       eligibleForRetry: false,
       requiresReview: true,
-      reason: "Bridge crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.",
+      reason:
+        checkpoint === null || checkpoint === undefined
+          ? "Job checkpoint missing or unreadable after restart; cannot prove job was read-only. Automatic retry blocked."
+          : "Bridge crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.",
     };
   }
 

@@ -41,6 +41,17 @@ import {
   type JobCheckpoint,
 } from "../tools/cliBridgeReconciliation.js";
 import crypto from "node:crypto";
+import path from "node:path";
+
+export function normalizeWorkspacePath(ws?: string): string | undefined {
+  if (!ws) return undefined;
+  try {
+    const resolved = path.resolve(ws);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  } catch {
+    return ws;
+  }
+}
 
 export type ReconciliationClassification =
   | "terminal"
@@ -219,14 +230,14 @@ export async function reconcileStartupProcesses(
   const allRecords = registry.listRecords();
 
   for (const record of allRecords) {
-    const callerWs = options.callerWorkspaceRoot;
-    const recordWs = record.ownership?.workspaceRoot;
+    const callerWs = normalizeWorkspacePath(options.callerWorkspaceRoot);
+    const recordWs = normalizeWorkspacePath(record.ownership?.workspaceRoot);
 
-    // Strict multi-tenant workspace boundary (P0-2):
+    // Strict multi-tenant workspace boundary (P0-2 / P1-4):
     // When callerWorkspaceRoot is specified, require EXACT match to record.ownership.workspaceRoot.
     // Records without workspaceRoot (missing/unspecified/ownerless) and records from other workspaces
     // MUST be completely omitted from all scoped entries, counts, owner probes, and checkpoint reads.
-    if (callerWs && recordWs !== callerWs) {
+    if (callerWs && (!recordWs || recordWs !== callerWs)) {
       continue;
     }
 
@@ -387,24 +398,72 @@ export async function reconcileStartupProcesses(
       }
     }
 
-    // 5. Job-Level Crash Reconciliation: Interrupted Mutating Jobs Check (P1-1)
+    // 5. Job-Level Crash Reconciliation: Interrupted Mutating Jobs Check (P1-1 / P0 #2 / P1 #3)
     if (record.ownership?.jobId) {
       const jobId = record.ownership.jobId;
       try {
-        const checkpoint = await Promise.resolve(readCheckpoint(jobId)).catch(() => null);
-        const hadMutatingWrite = checkpoint?.hasMutatingWrite === true;
+        const rawCheckpoint = await Promise.resolve(readCheckpoint(jobId)).catch(() => null);
+
+        // Checkpoint integrity & positive schema verification (P0 #2):
+        // Validate that checkpoint is a valid object and that checkpoint.jobId matches record.ownership.jobId.
+        const isCheckpointValid =
+          rawCheckpoint !== null &&
+          typeof rawCheckpoint === "object" &&
+          rawCheckpoint.jobId === jobId;
+
+        const checkpoint: JobCheckpoint | null = isCheckpointValid ? rawCheckpoint : null;
+
+        // Positive evidence required: never infer read-only without verifiable positive evidence.
+        // A missing, null, or untrusted checkpoint MUST be treated as potentially mutating (fail-closed).
+        const hadMutatingWrite = checkpoint !== null ? checkpoint.hasMutatingWrite === true : true;
+        const isProvenReadOnly = checkpoint !== null && checkpoint.hasMutatingWrite === false;
 
         const isTerminal = isRecordTerminal(record.state);
 
-        const hasCleanExit =
-          (typeof record.exitCode === "number" && record.exitCode === 0) ||
-          (typeof record.terminalObservation?.exitCode === "number" &&
-            record.terminalObservation.exitCode === 0);
+        // Exit observations (P1 #3)
+        const hasRecordedExit = typeof record.exitCode === "number";
+        const hasObservedExit = typeof record.terminalObservation?.exitCode === "number";
+        const recordedExit = record.exitCode;
+        const observedExit = record.terminalObservation?.exitCode;
 
+        const hasRecordedSignal = typeof record.signal === "string" && record.signal.length > 0;
+        const hasObservedSignal =
+          typeof record.terminalObservation?.signal === "string" &&
+          record.terminalObservation.signal.length > 0;
+        const recordedSignal = record.signal;
+        const observedSignal = record.terminalObservation?.signal;
+
+        // Contradictory exit proof (P1 #3):
+        // Conflicting exit codes (e.g. 0 vs 1, or 1 vs 0), conflicting signals, or signal vs clean exit 0
+        const hasConflictingExitCodes =
+          hasRecordedExit && hasObservedExit && recordedExit !== observedExit;
+
+        const hasConflictingSignals =
+          hasRecordedSignal && hasObservedSignal && recordedSignal !== observedSignal;
+
+        const hasSignalVsCleanExitConflict =
+          (hasRecordedSignal && hasObservedExit && observedExit === 0) ||
+          (hasObservedSignal && hasRecordedExit && recordedExit === 0);
+
+        const hasContradictoryExitProof =
+          hasConflictingExitCodes || hasConflictingSignals || hasSignalVsCleanExitConflict;
+
+        // Clean exit: requires mutual consistency, at least one 0, and neither nonzero nor signal
+        const hasCleanExit =
+          !hasContradictoryExitProof &&
+          ((hasRecordedExit && recordedExit === 0) || (hasObservedExit && observedExit === 0)) &&
+          !(hasRecordedExit && recordedExit !== 0) &&
+          !(hasObservedExit && observedExit !== 0) &&
+          !hasRecordedSignal &&
+          !hasObservedSignal;
+
+        // Nonzero exit: requires at least one nonzero exit code or signal, without contradiction
         const hasNonzeroExit =
-          (typeof record.exitCode === "number" && record.exitCode !== 0) ||
-          (typeof record.terminalObservation?.exitCode === "number" &&
-            record.terminalObservation.exitCode !== 0);
+          !hasContradictoryExitProof &&
+          ((hasRecordedExit && recordedExit !== 0) ||
+            (hasObservedExit && observedExit !== 0) ||
+            hasRecordedSignal ||
+            hasObservedSignal);
 
         const verificationState = checkpoint?.verificationState;
         const lastEvent = checkpoint?.lastEvent;
@@ -422,13 +481,20 @@ export async function reconcileStartupProcesses(
           verificationState === "verifying" ||
           (typeof lastEvent === "string" && lastEvent.startsWith("verifier_"));
 
-        // Contradictory receipts check: if one indicates verified while the other indicates failure or in-progress
+        // Authoritative proof of verified rollback / zero lingering side effects
+        const hasVerifiedRollback =
+          (checkpoint as any)?.rollbackState === "verified_clean" ||
+          (checkpoint as any)?.verifiedRollback === true;
+
+        // Contradictory verifier receipts check: if verified is paired with failure, in-progress, or rollback
         const hasContradictoryVerifierReceipt =
-          (hasVerifiedState && (hasFailedEvent || isVerifyingInProgress)) ||
-          (hasVerifiedEvent && (hasFailedState || isVerifyingInProgress));
+          (hasVerifiedState && (hasFailedEvent || isVerifyingInProgress || hasVerifiedRollback)) ||
+          (hasVerifiedEvent && (hasFailedState || isVerifyingInProgress || hasVerifiedRollback)) ||
+          (hasVerifiedRollback && (hasVerifiedState || hasVerifiedEvent));
 
         // Durable, self-consistent verifier proof
         const hasConsistentVerifiedProof =
+          checkpoint !== null &&
           (hasVerifiedState || hasVerifiedEvent) &&
           !hasFailedState &&
           !hasFailedEvent &&
@@ -436,15 +502,75 @@ export async function reconcileStartupProcesses(
           !hasContradictoryVerifierReceipt;
 
         const isAuthoritativelyVerified =
-          isTerminal && hasCleanExit && hasConsistentVerifiedProof;
+          isTerminal && hasCleanExit && !hasContradictoryExitProof && hasConsistentVerifiedProof;
 
-        // Authoritative proof of verified rollback / zero lingering side effects
-        const hasVerifiedRollback =
-          (checkpoint as any)?.rollbackState === "verified_clean" ||
-          (checkpoint as any)?.verifiedRollback === true;
+        if (classification !== "currently_owned_live" && classification !== "persistent_external") {
+          if (hasContradictoryExitProof) {
+            // Irreconcilable exit evidence contradiction (P1 #3)
+            const contradictionDetail = hasConflictingExitCodes
+              ? `recorded exitCode (${recordedExit}) conflicts with observed exitCode (${observedExit})`
+              : hasConflictingSignals
+              ? `recorded signal (${recordedSignal}) conflicts with observed signal (${observedSignal})`
+              : `exit signal (${recordedSignal || observedSignal}) conflicts with clean exit code 0`;
 
-        if (classification !== "currently_owned_live") {
-          if (isAuthoritativelyVerified) {
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "in_progress",
+              reconciledStatus: "unknown_outcome_review_required",
+              hasMutatingWrite: hadMutatingWrite,
+              requiresReview: true,
+              eligibleForRetry: false,
+              reason: `Contradictory exit proof detected: ${contradictionDetail}. Verification evidence cannot be reconciled; operator review required.`,
+            };
+
+            report.mutatingJobsRequiringReview++;
+            report.jobAssessments.push(jobAssessment);
+            if (recommendedSafeAction !== "investigate_identity") {
+              recommendedSafeAction = "review";
+            }
+            reason += ` Interrupted job '${jobId}' has contradictory exit proof: unknown_outcome_review_required.`;
+          } else if (!isCheckpointValid) {
+            // Missing, invalid, or untrusted checkpoint (P0 #2): Fail closed!
+            const checkpointReason =
+              rawCheckpoint === null
+                ? "Job checkpoint is missing or unreadable; cannot prove job was non-mutating. Automatic retry blocked to prevent duplicate writes; operator review required."
+                : `Job checkpoint schema invalid or jobId mismatch (expected '${jobId}', got '${(rawCheckpoint as any)?.jobId}'); untrusted verifier evidence. Operator review required.`;
+
+            jobAssessment = {
+              jobId,
+              previousStatus: "unknown",
+              reconciledStatus: "unknown_outcome_review_required",
+              hasMutatingWrite: true,
+              requiresReview: true,
+              eligibleForRetry: false,
+              reason: checkpointReason,
+            };
+
+            report.mutatingJobsRequiringReview++;
+            report.jobAssessments.push(jobAssessment);
+            if (recommendedSafeAction !== "investigate_identity") {
+              recommendedSafeAction = "review";
+            }
+            reason += ` Job '${jobId}' checkpoint missing or untrusted: unknown_outcome_review_required.`;
+          } else if (hasContradictoryVerifierReceipt) {
+            // Contradictory verification receipts (e.g. verified + rollback, or verified + failed) (P1 #3)
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "in_progress",
+              reconciledStatus: "unknown_outcome_review_required",
+              hasMutatingWrite: hadMutatingWrite,
+              requiresReview: true,
+              eligibleForRetry: false,
+              reason: `Contradictory verification receipts detected (lastEvent='${lastEvent}', verificationState='${verificationState}', rollbackState='${(checkpoint as any)?.rollbackState}'). Verifier evidence cannot be reconciled; operator review required.`,
+            };
+
+            report.mutatingJobsRequiringReview++;
+            report.jobAssessments.push(jobAssessment);
+            if (recommendedSafeAction !== "investigate_identity") {
+              recommendedSafeAction = "review";
+            }
+            reason += ` Interrupted job '${jobId}' has contradictory verification receipts: unknown_outcome_review_required.`;
+          } else if (isAuthoritativelyVerified) {
             // Completed job verified with authoritative, self-consistent proof; NOT unknown outcome
             jobAssessment = {
               jobId,
@@ -501,7 +627,7 @@ export async function reconcileStartupProcesses(
               }
             }
           } else if (isTerminal && (hasFailedState || hasFailedEvent || hasNonzeroExit || hasVerifiedRollback)) {
-            // Definitive failure for non-mutating job OR mutating job with proven clean rollback
+            // Definitive failure for proven non-mutating job OR mutating job with proven clean rollback
             jobAssessment = {
               jobId,
               previousStatus: checkpoint?.lastEvent ?? "failed",
@@ -529,8 +655,8 @@ export async function reconcileStartupProcesses(
               reason: "Non-mutating job crashed during verifier execution; verification outcome uncertain.",
             };
             report.jobAssessments.push(jobAssessment);
-          } else {
-            // Non-mutating job interrupted mid-flight before completion
+          } else if (isProvenReadOnly) {
+            // Non-mutating job interrupted mid-flight before completion (proven read-only with positive evidence)
             jobAssessment = {
               jobId,
               previousStatus: checkpoint?.lastEvent ?? "in_progress",
@@ -540,6 +666,19 @@ export async function reconcileStartupProcesses(
               eligibleForRetry: true,
               reason: "Non-mutating job interrupted before completion. Safe for automatic retry.",
             };
+            report.jobAssessments.push(jobAssessment);
+          } else {
+            // Fallback fail-closed
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "in_progress",
+              reconciledStatus: "unknown_outcome_review_required",
+              hasMutatingWrite: true,
+              requiresReview: true,
+              eligibleForRetry: false,
+              reason: "Job outcome cannot be verified without trusted checkpoint; automatic retry blocked.",
+            };
+            report.mutatingJobsRequiringReview++;
             report.jobAssessments.push(jobAssessment);
           }
         }

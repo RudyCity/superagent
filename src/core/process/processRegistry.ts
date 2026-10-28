@@ -172,6 +172,7 @@ export class ProcessRegistry {
   private isCorrupt = false;
   private corruptionReason?: string;
   private isInitialized = false;
+  private hasObservedDiskFile = false;
   private saveQueue: Promise<void> = Promise.resolve();
 
   constructor(options: ProcessRegistryOptions = {}) {
@@ -209,10 +210,12 @@ export class ProcessRegistry {
         this.isCorrupt = false;
         this.corruptionReason = undefined;
         this.isInitialized = true;
+        this.hasObservedDiskFile = false;
         return { success: true };
       }
 
       const content = await fsp.readFile(this.storagePath, "utf8");
+      this.hasObservedDiskFile = true;
       const trimmed = content.trim();
       if (!trimmed) {
         this.records.clear();
@@ -356,17 +359,19 @@ export class ProcessRegistry {
     await fsp.mkdir(targetDir, { recursive: true });
     const startTime = Date.now();
     let lockHandle: fsp.FileHandle | null = null;
+    let activeLockToken: string | null = null;
 
     while (Date.now() - startTime < timeoutMs) {
       let acquiredHandle: fsp.FileHandle | null = null;
       try {
         acquiredHandle = await fsp.open(lockPath, "wx", 0o600);
+        const myToken = crypto.randomBytes(6).toString("hex");
         try {
           await acquiredHandle.writeFile(
             JSON.stringify({
               pid: process.pid,
               createdAt: Date.now(),
-              token: crypto.randomBytes(4).toString("hex"),
+              token: myToken,
             })
           );
           await acquiredHandle.sync();
@@ -381,6 +386,7 @@ export class ProcessRegistry {
           throw writeErr;
         }
         lockHandle = acquiredHandle;
+        activeLockToken = myToken;
         break;
       } catch (err: any) {
         if (err.code === "EEXIST") {
@@ -459,7 +465,17 @@ export class ProcessRegistry {
         await lockHandle.close();
       } catch {}
       try {
-        await fsp.unlink(lockPath);
+        if (activeLockToken) {
+          const raw = await fsp.readFile(lockPath, "utf8").catch(() => null);
+          if (raw) {
+            try {
+              const data = JSON.parse(raw);
+              if (data.token === activeLockToken && data.pid === process.pid) {
+                await fsp.unlink(lockPath);
+              }
+            } catch {}
+          }
+        }
       } catch {}
     }
   }
@@ -481,47 +497,66 @@ export class ProcessRegistry {
     }
 
     await this.withRegistryLock(async () => {
-      // Re-read on-disk records before writing to reconcile with concurrent writers (P0-3)
-      if (fs.existsSync(this.storagePath)) {
-        try {
-          const content = await fsp.readFile(this.storagePath, "utf8");
-          const trimmed = content.trim();
-          if (trimmed) {
-            let parsed: any;
-            try {
-              parsed = JSON.parse(trimmed);
-            } catch (jsonErr) {
-              this.isCorrupt = true;
-              this.corruptionReason = `Corrupted JSON encountered during locked re-read: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`;
-              throw new Error(`Cannot persist registry: registry on disk is corrupt. Fail-closed.`);
-            }
+      // Re-read on-disk records before writing to reconcile with concurrent writers (P0-3 / P0 #1)
+      let diskContent: string | null = null;
+      try {
+        diskContent = await fsp.readFile(this.storagePath, "utf8");
+        this.hasObservedDiskFile = true;
+      } catch (readErr: any) {
+        if (readErr && readErr.code === "ENOENT") {
+          if (this.hasObservedDiskFile) {
+            // Unexpected file disappearance (ENOENT race when file was previously observed/loaded)
+            throw new Error(
+              `Cannot persist registry: registry file at ${this.storagePath} previously existed but was missing during locked re-read (unexpected ENOENT race). Fail-closed.`
+            );
+          }
+          // Narrowly proven initial nonexistence: first-time initialization
+          diskContent = null;
+        } else {
+          // Non-corruption read errors (EACCES, EPERM, EIO, sharing violation, etc.):
+          // FAIL CLOSED immediately! Do NOT swallow error. Do NOT proceed with local records.
+          throw new Error(
+            `Cannot persist registry: failed to read registry file at ${this.storagePath} (${
+              readErr?.code ?? "UNKNOWN"
+            }): ${readErr instanceof Error ? readErr.message : String(readErr)}. Fail-closed without altering disk.`
+          );
+        }
+      }
 
-            if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.records)) {
-              this.isCorrupt = true;
-              this.corruptionReason = "Schema violation encountered during locked re-read";
-              throw new Error(`Cannot persist registry: registry on disk has schema violation. Fail-closed.`);
-            }
+      if (diskContent !== null) {
+        const trimmed = diskContent.trim();
+        if (trimmed) {
+          let parsed: any;
+          try {
+            parsed = JSON.parse(trimmed);
+          } catch (jsonErr) {
+            this.isCorrupt = true;
+            this.corruptionReason = `Corrupted JSON encountered during locked re-read: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`;
+            throw new Error(`Cannot persist registry: registry on disk is corrupt. Fail-closed.`);
+          }
 
-            // Merge disk records into memory
-            for (const item of parsed.records) {
-              if (!item || typeof item !== "object" || !item.recordId) {
-                this.isCorrupt = true;
-                this.corruptionReason = "Corrupt record in registry: missing or invalid recordId";
-                throw new Error("Cannot persist registry: record on disk is corrupt. Fail-closed.");
-              }
-              const diskRecord = this.normalizeLoadedRecord(item);
-              const localRecord = this.records.get(item.recordId);
-              if (!localRecord) {
-                this.records.set(item.recordId, diskRecord);
-              } else {
-                const merged = this.reconcileRecordPair(localRecord, diskRecord);
-                this.records.set(item.recordId, merged);
-              }
+          if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.records)) {
+            this.isCorrupt = true;
+            this.corruptionReason = "Schema violation encountered during locked re-read";
+            throw new Error(`Cannot persist registry: registry on disk has schema violation. Fail-closed.`);
+          }
+
+          // Merge disk records into memory
+          for (const item of parsed.records) {
+            if (!item || typeof item !== "object" || !item.recordId) {
+              this.isCorrupt = true;
+              this.corruptionReason = "Corrupt record in registry: missing or invalid recordId";
+              throw new Error("Cannot persist registry: record on disk is corrupt. Fail-closed.");
+            }
+            const diskRecord = this.normalizeLoadedRecord(item);
+            const localRecord = this.records.get(item.recordId);
+            if (!localRecord) {
+              this.records.set(item.recordId, diskRecord);
+            } else {
+              const merged = this.reconcileRecordPair(localRecord, diskRecord);
+              this.records.set(item.recordId, merged);
             }
           }
-        } catch (readErr) {
-          if (this.isCorrupt) throw readErr;
-          // If reading failed due to non-corruption reasons (e.g. file vanished), proceed with local records
         }
       }
 
@@ -552,6 +587,7 @@ export class ProcessRegistry {
           try {
             await fsp.rename(tempFile, this.storagePath);
             renamed = true;
+            this.hasObservedDiskFile = true;
             break;
           } catch (renameErr) {
             lastRenameErr = renameErr;

@@ -490,20 +490,22 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
         callerWorkspaceRoot: wsLocal,
       });
 
-      expect(diag.totalTracked).toBe(2);
+      expect(diag.totalTracked).toBe(1);
       expect(diag.isCorrupt).toBe(false);
 
       const localEntry = diag.entries.find((e) => e.ownership.jobId === "job_local_123");
-      const foreignEntry = diag.entries.find((e) => e.ownership.isForeignWorkspace);
+      const foreignEntry = diag.entries.find((e) => e.ownership.jobId === "job_foreign_456");
 
       expect(localEntry).toBeDefined();
       expect(localEntry?.ownership.workspaceRoot).toBe(wsLocal);
       expect(localEntry?.ownership.sessionId).toBe("sess_local_123");
 
-      expect(foreignEntry).toBeDefined();
-      expect(foreignEntry?.ownership.workspaceRoot).toMatch(/^\[foreign_workspace:[a-f0-9]+\]$/);
-      expect(foreignEntry?.ownership.jobId).toBe("[foreign_job]");
-      expect(foreignEntry?.ownership.sessionId).toBe("[foreign_session]");
+      expect(foreignEntry).toBeUndefined();
+      const operatorDiag = await supervisor.getProcessDiagnostics({
+        isPrivilegedOperator: true,
+      });
+      expect(operatorDiag.totalTracked).toBe(2);
+      expect(operatorDiag.entries.find((e) => e.ownership.jobId === "job_foreign_456")).toBeDefined();
     });
   });
 });

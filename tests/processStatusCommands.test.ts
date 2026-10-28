@@ -37,6 +37,16 @@ describe("Process CLI read-only observability and workspace privacy", () => {
     resetProcessSupervisorForTest();
     const sup = getProcessSupervisor({ storagePath: path.join(tmp, "registry.json") });
     await sup.initialize();
+    const { writeJobCheckpoint } = await import("../src/core/tools/cliBridgeReconciliation.js");
+    await writeJobCheckpoint({
+      checkpointId: "chk_clean",
+      jobId: "private_job",
+      timestamp: Date.now() - 5000,
+      lastEvent: "verified_succeeded",
+      resourceClaims: [],
+      verificationState: "verified",
+      hasMutatingWrite: false,
+    });
     sup.getRegistry().addRecord(record(WS,"safe_record"));
     sup.getRegistry().addRecord(record(OTHER,"foreign_secret_record"));
   });

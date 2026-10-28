@@ -31,6 +31,7 @@ import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { getWorkspaceId } from "../config/paths.js";
 import {
   reconcileStartupProcesses,
+  normalizeWorkspacePath,
   type ProcessReconciliationReport,
   type ProcessReconciliationOptions,
   type ProcessReconciliationDependencies,
@@ -78,6 +79,12 @@ export interface ProcessDiagnosticFilter {
   callerWorkspaceRoot?: string;
   component?: string;
   state?: ProcessState;
+  /**
+   * Explicit privileged global operator mode (P1-4).
+   * When true, allows inspecting global service records and unscoped records across the host.
+   * When false or omitted, diagnostic queries are strictly tenant/user-scoped.
+   */
+  isPrivilegedOperator?: boolean;
 }
 
 export interface ProcessDiagnosticEntry {
@@ -384,7 +391,10 @@ export class ProcessSupervisor {
 
   /**
    * Read-only diagnostic inspection API suitable for `/doctor` processes.
-   * Respects workspace privacy by masking foreign workspace paths.
+   * Respects workspace privacy: user-scoped diagnostics strictly return same-workspace
+   * records and counts only; foreign and ownerless records are completely omitted (P1-4).
+   * Explicit privileged global operator mode (isPrivilegedOperator: true) is required
+   * to inspect host-wide global services.
    */
   public async getProcessDiagnostics(
     filter: ProcessDiagnosticFilter = {}
@@ -395,6 +405,28 @@ export class ProcessSupervisor {
     const allRecords = this.registry.listRecords();
     const isCorrupt = this.registry.isRegistryCorrupt();
     const corruptionReason = this.registry.getCorruptionReason();
+
+    const isPrivilegedOperator = filter.isPrivilegedOperator === true;
+    const targetWsRaw = filter.callerWorkspaceRoot ?? filter.filterByWorkspaceRoot;
+    const targetWs = normalizeWorkspacePath(targetWsRaw);
+
+    // If neither privileged operator mode nor a valid workspace is specified,
+    // fail closed to protect host and foreign workspace privacy.
+    if (!isPrivilegedOperator && !targetWs) {
+      return {
+        timestamp: now,
+        runtimeGeneration: getRuntimeGeneration(),
+        isCorrupt,
+        corruptionReason,
+        totalTracked: 0,
+        activeOwnedCount: 0,
+        historicalCount: 0,
+        terminalCount: 0,
+        identityMismatchCount: 0,
+        unverifiedPidCount: 0,
+        entries: [],
+      };
+    }
 
     let activeOwnedCount = 0;
     let historicalCount = 0;
@@ -408,10 +440,18 @@ export class ProcessSupervisor {
       if (filter.component && record.component !== filter.component) continue;
       if (filter.state && record.state !== filter.state) continue;
 
-      // Strict workspace filtering (P1-4): require exact match to requested workspace.
-      // Omit ownerless/missing-root records when filtering by workspace.
-      if (filter.filterByWorkspaceRoot) {
-        if (!record.ownership?.workspaceRoot || record.ownership.workspaceRoot !== filter.filterByWorkspaceRoot) {
+      if (!isPrivilegedOperator) {
+        // User-scoped diagnostics (P1-4):
+        // Strictly require exact match to requested workspace.
+        // Omit foreign and ownerless records completely from entries and counts!
+        const recordWs = normalizeWorkspacePath(record.ownership?.workspaceRoot);
+        if (!recordWs || recordWs !== targetWs) {
+          continue;
+        }
+      } else if (filter.filterByWorkspaceRoot) {
+        const filterWs = normalizeWorkspacePath(filter.filterByWorkspaceRoot);
+        const recordWs = normalizeWorkspacePath(record.ownership?.workspaceRoot);
+        if (!recordWs || recordWs !== filterWs) {
           continue;
         }
       }
@@ -422,7 +462,7 @@ export class ProcessSupervisor {
           : null;
       const check = this.registry.verifyOwnership(record.recordId, observedIdentity);
 
-      // Aggregate counts
+      // Aggregate counts strictly over matching records
       if (check.isOwnedByCurrentRuntime) {
         activeOwnedCount++;
       } else if (check.status === "historical_unverified") {
@@ -435,24 +475,14 @@ export class ProcessSupervisor {
         unverifiedPidCount++;
       }
 
-      // Workspace privacy guard (P1-4):
-      // Mask any record that does not match callerWorkspaceRoot (including ownerless records)
-      const callerWs = filter.callerWorkspaceRoot;
-      const recordWs = record.ownership?.workspaceRoot;
-      const isForeign = Boolean(callerWs && recordWs !== callerWs);
-
       const ownership: ProcessDiagnosticEntry["ownership"] = {
         workspaceId: record.ownership?.workspaceId,
         taskId: record.ownership?.taskId,
-        jobId: isForeign ? "[foreign_job]" : record.ownership?.jobId,
-        sessionId: isForeign ? "[foreign_session]" : record.ownership?.sessionId,
+        jobId: record.ownership?.jobId,
+        sessionId: record.ownership?.sessionId,
         systemScope: record.ownership?.systemScope,
-        workspaceRoot: isForeign
-          ? (recordWs
-              ? `[foreign_workspace:${crypto.createHash("sha256").update(recordWs).digest("hex").slice(0, 8)}]`
-              : "[unspecified_workspace]")
-          : recordWs,
-        isForeignWorkspace: isForeign,
+        workspaceRoot: record.ownership?.workspaceRoot,
+        isForeignWorkspace: false,
       };
 
       entries.push({
@@ -485,7 +515,7 @@ export class ProcessSupervisor {
       runtimeGeneration: getRuntimeGeneration(),
       isCorrupt,
       corruptionReason,
-      totalTracked: filter.filterByWorkspaceRoot ? entries.length : allRecords.length,
+      totalTracked: entries.length,
       activeOwnedCount,
       historicalCount,
       terminalCount,

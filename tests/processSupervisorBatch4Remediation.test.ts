@@ -215,16 +215,20 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(filteredDiag.totalTracked).toBe(0);
       expect(filteredDiag.entries).toHaveLength(0);
 
-      // Diagnostic query with callerWorkspaceRoot masking
-      const maskedDiag = await supervisor.getProcessDiagnostics({
+      // User-scoped diagnostics query strictly omits ownerless/foreign records (P1 #4)
+      const scopedDiag = await supervisor.getProcessDiagnostics({
         callerWorkspaceRoot: WS_A,
       });
-      expect(maskedDiag.totalTracked).toBe(1);
-      const entry = maskedDiag.entries[0];
-      expect(entry?.ownership.isForeignWorkspace).toBe(true);
-      expect(entry?.ownership.jobId).toBe("[foreign_job]");
-      expect(entry?.ownership.sessionId).toBe("[foreign_session]");
-      expect(JSON.stringify(maskedDiag)).not.toContain("private_ownerless_job");
+      expect(scopedDiag.totalTracked).toBe(0);
+      expect(scopedDiag.entries).toHaveLength(0);
+      expect(JSON.stringify(scopedDiag)).not.toContain("private_ownerless_job");
+
+      // Privileged operator query surfaces the ownerless record
+      const operatorDiag = await supervisor.getProcessDiagnostics({
+        isPrivilegedOperator: true,
+      });
+      expect(operatorDiag.totalTracked).toBe(1);
+      expect(operatorDiag.entries).toHaveLength(1);
     });
   });
 
@@ -598,8 +602,15 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(diag.totalTracked).toBe(1);
       expect(diag.entries[0]?.recordId).toBe(tenantJob.recordId);
 
-      // Unscoped operator diagnostics: surfaces both with clear systemScope
-      const operatorDiag = await supervisor.getProcessDiagnostics();
+      // Unauthenticated / unscoped user query returns 0 to prevent leakage
+      const unscopedUserDiag = await supervisor.getProcessDiagnostics();
+      expect(unscopedUserDiag.totalTracked).toBe(0);
+      expect(unscopedUserDiag.entries).toHaveLength(0);
+
+      // Authenticated privileged operator diagnostics: surfaces both with clear systemScope
+      const operatorDiag = await supervisor.getProcessDiagnostics({
+        isPrivilegedOperator: true,
+      });
       expect(operatorDiag.totalTracked).toBe(2);
       const globalEntry = operatorDiag.entries.find((e) => e.recordId === globalService.recordId);
       expect(globalEntry?.ownership.systemScope).toBe("global");

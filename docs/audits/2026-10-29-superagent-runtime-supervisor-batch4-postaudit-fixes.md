@@ -1,8 +1,8 @@
 # SuperAgent Runtime Supervisor: Post-Batch4 Independent Audit Remediation Report
 
-**Date**: 2026-10-29  
-**Branch**: `agent/runtime-supervisor-m1-coverage-m2-reaper-20261028`  
-**Base HEAD**: `70af5b461ad62de962679ed744b91c7a6e2aa61b`  
+**Date**: 2026-10-29
+**Branch**: `agent/runtime-supervisor-m1-coverage-m2-reaper-20261028`
+**Base HEAD**: `70af5b461ad62de962679ed744b91c7a6e2aa61b`
 **Scope**: Targeted Post-Batch4 Independent Audit Blocker Remediation
 
 ---
@@ -43,7 +43,7 @@ Following the delivery of Batch 4 (`70af5b46`), an independent code review ident
 ```diff
 @@ -528,7 +528,11 @@ export class ProcessRegistry {
          }
- 
+
 -        if (!renamed && process.platform === "win32") {
 -          // Fallback replacement on Windows inside exclusive lock
 -          try {

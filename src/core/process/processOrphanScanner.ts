@@ -4,6 +4,7 @@
  * Historical process records are report-only even when the recorded parent PID is absent.
  */
 import { ProcessRegistry, getRuntimeGeneration, type ProcessRecord } from "./processRegistry.js";
+import { normalizeWorkspacePath } from "./processReconciliation.js";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { observeProcessId, type PidObservation } from "../tools/cliBridgeRecovery.js";
 
@@ -110,8 +111,9 @@ export async function scanManagedProcessOrphans(
   const owner = deps.inspectOwner ?? inspectLiveOwner;
   const graceMs = Math.max(1_000, options.graceMs ?? 30_000);
   const maxEntries = Math.max(0, Math.min(200, options.maxEntries ?? 100));
+  const targetWs = normalizeWorkspacePath(options.callerWorkspaceRoot);
   // Strictly scoped: not even foreign record counts are leaked to callers.
-  const records = registry.listRecords().filter(r => r.ownership?.workspaceRoot === options.callerWorkspaceRoot);
+  const records = registry.listRecords().filter(r => normalizeWorkspacePath(r.ownership?.workspaceRoot) === targetWs);
   for (const record of records) {
     let classification: ProcessScanClassification = "unknown";
     const ageMs = Math.max(0, now - (record.startedAt ?? record.registeredAt));
@@ -146,7 +148,7 @@ export async function scanManagedProcessOrphans(
             latest.runtimeGeneration === record.runtimeGeneration &&
             latest.heartbeatAt === record.heartbeatAt && latest.state === record.state &&
             latest.lifecycle === record.lifecycle && latest.cleanupPolicy === record.cleanupPolicy &&
-            latest.ownership?.workspaceRoot === options.callerWorkspaceRoot &&
+            normalizeWorkspacePath(latest.ownership?.workspaceRoot) === targetWs &&
             latest.ownership?.jobId === record.ownership?.jobId &&
             latest.ownership?.sessionId === record.ownership?.sessionId;
           if (unchanged) {
@@ -163,7 +165,7 @@ export async function scanManagedProcessOrphans(
               finalRecord.state === record.state &&
               finalRecord.lifecycle === record.lifecycle &&
               finalRecord.cleanupPolicy === record.cleanupPolicy &&
-              finalRecord.ownership?.workspaceRoot === options.callerWorkspaceRoot &&
+              normalizeWorkspacePath(finalRecord.ownership?.workspaceRoot) === targetWs &&
               finalRecord.ownership?.jobId === record.ownership?.jobId &&
               finalRecord.ownership?.sessionId === record.ownership?.sessionId;
             if (ownerAgain.state === "terminal" && ownerAgain.source && leaseStillValid &&
