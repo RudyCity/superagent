@@ -32,6 +32,7 @@ function record(workspace: string, id: string): ProcessRecord {
 describe("Process CLI read-only observability and workspace privacy", () => {
   beforeEach(async () => {
     tmp = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-proc-observe-"));
+    process.env.SUPERAGENT_CLI_BRIDGE_CHECKPOINTS_DIR = path.join(tmp, "checkpoints");
     lines = [];
     resetProcessSupervisorForTest();
     const sup = getProcessSupervisor({ storagePath: path.join(tmp, "registry.json") });
@@ -48,9 +49,36 @@ describe("Process CLI read-only observability and workspace privacy", () => {
     const text = lines.join("\n");
     expect(text).toContain("Managed process records: 1");
     expect(text).toContain("Terminal: 1");
+    expect(text).toContain("Reconciliation findings: clean / no pending mutating review");
     expect(text).not.toContain(OTHER);
     expect(text).not.toContain("foreign_secret_record");
     expect(text).not.toContain("PRIVATE_PROMPT_NEVER_PRINT");
+  });
+
+  it("/status and /doctor show reconciliation findings when mutating jobs require review", async () => {
+    const { writeJobCheckpoint } = await import("../src/core/tools/cliBridgeReconciliation.js");
+    await writeJobCheckpoint({
+      checkpointId: "chk_test_mutating",
+      jobId: "private_job",
+      timestamp: Date.now() - 10000,
+      lastEvent: "agent_tool_exec",
+      resourceClaims: [],
+      verificationState: "verifying",
+      hasMutatingWrite: true,
+    });
+
+    lines = [];
+    await statusCommand.execute("processes", ctx());
+    let text = lines.join("\n");
+    expect(text).toContain("unknown_outcome_review_required");
+    expect(text).toContain("Recommendation: operator review required");
+
+    lines = [];
+    await doctorCommand.execute("processes", ctx());
+    text = lines.join("\n");
+    expect(text).toContain("job_status=unknown_outcome_review_required");
+    expect(text).toContain("action=review");
+    expect(text).not.toContain(OTHER);
   });
   it("/doctor processes provides only local scoped metadata and safe actions", async () => {
     await doctorCommand.execute("processes",ctx());

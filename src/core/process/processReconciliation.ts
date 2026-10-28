@@ -1,0 +1,464 @@
+/**
+ * SuperAgent Process Reconciliation (M3 Foundation)
+ *
+ * Implements crash-safe, read-only process and job reconciliation on startup.
+ *
+ * Key safety invariants:
+ * 1. Startup comparison connects persisted registry with live OS process table and creation identities.
+ * 2. Classifications:
+ *    - "terminal": process exited, terminated, failed, or PID absent from OS.
+ *    - "currently_owned_live": proven owned by current runtime generation, PID alive, creation identity matched, owner live.
+ *    - "orphan_candidate": proven owned by SuperAgent, owner dead/terminal, creation identity matched, stale lease past grace.
+ *    - "historical": prior-generation process; diagnostic only, NEVER adopted.
+ *    - "identity_mismatch": PID reused; creation identity mismatches recorded identity.
+ *    - "unknown": identity or owner state unprovable from evidence.
+ *    - "persistent_external": marked persistent or external; survives restart without being misclassified as orphan/leak.
+ * 3. ZERO process adoption of prior generations; ZERO reliance on PID alone.
+ * 4. ZERO automatic replay of prompts, ZERO auto-retry of ambiguous mutating jobs, ZERO reattachment to unknown stdin/stdout.
+ * 5. Interrupted mutating jobs with uncertain outcome persist and return exactly 'unknown_outcome_review_required'.
+ * 6. Purely read-only / report-only: NO kill, NO auto-reap.
+ * 7. Positive evidence required; missing or uncertain evidence stays unknown.
+ * 8. Strict workspace isolation: foreign workspace paths, job IDs, and arguments are redacted/masked.
+ * 9. Fail-closed on corrupt registry or legacy schema without lifecycle.
+ */
+
+import {
+  ProcessRegistry,
+  getRuntimeGeneration,
+  type ProcessRecord,
+} from "./processRegistry.js";
+import {
+  readProcessStartIdentity,
+  compareProcessStartIdentity,
+} from "../tools/cliBridgeProcessIdentity.js";
+import {
+  observeProcessId,
+  type PidObservation,
+} from "../tools/cliBridgeRecovery.js";
+import {
+  readJobCheckpoint,
+  writeJobCheckpoint,
+  type JobCheckpoint,
+} from "../tools/cliBridgeReconciliation.js";
+import crypto from "node:crypto";
+
+export type ReconciliationClassification =
+  | "terminal"
+  | "currently_owned_live"
+  | "orphan_candidate"
+  | "historical"
+  | "identity_mismatch"
+  | "unknown"
+  | "persistent_external";
+
+export interface ReconciledJobAssessment {
+  jobId: string;
+  previousStatus?: string;
+  reconciledStatus: string;
+  hasMutatingWrite: boolean;
+  requiresReview: boolean;
+  eligibleForRetry: boolean;
+  reason: string;
+}
+
+export interface ReconciledProcessEntry {
+  recordId: string;
+  pid: number | null;
+  component: string;
+  classification: ReconciliationClassification;
+  lifecycle: string;
+  cleanupPolicy: string;
+  runtimeGeneration: string;
+  isCurrentRuntime: boolean;
+  workspaceRoot?: string;
+  jobId?: string;
+  sessionId?: string;
+  isForeignWorkspace?: boolean;
+  recommendedSafeAction: "observe" | "review" | "investigate_identity" | "none";
+  reason: string;
+  jobAssessment?: ReconciledJobAssessment;
+}
+
+export interface ProcessReconciliationReport {
+  timestamp: number;
+  runtimeGeneration: string;
+  isCorrupt: boolean;
+  corruptionReason?: string;
+  totalRecords: number;
+  counts: Record<ReconciliationClassification, number>;
+  entries: ReconciledProcessEntry[];
+  mutatingJobsRequiringReview: number;
+  jobAssessments: ReconciledJobAssessment[];
+}
+
+export interface ProcessReconciliationOptions {
+  callerWorkspaceRoot?: string;
+  graceMs?: number;
+  maxEntries?: number;
+  persistInterruptedMutations?: boolean;
+}
+
+export interface ProcessReconciliationDependencies {
+  now?: () => number;
+  observePid?: (pid: number) => PidObservation | Promise<PidObservation>;
+  readIdentity?: (pid: number) => Promise<string | null>;
+  inspectOwner?: (record: Readonly<ProcessRecord>) => Promise<{ state: "live" | "terminal" | "unknown"; source: string }>;
+  readJobCheckpoint?: (jobId: string) => Promise<JobCheckpoint | null>;
+  persistCheckpoint?: (checkpoint: JobCheckpoint) => Promise<string>;
+}
+
+const ALL_CLASSIFICATIONS: ReconciliationClassification[] = [
+  "terminal",
+  "currently_owned_live",
+  "orphan_candidate",
+  "historical",
+  "identity_mismatch",
+  "unknown",
+  "persistent_external",
+];
+
+const isRecordTerminal = (s: string): boolean =>
+  s === "exited" || s === "failed" || s === "terminated";
+
+const isCleanupEligible = (r: ProcessRecord): boolean =>
+  (r.lifecycle === "ephemeral" || r.lifecycle === "job" || r.lifecycle === "session") &&
+  (r.cleanupPolicy === "terminate_with_owner" || r.cleanupPolicy === "lease_managed");
+
+/**
+ * Inspects live owner state with positive authoritative evidence only.
+ */
+async function defaultInspectOwner(
+  record: Readonly<ProcessRecord>
+): Promise<{ state: "live" | "terminal" | "unknown"; source: string }> {
+  if (record.runtimeGeneration !== getRuntimeGeneration()) {
+    return { state: "unknown", source: "historical_generation_not_adopted" };
+  }
+
+  if (record.ownership?.jobId) {
+    try {
+      const { getDelegateJob } = await import("../tools/cliBridgeDelegateJobs.js");
+      const job = await getDelegateJob(record.ownership.jobId);
+      if (!job || job.cwd !== record.ownership.workspaceRoot || job.jobId !== record.ownership.jobId) {
+        return { state: "unknown", source: "job_unavailable_or_scope_mismatch" };
+      }
+      const done = [
+        "succeeded",
+        "failed",
+        "timed_out",
+        "cancelled",
+        "verification_failed",
+        "permission_blocked",
+        "unknown_outcome_review_required",
+      ].includes(job.status);
+      return { state: done ? "terminal" : "live", source: "cli_bridge_job_status" };
+    } catch {
+      return { state: "unknown", source: "job_inspection_failed" };
+    }
+  }
+
+  if (record.ownership?.sessionId) {
+    try {
+      const { getSession } = await import("../tools/cliBridgeSession.js");
+      const session = getSession(record.ownership.sessionId);
+      if (!session || session.cwd !== record.ownership.workspaceRoot) {
+        return { state: "unknown", source: "session_unavailable_or_scope_mismatch" };
+      }
+      return {
+        state: session.status === "exited" || session.status === "errored" ? "terminal" : "live",
+        source: "cli_bridge_session_status",
+      };
+    } catch {
+      return { state: "unknown", source: "session_inspection_failed" };
+    }
+  }
+
+  return { state: "unknown", source: "owner_job_or_session_not_proven" };
+}
+
+/**
+ * Reconciles persisted processes with live OS process table and evaluates
+ * crash-safe states for interrupted jobs and orphan candidates.
+ */
+export async function reconcileStartupProcesses(
+  registry: ProcessRegistry,
+  options: ProcessReconciliationOptions = {},
+  deps: ProcessReconciliationDependencies = {}
+): Promise<ProcessReconciliationReport> {
+  const now = deps.now?.() ?? Date.now();
+  const currentGen = getRuntimeGeneration();
+  const graceMs = Math.max(1_000, options.graceMs ?? 30_000);
+  const maxEntries = Math.max(0, Math.min(200, options.maxEntries ?? 100));
+
+  const counts: Record<ReconciliationClassification, number> = Object.fromEntries(
+    ALL_CLASSIFICATIONS.map((c) => [c, 0])
+  ) as Record<ReconciliationClassification, number>;
+
+  const report: ProcessReconciliationReport = {
+    timestamp: now,
+    runtimeGeneration: currentGen,
+    isCorrupt: registry.isRegistryCorrupt(),
+    corruptionReason: registry.getCorruptionReason(),
+    totalRecords: 0,
+    counts,
+    entries: [],
+    mutatingJobsRequiringReview: 0,
+    jobAssessments: [],
+  };
+
+  // Fail closed if registry is corrupt
+  if (report.isCorrupt) {
+    return report;
+  }
+
+  const observe = deps.observePid ?? observeProcessId;
+  const readIdentity = deps.readIdentity ?? readProcessStartIdentity;
+  const inspectOwner = deps.inspectOwner ?? defaultInspectOwner;
+  const readCheckpoint = deps.readJobCheckpoint ?? readJobCheckpoint;
+  const persistCheckpoint = deps.persistCheckpoint ?? writeJobCheckpoint;
+
+  const allRecords = registry.listRecords();
+
+  for (const record of allRecords) {
+    const callerWs = options.callerWorkspaceRoot;
+    const recordWs = record.ownership?.workspaceRoot;
+    const isForeign = Boolean(callerWs && recordWs && callerWs !== recordWs);
+
+    // If a caller workspace was requested, filter out or mask foreign workspace records
+    if (callerWs && isForeign) {
+      continue;
+    }
+
+    report.totalRecords++;
+
+    let classification: ReconciliationClassification = "unknown";
+    let reason = "Process status could not be conclusively determined.";
+    let recommendedSafeAction: ReconciledProcessEntry["recommendedSafeAction"] = "observe";
+    let jobAssessment: ReconciledJobAssessment | undefined;
+
+    const pid = record.pid;
+    const isCurrentRuntime = record.runtimeGeneration === currentGen;
+
+    // 1. Terminal state check
+    if (isRecordTerminal(record.state)) {
+      classification = "terminal";
+      reason = `Record is in terminal state '${record.state}'.`;
+      recommendedSafeAction = "none";
+    }
+    // 2. Persistent / external service check
+    else if (
+      record.lifecycle === "persistent" ||
+      record.lifecycle === "external" ||
+      record.cleanupPolicy === "keep_alive" ||
+      record.cleanupPolicy === "manual_only" ||
+      record.cleanupPolicy === "manual"
+    ) {
+      classification = "persistent_external";
+      reason = `Process is marked with lifecycle '${record.lifecycle}' and policy '${record.cleanupPolicy}'. Survives restart; never an orphan candidate.`;
+      recommendedSafeAction = "observe";
+    }
+    // 3. Historical generation check: prior generations are NEVER adopted
+    else if (!isCurrentRuntime) {
+      if (typeof pid === "number" && pid > 0) {
+        const presence = await Promise.resolve(observe(pid)).catch(() => "unknown" as PidObservation);
+        if (presence === "pid_absent") {
+          classification = "terminal";
+          reason = `Historical process PID ${pid} is absent from OS process table.`;
+          recommendedSafeAction = "none";
+        } else if (presence === "pid_present_unverified") {
+          const liveIdentity = await Promise.resolve(readIdentity(pid)).catch(() => null);
+          const identityComp = compareProcessStartIdentity(record.creationIdentity, liveIdentity);
+          if (identityComp === "mismatch") {
+            classification = "identity_mismatch";
+            reason = `Historical PID ${pid} is present, but creation identity mismatches recorded identity (PID reused).`;
+            recommendedSafeAction = "investigate_identity";
+          } else {
+            classification = "historical";
+            reason = `Historical record from prior runtime generation (${record.runtimeGeneration}). Report-only; never adopted.`;
+            recommendedSafeAction = "observe";
+          }
+        } else {
+          classification = "historical";
+          reason = `Historical record from prior runtime generation (${record.runtimeGeneration}). Report-only; never adopted.`;
+          recommendedSafeAction = "observe";
+        }
+      } else {
+        classification = "historical";
+        reason = `Historical record from prior runtime generation without valid PID.`;
+        recommendedSafeAction = "observe";
+      }
+    }
+    // 4. Current runtime generation check
+    else if (typeof pid !== "number" || pid <= 0 || !record.creationIdentity) {
+      classification = "unknown";
+      reason = "Current runtime record has no valid PID or creation identity.";
+      recommendedSafeAction = "review";
+    } else {
+      // Check live OS process state
+      const presence = await Promise.resolve(observe(pid)).catch(() => "unknown" as PidObservation);
+      if (presence === "pid_absent") {
+        classification = "terminal";
+        reason = `Recorded PID ${pid} is absent from the OS process table.`;
+        recommendedSafeAction = "none";
+      } else if (presence === "pid_present_unverified") {
+        const liveIdentity = await Promise.resolve(readIdentity(pid)).catch(() => null);
+        const check = registry.verifyOwnership(record.recordId, liveIdentity, presence);
+
+        if (check.status === "identity_mismatch_blocked") {
+          classification = "identity_mismatch";
+          reason = `PID ${pid} is present, but process creation identity mismatches recorded identity. PID reuse suspected; ownership rejected.`;
+          recommendedSafeAction = "investigate_identity";
+        } else if (check.status === "verified_owner") {
+          // Check owner liveness with positive evidence
+          const ownerEvidence = await Promise.resolve(inspectOwner(record)).catch(
+            () => ({ state: "unknown" as const, source: "owner_probe_failed" })
+          );
+
+          if (ownerEvidence.state === "live") {
+            classification = "currently_owned_live";
+            reason = `Process is actively owned by live ${ownerEvidence.source}.`;
+            recommendedSafeAction = "observe";
+          } else if (ownerEvidence.state === "terminal") {
+            const heartbeatAgeMs =
+              typeof record.heartbeatAt === "number" ? Math.max(0, now - record.heartbeatAt) : null;
+            const isStaleLease = heartbeatAgeMs !== null && heartbeatAgeMs > graceMs;
+
+            if (isCleanupEligible(record) && isStaleLease) {
+              // Re-verify in second pass to avoid scan races (owner revived, heartbeat renewed, PID disappeared)
+              const latest = registry.getRecord(record.recordId);
+              const unchanged =
+                latest &&
+                !registry.isRegistryCorrupt() &&
+                latest.pid === pid &&
+                latest.creationIdentity === record.creationIdentity &&
+                latest.runtimeGeneration === record.runtimeGeneration &&
+                latest.heartbeatAt === record.heartbeatAt &&
+                latest.state === record.state;
+
+              if (unchanged) {
+                const ownerAgain = await Promise.resolve(inspectOwner(latest)).catch(
+                  () => ({ state: "unknown" as const, source: "owner_recheck_failed" })
+                );
+                const presenceAgain = await Promise.resolve(observe(pid)).catch(() => "unknown" as PidObservation);
+                const identityAgain =
+                  presenceAgain === "pid_present_unverified"
+                    ? await Promise.resolve(readIdentity(pid)).catch(() => null)
+                    : null;
+
+                if (
+                  ownerAgain.state === "terminal" &&
+                  registry.verifyOwnership(record.recordId, identityAgain, presenceAgain).status === "verified_owner"
+                ) {
+                  classification = "orphan_candidate";
+                  reason = `Verified SuperAgent-owned orphan candidate: owner is terminal, lease expired, creation identity confirmed.`;
+                  recommendedSafeAction = "review";
+                } else {
+                  classification = "unknown";
+                  reason = "Process state changed during two-pass verification; failing closed as unknown.";
+                  recommendedSafeAction = "review";
+                }
+              } else {
+                classification = "unknown";
+                reason = "Record state mutated during verification; failing closed as unknown.";
+                recommendedSafeAction = "review";
+              }
+            } else {
+              classification = "unknown";
+              reason = `Owner is terminal, but process is not cleanup-eligible or lease has not expired beyond grace period (${graceMs}ms).`;
+              recommendedSafeAction = "review";
+            }
+          } else {
+            classification = "unknown";
+            reason = "Owner status could not be proven with positive evidence (never infer orphan from PID absence alone).";
+            recommendedSafeAction = "review";
+          }
+        } else {
+          classification = "unknown";
+          reason = check.reason;
+          recommendedSafeAction = "review";
+        }
+      } else {
+        classification = "unknown";
+        reason = `Presence of PID ${pid} could not be determined.`;
+        recommendedSafeAction = "review";
+      }
+    }
+
+    // 5. Job-Level Crash Reconciliation: Interrupted Mutating Jobs Check
+    if (record.ownership?.jobId) {
+      const jobId = record.ownership.jobId;
+      try {
+        const checkpoint = await Promise.resolve(readCheckpoint(jobId)).catch(() => null);
+        const hadMutatingWrite = checkpoint?.hasMutatingWrite === true;
+        const wasVerifying =
+          checkpoint?.lastEvent?.startsWith("verifier_") ||
+          checkpoint?.verificationState === "verifying";
+
+        if (classification !== "currently_owned_live" && (hadMutatingWrite || wasVerifying)) {
+          // Mutating operation interrupted or outcome uncertain
+          jobAssessment = {
+            jobId,
+            previousStatus: checkpoint?.lastEvent ?? "in_progress",
+            reconciledStatus: "unknown_outcome_review_required",
+            hasMutatingWrite: true,
+            requiresReview: true,
+            eligibleForRetry: false,
+            reason: wasVerifying
+              ? "Process crashed during verifier execution. Verification outcome uncertain; operator review required."
+              : "Process crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.",
+          };
+
+          report.mutatingJobsRequiringReview++;
+          report.jobAssessments.push(jobAssessment);
+
+          if (recommendedSafeAction !== "investigate_identity") {
+            recommendedSafeAction = "review";
+          }
+          reason += ` Interrupted mutating job '${jobId}' requires review: unknown_outcome_review_required.`;
+
+          // Optionally persist this status into the job checkpoint so future checks stay fail-closed
+          if (options.persistInterruptedMutations && checkpoint) {
+            try {
+              await persistCheckpoint({
+                ...checkpoint,
+                lastEvent: "reconciled_unknown_outcome_review_required",
+                verificationState: "unknown_outcome_review_required",
+              });
+            } catch {
+              // Best-effort
+            }
+          }
+        }
+      } catch {
+        // Best-effort checkpoint inspection
+      }
+    }
+
+    counts[classification]++;
+
+    if (report.entries.length < maxEntries) {
+      const maskedWorkspace = isForeign
+        ? `[foreign_workspace:${crypto.createHash("sha256").update(recordWs || "").digest("hex").slice(0, 8)}]`
+        : recordWs;
+
+      report.entries.push({
+        recordId: record.recordId,
+        pid: record.pid,
+        component: record.component,
+        classification,
+        lifecycle: record.lifecycle,
+        cleanupPolicy: record.cleanupPolicy,
+        runtimeGeneration: record.runtimeGeneration,
+        isCurrentRuntime,
+        workspaceRoot: maskedWorkspace,
+        jobId: isForeign ? "[foreign_job]" : record.ownership?.jobId,
+        sessionId: isForeign ? "[foreign_session]" : record.ownership?.sessionId,
+        isForeignWorkspace: isForeign,
+        recommendedSafeAction,
+        reason,
+        jobAssessment,
+      });
+    }
+  }
+
+  return report;
+}

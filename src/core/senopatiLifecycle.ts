@@ -122,15 +122,42 @@ async function spawnWatchdogLauncher():Promise<boolean>{
  const root=getPackageRootDir();
  const script=path.join(root,"scripts","senopati-watchdog.ts");
  if(!fs.existsSync(script) || !(process.versions as any).bun)return false;
+ let launcherRecordId: string | undefined;
+ try {
+  const { getProcessSupervisor } = await import("./process/processSupervisor.js");
+  const reg = await getProcessSupervisor().registerProcess({
+   component: "senopati_watchdog_launcher",
+   executable: process.execPath,
+   args: [script, "start"],
+   launchIntent: "headless",
+   lifecycle: "ephemeral",
+   cleanupPolicy: "caller_owned",
+  });
+  launcherRecordId = reg.recordId;
+ } catch {}
  return new Promise(resolve=>{
   const child=spawn(process.execPath,[script,"start"],{
     cwd:root,windowsHide:true,stdio:"ignore",env:{...process.env},
   });
+  if (typeof child.pid === "number" && launcherRecordId) {
+   const cPid = child.pid;
+   import("./process/processSupervisor.js").then(({ getProcessSupervisor }) => {
+    void getProcessSupervisor().recordProcessSpawn(launcherRecordId!, cPid).catch(() => {});
+   }).catch(() => {});
+  }
   let completed=false;
   const finish=(ok:boolean)=>{
    if(completed)return;
    completed=true;
    clearTimeout(timer);
+   if (launcherRecordId) {
+    import("./process/processSupervisor.js").then(({ getProcessSupervisor }) => {
+     void getProcessSupervisor().recordProcessExit(launcherRecordId!, {
+      exitCode: ok ? 0 : 1,
+      source: "senopatiLifecycle.finish",
+     }).catch(() => {});
+    }).catch(() => {});
+   }
    resolve(ok);
   };
   const timer=setTimeout(()=>{

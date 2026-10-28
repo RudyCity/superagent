@@ -10,6 +10,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import net from "node:net";
 import { spawn } from "node:child_process";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 import {
   APPROVE_MANAGED_MCP, assertManagedMcpPort, assertManagedMcpDirectory,
   readManagedMcpLease, requestOwnedMcpStop,
@@ -153,11 +154,34 @@ async function startManaged(port:number,approve:string,cli:string):Promise<Manag
   const stat=fs.lstatSync(entry);
   if(!stat.isFile()||stat.isSymbolicLink()||path.basename(entry)!=="cli.js")
     throw new Error("Run with the compiled SuperAgent CLI");
+  let mcpRecordId: string | undefined;
+  try {
+    const reg = await getProcessSupervisor().registerProcess({
+      component: "mcp_owner_sandbox",
+      executable: process.execPath,
+      args: [entry, "mcp", "owner-sandbox", "--port", String(port)],
+      launchIntent: "headless",
+      lifecycle: "persistent",
+      cleanupPolicy: "lease_managed",
+    });
+    mcpRecordId = reg.recordId;
+  } catch {}
+
   const child=spawn(process.execPath,[entry,"mcp","owner-sandbox","--port",String(port)],{
     cwd:profile,env:sanitizedEnv(profile,crypto.randomBytes(32).toString("hex")),
     detached:true,windowsHide:true,stdio:"ignore",
   });
   if(!child.pid)throw new Error("Managed MCP spawn returned no PID");
+  if(mcpRecordId) {
+    void getProcessSupervisor().recordProcessSpawn(mcpRecordId, child.pid).catch(() => {});
+    child.once("exit", (code, signal) => {
+      void getProcessSupervisor().recordProcessExit(mcpRecordId!, {
+        exitCode: code,
+        signal: signal ? String(signal) : null,
+        source: "mcpOwnerLifecycle.childExit",
+      }).catch(() => {});
+    });
+  }
   child.unref();
   for(let i=0;i<60;i++){
     const current=await inspectManagedMcp(port);

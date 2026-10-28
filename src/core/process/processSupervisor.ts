@@ -29,6 +29,12 @@ import {
 import { type ProcessLaunchIntent } from "./processSpawnPolicy.js";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { getWorkspaceId } from "../config/paths.js";
+import {
+  reconcileStartupProcesses,
+  type ProcessReconciliationReport,
+  type ProcessReconciliationOptions,
+  type ProcessReconciliationDependencies,
+} from "./processReconciliation.js";
 
 let cachedSelfCreationIdentity: string | null = null;
 
@@ -121,6 +127,7 @@ export interface ProcessDiagnosticReport {
 export class ProcessSupervisor {
   private registry: ProcessRegistry;
   private initialized = false;
+  private lastReconciliationReport: ProcessReconciliationReport | null = null;
 
   constructor(options: ProcessRegistryOptions = {}) {
     this.registry = new ProcessRegistry(options);
@@ -128,6 +135,20 @@ export class ProcessSupervisor {
 
   public getRegistry(): ProcessRegistry {
     return this.registry;
+  }
+
+  public async reconcileOnStartup(
+    options: ProcessReconciliationOptions = {},
+    deps: ProcessReconciliationDependencies = {}
+  ): Promise<ProcessReconciliationReport> {
+    await this.initialize();
+    const report = await reconcileStartupProcesses(this.registry, options, deps);
+    this.lastReconciliationReport = report;
+    return report;
+  }
+
+  public getLastReconciliationReport(): ProcessReconciliationReport | null {
+    return this.lastReconciliationReport;
   }
 
   public async initialize(): Promise<void> {

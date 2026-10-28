@@ -4,6 +4,7 @@ import { execa } from "execa";
 import { Tool } from "./types.js";
 import { resolveWindowsShell, formatCommandForPowerShell } from "./helpers.js";
 import { applyProcessIntent, traceChildProcess } from "../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 import { loadModelConfig, mutateModelConfig } from "../config/jsonConfig.js";
 import { registry } from "../commands/registry.js";
 import { SlashCommand } from "../commands/types.js";
@@ -64,8 +65,26 @@ export async function executeHookCommand(
     reject: true,
     timeout: timeoutMs,
   }, "headless");
-  const result = await traceChildProcess(
-    execa(cmd, hookExecOpts),
+  let procRecordId: string | undefined;
+  try {
+    const reg = await getProcessSupervisor().registerProcess({
+      component: "dynamic_hook",
+      executable: String(shellPath),
+      args: [cmd],
+      launchIntent: "headless",
+      lifecycle: "ephemeral",
+      cleanupPolicy: "caller_owned",
+      workspaceRoot: cwd,
+    });
+    procRecordId = reg.recordId;
+  } catch {}
+
+  const proc = execa(cmd, hookExecOpts);
+  if (procRecordId && proc.pid) {
+    void getProcessSupervisor().recordProcessSpawn(procRecordId, proc.pid).catch(() => {});
+  }
+  const child = traceChildProcess(
+    proc,
     {
       caller: "dynamicHooks.executeHookCommand",
       executable: String(shellPath),
@@ -75,11 +94,30 @@ export async function executeHookCommand(
       options: hookExecOpts,
     }
   );
-  return {
-    stdout: result.stdout || "",
-    stderr: result.stderr || "",
-    exitCode: result.exitCode ?? 0,
-  };
+  try {
+    const result = await child;
+    if (procRecordId) {
+      void getProcessSupervisor().recordProcessExit(procRecordId, {
+        exitCode: result.exitCode ?? 0,
+        signal: null,
+        source: "dynamicHooks.executeHookCommand",
+      }).catch(() => {});
+    }
+    return {
+      stdout: result.stdout || "",
+      stderr: result.stderr || "",
+      exitCode: result.exitCode ?? 0,
+    };
+  } catch (err: any) {
+    if (procRecordId) {
+      void getProcessSupervisor().recordProcessExit(procRecordId, {
+        exitCode: typeof err?.exitCode === "number" ? err.exitCode : -1,
+        signal: err?.signal ?? null,
+        source: "dynamicHooks.executeHookCommand.error",
+      }).catch(() => {});
+    }
+    throw err;
+  }
 }
 
 let registeredDynamicCommands: string[] = [];

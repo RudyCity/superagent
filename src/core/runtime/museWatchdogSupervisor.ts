@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 import type { ChildProcess } from "node:child_process";
 export type MuseWatchdogHeartbeat = {
   version: 1; port: number; pid: number; observedAt: number; online: boolean;
@@ -63,6 +64,7 @@ export function readMuseWatchdogHeartbeat(port: number,
 }
 export type WatchdogExit = { code: number | null; signal: NodeJS.Signals | null };
 export interface WatchdogChild {
+  pid?: number;
   once(event: "exit" | "error", cb: (...args: any[]) => void): unknown;
   kill(signal?: NodeJS.Signals): boolean;
 }
@@ -102,8 +104,25 @@ export class MuseWatchdogSupervisor {
     this.started = true;
     let attempts = 0;
     while (!this.stopping) {
+      let watchdogRecordId: string | undefined;
+      try {
+        const reg = await getProcessSupervisor().registerProcess({
+          component: "muse_watchdog",
+          executable: process.execPath,
+          args: ["channel-host", "watchdog"],
+          launchIntent: "headless",
+          lifecycle: "persistent",
+          cleanupPolicy: "keep_alive",
+        });
+        watchdogRecordId = reg.recordId;
+      } catch {}
+
       const child = this.opts.launch();
       this.child = child;
+      if (watchdogRecordId && typeof child.pid === "number") {
+        void getProcessSupervisor().recordProcessSpawn(watchdogRecordId, child.pid).catch(() => {});
+      }
+
       const ended = await new Promise<WatchdogExit>(resolve => {
         let finished = false;
         const done = (value: WatchdogExit) => {
@@ -113,6 +132,14 @@ export class MuseWatchdogSupervisor {
           done({ code, signal }));
         child.once("error", () => done({ code: null, signal: null }));
       });
+
+      if (watchdogRecordId) {
+        void getProcessSupervisor().recordProcessExit(watchdogRecordId, {
+          exitCode: ended.code,
+          signal: ended.signal ? String(ended.signal) : null,
+          source: "museWatchdogSupervisor.exit",
+        }).catch(() => {});
+      }
       this.child = null;
       if (this.stopping) break;
       const now = (this.opts.clock || Date.now)();

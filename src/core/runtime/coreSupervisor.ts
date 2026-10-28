@@ -6,6 +6,7 @@ import os from "node:os";
 import { getRootConfigDir } from "../config/paths.js";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 import type { CoreDrainReport } from "./coreDrainInspection.js";
 import {
   coreCheckpointPath, readCoreCheckpoint, writeCoreCheckpoint,
@@ -234,6 +235,19 @@ export async function runCoreSupervisor(
     const staging = process.env.SUPERAGENT_CORE_STAGING === "1";
     const drainEligible = !!active || staging;
     const entry = path.resolve(process.argv[1] || "");
+    let workerRecordId: string | undefined;
+    try {
+      const reg = await getProcessSupervisor().registerProcess({
+        component: "core_worker",
+        executable: process.execPath,
+        args: [entry, "--server", String(workerPort), "--client-mode", clientMode],
+        launchIntent: "headless",
+        lifecycle: "persistent",
+        cleanupPolicy: "lease_managed",
+      });
+      workerRecordId = reg.recordId;
+    } catch {}
+
     const child = spawn(process.execPath, [entry, "--server", String(workerPort), "--client-mode", clientMode], {
       cwd: process.cwd(),
       stdio: "ignore",
@@ -254,6 +268,16 @@ export async function runCoreSupervisor(
       },
     });
     child.once("error", () => { /* readiness reports a failed spawn */ });
+    if (workerRecordId && child.pid) {
+      void getProcessSupervisor().recordProcessSpawn(workerRecordId, child.pid).catch(() => {});
+      child.once("exit", (code, signal) => {
+        void getProcessSupervisor().recordProcessExit(workerRecordId!, {
+          exitCode: code,
+          signal: signal ? String(signal) : null,
+          source: "coreSupervisor.workerExit",
+        }).catch(() => {});
+      });
+    }
     child.unref();
     try { await ready(workerPort, child, serverToken); }
     catch (error) {

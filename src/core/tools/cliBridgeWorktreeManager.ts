@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { execa } from "execa";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../config/jsonConfig.js";
 import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 
 function headlessOpts<T extends Record<string, any>>(opts?: T, caller = "cliBridgeWorktreeManager") {
   return applyProcessIntent(opts ?? ({} as T), "headless", { caller, executable: "git" });
@@ -164,14 +165,33 @@ export async function createIsolatedWorktree(options: CreateWorktreeOptions): Pr
   fs.mkdirSync(path.dirname(targetDir), { recursive: true });
 
   // Add git worktree
-  const addResult = await execa(
-    "git",
-    ["worktree", "add", targetDir, "-b", sanitizedBranch, baseCommitSha],
-    headlessOpts({
-      cwd: repoRoot,
-      reject: false,
-    })
-  );
+  const gitAddArgs = ["worktree", "add", targetDir, "-b", sanitizedBranch, baseCommitSha];
+  let procRecordId: string | undefined;
+  try {
+    const reg = await getProcessSupervisor().registerProcess({
+      component: "git_worktree",
+      executable: "git",
+      args: gitAddArgs,
+      launchIntent: "headless",
+      lifecycle: "ephemeral",
+      cleanupPolicy: "caller_owned",
+      workspaceRoot: repoRoot,
+    });
+    procRecordId = reg.recordId;
+  } catch {}
+
+  const addProc = execa("git", gitAddArgs, headlessOpts({ cwd: repoRoot, reject: false }));
+  if (procRecordId && addProc.pid) {
+    void getProcessSupervisor().recordProcessSpawn(procRecordId, addProc.pid).catch(() => {});
+  }
+  const addResult = await addProc;
+  if (procRecordId) {
+    void getProcessSupervisor().recordProcessExit(procRecordId, {
+      exitCode: addResult.exitCode ?? 0,
+      signal: null,
+      source: "cliBridgeWorktreeManager.createIsolatedWorktree",
+    }).catch(() => {});
+  }
 
   if (addResult.exitCode !== 0) {
     throw new Error(`Failed to create git worktree: ${addResult.stderr || addResult.stdout}`);
@@ -239,10 +259,32 @@ export async function removeIsolatedWorktree(options: {
       args.push("--force");
     }
 
-    const removeRes = await execa("git", args, headlessOpts({
-      cwd: repoRoot,
-      reject: false,
-    }));
+    let removeRecordId: string | undefined;
+    try {
+      const reg = await getProcessSupervisor().registerProcess({
+        component: "git_worktree",
+        executable: "git",
+        args,
+        launchIntent: "headless",
+        lifecycle: "ephemeral",
+        cleanupPolicy: "caller_owned",
+        workspaceRoot: repoRoot,
+      });
+      removeRecordId = reg.recordId;
+    } catch {}
+
+    const removeProc = execa("git", args, headlessOpts({ cwd: repoRoot, reject: false }));
+    if (removeRecordId && removeProc.pid) {
+      void getProcessSupervisor().recordProcessSpawn(removeRecordId, removeProc.pid).catch(() => {});
+    }
+    const removeRes = await removeProc;
+    if (removeRecordId) {
+      void getProcessSupervisor().recordProcessExit(removeRecordId, {
+        exitCode: removeRes.exitCode ?? 0,
+        signal: null,
+        source: "cliBridgeWorktreeManager.removeIsolatedWorktree",
+      }).catch(() => {});
+    }
 
     // If directory still exists on disk, clean up with retry
     if (fs.existsSync(targetDir)) {
