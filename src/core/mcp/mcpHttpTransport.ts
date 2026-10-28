@@ -790,6 +790,8 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
       };
       const sessionAudit = (info: McpAuditInfo) => audit({ ...info, sessionHash: sessionCtx.sessionHash });
+      const requestMethod = typeof (rb.body as any)?.method === "string" ? (rb.body as any).method : "";
+      const isToolOnlyRequest = requestMethod.startsWith("tools/");
       const statelessServer = createSuperagentMcpServer({
         toolExposure: opts.toolExposure,
         allowedTools,
@@ -799,6 +801,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         lockSafeTools: ownerStatelessLockSafeTools,
         getIdentity: () => identity,
         workspace: process.cwd(),
+        skipResourcesAndPrompts: isToolOnlyRequest,
       } as McpServerOptions);
       await statelessServer.connect(statelessTransport);
       try {

@@ -4,14 +4,27 @@
  * Broadcasts MCP tool calls, results, client connections, and discovery events
  * to active Superagent UI sessions (conversation log / chat sheet) both in-process
  * and cross-process via an append-only JSONL journal (~/.superagent-r/mcp-activity.jsonl).
+ *
+ * All payloads are strictly bounded before in-memory dispatch and journal persistence
+ * to prevent multi-megabyte memory spikes and unbounded journal growth.
  */
 
-import fs from "fs";
 import path from "path";
-import os from "os";
 import { EventEmitter } from "events";
-import { summarizeArgs } from "./mcpLogSanitizer.js";
+import {
+  summarizeArgs,
+  sanitizeActivityOutput,
+  sanitizeActivityError,
+  sanitizeActivityArgs,
+  type BoundedActivityOutput,
+} from "./mcpLogSanitizer.js";
 import { getMcpWorkspacePath } from "./tools/workspaceContext.js";
+import {
+  getActivityJournal,
+  BoundedChunkedJournalReader,
+  type McpJournalEntry,
+} from "./mcpActivityJournal.js";
+import { shouldThrottleLargeObservability } from "../runtime/runtimeMemoryDiagnostics.js";
 
 export type McpActivityType = "tool_call" | "client_connect" | "client_disconnect" | "tool_list" | "auth";
 
@@ -23,21 +36,12 @@ export interface McpActivityEvent {
   error?: string;
   durationMs?: number;
   output?: string;
+  outputMeta?: BoundedActivityOutput;
   sessionId?: string;
   clientId?: string;
   timestamp: number;
   workspace?: string;
 }
-
-interface McpJournalEntry {
-  ts: number;
-  pid: number;
-  workspace?: string;
-  event: McpActivityEvent;
-  chatLine: string;
-}
-
-const MCP_ACTIVITY_JOURNAL = path.join(os.homedir(), ".superagent-r", "mcp-activity.jsonl");
 
 class McpActivityEmitter extends EventEmitter {}
 
@@ -127,25 +131,45 @@ export function formatMcpActivityForChat(event: McpActivityEvent): string {
 /**
  * Emit an MCP activity event.
  * Dispatches to all in-memory subscribers and persists to the activity journal for cross-process visibility.
+ * Payloads (output, error, args) are strictly sanitized and bounded before dispatch and storage.
  */
 export function emitMcpActivity(event: McpActivityEvent): void {
   const ws = event.workspace || getMcpWorkspacePath() || process.cwd();
+
+  // M8 guardrail: throttle optional observability enrichment under critical memory pressure
+  let throttled = false;
+  try {
+    throttled = shouldThrottleLargeObservability();
+  } catch {}
+
+  // Bound output, error, and args before event dispatch or persistence
+  let boundedOutput: string | undefined = undefined;
+  let outputMeta: BoundedActivityOutput | undefined = undefined;
+  if (event.output !== undefined) {
+    const sanitized = sanitizeActivityOutput(event.output, (event as any).artifactRef, { throttled });
+    boundedOutput = sanitized.preview;
+    outputMeta = sanitized.meta;
+  }
+
+  const boundedError = event.error !== undefined ? sanitizeActivityError(event.error) : undefined;
+  const boundedArgs = event.args !== undefined ? sanitizeActivityArgs(event.args) : undefined;
+
   const eventWithWs: McpActivityEvent = {
     ...event,
     workspace: ws,
+    output: boundedOutput,
+    outputMeta: outputMeta ?? event.outputMeta,
+    error: boundedError,
+    args: boundedArgs,
   };
   const chatLine = formatMcpActivityForChat(eventWithWs);
 
-  // In-memory dispatch
+  // In-memory dispatch with bounded payloads
   emitter.emit("activity", eventWithWs);
   emitter.emit("chat_line", chatLine, eventWithWs);
 
-  // Cross-process dispatch via append-only journal
+  // Cross-process dispatch via append-only journal with size-based rotation & hard entry caps
   try {
-    const dir = path.dirname(MCP_ACTIVITY_JOURNAL);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
     const entry: McpJournalEntry = {
       ts: event.timestamp || Date.now(),
       pid: process.pid,
@@ -153,7 +177,7 @@ export function emitMcpActivity(event: McpActivityEvent): void {
       event: eventWithWs,
       chatLine,
     };
-    fs.appendFileSync(MCP_ACTIVITY_JOURNAL, JSON.stringify(entry) + "\n", "utf8");
+    getActivityJournal().appendEntry(entry);
   } catch {
     // Journal write failure must never disrupt tool execution
   }
@@ -165,7 +189,7 @@ export interface McpSubscriptionOptions {
 
 /**
  * Subscribe to formatted chat lines from MCP activity.
- * Handles both in-process events immediately and cross-process events via journal tailing.
+ * Handles both in-process events immediately and cross-process events via chunked journal tailing.
  * Optionally filters events by target workspace so activity only appears in the relevant terminal.
  * Returns an unsubscribe cleanup function.
  */
@@ -184,44 +208,27 @@ export function subscribeToMcpActivity(
   };
   emitter.on("chat_line", handler);
 
-  // Cross-process file polling for entries written by other PIDs
-  let lastFileSize = 0;
-  try {
-    if (fs.existsSync(MCP_ACTIVITY_JOURNAL)) {
-      lastFileSize = fs.statSync(MCP_ACTIVITY_JOURNAL).size;
-    }
-  } catch {}
+  // Cross-process file polling for entries written by other PIDs via bounded chunked reader
+  const journal = getActivityJournal();
+  const reader = new BoundedChunkedJournalReader({
+    journalPath: journal.journalPath,
+    startAtEnd: true,
+  });
 
   const pollInterval = setInterval(() => {
     try {
-      if (!fs.existsSync(MCP_ACTIVITY_JOURNAL)) return;
-      const stat = fs.statSync(MCP_ACTIVITY_JOURNAL);
-      if (stat.size <= lastFileSize) return;
-
-      const fd = fs.openSync(MCP_ACTIVITY_JOURNAL, "r");
-      const readLength = stat.size - lastFileSize;
-      const buffer = Buffer.alloc(readLength);
-      fs.readSync(fd, buffer, 0, readLength, lastFileSize);
-      fs.closeSync(fd);
-      lastFileSize = stat.size;
-
-      const chunk = buffer.toString("utf8");
-      const lines = chunk.split("\n").filter((l) => l.trim().length > 0);
-      for (const line of lines) {
-        try {
-          const entry: McpJournalEntry = JSON.parse(line);
-          // Only process foreign process events to avoid duplicate local dispatches
-          if (entry && entry.pid !== process.pid && entry.chatLine) {
-            if (targetWs) {
-              const entryWs = entry.workspace || entry.event?.workspace || resolveWorkspaceByPid(entry.pid);
-              if (entryWs && !isWorkspaceMatch(entryWs, targetWs)) {
-                continue;
-              }
+      reader.poll((entry) => {
+        // Only process foreign process events to avoid duplicate local dispatches
+        if (entry && entry.pid !== process.pid && entry.chatLine) {
+          if (targetWs) {
+            const entryWs = entry.workspace || entry.event?.workspace || resolveWorkspaceByPid(entry.pid);
+            if (entryWs && !isWorkspaceMatch(entryWs, targetWs)) {
+              return;
             }
-            onLine(entry.chatLine, entry.event);
           }
-        } catch {}
-      }
+          onLine(entry.chatLine, entry.event);
+        }
+      });
     } catch {}
   }, 1000);
 

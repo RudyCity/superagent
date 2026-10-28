@@ -150,3 +150,15 @@ export async function writeCompatibilityJobsSnapshot(directory: string): Promise
     await fs.rm(temp, { force: true }).catch(() => {});
   }
 }
+
+export function pruneJobRevisions(retainedJobIds: Set<string>): void {
+  for (const id of revisions.keys()) {
+    if (!retainedJobIds.has(id)) {
+      revisions.delete(id);
+    }
+  }
+}
+
+export function getJobRevisionCount(): number {
+  return revisions.size;
+}

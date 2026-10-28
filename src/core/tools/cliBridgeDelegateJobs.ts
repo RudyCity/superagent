@@ -22,7 +22,7 @@ import {
   acquireCrossProcessArtifactClaims, releaseCrossProcessArtifactClaims,
   type CrossProcessArtifactClaims,
 } from "./cliBridgeCrossProcessClaims.js";
-import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsSnapshot, jobShardPath } from "./cliBridgeJobStore.js";
+import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsSnapshot, jobShardPath, pruneJobRevisions } from "./cliBridgeJobStore.js";
 import { classifyDelegateRecovery, type DelegateRecoveryDiagnostic } from "./cliBridgeRecovery.js";
 import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
 import { getTlineCreatorForJob } from "../channels/tlineJobCreator.js";
@@ -365,15 +365,53 @@ export function getSchedulerContext(): {
   };
 }
 
-function pruneJobs(): void {
-  const completed = [...jobs.values()].filter((job) => !activeStatus(job.status)).sort((a, b) => b.startedAt - a.startedAt);
-  for (const job of completed.slice(MAX_RETAINED_JOBS)) jobs.delete(job.jobId);
+export function getRetainedJobCount(): number {
+  return jobs.size;
+}
+
+export function getActiveJobCount(): number {
+  return [...jobs.values()].filter((j) => activeStatus(j.status)).length;
+}
+
+export function getOwnedJobIdCount(): number {
+  return ownedJobIds.size;
+}
+
+export function getLogQueueCount(): number {
+  return logQueues.size;
+}
+
+export function pruneJobs(maxRetained = MAX_RETAINED_JOBS): number {
+  const completed = [...jobs.values()]
+    .filter((job) => !activeStatus(job.status))
+    .sort((a, b) => b.startedAt - a.startedAt);
+  let prunedCount = 0;
+  for (const job of completed.slice(maxRetained)) {
+    jobs.delete(job.jobId);
+    ownedJobIds.delete(job.jobId);
+    runners.delete(job.jobId);
+    processes.delete(job.jobId);
+    logQueues.delete(job.jobId);
+    cancellationRequested.delete(job.jobId);
+    progressFragments.delete(job.jobId);
+    queuedJobOptions.delete(job.jobId);
+    artifactBaselines.delete(job.jobId);
+    jobClaims.delete(job.jobId);
+    jobWorktreeCleanups.delete(job.jobId);
+    jobCustomClaims.delete(job.jobId);
+    prunedCount++;
+  }
+  try {
+    pruneJobRevisions(new Set(jobs.keys()));
+  } catch {}
+  return prunedCount;
 }
 
 async function refreshJobShards(): Promise<void> {
   for (const job of await loadJobShards(getStorageDir())) {
     if (!ownedJobIds.has(job.jobId)) jobs.set(job.jobId, job);
   }
+  pruneJobs();
 }
 
 async function persistQueuedJob(job: DelegateJob, opts: StartDelegateJobOptions): Promise<void> {
@@ -410,6 +448,7 @@ async function initialize(): Promise<void> {
           jobs.set(job.jobId, job);
         }
         await refreshJobShards();
+        pruneJobs();
 
         // Crash reconciliation (M5.1): Inspect uncompleted jobs with checkpoints
         for (const job of jobs.values()) {
@@ -745,9 +784,9 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     progressFragments.delete(job.jobId);
     cancellationRequested.delete(job.jobId);
     await (logQueues.get(job.jobId) ?? Promise.resolve()).catch(() => {});
-    logQueues.delete(job.jobId);
     queueLog(job.jobId, job.logPath, `\n\n[CLI Bridge job finished: status=${job.status} proof=${job.completionState} exit=${job.exitCode ?? "?"} timedOut=${job.timedOut} duration=${job.durationMs}ms timeout=${timeoutMs}ms]\n`);
     await (logQueues.get(job.jobId) ?? Promise.resolve()).catch(() => {});
+    logQueues.delete(job.jobId);
 
     // Write final checkpoint (M5.1)
     await writeJobCheckpoint({
@@ -765,7 +804,9 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     }).catch(() => {});
 
     await persistJobs();
+    ownedJobIds.delete(job.jobId);
     runners.delete(job.jobId);
+    pruneJobs();
 
     // Notify listeners and UI
     try {
@@ -1209,6 +1250,12 @@ export async function getDelegateJobRecovery(jobId: string): Promise<DelegateRec
 
 export function getQueuedJobCount(): number {
   return priorityQueue.size();
+}
+
+export function __populateCompletedJobsForTests(jobsList: DelegateJob[]): void {
+  for (const j of jobsList) {
+    jobs.set(j.jobId, j);
+  }
 }
 
 export async function __resetDelegateJobsForTests(opts?: { keepDiskFiles?: boolean }): Promise<void> {

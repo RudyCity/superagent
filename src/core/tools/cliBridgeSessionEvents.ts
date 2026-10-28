@@ -81,6 +81,9 @@ export function emitEvent(
   type: SessionEventType,
   data: SessionEvent["data"]
 ): void {
+  if (!sessionEmitters.has(session.sessionId) && !sessionEventBuffers.has(session.sessionId) && (session.status === "exited" || session.status === "errored") && type !== "exit" && type !== "status") {
+    return;
+  }
   const seq = (sessionSeqCounters.get(session.sessionId) ?? 0) + 1;
   sessionSeqCounters.set(session.sessionId, seq);
   const ev: SessionEvent = { seq, type, at: Date.now(), data };
@@ -117,6 +120,24 @@ export function ensureEmitter(sessionId: string): EventEmitter {
     sessionEmitters.set(sessionId, em);
   }
   return em;
+}
+
+/**
+ * Clean up all event state, subscribers, buffers, and emitters for a terminal session.
+ */
+export function cleanupSessionEvents(sessionId: string): void {
+  const em = sessionEmitters.get(sessionId);
+  if (em) {
+    em.removeAllListeners();
+    sessionEmitters.delete(sessionId);
+  }
+  sessionEventBuffers.delete(sessionId);
+  sessionSeqCounters.delete(sessionId);
+  const subs = sessionSubscribers.get(sessionId);
+  if (subs) {
+    subs.clear();
+    sessionSubscribers.delete(sessionId);
+  }
 }
 
 /** Set the idle scanner handle. Exposed so session module can stop it. */

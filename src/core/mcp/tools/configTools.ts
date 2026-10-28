@@ -468,6 +468,18 @@ export async function handleServerHealth(): Promise<McpToolResult> {
   const chromeConnected = isRemoteChromeConnected();
   lines.push(`\nRemote Chrome Bridge (port 9223): ${chromeConnected ? "Connected" : "Disconnected"}`);
 
+  // Process Memory & Lifecycle Telemetry
+  try {
+    const { getRuntimeMemorySnapshot } = await import("../../runtime/runtimeMemoryDiagnostics.js");
+    const memSnap = getRuntimeMemorySnapshot();
+    lines.push(`\nProcess Memory & Lifecycle:`);
+    lines.push(`  RSS: ${memSnap.memory.rssMb} MB | Heap: ${memSnap.memory.heapUsedMb}/${memSnap.memory.heapTotalMb} MB`);
+    lines.push(`  Pressure Level: ${memSnap.pressure.level}`);
+    lines.push(`  Activity Journal: ${Math.round(memSnap.mcp.activityJournalSizeBytes / 1024)} KB (${memSnap.mcp.activityJournalArchiveCount} archives)`);
+    lines.push(`  CLI Sessions: ${memSnap.cliBridge.activeSessions} active, ${memSnap.cliBridge.detachedSessions} detached`);
+    lines.push(`  Delegate Jobs: ${memSnap.cliBridge.activeJobs} active, ${memSnap.cliBridge.retainedJobs} retained in memory`);
+  } catch {}
+
   return { content: [{ type: "text", text: lines.join("\n") }] };
 }
 

@@ -171,6 +171,7 @@ import {
   sessionSubscribers,
   MAX_EVENT_BUFFER,
   IDLE_SCAN_INTERVAL_MS,
+  cleanupSessionEvents,
   type SessionEvent,
   type SessionEventType,
   type SessionEventListener,
@@ -223,6 +224,57 @@ const sessions = new Map<string, CliSession>();
 /** v1.5.17: Detached sessions — child process still alive but no longer managed. */
 const detachedSessions = new Map<string, CliSession>();
 const procHandles = new Map<string, any>();
+const terminalCleanupTimers = new Map<string, NodeJS.Timeout>();
+
+export const DEFAULT_TERMINAL_SESSION_GRACE_MS = 1000;
+export const ABSOLUTE_MAX_BUFFER_LINES = 10_000;
+
+export function getActiveSessionCount(): number {
+  return sessions.size;
+}
+
+export function getDetachedSessionCount(): number {
+  return detachedSessions.size;
+}
+
+export function cleanupSessionRuntime(sessionId: string, reason = "terminal", immediate = false): void {
+  const existingTimer = terminalCleanupTimers.get(sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    terminalCleanupTimers.delete(sessionId);
+  }
+
+  const doCleanup = () => {
+    terminalCleanupTimers.delete(sessionId);
+    const session = sessions.get(sessionId) ?? detachedSessions.get(sessionId);
+    if (session) {
+      if (session.status !== "exited" && session.status !== "errored") {
+        session.status = "exited";
+      }
+      session.pid = null;
+      try {
+        saveSessionRecordSync(session);
+      } catch {}
+    }
+    const proc = procHandles.get(sessionId);
+    if (proc && typeof proc.removeAllListeners === "function") {
+      try { proc.removeAllListeners(); } catch {}
+    }
+    sessions.delete(sessionId);
+    detachedSessions.delete(sessionId);
+    procHandles.delete(sessionId);
+    cleanupSessionEvents(sessionId);
+    maybeStopIdleScanner();
+  };
+
+  if (immediate) {
+    doCleanup();
+  } else {
+    const timer = setTimeout(doCleanup, DEFAULT_TERMINAL_SESSION_GRACE_MS);
+    if (typeof timer.unref === "function") timer.unref();
+    terminalCleanupTimers.set(sessionId, timer);
+  }
+}
 
 function ensureIdleScannerRunning(): void {
   if (getIdleScanHandle()) return;
@@ -736,7 +788,7 @@ export async function createSession(opts: {
     // v1.5.17
     maxBufferLines:
       typeof opts.maxBufferLines === "number" && opts.maxBufferLines > 0
-        ? Math.floor(opts.maxBufferLines)
+        ? Math.min(Math.floor(opts.maxBufferLines), ABSOLUTE_MAX_BUFFER_LINES)
         : MAX_BUFFER_LINES,
     lastOutputAt: Date.now(),
     idleTimeoutMs:
@@ -915,7 +967,8 @@ export async function createSession(opts: {
     procHandles.delete(sessionId);
     emitEvent(session, "exit", { code, signal: null });
     emitEvent(session, "status", { status: session.status });
-    saveSessionRecord(session).catch(() => {});
+    try { saveSessionRecordSync(session); } catch {}
+    cleanupSessionRuntime(sessionId, "exit", false);
   });
 
   proc.on("error", (err: Error) => {
@@ -929,7 +982,8 @@ export async function createSession(opts: {
     procHandles.delete(sessionId);
     emitEvent(session, "exit", { code: null, signal: "spawn-error" });
     emitEvent(session, "status", { status: session.status });
-    saveSessionRecord(session).catch(() => {});
+    try { saveSessionRecordSync(session); } catch {}
+    cleanupSessionRuntime(sessionId, "spawn_error", false);
   });
 
   // Best-effort ready probe: if the CLI doesn't print a prompt marker,
@@ -1127,11 +1181,12 @@ export function killSession(sessionId: string): { ok: boolean; reason?: string }
   killHandle(proc as any);
   session.status = "exited";
   session.pid = null;
-  sessions.delete(sessionId);
-  detachedSessions.delete(sessionId);
-  procHandles.delete(sessionId);
-  maybeStopIdleScanner();
-  saveSessionRecord(session).catch(() => {});
+  emitEvent(session, "exit", { code: null, signal: "SIGTERM" });
+  emitEvent(session, "status", { status: "exited" });
+  try {
+    saveSessionRecordSync(session);
+  } catch {}
+  cleanupSessionRuntime(sessionId, "kill", true);
   return { ok: true };
 }
 
@@ -1384,15 +1439,20 @@ export function getLastEventSeq(sessionId: string): number {
 export async function scanIdleSessions(): Promise<string[]> {
   const now = Date.now();
   const killed: string[] = [];
-  for (const s of sessions.values()) {
+  for (const [id, s] of Array.from(sessions.entries())) {
     if (s.detached) continue;
-    if (s.status === "exited" || s.status === "errored") continue;
+    if (s.status === "exited" || s.status === "errored") {
+      cleanupSessionRuntime(id, "idle_sweep", true);
+      continue;
+    }
     if (s.idleTimeoutMs <= 0) continue;
     if (now - s.lastOutputAt > s.idleTimeoutMs) {
       s.autoKilled = true;
       s.status = "exited";
       emitEvent(s, "status", { status: s.status });
-      saveSessionRecord(s).catch(() => {});
+      try {
+        saveSessionRecordSync(s);
+      } catch {}
       // Best-effort: actually kill the process.
       const handle = procHandles.get(s.sessionId);
       if (handle && typeof handle.kill === "function") {
@@ -1402,6 +1462,7 @@ export async function scanIdleSessions(): Promise<string[]> {
           /* ignore */
         }
       }
+      cleanupSessionRuntime(id, "idle_kill", true);
       killed.push(s.sessionId);
     }
   }

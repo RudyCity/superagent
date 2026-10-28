@@ -597,7 +597,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   };
 
   // Register Standard MCP Resources & Prompts
-  if (!lockSafeTools) {
+  if (!lockSafeTools && !options.skipResourcesAndPrompts) {
     registerResourcesAndPrompts(server, { authMode, getIdentity });
   }
 

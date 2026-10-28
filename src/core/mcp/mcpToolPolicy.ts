@@ -120,22 +120,29 @@ export interface McpToolAnnotations {
   openWorldHint?: boolean;
 }
 
-/** Behavior annotations derived from the safe/dangerous classification. */
+const annotationsCache = new Map<string, McpToolAnnotations | undefined>();
+
+/** Behavior annotations derived from the safe/dangerous classification (memoized). */
 export function getToolAnnotations(toolName: string): McpToolAnnotations | undefined {
+  if (annotationsCache.has(toolName)) {
+    return annotationsCache.get(toolName);
+  }
   // The router can delegate to a mutating tool. Do not misrepresent it as
   // read-only in client approval UIs even though its entrypoint only needs
   // read scope; the target call enforces write/admin permissions as needed.
+  let result: McpToolAnnotations | undefined;
   if (toolName === "superagent_tool_execute") {
-    return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+    result = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+  } else {
+    const level = MCP_TOOL_CLASSIFICATION[toolName];
+    if (level === "safe") {
+      result = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+    } else if (level === "dangerous") {
+      result = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
+    }
   }
-  const level = MCP_TOOL_CLASSIFICATION[toolName];
-  if (level === "safe") {
-    return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-  }
-  if (level === "dangerous") {
-    return { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true };
-  }
-  return undefined;
+  annotationsCache.set(toolName, result);
+  return result;
 }
 
 export interface McpToolSecurityScheme {
@@ -145,32 +152,42 @@ export interface McpToolSecurityScheme {
   note?: string;
 }
 
+const securitySchemesCache = new Map<string, McpToolSecurityScheme[]>();
+
 /**
- * Per-tool security metadata for MCP clients (e.g. ChatGPT approvals).
+ * Per-tool security metadata for MCP clients (e.g. ChatGPT approvals) (memoized).
  * Safe tools need read scope; dangerous tools need write scope in OAuth mode.
  */
 export function getToolSecuritySchemes(
   toolName: string,
   authMode: "static-bearer" | "oauth" = "static-bearer"
 ): McpToolSecurityScheme[] {
+  const cacheKey = `${toolName}:${authMode}`;
+  if (securitySchemesCache.has(cacheKey)) {
+    return securitySchemesCache.get(cacheKey)!;
+  }
   const level = MCP_TOOL_CLASSIFICATION[toolName];
+  let result: McpToolSecurityScheme[];
   if (authMode === "oauth") {
-    return PRIVILEGED_MCP_TOOLS.has(toolName)
+    result = PRIVILEGED_MCP_TOOLS.has(toolName)
       ? [{ type: "oauth2", scopes: ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"] }]
       : level === "dangerous"
         ? [{ type: "oauth2", scopes: ["mcp:tools", "mcp:tools:write"] }]
         : [{ type: "oauth2", scopes: ["mcp:tools"] }];
+  } else {
+    result = [
+      {
+        type: "http",
+        scheme: "bearer",
+        note:
+          level === "dangerous"
+            ? "dangerous tool: requires --allow-dangerous opt-in"
+            : undefined,
+      },
+    ];
   }
-  return [
-    {
-      type: "http",
-      scheme: "bearer",
-      note:
-        level === "dangerous"
-          ? "dangerous tool: requires --allow-dangerous opt-in"
-          : undefined,
-    },
-  ];
+  securitySchemesCache.set(cacheKey, result);
+  return result;
 }
 
 export interface McpServerOptions {
@@ -203,5 +220,6 @@ export interface McpServerOptions {
   workspace?: string;
   /** Gateway (default): compact discovery and authorized execution; full: standalone tools. */
   toolExposure?: "full" | "gateway";
+  /** If true, skip registering MCP resources and prompts for tool-only execution paths. */
+  skipResourcesAndPrompts?: boolean;
 }
-
