@@ -4,6 +4,7 @@ import path from "node:path";
 import os from "node:os";
 import { getRootConfigDir } from "../config/paths.js";
 import type { AcceptanceContract, JobVerificationState } from "./cliBridgeAcceptance.js";
+import { normalizePublicAcceptanceContract } from "./cliBridgeAcceptanceContract.js";
 import { getRoleProfile } from "./cliBridgeRoleProfiles.js";
 import {
   startDelegateJob,
@@ -102,7 +103,7 @@ export function createDagGraph(options: CreateDagOptions): DagGraph {
       prompt: item.prompt,
       cliAlias: item.cliAlias || (item.roleId ? getRoleProfile(item.roleId)?.cliAlias : undefined),
       dependencies: (item.dependencies || []).slice(),
-      acceptance: item.acceptance,
+      acceptance: item.acceptance === undefined ? undefined : normalizePublicAcceptanceContract(item.acceptance),
       worktree: item.worktree ?? (item.roleId ? getRoleProfile(item.roleId)?.worktreePolicy === "isolated" : false),
       status: "pending",
     };
@@ -451,9 +452,9 @@ export async function executeDagGraph(
           workspaceRoot: graph.workspaceRoot,
           roleProfile: node.roleId,
           worktree: node.worktree,
-          acceptanceContract: node.acceptance,
+          acceptanceContract: node.acceptance === undefined ? undefined : normalizePublicAcceptanceContract(node.acceptance),
           timeoutMs: 180_000,
-          args: ["--mode", node.roleId === "reviewer" || node.roleId === "architect" ? "plan" : "accept-edits", "--dangerously-skip-permissions", "-p", node.prompt],
+          args: ["--mode", node.roleId === "reviewer" || node.roleId === "architect" ? "plan" : "accept-edits", "-p", node.prompt],
         });
         node.jobId = job.jobId;
       } catch (err: any) {
@@ -553,6 +554,10 @@ export async function runSpeculativeWorkflow(
   const deadline = Date.now() + timeoutMs;
 
   for (const spec of specs) {
+    const acceptanceContract = normalizePublicAcceptanceContract(spec.acceptance);
+    if (!acceptanceContract) {
+      throw new Error("Speculative candidate '" + spec.candidateId + "' requires a non-empty acceptance contract.");
+    }
     const job = await startDelegateJob({
       cliAlias: spec.cliAlias || "agy",
       binary: "agy",
@@ -561,9 +566,9 @@ export async function runSpeculativeWorkflow(
       workspaceRoot,
       roleProfile: spec.roleId,
       worktree: spec.worktree ?? true,
-      acceptanceContract: spec.acceptance,
+      acceptanceContract,
       timeoutMs,
-      args: ["--mode", "accept-edits", "--dangerously-skip-permissions", "-p", spec.prompt],
+      args: ["--mode", "accept-edits", "-p", spec.prompt],
     });
     candidateJobs[spec.candidateId] = job;
   }
@@ -658,7 +663,7 @@ export async function runConsensusWorkflow(
       roleProfile: r.roleId || "reviewer",
       worktree: false,
       timeoutMs: Math.max(1000, timeoutMs),
-      args: ["--mode", "plan", "--dangerously-skip-permissions", "-p", promptText],
+      args: ["--mode", "plan", "-p", promptText],
     });
     reviewerJobs[r.agentId] = job;
   }

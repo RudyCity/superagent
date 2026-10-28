@@ -841,7 +841,7 @@ async function launchJobExecution(
     const hasPrint = runArgs.includes("-p") || runArgs.includes("--print") || runArgs.includes("-i");
     if (!hasPrint) {
       const mode = opts.roleProfile === "reviewer" || opts.roleProfile === "architect" ? "plan" : "accept-edits";
-      runArgs = ["--mode", mode, "--dangerously-skip-permissions", "-p", opts.prompt, ...runArgs];
+      runArgs = ["--mode", mode, "-p", opts.prompt, ...runArgs];
     }
   }
 

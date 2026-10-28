@@ -148,12 +148,14 @@ describe("Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", (
     const mainRepoRoot = process.cwd();
     const cleanBefore = (await execa("git", ["status", "--porcelain"], { cwd: mainRepoRoot })).stdout;
 
-    // Concurrently dispatch 4 real AGY coding jobs into isolated worktrees for the same project
-    const jobs = await Promise.all([1, 2, 3, 4].map((idx) =>
-      startDelegateJob({
+    // Concurrently dispatch 4 real AGY coding jobs into isolated worktrees for the same project.
+    // This certification scenario explicitly opts into full-auto; production code must never inject it implicitly.
+    const jobs = await Promise.all([1, 2, 3, 4].map((idx) => {
+      const prompt = `Create a file named provenance_${idx}.txt containing exactly 'PROVENANCE_WORKER_${idx}', git add provenance_${idx}.txt, and git commit -m 'worker ${idx} provenance'`;
+      return startDelegateJob({
         cliAlias: "agy",
         binary: "agy",
-        prompt: `Create a file named provenance_${idx}.txt containing exactly 'PROVENANCE_WORKER_${idx}', git add provenance_${idx}.txt, and git commit -m 'worker ${idx} provenance'`,
+        prompt,
         cwd: mainRepoRoot,
         workspaceRoot: mainRepoRoot,
         roleProfile: "coder",
@@ -163,9 +165,10 @@ describe("Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", (
         acceptanceContract: {
           artifacts: [{ path: `provenance_${idx}.txt`, mustExist: true }],
         },
+        args: ["--dangerously-skip-permissions", "-p", prompt],
         timeoutMs: 180000,
-      })
-    ));
+      });
+    }));
 
     expect(jobs.length).toBe(4);
     for (const j of jobs) {
