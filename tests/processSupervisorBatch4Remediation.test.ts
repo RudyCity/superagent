@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -701,6 +701,619 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
     it("readJobCheckpoint returns null for invalid job IDs without throwing", async () => {
       const result = await readJobCheckpoint("../../../outside");
       expect(result).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // Post-Batch4 Independent Audit Remediation: Windows-Safe Atomic Replacement
+  // =========================================================================
+  describe("Post-Batch4 Audit Remediation: Windows-Safe Atomic Replacement Without Destructive Unlink", () => {
+    it("fails closed when rename encounters EPERM/EEXIST after retries: original file intact, no lost records, temp file cleaned up", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "rec_initial_1",
+        pid: 7001,
+        parentPid: 1,
+        creationIdentity: "id_1",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        component: "task",
+        launchIntent: "headless",
+        state: "running",
+        lifecycle: "job",
+        cleanupPolicy: "caller_owned",
+        registeredAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      registry.addRecord({
+        recordId: "rec_initial_2",
+        pid: 7002,
+        parentPid: 1,
+        creationIdentity: "id_2",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        component: "task",
+        launchIntent: "headless",
+        state: "running",
+        lifecycle: "job",
+        cleanupPolicy: "caller_owned",
+        registeredAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      // Initial save succeeds
+      await registry.save();
+      expect(await fs.readFile(registryFile, "utf8")).toContain("rec_initial_1");
+      expect(await fs.readFile(registryFile, "utf8")).toContain("rec_initial_2");
+
+      // Add a third record
+      registry.addRecord({
+        recordId: "rec_new_3",
+        pid: 7003,
+        parentPid: 1,
+        creationIdentity: "id_3",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        component: "task",
+        launchIntent: "headless",
+        state: "running",
+        lifecycle: "job",
+        cleanupPolicy: "caller_owned",
+        registeredAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      // Mock fs.rename to simulate Windows EPERM / EEXIST locking failure
+      const renameSpy = vi.spyOn(fs, "rename").mockImplementation(async () => {
+        const err: any = new Error("EPERM: operation not permitted, rename");
+        err.code = "EPERM";
+        throw err;
+      });
+
+      try {
+        await expect(registry.save()).rejects.toThrow(
+          /Failed to atomically replace process registry.*Fail-closed with original registry intact/
+        );
+
+        // Verification: The original file MUST be completely intact!
+        const onDiskRaw = await fs.readFile(registryFile, "utf8");
+        const onDisk = JSON.parse(onDiskRaw);
+        expect(onDisk.records.length).toBe(2);
+        expect(onDisk.records.map((r: any) => r.recordId)).toEqual(["rec_initial_1", "rec_initial_2"]);
+
+        // Verification: No temp files left in directory
+        const files = await fs.readdir(tmpDir);
+        const tempFiles = files.filter((f) => f.startsWith(".tmp.proc_reg"));
+        expect(tempFiles.length).toBe(0);
+      } finally {
+        renameSpy.mockRestore();
+      }
+
+      // After restoring rename, saving succeeds cleanly with all 3 records
+      await registry.save();
+      const updatedRaw = await fs.readFile(registryFile, "utf8");
+      const updated = JSON.parse(updatedRaw);
+      expect(updated.records.length).toBe(3);
+    });
+  });
+
+  // =========================================================================
+  // Post-Batch4 Independent Audit Remediation: Lock Safety & TOCTOU Prevention
+  // =========================================================================
+  describe("Post-Batch4 Audit Remediation: Lock Safety & TOCTOU Race Prevention", () => {
+    it("closes FD and unlinks orphan lock if writeFile or sync fails after opening lock with wx", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "rec_lock_1",
+        pid: 8001,
+        parentPid: 1,
+        creationIdentity: "id_lock",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        component: "task",
+        launchIntent: "headless",
+        state: "running",
+        lifecycle: "job",
+        cleanupPolicy: "caller_owned",
+        registeredAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const lockPath = `${registryFile}.lock`;
+
+      // Mock fs.open specifically for lockPath to inject a writeFile failure
+      let intercepted = false;
+      const origOpen = fs.open;
+      const openSpy = vi.spyOn(fs, "open").mockImplementation(async (targetPath: any, flags: any, ...args: any[]) => {
+        if (String(targetPath) === lockPath) {
+          const realHandle = await (origOpen as any).call(fs, targetPath, flags, ...args);
+          realHandle.writeFile = async () => {
+            intercepted = true;
+            throw new Error("Simulated disk error during lock write");
+          };
+          return realHandle;
+        }
+        return (origOpen as any).call(fs, targetPath, flags, ...args);
+      });
+
+      try {
+        await expect(registry.save()).rejects.toThrow("Simulated disk error during lock write");
+        expect(intercepted).toBe(true);
+
+        // Invariant: Orphan lock MUST be removed from disk, NOT left behind!
+        let lockExists = false;
+        try {
+          await fs.stat(lockPath);
+          lockExists = true;
+        } catch {
+          lockExists = false;
+        }
+        expect(lockExists).toBe(false);
+      } finally {
+        openSpy.mockRestore();
+      }
+
+      // Next save succeeds normally without waiting on any orphan lock
+      await registry.save();
+      expect(await fs.readFile(registryFile, "utf8")).toContain("rec_lock_1");
+    });
+
+    it("stale-lock recovery does NOT delete an active replacement lock by race (TOCTOU)", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "rec_toctou_1",
+        pid: 8002,
+        parentPid: 1,
+        creationIdentity: "id_toctou",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        component: "task",
+        launchIntent: "headless",
+        state: "running",
+        lifecycle: "job",
+        cleanupPolicy: "caller_owned",
+        registeredAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const lockPath = `${registryFile}.lock`;
+
+      // Seed a stale lock metadata (dead PID)
+      const staleData = {
+        pid: 999999, // guaranteed non-existent PID
+        createdAt: Date.now() - 20_000,
+        token: "stale_token_original",
+      };
+      await fs.writeFile(lockPath, JSON.stringify(staleData), "utf8");
+
+      // Simulate a concurrent process that acquired the lock with a new token
+      // right after Process A read the stale metadata, before unlinking:
+      let readCount = 0;
+      const activeReplacementData = {
+        pid: process.pid,
+        createdAt: Date.now(),
+        token: "active_replacement_token_brand_new",
+      };
+
+      const origReadFile = fs.readFile;
+      const readSpy = vi.spyOn(fs, "readFile").mockImplementation(async (targetPath: any, ...rest: any[]) => {
+        if (String(targetPath) === lockPath) {
+          readCount++;
+          if (readCount === 1) {
+            // First read: returns the stale data
+            return JSON.stringify(staleData);
+          } else {
+            // Second read (verification read inside TOCTOU guard): returns active replacement!
+            // Also write it to disk so if anyone attempts to unlink, it would delete the replacement
+            await origReadFile.call(fs, targetPath, ...rest).catch(() => {});
+            return JSON.stringify(activeReplacementData);
+          }
+        }
+        return (origReadFile as any).call(fs, targetPath, ...rest);
+      });
+
+      // Write active replacement to disk as well
+      await fs.writeFile(lockPath, JSON.stringify(activeReplacementData), "utf8");
+
+      // Attempt save with very short timeout to observe behavior under contention
+      try {
+        await (registry as any).withRegistryLock(async () => "done", 200);
+      } catch (err: any) {
+        expect(err.message).toContain("Timed out waiting for process registry lock");
+      } finally {
+        readSpy.mockRestore();
+      }
+
+      // Assert that the active replacement lock file on disk was NOT deleted by stale-lock recovery!
+      const finalLockContent = await fs.readFile(lockPath, "utf8");
+      const parsedFinal = JSON.parse(finalLockContent);
+      expect(parsedFinal.token).toBe("active_replacement_token_brand_new");
+      expect(parsedFinal.pid).toBe(process.pid);
+
+      // Clean up test lock
+      await fs.unlink(lockPath);
+    });
+  });
+
+  // =========================================================================
+  // Post-Batch4 Independent Audit Remediation: Fail-Closed Process Reconciliation
+  // =========================================================================
+  describe("Post-Batch4 Audit Remediation: Fail-Closed Process Reconciliation", () => {
+    it("handles nonexistent terminalObservation (undefined) without misclassifying as definitive failure", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "proc_no_terminal_obs",
+        pid: 9001,
+        parentPid: 1,
+        creationIdentity: "id_9001",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        ownership: { workspaceRoot: WS_A, jobId: "job_no_obs_mutating" },
+        component: "cli_bridge_delegate",
+        launchIntent: "headless",
+        state: "running",
+        lifecycle: "job",
+        cleanupPolicy: "terminate_with_owner",
+        exitCode: null,
+        signal: null,
+        registeredAt: Date.now() - 30_000,
+        updatedAt: Date.now() - 10_000,
+      });
+
+      const checkpoint: JobCheckpoint = {
+        checkpointId: "chk_no_obs",
+        jobId: "job_no_obs_mutating",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "tool_execution",
+        resourceClaims: [],
+        verificationState: "unverified",
+        hasMutatingWrite: true,
+      };
+
+      const report = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => checkpoint,
+        }
+      );
+
+      expect(report.mutatingJobsRequiringReview).toBe(1);
+      const assessment = report.jobAssessments[0];
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
+      expect(assessment?.eligibleForRetry).toBe(false);
+    });
+
+    it("handles nonexistent terminalObservation (undefined) on non-mutating job as interrupted, not definitive failure", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "proc_no_obs_non_mutating",
+        pid: 9002,
+        parentPid: 1,
+        creationIdentity: "id_9002",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        ownership: { workspaceRoot: WS_A, jobId: "job_no_obs_read_only" },
+        component: "cli_bridge_delegate",
+        launchIntent: "headless",
+        state: "running",
+        lifecycle: "job",
+        cleanupPolicy: "terminate_with_owner",
+        exitCode: null,
+        signal: null,
+        registeredAt: Date.now() - 30_000,
+        updatedAt: Date.now() - 10_000,
+      });
+
+      const checkpoint: JobCheckpoint = {
+        checkpointId: "chk_ro",
+        jobId: "job_no_obs_read_only",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "reading_files",
+        resourceClaims: [],
+        verificationState: "unverified",
+        hasMutatingWrite: false,
+      };
+
+      const report = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => checkpoint,
+        }
+      );
+
+      expect(report.mutatingJobsRequiringReview).toBe(0);
+      const assessment = report.jobAssessments[0];
+      expect(assessment?.reconciledStatus).toBe("interrupted");
+      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.eligibleForRetry).toBe(true);
+    });
+
+    it("fails closed on mutating job with nonzero exit: unknown_outcome_review_required, requiresReview: true, eligibleForRetry: false", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "proc_mutating_nonzero",
+        pid: 9003,
+        parentPid: 1,
+        creationIdentity: "id_9003",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        ownership: { workspaceRoot: WS_A, jobId: "job_nonzero_mutating" },
+        component: "cli_bridge_delegate",
+        launchIntent: "headless",
+        state: "failed",
+        lifecycle: "job",
+        cleanupPolicy: "terminate_with_owner",
+        exitCode: 1,
+        terminalObservation: {
+          exitCode: 1,
+          signal: null,
+          observedAt: Date.now(),
+        },
+        signal: null,
+        registeredAt: Date.now() - 30_000,
+        updatedAt: Date.now() - 10_000,
+      });
+
+      const checkpoint: JobCheckpoint = {
+        checkpointId: "chk_nonzero",
+        jobId: "job_nonzero_mutating",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "tool_execution",
+        resourceClaims: [],
+        verificationState: "unverified",
+        hasMutatingWrite: true,
+      };
+
+      const report = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => checkpoint,
+        }
+      );
+
+      // Mutating job with nonzero exit MUST require operator review!
+      expect(report.mutatingJobsRequiringReview).toBe(1);
+      const assessment = report.jobAssessments[0];
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
+      expect(assessment?.eligibleForRetry).toBe(false);
+      expect(assessment?.reason).toContain("Mutating job exited with nonzero code (1) without authoritative proof of clean rollback");
+    });
+
+    it("rejects contradictory receipts (lastEvent: verified_succeeded with verificationState: verifying or verification_failed)", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "proc_contradictory_1",
+        pid: 9004,
+        parentPid: 1,
+        creationIdentity: "id_9004",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        ownership: { workspaceRoot: WS_A, jobId: "job_contradictory_1" },
+        component: "cli_bridge_delegate",
+        launchIntent: "headless",
+        state: "exited",
+        lifecycle: "job",
+        cleanupPolicy: "terminate_with_owner",
+        exitCode: 0,
+        signal: null,
+        registeredAt: Date.now() - 30_000,
+        updatedAt: Date.now() - 10_000,
+      });
+
+      // Contradiction 1: lastEvent says verified_succeeded, but verificationState is still verifying!
+      const contradictoryCheckpoint1: JobCheckpoint = {
+        checkpointId: "chk_contra_1",
+        jobId: "job_contradictory_1",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "verified_succeeded",
+        resourceClaims: [],
+        verificationState: "verifying",
+        hasMutatingWrite: true,
+      };
+
+      const report1 = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => contradictoryCheckpoint1,
+        }
+      );
+
+      expect(report1.mutatingJobsRequiringReview).toBe(1);
+      const assessment1 = report1.jobAssessments[0];
+      expect(assessment1?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment1?.requiresReview).toBe(true);
+      expect(assessment1?.reason).toContain("Contradictory verification receipts detected");
+
+      // Contradiction 2: lastEvent says verified_succeeded, but verificationState is verification_failed!
+      const contradictoryCheckpoint2: JobCheckpoint = {
+        checkpointId: "chk_contra_2",
+        jobId: "job_contradictory_1",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "verified_succeeded",
+        resourceClaims: [],
+        verificationState: "verification_failed",
+        hasMutatingWrite: true,
+      };
+
+      const report2 = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => contradictoryCheckpoint2,
+        }
+      );
+
+      expect(report2.mutatingJobsRequiringReview).toBe(1);
+      const assessment2 = report2.jobAssessments[0];
+      expect(assessment2?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment2?.requiresReview).toBe(true);
+      expect(assessment2?.reason).toContain("Contradictory verification receipts detected");
+    });
+
+    it("classifies clean terminal exit with consistent verified receipts as succeeded", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "proc_clean_verified",
+        pid: 9005,
+        parentPid: 1,
+        creationIdentity: "id_9005",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        ownership: { workspaceRoot: WS_A, jobId: "job_clean_verified" },
+        component: "cli_bridge_delegate",
+        launchIntent: "headless",
+        state: "exited",
+        lifecycle: "job",
+        cleanupPolicy: "terminate_with_owner",
+        exitCode: 0,
+        signal: null,
+        registeredAt: Date.now() - 30_000,
+        updatedAt: Date.now() - 10_000,
+      });
+
+      const checkpoint: JobCheckpoint = {
+        checkpointId: "chk_clean",
+        jobId: "job_clean_verified",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "verified_succeeded",
+        resourceClaims: [],
+        verificationState: "verified",
+        hasMutatingWrite: true,
+      };
+
+      const report = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => checkpoint,
+        }
+      );
+
+      expect(report.mutatingJobsRequiringReview).toBe(0);
+      const assessment = report.jobAssessments[0];
+      expect(assessment?.reconciledStatus).toBe("succeeded");
+      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.eligibleForRetry).toBe(false);
+    });
+
+    it("classifies non-mutating job failure as failed with requiresReview: false", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "proc_ro_failed",
+        pid: 9006,
+        parentPid: 1,
+        creationIdentity: "id_9006",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        ownership: { workspaceRoot: WS_A, jobId: "job_ro_failed" },
+        component: "cli_bridge_delegate",
+        launchIntent: "headless",
+        state: "failed",
+        lifecycle: "job",
+        cleanupPolicy: "terminate_with_owner",
+        exitCode: 2,
+        signal: null,
+        registeredAt: Date.now() - 30_000,
+        updatedAt: Date.now() - 10_000,
+      });
+
+      const checkpoint: JobCheckpoint = {
+        checkpointId: "chk_ro_fail",
+        jobId: "job_ro_failed",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "read_error",
+        resourceClaims: [],
+        verificationState: "unverified",
+        hasMutatingWrite: false,
+      };
+
+      const report = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => checkpoint,
+        }
+      );
+
+      expect(report.mutatingJobsRequiringReview).toBe(0);
+      const assessment = report.jobAssessments[0];
+      expect(assessment?.reconciledStatus).toBe("failed");
+      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.eligibleForRetry).toBe(false);
+    });
+
+    it("classifies mutating job with verified clean rollback as failed with requiresReview: false", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      registry.addRecord({
+        recordId: "proc_mutating_rollback",
+        pid: 9007,
+        parentPid: 1,
+        creationIdentity: "id_9007",
+        executable: "node.exe",
+        sanitizedArgs: [],
+        runtimeGeneration: getRuntimeGeneration(),
+        ownership: { workspaceRoot: WS_A, jobId: "job_mutating_rollback" },
+        component: "cli_bridge_delegate",
+        launchIntent: "headless",
+        state: "failed",
+        lifecycle: "job",
+        cleanupPolicy: "terminate_with_owner",
+        exitCode: 1,
+        signal: null,
+        registeredAt: Date.now() - 30_000,
+        updatedAt: Date.now() - 10_000,
+      });
+
+      const checkpoint = {
+        checkpointId: "chk_rollback",
+        jobId: "job_mutating_rollback",
+        timestamp: Date.now() - 10_000,
+        lastEvent: "failed",
+        resourceClaims: [],
+        verificationState: "verification_failed",
+        hasMutatingWrite: true,
+        rollbackState: "verified_clean",
+      } as any;
+
+      const report = await reconcileStartupProcesses(
+        registry,
+        { callerWorkspaceRoot: WS_A },
+        {
+          observePid: () => "pid_absent",
+          readJobCheckpoint: async () => checkpoint,
+        }
+      );
+
+      expect(report.mutatingJobsRequiringReview).toBe(0);
+      const assessment = report.jobAssessments[0];
+      expect(assessment?.reconciledStatus).toBe("verification_failed");
+      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.eligibleForRetry).toBe(false);
+      expect(assessment?.reason).toContain("verified clean rollback was confirmed");
     });
   });
 });

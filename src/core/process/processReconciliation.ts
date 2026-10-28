@@ -393,31 +393,59 @@ export async function reconcileStartupProcesses(
       try {
         const checkpoint = await Promise.resolve(readCheckpoint(jobId)).catch(() => null);
         const hadMutatingWrite = checkpoint?.hasMutatingWrite === true;
-        const wasVerifying =
-          checkpoint?.lastEvent?.startsWith("verifier_") ||
-          checkpoint?.verificationState === "verifying";
 
-        const isCleanTerminal =
-          isRecordTerminal(record.state) &&
-          (record.exitCode === 0 || record.terminalObservation?.exitCode === 0);
+        const isTerminal = isRecordTerminal(record.state);
+
+        const hasCleanExit =
+          (typeof record.exitCode === "number" && record.exitCode === 0) ||
+          (typeof record.terminalObservation?.exitCode === "number" &&
+            record.terminalObservation.exitCode === 0);
+
+        const hasNonzeroExit =
+          (typeof record.exitCode === "number" && record.exitCode !== 0) ||
+          (typeof record.terminalObservation?.exitCode === "number" &&
+            record.terminalObservation.exitCode !== 0);
+
+        const verificationState = checkpoint?.verificationState;
+        const lastEvent = checkpoint?.lastEvent;
+
+        const hasVerifiedState =
+          verificationState === "verified" || verificationState === "artifacts_verified";
+        const hasVerifiedEvent = lastEvent === "verified_succeeded";
+
+        const hasFailedState =
+          verificationState === "verification_failed" || verificationState === "failed";
+        const hasFailedEvent =
+          lastEvent === "verified_failed" || lastEvent === "verification_failed";
+
+        const isVerifyingInProgress =
+          verificationState === "verifying" ||
+          (typeof lastEvent === "string" && lastEvent.startsWith("verifier_"));
+
+        // Contradictory receipts check: if one indicates verified while the other indicates failure or in-progress
+        const hasContradictoryVerifierReceipt =
+          (hasVerifiedState && (hasFailedEvent || isVerifyingInProgress)) ||
+          (hasVerifiedEvent && (hasFailedState || isVerifyingInProgress));
+
+        // Durable, self-consistent verifier proof
+        const hasConsistentVerifiedProof =
+          (hasVerifiedState || hasVerifiedEvent) &&
+          !hasFailedState &&
+          !hasFailedEvent &&
+          !isVerifyingInProgress &&
+          !hasContradictoryVerifierReceipt;
 
         const isAuthoritativelyVerified =
-          isCleanTerminal &&
-          (checkpoint?.verificationState === "verified" ||
-            checkpoint?.verificationState === "artifacts_verified" ||
-            checkpoint?.lastEvent === "verified_succeeded");
+          isTerminal && hasCleanExit && hasConsistentVerifiedProof;
 
-        const isAuthoritativelyFailed =
-          isRecordTerminal(record.state) &&
-          (checkpoint?.verificationState === "verification_failed" ||
-            checkpoint?.lastEvent === "verified_failed" ||
-            (record.exitCode !== null && record.exitCode !== 0) ||
-            (record.terminalObservation?.exitCode !== null &&
-              record.terminalObservation?.exitCode !== 0));
+        // Authoritative proof of verified rollback / zero lingering side effects
+        const hasVerifiedRollback =
+          (checkpoint as any)?.rollbackState === "verified_clean" ||
+          (checkpoint as any)?.verifiedRollback === true;
 
         if (classification !== "currently_owned_live") {
           if (isAuthoritativelyVerified) {
-            // Completed job verified with authoritative proof; NOT unknown outcome
+            // Completed job verified with authoritative, self-consistent proof; NOT unknown outcome
             jobAssessment = {
               jobId,
               previousStatus: checkpoint?.lastEvent ?? "verified_succeeded",
@@ -425,26 +453,23 @@ export async function reconcileStartupProcesses(
               hasMutatingWrite: hadMutatingWrite,
               requiresReview: false,
               eligibleForRetry: false,
-              reason: "Terminal mutating job completed and was successfully verified with authoritative proof.",
+              reason: "Terminal job completed and was successfully verified with authoritative, self-consistent proof.",
             };
             report.jobAssessments.push(jobAssessment);
-          } else if (isAuthoritativelyFailed && !wasVerifying) {
-            // Proven failure; outcome is definitive, not unknown
-            jobAssessment = {
-              jobId,
-              previousStatus: checkpoint?.lastEvent ?? "failed",
-              reconciledStatus:
-                checkpoint?.verificationState === "verification_failed"
-                  ? "verification_failed"
-                  : "failed",
-              hasMutatingWrite: hadMutatingWrite,
-              requiresReview: false,
-              eligibleForRetry: false,
-              reason: "Terminal mutating job failed definitively with recorded exit code or verification failure.",
-            };
-            report.jobAssessments.push(jobAssessment);
-          } else if (hadMutatingWrite || wasVerifying) {
-            // Mutating operation interrupted mid-flight, verifier crashed, or outcome uncertain
+          } else if (hadMutatingWrite && !hasVerifiedRollback) {
+            // Fail-closed for mutating jobs:
+            // Nonzero exit, verifier crash, unverified exit, contradictory receipts, or missing proof
+            // CANNOT be treated as definitive failure with requiresReview: false, because "nonzero exit"
+            // alone is not definitive proof that zero mutating writes occurred.
+            // Unless there is authoritative proof of verified clean rollback, operator review is required!
+            const failureReason = hasContradictoryVerifierReceipt
+              ? `Contradictory verification receipts detected (lastEvent='${lastEvent}', verificationState='${verificationState}'). Verifier evidence cannot be reconciled; operator review required.`
+              : isVerifyingInProgress
+              ? "Process crashed during verifier execution. Verification outcome uncertain; operator review required."
+              : hasNonzeroExit
+              ? `Mutating job exited with nonzero code (${record.exitCode ?? record.terminalObservation?.exitCode}) without authoritative proof of clean rollback; operator review required.`
+              : "Process crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.";
+
             jobAssessment = {
               jobId,
               previousStatus: checkpoint?.lastEvent ?? "in_progress",
@@ -452,9 +477,7 @@ export async function reconcileStartupProcesses(
               hasMutatingWrite: true,
               requiresReview: true,
               eligibleForRetry: false,
-              reason: wasVerifying
-                ? "Process crashed during verifier execution. Verification outcome uncertain; operator review required."
-                : "Process crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.",
+              reason: failureReason,
             };
 
             report.mutatingJobsRequiringReview++;
@@ -477,6 +500,47 @@ export async function reconcileStartupProcesses(
                 // Best-effort
               }
             }
+          } else if (isTerminal && (hasFailedState || hasFailedEvent || hasNonzeroExit || hasVerifiedRollback)) {
+            // Definitive failure for non-mutating job OR mutating job with proven clean rollback
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "failed",
+              reconciledStatus:
+                checkpoint?.verificationState === "verification_failed"
+                  ? "verification_failed"
+                  : "failed",
+              hasMutatingWrite: hadMutatingWrite,
+              requiresReview: false,
+              eligibleForRetry: false,
+              reason: hasVerifiedRollback
+                ? "Mutating job failed but verified clean rollback was confirmed; zero lingering side effects."
+                : "Terminal non-mutating job failed with recorded exit code or verification failure; zero mutating side effects.",
+            };
+            report.jobAssessments.push(jobAssessment);
+          } else if (isVerifyingInProgress) {
+            // Non-mutating job crashed during verifier
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "in_progress",
+              reconciledStatus: "unknown_outcome_review_required",
+              hasMutatingWrite: false,
+              requiresReview: true,
+              eligibleForRetry: false,
+              reason: "Non-mutating job crashed during verifier execution; verification outcome uncertain.",
+            };
+            report.jobAssessments.push(jobAssessment);
+          } else {
+            // Non-mutating job interrupted mid-flight before completion
+            jobAssessment = {
+              jobId,
+              previousStatus: checkpoint?.lastEvent ?? "in_progress",
+              reconciledStatus: "interrupted",
+              hasMutatingWrite: false,
+              requiresReview: false,
+              eligibleForRetry: true,
+              reason: "Non-mutating job interrupted before completion. Safe for automatic retry.",
+            };
+            report.jobAssessments.push(jobAssessment);
           }
         }
       } catch {

@@ -358,50 +358,85 @@ export class ProcessRegistry {
     let lockHandle: fsp.FileHandle | null = null;
 
     while (Date.now() - startTime < timeoutMs) {
+      let acquiredHandle: fsp.FileHandle | null = null;
       try {
-        lockHandle = await fsp.open(lockPath, "wx", 0o600);
-        await lockHandle.writeFile(
-          JSON.stringify({
-            pid: process.pid,
-            createdAt: Date.now(),
-            token: crypto.randomBytes(4).toString("hex"),
-          })
-        );
-        await lockHandle.sync();
+        acquiredHandle = await fsp.open(lockPath, "wx", 0o600);
+        try {
+          await acquiredHandle.writeFile(
+            JSON.stringify({
+              pid: process.pid,
+              createdAt: Date.now(),
+              token: crypto.randomBytes(4).toString("hex"),
+            })
+          );
+          await acquiredHandle.sync();
+        } catch (writeErr) {
+          // If writeFile or sync fails, close FD and unlink orphan lock immediately
+          try {
+            await acquiredHandle.close();
+          } catch {}
+          try {
+            await fsp.unlink(lockPath);
+          } catch {}
+          throw writeErr;
+        }
+        lockHandle = acquiredHandle;
         break;
       } catch (err: any) {
         if (err.code === "EEXIST") {
           let isStale = false;
+          let staleToken: string | null = null;
+          let stalePid: number | null = null;
+          let staleCreatedAt: number | null = null;
+
           try {
             const raw = await fsp.readFile(lockPath, "utf8");
             const data = JSON.parse(raw);
-            if (typeof data.pid === "number") {
+            if (typeof data.pid === "number" && typeof data.token === "string") {
               try {
                 process.kill(data.pid, 0);
               } catch (killErr: any) {
                 if (killErr.code === "ESRCH") {
                   isStale = true;
+                  staleToken = data.token;
+                  stalePid = data.pid;
+                  staleCreatedAt = data.createdAt;
+                }
+              }
+              if (!isStale && typeof data.createdAt === "number" && Date.now() - data.createdAt > 8_000) {
+                try {
+                  process.kill(data.pid, 0);
+                } catch (kErr: any) {
+                  if (kErr.code === "ESRCH") {
+                    isStale = true;
+                    staleToken = data.token;
+                    stalePid = data.pid;
+                    staleCreatedAt = data.createdAt;
+                  }
                 }
               }
             }
-            if (!isStale && Date.now() - (data.createdAt || 0) > 8_000) {
-              try {
-                process.kill(data.pid, 0);
-              } catch (kErr: any) {
-                if (kErr.code === "ESRCH") isStale = true;
-              }
-            }
           } catch {
-            try {
-              const stat = await fsp.stat(lockPath);
-              if (Date.now() - stat.mtimeMs > 8_000) {
-                isStale = true;
-              }
-            } catch {}
+            // Malformed, empty, or unreadable lock file.
+            // Do NOT delete unverified locks blindly. Safe fail-closed beats risky auto-recovery.
           }
 
-          if (isStale) {
-            await fsp.unlink(lockPath).catch(() => {});
+          if (isStale && staleToken && stalePid !== null) {
+            // TOCTOU guard: Re-read lock file immediately before unlinking to ensure it has NOT
+            // been replaced by an active replacement lock from another concurrent process!
+            try {
+              const verifyRaw = await fsp.readFile(lockPath, "utf8");
+              const verifyData = JSON.parse(verifyRaw);
+              if (
+                verifyData.token === staleToken &&
+                verifyData.pid === stalePid &&
+                verifyData.createdAt === staleCreatedAt
+              ) {
+                await fsp.unlink(lockPath);
+              }
+            } catch {
+              // File changed, already removed, or unreadable; skip unlink to preserve active locks
+            }
             continue;
           }
 
@@ -512,12 +547,14 @@ export class ProcessRegistry {
         await fsp.writeFile(tempFile, serialized, "utf8");
 
         let renamed = false;
+        let lastRenameErr: unknown = null;
         for (let attempt = 0; attempt < 5; attempt++) {
           try {
             await fsp.rename(tempFile, this.storagePath);
             renamed = true;
             break;
           } catch (renameErr) {
+            lastRenameErr = renameErr;
             if (process.platform === "win32") {
               await new Promise((r) => setTimeout(r, 15 * (attempt + 1)));
               continue;
@@ -526,12 +563,12 @@ export class ProcessRegistry {
           }
         }
 
-        if (!renamed && process.platform === "win32") {
-          // Fallback replacement on Windows inside exclusive lock
-          try {
-            await fsp.unlink(this.storagePath);
-          } catch {}
-          await fsp.rename(tempFile, this.storagePath);
+        if (!renamed) {
+          throw new Error(
+            `Failed to atomically replace process registry at ${this.storagePath} after retries: ${
+              lastRenameErr instanceof Error ? lastRenameErr.message : String(lastRenameErr)
+            }. Fail-closed with original registry intact.`
+          );
         }
       } catch (err) {
         try {
