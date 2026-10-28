@@ -18,6 +18,7 @@ import {
   type ProcessRecord,
   type ProcessRecordOwnership,
   type ProcessState,
+  type ProcessLifecycle,
   type ProcessCleanupPolicy,
   type ProcessOwnershipCheckResult,
   type ProcessRegistryOptions,
@@ -29,12 +30,30 @@ import { type ProcessLaunchIntent } from "./processSpawnPolicy.js";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { getWorkspaceId } from "../config/paths.js";
 
+let cachedSelfCreationIdentity: string | null = null;
+
+export async function getSelfProcessCreationIdentity(): Promise<string | null> {
+  if (cachedSelfCreationIdentity) return cachedSelfCreationIdentity;
+  try {
+    cachedSelfCreationIdentity = await readProcessStartIdentity(process.pid);
+  } catch {
+    cachedSelfCreationIdentity = null;
+  }
+  return cachedSelfCreationIdentity;
+}
+
+export function setSelfProcessCreationIdentityForTest(identity: string | null): void {
+  cachedSelfCreationIdentity = identity;
+}
+
 export interface RegisterProcessOptions {
   component: string;
   executable: string;
   args?: readonly string[] | string | null;
   launchIntent?: ProcessLaunchIntent;
+  lifecycle?: ProcessLifecycle;
   cleanupPolicy?: ProcessCleanupPolicy;
+  parentCreationIdentity?: string | null;
   workspaceRoot?: string;
   sessionId?: string;
   jobId?: string;
@@ -63,6 +82,8 @@ export interface ProcessDiagnosticEntry {
   sanitizedArgs: string[];
   launchIntent: ProcessLaunchIntent;
   state: ProcessState;
+  lifecycle: ProcessLifecycle;
+  cleanupPolicy: ProcessCleanupPolicy;
   runtimeGeneration: string;
   ownership: {
     workspaceRoot?: string;
@@ -111,6 +132,7 @@ export class ProcessSupervisor {
 
   public async initialize(): Promise<void> {
     if (this.initialized) return;
+    void getSelfProcessCreationIdentity().catch(() => {});
     await this.registry.load();
     this.initialized = true;
   }
@@ -138,10 +160,26 @@ export class ProcessSupervisor {
       taskId: options.taskId,
     };
 
+    const lifecycle: ProcessLifecycle =
+      options.lifecycle ??
+      (options.cleanupPolicy === "keep_alive"
+        ? "persistent"
+        : options.component?.includes("session")
+        ? "session"
+        : options.jobId || options.component?.includes("delegate") || options.component === "cli_bridge"
+        ? "job"
+        : "ephemeral");
+
+    const parentCreationIdentity =
+      options.parentCreationIdentity !== undefined
+        ? options.parentCreationIdentity
+        : cachedSelfCreationIdentity;
+
     const record: ProcessRecord = {
       recordId,
       pid: null,
       parentPid: process.pid,
+      parentCreationIdentity,
       creationIdentity: null,
       executable: sanitizedExecutable,
       sanitizedArgs,
@@ -150,6 +188,7 @@ export class ProcessSupervisor {
       component: options.component,
       launchIntent: options.launchIntent ?? "headless",
       state: "registered",
+      lifecycle,
       cleanupPolicy: options.cleanupPolicy ?? "caller_owned",
       exitCode: null,
       signal: null,
@@ -376,6 +415,8 @@ export class ProcessSupervisor {
         sanitizedArgs: record.sanitizedArgs,
         launchIntent: record.launchIntent,
         state: record.state,
+        lifecycle: record.lifecycle,
+        cleanupPolicy: record.cleanupPolicy,
         runtimeGeneration: record.runtimeGeneration,
         ownership,
         ownershipStatus: check.status,

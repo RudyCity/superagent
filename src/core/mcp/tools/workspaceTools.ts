@@ -8,6 +8,7 @@ import { execa } from "execa";
 import { StringDecoder } from "node:string_decoder";
 import { createCommandLog } from "../../tools/commandLogger.js";
 import { applyProcessIntent, traceChildProcess } from "../../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../../process/processSupervisor.js";
 import { rollingCommandOutput, readCommandOutputPage } from "../../tools/commandOutputPaging.js";
 import { McpToolResult } from "../types.js";
 
@@ -153,6 +154,7 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
   }
 
   let childPid: number | undefined;
+  let procRecordId: string | undefined;
   let cmdLogger: ReturnType<typeof createCommandLog> | undefined;
   try {
     const isWin = process.platform === "win32";
@@ -178,8 +180,26 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
     const capture = rollingCommandOutput();
     const decoder = new StringDecoder("utf8");
     const mcpExecOpts = applyProcessIntent({ shell: shellPath, cwd: targetCwd, timeout: timeoutMs, reject: false, buffer: false, all: true, stdin: "ignore" as const, env: unbufferedEnv }, "headless");
+
+    try {
+      const reg = await getProcessSupervisor().registerProcess({
+        component: "mcp_exec_command",
+        executable: String(shellPath),
+        args: [formattedCommand],
+        launchIntent: "headless",
+        lifecycle: "ephemeral",
+        cleanupPolicy: "caller_owned",
+        workspaceRoot: String(targetCwd),
+      });
+      procRecordId = reg.recordId;
+    } catch {}
+
     const proc = traceChildProcess(execa(formattedCommand, mcpExecOpts), { caller: "workspaceTools.handleExecCommand", executable: String(shellPath), args: [formattedCommand], cwd: String(targetCwd), intent: "headless", options: mcpExecOpts });
     childPid = proc.pid;
+    if (procRecordId && childPid) {
+      void getProcessSupervisor().recordProcessSpawn(procRecordId, childPid).catch(() => {});
+    }
+
     const record = (data: Buffer | string) => {
       const chunk = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));
       cmdLogger?.write(chunk);
@@ -191,6 +211,13 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       proc.stderr?.on("data", record);
     }
     const result = await proc;
+    if (procRecordId) {
+      void getProcessSupervisor().recordProcessExit(procRecordId, {
+        exitCode: result.exitCode ?? null,
+        signal: null,
+        source: "workspaceTools.handleExecCommand",
+      }).catch(() => {});
+    }
     const remaining = decoder.end();
     if (remaining) { cmdLogger.write(remaining); capture.append(remaining); }
     cmdLogger.end(result.exitCode, result.timedOut ? "Timed out" : undefined);
@@ -211,6 +238,13 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       isError: result.exitCode !== 0,
     };
   } catch (err: any) {
+    if (procRecordId) {
+      void getProcessSupervisor().recordProcessExit(procRecordId, {
+        exitCode: -1,
+        signal: null,
+        source: "workspaceTools.handleExecCommand.error",
+      }).catch(() => {});
+    }
     cmdLogger?.end(null, err instanceof Error ? err.message : String(err));
     if (childPid) {
       killProcessTree(childPid);

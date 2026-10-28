@@ -17,6 +17,15 @@ export const statusCommand: SlashCommand = {
   name: "status",
   description: "Show aggregated status for Telegram, MCP servers, and all SuperAgent tunnels",
   async execute(args, ctx) {
+    if (args.trim().toLowerCase() === "processes") {
+      try {
+        const { formatProcessStatus } = await import("./processStatusViews.js");
+        emit(ctx, "system", await formatProcessStatus(ctx.agent?.workingDirectory ?? process.cwd()));
+      } catch {
+        emit(ctx, "error", "Process diagnostics unavailable; ownership remains unverified.");
+      }
+      return;
+    }
     if (args.trim().toLowerCase() !== "all") {
       emit(ctx, "system", [
         "Usage: /status all",

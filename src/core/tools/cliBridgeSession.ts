@@ -41,6 +41,7 @@ import {
   spawnHiddenTaskkill,
   traceChildProcess,
 } from "../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 import {
   saveSessionRecord,
   saveSessionRecordSync,
@@ -97,6 +98,8 @@ export interface CliSession {
   pendingPrompt?: DetectedPrompt;
   /** Profile alias used to create this session. */
   profileAlias?: string;
+  /** Stable runtime supervisor process record ID. */
+  processRecordId?: string;
   /** v1.5.16: System prompt set on the session. */
   systemPrompt?: string;
   /** v1.5.16: Names that were unresolved during skill resolution. */
@@ -623,7 +626,21 @@ export async function runDelegate(opts: {
   ];
 
   let proc: any;
+  let delegateProcRecordId: string | undefined;
   const resolvedBinary = resolveWindowsDirectExecutable(opts.binary, opts.env ?? process.env);
+  try {
+    const reg = await getProcessSupervisor().registerProcess({
+      component: "cli_bridge_delegate_oneshot",
+      executable: resolvedBinary,
+      args: argv,
+      launchIntent: "headless",
+      lifecycle: "job",
+      cleanupPolicy: "caller_owned",
+      workspaceRoot: opts.cwd,
+    });
+    delegateProcRecordId = reg.recordId;
+  } catch {}
+
   try {
     const delegateOpts = applyProcessIntent({
       cwd: opts.cwd,
@@ -645,7 +662,17 @@ export async function runDelegate(opts: {
         options: delegateOpts,
       }
     );
+    if (delegateProcRecordId && proc?.pid) {
+      void getProcessSupervisor().recordProcessSpawn(delegateProcRecordId, proc.pid).catch(() => {});
+    }
   } catch (err) {
+    if (delegateProcRecordId) {
+      void getProcessSupervisor().recordProcessExit(delegateProcRecordId, {
+        exitCode: -1,
+        signal: null,
+        source: "cliBridgeSession.runDelegate.spawn_error",
+      }).catch(() => {});
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return {
       output: "",
@@ -691,6 +718,13 @@ export async function runDelegate(opts: {
 
   try {
     const result = await proc;
+    if (delegateProcRecordId) {
+      void getProcessSupervisor().recordProcessExit(delegateProcRecordId, {
+        exitCode: result.exitCode ?? null,
+        signal: null,
+        source: "cliBridgeSession.runDelegate",
+      }).catch(() => {});
+    }
     handleOutput(decoder.end());
     await pendingLog;
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
@@ -712,6 +746,13 @@ export async function runDelegate(opts: {
       cliAlias: opts.cliAlias,
     };
   } catch (err) {
+    if (delegateProcRecordId) {
+      void getProcessSupervisor().recordProcessExit(delegateProcRecordId, {
+        exitCode: -1,
+        signal: null,
+        source: "cliBridgeSession.runDelegate.error",
+      }).catch(() => {});
+    }
     handleOutput(decoder.end());
     await pendingLog.catch(() => {});
     if (opts.signal) opts.signal.removeEventListener("abort", onAbort);
@@ -822,7 +863,23 @@ export async function createSession(opts: {
   );
 
   let proc: any;
+  let sessionProcRecordId: string | undefined;
   const resolvedSessionBinary = resolveWindowsDirectExecutable(opts.binary, opts.env ?? process.env);
+  try {
+    const reg = await getProcessSupervisor().registerProcess({
+      component: "cli_bridge_session",
+      executable: resolvedSessionBinary,
+      args: opts.args ?? [],
+      launchIntent: "capturedInteractive",
+      lifecycle: "session",
+      cleanupPolicy: "lease_managed",
+      workspaceRoot: opts.cwd,
+      sessionId,
+    });
+    sessionProcRecordId = reg.recordId;
+    session.processRecordId = reg.recordId;
+  } catch {}
+
   try {
     // Use execa to spawn — it correctly handles Windows .cmd/.bat files and
     // paths with spaces (child_process.spawn with shell:true has quoting
@@ -851,6 +908,13 @@ export async function createSession(opts: {
     );
     proc = child;
   } catch (err) {
+    if (sessionProcRecordId) {
+      void getProcessSupervisor().recordProcessExit(sessionProcRecordId, {
+        exitCode: -1,
+        signal: null,
+        source: "cliBridgeSession.createSession.spawn_error",
+      }).catch(() => {});
+    }
     const msg = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
@@ -859,6 +923,9 @@ export async function createSession(opts: {
   }
 
   session.pid = proc.pid ?? null;
+  if (sessionProcRecordId && session.pid) {
+    void getProcessSupervisor().recordProcessSpawn(sessionProcRecordId, session.pid).catch(() => {});
+  }
   sessions.set(sessionId, session);
   procHandles.set(sessionId, proc);
   await saveSessionRecord(session);
@@ -960,6 +1027,13 @@ export async function createSession(opts: {
   });
 
   proc.on("exit", (code: number | null) => {
+    if (sessionProcRecordId) {
+      void getProcessSupervisor().recordProcessExit(sessionProcRecordId, {
+        exitCode: code,
+        signal: null,
+        source: "cliBridgeSession.exit",
+      }).catch(() => {});
+    }
     session.status = code === 0 ? "exited" : "errored";
     session.exitCode = code;
     session.pid = null;
@@ -972,6 +1046,13 @@ export async function createSession(opts: {
   });
 
   proc.on("error", (err: Error) => {
+    if (sessionProcRecordId) {
+      void getProcessSupervisor().recordProcessExit(sessionProcRecordId, {
+        exitCode: -1,
+        signal: "spawn-error",
+        source: "cliBridgeSession.error",
+      }).catch(() => {});
+    }
     session.status = "errored";
     session.currentStage = `Spawn/Process error: ${err.message}`;
     session.stderrBuffer = appendLines(
@@ -1179,6 +1260,7 @@ export function killSession(sessionId: string): { ok: boolean; reason?: string }
   if (!session) return { ok: false, reason: "not_found" };
   const proc = procHandles.get(sessionId);
   killHandle(proc as any);
+  // The process exit handler owns terminal observation; issuing a stop is not proof of exit.
   session.status = "exited";
   session.pid = null;
   emitEvent(session, "exit", { code: null, signal: "SIGTERM" });

@@ -40,11 +40,22 @@ export type ProcessState =
   | "failed"
   | "terminated";
 
+export type ProcessLifecycle =
+  | "ephemeral"
+  | "job"
+  | "session"
+  | "persistent"
+  | "external"
+  | "unknown";
+
 export type ProcessCleanupPolicy =
   | "manual"
   | "automatic"
   | "caller_owned"
-  | "keep_alive";
+  | "keep_alive"
+  | "terminate_with_owner"
+  | "lease_managed"
+  | "manual_only";
 
 export interface ProcessRecordOwnership {
   workspaceRoot?: string;
@@ -66,6 +77,7 @@ export interface ProcessRecord {
   readonly recordId: string;
   pid: number | null;
   parentPid: number;
+  parentCreationIdentity?: string | null;
   creationIdentity: string | null;
   executable: string;
   sanitizedArgs: string[];
@@ -74,6 +86,7 @@ export interface ProcessRecord {
   component: string;
   launchIntent: ProcessLaunchIntent;
   state: ProcessState;
+  lifecycle: ProcessLifecycle;
   cleanupPolicy: ProcessCleanupPolicy;
   exitCode: number | null;
   signal: string | null;
@@ -230,7 +243,19 @@ export class ProcessRegistry {
           this.corruptionReason = "Corrupted record in registry: missing or invalid recordId";
           return { success: false, error: this.corruptionReason };
         }
-        this.records.set(item.recordId, item as ProcessRecord);
+        // Backward-compatible schema evolution: assign safe defaults if lifecycle or parentCreationIdentity missing
+        // Legacy records without lifecycle are REPORT ONLY. Never infer cleanup
+        // eligibility from executable names, component labels or job identifiers.
+        const lifecycle: ProcessLifecycle =
+          ["ephemeral", "job", "session", "persistent", "external"].includes(item.lifecycle)
+            ? item.lifecycle as ProcessLifecycle : "unknown";
+
+        const normalized: ProcessRecord = {
+          ...item,
+          lifecycle,
+          parentCreationIdentity: item.parentCreationIdentity ?? null,
+        };
+        this.records.set(item.recordId, normalized);
       }
 
       this.isCorrupt = false;

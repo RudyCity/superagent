@@ -18,6 +18,7 @@ import http from "http";
 
 import { killProcessTree } from "../tools/helpers.js";
 import { applyProcessIntent, traceChildProcess } from "../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 import { getOpenAiMcpTunnelConfig } from "./openaiMcpTunnelConfig.js";
 
 export interface OpenAiTunnelOptions {
@@ -73,6 +74,7 @@ export interface OpenAiTunnelProcess {
   adminUrl: string;
   healthUrl: string;
   readyUrl: string;
+  processRecordId?: string;
 }
 
 const activeTunnels = new Map<number, OpenAiTunnelProcess>();
@@ -597,11 +599,38 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
     }
     return value;
   };
+  let tunnelProcRecordId: string | undefined;
+  try {
+    const reg = await getProcessSupervisor().registerProcess({
+      component: "openai_tunnel",
+      executable: binary,
+      args,
+      launchIntent: "headless",
+      lifecycle: "persistent",
+      cleanupPolicy: "keep_alive",
+    });
+    tunnelProcRecordId = reg.recordId;
+  } catch {}
+
   const child = traceChildProcess(spawn(binary, args, applyProcessIntent({
     env,
     stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"],
     detached: false,
   }, "headless")), { caller: "openaiTunnelClient.startOpenAiMcpTunnel", executable: binary, args, intent: "headless" });
+
+  if (tunnelProcRecordId && child.pid) {
+    void getProcessSupervisor().recordProcessSpawn(tunnelProcRecordId, child.pid).catch(() => {});
+  }
+
+  child.on("exit", (code: number | null, signal: string | null) => {
+    if (tunnelProcRecordId) {
+      void getProcessSupervisor().recordProcessExit(tunnelProcRecordId, {
+        exitCode: code,
+        signal,
+        source: "openaiTunnelClient.exit",
+      }).catch(() => {});
+    }
+  });
 
   child.stdout?.on("data", (chunk) => {
     const output = chunk.toString();
@@ -675,6 +704,7 @@ export async function startOpenAiTunnel(opts: OpenAiTunnelOptions): Promise<Open
     adminUrl,
     healthUrl,
     readyUrl,
+    processRecordId: tunnelProcRecordId,
   };
 
   activeTunnels.set(mcpPort, tunnelProcess);
@@ -713,6 +743,7 @@ export async function stopOpenAiTunnel(mcpPort: number): Promise<boolean> {
   const inMemory = activeTunnels.get(mcpPort);
   if (inMemory) {
     activeTunnels.delete(mcpPort);
+    // Only the child exit event may mark the registry record terminal.
     if (inMemory.process.pid) {
       try {
         await killProcessTree(inMemory.process.pid);

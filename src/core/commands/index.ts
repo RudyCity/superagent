@@ -20,6 +20,7 @@ import "./serverCommand.js";
 import "./coreRuntimeCommand.js";
 import "./senopatiRuntimeCommand.js";
 import "./serviceStatusCommand.js";
+import "./processDoctorCommand.js";
 import "./selfdevCommand.js";
 import "./modeCommand.js";
 

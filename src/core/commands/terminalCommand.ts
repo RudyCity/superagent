@@ -23,6 +23,7 @@ import {
   applyProcessIntent,
   traceChildProcess,
 } from "../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 function normalizeCwd(cwdPath: string): string {
   if (process.platform === "win32") {
     const msysMatch = cwdPath.match(/^\/([a-zA-Z])($|\/.*)/);
@@ -291,6 +292,22 @@ export const terminalCommand: SlashCommand = {
           reject: false,
           all: true,
         }, "headless");
+
+        let bgProcRecordId: string | undefined;
+        try {
+          const reg = await getProcessSupervisor().registerProcess({
+            component: "terminal_bg",
+            executable: String(shellPath),
+            args: [commandStr],
+            launchIntent: "headless",
+            lifecycle: "ephemeral",
+            cleanupPolicy: "caller_owned",
+            workspaceRoot: runCwd,
+            taskId,
+          });
+          bgProcRecordId = reg.recordId;
+        } catch {}
+
         const proc = traceChildProcess(
           execa(commandStr, bgTermOpts),
           {
@@ -302,6 +319,10 @@ export const terminalCommand: SlashCommand = {
             options: bgTermOpts,
           }
         );
+
+        if (bgProcRecordId && proc?.pid) {
+          void getProcessSupervisor().recordProcessSpawn(bgProcRecordId, proc.pid).catch(() => {});
+        }
 
         const task: BackgroundTask = {
           id: taskId,
@@ -323,6 +344,13 @@ export const terminalCommand: SlashCommand = {
         });
 
         proc.on("close", (code: number | null) => {
+          if (bgProcRecordId) {
+            void getProcessSupervisor().recordProcessExit(bgProcRecordId, {
+              exitCode: code,
+              signal: null,
+              source: "terminalCommand.bg",
+            }).catch(() => {});
+          }
           task.hasExited = true;
           task.exitCode = code;
           const exitMsg = `\n[Process exited with code ${code}]`;

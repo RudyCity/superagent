@@ -7,6 +7,7 @@ import { logE2E } from "../utils/unifiedLogger.js";
 import { loadRemoteAgentConfig, updateRemoteAgentConfig } from "./config.js";
 import { scrubSecrets } from "./contextSanitizer.js";
 import { applyProcessIntent, execHiddenTaskkillSync, traceChildProcess } from "../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
 
 function headlessOpts<T extends Record<string, any>>(opts?: T, caller = "cloudflareTunnel") {
   return applyProcessIntent(opts ?? ({} as T), "headless", { caller });
@@ -594,6 +595,8 @@ export class CloudflareTunnelManager {
 
     return new Promise<TunnelMetadata>((resolve, reject) => {
       let isResolved = false;
+      let cfTunnelRecordId: string | undefined;
+      let earlyExit: { code: number | null; signal: string | null } | null = null;
 
       const child = traceChildProcess(
         spawn(
@@ -610,6 +613,35 @@ export class CloudflareTunnelManager {
           intent: "headless",
         }
       );
+
+      void getProcessSupervisor().registerProcess({
+        component: "cloudflare_tunnel",
+        executable: binary,
+        args: ["tunnel", "--url", localTarget],
+        launchIntent: "headless",
+        lifecycle: "persistent",
+        cleanupPolicy: "keep_alive",
+      }).then(async (reg) => {
+        cfTunnelRecordId = reg.recordId;
+        if (child.pid) {
+          await getProcessSupervisor().recordProcessSpawn(reg.recordId, child.pid).catch(() => {});
+        }
+        if (earlyExit) {
+          await getProcessSupervisor().recordProcessExit(reg.recordId, {
+            exitCode: earlyExit.code, signal: earlyExit.signal, source: "cloudflareTunnel.early_exit",
+          }).catch(() => {});
+        }
+      }).catch(() => {});
+
+      child.on("exit", (code: number | null, signal: string | null) => {
+        if (cfTunnelRecordId) {
+          void getProcessSupervisor().recordProcessExit(cfTunnelRecordId, {
+            exitCode: code, signal, source: "cloudflareTunnel.exit",
+          }).catch(() => {});
+        } else {
+          earlyExit = { code, signal };
+        }
+      });
 
       this.activeProcesses.set(port, child);
       this.currentProcess = child;
