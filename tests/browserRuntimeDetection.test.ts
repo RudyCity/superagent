@@ -5,7 +5,7 @@
  * and fail-fast behavior for reserved virtual-display mode.
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import {
   probeLinuxDisplayEnvironment,
   resolveEffectiveBrowserMode,

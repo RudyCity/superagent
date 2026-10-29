@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "bun:test";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import crypto from "node:crypto";
 import {
   startMcpHttpServer,

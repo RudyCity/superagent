@@ -5,7 +5,7 @@
  * suffer no regressions, and that virtual-display mode fails fast across all platforms.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   launchChromeProfileTool,
   browserRuntimeStatusTool,

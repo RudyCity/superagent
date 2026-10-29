@@ -5,7 +5,7 @@
  * browser identity fingerprint generation, target counting, and stopped/unhealthy status detection.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "node:http";
 import {
   BrowserProcessManager,

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createHash, randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";

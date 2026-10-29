@@ -5,7 +5,7 @@
  * and sandbox preservation invariants (strict rejection of --no-sandbox).
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import { buildBrowserLaunchFlags } from "../src/core/browserRuntime/browserFlags.js";
 
 describe("Browser Launch Flags Security & Normalization", () => {

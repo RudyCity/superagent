@@ -5,7 +5,7 @@
  * graceful stop invariants (refusing to kill foreign/unverified PIDs), and single-instance locks.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -74,6 +74,7 @@ describe("Browser Runtime Lifecycle & Ownership", () => {
       component: "browser-runtime",
       executable: "chrome.exe",
       launchIntent: "headless",
+      workspaceRoot: testDir,
     });
 
     // Use current process PID but with an impossible creation ticks identity
@@ -110,14 +111,15 @@ describe("Browser Runtime Lifecycle & Ownership", () => {
       executable: "google-chrome",
       args: ["--headless=new", "--remote-debugging-port=9222"],
       launchIntent: "headless",
+      workspaceRoot: testDir,
     });
 
     expect(record.component).toBe("browser-runtime");
     expect(record.executable).toBe("google-chrome");
     expect(record.state).toBe("registered");
 
-    await supervisor.recordProcessSpawn(record.recordId, 12345);
-    const diag = await supervisor.getProcessDiagnostics({});
-    expect(diag.entries.some((e) => e.recordId === record.recordId && e.pid === 12345)).toBe(true);
+    await supervisor.recordProcessSpawn(record.recordId, process.pid);
+    const diag = await supervisor.getProcessDiagnostics({ callerWorkspaceRoot: testDir });
+    expect(diag.entries.some((e) => e.recordId === record.recordId && e.pid === process.pid)).toBe(true);
   });
 });

@@ -11,7 +11,7 @@
  * 7. Platform boundaries (fail-fast on Windows/macOS, supported on Linux).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
