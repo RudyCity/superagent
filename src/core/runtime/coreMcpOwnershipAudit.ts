@@ -48,7 +48,24 @@ export function readListenerOwners(): Map<number,number>|null {
     const output=execFileSync("netstat.exe",["-ano","-p","TCP"],{
       encoding:"utf8",timeout:4000,maxBuffer:2*1024*1024,windowsHide:true,
     });
-    return parseNetstat(output);
+    const map = parseNetstat(output);
+    try {
+      const psOut = execFileSync("powershell.exe", ["-NoProfile", "-Command", "Get-NetTCPConnection -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Listen' -or $_.State -eq 2 -or $null -eq $_.State } | Select-Object -Property LocalPort,OwningProcess | ConvertTo-Json"], {
+        encoding: "utf8", timeout: 4000, windowsHide: true,
+      });
+      if (psOut && psOut.trim()) {
+        const raw = JSON.parse(psOut.trim());
+        const items = Array.isArray(raw) ? raw : [raw];
+        for (const item of items) {
+          const port = Number(item.LocalPort);
+          const pid = Number(item.OwningProcess);
+          if (validPort(port) && Number.isSafeInteger(pid) && pid > 0) {
+            if (!map.has(port)) map.set(port, pid);
+          }
+        }
+      }
+    } catch {}
+    return map;
   }catch{return null;}
 }
 export function parseWindowsListenerOwners(text:string):Map<number,number>{

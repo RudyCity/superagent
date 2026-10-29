@@ -24,11 +24,13 @@ const testJobsDir = path.join(root, "delegations");
 const originalConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
 const originalCapacityDir = process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR;
 const originalMaxJobs = process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
+const originalForcePressure = process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE;
 
 beforeAll(async () => {
   process.env.SUPERAGENT_CONFIG_DIR = root;
   process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR = testCapacityDir;
   process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = "4";
+  process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE = "none";
   await fs.mkdir(testCapacityDir, { recursive: true });
   await fs.mkdir(testJobsDir, { recursive: true });
 });
@@ -46,6 +48,8 @@ afterAll(async () => {
   else process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR = originalCapacityDir;
   if (originalMaxJobs === undefined) delete process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
   else process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = originalMaxJobs;
+  if (originalForcePressure === undefined) delete process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE;
+  else process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE = originalForcePressure;
   await fs.rm(root, { recursive: true, force: true }).catch(() => {});
 });
 
@@ -398,7 +402,7 @@ describe("Milestone M1 — Safe capacity slot classification and orphan recovery
 
   it("runs 4 simultaneous background delegations concurrently within 4 slots", async () => {
     // Spawn 4 concurrent delegations
-    const script = 'setTimeout(() => console.log("done"), 600);';
+    const script = 'setTimeout(() => console.log("done"), 2000);';
     const opts = (idx: number) => ({
       cliAlias: "custom",
       binary: process.execPath,

@@ -203,7 +203,7 @@ export async function inspectPort(port: number): Promise<PortInspectionResult> {
     // Fallback via PowerShell Get-NetTCPConnection if netstat found nothing
     if (pidsWithAddr.length === 0) {
       try {
-        const psCmd = `Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -Property LocalAddress,LocalPort,OwningProcess | ConvertTo-Json`;
+        const psCmd = `Get-NetTCPConnection -LocalPort ${port} -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Listen' -or $_.State -eq 2 -or $null -eq $_.State } | Select-Object -Property LocalAddress,LocalPort,OwningProcess | ConvertTo-Json`;
         const res = await execa("powershell", ["-NoProfile", "-Command", psCmd], applyProcessIntent({
           timeout: 4000,
           reject: false,
