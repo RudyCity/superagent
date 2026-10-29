@@ -19,7 +19,21 @@ describe("P0 M1 Subprocess Registration Coverage & Splash Elimination", () => {
 
   afterEach(async () => {
     resetProcessSupervisorForTest();
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    // Bun/Windows can retain the SQLite coordination file handle until the
+    // test process exits.  Any OTHER leftover file is a real teardown failure.
+    try {
+      await fs.rm(tmpDir, { recursive: true, force: true, maxRetries: 15, retryDelay: 150 });
+    } catch (error: any) {
+      if (error?.code !== "EBUSY") throw error;
+      const remaining = await fs.readdir(tmpDir);
+      if (remaining.length === 0 || remaining.some((name) =>
+        name !== "proc-reg.json.coordination.sqlite" &&
+        name !== "proc-reg.json.coordination.sqlite-journal" && name !== "proc-reg.json")) {
+        throw error;
+      }
+      // Only the OS-managed coordination DB remains; cleanup occurs after this
+      // test process exits and Windows releases its SQLite file handle.
+    }
   });
 
   it("1. dynamicHooks.executeHookCommand registers process headlessly and records exit observation", async () => {

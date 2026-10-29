@@ -20,6 +20,30 @@ export interface JobCheckpoint {
   isMutating?: boolean;
 }
 
+/**
+ * Validate every durable field before relying on checkpoint data.  Files from
+ * older or partially written versions are NOT proof of a safe restart.
+ */
+export function isValidJobCheckpoint(value: unknown, expectedJobId?: string): value is JobCheckpoint {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const cp = value as Record<string, unknown>;
+  if (!isValidJobId(cp.jobId) || (expectedJobId && cp.jobId !== expectedJobId)) return false;
+  if (typeof cp.checkpointId !== "string" || !/^[a-zA-Z0-9_-]{1,256}$/.test(cp.checkpointId)) return false;
+  if (typeof cp.timestamp !== "number" || !Number.isSafeInteger(cp.timestamp) ||
+      cp.timestamp <= 0 || cp.timestamp > Date.now() + 300_000) return false;
+  if (typeof cp.lastEvent !== "string" || cp.lastEvent.length < 1 || cp.lastEvent.length > 256) return false;
+  if (typeof cp.verificationState !== "string" || cp.verificationState.length < 1 ||
+      cp.verificationState.length > 128) return false;
+  if (typeof cp.hasMutatingWrite !== "boolean") return false;
+  if (cp.isMutating !== undefined && typeof cp.isMutating !== "boolean") return false;
+  if (!Array.isArray(cp.resourceClaims) ||
+      cp.resourceClaims.some((item: unknown) => typeof item !== "string")) return false;
+  for (const key of ["ownerProcessIdentity", "childProcessIdentity", "worktreePath", "branchName"]) {
+    if (cp[key] !== undefined && typeof cp[key] !== "string") return false;
+  }
+  return true;
+}
+
 export interface ReconciledJobAssessment {
   jobId: string;
   previousStatus: string;
@@ -68,7 +92,8 @@ export async function readJobCheckpoint(jobId: string): Promise<JobCheckpoint | 
   try {
     const file = resolveSecureCheckpointPath(jobId);
     const raw = await fs.readFile(file, "utf8");
-    return JSON.parse(raw);
+    const decoded: unknown = JSON.parse(raw);
+    return isValidJobCheckpoint(decoded, jobId) ? decoded : null;
   } catch {
     return null;
   }
@@ -90,6 +115,8 @@ export async function reconcileJobOnRestart(
   },
   checkpoint?: JobCheckpoint | null
 ): Promise<ReconciledJobAssessment> {
+  const rawCheckpoint = checkpoint;
+  checkpoint = isValidJobCheckpoint(rawCheckpoint, job.jobId) ? rawCheckpoint : null;
   // Terminal statuses that require operator review must strictly preserve requiresReview: true (P1-2 / P0-1)
   if (job.status === "unknown_outcome_review_required") {
     return {
@@ -187,20 +214,12 @@ export async function reconcileJobOnRestart(
   }
 
   // Child is dead: require durable, validated checkpoint whose jobId strictly matches job.jobId (P0-1)
-  const isCheckpointValid =
-    checkpoint !== null &&
-    checkpoint !== undefined &&
-    typeof checkpoint === "object" &&
-    checkpoint.jobId === job.jobId;
+  const isCheckpointValid = checkpoint !== null && checkpoint !== undefined;
 
   if (!isCheckpointValid) {
     // Missing, invalid, or mismatched checkpoint: FAIL CLOSED!
     // Never infer read-only without verifiable positive evidence; never trust in-memory job flags alone.
-    const reason =
-      checkpoint === null || checkpoint === undefined
-        ? "Job checkpoint is missing or unreadable after restart; cannot prove job was read-only. Automatic retry blocked to prevent duplicate writes; operator review required."
-        : `Job checkpoint schema invalid or jobId mismatch (expected '${job.jobId}', got '${checkpoint?.jobId}'); untrusted verifier evidence. Automatic retry blocked; operator review required.`;
-
+    const reason = "Job checkpoint missing, malformed, stale or jobId mismatch; cannot prove job was read-only. Automatic retry blocked; operator review required.";
     return {
       jobId: job.jobId,
       previousStatus: job.status,
@@ -212,8 +231,9 @@ export async function reconcileJobOnRestart(
   }
 
   // Check for contradictory verifier receipts
-  const verificationState = checkpoint.verificationState;
-  const lastEvent = checkpoint.lastEvent;
+  const validCheckpoint = checkpoint as JobCheckpoint;
+  const verificationState = validCheckpoint.verificationState;
+  const lastEvent = validCheckpoint.lastEvent;
 
   const hasVerifiedState =
     verificationState === "verified" || verificationState === "artifacts_verified";
@@ -251,8 +271,8 @@ export async function reconcileJobOnRestart(
   // Check for mutating operations
   const isMutating =
     job.hasMutatingWrite === true ||
-    checkpoint.hasMutatingWrite === true ||
-    checkpoint.isMutating === true ||
+    validCheckpoint.hasMutatingWrite === true ||
+    validCheckpoint.isMutating === true ||
     (checkpoint as any).hadMutatingWrite === true;
 
   if (isMutating) {
@@ -266,23 +286,8 @@ export async function reconcileJobOnRestart(
     };
   }
 
-  // Affirmative positive proof of read-only behavior
-  const isProvenReadOnly =
-    checkpoint.hasMutatingWrite === false &&
-    checkpoint.isMutating !== true &&
-    job.hasMutatingWrite !== true;
-
-  if (isProvenReadOnly) {
-    return {
-      jobId: job.jobId,
-      previousStatus: job.status,
-      reconciledStatus: "interrupted",
-      eligibleForRetry: true,
-      requiresReview: false,
-      reason: "Bridge restart interrupted read-only job with verified durable checkpoint; eligible for safe supervised retry.",
-    };
-  }
-
+  // A flag in local JSON is not authenticated read-only proof. Until a
+  // trusted, job-bound attestation producer exists, never auto-retry.
   // Fallback: cannot prove read-only
   return {
     jobId: job.jobId,

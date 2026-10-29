@@ -94,7 +94,7 @@ describe("Milestone M5 — Crash Reconciliation, Isolation & Adapter Contracts",
       expect(resPerm.requiresReview).toBe(true);
     });
 
-    it("reconciles interrupted read-only jobs safely with eligibleForRetry = true ONLY with valid matching checkpoint", async () => {
+    it("requires review for read-only-flagged checkpoint without authenticated attestation", async () => {
       const cp: JobCheckpoint = {
         checkpointId: "cp_ro",
         jobId: "clj_ro",
@@ -117,9 +117,9 @@ describe("Milestone M5 — Crash Reconciliation, Isolation & Adapter Contracts",
         },
         cp
       );
-      expect(res.reconciledStatus).toBe("interrupted");
-      expect(res.eligibleForRetry).toBe(true);
-      expect(res.requiresReview).toBe(false);
+      expect(res.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(res.eligibleForRetry).toBe(false);
+      expect(res.requiresReview).toBe(true);
     });
 
     it("fails closed when checkpoint is missing even if job.hasMutatingWrite is false", async () => {

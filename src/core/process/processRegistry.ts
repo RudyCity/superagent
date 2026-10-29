@@ -349,169 +349,80 @@ export class ProcessRegistry {
   }
 
   /**
-   * Explicitly authorized manual recovery for orphaned registry lock files (P0-2).
-   * Unsafe automatic stale lock reclamation is disabled to prevent TOCTOU races.
-   * This method requires explicit operator confirmation, inspects the lock file,
-   * verifies the recorded owner PID is dead (ESRCH), and safely unlinks the orphaned lock.
+   * Legacy lockfiles cannot be safely reclaimed from JavaScript: checking the
+   * name and deleting the name are different operations, so a replacement lock
+   * can be deleted.  Fail closed and instruct an operator to stop legacy
+   * processes before any out-of-band migration.
    */
   public static async recoverStaleLock(
-    lockPath: string,
-    options: {
-      operatorConfirmation: string;
-      expectedPid?: number;
-    }
+    _lockPath: string,
+    _options: { operatorConfirmation: string; expectedPid?: number }
   ): Promise<{ recovered: boolean; reason: string }> {
-    if (options.operatorConfirmation !== "CONFIRM_MANUAL_STALE_LOCK_REMOVAL") {
-      return {
-        recovered: false,
-        reason: "Refused: missing or invalid operator confirmation token (must be 'CONFIRM_MANUAL_STALE_LOCK_REMOVAL').",
-      };
-    }
-
-    try {
-      const raw = await fsp.readFile(lockPath, "utf8");
-      const data = JSON.parse(raw);
-      if (typeof data.pid !== "number") {
-        return {
-          recovered: false,
-          reason: "Refused: lock file does not contain a valid owner PID.",
-        };
-      }
-
-      if (typeof options.expectedPid === "number" && data.pid !== options.expectedPid) {
-        return {
-          recovered: false,
-          reason: `Refused: lock owner PID ${data.pid} does not match expected PID ${options.expectedPid}.`,
-        };
-      }
-
-      // Check if recorded owner is alive using non-destructive signal 0
-      try {
-        process.kill(data.pid, 0);
-        // Owner is STILL ALIVE! Refuse to remove lock!
-        return {
-          recovered: false,
-          reason: `Refused: lock owner process ${data.pid} is still alive. Automatic removal blocked to prevent data corruption.`,
-        };
-      } catch (killErr: any) {
-        if (killErr.code !== "ESRCH") {
-          return {
-            recovered: false,
-            reason: `Refused: unable to verify process termination for PID ${data.pid} (${killErr.code}).`,
-          };
-        }
-      }
-
-      // PID is confirmed dead (ESRCH): safe to remove orphaned lock
-      await fsp.unlink(lockPath);
-      return {
-        recovered: true,
-        reason: `Successfully recovered orphaned lock file for terminated PID ${data.pid}.`,
-      };
-    } catch (err: any) {
-      if (err.code === "ENOENT") {
-        return {
-          recovered: false,
-          reason: "Lock file does not exist (already released or removed).",
-        };
-      }
-      return {
-        recovered: false,
-        reason: `Failed to recover lock file: ${err.message}`,
-      };
-    }
+    return {
+      recovered: false,
+      reason: "Unsafe pathname-based lock recovery is disabled. Stop all legacy SuperAgent writers and perform an operator-reviewed migration; SQLite transaction locks require no stale-file deletion.",
+    };
   }
 
   /**
-   * Cross-process exclusive mutual exclusion lock for registry persistence.
-   * Uses OS-level exclusive file creation flag 'wx' (O_CREAT | O_EXCL).
-   * Unsafe automatic stale-lock reclamation is strictly disabled to eliminate
-   * TOCTOU races where active replacement locks could be deleted (P0-2).
+   * Cross-process mutex via SQLite's OS-managed write transaction. Unlike a
+   * create/check/unlink lockfile, it never deletes a pathname to release the
+   * lock; SQLite releases the OS lock on COMMIT, ROLLBACK or process death.
+   *
+   * This requires Bun, the supported SuperAgent runtime. Older running
+   * versions must be stopped before switching lock protocols.
    */
   private async withRegistryLock<T>(fn: () => Promise<T>, timeoutMs = 15_000): Promise<T> {
-    const lockPath = `${this.storagePath}.lock`;
-    const targetDir = path.dirname(this.storagePath);
-    await fsp.mkdir(targetDir, { recursive: true });
-    const startTime = Date.now();
-    let lockHandle: fsp.FileHandle | null = null;
-    let activeLockToken: string | null = null;
-    let myIno: number | null = null;
+    const legacyLockPath = `${this.storagePath}.lock`;
+    const coordinationPath = `${this.storagePath}.coordination.sqlite`;
+    await fsp.mkdir(path.dirname(this.storagePath), { recursive: true });
 
-    while (Date.now() - startTime < timeoutMs) {
-      let acquiredHandle: fsp.FileHandle | null = null;
+    type SqliteConnection = { exec(sql: string): void; close(): void };
+    let Database: new (file: string, options?: { create?: boolean }) => SqliteConnection;
+    try {
+      ({ Database } = require("bun:sqlite") as { Database: new (file: string, options?: { create?: boolean }) => SqliteConnection });
+    } catch {
+      throw new Error("Process registry lock requires the supported Bun SQLite runtime; refusing unsafe fallback.");
+    }
+
+    const began = Date.now();
+    let connection: SqliteConnection | null = null;
+    while (Date.now() - began < timeoutMs) {
+      // Fail closed rather than operate concurrently with pre-SQLite versions.
+      if (fs.existsSync(legacyLockPath)) {
+        throw new Error(
+          `Legacy process registry lock at ${legacyLockPath} requires an operator-reviewed migration; do not delete it while any older writer might be running.`
+        );
+      }
+      let candidate: SqliteConnection | null = null;
       try {
-        acquiredHandle = await fsp.open(lockPath, "wx", 0o600);
-        const myToken = crypto.randomBytes(8).toString("hex");
-        try {
-          await acquiredHandle.writeFile(
-            JSON.stringify({
-              pid: process.pid,
-              createdAt: Date.now(),
-              token: myToken,
-            })
-          );
-          await acquiredHandle.sync();
-          const hStat = await acquiredHandle.stat();
-          myIno = hStat.ino;
-        } catch (writeErr) {
-          // If writeFile or sync fails, close FD and unlink orphan lock immediately
-          try {
-            await acquiredHandle.close();
-          } catch {}
-          try {
-            await fsp.unlink(lockPath);
-          } catch {}
-          throw writeErr;
+        candidate = new Database(coordinationPath, { create: true });
+        candidate.exec("PRAGMA busy_timeout=0");
+        candidate.exec("BEGIN IMMEDIATE");
+        if (fs.existsSync(legacyLockPath)) {
+          throw new Error("Legacy lock appeared during SQLite acquisition; cannot safely mix lock protocols.");
         }
-        lockHandle = acquiredHandle;
-        activeLockToken = myToken;
+        connection = candidate;
         break;
       } catch (err: any) {
-        if (err.code === "EEXIST") {
-          // Unsafe automatic stale-lock reclamation is DISABLED (P0-2).
-          // We NEVER unlink another process's lock here to prevent deleting active replacement locks.
-          // Wait for the legitimate lock owner to finish, or fail closed on timeout.
-          const delay = 15 + Math.floor(Math.random() * 30);
-          await new Promise((r) => setTimeout(r, delay));
-          continue;
+        try { candidate?.close(); } catch {}
+        if (
+          err?.code !== "SQLITE_BUSY" &&
+          !String(err?.message ?? "").includes("database is locked")
+        ) {
+          throw err;
         }
-        throw err;
+        await new Promise((resolve) => setTimeout(resolve, 15 + Math.floor(Math.random() * 35)));
       }
     }
-
-    if (!lockHandle) {
-      throw new Error(
-        `Timed out waiting for process registry lock: ${lockPath}. Automatic stale-lock reclamation is disabled to prevent TOCTOU lock races. If a prior writer crashed, manual operator recovery is required: call ProcessRegistry.recoverStaleLock() with confirmation.`
-      );
+    if (!connection) {
+      throw new Error(`Timed out waiting for SQLite process registry transaction lock: ${coordinationPath}`);
     }
-
     try {
       return await fn();
     } finally {
-      if (lockHandle) {
-        try {
-          if (activeLockToken && typeof myIno === "number") {
-            // Verify lockPath still refers to our exact open lock file (same inode and token)
-            // If the lock file was replaced by another process, DO NOT UNLINK (P0-2)!
-            const currentStat = await fsp.stat(lockPath).catch(() => null);
-            if (currentStat && currentStat.ino === myIno) {
-              const raw = await fsp.readFile(lockPath, "utf8").catch(() => null);
-              if (raw) {
-                try {
-                  const data = JSON.parse(raw);
-                  if (data.token === activeLockToken && data.pid === process.pid) {
-                    await fsp.unlink(lockPath).catch(() => {});
-                  }
-                } catch {}
-              }
-            }
-          }
-        } catch {} finally {
-          try {
-            await lockHandle.close();
-          } catch {}
-        }
-      }
+      // No unlink: pathname substitution cannot steal/release another writer.
+      try { connection.exec("ROLLBACK"); } finally { connection.close(); }
     }
   }
 

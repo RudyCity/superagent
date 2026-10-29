@@ -50,7 +50,7 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
     });
 
     it("maintains the same record ID across PID assignment and state transitions", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       const record = await supervisor.registerProcess({
         component: "cli_bridge",
         executable: "node",
@@ -362,7 +362,7 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
     });
 
     it("never writes raw prompts or secrets to the persisted registry file", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       await supervisor.registerProcess({
         component: "cli_bridge",
         executable: "node.exe",
@@ -383,7 +383,7 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
 
   describe("6. Registration Lifecycle & Read-Only Diagnostics", () => {
     it("manages process lifecycle from registration through exit observation", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
 
       // Step 1: Register
       const registered = await supervisor.registerProcess({
@@ -423,7 +423,7 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
     });
 
     it("verifies a live current-runtime process in diagnostics using its creation identity", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       const creationIdentity = await readProcessStartIdentity(process.pid);
       expect(creationIdentity).toBeTruthy();
 
@@ -444,7 +444,7 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
     });
 
     it("serializes concurrent registry saves so all registered records survive reload", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile, maxRecords: 100 });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile, maxRecords: 100 });
       const created = await Promise.all(
         Array.from({ length: 24 }, (_, index) =>
           supervisor.registerProcess({
@@ -464,7 +464,7 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
     });
 
     it("generates privacy-safe diagnostic reports masking foreign workspace paths", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
 
       const wsLocal = path.join(tempDir, "local-workspace");
       const wsForeign = path.join(tempDir, "foreign-workspace");
@@ -508,7 +508,7 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
       expect(forgedDiag.totalTracked).toBe(0);
 
       // Authenticated operator capability grants host-wide diagnostics (P1-1)
-      const cap = supervisor.issueOperatorCapability();
+      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
       const operatorDiag = await supervisor.getProcessDiagnostics({
         operatorCapability: cap,
       });

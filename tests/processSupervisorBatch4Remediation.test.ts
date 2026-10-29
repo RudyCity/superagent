@@ -184,7 +184,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
     });
 
     it("P1-4: hardens getProcessDiagnostics against ownerless record leaks", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       await supervisor.initialize();
 
       // Register ownerless record directly in registry
@@ -224,7 +224,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(JSON.stringify(scopedDiag)).not.toContain("private_ownerless_job");
 
       // Privileged operator query surfaces the ownerless record (P1-1)
-      const cap = supervisor.issueOperatorCapability();
+      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
       const operatorDiag = await supervisor.getProcessDiagnostics({
         operatorCapability: cap,
       });
@@ -561,7 +561,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
   // =========================================================================
   describe("P1-2: Explicit Global-System Service Ownership", () => {
     it("models global system services with systemScope: 'global' and excludes from tenant scans", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       await supervisor.initialize();
 
       // Register global infrastructure service (no workspaceRoot)
@@ -609,7 +609,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(unscopedUserDiag.entries).toHaveLength(0);
 
       // Authenticated privileged operator diagnostics: surfaces both with clear systemScope (P1-1)
-      const cap = supervisor.issueOperatorCapability();
+      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
       const operatorDiag = await supervisor.getProcessDiagnostics({
         operatorCapability: cap,
       });
@@ -624,7 +624,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
   // =========================================================================
   describe("P1-3: Monotonic Terminal Lifecycle Protection", () => {
     it("prevents late recordProcessSpawn from resurrecting an exited process back to running", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       await supervisor.initialize();
 
       const reg = await supervisor.registerProcess({
@@ -817,62 +817,14 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
   // Post-Batch4 Independent Audit Remediation: Lock Safety & TOCTOU Prevention
   // =========================================================================
   describe("Post-Batch4 Audit Remediation: Lock Safety & TOCTOU Race Prevention", () => {
-    it("closes FD and unlinks orphan lock if writeFile or sync fails after opening lock with wx", async () => {
+    it("SQLite transaction lock is released after an operation error without deleting a lock path", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
-      registry.addRecord({
-        recordId: "rec_lock_1",
-        pid: 8001,
-        parentPid: 1,
-        creationIdentity: "id_lock",
-        executable: "node.exe",
-        sanitizedArgs: [],
-        runtimeGeneration: getRuntimeGeneration(),
-        component: "task",
-        launchIntent: "headless",
-        state: "running",
-        lifecycle: "job",
-        cleanupPolicy: "caller_owned",
-        registeredAt: Date.now(),
-        updatedAt: Date.now(),
-      });
-
-      const lockPath = `${registryFile}.lock`;
-
-      // Mock fs.open specifically for lockPath to inject a writeFile failure
-      let intercepted = false;
-      const origOpen = fs.open;
-      const openSpy = vi.spyOn(fs, "open").mockImplementation(async (targetPath: any, flags: any, ...args: any[]) => {
-        if (String(targetPath) === lockPath) {
-          const realHandle = await (origOpen as any).call(fs, targetPath, flags, ...args);
-          realHandle.writeFile = async () => {
-            intercepted = true;
-            throw new Error("Simulated disk error during lock write");
-          };
-          return realHandle;
-        }
-        return (origOpen as any).call(fs, targetPath, flags, ...args);
-      });
-
-      try {
-        await expect(registry.save()).rejects.toThrow("Simulated disk error during lock write");
-        expect(intercepted).toBe(true);
-
-        // Invariant: Orphan lock MUST be removed from disk, NOT left behind!
-        let lockExists = false;
-        try {
-          await fs.stat(lockPath);
-          lockExists = true;
-        } catch {
-          lockExists = false;
-        }
-        expect(lockExists).toBe(false);
-      } finally {
-        openSpy.mockRestore();
-      }
-
-      // Next save succeeds normally without waiting on any orphan lock
-      await registry.save();
-      expect(await fs.readFile(registryFile, "utf8")).toContain("rec_lock_1");
+      await expect((registry as any).withRegistryLock(async () => {
+        throw new Error("injected operation failure");
+      }, 1000)).rejects.toThrow("injected operation failure");
+      expect(await (registry as any).withRegistryLock(async () => "recovered", 1000)).toBe("recovered");
+      await expect(fs.stat(registryFile + ".lock")).rejects.toThrow();
+      await fs.stat(registryFile + ".coordination.sqlite");
     });
 
     it("stale-lock recovery does NOT delete an active replacement lock by race (TOCTOU)", async () => {
@@ -937,7 +889,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       try {
         await (registry as any).withRegistryLock(async () => "done", 200);
       } catch (err: any) {
-        expect(err.message).toContain("Timed out waiting for process registry lock");
+        expect(err.message).toContain("Legacy process registry lock");
       } finally {
         readSpy.mockRestore();
       }
@@ -1005,7 +957,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(assessment?.eligibleForRetry).toBe(false);
     });
 
-    it("handles nonexistent terminalObservation (undefined) on non-mutating job as interrupted, not definitive failure", async () => {
+    it("handles nonexistent terminalObservation (undefined) on non-mutating job without attestation as manual review", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
       registry.addRecord({
         recordId: "proc_no_obs_non_mutating",
@@ -1046,11 +998,11 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
         }
       );
 
-      expect(report.mutatingJobsRequiringReview).toBe(0);
+      expect(report.mutatingJobsRequiringReview).toBe(1);
       const assessment = report.jobAssessments[0];
-      expect(assessment?.reconciledStatus).toBe("interrupted");
-      expect(assessment?.requiresReview).toBe(false);
-      expect(assessment?.eligibleForRetry).toBe(true);
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
+      expect(assessment?.eligibleForRetry).toBe(false);
     });
 
     it("fails closed on mutating job with nonzero exit: unknown_outcome_review_required, requiresReview: true, eligibleForRetry: false", async () => {

@@ -81,6 +81,17 @@ export interface OperatorCapability {
   readonly capabilityId: string;
 }
 
+/** An identity already authenticated by the trusted host control plane. */
+export interface OperatorPrincipal {
+  readonly subject: string;
+  readonly authenticated: boolean;
+  readonly roles: readonly string[];
+}
+export interface ProcessSupervisorOptions extends ProcessRegistryOptions {
+  /** Trusted runtime-injected authorizer. Absent by default: operator access denied. */
+  trustedOperatorAuthorizer?: (principal: OperatorPrincipal) => boolean;
+}
+
 export interface ProcessDiagnosticFilter {
   filterByWorkspaceRoot?: string;
   callerWorkspaceRoot?: string;
@@ -148,23 +159,37 @@ export class ProcessSupervisor {
   private registry: ProcessRegistry;
   private initialized = false;
   private lastReconciliationReport: ProcessReconciliationReport | null = null;
-  private readonly issuedCapabilities = new Set<string>();
+  private readonly issuedCapabilities = new WeakSet<object>();
+  private readonly trustedOperatorAuthorizer?: (principal: OperatorPrincipal) => boolean;
 
-  constructor(options: ProcessRegistryOptions = {}) {
+  constructor(options: ProcessSupervisorOptions = {}) {
     this.registry = new ProcessRegistry(options);
+    this.trustedOperatorAuthorizer = options.trustedOperatorAuthorizer;
   }
 
   /**
    * Issues a non-forgeable server-internal capability for operator diagnostics (P1-1).
    * Held by authorized server runtime only; never constructible from untrusted public JSON.
    */
-  public issueOperatorCapability(): OperatorCapability {
-    const capabilityId = crypto.randomBytes(32).toString("hex");
-    this.issuedCapabilities.add(capabilityId);
-    return {
-      [OPERATOR_CAPABILITY_BRAND]: true,
-      capabilityId,
-    };
+  public issueOperatorCapability(principal?: OperatorPrincipal): OperatorCapability {
+    if (
+      !principal ||
+      principal.authenticated !== true ||
+      typeof principal.subject !== "string" ||
+      principal.subject.length === 0 ||
+      !Array.isArray(principal.roles) ||
+      !principal.roles.includes("operator") ||
+      !this.trustedOperatorAuthorizer ||
+      this.trustedOperatorAuthorizer(principal) !== true
+    ) {
+      throw new Error("Operator capability denied: verified host authorization required.");
+    }
+    const capability = Object.freeze({
+      [OPERATOR_CAPABILITY_BRAND]: true as const,
+      capabilityId: crypto.randomBytes(32).toString("hex"),
+    });
+    this.issuedCapabilities.add(capability);
+    return capability;
   }
 
   /**
@@ -175,8 +200,7 @@ export class ProcessSupervisor {
     if (!capability || typeof capability !== "object") return false;
     const candidate = capability as any;
     if (candidate[OPERATOR_CAPABILITY_BRAND] !== true) return false;
-    if (typeof candidate.capabilityId !== "string") return false;
-    return this.issuedCapabilities.has(candidate.capabilityId);
+    return this.issuedCapabilities.has(candidate);
   }
 
   public getRegistry(): ProcessRegistry {
@@ -569,7 +593,7 @@ export class ProcessSupervisor {
 let globalProcessSupervisor: ProcessSupervisor | null = null;
 let hasBootstrappedSupervisor = false;
 
-export function getProcessSupervisor(options?: ProcessRegistryOptions): ProcessSupervisor {
+export function getProcessSupervisor(options?: ProcessSupervisorOptions): ProcessSupervisor {
   if (!globalProcessSupervisor) {
     globalProcessSupervisor = new ProcessSupervisor(options);
   }

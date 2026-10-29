@@ -413,7 +413,7 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       expect(assessment?.reason).toContain("jobId mismatch");
     });
 
-    it("allows safe supervised retry ONLY when verifiable positive evidence proves job is read-only", async () => {
+    it("requires attested read-only evidence instead of a local checkpoint flag", async () => {
       const reg = new ProcessRegistry({ storagePath: registryFile });
       await reg.load();
 
@@ -455,10 +455,10 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       );
 
       const assessment = report.jobAssessments[0];
-      expect(assessment?.reconciledStatus).toBe("interrupted");
-      expect(assessment?.requiresReview).toBe(false);
-      expect(assessment?.eligibleForRetry).toBe(true);
-      expect(assessment?.hasMutatingWrite).toBe(false);
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
+      expect(assessment?.eligibleForRetry).toBe(false);
+      expect(assessment?.hasMutatingWrite).toBe(true);
     });
   });
 
@@ -744,7 +744,7 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
   // =========================================================================
   describe("P1 #4: Workspace Diagnostics Privacy & Strict Workspace Scoping", () => {
     it("user-scoped diagnostics strictly omits foreign and ownerless records from entries and counts", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       await supervisor.initialize();
       const registry = supervisor.getRegistry();
 
@@ -866,7 +866,7 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       expect(forgedDiag.totalTracked).toBe(0);
 
       // Authenticated privileged operator mode surfaces all 4 records (P1-1)
-      const cap = supervisor.issueOperatorCapability();
+      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
       const operatorDiag = await supervisor.getProcessDiagnostics({
         operatorCapability: cap,
       });
@@ -880,7 +880,7 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
     });
 
     it("normalizes canonical workspace paths across Windows slash/case variants", async () => {
-      const supervisor = new ProcessSupervisor({ storagePath: registryFile });
+      const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       await supervisor.initialize();
 
       const wsCanonical = path.resolve(tmpDir, "CanonicalWorkspace");

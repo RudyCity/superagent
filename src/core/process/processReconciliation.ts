@@ -38,6 +38,7 @@ import {
 import {
   readJobCheckpoint,
   writeJobCheckpoint,
+  isValidJobCheckpoint,
   type JobCheckpoint,
 } from "../tools/cliBridgeReconciliation.js";
 import crypto from "node:crypto";
@@ -406,17 +407,15 @@ export async function reconcileStartupProcesses(
 
         // Checkpoint integrity & positive schema verification (P0 #2):
         // Validate that checkpoint is a valid object and that checkpoint.jobId matches record.ownership.jobId.
-        const isCheckpointValid =
-          rawCheckpoint !== null &&
-          typeof rawCheckpoint === "object" &&
-          rawCheckpoint.jobId === jobId;
+        const isCheckpointValid = isValidJobCheckpoint(rawCheckpoint, jobId);
 
         const checkpoint: JobCheckpoint | null = isCheckpointValid ? rawCheckpoint : null;
 
         // Positive evidence required: never infer read-only without verifiable positive evidence.
         // A missing, null, or untrusted checkpoint MUST be treated as potentially mutating (fail-closed).
         const hadMutatingWrite = checkpoint !== null ? checkpoint.hasMutatingWrite === true : true;
-        const isProvenReadOnly = checkpoint !== null && checkpoint.hasMutatingWrite === false;
+        // No authenticated read-only attestation is produced yet; forbid automatic replay.
+        const isProvenReadOnly = false;
 
         const isTerminal = isRecordTerminal(record.state);
 

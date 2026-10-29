@@ -32,7 +32,7 @@ describe("SuperAgent Runtime Supervisor Batch 6 Independent Audit Remediation", 
     );
     await fs.mkdir(tempDir, { recursive: true });
     registryFile = path.join(tempDir, "process-registry.json");
-    supervisor = new ProcessSupervisor({ storagePath: registryFile });
+    supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
     await supervisor.initialize();
 
     originalCheckpointsDir = process.env.SUPERAGENT_CLI_BRIDGE_CHECKPOINTS_DIR;
@@ -150,7 +150,7 @@ describe("SuperAgent Runtime Supervisor Batch 6 Independent Audit Remediation", 
       }
     });
 
-    it("grants eligibleForRetry: true ONLY with durable validated matching checkpoint proving read-only", async () => {
+    it("does not treat a durable checkpoint flag as signed read-only attestation", async () => {
       const validCheckpoint: JobCheckpoint = {
         checkpointId: "cp_valid_ro",
         jobId: "job_proven_ro",
@@ -173,10 +173,10 @@ describe("SuperAgent Runtime Supervisor Batch 6 Independent Audit Remediation", 
         validCheckpoint
       );
 
-      expect(assessment.reconciledStatus).toBe("interrupted");
-      expect(assessment.eligibleForRetry).toBe(true);
-      expect(assessment.requiresReview).toBe(false);
-      expect(assessment.reason).toContain("eligible for safe supervised retry");
+      expect(assessment.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment.eligibleForRetry).toBe(false);
+      expect(assessment.requiresReview).toBe(true);
+      expect(assessment.reason).toContain("automatic retry blocked");
     });
 
     it("fails closed on contradictory checkpoint receipts (e.g. verified paired with failure)", async () => {
@@ -238,156 +238,54 @@ describe("SuperAgent Runtime Supervisor Batch 6 Independent Audit Remediation", 
   // MANDATORY P0-2: Safe Single-Writer Registry Lock Architecture & TOCTOU Elimination
   // =========================================================================
   describe("MANDATORY P0-2: Safe Single-Writer Lock Architecture & TOCTOU Elimination", () => {
-    it("reproduces and eliminates audit P0-2: automatic stale lock reclamation is DISABLED to prevent active lock deletion", async () => {
+    it("refuses legacy lock files instead of deleting them during protocol migration", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
-      const lockPath = `${registryFile}.lock`;
+      const legacyLock = registryFile + ".lock";
+      const bytes = JSON.stringify({ pid: 99999999, createdAt: Date.now(), token: "old-owner" });
+      await fs.writeFile(legacyLock, bytes);
+      await expect((registry as any).withRegistryLock(async () => "not-run", 200))
+        .rejects.toThrow("Legacy process registry lock");
+      expect(await fs.readFile(legacyLock, "utf8")).toBe(bytes);
+    });
 
-      // Seed a lock owned by another process
-      const otherProcessLock = {
-        pid: 99999999, // dead PID
-        createdAt: Date.now() - 30_000,
-        token: "stale_other_token",
-      };
-      await fs.writeFile(lockPath, JSON.stringify(otherProcessLock), "utf8");
-
-      // While Process A attempts acquisition, simulate an active replacement lock placed by Process B
-      const activeReplacement = {
-        pid: process.pid,
-        createdAt: Date.now(),
-        token: "active_replacement_token_verified",
-      };
-      await fs.writeFile(lockPath, JSON.stringify(activeReplacement), "utf8");
-
-      // When Process A attempts to save with short timeout (150ms),
-      // it MUST NOT unlink or steal the active replacement lock!
+    it("uses a transaction lock with no pathname unlink during acquisition or finalization", async () => {
+      const registry = new ProcessRegistry({ storagePath: registryFile });
+      const originalUnlink = fs.unlink;
+      const spy = vi.spyOn(fs, "unlink").mockImplementation(async (target: any) => {
+        if (String(target).endsWith(".lock")) throw new Error("UNSAFE LEGACY UNLINK");
+        return originalUnlink.call(fs, target);
+      });
       try {
-        await (registry as any).withRegistryLock(async () => "done", 150);
-        expect.unreachable("Expected withRegistryLock to timeout and fail closed");
-      } catch (err: any) {
-        expect(err.message).toContain("Timed out waiting for process registry lock");
-        expect(err.message).toContain("Automatic stale-lock reclamation is disabled");
+        expect(await (registry as any).withRegistryLock(async () => "transaction-ok", 1000))
+          .toBe("transaction-ok");
+        expect(await (registry as any).withRegistryLock(async () => "reacquired", 1000))
+          .toBe("reacquired");
+        await expect(fs.stat(registryFile + ".lock")).rejects.toThrow();
+        await fs.stat(registryFile + ".coordination.sqlite");
+      } finally {
+        spy.mockRestore();
       }
-
-      // Assert that active replacement lock on disk was 100% PRESERVED and NOT unlinked!
-      const diskContent = await fs.readFile(lockPath, "utf8");
-      const parsed = JSON.parse(diskContent);
-      expect(parsed.token).toBe("active_replacement_token_verified");
-      expect(parsed.pid).toBe(process.pid);
-
-      await fs.unlink(lockPath);
     });
 
-    it("proves release of OWN lock cannot delete an active replacement lock if file was swapped (deterministic TOCTOU prevention)", async () => {
+    it("disables recovery for both stale lock and unrelated files even with a fixed confirmation", async () => {
+      const staleLock = registryFile + ".lock";
+      const unrelated = path.join(tempDir, "private.json");
+      await fs.writeFile(staleLock, JSON.stringify({pid:99999999, token:"stale"}));
+      await fs.writeFile(unrelated, JSON.stringify({pid:99999999, secret:true}));
+      for (const file of [staleLock, unrelated]) {
+        const result = await ProcessRegistry.recoverStaleLock(file, {
+          operatorConfirmation:"CONFIRM_MANUAL_STALE_LOCK_REMOVAL", expectedPid:99999999
+        });
+        expect(result.recovered).toBe(false);
+        await fs.stat(file);
+      }
+    });
+
+    it("SQLite lock automatically releases on thrown error; manual stale recovery not needed", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
-      const lockPath = `${registryFile}.lock`;
-
-      // Acquire lock legitimately via withRegistryLock
-      let innerRan = false;
-      await (registry as any).withRegistryLock(async () => {
-        innerRan = true;
-
-        // While Process A holds the lock handle, simulate an external operator or race condition
-        // that replaced lockPath with a new file (different inode and token)
-        await fs.unlink(lockPath);
-        const replacementLock = {
-          pid: 88888,
-          createdAt: Date.now(),
-          token: "brand_new_replacement_token_different_owner",
-        };
-        await fs.writeFile(lockPath, JSON.stringify(replacementLock), "utf8");
-      }, 5000);
-
-      expect(innerRan).toBe(true);
-
-      // In finally block, Process A should have checked inode / token and REFUSED to unlink replacement!
-      const currentLockRaw = await fs.readFile(lockPath, "utf8");
-      const currentLock = JSON.parse(currentLockRaw);
-      expect(currentLock.token).toBe("brand_new_replacement_token_different_owner");
-      expect(currentLock.pid).toBe(88888);
-
-      // Clean up test lock
-      await fs.unlink(lockPath);
-    });
-
-    it("provides explicitly authorized manual safe recovery (recoverStaleLock) with strict operator confirmation", async () => {
-      const lockPath = `${registryFile}.lock`;
-
-      // 1. Refuses removal without valid operator confirmation token
-      const staleLock = {
-        pid: 99999999, // dead PID
-        createdAt: Date.now() - 60_000,
-        token: "dead_token_123",
-      };
-      await fs.writeFile(lockPath, JSON.stringify(staleLock), "utf8");
-
-      const unconfirmed = await ProcessRegistry.recoverStaleLock(lockPath, {
-        operatorConfirmation: "invalid_token",
-      });
-      expect(unconfirmed.recovered).toBe(false);
-      expect(unconfirmed.reason).toContain("missing or invalid operator confirmation token");
-
-      // Verify lock file is still intact on disk
-      expect(await fs.readFile(lockPath, "utf8")).toBeDefined();
-
-      // 2. Refuses removal if owner process is STILL ALIVE (fails closed!)
-      const liveOwnerLock = {
-        pid: process.pid, // current live process!
-        createdAt: Date.now() - 60_000,
-        token: "live_token_456",
-      };
-      await fs.writeFile(lockPath, JSON.stringify(liveOwnerLock), "utf8");
-
-      const liveCheck = await ProcessRegistry.recoverStaleLock(lockPath, {
-        operatorConfirmation: "CONFIRM_MANUAL_STALE_LOCK_REMOVAL",
-      });
-      expect(liveCheck.recovered).toBe(false);
-      expect(liveCheck.reason).toContain("is still alive. Automatic removal blocked");
-
-      // 3. Rejects recovery if expectedPid does not match
-      await fs.writeFile(lockPath, JSON.stringify(staleLock), "utf8");
-      const mismatchCheck = await ProcessRegistry.recoverStaleLock(lockPath, {
-        operatorConfirmation: "CONFIRM_MANUAL_STALE_LOCK_REMOVAL",
-        expectedPid: 12345, // does not match 99999999
-      });
-      expect(mismatchCheck.recovered).toBe(false);
-      expect(mismatchCheck.reason).toContain("does not match expected PID");
-
-      // 4. Successfully removes lock for confirmed dead owner with valid confirmation
-      const successRecovery = await ProcessRegistry.recoverStaleLock(lockPath, {
-        operatorConfirmation: "CONFIRM_MANUAL_STALE_LOCK_REMOVAL",
-        expectedPid: 99999999,
-      });
-      expect(successRecovery.recovered).toBe(true);
-      expect(successRecovery.reason).toContain("Successfully recovered orphaned lock file");
-
-      // Verify lock file was unlinked
-      await expect(fs.stat(lockPath)).rejects.toThrow();
-    });
-
-    it("crash simulation: orphaned lock halts acquisition until manual recovery, then succeeds cleanly", async () => {
-      const registry = new ProcessRegistry({ storagePath: registryFile });
-      const lockPath = `${registryFile}.lock`;
-
-      // Simulate a crashed writer: lock file left on disk
-      const crashLock = {
-        pid: 99999999, // dead PID
-        createdAt: Date.now() - 100_000,
-        token: "crashed_writer_token",
-      };
-      await fs.writeFile(lockPath, JSON.stringify(crashLock), "utf8");
-
-      // Acquisition without recovery fails closed after timeout
-      await expect(
-        (registry as any).withRegistryLock(async () => "done", 100)
-      ).rejects.toThrow(/Timed out waiting for process registry lock/);
-
-      // Operator manual recovery clears the lock safely
-      const recovery = await ProcessRegistry.recoverStaleLock(lockPath, {
-        operatorConfirmation: "CONFIRM_MANUAL_STALE_LOCK_REMOVAL",
-      });
-      expect(recovery.recovered).toBe(true);
-
-      // Now normal acquisition succeeds immediately
+      await expect((registry as any).withRegistryLock(async () => {
+        throw new Error("simulated writer crash");
+      }, 1000)).rejects.toThrow("simulated writer crash");
       const result = await (registry as any).withRegistryLock(async () => "success", 1000);
       expect(result).toBe("success");
     });
@@ -572,7 +470,7 @@ describe("SuperAgent Runtime Supervisor Batch 6 Independent Audit Remediation", 
       expect(forgedObjectDiag.totalTracked).toBe(0);
 
       // 2. Genuine capability issued by this supervisor instance grants access to all records
-      const genuineCap = supervisor.issueOperatorCapability();
+      const genuineCap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
       const operatorDiag = await supervisor.getProcessDiagnostics({
         operatorCapability: genuineCap,
       });
