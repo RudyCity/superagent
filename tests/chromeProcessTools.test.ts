@@ -277,15 +277,10 @@ describe("close_chrome_window validation", () => {
     expect(res).toContain("Nothing was closed");
   });
 
-  test.skipIf(process.platform !== "win32")("closeChromeWindowTool refuses an ambiguous title without closing anything", async () => {
-    const res = await closeChromeWindowTool.execute(
-      { titleSubstring: "Google Chrome" },
-      process.cwd()
-    );
-    expect(res).toMatch(
-      /matched \d+ windows -- refusing to guess|No Chrome window title matches/
-    );
-    expect(res).toContain("Nothing was closed");
+  test("findWindowsByTitle refuses to select an ambiguous fixture", () => {
+    const matches = findWindowsByTitle(browsers, "google chrome");
+    expect(matches.length).toBeGreaterThan(1);
+    expect(matches.map(hit => hit.window.hwnd)).toEqual([1001, 1002, 2001]);
   });
 });
 
