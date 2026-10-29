@@ -118,10 +118,15 @@ import {
 import { registerActiveDag, cancelActiveDag } from "./cliBridgeOrchestrationFeed.js";
 import type { JobPriority } from "./cliBridgeScheduler.js";
 import type { ResourceClaimRequest } from "./cliBridgeResourceClaims.js";
+import {
+  DEFAULT_BACKGROUND_DELEGATE_TIMEOUT_MS,
+  MAX_DELEGATE_TIMEOUT_MS,
+  MIN_DELEGATE_TIMEOUT_MS,
+} from "./cliBridgeTimeouts.js";
+
+export { DEFAULT_BACKGROUND_DELEGATE_TIMEOUT_MS, MAX_DELEGATE_TIMEOUT_MS } from "./cliBridgeTimeouts.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
-
-export const DEFAULT_BACKGROUND_DELEGATE_TIMEOUT_MS = 60 * 60 * 1000;
 
 const ACTIONS = [
   "list",
@@ -186,7 +191,7 @@ export const cliBridgeTool: Tool = {
         description:
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
           "'delegate' for short synchronous autonomous tasks, " +
-          "'delegate.start' for long-running background tasks that return a jobId immediately (default 60 minutes; up to 2 hours), " +
+          "'delegate.start' for long-running background tasks that return a jobId immediately (default 60 minutes; up to 12 hours), " +
           "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks, plus 'delegate.recovery' to inspect read-only owner/child process hints (requires jobId). " +
           "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 12). Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
           "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
@@ -380,7 +385,7 @@ export const cliBridgeTool: Tool = {
       timeoutMs: {
         type: "number",
         description:
-          "Timeout in milliseconds. Defaults: 300_000 for blocking delegate, 3_600_000 (60 minutes) for delegate.start, and 120_000 for session.send. Delegation timeout range is 1000..7200000 (2 hours). Background jobs are polled by job id without keeping the MCP request open.",
+          "Timeout in milliseconds. Defaults: 300_000 for blocking delegate, 3_600_000 (60 minutes) for delegate.start, and 120_000 for session.send. Delegation timeout range is 1000..43200000 (12 hours). Background jobs are polled by job id without keeping the MCP request open.",
       },
       slot: {
         type: "number",
@@ -921,8 +926,8 @@ async function handleDelegate(
   let timeoutMs: number | undefined;
   if (args.timeoutMs !== undefined && args.timeoutMs !== null) {
     const requestedTimeout = Number(args.timeoutMs);
-    if (!Number.isFinite(requestedTimeout) || requestedTimeout < 1000 || requestedTimeout > 7200000) {
-      return "Error: timeoutMs must be between 1000 and 7200000 (2 hours). Use action=delegate.start for long-running work that can be polled without keeping the MCP request open.";
+    if (!Number.isFinite(requestedTimeout) || requestedTimeout < MIN_DELEGATE_TIMEOUT_MS || requestedTimeout > MAX_DELEGATE_TIMEOUT_MS) {
+      return "Error: timeoutMs must be between 1000 and 43200000 (12 hours). Use action=delegate.start for long-running work that can be polled without keeping the MCP request open.";
     }
     timeoutMs = requestedTimeout;
   }

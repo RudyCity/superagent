@@ -19,6 +19,7 @@ import {
 } from "../../brain/brainStorageManager.js";
 import { getRootConfigDir } from "../../config/paths.js";
 import { cliBridgeTool } from "../../tools/cliBridgeTool.js";
+import { MAX_DELEGATE_TIMEOUT_MS, MIN_DELEGATE_TIMEOUT_MS } from "../../tools/cliBridgeTimeouts.js";
 import { beginBrainTransfer, inspectBrainTransfer, appendBrainTransfer, finishBrainTransfer, abortBrainTransfer, cleanupBrainTransfers } from "../../brain/brainTransfers.js";
 import { annotateBrainArtifact, searchBrainArtifacts, brainResumeContext, brainRMemoryCandidate } from "../../brain/brainIndex.js";
 import { promoteBrainDelegation, promoteBrainDelegationBatch } from "../../brain/brainDelegationArtifacts.js";
@@ -63,7 +64,7 @@ export const BRAIN_MCP_TOOL_DEFS = [
         jobId: { type: "string" },
         sourceArtifactPath: { type: "string", description: "Optional verified delegate output path to select when a job produced multiple artifacts." },
         expectedArtifacts: { type: "array", maxItems: 12, items: { type: "string" } },
-        timeoutMs: { type: "number", minimum: 1000, maximum: 7200000 },
+        timeoutMs: { type: "number", minimum: MIN_DELEGATE_TIMEOUT_MS, maximum: MAX_DELEGATE_TIMEOUT_MS },
         transferId: { type: "string" },
         totalBytes: { type: "integer", minimum: 1, maximum: 20971520 },
         sha256: { type: "string", description: "Expected lowercase SHA256 of the complete artifact." },

@@ -24,6 +24,7 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { getSuperAgentVersion } from "../config/paths.js";
+import { MAX_DELEGATE_TIMEOUT_MS, MIN_DELEGATE_TIMEOUT_MS } from "../tools/cliBridgeTimeouts.js";
 import {
   getYoloModeState,
   isFullYoloMode,
@@ -295,7 +296,7 @@ export const MCP_TOOL_DEFINITIONS = [
           planPath: { type: "string" },
           walkthroughPath: { type: "string" },
           expectedArtifacts: { type: "array", items: { type: "string" }, description: "1–12 relative workspace artifact paths checked by SHA-256 on completion." },
-          timeoutMs: { type: "number", minimum: 1000, maximum: 7200000 },
+          timeoutMs: { type: "number", minimum: MIN_DELEGATE_TIMEOUT_MS, maximum: MAX_DELEGATE_TIMEOUT_MS },
           wait: { type: "boolean", description: "For delegate only: false starts a pollable job; true waits for CLI exit." },
           permissionMode: { type: "string", enum: ["accept-edits", "plan", "auto", "full-auto"], description: "AGY permission policy: 'accept-edits' (default, prompts for shell commands which causes headless background jobs to be permission_blocked), 'plan', 'auto', or 'full-auto' (passes --dangerously-skip-permissions to allow unrestricted autonomous shell execution in background jobs)." },
           conversationId: { type: "string" },

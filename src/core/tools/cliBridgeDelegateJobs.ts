@@ -28,6 +28,7 @@ import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
 import { getTlineCreatorForJob } from "../channels/tlineJobCreator.js";
 import { inspectAgyBridgeLine, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
 import { readBoundedLogTail, redactCliBridgeOutput, summarizedPrompt } from "./cliBridgeObservability.js";
+import { MAX_DELEGATE_TIMEOUT_MS, MIN_DELEGATE_TIMEOUT_MS } from "./cliBridgeTimeouts.js";
 import { acquireCliBridgeCapacity, releaseCliBridgeCapacity, updateCliBridgeCapacity, type CliBridgeCapacityLease } from "./cliBridgeCapacity.js";
 import { sampleSystemResources, type SystemResourceSample, type ResourcePressureLevel } from "./cliBridgeResourceSampler.js";
 import {
@@ -1050,8 +1051,8 @@ async function launchJobExecution(
 
 export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<DelegateJob> {
   await initialize();
-  if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs < 1_000 || opts.timeoutMs > 7_200_000) {
-    throw new Error("Background delegation timeoutMs must be between 1000 and 7200000 (2 hours).");
+  if (!Number.isFinite(opts.timeoutMs) || opts.timeoutMs < MIN_DELEGATE_TIMEOUT_MS || opts.timeoutMs > MAX_DELEGATE_TIMEOUT_MS) {
+    throw new Error("Background delegation timeoutMs must be between 1000 and 43200000 (12 hours).");
   }
   if (opts.idempotencyKey !== undefined && !/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,119}$/.test(opts.idempotencyKey)) {
     throw new Error("CLI Bridge idempotencyKey must be 1–120 safe characters.");

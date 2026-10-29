@@ -1,3 +1,10 @@
+## [1.14.57] - 2026-10-29
+### CLI Bridge twelve-hour delegation ceiling
+- Raise the maximum explicit delegation timeout from 2 hours to 12 hours (`43_200_000 ms`) while keeping the default background timeout at 60 minutes.
+- Centralize minimum, default and maximum delegation timeout constants in `cliBridgeTimeouts.ts` and reuse them in the bridge runtime, background job validator and MCP schemas.
+- Preserve explicit `timeoutMs` overrides within the 1-second to 12-hour range; values above 12 hours remain rejected.
+- Expand timeout regression coverage to assert both the one-hour default and twelve-hour ceiling.
+
 ## [1.14.56] - 2026-10-29
 ### CLI Bridge one-hour background delegation default
 - Increase the default `delegate.start` timeout from 30 minutes to 60 minutes while preserving the explicit per-call override range of 1 second to 2 hours.
