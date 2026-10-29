@@ -1,3 +1,10 @@
+## [1.14.56] - 2026-10-29
+### CLI Bridge one-hour background delegation default
+- Increase the default `delegate.start` timeout from 30 minutes to 60 minutes while preserving the explicit per-call override range of 1 second to 2 hours.
+- Centralize the background delegation default in `DEFAULT_BACKGROUND_DELEGATE_TIMEOUT_MS` so validation, job creation, and tool documentation do not drift to different values.
+- Keep explicit `timeoutMs` values authoritative; callers that intentionally request shorter or longer jobs continue to override the one-hour default.
+- Add regression coverage for the one-hour constant and exposed tool descriptions.
+
 ## [1.14.55] - 2026-10-27
 ### MCP stateless discovery fix and RFC 6750 challenges
 - Fix independent MCP owners running with dangerous tools enabled returning `500` for every request that arrives without an `mcp-session-id` (`tools/list`, `tools/call`, `resources/read`, and other stateless posts). Owner control was forcing the safe-only lock onto the stateless path, but that lock is invalid once `--allow-dangerous` is set: `createSuperagentMcpServer` threw and the transport answered a generic `500`, which clients surfaced as "authentication succeeded, action discovery failed". Stateful `initialize` sessions were unaffected, which made the failure look client-specific.

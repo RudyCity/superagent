@@ -121,6 +121,8 @@ import type { ResourceClaimRequest } from "./cliBridgeResourceClaims.js";
 
 // ─── Tool definition ─────────────────────────────────────────────────────
 
+export const DEFAULT_BACKGROUND_DELEGATE_TIMEOUT_MS = 60 * 60 * 1000;
+
 const ACTIONS = [
   "list",
   "delegate",
@@ -184,7 +186,7 @@ export const cliBridgeTool: Tool = {
         description:
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
           "'delegate' for short synchronous autonomous tasks, " +
-          "'delegate.start' for long-running background tasks that return a jobId immediately (default 30 minutes; up to 2 hours), " +
+          "'delegate.start' for long-running background tasks that return a jobId immediately (default 60 minutes; up to 2 hours), " +
           "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks, plus 'delegate.recovery' to inspect read-only owner/child process hints (requires jobId). " +
           "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 12). Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
           "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
@@ -378,7 +380,7 @@ export const cliBridgeTool: Tool = {
       timeoutMs: {
         type: "number",
         description:
-          "Timeout in milliseconds. Defaults: 300_000 for blocking delegate, 1_800_000 (30 minutes) for delegate.start, and 120_000 for session.send. Delegation timeout range is 1000..7200000 (2 hours). Background jobs are polled by job id without keeping the MCP request open.",
+          "Timeout in milliseconds. Defaults: 300_000 for blocking delegate, 3_600_000 (60 minutes) for delegate.start, and 120_000 for session.send. Delegation timeout range is 1000..7200000 (2 hours). Background jobs are polled by job id without keeping the MCP request open.",
       },
       slot: {
         type: "number",
@@ -924,7 +926,7 @@ async function handleDelegate(
     }
     timeoutMs = requestedTimeout;
   }
-  if (isBackground && timeoutMs === undefined) timeoutMs = 30 * 60 * 1000;
+  if (isBackground && timeoutMs === undefined) timeoutMs = DEFAULT_BACKGROUND_DELEGATE_TIMEOUT_MS;
   const delegateCwd = resolveAuthorizedDelegateCwd(cwd, args.cwd ? String(args.cwd) : undefined);
 
   // Resolve skills directories/profiles for 1-shot execution:
@@ -1057,7 +1059,7 @@ async function handleDelegate(
       expectedArtifacts: args.expectedArtifacts as string[] | undefined,
       idempotencyKey: typeof args.idempotencyKey === "string" ? args.idempotencyKey : undefined,
       args: [...combinedArgs, composedPrompt],
-      timeoutMs: timeoutMs ?? 30 * 60 * 1000,
+      timeoutMs: timeoutMs ?? DEFAULT_BACKGROUND_DELEGATE_TIMEOUT_MS,
       priority: mappedPriority,
       resourceClass: typeof args.resourceClass === "string" ? (args.resourceClass as any) : undefined,
       roleProfile: typeof args.role === "string" ? args.role.trim() : undefined,
