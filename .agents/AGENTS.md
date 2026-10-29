@@ -18,6 +18,7 @@
 
 ## Mandatory Skills
 
+- **ALL TASKS — ALWAYS REQUIRED: Instruction Fidelity**: Every SuperAgent agent (Master Agent, Superagent, Subagent, AGY/CLI Bridge worker, and T-Line-connected agent working in this workspace) MUST read and apply `.agents/skills/instruction-fidelity/SKILL.md` at the start of every task, including investigation, implementation, testing, audits, delegation, and commits. Follow its understand → preflight → execute → verify → report cycle, preserve user constraints in delegated work, and never claim success without evidence. This skill does not override project permissions, safety constraints or higher-priority instructions.
 - **Design Tasks**: When building, designing, or refactoring user interfaces, layouts, components, or web applications, you MUST treat the hallmark skill (.agents/skills/hallmark/SKILL.md) as a mandatory skill and read its instructions using the view_file tool before proceeding.
 - **Debugging Tasks**: When investigating bugs, runtime errors, failures, or diagnosing issues, you MUST treat the non-linear-debugging skill (.agents/skills/non-linear-debugging/SKILL.md) as a mandatory skill and read its instructions using the view_file tool before proceeding.
 

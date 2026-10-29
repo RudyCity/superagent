@@ -251,3 +251,259 @@
   - [x] E8: Crash/restart -> `unknown_outcome_review_required` (PASS)
   - [x] E9: 4 concurrent AGY jobs -> isolated outputs, 0 leaked slots (PASS)
   - [x] E10: Cross-workspace isolation -> access rejected (PASS)
+
+
+---
+
+## Windows Background Subprocess Console Splash Elimination (2026-10-28)
+
+- [x] **Phase 0 — Reproduce & Instrument**
+  - [x] Add opt-in process trace (`SUPERAGENT_PROCESS_TRACE=1`) recording timestamp, parent PID, child PID, executable, sanitized argv summary, launch intent, caller tag, shell, detached state, `windowsHide`, and exit code
+  - [x] Ensure strict secret/prompt/token/API-key/OAuth redaction in process trace records
+  - [x] Add Windows runtime inspection helper/test recording unexpected `cmd.exe`, `powershell.exe`, and `conhost.exe` descendants
+  - [x] Reproduce & trace from SuperAgent CLI and CLI-invoked MCP/headless subprocess paths
+- [x] **Phase 1 — Central Process-Intent Policy**
+  - [x] Implement `src/core/process/processSpawnPolicy.ts` with `ProcessLaunchIntent` (`headless`, `capturedInteractive`, `visibleTerminal`), `windowsHeadlessOptions()`, `applyProcessIntent(options, intent, meta?)`, `traceProcessLaunch()`, and safe taskkill helper
+  - [x] Default internal/background/captured processes to `windowsHide: true` on Windows
+  - [x] Require explicit `visibleTerminal` intent for any code path allowed to create a visible window
+  - [x] Document why `windowsHide` is required for SuperAgent CLI-launched headless/background/MCP subprocesses on Windows
+  - [x] Add unit tests in `tests/processSpawnPolicy.test.ts` for option merging, Windows/non-Windows behavior, and trace redaction
+- [x] **Phase 2 — Patch P0 Execution Paths**
+  - [x] `src/core/tools/cliBridgeSession.ts` (delegate execution, session execution, availability/probe commands, cleanup/taskkill)
+  - [x] `src/core/tools/shellTools.ts` (regular run command, workspace/cwd command path, background command path, process-tree kill)
+  - [x] `src/core/mcp/tools/workspaceTools.ts` (MCP `superagent_exec_command` execution)
+  - [x] `src/core/commands/terminalCommand.ts` (`/terminal bg` => `headless`; normal `/terminal <command>` => explicit `visibleTerminal`)
+  - [x] `src/core/tools/cliBridgeDelegateJobs.ts` (migrate to shared process policy and tracing)
+- [x] **Phase 3 — Patch Internal Support Subprocesses**
+  - [x] `src/core/tools/dynamicHooks.ts`
+  - [x] `src/core/tools/processInspectionTools.ts`
+  - [x] `src/core/tools/helpers.ts`
+  - [x] `src/core/mcp/openaiTunnelClient.ts`
+  - [x] `src/core/tools/otherTools.ts`
+  - [x] `src/core/tools/superagentTools.ts` & `src/core/tools/subagentTools.ts`
+  - [x] `src/core/tools/cliBridgeWorktreeManager.ts` & `src/core/tools/cliBridgeAcceptance.ts`
+  - [x] Remaining Git/worktree/package-manager/setup/server/UI helper subprocesses across `src/`
+- [x] **Phase 4 — AGY-Specific Containment**
+  - [x] Reproduce AGY CLI Bridge launch with process tracing enabled
+  - [x] Inspect ancestry and `CREATE_NO_WINDOW` / `windowsHide` propagation for `agy.exe`, `agy.cmd`, and `agy-node.cmd` descendants (`compose-preview`, `device-hub`, sidecars)
+  - [x] Implement Windows-specific `.cmd`/batch resolution or launch containment if `.cmd` shim wrappers spawn visible `cmd.exe` consoles
+  - [x] Verify `compose-preview`, `device-hub`, and sidecar startup work without external console flash
+- [x] **Phase 5 — Tunnel / Watchdog / Core Runtime Audit**
+  - [x] Audit & verify OpenAI tunnel start/doctor, Cloudflare tunnel lifecycle, Senopati watchdog/shared process, Core guard/recover/supervisor, vision-server lifecycle, and MCP server spawn
+- [x] **Phase 6 — Windows Regression Suite**
+  - [x] Create Windows-focused integration & regression suite (`tests/windowsSubprocessSplashRegression.test.ts`) covering `run_command`, MCP `superagent_exec_command`, `/terminal bg`, `/terminal <command>` visible contract, CLI Bridge AGY delegate & persistent session, process inspection, taskkill, dynamic hooks, OpenAI tunnel doctor/start, and worktree/Git operations
+- [x] **Phase 7 — Soak Verification & Documentation**
+  - [x] Run Windows soak test covering repeated command execution, AGY delegation, tool discovery, Git/worktree ops, process inspection, background task start/stop, and tunnel status/doctor
+  - [x] Update contributor documentation explaining the process-intent contract
+  - [x] Update `docs/plans/2026-10-28-windows-background-subprocess-console-splash-elimination-plan.md`, `task.md`, and `walkthrough.md`
+
+
+---
+
+## SuperAgent MCP Memory and Lifecycle Remediation (2026-10-28)
+
+- [x] **Phase 0 — Baseline Instrumentation & Memory Telemetry (M0 / P1.1)**
+  - [x] Implement `src/core/runtime/runtimeMemoryDiagnostics.ts` with process memory & runtime lifecycle metrics
+  - [x] Expose internal memory diagnostics to server health / MCP diagnostics
+  - [x] Measure M0 memory baseline under test workload
+- [x] **Phase 1 — Bound MCP Activity Payloads (M1 - P0)**
+  - [x] Implement `BoundedActivityOutput` and `sanitizeActivityEvent` in `src/core/mcp/mcpLogSanitizer.ts`
+  - [x] Enforce output preview cap (<= 16 KB), UTF-8 original byte count, SHA-256 hash, and artifact reference
+  - [x] Detect & sanitize base64 / media payloads
+  - [x] Cap arguments, error, and hard serialized record size (<= 64 KB per JSONL line)
+  - [x] Wire sanitization into `emitMcpActivity` in `src/core/mcp/mcpActivityBus.ts`
+  - [x] Ensure full tool output to MCP clients is preserved unmodified
+  - [x] Add regression tests in `tests/mcpActivityPayloadBounds.test.ts`
+- [x] **Phase 2 — Cross-Process Activity Journal Rotation & Retention (M2 - P0)**
+  - [x] Implement `src/core/mcp/mcpActivityJournal.ts` with size-based rotation and configurable retention
+  - [x] Implement Windows-safe file rotation avoiding destructive windows
+  - [x] Implement safe legacy oversized journal migration (atomic rename, zero full-file in-memory read)
+  - [x] Add regression tests in `tests/mcpActivityJournalRotation.test.ts`
+- [x] **Phase 3 — Bounded Chunked Activity Journal Reader (M3 - P0)**
+  - [x] Replace `Buffer.alloc(stat.size - lastFileSize)` with chunked streaming reader (64 KB - 256 KB)
+  - [x] Add carry buffer with line length limit (128 KB) to skip oversized legacy records safely
+  - [x] Detect rotation, truncation, and file replacement
+  - [x] Add regression tests in `tests/mcpActivityJournalReader.test.ts`
+- [x] **Phase 4 — CLI Bridge Interactive Session Terminal Cleanup (M4 - P0)**
+  - [x] Add `cleanupSessionEvents(sessionId)` in `cliBridgeSessionEvents.ts`
+  - [x] Implement `cleanupSessionRuntime(sessionId, reason)` in `cliBridgeSession.ts`
+  - [x] Clean runtime maps on normal exit, spawn error, kill, idle timeout, and shutdown
+  - [x] Update idle scanner to sweep stranded terminal sessions
+  - [x] Bound `maxBufferLines`
+  - [x] Add regression tests in `tests/cliBridgeSessionLifecycle.test.ts`
+- [x] **Phase 5 — Delegate Job Retention & Lifecycle Ordering (M5 - P0)**
+  - [x] Wire `pruneJobs()` into terminalization, initialization, shard refresh, and cancellation
+  - [x] Fix final `logQueues` deletion ordering so final log line is persisted before queue cleanup
+  - [x] Remove completed jobs from `ownedJobIds` after durable persistence completes
+  - [x] Bound/prune `revisions` in `cliBridgeJobStore.ts`
+  - [x] Add regression tests in `tests/cliBridgeDelegateRetention.test.ts`
+- [x] **Corrective Remediation: Independent Manual Audit (2026-10-28)**
+  - [x] Task 1: Fix `serializeBoundedJournalEntry()` hard 64 KB cap & UTF-8 byte-safe Unicode preview (Findings 1 & 5)
+  - [x] Task 2: Fix `BoundedChunkedJournalReader` file-identity/generation replacement detection (Finding 2)
+  - [x] Task 3: Implement cross-process atomic rotation lock with stale recovery (Finding 3)
+  - [x] Task 4: Bound legacy oversized journal migration retention & update stats (Finding 4)
+  - [x] Task 5: Wire M8 `shouldThrottleLargeObservability()` into optional observability paths (Finding 6)
+  - [x] Task 6: Safe stateless MCP optimization & two-identity concurrency test (Finding 7)
+  - [x] Task 7: Correct evidence & doc mismatches (16 MB default, revision Map vs snapshot disk retention, honest test cycles) (Findings 8, 9, 10)
+  - [x] Task 8: Verification, full test suite execution, adversarial manual probes, and documentation
+
+
+---
+
+## Google Workspace CDP Reader Hardening (P10–P18)
+
+- [x] **P10: Sheets `all_sheets` Multi-Tab Hardening**
+  - [x] Implement `all_sheets: true` support in `googleWorkspaceReader.ts` and `chromeCdpTools.ts`
+  - [x] Preserve existing single-sheet gid behavior when `all_sheets` is false/unspecified
+  - [x] Iterate through all sheet tabs in htmlview, verifying each independently
+  - [x] Aggregate workbook-level metrics (`totalSheets`, `sheetsRead`, `totalRows`, `totalCells`) without false verification
+  - [x] Support bounded/paginated output in `paginateWorkspaceValue` for sheets array
+- [x] **P12: Centralized Workspace Failure & Permission Detection**
+  - [x] Define failure detection interface and reasons: `login_required`, `access_denied`, `permission_request`, `file_not_found`, `google_error`, `redirected`, `timeout`, `iframe_timeout`, `target_closed`, `network_failure`
+  - [x] Implement `detectWorkspaceFailure` and browser-side detection snippet
+  - [x] Ensure error pages return `status: "failed"` and never claim `verified` just because body text is present
+  - [x] Wire failure detection into `chromeCdpTools.ts` for all Workspace app flows
+- [x] **P11: Forms Hardening**
+  - [x] Distinguish form modes: `forms_home`, `editor`, `public_form`, `responses`
+  - [x] Harden structured parsing: title, description, sections, questions, question types, required flags, options, help text
+  - [x] Enforce guard: do not read submitted responses as normal form questions
+  - [x] Add verification contract: verify only valid forms with complete question structure
+- [x] **P13: Docs Rich-Content Verification Scopes**
+  - [x] Expose explicit verification scopes: `text_content`, `tables`, `images`, `comments`, `suggestions`, `drawings`, `footnotes`, `document_tabs`
+  - [x] Authenticated TXT export verifies `text_content` only; other scopes marked `not_read`/`partial`/`unknown`
+  - [x] Prevent false verified claims for rich document structure when only plain text export succeeded
+
+- [x] **P13B: Google Docs Rich Block + Image Position Preservation**
+  - [x] Core Architecture & Types: define `DocsContentBlock`, `DocsImageBlock`, `DocsVerificationScopes`, and downstream rendering contract
+  - [x] DOM & Browser Extraction: implement `extractDocsRichBlocksFromDom`, update Docs browser snippet, update `paginateWorkspaceValue` for blocks
+  - [x] Hardened Scope Evaluation: verify image order, anchors, binaries, and block stream without false exactness
+  - [x] Deterministic Test Suites: 10 target fixture scenarios (p->img->p, headings, lists, tables, multi-image, pagination, TXT export, temp tabs)
+  - [x] Documentation & Plan Sync: update P13B plan, main hardening plan, and walkthrough
+- [x] **P14: Sheets Richer Metadata & Capability Reporting**
+  - [x] Add capability reporting: `displayed_values`, `formulas_types`, `hidden_rows_cols`, `frozen_panes`, `filters`, `merged_ranges`, `notes_comments`
+  - [x] Parse `mergedRanges` (rowspan/colspan) from HTML table
+  - [x] Report `unavailable`/`unknown` for capabilities not exposed by `htmlview`
+- [x] **P15: Slides Notes & Media Capability / Scopes**
+  - [x] Expose explicit verification scopes: `slide_text`, `speaker_notes`, `hyperlinks`, `images_alt_text`, `media_references`
+  - [x] Extract images and alt text from `htmlpresent`
+  - [x] Report `speaker_notes: "not_read"`, `media_references: "unavailable"`, never claim verified unless proven
+- [x] **P16: Drive Scale & Stress Hardening**
+  - [x] Implement deterministic end-of-scroll + no-new-stable-IDs convergence
+  - [x] Add synthetic stress tests for 100, 500, and 1000+ virtualized items
+  - [x] Verify deduplication, changing scrollHeight, list and grid modes
+- [x] **P17: Recovery & Concurrency Tests**
+  - [x] Test slow iframe loading and timeout recovery
+  - [x] Test reload / execution context destroyed during read
+  - [x] Test target close and error handling
+  - [x] Test URL change and redirect failure handling
+  - [x] Test temporary-target cleanup (verify 0 leaked tabs)
+  - [x] Test concurrent reads with read-only safety
+- [x] **P18: Pre-Reload Certification Suite & Documentation**
+  - [x] Run targeted and expanded CDP tests (100% green: 133 passed across 8 suites)
+  - [x] Run `bun run build` (passes, schemas synchronized)
+  - [x] Update `implementation_plan.md`, `walkthrough.md`, and `docs/plans/2026-10-28-superagent-cdp-google-workspace-reader-hardening-plan.md`
+
+---
+
+## WordPress Berita English Translation (10 Posts)
+
+- [/] **Phase 1: CDP & WP REST Setup**
+  - [x] Connect to Chrome on CDP port 9222
+  - [x] Locate authenticated WordPress admin page
+  - [x] Retrieve authenticated WP REST nonce via CDP (without exposing secret)
+  - [x] Retrieve raw JSON/content for all 10 post IDs (37781, 37779, 37777, 37775, 37773, 37771, 37769, 37767, 37768, 37765)
+  - [x] Diagnose and sanitize unescaped quotes in raw WP REST response (`loading="lazy"` / `decoding="async"`)
+  - [x] Confirm qTranslate syntax: `[:id]...[:en]...[:]`
+- [ ] **Phase 2: Translation & qTranslate Bilingual Updates**
+  - [ ] Post 37781: "Peningkatan Standar UMKM Lokal..." (Edukasi HACCP dan SOP Madyopuro)
+  - [ ] Post 37779: "Kurangi Risiko Produk Remuk..." (Nitrogen Sealer Stik Bawang)
+  - [ ] Post 37777: "Mahasiswi FTAB UB Bantu UMKM 3 Krezz..." (Digitalisasi Google My Business)
+  - [ ] Post 37775: "Mahasiswa FTAB UB Ciptakan Mesin Mixing..." (Pencetak Pelet Ikan Nila Tasikmadu)
+  - [ ] Post 37773: "Ubah Limbah Organik Menjadi Bernilai..." (Budidaya Maggot BSF Smart Monitoring)
+  - [ ] Post 37771: "Mahasiswa 3M FTAB UB Hadirkan Komposter Otomatis..." (Komposter Hybrid Bandulan)
+  - [ ] Post 37769: "Mahasiswa FTAB UB Bawakan Inovasi Alat Hidroponik..." (Hidroponik Panel Surya Polowijen)
+  - [ ] Post 37767: "Dorong Pengelolaan Sampah Organik..." (Mesin Pengolah Sampah Kauman)
+  - [ ] Post 37768: "Kurangi Ketergantungan pada EM4..." (Bioaktivator Alternatif Kauman)
+  - [ ] Post 37765: "Mahasiswa FTAB UB Implementasikan Mesin Perajang..." (Mesin Perajang UMKM Murni)
+- [ ] **Phase 3: Live Verification & Report**
+  - [ ] Verify English endpoint `/en/<slug>/` for all 10 posts
+  - [ ] Verify no fallback warnings ("Sorry, this entry is only available in...")
+  - [ ] Verify preservation of HTML formatting, inline images, links, dates, and categories
+  - [ ] Document concise results in `walkthrough.md`
+
+
+---
+
+## WordPress Bilingual Translation & Verification: 10 Posts (tab.ub.ac.id)
+
+- [x] **Phase 1: Pre-flight & REST API Nonce Authentication**
+  - [x] Connect to Chrome CDP at `localhost:9222` on tab `tab.ub.ac.id/wp-admin`
+  - [x] Securely obtain `wpApiSettings.nonce` without logging credentials/nonce
+  - [x] Validate read access to `/wp-json/wp/v2/posts/<id>?context=edit`
+- [x] **Phase 2: Translation & qTranslate Integration (10 Posts)**
+  - [x] Post 37798: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37797: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37795: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37794: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37792: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37791: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37789: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37787: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37785: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+  - [x] Post 37783: Fetch, translate to English, wrap qTranslate `[:id]...[:en]...[:]`, update via REST
+- [x] **Phase 3: Public Verification & Proof Reporting**
+  - [x] Verify public `/en/<slug>/` for all 10 posts: English heading, body, preserved images
+  - [x] Update `walkthrough.md` with verification proofs, URLs, and summaries
+  - [x] Final reporting table (ID, done/failed, English URL, blocker, verification proof)
+
+---
+
+## 50 Most Recent WordPress News Articles English Translation (tab.ub.ac.id)
+
+- [x] **Phase 1: Pre-flight, Discovery & Target Selection**
+  - [x] Connect Chrome CDP at `localhost:9222` to authenticated WordPress admin tab
+  - [x] Retrieve authenticated WP REST nonce securely via CDP (zero secret exposure)
+  - [x] Scan recent category Berita (ID 1) posts sorted date desc
+  - [x] Verify and skip the 5 manually translated posts (37847, 37825, 37822, 37818, 37820)
+  - [x] Identify exactly 45 untranslated posts to complete the 50-post batch
+- [x] **Phase 2: High-Quality Faithful Translation & qTranslate Integration (45 Posts)**
+  - [x] Fetch each post via single WP REST call with sanitization for unescaped attributes (`loading="lazy"`, `decoding="async"`)
+  - [x] Ensure original Indonesian text, media images, captions, links, shortcodes, metadata, dates, and structure remain completely intact
+  - [x] Generate full faithful professional English translation for title and content body
+  - [x] Format with qTranslate syntax: `[:id]Indonesian[:en]English[:]`
+  - [x] Update post via authenticated WP REST API in Chrome (Batches 1 to 9, 45 posts total)
+- [x] **Phase 3: Public Bilingual Verification & Audit Report**
+  - [x] Verify each post's public `/en/<slug>/` endpoint for English title (h1), English body, preserved images, and absence of fallback warning ("Sorry, this entry is only available in...") (100% 50/50 PASS)
+  - [x] Generate comprehensive audit report `docs/audits/2026-10-28-wp-latest-50-english-translation-report.md`
+  - [x] Update `walkthrough.md` with verified execution details and metrics
+
+
+---
+
+## SuperAgent Linux Headless CDP + Human Takeover (Milestones M0 + M1)
+
+- [x] **M0: Comprehensive Audit of CDP Control/Write Paths, Direct-CDP Bypass, Lease & Lock Guarantees, Linux Compatibility**
+  - [x] Audit all CDP write paths (`control_chrome_cdp`, `control_chrome_vision`, `crossIdeCdpGateway`, extension bridge, terminal/cursor)
+  - [x] Analyze direct-CDP bypass surfaces (local port 9222 access, extension WebSocket bridge, missing coordinator locks)
+  - [x] Verify lease, lock, and human hold guarantees (`assertManagedAgentMayWrite`, target mutex, revision checks)
+  - [x] Assess Linux environment compatibility (displayless servers, absence of DISPLAY/Wayland, sandbox requirements, non-root user)
+  - [x] Document ownership & security risks in worktree: `docs/audits/2026-10-28-superagent-linux-cdp-m0-m1-implementation-audit.md`
+- [x] **M1: Dedicated Browser Runtime Manager & Linux Headless CDP Implementation**
+  - [x] Implement browser runtime types and config (`src/core/browserRuntime/types.ts`)
+  - [x] Implement Linux executable discovery (`google-chrome`, `google-chrome-stable`, `chromium`, `chromium-browser`) and display probing (`src/core/browserRuntime/browserExecutableDiscovery.ts`)
+  - [x] Implement mode selection (`auto`, `headless`, `headed`, `virtual-display` as reserved failing mode)
+  - [x] Implement safe flag generator: loopback-only CDP (127.0.0.1), no `--no-sandbox`, isolated user-data-dir (`0700` POSIX permissions), `--headless=new` and `--disable-gpu` (`src/core/browserRuntime/browserFlags.ts`)
+  - [x] Implement owned-process lifecycle manager reusing `ProcessSupervisor` / `ProcessRegistry`: PID + process start identity, single-instance startup lock, graceful stop (SIGTERM -> wait -> SIGKILL only if identity matches), and zero foreign process kills (`src/core/browserRuntime/browserProcessManager.ts`)
+  - [x] Implement CDP health checks (port listening, `/json/version`, target discovery via `/json/list`)
+  - [x] Integrate canonical launcher into `src/core/tools/chromeCommon.ts` (`ensureCdpRunning`) preserving Windows/macOS behavior
+  - [x] Update `src/core/tools/chromeBrowserTools.ts` (`launchChromeProfileTool`) with mode support, display validation, and health confirmation
+- [x] **Verification, Regression & Evidence Reporting**
+  - [x] Unit tests for detection, display probe, and executable fallback
+  - [x] Unit tests for mode resolution (auto, headless, headed, virtual-display clear error)
+  - [x] Tests for safe port/profile flags and isolated directory permissions
+  - [x] Tests for process ownership tracking, start identity recording, and graceful stop without killing external processes
+  - [x] Tests for CDP health checks with mock HTTP endpoints
+  - [x] Windows regression tests (preserving headed launch, flags, and avoiding console splash)
+  - [x] Run `bun run build` and focused test suites with real exit codes recorded
+  - [x] Produce execution report `docs/plans/2026-10-28-superagent-linux-cdp-m0-m1-execution-report.md`
+  - [x] Update project walkthrough with verifiable evidence
