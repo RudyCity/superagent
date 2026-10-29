@@ -40,7 +40,7 @@ import {
   type ResourceClaimRequest, type ResourceClaimLease,
 } from "./cliBridgeResourceClaims.js";
 import {
-  createIsolatedWorktree, removeIsolatedWorktree, inspectWorktreeProvenance,
+  createIsolatedWorktree, removeIsolatedWorktree, inspectWorktreeProvenance, assessAutomaticWorktreeCleanup,
   type WorktreeMetadata, type WorktreeCommitProvenance,
 } from "./cliBridgeWorktreeManager.js";
 import {
@@ -136,6 +136,8 @@ export interface DelegateJob {
   branchName?: string;
   baseCommitSha?: string;
   worktreeProvenance?: WorktreeCommitProvenance;
+  /** Automatic cleanup never deletes dirty or unmerged work. */
+  worktreeCleanupWarning?: string;
   resourceClaimLeases?: ResourceClaimLease[];
   acceptanceContract?: AcceptanceContract;
   verificationResult?: VerificationResult;
@@ -236,6 +238,7 @@ export interface StartDelegateJobOptions {
   queueIfBusy?: boolean;
   roleProfile?: string;
   // Worktree options
+  /** Direct delegations default to in-place. Only explicit true isolates. */
   worktree?: boolean;
   baseCommitSha?: string;
   branchName?: string;
@@ -273,6 +276,11 @@ let lastConfiguredEnv: string | undefined = undefined;
 let priorityQueue = new CliBridgePriorityQueue();
 const queuedJobOptions = new Map<string, StartDelegateJobOptions>();
 const jobWorktreeCleanups = new Map<string, boolean>();
+
+/** Role defaults apply to orchestrated DAG jobs, not ordinary single delegations. */
+export function shouldCreateDirectDelegateWorktree(requested?: boolean): boolean {
+  return requested === true;
+}
 const jobCustomClaims = new Map<string, ResourceClaimLease[]>();
 
 async function releaseArtifactClaims(jobId: string): Promise<void> {
@@ -717,11 +725,23 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
         job.worktreeProvenance = await inspectWorktreeProvenance(job.worktreePath, job.baseCommitSha);
       } catch {}
       if (jobWorktreeCleanups.get(job.jobId) && job.status === "succeeded") {
-        await removeIsolatedWorktree({
-          repoRoot: job.workspaceRoot ?? job.cwd,
-          worktreePath: job.worktreePath,
-          branchName: job.branchName,
-        }).catch(() => {});
+        const repoRoot = job.workspaceRoot ?? job.cwd;
+        try {
+          const safety = await assessAutomaticWorktreeCleanup({ repoRoot, worktreePath: job.worktreePath });
+          if (safety.safe) {
+            await removeIsolatedWorktree({
+              repoRoot,
+              worktreePath: job.worktreePath,
+              branchName: job.branchName,
+              force: false,
+              deleteBranch: true,
+            });
+          } else {
+            job.worktreeCleanupWarning = `Worktree retained for review: ${safety.reason}`;
+          }
+        } catch (error) {
+          job.worktreeCleanupWarning = `Worktree retained: automatic cleanup failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
       }
       jobWorktreeCleanups.delete(job.jobId);
     }
@@ -848,7 +868,7 @@ async function launchJobExecution(
     }).catch(() => {});
 
     // Worktree isolation setup (M1.7 & M3.1)
-    if (opts.worktree) {
+    if (shouldCreateDirectDelegateWorktree(opts.worktree)) {
       const repoRoot = opts.workspaceRoot ?? opts.cwd;
       const branchName = opts.branchName || `agent-wt-${job.jobId}`;
       const wtMeta = await createIsolatedWorktree({
@@ -1062,9 +1082,8 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
     if (profile) {
       opts.resourceClass ??= profile.resourceClass;
       opts.priority ??= "normal";
-      if (opts.worktree === undefined && profile.worktreePolicy === "isolated") {
-        opts.worktree = true;
-      }
+      // A role's isolated-worktree preference is for orchestrated DAG jobs.
+      // Never silently create a worktree for a single CLI Bridge delegation.
       opts.acceptanceContract ??= profile.defaultAcceptance;
       opts.prompt = `${profile.systemInstructions}\n\n${opts.prompt}`;
     }

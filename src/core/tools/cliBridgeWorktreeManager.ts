@@ -232,6 +232,49 @@ export async function createIsolatedWorktree(options: CreateWorktreeOptions): Pr
 }
 
 /**
+ * Automatic cleanup is allowed only when the worktree is clean, has no
+ * untracked/ignored scratch (other than the shared node_modules junction),
+ * and its HEAD is already reachable from the local main branch.
+ * A failed inspection always preserves the worktree for human reconciliation.
+ */
+export async function assessAutomaticWorktreeCleanup(options: {
+  repoRoot: string;
+  worktreePath: string;
+}): Promise<{ safe: boolean; reason: string }> {
+  const repoRoot = path.resolve(options.repoRoot);
+  const worktreePath = path.resolve(options.worktreePath);
+  const refuse = (reason: string) => ({ safe: false, reason });
+  if (normalizeFsPath(repoRoot) === normalizeFsPath(worktreePath)) {
+    return refuse("refusing to remove the main workspace");
+  }
+  try {
+    const registered = await listIsolatedWorktrees(repoRoot);
+    if (!registered.some((entry) => normalizeFsPath(entry.worktreePath) === normalizeFsPath(worktreePath))) {
+      return refuse("worktree is not registered with Git");
+    }
+    const status = await execa("git", ["status", "--porcelain", "--untracked-files=all"], headlessOpts({
+      cwd: worktreePath, reject: false,
+    }));
+    if (status.exitCode !== 0) return refuse("could not inspect worktree changes");
+    if (status.stdout.trim()) return refuse("worktree has staged, unstaged, or untracked changes");
+
+    const ignored = await execa("git", ["clean", "-ndx", "-e", "node_modules"], headlessOpts({
+      cwd: worktreePath, reject: false,
+    }));
+    if (ignored.exitCode !== 0) return refuse("could not inspect ignored artifacts");
+    if (ignored.stdout.trim()) return refuse("worktree contains ignored or generated artifacts");
+
+    const merged = await execa("git", ["merge-base", "--is-ancestor", "HEAD", "refs/heads/main"], headlessOpts({
+      cwd: worktreePath, reject: false,
+    }));
+    if (merged.exitCode !== 0) return refuse("worktree HEAD is not integrated into local main");
+    return { safe: true, reason: "clean and integrated into main" };
+  } catch (error) {
+    return refuse("cleanup inspection failed: " + (error instanceof Error ? error.message : String(error)));
+  }
+}
+
+/**
  * Removes an isolated git worktree and optionally deletes its branch.
  */
 export async function removeIsolatedWorktree(options: {
@@ -255,7 +298,7 @@ export async function removeIsolatedWorktree(options: {
     } catch {}
 
     const args = ["worktree", "remove", targetDir];
-    if (options.force !== false) {
+    if (options.force === true) {
       args.push("--force");
     }
 
@@ -286,14 +329,11 @@ export async function removeIsolatedWorktree(options: {
       }).catch(() => {});
     }
 
-    // If directory still exists on disk, clean up with retry
-    if (fs.existsSync(targetDir)) {
-      try {
-        fs.rmSync(targetDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-      } catch {
-        // ignore directory removal errors
-      }
+    if (removeRes.exitCode !== 0) {
+      throw new Error(`Git refused worktree removal; preserved ${targetDir}: ${removeRes.stderr || removeRes.stdout}`);
     }
+    // Never force-remove files following a failed Git operation. A successful
+    // Git removal may leave an empty directory, which is safe to leave behind.
   }
 
   // Prune worktree metadata in git
@@ -301,10 +341,13 @@ export async function removeIsolatedWorktree(options: {
 
   // Delete branch if requested
   if (options.deleteBranch && options.branchName) {
-    await execa("git", ["branch", "-D", options.branchName], headlessOpts({
+    const deletedBranch = await execa("git", ["branch", options.force === true ? "-D" : "-d", options.branchName], headlessOpts({
       cwd: repoRoot,
       reject: false,
     }));
+    if (deletedBranch.exitCode !== 0) {
+      throw new Error(`Worktree removed, but branch ${options.branchName} was retained: ${deletedBranch.stderr || deletedBranch.stdout}`);
+    }
   }
 }
 

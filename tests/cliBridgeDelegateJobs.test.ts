@@ -58,6 +58,20 @@ afterAll(async () => {
 });
 
 describe("CLI Bridge background delegation jobs", () => {
+  it("keeps direct coder delegation in the main workspace unless worktree is explicitly requested", async () => {
+    const cwd = process.cwd();
+    const started = await delegateJobs.startDelegateJob({
+      ...options('console.log("direct-coder-without-worktree")'),
+      roleProfile: "coder",
+    });
+    expect(started.worktreePath).toBeUndefined();
+    expect(started.cwd).toBe(cwd);
+    const completed = await waitForTerminal(started.jobId);
+    expect(completed.status).toBe("succeeded");
+    expect(completed.worktreePath).toBeUndefined();
+    expect(completed.cwd).toBe(cwd);
+  }, 15_000);
+
   it("marks AGY permission denial as blocked despite exit code zero", async () => {
     const script = [
       'console.log("warning: --mode auto is not available for this account; continuing in the default mode.");',

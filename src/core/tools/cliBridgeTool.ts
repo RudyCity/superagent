@@ -402,11 +402,11 @@ export const cliBridgeTool: Tool = {
       },
       role: {
         type: "string",
-        description: "Agent role profile alias (e.g. 'architect', 'coder', 'tester', 'reviewer', 'researcher') applying role instructions, timeout, and worktree policies.",
+        description: "Agent role profile alias (e.g. 'architect', 'coder', 'tester', 'reviewer', 'researcher'). Single delegations do not create worktrees solely because of the selected role.",
       },
       worktree: {
         type: "boolean",
-        description: "If true, executes the job in an isolated Git worktree with unique branch and commit provenance, keeping the main checkout clean.",
+        description: "Explicit opt-in for single delegations (default false): true creates an isolated Git worktree. DAG and speculative parallel orchestration retain their separate isolation defaults.",
       },
       baseCommitSha: {
         type: "string",
@@ -1257,6 +1257,7 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
     "Log: " + job.logPath,
     job.permissionWarning ? "Mode warning: " + job.permissionWarning : "",
     job.permissionRecoveryWarning ? "Permission recovery: " + job.permissionRecoveryWarning : "",
+    job.worktreeCleanupWarning ? "Worktree cleanup: " + job.worktreeCleanupWarning : "",
     job.error ? "Error: " + job.error : "",
     "",
     "Recent output:",
