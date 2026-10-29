@@ -29,8 +29,10 @@ export function isValidJobCheckpoint(value: unknown, expectedJobId?: string): va
   const cp = value as Record<string, unknown>;
   if (!isValidJobId(cp.jobId) || (expectedJobId && cp.jobId !== expectedJobId)) return false;
   if (typeof cp.checkpointId !== "string" || !/^[a-zA-Z0-9_-]{1,256}$/.test(cp.checkpointId)) return false;
+  const now = Date.now();
   if (typeof cp.timestamp !== "number" || !Number.isSafeInteger(cp.timestamp) ||
-      cp.timestamp <= 0 || cp.timestamp > Date.now() + 300_000) return false;
+      cp.timestamp <= 0 || cp.timestamp > now + 300_000 ||
+      cp.timestamp < now - MAX_CHECKPOINT_AGE_MS) return false;
   if (typeof cp.lastEvent !== "string" || cp.lastEvent.length < 1 || cp.lastEvent.length > 256) return false;
   if (typeof cp.verificationState !== "string" || cp.verificationState.length < 1 ||
       cp.verificationState.length > 128) return false;
@@ -58,6 +60,7 @@ function checkpointRoot(): string {
 }
 
 const CANONICAL_JOB_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
+const MAX_CHECKPOINT_AGE_MS = 24 * 60 * 60 * 1000;
 
 export function isValidJobId(jobId: unknown): jobId is string {
   return typeof jobId === "string" && CANONICAL_JOB_ID_REGEX.test(jobId);
@@ -76,7 +79,11 @@ function resolveSecureCheckpointPath(jobId: string): string {
 }
 
 export async function writeJobCheckpoint(checkpoint: JobCheckpoint): Promise<string> {
-  const file = resolveSecureCheckpointPath(checkpoint.jobId);
+  const checkpointJobId = checkpoint.jobId;
+  const file = resolveSecureCheckpointPath(checkpointJobId);
+  if (!isValidJobCheckpoint(checkpoint, checkpointJobId)) {
+    throw new Error(`Refusing to persist malformed or stale checkpoint for job '${String(checkpointJobId)}'.`);
+  }
   const root = path.dirname(file);
   await fs.mkdir(root, { recursive: true });
   const tmp = path.join(

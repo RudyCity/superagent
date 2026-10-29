@@ -287,7 +287,7 @@ describe("P0 M3 Crash-Safe Read-Only Startup Reconciliation", () => {
     const checkpoint: JobCheckpoint = {
       checkpointId: "chk_123",
       jobId: "job_mutating_123",
-      timestamp: NOW - 50_000,
+      timestamp: Date.now() - 50_000,
       lastEvent: "tool_execution",
       resourceClaims: [],
       verificationState: "verifying",

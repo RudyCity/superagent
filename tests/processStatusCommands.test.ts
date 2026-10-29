@@ -59,7 +59,8 @@ describe("Process CLI read-only observability and workspace privacy", () => {
     const text = lines.join("\n");
     expect(text).toContain("Managed process records: 1");
     expect(text).toContain("Terminal: 1");
-    expect(text).toContain("Reconciliation findings: clean / no pending mutating review");
+    expect(text).toContain("Reconciliation findings: 1 mutating job(s) require review ('unknown_outcome_review_required')");
+    expect(text).toContain("Recommendation: operator review required");
     expect(text).not.toContain(OTHER);
     expect(text).not.toContain("foreign_secret_record");
     expect(text).not.toContain("PRIVATE_PROMPT_NEVER_PRINT");

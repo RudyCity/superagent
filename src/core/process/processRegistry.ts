@@ -365,17 +365,53 @@ export class ProcessRegistry {
   }
 
   /**
-   * Cross-process mutex via SQLite's OS-managed write transaction. Unlike a
-   * create/check/unlink lockfile, it never deletes a pathname to release the
-   * lock; SQLite releases the OS lock on COMMIT, ROLLBACK or process death.
+   * Establishes a persistent compatibility fence at the legacy .lock pathname.
    *
-   * This requires Bun, the supported SuperAgent runtime. Older running
-   * versions must be stopped before switching lock protocols.
+   * The fence is a DIRECTORY, not an ownership lockfile. Legacy runtimes use
+   * open(path, "wx") and therefore cannot acquire their old file lock while
+   * this directory exists. New runtimes never remove the fence; cooperating
+   * writers serialize through SQLite below. If a legacy lock FILE already
+   * exists, startup fails closed and requires operator-controlled migration.
+   */
+  private async ensureRegistryProtocolFence(): Promise<string> {
+    const fencePath = `${this.storagePath}.lock`;
+    await fsp.mkdir(path.dirname(this.storagePath), { recursive: true });
+
+    try {
+      await fsp.mkdir(fencePath);
+    } catch (err: any) {
+      if (err?.code !== "EEXIST") throw err;
+    }
+
+    const stat = await fsp.stat(fencePath).catch(() => null);
+    if (!stat) {
+      try {
+        await fsp.mkdir(fencePath);
+      } catch (err: any) {
+        if (err?.code !== "EEXIST") throw err;
+      }
+    }
+
+    const confirmed = await fsp.stat(fencePath).catch(() => null);
+    if (!confirmed?.isDirectory()) {
+      throw new Error(
+        `Legacy process registry lock FILE exists at ${fencePath}. Refusing mixed-version operation. Stop every legacy SuperAgent writer, verify process identity, back up the registry, then migrate the legacy lock under operator control.`
+      );
+    }
+
+    // The directory itself is the protocol-version fence. Requiring a marker
+    // file would add an avoidable partial-write race between new writers.
+    return fencePath;
+  }
+
+  /**
+   * Cross-process mutex via SQLite's OS-managed write transaction. The
+   * persistent .lock DIRECTORY above blocks legacy file-lock writers, so old
+   * and new protocols cannot acquire ownership concurrently.
    */
   private async withRegistryLock<T>(fn: () => Promise<T>, timeoutMs = 15_000): Promise<T> {
-    const legacyLockPath = `${this.storagePath}.lock`;
+    await this.ensureRegistryProtocolFence();
     const coordinationPath = `${this.storagePath}.coordination.sqlite`;
-    await fsp.mkdir(path.dirname(this.storagePath), { recursive: true });
 
     type SqliteConnection = { exec(sql: string): void; close(): void };
     let Database: new (file: string, options?: { create?: boolean }) => SqliteConnection;
@@ -388,20 +424,11 @@ export class ProcessRegistry {
     const began = Date.now();
     let connection: SqliteConnection | null = null;
     while (Date.now() - began < timeoutMs) {
-      // Fail closed rather than operate concurrently with pre-SQLite versions.
-      if (fs.existsSync(legacyLockPath)) {
-        throw new Error(
-          `Legacy process registry lock at ${legacyLockPath} requires an operator-reviewed migration; do not delete it while any older writer might be running.`
-        );
-      }
       let candidate: SqliteConnection | null = null;
       try {
         candidate = new Database(coordinationPath, { create: true });
         candidate.exec("PRAGMA busy_timeout=0");
         candidate.exec("BEGIN IMMEDIATE");
-        if (fs.existsSync(legacyLockPath)) {
-          throw new Error("Legacy lock appeared during SQLite acquisition; cannot safely mix lock protocols.");
-        }
         connection = candidate;
         break;
       } catch (err: any) {
@@ -421,7 +448,6 @@ export class ProcessRegistry {
     try {
       return await fn();
     } finally {
-      // No unlink: pathname substitution cannot steal/release another writer.
       try { connection.exec("ROLLBACK"); } finally { connection.close(); }
     }
   }

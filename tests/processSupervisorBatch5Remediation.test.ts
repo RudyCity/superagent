@@ -631,7 +631,7 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       expect(assessment?.reason).toContain("Contradictory exit proof detected");
     });
 
-    it("classifies mutually consistent clean exit (exitCode=0, observed=0) as succeeded", async () => {
+    it("requires review for mutually consistent clean exit without trusted verifier attestation", async () => {
       const reg = new ProcessRegistry({ storagePath: registryFile });
       await reg.load();
 
@@ -678,8 +678,8 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       );
 
       const assessment = report.jobAssessments[0];
-      expect(assessment?.reconciledStatus).toBe("succeeded");
-      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
       expect(assessment?.eligibleForRetry).toBe(false);
     });
 
@@ -865,18 +865,14 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       } as any);
       expect(forgedDiag.totalTracked).toBe(0);
 
-      // Authenticated privileged operator mode surfaces all 4 records (P1-1)
-      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
+      // Privileged global mode is intentionally unavailable until host authentication is integrated.
+      expect(() => supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]}))
+        .toThrow("Global operator diagnostics are disabled");
       const operatorDiag = await supervisor.getProcessDiagnostics({
-        operatorCapability: cap,
+        operatorCapability: { capabilityId: "forged" } as any,
       });
-      expect(operatorDiag.totalTracked).toBe(4);
-      expect(operatorDiag.entries).toHaveLength(4);
-      const globalEntry = operatorDiag.entries.find((e) => e.recordId === "rec_global_service");
-      expect(globalEntry).toBeDefined();
-      expect(globalEntry?.ownership.systemScope).toBe("global");
-      // Zero fake tenant ownership assigned to global service
-      expect(globalEntry?.ownership.workspaceRoot).toBeUndefined();
+      expect(operatorDiag.totalTracked).toBe(0);
+      expect(operatorDiag.entries).toHaveLength(0);
     });
 
     it("normalizes canonical workspace paths across Windows slash/case variants", async () => {

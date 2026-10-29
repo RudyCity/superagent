@@ -507,13 +507,14 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
       } as any);
       expect(forgedDiag.totalTracked).toBe(0);
 
-      // Authenticated operator capability grants host-wide diagnostics (P1-1)
-      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
+      // Host-wide diagnostics remain disabled until a real host identity provider is wired.
+      expect(() => supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]}))
+        .toThrow("Global operator diagnostics are disabled");
       const operatorDiag = await supervisor.getProcessDiagnostics({
-        operatorCapability: cap,
+        operatorCapability: { capabilityId: "forged" } as any,
       });
-      expect(operatorDiag.totalTracked).toBe(2);
-      expect(operatorDiag.entries.find((e) => e.ownership.jobId === "job_foreign_456")).toBeDefined();
+      expect(operatorDiag.totalTracked).toBe(0);
+      expect(operatorDiag.entries).toHaveLength(0);
     });
   });
 });

@@ -411,10 +411,12 @@ export async function reconcileStartupProcesses(
 
         const checkpoint: JobCheckpoint | null = isCheckpointValid ? rawCheckpoint : null;
 
-        // Positive evidence required: never infer read-only without verifiable positive evidence.
-        // A missing, null, or untrusted checkpoint MUST be treated as potentially mutating (fail-closed).
-        const hadMutatingWrite = checkpoint !== null ? checkpoint.hasMutatingWrite === true : true;
-        // No authenticated read-only attestation is produced yet; forbid automatic replay.
+        // A structurally valid local checkpoint is still self-declared task data,
+        // not authenticated evidence of side effects. Until an independently
+        // verified, job-bound attestation contract exists, assume mutation is
+        // possible and never infer read-only execution from checkpoint flags.
+        const hadMutatingWrite = true;
+        const hasTrustedVerifierAttestation = false;
         const isProvenReadOnly = false;
 
         const isTerminal = isRecordTerminal(record.state);
@@ -480,19 +482,22 @@ export async function reconcileStartupProcesses(
           verificationState === "verifying" ||
           (typeof lastEvent === "string" && lastEvent.startsWith("verifier_"));
 
-        // Authoritative proof of verified rollback / zero lingering side effects
-        const hasVerifiedRollback =
+        // Positive rollback/completion claims inside the same local checkpoint
+        // are not trusted attestation. Keep them informational only.
+        const checkpointClaimsVerifiedRollback =
           (checkpoint as any)?.rollbackState === "verified_clean" ||
           (checkpoint as any)?.verifiedRollback === true;
+        const hasVerifiedRollback =
+          hasTrustedVerifierAttestation && checkpointClaimsVerifiedRollback;
 
         // Contradictory verifier receipts check: if verified is paired with failure, in-progress, or rollback
         const hasContradictoryVerifierReceipt =
-          (hasVerifiedState && (hasFailedEvent || isVerifyingInProgress || hasVerifiedRollback)) ||
-          (hasVerifiedEvent && (hasFailedState || isVerifyingInProgress || hasVerifiedRollback)) ||
-          (hasVerifiedRollback && (hasVerifiedState || hasVerifiedEvent));
+          (hasVerifiedState && (hasFailedEvent || isVerifyingInProgress || checkpointClaimsVerifiedRollback)) ||
+          (hasVerifiedEvent && (hasFailedState || isVerifyingInProgress || checkpointClaimsVerifiedRollback)) ||
+          (checkpointClaimsVerifiedRollback && (hasVerifiedState || hasVerifiedEvent));
 
         // Durable, self-consistent verifier proof
-        const hasConsistentVerifiedProof =
+        const hasConsistentCheckpointClaim =
           checkpoint !== null &&
           (hasVerifiedState || hasVerifiedEvent) &&
           !hasFailedState &&
@@ -501,7 +506,11 @@ export async function reconcileStartupProcesses(
           !hasContradictoryVerifierReceipt;
 
         const isAuthoritativelyVerified =
-          isTerminal && hasCleanExit && !hasContradictoryExitProof && hasConsistentVerifiedProof;
+          hasTrustedVerifierAttestation &&
+          isTerminal &&
+          hasCleanExit &&
+          !hasContradictoryExitProof &&
+          hasConsistentCheckpointClaim;
 
         if (classification !== "currently_owned_live" && classification !== "persistent_external") {
           if (hasContradictoryExitProof) {
@@ -625,21 +634,20 @@ export async function reconcileStartupProcesses(
                 // Best-effort
               }
             }
-          } else if (isTerminal && (hasFailedState || hasFailedEvent || hasNonzeroExit || hasVerifiedRollback)) {
-            // Definitive failure for proven non-mutating job OR mutating job with proven clean rollback
+          } else if (
+            hasTrustedVerifierAttestation &&
+            isTerminal &&
+            (hasFailedState || hasFailedEvent || hasNonzeroExit || hasVerifiedRollback)
+          ) {
+            // Intentionally unreachable until trusted verifier attestation exists.
             jobAssessment = {
               jobId,
               previousStatus: checkpoint?.lastEvent ?? "failed",
-              reconciledStatus:
-                checkpoint?.verificationState === "verification_failed"
-                  ? "verification_failed"
-                  : "failed",
+              reconciledStatus: "failed",
               hasMutatingWrite: hadMutatingWrite,
               requiresReview: false,
               eligibleForRetry: false,
-              reason: hasVerifiedRollback
-                ? "Mutating job failed but verified clean rollback was confirmed; zero lingering side effects."
-                : "Terminal non-mutating job failed with recorded exit code or verification failure; zero mutating side effects.",
+              reason: "Trusted verifier attestation proved a terminal failure with bounded side effects.",
             };
             report.jobAssessments.push(jobAssessment);
           } else if (isVerifyingInProgress) {

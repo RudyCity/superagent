@@ -223,13 +223,14 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(scopedDiag.entries).toHaveLength(0);
       expect(JSON.stringify(scopedDiag)).not.toContain("private_ownerless_job");
 
-      // Privileged operator query surfaces the ownerless record (P1-1)
-      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
+      // Global privileged diagnostics are disabled pending host-auth integration.
+      expect(() => supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]}))
+        .toThrow("Global operator diagnostics are disabled");
       const operatorDiag = await supervisor.getProcessDiagnostics({
-        operatorCapability: cap,
+        operatorCapability: { capabilityId: "forged" } as any,
       });
-      expect(operatorDiag.totalTracked).toBe(1);
-      expect(operatorDiag.entries).toHaveLength(1);
+      expect(operatorDiag.totalTracked).toBe(0);
+      expect(operatorDiag.entries).toHaveLength(0);
     });
   });
 
@@ -458,7 +459,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
   // P1-1: Authoritative Terminal Job Verification
   // =========================================================================
   describe("P1-1: Authoritative Terminal Job Verification", () => {
-    it("classifies terminal verified mutating job as succeeded, NOT unknown_outcome_review_required", async () => {
+    it("requires review for terminal mutating job when verification is only a local checkpoint claim", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
       registry.addRecord({
         recordId: "proc_verified_mutating",
@@ -498,14 +499,13 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
         }
       );
 
-      // Mutating review count MUST be 0!
-      expect(report.mutatingJobsRequiringReview).toBe(0);
+      expect(report.mutatingJobsRequiringReview).toBe(1);
       expect(report.jobAssessments).toHaveLength(1);
       const assessment = report.jobAssessments[0];
-      expect(assessment?.reconciledStatus).toBe("succeeded");
-      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
       expect(assessment?.eligibleForRetry).toBe(false);
-      expect(report.entries[0]?.recommendedSafeAction).toBe("none");
+      expect(report.entries[0]?.recommendedSafeAction).toBe("review");
     });
 
     it("classifies interrupted verifier job as unknown_outcome_review_required", async () => {
@@ -608,14 +608,14 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(unscopedUserDiag.totalTracked).toBe(0);
       expect(unscopedUserDiag.entries).toHaveLength(0);
 
-      // Authenticated privileged operator diagnostics: surfaces both with clear systemScope (P1-1)
-      const cap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
+      // Host-wide operator diagnostics stay fail-closed until authenticated host wiring exists.
+      expect(() => supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]}))
+        .toThrow("Global operator diagnostics are disabled");
       const operatorDiag = await supervisor.getProcessDiagnostics({
-        operatorCapability: cap,
+        operatorCapability: { capabilityId: "forged" } as any,
       });
-      expect(operatorDiag.totalTracked).toBe(2);
-      const globalEntry = operatorDiag.entries.find((e) => e.recordId === globalService.recordId);
-      expect(globalEntry?.ownership.systemScope).toBe("global");
+      expect(operatorDiag.totalTracked).toBe(0);
+      expect(operatorDiag.entries).toHaveLength(0);
     });
   });
 
@@ -823,7 +823,8 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
         throw new Error("injected operation failure");
       }, 1000)).rejects.toThrow("injected operation failure");
       expect(await (registry as any).withRegistryLock(async () => "recovered", 1000)).toBe("recovered");
-      await expect(fs.stat(registryFile + ".lock")).rejects.toThrow();
+      expect((await fs.stat(registryFile + ".lock")).isDirectory()).toBe(true);
+      await expect(fs.open(registryFile + ".lock", "wx")).rejects.toMatchObject({ code: expect.any(String) });
       await fs.stat(registryFile + ".coordination.sqlite");
     });
 
@@ -1135,7 +1136,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(assessment2?.reason).toContain("Contradictory verification receipts detected");
     });
 
-    it("classifies clean terminal exit with consistent verified receipts as succeeded", async () => {
+    it("requires review for clean terminal exit when verification is only self-declared checkpoint data", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
       registry.addRecord({
         recordId: "proc_clean_verified",
@@ -1176,14 +1177,14 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
         }
       );
 
-      expect(report.mutatingJobsRequiringReview).toBe(0);
+      expect(report.mutatingJobsRequiringReview).toBe(1);
       const assessment = report.jobAssessments[0];
-      expect(assessment?.reconciledStatus).toBe("succeeded");
-      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
       expect(assessment?.eligibleForRetry).toBe(false);
     });
 
-    it("classifies non-mutating job failure as failed with requiresReview: false", async () => {
+    it("does not trust hasMutatingWrite:false from a local checkpoint after failure", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
       registry.addRecord({
         recordId: "proc_ro_failed",
@@ -1224,14 +1225,15 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
         }
       );
 
-      expect(report.mutatingJobsRequiringReview).toBe(0);
+      expect(report.mutatingJobsRequiringReview).toBe(1);
       const assessment = report.jobAssessments[0];
-      expect(assessment?.reconciledStatus).toBe("failed");
-      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.hasMutatingWrite).toBe(true);
+      expect(assessment?.requiresReview).toBe(true);
       expect(assessment?.eligibleForRetry).toBe(false);
     });
 
-    it("classifies mutating job with verified clean rollback as failed with requiresReview: false", async () => {
+    it("does not trust a local verified_clean rollback claim without independent attestation", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
       registry.addRecord({
         recordId: "proc_mutating_rollback",
@@ -1273,12 +1275,12 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
         }
       );
 
-      expect(report.mutatingJobsRequiringReview).toBe(0);
+      expect(report.mutatingJobsRequiringReview).toBe(1);
       const assessment = report.jobAssessments[0];
-      expect(assessment?.reconciledStatus).toBe("verification_failed");
-      expect(assessment?.requiresReview).toBe(false);
+      expect(assessment?.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(assessment?.requiresReview).toBe(true);
       expect(assessment?.eligibleForRetry).toBe(false);
-      expect(assessment?.reason).toContain("verified clean rollback was confirmed");
+      expect(assessment?.reason).toContain("without authoritative proof of clean rollback");
     });
   });
 });

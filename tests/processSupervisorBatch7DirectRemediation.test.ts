@@ -36,14 +36,15 @@ describe("Batch 7 independent direct remediation verification", () => {
     expect(await fs.readFile(unrelated, "utf8")).toBe(bytes);
   });
 
-  it("registry uses SQLite transaction and never creates legacy pathname locks", async () => {
+  it("registry uses SQLite transaction plus a persistent legacy-protocol directory fence", async () => {
     const root = await testDirectory();
     const filename = path.join(root, "registry.json");
     const registry = new ProcessRegistry({ storagePath: filename });
     await registry.save();
     await registry.save();
     await fs.stat(filename + ".coordination.sqlite");
-    await expect(fs.stat(filename + ".lock")).rejects.toThrow();
+    expect((await fs.stat(filename + ".lock")).isDirectory()).toBe(true);
+    await expect(fs.open(filename + ".lock", "wx")).rejects.toMatchObject({ code: expect.any(String) });
   });
 
   it("two SQLite writers cannot enter their critical sections simultaneously", async () => {
@@ -124,27 +125,16 @@ describe("Batch 7 independent direct remediation verification", () => {
     }
   });
 
-  it("operator capability issuance denies unconfigured and unauthenticated clients", async () => {
+  it("keeps global operator diagnostics disabled even when a caller supplies an authorizer", async () => {
     const root = await testDirectory();
-    const noAuth = new ProcessSupervisor({storagePath:path.join(root,"ordinary.json")});
-    expect(() => noAuth.issueOperatorCapability()).toThrow("verified host authorization required");
-    expect(() => noAuth.issueOperatorCapability({
-      subject:"impostor", authenticated:true, roles:["operator"]
-    })).toThrow("verified host authorization required");
-
     const privileged = new ProcessSupervisor({
       storagePath:path.join(root,"privileged.json"),
-      trustedOperatorAuthorizer: (principal) => principal.subject === "approved-control-plane" &&
-        principal.authenticated && principal.roles.includes("operator")
+      trustedOperatorAuthorizer: () => true
     });
+    expect(() => privileged.issueOperatorCapability()).toThrow("Global operator diagnostics are disabled");
     expect(() => privileged.issueOperatorCapability({
-      subject:"impostor", authenticated:true, roles:["operator"]
-    })).toThrow("verified host authorization required");
-    const granted = privileged.issueOperatorCapability({
       subject:"approved-control-plane", authenticated:true, roles:["operator"]
-    });
-    expect(privileged.verifyOperatorCapability(granted)).toBe(true);
-    expect(privileged.verifyOperatorCapability({...granted})).toBe(false);
-    expect(privileged.verifyOperatorCapability(JSON.parse(JSON.stringify(granted)))).toBe(false);
+    })).toThrow("Global operator diagnostics are disabled");
+    expect(privileged.verifyOperatorCapability({ capabilityId:"forged" })).toBe(false);
   });
 });

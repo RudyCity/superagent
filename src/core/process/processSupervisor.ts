@@ -168,39 +168,19 @@ export class ProcessSupervisor {
   }
 
   /**
-   * Issues a non-forgeable server-internal capability for operator diagnostics (P1-1).
-   * Held by authorized server runtime only; never constructible from untrusted public JSON.
+   * Global host-wide diagnostics are intentionally disabled until a real host
+   * identity provider is wired. Caller-supplied principals, callbacks, booleans
+   * or JSON tokens are not accepted as authentication.
    */
-  public issueOperatorCapability(principal?: OperatorPrincipal): OperatorCapability {
-    if (
-      !principal ||
-      principal.authenticated !== true ||
-      typeof principal.subject !== "string" ||
-      principal.subject.length === 0 ||
-      !Array.isArray(principal.roles) ||
-      !principal.roles.includes("operator") ||
-      !this.trustedOperatorAuthorizer ||
-      this.trustedOperatorAuthorizer(principal) !== true
-    ) {
-      throw new Error("Operator capability denied: verified host authorization required.");
-    }
-    const capability = Object.freeze({
-      [OPERATOR_CAPABILITY_BRAND]: true as const,
-      capabilityId: crypto.randomBytes(32).toString("hex"),
-    });
-    this.issuedCapabilities.add(capability);
-    return capability;
+  public issueOperatorCapability(_principal?: OperatorPrincipal): OperatorCapability {
+    throw new Error(
+      "Global operator diagnostics are disabled until authenticated host authorization is integrated."
+    );
   }
 
-  /**
-   * Verifies that the supplied capability was genuinely issued by this runtime instance (P1-1).
-   * Forged boolean values or unverified tokens return false.
-   */
-  public verifyOperatorCapability(capability?: unknown): boolean {
-    if (!capability || typeof capability !== "object") return false;
-    const candidate = capability as any;
-    if (candidate[OPERATOR_CAPABILITY_BRAND] !== true) return false;
-    return this.issuedCapabilities.has(candidate);
+  /** No operator capabilities are valid while the privileged path is disabled. */
+  public verifyOperatorCapability(_capability?: unknown): boolean {
+    return false;
   }
 
   public getRegistry(): ProcessRegistry {

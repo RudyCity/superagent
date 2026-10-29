@@ -26,13 +26,21 @@ describe("P0 M1 Subprocess Registration Coverage & Splash Elimination", () => {
     } catch (error: any) {
       if (error?.code !== "EBUSY") throw error;
       const remaining = await fs.readdir(tmpDir);
-      if (remaining.length === 0 || remaining.some((name) =>
-        name !== "proc-reg.json.coordination.sqlite" &&
-        name !== "proc-reg.json.coordination.sqlite-journal" && name !== "proc-reg.json")) {
+      const allowed = new Set([
+        "proc-reg.json.coordination.sqlite",
+        "proc-reg.json.coordination.sqlite-journal",
+        "proc-reg.json",
+        "proc-reg.json.lock",
+      ]);
+      if (remaining.length === 0 || remaining.some((name) => !allowed.has(name))) {
         throw error;
       }
-      // Only the OS-managed coordination DB remains; cleanup occurs after this
-      // test process exits and Windows releases its SQLite file handle.
+      if (remaining.includes("proc-reg.json.lock")) {
+        const fence = await fs.stat(path.join(tmpDir, "proc-reg.json.lock"));
+        if (!fence.isDirectory()) throw error;
+      }
+      // Only registry/SQLite artifacts plus the persistent protocol-fence
+      // directory may remain until the test process releases Windows handles.
     }
   });
 

@@ -260,7 +260,8 @@ describe("SuperAgent Runtime Supervisor Batch 6 Independent Audit Remediation", 
           .toBe("transaction-ok");
         expect(await (registry as any).withRegistryLock(async () => "reacquired", 1000))
           .toBe("reacquired");
-        await expect(fs.stat(registryFile + ".lock")).rejects.toThrow();
+        expect((await fs.stat(registryFile + ".lock")).isDirectory()).toBe(true);
+        await expect(fs.open(registryFile + ".lock", "wx")).rejects.toMatchObject({ code: expect.any(String) });
         await fs.stat(registryFile + ".coordination.sqlite");
       } finally {
         spy.mockRestore();
@@ -469,15 +470,14 @@ describe("SuperAgent Runtime Supervisor Batch 6 Independent Audit Remediation", 
       });
       expect(forgedObjectDiag.totalTracked).toBe(0);
 
-      // 2. Genuine capability issued by this supervisor instance grants access to all records
-      const genuineCap = supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]});
+      // 2. Global operator capability cannot be issued until host authentication is wired.
+      expect(() => supervisor.issueOperatorCapability({subject:"trusted-test-operator", authenticated:true, roles:["operator"]}))
+        .toThrow("Global operator diagnostics are disabled");
       const operatorDiag = await supervisor.getProcessDiagnostics({
-        operatorCapability: genuineCap,
+        operatorCapability: { capabilityId: "forged" } as any,
       });
-      expect(operatorDiag.totalTracked).toBe(2);
-      expect(operatorDiag.entries).toHaveLength(2);
-      expect(operatorDiag.entries.find((e) => e.recordId === "rec_global_tunnel")).toBeDefined();
-      expect(operatorDiag.entries.find((e) => e.recordId === "rec_tenant_task")).toBeDefined();
+      expect(operatorDiag.totalTracked).toBe(0);
+      expect(operatorDiag.entries).toHaveLength(0);
 
       // 3. User query scoped to tenant workspace returns strictly tenant records and counts
       const tenantDiag = await supervisor.getProcessDiagnostics({
