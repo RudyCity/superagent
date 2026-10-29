@@ -126,7 +126,7 @@ describe("Skills Injection into Agent System Prompts", () => {
       return "";
     });
 
-    await agent.sendMessage("hello");
+    await agent.sendMessage("implement a TypeScript feature");
 
     expect(capturedSystemPrompt).toContain("PLANNING AND TASK GUIDELINES (superagent-planning):");
     expect(capturedSystemPrompt).toContain("MOCK_PLANNING_SKILL_CONTENT");
@@ -168,7 +168,7 @@ describe("Skills Injection into Agent System Prompts", () => {
       return "";
     });
 
-    await masterAgent.sendMessage("hello");
+    await masterAgent.sendMessage("implement a TypeScript feature");
     expect(masterPrompt).toContain("MASTER AGENT ORCHESTRATION GUIDELINES (master-agent-orchestration):");
     expect(masterPrompt).toContain("MOCK_ORCHESTRATION_CONTENT");
 
@@ -245,7 +245,7 @@ describe("Skill Preloading Enhancements", () => {
       } as any;
     });
 
-    await masterAgent.sendMessage("hello");
+    await masterAgent.sendMessage("implement a TypeScript feature");
 
     expect(capturedSystemPrompt).toContain("BEHAVIORAL CODING GUIDELINES (karpathy-guidelines):");
     expect(capturedSystemPrompt).toContain("PLANNING AND TASK GUIDELINES (superagent-planning):");
@@ -283,12 +283,12 @@ describe("Skill Preloading Enhancements", () => {
       } as any;
     });
 
-    await agent.sendMessage("first message");
+    await agent.sendMessage("implement a TypeScript feature");
     const readCountAfterFirst = readFileSpy.mock.calls.filter(
       (c) => typeof c[0] === "string" && (c[0] as string).includes("karpathy-guidelines")
     ).length;
 
-    await agent.sendMessage("second message");
+    await agent.sendMessage("continue the TypeScript implementation");
     const readCountAfterSecond = readFileSpy.mock.calls.filter(
       (c) => typeof c[0] === "string" && (c[0] as string).includes("karpathy-guidelines")
     ).length;

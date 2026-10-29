@@ -72,10 +72,12 @@ describe("Chrome extension/backend security regressions", () => {
   it("does not enable wildcard CDP origins or unattended screen capture by default", () => {
     const common = file("src/core/tools/chromeCommon.ts");
     const launcher = file("src/core/tools/chromeBrowserTools.ts");
+    const flags = file("src/core/browserRuntime/browserFlags.ts");
     expect(common).not.toContain("--remote-allow-origins=*");
     expect(launcher).not.toContain("--remote-allow-origins=*");
-    expect(common).toContain('SUPERAGENT_UNATTENDED_SCREEN_CAPTURE');
-    expect(launcher).toContain("useFakeMediaUi === true");
+    expect(common).toContain('SUPERAGENT_UNATTENDED_SCREEN_CAPTURE === "1"');
+    expect(flags).toContain("if (useFakeMediaUi)");
+    expect(flags).toContain("--use-fake-ui-for-media-stream");
   });
 
   it("syntax gate enumerates both unpacked extensions", () => {

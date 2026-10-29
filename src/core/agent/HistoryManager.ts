@@ -1,5 +1,5 @@
 import path from "path";
-import { clearHistoryCache, getSettings, getCurrentWorkspaceIdentifier } from "../config.js";
+import { clearHistoryCache, getSettings, getCurrentWorkspaceIdentifier, generateSessionId } from "../config.js";
 import { getRMemoryClient, getRMemoryProjectId, getRMemorySessionKey, isRmemoryActive } from "../rmemoryUtil.js";
 import { contentToString } from "../conversation.js";
 import type { Agent } from "../agent.js";
@@ -122,7 +122,9 @@ export class HistoryManager {
     (agent as any).pendingMessagesQueue = [];
     agent.lastSpeed = null;
     agent.wasRunningBeforeAbort = false;
-    const resolved = agent.resolveHistoryFilePath(false);
+    const freshSessionId = generateSessionId();
+    agent.sessionId = freshSessionId;
+    const resolved = agent.resolveHistoryFilePath(freshSessionId);
     (agent as any).currentHistoryFilePath = resolved;
     if (agent.tier === "master" || agent.tier === "single") {
       process.env.SUPERAGENT_SESSION_PATH = resolved;

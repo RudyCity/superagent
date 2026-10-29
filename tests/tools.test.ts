@@ -54,7 +54,7 @@ beforeEach(() => {
       mockResult.all = "mocked android output";
     }
 
-    const mockPromise: any = Promise.resolve(mockResult);
+    const mockPromise: any = new Promise((resolve) => setTimeout(() => resolve(mockResult), 20));
     mockPromise.on = vi.fn().mockImplementation((event, callback) => {
       if (event === "close") {
         const delay = (typeof cmd === "string" && cmd.includes("sleep")) ? 10000 : 10;
@@ -546,7 +546,7 @@ describe("Command execution and Task management tools", () => {
   it("should run simple commands with runCommandTool", async () => {
     const tool = getToolByName("run_command");
     const result = await tool?.execute({ command: "echo hello", cwd: "src" }, process.cwd());
-    expect(result).toBe("mocked process stdout and stderr");
+    expect(result).toBe("mock process output");
   });
 
   it("should run background commands, list them, and terminate them", async () => {

@@ -4,15 +4,20 @@ import path from "path";
 import os from "os";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 describe("Superagent Extended MCP Tools Execution Suite", () => {
   const testDir = path.join(process.cwd(), `.tmp_mcp_ext_test_${Date.now()}`);
 
   beforeEach(() => {
+    setFullYoloMode(false);
+    setYoloMode(true);
     fs.mkdirSync(testDir, { recursive: true });
   });
 
   afterEach(() => {
+    setFullYoloMode(false);
+    setYoloMode(false);
     try {
       fs.rmSync(testDir, { recursive: true, force: true });
     } catch {}

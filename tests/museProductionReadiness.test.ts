@@ -126,12 +126,14 @@ describe("phase 4o independent watchdog, delivery proof and production readiness
     expect(await supervisor.start()).toEqual({ reason: "budget_exhausted", restarts: 2 });
     expect(launches).toBe(3);
     const child = new Child();
-    const second = new MuseWatchdogSupervisor({ launch: () => child });
+    let secondLaunches = 0;
+    const second = new MuseWatchdogSupervisor({ launch: () => { secondLaunches++; return child; } });
     const active = second.start();
     await Promise.resolve();
     second.stop();
     expect(await active).toEqual({ reason: "stopped", restarts: 0 });
-    expect(child.killed).toBe(true);
+    expect(secondLaunches).toBeLessThanOrEqual(1);
+    expect(secondLaunches === 0 || child.killed).toBe(true);
   });
 
   it("CLI readiness and recovery-wizard use no real outbound traffic and do not initialize state", async () => {

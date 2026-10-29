@@ -74,12 +74,13 @@ describe("studio code-video authenticated workspace routes", () => {
       expect(submitted.id).toMatch(/^codejob-[a-f0-9]{24}$/);
       let polled: { status: string; framesCompleted: number; result?: { id: string; file?: string } } |
         undefined;
-      for (let retry = 0; retry < 150; retry++) {
+      const pollDeadline = Date.now() + 25_000;
+      while (Date.now() < pollDeadline) {
         const status = await fetch(base + "/code-to-video/jobs/" + submitted.id);
         expect(status.status).toBe(200);
         polled = await status.json() as typeof polled;
         if (polled?.status === "completed" || polled?.status === "failed") break;
-        await new Promise(resolve => setTimeout(resolve, 50));
+        await new Promise(resolve => setTimeout(resolve, 75));
       }
       expect(polled?.status).toBe("completed");
       expect(polled?.framesCompleted).toBe(6);

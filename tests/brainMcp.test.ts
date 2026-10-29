@@ -1,4 +1,4 @@
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,7 +9,13 @@ import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 const roots: string[] = [];
+beforeEach(() => {
+  setFullYoloMode(false);
+  setYoloMode(true);
+});
 afterEach(() => {
+  setFullYoloMode(false);
+  setYoloMode(false);
   delete process.env.SUPERAGENT_CONFIG_DIR;
   for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
@@ -18,6 +24,8 @@ describe("Brain MCP OAuth identity scope", () => {
   it("reuses a transport-scoped Brain when no sessionId is provided", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "brain-transport-")); roots.push(root);
     process.env.SUPERAGENT_CONFIG_DIR = root;
+    setFullYoloMode(false);
+    setYoloMode(true);
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true,
       getIdentity: () => ({ mode: "oauth", subject: "session-owner", scopes: ["mcp:tools", "mcp:tools:write"] }),
@@ -37,6 +45,8 @@ describe("Brain MCP OAuth identity scope", () => {
   it("publishes brain definition and respects read-only token permissions", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "brain-oauth-")); roots.push(root);
     process.env.SUPERAGENT_CONFIG_DIR = root;
+    setFullYoloMode(false);
+    setYoloMode(true);
     let scopes = ["mcp:tools"];
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true,
@@ -62,6 +72,8 @@ describe("Brain MCP OAuth identity scope", () => {
   it("separates OAuth principals through request handlers", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "brain-identity-")); roots.push(root);
     process.env.SUPERAGENT_CONFIG_DIR = root;
+    setFullYoloMode(false);
+    setYoloMode(true);
     let subject = "alice";
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true,
@@ -82,6 +94,8 @@ describe("Brain MCP OAuth identity scope", () => {
   it("publishes only after project write grant, without overwriting existing files", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "brain-publish-")); roots.push(root);
     process.env.SUPERAGENT_CONFIG_DIR = root;
+    setFullYoloMode(false);
+    setYoloMode(true);
     const nestedWorkspace = path.join(root, "anchor", "nested");
     const target = path.join(root, "target");
     fs.mkdirSync(nestedWorkspace, { recursive: true });
@@ -89,7 +103,7 @@ describe("Brain MCP OAuth identity scope", () => {
     const projectId = "brain-publish-test";
     registerProject({ id: projectId, type: "local", name: "Publish target", root: target });
     setFullYoloMode(false);
-    setYoloMode(false);
+    setYoloMode(true);
     const identity = { mode: "oauth" as const, subject: "publish-user", scopes: ["mcp:tools", "mcp:tools:write"] };
     const server = createSuperagentMcpServer({
       authMode: "oauth", allowDangerous: true, workspace: nestedWorkspace,

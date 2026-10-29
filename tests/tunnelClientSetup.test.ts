@@ -77,7 +77,7 @@ describe("tunnelClientSetup", () => {
     expect(execa).toHaveBeenCalledWith(
       process.versions.bun ? process.execPath : "bun",
       ["add", "-g", "@openai/tunnel-client"], {
-      stdio: "ignore", timeout: 45000,
+      stdio: "ignore", timeout: 45000, windowsHide: true,
     });
   });
 });

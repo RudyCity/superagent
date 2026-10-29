@@ -28,6 +28,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
   const testProjectId = path.basename(testDir).replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
 
   beforeEach(() => {
+    setFullYoloMode(false);
+    setYoloMode(true);
     superagentInstances.clear();
     subagentInstances.clear();
     fs.mkdirSync(testDir, { recursive: true });
@@ -35,6 +37,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
   });
 
   afterEach(() => {
+    setFullYoloMode(false);
+    setYoloMode(false);
     superagentInstances.clear();
     subagentInstances.clear();
     removeProject(testProjectId);
@@ -223,8 +227,8 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     });
     expect(instructionsRead.contents[0].text).toContain("SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL");
     expect(instructionsRead.contents[0].text).toContain("TOOL_FIRST");
-    expect(instructionsRead.contents[0].text).toContain("superagent_read_files");
-    expect(instructionsRead.contents[0].text).toContain("superagent_write_files");
+    expect(instructionsRead.contents[0].text).toContain("ACTION OVER ADVICE");
+    expect(instructionsRead.contents[0].text).toContain("Batch file operations");
   });
 
   it("lists and renders all 4 MCP Prompts", async () => {
@@ -293,7 +297,7 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
 
   it("routes local write, exec, and Git MCP calls through the provider contract", async () => {
     setFullYoloMode(false);
-    setYoloMode(false);
+    setYoloMode(true);
     execFileSync("git", ["init", "-q"], { cwd: testDir });
     const server = createSuperagentMcpServer({ workspace: testDir });
     const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
@@ -826,16 +830,14 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     // Lock file by another session
     lockFile(testFile, "competing-session-123", "cli", 60000, testDir);
 
-    // Write file while locked without YOLO -> blocked by lock conflict
-    const writeBlocked = await callHandler({
+    // Write file while locked without YOLO -> rejected at the fail-closed YOLO boundary before lock handling
+    await expect(callHandler({
       method: "tools/call",
       params: {
         name: "superagent_write_files",
         arguments: { files: [{ filePath: testFile, content: "Blocked content", overwrite: true }] },
       },
-    });
-    expect(writeBlocked.isError).toBe(true);
-    expect(writeBlocked.content[0].text).toContain("[LOCK_CONFLICT]");
+    })).rejects.toThrow("YOLO OFF");
 
     // Turn ON YOLO mode
     setYoloMode(true);

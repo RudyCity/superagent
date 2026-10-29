@@ -18,6 +18,7 @@ import { formatPythonMcpClientHints } from "../mcp/pythonMcpClientHints.js";
 import { describeMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
 import { verifyWindowsProcessBirth } from "./mcpProcessBirth.js";
+import { isProcessRunning } from "../remoteAgent/cloudflareTunnel.js";
 
 const OWNER_KIND = "managed_mcp_tunnel_owner" as const;
 const OWNER_MODE = "managed-tunnel" as const;
@@ -87,7 +88,7 @@ function parseStartOptions(args: string[]): StartMcpTunnelOptions {
   let tunnelProvider: "cloudflare" | "openai" | undefined = wantOpenAi ? "openai" : undefined;
   if (providerValue) {
     if (providerValue !== "cloudflare" && providerValue !== "openai") {
-      throw new Error(`Unsupported MCP tunnel provider "${providerValue}"`);
+      throw new Error(`Unsupported MCP tunnel provider "${providerValue}". Supported providers: cloudflare, openai.`);
     }
     tunnelProvider = providerValue;
   }
@@ -148,7 +149,7 @@ function writeManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
   });
 }
 
-function cleanManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
+export function cleanManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
   try {
     const current = readManagedMcpTunnelLease(lease.port);
     if (current?.pid === lease.pid && current.nonce === lease.nonce && current.createdAt === lease.createdAt) {
@@ -226,27 +227,61 @@ export async function probeManagedMcpTunnelOwner(
   return parseOwnerStatus(lease, await requestOwner(lease, operation));
 }
 
-function verifyManagedOwnerIdentity(lease: ManagedMcpTunnelLease): void {
-  const state = readMcpStateFile(getMcpStateFile(lease.port));
-  const listenerPid = readListenerOwners()?.get(lease.port);
-  if (!state || state.pid !== lease.pid || listenerPid !== lease.pid) {
-    throw new Error("MCP tunnel owner identity does not match state and kernel listener");
+export async function verifyManagedOwnerIdentity(
+  lease: ManagedMcpTunnelLease,
+  options?: { timeoutMs?: number; pollIntervalMs?: number },
+): Promise<void> {
+  const timeoutMs = options?.timeoutMs ?? (process.platform === "win32" ? 8_000 : 2_000);
+  const pollIntervalMs = options?.pollIntervalMs ?? 200;
+  const deadline = Date.now() + timeoutMs;
+
+  let lastError: Error | null = null;
+  while (true) {
+    const state = readMcpStateFile(getMcpStateFile(lease.port));
+    const listenerPid = readListenerOwners()?.get(lease.port);
+
+    if (state && state.pid === lease.pid && listenerPid === lease.pid) {
+      if (process.platform === "win32") {
+        const birth = verifyWindowsProcessBirth(lease.pid, lease.createdAt);
+        if (birth === "matched") {
+          return;
+        }
+        lastError = new Error("MCP tunnel owner process birth could not be verified");
+      } else {
+        return;
+      }
+    } else {
+      lastError = new Error("MCP tunnel owner identity does not match state and kernel listener");
+    }
+
+    if (Date.now() >= deadline || !isProcessRunning(lease.pid)) {
+      break;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
-  if (process.platform === "win32" && verifyWindowsProcessBirth(lease.pid, lease.createdAt) !== "matched") {
-    throw new Error("MCP tunnel owner process birth could not be verified");
-  }
+
+  throw lastError ?? new Error("MCP tunnel owner identity does not match state and kernel listener");
 }
 
 export async function startManagedMcpTunnelOwner(
   args: string[],
   cliEntry = process.argv[1] || "",
 ): Promise<ManagedMcpTunnelStartResult> {
-  const port = parsePort(args);
+  const parsedOptions = parseStartOptions(args);
+  const port = assertPort(parsedOptions.port ?? DEFAULT_MCP_PORT);
   if (listActiveMcpServers().some((server) => server.port === port) || readListenerOwners()?.has(port)) {
     throw new Error(`MCP port ${port} is already active; refusing duplicate owner`);
   }
-  if (readManagedMcpTunnelLease(port)) {
-    throw new Error(`MCP port ${port} has an existing managed-owner lease; inspect it before retrying`);
+  const existingLease = readManagedMcpTunnelLease(port);
+  if (existingLease) {
+    const isRunning = isProcessRunning(existingLease.pid);
+    const hasListener = readListenerOwners()?.has(port);
+    if (!isRunning && !hasListener) {
+      cleanManagedMcpTunnelLease(existingLease);
+    } else {
+      throw new Error(`MCP port ${port} has an existing managed-owner lease; inspect it before retrying`);
+    }
   }
   const entry = path.resolve(cliEntry);
   const stat = fs.lstatSync(entry);
@@ -308,13 +343,21 @@ export async function startManagedMcpTunnelOwner(
         done(new Error("MCP owner reported ready without a matching private lease"));
         return;
       }
-      try {
-        verifyManagedOwnerIdentity(lease);
-      } catch (error) {
-        done(error instanceof Error ? error : new Error(String(error)));
-        return;
-      }
-      done(undefined, { pid: ownerPid, info: m.info });
+      void (async () => {
+        try {
+          await verifyManagedOwnerIdentity(lease);
+          done(undefined, { pid: ownerPid, info: m.info! });
+        } catch (error) {
+          try { await requestOwner(lease, "stop?force=1"); } catch {}
+          try {
+            if (isProcessRunning(ownerPid)) {
+              process.kill(ownerPid, "SIGTERM");
+            }
+          } catch {}
+          cleanManagedMcpTunnelLease(lease);
+          done(error instanceof Error ? error : new Error(String(error)));
+        }
+      })();
     });
   });
 }
@@ -481,7 +524,21 @@ export async function stopManagedMcpTunnelOwner(
   assertPort(port);
   const lease = readManagedMcpTunnelLease(port);
   if (!lease) throw new Error(`MCP tunnel on port ${port} is not a managed independent owner`);
-  verifyManagedOwnerIdentity(lease);
+
+  const isRunning = isProcessRunning(lease.pid);
+  const listenerPid = readListenerOwners()?.get(port);
+
+  if (!isRunning && !listenerPid) {
+    cleanManagedMcpTunnelLease(lease);
+    return { stopped: true, draining: true, activeSessions: 0, inFlightRequests: 0 };
+  }
+
+  if (options?.force && !isRunning) {
+    cleanManagedMcpTunnelLease(lease);
+    return { stopped: true, draining: true, activeSessions: 0, inFlightRequests: 0 };
+  }
+
+  await verifyManagedOwnerIdentity(lease, { timeoutMs: 3_000 });
   let status = await probeManagedMcpTunnelOwner(lease);
   if (!status) throw new Error("Managed MCP tunnel owner did not authenticate");
   if (!status.draining) {

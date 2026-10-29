@@ -14,6 +14,7 @@ import {
   motionGenerateTool,
   motionReviseTool,
   motionStatusTool,
+  motionUpscaleTool,
 } from "./motionAgentTools.js";
 import { registerSubagentType } from "./state.js";
 import {
@@ -231,9 +232,16 @@ export const allTools: Tool[] = [
   studioGenerateTool,
   studioReviseTool,
   studioStatusTool,
+  studioUpscaleTool,
+  studioListProjectsTool,
+  studioInspectProjectTool,
+  studioEditProjectTool,
+  studioClipEditTool,
+  studioDesktopFocusTool,
   motionGenerateTool,
   motionReviseTool,
   motionStatusTool,
+  motionUpscaleTool,
   switchModeTool,
   runHeadlessBrowserTool,
   simulateVirtualCursorTool,

@@ -118,6 +118,19 @@ export class MuseWatchdogSupervisor {
         watchdogRecordId = reg.recordId;
       } catch {}
 
+      // stop() may race the asynchronous ownership registration above. Never
+      // launch a new watchdog after shutdown has already been requested.
+      if (this.stopping) {
+        if (watchdogRecordId) {
+          void getProcessSupervisor().recordProcessExit(watchdogRecordId, {
+            exitCode: null,
+            signal: "SIGTERM",
+            source: "museWatchdogSupervisor.stopped_before_launch",
+          }).catch(() => {});
+        }
+        break;
+      }
+
       const child = this.opts.launch();
       this.child = child;
       if (watchdogRecordId && typeof child.pid === "number") {

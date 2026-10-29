@@ -137,8 +137,11 @@ export class PathResolver {
     if (agent.tier === "master" || agent.tier === "single") {
       process.env.SUPERAGENT_SESSION_PATH = current;
     }
-    if (current && !agent.sessionId) {
-      agent.sessionId = path.basename(current, ".json");
+    if (current) {
+      const currentSessionId = path.basename(current, ".json");
+      if (currentSessionId && agent.sessionId !== currentSessionId) {
+        agent.sessionId = currentSessionId;
+      }
     }
     return current;
   }

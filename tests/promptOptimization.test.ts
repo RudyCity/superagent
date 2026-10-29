@@ -16,7 +16,7 @@ const superagent = SUPERAGENT_SYSTEM_PROMPT(
 );
 // Current v1.13.x prompt-size ceilings, refreshed after the latest prompt/tool updates.
 // Keep ceilings close to measured output so accidental prompt growth remains visible.
-const baselines = { base: 14250, master: 14400, superagent: 17200, researcher: 6500, coder: 10900 };
+const baselines = { base: 14250, master: 15100, superagent: 17900, researcher: 6500, coder: 10900 };
 const prompts = {
   base: getSystemPrompt(), master: MASTER_AGENT_SYSTEM_PROMPT,
   superagent, researcher: SUBAGENT_SYSTEM_PROMPTS.researcher,
@@ -47,7 +47,7 @@ describe("prompt optimization", () => {
     for (const prompt of [prompts.master, superagent, prompts.coder]) {
       expect(prompt).toContain("PROTECT_PROCESS: NEVER kill parent/runtime. Target PID ONLY.");
     }
-    expect(prompts.master).toContain("Code edits BLOCKED. Delegate ALL feature code to Superagents");
+    expect(prompts.master).toContain("RESTRICTION: Code edits BLOCKED in this tier; delegate software implementation to Superagents");
     expect(prompts.coder).toContain("Git BLOCKED outside worktree");
     expect(prompts.coder).toContain("Edits outside assigned files BLOCKED");
     expect(prompts.coder).toContain("manage_tasks/manage_plan BLOCKED");

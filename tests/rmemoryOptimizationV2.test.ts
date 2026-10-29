@@ -74,7 +74,13 @@ describe("memory operations v2", () => {
 });
 describe("archived embeddings inspection", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmemory-archive-recovery-test-"));
-  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+  afterEach(() => {
+    try { fs.rmSync(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 }); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
+    }
+  });
   it("never changes backup, and only recovers unambiguously scoped atomic memory", () => {
     const dirname = path.join(root, ".index-backups", "backup-99-12345");
     fs.mkdirSync(dirname, { recursive: true });

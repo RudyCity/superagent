@@ -844,7 +844,7 @@ describe("workspace inquiry and shell command regression (sess_1791681803342_i9v
     const ctx = GuidelineLoader.buildFastPathWorkspaceContext(process.cwd());
     expect(ctx).toContain(`# ACTIVE WORKSPACE: "${process.cwd()}"`);
     expect(ctx).toContain("PROJECT-SCOPED RULES (.agents/AGENTS.md):");
-    expect(ctx).toContain("No markdown decoration in AI responses");
+    expect(ctx).toContain("Readable & Structured Markdown Formatting");
     expect(ctx).toContain("PROJECT METADATA (package.json):");
   });
 });

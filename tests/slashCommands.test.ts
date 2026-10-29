@@ -557,7 +557,7 @@ describe("Slash Commands: /settings & /setting-*", () => {
 
     expect(addedLines.length).toBe(1);
     const content = addedLines[0].content;
-    expect(content).toContain("Concurrency Limit  : 1 (enabled)");
+    expect(content).toContain("Concurrency Limit  : 1 (active)");
     expect(content).toContain("Rate Limit (RPM)   : 30 RPM");
     expect(content).toContain("Limit Capacity     : 5");
     expect(content).toContain("SuperAgent Server  :");
@@ -737,27 +737,27 @@ describe("Slash Command: /worktree", () => {
   it("should execute list action by default", async () => {
     vi.mocked(execa).mockResolvedValueOnce({ stdout: "/path/to/wt feat/branch" } as any);
     await handleSlashCommand("/worktree", mockCtx as any);
-    expect(execa).toHaveBeenCalledWith("git", ["worktree", "list"]);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "list"], { windowsHide: true });
     expect(addedLines[addedLines.length - 2].content).toContain("Retrieving git worktrees...");
     expect(addedLines[addedLines.length - 1].content).toContain("feat/branch");
   });
 
   it("should execute prune action", async () => {
     await handleSlashCommand("/worktree prune", mockCtx as any);
-    expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"]);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"], { windowsHide: true });
     expect(addedLines[addedLines.length - 1].content).toContain("Stale git worktrees pruned");
   });
 
   it("should execute remove action", async () => {
     await handleSlashCommand("/worktree remove my-wt-path", mockCtx as any);
-    expect(execa).toHaveBeenCalledWith("git", ["worktree", "remove", "my-wt-path"]);
-    expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"]);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "remove", "my-wt-path"], { windowsHide: true });
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "prune"], { windowsHide: true });
     expect(addedLines[addedLines.length - 1].content).toContain("removed successfully");
   });
 
   it("should execute remove action with force flag", async () => {
     await handleSlashCommand("/worktree remove my-wt-path --force", mockCtx as any);
-    expect(execa).toHaveBeenCalledWith("git", ["worktree", "remove", "--force", "my-wt-path"]);
+    expect(execa).toHaveBeenCalledWith("git", ["worktree", "remove", "--force", "my-wt-path"], { windowsHide: true });
     expect(addedLines[addedLines.length - 1].content).toContain("removed successfully");
   });
 });

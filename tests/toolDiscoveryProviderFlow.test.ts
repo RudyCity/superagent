@@ -294,11 +294,11 @@ describe("discovery lifecycle across Agent tasks", () => {
 
     try {
       await agent.sendMessage("implement motion feature");
-      expect(schemaCalls).toHaveLength(3);
-      expect(agent.textOnlyContinuationNudges).toBe(2);
+      expect(schemaCalls).toHaveLength(2);
+      expect(agent.textOnlyContinuationNudges).toBe(1);
       const messages = agent.getConversationMessages();
       expect(messages.filter((message) => message.role === "system" &&
-        String(message.content).includes("unfinished task"))).toHaveLength(2);
+        String(message.content).includes("unfinished task"))).toHaveLength(1);
     } finally {
       agent.dispose();
       fs.rmSync(fixturePath, { force: true });

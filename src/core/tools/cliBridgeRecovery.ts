@@ -70,9 +70,17 @@ export function classifyDelegateRecovery(
   const childIdentityComparison = compareProcessStartIdentity(job.childProcessIdentity, options.childIdentityObservation);
   let assessment: RecoveryAssessment;
   let reason: string;
+  const terminalReviewRequired =
+    job.status === "unknown_outcome_review_required" ||
+    job.status === "verification_failed" ||
+    job.status === "interrupted" ||
+    job.completionState === "unknown_outcome_review_required" ||
+    job.completionState === "interrupted";
   if (!active(job.status)) {
     assessment = "terminal";
-    reason = "Stored job state is terminal. Inspect recorded exit/proof and output lock state separately.";
+    reason = terminalReviewRequired
+      ? "Stored job state requires operator review; no automatic cancellation or lock removal is authorized."
+      : "Stored job state is terminal. Inspect recorded exit/proof and output lock state separately.";
   } else if (options.ownedByCurrentRuntime) {
     assessment = "owned_by_this_runtime";
     reason = "This runtime owns the process handle; use delegate.get or delegate.cancel normally.";
@@ -101,7 +109,7 @@ export function classifyDelegateRecovery(
     assessment, ownerPid, ownerPidObservation,
     childPid, childPidObservation,
     ownerIdentityComparison, childIdentityComparison,
-    requiresManualReview: active(job.status) && !options.ownedByCurrentRuntime,
+    requiresManualReview: terminalReviewRequired || (active(job.status) && !options.ownedByCurrentRuntime),
     reason,
   };
 }

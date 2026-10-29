@@ -14,8 +14,8 @@
     "postbuild": "bun scripts/syncMcpSchemas.ts",
     "start": "bun dist/cli.js",
     "test": "bun --bun x vitest run",
-    "test:unit": "bun --bun x vitest run --exclude \"**/*integration*\" --exclude \"**/*e2e*\"",
-    "test:integration": "bun --bun x vitest run tests/*integration*.test.ts",
+    "test:unit": "bun --bun x vitest run --maxWorkers=4 --exclude \"**/*integration*\" --exclude \"**/*Integration*\" --exclude \"**/*e2e*\" --exclude \"**/*E2E*\"",
+    "test:integration": "bun --bun x vitest run tests/*integration*.test.ts tests/*Integration*.test.ts",
     "verify:extension-js": "bun scripts/verify-extension-js.mjs",
     "verify:all": "bun run build && bun run verify:extension-js && bun run test",
     "ext:css": "bun scripts/build-extension-css.ts",
@@ -33,7 +33,8 @@
     "compat:bun": "bun scripts/bun-dependency-compat-smoke.ts",
     "doctor:launcher": "bun scripts/repair-bun-global-launcher.ts",
     "repair:launcher": "bun scripts/repair-bun-global-launcher.ts --apply",
-    "setup:piper": "bun scripts/setup-piper.ts"
+    "setup:piper": "bun scripts/setup-piper.ts",
+    "test:e2e": "bun --bun x vitest run tests/*e2e*.test.ts tests/*E2E*.test.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",

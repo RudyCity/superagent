@@ -19,7 +19,12 @@ describe("Internal Hooks Feature", () => {
 
   afterAll(async () => {
     process.chdir(originalCwd);
-    await fs.rm(tempDir, { recursive: true, force: true });
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
+    }
   });
 
   it("should initialize a new hook folder and files on /ih init", async () => {

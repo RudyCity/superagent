@@ -61,7 +61,11 @@ describe("TASK-315 guided immutable skill revision", () => {
     });
     if (originalConfigDir === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
     else process.env.SUPERAGENT_CONFIG_DIR = originalConfigDir;
-    fs.rmSync(workspace, { recursive: true, force: true });
+    try { fs.rmSync(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 }); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
+    }
   });
 
   function persistCompletedTaskEvidence(taskId: string): string {

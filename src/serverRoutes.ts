@@ -1969,13 +1969,13 @@ export async function handleServerRoute(
       [...superagentInstances.values(), ...subagentInstances.values()]);
     for (const sub of subagentInstances.values()) {
       if (sub.status === "running" && sub.agent && ownedAgents.has(sub.agent)) {
-        sub.agent.abort();
+        if (sub.agent !== session.agent) sub.agent.abort();
         sub.status = "error";
       }
     }
     for (const superInst of superagentInstances.values()) {
       if (superInst.status === "running" && superInst.agent && ownedAgents.has(superInst.agent)) {
-        superInst.agent.abort();
+        if (superInst.agent !== session.agent) superInst.agent.abort();
         superInst.status = "terminated";
       }
     }

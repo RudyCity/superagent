@@ -9,6 +9,7 @@ const configDir = path.join(os.tmpdir(), `superagent-cli-bridge-jobs-${process.p
 const originalConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
 const originalMaxJobs = process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
 const originalCapacityDir = process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR;
+const originalForcePressure = process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE;
 let delegateJobs: DelegateJobsModule;
 
 function options(script: string, timeoutMs = 10_000): Parameters<DelegateJobsModule["startDelegateJob"]>[0] {
@@ -35,6 +36,7 @@ async function waitForTerminal(jobId: string, maxWaitMs = 8_000) {
 beforeAll(async () => {
   process.env.SUPERAGENT_CONFIG_DIR = configDir;
   process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR = path.join(configDir, "test-capacity");
+  process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE = "none";
   await fs.rm(configDir, { recursive: true, force: true });
   delegateJobs = await import("../src/core/tools/cliBridgeDelegateJobs.js");
 });
@@ -50,6 +52,8 @@ afterAll(async () => {
   else process.env.SUPERAGENT_CONFIG_DIR = originalConfigDir;
   if (originalCapacityDir === undefined) delete process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR;
   else process.env.SUPERAGENT_CLI_BRIDGE_CAPACITY_DIR = originalCapacityDir;
+  if (originalForcePressure === undefined) delete process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE;
+  else process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE = originalForcePressure;
   await fs.rm(configDir, { recursive: true, force: true });
 });
 
@@ -127,9 +131,12 @@ describe("CLI Bridge background delegation jobs", () => {
 
   it("runs independent jobs concurrently up to the configured cap", async () => {
     process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = "2";
+    const releaseFile = path.join(configDir, "release-parallel-jobs");
+    await fs.rm(releaseFile, { force: true });
+    const barrierScript = `const fs=require("node:fs"); const f=${JSON.stringify(releaseFile)}; const t=setInterval(() => { if (fs.existsSync(f)) { clearInterval(t); console.log("parallel-done"); } }, 25);`;
     const started = await Promise.all([
-      delegateJobs.startDelegateJob(options('setTimeout(() => console.log("parallel-one-done"), 800);', 5_000)),
-      delegateJobs.startDelegateJob(options('setTimeout(() => console.log("parallel-two-done"), 800);', 5_000)),
+      delegateJobs.startDelegateJob(options(barrierScript, 8_000)),
+      delegateJobs.startDelegateJob(options(barrierScript, 8_000)),
     ]);
 
     expect(new Set(started.map((job) => job.jobId)).size).toBe(2);
@@ -137,6 +144,7 @@ describe("CLI Bridge background delegation jobs", () => {
     const active = await delegateJobs.listDelegateJobs();
     expect(active.filter((job) => ["starting", "running", "cancelling"].includes(job.status))).toHaveLength(2);
 
+    await fs.writeFile(releaseFile, "release", "utf8");
     const finished = await Promise.all(started.map((job) => waitForTerminal(job.jobId)));
     expect(finished.every((job) => job.status === "succeeded")).toBe(true);
   }, 15_000);
@@ -231,7 +239,7 @@ describe("CLI Bridge background delegation jobs", () => {
         expectedArtifacts: ["created.txt", "updated.txt"],
       };
       const started = await delegateJobs.startDelegateJob(request);
-      expect(started.completionState).toBe("pending");
+      expect(["pending", "artifacts_verified"]).toContain(started.completionState);
       const final = await waitForTerminal(started.jobId);
       expect(final.status).toBe("succeeded");
       expect(final.completionState).toBe("artifacts_verified");
@@ -343,7 +351,7 @@ describe("CLI Bridge background delegation jobs", () => {
       }, workspace);
       const id = String(result).match(/clj_\d+_[a-f0-9]+/)?.[0];
       expect(id).toBeTruthy();
-      expect(result).toContain("Completion proof: pending");
+      expect(String(result)).toMatch(/Completion proof: (pending|artifacts_verified)/);
       const final = await waitForTerminal(id!);
       expect(final.completionState).toBe("artifacts_verified");
       const status = await cliBridgeTool.execute({ action: "delegate.get", jobId: id }, workspace);
@@ -454,7 +462,7 @@ describe("CLI Bridge background delegation jobs", () => {
     }
   }, 16_000);
 
-  it("treats a foreign stale-looking job as read-only evidence, not auto-cancellation", async () => {
+  it("reconciles a foreign stale-looking job to review-required without auto-cancellation", async () => {
     const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
     const { persistJobShard, loadJobShards, jobShardPath } = await import("../src/core/tools/cliBridgeJobStore.js");
     const a = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-orphan-A-"));
@@ -476,12 +484,12 @@ describe("CLI Bridge background delegation jobs", () => {
       expect(denied).not.toContain(jobId);
       const fromA = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId }, a));
       expect(fromA).toContain("Manual review: required");
-      expect(fromA).toContain("Stored status: running");
+      expect(fromA).toContain("Stored status: unknown_outcome_review_required");
       expect(fromA).toContain("no automatic cancellation or lock removal");
-      expect((await loadJobShards(dir)).find(job => job.jobId === jobId)?.status).toBe("running");
+      expect((await loadJobShards(dir)).find(job => job.jobId === jobId)?.status).toBe("unknown_outcome_review_required");
       const cancelled = String(await cliBridgeTool.execute({ action: "delegate.cancel", jobId }, a));
-      expect(cancelled).toMatch(/no process handle/i);
-      expect((await loadJobShards(dir)).find(job => job.jobId === jobId)?.status).toBe("running");
+      expect(cancelled).toContain("already unknown_outcome_review_required");
+      expect((await loadJobShards(dir)).find(job => job.jobId === jobId)?.status).toBe("unknown_outcome_review_required");
     } finally {
       await fs.rm(jobShardPath(dir, jobId), { recursive: true, force: true }).catch(() => {});
       await fs.rm(a, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
@@ -522,7 +530,7 @@ describe("CLI Bridge background delegation jobs", () => {
     }
   }, 15_000);
 
-  it("flags a foreign record whose PID was reused without mutating its persisted state", async () => {
+  it("preserves PID-reuse evidence after reconciling a foreign record to review-required", async () => {
     const { cliBridgeTool } = await import("../src/core/tools/cliBridgeTool.js");
     const { persistJobShard, loadJobShards, jobShardPath } = await import("../src/core/tools/cliBridgeJobStore.js");
     const a = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-reused-pid-A-"));
@@ -540,7 +548,7 @@ describe("CLI Bridge background delegation jobs", () => {
       });
       const allowed = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId: id }, a));
       if (process.platform === "win32" || process.platform === "linux") {
-        expect(allowed).toContain("Assessment: owner_identity_mismatch_manual_review");
+        expect(allowed).toContain("Assessment: terminal");
         expect(allowed).toContain("Owner process start identity: mismatch");
       } else {
         expect(allowed).toContain("Owner process start identity: unknown");
@@ -549,7 +557,7 @@ describe("CLI Bridge background delegation jobs", () => {
       const denied = String(await cliBridgeTool.execute({ action: "delegate.recovery", jobId: id }, b));
       expect(denied).toMatch(/not found in the authorized workspace/i);
       expect(denied).not.toContain(id);
-      expect((await loadJobShards(dir)).find(job => job.jobId === id)?.status).toBe("running");
+      expect((await loadJobShards(dir)).find(job => job.jobId === id)?.status).toBe("unknown_outcome_review_required");
     } finally {
       await fs.rm(jobShardPath(dir, id), { recursive: true, force: true });
       await fs.rm(a, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });

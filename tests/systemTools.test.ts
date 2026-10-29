@@ -86,9 +86,9 @@ describe("System Tools Optimizations", () => {
     try {
       const result = await grepTool.execute({ pattern: "target", path: tempDir }, process.cwd());
       
-      // Should contain the truncation warning
-      expect(result).toContain("output truncated, showing 100 of 150 matches");
-      expect(result).toContain("Refine your query/pattern or search path");
+      // Should expose bounded pagination metadata for remaining matches.
+      expect(result).toContain("More matches: 50");
+      expect(result).toContain("Next offset=100, limit=100 (total 150)");
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }

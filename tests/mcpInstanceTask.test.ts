@@ -9,17 +9,21 @@ import {
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 describe("Instance Current Task Tracking via MCP", () => {
   let testDir: string;
 
   beforeEach(() => {
+    setFullYoloMode(true);
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-instance-task-test-"));
     superagentInstances.clear();
     subagentInstances.clear();
   });
 
   afterEach(() => {
+    setFullYoloMode(false);
+    setYoloMode(false);
     superagentInstances.clear();
     subagentInstances.clear();
     try {

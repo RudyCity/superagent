@@ -90,47 +90,50 @@ describe("command domain separation", () => {
     expect(lines.at(-1)?.content).toContain("Invalid --mcp-auth value");
   });
 
-  it("passes an explicit OpenAI OAuth public issuer from the MCP command only", async () => {
-    const { ctx } = makeContext();
-    const spy = vi.spyOn(await import("../src/core/mcp/mcpTunnel.js"), "startMcpTunnel")
-      .mockResolvedValueOnce({
+  it("passes an explicit OpenAI OAuth public issuer to the independent MCP owner", async () => {
+    const { ctx, lines } = makeContext();
+    const ownerModule = await import("../src/core/runtime/mcpManagedTunnelOwner.js");
+    const spy = vi.spyOn(ownerModule, "startManagedMcpTunnelOwner").mockResolvedValueOnce({
+      pid: 4242,
+      info: {
         publicUrl: "openai-tunnel://tunnel_123456789abcdef0",
         bearerToken: "", localUrl: "http://127.0.0.1:9227/mcp",
         auditLogPath: "/tmp/audit.log", dangerous: false, toolCount: 4,
         authMode: "oauth", tunnelProvider: "openai",
         openAiTunnelId: "tunnel_123456789abcdef0", bootstrapCode: "mock-code",
         oauthDiscoveryUrl: "https://issuer.example.test/.well-known/oauth-authorization-server",
-      });
+        oauthStatePersistent: true,
+      },
+    } as any);
     await mcpCommand.execute(
       "tunnel start --provider openai --tunnel-id tunnel_123456789abcdef0 --mcp-auth oauth --oauth-public-url https://issuer.example.test",
       ctx,
     );
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
-      tunnelProvider: "openai", authMode: "oauth",
-      oauthPublicBaseUrl: "https://issuer.example.test",
-    }));
+    expect(spy).toHaveBeenCalledWith(expect.arrayContaining([
+      "--provider", "openai", "--tunnel-id", "tunnel_123456789abcdef0",
+      "--mcp-auth", "oauth", "--oauth-public-url", "https://issuer.example.test",
+    ]), expect.any(String));
+    expect(lines.map((l) => l.content).join("\n")).toContain("OpenAI Secure MCP Tunnel Online!");
     spy.mockRestore();
   });
 
-  it("forwards --mcp-auth oauth to startMcpTunnel and displays the bootstrap approval code", async () => {
+  it("forwards OAuth mode to the independent MCP owner and displays the bootstrap approval code", async () => {
     const { ctx, lines } = makeContext();
-    const spy = vi.spyOn(await import("../src/core/mcp/mcpTunnel.js"), "startMcpTunnel").mockResolvedValueOnce({
-      publicUrl: "https://example.trycloudflare.com/mcp",
-      bearerToken: "",
-      localUrl: "http://127.0.0.1:9227/mcp",
-      auditLogPath: "/tmp/audit.log",
-      dangerous: false,
-      toolCount: 15,
-      authMode: "oauth",
-      bootstrapCode: "mock-bootstrap-code-12345",
-      oauthDiscoveryUrl: "https://example.trycloudflare.com/.well-known/oauth-authorization-server",
-      tunnelProvider: "cloudflare",
-    });
-
+    const ownerModule = await import("../src/core/runtime/mcpManagedTunnelOwner.js");
+    const spy = vi.spyOn(ownerModule, "startManagedMcpTunnelOwner").mockResolvedValueOnce({
+      pid: 4243,
+      info: {
+        publicUrl: "https://example.trycloudflare.com/mcp",
+        bearerToken: "", localUrl: "http://127.0.0.1:9227/mcp",
+        auditLogPath: "/tmp/audit.log", dangerous: false, toolCount: 15,
+        authMode: "oauth", bootstrapCode: "mock-bootstrap-code-12345",
+        oauthDiscoveryUrl: "https://example.trycloudflare.com/.well-known/oauth-authorization-server",
+        oauthStatePersistent: true,
+        tunnelProvider: "cloudflare",
+      },
+    } as any);
     await mcpCommand.execute("tunnel start --mcp-auth oauth", ctx);
-    expect(spy).toHaveBeenCalledWith(expect.objectContaining({
-      authMode: "oauth",
-    }));
+    expect(spy).toHaveBeenCalledWith(expect.arrayContaining(["--mcp-auth", "oauth"]), expect.any(String));
     const output = lines.map((l) => l.content).join("\n");
     expect(output).toContain("mock-bootstrap-code-12345");
     expect(output).toContain("One-time bootstrap approval code");
@@ -139,5 +142,6 @@ describe("command domain separation", () => {
     expect(output).toContain("MCP URL     : https://example.trycloudflare.com/mcp");
     expect(output).toContain("One-shot PS : $env:SUPERAGENT_MCP_URL='https://example.trycloudflare.com/mcp'");
     expect(output).toContain("superagent-mcp-python login");
+    spy.mockRestore();
   });
 });

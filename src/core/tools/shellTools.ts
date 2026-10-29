@@ -240,14 +240,18 @@ export const bashTool: Tool = {
         }
       );
 
+      if (signal?.aborted) {
+        try { proc.kill("SIGKILL"); } catch {}
+        killProcessTree(proc.pid);
+        cmdLogger.end(null, "Aborted");
+        const abortErr = new Error("AbortError");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
+
       let abortPromiseReject: ((err: any) => void) | undefined;
       const abortPromise = new Promise<never>((_, reject) => {
         abortPromiseReject = reject;
-        if (signal?.aborted) {
-          const err = new Error("AbortError");
-          err.name = "AbortError";
-          reject(err);
-        }
       });
 
       const abortHandler = () => {
@@ -262,10 +266,6 @@ export const bashTool: Tool = {
       };
 
       if (signal) {
-        if (signal.aborted) {
-          abortHandler();
-          throw new Error("AbortError");
-        }
         signal.addEventListener("abort", abortHandler, { once: true });
       }
 
@@ -459,14 +459,18 @@ export const runCommandTool: Tool = {
         }
       );
 
+      if (signal?.aborted) {
+        try { proc.kill("SIGKILL"); } catch {}
+        killProcessTree(proc.pid);
+        cmdLogger.end(null, "Aborted");
+        const abortErr = new Error("AbortError");
+        abortErr.name = "AbortError";
+        throw abortErr;
+      }
+
       let abortPromiseReject: ((err: any) => void) | undefined;
       const abortPromise = new Promise<never>((_, reject) => {
         abortPromiseReject = reject;
-        if (signal?.aborted) {
-          const err = new Error("AbortError");
-          err.name = "AbortError";
-          reject(err);
-        }
       });
 
       const abortHandler = () => {
@@ -481,10 +485,6 @@ export const runCommandTool: Tool = {
       };
 
       if (signal) {
-        if (signal.aborted) {
-          abortHandler();
-          throw new Error("AbortError");
-        }
         signal.addEventListener("abort", abortHandler, { once: true });
       }
 

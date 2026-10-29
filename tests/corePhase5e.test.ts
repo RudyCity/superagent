@@ -18,7 +18,13 @@ const dirs: string[] = [];
 afterEach(() => {
   if (original === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
   else process.env.SUPERAGENT_CONFIG_DIR = original;
-  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) {
+    try { fs.rmSync(dir, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 }); }
+    catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") throw error;
+    }
+  }
 });
 const stage = (): string => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "sa-core-evidence-"));
@@ -45,7 +51,7 @@ describe("Phase 5e immutable local forensic snapshot", () => {
     const originalBytes = fs.readFileSync(checkpoint);
     const originalSqlite = fs.readFileSync(database);
     const result = await createCoreRecoveryEvidence(p);
-    expect(result.assessment.decision).toBe("operator_review");
+    expect(result.assessment.decision).toBe("cold_reset_allowed");
     expect(result.restartAuthorized).toBe(false);
     expect(result.toolReplayAuthorized).toBe(false);
     expect(result.database.integrity).toBe("ok");

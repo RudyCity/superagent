@@ -10,8 +10,14 @@ describe("authenticated T-Line capability contract", () => {
     expect(m.commands.find(c => c.name === "gateway")).toBeDefined();
     expect(m.commands.every(c => c.desktopExecution === "cli-only")).toBe(true);
   });
-  it("exposes only explicitly safe read-only HTTP operations", () => {
-    expect(TLINE_HTTP_ACTIONS.map(a => a.id)).toEqual(["daemon.status", "gateway.status"]);
-    expect(TLINE_HTTP_ACTIONS.every(a => a.method === "GET" && a.access === "read")).toBe(true);
+  it("separates safe read-only HTTP operations from explicit workspace-operator actions", () => {
+    const readOnly = TLINE_HTTP_ACTIONS.filter(a => a.access === "read");
+    expect(readOnly.map(a => a.id)).toEqual([
+      "daemon.status", "gateway.status", "studio.status", "studio.projects",
+    ]);
+    expect(readOnly.every(a => a.method === "GET")).toBe(true);
+    expect(TLINE_HTTP_ACTIONS.find(a => a.id === "studio.bundle")).toMatchObject({
+      method: "POST", access: "workspace-operator",
+    });
   });
 });
