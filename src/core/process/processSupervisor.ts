@@ -74,15 +74,26 @@ export interface ProcessExitObservation {
   source?: string;
 }
 
+const OPERATOR_CAPABILITY_BRAND = Symbol("OPERATOR_CAPABILITY_BRAND");
+
+export interface OperatorCapability {
+  readonly [OPERATOR_CAPABILITY_BRAND]: true;
+  readonly capabilityId: string;
+}
+
 export interface ProcessDiagnosticFilter {
   filterByWorkspaceRoot?: string;
   callerWorkspaceRoot?: string;
   component?: string;
   state?: ProcessState;
   /**
-   * Explicit privileged global operator mode (P1-4).
-   * When true, allows inspecting global service records and unscoped records across the host.
-   * When false or omitted, diagnostic queries are strictly tenant/user-scoped.
+   * Non-forgeable server-internal capability held by authorized runtime only (P1-1).
+   * Untrusted caller boolean fields (e.g. isPrivilegedOperator: true) are strictly rejected.
+   */
+  operatorCapability?: OperatorCapability;
+  /**
+   * Untrusted caller boolean flag; strictly rejected and ignored for privilege escalation (P1-1).
+   * Maintained for backward compatibility of caller type signatures, but NEVER grants privilege.
    */
   isPrivilegedOperator?: boolean;
 }
@@ -137,9 +148,35 @@ export class ProcessSupervisor {
   private registry: ProcessRegistry;
   private initialized = false;
   private lastReconciliationReport: ProcessReconciliationReport | null = null;
+  private readonly issuedCapabilities = new Set<string>();
 
   constructor(options: ProcessRegistryOptions = {}) {
     this.registry = new ProcessRegistry(options);
+  }
+
+  /**
+   * Issues a non-forgeable server-internal capability for operator diagnostics (P1-1).
+   * Held by authorized server runtime only; never constructible from untrusted public JSON.
+   */
+  public issueOperatorCapability(): OperatorCapability {
+    const capabilityId = crypto.randomBytes(32).toString("hex");
+    this.issuedCapabilities.add(capabilityId);
+    return {
+      [OPERATOR_CAPABILITY_BRAND]: true,
+      capabilityId,
+    };
+  }
+
+  /**
+   * Verifies that the supplied capability was genuinely issued by this runtime instance (P1-1).
+   * Forged boolean values or unverified tokens return false.
+   */
+  public verifyOperatorCapability(capability?: unknown): boolean {
+    if (!capability || typeof capability !== "object") return false;
+    const candidate = capability as any;
+    if (candidate[OPERATOR_CAPABILITY_BRAND] !== true) return false;
+    if (typeof candidate.capabilityId !== "string") return false;
+    return this.issuedCapabilities.has(candidate.capabilityId);
   }
 
   public getRegistry(): ProcessRegistry {
@@ -393,8 +430,8 @@ export class ProcessSupervisor {
    * Read-only diagnostic inspection API suitable for `/doctor` processes.
    * Respects workspace privacy: user-scoped diagnostics strictly return same-workspace
    * records and counts only; foreign and ownerless records are completely omitted (P1-4).
-   * Explicit privileged global operator mode (isPrivilegedOperator: true) is required
-   * to inspect host-wide global services.
+   * Verified operator capability (filter.operatorCapability) is required to inspect
+   * host-wide global services (P1-1). Untrusted boolean parameters are strictly rejected.
    */
   public async getProcessDiagnostics(
     filter: ProcessDiagnosticFilter = {}
@@ -406,11 +443,13 @@ export class ProcessSupervisor {
     const isCorrupt = this.registry.isRegistryCorrupt();
     const corruptionReason = this.registry.getCorruptionReason();
 
-    const isPrivilegedOperator = filter.isPrivilegedOperator === true;
+    // Trusted operator authorization boundary: strictly require verified OperatorCapability.
+    // Untrusted public caller boolean (isPrivilegedOperator: true) is rejected to prevent privilege escalation (P1-1).
+    const isPrivilegedOperator = this.verifyOperatorCapability(filter.operatorCapability);
     const targetWsRaw = filter.callerWorkspaceRoot ?? filter.filterByWorkspaceRoot;
     const targetWs = normalizeWorkspacePath(targetWsRaw);
 
-    // If neither privileged operator mode nor a valid workspace is specified,
+    // If neither verified operator capability nor a valid workspace is specified,
     // fail closed to protect host and foreign workspace privacy.
     if (!isPrivilegedOperator && !targetWs) {
       return {

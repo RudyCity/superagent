@@ -51,7 +51,7 @@ describe("Milestone M5 — Crash Reconciliation, Isolation & Adapter Contracts",
       expect(loaded?.resourceClaims).toEqual(["file:src/app.ts"]);
     });
 
-    it("leaves already-terminal jobs unchanged upon restart", async () => {
+    it("leaves safe terminal jobs unchanged upon restart without requiring review", async () => {
       const res = await reconcileJobOnRestart({
         jobId: "clj_term",
         status: "succeeded",
@@ -62,25 +62,129 @@ describe("Milestone M5 — Crash Reconciliation, Isolation & Adapter Contracts",
       expect(res.requiresReview).toBe(false);
     });
 
-    it("reconciles interrupted read-only jobs safely with eligibleForRetry = true", async () => {
-      const res = await reconcileJobOnRestart({
-        jobId: "clj_ro",
-        status: "running",
-        pid: 9999999, // non-existent PID
-        hasMutatingWrite: false,
+    it("preserves requiresReview: true for review-needed terminal statuses", async () => {
+      // unknown_outcome_review_required
+      const resUnknown = await reconcileJobOnRestart({
+        jobId: "clj_unk",
+        status: "unknown_outcome_review_required",
+        pid: null,
       });
+      expect(resUnknown.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(resUnknown.eligibleForRetry).toBe(false);
+      expect(resUnknown.requiresReview).toBe(true);
+
+      // verification_failed
+      const resFailed = await reconcileJobOnRestart({
+        jobId: "clj_vf",
+        status: "verification_failed",
+        pid: null,
+      });
+      expect(resFailed.reconciledStatus).toBe("verification_failed");
+      expect(resFailed.eligibleForRetry).toBe(false);
+      expect(resFailed.requiresReview).toBe(true);
+
+      // permission_blocked
+      const resPerm = await reconcileJobOnRestart({
+        jobId: "clj_perm",
+        status: "permission_blocked",
+        pid: null,
+      });
+      expect(resPerm.reconciledStatus).toBe("permission_blocked");
+      expect(resPerm.eligibleForRetry).toBe(false);
+      expect(resPerm.requiresReview).toBe(true);
+    });
+
+    it("reconciles interrupted read-only jobs safely with eligibleForRetry = true ONLY with valid matching checkpoint", async () => {
+      const cp: JobCheckpoint = {
+        checkpointId: "cp_ro",
+        jobId: "clj_ro",
+        timestamp: Date.now(),
+        lastEvent: "tool_call: read_file",
+        worktreePath: "d:/test/worktree",
+        branchName: "feature/test",
+        resourceClaims: [],
+        verificationState: "succeeded",
+        hasMutatingWrite: false,
+      };
+      await writeJobCheckpoint(cp);
+
+      const res = await reconcileJobOnRestart(
+        {
+          jobId: "clj_ro",
+          status: "running",
+          pid: 9999999, // non-existent PID
+          hasMutatingWrite: false,
+        },
+        cp
+      );
       expect(res.reconciledStatus).toBe("interrupted");
       expect(res.eligibleForRetry).toBe(true);
       expect(res.requiresReview).toBe(false);
     });
 
+    it("fails closed when checkpoint is missing even if job.hasMutatingWrite is false", async () => {
+      const res = await reconcileJobOnRestart(
+        {
+          jobId: "job_no_checkpoint",
+          status: "running",
+          pid: null,
+          hasMutatingWrite: false,
+        },
+        null
+      );
+      expect(res.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(res.eligibleForRetry).toBe(false);
+      expect(res.requiresReview).toBe(true);
+      expect(res.reason).toContain("cannot prove job was read-only");
+    });
+
+    it("fails closed when checkpoint has mismatched jobId", async () => {
+      const otherCp: JobCheckpoint = {
+        checkpointId: "cp_other",
+        jobId: "other_job",
+        timestamp: Date.now(),
+        lastEvent: "read",
+        resourceClaims: [],
+        verificationState: "succeeded",
+        hasMutatingWrite: false,
+      };
+
+      const res = await reconcileJobOnRestart(
+        {
+          jobId: "target_job",
+          status: "running",
+          pid: null,
+          hasMutatingWrite: false,
+        },
+        otherCp
+      );
+      expect(res.reconciledStatus).toBe("unknown_outcome_review_required");
+      expect(res.eligibleForRetry).toBe(false);
+      expect(res.requiresReview).toBe(true);
+      expect(res.reason).toContain("jobId mismatch");
+    });
+
     it("blocks blind retry of unverified mutating operations (unknown_outcome_review_required)", async () => {
-      const res = await reconcileJobOnRestart({
+      const cp: JobCheckpoint = {
+        checkpointId: "cp_mutate",
         jobId: "clj_mutate",
-        status: "running",
-        pid: 9999999, // non-existent PID
+        timestamp: Date.now(),
+        lastEvent: "write_file",
+        resourceClaims: ["file:src/test.ts"],
+        verificationState: "succeeded_unverified",
         hasMutatingWrite: true,
-      });
+      };
+      await writeJobCheckpoint(cp);
+
+      const res = await reconcileJobOnRestart(
+        {
+          jobId: "clj_mutate",
+          status: "running",
+          pid: 9999999, // non-existent PID
+          hasMutatingWrite: true,
+        },
+        cp
+      );
       expect(res.reconciledStatus).toBe("unknown_outcome_review_required");
       expect(res.eligibleForRetry).toBe(false);
       expect(res.requiresReview).toBe(true);

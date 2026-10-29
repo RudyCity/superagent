@@ -501,8 +501,16 @@ describe("M1 Durable Process Ownership Registry Foundation", () => {
       expect(localEntry?.ownership.sessionId).toBe("sess_local_123");
 
       expect(foreignEntry).toBeUndefined();
-      const operatorDiag = await supervisor.getProcessDiagnostics({
+      // Forged boolean flag does NOT escalate privilege (P1-1)
+      const forgedDiag = await supervisor.getProcessDiagnostics({
         isPrivilegedOperator: true,
+      } as any);
+      expect(forgedDiag.totalTracked).toBe(0);
+
+      // Authenticated operator capability grants host-wide diagnostics (P1-1)
+      const cap = supervisor.issueOperatorCapability();
+      const operatorDiag = await supervisor.getProcessDiagnostics({
+        operatorCapability: cap,
       });
       expect(operatorDiag.totalTracked).toBe(2);
       expect(operatorDiag.entries.find((e) => e.ownership.jobId === "job_foreign_456")).toBeDefined();

@@ -223,9 +223,10 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(scopedDiag.entries).toHaveLength(0);
       expect(JSON.stringify(scopedDiag)).not.toContain("private_ownerless_job");
 
-      // Privileged operator query surfaces the ownerless record
+      // Privileged operator query surfaces the ownerless record (P1-1)
+      const cap = supervisor.issueOperatorCapability();
       const operatorDiag = await supervisor.getProcessDiagnostics({
-        isPrivilegedOperator: true,
+        operatorCapability: cap,
       });
       expect(operatorDiag.totalTracked).toBe(1);
       expect(operatorDiag.entries).toHaveLength(1);
@@ -607,9 +608,10 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
       expect(unscopedUserDiag.totalTracked).toBe(0);
       expect(unscopedUserDiag.entries).toHaveLength(0);
 
-      // Authenticated privileged operator diagnostics: surfaces both with clear systemScope
+      // Authenticated privileged operator diagnostics: surfaces both with clear systemScope (P1-1)
+      const cap = supervisor.issueOperatorCapability();
       const operatorDiag = await supervisor.getProcessDiagnostics({
-        isPrivilegedOperator: true,
+        operatorCapability: cap,
       });
       expect(operatorDiag.totalTracked).toBe(2);
       const globalEntry = operatorDiag.entries.find((e) => e.recordId === globalService.recordId);

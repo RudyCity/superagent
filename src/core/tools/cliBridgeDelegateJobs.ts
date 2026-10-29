@@ -455,16 +455,14 @@ async function initialize(): Promise<void> {
         for (const job of jobs.values()) {
           if (activeStatus(job.status) && !ownedJobIds.has(job.jobId)) {
             const cp = await readJobCheckpoint(job.jobId).catch(() => null);
-            if (cp) {
-              const assessment = await reconcileJobOnRestart(job, cp);
-              job.status = assessment.reconciledStatus as DelegateJobStatus;
-              if (assessment.reconciledStatus === "unknown_outcome_review_required") {
-                job.completionState = "unknown_outcome_review_required";
-              }
-              job.updatedAt = Date.now();
-              job.error = assessment.reason;
-              await persistJobShard(getStorageDir(), job).catch(() => {});
+            const assessment = await reconcileJobOnRestart(job, cp);
+            job.status = assessment.reconciledStatus as DelegateJobStatus;
+            if (assessment.reconciledStatus === "unknown_outcome_review_required") {
+              job.completionState = "unknown_outcome_review_required";
             }
+            job.updatedAt = Date.now();
+            job.error = assessment.reason;
+            await persistJobShard(getStorageDir(), job).catch(() => {});
           }
         }
 

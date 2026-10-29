@@ -349,9 +349,84 @@ export class ProcessRegistry {
   }
 
   /**
+   * Explicitly authorized manual recovery for orphaned registry lock files (P0-2).
+   * Unsafe automatic stale lock reclamation is disabled to prevent TOCTOU races.
+   * This method requires explicit operator confirmation, inspects the lock file,
+   * verifies the recorded owner PID is dead (ESRCH), and safely unlinks the orphaned lock.
+   */
+  public static async recoverStaleLock(
+    lockPath: string,
+    options: {
+      operatorConfirmation: string;
+      expectedPid?: number;
+    }
+  ): Promise<{ recovered: boolean; reason: string }> {
+    if (options.operatorConfirmation !== "CONFIRM_MANUAL_STALE_LOCK_REMOVAL") {
+      return {
+        recovered: false,
+        reason: "Refused: missing or invalid operator confirmation token (must be 'CONFIRM_MANUAL_STALE_LOCK_REMOVAL').",
+      };
+    }
+
+    try {
+      const raw = await fsp.readFile(lockPath, "utf8");
+      const data = JSON.parse(raw);
+      if (typeof data.pid !== "number") {
+        return {
+          recovered: false,
+          reason: "Refused: lock file does not contain a valid owner PID.",
+        };
+      }
+
+      if (typeof options.expectedPid === "number" && data.pid !== options.expectedPid) {
+        return {
+          recovered: false,
+          reason: `Refused: lock owner PID ${data.pid} does not match expected PID ${options.expectedPid}.`,
+        };
+      }
+
+      // Check if recorded owner is alive using non-destructive signal 0
+      try {
+        process.kill(data.pid, 0);
+        // Owner is STILL ALIVE! Refuse to remove lock!
+        return {
+          recovered: false,
+          reason: `Refused: lock owner process ${data.pid} is still alive. Automatic removal blocked to prevent data corruption.`,
+        };
+      } catch (killErr: any) {
+        if (killErr.code !== "ESRCH") {
+          return {
+            recovered: false,
+            reason: `Refused: unable to verify process termination for PID ${data.pid} (${killErr.code}).`,
+          };
+        }
+      }
+
+      // PID is confirmed dead (ESRCH): safe to remove orphaned lock
+      await fsp.unlink(lockPath);
+      return {
+        recovered: true,
+        reason: `Successfully recovered orphaned lock file for terminated PID ${data.pid}.`,
+      };
+    } catch (err: any) {
+      if (err.code === "ENOENT") {
+        return {
+          recovered: false,
+          reason: "Lock file does not exist (already released or removed).",
+        };
+      }
+      return {
+        recovered: false,
+        reason: `Failed to recover lock file: ${err.message}`,
+      };
+    }
+  }
+
+  /**
    * Cross-process exclusive mutual exclusion lock for registry persistence.
    * Uses OS-level exclusive file creation flag 'wx' (O_CREAT | O_EXCL).
-   * Enforces fail-closed stale-lock recovery by verifying owner PID liveness.
+   * Unsafe automatic stale-lock reclamation is strictly disabled to eliminate
+   * TOCTOU races where active replacement locks could be deleted (P0-2).
    */
   private async withRegistryLock<T>(fn: () => Promise<T>, timeoutMs = 15_000): Promise<T> {
     const lockPath = `${this.storagePath}.lock`;
@@ -360,12 +435,13 @@ export class ProcessRegistry {
     const startTime = Date.now();
     let lockHandle: fsp.FileHandle | null = null;
     let activeLockToken: string | null = null;
+    let myIno: number | null = null;
 
     while (Date.now() - startTime < timeoutMs) {
       let acquiredHandle: fsp.FileHandle | null = null;
       try {
         acquiredHandle = await fsp.open(lockPath, "wx", 0o600);
-        const myToken = crypto.randomBytes(6).toString("hex");
+        const myToken = crypto.randomBytes(8).toString("hex");
         try {
           await acquiredHandle.writeFile(
             JSON.stringify({
@@ -375,6 +451,8 @@ export class ProcessRegistry {
             })
           );
           await acquiredHandle.sync();
+          const hStat = await acquiredHandle.stat();
+          myIno = hStat.ino;
         } catch (writeErr) {
           // If writeFile or sync fails, close FD and unlink orphan lock immediately
           try {
@@ -390,63 +468,10 @@ export class ProcessRegistry {
         break;
       } catch (err: any) {
         if (err.code === "EEXIST") {
-          let isStale = false;
-          let staleToken: string | null = null;
-          let stalePid: number | null = null;
-          let staleCreatedAt: number | null = null;
-
-          try {
-            const raw = await fsp.readFile(lockPath, "utf8");
-            const data = JSON.parse(raw);
-            if (typeof data.pid === "number" && typeof data.token === "string") {
-              try {
-                process.kill(data.pid, 0);
-              } catch (killErr: any) {
-                if (killErr.code === "ESRCH") {
-                  isStale = true;
-                  staleToken = data.token;
-                  stalePid = data.pid;
-                  staleCreatedAt = data.createdAt;
-                }
-              }
-              if (!isStale && typeof data.createdAt === "number" && Date.now() - data.createdAt > 8_000) {
-                try {
-                  process.kill(data.pid, 0);
-                } catch (kErr: any) {
-                  if (kErr.code === "ESRCH") {
-                    isStale = true;
-                    staleToken = data.token;
-                    stalePid = data.pid;
-                    staleCreatedAt = data.createdAt;
-                  }
-                }
-              }
-            }
-          } catch {
-            // Malformed, empty, or unreadable lock file.
-            // Do NOT delete unverified locks blindly. Safe fail-closed beats risky auto-recovery.
-          }
-
-          if (isStale && staleToken && stalePid !== null) {
-            // TOCTOU guard: Re-read lock file immediately before unlinking to ensure it has NOT
-            // been replaced by an active replacement lock from another concurrent process!
-            try {
-              const verifyRaw = await fsp.readFile(lockPath, "utf8");
-              const verifyData = JSON.parse(verifyRaw);
-              if (
-                verifyData.token === staleToken &&
-                verifyData.pid === stalePid &&
-                verifyData.createdAt === staleCreatedAt
-              ) {
-                await fsp.unlink(lockPath);
-              }
-            } catch {
-              // File changed, already removed, or unreadable; skip unlink to preserve active locks
-            }
-            continue;
-          }
-
-          const delay = 10 + Math.floor(Math.random() * 25);
+          // Unsafe automatic stale-lock reclamation is DISABLED (P0-2).
+          // We NEVER unlink another process's lock here to prevent deleting active replacement locks.
+          // Wait for the legitimate lock owner to finish, or fail closed on timeout.
+          const delay = 15 + Math.floor(Math.random() * 30);
           await new Promise((r) => setTimeout(r, delay));
           continue;
         }
@@ -455,28 +480,38 @@ export class ProcessRegistry {
     }
 
     if (!lockHandle) {
-      throw new Error(`Timed out waiting for process registry lock: ${lockPath}`);
+      throw new Error(
+        `Timed out waiting for process registry lock: ${lockPath}. Automatic stale-lock reclamation is disabled to prevent TOCTOU lock races. If a prior writer crashed, manual operator recovery is required: call ProcessRegistry.recoverStaleLock() with confirmation.`
+      );
     }
 
     try {
       return await fn();
     } finally {
-      try {
-        await lockHandle.close();
-      } catch {}
-      try {
-        if (activeLockToken) {
-          const raw = await fsp.readFile(lockPath, "utf8").catch(() => null);
-          if (raw) {
-            try {
-              const data = JSON.parse(raw);
-              if (data.token === activeLockToken && data.pid === process.pid) {
-                await fsp.unlink(lockPath);
+      if (lockHandle) {
+        try {
+          if (activeLockToken && typeof myIno === "number") {
+            // Verify lockPath still refers to our exact open lock file (same inode and token)
+            // If the lock file was replaced by another process, DO NOT UNLINK (P0-2)!
+            const currentStat = await fsp.stat(lockPath).catch(() => null);
+            if (currentStat && currentStat.ino === myIno) {
+              const raw = await fsp.readFile(lockPath, "utf8").catch(() => null);
+              if (raw) {
+                try {
+                  const data = JSON.parse(raw);
+                  if (data.token === activeLockToken && data.pid === process.pid) {
+                    await fsp.unlink(lockPath).catch(() => {});
+                  }
+                } catch {}
               }
-            } catch {}
+            }
           }
+        } catch {} finally {
+          try {
+            await lockHandle.close();
+          } catch {}
         }
-      } catch {}
+      }
     }
   }
 

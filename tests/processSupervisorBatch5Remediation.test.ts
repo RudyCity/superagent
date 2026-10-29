@@ -859,9 +859,16 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       expect(unscopedDiag.totalTracked).toBe(0);
       expect(unscopedDiag.entries).toHaveLength(0);
 
-      // Authenticated privileged operator mode surfaces all 4 records
-      const operatorDiag = await supervisor.getProcessDiagnostics({
+      // Forged boolean flag does NOT escalate privilege (P1-1)
+      const forgedDiag = await supervisor.getProcessDiagnostics({
         isPrivilegedOperator: true,
+      } as any);
+      expect(forgedDiag.totalTracked).toBe(0);
+
+      // Authenticated privileged operator mode surfaces all 4 records (P1-1)
+      const cap = supervisor.issueOperatorCapability();
+      const operatorDiag = await supervisor.getProcessDiagnostics({
+        operatorCapability: cap,
       });
       expect(operatorDiag.totalTracked).toBe(4);
       expect(operatorDiag.entries).toHaveLength(4);

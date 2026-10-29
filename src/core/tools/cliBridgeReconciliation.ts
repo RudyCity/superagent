@@ -17,6 +17,7 @@ export interface JobCheckpoint {
   childProcessIdentity?: string;
   verificationState: string;
   hasMutatingWrite: boolean;
+  isMutating?: boolean;
 }
 
 export interface ReconciledJobAssessment {
@@ -89,8 +90,42 @@ export async function reconcileJobOnRestart(
   },
   checkpoint?: JobCheckpoint | null
 ): Promise<ReconciledJobAssessment> {
-  const terminalStatuses = ["succeeded", "failed", "cancelled", "timed_out", "interrupted", "verification_failed", "unknown_outcome_review_required"];
-  if (terminalStatuses.includes(job.status)) {
+  // Terminal statuses that require operator review must strictly preserve requiresReview: true (P1-2 / P0-1)
+  if (job.status === "unknown_outcome_review_required") {
+    return {
+      jobId: job.jobId,
+      previousStatus: job.status,
+      reconciledStatus: "unknown_outcome_review_required",
+      eligibleForRetry: false,
+      requiresReview: true,
+      reason: "Job previously reached terminal status 'unknown_outcome_review_required'; operator review required.",
+    };
+  }
+
+  if (job.status === "verification_failed") {
+    return {
+      jobId: job.jobId,
+      previousStatus: job.status,
+      reconciledStatus: "verification_failed",
+      eligibleForRetry: false,
+      requiresReview: true,
+      reason: "Job previously reached terminal status 'verification_failed'; operator review required.",
+    };
+  }
+
+  if (job.status === "permission_blocked") {
+    return {
+      jobId: job.jobId,
+      previousStatus: job.status,
+      reconciledStatus: "permission_blocked",
+      eligibleForRetry: false,
+      requiresReview: true,
+      reason: "Job was blocked by permission policy before restart. Automatic retry blocked; review permissions.",
+    };
+  }
+
+  const safeTerminalStatuses = ["succeeded", "failed", "cancelled", "timed_out", "interrupted"];
+  if (safeTerminalStatuses.includes(job.status)) {
     return {
       jobId: job.jobId,
       previousStatus: job.status,
@@ -139,8 +174,8 @@ export async function reconcileJobOnRestart(
     };
   }
 
-  // Prior permission block persists across restart
-  if (job.status === "permission_blocked" || checkpoint?.verificationState === "permission_blocked") {
+  // Prior permission block in checkpoint persists across restart
+  if (checkpoint?.verificationState === "permission_blocked") {
     return {
       jobId: job.jobId,
       previousStatus: job.status,
@@ -151,31 +186,110 @@ export async function reconcileJobOnRestart(
     };
   }
 
-  // Child is dead
-  const hadMutatingWrite = !(job.hasMutatingWrite === false || (checkpoint !== null && checkpoint !== undefined && checkpoint.hasMutatingWrite === false));
+  // Child is dead: require durable, validated checkpoint whose jobId strictly matches job.jobId (P0-1)
+  const isCheckpointValid =
+    checkpoint !== null &&
+    checkpoint !== undefined &&
+    typeof checkpoint === "object" &&
+    checkpoint.jobId === job.jobId;
 
-  if (hadMutatingWrite) {
-    // If unknown mutating side effects occurred before crash, require manual review
+  if (!isCheckpointValid) {
+    // Missing, invalid, or mismatched checkpoint: FAIL CLOSED!
+    // Never infer read-only without verifiable positive evidence; never trust in-memory job flags alone.
+    const reason =
+      checkpoint === null || checkpoint === undefined
+        ? "Job checkpoint is missing or unreadable after restart; cannot prove job was read-only. Automatic retry blocked to prevent duplicate writes; operator review required."
+        : `Job checkpoint schema invalid or jobId mismatch (expected '${job.jobId}', got '${checkpoint?.jobId}'); untrusted verifier evidence. Automatic retry blocked; operator review required.`;
+
     return {
       jobId: job.jobId,
       previousStatus: job.status,
       reconciledStatus: "unknown_outcome_review_required",
       eligibleForRetry: false,
       requiresReview: true,
-      reason:
-        checkpoint === null || checkpoint === undefined
-          ? "Job checkpoint missing or unreadable after restart; cannot prove job was read-only. Automatic retry blocked."
-          : "Bridge crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes.",
+      reason,
     };
   }
 
-  // Purely read-only or cleanly safe interrupted job
+  // Check for contradictory verifier receipts
+  const verificationState = checkpoint.verificationState;
+  const lastEvent = checkpoint.lastEvent;
+
+  const hasVerifiedState =
+    verificationState === "verified" || verificationState === "artifacts_verified";
+  const hasVerifiedEvent = lastEvent === "verified_succeeded";
+
+  const hasFailedState =
+    verificationState === "verification_failed" || verificationState === "failed";
+  const hasFailedEvent =
+    lastEvent === "verified_failed" || lastEvent === "verification_failed";
+
+  const isVerifyingInProgress =
+    verificationState === "verifying" ||
+    (typeof lastEvent === "string" && lastEvent.startsWith("verifier_"));
+
+  const hasVerifiedRollback =
+    (checkpoint as any)?.rollbackState === "verified_clean" ||
+    (checkpoint as any)?.verifiedRollback === true;
+
+  const hasContradictoryVerifierReceipt =
+    (hasVerifiedState && (hasFailedEvent || isVerifyingInProgress || hasVerifiedRollback)) ||
+    (hasVerifiedEvent && (hasFailedState || isVerifyingInProgress || hasVerifiedRollback)) ||
+    (hasVerifiedRollback && (hasVerifiedState || hasVerifiedEvent));
+
+  if (hasContradictoryVerifierReceipt) {
+    return {
+      jobId: job.jobId,
+      previousStatus: job.status,
+      reconciledStatus: "unknown_outcome_review_required",
+      eligibleForRetry: false,
+      requiresReview: true,
+      reason: "Contradictory verifier receipts detected in checkpoint. Verification evidence cannot be reconciled; operator review required.",
+    };
+  }
+
+  // Check for mutating operations
+  const isMutating =
+    job.hasMutatingWrite === true ||
+    checkpoint.hasMutatingWrite === true ||
+    checkpoint.isMutating === true ||
+    (checkpoint as any).hadMutatingWrite === true;
+
+  if (isMutating) {
+    return {
+      jobId: job.jobId,
+      previousStatus: job.status,
+      reconciledStatus: "unknown_outcome_review_required",
+      eligibleForRetry: false,
+      requiresReview: true,
+      reason: "Bridge crashed during unverified mutating operation. Automatic retry blocked to prevent duplicate writes; operator review required.",
+    };
+  }
+
+  // Affirmative positive proof of read-only behavior
+  const isProvenReadOnly =
+    checkpoint.hasMutatingWrite === false &&
+    checkpoint.isMutating !== true &&
+    job.hasMutatingWrite !== true;
+
+  if (isProvenReadOnly) {
+    return {
+      jobId: job.jobId,
+      previousStatus: job.status,
+      reconciledStatus: "interrupted",
+      eligibleForRetry: true,
+      requiresReview: false,
+      reason: "Bridge restart interrupted read-only job with verified durable checkpoint; eligible for safe supervised retry.",
+    };
+  }
+
+  // Fallback: cannot prove read-only
   return {
     jobId: job.jobId,
     previousStatus: job.status,
-    reconciledStatus: "interrupted",
-    eligibleForRetry: true,
-    requiresReview: false,
-    reason: "Bridge restart interrupted read-only job; eligible for safe supervised retry.",
+    reconciledStatus: "unknown_outcome_review_required",
+    eligibleForRetry: false,
+    requiresReview: true,
+    reason: "Cannot prove job was read-only from checkpoint; automatic retry blocked; operator review required.",
   };
 }
