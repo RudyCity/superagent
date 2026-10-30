@@ -9,6 +9,7 @@ import {
   getLogQueueCount,
   __resetDelegateJobsForTests,
   __populateCompletedJobsForTests,
+  __setOwnedJobForTests,
   type DelegateJob,
 } from "../src/core/tools/cliBridgeDelegateJobs.js";
 import {
@@ -64,6 +65,41 @@ describe("CLI Bridge Delegate Job Retention & Lifecycle Ordering (M5)", () => {
     const oldestRemainingStartedAt = baseTime + 900 * 1000;
     // Calling pruneJobs again should prune 0
     expect(pruneJobs()).toBe(0);
+    expect(getRetainedJobCount()).toBe(100);
+  });
+
+  it("does not prune a terminal job while the current runtime still owns its finalizer state", async () => {
+    const syntheticJobs: DelegateJob[] = [];
+    const baseTime = Date.now() - 500_000;
+    for (let i = 0; i < 101; i++) {
+      const jobId = `clj_${4000 + i}_${(i + 1).toString(16).padStart(8, "0")}`;
+      syntheticJobs.push({
+        jobId,
+        cliAlias: "fixture",
+        binary: process.execPath,
+        cwd: process.cwd(),
+        logPath: path.join(tempDir, `${jobId}.log`),
+        status: "succeeded",
+        startedAt: baseTime + i * 1000,
+        endedAt: baseTime + i * 1000 + 100,
+        pid: null,
+        exitCode: 0,
+        timedOut: false,
+        timeoutMs: 1000,
+        outputTail: "",
+        outputBytes: 0,
+        updatedAt: baseTime + i * 1000 + 100,
+      });
+    }
+    __populateCompletedJobsForTests(syntheticJobs);
+    const finalizingId = syntheticJobs[0].jobId;
+    __setOwnedJobForTests(finalizingId, true);
+
+    expect(pruneJobs()).toBe(0);
+    expect(getRetainedJobCount()).toBe(101);
+
+    __setOwnedJobForTests(finalizingId, false);
+    expect(pruneJobs()).toBe(1);
     expect(getRetainedJobCount()).toBe(100);
   });
 

@@ -6,11 +6,18 @@
  * rejection never falls back to local (guard-bypassing) execution.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
+import fs from "node:fs/promises";
 import http from "http";
+import os from "os";
 import path from "path";
 import { EventEmitter } from "events";
 import { callServerApi } from "../src/core/mcp/tools/processTools.js";
-import { getMcpWorkspacePath, resolveMcpWorkspace, runWithMcpWorkspace } from "../src/core/mcp/tools/workspaceContext.js";
+import {
+  getMcpWorkspacePath,
+  resolveMcpChildWorkspacePath,
+  resolveMcpWorkspace,
+  runWithMcpWorkspace,
+} from "../src/core/mcp/tools/workspaceContext.js";
 import { handleRunTask, handleInvoke } from "../src/core/mcp/tools/executionTools.js";
 import { handleInterrupt } from "../src/core/mcp/tools/processTools.js";
 
@@ -78,6 +85,31 @@ describe("resolveMcpWorkspace", () => {
   it("reports explicit:false when no workspace is given", () => {
     expect(resolveMcpWorkspace(undefined).explicit).toBe(false);
     expect(resolveMcpWorkspace("   ").explicit).toBe(false);
+  });
+});
+
+describe("resolveMcpChildWorkspacePath", () => {
+  it("preserves an explicit child cwd beneath the authorized workspace", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-child-workspace-"));
+    try {
+      const apps = path.join(root, "apps");
+      await fs.mkdir(apps);
+      expect(resolveMcpChildWorkspacePath(root, "apps")).toBe(await fs.realpath(apps));
+      expect(resolveMcpChildWorkspacePath(root, apps)).toBe(await fs.realpath(apps));
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a child cwd that escapes the authorized workspace", async () => {
+    const parent = await fs.mkdtemp(path.join(os.tmpdir(), "mcp-child-workspace-escape-"));
+    try {
+      const root = path.join(parent, "root");
+      await fs.mkdir(root);
+      expect(() => resolveMcpChildWorkspacePath(root, "../outside")).toThrow(/outside the authorized workspace/i);
+    } finally {
+      await fs.rm(parent, { recursive: true, force: true });
+    }
   });
 });
 

@@ -392,7 +392,10 @@ export function getLogQueueCount(): number {
 
 export function pruneJobs(maxRetained = MAX_RETAINED_JOBS): number {
   const completed = [...jobs.values()]
-    .filter((job) => !activeStatus(job.status))
+    // A runner can set a terminal status before its finally block releases
+    // artifact/resource/capacity claims. Never prune runtime-owned/finalizing
+    // jobs or refreshJobShards() can erase claim bookkeeping mid-cleanup.
+    .filter((job) => !activeStatus(job.status) && !ownedJobIds.has(job.jobId) && !runners.has(job.jobId))
     .sort((a, b) => b.startedAt - a.startedAt);
   let prunedCount = 0;
   for (const job of completed.slice(maxRetained)) {
@@ -1274,6 +1277,11 @@ export function __populateCompletedJobsForTests(jobsList: DelegateJob[]): void {
   for (const j of jobsList) {
     jobs.set(j.jobId, j);
   }
+}
+
+export function __setOwnedJobForTests(jobId: string, owned: boolean): void {
+  if (owned) ownedJobIds.add(jobId);
+  else ownedJobIds.delete(jobId);
 }
 
 export async function __resetDelegateJobsForTests(opts?: { keepDiskFiles?: boolean }): Promise<void> {

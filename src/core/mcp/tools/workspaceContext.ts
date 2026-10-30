@@ -1,4 +1,5 @@
 import path from "path";
+import fs from "node:fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 
 /**
@@ -22,6 +23,37 @@ export function getMcpWorkspacePath(): string {
 
 export function isRemoteWorkspaceTarget(workspacePath: string): boolean {
   return /^(?:ssh:|ssh:\/\/|chain:)/i.test(workspacePath);
+}
+
+/**
+ * Resolve an explicit child path beneath an already-authorized local workspace.
+ * This preserves child cwd/worktree semantics after MCP project routing while
+ * refusing lexical and symlink-parent escapes from the authorized workspace.
+ */
+export function resolveMcpChildWorkspacePath(workspacePath: string, requestedPath: string): string {
+  if (isRemoteWorkspaceTarget(workspacePath)) {
+    throw new Error("Child filesystem paths are unavailable for remote MCP workspace targets.");
+  }
+  const raw = requestedPath.trim();
+  if (!raw || isRemoteWorkspaceTarget(raw)) {
+    throw new Error("MCP child workspace path must be a nonempty local path.");
+  }
+
+  const root = fs.realpathSync(path.resolve(workspacePath));
+  const candidate = path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(root, raw);
+  let ancestor = candidate;
+  while (!fs.existsSync(ancestor)) {
+    const parent = path.dirname(ancestor);
+    if (parent === ancestor) break;
+    ancestor = parent;
+  }
+  const canonicalAncestor = fs.realpathSync(ancestor);
+  const canonicalCandidate = path.resolve(canonicalAncestor, path.relative(ancestor, candidate));
+  const relative = path.relative(root, canonicalCandidate);
+  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error("MCP child workspace path is outside the authorized workspace.");
+  }
+  return canonicalCandidate;
 }
 
 export function resolveMcpWorkspace(workspaceArg?: unknown): McpWorkspaceContext {

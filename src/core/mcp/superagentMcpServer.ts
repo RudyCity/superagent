@@ -35,7 +35,11 @@ import {
   isSensitiveEnvFileAccess,
 } from "../permissions.js";
 import { registerResourcesAndPrompts } from "./resourcesAndPrompts.js";
-import { runWithMcpWorkspace } from "./tools/workspaceContext.js";
+import {
+  isRemoteWorkspaceTarget,
+  resolveMcpChildWorkspacePath,
+  runWithMcpWorkspace,
+} from "./tools/workspaceContext.js";
 import {
   handleListActive,
   handleGetProcessStatus,
@@ -744,10 +748,21 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     }
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && hasExplicitWorkspaceTarget) {
       // Canonicalize explicit handler context: avoid a relative cwd/workspace argument
-      // being resolved again against process.cwd(). Preserve ambient defaults so
-      // superagentId/worktree-based task lookups retain their existing semantics.
+      // being resolved again against process.cwd(). When workspace + cwd are both
+      // supplied, preserve cwd as a child of the authorized workspace instead of
+      // flattening it back to the workspace root.
+      const requestedWorkspace = typeof args.workspace === "string" && args.workspace.trim()
+        ? args.workspace.trim()
+        : undefined;
+      const requestedCwd = typeof args.cwd === "string" && args.cwd.trim()
+        ? args.cwd.trim()
+        : undefined;
       args.workspace = targetWorkspace;
-      if (typeof args.cwd === "string") args.cwd = targetWorkspace;
+      if (requestedCwd) {
+        args.cwd = requestedWorkspace && !isRemoteWorkspaceTarget(targetWorkspace)
+          ? resolveMcpChildWorkspacePath(targetWorkspace, requestedCwd)
+          : targetWorkspace;
+      }
       if (typeof args.worktreePath === "string") args.worktreePath = targetWorkspace;
     }
     return runWithMcpWorkspace(targetWorkspace, async () => {
