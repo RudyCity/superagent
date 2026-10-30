@@ -1245,6 +1245,9 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
     "Timeout: " + job.timeoutMs + "ms",
     "Output bytes: " + job.outputBytes,
     "Current stage: " + (job.currentStage ?? "(no structured progress yet)"),
+    "Active AGY tool: " + (job.activeToolName ?? "(none)") +
+      (job.activeToolClass ? " [" + job.activeToolClass + "]" : ""),
+    "Active tool age: " + (job.activeToolStartedAt ? Math.max(0, Date.now() - job.activeToolStartedAt) + "ms" : "n/a"),
     "Progress events: " + (job.activityEvents ?? 0),
     "Last progress: " + (job.lastProgressAt ? new Date(job.lastProgressAt).toISOString() : "(none)"),
     "Bridge heartbeat: " + (job.heartbeatAt ? new Date(job.heartbeatAt).toISOString() : "(not recorded)"),
@@ -1258,6 +1261,7 @@ async function handleDelegateGet(jobId: string, callerWorkspace: string): Promis
     job.permissionWarning ? "Mode warning: " + job.permissionWarning : "",
     job.permissionRecoveryWarning ? "Permission recovery: " + job.permissionRecoveryWarning : "",
     job.worktreeCleanupWarning ? "Worktree cleanup: " + job.worktreeCleanupWarning : "",
+    job.toolStallReason ? "Tool stall warning: " + job.toolStallReason : "",
     job.error ? "Error: " + job.error : "",
     "",
     "Recent output:",

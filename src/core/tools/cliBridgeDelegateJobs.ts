@@ -118,6 +118,14 @@ export interface DelegateJob {
   lastProgressAt?: number;
   activityEvents?: number;
   currentStage?: string;
+  /** Structured AGY tool currently executing, when available from the event stream. */
+  activeToolName?: string;
+  activeToolStartedAt?: number;
+  /** Probe commands are safe to terminate when they become obviously stale. */
+  activeToolClass?: "probe" | "general";
+  /** Diagnostic only for general tools; probe stalls may also trigger fail-safe termination. */
+  toolStallDetectedAt?: number;
+  toolStallReason?: string;
   endedAt?: number;
   durationMs?: number;
   exitCode: number | null;
@@ -149,6 +157,59 @@ export interface DelegateJob {
   verifiedAt?: number;
   failureReason?: string;
   processRecordId?: string;
+}
+
+const DEFAULT_AGY_TOOL_STALL_WARN_MS = 90_000;
+const DEFAULT_AGY_PROBE_STALL_KILL_MS = 120_000;
+const toolStallTerminations = new Set<string>();
+
+function boundedPositiveEnvMs(name: string, fallback: number, minimum: number): number {
+  const raw = Number(process.env[name]);
+  if (!Number.isFinite(raw)) return fallback;
+  return Math.max(minimum, Math.floor(raw));
+}
+
+export function classifyAgyToolCommand(commandLine: unknown): "probe" | "general" {
+  if (typeof commandLine !== "string") return "general";
+  const command = commandLine.trim();
+  if (!command || command.length > 2_000) return "general";
+  const probePatterns = [
+    /^echo\b/i,
+    /^(?:pwd|whoami)\b/i,
+    /^Get-Location\b/i,
+    /^Get-ChildItem\b/i,
+    /^(?:git\s+(?:status|rev-parse|branch|log|diff\s+--stat))\b/i,
+    /^(?:node|bun|python|python3|rudy|npm|pnpm|yarn)\s+--version\b/i,
+    /^(?:where|where\.exe|Get-Command)\b/i,
+  ];
+  return probePatterns.some(pattern => pattern.test(command)) ? "probe" : "general";
+}
+
+export function assessAgyToolStall(
+  job: Pick<DelegateJob, "cliAlias" | "activeToolName" | "activeToolStartedAt" | "activeToolClass" | "lastProgressAt">,
+  now = Date.now(),
+): { stalled: boolean; terminate: boolean; ageMs: number; reason?: string } {
+  if (job.cliAlias !== "agy" || !job.activeToolName || !job.activeToolStartedAt) {
+    return { stalled: false, terminate: false, ageMs: 0 };
+  }
+  const ageMs = Math.max(0, now - job.activeToolStartedAt);
+  const warnMs = boundedPositiveEnvMs("SUPERAGENT_AGY_TOOL_STALL_WARN_MS", DEFAULT_AGY_TOOL_STALL_WARN_MS, 1_000);
+  if (ageMs < warnMs) return { stalled: false, terminate: false, ageMs };
+
+  const probeKillMs = boundedPositiveEnvMs(
+    "SUPERAGENT_AGY_PROBE_STALL_KILL_MS",
+    DEFAULT_AGY_PROBE_STALL_KILL_MS,
+    warnMs,
+  );
+  const isProbe = job.activeToolClass === "probe";
+  return {
+    stalled: true,
+    terminate: isProbe && ageMs >= probeKillMs,
+    ageMs,
+    reason: isProbe
+      ? `AGY probe tool '${job.activeToolName}' has remained ACTIVE for ${ageMs}ms without a structured completion event.`
+      : `AGY tool '${job.activeToolName}' has remained ACTIVE for ${ageMs}ms; warning only because long-running work may be legitimate.`,
+  };
 }
 
 export function isProcessSuccessful(job: Pick<DelegateJob, "status" | "exitCode">): boolean {
@@ -579,6 +640,23 @@ function updateOutput(job: DelegateJob, chunk: Buffer | string): void {
           const type = String(step?.step_type ?? "step").slice(0, 64).replace(/[^a-zA-Z0-9_-]/g, "");
           const state = String(step?.state ?? "progress").slice(0, 24).replace(/[^a-zA-Z0-9_-]/g, "");
           job.currentStage = type + ": " + state;
+          const toolName = String(step?.tool_name ?? "").slice(0, 96).replace(/[^a-zA-Z0-9_.-]/g, "");
+          if (toolName && state === "ACTIVE") {
+            if (job.activeToolName !== toolName) job.activeToolStartedAt = Date.now();
+            job.activeToolName = toolName;
+            job.activeToolStartedAt ??= Date.now();
+            job.activeToolClass = toolName === "run_command"
+              ? classifyAgyToolCommand(step?.tool_info?.parameters?.CommandLine)
+              : "general";
+            job.toolStallDetectedAt = undefined;
+            job.toolStallReason = undefined;
+          } else if (toolName && ["DONE", "FAILED", "CANCELLED"].includes(state)) {
+            job.activeToolName = undefined;
+            job.activeToolStartedAt = undefined;
+            job.activeToolClass = undefined;
+            job.toolStallDetectedAt = undefined;
+            job.toolStallReason = undefined;
+          }
         }
       } catch { /* other CLI output is not trusted JSON progress */ }
     }
@@ -710,9 +788,20 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
       job.error = "The CLI process failed before returning an exit code.";
     }
   } catch (error) {
-    job.status = cancellationRequested.has(job.jobId) ? "cancelled" : "failed";
-    job.error = error instanceof Error ? error.message : String(error);
+    if (toolStallTerminations.has(job.jobId)) {
+      job.status = "interrupted";
+      job.completionState = "interrupted";
+      job.error = job.toolStallReason ?? "AGY probe tool was terminated by the CLI Bridge stall watchdog.";
+    } else {
+      job.status = cancellationRequested.has(job.jobId) ? "cancelled" : "failed";
+      job.error = error instanceof Error ? error.message : String(error);
+    }
   } finally {
+    if (toolStallTerminations.has(job.jobId)) {
+      job.status = "interrupted";
+      job.completionState = "interrupted";
+      job.error = job.toolStallReason ?? job.error ?? "AGY probe tool was terminated by the CLI Bridge stall watchdog.";
+    }
     if (cancellationRequested.has(job.jobId)) {
       job.status = "cancelled";
       job.completionState = "cancelled";
@@ -805,6 +894,7 @@ async function finishJob(job: DelegateJob, proc: any, timeoutMs: number): Promis
     processes.delete(job.jobId);
     progressFragments.delete(job.jobId);
     cancellationRequested.delete(job.jobId);
+    toolStallTerminations.delete(job.jobId);
     await (logQueues.get(job.jobId) ?? Promise.resolve()).catch(() => {});
     queueLog(job.jobId, job.logPath, `\n\n[CLI Bridge job finished: status=${job.status} proof=${job.completionState} exit=${job.exitCode ?? "?"} timedOut=${job.timedOut} duration=${job.durationMs}ms timeout=${timeoutMs}ms]\n`);
     await (logQueues.get(job.jobId) ?? Promise.resolve()).catch(() => {});
@@ -1040,6 +1130,16 @@ async function launchJobExecution(
   const pulse = setInterval(() => {
     if (!activeStatus(job.status)) return;
     job.heartbeatAt = Date.now();
+    const stall = assessAgyToolStall(job, job.heartbeatAt);
+    if (stall.stalled) {
+      job.toolStallDetectedAt ??= job.heartbeatAt;
+      job.toolStallReason = stall.reason;
+      if (stall.terminate && !toolStallTerminations.has(job.jobId)) {
+        toolStallTerminations.add(job.jobId);
+        job.currentStage = "AGY probe tool stalled; terminating process tree";
+        killProcessTree(job.jobId, proc);
+      }
+    }
     if (job.processRecordId) {
       void getProcessSupervisor().recordProcessHeartbeat(job.processRecordId).catch(() => {});
     }
@@ -1295,6 +1395,7 @@ export async function __resetDelegateJobsForTests(opts?: { keepDiskFiles?: boole
   for (const pulse of heartbeatTimers.values()) clearInterval(pulse);
   heartbeatTimers.clear();
   progressFragments.clear();
+  toolStallTerminations.clear();
   jobs.clear(); processes.clear(); runners.clear(); logQueues.clear(); cancellationRequested.clear(); killTimers.clear();
   ownedJobIds.clear();
   await Promise.allSettled([...jobCrossProcessClaims.keys()].map(releaseArtifactClaims));

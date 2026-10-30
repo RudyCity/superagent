@@ -114,6 +114,26 @@ describe("CLI Bridge hardened delegate behavior", () => {
     expect(status).toContain("Current stage: tool_call: ACTIVE");
     expect(String(await cliBridgeTool.execute({ action: "delegate.health" }, root))).toContain("CLI Bridge project job health");
   }, 20_000);
+  it("classifies bounded AGY probes and warns before terminating only stale probes", () => {
+    expect(delegateJobs.classifyAgyToolCommand("echo hello")).toBe("probe");
+    expect(delegateJobs.classifyAgyToolCommand("rudy --version")).toBe("probe");
+    expect(delegateJobs.classifyAgyToolCommand("Get-ChildItem -Path . | Select-Object Name")).toBe("probe");
+    expect(delegateJobs.classifyAgyToolCommand("rudy train.rdy --epochs 3")).toBe("general");
+
+    const started = 1_000;
+    const base = {
+      cliAlias: "agy",
+      activeToolName: "run_command",
+      activeToolStartedAt: started,
+      lastProgressAt: started,
+    } as const;
+    const warn = delegateJobs.assessAgyToolStall({ ...base, activeToolClass: "general" }, started + 95_000);
+    expect(warn.stalled).toBe(true);
+    expect(warn.terminate).toBe(false);
+    const probe = delegateJobs.assessAgyToolStall({ ...base, activeToolClass: "probe" }, started + 125_000);
+    expect(probe.stalled).toBe(true);
+    expect(probe.terminate).toBe(true);
+  });
   it("reserves slots atomically, never steals a competing slot and releases its own", async () => {
     const lease = await acquireCliBridgeCapacity(1, "a");
     expect(lease.index).toBe(0);
