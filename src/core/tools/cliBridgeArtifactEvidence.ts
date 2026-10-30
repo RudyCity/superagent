@@ -28,21 +28,51 @@ function within(base: string, candidate: string): boolean {
   return relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
-/** Called before process launch. Immutable file claims are workspace-relative. */
+/**
+ * Called before process launch.
+ *
+ * expectedArtifacts remains cwd-relative for backwards compatibility. When the
+ * delegated cwd is a descendant of the workspace root, callers may also pass
+ * the same artifact using its workspace-prefixed form, e.g.:
+ *
+ *   cwd:               <workspace>/apps/foo
+ *   expectedArtifacts: apps/foo/output.json
+ *
+ * The workspace-prefixed form is accepted only when it resolves back inside
+ * the delegated cwd; it cannot be used to claim sibling workspace files.
+ */
 export function resolveExpectedArtifacts(cwd: string, workspace: string, paths: string[] | undefined): string[] {
   if (paths === undefined) return [];
   if (!Array.isArray(paths) || paths.length < 1 || paths.length > MAX_DELEGATE_ARTIFACTS) {
     throw new Error(`expectedArtifacts requires 1 to ${MAX_DELEGATE_ARTIFACTS} relative file paths.`);
   }
+
   const base = fsSync.realpathSync(cwd);
+  const workspaceBase = fsSync.realpathSync(workspace);
+  if (!within(workspaceBase, base)) {
+    throw new Error("Delegated working directory is outside the authorized workspace.");
+  }
+
+  const cwdFromWorkspace = path.relative(workspaceBase, base);
+  const cwdPrefix = cwdFromWorkspace === "" ? "" : path.normalize(cwdFromWorkspace) + path.sep;
   const seen = new Set<string>();
+
   return paths.map(request => {
     if (typeof request !== "string" || !request.trim() || request.length > 240 || path.isAbsolute(request) || request.includes("\0")) {
       throw new Error("expectedArtifacts must contain nonempty, relative file paths (max 240 characters).");
     }
-    const file = path.resolve(base, request);
-    if (!within(base, file) || !cliArtifactPathVisibleToWorkspace(file, workspace)) {
-      throw new Error("Expected artifact path is outside the authorized delegation workspace.");
+
+    const normalizedRequest = path.normalize(request);
+    const workspacePrefixed =
+      cwdPrefix !== "" &&
+      (normalizedRequest === path.normalize(cwdFromWorkspace) || normalizedRequest.startsWith(cwdPrefix));
+
+    const file = workspacePrefixed
+      ? path.resolve(workspaceBase, normalizedRequest)
+      : path.resolve(base, normalizedRequest);
+
+    if (!within(base, file) || !cliArtifactPathVisibleToWorkspace(file, workspaceBase)) {
+      throw new Error("Expected artifact path is outside the authorized delegated working directory.");
     }
     if (fsSync.existsSync(file) && !fsSync.lstatSync(file).isFile()) {
       throw new Error("Expected artifact must be a regular file, not a directory or symlink.");

@@ -272,6 +272,37 @@ describe("CLI Bridge background delegation jobs", () => {
     }
   }, 15_000);
 
+  it("verifies workspace-prefixed expected artifacts when delegation cwd is nested", async () => {
+    const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-prefixed-"));
+    const cwd = path.join(workspace, "apps", "smartseller_global_pii_rlcd");
+    await fs.mkdir(cwd, { recursive: true });
+    try {
+      const prefixedArtifact = path.join("apps", "smartseller_global_pii_rlcd", "full_summary.json");
+      const started = await delegateJobs.startDelegateJob({
+        ...options('require("fs").writeFileSync("full_summary.json", "verified")'),
+        cwd,
+        workspaceRoot: workspace,
+        expectedArtifacts: [prefixedArtifact],
+      });
+      const final = await waitForTerminal(started.jobId);
+      expect(final.status).toBe("succeeded");
+      expect(final.completionState).toBe("artifacts_verified");
+      expect(final.artifactEvidence).toEqual([
+        expect.objectContaining({ path: "full_summary.json", state: "created", bytes: 8 }),
+      ]);
+      expect(await fs.readFile(path.join(cwd, "full_summary.json"), "utf8")).toBe("verified");
+
+      await expect(delegateJobs.startDelegateJob({
+        ...options('console.log("must not run duplicate artifact aliases")'),
+        cwd,
+        workspaceRoot: workspace,
+        expectedArtifacts: ["full_summary.json", prefixedArtifact],
+      })).rejects.toThrow(/duplicate/i);
+    } finally {
+      await fs.rm(workspace, { recursive: true, force: true, maxRetries: 8, retryDelay: 120 });
+    }
+  }, 15_000);
+
   it("refuses missing or unchanged artifacts despite successful CLI exit", async () => {
     const workspace = await fs.mkdtemp(path.join(os.tmpdir(), "hermes-artifact-fail-"));
     try {

@@ -378,6 +378,7 @@ export const cliBridgeTool: Tool = {
         items: { type: "string" },
         description:
           "For delegate.start, or read-only delegate.claims: 1-12 relative file paths inside the delegated working directory. " +
+          "Paths may be cwd-relative (data/output.json) or use the workspace-prefixed form when it points back inside the same cwd (apps/foo/data/output.json). " +
           "After exit 0, every file must be newly created or content-changed (SHA-256 compared against a pre-run baseline). " +
           "Missing, unchanged, escaped, oversized or symlinked files do not count as verified completion. " +
           "Without expectedArtifacts, exit 0 is an unverified process success, not proof of task completion.",
