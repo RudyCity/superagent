@@ -17,7 +17,7 @@ export interface StatusBarProps {
   worktreeCount: number;
   lastSpeed: number | null;
   formatCompactNumber: (val: number) => string;
-  rmemoryStatus?: "online" | "offline" | "checking" | "disabled";
+  rmemoryStatus?: "online" | "offline" | "ready" | "disabled";
   activeDevHook?: string | null;
   workspace?: string;
   isProcessing?: boolean;
@@ -137,10 +137,10 @@ export const StatusBar = memo(function StatusBar(props: StatusBarProps) {
               <Text color="red" bold>🧠 Mem: OFFLINE</Text>
             </>
           )}
-          {rmemoryStatus === "checking" && (
+          {rmemoryStatus === "ready" && (
             <>
               <Text color="gray"> • </Text>
-              <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
+              <Text color="cyan" bold>🧠 Mem: READY</Text>
             </>
           )}
           {(rmemoryStatus === "disabled" || !rmemoryStatus) && (

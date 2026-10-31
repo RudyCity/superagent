@@ -20,7 +20,7 @@ export interface DashboardStatusBarProps {
   activeWizard: any;
   wizardOptions: string[];
   focusArea: string;
-  rmemoryStatus?: "online" | "offline" | "checking" | "disabled";
+  rmemoryStatus?: "online" | "offline" | "ready" | "disabled";
   workspace?: string;
   isProcessing?: boolean;
   isVisionActive?: boolean;
@@ -102,8 +102,8 @@ export const DashboardStatusBar = memo(function DashboardStatusBar({
         {rmemoryStatus === "offline" && (
           <Text color="red" bold>🧠 Mem: OFFLINE</Text>
         )}
-        {rmemoryStatus === "checking" && (
-          <Text color="yellow" bold>🧠 Mem: CHECKING</Text>
+        {rmemoryStatus === "ready" && (
+          <Text color="cyan" bold>🧠 Mem: READY</Text>
         )}
         {(rmemoryStatus === "disabled" || !rmemoryStatus) && (
           <Text color="gray" dimColor>🧠 Mem: OFF</Text>

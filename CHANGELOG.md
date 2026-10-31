@@ -1,3 +1,9 @@
+## [1.14.62] - 2026-10-31
+### RMemory status semantics
+- Replace the misleading persistent `🧠 Mem: CHECKING` state with `🧠 Mem: READY` when RMemory is enabled but its lazy index has not been initialized yet.
+- Keep `ON` for a live initialized index, `OFFLINE` for degraded initialization, and `OFF` when memory is disabled.
+- Update both standard and dashboard status bars plus regression coverage.
+
 ## [1.14.61] - 2026-10-31
 ### Timeline guides hidden by default
 - Make conversation timeline/tree guide lines hidden by default for a cleaner chat view.

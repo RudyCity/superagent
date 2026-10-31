@@ -66,7 +66,7 @@ describe("useRmemoryStatus Hook", () => {
 
     health.mockReturnValue(snapshot(true, false));
     view = render(React.createElement(TestComponent));
-    await waitForCondition(() => hookStatus === "checking");
+    await waitForCondition(() => hookStatus === "ready");
     view.unmount();
 
     health.mockReturnValue(snapshot(true, true));
