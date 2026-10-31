@@ -733,7 +733,7 @@ export function getSettings(): SystemSettings {
     maxChecklistVisible: s.maxChecklistVisible ?? 3,
     maxHistoryVisible: s.maxHistoryVisible ?? 3,
     maxProcsVisible: s.maxProcsVisible ?? 3,
-    hideTimeline: s.hideTimeline ?? false,
+    hideTimeline: s.hideTimeline ?? true,
     enableAdvisor: s.enableAdvisor ?? true,
     advisorWarningThreshold: s.advisorWarningThreshold ?? 3,
     advisorPauseThreshold: s.advisorPauseThreshold ?? 5,

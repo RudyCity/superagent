@@ -15,6 +15,9 @@ export const DEFAULT_CONFIG: GlobalModelConfig = {
     maxHistoryVisible: 3,
     maxProcsVisible: 3,
     forcePromptBasedToolCalling: false,
+    // Conversation timeline/tree guides are hidden by default. Users can
+    // re-enable them with /setting-hide-timeline off.
+    hideTimeline: true,
     // RMemory defaults ON. An explicit per-user OFF still takes precedence.
     enableRmemory: true,
     rmemoryEmbeddingProvider: "local",

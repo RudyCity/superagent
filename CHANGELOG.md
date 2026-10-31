@@ -1,3 +1,10 @@
+## [1.14.61] - 2026-10-31
+### Timeline guides hidden by default
+- Make conversation timeline/tree guide lines hidden by default for a cleaner chat view.
+- Reuse the existing `hideTimeline` setting instead of adding a duplicate preference.
+- Preserve `/setting-hide-timeline off` as the opt-in way to show timeline lines again.
+- Align chat and wizard fallback rendering with the new default and add regression coverage.
+
 ## [1.14.60] - 2026-10-31
 ### MCP tunnel workspace path visibility
 - Show the full active `Workspace Path` in MCP tunnel startup output directly below `Current Project`.

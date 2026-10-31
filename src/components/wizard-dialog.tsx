@@ -180,7 +180,7 @@ export function WizardDialog({
     finalOnHeaderRowsChange(headerRows);
   }, [description, searchQuery, isLoading, start, terminalWidth, maxDescriptionLines, descOffset, finalOnHeaderRowsChange]);
 
-  const hideTimeline = getSettings().hideTimeline ?? false;
+  const hideTimeline = getSettings().hideTimeline ?? true;
   const marginPrefix = hideTimeline ? "  " : "│ ";
 
   return (

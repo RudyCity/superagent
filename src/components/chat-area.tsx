@@ -1190,7 +1190,7 @@ export function computeWrappedLines({
     lineWrapCache.clear();
   }
 
-  const hideTimeline = getSettings().hideTimeline ?? false;
+  const hideTimeline = getSettings().hideTimeline ?? true;
 
   const lastAssistantIdx = (() => {
     const shouldRenderStreamNow = isProcessing && streamDisplay && streamDisplay.trim().length > 0;

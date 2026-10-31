@@ -13,6 +13,7 @@ import * as configModule from "../src/core/config.js";
 import { getDashboardSuggestions } from "../src/utils/dashboardSuggestions.js";
 import { getModelConfigPath, ensureGlobalConfigDir } from "../src/core/config/paths.js";
 import { clearModelConfigCache, getSettings } from "../src/core/config/jsonConfig.js";
+import { DEFAULT_CONFIG } from "../src/core/config/defaultConfig.js";
 import * as execaModule from "execa";
 import { execa } from "execa";
 
@@ -674,6 +675,10 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(addedLines[addedLines.length - 1].content).toContain("Max iterations set to: 120");
   });
 
+
+  it("defaults conversation timeline lines to hidden", () => {
+    expect(DEFAULT_CONFIG.settings?.hideTimeline).toBe(true);
+  });
 
   it("should configure hide timeline when running /setting-hide-timeline", () => {
     handleSlashCommand("/setting-hide-timeline", mockCtx as any);
