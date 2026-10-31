@@ -346,8 +346,13 @@ export const mcpCommand: SlashCommand = {
           port = parsed;
         }
         const { listActiveMcpServers, stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
-        const { readManagedMcpTunnelLease, stopManagedMcpTunnelOwner, startManagedMcpTunnelOwner, formatManagedMcpTunnelStartup } =
-          await import("../runtime/mcpManagedTunnelOwner.js");
+        const {
+          readManagedMcpTunnelLease,
+          stopManagedMcpTunnelOwner,
+          startManagedMcpTunnelOwner,
+          formatManagedMcpTunnelStartup,
+          copyManagedMcpExtensionSetupToClipboard,
+        } = await import("../runtime/mcpManagedTunnelOwner.js");
         const active = listActiveMcpServers().find((server) => server.port === port);
         const lease = readManagedMcpTunnelLease(port);
         const hasForce = rawArgs.includes("--force") || rawArgs.includes("-f");
@@ -382,8 +387,14 @@ export const mcpCommand: SlashCommand = {
           } else if (active) {
             await stopMcpTunnel(port);
           }
-          const started = await startManagedMcpTunnelOwner(restartArgs, process.argv[1] || "");
-          ctx.addLine({ type: "system", content: formatManagedMcpTunnelStartup(started), timestamp: Date.now() });
+          const workspace = ctx.agent?.workingDirectory || process.cwd();
+          const started = await startManagedMcpTunnelOwner(restartArgs, process.argv[1] || "", workspace);
+          const copied = await copyManagedMcpExtensionSetupToClipboard(started);
+          ctx.addLine({
+            type: "system",
+            content: formatManagedMcpTunnelStartup(started, { extensionSetupCopied: copied }),
+            timestamp: Date.now(),
+          });
         } catch (err: any) {
           ctx.addLine({ type: "error", content: `Failed to restart MCP tunnel: ${err.message}`, timestamp: Date.now() });
         }
@@ -426,12 +437,17 @@ export const mcpCommand: SlashCommand = {
 
       if (tunnelAction === "start") {
         try {
-          const { startManagedMcpTunnelOwner, formatManagedMcpTunnelStartup } =
-            await import("../runtime/mcpManagedTunnelOwner.js");
-          const started = await startManagedMcpTunnelOwner(rawArgs, process.argv[1] || "");
+          const {
+            startManagedMcpTunnelOwner,
+            formatManagedMcpTunnelStartup,
+            copyManagedMcpExtensionSetupToClipboard,
+          } = await import("../runtime/mcpManagedTunnelOwner.js");
+          const workspace = ctx.agent?.workingDirectory || process.cwd();
+          const started = await startManagedMcpTunnelOwner(rawArgs, process.argv[1] || "", workspace);
+          const copied = await copyManagedMcpExtensionSetupToClipboard(started);
           ctx.addLine({
             type: "system",
-            content: formatManagedMcpTunnelStartup(started),
+            content: formatManagedMcpTunnelStartup(started, { extensionSetupCopied: copied }),
             timestamp: Date.now(),
           });
         } catch (err: any) {

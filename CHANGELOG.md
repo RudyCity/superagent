@@ -1,3 +1,11 @@
+## [1.14.59] - 2026-10-31
+### One-paste MCP extension handoff
+- Automatically copy the Cloudflare MCP extension setup block to the system clipboard after `/mcp tunnel start` and `/mcp tunnel restart`, covering both static Bearer and OAuth bootstrap modes.
+- Label the terminal block `COPY FOR EXTENSION — copied to clipboard` when clipboard handoff succeeds, while keeping credentials out of the AI-safe agent handoff text.
+- Show the active `Current Project` and `Local Endpoint` in tunnel startup output alongside the public MCP endpoint.
+- Launch managed MCP tunnel owners from the active SuperAgent workspace so startup context reflects the actual current project rather than only the Core process directory.
+- Add regression coverage for clipboard handoff, project/local-endpoint logging, and credential isolation.
+
 ## [1.14.58] - 2026-10-31
 ### Compact MCP tunnel startup handoff
 - Replace the verbose post-start Python/client permission guide with a compact MCP tunnel summary and a short client/extension setup block.

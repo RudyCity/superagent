@@ -17,7 +17,7 @@ import {
 import { describeMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
 import { verifyWindowsProcessBirth } from "./mcpProcessBirth.js";
-import { isProcessRunning } from "../remoteAgent/cloudflareTunnel.js";
+import { copyTextToClipboard, isProcessRunning } from "../remoteAgent/cloudflareTunnel.js";
 
 const OWNER_KIND = "managed_mcp_tunnel_owner" as const;
 const OWNER_MODE = "managed-tunnel" as const;
@@ -53,6 +53,7 @@ export interface ManagedMcpTunnelOwnerStatus {
 export interface ManagedMcpTunnelStartResult {
   pid: number;
   info: McpTunnelInfo;
+  workspace?: string;
 }
 
 function ownerLeasePath(port: number): string {
@@ -266,6 +267,7 @@ export async function verifyManagedOwnerIdentity(
 export async function startManagedMcpTunnelOwner(
   args: string[],
   cliEntry = process.argv[1] || "",
+  workspace = process.cwd(),
 ): Promise<ManagedMcpTunnelStartResult> {
   const parsedOptions = parseStartOptions(args);
   const port = assertPort(parsedOptions.port ?? DEFAULT_MCP_PORT);
@@ -283,6 +285,11 @@ export async function startManagedMcpTunnelOwner(
     }
   }
   const entry = path.resolve(cliEntry);
+  const workspacePath = path.resolve(workspace);
+  const workspaceStat = fs.lstatSync(workspacePath);
+  if (!workspaceStat.isDirectory() || workspaceStat.isSymbolicLink()) {
+    throw new Error("Managed MCP tunnel requires a real workspace directory");
+  }
   const stat = fs.lstatSync(entry);
   if (!stat.isFile() || stat.isSymbolicLink()) {
     throw new Error("Managed MCP tunnel requires a real SuperAgent CLI entry file");
@@ -290,7 +297,7 @@ export async function startManagedMcpTunnelOwner(
   const useWindowsTrampoline = process.platform === "win32";
   const child = fork(entry, ["mcp", useWindowsTrampoline ? "tunnel-launcher" : "tunnel-owner", ...args], {
     execPath: process.execPath,
-    cwd: process.cwd(),
+    cwd: workspacePath,
     detached: true,
     stdio: ["ignore", "ignore", "ignore", "ipc"],
     ...({ windowsHide: true } as any),
@@ -345,7 +352,7 @@ export async function startManagedMcpTunnelOwner(
       void (async () => {
         try {
           await verifyManagedOwnerIdentity(lease);
-          done(undefined, { pid: ownerPid, info: m.info! });
+          done(undefined, { pid: ownerPid, info: m.info!, workspace: lease.workspace });
         } catch (error) {
           try { await requestOwner(lease, "stop?force=1"); } catch {}
           try {
@@ -579,38 +586,65 @@ export async function stopManagedMcpTunnelOwner(
   throw new Error("Managed MCP tunnel owner did not complete graceful stop");
 }
 
-export function formatManagedMcpTunnelStartup(result: ManagedMcpTunnelStartResult): string {
+export function buildManagedMcpExtensionSetup(info: McpTunnelInfo): string | null {
+  if (info.tunnelProvider !== "cloudflare") return null;
+  if (info.authMode === "oauth") {
+    return [
+      `MCP URL   : ${info.publicUrl}`,
+      "Auth      : OAuth",
+      `Bootstrap : ${info.bootstrapCode}`,
+    ].join("\n");
+  }
+  return [
+    `MCP URL : ${info.publicUrl}`,
+    "Auth    : Bearer",
+    `Bearer  : ${info.bearerToken}`,
+  ].join("\n");
+}
+
+export async function copyManagedMcpExtensionSetupToClipboard(
+  result: ManagedMcpTunnelStartResult,
+): Promise<boolean> {
+  const setup = buildManagedMcpExtensionSetup(result.info);
+  return setup ? copyTextToClipboard(setup) : false;
+}
+
+export function formatManagedMcpTunnelStartup(
+  result: ManagedMcpTunnelStartResult,
+  options?: { extensionSetupCopied?: boolean },
+): string {
   const { info, pid } = result;
   const provider = info.tunnelProvider === "openai" ? "OpenAI Secure MCP Tunnel" : "Cloudflare Quick Tunnel";
   const toolMode = `${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`;
   const stopPort = new URL(info.localUrl).port || String(DEFAULT_MCP_PORT);
+  const workspace = result.workspace || process.cwd();
+  const currentProject = path.basename(workspace) || workspace;
+  const extensionSetup = buildManagedMcpExtensionSetup(info);
   const lines = [
     `${provider} Online!`,
-    `- Owner        : PID ${pid}`,
+    `- Owner           : PID ${pid}`,
+    `- Current Project : ${currentProject}`,
+    `- Local Endpoint  : ${info.localUrl}`,
     ...(info.tunnelProvider === "openai"
-      ? [`- Tunnel ID    : ${info.openAiTunnelId}`]
-      : [`- MCP Endpoint : ${info.publicUrl}`]),
-    `- Auth / Tools : ${info.authMode} / ${toolMode}`,
+      ? [`- Tunnel ID       : ${info.openAiTunnelId}`]
+      : [`- MCP Endpoint    : ${info.publicUrl}`]),
+    `- Auth / Tools    : ${info.authMode} / ${toolMode}`,
   ];
 
   if (info.authMode === "oauth") {
     lines.push(
-      `- OAuth state  : ${describeMcpOAuthStore({ persistent: info.oauthStatePersistent === true, reason: info.oauthStateReason })}`,
-      "",
-      "Client / extension setup (contains a one-time credential; do not paste into AI chat):",
-      ...(info.tunnelProvider === "openai"
-        ? [`  Tunnel ID : ${info.openAiTunnelId}`]
-        : [`  MCP URL   : ${info.publicUrl}`]),
-      "  Auth      : OAuth",
-      `  Bootstrap : ${info.bootstrapCode}`,
+      `- OAuth state     : ${describeMcpOAuthStore({ persistent: info.oauthStatePersistent === true, reason: info.oauthStateReason })}`,
     );
-  } else if (info.tunnelProvider === "cloudflare") {
+  }
+
+  if (extensionSetup) {
     lines.push(
       "",
-      "Client / extension setup (contains a secret; do not paste into AI chat):",
-      `  MCP URL : ${info.publicUrl}`,
-      "  Auth    : Bearer",
-      `  Bearer  : ${info.bearerToken}`,
+      options?.extensionSetupCopied
+        ? "COPY FOR EXTENSION — copied to clipboard:"
+        : "COPY FOR EXTENSION:",
+      ...extensionSetup.split("\n").map((line) => `  ${line}`),
+      "  Do not paste this credential block into AI chat.",
     );
   } else {
     lines.push(

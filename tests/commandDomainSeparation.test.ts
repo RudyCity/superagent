@@ -109,10 +109,14 @@ describe("command domain separation", () => {
       "tunnel start --provider openai --tunnel-id tunnel_123456789abcdef0 --mcp-auth oauth --oauth-public-url https://issuer.example.test",
       ctx,
     );
-    expect(spy).toHaveBeenCalledWith(expect.arrayContaining([
-      "--provider", "openai", "--tunnel-id", "tunnel_123456789abcdef0",
-      "--mcp-auth", "oauth", "--oauth-public-url", "https://issuer.example.test",
-    ]), expect.any(String));
+    expect(spy).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        "--provider", "openai", "--tunnel-id", "tunnel_123456789abcdef0",
+        "--mcp-auth", "oauth", "--oauth-public-url", "https://issuer.example.test",
+      ]),
+      expect.any(String),
+      expect.any(String),
+    );
     expect(lines.map((l) => l.content).join("\n")).toContain("OpenAI Secure MCP Tunnel Online!");
     spy.mockRestore();
   });
@@ -122,6 +126,7 @@ describe("command domain separation", () => {
     const ownerModule = await import("../src/core/runtime/mcpManagedTunnelOwner.js");
     const spy = vi.spyOn(ownerModule, "startManagedMcpTunnelOwner").mockResolvedValueOnce({
       pid: 4243,
+      workspace: "C:/projects/example-store",
       info: {
         publicUrl: "https://example.trycloudflare.com/mcp",
         bearerToken: "", localUrl: "http://127.0.0.1:9227/mcp",
@@ -132,17 +137,26 @@ describe("command domain separation", () => {
         tunnelProvider: "cloudflare",
       },
     } as any);
+    const copySpy = vi.spyOn(ownerModule, "copyManagedMcpExtensionSetupToClipboard").mockResolvedValueOnce(true);
     await mcpCommand.execute("tunnel start --mcp-auth oauth", ctx);
-    expect(spy).toHaveBeenCalledWith(expect.arrayContaining(["--mcp-auth", "oauth"]), expect.any(String));
+    expect(spy).toHaveBeenCalledWith(
+      expect.arrayContaining(["--mcp-auth", "oauth"]),
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(copySpy).toHaveBeenCalledOnce();
     const output = lines.map((l) => l.content).join("\n");
-    expect(output).toContain("Client / extension setup");
+    expect(output).toContain("Current Project : example-store");
+    expect(output).toContain("Local Endpoint  : http://127.0.0.1:9227/mcp");
+    expect(output).toContain("COPY FOR EXTENSION — copied to clipboard:");
     expect(output).toContain("MCP URL   : https://example.trycloudflare.com/mcp");
     expect(output).toContain("Auth      : OAuth");
     expect(output).toContain("Bootstrap : mock-bootstrap-code-12345");
-    expect(output).toContain("Auth / Tools : oauth / SAFE (15 tools)");
+    expect(output).toContain("Auth / Tools    : oauth / SAFE (15 tools)");
     expect(output).toContain("Agent handoff (safe to paste):");
     expect(output.split("Agent handoff (safe to paste):")[1]).not.toContain("mock-bootstrap-code-12345");
     expect(output).not.toContain("Python MCP Client (copy/paste):");
+    copySpy.mockRestore();
     spy.mockRestore();
   });
 
@@ -151,6 +165,7 @@ describe("command domain separation", () => {
     const ownerModule = await import("../src/core/runtime/mcpManagedTunnelOwner.js");
     const spy = vi.spyOn(ownerModule, "startManagedMcpTunnelOwner").mockResolvedValueOnce({
       pid: 4244,
+      workspace: "C:/projects/superagent",
       info: {
         publicUrl: "https://static.trycloudflare.com/mcp",
         bearerToken: "secret-bearer-token-123",
@@ -162,18 +177,23 @@ describe("command domain separation", () => {
         tunnelProvider: "cloudflare",
       },
     } as any);
+    const copySpy = vi.spyOn(ownerModule, "copyManagedMcpExtensionSetupToClipboard").mockResolvedValueOnce(true);
 
     await mcpCommand.execute("tunnel start --mcp-auth static-bearer --allow-dangerous", ctx);
     const output = lines.map((l) => l.content).join("\n");
-    expect(output).toContain("Client / extension setup");
+    expect(copySpy).toHaveBeenCalledOnce();
+    expect(output).toContain("Current Project : superagent");
+    expect(output).toContain("Local Endpoint  : http://127.0.0.1:9227/mcp");
+    expect(output).toContain("COPY FOR EXTENSION — copied to clipboard:");
     expect(output).toContain("MCP URL : https://static.trycloudflare.com/mcp");
     expect(output).toContain("Auth    : Bearer");
     expect(output).toContain("Bearer  : secret-bearer-token-123");
-    expect(output).toContain("Auth / Tools : static-bearer / FULL (42 tools)");
+    expect(output).toContain("Auth / Tools    : static-bearer / FULL (42 tools)");
     const agentSection = output.split("Agent handoff (safe to paste):")[1];
     expect(agentSection).toBeDefined();
     expect(agentSection).not.toContain("secret-bearer-token-123");
     expect(agentSection).toContain("Never request, echo, or store MCP credentials in chat.");
+    copySpy.mockRestore();
     spy.mockRestore();
   });
 });

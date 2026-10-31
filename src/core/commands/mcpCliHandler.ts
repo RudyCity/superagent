@@ -234,8 +234,13 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
         port = parsed;
       }
       const { listActiveMcpServers, stopMcpTunnel } = await import("../mcp/mcpTunnel.js");
-      const { readManagedMcpTunnelLease, stopManagedMcpTunnelOwner, startManagedMcpTunnelOwner, formatManagedMcpTunnelStartup } =
-        await import("../runtime/mcpManagedTunnelOwner.js");
+      const {
+        readManagedMcpTunnelLease,
+        stopManagedMcpTunnelOwner,
+        startManagedMcpTunnelOwner,
+        formatManagedMcpTunnelStartup,
+        copyManagedMcpExtensionSetupToClipboard,
+      } = await import("../runtime/mcpManagedTunnelOwner.js");
       const active = listActiveMcpServers().find((server) => server.port === port);
       const lease = readManagedMcpTunnelLease(port);
       const hasForce = rawArgs.includes("--force") || rawArgs.includes("-f");
@@ -266,8 +271,9 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
         } else if (active) {
           await stopMcpTunnel(port);
         }
-        const started = await startManagedMcpTunnelOwner(restartArgs, process.argv[1] || "");
-        console.log(formatManagedMcpTunnelStartup(started));
+        const started = await startManagedMcpTunnelOwner(restartArgs, process.argv[1] || "", process.cwd());
+        const copied = await copyManagedMcpExtensionSetupToClipboard(started);
+        console.log(formatManagedMcpTunnelStartup(started, { extensionSetupCopied: copied }));
         process.exit(0);
       } catch (err: any) {
         console.error(`Error restarting MCP tunnel: ${err.message}`);
@@ -308,10 +314,14 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
 
     if (tunnelAction === "start") {
       try {
-        const { startManagedMcpTunnelOwner, formatManagedMcpTunnelStartup } =
-          await import("../runtime/mcpManagedTunnelOwner.js");
-        const started = await startManagedMcpTunnelOwner(rawArgs, process.argv[1] || "");
-        console.log(formatManagedMcpTunnelStartup(started));
+        const {
+          startManagedMcpTunnelOwner,
+          formatManagedMcpTunnelStartup,
+          copyManagedMcpExtensionSetupToClipboard,
+        } = await import("../runtime/mcpManagedTunnelOwner.js");
+        const started = await startManagedMcpTunnelOwner(rawArgs, process.argv[1] || "", process.cwd());
+        const copied = await copyManagedMcpExtensionSetupToClipboard(started);
+        console.log(formatManagedMcpTunnelStartup(started, { extensionSetupCopied: copied }));
         process.exit(0);
       } catch (err: any) {
         console.error(`Error starting independent MCP tunnel owner: ${err.message}`);
