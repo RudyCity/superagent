@@ -3,8 +3,8 @@ import { execa } from "execa";
 import { getWorkspaceId } from "./paths.js";
 import { saveWorkspaceToDb, getWorkspacesFromDb, getWorkspaceFromDb, deleteWorkspaceFromDb } from "../storage/historyDb.js";
 
-export function getTrustedDirectories(): string[] {
-  const workspaces = getWorkspacesFromDb();
+export function getTrustedDirectories(customDb?: any): string[] {
+  const workspaces = getWorkspacesFromDb(customDb);
   return workspaces.filter(ws => ws.isTrusted).map(ws => ws.path);
 }
 

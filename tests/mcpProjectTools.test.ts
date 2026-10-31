@@ -39,10 +39,14 @@ describe("project registry MCP tools", () => {
   it("exposes read-only discovery as safe and registry mutations as dangerous", () => {
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_list_projects).toBe("safe");
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_get_project).toBe("safe");
+    expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_discover_projects).toBe("safe");
+    expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_import_discovered_project).toBe("dangerous");
+    expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_sync_projects).toBe("dangerous");
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_register_project).toBe("dangerous");
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_update_project).toBe("dangerous");
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_remove_project).toBe("dangerous");
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_list_project_access).toBe("safe");
+    expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_check_project_health).toBe("safe");
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_grant_project_access).toBe("dangerous");
     expect(PROJECT_MCP_TOOL_CLASSIFICATIONS.superagent_revoke_project_access).toBe("dangerous");
   });

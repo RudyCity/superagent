@@ -172,6 +172,208 @@ describe("GET /api/workspaces", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// GET /api/workspaces/catalog (Finding H & A)
+// ═══════════════════════════════════════════════════════════════════════════════
+describe("GET /api/workspaces/catalog", () => {
+  it("returns 200 with catalog array, total, and default pagination", async () => {
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog");
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.catalog)).toBe(true);
+    expect(typeof body.total).toBe("number");
+  });
+
+  it("wires active sessions into catalog output (Finding A)", async () => {
+    await postJSON(port, "/api/init", { workspace: testWorkspace });
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog?active=true");
+    expect(status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(Array.isArray(body.catalog)).toBe(true);
+    expect(body.catalog.some((e: any) => e.active === true)).toBe(true);
+  });
+
+  it("rejects malformed boolean filter with 400 Bad Request", async () => {
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog?registered=invalid-bool");
+    expect(status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Invalid boolean parameter 'registered'");
+  });
+
+  it("rejects invalid classification enum with 400 Bad Request", async () => {
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog?classification=not-a-real-class");
+    expect(status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Invalid classification filter");
+  });
+
+  it("rejects invalid type enum with 400 Bad Request", async () => {
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog?type=ftp");
+    expect(status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Invalid type filter");
+  });
+
+  it("rejects invalid source enum with 400 Bad Request", async () => {
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog?source=bad-source");
+    expect(status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Invalid source filter");
+  });
+
+  it("rejects out-of-range or malformed limit and offset with 400 Bad Request", async () => {
+    const r1 = await getJSON(port, "/api/workspaces/catalog?limit=999");
+    expect(r1.status).toBe(400);
+    expect(r1.body.error).toContain("Invalid limit parameter");
+
+    const r2 = await getJSON(port, "/api/workspaces/catalog?limit=-5");
+    expect(r2.status).toBe(400);
+
+    const r3 = await getJSON(port, "/api/workspaces/catalog?limit=abc");
+    expect(r3.status).toBe(400);
+
+    const r4 = await getJSON(port, "/api/workspaces/catalog?offset=-1");
+    expect(r4.status).toBe(400);
+    expect(r4.body.error).toContain("Invalid offset parameter");
+
+    const r5 = await getJSON(port, "/api/workspaces/catalog?offset=xyz");
+    expect(r5.status).toBe(400);
+  });
+
+  it("rejects queries exceeding 500 characters with 400 Bad Request", async () => {
+    const longQuery = "a".repeat(501);
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog?query=" + encodeURIComponent(longQuery));
+    expect(status).toBe(400);
+    expect(body.success).toBe(false);
+    expect(body.error).toContain("Query parameter exceeds maximum length of 500 characters");
+  });
+
+  it("supports pagination with limit and offset", async () => {
+    const { status, body } = await getJSON(port, "/api/workspaces/catalog?limit=2&offset=0");
+    expect(status).toBe(200);
+    expect(body.limit).toBe(2);
+    expect(body.offset).toBe(0);
+    expect(body.catalog.length).toBeLessThanOrEqual(2);
+  });
+});
+
+
+describe("M6 project browser operator lifecycle", () => {
+  it("keeps registration separate from identity-scoped authorization", async () => {
+    const projectDir = path.join(path.dirname(process.cwd()), `sa-browser-route-${Date.now()}`);
+    fs.mkdirSync(path.join(projectDir, ".git"), { recursive: true });
+
+    const { saveWorkspaceToDb } = await import("../src/core/storage/historyDb.js");
+    const { setFullYoloMode } = await import("../src/core/permissions.js");
+    const {
+      recordMcpIdentityPresence,
+      clearMcpIdentityPresence,
+    } = await import("../src/core/mcp/mcpIdentityPresence.js");
+
+    saveWorkspaceToDb({
+      id: "browser-route-workspace",
+      path: projectDir,
+      name: "Browser Route Test",
+      isTrusted: true,
+    });
+
+    setFullYoloMode(true);
+    try {
+      const discovered = await getJSON(
+        port,
+        "/api/projects/browser?filter=discovered&query=" + encodeURIComponent("Browser Route Test"),
+      );
+      expect(discovered.status).toBe(200);
+      expect(Array.isArray(discovered.body.projects)).toBe(true);
+      expect(Array.isArray(discovered.body.identities)).toBe(true);
+      expect(JSON.stringify(discovered.body)).not.toContain("credentialHash");
+      expect(JSON.stringify(discovered.body)).not.toContain("principalKey");
+
+      const canonicalProjectDir = fs.realpathSync(projectDir);
+      const candidate = discovered.body.projects.find((project: any) => project.target === canonicalProjectDir);
+      expect(candidate?.discovered).toBe(true);
+      expect(candidate?.registered).toBe(false);
+
+      const blockedSecretField = await postJSON(port, "/api/projects/browser/import", {
+        catalogId: candidate.catalogId,
+        target: "D:/forged-target",
+      });
+      expect(blockedSecretField.status).toBe(400);
+      expect(blockedSecretField.body.error).toContain("target");
+
+      const imported = await postJSON(port, "/api/projects/browser/import", {
+        catalogId: candidate.catalogId,
+        projectId: "browser-route-project",
+        name: "Browser Route Project",
+      });
+      expect(imported.status).toBe(200);
+      expect(imported.body.capabilitiesGranted).toBe(false);
+
+      const beforeGrant = await getJSON(
+        port,
+        "/api/projects/browser?filter=registered&query=browser-route-project",
+      );
+      const registered = beforeGrant.body.projects.find((project: any) => project.registeredProjectId === "browser-route-project");
+      expect(registered?.registered).toBe(true);
+      expect(registered?.authorized).toBe(false);
+      expect(registered?.capabilities).toEqual([]);
+
+      const identity = recordMcpIdentityPresence({
+        mode: "oauth",
+        subject: "browser-route-client",
+        scopes: ["read"],
+      });
+
+      const granted = await postJSON(port, "/api/projects/browser/grant", {
+        projectId: "browser-route-project",
+        identityHandle: identity.identityHandle,
+        capabilities: ["read"],
+      });
+      expect(granted.status).toBe(200);
+      expect(granted.body.grant.capabilities).toEqual(["read"]);
+
+      const afterGrant = await getJSON(
+        port,
+        "/api/projects/browser?filter=registered&identityHandle=" +
+          encodeURIComponent(identity.identityHandle) +
+          "&query=browser-route-project",
+      );
+      const authorized = afterGrant.body.projects.find((project: any) => project.registeredProjectId === "browser-route-project");
+      expect(authorized?.authorized).toBe(true);
+      expect(authorized?.capabilities).toEqual(["read"]);
+      expect(JSON.stringify(afterGrant.body)).not.toContain("credentialHash");
+
+      const revoked = await postJSON(port, "/api/projects/browser/revoke", {
+        projectId: "browser-route-project",
+        identityHandle: identity.identityHandle,
+      });
+      expect(revoked.status).toBe(200);
+      expect(revoked.body.revoked).toBe(true);
+
+      await postJSON(port, "/api/projects/browser/grant", {
+        projectId: "browser-route-project",
+        identityHandle: identity.identityHandle,
+        capabilities: ["read", "git"],
+      });
+      const disabled = await postJSON(port, "/api/projects/browser/disable", {
+        projectId: "browser-route-project",
+        enabled: false,
+      });
+      expect(disabled.status).toBe(200);
+      expect(disabled.body.allGrantsRevoked).toBe(true);
+      expect(disabled.body.revokedGrantsCount).toBeGreaterThanOrEqual(1);
+
+      const removed = await deleteJSON(port, "/api/projects/browser/browser-route-project");
+      expect(removed.status).toBe(200);
+      expect(removed.body.filesDeleted).toBe(false);
+    } finally {
+      setFullYoloMode(false);
+      clearMcpIdentityPresence();
+      try { fs.rmSync(projectDir, { recursive: true, force: true }); } catch {}
+    }
+  }, 30000);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GET /api/history
 // ═══════════════════════════════════════════════════════════════════════════════
 describe("GET /api/history", () => {

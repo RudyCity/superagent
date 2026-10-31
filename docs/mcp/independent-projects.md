@@ -113,3 +113,49 @@ Tools not implemented for standalone SSH return an explicit unsupported-capabili
 - Avoid using \`execute\` for read-only tasks. Prefer \`read\`, \`write\`, \`git\`, or \`planning\` as appropriate.
 - If SSH authentication fails, configure a supported SSH key/profile first; the MCP provider intentionally does not prompt interactively.
 - Workspace Chain remains a separate optional layer and retains its own node/path/permission checks.
+
+## 6. Workspace Catalog and Discovered Projects
+
+SuperAgent maintains a canonical read model called the **Workspace Catalog** that unifies historical sessions (`history.db`), trusted directories, active server sessions, Workspace Chains, and registered projects (`projects.json`).
+
+### Security Sequence: Discovery != Registration != Authorization
+
+```text
+Workspace used by SuperAgent
+        ↓
+Workspace Catalog
+        ↓
+Discovered MCP project candidate (superagent_discover_projects)
+        ↓
+Explicit/controlled registration (superagent_import_discovered_project)
+        ↓
+Explicit capability grant (superagent_grant_project_access)
+        ↓
+Authorized MCP operations
+```
+
+Discovery, registration, and authorization remain strictly isolated:
+1. **Discovery** is completely read-only, strips secrets/credentials, and makes zero changes to `projects.json` or capabilities.
+2. **Registration / Import** writes metadata to `projects.json` after validating directory existence and Git/monorepo boundaries. It NEVER grants filesystem permissions or capabilities.
+3. **Authorization** requires explicit operator action through `superagent_grant_project_access` with local Full YOLO enabled.
+
+### Discovery vs Registry Tools
+
+- `superagent_list_projects`: (Safe) Returns explicitly registered MCP projects from `projects.json`. Backward-compatible.
+- `superagent_discover_projects`: (Safe, Read-only) Searches and enumerates candidates in the Workspace Catalog. Supports filtering by `classification`, `registered`, `available`, `trusted`, `active`, `source`, `importableOnly`, `query`, and pagination (`limit`, `offset`). Strips credentials and query secrets from legacy targets.
+- `superagent_import_discovered_project`: (Dangerous) Imports a valid candidate from the Workspace Catalog into `projects.json`. Supports single-project import and dry-run validation (`dryRun: true`).
+- `superagent_sync_projects`: (Dangerous) Reconciles candidates in `mode: 'dry-run'` or `mode: 'apply'` with explicit `catalogIds`.
+
+### HTTP APIs
+
+- `GET /api/workspaces`: Lists currently active runtime sessions (backward compatible).
+- `GET /api/workspaces/catalog`: Lists durable workspace history and project catalog with query, classification, source, registered, available, and pagination filters.
+
+### T-Line Desktop Integration Contract
+
+The SuperAgent Core backend provides the foundation for the T-Line Project Browser:
+- **Discovered**: Found in history or trusted directories with session activity, but not yet registered in `projects.json`.
+- **Registered**: Present in `projects.json`, but has no MCP access grants yet.
+- **Authorized**: Has explicit capability grants (`read`, `write`, `execute`, etc.) bound to the current identity.
+- **Unavailable**: Missing directory or unresolvable path on disk.
+- **Worktree / Temp**: Filtered out from normal project listings by default.

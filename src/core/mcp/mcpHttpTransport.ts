@@ -49,6 +49,7 @@ import {
 } from "./mcpSessionRegistry.js";
 import { summarizeArgs, argShape } from "./mcpLogSanitizer.js";
 import { recordMcpOAuthAudit } from "./mcpOAuthAudit.js";
+import { recordMcpIdentityPresence } from "./mcpIdentityPresence.js";
 import {
   MCP_TOOL_CLASSIFICATION as MCP_TOOL_CLASSIFICATION_SRC,
   DISABLED_MCP_TOOLS,
@@ -601,6 +602,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         res.end(req.method === "HEAD" ? undefined : JSON.stringify(challenge.body));
         return;
       }
+
+      // Record authenticated presence for the local operator / project browser UI
+      recordMcpIdentityPresence(identity);
 
       // A client may probe the protected endpoint before starting OAuth. Return
       // headers only, with no MCP session allocation or tool dispatch.

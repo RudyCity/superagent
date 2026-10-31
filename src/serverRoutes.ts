@@ -1,3 +1,20 @@
+import { registerActiveSessionProvider, queryWorkspaceCatalog, getWorkspaceCatalogEntry, type WorkspaceClassification, type WorkspaceCatalogSource } from "./core/project/workspaceCatalog.js";
+import { getProject, registerProject, updateProject, removeProject } from "./core/project/projectRegistry.js";
+import {
+  grantProjectAccess,
+  revokeProjectAccess,
+  revokeAllProjectAccess,
+  listProjectAccess,
+  PROJECT_ACCESS_CAPABILITIES,
+  type ProjectAccessCapability,
+} from "./core/project/projectAccessPolicy.js";
+import { isFullYoloMode } from "./core/permissions.js";
+import { standaloneSshProjectProvider } from "./core/mcp/tools/standaloneSshProjectTools.js";
+import {
+  listSanitizedMcpIdentities,
+  getMcpIdentityByHandle,
+  getMostRecentMcpIdentityHandle,
+} from "./core/mcp/mcpIdentityPresence.js";
 import http from "http";
 import crypto from "node:crypto";
 import {
@@ -201,6 +218,15 @@ export async function handleServerRoute(
     executeBrowserControlOnClient,
     killVisionServerProcess
   } = ctx;
+
+  // Wire active session snapshots for Workspace Catalog and MCP discovery
+  registerActiveSessionProvider(() => {
+    return Array.from(activeSessions.values()).map((s: any) => ({
+      workspace: s.workspace,
+      sessionId: s.sessionId,
+      lastActiveTime: s.lastActiveTime || Date.now(),
+    }));
+  });
 
   // An explicit abort settles the read-only UI registry as well as the real
   // pending permission promise. Never turn historical metadata into authority.
@@ -690,6 +716,719 @@ export async function handleServerRoute(
       };
     });
     sendJSON(res, 200, { success: true, workspaces });
+    return true;
+  }
+
+  // Durable Workspace Catalog List & Filter
+  if (pathname === "/api/workspaces/catalog" && req.method === "GET") {
+    const VALID_CLASSIFICATIONS = new Set<string>([
+      "project",
+      "nested-project",
+      "worktree",
+      "temporary",
+      "test-fixture",
+      "missing",
+      "unsafe",
+      "unknown",
+    ]);
+    const VALID_TYPES = new Set<string>(["local", "ssh", "chain"]);
+    const VALID_SOURCES = new Set<string>(["registry", "history", "trusted", "active", "chain"]);
+
+    // Strict boolean parser
+    function parseStrictBool(paramName: string, val: string | null): boolean | undefined {
+      if (val === null) return undefined;
+      if (val === "true") return true;
+      if (val === "false") return false;
+      throw new Error(`Invalid boolean parameter '${paramName}'. Expected 'true' or 'false'.`);
+    }
+
+    let registered: boolean | undefined;
+    let available: boolean | undefined;
+    let trusted: boolean | undefined;
+    let active: boolean | undefined;
+    let importableOnly: boolean | undefined;
+
+    try {
+      registered = parseStrictBool("registered", parsedUrl.searchParams.get("registered"));
+      available = parseStrictBool("available", parsedUrl.searchParams.get("available"));
+      trusted = parseStrictBool("trusted", parsedUrl.searchParams.get("trusted"));
+      active = parseStrictBool("active", parsedUrl.searchParams.get("active"));
+      importableOnly = parseStrictBool("importableOnly", parsedUrl.searchParams.get("importableOnly"));
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message });
+      return true;
+    }
+
+    const classificationParam = parsedUrl.searchParams.get("classification");
+    if (classificationParam !== null) {
+      if (!VALID_CLASSIFICATIONS.has(classificationParam)) {
+        sendJSON(res, 400, {
+          success: false,
+          error: `Invalid classification filter '${classificationParam}'.`,
+        });
+        return true;
+      }
+    }
+    const classification = (classificationParam as WorkspaceClassification) || undefined;
+
+    const typeParam = parsedUrl.searchParams.get("type");
+    if (typeParam !== null) {
+      if (!VALID_TYPES.has(typeParam)) {
+        sendJSON(res, 400, {
+          success: false,
+          error: `Invalid type filter '${typeParam}'. Expected 'local', 'ssh', or 'chain'.`,
+        });
+        return true;
+      }
+    }
+    const type = (typeParam as "local" | "ssh" | "chain") || undefined;
+
+    const sourceParam = parsedUrl.searchParams.get("source");
+    if (sourceParam !== null) {
+      if (!VALID_SOURCES.has(sourceParam)) {
+        sendJSON(res, 400, {
+          success: false,
+          error: `Invalid source filter '${sourceParam}'. Expected 'registry', 'history', 'trusted', 'active', or 'chain'.`,
+        });
+        return true;
+      }
+    }
+    const source = (sourceParam as WorkspaceCatalogSource) || undefined;
+
+    let limit: number | undefined;
+    const limitParam = parsedUrl.searchParams.get("limit");
+    if (limitParam !== null) {
+      if (!/^\d+$/.test(limitParam)) {
+        sendJSON(res, 400, {
+          success: false,
+          error: "Invalid limit parameter. Expected an integer between 1 and 200.",
+        });
+        return true;
+      }
+      const parsed = parseInt(limitParam, 10);
+      if (parsed < 1 || parsed > 200) {
+        sendJSON(res, 400, {
+          success: false,
+          error: "Invalid limit parameter. Expected an integer between 1 and 200.",
+        });
+        return true;
+      }
+      limit = parsed;
+    }
+
+    let offset: number | undefined;
+    const offsetParam = parsedUrl.searchParams.get("offset");
+    if (offsetParam !== null) {
+      if (!/^\d+$/.test(offsetParam)) {
+        sendJSON(res, 400, {
+          success: false,
+          error: "Invalid offset parameter. Expected an integer >= 0.",
+        });
+        return true;
+      }
+      offset = parseInt(offsetParam, 10);
+    }
+
+    const queryParam = parsedUrl.searchParams.get("query");
+    if (queryParam !== null && queryParam.length > 500) {
+      sendJSON(res, 400, {
+        success: false,
+        error: "Query parameter exceeds maximum length of 500 characters.",
+      });
+      return true;
+    }
+    const query = queryParam || undefined;
+
+    const activeSessionSnapshots = Array.from(activeSessions.values()).map((s: any) => ({
+      workspace: s.workspace,
+      sessionId: s.sessionId,
+      lastActiveTime: s.lastActiveTime || Date.now(),
+    }));
+
+    const catalogResult = queryWorkspaceCatalog(
+      {
+        classification,
+        registered,
+        available,
+        trusted,
+        active,
+        type,
+        source,
+        importableOnly,
+        query,
+        limit,
+        offset,
+      },
+      {
+        activeSessions: activeSessionSnapshots,
+      },
+    );
+
+    sendJSON(res, 200, {
+      success: true,
+      catalog: catalogResult.entries,
+      total: catalogResult.total,
+      limit: catalogResult.limit,
+      offset: catalogResult.offset,
+    });
+    return true;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // M6 T-Line Project Browser Operator Endpoints
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const PROJECT_BROWSER_FORBIDDEN_FIELDS = new Set([
+    "root",
+    "target",
+    "token",
+    "bearerToken",
+    "credentialHash",
+    "principalKey",
+  ]);
+  const hasForbiddenProjectBrowserField = (body: Record<string, unknown>): string | null => {
+    for (const key of Object.keys(body)) {
+      if (PROJECT_BROWSER_FORBIDDEN_FIELDS.has(key)) return key;
+    }
+    return null;
+  };
+
+  // GET /api/projects/browser - List catalog candidates with Discovered/Registered/Authorized/Unavailable state
+  if (pathname === "/api/projects/browser" && req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    const VALID_FILTERS = new Set<string>(["all", "registered", "discovered", "active", "unavailable"]);
+    const rawFilter = (parsedUrl.searchParams.get("filter") || "all").toLowerCase().trim();
+    if (!VALID_FILTERS.has(rawFilter)) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `Invalid filter '${rawFilter}'. Valid filters: all, registered, discovered, active, unavailable.`,
+      });
+      return true;
+    }
+    const filter = rawFilter as "all" | "registered" | "discovered" | "active" | "unavailable";
+
+    const rawQuery = parsedUrl.searchParams.get("query");
+    if (rawQuery !== null && rawQuery.length > 500) {
+      sendJSON(res, 400, {
+        success: false,
+        error: "Query parameter exceeds maximum length of 500 characters.",
+      });
+      return true;
+    }
+    const query = rawQuery ? rawQuery.trim() : "";
+
+    const rawLimit = parsedUrl.searchParams.get("limit");
+    let limit = 50;
+    if (rawLimit !== null) {
+      const parsed = Number(rawLimit);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 200) {
+        sendJSON(res, 400, {
+          success: false,
+          error: "Invalid limit parameter. Expected an integer between 1 and 200.",
+        });
+        return true;
+      }
+      limit = parsed;
+    }
+
+    const rawOffset = parsedUrl.searchParams.get("offset");
+    let offset = 0;
+    if (rawOffset !== null) {
+      const parsed = Number(rawOffset);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        sendJSON(res, 400, {
+          success: false,
+          error: "Invalid offset parameter. Expected a non-negative integer.",
+        });
+        return true;
+      }
+      offset = parsed;
+    }
+
+    const includeNoise = parsedUrl.searchParams.get("includeNoise") === "true";
+
+    // MCP Identity resolution for project authorization mapping
+    const availableIdentities = listSanitizedMcpIdentities();
+    const requestedHandle = parsedUrl.searchParams.get("identityHandle")?.trim();
+    let selectedIdentityHandle: string | null = null;
+    let selectedIdentity = null;
+
+    if (requestedHandle) {
+      if (!/^idh_[a-f0-9]{16}$/.test(requestedHandle)) {
+        sendJSON(res, 400, { success: false, error: "Invalid identityHandle format." });
+        return true;
+      }
+      selectedIdentity = getMcpIdentityByHandle(requestedHandle);
+      if (!selectedIdentity) {
+        sendJSON(res, 400, { success: false, error: `Unknown or expired MCP identity handle: ${requestedHandle}` });
+        return true;
+      }
+      selectedIdentityHandle = requestedHandle;
+    } else {
+      const recentHandle = getMostRecentMcpIdentityHandle();
+      if (recentHandle) {
+        selectedIdentityHandle = recentHandle;
+        selectedIdentity = getMcpIdentityByHandle(recentHandle);
+      }
+    }
+
+    const grantMap = new Map<string, ProjectAccessCapability[]>();
+    if (selectedIdentity) {
+      try {
+        const grants = listProjectAccess(selectedIdentity);
+        for (const g of grants) {
+          grantMap.set(g.projectId, g.capabilities);
+        }
+      } catch {
+        // Fail-safe: empty grants
+      }
+    }
+
+    const activeSessionSnapshots = Array.from(activeSessions.values()).map((s: any) => ({
+      workspace: s.workspace,
+      sessionId: s.sessionId,
+      lastActiveTime: s.lastActiveTime || Date.now(),
+    }));
+
+    const catalogResult = queryWorkspaceCatalog(
+      { query: query || undefined },
+      { activeSessions: activeSessionSnapshots },
+    );
+
+    let filtered = catalogResult.entries;
+
+    // By default, exclude noise (worktrees, temp folders, test fixtures, unsafe paths)
+    if (!includeNoise) {
+      filtered = filtered.filter(
+        (e) =>
+          e.classification !== "worktree" &&
+          e.classification !== "temporary" &&
+          e.classification !== "test-fixture" &&
+          e.classification !== "unsafe",
+      );
+    }
+
+    // Apply primary filter
+    if (filter === "registered") {
+      filtered = filtered.filter((e) => e.registered);
+    } else if (filter === "discovered") {
+      filtered = filtered.filter((e) => !e.registered && e.available && e.importable);
+    } else if (filter === "active") {
+      filtered = filtered.filter((e) => e.active);
+    } else if (filter === "unavailable") {
+      filtered = filtered.filter((e) => !e.available || e.classification === "missing");
+    }
+
+    const total = filtered.length;
+    const paged = filtered.slice(offset, offset + limit);
+
+    const entries = paged.map((entry) => {
+      const isRegistered = Boolean(entry.registered);
+      const isUnavailable = Boolean(!entry.available || entry.classification === "missing");
+      const isDiscovered = Boolean(!isRegistered && entry.available && entry.importable);
+
+      let enabled: boolean | undefined = undefined;
+      if (isRegistered && entry.registeredProjectId) {
+        const proj = getProject(entry.registeredProjectId);
+        enabled = proj ? proj.enabled : false;
+      }
+
+      const capabilities = (isRegistered && entry.registeredProjectId && grantMap.get(entry.registeredProjectId)) || [];
+      const authorized = isRegistered && capabilities.length > 0;
+
+      return {
+        catalogId: entry.catalogId,
+        name: entry.displayName,
+        target: entry.canonicalTarget,
+        type: entry.type,
+        discovered: isDiscovered,
+        registered: isRegistered,
+        unavailable: isUnavailable,
+        authorized,
+        capabilities,
+        registeredProjectId: entry.registeredProjectId,
+        enabled,
+        sources: entry.sources,
+        active: entry.active,
+        sessionCount: entry.sessionCount,
+        requiresManualProfile: Boolean(entry.requiresManualProfile),
+        rejectionReasons: entry.rejectionReasons,
+        classification: entry.classification,
+        lastUsedAt: entry.lastUsedAt,
+      };
+    });
+
+    sendJSON(res, 200, {
+      success: true,
+      projects: entries,
+      total,
+      limit,
+      offset,
+      selectedIdentityHandle,
+      identities: availableIdentities,
+    });
+    return true;
+  }
+
+  // POST /api/projects/browser/import - Import discovered project candidate into MCP registry
+  if (pathname === "/api/projects/browser/import" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    if (!isFullYoloMode()) {
+      sendJSON(res, 403, {
+        success: false,
+        error: "Importing a project candidate requires Full YOLO mode to be enabled locally.",
+      });
+      return true;
+    }
+
+    let body: any;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 32768) throw new Error("Request body too large.");
+      body = JSON.parse(raw);
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Invalid JSON body." });
+      return true;
+    }
+    const forbiddenImportField = hasForbiddenProjectBrowserField(body || {});
+    if (forbiddenImportField) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `Field '${forbiddenImportField}' is not accepted by the project browser operator API.`,
+      });
+      return true;
+    }
+
+    const catalogId = typeof body?.catalogId === "string" ? body.catalogId.trim() : "";
+    if (!/^cat_[a-f0-9]{16}$/.test(catalogId)) {
+      sendJSON(res, 400, { success: false, error: "A valid catalogId is required to import a project candidate." });
+      return true;
+    }
+
+    const entry = getWorkspaceCatalogEntry(catalogId);
+    if (!entry) {
+      sendJSON(res, 404, { success: false, error: `Catalog entry not found: ${catalogId}` });
+      return true;
+    }
+    if (entry.registered) {
+      sendJSON(res, 409, { success: false, error: `Project is already registered with ID: ${entry.registeredProjectId}` });
+      return true;
+    }
+    if (!entry.available) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `Cannot import unavailable workspace: ${entry.rejectionReasons.join("; ") || "Target not available"}`,
+      });
+      return true;
+    }
+    if (!entry.importable) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `Cannot import ${entry.classification}: ${entry.rejectionReasons.join("; ") || "Not importable"}`,
+      });
+      return true;
+    }
+
+    const customProjectId = typeof body.projectId === "string" && body.projectId.trim() ? body.projectId.trim() : undefined;
+    if (customProjectId && !/^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(customProjectId)) {
+      sendJSON(res, 400, { success: false, error: "Invalid projectId format." });
+      return true;
+    }
+    const customName = typeof body.name === "string" && body.name.trim() ? body.name.trim() : undefined;
+    if (customName && customName.length > 120) {
+      sendJSON(res, 400, { success: false, error: "Project name must be at most 120 characters." });
+      return true;
+    }
+
+    try {
+      const registered = registerProject({
+        id: customProjectId,
+        name: customName || entry.displayName,
+        type: entry.type,
+        root: entry.type === "local" ? entry.canonicalTarget : undefined,
+        target: entry.type !== "local" ? entry.canonicalTarget : undefined,
+        tags: ["catalog", "imported"],
+      });
+
+      sendJSON(res, 200, {
+        success: true,
+        project: registered,
+        capabilitiesGranted: false,
+        message: "Project successfully registered in MCP registry. Explicit capability grants remain required before MCP operations can be performed.",
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Failed to register project." });
+    }
+    return true;
+  }
+
+  // POST /api/projects/browser/grant - Explicitly grant project capabilities to an MCP identity
+  if (pathname === "/api/projects/browser/grant" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    if (!isFullYoloMode()) {
+      sendJSON(res, 403, {
+        success: false,
+        error: "Granting project access requires Full YOLO mode to be enabled locally.",
+      });
+      return true;
+    }
+
+    let body: any;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 32768) throw new Error("Request body too large.");
+      body = JSON.parse(raw);
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Invalid JSON body." });
+      return true;
+    }
+    const forbiddenGrantField = hasForbiddenProjectBrowserField(body || {});
+    if (forbiddenGrantField) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `Field '${forbiddenGrantField}' is not accepted by the project browser operator API.`,
+      });
+      return true;
+    }
+
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    const identityHandle = typeof body?.identityHandle === "string" ? body.identityHandle.trim() : "";
+    const capabilities = Array.isArray(body?.capabilities) ? body.capabilities : null;
+
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(projectId)) {
+      sendJSON(res, 400, { success: false, error: "A valid projectId is required." });
+      return true;
+    }
+    if (!/^idh_[a-f0-9]{16}$/.test(identityHandle)) {
+      sendJSON(res, 400, { success: false, error: "A valid identityHandle is required." });
+      return true;
+    }
+    if (
+      !capabilities ||
+      capabilities.length === 0 ||
+      capabilities.length > PROJECT_ACCESS_CAPABILITIES.length ||
+      capabilities.some(
+        (capability: unknown) =>
+          typeof capability !== "string" ||
+          !(PROJECT_ACCESS_CAPABILITIES as readonly string[]).includes(capability),
+      )
+    ) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `capabilities must contain one or more of: ${PROJECT_ACCESS_CAPABILITIES.join(", ")}.`,
+      });
+      return true;
+    }
+
+    const identity = getMcpIdentityByHandle(identityHandle);
+    if (!identity) {
+      sendJSON(res, 400, { success: false, error: `Unknown or expired MCP identity handle: ${identityHandle}` });
+      return true;
+    }
+
+    const project = getProject(projectId);
+    if (!project) {
+      sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
+      return true;
+    }
+    if (!project.enabled) {
+      sendJSON(res, 400, { success: false, error: `Project is disabled: ${projectId}` });
+      return true;
+    }
+
+    try {
+      const grant = grantProjectAccess(identity, projectId, capabilities as ProjectAccessCapability[]);
+      sendJSON(res, 200, {
+        success: true,
+        grant: {
+          projectId: grant.projectId,
+          capabilities: grant.capabilities,
+          updated: grant.updated,
+        },
+      });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Failed to grant project access." });
+    }
+    return true;
+  }
+
+  // POST /api/projects/browser/revoke - Explicitly revoke project access for an MCP identity
+  if (pathname === "/api/projects/browser/revoke" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    if (!isFullYoloMode()) {
+      sendJSON(res, 403, {
+        success: false,
+        error: "Revoking project access requires Full YOLO mode to be enabled locally.",
+      });
+      return true;
+    }
+
+    let body: any;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 32768) throw new Error("Request body too large.");
+      body = JSON.parse(raw);
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Invalid JSON body." });
+      return true;
+    }
+    const forbiddenRevokeField = hasForbiddenProjectBrowserField(body || {});
+    if (forbiddenRevokeField) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `Field '${forbiddenRevokeField}' is not accepted by the project browser operator API.`,
+      });
+      return true;
+    }
+
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    const identityHandle = typeof body?.identityHandle === "string" ? body.identityHandle.trim() : "";
+
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(projectId)) {
+      sendJSON(res, 400, { success: false, error: "A valid projectId is required." });
+      return true;
+    }
+    if (!/^idh_[a-f0-9]{16}$/.test(identityHandle)) {
+      sendJSON(res, 400, { success: false, error: "A valid identityHandle is required." });
+      return true;
+    }
+
+    if (!getProject(projectId)) {
+      sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
+      return true;
+    }
+    const identity = getMcpIdentityByHandle(identityHandle);
+    if (!identity) {
+      sendJSON(res, 400, { success: false, error: `Unknown or expired MCP identity handle: ${identityHandle}` });
+      return true;
+    }
+
+    try {
+      const revoked = revokeProjectAccess(identity, projectId);
+      sendJSON(res, 200, { success: true, projectId, revoked });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Failed to revoke project access." });
+    }
+    return true;
+  }
+
+  // POST /api/projects/browser/disable - Disable or re-enable project; disabling revokes all grants
+  if (pathname === "/api/projects/browser/disable" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    if (!isFullYoloMode()) {
+      sendJSON(res, 403, {
+        success: false,
+        error: "Modifying project state requires Full YOLO mode to be enabled locally.",
+      });
+      return true;
+    }
+
+    let body: any;
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 32768) throw new Error("Request body too large.");
+      body = JSON.parse(raw);
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Invalid JSON body." });
+      return true;
+    }
+    const forbiddenDisableField = hasForbiddenProjectBrowserField(body || {});
+    if (forbiddenDisableField) {
+      sendJSON(res, 400, {
+        success: false,
+        error: `Field '${forbiddenDisableField}' is not accepted by the project browser operator API.`,
+      });
+      return true;
+    }
+
+    const projectId = typeof body?.projectId === "string" ? body.projectId.trim() : "";
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(projectId)) {
+      sendJSON(res, 400, { success: false, error: "A valid projectId is required." });
+      return true;
+    }
+    if (typeof body?.enabled !== "boolean") {
+      sendJSON(res, 400, { success: false, error: "enabled (boolean) is required." });
+      return true;
+    }
+    const enabled = body.enabled;
+
+    const project = getProject(projectId);
+    if (!project) {
+      sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
+      return true;
+    }
+
+    const updated = updateProject(projectId, { enabled });
+    let revokedGrantsCount = 0;
+    if (!enabled) {
+      revokedGrantsCount = revokeAllProjectAccess(projectId);
+      await standaloneSshProjectProvider.closeProject(projectId);
+    }
+
+    sendJSON(res, 200, {
+      success: true,
+      project: updated,
+      allGrantsRevoked: !enabled,
+      revokedGrantsCount,
+    });
+    return true;
+  }
+
+  // DELETE /api/projects/browser/:projectId - Remove project from registry, revoke all grants, close SSH
+  if (pathname.startsWith("/api/projects/browser/") && req.method === "DELETE") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+
+    if (!isFullYoloMode()) {
+      sendJSON(res, 403, {
+        success: false,
+        error: "Removing a registered project requires Full YOLO mode to be enabled locally.",
+      });
+      return true;
+    }
+
+    let projectId = "";
+    try {
+      projectId = decodeURIComponent(pathname.replace("/api/projects/browser/", "").trim());
+    } catch {
+      sendJSON(res, 400, { success: false, error: "Invalid projectId encoding." });
+      return true;
+    }
+    if (!/^[a-z0-9](?:[a-z0-9-]{0,62})$/.test(projectId)) {
+      sendJSON(res, 400, { success: false, error: "A valid projectId is required." });
+      return true;
+    }
+
+    const project = getProject(projectId);
+    if (!project) {
+      sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
+      return true;
+    }
+
+    await standaloneSshProjectProvider.closeProject(projectId);
+    const removed = removeProject(projectId);
+    if (!removed) {
+      sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
+      return true;
+    }
+    const revokedGrants = revokeAllProjectAccess(projectId);
+
+    sendJSON(res, 200, {
+      success: true,
+      removed: projectId,
+      filesDeleted: false,
+      revokedGrants,
+    });
     return true;
   }
 

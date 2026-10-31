@@ -391,6 +391,8 @@ When operating in an SSH remote workspace, you can still leverage local workspac
 
 One MCP connection can target several local repositories by stable projectId, and can also operate on supported standalone SSH projects. Register projects and inspect them with the project tools, then pass the project ID to each supported workspace-scoped MCP call. A per-call project target does not change the session's default workspace. Project-access tools provide identity-bound capabilities; granting access requires the local operator to enable Full YOLO and expose dangerous tools. Registration alone never grants access; project registry mutations and grant creation require Full YOLO locally.
 
+SuperAgent features a canonical **Workspace Catalog** unifying historical sessions from SQLite history (`history.db`), trusted directories, and active sessions. Discover valid candidate projects with `superagent_discover_projects` and explicitly import them via `superagent_import_discovered_project` or `superagent_sync_projects` (with dry-run validation). The security sequence strictly preserves `discovery != registration != authorization`: imported projects never auto-grant capabilities. The durable catalog is also available over HTTP via `GET /api/workspaces/catalog`.
+
 Standalone SSH projects are not wrapped in one-node Workspace Chains. Supported SSH operations use a connection scoped to that registered project and enforce its remote root for file operations. SSH command execution has the configured remote OS user's privileges; the path root is not a shell sandbox. See [the complete MCP project guide](docs/mcp/independent-projects.md) for registration, grants, tool examples, and SSH limitations.
 
 #### 🔗 Workspace Chaining (Cross-Workspace Development)

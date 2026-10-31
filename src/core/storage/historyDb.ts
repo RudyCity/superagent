@@ -58,7 +58,7 @@ export function getHistoryDbPath(): string {
   return path.join(configDir, "history.db");
 }
 
-function createSqliteDb(dbPath: string): any {
+export function createSqliteDb(dbPath: string): any {
   const isBun = typeof process !== "undefined" && (process.versions as any)?.bun;
   if (isBun) {
     try {
@@ -1824,9 +1824,9 @@ export function saveWorkspaceToDb(workspace: WorkspaceRecord): void {
   } catch {}
 }
 
-export function getWorkspacesFromDb(): WorkspaceRecord[] {
+export function getWorkspacesFromDb(customDb?: any): WorkspaceRecord[] {
   try {
-    const db = getHistoryDb();
+    const db = customDb ?? getHistoryDb();
     const rows = db.prepare("SELECT * FROM workspaces").all() || [];
     return rows.map((row: any) => ({
       id: row.id,
@@ -1841,9 +1841,9 @@ export function getWorkspacesFromDb(): WorkspaceRecord[] {
   }
 }
 
-export function getWorkspaceFromDb(id: string): WorkspaceRecord | null {
+export function getWorkspaceFromDb(id: string, customDb?: any): WorkspaceRecord | null {
   try {
-    const db = getHistoryDb();
+    const db = customDb ?? getHistoryDb();
     const row = db.prepare("SELECT * FROM workspaces WHERE id = ?").get(id);
     if (row) {
       return {
