@@ -624,6 +624,7 @@ export function formatManagedMcpTunnelStartup(
     `${provider} Online!`,
     `- Owner           : PID ${pid}`,
     `- Current Project : ${currentProject}`,
+    `- Workspace Path  : ${workspace}`,
     `- Local Endpoint  : ${info.localUrl}`,
     ...(info.tunnelProvider === "openai"
       ? [`- Tunnel ID       : ${info.openAiTunnelId}`]

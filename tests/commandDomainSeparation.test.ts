@@ -147,6 +147,7 @@ describe("command domain separation", () => {
     expect(copySpy).toHaveBeenCalledOnce();
     const output = lines.map((l) => l.content).join("\n");
     expect(output).toContain("Current Project : example-store");
+    expect(output).toContain("Workspace Path  : C:/projects/example-store");
     expect(output).toContain("Local Endpoint  : http://127.0.0.1:9227/mcp");
     expect(output).toContain("COPY FOR EXTENSION — copied to clipboard:");
     expect(output).toContain("MCP URL   : https://example.trycloudflare.com/mcp");
@@ -183,6 +184,7 @@ describe("command domain separation", () => {
     const output = lines.map((l) => l.content).join("\n");
     expect(copySpy).toHaveBeenCalledOnce();
     expect(output).toContain("Current Project : superagent");
+    expect(output).toContain("Workspace Path  : C:/projects/superagent");
     expect(output).toContain("Local Endpoint  : http://127.0.0.1:9227/mcp");
     expect(output).toContain("COPY FOR EXTENSION — copied to clipboard:");
     expect(output).toContain("MCP URL : https://static.trycloudflare.com/mcp");

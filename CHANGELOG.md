@@ -1,3 +1,9 @@
+## [1.14.60] - 2026-10-31
+### MCP tunnel workspace path visibility
+- Show the full active `Workspace Path` in MCP tunnel startup output directly below `Current Project`.
+- Keep the workspace path out of the extension credential clipboard block so one-paste authentication remains minimal.
+- Add regression coverage for both OAuth and static Bearer startup output.
+
 ## [1.14.59] - 2026-10-31
 ### One-paste MCP extension handoff
 - Automatically copy the Cloudflare MCP extension setup block to the system clipboard after `/mcp tunnel start` and `/mcp tunnel restart`, covering both static Bearer and OAuth bootstrap modes.
