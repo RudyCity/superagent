@@ -1,3 +1,10 @@
+## [1.14.58] - 2026-10-31
+### Compact MCP tunnel startup handoff
+- Replace the verbose post-start Python/client permission guide with a compact MCP tunnel summary and a short client/extension setup block.
+- Keep static Bearer tokens and OAuth bootstrap codes only in the client/extension block, explicitly marked as credentials that must not be pasted into AI chat.
+- Add a separate credential-free agent handoff prompt plus a concise stop command; advanced Python/client details remain available through `/mcp tunnel status`.
+- Add regression coverage proving static Bearer and OAuth bootstrap credentials do not leak into the agent handoff section.
+
 ## [1.14.57] - 2026-10-29
 ### CLI Bridge twelve-hour delegation ceiling
 - Raise the maximum explicit delegation timeout from 2 hours to 12 hours (`43_200_000 ms`) while keeping the default background timeout at 60 minutes.

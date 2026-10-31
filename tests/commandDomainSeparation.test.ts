@@ -135,13 +135,45 @@ describe("command domain separation", () => {
     await mcpCommand.execute("tunnel start --mcp-auth oauth", ctx);
     expect(spy).toHaveBeenCalledWith(expect.arrayContaining(["--mcp-auth", "oauth"]), expect.any(String));
     const output = lines.map((l) => l.content).join("\n");
-    expect(output).toContain("mock-bootstrap-code-12345");
-    expect(output).toContain("One-time bootstrap approval code");
-    expect(output).toContain("Auth Mode    : oauth");
-    expect(output).toContain("Python MCP Client (copy/paste):");
-    expect(output).toContain("MCP URL     : https://example.trycloudflare.com/mcp");
-    expect(output).toContain("One-shot PS : $env:SUPERAGENT_MCP_URL='https://example.trycloudflare.com/mcp'");
-    expect(output).toContain("superagent-mcp-python login");
+    expect(output).toContain("Client / extension setup");
+    expect(output).toContain("MCP URL   : https://example.trycloudflare.com/mcp");
+    expect(output).toContain("Auth      : OAuth");
+    expect(output).toContain("Bootstrap : mock-bootstrap-code-12345");
+    expect(output).toContain("Auth / Tools : oauth / SAFE (15 tools)");
+    expect(output).toContain("Agent handoff (safe to paste):");
+    expect(output.split("Agent handoff (safe to paste):")[1]).not.toContain("mock-bootstrap-code-12345");
+    expect(output).not.toContain("Python MCP Client (copy/paste):");
+    spy.mockRestore();
+  });
+
+  it("keeps static Bearer credentials in the client block and out of the agent handoff", async () => {
+    const { ctx, lines } = makeContext();
+    const ownerModule = await import("../src/core/runtime/mcpManagedTunnelOwner.js");
+    const spy = vi.spyOn(ownerModule, "startManagedMcpTunnelOwner").mockResolvedValueOnce({
+      pid: 4244,
+      info: {
+        publicUrl: "https://static.trycloudflare.com/mcp",
+        bearerToken: "secret-bearer-token-123",
+        localUrl: "http://127.0.0.1:9227/mcp",
+        auditLogPath: "/tmp/audit.log",
+        dangerous: true,
+        toolCount: 42,
+        authMode: "static-bearer",
+        tunnelProvider: "cloudflare",
+      },
+    } as any);
+
+    await mcpCommand.execute("tunnel start --mcp-auth static-bearer --allow-dangerous", ctx);
+    const output = lines.map((l) => l.content).join("\n");
+    expect(output).toContain("Client / extension setup");
+    expect(output).toContain("MCP URL : https://static.trycloudflare.com/mcp");
+    expect(output).toContain("Auth    : Bearer");
+    expect(output).toContain("Bearer  : secret-bearer-token-123");
+    expect(output).toContain("Auth / Tools : static-bearer / FULL (42 tools)");
+    const agentSection = output.split("Agent handoff (safe to paste):")[1];
+    expect(agentSection).toBeDefined();
+    expect(agentSection).not.toContain("secret-bearer-token-123");
+    expect(agentSection).toContain("Never request, echo, or store MCP credentials in chat.");
     spy.mockRestore();
   });
 });

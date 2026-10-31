@@ -14,7 +14,6 @@ import {
   type McpTunnelInfo,
   type StartMcpTunnelOptions,
 } from "../mcp/mcpTunnel.js";
-import { formatPythonMcpClientHints } from "../mcp/pythonMcpClientHints.js";
 import { describeMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
 import { verifyWindowsProcessBirth } from "./mcpProcessBirth.js";
@@ -582,67 +581,53 @@ export async function stopManagedMcpTunnelOwner(
 
 export function formatManagedMcpTunnelStartup(result: ManagedMcpTunnelStartResult): string {
   const { info, pid } = result;
-  const lines = info.tunnelProvider === "openai"
-    ? [
-        "OpenAI Secure MCP Tunnel Online!",
-        `- Owner PID    : ${pid} (independent process)`,
-        `- Tunnel ID    : ${info.openAiTunnelId}`,
-        `- Local MCP URL: ${info.localUrl}`,
-        info.adminUrl ? `- Admin UI     : ${info.adminUrl}` : "",
-        `- Auth Mode    : ${info.authMode}`,
-        `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-      ]
-    : [
-        "MCP via Cloudflare Tunnel Online!",
-        `- Owner PID    : ${pid} (independent process)`,
-        `- Endpoint     : ${info.publicUrl}`,
-        `- Local URL    : ${info.localUrl}`,
-        `- Auth Mode    : ${info.authMode}`,
-      ];
+  const provider = info.tunnelProvider === "openai" ? "OpenAI Secure MCP Tunnel" : "Cloudflare Quick Tunnel";
+  const toolMode = `${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`;
+  const stopPort = new URL(info.localUrl).port || String(DEFAULT_MCP_PORT);
+  const lines = [
+    `${provider} Online!`,
+    `- Owner        : PID ${pid}`,
+    ...(info.tunnelProvider === "openai"
+      ? [`- Tunnel ID    : ${info.openAiTunnelId}`]
+      : [`- MCP Endpoint : ${info.publicUrl}`]),
+    `- Auth / Tools : ${info.authMode} / ${toolMode}`,
+  ];
 
   if (info.authMode === "oauth") {
     lines.push(
-      `- Discovery    : ${info.oauthDiscoveryUrl}`,
       `- OAuth state  : ${describeMcpOAuthStore({ persistent: info.oauthStatePersistent === true, reason: info.oauthStateReason })}`,
-      ...(info.tunnelProvider === "cloudflare"
-        ? [`- Scopes       : mcp:tools${info.dangerous ? " mcp:tools:write" : ""}`,
-           `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-           `- Audit Log    : ${info.auditLogPath}`]
-        : []),
       "",
-      "One-time bootstrap approval code (shown ONCE, never stored):",
-      `  - ${info.bootstrapCode}`,
+      "Client / extension setup (contains a one-time credential; do not paste into AI chat):",
+      ...(info.tunnelProvider === "openai"
+        ? [`  Tunnel ID : ${info.openAiTunnelId}`]
+        : [`  MCP URL   : ${info.publicUrl}`]),
+      "  Auth      : OAuth",
+      `  Bootstrap : ${info.bootstrapCode}`,
     );
-    if (info.tunnelProvider === "cloudflare") {
-      lines.push(
-        "",
-        "Client setup (e.g. ChatGPT / Gemini):",
-        `  1. Set MCP server URL to: ${info.publicUrl}`,
-        "  2. Authentication: OAuth",
-        "  3. Open browser authorization page when prompted and paste the bootstrap code above to approve.",
-      );
-    }
+  } else if (info.tunnelProvider === "cloudflare") {
+    lines.push(
+      "",
+      "Client / extension setup (contains a secret; do not paste into AI chat):",
+      `  MCP URL : ${info.publicUrl}`,
+      "  Auth    : Bearer",
+      `  Bearer  : ${info.bearerToken}`,
+    );
   } else {
     lines.push(
-      `- Bearer Token : ${info.bearerToken}`,
-      `- Tool Mode    : ${info.dangerous ? "FULL" : "SAFE"} (${info.toolCount} tools)`,
-    );
-  }
-  lines.push(...formatPythonMcpClientHints(info));
-  if (info.tunnelProvider === "openai") {
-    lines.push(
       "",
-      "Responses API tool definition:",
-      JSON.stringify({
-        model: "gpt-4o",
-        input: "Use the private MCP server to answer my request.",
-        tools: [{ type: "mcp", server_label: "superagent_mcp", tunnel_id: info.openAiTunnelId }],
-      }, null, 2),
+      "Client setup:",
+      `  Tunnel ID : ${info.openAiTunnelId}`,
+      "  Auth      : OpenAI tunnel transport",
     );
   }
+
   lines.push(
     "",
-    `MCP owner PID ${pid} is detached from Core. Use /mcp tunnel stop --port ${new URL(info.localUrl).port || DEFAULT_MCP_PORT} to drain and stop it.`,
+    "Agent handoff (safe to paste):",
+    "  Use the connected SuperAgent MCP server. Discover projects and tools first. Never request, echo, or store MCP credentials in chat.",
+    "",
+    `Stop: /mcp tunnel stop --port ${stopPort}`,
+    "Advanced client/Python details: /mcp tunnel status",
   );
   return lines.filter((line) => line !== "").join("\n").replace(/\n{3,}/g, "\n\n");
 }
