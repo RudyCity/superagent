@@ -1,7 +1,8 @@
 import { MOTION_MCP_TOOL_NAMES } from "./tools/motionMcpTools.js";
 
 export const PROJECT_REGISTRY_TOOL_NAMES = new Set([
-  "superagent_list_projects", "superagent_get_project", "superagent_register_project",
+  "superagent_list_projects", "superagent_get_project", "superagent_discover_projects",
+  "superagent_import_discovered_project", "superagent_sync_projects", "superagent_register_project",
   "superagent_update_project", "superagent_remove_project",
   "superagent_list_project_access", "superagent_grant_project_access", "superagent_revoke_project_access",
 ]);

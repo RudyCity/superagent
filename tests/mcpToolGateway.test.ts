@@ -5,6 +5,7 @@ import {
 } from "../src/core/mcp/superagentMcpServer.js";
 import {
   MCP_GATEWAY_TOOL_NAMES,
+  MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES,
   describeGatewayTool,
   searchGatewayTools,
   validateGatewayExecuteTarget,
@@ -45,6 +46,20 @@ describe("static MCP gateway catalog", () => {
     expect(executionTool.annotations?.destructiveHint).toBe(true);
     expect(executionTool._meta.securitySchemes[0].scopes).toContain("mcp:tools");
     expect(advertised).not.toContain("superagent_read_files");
+    expect(advertised).toEqual(expect.arrayContaining([
+      "superagent_get_workspace",
+      "superagent_list_projects",
+      "superagent_discover_projects",
+      "superagent_get_project",
+      "superagent_check_project_health",
+      "superagent_list_project_access",
+    ]));
+    expect(advertised).not.toContain("superagent_switch_workspace");
+    expect(advertised).not.toContain("superagent_register_project");
+    expect(advertised).not.toContain("superagent_import_discovered_project");
+
+    const directList = await invoke(server, "superagent_list_projects");
+    expect(directList.isError).not.toBe(true);
 
     const search = parseResult(await invoke(server, MCP_GATEWAY_TOOL_NAMES.search, { query: "project", limit: 20 }));
     expect(search.tools.length).toBeGreaterThan(0);
@@ -62,6 +77,38 @@ describe("static MCP gateway catalog", () => {
     expect(status.mode).toBe("gateway");
     expect(status.visibleToolCount).toBeGreaterThan(0);
     expect(status.gatewayTools).toContain(MCP_GATEWAY_TOOL_NAMES.execute);
+    expect(status.eagerProjectWorkspaceTools).toEqual(expect.arrayContaining([
+      "superagent_get_workspace",
+      "superagent_list_projects",
+      "superagent_discover_projects",
+    ]));
+    expect(status.initiallyAdvertisedTools).toEqual(expect.arrayContaining([
+      MCP_GATEWAY_TOOL_NAMES.search,
+      "superagent_list_projects",
+    ]));
+    await server.close();
+  });
+
+  it("eager-loads authorized project/workspace mutation tools only with their original write/admin policy", async () => {
+    setYoloMode(true);
+    let scopes = ["mcp:tools", "mcp:tools:read", "mcp:tools:write"];
+    const server = createSuperagentMcpServer({
+      toolExposure: "gateway",
+      authMode: "oauth",
+      allowDangerous: true,
+      getIdentity: () => ({ mode: "oauth", subject: "project-writer", scopes }),
+    });
+    const writerTools = (await list(server)).map((tool) => tool.name);
+    expect(writerTools).toContain("superagent_switch_workspace");
+    expect(writerTools).not.toContain("superagent_register_project");
+    expect(writerTools).not.toContain("superagent_import_discovered_project");
+    expect(writerTools).not.toContain("superagent_sync_projects");
+
+    scopes = ["mcp:tools", "mcp:tools:read", "mcp:tools:write", "mcp:tools:admin"];
+    const adminTools = (await list(server)).map((tool) => tool.name);
+    for (const toolName of MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES) {
+      expect(adminTools).toContain(toolName);
+    }
     await server.close();
   });
 

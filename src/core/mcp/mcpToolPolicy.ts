@@ -85,6 +85,8 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
  * Static-bearer / stdio retain their local policy enforcement.
  */
 export const PRIVILEGED_MCP_TOOLS: ReadonlySet<string> = new Set([
+  "superagent_import_discovered_project",
+  "superagent_sync_projects",
   "superagent_register_project",
   "superagent_update_project",
   "superagent_remove_project",

@@ -188,6 +188,8 @@ import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTo
 import {
   MCP_GATEWAY_TOOL_DEFS,
   MCP_GATEWAY_TOOL_NAMES,
+  MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES,
+  getGatewayInitiallyAdvertisedTools,
   getGatewayVisibleCatalog,
   searchGatewayTools,
   describeGatewayTool,
@@ -642,7 +644,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     const authorized = getAuthorizedMcpTools();
     const tools = toolExposure === "gateway"
-      ? authorized.filter((tool) => Object.values(MCP_GATEWAY_TOOL_NAMES).includes(tool.name as any))
+      ? getGatewayInitiallyAdvertisedTools(authorized)
       : authorized;
     const annotated = tools.map((t) => ({
       ...t,
@@ -1135,12 +1137,7 @@ function extractMcpResultText(result: unknown): string {
       });
       throw new McpError(ErrorCode.InvalidRequest, reason);
     }
-    const registryManagementTools = new Set([
-      "superagent_list_projects", "superagent_get_project", "superagent_register_project",
-      "superagent_update_project", "superagent_remove_project", "superagent_list_project_access",
-      "superagent_grant_project_access", "superagent_revoke_project_access",
-    ]);
-    if (toolName !== "superagent_switch_workspace" && !registryManagementTools.has(toolName)
+    if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
       && (typeof rawArgs.projectId === "string" || typeof rawArgs.workspace === "string" || typeof rawArgs.cwd === "string" || typeof rawArgs.worktreePath === "string")) {
       try {
         const resolvedTarget = resolveMcpProjectTarget(toolName, {
@@ -1275,6 +1272,9 @@ function extractMcpResultText(result: unknown): string {
           visibleToolCount: getGatewayVisibleCatalog(authorizedTools).length,
           gatewayTools: authorizedTools.filter((tool) =>
             Object.values(MCP_GATEWAY_TOOL_NAMES).includes(tool.name as any)).map((tool) => tool.name),
+          eagerProjectWorkspaceTools: authorizedTools.filter((tool) =>
+            (MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES as readonly string[]).includes(tool.name)).map((tool) => tool.name),
+          initiallyAdvertisedTools: getGatewayInitiallyAdvertisedTools(authorizedTools).map((tool) => tool.name),
         });
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.execute) {
         const target = validateGatewayExecuteTarget(authorizedTools, rawArgs);

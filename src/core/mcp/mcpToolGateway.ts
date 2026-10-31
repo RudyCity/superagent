@@ -7,6 +7,29 @@ export const MCP_GATEWAY_TOOL_NAMES = {
   status: "superagent_tool_status",
 } as const;
 
+/**
+ * Core project/workspace lifecycle tools are eagerly advertised in Gateway mode.
+ * They still pass through the normal authorized catalog first, so read-only
+ * identities only see safe tools while mutation/admin tools remain hidden until
+ * their original OAuth/YOLO policy allows them.
+ */
+export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
+  "superagent_get_workspace",
+  "superagent_switch_workspace",
+  "superagent_list_projects",
+  "superagent_discover_projects",
+  "superagent_get_project",
+  "superagent_check_project_health",
+  "superagent_import_discovered_project",
+  "superagent_sync_projects",
+  "superagent_register_project",
+  "superagent_update_project",
+  "superagent_remove_project",
+  "superagent_list_project_access",
+  "superagent_grant_project_access",
+  "superagent_revoke_project_access",
+] as const);
+
 export const MCP_GATEWAY_TOOL_DEFS = [
   {
     name: MCP_GATEWAY_TOOL_NAMES.search,
@@ -50,6 +73,15 @@ export const MCP_GATEWAY_TOOL_DEFS = [
 
 export type GatewayToolDef = { name: string; description?: string; inputSchema?: Record<string, unknown> };
 const gatewayNames = new Set<string>(Object.values(MCP_GATEWAY_TOOL_NAMES));
+const eagerProjectWorkspaceNames = new Set<string>(MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES);
+
+export function isGatewayInitiallyAdvertisedTool(name: string): boolean {
+  return gatewayNames.has(name) || eagerProjectWorkspaceNames.has(name);
+}
+
+export function getGatewayInitiallyAdvertisedTools<T extends GatewayToolDef>(allAuthorized: T[]): T[] {
+  return allAuthorized.filter((tool) => isGatewayInitiallyAdvertisedTool(tool.name));
+}
 
 export function getGatewayVisibleCatalog<T extends GatewayToolDef>(allAuthorized: T[]): T[] {
   return allAuthorized.filter((tool) => !gatewayNames.has(tool.name));
