@@ -15,6 +15,18 @@ function headlessOpts<T extends Record<string, any>>(opts?: T, caller = "cloudfl
 
 export type TunnelServiceKind = "muse-websocket" | "mcp-http" | "superagent-http" | "unknown";
 
+export interface TunnelHeartbeatStatus {
+  enabled: boolean;
+  lastPingAt?: number;
+  lastSuccessAt?: number;
+  lastStatus?: "healthy" | "degraded" | "failing";
+  lastStatusCode?: number;
+  latencyMs?: number;
+  consecutiveFailures: number;
+  totalPings: number;
+  error?: string;
+}
+
 export interface TunnelMetadata {
   pid: number;
   publicUrl: string;
@@ -27,6 +39,7 @@ export interface TunnelMetadata {
   serviceKind?: TunnelServiceKind;
   workspace?: string;
   workspaces?: string[];
+  heartbeat?: TunnelHeartbeatStatus;
 }
 export interface TunnelStatus {
   isRunning: boolean;
@@ -41,6 +54,7 @@ export interface TunnelStatus {
   workspace?: string;
   workspaces?: string[];
   error?: string;
+  heartbeat?: TunnelHeartbeatStatus;
 }
 export interface ActiveTunnelInfo {
   port: number;
@@ -54,6 +68,7 @@ export interface ActiveTunnelInfo {
   serviceKind?: TunnelServiceKind;
   workspace?: string;
   workspaces?: string[];
+  heartbeat?: TunnelHeartbeatStatus;
 }
 export interface StartTunnelOptions {
   port?: number;
@@ -69,6 +84,10 @@ export interface StartTunnelOptions {
   onUrlDetected?: (publicUrl: string, wssUrl?: string) => void;
   /** Service-owned cleanup hook; generic tunnel management never changes service config. */
   onExit?: (metadata: TunnelMetadata) => void;
+  /** Interval in ms between heartbeat keep-alive pings. Default: 25000 (25s). */
+  heartbeatIntervalMs?: number;
+  /** If true, disables the automatic public heartbeat keep-alive. */
+  disableHeartbeat?: boolean;
 }
 
 /** Compare the local HTTP origin a tunnel forwards to, independent of path/trailing slash. */
@@ -443,6 +462,8 @@ export class CloudflareTunnelManager {
   private static instance: CloudflareTunnelManager | null = null;
   private activeProcesses = new Map<number, ChildProcess>();
   private activeMetadata = new Map<number, TunnelMetadata>();
+  private heartbeatTimers = new Map<number, ReturnType<typeof setInterval>>();
+  private heartbeatStatus = new Map<number, TunnelHeartbeatStatus>();
   private currentProcess: ChildProcess | null = null;
   private currentMetadata: TunnelMetadata | null = null;
 
@@ -457,16 +478,19 @@ export class CloudflareTunnelManager {
     if (typeof port === "number") {
       this.activeProcesses.delete(port);
       this.activeMetadata.delete(port);
+      this.stopHeartbeat(port);
       if (this.currentMetadata?.port === port) {
         this.currentMetadata = null;
       }
     } else if (port === "all") {
+      this.stopAllHeartbeats();
       this.activeProcesses.clear();
       this.activeMetadata.clear();
       this.currentProcess = null;
       this.currentMetadata = null;
     } else {
       if (this.currentMetadata?.port) {
+        this.stopHeartbeat(this.currentMetadata.port);
         this.activeProcesses.delete(this.currentMetadata.port);
         this.activeMetadata.delete(this.currentMetadata.port);
       }
@@ -480,6 +504,141 @@ export class CloudflareTunnelManager {
     if (!this.currentMetadata || this.currentMetadata.port === port) {
       this.currentMetadata = meta;
     }
+  }
+
+  /**
+   * Starts an automated keep-alive heartbeat ping for a Cloudflare tunnel.
+   * Periodically pings the public endpoint over HTTPS through Cloudflare edge to prevent
+   * idle disconnections, NAT dropouts, and ephemeral hostname de-registrations.
+   */
+  public startHeartbeat(port: number, publicUrl: string, intervalMs = 25000): void {
+    this.stopHeartbeat(port);
+    if (!publicUrl) return;
+
+    const status: TunnelHeartbeatStatus = {
+      enabled: true,
+      consecutiveFailures: 0,
+      totalPings: 0,
+    };
+    this.heartbeatStatus.set(port, status);
+
+    const ping = async () => {
+      const meta = this.activeMetadata.get(port) || readTunnelState(port);
+      if (!meta || !meta.publicUrl) {
+        this.stopHeartbeat(port);
+        return;
+      }
+      const targetUrl = meta.publicUrl.replace(/\/$/, "");
+      const pingStart = performance.now();
+      const current = this.heartbeatStatus.get(port) || status;
+
+      if (!this.isTunnelProcessAlive(meta)) {
+        current.totalPings++;
+        current.lastPingAt = Date.now();
+        current.consecutiveFailures++;
+        current.lastStatus = current.consecutiveFailures >= 3 ? "failing" : "degraded";
+        current.error = "Tunnel process inactive";
+        if (current.consecutiveFailures >= 5) {
+          this.stopHeartbeat(port);
+        }
+        return;
+      }
+
+      current.totalPings++;
+      current.lastPingAt = Date.now();
+
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
+        let res: Response;
+        try {
+          res = await fetch(`${targetUrl}/`, {
+            method: "HEAD",
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "SuperAgent-Cloudflare-Heartbeat/1.0",
+              "Cache-Control": "no-cache",
+            },
+          });
+        } catch {
+          res = await fetch(`${targetUrl}/`, {
+            method: "GET",
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "SuperAgent-Cloudflare-Heartbeat/1.0",
+              "Cache-Control": "no-cache",
+            },
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+
+        const latency = Math.round(performance.now() - pingStart);
+        current.latencyMs = latency;
+        current.lastStatusCode = res.status;
+
+        // Status codes >= 500 from Cloudflare (502 Bad Gateway, 503, 530 Origin DNS error) indicate tunnel failure
+        if (res.status >= 500) {
+          current.consecutiveFailures++;
+          current.lastStatus = current.consecutiveFailures >= 3 ? "failing" : "degraded";
+          current.error = `HTTP ${res.status}`;
+          logE2E("REMOTE-AGENT", `[Tunnel Heartbeat] Warning: ${targetUrl} returned HTTP ${res.status} (${current.consecutiveFailures} consecutive failures)`);
+        } else {
+          current.consecutiveFailures = 0;
+          current.lastSuccessAt = Date.now();
+          current.lastStatus = "healthy";
+          delete current.error;
+        }
+      } catch (err: any) {
+        const latency = Math.round(performance.now() - pingStart);
+        current.latencyMs = latency;
+        current.consecutiveFailures++;
+        current.lastStatus = current.consecutiveFailures >= 3 ? "failing" : "degraded";
+        current.error = err?.name === "AbortError" ? "Ping timeout (>8s)" : (err?.message || "Ping error");
+        logE2E("REMOTE-AGENT", `[Tunnel Heartbeat] Ping error for ${targetUrl}: ${current.error} (fails: ${current.consecutiveFailures})`);
+      }
+
+      const activeMeta = this.activeMetadata.get(port);
+      if (activeMeta) {
+        activeMeta.heartbeat = { ...current };
+        saveTunnelState(activeMeta, port);
+      }
+    };
+
+    const timer = setInterval(() => { void ping(); }, intervalMs);
+    if (typeof timer.unref === "function") timer.unref();
+    this.heartbeatTimers.set(port, timer);
+
+    // Initial ping after a short delay (scaled to intervalMs, max 2500ms)
+    const initialDelay = Math.min(2500, Math.max(10, Math.floor(intervalMs / 10)));
+    const initialTimer = setTimeout(() => { void ping(); }, initialDelay);
+    if (typeof initialTimer.unref === "function") initialTimer.unref();
+  }
+
+  public stopHeartbeat(port: number): void {
+    const timer = this.heartbeatTimers.get(port);
+    if (timer) {
+      clearInterval(timer);
+      this.heartbeatTimers.delete(port);
+    }
+    this.heartbeatStatus.delete(port);
+    const activeMeta = this.activeMetadata.get(port);
+    if (activeMeta && activeMeta.heartbeat) {
+      activeMeta.heartbeat.enabled = false;
+      saveTunnelState(activeMeta, port);
+    }
+  }
+
+  public stopAllHeartbeats(): void {
+    for (const timer of this.heartbeatTimers.values()) {
+      clearInterval(timer);
+    }
+    this.heartbeatTimers.clear();
+    this.heartbeatStatus.clear();
+  }
+
+  public getHeartbeatStatus(port: number): TunnelHeartbeatStatus | undefined {
+    return this.heartbeatStatus.get(port) || this.activeMetadata.get(port)?.heartbeat || readTunnelState(port)?.heartbeat;
   }
 
   private isTunnelCommandOwned(meta: TunnelMetadata): boolean {
@@ -575,6 +734,9 @@ export class CloudflareTunnelManager {
         assertCompatibleService(persisted);
         this.activeMetadata.set(port, persisted);
         this.currentMetadata = persisted;
+        if (!options.disableHeartbeat && persisted.publicUrl) {
+          this.startHeartbeat(port, persisted.publicUrl, options.heartbeatIntervalMs);
+        }
         return persisted;
       }
       clearTunnelState(port);
@@ -598,10 +760,11 @@ export class CloudflareTunnelManager {
       let cfTunnelRecordId: string | undefined;
       let earlyExit: { code: number | null; signal: string | null } | null = null;
 
+      const cfArgs = ["tunnel", "--url", localTarget, "--no-autoupdate"];
       const child = traceChildProcess(
         spawn(
           binary,
-          ["tunnel", "--url", localTarget],
+          cfArgs,
           headlessOpts({
             stdio: ["ignore", "pipe", "pipe"] as ["ignore", "pipe", "pipe"],
           }, "cloudflareTunnel.startQuickTunnel")
@@ -609,7 +772,7 @@ export class CloudflareTunnelManager {
         {
           caller: "cloudflareTunnel.startQuickTunnel",
           executable: binary,
-          args: ["tunnel", "--url", localTarget],
+          args: cfArgs,
           intent: "headless",
         }
       );
@@ -617,7 +780,7 @@ export class CloudflareTunnelManager {
       void getProcessSupervisor().registerProcess({
         component: "cloudflare_tunnel",
         executable: binary,
-        args: ["tunnel", "--url", localTarget],
+        args: cfArgs,
         launchIntent: "headless",
         lifecycle: "persistent",
         cleanupPolicy: "keep_alive",
@@ -713,6 +876,9 @@ export class CloudflareTunnelManager {
             saveTunnelState(meta);
 
             logE2E("REMOTE-AGENT", `Cloudflare quick tunnel established (${serviceKind}): ${publicUrl}${wssUrl ? ` -> ${wssUrl}` : ""}`);
+            if (!options.disableHeartbeat) {
+              this.startHeartbeat(port, publicUrl, options.heartbeatIntervalMs);
+            }
             options.onUrlDetected?.(publicUrl, wssUrl);
             resolve(meta);
           }
@@ -729,6 +895,7 @@ export class CloudflareTunnelManager {
           clearTunnelState(port);
           this.activeProcesses.delete(port);
           this.activeMetadata.delete(port);
+          this.stopHeartbeat(port);
           if (this.currentProcess === child) {
             this.currentProcess = null;
             this.currentMetadata = null;
@@ -743,6 +910,7 @@ export class CloudflareTunnelManager {
         clearTunnelState(port);
         this.activeProcesses.delete(port);
         this.activeMetadata.delete(port);
+        this.stopHeartbeat(port);
         // Service-specific cleanup is performed through the caller-owned hook.
         if (closedMeta) {
           try { options.onExit?.(closedMeta); } catch {}
@@ -811,7 +979,9 @@ export class CloudflareTunnelManager {
           } catch {}
           this.activeProcesses.delete(p);
           if (this.currentProcess === proc) this.currentProcess = null;
-          clearTunnelState(p);
+          this.stopHeartbeat(p);
+          this.stopHeartbeat(p);
+        clearTunnelState(p);
           continue;
         }
         logE2E("REMOTE-AGENT", `Skipped tunnel stop on port ${p}: no verifiable tunnel state or owned pending child.`);
@@ -851,6 +1021,7 @@ export class CloudflareTunnelManager {
         } catch {}
         this.activeProcesses.delete(p);
         this.activeMetadata.delete(p);
+        this.stopHeartbeat(p);
         if (this.currentProcess === proc) {
           this.currentProcess = null;
           this.currentMetadata = null;
@@ -882,6 +1053,7 @@ export class CloudflareTunnelManager {
             stopped = true;
           }
         } catch {}
+        this.stopHeartbeat(p);
         clearTunnelState(p);
         // No service configuration is changed by a generic stop.
       }
@@ -907,6 +1079,7 @@ export class CloudflareTunnelManager {
     for (const [p, meta] of this.activeMetadata.entries()) {
       if (meta && this.isTunnelProcessAlive(meta)) {
         const uptime = Math.floor((Date.now() - meta.startedAt) / 1000);
+        const heartbeat = this.getHeartbeatStatus(meta.port) || meta.heartbeat;
         activeMap.set(meta.port, {
           port: meta.port,
           pid: meta.pid,
@@ -918,8 +1091,10 @@ export class CloudflareTunnelManager {
           workspaces: meta.workspaces,
           startedAt: meta.startedAt,
           uptimeSeconds: Math.max(0, uptime),
+          heartbeat,
         });
       } else if (meta && !this.isTunnelCommandOwned(meta)) {
+        this.stopHeartbeat(p);
         clearTunnelState(p);
       }
     }
@@ -951,6 +1126,7 @@ export class CloudflareTunnelManager {
                   if (this.hasExpectedTargetPort(candidate)) {
                     const uptime = Math.floor((Date.now() - (meta.startedAt || Date.now())) / 1000);
                     if (!activeMap.has(effectivePort)) {
+                      const heartbeat = this.getHeartbeatStatus(effectivePort) || meta.heartbeat;
                       activeMap.set(effectivePort, {
                         port: effectivePort,
                         pid: meta.pid,
@@ -962,6 +1138,7 @@ export class CloudflareTunnelManager {
                         workspaces: meta.workspaces,
                         startedAt: meta.startedAt,
                         uptimeSeconds: Math.max(0, uptime),
+                        heartbeat,
                       });
                     }
                   }
@@ -1062,6 +1239,8 @@ export class CloudflareTunnelManager {
     }
 
     const uptime = Math.floor((Date.now() - meta.startedAt) / 1000);
+    const effectivePort = meta.port || port;
+    const heartbeat = (typeof effectivePort === "number" ? this.getHeartbeatStatus(effectivePort) : undefined) || meta.heartbeat;
     return {
       isRunning: true,
       pid: meta.pid,
@@ -1074,11 +1253,16 @@ export class CloudflareTunnelManager {
       workspaces: meta.workspaces,
       startedAt: meta.startedAt,
       uptimeSeconds: uptime,
+      heartbeat,
     };
   }
 }
 
 export const cloudflareTunnel = CloudflareTunnelManager.getInstance();
+
+export function getTunnelHeartbeatStatus(port: number): TunnelHeartbeatStatus | undefined {
+  return cloudflareTunnel.getHeartbeatStatus(port);
+}
 
 export async function startQuickTunnel(options?: StartTunnelOptions): Promise<TunnelMetadata> {
   return cloudflareTunnel.startQuickTunnel(options);

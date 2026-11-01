@@ -11,6 +11,7 @@ import {
   isProcessRunning,
   getTunnelStatus,
   CloudflareTunnelManager,
+  getTunnelHeartbeatStatus,
 } from "../src/core/remoteAgent/cloudflareTunnel.js";
 import { handleMuseCliCommand } from "../src/core/remoteAgent/museCli.js";
 import { museCommand } from "../src/core/commands/museCommand.js";
@@ -102,6 +103,75 @@ describe("Cloudflare Quick Ephemeral Tunnel Suite", () => {
       clearTunnelState();
       const status = getTunnelStatus();
       expect(status.isRunning).toBe(false);
+    });
+
+    it("should manage heartbeat lifecycle and track ping status", async () => {
+      const mgr = CloudflareTunnelManager.getInstance();
+      const port = 9988;
+      const fixturePid = await spawnTunnelFixture(port);
+      const sampleMeta = {
+        pid: fixturePid,
+        publicUrl: "https://heartbeat-test.trycloudflare.com",
+        localUrl: `http://127.0.0.1:${port}`,
+        port,
+        startedAt: Date.now(),
+      };
+      mgr.setMemoryState(port, sampleMeta);
+      saveTunnelState(sampleMeta, port);
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+        status: 200,
+        ok: true,
+      } as any);
+
+      mgr.startHeartbeat(port, sampleMeta.publicUrl, 100);
+      const initial = mgr.getHeartbeatStatus(port);
+      expect(initial?.enabled).toBe(true);
+
+      // Wait for at least one ping to occur
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const active = mgr.getHeartbeatStatus(port);
+      expect(active?.totalPings).toBeGreaterThanOrEqual(1);
+      expect(active?.lastStatus).toBe("healthy");
+      expect(active?.lastStatusCode).toBe(200);
+
+      mgr.stopHeartbeat(port);
+      expect(mgr.getHeartbeatStatus(port)?.enabled).toBe(false);
+      clearTunnelState(port);
+      expect(readTunnelState(port)).toBeNull();
+      fetchSpy.mockRestore();
+    });
+
+    it("should record degraded and failing status when ping returns error codes", async () => {
+      const mgr = CloudflareTunnelManager.getInstance();
+      const port = 9989;
+      const fixturePid = await spawnTunnelFixture(port);
+      const sampleMeta = {
+        pid: fixturePid,
+        publicUrl: "https://heartbeat-fail-test.trycloudflare.com",
+        localUrl: `http://127.0.0.1:${port}`,
+        port,
+        startedAt: Date.now(),
+      };
+      mgr.setMemoryState(port, sampleMeta);
+      saveTunnelState(sampleMeta, port);
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+        status: 502,
+        ok: false,
+      } as any);
+
+      mgr.startHeartbeat(port, sampleMeta.publicUrl, 60);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const failed = mgr.getHeartbeatStatus(port);
+      expect(failed?.totalPings).toBeGreaterThanOrEqual(1);
+      expect(failed?.consecutiveFailures).toBeGreaterThanOrEqual(1);
+      expect(failed?.lastStatus).toMatch(/degraded|failing/);
+      expect(failed?.error).toContain("502");
+
+      mgr.stopHeartbeat(port);
+      fetchSpy.mockRestore();
     });
   });
 

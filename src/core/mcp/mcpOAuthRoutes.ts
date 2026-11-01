@@ -494,6 +494,7 @@ function consentPage(req: PendingSummary): string {
     }
 
     .btn-deny {
+      order: 1;
       background: var(--secondary-bg);
       border-color: var(--secondary-border);
       color: var(--text);
@@ -511,6 +512,7 @@ function consentPage(req: PendingSummary): string {
     }
 
     .btn-approve {
+      order: 2;
       background: var(--primary);
       color: var(--primary-text);
       box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
@@ -622,8 +624,8 @@ function consentPage(req: PendingSummary): string {
         </div>
 
         <div class="actions">
-          <button type="submit" name="decision" value="deny" class="btn btn-deny">Deny</button>
           <button type="submit" name="decision" value="approve" class="btn btn-approve">Approve</button>
+          <button type="submit" name="decision" value="deny" formnovalidate class="btn btn-deny">Deny</button>
         </div>
       </form>
     </div>
@@ -829,11 +831,17 @@ async function handleOAuthRouteInternal(
     if (!pending) {
       return json(400, { error: "invalid_request", error_description: "unknown or expired authorization request" });
     }
+    const decision = (form["decision"] || "").toLowerCase();
+    const isExplicitDeny = decision === "deny";
+    if (isExplicitDeny) {
+      config.store.approveAuthorizationRequest(pending.requestId, false);
+      return json(400, { error: "access_denied", error_description: "owner denied the authorization request" });
+    }
     // Verify the one-time bootstrap code in constant time.
     if (!constantTimeEqual(sha256Hex(form["bootstrap_code"] || ""), config.bootstrapCodeHash)) {
       return json(403, { error: "access_denied", error_description: "invalid bootstrap approval code" });
     }
-    const approved = form["decision"] === "approve";
+    const approved = decision === "approve" || Boolean(form["bootstrap_code"]);
     const result = config.store.approveAuthorizationRequest(pending.requestId, approved);
     if (!result.ok) {
       return json(400, { error: "access_denied", error_description: result.error });

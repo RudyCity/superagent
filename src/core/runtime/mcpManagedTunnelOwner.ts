@@ -638,6 +638,12 @@ export function formatManagedMcpTunnelStartup(
     );
   }
 
+  if (info.tunnelProvider === "cloudflare") {
+    lines.push(
+      "- Heartbeat       : active (25s keep-alive ping)",
+    );
+  }
+
   if (extensionSetup) {
     lines.push(
       "",

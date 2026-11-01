@@ -25,7 +25,9 @@ import {
   stopQuickTunnel,
   getTunnelStatus,
   isProcessRunning,
+  readTunnelState,
   type TunnelMetadata,
+  type TunnelHeartbeatStatus,
 } from "../remoteAgent/cloudflareTunnel.js";
 import {
   startMcpHttpServer,
@@ -129,6 +131,7 @@ export interface McpServerState {
   oauthPublicBaseUrl?: string;
   /** True when OAuth tokens survive an owner restart for this issuer. */
   oauthStatePersistent?: boolean;
+  heartbeat?: TunnelHeartbeatStatus;
 }
 
 /** Full info for one active MCP server, including cross-workspace ones. */
@@ -191,7 +194,12 @@ export function readMcpStateFile(filePath: string): McpServerState | null {
 
 function toActiveMcpInfo(s: McpServerState): ActiveMcpInfo {
   const uptime = Math.floor((Date.now() - (s.startedAt || Date.now())) / 1000);
-  return { ...s, uptimeSeconds: Math.max(0, uptime) };
+  const tunnelState = readTunnelState(s.port);
+  return {
+    ...s,
+    uptimeSeconds: Math.max(0, uptime),
+    heartbeat: s.heartbeat || tunnelState?.heartbeat,
+  };
 }
 
 export interface StartMcpTunnelOptions {
@@ -702,6 +710,15 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
     }
     if (s.workspace) {
       lines.push(`   - Workspace  : ${s.workspace}`);
+    }
+    if (s.tunnelProvider === "cloudflare") {
+      const hb = s.heartbeat || readTunnelState(s.port)?.heartbeat;
+      if (hb) {
+        const hbStatus = hb.lastStatus ? hb.lastStatus.toUpperCase() : (hb.enabled ? "ACTIVE" : "DISABLED");
+        const latency = hb.latencyMs !== undefined ? `${hb.latencyMs}ms` : "pending";
+        const lastPing = hb.lastPingAt ? `${Math.max(0, Math.round((Date.now() - hb.lastPingAt) / 1000))}s ago` : "warming up";
+        lines.push(`   - Heartbeat  : ${hbStatus} (latency: ${latency}, last ping: ${lastPing})`);
+      }
     }
     lines.push(...formatPythonMcpClientHints({
       publicUrl: s.publicUrl,

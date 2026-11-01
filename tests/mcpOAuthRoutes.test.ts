@@ -173,6 +173,37 @@ describe("authorization flow", () => {
     expect(store.verifyAccessToken(tokens.access_token)).not.toBeNull();
   });
 
+  it("approves when decision is omitted (Enter submit) with valid bootstrap code", async () => {
+    const { challenge } = pkcePair();
+    const page = await handleOAuthRoute(
+      getReq(`/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_challenge=${challenge}&code_challenge_method=S256`),
+      config
+    );
+    const m = /name="request_id" value="([^"]+)"/.exec(page.body);
+    const approve = await handleOAuthRoute(
+      postReq("/oauth/authorize", `request_id=${m![1]}&bootstrap_code=${bootstrap}`),
+      config
+    );
+    expect(approve.statusCode).toBe(302);
+    const code = new URL(approve.headers["Location"]).searchParams.get("code");
+    expect(code).toBeTruthy();
+  });
+
+  it("handles explicit owner denial without requiring bootstrap code", async () => {
+    const { challenge } = pkcePair();
+    const page = await handleOAuthRoute(
+      getReq(`/oauth/authorize?client_id=${CLIENT_ID}&redirect_uri=${encodeURIComponent(REDIRECT_URI)}&code_challenge=${challenge}&code_challenge_method=S256`),
+      config
+    );
+    const m = /name="request_id" value="([^"]+)"/.exec(page.body);
+    const deny = await handleOAuthRoute(
+      postReq("/oauth/authorize", `request_id=${m![1]}&decision=deny`),
+      config
+    );
+    expect(deny.statusCode).toBe(400);
+    expect(JSON.parse(deny.body).error).toBe("access_denied");
+  });
+
   it("rejects wrong bootstrap code on approval", async () => {
     const { challenge } = pkcePair();
     const page = await handleOAuthRoute(
