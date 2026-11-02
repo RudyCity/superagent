@@ -157,21 +157,28 @@ export class TakeoverWebsocketProxy {
       }
     });
 
-    // Pipe frames from client to target
-    clientWs.on("message", async (data: any, isBinary: boolean) => {
-      try {
-        if (!this.activeSockets.has(sessionId) ||
+    // Serialize reauthorization and sends. An async disk-backed authorization
+    // check for each WebSocket message could otherwise reorder RFB keyboard,
+    // pointer and protocol frames even if they arrived in the correct order.
+    let pendingInput = Promise.resolve();
+    clientWs.on("message", (data: any, isBinary: boolean) => {
+      pendingInput = pendingInput.then(async () => {
+        if (this.activeSockets.get(sessionId) !== sessionEntry ||
             !(await manager.authorizeOperator(sessionId, operatorToken))) {
-          this.closeSessionTunnel(sessionId, 4003, "Human authorization expired or revoked");
+          if (this.activeSockets.get(sessionId) === sessionEntry) {
+            this.closeSessionTunnel(sessionId, 4003, "Human authorization expired or revoked");
+          }
           return;
         }
         if (this.activeSockets.get(sessionId) !== sessionEntry) return;
         if (targetWs.readyState === WebSocket.OPEN) {
           targetWs.send(data, { binary: isBinary });
         }
-      } catch {
-        this.closeSessionTunnel(sessionId, 4003, "Authorization unavailable");
-      }
+      }).catch(() => {
+        if (this.activeSockets.get(sessionId) === sessionEntry) {
+          this.closeSessionTunnel(sessionId, 4003, "Authorization unavailable");
+        }
+      });
     });
 
     // Server-side expiry/failure revocation closes inactive sockets, not just
@@ -183,9 +190,11 @@ export class TakeoverWebsocketProxy {
     }, 3000);
     expiryTimer.unref();
 
-    // Error and cleanup handling
+    // Error and cleanup handling. A delayed close event from an earlier
+    // connection must never tear down its replacement for the same session.
     const cleanup = () => {
       clearInterval(expiryTimer);
+      if (this.activeSockets.get(sessionId) !== sessionEntry) return;
       this.closeSessionTunnel(sessionId);
     };
 

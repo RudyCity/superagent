@@ -135,3 +135,7 @@ console.log(JSON.stringify({
   display: process.env.DISPLAY
 }, null, 2));
 EOF
+
+# Full GUI input certification (RFB keyboard/mouse delivered to Chrome via
+# Xvfb, asserted independently through the local Chrome DevTools Protocol).
+"$node_bin" "$(dirname "$0")/linux-takeover-input-smoke.mjs"
