@@ -11,6 +11,7 @@ import path from "node:path";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { requestCoreSupervisor } from "../src/core/runtime/coreSupervisor.js";
 import { coreCheckpointPath } from "../src/core/runtime/coreSupervisorCheckpoint.js";
+import { noteCoreAgentSessionTurn } from "../src/core/runtime/coreAgentSessionCheckpoint.js";
 
 const repo = path.resolve(import.meta.dir, "..");
 const cli = path.join(repo, "dist", "cli.js");
@@ -228,8 +229,15 @@ try {
   const viaTlineAfterBoot = await api(frontPort, initialBearer, "/api/status?sessionId=" + id);
   check("tline_routes_original_session_after_login_boot",
     viaTlineAfterBoot.code === 200 && viaTlineAfterBoot.data?.sessionId === id);
-  // A whole-machine reboot has NO surviving workers. A checkpoint must not
-  // authorize automatic execution of a new agent as if it were the old one.
+  // Make this a genuine FAIL-CLOSED scenario: record a synthetically
+  // accepted-but-unreconciled turn in the test-owned durable receipt.
+  // With all workers dead, the cold-start policy MUST choose operator_review,
+  // not the separately tested safe cold_reset_allowed path.
+  noteCoreAgentSessionTurn(id, "guardian_unreconciled_" + crypto.randomBytes(4).toString("hex"));
+  check("accepted_turn_receipt_requires_manual_reconciliation",
+    fs.existsSync(path.join(config, "core-session-receipts")));
+  // A whole-machine reboot has NO surviving workers and an unresolved turn.
+  // Such a checkpoint must never authorize replay or cold reset.
   killOwned(bootProcess.pid);
   killOwned(first.active.pid);
   const deniedColdBoot = spawnSync(process.execPath, [cli, "core", "boot",

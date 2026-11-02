@@ -24,6 +24,16 @@ The latest regression had previously been red across multiple pushes, so the err
 5. **Virtual desktop package test assumed PATH="" makes /usr/bin binaries disappear:** System package probing intentionally searches standard directories independently of PATH. Assertions now compare detection to actual installed package presence while requiring precise missing-required diagnostics.
 6. **Windows Core Guardian PID birth test:** Permission-constrained PowerShell queries legitimately return `unverified`, a fail-closed value that must never authorize ownership. The test accepts this result while other deterministic birth-time tests continue verifying that mismatched timestamps never match.
 
+## Verification of first remediation push and follow-up CI findings
+
+After commit `88e01729` was pushed, [Bun Runtime Validation 41439013118](https://github.com/RudyCity/superagent/actions/runs/41439013118) showed:
+- Windows runtime (including new Windows-only step): **PASS**.
+- Ubuntu runtime: **PASS**.
+- Dependency security: **PASS**.
+- Full Ubuntu regression: **5,478 passed, 49 skipped, 1 failed**, zero unhandled taskkill errors. This is a separate performance-sensitive test, `studioCodeVideoDurableJobs.test.ts`, with a hard-coded 10-second polling cap while Chrome/FFmpeg render in a 4-worker concurrent regression. We extended its bounded poll to 45s, report the final job status on timeout, and extended the test's own deadline without changing the job's expected terminal `completed` status.
+
+[Core Guardian 41439013071](https://github.com/RudyCity/superagent/actions/runs/41439013071) showed all 112 Windows unit tests passing, but the owned staging fault-injection failed on an out-of-date scenario: it expected unconditional refusal after the original workers died. The current audited cold-start policy instead permits *verified, evidence-clean archival and fresh start*. The remediation inserts a canonical **accepted-but-unreconciled turn receipt** in the temporary staging profile before total-worker-loss injection. This makes `operator_review` mandatory and verifies that boot refuses to replay work, without weakening the production cold-start policy. `bun scripts/verify-core-guardian.ts` then **PASS** locally, including the full staged crash/recovery path.
+
 ## Verification performed
 
 - Windows local TypeScript build: PASS.

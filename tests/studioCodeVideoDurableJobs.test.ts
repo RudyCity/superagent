@@ -15,13 +15,20 @@ async function ws() {
 const html = '<!doctype html><html><head><style>body{background:#111}' +
   'p{color:white;animation:move .5s linear both}@keyframes move{from{transform:translateX(0)}' +
   'to{transform:translateX(50px)}}</style></head><body><p>Hello</p></body></html>';
-async function finished(workspace: string, id: string) {
-  for (let i = 0; i < 200; i++) {
+async function finished(workspace: string, id: string, maxWaitMs = 45_000) {
+  // Rendering starts an actual Chrome + FFmpeg process. Under the full
+  // 4-worker GitHub matrix it can legitimately exceed the old fixed 10s
+  // (200 x 50ms) even for a 1s clip. Keep a bounded deadline and surface
+  // last state for a real stalled renderer rather than papering over errors.
+  const deadline = Date.now() + maxWaitMs;
+  let lastStatus = "unknown";
+  while (Date.now() < deadline) {
     const status = await inspectStudioCodeVideo(workspace, id);
+    lastStatus = status.status;
     if (["completed", "failed", "cancelled"].includes(status.status)) return status;
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 100));
   }
-  throw new Error("Timed out waiting for code-video job");
+  throw new Error("Timed out waiting for code-video job: last status=" + lastStatus);
 }
 describe("Durable workspace-only Code-to-Video job history", () => {
   it("survives process restart without leaking source/absolute paths and retains MP4 ID", async () => {
@@ -51,7 +58,7 @@ console.log(JSON.stringify({job:x,ids:l.map(v=>v.id)}));`;
     const foreign = await ws();
     await expect(readStudioCodeVideoJob(foreign, created.id)).resolves.toBeNull();
     expect(await listStudioCodeVideoJobs(foreign)).toEqual([]);
-  }, 45000);
+  }, 80_000);
 
   it("fails closed on stale in-progress metadata without starting any renderer", async () => {
     const workspace = await ws();
@@ -85,7 +92,7 @@ console.log(JSON.stringify({job:x,ids:l.map(v=>v.id)}));`;
     expect(["cancelled", "failed"]).toContain(terminal.status);
     expect(terminal.status).not.toBe("interrupted");
     expect(terminal.result).toBeUndefined();
-  }, 48000);
+  }, 65_000);
 
   it("rejects malformed/symlink job manifests without leaking foreign data", async () => {
     const workspace = await ws();
