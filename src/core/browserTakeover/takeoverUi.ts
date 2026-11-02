@@ -385,21 +385,32 @@ export function renderTakeoverHtml(session: TakeoverSession, token?: string): st
           document.getElementById("session-badge").className = "badge";
           document.getElementById("session-badge").innerText = "● AGENT_ACTIVE";
         } else {
-          showOverlay("Review Required", "Handoff paused: " + (data.error || "Verification flagged for review."));
+          // Server keeps the human hold installed on verification failure.
+          // Retain the short-lived operator capability for an authorized retry.
+          currentState = data.state || "PAUSED_NEEDS_REVIEW";
+          showOverlay("Review Required", "Agent remains paused. Retry Return to Agent after correcting the problem: " + (data.reason || data.error || "Verification flagged for review."));
         }
       } catch (err) {
-        showOverlay("Error", "Return failed: " + err.message);
+        showOverlay("Error", "Agent remains paused. Return failed: " + err.message);
+      } finally {
+        if (currentState !== "AGENT_ACTIVE" && operatorToken) {
+          document.getElementById("btn-return").disabled = false;
+          document.getElementById("btn-return").innerText = "Retry Return to Agent";
+        }
       }
     }
 
     async function cancelTakeover() {
       if (!confirm("Cancel this takeover session? The browser target will remain safely paused.")) return;
       try {
-        await fetch("/api/browser/takeover/cancel", {
+        const res = await fetch("/api/browser/takeover/cancel", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId, operatorToken, invitationToken: token, reason: "Cancelled by user" })
         });
+        const result = await res.json();
+        if (!res.ok || !result.success) throw new Error(result.error || "Cancellation not authorized.");
+        currentState = "CANCELLED";
         showOverlay("Takeover Cancelled", "Session cancelled. The browser target remains paused.");
         document.getElementById("session-badge").innerText = "● CANCELLED";
         document.getElementById("btn-return").disabled = true;

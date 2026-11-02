@@ -117,8 +117,16 @@ describe("Takeover Session Persistence & Hashing", () => {
     expect(diskContent).toContain(tokenHash);
 
     // Public representation scrubs tokenHash
-    const publicSession = sanitizePublicSession(loaded!);
+    const publicSession = sanitizePublicSession({
+      ...loaded!,
+      operatorTokenHash: "operator-secret-hash",
+      csrfTokenHash: "csrf-secret-hash",
+      vncPassword: "vnc-secret",
+    });
     expect((publicSession as any).tokenHash).toBeUndefined();
+    expect((publicSession as any).operatorTokenHash).toBeUndefined();
+    expect((publicSession as any).csrfTokenHash).toBeUndefined();
+    expect((publicSession as any).vncPassword).toBeUndefined();
     expect(publicSession.sessionId).toBe(sessionId);
   });
 });
@@ -312,6 +320,25 @@ describe("Takeover Session Manager Lifecycle & Invariants", () => {
     const updated = await manager.requestReturn({ sessionId, operatorToken: "operator-for-test" }, testDir);
     expect(updated.state).toBe("VERIFYING");
     expect(revokerCalled).toBe(true);
+  });
+
+  it("permits operator-authorized retry from PAUSED_NEEDS_REVIEW and VERIFYING without bypassing hold", async () => {
+    const sessionId = crypto.randomUUID();
+    const operatorToken = "test-operator-capability";
+    const now = Date.now();
+    const session: TakeoverSession = {
+      sessionId, targetId: "retry-tab", port: 9222, profileId: "test",
+      generation: "gen1", browserFingerprint: "a".repeat(64),
+      state: "PAUSED_NEEDS_REVIEW", requestedBy: "agent", reason: "resume retry",
+      tokenHash: "unused", operatorTokenHash: crypto.createHash("sha256").update(operatorToken).digest("hex"),
+      invitationRedeemed: true, createdAt: now, updatedAt: now,
+      invitationExpiresAt: now + 10_000, sessionExpiresAt: now + 60_000, auditTrail: [],
+    };
+    await saveTakeoverSession(session, testDir);
+    await expect(manager.requestReturn({ sessionId }, testDir)).rejects.toThrow(/authorization required/i);
+    expect((await manager.requestReturn({ sessionId, operatorToken }, testDir)).state).toBe("VERIFYING");
+    expect((await manager.requestReturn({ sessionId, operatorToken }, testDir)).state).toBe("VERIFYING");
+    expect((await loadTakeoverSession(sessionId, testDir))?.state).toBe("VERIFYING");
   });
 
   it("expires stale sessions without releasing holds (fails closed)", async () => {

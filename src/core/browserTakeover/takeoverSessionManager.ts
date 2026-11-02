@@ -45,6 +45,7 @@ import {
 } from "../tools/managedBrowserRegistry.js";
 import { discoverCdpPages } from "../tools/chromeCdpTools.js";
 import { getBrowserProcessManager } from "../browserRuntime/browserProcessManager.js";
+import { claimTakeoverTarget, releaseTakeoverTarget } from "./takeoverTargetLease.js";
 
 const DEFAULT_CONFIG: TakeoverConfig = {
   enabled: true,
@@ -83,7 +84,15 @@ function verifyTokenHash(token: string, expectedHash: string): boolean {
  * Removes the sensitive token hash from a session object before returning to public callers.
  */
 export function sanitizePublicSession(session: TakeoverSession): PublicTakeoverSession {
-  const { tokenHash: _hash, operatorTokenHash: _operatorHash, ...publicSession } = session;
+  // These fields are never authorized for public session/status responses.
+  // Keep this runtime redaction explicit even if the wire type changes.
+  const {
+    tokenHash: _hash,
+    operatorTokenHash: _operatorHash,
+    csrfTokenHash: _csrfHash,
+    vncPassword: _vncPassword,
+    ...publicSession
+  } = session;
   return publicSession;
 }
 
@@ -171,6 +180,13 @@ export class TakeoverSessionManager {
       throw new Error(`Target tab '${input.targetId}' not found on CDP port ${port}.`);
     }
 
+    // Reserve the target BEFORE installing the human hold. The atomic durable
+    // reservation fences concurrent requests (including other Core processes).
+    const sessionId = crypto.randomUUID();
+    const sessionDir = customDir || this.config.sessionsDir;
+    await claimTakeoverTarget(port, input.targetId, sessionId, sessionDir);
+    let holdInstalled = false;
+    try {
     // 3. Locate or establish managed browser registration
     let profileId = input.profileId;
     let generation = input.generation;
@@ -217,9 +233,9 @@ export class TakeoverSessionManager {
       generation,
       browserFingerprint,
     });
+    holdInstalled = true;
 
     // 5. Generate one-time invitation nonce and session metadata
-    const sessionId = crypto.randomUUID();
     const token = generateInvitationToken();
     const tokenHash = hashToken(token);
     const now = Date.now();
@@ -274,6 +290,15 @@ export class TakeoverSessionManager {
     };
     this.pendingInvitations.set(sessionId, invitation);
     return invitation;
+    } catch (error) {
+      // If no human hold was installed, the reservation has no legitimate
+      // owner and can safely be released. After hold installation, retain it
+      // even on persistence failure: operator reconciliation is required.
+      if (!holdInstalled) {
+        await releaseTakeoverTarget(port, input.targetId, sessionId, sessionDir).catch(() => {});
+      }
+      throw error;
+    }
   }
 
   /**
@@ -380,7 +405,17 @@ export class TakeoverSessionManager {
     if (Date.now() > session.sessionExpiresAt) {
       throw new Error("Human operator session expired; hold remains installed.");
     }
-    if (session.state !== "HUMAN_ACTIVE" && session.state !== "HUMAN_READY" && session.state !== "PAUSED_NEEDS_REVIEW") {
+    if (session.state === "VERIFYING") {
+      this.revokeRemoteInput(input.sessionId);
+      return session; // retry after process interruption, never resume blindly
+    }
+    if (session.state === "RETURN_REQUESTED" || session.state === "PAUSED_NEEDS_REVIEW") {
+      this.revokeRemoteInput(input.sessionId);
+      const retry = transitionSession(session, "VERIFYING", "human", "Operator-authorized return retry.");
+      await saveTakeoverSession(retry, customDir || this.config.sessionsDir);
+      return retry;
+    }
+    if (session.state !== "HUMAN_ACTIVE") {
       throw new Error(`Cannot request return in state '${session.state}'.`);
     }
 
@@ -524,6 +559,11 @@ export class TakeoverSessionManager {
     );
 
     await saveTakeoverSession(resumedSession, customDir || this.config.sessionsDir);
+    // Release only after the verified agent hold transition has been saved.
+    // If cleanup fails, leaving a stale reservation is safer than allowing
+    // another conflicting takeover; it must be reconciled by an operator.
+    await releaseTakeoverTarget(session.port, session.targetId, sessionId, customDir || this.config.sessionsDir)
+      .catch((error) => console.warn("[takeover] Target reservation cleanup needs operator reconciliation:", error instanceof Error ? error.message : String(error)));
 
     return {
       sessionId,

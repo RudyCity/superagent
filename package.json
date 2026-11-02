@@ -83,6 +83,8 @@
     "bun": ">=1.4.2"
   },
   "overrides": {
+    "body-parser": "2.4.0",
+    "zod": "4.6.7",
     "@xmldom/xmldom": "0.9.12",
     "fast-uri": "3.1.7",
     "proxy-addr": "2.0.8",
