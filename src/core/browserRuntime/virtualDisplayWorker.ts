@@ -26,6 +26,7 @@ import {
 } from "./types.js";
 import {
   allocateVirtualDisplay,
+  isAbstractX11DisplayListening,
   type DisplayAllocation,
 } from "./virtualDisplayAllocation.js";
 import {
@@ -243,7 +244,10 @@ export class VirtualDisplayWorker {
     let socketReady = false;
 
     while (Date.now() < socketDeadline) {
-      if (fs.existsSync(allocation.xSocketPath)) {
+      // WSLg mounts /tmp/.X11-unix read-only, so Xvfb exposes an abstract
+      // Unix socket rather than a filesystem entry. Check both forms.
+      if (fs.existsSync(allocation.xSocketPath) ||
+          await isAbstractX11DisplayListening(displayNumber)) {
         socketReady = true;
         break;
       }
@@ -336,9 +340,18 @@ export class VirtualDisplayWorker {
       });
 
       try {
+        // WSLg and mixed-desktop hosts may export WAYLAND_DISPLAY globally.
+        // x11vnc exits immediately on that signal even when a dedicated Xvfb
+        // DISPLAY is supplied. Pin the worker to its owned X11 display.
+        const { WAYLAND_DISPLAY: _waylandDisplay, ...x11Env } = process.env;
         const vncChild = spawn(x11vncBin, vncArgs, {
           detached: true,
           stdio: "ignore",
+          env: {
+            ...x11Env,
+            DISPLAY: displayStr,
+            XDG_SESSION_TYPE: "x11",
+          },
         });
 
         if (vncChild.pid) {
@@ -490,7 +503,8 @@ export class VirtualDisplayWorker {
   public async checkVirtualDisplayHealth(
     instance: VirtualDisplayInstance
   ): Promise<VirtualDisplayHealth> {
-    const xSocketActive = fs.existsSync(instance.xSocketPath);
+    const xSocketActive = fs.existsSync(instance.xSocketPath) ||
+      await isAbstractX11DisplayListening(instance.displayNumber);
     const xvfbRunning = isPidAlive(instance.xvfbProcess.pid);
     const wmRunning = instance.wmProcess ? isPidAlive(instance.wmProcess.pid) : false;
 

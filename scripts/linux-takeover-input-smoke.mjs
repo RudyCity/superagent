@@ -5,6 +5,8 @@
  * No remote sites or user browser profiles; validates actual VNC pointer/keyboard
  * delivery against Chrome's DOM via CDP, not just a handshake.
  */
+import { createCipheriv } from "node:crypto";
+import { WebSocket as NodeWebSocket } from "ws";
 const cdpPort = process.env.M4C_CDP_PORT;
 const wsPort = process.env.M4C_WS_PORT;
 if (!cdpPort || !wsPort) throw new Error("M4C localhost endpoints not supplied.");
@@ -19,13 +21,19 @@ async function waitForJson(url, fn) {
   }
   throw new Error("CDP did not become ready");
 }
-function openWs(url) {
+function openWs(url, options = {}) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(url);
+    const ws = new NodeWebSocket(url, options.protocols || [],
+      { headers: options.origin ? { Origin: options.origin } : undefined });
     ws.binaryType = "arraybuffer";
     const timeout = setTimeout(() => { ws.close(); reject(new Error("WebSocket connection timed out")); }, 7000);
     ws.addEventListener("open", () => { clearTimeout(timeout); resolve(ws); }, { once: true });
-    ws.addEventListener("error", () => { clearTimeout(timeout); reject(new Error("WebSocket connection failed: " + url)); }, { once: true });
+    ws.on("unexpected-response", (_req, response) => {
+      response.resume();
+      clearTimeout(timeout);
+      reject(new Error("WebSocket handshake rejected: HTTP " + response.statusCode));
+    });
+    ws.addEventListener("error", () => { clearTimeout(timeout); reject(new Error("WebSocket connection failed")); }, { once: true });
   });
 }
 async function cdpClient(targetUrl) {
@@ -69,7 +77,13 @@ const pages = await waitForJson('http://127.0.0.1:' + cdpPort + '/json/list',
   ps => ps.some(p => p.type === "page" && p.webSocketDebuggerUrl));
 const page = pages.find(p => p.type === "page" && p.webSocketDebuggerUrl);
 const devtools = await cdpClient(page.webSocketDebuggerUrl);
-const vnc = await openWs('ws://127.0.0.1:' + wsPort + '/websockify');
+const proxyUrl = process.env.M4C_PROXY_WS_URL;
+const proxyToken = process.env.M4C_OPERATOR_TOKEN;
+const vncPassword = process.env.M4C_VNC_PASSWORD;
+const vnc = await openWs(proxyUrl || ('ws://127.0.0.1:' + wsPort + '/websockify'), {
+  protocols: proxyUrl ? ["binary", "operator." + proxyToken] : [],
+  origin: proxyUrl ? new URL(proxyUrl).origin.replace(/^ws/, "http").split("/").join("/") : undefined,
+});
 let rfbVersion = null;
 try {
   await devtools.send("Page.enable");
@@ -111,8 +125,30 @@ try {
           if (buffer.length < 1 + n) break;
           const offered = buffer.subarray(1, 1 + n);
           buffer = buffer.subarray(1 + n);
-          if (!offered.includes(1)) throw new Error("Local-only no-auth RFB unavailable");
-          send(Buffer.from([1]));
+          // Owned Linux VNC uses x11vnc password authentication (type 2).
+          // The earlier localhost-only no-password smoke may use type 1.
+          if (vncPassword && offered.includes(2)) {
+            send(Buffer.from([2]));
+            stage = "vnc-challenge";
+          } else if (!vncPassword && offered.includes(1)) {
+            send(Buffer.from([1]));
+            stage = "security-result";
+          } else {
+            throw new Error("RFB server requires a different authentication method");
+          }
+        } else if (stage === "vnc-challenge") {
+          if (buffer.length < 16) break;
+          const challenge = buffer.subarray(0, 16);
+          buffer = buffer.subarray(16);
+          // RFB VNCAuth uses DES with bit-reversed password bytes, repeated
+          // key EDE3 is equivalent to single DES (OpenSSL 3 provider-safe).
+          const passwordBytes = Buffer.alloc(8);
+          Buffer.from(vncPassword.slice(0, 8)).copy(passwordBytes);
+          const reverse = n => { let r = 0; for (let b = 0; b < 8; b++) r = (r << 1) | ((n >> b) & 1); return r; };
+          const key = Buffer.from(passwordBytes.map(reverse));
+          const cipher = createCipheriv("des-ede3", Buffer.concat([key, key, key]), null);
+          cipher.setAutoPadding(false);
+          send(Buffer.concat([cipher.update(challenge), cipher.final()]));
           stage = "security-result";
         } else if (stage === "security-result") {
           if (buffer.length < 4) break;

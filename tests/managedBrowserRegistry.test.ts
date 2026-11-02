@@ -27,6 +27,23 @@ afterAll(() => {
   if (testDir) rmSync(testDir, { recursive: true, force: true });
 });
 describe("managed browser Core registration", () => {
+  test("accepts the real process-supervisor generation but still rejects forged formats", () => {
+    const actual = "gen_1793613890000_123456_ab12cd34";
+    expect(validateManagedBrowserRegistration({
+      ...pair, generation: actual,
+    }).generation).toBe(actual);
+    for (const malformed of [
+      "gen_any_1234_ab12cd34",
+      "gen_1793613890000_123456_ffffffff_extra",
+      "gen_1793613890000_123456_zzzzzzzz",
+      "gen_1793613890000_123456_ffffffff/../../",
+    ]) {
+      expect(() => validateManagedBrowserRegistration({
+        ...pair, generation: malformed,
+      })).toThrow(/Invalid managed browser registration/);
+    }
+  });
+
   test("announces only a verified live tab; never issues a CDP capability", async () => {
     const discover = async (port: number) => {
       expect(port).toBe(53331);

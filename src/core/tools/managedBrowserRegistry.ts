@@ -24,7 +24,8 @@ export function validateManagedBrowserRegistration(input: unknown): {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid registration body.");
   const body = input as Record<string, unknown>;
   if (typeof body.profileId !== "string" || !/^[a-z0-9][a-z0-9_-]{0,39}$/.test(body.profileId) ||
-      typeof body.generation !== "string" || !/^[0-9]+-[0-9]{8,32}$/.test(body.generation) ||
+      typeof body.generation !== "string" ||
+      !/^(?:[0-9]+-[0-9]{8,32}|gen_[0-9]{8,16}_[0-9]{1,10}_[a-f0-9]{8})$/.test(body.generation) ||
       !Number.isInteger(body.port) || Number(body.port) < 1024 || Number(body.port) > 65535 ||
       typeof body.targetId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(body.targetId) ||
       typeof body.browserFingerprint !== "string" || !/^[a-f0-9]{64}$/.test(body.browserFingerprint) ||

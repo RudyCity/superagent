@@ -258,7 +258,15 @@ export class TakeoverSessionManager {
       profileId = existing.profileId;
       generation = existing.generation;
     } else {
-      profileId = profileId || runtime.profileName;
+      // Runtime profileName is a human-facing label (e.g. "Default"), while
+      // managed Core profile IDs have a strict lowercase identifier schema.
+      // Derive a collision-resistant stable ID rather than persisting an
+      // invalid label or trusting an arbitrary user-supplied identifier.
+      const runtimeProfile = runtime.profileName || "Default";
+      const managedProfileId = /^[a-z0-9][a-z0-9_-]{0,39}$/.test(runtimeProfile)
+        ? runtimeProfile
+        : "profile-" + crypto.createHash("sha256").update(runtimeProfile).digest("hex").slice(0,16);
+      profileId = profileId || managedProfileId;
       generation = generation || runtime.generation;
       try {
         await registerManagedBrowser({

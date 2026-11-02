@@ -10,6 +10,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import net from "node:net";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 
 export interface DisplayLockMetadata {
@@ -55,6 +56,26 @@ export function getDisplayLockDir(overrideDir?: string): string {
   return path.join(os.homedir(), ".superagent-r", "display-locks");
 }
 
+/** Probe Linux abstract X11 socket (WSLg can mount /tmp/.X11-unix read-only).
+ * Never treat a socket pathname's absence as proof that the display is free. */
+export async function isAbstractX11DisplayListening(displayNumber: number): Promise<boolean> {
+  if (process.platform !== "linux" || !Number.isInteger(displayNumber) ||
+      displayNumber < 0 || displayNumber > 65535) return false;
+  return await new Promise<boolean>(resolve => {
+    const socket = net.createConnection({ path: "\0/tmp/.X11-unix/X" + displayNumber });
+    let done = false;
+    const finish = (connected: boolean) => {
+      if (done) return;
+      done = true;
+      socket.destroy();
+      resolve(connected);
+    };
+    socket.setTimeout(250, () => finish(false));
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+  });
+}
+
 /**
  * Probes whether a specific X11 display number is currently active on the host OS.
  * Checks system lock file, Unix domain socket, and SuperAgent runtime locks.
@@ -77,6 +98,12 @@ export async function isDisplayActive(
   const xSocketPath = path.join(x11SockDir, `X${displayNumber}`);
   if (fs.existsSync(xSocketPath)) {
     return { inUse: true, reason: `X11 domain socket exists: ${xSocketPath}` };
+  }
+
+  // 2b. WSLg/containers may expose only the abstract Unix listener, without
+  // a filesystem socket. Reserving that number would collide with a live X11.
+  if (!options.x11SocketDir && await isAbstractX11DisplayListening(displayNumber)) {
+    return { inUse: true, reason: `Abstract X11 socket is active on :${displayNumber}` };
   }
 
   // 3. SuperAgent display lock check: display-${N}.lock
