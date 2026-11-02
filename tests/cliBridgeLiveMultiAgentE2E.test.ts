@@ -53,9 +53,13 @@ import { cliBridgeTool } from "../src/core/tools/cliBridgeTool.js";
 
 const PINNED_BASE_SHA = "0c5cea2cc4f18b1838157b02a05f782461e783f9";
 
-describe("Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", () => {
+// These destructive live AGY E2E cases MUST NOT create worktrees/branches in
+// the developer's current repository during the ordinary Vitest regression.
+// Run separately, explicitly, when the operator authorizes worktree testing.
+describe.runIf(process.env.SUPERAGENT_ALLOW_WORKTREE_TESTS === "1")(
+  "Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", () => {
   let testWorkspace: string;
-  let testWorktreeRoots: string[] = [];
+  let testWorktreeRoots: Array<{ worktreePath: string; branchName: string }> = [];
 
   beforeEach(async () => {
     testWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-live-e2e-"));
@@ -72,7 +76,10 @@ describe("Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", (
     delete process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
     delete process.env.SUPERAGENT_CLI_BRIDGE_FORCE_PRESSURE;
     for (const wt of testWorktreeRoots) {
-      await removeIsolatedWorktree({ repoRoot: process.cwd(), worktreePath: wt, force: true, deleteBranch: true }).catch(() => {});
+      await removeIsolatedWorktree({
+        repoRoot: process.cwd(), worktreePath: wt.worktreePath,
+        branchName: wt.branchName, force: true, deleteBranch: true,
+      }).catch(() => {});
     }
     await fs.rm(testWorkspace, { recursive: true, force: true }).catch(() => {});
   }, 60000);
@@ -150,8 +157,11 @@ describe("Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", (
 
     // Concurrently dispatch 4 real AGY coding jobs into isolated worktrees for the same project.
     // This certification scenario explicitly opts into full-auto; production code must never inject it implicitly.
+    const branchNames: string[] = [];
     const jobs = await Promise.all([1, 2, 3, 4].map((idx) => {
       const prompt = `Create a file named provenance_${idx}.txt containing exactly 'PROVENANCE_WORKER_${idx}', git add provenance_${idx}.txt, and git commit -m 'worker ${idx} provenance'`;
+      const branchName = `cli-bridge/live-worker-${idx}-${Date.now()}`;
+      branchNames.push(branchName);
       return startDelegateJob({
         cliAlias: "agy",
         binary: "agy",
@@ -161,7 +171,7 @@ describe("Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", (
         roleProfile: "coder",
         worktree: true,
         baseCommitSha: PINNED_BASE_SHA,
-        branchName: `cli-bridge/live-worker-${idx}-${Date.now()}`,
+        branchName,
         acceptanceContract: {
           artifacts: [{ path: `provenance_${idx}.txt`, mustExist: true }],
         },
@@ -171,10 +181,12 @@ describe("Milestone M6.2 — Full Live Multi-Agent Runtime E2E Certification", (
     }));
 
     expect(jobs.length).toBe(4);
-    for (const j of jobs) {
+    for (const [index, j] of jobs.entries()) {
       expect(j.roleProfile).toBe("coder");
       expect(j.worktreePath).toBeDefined();
-      if (j.worktreePath) testWorktreeRoots.push(j.worktreePath);
+      if (j.worktreePath) testWorktreeRoots.push({
+        worktreePath: j.worktreePath, branchName: branchNames[index],
+      });
       expect(["starting", "running", "succeeded"]).toContain(j.status);
     }
 

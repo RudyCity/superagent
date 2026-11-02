@@ -11,7 +11,10 @@ import {
   type WorktreeMetadata,
 } from "../src/core/tools/cliBridgeWorktreeManager.js";
 
-describe("Milestone M1.7 & M3 — Isolated Git Worktree Manager", () => {
+ // Worktree creation in the current checkout requires explicit opt-in and must
+ // never run as part of the ordinary full regression on the developer's main.
+describe.runIf(process.env.SUPERAGENT_ALLOW_WORKTREE_TESTS === "1")(
+  "Milestone M1.7 & M3 — Isolated Git Worktree Manager", () => {
   const repoRoot = path.resolve(process.cwd());
   const tempBase = path.join(os.tmpdir(), `superagent-worktree-test-${Date.now()}`);
   const activeWorktrees: WorktreeMetadata[] = [];
