@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { startMcpHttpServer, generateMcpBearerToken } from "../src/core/mcp/mcpHttpTransport.js";
-import { MCP_GATEWAY_TOOL_NAMES } from "../src/core/mcp/mcpToolGateway.js";
+import { MCP_GATEWAY_TOOL_NAMES, MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES } from "../src/core/mcp/mcpToolGateway.js";
 
 describe("MCP gateway Streamable HTTP integration", () => {
   it("advertises compact catalog, searches authorized capabilities and does not bypass execute permission", async () => {
@@ -17,12 +17,12 @@ describe("MCP gateway Streamable HTTP integration", () => {
     try {
       await client.connect(transport);
       const { tools } = await client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual([
-        MCP_GATEWAY_TOOL_NAMES.search,
-        MCP_GATEWAY_TOOL_NAMES.describe,
-        MCP_GATEWAY_TOOL_NAMES.status,
-        MCP_GATEWAY_TOOL_NAMES.execute,
-      ].sort());
+      const advertised = tools.map((tool) => tool.name);
+      expect(advertised).toEqual(expect.arrayContaining(Object.values(MCP_GATEWAY_TOOL_NAMES)));
+      expect(advertised).toContain("superagent_get_workspace");
+      expect(advertised).not.toContain("superagent_switch_workspace");
+      expect(advertised.every((name) => Object.values(MCP_GATEWAY_TOOL_NAMES).includes(name as any)
+        || MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES.includes(name as any))).toBe(true);
       const search = await client.callTool({
         name: MCP_GATEWAY_TOOL_NAMES.search,
         arguments: { query: "workspace", limit: 6 },
@@ -53,7 +53,7 @@ describe("MCP gateway Streamable HTTP integration", () => {
     }
   }, 30000);
 
-  it("exposes exactly four gateway tools with explicit dangerous opt-in and dispatches authorized targets", async () => {
+  it("exposes gateway plus authorized eager workspace tools and dispatches permitted targets", async () => {
     const token = generateMcpBearerToken();
     const server = await startMcpHttpServer({
       port: 0, bearerToken: token, allowDangerous: true, toolExposure: "gateway",
@@ -64,7 +64,11 @@ describe("MCP gateway Streamable HTTP integration", () => {
         requestInit: { headers: { Authorization: "Bearer " + token } },
       }));
       const { tools } = await client.listTools();
-      expect(tools.map((tool) => tool.name).sort()).toEqual(Object.values(MCP_GATEWAY_TOOL_NAMES).sort());
+      const advertised = tools.map((tool) => tool.name);
+      expect(advertised).toEqual(expect.arrayContaining(Object.values(MCP_GATEWAY_TOOL_NAMES)));
+      expect(advertised).toContain("superagent_get_workspace");
+      expect(advertised.every((name) => Object.values(MCP_GATEWAY_TOOL_NAMES).includes(name as any)
+        || MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES.includes(name as any))).toBe(true);
 
       const dispatched = await client.callTool({
         name: MCP_GATEWAY_TOOL_NAMES.execute,

@@ -28,6 +28,8 @@ const invoke = async (handler: any, name: string, args: Record<string, unknown> 
 
 describe("Motion MCP integration", () => {
   it("exposes all sixteen tools with classification and explicit project capabilities", async () => {
+    // allowDangerous alone does not grant writes; scoped local YOLO does.
+    setYoloMode(true);
     const server = createSuperagentMcpServer({ toolExposure: "full", allowDangerous: true });
     const list = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
     const names = (await list({ method: "tools/list", params: {} })).tools.map((entry: any) => entry.name);
@@ -55,6 +57,7 @@ describe("Motion MCP integration", () => {
   });
 
   it("creates and edits using the authorized workspace without losing revision guards", async () => {
+    setYoloMode(true);
     const root = await fixture();
     const server = createSuperagentMcpServer({ workspace: root, allowDangerous: true });
     const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
@@ -82,6 +85,7 @@ describe("Motion MCP integration", () => {
   });
 
   it("imports canonical image assets through a write-scoped tool, rejecting malformed data and foreign workspace paths", async () => {
+    setYoloMode(true);
     const root = await fixture();
     const other = await fixture();
     const server = createSuperagentMcpServer({ workspace: root, allowDangerous: true });

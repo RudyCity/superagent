@@ -22,7 +22,11 @@ import { cliBridgeTool } from "../src/core/tools/cliBridgeTool.js";
 
 const AGY_BIN = "C:\\Users\\USER\\AppData\\Local\\agy\\bin\\agy.exe";
 
-describe("Milestone M8: Real AGY End-to-End Certification Matrix (E1–E10)", () => {
+ // Real AGY calls depend on a logged-in external CLI, may consume quota, and
+ // run for minutes. Never invoke them during the normal deterministic suite.
+ // Run separately for certification with SUPERAGENT_RUN_LIVE_AGY_E2E=1.
+describe.runIf(process.env.SUPERAGENT_RUN_LIVE_AGY_E2E === "1")(
+  "Milestone M8: Real AGY End-to-End Certification Matrix (E1–E10)", () => {
   let testWorkspace: string;
   let testConfigDir: string;
   let testCapacityDir: string;

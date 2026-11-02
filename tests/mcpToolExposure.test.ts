@@ -64,7 +64,10 @@ describe("mcp use gateway/full", () => {
       const handler = (server as any)._requestHandlers.get("tools/list");
       const tools = (await handler({ method: "tools/list", params: {} })).tools.map((tool: any) => tool.name) as string[];
       expect(tools).toEqual(expect.arrayContaining(Object.values(MCP_GATEWAY_TOOL_NAMES)));
-      expect(tools).not.toContain("superagent_get_workspace");
+      // Workspace/project lifecycle tools are now eagerly advertised in gateway
+    // mode, but still subject to the original OAuth/YOLO authorization gates.
+    expect(tools).toContain("superagent_get_workspace");
+    expect(tools).not.toContain("superagent_switch_workspace");
     } finally {
       await server.close();
     }
@@ -100,7 +103,8 @@ describe("mcp use gateway/full", () => {
     };
     const gateway = await listHandler("gateway");
     expect(gateway).toContain(MCP_GATEWAY_TOOL_NAMES.search);
-    expect(gateway).not.toContain("superagent_get_workspace");
+    expect(gateway).toContain("superagent_get_workspace");
+    expect(gateway).not.toContain("superagent_switch_workspace");
     const full = await listHandler("full");
     expect(full).toContain("superagent_get_workspace");
   });
