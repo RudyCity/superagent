@@ -1664,6 +1664,29 @@ export async function handleServerRoute(
       return true;
     }
 
+    // Local Core-bearer + redeemed operator token required. Only clears a
+    // provably dead verification mutex, never the human hold or target lease.
+    if (pathname === "/api/browser/takeover/reconcile-verifier") {
+      if (req.method !== "POST") {
+        sendJSON(res, 405, { success: false, error: "POST required." }); return true;
+      }
+      const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+      if (!local || !/^(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(String(req.headers.host || ""))) {
+        sendJSON(res, 403, { success: false, error: "Local authorized operator only." }); return true;
+      }
+      try {
+        const raw = await readBody(req);
+        if (raw.length > 1024) throw new Error("Request too large.");
+        const body = JSON.parse(raw);
+        const { getTakeoverSessionManager } = await import("./core/browserTakeover/index.js");
+        const result = await getTakeoverSessionManager().reconcileInterruptedVerification(body);
+        sendJSON(res, 200, { success: true, ...result });
+      } catch (err: any) {
+        sendJSON(res, 409, { success: false, error: err.message || "Verification reconciliation denied." });
+      }
+      return true;
+    }
+
     // Cancel takeover
     if (pathname === "/api/browser/takeover/cancel") {
       if (req.method !== "POST") {

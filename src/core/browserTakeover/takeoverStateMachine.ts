@@ -192,14 +192,21 @@ export async function loadTakeoverSession(
 /**
  * Lists all active and recent takeover sessions.
  */
-export async function listTakeoverSessions(customDir?: string): Promise<TakeoverSession[]> {
+export async function listTakeoverSessions(
+  customDir?: string, options?: { complete?: boolean }
+): Promise<TakeoverSession[]> {
   const dir = getTakeoverSessionsDir(customDir);
   if (!fs.existsSync(dir)) return [];
 
   const files = await fsp.readdir(dir);
   const sessions: TakeoverSession[] = [];
 
-  for (const file of files.filter((f) => /^[a-f0-9-]{36}\.json$/.test(f)).slice(0, 100)) {
+  const matching = files.filter((f) => /^[a-f0-9-]{36}\.json$/.test(f));
+  // Public listing remains bounded; crash recovery MUST see the full set.
+  if (options?.complete && matching.length > 10_000) {
+    throw new Error("Takeover ledger exceeds startup reconciliation safety limit; operator investigation required.");
+  }
+  for (const file of matching.slice(0, options?.complete ? undefined : 100)) {
     const id = file.slice(0, -5);
     const session = await loadTakeoverSession(id, customDir);
     if (session) {

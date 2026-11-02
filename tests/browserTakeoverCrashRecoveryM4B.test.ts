@@ -50,6 +50,18 @@ describe("M4-B durable takeover crash recovery", () => {
     await expect(releaseTakeoverTarget(9222, "tab", id, dir)).rejects.toThrow(/operator reconciliation/i);
   });
 
+  it("reconciles every pending session beyond the public 100-session listing limit", async () => {
+    const dir = await newDir();
+    const sessions = Array.from({ length: 106 }, () => createSession("HUMAN_READY"));
+    await Promise.all(sessions.map(session => saveTakeoverSession(session, dir)));
+    const manager = new TakeoverSessionManager({ sessionsDir: dir });
+    expect(await manager.reconcileAfterRestart(dir)).toEqual({
+      scanned: 106, reconciled: 106, requiresReview: 106,
+    });
+    const states = await Promise.all(sessions.map(s => loadTakeoverSession(s.sessionId, dir)));
+    expect(states.every(s => s?.state === "EXPIRED")).toBe(true);
+  });
+
   it("restarts active, returning and verifying sessions in paused review without releasing target leases", async () => {
     const dir = await newDir();
     const states: TakeoverState[] = ["HUMAN_ACTIVE", "RETURN_REQUESTED", "VERIFYING"];

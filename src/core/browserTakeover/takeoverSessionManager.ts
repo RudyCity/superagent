@@ -46,6 +46,10 @@ import {
 import { discoverCdpPages } from "../tools/chromeCdpTools.js";
 import { getBrowserProcessManager } from "../browserRuntime/browserProcessManager.js";
 import { claimTakeoverTarget, releaseTakeoverTarget, readTakeoverTargetReservation } from "./takeoverTargetLease.js";
+import {
+  claimVerificationLock, releaseVerificationLock, assertStaleVerificationLockRecoverable,
+  reconcileStaleVerificationLock,
+} from "./takeoverVerificationLease.js";
 
 const DEFAULT_CONFIG: TakeoverConfig = {
   enabled: true,
@@ -129,7 +133,9 @@ export class TakeoverSessionManager {
     scanned: number; reconciled: number; requiresReview: number;
   }> {
     const dir = customDir || this.config.sessionsDir;
-    const sessions = await listTakeoverSessions(dir);
+    // Startup safety cannot silently ignore the 101st or later session.
+    // A very large/corrupt ledger fails closed rather than partially waking.
+    const sessions = await listTakeoverSessions(dir, { complete: true });
     let reconciled = 0, requiresReview = 0;
     for (const session of sessions) {
       if (session.state === "AGENT_ACTIVE" || session.state === "CANCELLED") continue;
@@ -505,16 +511,9 @@ export class TakeoverSessionManager {
   ): Promise<VerifyAndResumeResult> {
     await this.ensureStartupReconciled();
     if (!/^[a-f0-9-]{36}$/.test(sessionId)) throw new Error("Invalid takeover session identity.");
-    // One verifier per session across Core processes. Keep an interrupted
-    // verifier's lock fail-closed; never steal by elapsed wall-clock age.
-    const verifyDir = getTakeoverSessionsDir(customDir || this.config.sessionsDir);
-    await fsp.mkdir(verifyDir, { recursive: true, mode: 0o700 });
-    const verifyLock = path.join(verifyDir, sessionId + ".verify.lock");
-    try {
-      await fsp.mkdir(verifyLock, { mode: 0o700 });
-    } catch {
-      throw new Error("Another Return to Agent verification is active or interrupted; operator reconciliation required.");
-    }
+    // One verifier per session across Core processes. A crash leaves a durable
+    // owner marker for authenticated, evidence-based operator reconciliation.
+    const ticket = await claimVerificationLock(sessionId, customDir || this.config.sessionsDir);
     try {
     const session = await loadTakeoverSession(sessionId, customDir || this.config.sessionsDir);
     if (!session) {
@@ -659,8 +658,62 @@ export class TakeoverSessionManager {
       verifiedAt: resumedSession.verifiedAt,
     };
     } finally {
-      await fsp.rmdir(verifyLock).catch(() => {});
+      await releaseVerificationLock(ticket).catch(error =>
+        console.warn("[takeover] Verification mutex retained for operator review:",
+          error instanceof Error ? error.message : String(error)));
     }
+  }
+
+  /**
+   * Authenticated operator reconciliation of an interrupted verification ONLY.
+   * This does not revoke a native human hold, release a target reservation, or
+   * resume the agent. A NEW authorized Return must verify live identity.
+   */
+  public async reconcileInterruptedVerification(
+    input: { sessionId: string; operatorToken: string; acknowledgeInterruptedVerification: true },
+    customDir?: string,
+  ): Promise<{ recovered: true; sessionId: string; state: "PAUSED_NEEDS_REVIEW" }> {
+    await this.ensureStartupReconciled();
+    if (!input || !/^[a-f0-9-]{36}$/.test(input.sessionId) ||
+        input.acknowledgeInterruptedVerification !== true) {
+      throw new Error("Explicit verification reconciliation acknowledgement required.");
+    }
+    const dir = customDir || this.config.sessionsDir;
+    const session = await loadTakeoverSession(input.sessionId, dir);
+    if (!session || !session.operatorTokenHash ||
+        !verifyTokenHash(input.operatorToken || "", session.operatorTokenHash)) {
+      throw new Error("Valid redeemed human operator capability required.");
+    }
+    if (Date.now() >= session.sessionExpiresAt) {
+      throw new Error("Operator capability expired; hold and mutex require manual investigation.");
+    }
+    if (session.state !== "PAUSED_NEEDS_REVIEW") {
+      throw new Error("Verification reconciliation requires PAUSED_NEEDS_REVIEW state.");
+    }
+    const reservation = await readTakeoverTargetReservation(
+      session.port, session.targetId, dir,
+    );
+    if (!reservation || reservation.sessionId !== session.sessionId) {
+      throw new Error("Target reservation missing or owned by another session; refusing unlock.");
+    }
+    // Denied unlock attempts must not change persisted session status.
+    // This is read-only; the destructive step rechecks proof again.
+    await assertStaleVerificationLockRecoverable(session.sessionId, dir);
+    // Persist a write-ahead audit record before clearing the lock. A Core
+    // crash after unlock must not erase evidence of the operator's action.
+    const intent = transitionSession(session, "PAUSED_NEEDS_REVIEW", "human",
+      "Operator requested reconciliation of interrupted verification; target remains held.");
+    intent.reviewReason = "Reconciling interrupted verification; fresh Return required";
+    await saveTakeoverSession(intent, dir);
+    // The verifier must be proven dead by the OS; a legacy lock with no owner,
+    // unknown PID state, or a reused PID always remains fenced.
+    await reconcileStaleVerificationLock(session.sessionId, dir);
+    this.revokeRemoteInput(session.sessionId);
+    const reviewed = transitionSession(intent, "PAUSED_NEEDS_REVIEW", "human",
+      "Operator reconciled a dead verification owner; human hold and target lease remain installed.");
+    reviewed.reviewReason = "Interrupted verification reconciled; fresh Return to Agent required";
+    await saveTakeoverSession(reviewed, dir);
+    return { recovered: true, sessionId: session.sessionId, state: "PAUSED_NEEDS_REVIEW" };
   }
 
   /**
