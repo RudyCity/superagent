@@ -875,7 +875,7 @@ describe("SuperAgent Runtime Supervisor Batch 5 Independent Audit Remediation", 
       expect(operatorDiag.entries).toHaveLength(0);
     });
 
-    it("normalizes canonical workspace paths across Windows slash/case variants", async () => {
+    it.runIf(process.platform === "win32")("normalizes canonical workspace paths across Windows slash/case variants", async () => {
       const supervisor = new ProcessSupervisor({ trustedOperatorAuthorizer: (principal) => principal.authenticated && principal.roles.includes("operator"),  storagePath: registryFile });
       await supervisor.initialize();
 

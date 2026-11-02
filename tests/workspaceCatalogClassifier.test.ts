@@ -62,7 +62,7 @@ describe("workspaceCatalogClassifier", () => {
     fs.rmSync(testRoot, { recursive: true, force: true });
   });
 
-  it("normalizes Windows paths and collapses case variants", () => {
+  it.runIf(process.platform === "win32")("normalizes Windows paths and collapses case variants", () => {
     const p1 = "c:\\MyProject\\SubDir\\";
     const norm = normalizeLocalPath(p1);
     expect(norm).toMatch(/^C:[\\/]MyProject[\\/]SubDir$/);

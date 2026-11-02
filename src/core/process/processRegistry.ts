@@ -154,7 +154,10 @@ export function sanitizeProcessCommand(
   executable: string,
   args?: readonly string[] | string | null
 ): { sanitizedExecutable: string; sanitizedArgs: string[] } {
-  const baseName = path.basename(executable || "<unknown>");
+  // Persist only the executable name even when a Windows command is observed
+  // on Linux (e.g. mixed OS tooling or audit data). POSIX basename alone
+  // treats backslashes as ordinary characters and would leak the full path.
+  const baseName = path.win32.basename(path.posix.basename(executable || "<unknown>"));
   const sanitizedExecutable = redactSensitiveProcessText(baseName, 100);
   const sanitizedArgs = sanitizeArgvForTrace(args, 32);
   return { sanitizedExecutable, sanitizedArgs };

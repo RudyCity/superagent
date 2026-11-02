@@ -721,7 +721,7 @@ describe("SuperAgent Runtime Supervisor Batch 4 Audit Remediation", () => {
   // Post-Batch4 Independent Audit Remediation: Windows-Safe Atomic Replacement
   // =========================================================================
   describe("Post-Batch4 Audit Remediation: Windows-Safe Atomic Replacement Without Destructive Unlink", () => {
-    it("fails closed when rename encounters EPERM/EEXIST after retries: original file intact, no lost records, temp file cleaned up", async () => {
+    it.runIf(process.platform === "win32")("fails closed when rename encounters EPERM/EEXIST after retries: original file intact, no lost records, temp file cleaned up", async () => {
       const registry = new ProcessRegistry({ storagePath: registryFile });
       registry.addRecord({
         recordId: "rec_initial_1",

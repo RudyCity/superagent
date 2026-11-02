@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 describe("Workspace Catalog Core (M1)", () => {
-  it("derives deterministic stable catalogId", () => {
+  it.runIf(process.platform === "win32")("derives deterministic stable catalogId for Windows case variants", () => {
     const id1 = deriveCatalogId("D:\\Projects\\App", "local");
     const id2 = deriveCatalogId("d:\\projects\\app", "local");
     expect(id1).toBe(id2);
@@ -120,7 +120,7 @@ describe("Workspace Catalog Core (M1)", () => {
     expect(match?.sources).toContain("active");
   });
 
-  it("deduplicates Windows path case variants into a single entry", () => {
+  it.runIf(process.platform === "win32")("deduplicates Windows path case variants into a single entry", () => {
     const projDir = path.join(testRoot, "case-proj");
     fs.mkdirSync(path.join(projDir, ".git"), { recursive: true });
 

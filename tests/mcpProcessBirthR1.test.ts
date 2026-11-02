@@ -18,6 +18,8 @@ describe("R1 process birth identity",()=>{
   if(process.platform!=="win32")return;
   // process uptime may exceed 30s by this point; do not assume it is new.
   const birth = verifyWindowsProcessBirth(process.pid,Date.now());
-  expect(["matched","mismatch"]).toContain(birth);
+  // A locked-down CI runner may block PowerShell process StartTime access.
+  // "unverified" is the intended fail-closed verdict, never ownership proof.
+  expect(["matched","mismatch","unverified"]).toContain(birth);
  });
 });

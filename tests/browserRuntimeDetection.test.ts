@@ -123,9 +123,17 @@ describe("Browser Runtime Environment & Mode Probing", () => {
 
     it("enumerates canonical Linux candidate executables", () => {
       const res = discoverBrowserExecutable(undefined, "linux", { PATH: "" });
-      expect(res.candidatesProbed.length).toBeGreaterThanOrEqual(LINUX_EXECUTABLE_CANDIDATES.length);
-      for (const candidate of LINUX_EXECUTABLE_CANDIDATES) {
-        expect(res.candidatesProbed.some((p) => p.includes(candidate))).toBe(true);
+      // Discovery stops on the first existing binary, so installed Chrome on
+      // Ubuntu may intentionally yield fewer than four candidate probes.
+      expect(res.candidatesProbed.length).toBeGreaterThan(0);
+      expect(res.candidatesProbed.every((p) =>
+        LINUX_EXECUTABLE_CANDIDATES.some(candidate => p.endsWith(candidate)))).toBe(true);
+      if (!res.found) {
+        for (const candidate of LINUX_EXECUTABLE_CANDIDATES) {
+          expect(res.candidatesProbed.some((p) => p.endsWith(candidate))).toBe(true);
+        }
+      } else {
+        expect(res.candidatesProbed).toContain(res.executable);
       }
     });
 

@@ -15,7 +15,7 @@ import { ensureCdpRunning } from "../src/core/tools/chromeCommon.js";
 import { resetBrowserProcessManagerForTest } from "../src/core/browserRuntime/browserProcessManager.js";
 import { applyProcessIntent } from "../src/core/process/processSpawnPolicy.js";
 
-describe("Browser Runtime Windows Regression & Tool Policy", () => {
+describe.runIf(process.platform === "win32")("Browser Runtime Windows Regression & Tool Policy", () => {
   beforeEach(() => {
     resetBrowserProcessManagerForTest();
   });

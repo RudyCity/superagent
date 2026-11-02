@@ -373,7 +373,9 @@ export function spawnHiddenTaskkill(
   tree = true,
   caller = "spawnHiddenTaskkill"
 ): ChildProcess | null {
-  if (!Number.isInteger(pid) || pid <= 0) return null;
+  // taskkill is Windows-only. Linux/macOS must never spawn this executable:
+  // missing binary emits asynchronous ENOENT errors outside the try/catch.
+  if (process.platform !== "win32" || !Number.isInteger(pid) || pid <= 0) return null;
   const args = tree ? ["/F", "/T", "/PID", String(pid)] : ["/F", "/PID", String(pid)];
   const opts = applyProcessIntent(
     { stdio: "ignore" as const },
@@ -382,6 +384,9 @@ export function spawnHiddenTaskkill(
   );
   try {
     const child = spawn("taskkill", args, opts);
+    // ENOENT is emitted asynchronously by ChildProcess, outside this try.
+    // A missing taskkill must not crash the task/session cleanup caller.
+    child.once("error", () => {});
     child.unref?.();
     return child;
   } catch {
@@ -399,7 +404,7 @@ export function execHiddenTaskkillSync(
   timeoutMs = 5000,
   caller = "execHiddenTaskkillSync"
 ): boolean {
-  if (!Number.isInteger(pid) || pid <= 0) return false;
+  if (process.platform !== "win32" || !Number.isInteger(pid) || pid <= 0) return false;
   const args = tree ? ["/F", "/T", "/PID", String(pid)] : ["/F", "/PID", String(pid)];
   const opts = applyProcessIntent(
     { stdio: "ignore" as const, timeout: timeoutMs },

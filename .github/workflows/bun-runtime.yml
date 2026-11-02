@@ -25,6 +25,9 @@ jobs:
       - run: bun run runtime:acceptance
       - run: bun run perf:bun
       - run: bun --bun x vitest run tests/nativeGlob.test.ts tests/globPatternGuard.test.ts tests/bunMcpRegistration.test.ts tests/serverAuth.test.ts tests/ProcessPool.test.ts tests/processMailbox.test.ts
+      - name: Windows-only path, lifecycle and process-policy regression
+        if: runner.os == 'Windows'
+        run: bun --bun x vitest run --maxWorkers=2 tests/workspaceCatalog.test.ts tests/workspaceCatalogClassifier.test.ts tests/browserRuntimeWindowsRegression.test.ts tests/processSupervisorBatch4Remediation.test.ts tests/processSupervisorBatch5Remediation.test.ts tests/mcpProcessBirthR1.test.ts
   regression:
     name: Full regression (bounded concurrency)
     runs-on: ubuntu-24.04

@@ -286,18 +286,23 @@ describe("Virtual Display Package Discovery & Diagnostics (M2)", () => {
     expect(WINDOW_MANAGER_CANDIDATES).toContain("twm");
   });
 
-  it("correctly identifies missing prerequisites when environment has empty PATH", () => {
+  it("searches standard system directories even when PATH is empty and reports missing packages accurately", () => {
     const res = probeVirtualDisplayPrerequisites({
       env: { PATH: "" },
       requireVnc: true,
       requireNoVnc: true,
     });
 
-    expect(res.xvfb.found).toBe(false);
-    expect(res.windowManager.found).toBe(false);
-    expect(res.missingRequired).toContain("Xvfb");
-    expect(res.missingRequired).toContain("Window Manager (openbox/fluxbox/matchbox/twm)");
-    expect(res.missingRequired).toContain("x11vnc");
+    // PATH="" does not hide /usr/bin or /bin: package probing deliberately
+    // searches canonical system dirs. CI Ubuntu may already have Xvfb.
+    expect(res.xvfb.found).toBe(Boolean(findSystemBinary("Xvfb", { PATH: "" })));
+    const windowManagerPresent = WINDOW_MANAGER_CANDIDATES.some(candidate =>
+      Boolean(findSystemBinary(candidate, { PATH: "" })));
+    expect(res.windowManager.found).toBe(windowManagerPresent);
+    expect(res.missingRequired.includes("Xvfb")).toBe(!res.xvfb.found);
+    expect(res.missingRequired.includes("Window Manager (openbox/fluxbox/matchbox/twm)"))
+      .toBe(!res.windowManager.found);
+    expect(res.missingRequired.includes("x11vnc")).toBe(!res.x11vnc.found);
     expect(res.actionableInstallCommand.length).toBeGreaterThan(10);
   });
 });
