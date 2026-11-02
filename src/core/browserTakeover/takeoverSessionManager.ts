@@ -45,7 +45,7 @@ import {
 } from "../tools/managedBrowserRegistry.js";
 import { discoverCdpPages } from "../tools/chromeCdpTools.js";
 import { getBrowserProcessManager } from "../browserRuntime/browserProcessManager.js";
-import { claimTakeoverTarget, releaseTakeoverTarget } from "./takeoverTargetLease.js";
+import { claimTakeoverTarget, releaseTakeoverTarget, readTakeoverTargetReservation } from "./takeoverTargetLease.js";
 
 const DEFAULT_CONFIG: TakeoverConfig = {
   enabled: true,
@@ -102,9 +102,60 @@ export class TakeoverSessionManager {
   // Invitation secrets stay in memory only, and are retrievable exclusively via
   // the locally authenticated human control-plane endpoint (never agent output).
   private pendingInvitations = new Map<string, TakeoverInvitation>();
+  private startupReconciliation: Promise<void> | null = null;
 
   constructor(config?: Partial<TakeoverConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  /** Startup reconciliation must finish before a new request can change state. */
+  public beginStartupReconciliation(): void {
+    if (!this.startupReconciliation) {
+      this.startupReconciliation = this.reconcileAfterRestart().then(() => undefined);
+      void this.startupReconciliation.catch(error => {
+        console.error("[takeover] Startup reconciliation failed closed:", error instanceof Error ? error.message : String(error));
+      });
+    }
+  }
+
+  public async ensureStartupReconciled(): Promise<void> {
+    if (this.startupReconciliation) await this.startupReconciliation;
+  }
+
+  /** Crash/restart recovery: never turn an existing human session into agent
+   * control. Preserve the reservation/hold and revoke stale websocket input.
+   * The operator must explicitly authorize a new verification after review. */
+  public async reconcileAfterRestart(customDir?: string): Promise<{
+    scanned: number; reconciled: number; requiresReview: number;
+  }> {
+    const dir = customDir || this.config.sessionsDir;
+    const sessions = await listTakeoverSessions(dir);
+    let reconciled = 0, requiresReview = 0;
+    for (const session of sessions) {
+      if (session.state === "AGENT_ACTIVE" || session.state === "CANCELLED") continue;
+      if (session.state === "PAUSED_NEEDS_REVIEW" || session.state === "EXPIRED") {
+        requiresReview++;
+        continue;
+      }
+      this.revokeRemoteInput(session.sessionId);
+      // Interrupted invitations are no longer trustworthy after the owner's
+      // in-memory capabilities were lost. Keep their hold and lease intact.
+      if (session.state === "HUMAN_READY" || session.state === "HUMAN_REQUESTED") {
+        const expired = transitionSession(session, "EXPIRED", "system",
+          "Core restart invalidated pending human invitation; hold and lease retained.");
+        expired.reviewReason = "Pending invitation interrupted by Core restart";
+        await saveTakeoverSession(expired, dir);
+      } else if (session.state === "HUMAN_ACTIVE" || session.state === "RETURN_REQUESTED" ||
+                 session.state === "VERIFYING") {
+        const paused = transitionSession(session, "PAUSED_NEEDS_REVIEW", "system",
+          "Core restarted during human takeover; live return verification required.");
+        paused.reviewReason = "Core restart: human control interrupted";
+        await saveTakeoverSession(paused, dir);
+      }
+      reconciled++;
+      requiresReview++;
+    }
+    return { scanned: sessions.length, reconciled, requiresReview };
   }
 
   public getConfig(): TakeoverConfig {
@@ -142,6 +193,7 @@ export class TakeoverSessionManager {
     input: RequestTakeoverInput,
     customDir?: string
   ): Promise<TakeoverInvitation> {
+    await this.ensureStartupReconciled();
     if (!this.config.enabled) {
       throw new Error("Human takeover subsystem is disabled.");
     }
@@ -309,6 +361,7 @@ export class TakeoverSessionManager {
     input: RedeemInvitationInput,
     customDir?: string
   ): Promise<{ session: TakeoverSession; authorized: boolean; operatorToken: string; vncPassword?: string }> {
+    await this.ensureStartupReconciled();
     // An atomic cross-process mutex protects the read/verify/consume sequence.
     // A stale lock fails closed and requires operator reconciliation.
     const directory = getTakeoverSessionsDir(customDir || this.config.sessionsDir);
@@ -388,6 +441,7 @@ export class TakeoverSessionManager {
     input: ReturnToAgentInput,
     customDir?: string
   ): Promise<TakeoverSession> {
+    await this.ensureStartupReconciled();
     const session = await loadTakeoverSession(
       input.sessionId,
       customDir || this.config.sessionsDir
@@ -449,6 +503,19 @@ export class TakeoverSessionManager {
     sessionId: string,
     customDir?: string
   ): Promise<VerifyAndResumeResult> {
+    await this.ensureStartupReconciled();
+    if (!/^[a-f0-9-]{36}$/.test(sessionId)) throw new Error("Invalid takeover session identity.");
+    // One verifier per session across Core processes. Keep an interrupted
+    // verifier's lock fail-closed; never steal by elapsed wall-clock age.
+    const verifyDir = getTakeoverSessionsDir(customDir || this.config.sessionsDir);
+    await fsp.mkdir(verifyDir, { recursive: true, mode: 0o700 });
+    const verifyLock = path.join(verifyDir, sessionId + ".verify.lock");
+    try {
+      await fsp.mkdir(verifyLock, { mode: 0o700 });
+    } catch {
+      throw new Error("Another Return to Agent verification is active or interrupted; operator reconciliation required.");
+    }
+    try {
     const session = await loadTakeoverSession(sessionId, customDir || this.config.sessionsDir);
     if (!session) {
       throw new Error(`Takeover session '${sessionId}' not found.`);
@@ -496,6 +563,23 @@ export class TakeoverSessionManager {
       };
     }
 
+    // Refuse release if the durable reservation was lost or has another owner.
+    try {
+      const owner = await readTakeoverTargetReservation(
+        session.port, session.targetId, customDir || this.config.sessionsDir
+      );
+      if (!owner || owner.sessionId !== sessionId) {
+        throw new Error("Takeover reservation absent or belongs to another session.");
+      }
+    } catch {
+      const paused = transitionSession(session, "PAUSED_NEEDS_REVIEW", "system",
+        "Durable takeover reservation could not be verified after restart.");
+      paused.reviewReason = "Takeover reservation unavailable or inconsistent";
+      await saveTakeoverSession(paused, customDir || this.config.sessionsDir);
+      return { sessionId, state: "PAUSED_NEEDS_REVIEW", resumed: false,
+        reason: "Takeover reservation unavailable; human hold must be reconciled." };
+    }
+
     // 2. Re-verify target page still exists
     const pages = await discoverCdpPages(session.port);
     const targetPage = pages.find((p) => p.targetId === session.targetId);
@@ -532,6 +616,9 @@ export class TakeoverSessionManager {
         profileId: session.profileId,
         generation: session.generation,
         browserFingerprint: session.browserFingerprint,
+      }, {
+        takeoverSessionId: session.sessionId,
+        takeoverSessionsDir: customDir || this.config.sessionsDir,
       });
     } catch (err: any) {
       const paused = transitionSession(
@@ -571,6 +658,9 @@ export class TakeoverSessionManager {
       resumed: true,
       verifiedAt: resumedSession.verifiedAt,
     };
+    } finally {
+      await fsp.rmdir(verifyLock).catch(() => {});
+    }
   }
 
   /**
@@ -581,6 +671,7 @@ export class TakeoverSessionManager {
     input: CancelTakeoverInput,
     customDir?: string
   ): Promise<TakeoverSession> {
+    await this.ensureStartupReconciled();
     const session = await loadTakeoverSession(
       input.sessionId,
       customDir || this.config.sessionsDir
@@ -637,6 +728,7 @@ export class TakeoverSessionManager {
   }
 
   public async authorizeOperator(sessionId: string, operatorToken: string): Promise<boolean> {
+    await this.ensureStartupReconciled();
     const session = await loadTakeoverSession(sessionId, this.config.sessionsDir);
     return Boolean(session && session.state === "HUMAN_ACTIVE" &&
       Date.now() < session.sessionExpiresAt && session.operatorTokenHash &&
@@ -644,6 +736,7 @@ export class TakeoverSessionManager {
   }
 
   public async verifyInvitation(sessionId: string, invitationToken: string): Promise<boolean> {
+    await this.ensureStartupReconciled();
     const session = await loadTakeoverSession(sessionId, this.config.sessionsDir);
     return Boolean(session && session.state === "HUMAN_READY" && !session.invitationRedeemed &&
       Date.now() < session.invitationExpiresAt && session.tokenHash &&
@@ -651,6 +744,7 @@ export class TakeoverSessionManager {
   }
 
   public async expireStaleSessions(customDir?: string): Promise<number> {
+    await this.ensureStartupReconciled();
     const sessions = await listTakeoverSessions(customDir || this.config.sessionsDir);
     const now = Date.now();
     let expiredCount = 0;
@@ -689,6 +783,7 @@ let takeoverSweepStarted = false;
 export function getTakeoverSessionManager(config?: Partial<TakeoverConfig>): TakeoverSessionManager {
   if (!defaultManager || config) {
     defaultManager = new TakeoverSessionManager(config);
+    if (!config) defaultManager.beginStartupReconciliation();
   }
   if (!takeoverSweepStarted && !config) {
     takeoverSweepStarted = true;

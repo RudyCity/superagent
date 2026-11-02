@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { cdpGatewayRoot, withCdpTargetCoordination } from "./chromeCdpSessionManager.js";
 import { browserFingerprintForPort, listManagedBrowserRegistrations, validateManagedBrowserRegistration } from "./managedBrowserRegistry.js";
 import { discoverCdpPages } from "./chromeCdpTools.js";
+import { readTakeoverTargetReservation } from "../browserTakeover/takeoverTargetLease.js";
 
 export type ManagedControlMode = "human" | "agent";
 type HumanHold = { port: number; targetId: string; fingerprint: string; generation: string; mode: "human" };
@@ -15,7 +16,16 @@ const folder = () => join(cdpGatewayRoot(), "human-holds");
 const fileFor = (port: number, targetId: string) =>
   join(folder(), createHash("sha256").update(port + ":" + targetId).digest("hex") + ".json");
 
-export async function setManagedBrowserControl(input: unknown): Promise<{ mode: ManagedControlMode }> {
+/** Internal-only proof supplied after operator-token verification.
+ * HTTP JSON bodies cannot supply this optional second argument. */
+export interface VerifiedTakeoverRelease {
+  takeoverSessionId: string;
+  takeoverSessionsDir?: string;
+}
+
+export async function setManagedBrowserControl(
+  input: unknown, verifiedTakeoverRelease?: VerifiedTakeoverRelease
+): Promise<{ mode: ManagedControlMode }> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid control request.");
   const body = input as Record<string, unknown>;
   if (body.mode !== "human" && body.mode !== "agent") throw new Error("Invalid control mode.");
@@ -34,6 +44,17 @@ export async function setManagedBrowserControl(input: unknown): Promise<{ mode: 
     const file = fileFor(verified.port, verified.targetId);
     mkdirSync(folder(), { recursive: true, mode: 0o700 });
     if (mode === "agent") {
+      // A desktop handoff must not bypass a reserved human takeover. Only
+      // operator-authorized internal Return may release its matching session.
+      const reservation = await readTakeoverTargetReservation(
+        verified.port, verified.targetId, verifiedTakeoverRelease?.takeoverSessionsDir
+      );
+      if (reservation && reservation.sessionId !== verifiedTakeoverRelease?.takeoverSessionId) {
+        throw new Error("Browser takeover reservation requires verified operator Return to Agent.");
+      }
+      if (!reservation && verifiedTakeoverRelease) {
+        throw new Error("Verified takeover reservation is missing; refusing release.");
+      }
       // Only the same live identity may release an existing human hold.
       const prior = loadHold(verified.port, verified.targetId);
       if (prior && (prior.fingerprint !== verified.browserFingerprint || prior.generation !== verified.generation))
@@ -67,7 +88,13 @@ function loadHold(port: number, targetId: string): HumanHold | null {
 /** Called inside the per-target CDP write lock. Any live human hold blocks writes. */
 export async function assertManagedAgentMayWrite(port: number, targetId: string): Promise<void> {
   const hold = loadHold(port, targetId);
-  if (!hold) return;
+  if (!hold) {
+    // A durable reservation also fences writes when the native hold is lost
+    // after restart or between release and lease cleanup.
+    const reservation = await readTakeoverTargetReservation(port, targetId);
+    if (reservation) throw new Error("Human takeover reservation still owns this tab; agent writes blocked.");
+    return;
+  }
   // Stale/forked browser identities fail closed: a new native handoff is required.
   let fingerprint: string;
   try { fingerprint = await browserFingerprintForPort(port); }

@@ -35,6 +35,7 @@ import {
   resetManagedBrowserRegistrationsForTests,
 } from "../src/core/tools/managedBrowserRegistry.js";
 import { withCdpTargetWrite, claimCdpTarget, releaseCdpTarget } from "../src/core/tools/chromeCdpSessionManager.js";
+import { claimTakeoverTarget } from "../src/core/browserTakeover/takeoverTargetLease.js";
 
 describe("Agent Write Mutation Fencing During Human Hold", () => {
   let server: http.Server;
@@ -361,6 +362,7 @@ describe("Return to Agent Verification Security & Fail-Closed Semantics", () => 
     };
 
     await saveTakeoverSession(session, testDir);
+    await claimTakeoverTarget(mockPort, session.targetId, sessionId, testDir);
 
     const res = await manager.verifyAndResume(sessionId, testDir);
 

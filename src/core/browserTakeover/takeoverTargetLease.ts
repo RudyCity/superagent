@@ -16,10 +16,41 @@ function reservationPath(port: number, targetId: string, customDir?: string): st
   return path.join(getTakeoverSessionsDir(customDir), `.target-${digest}.lock`);
 }
 
-interface TargetReservation {
+export interface TargetReservation {
   sessionId: string;
   targetId: string;
   port: number;
+}
+
+/** Read-only inspection; corrupt reservations fail closed rather than looking absent. */
+export async function readTakeoverTargetReservation(
+  port: number, targetId: string, customDir?: string
+): Promise<TargetReservation | null> {
+  const lock = reservationPath(port, targetId, customDir);
+  try {
+    const stat = await fsp.lstat(lock);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      throw new Error("Invalid takeover reservation directory.");
+    }
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  try {
+    const ownerPath = path.join(lock, "owner.json");
+    const stat = await fsp.lstat(ownerPath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2048) {
+      throw new Error("Invalid takeover reservation owner file.");
+    }
+    const owner = JSON.parse(await fsp.readFile(ownerPath, "utf8")) as TargetReservation;
+    if (owner.port !== port || owner.targetId !== targetId ||
+        !/^[a-f0-9-]{36}$/.test(owner.sessionId)) {
+      throw new Error("Takeover reservation identity mismatch.");
+    }
+    return owner;
+  } catch {
+    throw new Error("Takeover reservation missing or unreadable; operator reconciliation required.");
+  }
 }
 
 export async function claimTakeoverTarget(

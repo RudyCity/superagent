@@ -4,7 +4,8 @@ import { createServer, type Server } from "node:http";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { setManagedBrowserControl } from "../src/core/tools/managedBrowserControl.js";
+import { setManagedBrowserControl, assertManagedAgentMayWrite } from "../src/core/tools/managedBrowserControl.js";
+import { claimTakeoverTarget, releaseTakeoverTarget } from "../src/core/browserTakeover/takeoverTargetLease.js";
 import { registerManagedBrowser } from "../src/core/tools/managedBrowserRegistry.js";
 import { claimCdpTarget, withCdpTargetWrite, withCdpTargetRead } from "../src/core/tools/chromeCdpSessionManager.js";
 
@@ -59,6 +60,31 @@ describe("same-tab human/agent handoff", () => {
     await expect(setManagedBrowserControl({ ...identity, browserFingerprint: "f".repeat(64), mode: "human" }))
       .rejects.toThrow();
   });
+  test("a durable takeover reservation blocks native agent release and writes when a hold is lost", async () => {
+    const previousSessionsDir = process.env.SUPERAGENT_TAKEOVER_SESSIONS_DIR;
+    process.env.SUPERAGENT_TAKEOVER_SESSIONS_DIR = directory;
+    const identity = { profileId: "default-managed", generation, port, targetId, browserFingerprint: fingerprint };
+    const owner = randomUUID();
+    try {
+      await registerManagedBrowser(identity, async () => [{ targetId, title: "Shared", url: "https://example.org/" }]);
+      await claimTakeoverTarget(port, targetId, owner);
+      // Simulate native hold missing after a crash, while the reservation survives.
+      await expect(assertManagedAgentMayWrite(port, targetId)).rejects.toThrow(/reservation still owns/i);
+      await expect(setManagedBrowserControl({ ...identity, mode: "agent" }))
+        .rejects.toThrow(/verified operator Return/i);
+      await expect(setManagedBrowserControl({ ...identity, mode: "agent" }, {
+        takeoverSessionId: randomUUID(),
+      })).rejects.toThrow(/verified operator Return/i);
+      // A different target is not fenced by this reservation.
+      await releaseTakeoverTarget(port, targetId, owner);
+      await expect(assertManagedAgentMayWrite(port, targetId)).resolves.toBeUndefined();
+    } finally {
+      if (previousSessionsDir === undefined) delete process.env.SUPERAGENT_TAKEOVER_SESSIONS_DIR;
+      else process.env.SUPERAGENT_TAKEOVER_SESSIONS_DIR = previousSessionsDir;
+      await releaseTakeoverTarget(port, targetId, owner, directory).catch(() => {});
+    }
+  });
+
   test("rejects unauthenticated or malformed local control input", async () => {
     await expect(setManagedBrowserControl({ mode: "human", port })).rejects.toThrow();
     await expect(setManagedBrowserControl({ mode: "force", port, targetId })).rejects.toThrow();

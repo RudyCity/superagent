@@ -26,8 +26,8 @@ const VALID_TRANSITIONS: Record<TakeoverState, readonly TakeoverState[]> = {
   AGENT_ACTIVE: ["HUMAN_REQUESTED", "CANCELLED"],
   HUMAN_REQUESTED: ["HUMAN_READY", "CANCELLED", "EXPIRED"],
   HUMAN_READY: ["HUMAN_ACTIVE", "CANCELLED", "EXPIRED"],
-  HUMAN_ACTIVE: ["RETURN_REQUESTED", "CANCELLED", "EXPIRED"],
-  RETURN_REQUESTED: ["VERIFYING", "CANCELLED", "EXPIRED"],
+  HUMAN_ACTIVE: ["RETURN_REQUESTED", "PAUSED_NEEDS_REVIEW", "CANCELLED", "EXPIRED"],
+  RETURN_REQUESTED: ["VERIFYING", "PAUSED_NEEDS_REVIEW", "CANCELLED", "EXPIRED"],
   VERIFYING: ["AGENT_ACTIVE", "PAUSED_NEEDS_REVIEW", "CANCELLED"],
   PAUSED_NEEDS_REVIEW: ["VERIFYING", "AGENT_ACTIVE", "CANCELLED"],
   CANCELLED: [],
@@ -39,6 +39,12 @@ const VALID_TRANSITIONS: Record<TakeoverState, readonly TakeoverState[]> = {
  */
 export function getTakeoverSessionsDir(customDir?: string): string {
   if (customDir) return customDir;
+  // Core persistence and CDP write fencing must share a durable lease root.
+  const configured = process.env.SUPERAGENT_TAKEOVER_SESSIONS_DIR;
+  if (configured) {
+    if (!path.isAbsolute(configured)) throw new Error("Takeover session directory must be absolute.");
+    return configured;
+  }
   return path.join(os.homedir(), ".superagent-r", "browser-takeover", "sessions");
 }
 
