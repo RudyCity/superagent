@@ -1,3 +1,4 @@
+importScripts("tabSingleton.js");
 /* Dedicated ChatGPT Delegate service worker: fixed localhost RPC only. */
 const ENDPOINT = "ws://127.0.0.1:17341";
 const PROTOCOL = "superagent-delegate-v1";
@@ -55,6 +56,7 @@ function getConnectionStatus() {
     lastError,
     retryCount: failures,
     inFlight: inFlight.size,
+    tabPolicy: singleton.status(),
   };
 }
 
@@ -265,6 +267,7 @@ async function setEnabled(next) {
   } else {
     lastError = null;
     connect();
+    singleton.schedule();
   }
   return { ok: true, status: getConnectionStatus() };
 }
@@ -390,6 +393,17 @@ async function waitForContentScript(tabId, ms = 4500) {
     "ChatGPT content script is unavailable. Open a logged-in chatgpt.com tab and try again.");
 }
 
+const singleton = globalThis.createDelegateTabSingleton({
+  chrome,
+  enabled: () => initialized && enabled,
+  busy: () => inFlight.size > 0,
+  ensureContent: async (tabId) => {
+    const ready = await attachContentScript(tabId);
+    if (!ready?.ok) throw new Error(ready?.error || "DELEGATE_TAB_NOT_READY");
+  },
+});
+singleton.register();
+
 async function dispatchToTab(request) {
   const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
   const exactTab = request.params?.tabId;
@@ -438,6 +452,7 @@ async function handleRequest(request) {
     };
   } finally {
     inFlight.delete(request.id);
+    singleton.schedule();
   }
   completed.set(request.id, response);
   if (completed.size > 128) completed.delete(completed.keys().next().value);
@@ -481,8 +496,10 @@ chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }, () => {
       void chrome.storage.local.set({ delegateClientId: clientId });
     }
     ensureWakeAlarm();
-    if (enabled) connect();
-    else setStatus("disabled");
+    if (enabled) {
+      connect();
+      singleton.schedule(1100);
+    } else setStatus("disabled");
   },
   );
 });

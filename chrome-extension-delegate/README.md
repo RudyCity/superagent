@@ -1,6 +1,39 @@
 # SuperAgent Delegate — isolated ChatGPT extension
 
-This extension is entirely separate from `chrome-extension/`. Its runtime consists of `manifest.json`, `background.js`, `content.js`, and popup files; the README documents installation and security.
+## Automatic one-safe-tab mode — v1.5.0
+
+After loading the extension, a single Chrome profile automatically keeps
+**one verified ChatGPT tab**. When two or more `https://chatgpt.com/*`
+tabs are present, the service worker chooses a deterministic primary
+(favoring an actively generating chat, unsent draft, pinned tab, then
+the currently active tab) and closes **only** redundant tabs that passed
+a fresh content-script safety inspection. This includes distinct completed
+ChatGPT conversations; completed chats remain in ChatGPT history.
+
+The extension listens for tab creation, page completion, activation and
+removal, and checks existing tabs at startup. Cleanup is sequential and
+double-checks current URL, activation and DOM safety immediately before
+closing. While a Delegate RPC is in flight or the extension is OFF, no
+tabs are closed. It never reloads ChatGPT or sends/stops a chat to repair
+tab counts.
+
+**Exception, not silent data loss:** A generating chat, unsent draft,
+pending attachment, open dialog, pinned/audible tab, incomplete page or
+unavailable content script is protected. If any tab is still loading
+or unverified, cleanup is deferred for that group until it is safe
+to choose the primary. When several tabs are protected,
+more than one may remain open. The background status reports
+`tabPolicy.remainingTabs`, `primaryTabId`, `lastClosedTabIds` and
+`protectedTabs`. If multiple tabs remain, existing Delegate tools still
+require an explicit `tabId` and never guess.
+
+Only tabs inside **this Chrome profile** are managed. Separate Chrome
+profiles and incognito contexts are isolated; the extension never closes
+other extensions or browser profiles.
+
+
+This extension is entirely separate from `chrome-extension/`. Its runtime consists of `manifest.json`, `background.js`,
+`tabSingleton.js`, `content.js`, and popup files; the README documents installation and security.
 
 ## Production pairing directly from server console — v1.4.0
 
@@ -80,7 +113,7 @@ bun run release:delegate
 ```
 
 The deterministic allowlisted ZIP and SHA-256 receipt are placed in
-`build/releases/` (only six extension runtime files, no secrets).
+`build/releases/` (only seven extension runtime files, no secrets).
 Chrome Web Store publication and full real-browser send/stop production
 acceptance are **separate steps**, not claimed by these checks.
 
@@ -128,13 +161,13 @@ back to another Chrome profile. No timeout, disconnect, or profile change
 automatically resends ChatGPT messages. Stop is explicit only.
 
 Several Chrome **windows of the same profile** share one extension
-service worker (one `clientId`). If that profile has several ChatGPT
-tabs, the tool requires an explicit `tabId`. The Delegate popup lists those tab IDs and performs read-only content-script
-probes, showing **siap** (ready) or **belum siap** for each tab. This
-helps diagnose `CHATGPT_TAB_NOT_READY` without reloading the page or
-submitting a message; e.g., use `{"clientId":"...","tabId":12345}`.
-If more than one tab exists without `tabId`, the extension returns
-`CHATGPT_MULTIPLE_TABS` without touching the page.
+service worker (one `clientId`). v1.5.0 automatically consolidates
+ChatGPT tabs when safe; see **Automatic one-safe-tab mode** above.
+The popup still lists surviving tab IDs and performs read-only content-script
+probes, showing **siap** (ready) or **belum siap** without reloading.
+When multiple protected tabs remain, use an exact
+`{"clientId":"...","tabId":12345}`; requests without `tabId` return
+`CHATGPT_MULTIPLE_TABS` rather than arbitrarily choosing a tab.
 
 After installing this version, **restart the rebuilt SuperAgent server**
 to load the multi-client bridge, and reload this extension in

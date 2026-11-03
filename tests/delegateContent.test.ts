@@ -105,7 +105,16 @@ function setup(options: {
       if (!accepts) reject(new Error("Unexpected listener rejection"));
     });
   }
-  return { call, turns, buttons, composer, location: ctx.location };
+  function inspect(): any {
+    let reply: any;
+    listener(
+      { scope: "superagent-delegate-v1", action: "inspect_tab" },
+      { id: chrome.runtime.id },
+      response => { reply = response; },
+    );
+    return reply;
+  }
+  return { call, inspect, turns, buttons, composer, location: ctx.location };
 }
 
 function turn(role: "assistant" | "user", text: string): FakeTurn {
@@ -136,6 +145,38 @@ function button(kind: "send" | "stop" | "new", onClick: () => void) {
 }
 
 describe("delegate content script (simulated DOM)", () => {
+  it("marks an empty ChatGPT homepage safe for duplicate cleanup", () => {
+    const sim = setup({ path: "/" });
+    expect(sim.inspect()).toEqual({
+      ready: true, safeToClose: true, reason: "verified_idle",
+    });
+  });
+
+  it("never exposes or closes an unsent draft", () => {
+    const draft = "Private unfinished user draft";
+    const sim = setup({ path: "/", composer: new FakeTextarea(draft) });
+    const verdict = sim.inspect();
+    expect(verdict).toEqual({
+      ready: true, safeToClose: false, reason: "draft_present",
+    });
+    expect(JSON.stringify(verdict)).not.toContain(draft);
+  });
+
+  it("protects generating and unverified conversation tabs", () => {
+    const active = setup({ buttons: [button("stop", () => {})] });
+    expect(active.inspect().reason).toBe("generating");
+    expect(active.inspect().safeToClose).toBe(false);
+    const loading = setup({ path: "/c/existing", turns: [] });
+    expect(loading.inspect().reason).toBe("chat_not_loaded");
+    expect(loading.inspect().safeToClose).toBe(false);
+  });
+
+  it("permits completed idle chats but not pages with a missing composer", () => {
+    expect(setup({ path: "/c/existing", turns: [turn("assistant", "Done")] })
+      .inspect().safeToClose).toBe(true);
+    expect(setup({ path: "/", composer: null }).inspect().safeToClose).toBe(false);
+  });
+
   it("rejects logged-out chat without clicking anything", async () => {
     let clicks = 0;
     const sim = setup({ path: "/auth/login", buttons: [button("send", () => clicks++)] });

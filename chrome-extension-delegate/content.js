@@ -118,6 +118,36 @@
     };
   }
 
+  // Read-only safety verdict for automatic single-tab consolidation.
+  // Do not return actual draft text, message content, or page cookies.
+  function inspectTabSafety() {
+    if (sendActive || newChatActive || inFlight.size) {
+      return { ready: true, safeToClose: false, reason: "delegate_busy" };
+    }
+    if (stopButton()) {
+      return { ready: true, safeToClose: false, reason: "generating" };
+    }
+    const input = composer();
+    if (!input || loginRequired()) {
+      return { ready: false, safeToClose: false, reason: "page_not_ready" };
+    }
+    if (norm(input.innerText || input.value || input.textContent)) {
+      return { ready: true, safeToClose: false, reason: "draft_present" };
+    }
+    if (Array.from(document.querySelectorAll(
+      '[data-testid="attachment-preview"], [data-testid="composer-attachment"], [data-testid="attachment-uploading"]'
+    )).some(visible)) {
+      return { ready: true, safeToClose: false, reason: "attachment_pending" };
+    }
+    if (Array.from(document.querySelectorAll('dialog[open], [role="dialog"]')).some(visible)) {
+      return { ready: true, safeToClose: false, reason: "dialog_open" };
+    }
+    if (location.pathname.startsWith("/c/") && !turns().length) {
+      return { ready: false, safeToClose: false, reason: "chat_not_loaded" };
+    }
+    return { ready: true, safeToClose: true, reason: "verified_idle" };
+  }
+
   function writeComposer(el, text) {
     el.focus();
     if (el instanceof HTMLTextAreaElement) {
@@ -244,6 +274,10 @@
     if (sender.id !== chrome.runtime.id || request?.scope !== SCOPE) return false;
     if (request.action === "probe") {
       sendResponse({ ready: true });
+      return false;
+    }
+    if (request.action === "inspect_tab") {
+      sendResponse(inspectTabSafety());
       return false;
     }
     if (request.action !== "execute" || typeof request.id !== "string") return false;

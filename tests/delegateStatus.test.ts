@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const background = readFileSync(
+  new URL("../chrome-extension-delegate/tabSingleton.js", import.meta.url), "utf8"
+) + String.fromCharCode(10) + readFileSync(
   new URL("../chrome-extension-delegate/background.js", import.meta.url), "utf8"
-);
+).replace('importScripts("tabSingleton.js");', "");
 
 type Listener = (event?: any) => void;
 function fixture(

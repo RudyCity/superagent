@@ -186,8 +186,12 @@ async function refreshStatus() {
         }
       }));
       const readyCount = checked.filter(t => t.ready).length;
+      const guarded = state.status === "fulfilled" && state.value?.ok
+        ? Number(state.value.status?.tabPolicy?.protectedTabs?.length || 0) : 0;
       $("tab-status").textContent = checked.length
-        ? readyCount + "/" + checked.length + " siap" : "Tidak ada tab";
+        ? readyCount + "/" + checked.length + " siap" +
+          (guarded ? " • " + guarded + " dilindungi" : "")
+        : "Tidak ada tab";
       renderTabs(checked);
     } else {
       $("tab-status").textContent = "Tidak dapat diperiksa";

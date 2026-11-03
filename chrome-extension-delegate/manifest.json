@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SuperAgent Delegate (ChatGPT)",
-  "version": "1.4.0",
-  "description": "Local ChatGPT delegation with console pairing codes, multi-profile routing and auditable connection events.",
+  "version": "1.5.0",
+  "description": "Local ChatGPT delegation with console pairing codes, single-safe-tab auto cleanup, multi-profile routing and connection audit.",
   "permissions": [
     "tabs",
     "alarms",
