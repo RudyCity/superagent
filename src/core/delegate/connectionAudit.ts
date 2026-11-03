@@ -53,10 +53,15 @@ export async function flushDelegateConnectionAudit(): Promise<void> {
   await pendingWrite;
 }
 
-/** Console JSON and a daily private JSONL file in the SuperAgent config logs. */
+/** Console: connected Chrome profiles only. Disk JSONL: every audit event. */
 export const writeDelegateConnectionAudit: DelegateAuditSink = record => {
   const line = JSON.stringify(record);
-  console.info("[Delegate][connection] " + line);
+  // Keep the server terminal readable: print successful connections only.
+  // Pairing codes have their own separate [Delegate][PAIR] terminal notice.
+  // Rejections, disconnects and transport diagnostics remain in private JSONL.
+  if (record.event === "connected") {
+    console.info("[Delegate][CONNECTED] " + line);
+  }
   try {
     const dir = path.join(getRootConfigDir(), "logs");
     fs.mkdirSync(dir, { recursive: true, mode: 0o700 });

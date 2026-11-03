@@ -333,13 +333,17 @@ export class DelegateBridge {
         }));
         if (issuedClientToken) {
           log("pairing_accepted", { clientId, profileLabel: label, authVerified: true });
-          this.issuePairingCode(); // next code, for the next Chrome profile
         }
         log("connected", {
           clientId, profileLabel: label, extensionVersion, browserUserAgent,
           authVerified: validCredential && token.length > 0 || !!issuedClientToken,
           handshakeDurationMs: Date.now() - openedAt,
         });
+        if (issuedClientToken) {
+          // Put next-profile code directly BELOW the successful connection
+          // in the server terminal, rather than before it.
+          this.issuePairingCode();
+        }
         this.broadcastConnections();
         for (const notify of this.waiters) notify();
         this.waiters.clear();

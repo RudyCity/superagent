@@ -48,10 +48,18 @@ workflow still works without copying the master secret into Chrome.
 If an old, invalid `SUPERAGENT_DELEGATE_AUTH_TOKEN_FILE` variable is set,
 clear it from the shell before starting the fileless mode.
 
-The console also prints sanitized structured **connection events** for
-`listener_started`, `socket_open`, `connected`, `pairing_accepted`,
-`client_updated`, `handshake_rejected`, `disconnected`, and other
-transport failures. Persistent audit files are written daily under
+The terminal displays **only successfully connected Chrome profiles** as
+`[Delegate][CONNECTED]` with full sanitized connection metadata, plus the
+independent `[Delegate][PAIR] Kode: XXXX-XXXX` notice. At startup the code
+appears as soon as Delegate port 17341 starts listening; after each
+successful new pairing the next code appears **directly below** the
+corresponding connection line. The terminal does **not** spam
+`socket_open`, rejects or disconnects.
+
+All connection lifecycle events (including `listener_started`,
+`socket_open`, `pairing_accepted`, `handshake_rejected`,
+`disconnected` and transport failures) are retained in daily private
+audit files under
 `~/.superagent-r/logs/delegate-connections-YYYY-MM-DD.jsonl`, including
 UTC timestamp, connectionId, clientId, profile label, extension ID/version,
 browser user agent, localhost remote address/port, pairing status, active

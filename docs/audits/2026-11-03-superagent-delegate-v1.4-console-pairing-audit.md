@@ -17,7 +17,7 @@ Scope: `src/core/delegate/` and `chrome-extension-delegate/` only, plus focused 
 
 ## Structured connection audit
 
-Console events and daily JSONL under `~/.superagent-r/logs/delegate-connections-YYYY-MM-DD.jsonl` include:
+The server console prints only successful `[Delegate][CONNECTED]` events and short-lived `[Delegate][PAIR]` codes; the next code appears immediately after a successful connection. All events are retained in daily JSONL under `~/.superagent-r/logs/delegate-connections-YYYY-MM-DD.jsonl` include:
 
 - UTC timestamp, event name, unique `connectionId`, server PID, bound listener endpoint/port
 - Remote loopback IP and remote port, browser extension ID and version, client ID, profile label, sanitized browser user agent
