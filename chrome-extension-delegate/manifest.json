@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "SuperAgent Delegate (ChatGPT)",
+  "version": "1.3.0",
+  "description": "Secure local ChatGPT delegation: optional pairing in development, mandatory in production, multi-profile routing and per-tab repair.",
+  "permissions": [
+    "tabs",
+    "alarms",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "SuperAgent Delegate — koneksi Chrome",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17341"
+  }
+}

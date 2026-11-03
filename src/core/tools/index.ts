@@ -22,7 +22,8 @@ import {
   superagentToolset,
   subagentToolsets,
   defaultSubagentToolset,
-  chromeExtensionToolset
+  chromeExtensionToolset,
+  delegateToolset
 } from "./toolsets.js";
 import { loadDynamicHooks } from "./dynamicHooks.js";
 import { bumpToolRegistryVersion } from "./toolRegistryVersion.js";
@@ -228,7 +229,8 @@ import { listToolsTool, describeToolTool } from "./toolDiscoveryTools.js";
 import { switchModeTool } from "./modeTools.js";
 
 
-export const allTools: Tool[] = [
+export const allTools: Tool[] = [
+  ...delegateToolset,
   studioGenerateTool,
   studioReviseTool,
   studioStatusTool,

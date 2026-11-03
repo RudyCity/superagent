@@ -140,6 +140,12 @@ export async function runCli() {
     scheduleSenopatiLifecycle();
   }catch{}
 
+  // CLI agent tools also run when REST port 7888 is already occupied.
+  // Bind the fixed loopback Delegate listener in this agent process.
+  void import("./core/delegate/lifecycle.js")
+    .then(({ startDelegateBridgeForAgentHost }) => startDelegateBridgeForAgentHost())
+    .catch((error) => console.warn("[Delegate] CLI bridge bootstrap failed:", error));
+
   // Start extension server silently in the background
   try {
     const { runServer } = await import("./server.js");

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>SuperAgent Delegate — Chrome connections</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="panel">
+    <header class="header">
+      <div class="brand-symbol" aria-hidden="true">D</div>
+      <div class="brand-copy">
+        <h1>SuperAgent Delegate</h1>
+        <p>Kelola koneksi Chrome lokal</p>
+      </div>
+      <span class="version">v1.3.0</span>
+    </header>
+
+    <section class="control-card" aria-labelledby="enabled-heading">
+      <div class="setting-line">
+        <div class="setting-description">
+          <h2 id="enabled-heading">Koneksi Delegate</h2>
+          <p>ON/OFF hanya untuk profil Chrome ini</p>
+        </div>
+        <label class="toggle">
+          <input id="enabled" type="checkbox" role="switch" aria-label="Aktifkan koneksi Delegate">
+          <span class="toggle-track" aria-hidden="true"></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="status-panel" aria-labelledby="status-heading">
+      <div class="status-topline">
+        <span id="status-dot" class="status-dot connecting" aria-hidden="true"></span>
+        <h2 id="status-heading">Memeriksa...</h2>
+        <span id="status-pill" class="status-pill connecting">CONNECTING</span>
+      </div>
+      <p id="status-description" class="description" role="status" aria-live="polite">Memeriksa bridge SuperAgent.</p>
+    </section>
+
+    <section class="details" aria-label="Informasi koneksi">
+      <div class="detail-row"><span class="detail-label">Server</span><span class="detail-value mono">127.0.0.1:17341</span></div>
+      <div class="detail-row"><span class="detail-label">Terhubung terakhir</span><span id="last-connected" class="detail-value">—</span></div>
+      <div class="detail-row"><span class="detail-label">Tab ChatGPT di profil ini</span><span id="tab-status" class="detail-value">Memeriksa...</span></div>
+      <div id="tab-list" class="tab-list" aria-label="Daftar ID tab ChatGPT pada profil ini"></div>
+      <p class="helper">Klik Aktifkan hanya jika tab belum siap. Tidak ada reload atau pengiriman chat.</p>
+      <div class="detail-row"><span class="detail-label">Aktivitas</span><span id="request-status" class="detail-value">—</span></div>
+    </section>
+
+    <section class="profile-section" aria-labelledby="profile-heading">
+      <h2 id="profile-heading">Nama profil koneksi</h2>
+      <div class="field-line">
+        <input id="profile-label" maxlength="48" placeholder="Misalnya: Chrome Kerja" aria-label="Nama koneksi Chrome">
+        <button id="save-label" class="secondary-button" type="button">Simpan</button>
+      </div>
+      <p class="helper">Gunakan nama berbeda untuk tiap Chrome agar tidak tertukar.</p>
+      <div class="detail-row local-id-row"><span class="detail-label">Client ID sendiri</span><span id="client-id" class="detail-value mono">—</span></div>
+    </section>
+
+    <section class="profile-section" aria-labelledby="auth-heading">
+      <div class="section-heading">
+        <h2 id="auth-heading">Kunci pairing produksi</h2>
+        <span id="auth-state" class="count">BELUM ADA</span>
+      </div>
+      <div class="field-line">
+        <input id="pairing-key" type="password" minlength="32" maxlength="512"
+          autocomplete="off" spellcheck="false" placeholder="Kunci lokal dari host SuperAgent"
+          aria-label="Kunci pairing WebSocket">
+        <button id="save-pairing" class="secondary-button" type="button">Simpan</button>
+      </div>
+      <p class="helper">Kunci disimpan hanya di profil Chrome ini. Jangan membagikannya ke situs atau chat.</p>
+    </section>
+
+    <section class="profiles-section" aria-labelledby="connections-heading">
+      <div class="section-heading">
+        <h2 id="connections-heading">Chrome yang terhubung</h2>
+        <span id="connection-count" class="count">0</span>
+      </div>
+      <div id="connections" class="client-list" aria-live="polite">
+        <p class="empty-state">Belum ada koneksi.</p>
+      </div>
+      <p class="helper">Jika lebih dari satu Chrome aktif, pilih target dengan <code>clientId</code> pada tool Delegate. Tidak ada pemilihan acak.</p>
+    </section>
+
+    <p id="error-info" class="error-info" hidden></p>
+    <button id="reconnect" class="reconnect-button" type="button"><span aria-hidden="true">⟳</span> Sambungkan ulang</button>
+    <p id="action-note" class="action-note">Koneksi ulang tidak mengirim pesan ChatGPT.</p>
+    <footer>Extension Chrome utama tetap terpisah; toggle ini hanya untuk Delegate.</footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>

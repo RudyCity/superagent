@@ -138,12 +138,17 @@ async function createAgentForMode(
     }
   }
 
-  // Mode-aware tool discovery: in non-extension modes list_tools /
-  // describe_tool reflect the filtered toolset (the 12 extension tools
-  // stay hidden); in chrome-extension chat mode the originals are kept.
-  if (targetClientMode !== "chrome-extension" && customTools) {
+  // Delegate is a single-agent capability, not a Master orchestration tool.
+  if (targetMode === "single" && customTools) {
+    const { delegateToolset } = await import("./core/tools/toolsets.js");
+    customTools = [...customTools, ...delegateToolset];
+  }
+
+  // Discover only tools visible in the actual client mode.
+  // T-Line keeps the existing 12 extension-dependent tools hidden.
+  if (customTools) {
     const { withModeAwareDiscoveryTools } = await import("./core/tools/toolsets.js");
-    customTools = withModeAwareDiscoveryTools(customTools, false);
+    customTools = withModeAwareDiscoveryTools(customTools, targetClientMode === "chrome-extension");
   }
 
   let agent: Agent;
@@ -1112,6 +1117,12 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   });
 
   server.listen(port, '127.0.0.1', () => {
+    // The dedicated Delegate Chrome extension is a WebSocket CLIENT.
+    // Start the local listener when the SuperAgent server is ready, not
+    // on the first delegate tool invocation (which left port 17341 closed).
+    void import("./core/delegate/lifecycle.js")
+      .then(({ startDelegateBridgeForAgentHost }) => startDelegateBridgeForAgentHost())
+      .catch((error) => console.warn("[Delegate] Bridge bootstrap failed:", error));
     // T-Line's SuperAgent REST core uses this same startup path. Start only
     // the isolated shared-model watchdog; never touch T-Line/MCP/tunnels.
     if(process.env.SUPERAGENT_CORE_WORKER!=="1") {
