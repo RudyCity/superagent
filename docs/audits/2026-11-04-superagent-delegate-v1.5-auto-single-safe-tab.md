@@ -17,7 +17,9 @@ Pick a deterministic primary; close only safe-to-close redundant tabs,
 re-checking URL, foreground change and DOM immediately before each close.
 Never close or navigate during RPC in-flight. If an existing tab is
 loading/unverified, defer the whole group rather than choosing the wrong
-primary. Never close a pinned or
+primary. Live browser smoke uncovered a navigation-complete/DOM-ready
+race; eight bounded short retries plus the existing 30-second service
+worker alarm now recover without reloading pages. Never close a pinned or
 audible tab. If multiple protected tabs remain, keep them and continue to
 require explicit `tabId` on Delegate RPC calls.
 
@@ -42,10 +44,25 @@ profile was forcibly normalized: existing tabs may have unsent content.
 
 ## Verified results (2026-11-04)
 
-- `bun run verify:delegate`: **PASS**, 73/73 tests in 6 suites.
+- `bun run verify:delegate`: **PASS**, 74/74 tests in 6 suites.
 - `bun run verify:extension-js`: **PASS**, 20 Chrome extension JS files.
 - `bun run build`: **PASS** (Bun 1.4.2; SuperAgent 1.14.62).
 - `bun run release:delegate`: **PASS**, seven allowlisted extension files.
-- ZIP SHA-256: `739a3684c639252f97ddc67087f3a5c9997dd36fb76f30cff9ae019261ccf606`.
+- ZIP SHA-256: `f94c749c1d991c18e33ef282329339eacfc6118b97e2c50eaa6ef443bb274077`.
 - Live Chrome auto-close not executed against existing user tabs; only
   isolated simulated Chrome tab lifecycle and DOM tests were run.
+
+
+## Live Chrome smoke (same user-profile, no chat message sent)
+
+- Existing ChatGPT tab `1217725633` preserved.
+- Created disposable duplicate ChatGPT tab `1217725656` (inactive).
+- First browser check observed `not_loaded`; cleanup correctly deferred.
+- Detected missing DOM-ready retry from real browser, fixed with bounded
+  retries and the periodic alarm.
+- After extension reload, `chrome.tabs.query` reported **only original
+  tab `1217725633`**, Delegate connection still `connected`,
+  manifest version `1.5.0`, `remainingTabs:1`, no protected tabs.
+- No ChatGPT messages submitted, no user conversations reloaded.
+- Follow-up polish keeps `lastClosedTabIds` and timestamp visible across
+  subsequent one-tab checks in the popup for 5 minutes.

@@ -463,7 +463,12 @@ function ensureWakeAlarm() {
   chrome.alarms.create(RECONNECT_ALARM, { periodInMinutes: 0.5 });
 }
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === RECONNECT_ALARM) connect();
+  if (alarm.name === RECONNECT_ALARM) {
+    connect();
+    // A tab might finish rendering its composer AFTER navigation completed.
+    // Periodically retry safe cleanup, even if no new tab event fires.
+    singleton.schedule();
+  }
 });
 chrome.runtime.onStartup.addListener(() => { ensureWakeAlarm(); connect(); });
 chrome.runtime.onInstalled.addListener(() => { ensureWakeAlarm(); connect(); });

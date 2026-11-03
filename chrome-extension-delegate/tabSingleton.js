@@ -9,11 +9,13 @@
     let timer = null;
     let running = null;
     let repeat = false;
+    let unverifiedRetries = 0;
     let snapshot = {
       mode: "single-safe-tab",
       primaryTabId: null,
       remainingTabs: 0,
       lastClosedTabIds: [],
+      lastClosedAt: null,
       protectedTabs: [],
       lastCheckedAt: null,
     };
@@ -82,6 +84,13 @@
           "content_unavailable", "unverified",
         ]);
         if (checks.some(check => unverified.has(check.reason))) {
+          // DOM readiness can lag behind Chrome's 'complete' event; retry
+          // shortly, up to eight times. The reconnect alarm supplies a
+          // slower periodic fallback afterward, avoiding an infinite loop.
+          if (unverifiedRetries < 8) {
+            unverifiedRetries++;
+            schedule(700 + unverifiedRetries * 350);
+          }
           for (let i = 0; i < group.length; i++) {
             if (unverified.has(checks[i].reason)) {
               protectedTabs.push({ tabId: group[i].id, reason: checks[i].reason });
@@ -89,6 +98,7 @@
           }
           continue;
         }
+        unverifiedRetries = 0;
         // If the user switched tabs during inspection, defer rather than
         // close any page based on stale active-tab ordering.
         const currentTabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
@@ -145,7 +155,8 @@
       snapshot = {
         mode: "single-safe-tab", primaryTabId,
         remainingTabs: all.length - closed.length,
-        lastClosedTabIds: closed,
+        lastClosedTabIds: closed.length ? closed : snapshot.lastClosedTabIds,
+        lastClosedAt: closed.length ? Date.now() : snapshot.lastClosedAt,
         protectedTabs,
         lastCheckedAt: Date.now(),
       };

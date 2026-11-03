@@ -186,11 +186,15 @@ async function refreshStatus() {
         }
       }));
       const readyCount = checked.filter(t => t.ready).length;
-      const guarded = state.status === "fulfilled" && state.value?.ok
-        ? Number(state.value.status?.tabPolicy?.protectedTabs?.length || 0) : 0;
+      const policy = state.status === "fulfilled" && state.value?.ok
+        ? state.value.status?.tabPolicy : undefined;
+      const guarded = Number(policy?.protectedTabs?.length || 0);
+      const recentlyClosed = Date.now() - Number(policy?.lastClosedAt || 0) < 300_000
+        ? Number(policy?.lastClosedTabIds?.length || 0) : 0;
       $("tab-status").textContent = checked.length
         ? readyCount + "/" + checked.length + " siap" +
-          (guarded ? " • " + guarded + " dilindungi" : "")
+          (guarded ? " • " + guarded + " dilindungi" : "") +
+          (recentlyClosed ? " • " + recentlyClosed + " duplikat ditutup" : "")
         : "Tidak ada tab";
       renderTabs(checked);
     } else {

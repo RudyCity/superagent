@@ -98,6 +98,12 @@ describe("Delegate single-safe-tab policy", () => {
     expect([...f.closed].sort()).toEqual([20, 30]);
     expect(status.remainingTabs).toBe(1);
     expect(f.tabs.size).toBe(1);
+    expect(status.lastClosedTabIds).toEqual([20, 30]);
+    expect(status.lastClosedAt).toBeTypeOf("number");
+    // Subsequent onRemoved checks must not erase the last closure receipt.
+    const after = await f.manager.cleanup();
+    expect(after.lastClosedTabIds).toEqual([20, 30]);
+    expect(after.lastClosedAt).toBe(status.lastClosedAt);
   });
 
   it("protects a draft and keeps its tab over an active empty ChatGPT tab", async () => {
@@ -132,6 +138,24 @@ describe("Delegate single-safe-tab policy", () => {
     expect(f.closed).toEqual([]);
     expect(out.remainingTabs).toBe(2);
     expect(out.protectedTabs).toEqual([{ tabId: 2, reason: "not_loaded" }]);
+  });
+
+  it("retries after a completed navigation when the DOM was initially not ready", async () => {
+    const f = fixture([
+      chat(1, { active: true }),
+      chat(2, { status: "loading" }),
+    ]);
+    f.handlers.created(chat(2));
+    await f.fireScheduled();
+    expect(f.closed).toEqual([]);
+    expect(f.manager.status().protectedTabs).toEqual([
+      { tabId: 2, reason: "not_loaded" },
+    ]);
+    // No extra Chrome tab event fires: only the page becomes inspectable.
+    f.tabs.get(2)!.status = "complete";
+    await f.fireScheduled();
+    expect(f.closed).toEqual([2]);
+    expect(f.manager.status().remainingTabs).toBe(1);
   });
 
   it("keeps pinned tabs and closes only verified idle duplicates", async () => {

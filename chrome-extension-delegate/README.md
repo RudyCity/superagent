@@ -21,10 +21,12 @@ tab counts.
 pending attachment, open dialog, pinned/audible tab, incomplete page or
 unavailable content script is protected. If any tab is still loading
 or unverified, cleanup is deferred for that group until it is safe
-to choose the primary. When several tabs are protected,
+to choose the primary. Up to eight short DOM-readiness retries and a
+30-second alarm fallback handle pages whose composer appears late. When several tabs are protected,
 more than one may remain open. The background status reports
-`tabPolicy.remainingTabs`, `primaryTabId`, `lastClosedTabIds` and
-`protectedTabs`. If multiple tabs remain, existing Delegate tools still
+`tabPolicy.remainingTabs`, `primaryTabId`, `lastClosedTabIds`,
+`lastClosedAt` and `protectedTabs`. The popup shows recent safe closures
+for five minutes, even after later one-tab checks. If multiple tabs remain, existing Delegate tools still
 require an explicit `tabId` and never guess.
 
 Only tabs inside **this Chrome profile** are managed. Separate Chrome
