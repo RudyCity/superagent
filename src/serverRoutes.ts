@@ -78,6 +78,7 @@ import { createMemoryRecordMetadata } from "./core/memoryRecord.js";
 import { detectScopedMemoryConflicts, filterEligibleMemoryRecords, previewMemoryRetention } from "./core/memoryLifecycle.js";
 import { getRootConfigDir } from "./core/config/paths.js";
 import { buildCorsHeaders, isPathInsideOrEqual } from "./core/utils/serverSecurity.js";
+import { parseStoredHistoryContent } from "./core/utils/parseStoredHistoryContent.js";
 import { maskApiKey, isMaskedApiKey } from "./core/config.js";
 import { isPendingPromptOwner } from "./core/agent/pendingPromptOwnership.js";
 import { recordAgentTimeline } from "./core/channels/tlineAgentTimeline.js";
@@ -1789,10 +1790,10 @@ export async function handleServerRoute(
       logE2E("SUPERAGENT-SERVER", `GET /api/history dbResult`, { targetSessionId, found: !!dbResult?.session, count: dbResult?.messages?.length });
       if (dbResult && dbResult.session && dbResult.messages.length > 0) {
         const formattedMsgs = dbResult.messages.map((m) => {
-          let content = m.content;
-          if (typeof m.content === "string" && (m.content.startsWith("[") || m.content.startsWith("{"))) {
-            try { content = JSON.parse(m.content); } catch (e) { console.debug("[serverRoutes] content JSON.parse failed:", (e as Error)?.message); }
-          }
+          // Historical rows may hold JSON arrays or literal markdown
+          // such as "[RMemory] ...". Preserve original text.
+          const content = parseStoredHistoryContent(m.content);
+
           let toolCalls = undefined;
           if (m.toolCalls) {
             try { toolCalls = JSON.parse(m.toolCalls); } catch (e) { console.debug("[serverRoutes] toolCalls JSON.parse failed:", (e as Error)?.message); }
