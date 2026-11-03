@@ -237,8 +237,10 @@ $("save-label").addEventListener("click", async () => {
 
 $("save-pairing").addEventListener("click", async () => {
   const token = $("pairing-key").value;
-  if (token !== "" && (token.length < 32 || token.length > 512)) {
-    $("action-note").textContent = "Kunci pairing harus 32–512 karakter.";
+  const code = /^[A-HJ-NP-Z2-9]{8}$/.test(token.toUpperCase().replace(/[\s-]/g, ""));
+  const legacy = token.length >= 32 && token.length <= 512;
+  if (token !== "" && !code && !legacy) {
+    $("action-note").textContent = "Kode harus 8 karakter sesuai yang tampil di terminal.";
     return;
   }
   $("save-pairing").disabled = true;
@@ -248,7 +250,9 @@ $("save-pairing").addEventListener("click", async () => {
     });
     if (!result?.ok) throw new Error(result?.error || "Gagal menyimpan kunci.");
     $("pairing-key").value = "";
-    $("action-note").textContent = "Kunci tersimpan. Koneksi sedang diverifikasi ulang.";
+    $("action-note").textContent = code
+      ? "Kode dikirim untuk pairing. Periksa status CONNECTED."
+      : "Kunci tersimpan. Koneksi sedang diverifikasi ulang.";
     renderStatus(result.status);
   } catch (reason) {
     $("action-note").textContent = String(reason?.message || reason);

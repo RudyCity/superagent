@@ -1,7 +1,8 @@
-import { randomUUID, createHash, timingSafeEqual } from "node:crypto";
+import { randomUUID, randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import WebSocket, { WebSocketServer } from "ws";
 import type { IncomingMessage } from "node:http";
+import { writeDelegateConnectionAudit, flushDelegateConnectionAudit, safeAuditText, type DelegateAuditEvent, type DelegateAuditRecord, type DelegateAuditSink } from "./connectionAudit.js";
 
 export type DelegateMethod =
   | "delegate.create_chat"
@@ -22,6 +23,7 @@ type ClientSession = {
   label: string;
   extensionId: string;
   connectedAt: number;
+  connectionId: string;
   socket: WebSocket;
 };
 
@@ -37,6 +39,17 @@ const CLIENT_ID_PATTERN = /^[a-zA-Z0-9_-]{8,80}$/;
 const MAX_CONNECTED_CLIENTS = 8;
 const MAX_OPEN_SOCKETS = 32;
 const MAX_RPC_FRAME_BYTES = 2_000_000;
+const PAIR_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const PAIR_CODE_TTL_MS = 10 * 60_000;
+const MAX_BAD_PAIR_ATTEMPTS = 5;
+const PAIR_ATTEMPT_WINDOW_MS = 60_000;
+function createPairingCode(): string {
+  const values = randomBytes(8);
+  return Array.from(values, byte => PAIR_CODE_CHARS[byte & 31]).join("");
+}
+function normalizePairingCode(input: unknown): string {
+  return typeof input === "string" ? input.toUpperCase().replace(/[\s-]/g, "") : "";
+}
 
 /** Constant-time digest comparison avoids exposing differences in token length. */
 function tokenMatches(expected: string, supplied: unknown): boolean {
@@ -50,12 +63,38 @@ export class DelegateBridge {
   private server: WebSocketServer | undefined;
   private starting: Promise<void> | undefined;
   private authenticatedToken = "";
+  private pairingCode = "";
+  private pairingIssuedAt = 0;
+  private pairingTimeout: ReturnType<typeof setTimeout> | undefined;
+  private badPairAttempts: number[] = [];
+  private pairedClients = new Map<string, { extensionId: string; token: string }>();
   private clients = new Map<string, ClientSession>();
   private pending = new Map<string, Pending>();
   private waiters = new Set<() => void>();
 
   /** Optional test override. In deployed hosts the secret comes from process.env. */
-  constructor(readonly port = 17341, private readonly tokenOverride?: string) {}
+  constructor(
+    readonly port = 17341,
+    private readonly tokenOverride?: string,
+    private readonly auditSink: DelegateAuditSink = writeDelegateConnectionAudit,
+    private readonly pairingNotice: (line: string) => void = line => console.info(line),
+  ) {}
+
+  private audit(event: DelegateAuditEvent, details: Partial<DelegateAuditRecord> = {}): void {
+    const record: DelegateAuditRecord = {
+      timestamp: new Date().toISOString(),
+      event,
+      pid: process.pid,
+      listenerPort: this.port,
+      endpoint: `ws://127.0.0.1:${this.port}`,
+      activeProfiles: this.listConnections().length,
+      openSockets: this.server?.clients.size ?? 0,
+      pendingRequests: this.pending.size,
+      ...details,
+    };
+    try { this.auditSink(record); } catch { /* audit cannot interrupt RPC */ }
+  }
+
 
   private getAuthToken(): string {
     const file = process.env.SUPERAGENT_DELEGATE_AUTH_TOKEN_FILE?.trim();
@@ -80,10 +119,42 @@ export class DelegateBridge {
     if (token && (token.length < 32 || token.length > 512)) {
       throw new Error("DELEGATE_AUTH_CONFIGURATION_INVALID: Configure a 32–512 character random token");
     }
-    if (!token && process.env.NODE_ENV === "production") {
-      throw new Error("DELEGATE_AUTH_REQUIRED: Configure SUPERAGENT_DELEGATE_AUTH_TOKEN or SUPERAGENT_DELEGATE_AUTH_TOKEN_FILE before production startup");
+    // No manual token-file creation is required. The default is a random
+    // per-process secret and a short-lived console pairing code. Previously
+    // paired profiles must re-pair after a host restart in this mode.
+    if (!token && this.tokenOverride === undefined &&
+        !process.env.VITEST && process.env.NODE_ENV !== "test") {
+      return randomBytes(32).toString("hex");
     }
     return token;
+  }
+
+  private issuePairingCode(): void {
+    if (!this.authenticatedToken || !this.server) return;
+    if (this.pairingTimeout) clearTimeout(this.pairingTimeout);
+    this.pairingCode = createPairingCode();
+    this.pairingIssuedAt = Date.now();
+    const displayed = this.pairingCode.slice(0, 4) + "-" + this.pairingCode.slice(4);
+    // Print ONLY the short, expiring code to the local terminal, never
+    // into connectionAudit JSONL / network / persistent credentials.
+    this.pairingNotice("[Delegate][PAIR] Kode: " + displayed +
+      " | berlaku 10 menit, sekali pakai | masukkan di popup Delegate");
+    this.pairingTimeout = setTimeout(() => {
+      if (this.server) this.issuePairingCode();
+    }, PAIR_CODE_TTL_MS);
+    this.pairingTimeout.unref?.();
+  }
+
+  private validatePairCode(submitted: unknown): boolean {
+    const input = normalizePairingCode(submitted);
+    if (!/^[A-HJ-NP-Z2-9]{8}$/.test(input)) return false;
+    const now = Date.now();
+    this.badPairAttempts = this.badPairAttempts.filter(t => now - t < PAIR_ATTEMPT_WINDOW_MS);
+    if (this.badPairAttempts.length >= MAX_BAD_PAIR_ATTEMPTS) return false;
+    if (!this.pairingCode || now - this.pairingIssuedAt >= PAIR_CODE_TTL_MS) return false;
+    if (tokenMatches(this.pairingCode, input)) return true;
+    this.badPairAttempts.push(now);
+    return false;
   }
 
   listConnections(): DelegateClientInfo[] {
@@ -116,10 +187,21 @@ export class DelegateBridge {
         host: "127.0.0.1",
         port: this.port,
         maxPayload: MAX_RPC_FRAME_BYTES,
-        verifyClient: (info: { origin?: string }) => {
+        verifyClient: (info: { origin?: string; req: IncomingMessage }) => {
           const origin = info.origin || "";
-          if (!/^chrome-extension:\/\/[a-p]{32}$/.test(origin)) return false;
-          return !expectedId || origin === `chrome-extension://${expectedId}`;
+          const validOrigin = /^chrome-extension:\/\/[a-p]{32}$/.test(origin);
+          const allowed = validOrigin && (!expectedId || origin === `chrome-extension://${expectedId}`);
+          if (!allowed) {
+            this.audit("origin_rejected", {
+              remoteAddress: safeAuditText(info.req?.socket.remoteAddress, 64),
+              remotePort: info.req?.socket.remotePort,
+              extensionId: validOrigin ? origin.slice("chrome-extension://".length) : undefined,
+              reasonCode: validOrigin ? "EXTENSION_ID_MISMATCH" : "INVALID_EXTENSION_ORIGIN",
+              authMode: this.authenticatedToken ? "pairing_required" : "development_unpaired",
+              authVerified: false,
+            });
+          }
+          return allowed;
         },
       });
       const onError = (error: Error) => {
@@ -131,6 +213,10 @@ export class DelegateBridge {
         wss.off("error", onError);
         this.server = wss;
         wss.on("connection", (socket, req) => this.onConnection(socket, req));
+        this.audit("listener_started", {
+          authMode: this.authenticatedToken ? "pairing_required" : "development_unpaired",
+        });
+        this.issuePairingCode();
         resolve();
       });
     });
@@ -150,12 +236,39 @@ export class DelegateBridge {
   private onConnection(socket: WebSocket, req: IncomingMessage): void {
     const origin = String(req.headers.origin || "");
     const extensionId = origin.replace(/^chrome-extension:\/\//, "");
+    const connectionId = randomUUID();
+    const openedAt = Date.now();
+    const base = {
+      connectionId,
+      extensionId,
+      remoteAddress: safeAuditText(req.socket.remoteAddress, 64),
+      remotePort: req.socket.remotePort,
+      authMode: this.authenticatedToken ? "pairing_required" as const : "development_unpaired" as const,
+    };
+    const log = (event: DelegateAuditEvent, extra: Partial<DelegateAuditRecord> = {}) =>
+      this.audit(event, { ...base, ...extra });
+    let active: ClientSession | undefined;
+    let rejectedReason: string | undefined;
+    const reject = (reasonCode: string) => {
+      if (rejectedReason) return;
+      rejectedReason = reasonCode;
+      log("handshake_rejected", {
+        authVerified: false,
+        reasonCode,
+        handshakeDurationMs: Date.now() - openedAt,
+      });
+      socket.close(1008, reasonCode);
+    };
+    log("socket_open", { authVerified: false });
     if ((this.server?.clients.size || 0) > MAX_OPEN_SOCKETS) {
-      socket.close(1008, "DELEGATE_SOCKET_LIMIT");
+      socket.once("close", code => log("disconnected", {
+        closeCode: code, reasonCode: "DELEGATE_SOCKET_LIMIT",
+        connectedDurationMs: 0,
+      }));
+      reject("DELEGATE_SOCKET_LIMIT");
       return;
     }
-    let active: ClientSession | undefined;
-    const helloTimer = setTimeout(() => socket.close(1008, "HELLO timeout"), 3000);
+    const helloTimer = setTimeout(() => reject("DELEGATE_HELLO_TIMEOUT"), 3000);
 
     socket.on("message", raw => {
       let msg: Record<string, unknown>;
@@ -168,40 +281,65 @@ export class DelegateBridge {
 
       if (!active) {
         if (msg.type !== "hello" || msg.protocol !== PROTOCOL) {
-          socket.close(1008, "Invalid delegate protocol");
+          reject("DELEGATE_INVALID_PROTOCOL");
           return;
         }
         const token = this.authenticatedToken;
-        if (token && !tokenMatches(token, msg.authToken)) {
-          socket.close(1008, "DELEGATE_AUTH_FAILED");
-          return;
-        }
         const declaredId = typeof msg.clientId === "string" ? msg.clientId : "";
         const clientId = CLIENT_ID_PATTERN.test(declaredId)
           ? declaredId : `legacy-${randomUUID()}`;
-        const label = typeof msg.label === "string"
-          ? msg.label.trim().slice(0, 48) || "Chrome Delegate"
-          : "Chrome Delegate";
+        const profileToken = this.pairedClients.get(clientId);
+        const validCredential = !token ||
+          tokenMatches(token, msg.authToken) ||
+          (profileToken?.extensionId === extensionId &&
+            tokenMatches(profileToken.token, msg.authToken));
+        const wantPair = !validCredential && typeof msg.pairingCode === "string";
+        if (!validCredential && !wantPair) {
+          reject("DELEGATE_AUTH_FAILED");
+          return;
+        }
+        if (wantPair && !this.validatePairCode(msg.pairingCode)) {
+          reject(this.badPairAttempts.length >= MAX_BAD_PAIR_ATTEMPTS
+            ? "DELEGATE_PAIR_RATE_LIMIT" : "DELEGATE_PAIR_CODE_INVALID");
+          return;
+        }
+        const label = safeAuditText(msg.label, 48) || "Chrome Delegate";
+        const extensionVersion = safeAuditText(msg.extensionVersion, 32);
+        const browserUserAgent = safeAuditText(msg.browserUserAgent, 180);
 
         const existing = this.clients.get(clientId);
         if (existing && existing.socket.readyState === WebSocket.OPEN) {
           // Never allow takeover or forced disconnect of a live profile,
           // even if the two extensions share the same origin and token.
-          socket.close(1008, "DELEGATE_DUPLICATE_CLIENT_ID");
+          reject("DELEGATE_DUPLICATE_CLIENT_ID");
           return;
         }
         if (!existing && this.listConnections().length >= MAX_CONNECTED_CLIENTS) {
-          socket.close(1008, "DELEGATE_CLIENT_LIMIT");
+          reject("DELEGATE_CLIENT_LIMIT");
           return;
         }
 
-        active = { clientId, label, extensionId, connectedAt: Date.now(), socket };
+        const issuedClientToken = wantPair ? randomBytes(32).toString("hex") : undefined;
+        if (issuedClientToken) {
+          this.pairedClients.set(clientId, { extensionId, token: issuedClientToken });
+        }
+        active = { clientId, label, extensionId, connectedAt: Date.now(), connectionId, socket };
         this.clients.set(clientId, active);
         clearTimeout(helloTimer);
         socket.send(JSON.stringify({
           type: "hello_ack", protocol: PROTOCOL,
           clientId, clients: this.listConnections(),
+          ...(issuedClientToken ? { authToken: issuedClientToken } : {}),
         }));
+        if (issuedClientToken) {
+          log("pairing_accepted", { clientId, profileLabel: label, authVerified: true });
+          this.issuePairingCode(); // next code, for the next Chrome profile
+        }
+        log("connected", {
+          clientId, profileLabel: label, extensionVersion, browserUserAgent,
+          authVerified: validCredential && token.length > 0 || !!issuedClientToken,
+          handshakeDurationMs: Date.now() - openedAt,
+        });
         this.broadcastConnections();
         for (const notify of this.waiters) notify();
         this.waiters.clear();
@@ -210,8 +348,12 @@ export class DelegateBridge {
 
       if (msg.type === "client_info") {
         if (typeof msg.label === "string") {
-          active.label = msg.label.trim().slice(0, 48) || "Chrome Delegate";
-          this.broadcastConnections();
+          const next = safeAuditText(msg.label, 48) || "Chrome Delegate";
+          if (next !== active.label) {
+            active.label = next;
+            log("client_updated", { clientId: active.clientId, profileLabel: next, authVerified: this.authenticatedToken.length > 0 });
+            this.broadcastConnections();
+          }
         }
         return;
       }
@@ -233,7 +375,7 @@ export class DelegateBridge {
       }
     });
 
-    socket.on("close", () => {
+    socket.on("close", code => {
       clearTimeout(helloTimer);
       this.rejectPendingForSocket(socket,
         "DELEGATE_EXTENSION_DISCONNECTED: Request not retried");
@@ -241,8 +383,22 @@ export class DelegateBridge {
         this.clients.delete(active.clientId);
         this.broadcastConnections();
       }
+      log("disconnected", {
+        clientId: active?.clientId,
+        profileLabel: active?.label,
+        authVerified: !!active && this.authenticatedToken.length > 0,
+        closeCode: code,
+        reasonCode: rejectedReason || (active ? (code === 1000 ? "CLIENT_NORMAL_CLOSE" : "CONNECTION_CLOSED") : "UNAUTHENTICATED_CLOSE"),
+        connectedDurationMs: active ? Date.now() - active.connectedAt : undefined,
+        handshakeDurationMs: active ? active.connectedAt - openedAt : undefined,
+      });
     });
-    socket.on("error", () => {}); // close handles pending operations
+    socket.on("error", error => {
+      log("socket_error", {
+        clientId: active?.clientId,
+        transportErrorCode: safeAuditText((error as NodeJS.ErrnoException).code, 64) || "SOCKET_ERROR",
+      });
+    }); // close handles pending operations
   }
 
   private async connected(clientId?: string, signal?: AbortSignal): Promise<ClientSession> {
@@ -352,8 +508,14 @@ export class DelegateBridge {
     const server = this.server;
     this.server = undefined;
     this.starting = undefined;
-    this.authenticatedToken = "";
+    this.pairingCode = "";
+    this.pairedClients.clear();
+    if (this.pairingTimeout) clearTimeout(this.pairingTimeout);
+    this.pairingTimeout = undefined;
     if (server) await new Promise<void>(resolve => server.close(() => resolve()));
+    this.audit("listener_closed");
+    this.authenticatedToken = "";
+    await flushDelegateConnectionAudit();
   }
 }
 

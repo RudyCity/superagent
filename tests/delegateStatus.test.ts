@@ -37,9 +37,9 @@ function fixture(
     open() { this.readyState = FakeSocket.OPEN; this.fire("open"); }
     send(data: string) { this.sent.push(JSON.parse(data)); }
     message(data: any) { this.fire("message", { data: JSON.stringify(data) }); }
-    close(code = 1006) {
+    close(code = 1006, reason = "") {
       this.readyState = FakeSocket.CLOSED;
-      this.fire("close", { code });
+      this.fire("close", { code, reason });
     }
   }
 
@@ -58,6 +58,7 @@ function fixture(
     runtime: {
       id: "delegate-test",
       getURL: (path: string) => "chrome-extension://delegate-test/" + path,
+      getManifest: () => ({ version: "1.3.0" }),
       onMessage: { addListener: (handler: typeof onMessage) => { onMessage = handler; } },
       onStartup: { addListener: (_handler: Listener) => {} },
       onInstalled: { addListener: (_handler: Listener) => {} },
@@ -98,6 +99,7 @@ function fixture(
     clearTimeout: (id: number) => timers.delete(id),
     setInterval: () => 1,
     crypto: { randomUUID: () => "delegate-test-profile-002" },
+    navigator: { userAgent: "Chrome Test Agent" },
     Date,
   });
 
@@ -275,5 +277,47 @@ describe("Delegate connection status", () => {
     expect(result.ok).toBe(false);
     expect(result.error).toBe("DELEGATE_TAB_ORIGIN_DENIED");
     expect(injections).toEqual([]);
+  });
+
+  it("accepts an eight-character terminal pairing code and saves issued token only after ack", async () => {
+    const { update, sockets, stored, ask } = fixture();
+    const attempt = await update("set_pairing", { token: "ABCD-EFGH" });
+    expect(attempt.ok).toBe(true);
+    expect(attempt.status.pairingInProgress).toBe(true);
+    expect(stored.delegateAuthToken).toBe("");
+    expect(sockets).toHaveLength(2);
+    sockets[1].open();
+    expect(sockets[1].sent[0]).toMatchObject({
+      type: "hello", pairingCode: "ABCDEFGH",
+      clientId: "delegate-test-profile-001",
+    });
+    expect(sockets[1].sent[0].authToken).toBeUndefined();
+    const issued = "f".repeat(64);
+    sockets[1].message({
+      type: "hello_ack", protocol: "superagent-delegate-v1",
+      authToken: issued,
+    });
+    for (let i = 0; i < 8 && stored.delegateAuthToken !== issued; i++) {
+      await Promise.resolve();
+    }
+    expect(stored.delegateAuthToken).toBe(issued);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(ask("get_status").status.connected).toBe(true);
+    expect(ask("get_status").status.pairingInProgress).toBe(false);
+    expect(JSON.stringify(ask("get_status"))).not.toContain("ABCDEFGH");
+    expect(JSON.stringify(ask("get_status"))).not.toContain(issued);
+  });
+
+  it("stops automatic retries when server rejects pairing code", async () => {
+    const { update, sockets, ask } = fixture();
+    await update("set_pairing", { token: "WXYZ-2345" });
+    sockets[1].open();
+    sockets[1].close(1008, "DELEGATE_PAIR_CODE_INVALID");
+    expect(ask("get_status").status.connected).toBe(false);
+    expect(ask("get_status").status.nextRetryAt).toBeNull();
+    expect(sockets).toHaveLength(2);
+    const next = await update("set_pairing", { token: "ABCD-EFGH" });
+    expect(next.ok).toBe(true);
+    expect(sockets).toHaveLength(3);
   });
 });

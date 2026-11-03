@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import net from "node:net";
 import WebSocket from "ws";
 import { DelegateBridge } from "../src/core/delegate/bridge.js";
+import type { DelegateAuditRecord } from "../src/core/delegate/connectionAudit.js";
 
 const originA = "chrome-extension://" + "a".repeat(32);
 const originB = "chrome-extension://" + "b".repeat(32);
@@ -16,9 +17,13 @@ async function freePort(): Promise<number> {
 
 const active: Array<{ bridge: DelegateBridge; clients: WebSocket[] }> = [];
 async function testBridge(token?: string) {
-  const bridge = new DelegateBridge(await freePort(), token);
+  const records: DelegateAuditRecord[] = [];
+  const pairMessages: string[] = [];
+  const bridge = new DelegateBridge(await freePort(), token,
+    record => records.push(record),
+    line => pairMessages.push(line));
   await bridge.start();
-  const entry = { bridge, clients: [] as WebSocket[] };
+  const entry = { bridge, records, pairMessages, clients: [] as WebSocket[] };
   active.push(entry);
   return entry;
 }
@@ -237,5 +242,97 @@ describe("multiple independent Chrome Delegate connections", () => {
     expect(await closed).toBe(1008);
     expect(existing.readyState).toBe(WebSocket.OPEN);
     expect(entry.bridge.listConnections().map(c => c.label)).toEqual(["Original"]);
+  });
+
+  it("prints short one-time pairing codes and issues per-profile secrets without logging them", async () => {
+    const entry = await testBridge("d".repeat(64));
+    const codeLine = entry.pairMessages[0];
+    expect(codeLine).toMatch(/\[Delegate\]\[PAIR\] Kode: [A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}/);
+    const code = codeLine.match(/Kode: ([A-HJ-NP-Z2-9-]+)/)![1];
+    const pair = async (clientId: string, pairingCode: string) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${entry.bridge.port}`, { headers: { Origin: originA } });
+      entry.clients.push(ws);
+      await new Promise<void>((resolve, reject) => {
+        ws.once("open", resolve); ws.once("error", reject);
+      });
+      const ack = new Promise<any>((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error("pairing ack timed out")), 1600);
+        ws.on("message", raw => {
+          const m = JSON.parse(raw.toString());
+          if (m.type === "hello_ack") { clearTimeout(t); resolve(m); }
+        });
+      });
+      ws.send(JSON.stringify({ type: "hello", protocol: "superagent-delegate-v1",
+        clientId, label: "Paired browser", pairingCode }));
+      return { ws, result: await ack };
+    };
+    const first = await pair("chrome-work-001", code);
+    expect(first.result.authToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(first.result.authToken).not.toBe("d".repeat(64));
+    expect(entry.pairMessages).toHaveLength(2);
+    const secondCode = entry.pairMessages[1].match(/Kode: ([A-HJ-NP-Z2-9-]+)/)![1];
+    expect(secondCode).not.toBe(code);
+    // The already-consumed code cannot enroll a third client.
+    const replay = new WebSocket(`ws://127.0.0.1:${entry.bridge.port}`, {
+      headers: { Origin: originA },
+    });
+    entry.clients.push(replay);
+    await new Promise<void>((resolve, reject) => {
+      replay.once("open", resolve); replay.once("error", reject);
+    });
+    const replayClosed = new Promise<number>(resolve =>
+      replay.once("close", closeCode => resolve(closeCode)));
+    replay.send(JSON.stringify({
+      type: "hello", protocol: "superagent-delegate-v1",
+      clientId: "chrome-replay-001", label: "Replay", pairingCode: code,
+    }));
+    expect(await replayClosed).toBe(1008);
+    expect(entry.records.some(r => r.reasonCode === "DELEGATE_PAIR_CODE_INVALID")).toBe(true);
+
+
+    const second = await pair("chrome-personal-001", secondCode);
+    expect(second.result.authToken).toMatch(/^[a-f0-9]{64}$/);
+    expect(second.result.authToken).not.toBe(first.result.authToken);
+    expect(entry.bridge.listConnections()).toHaveLength(2);
+    expect(entry.records.filter(r => r.event === "pairing_accepted")).toHaveLength(2);
+    for (const audit of entry.records) {
+      const record = JSON.stringify(audit);
+      expect(record).not.toContain(first.result.authToken);
+      expect(record).not.toContain(second.result.authToken);
+      expect(record).not.toContain(code);
+    }
+
+    first.ws.close();
+    await new Promise<void>(resolve => first.ws.once("close", () => resolve()));
+    for (let i = 0; i < 30 && entry.bridge.listConnections().length !== 1; i++) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    // The profile's long-lived in-process token reconnects without re-pairing.
+    const returned = await connect(entry, "chrome-work-001", "Paired again", originA, first.result.authToken);
+    expect(returned.readyState).toBe(WebSocket.OPEN);
+    expect(entry.bridge.listConnections()).toHaveLength(2);
+  });
+
+  it("refuses used pairing codes and rate-limits bad guesses", async () => {
+    const entry = await testBridge("e".repeat(64));
+    const code = entry.pairMessages[0].match(/Kode: ([A-HJ-NP-Z2-9-]+)/)![1];
+    const hello = async (clientId: string, pairingCode: string) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${entry.bridge.port}`, { headers: { Origin: originA } });
+      entry.clients.push(ws);
+      await new Promise<void>((resolve, reject) => {
+        ws.once("open", resolve); ws.once("error", reject);
+      });
+      const result = new Promise<number>(resolve => ws.once("close", (code) => resolve(code)));
+      ws.send(JSON.stringify({ type: "hello", protocol: "superagent-delegate-v1",
+        clientId, label: "Unauthenticated", pairingCode }));
+      return await result;
+    };
+    for (let i = 0; i < 5; i++) {
+      expect(await hello("attacker-" + i.toString().padStart(8,"0"), "ZZZZ-ZZZZ")).toBe(1008);
+    }
+    expect(await hello("client-00001", code)).toBe(1008);
+    expect(entry.records.some(r => r.reasonCode === "DELEGATE_PAIR_RATE_LIMIT")).toBe(true);
+    expect(entry.bridge.listConnections()).toHaveLength(0);
+    expect(entry.records.some(r => r.event === "connected")).toBe(false);
   });
 });

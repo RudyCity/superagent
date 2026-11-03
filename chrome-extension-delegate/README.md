@@ -2,77 +2,79 @@
 
 This extension is entirely separate from `chrome-extension/`. Its runtime consists of `manifest.json`, `background.js`, `content.js`, and popup files; the README documents installation and security.
 
-## Production deployment and pairing — v1.3.0
+## Production pairing directly from server console — v1.4.0
 
-**Supported deployment:** one local SuperAgent agent-host process with a
-private loopback WebSocket listener on `127.0.0.1:17341`; multiple Chrome
-profiles may connect to that single host. This is **not** a public
-Internet-facing or multi-worker broker.
-
-Production mode refuses to start the Delegate listener without a random
-pairing key. Run these steps on the **same Windows user account as
-SuperAgent** (never commit, email, or paste the key into an AI conversation):
+Use a single local SuperAgent agent host and the Delegate extension installed
+in each Chrome profile on the **same computer**. No manual secret file or
+environment variable is necessary:
 
 ```powershell
 bun run build
-bun scripts/delegate-auth.mjs init
-bun scripts/delegate-auth.mjs status
-# Prints the secret ONLY when the operator deliberately needs to pair a profile:
-bun scripts/delegate-auth.mjs show
-
-# Restart the single SuperAgent agent host with this environment:
-$env:NODE_ENV = "production"
-$env:SUPERAGENT_DELEGATE_AUTH_TOKEN_FILE = Join-Path $HOME ".superagent-r\delegate-auth-token"
 bun dist/cli.js --server 7888
 ```
 
-`init` creates `~/.superagent-r/delegate-auth-token` with a random
-256-bit key using exclusive-create; it never replaces an existing key.
-On POSIX the file must have mode 0600. On Windows protect this user
-profile folder with OS account permissions and avoid sharing the key.
-The environment variable `SUPERAGENT_DELEGATE_AUTH_TOKEN` is also
-accepted, but environment values may be exposed to process diagnostics;
-the private file is preferable.
+On startup the server generates a 256-bit in-memory secret and displays
+an **8-character, one-time pairing code** in the server console, for example:
 
-Open each Chrome profile, reload the unpacked Delegate extension,
-open its popup, and paste the same secret into **Kunci pairing produksi**
-then **Simpan**. The secret is stored only in that Chrome profile's
-extension-local storage, with content-script access disabled via
-`TRUSTED_CONTEXTS`; it is not included in status responses or logs.
-Reconnection never resends a chat message. For a release rollback, switch
-the server and extension back to a previously verified matching pair,
-not to an unauthenticated production bridge.
+```text
+[Delegate][PAIR] Kode: ABCD-EFGH | berlaku 10 menit, sekali pakai | masukkan di popup Delegate
+```
 
-A second or copied Chrome installation with the **same active clientId**
-is rejected rather than evicting the first. Maximum eight authenticated
-Delegate profiles and 2 MB incoming RPC frames are supported per bridge.
-If `SUPERAGENT_DELEGATE_EXTENSION_ID` is set, the supplied Chrome extension
-origin must match it as an extra restriction. Origin headers alone are
-not authentication.
+This is an *illustrative* code, not a usable production value. Open
+`chrome://extensions`, reload **SuperAgent Delegate**, click its popup,
+turn it ON, enter the actual displayed code in **Kode pairing dari terminal**,
+and press **Pair**. After a successful handshake, the extension receives a
+random 256-bit **profile-specific token**, stores it in trusted
+`chrome.storage.local`, and automatically reconnects without re-entering
+the code for the rest of that server process's lifetime.
 
-To activate an already-open ChatGPT tab whose popup says **belum siap**,
-click **Aktifkan** in its tab row. This requires the `scripting`
-permission and inserts only the packaged `content.js` on a verified
-`https://chatgpt.com/*` tab. It never navigates, reloads, runs arbitrary
-scripts, or submits any message. No repair is attempted automatically
-on a mutating RPC.
+After one Chrome profile is paired, the server automatically displays a
+**new** one-time code for the next profile. The old code cannot be reused.
+Codes expire after 10 minutes, and the console displays a replacement.
+Five invalid pairing attempts per minute trigger a temporary lockout.
+The token and submitted code are **never written to the persistent connection
+audit JSONL** or returned in status responses. Treat the server console as
+private while a code is active.
+
+**Restart behavior:** in the default fileless mode, the host intentionally
+rotates its in-memory secret on restart, so each browser must pair again
+using the *new* console code. Previously saved browser tokens no longer work.
+This is a security trade-off for eliminating secret-file management.
+To preserve pairing through restarts, an administrator can optionally
+configure the existing 32–512 character token through
+`SUPERAGENT_DELEGATE_AUTH_TOKEN` or
+`SUPERAGENT_DELEGATE_AUTH_TOKEN_FILE`; the same short-code pairing
+workflow still works without copying the master secret into Chrome.
+If an old, invalid `SUPERAGENT_DELEGATE_AUTH_TOKEN_FILE` variable is set,
+clear it from the shell before starting the fileless mode.
+
+The console also prints sanitized structured **connection events** for
+`listener_started`, `socket_open`, `connected`, `pairing_accepted`,
+`client_updated`, `handshake_rejected`, `disconnected`, and other
+transport failures. Persistent audit files are written daily under
+`~/.superagent-r/logs/delegate-connections-YYYY-MM-DD.jsonl`, including
+UTC timestamp, connectionId, clientId, profile label, extension ID/version,
+browser user agent, localhost remote address/port, pairing status, active
+connection count, duration, close code and reason. No auth headers, cookies,
+chat messages, pairing codes or long tokens are included.
+
+Maximum 8 concurrent Chrome profiles; the extension's ON/OFF toggle is
+per Chrome profile. If several profiles are online, select `clientId`
+explicitly in every Delegate action. A second session with an already-live
+`clientId` is denied instead of evicting the existing client.
+The fixed WebSocket port `127.0.0.1:17341` must never be exposed publicly.
+
+### Verification and packaging
 
 ```powershell
 bun run verify:delegate
 bun run release:delegate
 ```
 
-The release script writes a deterministic, allowlisted ZIP and a SHA-256
-receipt to `build/releases/`. Only six extension runtime files go into
-the ZIP, never workspace files, secrets or Chrome user data. The ZIP
-is an unpacked/testing artifact; **Chrome Web Store publication is a
-separate distribution process and has not been performed.**
-
-**Acceptance limitation:** full production authorization requires a
-real Chrome end-to-end test of `send_message` and `stop_generation`,
-verification of existing-chat-to-new-chat, and explicit validation of any
-supervised multi-process runtime. Unit tests, packaging and an ON badge
-are not sufficient proof.
+The deterministic allowlisted ZIP and SHA-256 receipt are placed in
+`build/releases/` (only six extension runtime files, no secrets).
+Chrome Web Store publication and full real-browser send/stop production
+acceptance are **separate steps**, not claimed by these checks.
 
 ## Two extensions and multiple Chrome profiles — v1.2.0
 

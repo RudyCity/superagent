@@ -27,6 +27,8 @@ let initialized = false;
 let clientId = null;
 let profileLabel = "Chrome Delegate";
 let authToken = "";
+let pairingCode = "";
+let authBlocked = false;
 let connectedClients = [];
 
 const inFlight = new Set();
@@ -41,6 +43,7 @@ function getConnectionStatus() {
     state: connectionStatus,
     enabled,
     authConfigured: authToken.length >= 32,
+    pairingInProgress: !!pairingCode,
     clientId,
     profileLabel,
     connectedClients,
@@ -88,7 +91,7 @@ function cancelRetry() {
 }
 
 function scheduleReconnect() {
-  if (!enabled || !initialized || reconnectTimer !== null) return;
+  if (!enabled || !initialized || authBlocked || reconnectTimer !== null) return;
   const delay = Math.min(RECONNECT_MAX_MS, RECONNECT_MIN_MS * 2 ** Math.min(failures++, 5));
   nextRetryAt = Date.now() + delay;
   setStatus("reconnecting");
@@ -101,7 +104,7 @@ function scheduleReconnect() {
 }
 
 function connect() {
-  if (!enabled || !initialized) return;
+  if (!enabled || !initialized || authBlocked) return;
   if (socket && (
     socket.readyState === WebSocket.CONNECTING ||
     socket.readyState === WebSocket.OPEN
@@ -129,7 +132,15 @@ function connect() {
         ws.close();
       }
     }, 5_000);
-    ws.send(JSON.stringify({ type: "hello", protocol: PROTOCOL, clientId, label: profileLabel, ...(authToken ? { authToken } : {}) }));
+    ws.send(JSON.stringify({
+      type: "hello",
+      protocol: PROTOCOL,
+      clientId,
+      label: profileLabel,
+      extensionVersion: chrome.runtime.getManifest().version,
+      browserUserAgent: typeof navigator === "object" ? navigator.userAgent : "unknown",
+      ...(pairingCode ? { pairingCode } : (authToken ? { authToken } : {})),
+    }));
   });
 
   ws.addEventListener("message", (event) => {
@@ -139,12 +150,38 @@ function connect() {
     if (envelope?.type === "hello_ack" && envelope.protocol === PROTOCOL) {
       clearTimeout(handshakeTimer);
       handshakeTimer = null;
-      failures = 0;
-      isReady = true;
-      lastError = null;
-      lastConnectedAt = Date.now();
-      connectedClients = Array.isArray(envelope.clients) ? envelope.clients : [];
-      setStatus("connected");
+      const accepted = () => {
+        if (socket !== ws) return;
+        failures = 0;
+        authBlocked = false;
+        isReady = true;
+        lastError = null;
+        lastConnectedAt = Date.now();
+        connectedClients = Array.isArray(envelope.clients) ? envelope.clients : [];
+        setStatus("connected");
+      };
+      if (pairingCode) {
+        if (typeof envelope.authToken !== "string" ||
+            envelope.authToken.length < 32 || envelope.authToken.length > 512) {
+          lastError = "Server tidak mengeluarkan kredensial pairing yang valid.";
+          ws.close(1008, "DELEGATE_PAIR_RESPONSE_INVALID");
+          return;
+        }
+        const receivedToken = envelope.authToken;
+        void chrome.storage.local.set({ delegateAuthToken: receivedToken })
+          .then(() => {
+            if (socket !== ws) return;
+            authToken = receivedToken;
+            pairingCode = "";
+            accepted();
+          })
+          .catch(() => {
+            lastError = "Gagal menyimpan kredensial pairing pada profil Chrome.";
+            ws.close(1008, "DELEGATE_PAIR_STORAGE_FAILED");
+          });
+        return;
+      }
+      accepted();
       return;
     }
     if (envelope?.type === "clients_update" && envelope.protocol === PROTOCOL) {
@@ -164,7 +201,9 @@ function connect() {
     socket = null;
     if (event.code === 1008 && event.reason) {
       const reasons = {
-        DELEGATE_AUTH_FAILED: "Kunci pairing tidak cocok. Simpan ulang kunci dari host SuperAgent.",
+        DELEGATE_AUTH_FAILED: "Belum dipasangkan. Masukkan kode dari terminal SuperAgent.",
+        DELEGATE_PAIR_CODE_INVALID: "Kode pairing salah atau kedaluwarsa. Lihat kode terbaru di terminal server.",
+        DELEGATE_PAIR_RATE_LIMIT: "Terlalu banyak percobaan pairing. Coba setelah 1 menit.",
         DELEGATE_DUPLICATE_CLIENT_ID: "Client ID sedang dipakai Chrome lain. Periksa identitas profil.",
         DELEGATE_CLIENT_LIMIT: "Batas Chrome Delegate aktif tercapai (8 profil).",
         DELEGATE_SOCKET_LIMIT: "Koneksi sedang terlalu banyak, coba ulang.",
@@ -176,6 +215,13 @@ function connect() {
         : "Koneksi terputus. Pastikan server SuperAgent berjalan.";
     }
     connectedClients = [];
+    if (event.code === 1008 && [
+      "DELEGATE_AUTH_FAILED", "DELEGATE_PAIR_CODE_INVALID", "DELEGATE_PAIR_RATE_LIMIT",
+      "DELEGATE_PAIR_RESPONSE_INVALID", "DELEGATE_PAIR_STORAGE_FAILED",
+    ].includes(event.reason)) {
+      pairingCode = "";
+      authBlocked = true; // wait for a fresh manual code; don't brute-force on timers
+    }
     if (enabled) {
       setStatus("disconnected");
       scheduleReconnect();
@@ -234,26 +280,35 @@ async function setProfileLabel(next) {
 }
 
 async function setPairingToken(next) {
-  if (typeof next !== "string" || (next !== "" && (next.length < 32 || next.length > 512))) {
-    return { ok: false, error: "Kunci pairing harus 32–512 karakter, atau kosong untuk menghapusnya." };
+  if (typeof next !== "string") return { ok: false, error: "Kode pairing harus berupa teks." };
+  const normalized = next.toUpperCase().replace(/[\s-]/g, "");
+  const shortCode = /^[A-HJ-NP-Z2-9]{8}$/.test(normalized);
+  const longToken = next.length >= 32 && next.length <= 512;
+  if (next && !shortCode && !longToken) {
+    return { ok: false, error: "Masukkan kode 8 karakter dari terminal, atau kunci lama 32–512 karakter." };
   }
   if (inFlight.size) {
-    return { ok: false, error: "DELEGATE_BUSY: Tunggu sampai operasi aktif selesai sebelum mengganti kunci." };
+    return { ok: false, error: "DELEGATE_BUSY: Tunggu sampai operasi aktif selesai sebelum pairing." };
   }
-  await chrome.storage.local.set({ delegateAuthToken: next });
-  authToken = next;
+  if (shortCode) {
+    pairingCode = normalized; // RAM only, never persisted or returned via status
+  } else {
+    await chrome.storage.local.set({ delegateAuthToken: next });
+    authToken = next; // legacy 32-512 character credential compatibility
+    pairingCode = "";
+  }
+  authBlocked = false;
   lastError = null;
   cancelRetry();
   const old = socket;
   socket = null;
   isReady = false;
   connectedClients = [];
-  if (old) old.close(1000, "Pairing token updated");
+  if (old) old.close(1000, "Pairing updated");
   if (enabled) connect();
   else setStatus("disabled");
   return { ok: true, status: getConnectionStatus() };
 }
-
 
 // Manual repair is deliberately limited to bundled content.js on an exact
 // ChatGPT tab. It does not reload the page, click, send or run arbitrary code.
