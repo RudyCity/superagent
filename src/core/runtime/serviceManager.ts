@@ -19,6 +19,10 @@ import { getMcpStateFile, readMcpStateFile } from "../mcp/mcpTunnel.js";
 import { readManagedMcpTunnelLease, probeManagedMcpTunnelOwner,
   verifyManagedOwnerIdentity, reloadManagedMcpTunnelBackend } from "./mcpManagedTunnelOwner.js";
 import { McpServiceReloadLedger } from "./serviceReloadLedger.js";
+import {planSidecarService,executeSidecarService,type SidecarService} from "./managedSidecarControl.js";
+import {readTransportOwner} from "./transportHost.js";
+import {readChannelHostDiscovery} from "./channelHost.js";
+import {planOwnedTunnelStop,stopOwnedTunnel} from "./ownedTunnelLifecycle.js";
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
@@ -29,6 +33,9 @@ export type ManageServicesArgs = {
   targetAction?:"restart"|"rollback"|"drain"|"reload"|"start"|"stop";
   confirm?:boolean; operationId?:string; expectedBuildDigest?:string;
   expectedOwnerPid?:number; expectedPublicUrl?:string;
+  expectedInstanceId?:string; noPublicIngress?:boolean;
+  expectedLocalUrl?:string;allowPublicDisruption?:boolean;
+  corePort?:number;channelMode?:"idle"|"muse-ws"|"telegram-fallback";wsPort?:number;
 };
 export type ServiceStatus = {
   service:ManagedServiceName; port?:number;
@@ -37,7 +44,7 @@ export type ServiceStatus = {
   reason:string; details?:Record<string,unknown>;
 };
 const defaultPorts:Partial<Record<ManagedServiceName,number>>={
-  core:7888,mcp:8857,transport:7891,channel_host:7892,muse:9225,
+  core:7888,mcp:8857,transport:7891,channel_host:7892,muse:7892,
   telegram:7892,vision:8095,guardian:7888,daemon:7888,
   rest_tunnel:7888,muse_tunnel:9225,
 };
@@ -53,7 +60,9 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
     throw new Error("SERVICE_ARGUMENTS_OBJECT_REQUIRED");
   const v=raw as Record<string,unknown>;
   const allowed=new Set(["action","service","port","targetAction","confirm",
-    "operationId","expectedBuildDigest","expectedOwnerPid","expectedPublicUrl"]);
+    "operationId","expectedBuildDigest","expectedOwnerPid","expectedPublicUrl",
+    "expectedInstanceId","noPublicIngress","corePort","channelMode","wsPort",
+    "expectedLocalUrl","allowPublicDisruption"]);
   if(Object.keys(v).some(k=>!allowed.has(k)))throw new Error("SERVICE_UNEXPECTED_ARGUMENT");
   if(!["inventory","status","plan","restart","rollback","drain","reload","start","stop","doctor"].includes(String(v.action)))
     throw new Error("SERVICE_UNKNOWN_ACTION");
@@ -65,8 +74,23 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
      !["restart","rollback","drain","reload","start","stop"].includes(String(v.targetAction)))
     throw new Error("SERVICE_INVALID_TARGET_ACTION");
   if(v.expectedOwnerPid!==undefined&&
-     (!Number.isSafeInteger(v.expectedOwnerPid)||Number(v.expectedOwnerPid)<=0))
+     (!Number.isSafeInteger(v.expectedOwnerPid)||Number(v.expectedOwnerPid)<0))
     throw new Error("SERVICE_INVALID_OWNER_PID");
+  if(v.expectedInstanceId!==undefined&&(typeof v.expectedInstanceId!=="string"||
+     !(/^[a-f0-9]{32}$/.test(v.expectedInstanceId)||v.expectedInstanceId==="absent")))
+    throw new Error("SERVICE_INVALID_INSTANCE_ID");
+  if(v.noPublicIngress!==undefined&&typeof v.noPublicIngress!=="boolean")
+    throw new Error("SERVICE_INVALID_INGRESS_GUARD");
+  if(v.allowPublicDisruption!==undefined&&typeof v.allowPublicDisruption!=="boolean")
+    throw new Error("SERVICE_INVALID_PUBLIC_DISRUPTION_ACK");
+  if(v.expectedLocalUrl!==undefined&&
+     (typeof v.expectedLocalUrl!=="string"||v.expectedLocalUrl.length>256||
+      !/^http:\/\/127\.0\.0\.1:\d{4,5}(?:\/|$)/.test(v.expectedLocalUrl)))
+    throw new Error("SERVICE_INVALID_LOCAL_TUNNEL_TARGET");
+  if(v.corePort!==undefined)validateServicePort(v.corePort);
+  if(v.wsPort!==undefined)validateServicePort(v.wsPort);
+  if(v.channelMode!==undefined&&!["idle","muse-ws","telegram-fallback"].includes(String(v.channelMode)))
+    throw new Error("SERVICE_INVALID_CHANNEL_MODE");
   if(v.expectedPublicUrl!==undefined&&
      (typeof v.expectedPublicUrl!=="string"||!/^https:\/\/[^\s]+$/.test(v.expectedPublicUrl)||v.expectedPublicUrl.length>1024))
     throw new Error("SERVICE_INVALID_PUBLIC_URL");
@@ -144,9 +168,12 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
     if(!data||data.service!=="superagent-transport-host"||data.publicPort!==port)
       return snap(service,port,owner?"unverified":"inactive",owner,false,["status"],
         owner?"Unrecognized listener":"No T-Line Transport Host");
-    const verified=Number.isSafeInteger(data.pid)&&owner===data.pid;
+    const registered=readTransportOwner(port!);
+    const verified=Number.isSafeInteger(data.pid)&&owner===data.pid&&
+      registered?.pid===data.pid&&registered?.instanceId===data.instanceId;
+    const actions=verified?["status","plan","stop","restart"]:["status"];
     return snap(service,port,!verified?"unverified":
-      data.backendReady?"active":"degraded",data.pid,verified,["status"],
+      data.backendReady?"active":"degraded",data.pid,verified,actions,
       verified?"Identified T-Line front door":"Transport PID mismatch",
       {corePort:data.corePort,backendReady:data.backendReady,
         activeRequests:data.activeHttpRequests,upgradedSockets:data.upgradedSockets});
@@ -157,9 +184,12 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
       hosts.find(x=>x.mode===(service==="muse"?"muse-ws":"telegram-fallback"));
     if(!h)return snap(service,service==="channel_host"?port:undefined,"inactive",
       null,false,["status"],"No verified independent channel host for "+service);
-    const verified=listeners?.get(h.port)===h.pid;
+    const registered=readChannelHostDiscovery(h.port);
+    const verified=listeners?.get(h.port)===h.pid&&
+      registered.pid===h.pid&&registered.instanceId===h.instanceId;
+    const actions=verified?["status","plan","stop","restart"]:["status"];
     return snap(service,h.port,!verified?"unverified":
-      h.status==="error"?"degraded":"active",h.pid,verified,["status"],
+      h.status==="error"?"degraded":"active",h.pid,verified,actions,
       verified?"Verified independent channel host":"Channel host kernel PID mismatch",
       {mode:h.mode,watcherActive:h.watcherActive,taskActive:h.taskActive,
         pendingReconciliation:h.reconciliationPending??0});
@@ -184,15 +214,17 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
   if(service==="rest_tunnel"||service==="muse_tunnel") {
     // A public URL or a Cloudflare registry record is NOT a verified owner.
     // In particular, the local backend's listening PID is not cloudflared's PID.
-    const { listActiveTunnels }=await import("../remoteAgent/cloudflareTunnel.js");
-    const kind=service==="rest_tunnel"?"superagent-http":"muse-websocket";
-    const tunnel=listActiveTunnels().find(x=>x.serviceKind===kind&&x.port===port);
-    return snap(service,port,tunnel?"unverified":"inactive",tunnel?.pid??null,
-      false,["status"],tunnel?
-        "Tunnel metadata found; foreign/public ingress ownership and active sessions are not authenticated here":
+    const {listActiveTunnels,isOwnQuickTunnelProcess}=await import("../remoteAgent/cloudflareTunnel.js");
+    const serviceKind=service==="rest_tunnel"?"superagent-http":"muse-websocket";
+    const tunnel=listActiveTunnels().find(x=>x.serviceKind===serviceKind&&x.port===port);
+    const verified=tunnel?await isOwnQuickTunnelProcess(tunnel.pid,tunnel.localUrl):false;
+    return snap(service,port,tunnel?(verified?"active":"unverified"):"inactive",
+      tunnel?.pid??null,verified,verified?["status","plan","stop"]:["status"],
+      verified?"Exactly identified local cloudflared owner; destructive stop still needs separate public-disruption approval":
+        tunnel?"Tunnel metadata exists but process ownership cannot be independently confirmed":
         "No registered Cloudflare tunnel of this kind",
       tunnel?{publicUrl:tunnel.publicUrl,registeredTunnelPid:tunnel.pid,
-        localBackendListenerPid:owner,kind}:undefined);
+        localBackendListenerPid:owner,kind:serviceKind}:undefined);
   }
   if(service==="daemon")
     return snap(service,port,"embedded",null,false,["status"],
@@ -250,6 +282,14 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       return {service,...await prepareCoreLifecycle(args.targetAction,port!)};
     }
     if(service==="mcp"&&args.targetAction==="reload")return planMcpReload(port!);
+    if((service==="rest_tunnel"||service==="muse_tunnel")&&args.targetAction==="stop")
+      return planOwnedTunnelStop(service,port!);
+    if(["transport","channel_host","muse","telegram"].includes(service)&&
+       (args.targetAction==="start"||args.targetAction==="stop"||args.targetAction==="restart"))
+      return planSidecarService({
+        service:service as SidecarService,action:args.targetAction,port:port!,
+        corePort:args.corePort,channelMode:args.channelMode,wsPort:args.wsPort,
+      });
     return {service,port,action:"plan",targetAction:args.targetAction??null,
       allowed:false,supportedActions:(await inspectServices(service,port))[0].actions,
       reason:"SERVICE_UNSUPPORTED_MUTATION: no authenticated remote lifecycle protocol; no PID kill or tunnel restart will be attempted"};
@@ -263,6 +303,31 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       throw new Error("SERVICE_CORE_KERNEL_OWNER_UNVERIFIED");
     return {service,...await controlCoreLifecycle(action,port!,true,undefined,
       {operationId:args.operationId,expectedBuildDigest:args.expectedBuildDigest})};
+  }
+  if(["transport","channel_host","muse","telegram"].includes(service)&&
+     (action==="start"||action==="stop"||action==="restart")) {
+    if(!args.operationId||args.expectedOwnerPid===undefined||
+       !args.expectedInstanceId||args.noPublicIngress!==true)
+      throw new Error("SERVICE_SIDECAR_PLAN_REQUIRED: run action=plan first");
+    return executeSidecarService({
+      service:service as SidecarService,action,port:port!,confirm:true,
+      operationId:args.operationId,expectedOwnerPid:args.expectedOwnerPid,
+      expectedInstanceId:args.expectedInstanceId,noPublicIngress:true,
+      corePort:args.corePort,channelMode:args.channelMode,wsPort:args.wsPort,
+      note:"Approved owner-attested sidecar lifecycle operation",
+    });
+  }
+  if((service==="rest_tunnel"||service==="muse_tunnel")&&action==="stop"){
+    if(!args.operationId||!args.expectedOwnerPid||!args.expectedPublicUrl||
+       !args.expectedLocalUrl||args.allowPublicDisruption!==true)
+      throw new Error("SERVICE_PUBLIC_TUNNEL_STOP_PLAN_AND_ACK_REQUIRED");
+    return stopOwnedTunnel({
+      service,port:port!,confirm:true,operationId:args.operationId,
+      expectedOwnerPid:args.expectedOwnerPid,
+      expectedPublicUrl:args.expectedPublicUrl,
+      expectedLocalUrl:args.expectedLocalUrl,
+      allowPublicDisruption:true,
+    });
   }
   if(service==="mcp"&&action==="reload") {
     if(!args.operationId||!args.expectedPublicUrl||!args.expectedOwnerPid)

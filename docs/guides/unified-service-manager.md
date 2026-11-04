@@ -33,14 +33,14 @@ change services. The tool covers:
 |---|---:|---|---|
 | Core API supervisor | 7888 | authenticated Core control + kernel listener identity on Windows | plan, restart, rollback, drain |
 | MCP HTTP/Cloudflare | 8857 in current local config; general MCP default 9227 | managed owner + kernel listener + authenticated probe | plan, **backend-only reload** on verified Reloadable Cloudflare owner |
-| T-Line transport | 7891 | local health and PID comparison | unavailable: no authorized remote lifecycle protocol |
-| Independent Channel Host | 7892 | verified owner discovery + health + PID | unavailable |
-| Muse/Telegram independent watchers | 9225 WSS / 7892 controller | channel-host evidence only | unavailable |
+| T-Line transport | 7891 | private owner record + local health + kernel PID | **plan → start/stop/restart** when idle and no public ingress |
+| Independent Channel Host | 7892 | private owner record + health + kernel PID | **plan → start/stop/restart** (idle mode tested) |
+| Muse/Telegram independent watchers | 9225 WSS / 7892 controller | channel owner + task/recovery checks | **plan → start/stop/restart** only on independent owners, configured modes and no pending recovery |
 | Vision UI-DETR-1 | 8095 | local /health and model_loaded | unavailable: HTTP health is not process ownership |
 | Guardian | 7888 protected Core | Guardian lease (not proof of ownership) | unavailable |
 | Daemon scheduler | embedded in Core | Core ownership and daemon architecture | unavailable |
 | Tray | desktop process | no independent HTTP server | unavailable |
-| REST/SSE & Muse Cloudflare tunnels | 7888 / 9225 | Cloudflare registry (not authenticated owner) | unavailable |
+| REST/SSE & Muse Cloudflare tunnels | 7888 / 9225 | Cloudflare registry + exact process command identity | **plan → stop** only with public-disruption acknowledgment; never automatic URL-changing restart |
 | Process supervisor | embedded | internal process registry | unavailable |
 
 “Unavailable” means the manager rejects `start`/`stop`/`restart`
@@ -108,6 +108,59 @@ stop/restart/migrate that tunnel. Source deployment alone does not make
 this tool appear in a running Legacy backend. Consult the separate
 [Core/MCP development cutover runbook](core-mcp-development-self-restart.md)
 before staging a separately approved named-tunnel migration.
+
+### Independently owned sidecars: Transport, Channel, Muse and Telegram
+
+The unified manager can start/stop/restart an **isolated owner**, without ever
+replacing an unrelated listener, existing unsupervised CLI, public tunnel, or
+a running Telegram/Muse task. First:
+
+```json
+{"name":"superagent_manage_services","arguments":{
+  "action":"plan","service":"transport","port":7891,
+  "targetAction":"start","corePort":7888
+}}
+```
+
+Use the returned `operationId`, `expectedOwnerPid` (0 for a new process),
+`expectedInstanceId` ("absent" for a new process), `noPublicIngress:true`,
+`corePort`, and `port` in the matching `start`, `stop`, or `restart`
+call with `confirm:true`. The plan output is a description, not a directly
+replayable JSON argument object; copy the schema fields only.
+
+For a Channel Host, use `service:"channel_host"` with
+`channelMode:"idle"` or the explicitly configured
+`muse-ws`/`telegram-fallback` mode, along with `wsPort`.
+The `service:"muse"` and `service:"telegram"` names target their
+respective **independent Channel Host** owners, not the embedded legacy
+watcher. Non-idle startup requires configured credentials before spawning.
+
+The owner process publishes a private per-port token and instance identity.
+The stop client checks the kernel listener PID, instance ID and local health.
+The owner rejects missing tokens, active HTTP/SSE/WebSockets, running channel
+tasks, unreconciled batches, interrupted tool calls and pending outbox data.
+A managed sidecar exits only after graceful listener shutdown. A hashed
+durable operation journal rejects replay and unknown crash outcomes.
+
+### Destructive Quick Tunnel stop — deliberately non-automatic
+
+A Quick Tunnel may lose its random public hostname permanently when stopped.
+The manager only permits a **single, exact, owner-verified tunnel** to stop;
+it never supports stop-all or automatic restart. To plan a stop:
+
+```json
+{"name":"superagent_manage_services","arguments":{
+  "action":"plan","service":"rest_tunnel","port":7888,"targetAction":"stop"
+}}
+```
+
+After **explicit operator approval to disconnect public clients**, provide
+the returned `operationId`, `expectedOwnerPid`, `expectedPublicUrl`
+and `expectedLocalUrl`, plus `allowPublicDisruption:true` and
+`confirm:true`. `muse_tunnel` follows the same contract. No tunnel
+stop is executed as part of tests or automatic service recovery.
+MCP tunnel owner `mcp` remains subject to its separate Reloadable/Legacy
+contract; Legacy Quick Tunnel is not killed through this manager.
 
 ### Security and failure behavior
 

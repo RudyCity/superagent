@@ -7,7 +7,7 @@ import { MANAGED_SERVICE_NAMES } from "../runtime/serviceManagerTypes.js";
 
 export const manageServicesTool:Tool={
   name:"manage_services",
-  description:"Unified control of SuperAgent services: inventory/status/doctor across Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, external tunnels and process supervisor. Use action=plan first for supervised Core restart/rollback/drain or Reloadable MCP backend reload. Mutations require confirm=true and the returned operationId/expected identity. Legacy Cloudflare Quick Tunnel URL is never changed. Other service actions are explicitly blocked unless owner-safe controls exist.",
+  description:"Unified control of SuperAgent services: inventory/status/doctor across Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, external tunnels and process supervisor. Use action=plan first for supervised Core restart/rollback/drain or Reloadable MCP backend reload. Mutations require confirm=true and the returned operationId/expected identity. Legacy Cloudflare Quick Tunnel URL is never changed. Sidecar start/stop/restart requires exact owner plan and no public ingress. Vision/Guardian/Tray remain status-only until independently verified owner control is available.",
   parameters:{
     type:"object",
     properties:{
@@ -18,8 +18,15 @@ export const manageServicesTool:Tool={
       confirm:{type:"boolean"},
       operationId:{type:"string",minLength:16,maxLength:128},
       expectedBuildDigest:{type:"string",pattern:"^[a-f0-9]{64}$"},
-      expectedOwnerPid:{type:"integer",minimum:1},
+      expectedOwnerPid:{type:"integer",minimum:0},
       expectedPublicUrl:{type:"string"},
+      expectedInstanceId:{type:"string",description:"From sidecar start/stop/restart plan: instance id or absent."},
+      noPublicIngress:{type:"boolean",description:"Must be true for sidecar lifecycle; stop refused if public tunnel attached."},
+      corePort:{type:"integer",minimum:1024,maximum:65535},
+      channelMode:{type:"string",enum:["idle","muse-ws","telegram-fallback"]},
+      wsPort:{type:"integer",minimum:1024,maximum:65535},
+      expectedLocalUrl:{type:"string",description:"Exact local origin in owner-verified tunnel plan."},
+      allowPublicDisruption:{type:"boolean",description:"EXPLICIT acknowledgment: stopping Quick Tunnel disconnects clients and URL may change."},
     },
     required:["action"],
   },

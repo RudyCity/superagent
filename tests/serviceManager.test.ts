@@ -26,10 +26,9 @@ describe("unified SuperAgent service manager",()=>{
       .rejects.toThrow("CONFIRM_REQUIRED");
     await expect(manageServices({action:"stop",service:"tray",confirm:true}))
       .rejects.toThrow("UNSUPPORTED_MUTATION");
-    const plan:any=await manageServices({
-      action:"plan",service:"transport",targetAction:"restart",port:19561});
-    expect(plan.allowed).toBe(false);
-    expect(plan.reason).toContain("UNSUPPORTED_MUTATION");
+    await expect(manageServices({
+      action:"plan",service:"transport",targetAction:"restart",port:19561,
+    })).rejects.toThrow("SIDECAR_OWNER_UNVERIFIED");
   });
   it("fails closed for unregistered or legacy MCP reload",async()=>{
     await expect(manageServices({

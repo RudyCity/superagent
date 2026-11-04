@@ -37,6 +37,8 @@ export interface ChannelHostHealth {
   pid: number;
   port: number;
   mode: ChannelHostMode;
+  wsPort?: number;
+  draining?: boolean;
   status: "idle" | "starting" | "running" | "error";
   watcherActive: boolean;
   taskActive: boolean;
@@ -88,7 +90,7 @@ export function validateChannelHostMode(mode: string, wsPort: number, config: Re
   throw new Error("Unsupported channel-host mode");
 }
 
-function readDiscovery(port: number): ChannelHostDiscovery {
+export function readChannelHostDiscovery(port: number): ChannelHostDiscovery {
   const stat = fs.lstatSync(statePath(port));
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024) throw new Error("Invalid channel host discovery file");
   const item = JSON.parse(fs.readFileSync(statePath(port), "utf8")) as ChannelHostDiscovery;
@@ -160,6 +162,27 @@ function writeDiscovery(record: ChannelHostDiscovery) {
 
 /** Cross-process read-only discovery. Never trust PID records without a live
  * loopback identity match; never expose private config or start channels. */
+/** Owner-verified graceful stop; unlike /muse stop it NEVER targets global watchers. */
+export async function requestChannelHostStop(port:number,expectedPid:number) {
+  const record=readChannelHostDiscovery(port);
+  const {readListenerOwners}=await import("./coreMcpOwnershipAudit.js");
+  if(record.pid!==expectedPid||readListenerOwners()?.get(port)!==record.pid)
+    throw new Error("CHANNEL_OWNER_PID_MISMATCH");
+  const health=await probeHost(port);
+  if(health.pid!==record.pid||health.instanceId!==record.instanceId)
+    throw new Error("CHANNEL_OWNER_IDENTITY_CHANGED");
+  const response=await fetch("http://127.0.0.1:"+port+"/_channel/lifecycle",{
+    method:"POST",headers:{"Authorization":"Bearer "+record.ipcToken,
+      "Content-Type":"application/json"},
+    body:JSON.stringify({action:"stop",instanceId:record.instanceId}),
+    signal:AbortSignal.timeout(6500),
+  });
+  const body=await response.json().catch(()=>null) as {ok?:boolean;code?:string}|null;
+  if(!response.ok||body?.ok!==true)
+    throw new Error(body?.code||"CHANNEL_STOP_REFUSED");
+  return {port,previousPid:expectedPid,stopping:true};
+}
+
 export async function listVerifiedChannelHosts(): Promise<ChannelHostHealth[]> {
   let names: string[];
   try { names = fs.readdirSync(dir()); } catch { return []; }
@@ -168,7 +191,7 @@ export async function listVerifiedChannelHosts(): Promise<ChannelHostHealth[]> {
     const port = Number(name.match(/^channel-host-(\d+)\.json$/)?.[1]);
     if (!validPort(port)) return null;
     try {
-      const known = readDiscovery(port);
+      const known = readChannelHostDiscovery(port);
       const live = await probeHost(port);
       if (known.pid !== live.pid || known.instanceId !== live.instanceId ||
           !["idle", "muse-ws", "telegram-fallback"].includes(live.mode) ||
@@ -200,7 +223,7 @@ export async function requestChannelHostIpc(
   requestId = crypto.randomBytes(16).toString("hex"),
 ): Promise<ChannelHostIpcResult> {
   const command = validateChannelIpcCommand({ operation, text, requestId });
-  const discovery = readDiscovery(port);
+  const discovery = readChannelHostDiscovery(port);
   const health = await probeHost(port);
   if (health.pid !== discovery.pid || health.instanceId !== discovery.instanceId ||
       health.status !== "running" || !health.watcherActive) {
@@ -263,6 +286,7 @@ export async function runChannelHost(options: {
   };
   const processed = new Map<string, { signature: string; result: Promise<boolean>; at: number }>();
   let executingId: string | null = null;
+  let draining = false;
   let releaseLease: () => void = () => {};
   let releaseJournalLock: () => void = () => {};
   let state: ChannelHostHealth["status"] = mode === "idle" ? "idle" : "starting";
@@ -302,7 +326,7 @@ export async function runChannelHost(options: {
         .report(getWatchedWorkspaces(config)) : null;
     return {
       service: "superagent-channel-host", instanceId, pid: process.pid, port,
-      mode, status: state, watcherActive: Boolean(options.executeIpc || watcher?.isActive()),
+      mode, wsPort, draining, status: state, watcherActive: Boolean(options.executeIpc || watcher?.isActive()),
       taskActive: Boolean(stats?.activeTaskId || (stats?.queuedBatches ?? 0) > 0),
       tasksCompleted: stats?.tasksCompleted || 0, startedAt,
       reconciliationPending: journal?.summary().requiresReconciliation || 0,
@@ -351,6 +375,45 @@ export async function runChannelHost(options: {
       } catch { json(503, { error: "Incident history unavailable" }); }
       return;
     }
+    if(req.method==="POST" && pathname==="/_channel/lifecycle") {
+      const auth=Buffer.from(req.headers.authorization||"");
+      const expected=Buffer.from("Bearer "+record.ipcToken);
+      if(auth.length!==expected.length||!crypto.timingSafeEqual(auth,expected)){
+        json(401,{ok:false,code:"CHANNEL_UNAUTHORIZED"});req.resume();return;
+      }
+      req.setTimeout(2500,()=>req.destroy());
+      let content="";
+      for await(const chunk of req){
+        content+=String(chunk);
+        if(content.length>256){json(413,{ok:false,code:"CHANNEL_BODY_TOO_LARGE"});return;}
+      }
+      let request:any=null;
+      try{request=JSON.parse(content);}catch{}
+      if(request?.action!=="stop"||request.instanceId!==instanceId){
+        json(400,{ok:false,code:"CHANNEL_IDENTITY_MISMATCH"});return;
+      }
+      const current=health();
+      if(draining||executingId!==null||current.taskActive||
+         (current.reconciliationPending??0)>0||(current.interruptedCallBatches??0)>0||
+         (current.recoveryIntegrityBlocked??0)>0||
+         (current.recoveryManualReconciliation??0)>0||
+         (current.resultOutboxStored??0)>0){
+        json(409,{ok:false,code:"CHANNEL_PENDING_TASK_OR_RECONCILIATION"});return;
+      }
+      draining=true;
+      try {
+        if(mode!=="idle"){
+          const {stopMuseWatcher}=await import("../remoteAgent/museWatcherRegistry.js");
+          await stopMuseWatcher(mode==="muse-ws"?wsPort:TELEGRAM_FALLBACK_KEY);
+        }
+        json(200,{ok:true,stopping:true});
+        setTimeout(()=>server.close(),50).unref();
+      }catch{
+        draining=false;
+        json(503,{ok:false,code:"CHANNEL_WATCHER_STOP_FAILED"});
+      }
+      return;
+    }
     if (req.method !== "POST" || pathname !== "/_channel/ipc") {
       res.writeHead(404); res.end(); return;
     }
@@ -373,7 +436,7 @@ export async function runChannelHost(options: {
         chunks.push(chunk as Buffer);
       }
       const command = validateChannelIpcCommand(JSON.parse(Buffer.concat(chunks).toString("utf8")));
-      if (state !== "running" || mode === "idle") {
+      if (draining || state !== "running" || mode === "idle") {
         json(409, { ok: false, code: "NOT_READY", requestId: command.requestId });
         return;
       }
@@ -456,7 +519,7 @@ export async function runChannelHost(options: {
     monitor.stop();
     delivery.stop();
     try {
-      const old = readDiscovery(port);
+      const old = readChannelHostDiscovery(port);
       if (old.pid === process.pid && old.instanceId === instanceId) fs.rmSync(statePath(port), { force: true });
     } catch {}
     releaseJournalLock();
@@ -464,6 +527,9 @@ export async function runChannelHost(options: {
   };
   server.once("close", cleanup);
   process.once("exit", cleanup);
+  if (process.env.SUPERAGENT_MANAGED_SIDECAR === "1") {
+    server.once("close", () => setImmediate(() => process.exit(0)));
+  }
   if (mode !== "idle") {
     // Do not block the health listener while transport connection is pending.
     void (async () => {
@@ -572,7 +638,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   if (action === "watchdog-once" || action === "watchdog") {
     const { observeIndependentChannelHost } = await import("./museHostWatchdog.js");
     const observer = async () => {
-      const known = (() => { try { return readDiscovery(port); } catch { return null; } })();
+      const known = (() => { try { return readChannelHostDiscovery(port); } catch { return null; } })();
       let online = false;
       if (known) {
         try {
@@ -689,7 +755,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
   }
   if (action === "integrity") {
     if (fs.existsSync(statePath(port))) {
-      const known = readDiscovery(port);
+      const known = readChannelHostDiscovery(port);
       const live = await probeHost(port);
       if (known.pid !== live.pid || known.instanceId !== live.instanceId) {
         throw new Error("Channel host integrity owner mismatch");
@@ -920,7 +986,7 @@ export async function handleChannelHostCliCommand(argv: string[]): Promise<boole
     }
   }
   if (action === "status") {
-    const known = readDiscovery(port);
+    const known = readChannelHostDiscovery(port);
     const live = await probeHost(port);
     if (known.pid !== live.pid || known.instanceId !== live.instanceId) {
       throw new Error("Channel-host ownership mismatch");
