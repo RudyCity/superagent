@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Optimizer",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Optimize ChatGPT rendering, safely hibernate idle background chat tabs on demand, sync recent chats, and retry failed conversations.",
   "permissions": [
     "storage",
     "tabs",
-    "alarms"
+    "alarms",
+    "scripting"
   ],
   "background": {
     "service_worker": "background.js"

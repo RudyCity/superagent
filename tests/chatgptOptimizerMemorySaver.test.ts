@@ -64,6 +64,8 @@ function workerHarness(options: {
   probe?: Record<number, any>;
   raceActive?: number;
   refuse?: number;
+  missingProbe?: number;
+  injectFailure?: number;
 } = {}) {
   let listener: Function = () => {};
   let tabs = options.tabs || [
@@ -76,6 +78,7 @@ function workerHarness(options: {
   ];
   const discarded: number[] = [];
   const probed: number[] = [];
+  const injected: number[] = [];
   const chrome = {
     runtime: {
       id: "memory-extension",
@@ -85,6 +88,9 @@ function workerHarness(options: {
       async query(_params: any) { return tabs; },
       async sendMessage(id: number, message: any) {
         probed.push(id);
+        if (options.missingProbe === id && !injected.includes(id)) {
+          throw Error("No content script");
+        }
         expect(message).toEqual({
           scope: "chatgpt-optimizer-tab-sleep-v1", action: "inspect_sleep",
         });
@@ -102,6 +108,14 @@ function workerHarness(options: {
         return { ...tab };
       },
     },
+    scripting: {
+      async executeScript(request: any) {
+        const id = request?.target?.tabId;
+        expect(request.files).toEqual(["tab-sleep.js"]);
+        if (options.injectFailure === id) throw Error("Injection blocked");
+        injected.push(id);
+      },
+    },
   };
   vm.runInNewContext(workerCode, { chrome, URL, Number, Promise });
   async function call(action: string, senderId = "memory-extension"): Promise<any> {
@@ -110,7 +124,7 @@ function workerHarness(options: {
       { id: senderId }, resolve,
     ));
   }
-  return { call, discarded, probed, tabs };
+  return { call, discarded, probed, injected, tabs };
 }
 
 describe("ChatGPT Optimizer: idle-tab guard", () => {
@@ -158,6 +172,31 @@ describe("ChatGPT Optimizer: explicit Chrome memory saver", () => {
     expect(summary.failed).toBe(1);
     expect(h.discarded).toEqual([]);
   });
+  it("injects a read-only guard into older tabs without any page reload", async () => {
+    const h = workerHarness({
+      tabs: [baseTab(1, { active: true }), baseTab(2)],
+      missingProbe: 2,
+    });
+    const result = await h.call("sleep_others");
+    expect(result.sleeping).toBe(1);
+    expect(h.injected).toEqual([2]);
+    expect(h.probed).toEqual([2, 2]);
+    expect(h.discarded).toEqual([2]);
+    expect(workerCode).not.toContain("tabs.reload");
+  });
+
+  it("fails closed when the safety guard cannot be injected", async () => {
+    const h = workerHarness({
+      tabs: [baseTab(1, { active: true }), baseTab(2)],
+      missingProbe: 2, injectFailure: 2,
+    });
+    const result = await h.call("sleep_others");
+    expect(result.sleeping).toBe(0);
+    expect(result.skipped).toBe(1);
+    expect(h.discarded).toEqual([]);
+    expect(h.injected).toEqual([]);
+  });
+
   it("only enumerates in status mode and requires extension-origin messages", async () => {
     const h = workerHarness();
     const status = await h.call("status");
@@ -173,6 +212,6 @@ describe("ChatGPT Optimizer: explicit Chrome memory saver", () => {
     expect(workerCode).not.toMatch(/onAlarm|onInstalled|setInterval|setTimeout|onStartup/);
     expect(workerCode).toContain('message.action !== "sleep_others"');
     expect(manifest.content_scripts[0].js).toContain("tab-sleep.js");
-    expect(manifest.permissions).toEqual(["storage", "tabs", "alarms"]);
+    expect(manifest.permissions).toEqual(["storage", "tabs", "alarms", "scripting"]);
   });
 });

@@ -41,7 +41,7 @@ Uji browser terisolasi: `node chrome-extension-chatgpt-optimizer/verify-render.m
 - Matikan sakelar utama untuk melepas semua atribut optimasi dari pesan; atau nonaktifkan ekstensi di Chrome untuk memulihkan tampilan tanpa menyentuh data chat.
 - Saat pindah chat, jendela tampilan sementara di-reset. Tidak ada pengaturan atau isi chat yang disimpan per percakapan.
 
-## Penghematan RAM nyata untuk tab latar (v0.5.0)
+## Penghematan RAM nyata untuk tab latar (v0.5.1)
 
 **Render ringan** hanya mengurangi pekerjaan rendering dan tidak melepas memori React pada tab aktif. Untuk penghematan RAM saat **banyak tab ChatGPT terbuka**, gunakan tombol **Tidurkan tab ChatGPT lain** di popup.
 
@@ -49,7 +49,7 @@ Fitur ini menggunakan `chrome.tabs.discard(tabId)`, API Chrome untuk melepas kon
 
 Perlindungan: hanya percakapan tersimpan yang sudah dimuat; tab aktif di **semua jendela**, tab pinned, berbunyi, tidak boleh di-discard, memiliki draft, streaming AI, upload, rekaman/panggilan atau dialog akan dilewati. Status dan URL dicek ulang sebelum tidur; bila pemeriksaan tidak tersedia, tab tidak disentuh.
 
-**Manual saja**, bukan otomatis. Tidurkan hanya tab yang tidak lagi menjalankan Delegate atau tugas AI penting. Popup menampilkan jumlah tab yang benar-benar ditidurkan, dilewati atau gagal—**bukan angka MB yang belum diukur**. Memori tab aktif tidak berkurang. Tiap profil Chrome perlu ekstensi sendiri.
+**Manual saja**, bukan otomatis. Jika tab lama belum memiliki skrip pemeriksa keamanan, ekstensi menyuntikkan pemeriksa baca-saja melalui `chrome.scripting.executeScript` saat tombol diklik, tanpa memuat ulang halaman; jika gagal, tab dilewati. Tidurkan hanya tab yang tidak lagi menjalankan Delegate atau tugas AI penting. Popup menampilkan jumlah tab yang benar-benar ditidurkan, dilewati atau gagal—**bukan angka MB yang belum diukur**. Memori tab aktif tidak berkurang. Tiap profil Chrome perlu ekstensi sendiri.
 
 ## Recent-chat synchronization (v0.4.0)
 
@@ -83,7 +83,7 @@ In-page retry is blocked if the tab has an unsent draft, an in-progress response
 
 ## Privasi dan keamanan
 
-- Izin terbatas pada `storage`, `tabs`, `alarms`, dan host `https://chatgpt.com/*`; `alarms` hanya menjadwalkan pemeriksaan background.
+- Izin terbatas pada `storage`, `tabs`, `alarms`, `scripting`, dan host `https://chatgpt.com/*`; `alarms` hanya menjadwalkan pemeriksaan background.
 - Sidebar synchronization performs **read-only first-party fetches** to `/api/auth/session` and `/backend-api/conversations` on `chatgpt.com`. The access token is used in memory only to authenticate ChatGPT's history requests; it is never logged, persisted, returned to the popup, or sent to any other origin. The endpoint is not a public API and may change. No WebSocket, debugger, analytics, or external server is used.
 - The new sidebar feature reads **conversation IDs and titles** to display local links. It discards message mappings, snippets, response content and token-bearing session data, and never stores chat metadata in Chrome storage; only UI settings are persisted. The message-rendering feature still stores no message text.
 - Tidak mengirim/menyetop pesan, klik tombol ChatGPT, menyetel input, atau membuang node chat milik React.
@@ -133,4 +133,4 @@ Tests cover safe DOM optimization, sidebar synchronization, permissions, selecte
 - `../tests/chatgptOptimizerMemorySaver.test.ts` — inactive-tab memory-saver safety tests.
 - `../tests/chatgptOptimizerTabReload.test.ts` — specific-chat reload safety and isolation tests.
 
-Version: 0.5.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No external SuperAgent server is needed; a lightweight MV3 service worker schedules background checks.
+Version: 0.5.1. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No external SuperAgent server is needed; a lightweight MV3 service worker schedules background checks.

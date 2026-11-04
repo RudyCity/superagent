@@ -36,10 +36,29 @@
         inspection = await chrome.tabs.sendMessage(tab.id, {
           scope: PROBE, action: "inspect_sleep",
         });
+        if (inspection?.ok !== true) throw Error("Content script not ready");
       } catch {
-        results.skipped++;
-        count("Idle safety probe unavailable.");
-        continue;
+        // A tab opened before this version of the extension may not have its
+        // read-only guard yet. Inject only that guard without reloading the tab.
+        try {
+          const current = await chrome.tabs.get(tab.id);
+          if (!eligible(current) || current.url !== tab.url) {
+            results.skipped++;
+            count("Tab changed before safety inspection.");
+            continue;
+          }
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ["tab-sleep.js"],
+          });
+          inspection = await chrome.tabs.sendMessage(tab.id, {
+            scope: PROBE, action: "inspect_sleep",
+          });
+        } catch {
+          results.skipped++;
+          count("Idle safety probe unavailable, tab was not touched.");
+          continue;
+        }
       }
       if (inspection?.ok !== true || inspection.safe !== true) {
         results.skipped++;
