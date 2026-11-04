@@ -28,8 +28,8 @@ export const coreRuntimeCommand: SlashCommand = {
           "Independent Muse/Telegram owner: superagent channel-host serve --port 7892 --mode idle",
           "Unsupervised CLI/server instances cannot be rolled automatically.",
           "Previous workers are retained; MCP, Muse, Telegram and jobs are not stopped.",
-          "MCP: superagent_core_status|restart|rollback|drain (mutations require confirm:true and write permission).",
-          "Agent: manage_core { action: status|restart|rollback|drain, port: 7888, confirm: true }.",
+          "MCP: superagent_core_status|plan|restart|rollback|drain (plan yields operationId + expectedBuildDigest).",
+          "Agent: manage_core action=plan targetAction=restart, then action=restart with operationId, expectedBuildDigest, confirm:true.",
         ].join("\n"),
         timestamp: Date.now(),
       });

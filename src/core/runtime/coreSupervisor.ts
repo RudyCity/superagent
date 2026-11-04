@@ -8,6 +8,8 @@ import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { getProcessSupervisor } from "../process/processSupervisor.js";
 import type { CoreDrainReport } from "./coreDrainInspection.js";
+import { inspectCoreBuild, type CoreBuildIdentity } from "./coreBuildIdentity.js";
+import { CoreLifecycleLedger, validateCoreOperationId } from "./coreLifecycleLedger.js";
 import {
   coreCheckpointPath, readCoreCheckpoint, writeCoreCheckpoint,
   type CoreSupervisorCheckpoint,
@@ -31,8 +33,10 @@ export interface CoreRuntimeStatus {
   };
   supervisorPid: number;
   publicPort: number;
-  active: { pid: number; port: number; since: number };
-  retained: Array<{ pid: number; port: number; since: number }>;
+  active: { pid: number; port: number; since: number; buildDigest?: string; buildMode?: "source" | "compiled" };
+  retained: Array<{ pid: number; port: number; since: number; buildDigest?: string; buildMode?: "source" | "compiled" }>;
+  currentBuild?: CoreBuildIdentity;
+  operation?: { operationHashPrefix: string; replayed: boolean; action: "restart" | "rollback" | "drain" };
   /** Bound session IDs remain pinned to the generation that initialized them. */
   affinitySessions?: number;
   maxRetainedWorkers?: number;
@@ -133,6 +137,7 @@ async function ready(port: number, child: ChildProcess, bearer: string): Promise
 
 export async function requestCoreSupervisor(
   action: "status" | "restart" | "rollback" | "drain", port = 7888, timeoutMs = 30000,
+  options: { operationId?: string; expectedBuildDigest?: string } = {},
 ): Promise<CoreRuntimeStatus> {
   let info: SupervisorDiscovery;
   try { info = readDiscovery(port); }
@@ -142,7 +147,13 @@ export async function requestCoreSupervisor(
       host: "127.0.0.1", port: info.controlPort, method: action === "status" ? "GET" : "POST",
       path: "/" + action,
       timeout: timeoutMs,
-      headers: { Authorization: "Bearer " + info.controlToken },
+      headers: {
+        Authorization: "Bearer " + info.controlToken,
+        ...(action !== "status" && options.operationId
+          ? { "x-superagent-operation-id": validateCoreOperationId(options.operationId) } : {}),
+        ...(action !== "status" && options.expectedBuildDigest
+          ? { "x-superagent-expected-build": options.expectedBuildDigest } : {}),
+      },
     }, res => {
       let body = "";
       res.setEncoding("utf8");
@@ -201,11 +212,17 @@ export async function runCoreSupervisor(
   let lastRollback: CoreRuntimeStatus["lastRollback"];
   let lastDrain: CoreRuntimeStatus["lastDrain"];
   let recovered = false;
+  // Durable receipts remain outside Core's worker checkpoint and survive
+  // supervisor crash/recovery. Unresolved operations are never replayed.
+  const lifecycleLedger = new CoreLifecycleLedger(port);
+  const coreEntry = path.resolve(process.argv[1] || "");
 
   function persistCheckpoint(): void {
     if (!active) return;
-    const workers = [active, ...retained].map(({ pid, port: workerPort, since, generationId, drainEligible }) =>
-      ({ pid, port: workerPort, since, generationId, drainEligible }));
+    const workers = [active, ...retained].map(({ pid, port: workerPort, since, generationId, drainEligible, buildDigest, buildMode }) =>
+      ({ pid, port: workerPort, since, generationId, drainEligible,
+        ...(buildDigest ? { buildDigest } : {}),
+        ...(buildMode ? { buildMode } : {}) }));
     writeCoreCheckpoint({
       version: 1, port, savedAt: Date.now(), clientMode,
       serverToken, inspectToken, activePid: active.pid,
@@ -234,7 +251,8 @@ export async function runCoreSupervisor(
     // own workers after session/inflight/transport drain verification.
     const staging = process.env.SUPERAGENT_CORE_STAGING === "1";
     const drainEligible = !!active || staging;
-    const entry = path.resolve(process.argv[1] || "");
+    const entry = coreEntry;
+    const buildBefore = inspectCoreBuild(entry, { requireFreshCompiled: true });
     let workerRecordId: string | undefined;
     try {
       const reg = await getProcessSupervisor().registerProcess({
@@ -287,7 +305,15 @@ export async function runCoreSupervisor(
       throw error;
     }
     if (!child.pid) throw new Error("Worker PID unavailable");
+    // Do not publish a candidate that was spawned while the source/dist tree
+    // was changing. The old active worker remains untouched on failure.
+    const buildAfter = inspectCoreBuild(entry, { requireFreshCompiled: true });
+    if (buildAfter.digest !== buildBefore.digest) {
+      try { child.kill(); } catch {}
+      throw new Error("CORE_BUILD_CHANGED_DURING_RESTART");
+    }
     return { child, pid: child.pid, port: workerPort, since: Date.now(), generationId,
+      buildDigest: buildBefore.digest, buildMode: buildBefore.mode,
       drainEligible, adopted: false, verified: true };
   }
 
@@ -300,8 +326,11 @@ export async function runCoreSupervisor(
       },
       supervisorPid: process.pid,
       publicPort: port,
-      active: { pid: active.pid, port: active.port, since: active.since },
-      retained: retained.map(({ pid, port: workerPort, since }) => ({ pid, port: workerPort, since })),
+      active: { pid: active.pid, port: active.port, since: active.since,
+        buildDigest: active.buildDigest, buildMode: active.buildMode },
+      retained: retained.map(({ pid, port: workerPort, since, buildDigest, buildMode }) =>
+        ({ pid, port: workerPort, since, buildDigest, buildMode })),
+      currentBuild: inspectCoreBuild(coreEntry),
       affinitySessions: sessionAffinity.count,
       maxRetainedWorkers: MAX_RETAINED_CORE_WORKERS,
       ...(lastRollback ? { lastRollback } : {}),
@@ -724,15 +753,56 @@ export async function runCoreSupervisor(
       res.writeHead(401); res.end(); return;
     }
     try {
-      const result = req.method === "GET" && req.url === "/status"
-        ? status()
-        : req.method === "POST" && req.url === "/restart"
-          ? await restart()
-          : req.method === "POST" && req.url === "/rollback"
-            ? await rollback("operator-requested")
-            : req.method === "POST" && req.url === "/drain"
-              ? await drain()
-              : null;
+      let result: CoreRuntimeStatus | null = null;
+      const action = req.method === "POST" && req.url === "/restart" ? "restart"
+        : req.method === "POST" && req.url === "/rollback" ? "rollback"
+        : req.method === "POST" && req.url === "/drain" ? "drain" : null;
+      if (req.method === "GET" && req.url === "/status") {
+        result = status();
+      } else if (action) {
+        const rawId = req.headers["x-superagent-operation-id"];
+        const rawDigest = req.headers["x-superagent-expected-build"];
+        if ((rawId !== undefined && typeof rawId !== "string") ||
+            (rawDigest !== undefined && (typeof rawDigest !== "string" || !/^[a-f0-9]{64}$/.test(rawDigest))))
+          throw new Error("CORE_OPERATION_INVALID_HEADERS");
+        const id = rawId ? validateCoreOperationId(rawId) : crypto.randomUUID();
+        const build = inspectCoreBuild(coreEntry, { requireFreshCompiled: true });
+        if (rawDigest && rawDigest !== build.digest)
+          throw new Error("CORE_BUILD_CHANGED_SINCE_PLAN");
+        const operation = lifecycleLedger.begin({
+          id, action, expectedBuildDigest: build.digest,
+          beforePid: active!.pid,
+        });
+        if (operation.replayed) {
+          // Previously completed, never execute the requested mutation twice.
+          if (active!.pid !== operation.receipt.afterPid)
+            throw new Error("CORE_OPERATION_COMPLETED_BUT_STATE_MOVED: inspect status before new action");
+          result = {
+            ...status(),
+            operation: { operationHashPrefix: operation.receipt.operationHash.slice(0,16),
+              replayed: true, action },
+          };
+        } else {
+          try {
+            const updated = action === "restart" ? await restart()
+              : action === "rollback" ? await rollback("operator-requested")
+              : await drain();
+            if (action === "restart" && updated.active.buildDigest !== build.digest)
+              throw new Error("CORE_BUILD_ATTESTATION_MISMATCH");
+            lifecycleLedger.complete(id, updated.active.pid);
+            result = {
+              ...updated,
+              operation: { operationHashPrefix: operation.receipt.operationHash.slice(0,16),
+                replayed: false, action },
+            };
+          } catch (error) {
+            // A crash before this write leaves a PENDING receipt. Recovery
+            // refuses silent retries; an operator must reconcile the outcome.
+            lifecycleLedger.fail(id, "CORE_OPERATION_FAILED");
+            throw error;
+          }
+        }
+      }
       if (!result) { res.writeHead(404); res.end(); return; }
       res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
       res.end(JSON.stringify(result));
@@ -827,6 +897,8 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core restart [--port 7888]");
     console.log("superagent core rollback [--port 7888]");
     console.log("superagent core drain [--port 7888]");
+    console.log("superagent core operations --port PORT  # pending/completed operation receipts, no secret IDs");
+    console.log("superagent core reconcile-operation --port PORT --operation-id ID --observed-pid PID --acknowledge-unknown  # operator-only, after 120s review");
     console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
     console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--adopt-running] [--stop-on-stdin]  # opt-in owned Core crash recovery");
     console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
@@ -843,6 +915,28 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core lifecycle-observe [--port 7888] [--samples 3]  # bounded authenticated GET-only health samples");
     console.log("superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID  # one-shot GET-only T-Line probe");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
+    return;
+  }
+  if (action === "operations" || action === "reconcile-operation") {
+    const current=await requestCoreSupervisor("status",port,1600);
+    if(current.publicPort!==port || current.ownerContract?.role!=="core-supervisor" ||
+       current.ownerContract?.mcpLifecycle!=="not-owned")
+      throw new Error("CORE_OPERATION_OWNER_UNVERIFIED");
+    const ledger=new CoreLifecycleLedger(port);
+    if(action==="operations"){
+      console.log(JSON.stringify({
+        port,supervisorPid:current.supervisorPid,activeWorkerPid:current.active.pid,
+        receipts:ledger.inspect(),
+      },null,2));
+      return;
+    }
+    const idIdx=argv.indexOf("--operation-id"),pidIdx=argv.indexOf("--observed-pid");
+    const id=idIdx>=0?argv[idIdx+1]:"",observed=pidIdx>=0?Number(argv[pidIdx+1]):0;
+    if(!argv.includes("--acknowledge-unknown") ||
+       !Number.isSafeInteger(observed)||observed<=0)
+      throw new Error("CORE_OPERATION_OPERATOR_ATTESTATION_REQUIRED");
+    console.log(JSON.stringify(ledger.reconcilePending(
+      validateCoreOperationId(id),observed,current.active.pid,true),null,2));
     return;
   }
   if (action === "reconnect-check") {

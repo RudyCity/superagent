@@ -13,6 +13,9 @@ import { validCoreSessionId } from "./coreSessionRouting.js";
 export interface CoreCheckpointWorker extends CoreOwner {
   generationId: string;
   drainEligible: boolean;
+  /** Code fingerprint captured for the exact worker generation; absent on legacy checkpoints. */
+  buildDigest?: string;
+  buildMode?: "source" | "compiled";
 }
 
 export interface CoreSupervisorCheckpoint {
@@ -52,6 +55,8 @@ export function validateCoreCheckpoint(value: unknown, port: number): CoreSuperv
     if (!goodOwner(worker) || typeof worker.generationId !== "string" ||
         !/^[a-f0-9]{32}$/.test(worker.generationId) ||
         typeof worker.drainEligible !== "boolean" ||
+        (worker.buildDigest !== undefined && !/^[a-f0-9]{64}$/.test(worker.buildDigest)) ||
+        (worker.buildMode !== undefined && worker.buildMode !== "source" && worker.buildMode !== "compiled") ||
         keys.has(worker.pid + ":" + worker.port)) throw new Error("Invalid or duplicate checkpoint worker");
     keys.add(worker.pid + ":" + worker.port);
   }

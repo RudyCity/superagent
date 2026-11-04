@@ -12,6 +12,7 @@ import { requestCoreSupervisor } from "../src/core/runtime/coreSupervisor.js";
 import { dispatchCoreLifecycleMcpTool } from "../src/core/mcp/tools/coreLifecycleMcpTools.js";
 import { manageCoreTool } from "../src/core/tools/coreLifecycleTools.js";
 import { coreCheckpointPath, readCoreCheckpoint } from "../src/core/runtime/coreSupervisorCheckpoint.js";
+import { coreOperationsPath } from "../src/core/runtime/coreLifecycleLedger.js";
 
 async function freePort(): Promise<number> {
   const server = net.createServer();
@@ -95,6 +96,7 @@ if (transportPort === publicPort || transportPort === 7888 ||
 const discoveryFile = path.join(os.homedir(), ".superagent-r", "core-supervisor-" + publicPort + ".json");
 const infoFile = path.join(os.homedir(), ".superagent-r", "server-info-" + publicPort + ".json");
 const checkpointFile = coreCheckpointPath(publicPort);
+const operationsFile = coreOperationsPath(publicPort);
 const channelStateFile = path.join(os.homedir(), ".superagent-r", "channel-host-" + channelPort + ".json");
 
 try {
@@ -175,11 +177,24 @@ try {
   const mcpStatus = await dispatchCoreLifecycleMcpTool("superagent_core_status", {port:publicPort});
   if (mcpStatus.isError || JSON.parse(mcpStatus.content[0].text).activeWorkerPid !== initial.active.pid)
     throw new Error("MCP did not report the same authenticated initial Core owner");
+  const mcpPlan = await dispatchCoreLifecycleMcpTool("superagent_core_plan", {
+    port:publicPort,action:"restart",
+  });
+  if(mcpPlan.isError)throw new Error("MCP Core plan failed: "+mcpPlan.content[0].text);
+  const planned = JSON.parse(mcpPlan.content[0].text);
   const mcpRestart = await dispatchCoreLifecycleMcpTool("superagent_core_restart", {
     port:publicPort,confirm:true,
+    operationId:planned.operationId,expectedBuildDigest:planned.expectedBuildDigest,
   });
   if (mcpRestart.isError) throw new Error("MCP Core restart failed: "+mcpRestart.content[0].text);
   const next = JSON.parse(mcpRestart.content[0].text).status as Awaited<ReturnType<typeof requestCoreSupervisor>>;
+  const replay = await dispatchCoreLifecycleMcpTool("superagent_core_restart", {
+    port:publicPort,confirm:true,
+    operationId:planned.operationId,expectedBuildDigest:planned.expectedBuildDigest,
+  });
+  if (replay.isError || JSON.parse(replay.content[0].text).replayed !== true ||
+      JSON.parse(replay.content[0].text).activeWorkerPid !== next.active.pid)
+    throw new Error("MCP restart replay was not idempotent");
   if (next.supervisorPid !== owner.pid) throw new Error("Supervisor ownership changed unexpectedly");
   ownedPids.add(next.active.pid);
   if (next.active.pid === initial.active.pid) throw new Error("Worker generation did not change");
@@ -214,8 +229,14 @@ try {
   // Manual rollback only changes the default route; pre-existing sessions
   // on both generations MUST remain bound to their owning worker.
   // Agent tool follows the same control path and verifies returned worker.
+  const agentPlan = await manageCoreTool.execute({
+    action:"plan",targetAction:"rollback",port:publicPort,
+  },root);
+  if(agentPlan.startsWith("Error:"))throw new Error("Agent plan failed: "+agentPlan);
+  const rollbackPlan = JSON.parse(agentPlan);
   const agentRollback = await manageCoreTool.execute({
     action:"rollback",port:publicPort,confirm:true,
+    operationId:rollbackPlan.operationId,expectedBuildDigest:rollbackPlan.expectedBuildDigest,
   },root);
   if (agentRollback.startsWith("Error:")) throw new Error("Agent rollback failed: "+agentRollback);
   const rolledBack = JSON.parse(agentRollback).status as Awaited<ReturnType<typeof requestCoreSupervisor>>;
@@ -273,6 +294,8 @@ try {
   // New API-only generation with NO session or open stream may be retired.
   const fourth = await requestCoreSupervisor("restart", publicPort);
   ownedPids.add(fourth.active.pid);
+  // Exercise the real 5s lifecycle cooldown; do not bypass it in staging.
+  await new Promise(resolve => setTimeout(resolve, 5200));
   const fifth = await requestCoreSupervisor("restart", publicPort);
   ownedPids.add(fifth.active.pid);
   const verified = await requestCoreSupervisor("drain", publicPort);
@@ -391,6 +414,7 @@ try {
     if (registration.pid === channelOwner?.pid) fs.rmSync(channelStateFile, { force: true });
   } catch {}
   try { fs.rmSync(checkpointFile, { force: true }); } catch {}
+  try { fs.rmSync(operationsFile, { force: true }); } catch {}
   try {
     const disc = JSON.parse(fs.readFileSync(discoveryFile, "utf8"));
     if (disc.supervisorPid === owner.pid || disc.supervisorPid === recoveryOwner?.pid)

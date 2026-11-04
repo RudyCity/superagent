@@ -4,7 +4,7 @@ import {setFullYoloMode,setYoloMode} from "../src/core/permissions.js";
 import {CallToolRequestSchema,ListToolsRequestSchema} from "@modelcontextprotocol/sdk/types.js";
 import {getToolSecuritySchemes} from "../src/core/mcp/mcpToolPolicy.js";
 
-const names=["superagent_core_status","superagent_core_restart",
+const names=["superagent_core_status","superagent_core_plan","superagent_core_restart",
   "superagent_core_rollback","superagent_core_drain"];
 
 function handlers(config:Parameters<typeof createSuperagentMcpServer>[0]){
@@ -15,10 +15,11 @@ function handlers(config:Parameters<typeof createSuperagentMcpServer>[0]){
 }
 afterEach(()=>{setFullYoloMode(false);setYoloMode(false);});
 describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
-  it("has four classified tools and write-scope for mutating calls",()=>{
+  it("has five classified tools and write-scope for mutating calls",()=>{
     for(const name of names) expect(MCP_TOOL_DEFINITIONS.some(t=>t.name===name)).toBe(true);
     expect(MCP_TOOL_CLASSIFICATION.superagent_core_status).toBe("safe");
-    for(const name of names.slice(1)) {
+    expect(MCP_TOOL_CLASSIFICATION.superagent_core_plan).toBe("safe");
+    for(const name of names.slice(2)) {
       expect(MCP_TOOL_CLASSIFICATION[name]).toBe("dangerous");
       expect(getToolSecuritySchemes(name,"oauth")[0].scopes).toContain("mcp:tools:write");
     }
@@ -29,10 +30,10 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
     try {
       const visible=(await list({method:"tools/list",params:{}})).tools.map((t:any)=>t.name);
       expect(visible).toContain(names[0]);
-      for(const name of names.slice(1))expect(visible).not.toContain(name);
+      for(const name of names.slice(2))expect(visible).not.toContain(name);
     } finally {await server.close();}
   });
-  it("advertises all four direct gateway tools with authorized dangerous mode",async()=>{
+  it("advertises all five direct gateway tools with authorized dangerous mode",async()=>{
     setYoloMode(true);
     const {server,list}=handlers({allowDangerous:true,toolExposure:"gateway"});
     try {
@@ -68,17 +69,23 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
         name:"superagent_core_restart",arguments:{port:19997},
       }});
       expect(result.isError).toBe(true);
-      expect(JSON.stringify(result)).toContain("CORE_CONTROL_CONFIRM_REQUIRED");
+      expect(JSON.stringify(result)).toContain("CORE_OPERATION_PLAN_REQUIRED");
+      const consent=await call({method:"tools/call",params:{
+        name:"superagent_core_restart",
+        arguments:{port:19997,operationId:"sample-operation-id-0001",expectedBuildDigest:"a".repeat(64)},
+      }});
+      expect(consent.isError).toBe(true);
+      expect(JSON.stringify(consent)).toContain("CORE_CONTROL_CONFIRM_REQUIRED");
     } finally {await server.close();}
   });
   it("refuses mutation without confirm or supervised owner; never falls back to process kill",async()=>{
     setYoloMode(true);
     const {server,call}=handlers({allowDangerous:true,toolExposure:"full"});
     try {
-      const denied=await call({method:"tools/call",params:{name:names[1],arguments:{port:19997}}});
+      const denied=await call({method:"tools/call",params:{name:"superagent_core_restart",arguments:{port:19997,operationId:"sample-operation-id-0001",expectedBuildDigest:"a".repeat(64)}}});
       expect(denied.isError).toBe(true);
       expect(JSON.stringify(denied)).toContain("CORE_CONTROL_CONFIRM_REQUIRED");
-      const missing=await call({method:"tools/call",params:{name:names[1],arguments:{port:19997,confirm:true}}});
+      const missing=await call({method:"tools/call",params:{name:"superagent_core_restart",arguments:{port:19997,confirm:true,operationId:"sample-operation-id-0001",expectedBuildDigest:"a".repeat(64)}}});
       expect(missing.isError).toBe(true);
       expect(JSON.stringify(missing)).toContain("No supervised core");
       const bad=await call({method:"tools/call",params:{name:names[0],arguments:{port:"19997"}}});
@@ -93,7 +100,7 @@ describe("Core MCP control: independent auth, gateway, supervisor guard",()=>{
       const result=await call({method:"tools/call",params:{name:names[0],arguments:{port:19997}}});
       expect(result.isError).toBe(true);
       expect(JSON.stringify(result)).toContain("No supervised core");
-      await expect(call({method:"tools/call",params:{name:names[1],arguments:{port:19997,confirm:true}}}))
+      await expect(call({method:"tools/call",params:{name:"superagent_core_restart",arguments:{port:19997,confirm:true,operationId:"sample-operation-id-0001",expectedBuildDigest:"a".repeat(64)}}}))
         .rejects.toThrow();
     } finally {await server.close();}
   });

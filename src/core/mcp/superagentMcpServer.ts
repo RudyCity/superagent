@@ -951,6 +951,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         case "superagent_manage":
           return await handleManage(args);
         case "superagent_core_status":
+        case "superagent_core_plan":
         case "superagent_core_restart":
         case "superagent_core_rollback":
         case "superagent_core_drain":

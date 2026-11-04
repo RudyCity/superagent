@@ -246,11 +246,12 @@ Run from the repository: bun src/cli.tsx core start --port 7888, then bun src/cl
 
 **Development Core restart through MCP or AI agent (opt-in supervisor):**
 The same authenticated supervisor control path is exposed through direct
-MCP tools `superagent_core_status` (read-only), `superagent_core_restart`,
-`superagent_core_rollback` and `superagent_core_drain`. Gateway mode
-advertises these four tools directly once the connected MCP backend loads this
-version. The Master, Superagent and Chrome-extension agent toolsets also
-provide `manage_core` with `action=status|restart|rollback|drain`.
+MCP tools `superagent_core_status` and `superagent_core_plan` (read-only),
+plus `superagent_core_restart`, `superagent_core_rollback` and
+`superagent_core_drain`. Gateway mode
+advertises all five tools directly once the connected MCP backend loads this
+version and authorizes their scopes. Master, Superagent and Chrome-extension
+agents expose `manage_core` with `action=status|plan|restart|rollback|drain`.
 
 For development, first start an *unoccupied* supervised port using
 `bun src/cli.tsx core start --port 7888`; workers launched from the
@@ -258,15 +259,29 @@ TypeScript source pick up code edits on a later worker restart. When using the
 compiled `dist/cli.js`, run `bun run build` **before** invoking restart.
 No tool silently compiles code, kills an unsupervised process or steals a port.
 
-MCP restart example (via `superagent_tool_execute` in Gateway mode):
+MCP restart example (via `superagent_tool_execute` in Gateway mode).
+First call `superagent_core_plan` with `{"action":"restart","port":7888}`
+and copy its **operationId** and **expectedBuildDigest** into the authorized
+mutation. Both fields are required; reuse the SAME operation ID on retries:
 
 ```json
-{"name":"superagent_core_restart","arguments":{"port":7888,"confirm":true}}
+{
+  "name": "superagent_core_restart",
+  "arguments": {
+    "port": 7888,
+    "confirm": true,
+    "operationId": "<operationId returned by plan>",
+    "expectedBuildDigest": "<expectedBuildDigest returned by plan>"
+  }
+}
 ```
 
-Agent tool equivalent: `manage_core({ action: "restart", port: 7888,
-confirm: true })`. The other mutating actions use the same `confirm:true`
-requirement; `status` does not. MCP mutations require locally enabled YOLO
+Agent equivalent: `manage_core({ action: "plan", targetAction: "restart",
+port: 7888 })`, followed by `manage_core({ action: "restart",
+port: 7888, confirm: true, operationId, expectedBuildDigest })`.
+Rollback and drain follow the same plan/confirm contract; status and plan
+are read-only. The plan is **not** human authorization: operator intent and
+OAuth write permissions still apply. MCP mutations require locally enabled YOLO
 and the normal dangerous-tool authorization (OAuth
 `mcp:tools:write` plus tunnel opt-in as applicable), including through the
 gateway; read-only tokens may inspect status but cannot roll workers. The
@@ -278,11 +293,29 @@ are bounded by the existing worker retention and drain policy; they never
 restart a Cloudflare/OpenAI MCP Tunnel or claim to restart the interactive
 CLI/T-Line itself. A running legacy MCP backend must first load this code
 through a separately authorized update; the tools do not appear magically
-in existing MCP sessions.
+in existing MCP sessions. See the [Core/MCP restart and Legacy tunnel cutover
+runbook](docs/guides/core-mcp-development-self-restart.md) for rollout
+constraints and read-only readiness audit.
 
-Real isolated E2E: `bun scripts/verify-core-supervisor.ts` now exercises
-MCP-driven restart, agent-driven rollback, session handover, guarded drain,
-crash and recovery without touching active production ports or tunnels.
+A deterministic SHA-256 fingerprint covers the current source or compiled
+output. Compiled mode requires the matching manifest generated automatically
+by `bun run build`; stale dist is rejected. Mutations are journaled with
+durable operation IDs (retries return the verified previous result, never
+spawn another worker). An incomplete operation after a crash **fails closed**
+until operator review, with `superagent core operations --port 7888`
+for read-only inspection. Only after reviewing the active PID, retained
+workers, and side effects can a local operator use
+`superagent core reconcile-operation --port 7888 --operation-id ID --observed-pid PID --acknowledge-unknown`;
+it requires a verified live supervisor and at least two minutes since the
+ambiguous request; it does NOT replay the operation. Repeated rapid restarts
+also have a five-second cooldown, in addition to the four-retained-worker
+safety bound.
+
+Real isolated E2E: `bun scripts/verify-core-supervisor.ts` exercises
+MCP-driven restart, replay, agent rollback, session handover, guarded drain,
+crash/recovery. `tests/coreLifecycleOAuthHttp.test.ts` uses actual OAuth
+token scopes + loopback MCP HTTP and starts an isolated Core supervisor;
+neither test touches production ports, accounts or tunnels.
 
 Phase 2 also pins successful session IDs to their original API workers, including session-bound chat JSON, SSE and upgrade routes after restart. New sessions use the new worker. Existing clients should send their session ID when reconnecting; session data stays inside its original process. This is API-core rolling handover, **not full zero-downtime migration of in-memory sessions or live MCP tool processes**. Old workers remain alive rather than being force-killed; a full transport/session supervisor and verified generation drain are future work. See docs/plans/2026-10-25-superagent-core-rolling-restart.md. Manual isolated smoke: bun scripts/verify-core-supervisor.ts.
 
