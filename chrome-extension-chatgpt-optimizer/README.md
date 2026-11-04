@@ -21,6 +21,18 @@ Tidak perlu menjalankan server SuperAgent, API key, koneksi localhost, atau menj
 
 **Penting:** mode Ringkas **bukan** penghapusan node DOM, message data, React state, atau history di server. Tidak ada optimasi memori JavaScript/React yang dijanjikan; pengurangan utamanya ada pada layout dan painting. Dalam mode Ringkas, pesan lama disembunyikan secara visual tetapi tetap ada pada DOM. Efek terhadap kecepatan bergantung pada panjang chat dan browser.
 
+### Diagnostik Render ringan (v0.4.1)
+
+Mode **Render ringan** menggunakan CSS `content-visibility: auto` untuk melewati rendering sebagian konten pesan lama yang berada di luar layar. Ini **tidak mengurangi memori React, tidak menghapus DOM dan tidak menjamin penurunan RAM/VRAM**. Mode **Ringkas pesan lama** memberi efek visual lebih besar, tetapi dapat mengganggu Delegate yang membaca semua pesan.
+
+- Popup memverifikasi nilai CSS nyata menggunakan `getComputedStyle` pada sampel, bukan hanya jumlah atribut. Status ditampilkan bila CSS tidak aktif atau hanya aktif sebagian.
+- Pemeriksaan `checkVisibility({ contentVisibilityAuto: true })` pada isi elemen dipakai untuk mengindikasikan sampel yang sedang dilewati browser; ini bukan benchmark FPS.
+- Pembungkus dengan `display: contents` dialihkan ke satu anak yang memiliki layout box bila aman.
+- Popup tidak memindai ulang seluruh chat tanpa perubahan; streaming token dalam turn yang sama dan perubahan di sidebar tidak memicu pemindaian penuh.
+- Empat pesan terbaru tidak dioptimasi, fokus/seleksi dilindungi, dan semua atribut dibersihkan saat nonaktif atau pindah percakapan.
+
+Uji browser terisolasi: `node chrome-extension-chatgpt-optimizer/verify-render.mjs` menjalankan Chromium headless menggunakan `playwright-core` dengan percakapan sintetis. Hasil: 56 elemen CSS aktif, 51 isi offscreen dilewati rendering, tidak ada scan tambahan saat streaming, dan semua pesan dipertahankan setelah optimasi dinonaktifkan. Belum ada benchmark FPS atau memori pada ChatGPT nyata.
+
 ### Penggunaan
 
 - Ubah mode melalui popup; perubahan langsung diterapkan pada tab `chatgpt.com` yang terbuka.
@@ -82,6 +94,7 @@ node --check "chrome-extension-chatgpt-optimizer/background.js"
 node --check "chrome-extension-chatgpt-optimizer/tab-reload.js"
 node --check "chrome-extension-chatgpt-optimizer/popup.js"
 node --check "chrome-extension-chatgpt-optimizer/popup-reload.js"
+node chrome-extension-chatgpt-optimizer/verify-render.mjs
 bun --bun x tsc --noEmit
 ```
 
@@ -93,7 +106,8 @@ Tests cover safe DOM optimization, sidebar synchronization, permissions, selecte
 
 - `manifest.json` — MV3 extension configuration and site-only permissions.
 - `policy.js` — pure rendering and sidebar-list policies.
-- `content.js` / `content.css` — reversible message rendering optimization.
+- `content.js` / `content.css` — render optimization with computed-style checks, layout-box fallback and structural scanning.
+- `verify-render.mjs` — isolated headless Chromium rendering regression test.
 - `sidebar.js` / `sidebar.css` — authenticated read-only history sync and isolated Recents-anchored shortcuts.
 - `background.js` — MV3 alarm scheduler; it never receives session tokens or chat content.
 - `popup.html` / `popup.css` / `popup.js` — controls, statistics and manual sidebar refresh.
@@ -103,4 +117,4 @@ Tests cover safe DOM optimization, sidebar synchronization, permissions, selecte
 - `../tests/chatgptOptimizerBackground.test.ts` — inactive-window scheduling and alarm tests.
 - `../tests/chatgptOptimizerTabReload.test.ts` — specific-chat reload safety and isolation tests.
 
-Version: 0.4.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No external SuperAgent server is needed; a lightweight MV3 service worker schedules background checks.
+Version: 0.4.1. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No external SuperAgent server is needed; a lightweight MV3 service worker schedules background checks.

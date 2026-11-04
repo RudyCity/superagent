@@ -18,6 +18,21 @@ class NodeMock {
   getAttribute(key: string) { return this.attrs.get(key) ?? null; }
   setAttribute(key: string, value: string) { this.attrs.set(key, value); }
   removeAttribute(key: string) { this.attrs.delete(key); }
+  matches(selector: string) {
+    if (selector.includes("conversation-turn-") &&
+        this.getAttribute("data-testid")?.startsWith("conversation-turn-")) return true;
+    if (selector.includes("data-message-author-role") &&
+        this.getAttribute("data-message-author-role")) return true;
+    return false;
+  }
+  querySelector(selector: string): NodeMock | null {
+    for (const child of this.children) {
+      if (child.matches(selector)) return child;
+      const descendant = child.querySelector(selector);
+      if (descendant) return descendant;
+    }
+    return null;
+  }
   contains(node: NodeMock | null): boolean {
     for (let current = node; current; current = current.parentElement) if (current === this) return true;
     return false;
@@ -41,10 +56,14 @@ class NodeMock {
 }
 
 type Harness = ReturnType<typeof makeHarness>;
-function makeHarness(initial: Record<string, unknown> = { mode: "compact", keepLast: 8 }) {
+function makeHarness(
+  initial: Record<string, unknown> = { mode: "compact", keepLast: 8 },
+  options: { cssWorks?: boolean; cssWorksPartial?: boolean; displayContentsFirst?: boolean } = {},
+) {
   const turns = Array.from({ length: 30 }, (_, idx) => {
     const node = new NodeMock("article");
     node.setAttribute("data-testid", `conversation-turn-${idx}`);
+    if (idx === 0 && options.displayContentsFirst) node.setAttribute("data-test-display", "contents");
     const message = new NodeMock("p");
     message.textContent = `message ${idx}`;
     node.appendChild(message);
@@ -52,6 +71,8 @@ function makeHarness(initial: Record<string, unknown> = { mode: "compact", keepL
   });
   const body = new NodeMock("body");
   const location = { pathname: "/c/one" };
+  let queryCount = 0;
+  let mutationCallback: ((items: any[]) => void) | null = null;
   const document = {
     body,
     documentElement: new NodeMock("html"),
@@ -59,6 +80,7 @@ function makeHarness(initial: Record<string, unknown> = { mode: "compact", keepL
     hidden: false,
     createElement: (tag: string) => new NodeMock(tag),
     querySelectorAll: (selector: string) => {
+      queryCount++;
       if (selector.includes("conversation-turn-")) return turns;
       if (selector.includes("data-message-author-role")) return [];
       return [];
@@ -76,7 +98,17 @@ function makeHarness(initial: Record<string, unknown> = { mode: "compact", keepL
   };
   const context: any = {
     chrome, document, location, window: { getSelection: () => ({ isCollapsed: true }), addEventListener() {} },
-    MutationObserver: class { observe() {} disconnect() {} },
+    MutationObserver: class {
+      constructor(fn: (items: any[]) => void) { mutationCallback = fn; }
+      observe() {}
+      disconnect() {}
+    },
+    getComputedStyle: (node: NodeMock) => ({
+      display: node.getAttribute("data-test-display") || "block",
+      contentVisibility: options.cssWorks === false ||
+        (options.cssWorksPartial && node.getAttribute("data-testid") === "conversation-turn-13")
+        ? "visible" : node.getAttribute("data-sg-lite-render") === "1" ? "auto" : "visible",
+    }),
     setTimeout, clearTimeout, setInterval: () => 1, console,
   };
   vm.runInNewContext(policyCode, context, { filename: "policy.js" });
@@ -90,7 +122,11 @@ function makeHarness(initial: Record<string, unknown> = { mode: "compact", keepL
   function updateSettings(newValue: Record<string, unknown>) {
     changeListener({ superagentChatGPTLiteSettings: { newValue } }, "local");
   }
-  return { ready, turns, body, document, location, call, updateSettings, context };
+  return {
+    ready, turns, body, document, location, call, updateSettings, context,
+    queries: () => queryCount,
+    emitMutations: (items: any[]) => mutationCallback?.(items),
+  };
 }
 
 describe("ChatGPT Optimizer extension: policy", () => {
@@ -184,6 +220,91 @@ describe("ChatGPT Optimizer extension: DOM integration", () => {
     expect(response.state.revealedExtra).toBe(0);
     expect(response.state.pathname).toBe("/c/two");
     expect(response.state.hidden).toBe(22);
+  });
+
+  it("verifies actual computed CSS rather than trusting an optimized attribute count", async () => {
+    const h = makeHarness({ mode: "render" });
+    await h.ready;
+    const status = h.call("status").state;
+    expect(status.total).toBe(30);
+    expect(status.optimized).toBe(26);
+    expect(status.verified).toBe(true);
+    expect(status.renderState).toBe("verified");
+    expect(status.hidden).toBe(0);
+    const css = fs.readFileSync(new URL("content.css", base), "utf8");
+    expect(css).toMatch(/content-visibility:\s*auto/);
+    const popup = fs.readFileSync(new URL("popup.js", base), "utf8");
+    expect(popup).toContain('state.renderState === "css-inactive"');
+    expect(popup).toContain('state.renderState === "verified"');
+  });
+
+  it("reports partially applied CSS rather than silently claiming optimization works", async () => {
+    const h = makeHarness({ mode: "render" }, { cssWorksPartial: true });
+    await h.ready;
+    const state = h.call("status").state;
+    expect(state.optimized).toBe(26);
+    expect(state.verified).toBe(false);
+    expect(state.renderState).toBe("css-partial");
+    expect(state.verifiedSamples).toBe(2);
+    expect(state.sampledCount).toBe(3);
+  });
+
+  it("warns when CSS is ineffective even though turns are marked optimized", async () => {
+    const h = makeHarness({ mode: "render" }, { cssWorks: false });
+    await h.ready;
+    const state = h.call("status").state;
+    expect(state.optimized).toBe(26);
+    expect(state.verified).toBe(false);
+    expect(state.renderState).toBe("css-inactive");
+  });
+
+  it("moves content-visibility to a real layout child for display:contents wrappers", async () => {
+    const h = makeHarness({ mode: "render" }, { displayContentsFirst: true });
+    await h.ready;
+    const first = h.turns[0];
+    const status = h.call("status").state;
+    expect(first.getAttribute("data-sg-lite-render")).toBe(null);
+    expect(first.children[0].getAttribute("data-sg-lite-render")).toBe("1");
+    expect(status.optimized).toBe(26);
+    expect(status.renderState).toBe("verified");
+    h.updateSettings({ enabled: false, mode: "render" });
+    expect(first.children[0].getAttribute("data-sg-lite-render")).toBe(null);
+  });
+
+  it("does not rescan on every popup poll or streamed token", async () => {
+    const h = makeHarness({ mode: "render" });
+    await h.ready;
+    const initial = h.call("status").state.scanCount;
+    const queryCount = h.queries();
+    for (let i = 0; i < 8; i++) expect(h.call("status").state.scanCount).toBe(initial);
+    expect(h.queries()).toBe(queryCount);
+    h.emitMutations([{
+      type: "childList", target: h.turns[29],
+      addedNodes: [new NodeMock("span")], removedNodes: [],
+    }]);
+    expect(h.call("status").state.scanCount).toBe(initial);
+    const newTurn = new NodeMock("article");
+    newTurn.setAttribute("data-testid", "conversation-turn-30");
+    h.turns.push(newTurn);
+    h.emitMutations([{
+      type: "childList", target: h.body,
+      addedNodes: [newTurn], removedNodes: [],
+    }]);
+    const after = h.call("status").state;
+    expect(after.total).toBe(31);
+    expect(after.scanCount).toBe(initial + 1);
+    expect(after.optimized).toBe(27);
+  });
+
+  it("reports that short and unloaded conversations do not need optimization", async () => {
+    const h = makeHarness({ mode: "render" });
+    await h.ready;
+    h.turns.splice(0, 28);
+    h.updateSettings({ mode: "render" });
+    expect(h.call("status").state.renderState).toBe("short-chat");
+    h.turns.splice(0, 2);
+    h.updateSettings({ mode: "render" });
+    expect(h.call("status").state.renderState).toBe("no-messages");
   });
 
   it("keeps full DOM visible in render mode and ignores external messages", async () => {

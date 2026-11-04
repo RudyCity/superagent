@@ -23,16 +23,17 @@
 
     <section class="stats" aria-label="Statistik pesan">
       <div><strong id="total">—</strong><span>Pesan</span></div>
-      <div><strong id="optimized">—</strong><span>Render ringan</span></div>
+      <div><strong id="optimized">—</strong><span>CSS diterapkan</span></div>
       <div><strong id="hidden">—</strong><span>Diringkas</span></div>
     </section>
+    <p class="render-diagnostic" id="render-diagnostic">Memeriksa efektivitas mode render…</p>
     <p class="status" id="status" role="status">Mendeteksi tab ChatGPT…</p>
 
     <section class="settings" aria-label="Pengaturan optimasi">
       <div class="field">
         <label for="mode">Mode optimasi</label>
         <select id="mode">
-          <option value="render">Render ringan (aman)</option>
+          <option value="render">Render ringan (CSS offscreen)</option>
           <option value="compact">Ringkas pesan lama</option>
         </select>
         <small id="mode-help">Pesan tetap tersedia; Chrome tidak perlu mengecat bagian yang jauh dari layar.</small>

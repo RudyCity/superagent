@@ -33,7 +33,10 @@ h1 { margin: 0; font-size: 16px; line-height: 1.25; letter-spacing: -.02em; }
 .stats div + div { border-left: 1px solid var(--line); }
 .stats strong { display: block; font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .stats span { color: var(--muted); font-size: 10px; }
-.status { color: var(--muted); margin: 9px 0 17px; min-height: 18px; font-size: 11px; }
+.status { color: var(--muted); margin: 7px 0 17px; min-height: 18px; font-size: 11px; }
+.render-diagnostic { margin: 9px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.render-diagnostic.error { color: var(--danger); }
+.render-diagnostic.success { color: var(--success); }
 .status.error { color: var(--danger); }
 .status.success { color: var(--success); }
 .settings { display: grid; gap: 13px; }

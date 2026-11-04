@@ -24,7 +24,7 @@
     el("sidebarInterval").value = String(settings.sidebarInterval);
     el("mode-help").textContent = settings.mode === "compact"
       ? "Only recent messages are visible. Older messages can be restored at any time."
-      : "Reduce rendering while keeping all messages visible. Works alongside Delegate.";
+      : "Optimizes painting of older offscreen messages only. All messages stay in the DOM for Delegate; React memory is not reduced.";
     el("keepLast").disabled = !settings.enabled || settings.mode !== "compact";
     el("showControls").disabled = !settings.enabled || settings.mode !== "compact";
     el("sidebarSync").disabled = !settings.enabled;
@@ -82,7 +82,11 @@
       paintCounters(result.state);
       const sidebarResult = await send(SIDEBAR_SCOPE, "status");
       paintSidebar(sidebarResult?.ok ? sidebarResult.state : null);
-      setStatus(settings.enabled ? "Optimizer active" : "Optimizer disabled", settings.enabled ? "success" : "");
+      const failed = settings.enabled && settings.mode === "render" &&
+        ["css-inactive", "css-partial", "no-targets"].includes(result.state.renderState);
+      setStatus(failed ? "Render ringan tidak efektif pada halaman ini"
+        : settings.enabled ? "Optimizer aktif" : "Optimizer nonaktif",
+        failed ? "error" : settings.enabled ? "success" : "");
     } catch {
       setStatus("Unable to query the current tab.", "error");
       paintSidebar(null);
@@ -95,6 +99,38 @@
     el("total").textContent = state ? String(state.total) : "—";
     el("optimized").textContent = state ? String(state.optimized) : "—";
     el("hidden").textContent = state ? String(state.hidden) : "—";
+    const diagnostic = el("render-diagnostic");
+    diagnostic.className = "render-diagnostic";
+    const mode = state?.settings?.mode ?? settings.mode;
+    if (!state) {
+      diagnostic.textContent = "Belum bisa membaca status optimasi di tab ini.";
+    } else if (!state.settings?.enabled) {
+      diagnostic.textContent = "Optimasi dinonaktifkan; semua atribut lama dilepas.";
+    } else if (mode === "compact") {
+      diagnostic.textContent = state.hidden > 0
+        ? `${state.hidden} pesan lama diringkas (DOM tetap ada).`
+        : "Mode ringkas aktif, tetapi tidak ada pesan yang perlu disembunyikan.";
+    } else if (state.renderState === "verified") {
+      diagnostic.textContent = state.skipCheckCount > 0
+        ? `CSS aktif pada ${state.verifiedSamples}/${state.sampledCount} sampel; ${state.skippedSamples}/${state.skipCheckCount} sampel konten sedang dilewati browser. Ini bukan benchmark FPS/memori.`
+        : "CSS content-visibility: auto terverifikasi. Hanya konten di luar layar yang berpotensi dilewati; FPS/memori belum diukur.";
+      diagnostic.className = "render-diagnostic success";
+    } else if (state.renderState === "css-partial") {
+      diagnostic.textContent = `CSS aktif hanya pada ${state.verifiedSamples}/${state.sampledCount} elemen sampel. Ada elemen lama yang belum teroptimasi.`;
+      diagnostic.className = "render-diagnostic error";
+    } else if (state.renderState === "css-inactive") {
+      diagnostic.textContent = "CSS optimasi tidak efektif pada elemen yang diperiksa. Periksa pemasangan ekstensi.";
+      diagnostic.className = "render-diagnostic error";
+    } else if (state.renderState === "no-targets") {
+      diagnostic.textContent = "Pesan ditemukan tetapi tidak punya elemen layout yang aman untuk dioptimasi.";
+      diagnostic.className = "render-diagnostic error";
+    } else if (state.renderState === "no-messages") {
+      diagnostic.textContent = "Belum menemukan pesan percakapan. Buka chat yang sudah termuat.";
+    } else if (state.renderState === "short-chat") {
+      diagnostic.textContent = "Chat masih pendek (≤4 pesan); CSS offscreen belum diperlukan.";
+    } else {
+      diagnostic.textContent = "Penanda optimasi terpasang; verifikasi CSS belum tersedia.";
+    }
     const allow = !!state && settings.enabled && settings.mode === "compact";
     el("more").disabled = !allow || state.hidden === 0;
     el("all").disabled = !allow || state.hidden === 0;
