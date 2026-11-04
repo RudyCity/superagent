@@ -187,6 +187,7 @@ import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWo
 import { BRAIN_MCP_TOOL_DEFS, dispatchBrainMcpTool, dispatchBrainPublishMcpTool } from "./tools/brainMcpTools.js";
 import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTools.js";
 import { CORE_LIFECYCLE_MCP_TOOL_DEFS, dispatchCoreLifecycleMcpTool } from "./tools/coreLifecycleMcpTools.js";
+import { SERVICE_MANAGER_MCP_TOOL_DEFS, dispatchServiceManagerMcpTool } from "./tools/serviceManagerMcpTools.js";
 import {
   MCP_GATEWAY_TOOL_DEFS,
   MCP_GATEWAY_TOOL_NAMES,
@@ -560,6 +561,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
     ...MOTION_MCP_TOOL_DEFS,
     ...CORE_LIFECYCLE_MCP_TOOL_DEFS,
+    ...SERVICE_MANAGER_MCP_TOOL_DEFS,
     ...MCP_GATEWAY_TOOL_DEFS,
     ...DELEGATE_MCP_TOOL_DEFS,
 ];
@@ -950,6 +952,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleMerge(args);
         case "superagent_manage":
           return await handleManage(args);
+        case "superagent_manage_services":
+          return await dispatchServiceManagerMcpTool(args);
         case "superagent_core_status":
         case "superagent_core_plan":
         case "superagent_core_restart":

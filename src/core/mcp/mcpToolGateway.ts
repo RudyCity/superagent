@@ -87,6 +87,7 @@ const eagerDelegateNames = new Set<string>(MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES
 export const MCP_GATEWAY_EAGER_CORE_TOOL_NAMES = Object.freeze([
   "superagent_core_status", "superagent_core_plan", "superagent_core_restart",
   "superagent_core_rollback", "superagent_core_drain",
+  "superagent_manage_services",
 ] as const);
 const eagerCoreNames = new Set<string>(MCP_GATEWAY_EAGER_CORE_TOOL_NAMES);
 

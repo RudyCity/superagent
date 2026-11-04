@@ -134,5 +134,30 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
     expect(retry.replayed).toBe(true);
     expect(retry.activeWorkerPid).toBe(output.activeWorkerPid);
     expect((await requestCoreSupervisor("status",ownerPort)).active.pid).toBe(output.activeWorkerPid);
+
+    // The unified MCP endpoint uses the same authenticated control and must
+    // not mutate the local OAuth HTTP ingress while rolling a worker back.
+    expect((await writer.listTools()).tools.map(t=>t.name))
+      .toContain("superagent_manage_services");
+    const inventory=await writer.callTool({name:"superagent_manage_services",
+      arguments:{action:"status",service:"core",port:ownerPort}});
+    expect(inventory.isError).not.toBe(true);
+    const inv=JSON.parse((inventory.content as any[])[0].text);
+    expect(inv.services[0].ownershipVerified).toBe(true);
+    const unifiedPlan=await writer.callTool({name:"superagent_manage_services",
+      arguments:{action:"plan",service:"core",targetAction:"rollback",port:ownerPort}});
+    expect(unifiedPlan.isError).not.toBe(true);
+    const rollbackPlan=JSON.parse((unifiedPlan.content as any[])[0].text);
+    const rollbackArgs={action:"rollback",service:"core",port:ownerPort,confirm:true,
+      operationId:rollbackPlan.operationId,expectedBuildDigest:rollbackPlan.expectedBuildDigest};
+    const rolled=await writer.callTool({name:"superagent_manage_services",arguments:rollbackArgs});
+    expect(rolled.isError).not.toBe(true);
+    const receipt=JSON.parse((rolled.content as any[])[0].text);
+    expect(receipt.verified).toBe(true);
+    expect(receipt.activeWorkerPid).toBe(before.active.pid);
+    const reissued=await writer.callTool({name:"superagent_manage_services",arguments:rollbackArgs});
+    expect(reissued.isError).not.toBe(true);
+    expect(JSON.parse((reissued.content as any[])[0].text).replayed).toBe(true);
+    expect((await requestCoreSupervisor("status",ownerPort)).active.pid).toBe(before.active.pid);
   },90000);
 });

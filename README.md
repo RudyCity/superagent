@@ -477,6 +477,8 @@ Workspace Chaining allows you to link multiple workspaces—both local directori
 - **Dynamic Context Injection**: The active chain's topology, node roles, paths, and purpose descriptions are dynamically injected into the AI's base prompt.
 - **Automatic Workspace Switching**: Switching workspaces automatically switches to the workspace chain associated with the active workspace.
 - **Cross-Workspace Execution**: The agent uses `cross_workspace_exec` to run commands, read files, and write code across different local or remote nodes within the chain.
+- **Unified runtime management**: MCP `superagent_manage_services` and agent `manage_services` inventory Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, Cloudflare tunnels, and the process supervisor. `status|inventory|doctor` are read-only operations; authenticated/confirmed `plan -> restart|rollback|drain` manages supervised Core, while `plan -> reload` manages only an authenticated Reloadable MCP backend without restarting its public tunnel. Unsupported start/stop/restart combinations fail closed; Legacy Quick Tunnel URLs are never changed. See [Unified service manager](docs/guides/unified-service-manager.md).
+
 
 **`/worktrees` subcommands:**
 - `list` — Show all Git worktrees

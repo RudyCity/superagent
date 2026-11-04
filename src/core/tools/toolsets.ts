@@ -141,6 +141,7 @@ import {
 
 import { manageMcpTool } from "./mcpTools.js";
 import { manageCoreTool } from "./coreLifecycleTools.js";
+import { manageServicesTool } from "./serviceManagerTools.js";
 import { saveSharedMemoryTool, readSharedMemoryTool } from "./sharedMemoryTools.js";
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../workspace/workspaceChainTools.js";
 import { unlockFileTool, getLockStatsTool, resolveConflictTool, generateLockReportTool } from "./lockTools.js";
@@ -241,6 +242,7 @@ export const masterToolset: Tool[] = [
   // ── MCP is a master-tier concern (cross-tool integration setup) ──
   manageMcpTool,
   manageCoreTool,
+  manageServicesTool,
 ];
 
 // Defense-in-depth runtime allowlist. The MasterAgent runner consults
@@ -304,6 +306,7 @@ export const superagentToolset: Tool[] = [
   synthesizeSkillTool,
   manageMcpTool,
   manageCoreTool,
+  manageServicesTool,
   listPeerSuperagentsTool,
   defineSubagentTool,    // define specialized subagents
   invokeSubagentTool,    // spawn subagents (depth 2)
@@ -466,6 +469,7 @@ export const chromeExtensionToolset: Tool[] = [
   useSkillTool,
   manageMcpTool,
   manageCoreTool,
+  manageServicesTool,
   defineSubagentTool,
   invokeSubagentTool,
   sendMessageTool,
