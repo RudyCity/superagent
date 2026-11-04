@@ -52,6 +52,9 @@ small { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; 
 .sidebar-sync-status { margin: -5px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
 button.refresh-sidebar { width: 100%; }
 .target-reload-settings { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
+.memory-settings { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
+.memory-settings > button { width: 100%; }
+.memory-warning { margin: 0; line-height: 1.5; color: var(--danger); font-size: 11px; }
 .reload-explanation { color: var(--muted); font-size: 11px; margin: -6px 0 0; line-height: 1.5; }
 .reload-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .reload-actions button { min-width: 0; font-size: 11px; }

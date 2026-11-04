@@ -90,6 +90,16 @@
       <p class="sidebar-sync-status" id="reload-chat-status" role="status">Select a conversation tab first.</p>
     </section>
 
+    <section class="settings memory-settings" aria-label="Penghematan RAM Chrome">
+      <div class="sidebar-settings-title">Penghematan RAM nyata</div>
+      <p class="reload-explanation">Tidurkan tab ChatGPT latar belakang yang tidak sedang bekerja. Tab aktif, draft, proses AI, panggilan, dan tab yang disematkan dilindungi.</p>
+      <p class="memory-warning"><strong>Perhatian:</strong> tab yang ditidurkan akan dimuat ulang saat Anda membukanya kembali. Jika ChatGPT sedang bermasalah, error loading bisa muncul. Fitur hanya berjalan saat tombol diklik.</p>
+      <p class="sidebar-sync-status" id="sleep-tab-count" role="status">Memeriksa tab…</p>
+      <button type="button" id="sleep-background-tabs">Tidurkan tab ChatGPT lain</button>
+      <p class="sidebar-sync-status" id="sleep-result" role="status"></p>
+      <small>Chrome melepas tab latar belakang dari memori. Memori tab yang sedang aktif tidak dikurangi dan tidak ada janji penghematan MB tertentu.</small>
+    </section>
+
     <div class="actions">
       <button type="button" id="more">Tampilkan +20</button>
       <button type="button" id="all">Lihat semua</button>
@@ -97,12 +107,13 @@
     </div>
 
     <footer>
-      <p><strong>Aman untuk riwayat:</strong> ekstensi hanya mengubah tampilan lokal, bukan menghapus pesan atau mengirim chat.</p>
+      <p><strong>Riwayat tetap tersimpan:</strong> mode render tidak menghapus pesan. Tombol tidur tab adalah aksi terpisah yang melepas memori dengan konsekuensi reload saat tab dibuka kembali.</p>
       <p>Jika memakai Delegate, pilih <b>Render ringan</b> agar pembacaan pesan lama tetap terlihat di DOM.</p>
     </footer>
   </main>
   <script src="policy.js"></script>
   <script src="popup.js"></script>
   <script src="popup-reload.js"></script>
+  <script src="popup-memory.js"></script>
 </body>
 </html>

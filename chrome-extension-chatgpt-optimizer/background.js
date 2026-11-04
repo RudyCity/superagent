@@ -39,7 +39,7 @@
     }
     const perWindow = new Map();
     for (const tab of tabs) {
-      if (!Number.isSafeInteger(tab.id) || !Number.isSafeInteger(tab.windowId)) continue;
+      if (!Number.isSafeInteger(tab.id) || !Number.isSafeInteger(tab.windowId) || tab.discarded) continue;
       const current = perWindow.get(tab.windowId);
       // One tab per Chrome window, prefer its active tab if ChatGPT is active.
       if (!current || (tab.active && !current.active)) perWindow.set(tab.windowId, tab);
@@ -65,3 +65,6 @@
   // Service workers may be restarted after idling. Ensure the alarm exists.
   void schedule();
 })();
+
+// Load separately to keep history scheduling and memory-saving isolated.
+importScripts("memory-worker.js");

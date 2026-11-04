@@ -194,7 +194,7 @@ describe("ChatGPT Optimizer: sidebar sync policy", () => {
   });
 
   it("manifest loads sidebar scripts with no new permissions or external origins", () => {
-    expect(manifest.content_scripts[0].js).toEqual(["policy.js", "content.js", "sidebar.js", "tab-reload.js"]);
+    expect(manifest.content_scripts[0].js).toEqual(["policy.js", "content.js", "sidebar.js", "tab-reload.js", "tab-sleep.js"]);
     expect(manifest.content_scripts[0].css).toEqual(["content.css", "sidebar.css"]);
     expect(manifest.permissions).toEqual(["storage", "tabs", "alarms"]);
     expect(manifest.host_permissions).toEqual(["https://chatgpt.com/*"]);

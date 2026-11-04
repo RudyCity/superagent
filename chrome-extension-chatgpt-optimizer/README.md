@@ -41,6 +41,16 @@ Uji browser terisolasi: `node chrome-extension-chatgpt-optimizer/verify-render.m
 - Matikan sakelar utama untuk melepas semua atribut optimasi dari pesan; atau nonaktifkan ekstensi di Chrome untuk memulihkan tampilan tanpa menyentuh data chat.
 - Saat pindah chat, jendela tampilan sementara di-reset. Tidak ada pengaturan atau isi chat yang disimpan per percakapan.
 
+## Penghematan RAM nyata untuk tab latar (v0.5.0)
+
+**Render ringan** hanya mengurangi pekerjaan rendering dan tidak melepas memori React pada tab aktif. Untuk penghematan RAM saat **banyak tab ChatGPT terbuka**, gunakan tombol **Tidurkan tab ChatGPT lain** di popup.
+
+Fitur ini menggunakan `chrome.tabs.discard(tabId)`, API Chrome untuk melepas konten tab latar dari RAM tanpa menghapus tab. Tab **dimuat ulang saat dikunjungi kembali**. Hal ini berbeda dari *Retry chat only*, yang tidak me-reload halaman. Jika ChatGPT bermasalah saat dimuat ulang, error loading masih mungkin terjadi.
+
+Perlindungan: hanya percakapan tersimpan yang sudah dimuat; tab aktif di **semua jendela**, tab pinned, berbunyi, tidak boleh di-discard, memiliki draft, streaming AI, upload, rekaman/panggilan atau dialog akan dilewati. Status dan URL dicek ulang sebelum tidur; bila pemeriksaan tidak tersedia, tab tidak disentuh.
+
+**Manual saja**, bukan otomatis. Tidurkan hanya tab yang tidak lagi menjalankan Delegate atau tugas AI penting. Popup menampilkan jumlah tab yang benar-benar ditidurkan, dilewati atau gagal—**bukan angka MB yang belum diukur**. Memori tab aktif tidak berkurang. Tiap profil Chrome perlu ekstensi sendiri.
+
 ## Recent-chat synchronization (v0.4.0)
 
 The extension checks saved chats from the signed-in account without refreshing the ChatGPT page or touching its React state.
@@ -86,11 +96,14 @@ In-page retry is blocked if the tab has an unsent draft, an in-progress response
 From the SuperAgent repository root:
 
 ```powershell
-bun --bun x vitest run tests/chatgptLiteExtension.test.ts tests/chatgptOptimizerSidebar.test.ts tests/chatgptOptimizerTabReload.test.ts tests/chatgptOptimizerBackground.test.ts
+bun --bun x vitest run tests/chatgptLiteExtension.test.ts tests/chatgptOptimizerSidebar.test.ts tests/chatgptOptimizerTabReload.test.ts tests/chatgptOptimizerBackground.test.ts tests/chatgptOptimizerMemorySaver.test.ts
 node --check "chrome-extension-chatgpt-optimizer/policy.js"
 node --check "chrome-extension-chatgpt-optimizer/content.js"
 node --check "chrome-extension-chatgpt-optimizer/sidebar.js"
 node --check "chrome-extension-chatgpt-optimizer/background.js"
+node --check "chrome-extension-chatgpt-optimizer/memory-worker.js"
+node --check "chrome-extension-chatgpt-optimizer/tab-sleep.js"
+node --check "chrome-extension-chatgpt-optimizer/popup-memory.js"
 node --check "chrome-extension-chatgpt-optimizer/tab-reload.js"
 node --check "chrome-extension-chatgpt-optimizer/popup.js"
 node --check "chrome-extension-chatgpt-optimizer/popup-reload.js"
@@ -110,11 +123,14 @@ Tests cover safe DOM optimization, sidebar synchronization, permissions, selecte
 - `verify-render.mjs` — isolated headless Chromium rendering regression test.
 - `sidebar.js` / `sidebar.css` — authenticated read-only history sync and isolated Recents-anchored shortcuts.
 - `background.js` — MV3 alarm scheduler; it never receives session tokens or chat content.
+- `memory-worker.js` / `tab-sleep.js` — manual Chrome tab memory release, guarded by idle-state checks.
+- `popup-memory.js` — manual sleep action and result summary.
 - `popup.html` / `popup.css` / `popup.js` — controls, statistics and manual sidebar refresh.
 - `tab-reload.js` / `popup-reload.js` — in-page native Try again detection and guarded per-chat retry; never calls Chrome tab reload.
 - `../tests/chatgptLiteExtension.test.ts` — message-rendering tests.
 - `../tests/chatgptOptimizerSidebar.test.ts` — sidebar behavior, UI anchoring and safety tests.
 - `../tests/chatgptOptimizerBackground.test.ts` — inactive-window scheduling and alarm tests.
+- `../tests/chatgptOptimizerMemorySaver.test.ts` — inactive-tab memory-saver safety tests.
 - `../tests/chatgptOptimizerTabReload.test.ts` — specific-chat reload safety and isolation tests.
 
-Version: 0.4.1. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No external SuperAgent server is needed; a lightweight MV3 service worker schedules background checks.
+Version: 0.5.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No external SuperAgent server is needed; a lightweight MV3 service worker schedules background checks.

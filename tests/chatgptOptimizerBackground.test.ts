@@ -40,7 +40,7 @@ function harness() {
       sendMessage: async (tabId: number, message: any) => { sent.push({ tabId, message }); },
     },
   };
-  vm.runInNewContext(source, { chrome, console });
+  vm.runInNewContext(source, { chrome, console, importScripts: () => {} });
   const tick = async () => {
     await new Promise<void>((resolve) => setImmediate(resolve));
     await new Promise<void>((resolve) => setImmediate(resolve));
@@ -50,7 +50,7 @@ function harness() {
     storageCallback({ [KEY]: { newValue: settings } }, "local");
   }
   const trigger = (name = ALARM) => alarmCallback({ name });
-  return { tick, alarms, cleared, sent, update, trigger, queries: () => queryCalls };
+  return { tick, alarms, cleared, sent, update, trigger, tabs, queries: () => queryCalls };
 }
 
 describe("ChatGPT Optimizer MV3 multi-window synchronization", () => {
@@ -73,6 +73,16 @@ describe("ChatGPT Optimizer MV3 multi-window synchronization", () => {
       entry.message.scope === "chatgpt-optimizer-sidebar-v1" &&
       entry.message.action === "background_refresh",
     )).toBe(true);
+  });
+
+  it("does not wake discarded ChatGPT tabs during sidebar synchronization", async () => {
+    const h = harness();
+    await h.tick();
+    h.tabs[2].discarded = true;
+    h.tabs[4].discarded = true;
+    h.trigger();
+    await h.tick();
+    expect(h.sent.map((entry) => entry.tabId)).toEqual([12, 23]);
   });
 
   it("ignores unrelated alarms", async () => {
