@@ -101,7 +101,9 @@
         return;
       }
       await chrome.tabs.reload(tabId);
-      message("Reload requested for the selected chat tab. All other tabs are untouched.");
+      message(inspected.recovery
+        ? "Recovery retry requested for this tab only. If ChatGPT still cannot load it, check account access or try again later."
+        : "Reload requested for the selected chat tab. All other tabs are untouched.");
     } catch {
       message("Could not reload safely. Check that the ChatGPT tab is open and ready.", true);
     } finally {

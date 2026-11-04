@@ -19,6 +19,9 @@ function safetyFixture(options: {
   loading?: boolean;
   composer?: boolean;
   messages?: boolean;
+  errorText?: string;
+  errorQuoted?: boolean;
+  errorHidden?: boolean;
 } = {}) {
   let listener: Function = () => {};
   const editor = {
@@ -34,6 +37,12 @@ function safetyFixture(options: {
     matches: (selector: string) => !!options.generating && selector.includes("stop-button"),
   };
   const node = { isConnected: true, getClientRects: () => [1] };
+  const errorNode = {
+    isConnected: true,
+    getClientRects: () => options.errorHidden ? [] : [1],
+    textContent: options.errorText || "",
+    closest: (_selector: string) => options.errorQuoted ? { tagName: "ARTICLE" } : null,
+  };
   const document = {
     readyState: options.loading ? "loading" : "complete",
     querySelectorAll: (selector: string) => {
@@ -41,6 +50,7 @@ function safetyFixture(options: {
       if (selector === "button") return options.generating ? [control] : [];
       if (selector.includes("attachment-preview")) return options.attachment ? [node] : [];
       if (selector.includes('dialog[open]')) return options.dialog ? [node] : [];
+      if (selector.includes("main h1")) return options.errorText ? [errorNode] : [];
       if (selector.includes("data-message-author-role")) return options.messages === false ? [] : [node];
       return [];
     },
@@ -84,7 +94,7 @@ class FakeElement {
 function popupFixture(options: {
   tabs?: Array<{ id: number; url: string; title: string; windowId: number }>;
   activeId?: number;
-  safety?: { ok: boolean; safe?: boolean; reason?: string };
+  safety?: { ok: boolean; safe?: boolean; recovery?: boolean; reason?: string };
   secondUrl?: string;
   noContent?: boolean;
 } = {}) {
@@ -154,6 +164,48 @@ describe("ChatGPT Optimizer: selected-chat reload guard", () => {
     }
   });
 
+  it("offers one targeted recovery reload on the actual conversation load error", () => {
+    const response = safetyFixture({
+      composer: false, messages: false,
+      errorText: "Could not load this ChatGPT conversation",
+    }).call().response;
+    expect(response).toEqual({
+      ok: true, safe: true, recovery: true,
+      reason: "ChatGPT reports a failed conversation load. A targeted reload may retry it.",
+    });
+  });
+
+  it("does not treat quoted, hidden or unrelated error text as a failed conversation", () => {
+    for (const scenario of [
+      { composer: false, messages: false, errorText: "Could not load this ChatGPT conversation", errorQuoted: true },
+      { composer: false, messages: false, errorText: "Could not load this ChatGPT conversation", errorHidden: true },
+      { composer: false, messages: false, errorText: "Could not load any other chat" },
+      { composer: false, messages: false, errorText: "Could not load this ChatGPT conversation", path: "/" },
+    ]) {
+      expect(safetyFixture(scenario).call().response.safe).toBe(false);
+    }
+  });
+
+  it("refuses recovery if a draft, generation, attachment, dialog or loading state is present", () => {
+    const errorText = "Could not load this ChatGPT conversation";
+    for (const scenario of [
+      { generating: true }, { draft: "Unsent work" },
+      { attachment: true }, { dialog: true }, { loading: true },
+    ]) {
+      const response = safetyFixture({ errorText, messages: false, ...scenario }).call().response;
+      expect(response.safe).toBe(false);
+      expect(response.recovery).toBeUndefined();
+      expect(JSON.stringify(response)).not.toContain("Unsent work");
+    }
+  });
+
+  it("recognizes the error with extra whitespace and a trailing period", () => {
+    expect(safetyFixture({
+      composer: false, messages: false,
+      errorText: " Could not   load this ChatGPT conversation. ",
+    }).call().response.recovery).toBe(true);
+  });
+
   it("ignores messages from other extensions and unknown actions", () => {
     const fixture = safetyFixture();
     expect(fixture.call("wrong-extension")).toEqual({ response: undefined, result: false });
@@ -172,6 +224,23 @@ describe("ChatGPT Optimizer: selected-chat reload guard", () => {
     expect(p.calls.inspected).toEqual([102]);
     expect(p.calls.reloaded).toEqual([102]);
     expect(p.nodes["reload-chat-status"].textContent).toContain("All other tabs are untouched");
+  });
+
+  it("retries the selected failed chat once without affecting other tabs", async () => {
+    const p = popupFixture({
+      safety: {
+        ok: true, safe: true, recovery: true,
+        reason: "ChatGPT reports a failed conversation load. A targeted reload may retry it.",
+      },
+    });
+    await p.tick();
+    p.nodes["reload-chat-select"].value = "102";
+    p.nodes["reload-chat"].trigger("click");
+    await p.tick();
+    expect(p.calls.inspected).toEqual([102]);
+    expect(p.calls.reloaded).toEqual([102]);
+    expect(p.nodes["reload-chat-status"].textContent).toContain("Recovery retry requested");
+    expect(p.nodes["reload-chat-status"].textContent).toContain("this tab only");
   });
 
   it("does not reload a tab whose safety inspection reports a draft or stream", async () => {

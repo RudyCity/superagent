@@ -45,7 +45,7 @@ ChatGPT Optimizer checks for saved conversations from the signed-in ChatGPT acco
 
 **Important:** The extension does **not** force ChatGPT's React cache to invalidate. It adds a separate read-only floating navigation panel. If a new chat is not yet accessible to the account, only the *new tab* may show an error; the original working chat stays untouched. Pin/unpin and deletion remain native features.
 
-## Reload a specific chat tab (v0.3.0)
+## Reload or recover a specific chat tab (v0.3.2)
 
 Use the extension popup's **Reload one chat tab** section:
 
@@ -53,7 +53,9 @@ Use the extension popup's **Reload one chat tab** section:
 2. Click **Reload selected chat**. The extension checks the exact tab URL, verifies that the conversation is idle, and checks the URL again before calling `chrome.tabs.reload(tabId)`.
 3. **Only that selected tab** is reloaded. Other Chrome tabs and windows are not touched. Unlike sidebar synchronization, this is a full page reload of one tab.
 
-Reload is blocked if a response is generating, an unsent draft exists, an attachment/upload is pending, a dialog is open or the chat has not finished rendering. New/unsaved chat pages and non-ChatGPT pages cannot be selected. Use **Update tab list** after opening or closing tabs.
+**Error recovery:** If the selected tab visibly says **“Could not load this ChatGPT conversation”**, the usual requirement for visible messages and a ready composer is waived for that specific error. Click **Reload selected chat** to attempt **one manual retry of that tab**. No automatic reload loops or modification of another working chat. If it still fails, verify the account, sharing/access status, whether the chat still exists, or try again later; a reload cannot restore deleted or inaccessible conversations.
+
+Reload is always blocked if a response is generating, an unsent draft exists, an attachment/upload is pending, a dialog is open or the page is still loading. Without the exact visible failure, a chat with missing messages or composer remains protected from reload. Errors merely quoted inside chat messages do not unlock recovery. New/unsaved chat pages and non-ChatGPT pages cannot be selected. Use **Update tab list** after opening or closing tabs.
 
 **Independent Chrome profiles:** the extension sees only tabs belonging to the Chrome profile in which it is installed. Install ChatGPT Optimizer separately in each profile; it cannot reload a chat belonging to a different profile.
 
@@ -100,4 +102,4 @@ Tests cover safe DOM optimization, sidebar synchronization, permissions, selecte
 - `../tests/chatgptOptimizerSidebar.test.ts` — sidebar behavior and safety tests.
 - `../tests/chatgptOptimizerTabReload.test.ts` — specific-chat reload safety and isolation tests.
 
-Version: 0.3.1. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No separate SuperAgent server or background daemon is required.
+Version: 0.3.2. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No separate SuperAgent server or background daemon is required.
