@@ -3,6 +3,7 @@
 //! SuperAgent process journal. Never exports bearer credentials or process
 //! command lines to the WebView. File presence or PID alone is not "online".
 
+use crate::remote_service_detection::{self, RemoteService};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -47,6 +48,7 @@ struct CoreRecord {
 
 pub struct RuntimeCredentials {
     pub port: u16,
+    pub pid: Option<u32>,
     pub auth_token: String,
 }
 
@@ -109,6 +111,7 @@ pub struct RuntimeSnapshot {
     cores: Vec<RuntimeCore>,
     processes: Vec<RuntimeProcess>,
     independent_hosts: Vec<RuntimeIndependentHost>,
+    remote_services: Vec<RemoteService>,
     notes: Vec<String>,
 }
 
@@ -149,7 +152,7 @@ fn core_records(dir: &Path) -> Vec<CoreRecord> {
         indexed.insert(info.info.port, info);
     }
     if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten().take(150) {
+        for entry in entries.flatten().take(2048) {
             let name = entry.file_name().to_string_lossy().to_string();
             let Some(port_text) = name
                 .strip_prefix("server-info-")
@@ -189,6 +192,7 @@ pub fn server_info(dir: &Path) -> Result<RuntimeCredentials, String> {
     };
     Ok(RuntimeCredentials {
         port: chosen.info.port,
+        pid: chosen.info.pid,
         auth_token: chosen.info.authToken,
     })
 }
@@ -208,11 +212,188 @@ struct JournalEntry {
     is_agent_running: bool,
 }
 
+fn host_candidates(dir: &Path) -> Vec<HostCandidate> {
+    let mut hosts = vec![HostCandidate {
+        port: 7891,
+        pid: None,
+        instance_id: None,
+        kind: "tline-transport",
+    }];
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten().take(2048) {
+            let name = entry.file_name().to_string_lossy().to_string();
+            let Some(port_text) = name
+                .strip_prefix("channel-host-")
+                .and_then(|s| s.strip_suffix(".json"))
+            else {
+                continue;
+            };
+            let Ok(port) = port_text.parse::<u16>() else {
+                continue;
+            };
+            if port == 0 || port == 7891 || hosts.len() > 16 {
+                continue;
+            }
+            let Some(raw) = checked_file_read(&entry.path(), 1024)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            else {
+                continue;
+            };
+            let pid = raw["pid"]
+                .as_u64()
+                .filter(|n| *n > 0 && *n <= u32::MAX as u64)
+                .map(|n| n as u32);
+            let instance_id = raw["instanceId"].as_str().map(str::to_owned);
+            if raw["version"] != 1
+                || raw["port"].as_u64() != Some(port as u64)
+                || pid.is_none()
+                || instance_id.as_deref().unwrap_or("").len() < 8
+            {
+                continue;
+            }
+            hosts.push(HostCandidate {
+                port,
+                pid,
+                instance_id,
+                kind: "channel-host",
+            });
+        }
+    }
+    hosts
+}
+
+async fn probe_independent_host(
+    candidate: HostCandidate,
+    os_pids: &HashSet<u32>,
+) -> Option<RuntimeIndependentHost> {
+    let mut result = RuntimeIndependentHost {
+        kind: candidate.kind,
+        port: candidate.port,
+        pid: candidate.pid,
+        state: "unreachable",
+        backend_ready: None,
+        detail: String::new(),
+        evidence: "registration only; endpoint not confirmed",
+    };
+    let client = Client::builder()
+        .timeout(Duration::from_millis(1600))
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .ok()?;
+    let path = if candidate.kind == "channel-host" {
+        "/_channel/health"
+    } else {
+        "/_transport/health"
+    };
+    let url = format!("http://127.0.0.1:{}{}", candidate.port, path);
+    let Ok(mut response) = client.get(&url).send().await else {
+        // T-Line default port has no registration file; don't show invented
+        // "stopped" service when nothing identified is there.
+        return if candidate.kind == "tline-transport" {
+            None
+        } else {
+            Some(result)
+        };
+    };
+    if response.status() != StatusCode::OK {
+        return if candidate.kind == "tline-transport" {
+            None
+        } else {
+            Some(result)
+        };
+    }
+    let mut bytes = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) if bytes.len() + chunk.len() <= 16 * 1024 => {
+                bytes.extend_from_slice(&chunk)
+            }
+            Ok(None) => break,
+            _ => {
+                return if candidate.kind == "tline-transport" {
+                    None
+                } else {
+                    Some(result)
+                }
+            }
+        }
+    }
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return if candidate.kind == "tline-transport" {
+            None
+        } else {
+            Some(result)
+        };
+    };
+    let observed_pid = value["pid"]
+        .as_u64()
+        .filter(|n| *n > 0 && *n <= u32::MAX as u64)
+        .map(|n| n as u32);
+    let identity_ok = candidate.kind == "channel-host"
+        && value["service"] == "superagent-channel-host"
+        && value["port"].as_u64() == Some(candidate.port as u64)
+        && value["instanceId"].as_str() == candidate.instance_id.as_deref()
+        && candidate.pid == observed_pid;
+    let transport_ok = candidate.kind == "tline-transport"
+        && value["service"] == "superagent-transport-host"
+        && value["publicPort"].as_u64() == Some(candidate.port as u64);
+    if !(identity_ok || transport_ok) {
+        result.state = "unverified";
+        result.evidence = "endpoint identity does not match a SuperAgent service";
+        return if candidate.kind == "tline-transport" {
+            None
+        } else {
+            Some(result)
+        };
+    }
+    result.pid = observed_pid;
+    if !observed_pid.is_some_and(|pid| os_pids.contains(&pid)) {
+        result.state = "unverified";
+        result.evidence = "service response PID is not alive on this machine";
+        return Some(result);
+    }
+    result.evidence = "service-identity HTTP health + live OS PID";
+    if candidate.kind == "tline-transport" {
+        let ready = value["backendReady"] == true;
+        result.backend_ready = Some(ready);
+        result.state = if ready { "online" } else { "degraded" };
+        result.detail = if ready {
+            "T-Line front door; Core backend ready"
+        } else {
+            "T-Line listener responding; Core backend unavailable"
+        }
+        .into();
+    } else {
+        result.state = match value["status"].as_str() {
+            Some("running") => "online",
+            Some("starting") => "starting",
+            Some("idle") => "idle",
+            Some("error") => "error",
+            _ => "unverified",
+        };
+        let mode = value["mode"].as_str().unwrap_or("unknown");
+        let watcher = value["watcherActive"] == true;
+        result.detail = format!(
+            "Mode: {} · Watcher: {}",
+            mode.chars().take(32).collect::<String>(),
+            if watcher { "yes" } else { "no" }
+        );
+    }
+    Some(result)
+}
+
 fn read_inventory(dir: &Path) -> LocalInventory {
     let cores = core_records(dir);
     // This OS inspection is independent of Core availability. It checks that a
     // journal heartbeat still belongs to the same process, preventing PID reuse.
-    let system = System::new_all();
+    // Process-only refresh: avoid loading unrelated disk/RAM/CPU metadata
+    // every time the desktop panel polls for runtime presence.
+    let mut system = System::new();
+    system.refresh_processes();
+    let os_pids: HashSet<u32> = system.processes().keys().map(|pid| pid.as_u32()).collect();
+    let hosts = host_candidates(dir);
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| duration.as_millis() as u64);
@@ -283,6 +464,8 @@ fn read_inventory(dir: &Path) -> LocalInventory {
     LocalInventory {
         cores,
         pid_verified,
+        os_pids,
+        hosts,
         processes,
     }
 }
@@ -405,9 +588,18 @@ pub async fn select_core(dir: &Path, port: u16) -> Result<(), String> {
 
 pub async fn detect_runtime(dir: &Path) -> Result<RuntimeSnapshot, String> {
     let path = dir.to_owned();
+    let remote = remote_service_detection::scan(dir);
     let local = tokio::task::spawn_blocking(move || read_inventory(&path))
         .await
         .map_err(|_| "Local runtime inspection failed".to_string())?;
+    let host_pids = local.os_pids.clone();
+    let mut host_handles = Vec::new();
+    for candidate in local.hosts {
+        let live_pids = host_pids.clone();
+        host_handles.push(tokio::spawn(async move {
+            probe_independent_host(candidate, &live_pids).await
+        }));
+    }
     let mut handles = Vec::new();
     for record in local.cores {
         let verified = record
@@ -423,6 +615,14 @@ pub async fn detect_runtime(dir: &Path) -> Result<RuntimeSnapshot, String> {
         }
     }
     cores.sort_by_key(|core| core.port);
+    let mut independent_hosts = Vec::new();
+    for handle in host_handles {
+        if let Ok(Some(host)) = handle.await {
+            independent_hosts.push(host);
+        }
+    }
+    independent_hosts.sort_by_key(|host| (host.kind, host.port));
+    let remote_services = remote.await;
     let effective_port = selected_port()
         .or_else(|| {
             parse_core(&dir.join("server-info.json"), None, "default").map(|core| core.info.port)
@@ -446,6 +646,8 @@ pub async fn detect_runtime(dir: &Path) -> Result<RuntimeSnapshot, String> {
         selected_core_port: effective_port,
         cores,
         processes: local.processes,
+        independent_hosts,
+        remote_services,
         notes: vec![
             "Core online requires authenticated GET /api/status; a saved port or PID is not proof.".into(),
             "CLI and MCP processes require a matching OS PID, creation time and fresh process-journal heartbeat.".into(),
@@ -458,7 +660,90 @@ pub async fn detect_runtime(dir: &Path) -> Result<RuntimeSnapshot, String> {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
-    use std::net::{TcpListener, TcpStream};
+    use std::net::TcpListener;
+
+    #[tokio::test]
+    async fn channel_host_requires_matching_registry_identity_and_live_pid() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let instance_id = "verified-channel-host";
+        let pid = std::process::id();
+        let body = json!({
+            "service":"superagent-channel-host", "instanceId":instance_id,
+            "pid":pid,"port":port,"mode":"telegram-fallback","status":"running",
+            "watcherActive":true
+        })
+        .to_string();
+        let serving = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf);
+            let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{}", body.len(), body);
+            socket.write_all(response.as_bytes()).unwrap();
+        });
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("sagent-channel-{}-{}", pid, unique));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join(format!("channel-host-{}.json", port)),
+            json!({
+                "version":1,"port":port,"pid":pid,"instanceId":instance_id,
+                "ipcToken":"private-token-must-not-escape"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let selected = host_candidates(&dir)
+            .into_iter()
+            .find(|entry| entry.kind == "channel-host")
+            .unwrap();
+        let observed = probe_independent_host(selected, &HashSet::from([pid]))
+            .await
+            .unwrap();
+        serving.join().unwrap();
+        assert_eq!(observed.state, "online");
+        assert!(observed.detail.contains("telegram-fallback"));
+        assert!(!serde_json::to_string(&observed)
+            .unwrap()
+            .contains("private-token"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn tline_transport_reports_degraded_when_backend_is_not_ready() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let pid = std::process::id();
+        let body = json!({
+            "service":"superagent-transport-host","pid":pid,
+            "publicPort":port,"corePort":7888,"backendReady":false
+        })
+        .to_string();
+        let serving = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut buf = [0u8; 1024];
+            let _ = socket.read(&mut buf);
+            let response = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{}",body.len(),body);
+            socket.write_all(response.as_bytes()).unwrap();
+        });
+        let detected = probe_independent_host(
+            HostCandidate {
+                port,
+                pid: None,
+                instance_id: None,
+                kind: "tline-transport",
+            },
+            &HashSet::from([pid]),
+        )
+        .await
+        .unwrap();
+        serving.join().unwrap();
+        assert_eq!(detected.state, "degraded");
+        assert_eq!(detected.backend_ready, Some(false));
+    }
 
     #[tokio::test]
     async fn detects_authentic_local_core_and_live_journal_without_leaking_tokens() {

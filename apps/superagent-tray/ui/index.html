@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' asset:; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost https://ipc.localhost" />
+  <title>SuperAgent Tray · Automation &amp; Runtime Console</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="./titlebar.js" defer></script>
+  <script src="./app.js" defer></script>
+  <script src="./runtime.js" defer></script>
+  <script src="./settings.js" defer></script>
+</head>
+<body>
+  <!-- Native Windows decorations are disabled; these controls use strict
+       Rust/Tauri window actions, not arbitrary browser or shell commands. -->
+  <header id="tray-titlebar" class="tray-titlebar" aria-label="SuperAgent Tray window title bar">
+    <div id="tray-titlebar-drag" class="tray-titlebar-drag" aria-label="Drag to move window, double-click to maximize or restore" title="Drag to move · Double-click to maximize/restore">
+      <span class="tray-titlebar-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="19" height="19">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 12 12 17 22 12"></polyline>
+          <polyline points="2 17 12 22 22 17"></polyline>
+        </svg>
+      </span>
+      <span class="tray-titlebar-name">SuperAgent <span class="tray-titlebar-edition">Tray</span></span>
+      <span class="tray-titlebar-separator" aria-hidden="true"></span>
+      <span class="tray-titlebar-description">Automation &amp; Runtime Console</span>
+    </div>
+    <div class="tray-window-actions" role="group" aria-label="Window controls">
+      <button id="tray-window-minimize" class="tray-window-button" type="button" aria-label="Minimize window" title="Minimize">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M3 8.5h10" />
+        </svg>
+      </button>
+      <button id="tray-window-maximize" class="tray-window-button" type="button" aria-label="Maximize window" title="Maximize" aria-pressed="false">
+        <svg class="tray-icon-maximize" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <rect x="3" y="3" width="10" height="10" rx="1" />
+        </svg>
+        <svg class="tray-icon-restore" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" hidden>
+          <path d="M5.5 3H12a1 1 0 0 1 1 1v6.5M4 5.5h6.5a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z" />
+        </svg>
+      </button>
+      <button id="tray-window-close" class="tray-window-button tray-window-close" type="button" aria-label="Close window" title="Close (hide to tray or quit, according to Settings)">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" />
+        </svg>
+      </button>
+    </div>
+    <span id="tray-window-action-feedback" class="visually-hidden" role="status" aria-live="polite"></span>
+  </header>
+  <div class="shell">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-badge">
+          <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 2 7 12 12 22 7 12 2" stroke="url(#brand-grad)"></polygon>
+            <polyline points="2 17 12 22 22 17"></polyline>
+            <polyline points="2 12 12 17 22 12"></polyline>
+            <defs>
+              <linearGradient id="brand-grad" x1="2" y1="2" x2="22" y2="12" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#38bdf8"></stop>
+                <stop offset="1" stop-color="#3b82f6"></stop>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div class="brand-info">
+          <div class="brand-title">SuperAgent</div>
+          <div class="brand-tag">TRAY CONTROL</div>
+        </div>
+      </div>
+
+      <!-- Navigation Menu -->
+      <nav class="navigation" aria-label="Main Navigation">
+        <a class="nav-link active" href="#jobs" data-page="jobs" id="nav-jobs">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="16" y1="2" x2="16" y2="6"></line>
+            <line x1="8" y1="2" x2="8" y2="6"></line>
+            <line x1="3" y1="10" x2="21" y2="10"></line>
+          </svg>
+          <span>Schedules &amp; Reminders</span>
+        </a>
+        <a class="nav-link" href="#runtime" data-page="runtime" id="nav-runtime">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+          </svg>
+          <span>Runtime Detection</span>
+        </a>
+        <a class="nav-link" href="#history" data-page="history" id="nav-history">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>Execution History</span>
+        </a>
+        <a class="nav-link" href="#settings" data-page="settings" id="nav-settings">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21h-4v-.04A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3 14H3v-4h.04A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88L4.2 7.06 7.06 4.2l.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.04V3h4v.04A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 21 10v4a1.7 1.7 0 0 0-1.6 1z"></path>
+          </svg>
+          <span>Tray Settings</span>
+        </a>
+      </nav>
+
+      <!-- Connection Status Card -->
+      <div class="side-bottom">
+        <div class="card-status-label">CORE STATUS</div>
+        <div class="connection-status">
+          <span id="connection-dot" class="status-dot offline"></span>
+          <span id="connection-text" class="connection-state">Connecting...</span>
+        </div>
+        <p id="connection-detail" class="connection-sub">Connecting to verified loopback...</p>
+        <div class="connection-badge">
+          <svg class="badge-lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>Authenticated Loopback</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main">
+      <!-- Dynamic Top Action Bar -->
+      <header class="top-bar">
+        <div class="page-header">
+          <div id="top-eyebrow" class="eyebrow">AUTOMATION CONSOLE</div>
+          <h1 id="top-title">Schedules &amp; Reminders</h1>
+          <p id="top-desc" class="page-desc">Manage background cron jobs, native reminders, and active schedules.</p>
+        </div>
+        <div class="header-actions">
+          <!-- Jobs Page Actions -->
+          <div id="actions-jobs" class="action-group">
+            <button id="refresh-btn" class="button ghost" title="Refresh schedules and daemon health">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Refresh</span>
+            </button>
+            <button id="new-btn" class="button primary">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>New Schedule</span>
+            </button>
+          </div>
+
+          <!-- Runtime Page Actions -->
+          <div id="actions-runtime" class="action-group" hidden>
+            <button type="button" id="runtime-refresh" class="button primary" title="Scan local runtime services">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Scan Runtime</span>
+            </button>
+          </div>
+
+          <!-- History Page Actions -->
+          <div id="actions-history" class="action-group" hidden>
+            <button id="history-refresh-btn" class="button ghost" title="Refresh execution history">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Refresh History</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- ================= PAGE 1: SCHEDULES & REMINDERS ================= -->
+      <div id="page-jobs" class="page-view active">
+        <!-- Summary Metrics Bar -->
+        <section class="stats-grid" aria-label="Summary Statistics">
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Total Schedules</span>
+              <span class="stat-chip">Daemon</span>
+            </div>
+            <strong id="stat-total" class="stat-value">-</strong>
+            <div class="stat-sub">Configured in scheduler</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Active Jobs</span>
+              <span class="stat-chip success">Live</span>
+            </div>
+            <strong id="stat-active" class="stat-value">-</strong>
+            <div class="stat-sub">Currently running or queued</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Next Reminder</span>
+              <span class="stat-chip accent">Countdown</span>
+            </div>
+            <strong id="stat-next" class="stat-value stat-next">-</strong>
+            <div class="stat-sub">Local system time</div>
+          </article>
+        </section>
+
+        <!-- Alert / Notice Banner -->
+        <div id="banner" class="banner" role="status" hidden></div>
+
+        <!-- Schedules Table Panel -->
+        <section id="jobs" class="panel jobs-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">AUTOMATED WORKFLOWS</div>
+              <h2>Configured Schedules</h2>
+              <p>Background reminders and autonomous agent tasks managed by SuperAgent daemon.</p>
+            </div>
+            <div class="panel-tools">
+              <div class="select-wrapper">
+                <select id="filter" aria-label="Filter schedules">
+                  <option value="all">All Task Types</option>
+                  <option value="reminder">Reminders Only</option>
+                  <option value="agent">Agent Tasks Only</option>
+                  <option value="enabled">Active Schedules Only</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table aria-label="Schedule table">
+              <thead>
+                <tr>
+                  <th>TASK &amp; DETAILS</th>
+                  <th>SCHEDULE</th>
+                  <th>NEXT RUN</th>
+                  <th>STATUS</th>
+                  <th class="text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody id="job-table">
+                <tr>
+                  <td colspan="5" class="empty-state">Loading schedules from daemon...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ================= PAGE 2: RUNTIME DETECTION ================= -->
+      <div id="page-runtime" class="page-view" hidden>
+        <!-- Runtime Panel -->
+        <section id="runtime" class="panel runtime-panel" aria-labelledby="runtime-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">SYSTEM INVENTORY</div>
+              <h2 id="runtime-title">SuperAgent Runtime Detection</h2>
+              <p>Inspect authenticated Core APIs, CLI sessions, MCP servers, schedulers, gateways, and tunnel connections.</p>
+            </div>
+            <div class="runtime-toolbar">
+              <button id="runtime-create-toggle" type="button" class="button primary">+ New Connection</button>
+              <span id="runtime-scanned" class="subtle-badge">Not scanned yet</span>
+            </div>
+          </div>
+
+          <div class="runtime-summary">
+            <div class="metric-cell">
+              <strong id="runtime-core-count" class="metric-val">-</strong>
+              <small class="metric-desc">Core APIs Online</small>
+            </div>
+            <div class="metric-cell">
+              <strong id="runtime-process-count" class="metric-val">-</strong>
+              <small class="metric-desc">Heartbeat Processes</small>
+            </div>
+            <div class="metric-cell">
+              <strong id="runtime-selected-port" class="metric-val">-</strong>
+              <small class="metric-desc">Active Cron Core Port</small>
+            </div>
+          </div>
+
+          <section id="runtime-create-panel" class="runtime-create-panel" hidden aria-label="Create new connection">
+            <div class="runtime-create-heading">
+              <div><strong>Create new SuperAgent connection</strong>
+                <p>Uses the authenticated selected Core. Existing sessions and tunnel owners are not replaced.</p></div>
+              <button type="button" class="button ghost" id="runtime-create-close">Close</button>
+            </div>
+            <form id="runtime-create-form">
+              <div class="runtime-create-fields">
+                <label class="runtime-create-field">Connection type
+                  <select id="runtime-create-kind" required>
+                    <option value="mcp-client">Connect external MCP server</option>
+                    <option value="mcp-tunnel">Host SuperAgent MCP tunnel</option>
+                    <option value="core-tunnel">Expose Core REST/SSE with HTTPS tunnel</option>
+                    <option value="muse-tunnel">Host Muse WebSocket tunnel</option>
+                  </select>
+                </label>
+                <label class="runtime-create-field" id="runtime-create-name-field">MCP connection name
+                  <input id="runtime-create-name" maxlength="48" placeholder="my-mcp-server" autocomplete="off">
+                </label>
+                <label class="runtime-create-field" id="runtime-create-url-field">MCP HTTPS endpoint
+                  <input id="runtime-create-url" type="url" maxlength="2048" placeholder="https://example.com/mcp" autocomplete="off">
+                </label>
+                <label class="runtime-create-field" id="runtime-create-port-field" hidden>Local listening port
+                  <input id="runtime-create-port" type="number" min="1024" max="65535" step="1" value="9227">
+                </label>
+                <label class="runtime-create-field" id="runtime-create-provider-field" hidden>MCP tunnel provider
+                  <select id="runtime-create-provider">
+                    <option value="cloudflare">Cloudflare Quick Tunnel</option>
+                    <option value="openai">OpenAI Secure MCP Tunnel (existing ID)</option>
+                  </select>
+                </label>
+                <label class="runtime-create-field" id="runtime-create-tunnelid-field" hidden>OpenAI tunnel ID
+                  <input id="runtime-create-tunnelid" maxlength="107" placeholder="tunnel_..." autocomplete="off">
+                </label>
+                <label class="runtime-create-field runtime-create-checkbox" id="runtime-create-oauth-field">
+                  <input id="runtime-create-oauth" type="checkbox" checked>
+                  <span>Use OAuth for external MCP authentication</span>
+                </label>
+              </div>
+              <p id="runtime-create-guidance" class="runtime-create-guidance">Registers an MCP client configuration. Connection/reconnect is handled by the active MCP session.</p>
+              <div class="runtime-create-footer">
+                <button type="submit" class="button primary" id="runtime-create-submit">Create Connection</button>
+                <span id="runtime-create-feedback" role="status" aria-live="polite"></span>
+              </div>
+              <div id="runtime-create-result" class="runtime-create-result" hidden></div>
+            </form>
+          </section>
+          <p id="runtime-action-feedback" class="runtime-notes" role="status" aria-live="polite" hidden></p>
+          <div class="runtime-content">
+            <div class="runtime-column">
+              <div class="column-header">
+                <h3>Registered Core Servers</h3>
+                <span class="column-tag">Authenticated</span>
+              </div>
+              <div id="runtime-servers" class="runtime-items">
+                <p class="empty-state">Checking registered loopback servers...</p>
+              </div>
+            </div>
+
+            <div class="runtime-column">
+              <div class="column-header">
+                <h3>CLI &amp; Process Journal</h3>
+                <span class="column-tag">Heartbeats</span>
+              </div>
+              <div id="runtime-processes" class="runtime-items">
+                <p class="empty-state">Checking process journal...</p>
+              </div>
+            </div>
+
+            <div class="runtime-column runtime-full">
+              <div class="column-header">
+                <h3>Independent MCP, Cloudflare &amp; Muse Watch <span id="runtime-remote-count" class="subtle-badge"></span></h3>
+                <span class="column-tag">Cross-process</span>
+              </div>
+              <div id="runtime-remote" class="runtime-items runtime-host-grid">
+                <p class="empty-state">Checking registered MCP tunnels and Muse watchers...</p>
+              </div>
+
+            </div>
+
+            <div class="runtime-column runtime-full">
+              <div class="column-header">
+                <h3>Independent Transports &amp; Channel Hosts <span id="runtime-independent-count" class="subtle-badge"></span></h3>
+                <span class="column-tag">T-Line &amp; Muse</span>
+              </div>
+              <div id="runtime-independent" class="runtime-items runtime-host-grid">
+                <p class="empty-state">Checking transport and channel hosts...</p>
+              </div>
+            </div>
+          </div>
+
+          <div id="runtime-notes" class="runtime-notes" hidden></div>
+        </section>
+      </div>
+
+      <!-- ================= PAGE 3: EXECUTION HISTORY ================= -->
+      <div id="page-history" class="page-view" hidden>
+        <!-- Execution History Panel -->
+        <section id="history" class="panel history-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">AUDIT LEDGER</div>
+              <h2>Execution History</h2>
+              <p>Latest execution results recorded by the SuperAgent daemon ledger.</p>
+            </div>
+            <span class="subtle-badge">Last 10 executions</span>
+          </div>
+          <ul id="runs" class="runs">
+            <li class="empty-state">No execution activity recorded yet.</li>
+          </ul>
+        </section>
+      </div>
+
+      <!-- ================= PAGE 4: TRAY SETTINGS ================= -->
+      <div id="page-settings" class="page-view" hidden>
+        <section class="panel tray-settings-panel" aria-labelledby="settings-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">TRAY PREFERENCES</div>
+              <h2 id="settings-title">SuperAgent Tray Settings</h2>
+              <p>Preferences for this tray utility only. Core, MCP and Muse services keep their own configurations.</p>
+            </div>
+            <span class="subtle-badge">Local · versioned</span>
+          </div>
+          <form id="tray-settings-form">
+            <div class="tray-settings-section">
+              <h3>Startup &amp; Window</h3>
+              <label class="tray-switch-row">
+                <span><strong>Auto-launch with SuperAgent</strong>
+                  <small>Open the tray in the background when a long-running SuperAgent CLI, server, or supported host starts. Not Windows sign-in startup.</small></span>
+                <input id="settings-auto-launch" type="checkbox" checked />
+              </label>
+              <label class="tray-switch-row">
+                <span><strong>Close window to tray</strong>
+                  <small>When off, closing this window quits the Tray utility and its reminder notification monitor; it does not stop SuperAgent Core or tunnels.</small></span>
+                <input id="settings-close-to-tray" type="checkbox" checked />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Startup page</strong>
+                  <small>Page shown when you open a fresh Tray window. An explicit page URL takes priority.</small></span>
+                <select id="settings-startup-page">
+                  <option value="jobs">Schedules &amp; Reminders</option>
+                  <option value="runtime">Runtime Detection</option>
+                  <option value="history">Execution History</option>
+                </select>
+              </label>
+            </div>
+            <div class="tray-settings-section">
+              <h3>Reminders &amp; Notifications</h3>
+              <label class="tray-switch-row">
+                <span><strong>Native reminder notifications</strong>
+                  <small>Show Windows notifications for completed reminders. When disabled, notifications are quietly acknowledged so old reminders do not flood the screen when re-enabled.</small></span>
+                <input id="settings-notifications" type="checkbox" checked />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Notification check interval</strong>
+                  <small>How often the Tray checks completed reminders while it is running. Does not change the daemon's cron schedule.</small></span>
+                <select id="settings-notification-poll">
+                  <option value="15">15 seconds</option>
+                  <option value="30">30 seconds</option>
+                  <option value="60">1 minute</option>
+                  <option value="120">2 minutes</option>
+                </select>
+              </label>
+            </div>
+            <div class="tray-settings-section">
+              <h3>Dashboard refresh</h3>
+              <label class="tray-field-row">
+                <span><strong>Runtime Detection scan</strong>
+                  <small>Frequency for scanning registered Core, MCP, tunnel and Muse services. Manual Scan remains available.</small></span>
+                <select id="settings-runtime-scan">
+                  <option value="10">10 seconds</option>
+                  <option value="20">20 seconds</option>
+                  <option value="30">30 seconds</option>
+                  <option value="60">1 minute</option>
+                  <option value="120">2 minutes</option>
+                </select>
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Schedules &amp; History refresh</strong>
+                  <small>Frequency for the daemon jobs list and execution history. Manual Refresh remains available.</small></span>
+                <select id="settings-jobs-refresh">
+                  <option value="15">15 seconds</option>
+                  <option value="30">30 seconds</option>
+                  <option value="60">1 minute</option>
+                  <option value="120">2 minutes</option>
+                </select>
+              </label>
+            </div>
+            <p class="tray-settings-note">Changes are stored in <code>~/.superagent-r/tray-settings.json</code> (or <code>SUPERAGENT_CONFIG_DIR</code>). <code>SUPERAGENT_TRAY_AUTOSTART=0/1</code> overrides the startup toggle when set. No Core restart is required for these preferences.</p>
+            <div class="tray-settings-actions">
+              <button type="submit" class="button primary" id="settings-save">Save Settings</button>
+              <button type="button" class="button ghost" id="settings-defaults">Restore Defaults</button>
+              <span id="settings-feedback" role="status" aria-live="polite"></span>
+            </div>
+          </form>
+        </section>
+      </div>
+
+      <!-- Footer Info -->
+      <footer class="footer">
+        <div class="footer-left">
+          <span>SuperAgent Tray</span>
+          <span class="footer-sep">•</span>
+          <span>Tauri Desktop Companion</span>
+        </div>
+        <div class="footer-right">
+          <span id="timezone"></span>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <!-- Create / Edit Schedule Modal Dialog -->
+  <div id="dialog" class="overlay" hidden>
+    <form id="job-form" class="modal-dialog" novalidate>
+      <div class="modal-header">
+        <div>
+          <div class="modal-eyebrow">CONFIGURATION</div>
+          <h2 id="form-title">Create New Schedule</h2>
+        </div>
+        <button type="button" id="close-form" class="icon-button" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="kind">Task Kind</label>
+          <div class="select-wrapper">
+            <select id="kind" name="kind">
+              <option value="reminder">🔔 Reminder (Deterministic text-only notification)</option>
+              <option value="agent">✦ Agent Task (Autonomous agent execution)</option>
+            </select>
+          </div>
+          <small class="field-hint">Reminders deliver OS notifications without running AI models or tools.</small>
+        </div>
+
+        <div class="form-group">
+          <label for="name">Schedule Name</label>
+          <input id="name" name="name" maxlength="240" required placeholder="e.g. Daily Standup Reminder or Repository Health Audit" />
+        </div>
+
+        <div class="form-group">
+          <label id="prompt-label" for="prompt">Reminder Message</label>
+          <textarea id="prompt" name="prompt" rows="3" maxlength="100000" required placeholder="e.g. Review pending PRs and inspect active agent sessions"></textarea>
+        </div>
+
+        <div id="workspace-label" class="form-group" hidden>
+          <label for="workspace">Workspace Directory</label>
+          <input id="workspace" name="workspace" placeholder="e.g. C:\projects\superagent" />
+          <small class="field-hint">Absolute target directory required for autonomous Agent tasks.</small>
+        </div>
+
+        <div class="form-divider">RECURRENCE &amp; TIMING</div>
+
+        <div class="form-group">
+          <label for="frequency">Schedule Frequency</label>
+          <div class="select-wrapper">
+            <select id="frequency">
+              <option value="once">Once (Single run)</option>
+              <option value="daily">Daily (Every day at set time)</option>
+              <option value="weekly">Weekly (Every week on selected day)</option>
+              <option value="custom">Custom Cron Expression (Advanced 5-field)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="frequency-fields">
+          <div id="once-field" class="form-group">
+            <label for="once-at">Target Date &amp; Time</label>
+            <input id="once-at" type="datetime-local" />
+          </div>
+          <div id="time-field" class="form-group" hidden>
+            <label for="at-time">Execution Time</label>
+            <input id="at-time" type="time" value="09:00" />
+          </div>
+          <div id="weekday-field" class="form-group" hidden>
+            <label for="weekday">Day of Week</label>
+            <div class="select-wrapper">
+              <select id="weekday">
+                <option value="1">Monday</option>
+                <option value="2">Tuesday</option>
+                <option value="3">Wednesday</option>
+                <option value="4">Thursday</option>
+                <option value="5">Friday</option>
+                <option value="6">Saturday</option>
+                <option value="0">Sunday</option>
+              </select>
+            </div>
+          </div>
+          <div id="custom-field" class="form-group" hidden>
+            <label for="cron">5-Field Cron Expression</label>
+            <input id="cron" placeholder="0 9 * * 1-5" spellcheck="false" class="font-mono" />
+            <small class="field-hint">Syntax: Minute (0-59) • Hour (0-23) • Day (1-31) • Month (1-12) • Weekday (0-6)</small>
+          </div>
+        </div>
+
+        <div id="repeat-info" class="schedule-info-box">Runs once at the target time, then automatically pauses.</div>
+
+        <div class="form-group">
+          <label class="toggle-control">
+            <input id="job-enabled" type="checkbox" checked />
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Enable schedule immediately</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" id="cancel-form" class="button ghost">Cancel</button>
+        <button id="save-form" type="submit" class="button primary">Save Schedule</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Toast Notification Alert -->
+  <div id="toast" class="toast" role="alert" hidden></div>
+</body>
+</html>

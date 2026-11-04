@@ -159,6 +159,12 @@ export async function runCli() {
     registerCurrentProcess(isMulti ? "multi" : "single");
   } catch {}
 
+  // Start the companion tray once for an active interactive CLI. The native
+  // single-instance guard prevents duplication with the HTTP server.
+  void import("./core/runtime/trayAutoLauncher.js")
+    .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray())
+    .catch(() => {});
+
   // Check for --workspace-ssh flag
   const sshFlagIdx = process.argv.findIndex((arg) => arg === "--workspace-ssh" || arg === "-ws");
   if (sshFlagIdx !== -1 && process.argv[sshFlagIdx + 1]) {

@@ -739,6 +739,133 @@ export async function handleServerRoute(
     return true;
   }
 
+  // New service connections from the *local authenticated* SuperAgent Tray.
+  // Core remains the sole lifecycle owner. Never accept remote requests,
+  // arbitrary subprocesses, raw CLI arguments, existing-owner takeovers,
+  // or secrets in the response.
+  if (pathname === "/api/desktop/create-connection") {
+    res.setHeader("Cache-Control", "no-store");
+    const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const host = String(req.headers.host || "");
+    const localHost = /^(?:127\.0\.0\.1|localhost):([0-9]{2,5})$/i.exec(host);
+    const ingressPort = localHost ? Number(localHost[1]) : 0;
+    if (!loopback || !localHost || ingressPort < 1024 || ingressPort > 65535 ||
+      req.headers.origin || req.headers["x-forwarded-for"] ||
+      req.headers["x-forwarded-host"] || req.headers["cf-connecting-ip"] ||
+      req.headers["cf-ray"]) {
+      sendJSON(res, 403, {success:false,error:"TRAY_CONNECTION_LOCAL_AUTHENTICATED_ONLY"});
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendJSON(res, 405, {success:false,error:"POST required"});
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw,"utf8") > 3072) {
+        sendJSON(res, 413, {success:false,error:"Connection request too large"});
+        return true;
+      }
+      const {parseNewTrayConnection,createTrayConnection} =
+        await import("./core/runtime/trayConnectionCreation.js");
+      const request = parseNewTrayConnection(JSON.parse(raw),ingressPort);
+      const result = await createTrayConnection(request);
+      sendJSON(res, 200, result);
+    } catch (error) {
+      // Known validation errors are operator-actionable. Never propagate
+      // raw tunnel command output, OAuth tokens, or private owner metadata.
+      const message = error instanceof Error ? error.message : "Connection rejected";
+      const safe = message
+        .replace(/Bearer\s+[\w.~-]+/gi,"Bearer [REDACTED]")
+        .replace(/(token|secret|api.key|bootstrap.code)=\S+/gi,"$1=[REDACTED]")
+        .slice(0,240);
+      sendJSON(res, 409, {success:false,error:safe});
+    }
+    return true;
+  }
+
+  // Explicit operator token rotation from the local authenticated tray.
+  // Public tunnel URLs and active OAuth grants are NOT rotated. New secrets
+  // are copied by the owner to the local OS clipboard, never returned in JSON.
+  if (pathname === "/api/desktop/regenerate-token") {
+    res.setHeader("Cache-Control","no-store");
+    const loopback = ["127.0.0.1","::1","::ffff:127.0.0.1"]
+      .includes(req.socket.remoteAddress || "");
+    const host = /^(?:127\.0\.0\.1|localhost):([0-9]{2,5})$/i
+      .exec(String(req.headers.host || ""));
+    const ingressPort=host ? Number(host[1]) : 0;
+    if (!loopback || !host || ingressPort < 1024 || ingressPort > 65535 ||
+      req.headers.origin || req.headers["x-forwarded-for"] ||
+      req.headers["x-forwarded-host"] || req.headers["cf-connecting-ip"] ||
+      req.headers["cf-ray"]) {
+      sendJSON(res,403,{success:false,error:"TRAY_TOKEN_ROTATION_LOCAL_AUTHENTICATED_ONLY"});
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendJSON(res,405,{success:false,error:"POST required"});
+      return true;
+    }
+    try {
+      const raw=await readBody(req);
+      if (Buffer.byteLength(raw,"utf8") > 256) {
+        sendJSON(res,413,{success:false,error:"Token rotation request too large"});
+        return true;
+      }
+      const {parseTrayTokenTarget,regenerateTrayToken} =
+        await import("./core/runtime/desktopTokenRegeneration.js");
+      const target=parseTrayTokenTarget(JSON.parse(raw));
+      if (target.kind === "muse-core" &&
+          (target.pid !== process.pid || target.port !== ingressPort)) {
+        sendJSON(res,409,{success:false,error:"Core Muse token owner did not match"});
+        return true;
+      }
+      const result=await regenerateTrayToken(target);
+      sendJSON(res,200,result);
+    } catch (error) {
+      // Avoid leaking private owner errors to the WebView; regeneration may
+      // have happened before a clipboard copy error.
+      const message=error instanceof Error ? error.message : "Token rotation rejected";
+      const safe=message
+        .replace(/Bearer\s+[\w.~-]+/gi,"Bearer [REDACTED]")
+        .replace(/(token|secret|api.key|bootstrap.code)=\S+/gi,"$1=[REDACTED]")
+        .slice(0,240);
+      sendJSON(res,409,{success:false,error:safe});
+    }
+    return true;
+  }
+
+  // Authenticated, fixed-shape Muse lifecycle control for the local tray.
+  // Only this Core's watcher instance may be stopped/restarted, and active
+  // work is explicitly refused (no PID kill, token forwarding, or replay).
+  if (pathname === "/api/desktop/muse-lifecycle") {
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required" });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 256) {
+        sendJSON(res, 413, {success:false,error:"Lifecycle request too large"});
+        return true;
+      }
+      const body = JSON.parse(raw) as Record<string,unknown>;
+      if (!body || Array.isArray(body) || typeof body !== "object" ||
+        Object.keys(body).sort().join(",") !== "action,pid" ||
+        !["stop","restart"].includes(String(body.action)) ||
+        body.pid !== process.pid) {
+        sendJSON(res, 400, {success:false,error:"Invalid or mismatched Core lifecycle target"});
+        return true;
+      }
+      const {controlCoreLocalMuse} = await import("./core/runtime/desktopMuseLifecycle.js");
+      const result = await controlCoreLocalMuse(body.action as string, body.pid as number);
+      sendJSON(res, 200, result);
+    } catch (error) {
+      sendJSON(res, 409, {success:false,error:
+        error instanceof Error ? error.message.slice(0,240) : "Muse lifecycle rejected"});
+    }
+    return true;
+  }
+
   // Authenticated, read-only service health for the local Tauri runtime panel.
   // The server's existing /api bearer gate applies; never return remote URLs,
   // bot identifiers, MCP tool definitions or protected transport credentials.
@@ -750,6 +877,10 @@ export async function handleServerRoute(
         import("./core/runtime/desktopServiceProjection.js"),
       ]);
       const services = projectDesktopServices(await getRemoteServiceStatus());
+      const { getMuseWatcher } = await import("./core/remoteAgent/museWatcherRegistry.js");
+      // This is a *Core-process-local* owner, not proof of a watcher owned
+      // by the separate CLI or a remote channel host.
+      services.muse.ownerPresent = Boolean(getMuseWatcher());
       res.setHeader("Cache-Control", "no-store");
       sendJSON(res, 200, services);
     } catch {

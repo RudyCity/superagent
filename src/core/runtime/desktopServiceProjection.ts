@@ -11,6 +11,7 @@ export function projectDesktopServices(status: RemoteServiceStatusResult) {
     scope: "this-core-process" as const,
     timestamp: status.timestamp,
     muse: {
+      ownerPresent: false,
       watcherActive: status.tunnel.watcherActive === true || status.telegram.museWatcherActive === true,
       transport: status.tunnel.watcherTransport || status.telegram.museWatcherTransport || null,
       connected: status.tunnel.museConnected === true,
@@ -27,7 +28,9 @@ export function projectDesktopServices(status: RemoteServiceStatusResult) {
       connectedClientCount: status.mcp.clientServers.filter(s => s.status === "connected").length,
     },
     tunnel: {
-      active: status.tunnel.active === true,
+      // remoteStatusService.tunnel.active may mean only a local WSS
+      // watcher; it is NOT evidence of a running Cloudflare tunnel.
+      active: status.tunnel.tunnelProcessActive === true || status.tunnel.count > 0,
       count: status.tunnel.count,
     },
     channelHosts: {

@@ -1117,6 +1117,13 @@ export async function runServer(port: number, silent = false, defaultClientMode:
   });
 
   server.listen(port, '127.0.0.1', () => {
+    // Launch only after successful server bind, never from tests/private Core
+    // workers. GUI startup is best-effort and may never block API readiness.
+    if (process.env.SUPERAGENT_CORE_WORKER !== "1") {
+      void import("./core/runtime/trayAutoLauncher.js")
+        .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray())
+        .catch(() => {});
+    }
     // The dedicated Delegate Chrome extension is a WebSocket CLIENT.
     // Start the local listener when the SuperAgent server is ready, not
     // on the first delegate tool invocation (which left port 17341 closed).

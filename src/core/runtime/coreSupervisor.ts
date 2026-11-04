@@ -781,6 +781,11 @@ export async function runCoreSupervisor(
     // The legacy unqualified lookup belongs to the default API port only.
     // Avoid changing another live T-Line instance when using a custom port.
     if (port === 7888) saveJsonAtomic(path.join(stateDir(), "server-info.json"), authInfo);
+    // Only the public owner attempts auto-launch, after the supervised
+    // server/worker registration has been successfully established.
+    void import("./trayAutoLauncher.js")
+      .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray())
+      .catch(() => {});
     console.log("Core supervisor listening on http://127.0.0.1:" + port);
     console.log("Worker PID " + active!.pid + "; use: superagent core restart --port " + port);
     if (recovered) console.log("Authenticated supervisor recovery completed; old sessions kept on original workers.");

@@ -47,5 +47,7 @@ describe("desktop runtime services projection", () => {
     } as any);
     expect(projected.muse.watcherActive).toBe(true);
     expect(projected.muse.connected).toBe(false);
+    // A WSS watcher without a verified Cloudflare process is NOT a tunnel.
+    expect(projected.tunnel.active).toBe(false);
   });
 });

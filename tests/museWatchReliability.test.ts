@@ -51,6 +51,32 @@ describe("Muse watch ingress reliability", () => {
     expect(watcher.getStats().lastTransportError).toContain("polling exited unexpectedly");
   });
 
+  it("publishes private-data-free cross-process Muse heartbeat and removes it on stop", async () => {
+    const { dir, file } = config();
+    vi.stubEnv("SUPERAGENT_CONFIG_DIR", dir);
+    const watcher = new MuseWatcher({
+      workspace: dir, customConfigPath: file, announce: false,
+      transport: transport("websocket", async () => true, async () => {}, true),
+    });
+    await watcher.start();
+    try {
+      const names = fs.readdirSync(dir).filter(name => name.startsWith(`muse-watch-${process.pid}-`));
+      expect(names).toHaveLength(1);
+      const presence = JSON.parse(fs.readFileSync(path.join(dir, names[0]), "utf8"));
+      expect(presence).toMatchObject({
+        version: 1, pid: process.pid, transport: "websocket", ready: true,
+      });
+      const encoded = JSON.stringify(presence);
+      for (const secret of ["test-token", "-100123", "987654", dir, "botToken", "groupId"]) {
+        expect(encoded).not.toContain(secret);
+      }
+    } finally {
+      await watcher.stop();
+      expect(fs.readdirSync(dir).filter(name => name.startsWith("muse-watch-"))).toHaveLength(0);
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("reports WebSocket listener running but not connected as NOT ready", async () => {
     const { dir, file } = config();
     const watcher = new MuseWatcher({

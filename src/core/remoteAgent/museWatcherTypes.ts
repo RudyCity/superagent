@@ -35,6 +35,8 @@ export interface MuseWatcherOptions {
   agent?: Agent | null;
   customConfigPath?: string;
   announce?: boolean;
+  /** Tray-created watcher must never cancel an already-running remote task. */
+  skipRemoteTaskAbort?: boolean;
   autoApproveWorkspace?: boolean;
   tunnel?: boolean;
   wsPort?: number;

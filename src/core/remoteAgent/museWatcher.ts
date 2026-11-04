@@ -1,5 +1,8 @@
 import path from "path";
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import { getRootConfigDir } from "../config/paths.js";
+import { MuseOwnerLifecycle, type MuseOwnerAction } from "./museOwnerLifecycle.js";
 import {
   loadRemoteAgentConfig,
   RemoteAgentConfig,
@@ -73,6 +76,11 @@ export class MuseWatcher {
   private quickTunnelStarted = false;
   private tunnelMetadata: WatcherTunnelMetadata | null = null;
   private lastTransportError?: string;
+  /** Publicly inspectable, credential-free status for out-of-process tray detection. */
+  private presenceFile?: string;
+  private presenceTimer?: NodeJS.Timeout;
+  private ownerControl?: MuseOwnerLifecycle;
+  private preserveOwnerOnStop = false;
   private pendingChatReplies = new Map<string, {
     resolve: (reply: ChatEnvelope) => void;
     reject: (error: Error) => void;
@@ -274,6 +282,118 @@ export class MuseWatcher {
     };
   }
 
+  private writePresence(): void {
+    if ((!this.isRunning && !this.preserveOwnerOnStop) || !this.presenceFile) return;
+    try {
+      const file = this.presenceFile;
+      const payload = {
+        version: 1, pid: process.pid,
+        processStartedAt: Date.now() - Math.round(process.uptime() * 1000),
+        watcherStartedAt: this.startedAt,
+        updatedAt: Date.now(),
+        transport: this.transport?.type || "unknown",
+        running: this.isRunning,
+        ready: this.isRunning && Boolean(this.transport?.isConnected()),
+        ...(this.ownerControl ? {
+          controlPort: this.ownerControl.port, controlId: this.ownerControl.id,
+        } : {}),
+        // Never include bot identifiers, tokens, URLs, watched paths, task IDs, or errors.
+      };
+      fs.mkdirSync(getRootConfigDir(), { recursive: true });
+      const temp = file + "." + process.pid + ".tmp";
+      fs.writeFileSync(temp, JSON.stringify(payload), { mode: 0o600 });
+      fs.renameSync(temp, file);
+    } catch { /* observational state must never interrupt Muse Watch */ }
+  }
+
+  private async beginPresence(): Promise<void> {
+    if (!this.isRunning) return;
+    if (!this.presenceFile) {
+      const id = randomUUID().replace(/-/g, "").slice(0, 12);
+      this.presenceFile = path.join(getRootConfigDir(), `muse-watch-${process.pid}-${id}.json`);
+    }
+    if (!this.ownerControl) {
+      const suffix = this.presenceFile.match(/muse-watch-\d+-([a-f0-9]{12})\.json$/)?.[1];
+      if (suffix) {
+        const owner = new MuseOwnerLifecycle(getRootConfigDir(), suffix, {
+          status: () => {
+            const stats = this.getStats();
+            return {
+              running: this.isActive(),
+              ready: Boolean(stats.museConnected),
+              activeTask: Boolean(stats.activeTaskId || this.hasActiveBatch()),
+              queueSize: stats.queuedBatches || 0,
+              tunnelOwned: Boolean(stats.tunnel),
+              tokenRotationSupported: this.isActive()
+                && this.transport instanceof MuseWsServerTransport,
+            };
+          },
+          change: (action: MuseOwnerAction) => this.applyOwnerLifecycleAction(action),
+          rotateToken: () => this.rotateOwnedWsToken(),
+        });
+        try {
+          await owner.listen();
+          this.ownerControl = owner;
+        } catch {
+          // An unavailable control channel must never break Muse ingress.
+          owner.close();
+        }
+      }
+    }
+    this.writePresence();
+    if (!this.presenceTimer) {
+      this.presenceTimer = setInterval(() => this.writePresence(), 10_000);
+      this.presenceTimer.unref?.();
+    }
+  }
+
+  private endPresence(): void {
+    this.ownerControl?.close();
+    this.ownerControl = undefined;
+    if (this.presenceTimer) clearInterval(this.presenceTimer);
+    this.presenceTimer = undefined;
+    if (this.presenceFile) {
+      try { fs.rmSync(this.presenceFile, { force: true }); } catch {}
+    }
+    this.presenceFile = undefined;
+  }
+
+  /** Rotation is in-place and does not stop the watcher, Cloudflare process,
+   * or authenticated Muse connection. Existing WS transport handles both
+   * token_refresh notification and the five-minute previous-token grace. */
+  public async rotateOwnedWsToken(): Promise<{copied: boolean}> {
+    if (!this.isRunning || !(this.transport instanceof MuseWsServerTransport)) {
+      throw new Error("Only a running Muse WebSocket server can rotate its bearer token");
+    }
+    if (this.hasActiveBatch() || this.activeTaskId || this.batchQueue.length > 0) {
+      throw new Error("An active or queued Muse task prevents token rotation");
+    }
+    const rotation = this.transport.rotateToken("superagent_tray_operator");
+    const {buildMuseConnectionPrompt,copyTextToClipboard} =
+      await import("./cloudflareTunnel.js");
+    const wss = this.tunnelMetadata?.wssUrl;
+    const localSetup = wss
+      ? buildMuseConnectionPrompt({
+          wssUrl:wss,token:rotation.newToken,workspaces:this.workspaces,
+        })
+      : "Muse WebSocket bearer token (private): " + rotation.newToken;
+    // New credential is copied by the owner process, never returned to the
+    // Tray WebView or written to diagnostics/audit.
+    return {copied: await copyTextToClipboard(localSetup)};
+  }
+
+  private async applyOwnerLifecycleAction(action: MuseOwnerAction): Promise<void> {
+    this.preserveOwnerOnStop = true;
+    try {
+      if (this.isActive()) await this.stop();
+      if (action === "restart") await this.start();
+    } finally {
+      this.preserveOwnerOnStop = !this.isActive();
+      this.ownerControl?.holdForRestart(this.preserveOwnerOnStop);
+      this.writePresence();
+    }
+  }
+
   public async start(): Promise<void> {
     if (this.isRunning) {
       return;
@@ -305,11 +425,14 @@ export class MuseWatcher {
       }
     }
 
-    // Cancel any running single-task runner to ensure token or port is exclusively polled
-    try {
-      const { abortActiveRemoteTask } = await import("./taskRunner.js");
-      await abortActiveRemoteTask("Starting Muse Watch mode");
-    } catch {}
+    // Legacy interactive startup may cancel an old single-task runner.
+    // Creating a new tunnel from Tray must NEVER interrupt one in flight.
+    if (!this.options.skipRemoteTaskAbort) {
+      try {
+        const { abortActiveRemoteTask } = await import("./taskRunner.js");
+        await abortActiveRemoteTask("Starting Muse Watch mode");
+      } catch {}
+    }
 
     this.isRunning = true;
     this.startedAt = Date.now();
@@ -410,13 +533,24 @@ export class MuseWatcher {
 
       this.transport.sendEnvelope({ v: 1, kind: "chat", text: presenceText }).catch(() => {});
     }
+    await this.beginPresence();
   }
 
   public async stop(): Promise<void> {
     const wasRunning = this.isRunning;
-    if (!wasRunning && !this.abortController && !this.quickTunnelStarted && !this.tunnelMetadata) return;
+    if (!wasRunning && !this.abortController && !this.quickTunnelStarted && !this.tunnelMetadata) {
+      // An explicit CLI stop following a tray stop fully releases the idle
+      // owner control; only the tray operation leaves a restartable owner.
+      if (this.preserveOwnerOnStop) {
+        this.preserveOwnerOnStop = false;
+        this.endPresence();
+      }
+      return;
+    }
 
     this.isRunning = false;
+    if (this.preserveOwnerOnStop) this.writePresence();
+    else this.endPresence();
     this.clearActiveTaskIdentity();
     this.rejectPendingChatReplies(new Error("Muse watcher stopped before the chat reply arrived."));
     this.batchQueue = [];

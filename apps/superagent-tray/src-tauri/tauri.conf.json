@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SuperAgent Desktop",
+  "productName": "SuperAgent Tray",
   "version": "0.1.0",
-  "identifier": "click.superagent.desktop",
+  "identifier": "click.superagent.tray",
   "build": {
     "frontendDist": "../ui"
   },
@@ -11,7 +11,11 @@
     "windows": [
       {
         "label": "main",
-        "title": "SuperAgent · Cron & Reminders",
+        "title": "SuperAgent Tray · Cron & Runtime",
+        "decorations": false,
+        "resizable": true,
+        "minimizable": true,
+        "maximizable": true,
         "width": 1070,
         "height": 760,
         "minWidth": 760,

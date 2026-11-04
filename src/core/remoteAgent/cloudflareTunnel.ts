@@ -1357,23 +1357,22 @@ export function buildMuseConnectionPrompt(opts: BuildMusePromptOptions): string 
 export async function copyTextToClipboard(text: string): Promise<boolean> {
   try {
     if (process.platform === "win32") {
-      await execa("powershell", ["-NoProfile", "-Command", "Set-Clipboard", "-Value", "$input"], headlessOpts({
+      const result = await execa("powershell", ["-NoProfile", "-Command", "Set-Clipboard", "-Value", "$input"], headlessOpts({
         input: text,
         timeout: 2000,
         reject: false,
       }, "cloudflareTunnel.copyTextToClipboard.win"));
-      return true;
+      return result.exitCode === 0;
     } else if (process.platform === "darwin") {
-      await execa("pbcopy", [], headlessOpts({ input: text, timeout: 2000, reject: false }, "cloudflareTunnel.copyTextToClipboard.mac"));
-      return true;
+      const result = await execa("pbcopy", [], headlessOpts({ input: text, timeout: 2000, reject: false }, "cloudflareTunnel.copyTextToClipboard.mac"));
+      return result.exitCode === 0;
     } else if (process.platform === "linux") {
       try {
-        await execa("wl-copy", [], headlessOpts({ input: text, timeout: 1500, reject: false }, "cloudflareTunnel.copyTextToClipboard.wl"));
-        return true;
-      } catch {
-        await execa("xclip", ["-selection", "clipboard"], headlessOpts({ input: text, timeout: 1500, reject: false }, "cloudflareTunnel.copyTextToClipboard.xclip"));
-        return true;
-      }
+        const result = await execa("wl-copy", [], headlessOpts({ input: text, timeout: 1500, reject: false }, "cloudflareTunnel.copyTextToClipboard.wl"));
+        if (result.exitCode === 0) return true;
+      } catch {}
+      const fallback = await execa("xclip", ["-selection", "clipboard"], headlessOpts({ input: text, timeout: 1500, reject: false }, "cloudflareTunnel.copyTextToClipboard.xclip"));
+      return fallback.exitCode === 0;
     }
   } catch {}
   return false;
