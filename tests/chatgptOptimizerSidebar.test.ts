@@ -18,6 +18,17 @@ class FakeNode {
   disabled = false;
   title = "";
   type = "";
+  style: Record<string, string> = {};
+  get isConnected() { return this.parentElement !== null; }
+  getBoundingClientRect() {
+    if (this.tagName === "NAV") {
+      return { top: 52, bottom: 800, left: 0, right: 340, width: 340, height: 748 };
+    }
+    if (this.tagName === "BUTTON") {
+      return { top: 290, bottom: 326, left: 10, right: 310, width: 300, height: 36 };
+    }
+    return { top: 52, bottom: 800, left: 0, right: 340, width: 340, height: 748 };
+  }
   listeners = new Map<string, (...args: any[]) => void>();
 
   constructor(tagName: string) { this.tagName = tagName.toUpperCase(); }
@@ -155,6 +166,7 @@ function setup(options: { items?: any[]; noToken?: boolean; apiFailure?: boolean
       superagentChatGPTLiteSettings: { newValue: newSettings },
     }, "local"),
     setData: (next: any[]) => { data = next; },
+    setHidden: (value: boolean) => { document.hidden = value; },
     setFailure: (value: boolean) => { failing = value; },
     advance: (ms = 20000) => { now += ms; },
     getLinks: () => (body.querySelector(".sg-opt-sidebar-links")?.querySelectorAll('a[href^="/c/"]') || []),
@@ -184,7 +196,7 @@ describe("ChatGPT Optimizer: sidebar sync policy", () => {
   it("manifest loads sidebar scripts with no new permissions or external origins", () => {
     expect(manifest.content_scripts[0].js).toEqual(["policy.js", "content.js", "sidebar.js", "tab-reload.js"]);
     expect(manifest.content_scripts[0].css).toEqual(["content.css", "sidebar.css"]);
-    expect(manifest.permissions).toEqual(["storage", "tabs"]);
+    expect(manifest.permissions).toEqual(["storage", "tabs", "alarms"]);
     expect(manifest.host_permissions).toEqual(["https://chatgpt.com/*"]);
     expect(sidebarCode).not.toMatch(/location\.reload|history\.pushState|\.innerHTML\s*=|document\.cookie|localStorage|WebSocket/);
     expect(sidebarCode).not.toContain("section.insertBefore(container");
@@ -214,6 +226,27 @@ describe("ChatGPT Optimizer: live recent list", () => {
     expect(JSON.stringify(result.state)).not.toContain("fake-secret");
   });
 
+  it("anchors a compact badge next to Recents and opens a non-destructive dropdown", async () => {
+    const h = setup();
+    await h.ready;
+    const container = h.getLive()!;
+    const badge = container.querySelector(".sg-opt-sidebar-trigger")!;
+    const panel = container.querySelector(".sg-opt-sidebar-panel")!;
+    expect(container.parentElement).toBe(h.body);
+    expect(container.style.left).toBe("110px");
+    expect(container.style.top).toBe("295px");
+    expect(container.hidden).toBe(false);
+    expect(badge.textContent).toBe("↻ 1");
+    expect(panel.hidden).toBe(true);
+    badge.dispatch("click", {});
+    expect(panel.hidden).toBe(false);
+    expect(badge.getAttribute("aria-expanded")).toBe("true");
+    badge.dispatch("click", {});
+    expect(panel.hidden).toBe(true);
+    expect(h.nav.children).toEqual([h.section]);
+    expect(h.nativeList.children).toHaveLength(1);
+  });
+
   it("finds a new chat on subsequent fetch without reloading or replacing native sidebar", async () => {
     const h = setup({ items: [record(1)] });
     await h.ready;
@@ -224,6 +257,19 @@ describe("ChatGPT Optimizer: live recent list", () => {
     expect(result.state.missingCount).toBe(1);
     expect(h.getLinks()[0].getAttribute("href")).toBe(`/c/${chatId(9)}`);
     expect(h.nativeList.children[0].getAttribute("href")).toBe(`/c/${chatId(1)}`);
+  });
+
+  it("accepts scheduled background checks while the ChatGPT tab is hidden", async () => {
+    const h = setup({ items: [record(1)] });
+    await h.ready;
+    h.setHidden(true);
+    h.setData([record(1), record(8)]);
+    h.advance(61000);
+    const result = await h.call("background_refresh");
+    expect(result.state.phase).toBe("ready");
+    expect(result.state.missingCount).toBe(1);
+    expect(h.getLinks()[0].getAttribute("href")).toBe(`/c/${chatId(8)}`);
+    expect(h.nativeList.children).toHaveLength(1);
   });
 
   it("removes duplicate links when native ChatGPT navigation catches up", async () => {

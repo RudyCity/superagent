@@ -14,19 +14,24 @@
   let settings = policy.normalizeSettings();
   let timer = null;
   let observer = null;
+  let observedNav = null;
   let attachTimer = null;
   let container = null;
   let newest = [];
   let renderedLinksKey = null;
   let running = null;
   let generation = 0;
+  let panelOpen = false;
+  let geometryTimer = null;
+  let lastPosition = "";
   const status = {
     phase: "idle", lastSuccess: 0, lastAttempt: 0,
     serverCount: 0, missingCount: 0, error: "",
   };
 
   const enabled = () => settings.enabled && settings.sidebarSync;
-  const state = () => ({ ...status, enabled: enabled(), interval: settings.sidebarInterval });
+  const state = () => ({ ...status, enabled: enabled(), interval: settings.sidebarInterval,
+    mounted: !!(container?.isConnected && !container.hidden), panelOpen });
 
   function chatHistoryNav() {
     return document.querySelector('nav[aria-label="Chat history"]');
@@ -67,6 +72,17 @@
     root.setAttribute("aria-label", "ChatGPT Optimizer live recent chats");
     root.setAttribute("data-sg-opt-sidebar", "1");
 
+    const trigger = makeElement("button", "sg-opt-sidebar-trigger", "↻");
+    trigger.type = "button";
+    trigger.setAttribute("aria-label", "Open recent-chat sync updates");
+    trigger.setAttribute("aria-expanded", "false");
+    trigger.title = "ChatGPT Optimizer — synced recent chats";
+    trigger.addEventListener("click", () => {
+      panelOpen = !panelOpen;
+      render();
+    });
+    const panel = makeElement("div", "sg-opt-sidebar-panel");
+    panel.hidden = true;
     const top = makeElement("div", "sg-opt-sidebar-top");
     const heading = makeElement("span", "sg-opt-sidebar-title", "Live updates");
     const refresh = makeElement("button", "sg-opt-sidebar-refresh", "↻");
@@ -78,23 +94,75 @@
     const info = makeElement("p", "sg-opt-sidebar-info", "Checking for recent chats…");
     info.setAttribute("aria-live", "polite");
     const links = makeElement("ul", "sg-opt-sidebar-links");
-    root.append(top, info, links);
+    panel.append(top, info, links);
+    root.append(trigger, panel);
     return root;
+  }
+
+  function positionPortal(nav, section) {
+    if (!container) return;
+    const toggle = section?.querySelector('button[data-app-action-sidebar-section-toggle]');
+    const header = toggle?.closest?.('[class*="nav-section-title"]') || toggle;
+    const box = header?.getBoundingClientRect?.();
+    const navBox = nav?.getBoundingClientRect?.();
+    // Sidebar can scroll independently of the conversation. The trigger should
+    // follow the actual Recents heading and hide when that heading is offscreen.
+    let scroller = header?.parentElement;
+    while (scroller && scroller !== nav && scroller !== document.body) {
+      if (scroller.scrollHeight > scroller.clientHeight + 8 && scroller.clientHeight > 80) break;
+      scroller = scroller.parentElement;
+    }
+    const clip = scroller?.getBoundingClientRect?.() || navBox;
+    if (box && navBox && clip) {
+      const viewTop = Math.max(navBox.top, clip.top);
+      const viewBottom = Math.min(navBox.bottom, clip.bottom);
+      const shown = box.height > 0 && navBox.width > 160 &&
+        box.bottom > viewTop && box.top < viewBottom;
+      container.hidden = !shown;
+      if (shown && container.style) {
+        const left = Math.round(Math.max(navBox.left + 6,
+          Math.min(box.left + 100, box.right - 86)));
+        const top = Math.round(box.top + Math.min(5, (box.height - 26) / 2));
+        const placement = viewBottom - box.bottom >= 245 ? "below" : "above";
+        const position = left + "," + top + "," + placement;
+        if (lastPosition !== position) {
+          lastPosition = position;
+          container.style.left = left + "px";
+          container.style.top = top + "px";
+          container.setAttribute("data-panel-placement", placement);
+        }
+      }
+    } else {
+      // Test DOMs / older browser layouts without geometry: do not interfere
+      // with native React content; positioning defaults remain conservative.
+      container.hidden = false;
+    }
+  }
+
+  function queuePosition() {
+    if (geometryTimer) return;
+    geometryTimer = setTimeout(() => {
+      geometryTimer = null;
+      const nav = chatHistoryNav();
+      const section = recentSection(nav);
+      if (nav && section) positionPortal(nav, section);
+      else if (container) container.hidden = true;
+    }, 40);
   }
 
   function ensurePlaced() {
     if (!enabled()) return false;
     const nav = chatHistoryNav();
-    if (!nav) return false;
     const section = recentSection(nav);
-    if (!section) return false;
+    if (!section) {
+      if (container) container.hidden = true;
+      return false;
+    }
     if (!container) container = buildContainer();
-    // NEVER inject into a React-owned sidebar list. React may reconcile its
-    // children at any time and can tear down the active conversation on mismatch.
-    // A body-level portal, outside ChatGPT's application root, remains isolated.
+    // No insertions into React-owned elements: the portal is under body only.
     if (container.parentElement !== document.body) document.body.appendChild(container);
-    const toggle = section.querySelector('button[data-app-action-sidebar-section-toggle]');
-    container.hidden = toggle?.getAttribute("aria-expanded") === "false";
+    if (observer && observedNav !== nav) watchSidebar(nav);
+    positionPortal(nav, section);
     return true;
   }
 
@@ -113,6 +181,19 @@
     const info = container.querySelector(".sg-opt-sidebar-info");
     const links = container.querySelector(".sg-opt-sidebar-links");
     const refreshButton = container.querySelector(".sg-opt-sidebar-refresh");
+    const trigger = container.querySelector(".sg-opt-sidebar-trigger");
+    const panel = container.querySelector(".sg-opt-sidebar-panel");
+    if (trigger) {
+      const countText = missing.length ? " " + missing.length : "";
+      const label = status.phase === "error" ? "↻ !" : "↻" + countText;
+      if (trigger.textContent !== label) trigger.textContent = label;
+      trigger.setAttribute("aria-label", status.phase === "error"
+        ? "Recent chat synchronization failed; open details"
+        : "Recent chat synchronization: " + missing.length + " pending update(s)");
+      trigger.setAttribute("aria-expanded", String(panelOpen));
+      trigger.setAttribute("data-sync-state", status.phase);
+    }
+    if (panel) panel.hidden = !panelOpen;
     if (refreshButton) refreshButton.disabled = status.phase === "syncing";
 
     const summary = status.phase === "syncing" ? "Checking for updates…" :
@@ -156,13 +237,13 @@
     // Read the first-party session only in this isolated content-script context.
     // The access token is never persisted, returned to the popup or logged.
     const sessionResponse = await fetch("/api/auth/session", opts);
-    if (!sessionResponse.ok) throw new Error("Session unavailable");
+    if (!sessionResponse.ok) throw new Error("SESSION_HTTP_" + (sessionResponse.status || "unknown"));
     const session = await sessionResponse.json();
     const accessToken = typeof session?.accessToken === "string" ? session.accessToken : "";
     if (!accessToken) throw new Error("Sign in to ChatGPT to sync recent chats");
     const headers = { Accept: "application/json", Authorization: `Bearer ${accessToken}` };
     const response = await fetch(RECENTS_URL, { ...opts, headers });
-    if (!response.ok) throw new Error("History request failed");
+    if (!response.ok) throw new Error("HISTORY_HTTP_" + (response.status || "unknown"));
     const items = normalizeResponse(await response.json());
     // Retain only sanitized titles and IDs in tab memory, never full messages,
     // session data, mapping/snippets or hidden token-bearing metadata.
@@ -197,8 +278,18 @@
         if (started !== generation || !enabled()) return state();
         status.phase = "error";
         // Do not put server response/error details containing user data in the UI.
-        status.error = /Sign in/.test(String(error?.message)) ?
-          "Sign in to ChatGPT to sync" : "Unable to refresh. ChatGPT may have changed its API.";
+        const detail = String(error?.message || "");
+        if (detail.includes("Sign in") || /^SESSION_HTTP_401/.test(detail)) {
+          status.error = "Sign in to ChatGPT to enable recent-chat sync."
+        } else if (/^SESSION_HTTP_/.test(detail)) {
+          status.error = "Unable to refresh: session check HTTP " + detail.slice(13) + ".";
+        } else if (/^HISTORY_HTTP_/.test(detail)) {
+          status.error = "Unable to refresh: history API HTTP " + detail.slice(13) + ".";
+        } else if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+          status.error = "Unable to refresh: history request timed out.";
+        } else {
+          status.error = "Unable to refresh: ChatGPT's internal API may have changed.";
+        }
       } finally {
         running = null;
         render();
@@ -211,28 +302,41 @@
   function disconnectObserver() {
     observer?.disconnect();
     observer = null;
+    observedNav = null;
     if (attachTimer) clearTimeout(attachTimer);
     attachTimer = null;
+  }
+
+  function watchSidebar(nav) {
+    if (!observer) return;
+    observer.disconnect();
+    observedNav = nav;
+    if (nav) {
+      // Only watch the sidebar. Do not observe a long conversation's
+      // streaming message tree, which would cause unnecessary rendering work.
+      observer.observe(nav, {
+        subtree: true,
+        childList: true,
+        attributes: true,
+        attributeFilter: ["aria-expanded"],
+      });
+    } else {
+      // During initial hydration, wait for the sidebar to appear.
+      observer.observe(document.body, { subtree: true, childList: true });
+    }
   }
 
   function armObserver() {
     disconnectObserver();
     if (!enabled()) return;
-    observer = new MutationObserver((records) => {
-      // A React sidebar render can replace our container. Avoid reacting to
-      // our own injected list/labels so no observer-driven feedback loops occur.
-      const externalChange = records.some((record) => {
-        const target = record.target;
-        return !(target?.closest?.("[data-sg-opt-sidebar]") ||
-          target?.getAttribute?.("data-sg-opt-sidebar") === "1");
-      });
-      if (!externalChange || attachTimer) return;
+    observer = new MutationObserver(() => {
+      if (attachTimer) return;
       attachTimer = setTimeout(() => {
         attachTimer = null;
         render();
       }, 250);
     });
-    observer.observe(document.body, { subtree: true, childList: true });
+    watchSidebar(chatHistoryNav());
   }
 
   function configure() {
@@ -243,16 +347,22 @@
       status.phase = "disabled";
       newest = [];
       renderedLinksKey = null;
+      panelOpen = false;
+      lastPosition = "";
+      if (geometryTimer) clearTimeout(geometryTimer);
+      geometryTimer = null;
       container?.remove();
       disconnectObserver();
       return;
     }
     armObserver();
     render();
+    // MV3 alarms refresh inactive tabs too; this local timer is a resilience
+    // fallback and obeys the rate limiter to avoid duplicate network calls.
     timer = setInterval(() => {
       if (!document.hidden) void refresh(false);
     }, settings.sidebarInterval * 1000);
-    if (!document.hidden) void refresh(false);
+    void refresh(false);
   }
 
   chrome.runtime.onMessage.addListener((message, sender, reply) => {
@@ -262,8 +372,10 @@
       reply({ ok: true, state: state() });
       return false;
     }
-    if (message.action === "refresh") {
-      void refresh(true).then((result) => reply({ ok: true, state: result }));
+    if (message.action === "refresh" || message.action === "background_refresh") {
+      // Scheduled checks do not bypass rate limits; manual popup/button checks can.
+      void refresh(message.action === "refresh").then((result) =>
+        reply({ ok: true, state: result }));
       return true;
     }
     reply({ ok: false, error: "UNKNOWN_ACTION" });
@@ -278,9 +390,14 @@
 
   window.addEventListener("focus", () => {
     if (enabled() && Date.now() - status.lastAttempt >= MIN_REFRESH_GAP_MS) void refresh(false);
+    queuePosition();
   });
+  window.addEventListener("resize", queuePosition);
+  // Sidebar scrolls inside its own container, so listen in capture phase.
+  document.addEventListener("scroll", queuePosition, true);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden && enabled()) void refresh(false);
+    queuePosition();
   });
 
   void (async () => {

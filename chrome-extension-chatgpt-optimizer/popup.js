@@ -51,7 +51,7 @@
     } else if (state.phase === "error") {
       field.textContent = state.error || "Synchronization failed";
     } else if (state.phase === "ready") {
-      field.textContent = `${state.missingCount} new chat(s) in Live updates · checked at ${new Date(state.lastSuccess).toLocaleTimeString()}`;
+      field.textContent = `${state.serverCount} recent chats checked · ${state.missingCount} not yet in native Recents · ${new Date(state.lastSuccess).toLocaleTimeString()}`;
     } else {
       field.textContent = "Waiting for first sync…";
     }

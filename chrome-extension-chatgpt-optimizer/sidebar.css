@@ -1,42 +1,72 @@
-/* A BODY-level portal. Never insert nodes in ChatGPT's React-owned sidebar DOM. */
+/* Read-only sidebar sync trigger. Portal lives under body, outside React DOM. */
 .sg-opt-sidebar {
   position: fixed;
   z-index: 9990;
-  bottom: 14px;
-  left: 10px;
-  width: min(256px, calc(100vw - 24px));
-  max-height: min(260px, 50vh);
-  overflow-y: auto;
+  width: 80px;
+  height: 30px;
   box-sizing: border-box;
-  padding: 9px;
-  border-radius: 12px;
-  border: 1px solid color-mix(in srgb, currentColor 15%, transparent);
-  box-shadow: 0 4px 24px #0002;
-  background: var(--main-surface-primary, Canvas);
   color: var(--text-primary, CanvasText);
   font: 12px/1.45 system-ui, sans-serif;
+  pointer-events: none;
 }
-.sg-opt-sidebar[hidden] { display: none !important; }
+.sg-opt-sidebar[hidden], .sg-opt-sidebar-panel[hidden] { display: none !important; }
+.sg-opt-sidebar-trigger {
+  display: block;
+  margin-left: auto;
+  min-width: 35px;
+  max-width: 78px;
+  height: 27px;
+  padding: 2px 8px;
+  border-radius: 9px;
+  background: var(--main-surface-primary, Canvas);
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  color: inherit;
+  font: 600 12px/1.4 system-ui, sans-serif;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.sg-opt-sidebar-trigger:hover,
+.sg-opt-sidebar-trigger[aria-expanded="true"] {
+  background: color-mix(in srgb, currentColor 11%, var(--main-surface-primary, Canvas));
+}
+.sg-opt-sidebar-trigger[data-sync-state="error"] { border-style: dashed; }
+.sg-opt-sidebar-trigger:focus-visible, .sg-opt-sidebar-refresh:focus-visible {
+  outline: 2px solid currentColor; outline-offset: 2px;
+}
+.sg-opt-sidebar-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: min(274px, calc(100vw - 32px));
+  max-height: min(310px, 55vh);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: 11px;
+  box-shadow: 0 6px 24px #0004;
+  background: var(--main-surface-primary, Canvas);
+  color: inherit;
+  pointer-events: auto;
+}
+.sg-opt-sidebar[data-panel-placement="above"] .sg-opt-sidebar-panel {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
 .sg-opt-sidebar-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .sg-opt-sidebar-title { font-weight: 650; opacity: .90; }
 .sg-opt-sidebar-refresh {
-  background: transparent;
-  color: inherit;
-  border: 0;
-  border-radius: 6px;
-  font: 600 19px/1 system-ui, sans-serif;
-  padding: 3px 8px;
-  cursor: pointer;
+  background: transparent; color: inherit; border: 0; border-radius: 6px;
+  font: 600 19px/1 system-ui, sans-serif; padding: 3px 8px; cursor: pointer;
 }
 .sg-opt-sidebar-refresh:hover { background: color-mix(in srgb, currentColor 9%, transparent); }
-.sg-opt-sidebar-refresh:focus-visible { outline: 2px solid currentColor; outline-offset: 1px; }
 .sg-opt-sidebar-refresh:disabled { opacity: .45; cursor: wait; }
-.sg-opt-sidebar-info { margin: 3px 0 2px; font-size: 11px; opacity: .65; }
-.sg-opt-sidebar-links { padding: 0; margin: 3px 0 0; list-style: none; }
+.sg-opt-sidebar-info { margin: 5px 0 3px; font-size: 11px; opacity: .8; }
+.sg-opt-sidebar-links { padding: 0; margin: 4px 0 0; list-style: none; }
 .sg-opt-sidebar-item { min-width: 0; }
 .sg-opt-sidebar-link {
   display: block;
-  padding: 6px 8px;
+  padding: 7px 8px;
   text-decoration: none;
   color: inherit;
   white-space: nowrap;
@@ -47,5 +77,4 @@
 .sg-opt-sidebar-link::after { content: " ↗"; opacity: .55; }
 .sg-opt-sidebar-link:hover { background: color-mix(in srgb, currentColor 9%, transparent); }
 .sg-opt-sidebar-link:focus-visible { outline: 2px solid currentColor; }
-/* A missing / collapsed sidebar should never create a mobile-page overlay. */
 @media (max-width: 760px) { .sg-opt-sidebar { display: none !important; } }

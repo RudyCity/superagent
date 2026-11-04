@@ -249,8 +249,8 @@ describe("ChatGPT Optimizer: popup's selected-chat in-page recovery", () => {
   it("never calls chrome.tabs.reload or changes active tab URL", () => {
     expect(popupCode).not.toMatch(/chrome\.tabs\.reload|chrome\.tabs\.update|location\.reload|location\.assign|location\.replace/);
     expect(probeCode).not.toMatch(/location\.reload|location\.assign|history\.pushState|history\.replaceState|\.innerHTML\s*=/);
-    expect(manifest.permissions).toEqual(["storage", "tabs"]);
-    expect(manifest.version).toBe("0.3.3");
+    expect(manifest.permissions).toEqual(["storage", "tabs", "alarms"]);
+    expect(manifest.version).toBe("0.4.0");
   });
 
   it("triggers in-page retry only on the selected tab", async () => {

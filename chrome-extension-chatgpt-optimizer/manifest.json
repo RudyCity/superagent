@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Optimizer",
-  "version": "0.3.3",
-  "description": "Optimize long chats, sync the sidebar without a page reload, or safely reload a selected conversation tab on demand.",
+  "version": "0.4.0",
+  "description": "Optimize long chats, show recent-chat updates beside Recents without page reloads, and retry failed conversations in place.",
   "permissions": [
     "storage",
-    "tabs"
+    "tabs",
+    "alarms"
   ],
+  "background": {
+    "service_worker": "background.js"
+  },
   "host_permissions": [
     "https://chatgpt.com/*"
   ],

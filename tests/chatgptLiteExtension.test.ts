@@ -134,9 +134,9 @@ describe("ChatGPT Optimizer extension: policy", () => {
 
   it("limits the site origin and permissions (no network/socket/clipboard APIs)", () => {
     expect(manifest.host_permissions).toEqual(["https://chatgpt.com/*"]);
-    expect(manifest.permissions).toEqual(["storage", "tabs"]);
+    expect(manifest.permissions).toEqual(["storage", "tabs", "alarms"]);
     expect(manifest.content_scripts).toHaveLength(1);
-    expect(manifest.background).toBeUndefined();
+    expect(manifest.background).toEqual({ service_worker: "background.js" });
     expect(contentCode).not.toMatch(/fetch\(|WebSocket\(|XMLHttpRequest\(|\.innerHTML\s*=|\.removeChild\(/);
   });
 });
