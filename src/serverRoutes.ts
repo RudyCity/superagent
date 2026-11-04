@@ -889,6 +889,226 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Authenticated, read-only Connection Logs endpoint for desktop companions.
+  if (pathname === "/api/desktop/connection-logs") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "GET or POST required." });
+      return true;
+    }
+    try {
+      let queryParams: any = {};
+      if (req.method === "POST") {
+        const raw = await readBody(req);
+        if (raw) queryParams = JSON.parse(raw);
+      } else {
+        const parsedUrl = new URL(req.url || "/", "http://127.0.0.1");
+        queryParams = {
+          page: parsedUrl.searchParams.get("page") ? Number(parsedUrl.searchParams.get("page")) : undefined,
+          pageSize: parsedUrl.searchParams.get("pageSize") ? Number(parsedUrl.searchParams.get("pageSize")) : undefined,
+          search: parsedUrl.searchParams.get("search") || undefined,
+          source: parsedUrl.searchParams.get("source") || undefined,
+          direction: parsedUrl.searchParams.get("direction") || undefined,
+          status: parsedUrl.searchParams.get("status") || undefined,
+          timeRange: parsedUrl.searchParams.get("timeRange") || undefined,
+          sortBy: parsedUrl.searchParams.get("sortBy") as any,
+          sortOrder: parsedUrl.searchParams.get("sortOrder") as any,
+        };
+      }
+      const { queryConnectionLogs } = await import("./core/runtime/desktopConnectionLogs.js");
+      const result = queryConnectionLogs(queryParams);
+      sendJSON(res, 200, result);
+    } catch {
+      sendJSON(res, 500, { success: false, error: "Failed to read connection logs." });
+    }
+    return true;
+  }
+
+  // Authenticated, loopback-only Delegate Management endpoints for desktop companion.
+  if (pathname === "/api/desktop/delegate/status") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { success: false, error: "GET required." });
+      return true;
+    }
+    try {
+      const { delegateBridge } = await import("./core/delegate/bridge.js");
+      sendJSON(res, 200, { success: true, ...delegateBridge.getStatus() });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || "Failed to inspect delegate status" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/delegate/renew-pair-code") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    try {
+      const { delegateBridge } = await import("./core/delegate/bridge.js");
+      const pair = delegateBridge.renewPairingCode();
+      sendJSON(res, 200, { success: true, ...pair });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err?.message || "Failed to renew pairing code" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/delegate/disconnect") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      const body = JSON.parse(raw);
+      const clientId = String(body.clientId || "");
+      if (!clientId) {
+        sendJSON(res, 400, { success: false, error: "clientId is required" });
+        return true;
+      }
+      const { delegateBridge } = await import("./core/delegate/bridge.js");
+      const disconnected = delegateBridge.disconnectClient(clientId);
+      sendJSON(res, 200, { success: true, disconnected, clientId });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err?.message || "Failed to disconnect delegate client" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/delegate/lifecycle") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      const body = JSON.parse(raw);
+      const action = String(body.action || "");
+      const { delegateBridge } = await import("./core/delegate/bridge.js");
+      if (action === "start") {
+        await delegateBridge.start();
+        sendJSON(res, 200, { success: true, action: "started", ...delegateBridge.getStatus() });
+      } else if (action === "stop") {
+        await delegateBridge.close();
+        sendJSON(res, 200, { success: true, action: "stopped", ...delegateBridge.getStatus() });
+      } else {
+        sendJSON(res, 400, { success: false, error: "Action must be start or stop" });
+      }
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err?.message || "Lifecycle action failed" });
+    }
+    return true;
+  }
+
+
+  // Authenticated Terminal & Background Process Management for desktop companion
+  if (pathname === "/api/desktop/terminal/tasks") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { success: false, error: "GET required." });
+      return true;
+    }
+    try {
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const runningOnly = parsedUrl.searchParams.get("runningOnly") === "true";
+      const search = parsedUrl.searchParams.get("search") || undefined;
+      const result = DesktopTerminalManager.listTasks({ runningOnly, search });
+      sendJSON(res, 200, { success: true, ...result });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || "Failed to list terminal tasks" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/terminal/kill") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      const body = JSON.parse(raw || "{}");
+      const taskId = String(body.taskId || "").trim();
+      if (!taskId) {
+        sendJSON(res, 400, { success: false, error: "taskId is required" });
+        return true;
+      }
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const result = DesktopTerminalManager.killTask(taskId);
+      sendJSON(res, 200, { ...result });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || "Failed to kill terminal task" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/terminal/launch") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      const body = JSON.parse(raw || "{}");
+      const wsPath = resolveWorkspacePath(req);
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const result = DesktopTerminalManager.launchTask({
+        command: body.command,
+        presetName: body.presetName,
+        cwd: body.cwd || (wsPath ?? undefined),
+      });
+      sendJSON(res, 200, { ...result });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err?.message || "Failed to launch terminal task" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/terminal/logs") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { success: false, error: "GET required." });
+      return true;
+    }
+    try {
+      const taskId = parsedUrl.searchParams.get("taskId") || "";
+      if (!taskId) {
+        sendJSON(res, 400, { success: false, error: "taskId parameter is required" });
+        return true;
+      }
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const result = DesktopTerminalManager.getLogs(taskId);
+      sendJSON(res, 200, { success: true, ...result });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || "Failed to get terminal logs" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/terminal/presets") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { success: false, error: "GET required." });
+      return true;
+    }
+    try {
+      const wsPath = resolveWorkspacePath(req);
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const presets = DesktopTerminalManager.getPresets(wsPath ?? undefined);
+      sendJSON(res, 200, { success: true, presets });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || "Failed to get presets" });
+    }
+    return true;
+  }
+
   // Status
   if (pathname === "/api/status" && req.method === "GET") {
     const session = resolveSession(req);

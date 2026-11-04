@@ -130,7 +130,11 @@ export class DelegateBridge {
   }
 
   private issuePairingCode(): void {
-    if (!this.authenticatedToken || !this.server) return;
+    if (!this.authenticatedToken) {
+      try {
+        this.authenticatedToken = this.getAuthToken();
+      } catch {}
+    }
     if (this.pairingTimeout) clearTimeout(this.pairingTimeout);
     this.pairingCode = createPairingCode();
     this.pairingIssuedAt = Date.now();
@@ -165,6 +169,57 @@ export class DelegateBridge {
       }))
       .sort((a, b) => a.connectedAt - b.connectedAt || a.clientId.localeCompare(b.clientId));
   }
+  isRunning(): boolean {
+    return Boolean(this.server);
+  }
+
+  getPairingCode(): { code: string; expiresAt: number; ttlRemainingMs: number } | null {
+    if (!this.pairingCode || !this.pairingIssuedAt) return null;
+    const now = Date.now();
+    const expiresAt = this.pairingIssuedAt + PAIR_CODE_TTL_MS;
+    if (now >= expiresAt) return null;
+    return {
+      code: this.pairingCode.slice(0, 4) + "-" + this.pairingCode.slice(4),
+      expiresAt,
+      ttlRemainingMs: Math.max(0, expiresAt - now),
+    };
+  }
+
+  renewPairingCode(): { code: string; expiresAt: number; ttlRemainingMs: number } | null {
+    if (!this.authenticatedToken) {
+      this.authenticatedToken = this.getAuthToken();
+    }
+    this.issuePairingCode();
+    return this.getPairingCode();
+  }
+
+  disconnectClient(clientId: string): boolean {
+    const client = this.clients.get(clientId);
+    if (!client) return false;
+    try {
+      client.socket.close(1000, "MANUALLY_DISCONNECTED");
+    } catch {}
+    this.clients.delete(clientId);
+    this.pairedClients.delete(clientId);
+    this.broadcastConnections();
+    return true;
+  }
+
+  getStatus() {
+    const pair = this.getPairingCode();
+    return {
+      running: this.isRunning(),
+      port: this.port,
+      endpoint: "ws://127.0.0.1:" + this.port,
+      activeProfiles: this.listConnections(),
+      openSockets: this.server?.clients.size ?? 0,
+      pairingCode: pair ? pair.code : null,
+      pairingExpiresAt: pair ? pair.expiresAt : null,
+      pairingTtlMs: pair ? pair.ttlRemainingMs : null,
+      authMode: this.authenticatedToken ? "pairing_required" : "development_unpaired",
+    };
+  }
+
 
   private broadcastConnections(): void {
     const clients = this.listConnections();

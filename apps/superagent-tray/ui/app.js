@@ -357,7 +357,7 @@ async function onRowClick(event) {
 }
 
 function navigateToPage(pageId) {
-  const validPages = ["jobs", "runtime", "history", "settings"];
+  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "terminal", "settings"];
   const target = validPages.includes(pageId) ? pageId : "jobs";
 
   if (window.location.hash !== `#${target}`) {
@@ -384,26 +384,28 @@ function navigateToPage(pageId) {
   const actionsJobs = $("actions-jobs");
   const actionsRuntime = $("actions-runtime");
   const actionsHistory = $("actions-history");
+  const actionsLogs = $("actions-logs");
+  const actionsDelegate = $("actions-delegate");
+  const actionsTerminal = $("actions-terminal");
 
   // Every page first hides all other page-specific actions.
   if (actionsJobs) actionsJobs.hidden = true;
   if (actionsRuntime) actionsRuntime.hidden = true;
   if (actionsHistory) actionsHistory.hidden = true;
+  if (actionsLogs) actionsLogs.hidden = true;
+  if (actionsDelegate) actionsDelegate.hidden = true;
+  if (actionsTerminal) actionsTerminal.hidden = true;
 
   if (target === "jobs") {
     if (topEyebrow) topEyebrow.textContent = "AUTOMATION CONSOLE";
     if (topTitle) topTitle.textContent = "Schedules & Reminders";
     if (topDesc) topDesc.textContent = "Manage background cron jobs, native reminders, and active schedules.";
     if (actionsJobs) actionsJobs.hidden = false;
-    if (actionsRuntime) actionsRuntime.hidden = true;
-    if (actionsHistory) actionsHistory.hidden = true;
   } else if (target === "runtime") {
     if (topEyebrow) topEyebrow.textContent = "SYSTEM INVENTORY";
     if (topTitle) topTitle.textContent = "Runtime Detection";
     if (topDesc) topDesc.textContent = "Inspect authenticated Core APIs, CLI sessions, MCP servers, and tunnel connections.";
-    if (actionsJobs) actionsJobs.hidden = true;
     if (actionsRuntime) actionsRuntime.hidden = false;
-    if (actionsHistory) actionsHistory.hidden = true;
     if (typeof window.__superagentRuntimeRefresh === "function") {
       window.__superagentRuntimeRefresh();
     }
@@ -411,9 +413,34 @@ function navigateToPage(pageId) {
     if (topEyebrow) topEyebrow.textContent = "AUDIT LEDGER";
     if (topTitle) topTitle.textContent = "Execution History";
     if (topDesc) topDesc.textContent = "Review recent execution outcomes from the SuperAgent daemon run ledger.";
-    if (actionsJobs) actionsJobs.hidden = true;
-    if (actionsRuntime) actionsRuntime.hidden = true;
     if (actionsHistory) actionsHistory.hidden = false;
+  } else if (target === "logs") {
+    if (topEyebrow) topEyebrow.textContent = "REAL-TIME TELEMETRY";
+    if (topTitle) topTitle.textContent = "Connection Logs";
+    if (topDesc) topDesc.textContent =
+      "Inspect inbound and outbound connections, WebSocket sessions, MCP tool calls, and tunnel events.";
+    if (actionsLogs) actionsLogs.hidden = false;
+    if (typeof window.__superagentLogsRefresh === "function") {
+      window.__superagentLogsRefresh();
+    }
+  } else if (target === "delegate") {
+    if (topEyebrow) topEyebrow.textContent = "BROWSER ORCHESTRATION";
+    if (topTitle) topTitle.textContent = "Chrome Delegate Management";
+    if (topDesc) topDesc.textContent =
+      "Manage connected Chrome extensions, pairing codes, active browser profiles, and WebSocket bridge sessions.";
+    if (actionsDelegate) actionsDelegate.hidden = false;
+    if (typeof window.__superagentDelegateRefresh === "function") {
+      window.__superagentDelegateRefresh();
+    }
+  } else if (target === "terminal") {
+    if (topEyebrow) topEyebrow.textContent = "PROCESS SUPERVISOR";
+    if (topTitle) topTitle.textContent = "Terminal Processes";
+    if (topDesc) topDesc.textContent =
+      "Inspect, monitor stdout logs, and manage running terminal commands and background subprocesses.";
+    if (actionsTerminal) actionsTerminal.hidden = false;
+    if (typeof window.__superagentTerminalRefresh === "function") {
+      window.__superagentTerminalRefresh();
+    }
   } else if (target === "settings") {
     if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
     if (topTitle) topTitle.textContent = "Tray Settings";
@@ -492,6 +519,22 @@ function install() {
 
   window.__TAURI__?.event?.listen?.("desktop-open-runtime", () => {
     navigateToPage("runtime");
+  });
+
+  window.__TAURI__?.event?.listen?.("desktop-open-logs", () => {
+    navigateToPage("logs");
+  });
+
+  window.__TAURI__?.event?.listen?.("desktop-open-delegate", () => {
+    navigateToPage("delegate");
+  });
+
+  window.__TAURI__?.event?.listen?.("desktop-open-terminal", () => {
+    navigateToPage("terminal");
+  });
+
+  window.__TAURI__?.event?.listen?.("desktop-open-settings", () => {
+    navigateToPage("settings");
   });
 
   window.__TAURI__?.event?.listen?.("desktop-create-reminder", () => {

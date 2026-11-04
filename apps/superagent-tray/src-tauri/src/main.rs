@@ -15,6 +15,7 @@ use tauri::{
 };
 use tauri_plugin_notification::NotificationExt;
 
+mod connection_logs;
 mod remote_service_detection;
 mod runtime_control;
 mod runtime_detection;
@@ -242,6 +243,109 @@ async fn create_connection(payload: Value) -> Result<Value, String> {
     core_request(Method::POST, "/api/desktop/create-connection", Some(body)).await
 }
 
+#[tauri::command]
+async fn get_delegate_status() -> Result<Value, String> {
+    core_request(Method::GET, "/api/desktop/delegate/status", None).await
+}
+
+#[tauri::command]
+async fn delegate_action(action: String, payload: Option<Value>) -> Result<Value, String> {
+    match action.as_str() {
+        "renew-code" => {
+            core_request(Method::POST, "/api/desktop/delegate/renew-pair-code", None).await
+        }
+        "disconnect" => {
+            let body = payload.ok_or_else(|| "Missing payload for disconnect action".to_string())?;
+            core_request(Method::POST, "/api/desktop/delegate/disconnect", Some(body)).await
+        }
+        "start" => {
+            core_request(
+                Method::POST,
+                "/api/desktop/delegate/lifecycle",
+                Some(json!({"action": "start"})),
+            )
+            .await
+        }
+        "stop" => {
+            core_request(
+                Method::POST,
+                "/api/desktop/delegate/lifecycle",
+                Some(json!({"action": "stop"})),
+            )
+            .await
+        }
+        _ => Err("Unsupported delegate action".into()),
+    }
+}
+
+#[tauri::command]
+async fn get_terminal_tasks(
+    running_only: Option<bool>,
+    search: Option<String>,
+) -> Result<Value, String> {
+    let mut path = "/api/desktop/terminal/tasks?".to_string();
+    if let Some(ro) = running_only {
+        path.push_str(&format!("runningOnly={}&", ro));
+    }
+    if let Some(s) = search {
+        if !s.is_empty() {
+            let clean: String = s
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_' || *c == '.')
+                .collect();
+            path.push_str(&format!("search={}&", clean));
+        }
+    }
+    core_request(
+        Method::GET,
+        path.trim_end_matches('&').trim_end_matches('?'),
+        None,
+    )
+    .await
+}
+
+#[tauri::command]
+async fn kill_terminal_task(task_id: String) -> Result<Value, String> {
+    core_request(
+        Method::POST,
+        "/api/desktop/terminal/kill",
+        Some(json!({ "taskId": task_id })),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn launch_terminal_task(
+    command: Option<String>,
+    preset_name: Option<String>,
+) -> Result<Value, String> {
+    core_request(
+        Method::POST,
+        "/api/desktop/terminal/launch",
+        Some(json!({
+            "command": command,
+            "presetName": preset_name
+        })),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn get_terminal_logs(task_id: String) -> Result<Value, String> {
+    let clean: String = task_id
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    let path = format!("/api/desktop/terminal/logs?taskId={}", clean);
+    core_request(Method::GET, &path, None).await
+}
+
+#[tauri::command]
+async fn get_terminal_presets() -> Result<Value, String> {
+    core_request(Method::GET, "/api/desktop/terminal/presets", None).await
+}
+
+
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -363,6 +467,14 @@ async fn stop_core_server(port: Option<u16>) -> Result<Value, String> {
         let _ = Command::new("kill").arg(pid.to_string()).status();
     }
     Ok(json!({ "success": true, "port": target, "pid": pid, "message": "Core server stopped" }))
+}
+
+#[tauri::command]
+fn get_connection_logs(
+    query: connection_logs::ConnectionLogsQuery,
+) -> Result<connection_logs::ConnectionLogsResponse, String> {
+    let dir = config_dir()?;
+    Ok(connection_logs::query_connection_logs(&dir, query))
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -736,6 +848,12 @@ fn main() {
             let start_server = MenuItem::with_id(app, "start_server", "🟢 Start Core Server (:7888)", true, None::<&str>)?;
             let runtime =
                 MenuItem::with_id(app, "runtime", "🔍 Runtime Detection", true, None::<&str>)?;
+            let conn_logs =
+                MenuItem::with_id(app, "connection_logs", "📜 Connection Logs", true, None::<&str>)?;
+            let delegate =
+                MenuItem::with_id(app, "delegate", "🌐 Chrome Delegate", true, None::<&str>)?;
+            let terminal =
+                MenuItem::with_id(app, "terminal", "💻 Terminal Processes", true, None::<&str>)?;
             let add = MenuItem::with_id(app, "add", "➕ New Reminder", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let settings = MenuItem::with_id(app, "settings", "⚙️ Tray Settings", true, None::<&str>)?;
@@ -747,6 +865,9 @@ fn main() {
                 &open,
                 &start_server,
                 &runtime,
+                &conn_logs,
+                &delegate,
+                &terminal,
                 &add,
                 &sep1,
                 &settings,
@@ -776,6 +897,18 @@ fn main() {
                     "runtime" => {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-runtime", ());
+                    }
+                    "connection_logs" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-logs", ());
+                    }
+                    "delegate" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-delegate", ());
+                    }
+                    "terminal" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-terminal", ());
                     }
                     "settings" => {
                         show_main(app, false);
@@ -842,7 +975,15 @@ fn main() {
             set_tray_settings,
             tray_window_action,
             start_core_server,
-            stop_core_server
+            stop_core_server,
+            get_connection_logs,
+            get_delegate_status,
+            delegate_action,
+            get_terminal_tasks,
+            kill_terminal_task,
+            launch_terminal_task,
+            get_terminal_logs,
+            get_terminal_presets
         ])
         .run(tauri::generate_context!())
         .expect("SuperAgent Tray could not start");

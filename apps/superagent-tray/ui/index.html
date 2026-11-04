@@ -10,6 +10,9 @@
   <script src="./app.js" defer></script>
   <script src="./runtime.js" defer></script>
   <script src="./settings.js" defer></script>
+  <script src="./logs.js" defer></script>
+  <script src="./delegate.js" defer></script>
+  <script src="./terminal.js" defer></script>
 </head>
 <body>
   <!-- Native Windows decorations are disabled; these controls use strict
@@ -96,6 +99,30 @@
           </svg>
           <span>Execution History</span>
         </a>
+        <a class="nav-link" href="#logs" data-page="logs" id="nav-logs">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+          </svg>
+          <span>Connection Logs</span>
+        </a>
+        <a class="nav-link" href="#delegate" data-page="delegate" id="nav-delegate">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="4"></circle>
+            <line x1="21.17" y1="8" x2="12" y2="8"></line>
+            <line x1="3.95" y1="6.06" x2="8.54" y2="14"></line>
+            <line x1="10.88" y1="21.94" x2="15.46" y2="14"></line>
+          </svg>
+          <span>Chrome Delegate</span>
+        </a>
+                <a class="nav-link" href="#terminal" data-page="terminal" id="nav-terminal">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          <span>Terminal Processes</span>
+        </a>
         <a class="nav-link" href="#settings" data-page="settings" id="nav-settings">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
@@ -173,6 +200,55 @@
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
               </svg>
               <span>Refresh History</span>
+            </button>
+          </div>
+
+          <!-- Connection Logs Page Actions -->
+          <div id="actions-logs" class="action-group" hidden>
+            <button id="logs-autorefresh-btn" class="button ghost" title="Toggle automatic live tail (every 5s)">
+              <span class="live-dot"></span>
+              <span id="logs-autorefresh-text">Live Tail: Off</span>
+            </button>
+            <button id="logs-refresh-btn" class="button primary" title="Refresh connection telemetry">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Refresh Logs</span>
+            </button>
+          </div>
+
+          <!-- Terminal Page Actions -->
+          <div id="actions-terminal" class="action-group" hidden>
+            <button id="terminal-kill-all-btn" class="button ghost danger" title="Terminate all running terminal tasks" disabled>
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+              <span>Stop All</span>
+            </button>
+            <button id="terminal-refresh-btn" class="button primary" title="Refresh running terminal processes">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Refresh Processes</span>
+            </button>
+          </div>
+
+          <!-- Chrome Delegate Page Actions -->
+          <div id="actions-delegate" class="action-group" hidden>
+            <button id="delegate-view-logs-btn" class="button ghost" title="Filter Connection Logs for Chrome Delegate">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+              </svg>
+              <span>View Logs</span>
+            </button>
+            <button id="delegate-refresh-btn" class="button primary" title="Refresh delegate bridge status and clients">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Refresh Status</span>
             </button>
           </div>
         </div>
@@ -427,6 +503,9 @@
                   <option value="jobs">Schedules &amp; Reminders</option>
                   <option value="runtime">Runtime Detection</option>
                   <option value="history">Execution History</option>
+                  <option value="logs">Connection Logs</option>
+                  <option value="delegate">Chrome Delegate</option>
+                  <option value="terminal">Terminal Processes</option>
                 </select>
               </label>
             </div>
@@ -482,6 +561,413 @@
         </section>
       </div>
 
+      <!-- ================= PAGE 5: CONNECTION LOGS ================= -->
+      <div id="page-logs" class="page-view" hidden>
+        <!-- Summary Stats Grid -->
+        <section class="stats-grid" aria-label="Connection Statistics">
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Total Connections</span>
+              <span class="stat-chip">Telemetry</span>
+            </div>
+            <strong id="logs-stat-total" class="stat-value">-</strong>
+            <div class="stat-sub">Recorded connection events</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Inbound (Masuk)</span>
+              <span class="stat-chip success">📥 IN</span>
+            </div>
+            <strong id="logs-stat-in" class="stat-value">-</strong>
+            <div class="stat-sub">Incoming requests &amp; WS open</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Outbound (Keluar)</span>
+              <span class="stat-chip accent">📤 OUT</span>
+            </div>
+            <strong id="logs-stat-out" class="stat-value">-</strong>
+            <div class="stat-sub">Responses &amp; MCP tool dispatches</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Errors &amp; Warnings</span>
+              <span class="stat-chip error">⚠️ ISSUES</span>
+            </div>
+            <strong id="logs-stat-err" class="stat-value">-</strong>
+            <div class="stat-sub">Handshake failures &amp; rejects</div>
+          </article>
+        </section>
+
+        <!-- Filter & Search Panel -->
+        <section class="panel logs-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">AUDIT &amp; TELEMETRY</div>
+              <h2>Connection Activity Journal</h2>
+              <p>Real-time audit log of all inbound and outbound network connections, sockets, and protocols.</p>
+            </div>
+            <div class="logs-header-tools">
+              <button type="button" id="logs-clear-filters" class="button ghost" title="Reset all search and filters">Reset Filters</button>
+              <button type="button" id="logs-export-btn" class="button ghost" title="Export current logs view to JSON">Export JSON</button>
+            </div>
+          </div>
+
+          <!-- Controls Toolbar -->
+          <div class="logs-toolbar">
+            <div class="logs-search-box">
+              <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="logs-search" placeholder="Search event, endpoint, client ID, IP, error code..." autocomplete="off" />
+              <button type="button" id="logs-search-clear" class="search-clear-btn" hidden title="Clear search">✕</button>
+            </div>
+
+            <div class="logs-filter-group">
+              <div class="select-wrapper">
+                <select id="logs-filter-source" aria-label="Filter by Source">
+                  <option value="all">All Sources</option>
+                  <option value="delegate">Chrome Delegate (WS)</option>
+                  <option value="mcp">MCP Activity</option>
+                  <option value="oauth">OAuth Handshakes</option>
+                  <option value="tunnel">Tunnel &amp; Bridge</option>
+                  <option value="server">Core Server (HTTP)</option>
+                </select>
+              </div>
+
+              <div class="select-wrapper">
+                <select id="logs-filter-direction" aria-label="Filter by Direction">
+                  <option value="all">All Directions</option>
+                  <option value="in">📥 Inbound (Masuk)</option>
+                  <option value="out">📤 Outbound (Keluar)</option>
+                  <option value="event">⚡ Connection Event</option>
+                </select>
+              </div>
+
+              <div class="select-wrapper">
+                <select id="logs-filter-status" aria-label="Filter by Status">
+                  <option value="all">All Statuses</option>
+                  <option value="success">✅ Success</option>
+                  <option value="info">ℹ️ Info</option>
+                  <option value="warn">⚠️ Warning</option>
+                  <option value="error">❌ Error</option>
+                </select>
+              </div>
+
+              <div class="select-wrapper">
+                <select id="logs-filter-time" aria-label="Filter by Time Range">
+                  <option value="all">All Recorded</option>
+                  <option value="1h">Last 1 Hour</option>
+                  <option value="24h">Last 24 Hours</option>
+                  <option value="7d">Last 7 Days</option>
+                </select>
+              </div>
+
+              <div class="select-wrapper">
+                <select id="logs-sort-by" aria-label="Sort by Field">
+                  <option value="timestamp">Sort: Timestamp</option>
+                  <option value="source">Sort: Source</option>
+                  <option value="direction">Sort: Direction</option>
+                  <option value="event">Sort: Event</option>
+                  <option value="endpoint">Sort: Endpoint</option>
+                  <option value="status">Sort: Status</option>
+                  <option value="duration">Sort: Duration</option>
+                </select>
+              </div>
+
+              <button type="button" id="logs-sort-order-btn" class="button ghost sort-toggle-btn" title="Toggle Ascending / Descending order">
+                <span id="logs-sort-order-indicator">▼ DESC</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Logs Table -->
+          <div class="table-wrap logs-table-wrap">
+            <table class="logs-table" aria-label="Connection logs table">
+              <thead>
+                <tr>
+                  <th class="sortable-th" data-sort="timestamp">TIMESTAMP <span class="sort-icon" id="th-sort-timestamp">▼</span></th>
+                  <th class="sortable-th" data-sort="direction">DIR <span class="sort-icon" id="th-sort-direction"></span></th>
+                  <th class="sortable-th" data-sort="source">SOURCE <span class="sort-icon" id="th-sort-source"></span></th>
+                  <th class="sortable-th" data-sort="event">EVENT <span class="sort-icon" id="th-sort-event"></span></th>
+                  <th class="sortable-th" data-sort="endpoint">ENDPOINT / TARGET <span class="sort-icon" id="th-sort-endpoint"></span></th>
+                  <th class="sortable-th" data-sort="status">STATUS <span class="sort-icon" id="th-sort-status"></span></th>
+                  <th class="sortable-th" data-sort="duration">LATENCY <span class="sort-icon" id="th-sort-duration"></span></th>
+                  <th class="text-right">ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody id="logs-tbody">
+                <tr>
+                  <td colspan="8" class="empty-state">Loading connection logs...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Pagination Bar -->
+          <div class="logs-pagination-bar">
+            <div class="pagination-info">
+              <span id="logs-page-info">Showing 0 of 0 logs</span>
+              <div class="page-size-selector">
+                <label for="logs-page-size">Per page:</label>
+                <div class="select-wrapper sm">
+                  <select id="logs-page-size">
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="pagination-controls">
+              <button type="button" id="logs-page-first" class="button ghost page-btn" title="First page" disabled>«</button>
+              <button type="button" id="logs-page-prev" class="button ghost page-btn" title="Previous page" disabled>‹ Prev</button>
+              <span id="logs-page-current" class="page-indicator">Page 1 of 1</span>
+              <button type="button" id="logs-page-next" class="button ghost page-btn" title="Next page" disabled>Next ›</button>
+              <button type="button" id="logs-page-last" class="button ghost page-btn" title="Last page" disabled>»</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- ================= PAGE 5: CHROME DELEGATE ================= -->
+      <div id="page-delegate" class="page-view" hidden>
+        <!-- Summary Metrics Bar -->
+        <section class="stats-grid" aria-label="Delegate Statistics">
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Connected Profiles</span>
+              <span class="stat-chip">Chrome</span>
+            </div>
+            <strong id="delegate-stat-clients" class="stat-value">0</strong>
+            <div class="stat-sub">Active browser extensions</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">WebSocket Sockets</span>
+              <span class="stat-chip success">Live</span>
+            </div>
+            <strong id="delegate-stat-sockets" class="stat-value">0</strong>
+            <div class="stat-sub">Open duplex connections</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Security Protocol</span>
+              <span class="stat-chip accent">Auth</span>
+            </div>
+            <strong id="delegate-stat-authmode" class="stat-value">Pairing Protected</strong>
+            <div class="stat-sub">Expiring code verification</div>
+          </article>
+        </section>
+
+        <!-- Pairing & Bridge Controller Grid -->
+        <div class="delegate-grid">
+          <!-- Pairing Verification Card -->
+          <article class="delegate-card">
+            <div class="card-head">
+              <div class="panel-eyebrow">ONE-TIME PAIRING CODE</div>
+              <h2>Extension Pairing Verification</h2>
+              <p>Enter this 8-character pairing code into the SuperAgent Chrome extension popup to securely link this browser profile to SuperAgent Core.</p>
+            </div>
+            <div class="pairing-box">
+              <div id="delegate-pair-code" class="pair-code-display empty">---- ----</div>
+              <div id="delegate-pair-countdown" class="pair-countdown-chip expired">No active pairing code</div>
+            </div>
+            <div class="delegate-actions-row">
+              <button type="button" id="delegate-pair-copy" class="button secondary" disabled>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span>Copy Code</span>
+              </button>
+              <button type="button" id="delegate-pair-renew" class="button ghost">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+                </svg>
+                <span>Renew Code</span>
+              </button>
+            </div>
+            <p class="delegate-hint text-secondary">
+              Codes expire in 10 minutes. Once paired, the Chrome extension receives an authenticated authorization token and stays connected across browser restarts.
+            </p>
+          </article>
+
+          <!-- Bridge Listener Card -->
+          <article class="delegate-card">
+            <div class="card-head">
+              <div class="panel-eyebrow">WEBSOCKET BRIDGE</div>
+              <h2>Bridge Listener Status</h2>
+              <p>The bridge operates on a dedicated loopback WebSocket port and accepts connections only from authenticated Chrome extensions.</p>
+            </div>
+            <div class="listener-status-box">
+              <div class="endpoint-chip">
+                <span id="delegate-status-dot" class="status-dot offline"></span>
+                <span id="delegate-endpoint-val" class="font-mono">ws://127.0.0.1:17341</span>
+              </div>
+              <div id="delegate-status-text" class="listener-status-label">Listener Stopped</div>
+            </div>
+            <div class="delegate-actions-row">
+              <button type="button" id="delegate-listener-toggle" class="button primary">Start Listener</button>
+            </div>
+            <p class="delegate-hint text-secondary">
+              Default endpoint is <code>ws://127.0.0.1:17341</code>. Only requests with valid <code>chrome-extension://</code> origin headers and approved tokens are processed.
+            </p>
+          </article>
+        </div>
+
+        <!-- Connected Profiles Table Panel -->
+        <section class="panel delegate-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">ACTIVE BROWSER SESSIONS</div>
+              <h2>Connected Extensions</h2>
+              <p>Active Chrome browser extension instances paired and connected to this SuperAgent runtime.</p>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table" aria-label="Connected Chrome Extensions">
+              <thead>
+                <tr>
+                  <th scope="col">Profile &amp; Client ID</th>
+                  <th scope="col">Extension ID</th>
+                  <th scope="col">Status</th>
+                  <th scope="col">Connected Time</th>
+                  <th scope="col" class="text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody id="delegate-profiles-tbody">
+                <tr>
+                  <td colspan="5" class="empty-state">
+                    No Chrome extensions currently connected.<br />
+                    <small class="text-secondary">Open your Chrome extension popup and enter the pairing code above.</small>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ================= PAGE 6: TERMINAL PROCESSES ================= -->
+      <div id="page-terminal" class="page-view" hidden>
+        <!-- Summary Metrics Bar -->
+        <section class="stats-grid" aria-label="Terminal Statistics">
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Running Terminals</span>
+              <span class="stat-chip success">Active</span>
+            </div>
+            <strong id="terminal-stat-running" class="stat-value">0</strong>
+            <div class="stat-sub">Live OS subprocesses</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Total Launched</span>
+              <span class="stat-chip">Tasks</span>
+            </div>
+            <strong id="terminal-stat-total" class="stat-value">0</strong>
+            <div class="stat-sub">Session &amp; persisted tasks</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header">
+              <span class="stat-label">Configured Presets</span>
+              <span class="stat-chip accent">Presets</span>
+            </div>
+            <strong id="terminal-stat-presets" class="stat-value">0</strong>
+            <div class="stat-sub">From terminal-presets.json</div>
+          </article>
+        </section>
+
+        <!-- Quick Launch Bar Panel -->
+        <section class="panel terminal-launch-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">COMMAND RUNNER</div>
+              <h2>Quick Launch Terminal</h2>
+              <p>Execute a preset or run a command in the workspace as a managed background process.</p>
+            </div>
+          </div>
+          <form id="terminal-quick-launch-form" class="terminal-launch-form">
+            <div class="launch-inputs">
+              <div class="select-wrapper">
+                <select id="terminal-quick-preset-select" aria-label="Select configured preset">
+                  <option value="">-- Choose a configured preset --</option>
+                </select>
+              </div>
+              <input
+                type="text"
+                id="terminal-quick-cmd"
+                class="input-control font-mono"
+                placeholder="Or type command, e.g. npm run dev, cargo watch, python app.py"
+                aria-label="Custom terminal command"
+              />
+              <button type="submit" id="terminal-quick-launch-btn" class="button primary">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>Run</span>
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- Running Processes Table Panel -->
+        <section class="panel terminal-panel">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">ACTIVE PROCESS SUPERVISOR</div>
+              <h2>Launched Terminals &amp; Subprocesses</h2>
+              <p>Monitor live terminals, inspect output logs, and stop active processes.</p>
+            </div>
+            <div class="terminal-table-filters">
+              <label class="terminal-toggle-label">
+                <input type="checkbox" id="terminal-filter-running" checked />
+                <span>Running Only</span>
+              </label>
+              <div class="search-box">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                  type="search"
+                  id="terminal-search-input"
+                  placeholder="Filter by command or PID..."
+                  aria-label="Search terminal processes"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="data-table" aria-label="Launched Terminal Processes">
+              <thead>
+                <tr>
+                  <th scope="col">Task ID &amp; Label</th>
+                  <th scope="col">Command</th>
+                  <th scope="col">PID</th>
+                  <th scope="col">Working Directory</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" class="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="terminal-tasks-tbody">
+                <tr>
+                  <td colspan="6" class="empty-state">
+                    Loading terminal tasks...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
       <!-- Footer Info -->
       <footer class="footer">
         <div class="footer-left">
@@ -494,6 +980,58 @@
         </div>
       </footer>
     </main>
+  </div>
+
+  <!-- Log Detail Modal Dialog -->
+  <div id="log-detail-dialog" class="overlay" hidden>
+    <div class="modal-dialog modal-large">
+      <div class="modal-header">
+        <div>
+          <div class="modal-eyebrow">TELEMETRY INSPECTOR</div>
+          <h2 id="log-detail-title">Connection Log Detail</h2>
+        </div>
+        <button type="button" id="log-detail-close" class="icon-button" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="log-detail-meta-grid">
+          <div class="detail-cell">
+            <span class="detail-label">TIMESTAMP</span>
+            <strong id="log-detail-ts" class="detail-val font-mono">-</strong>
+          </div>
+          <div class="detail-cell">
+            <span class="detail-label">DIRECTION</span>
+            <span id="log-detail-dir" class="detail-val">-</span>
+          </div>
+          <div class="detail-cell">
+            <span class="detail-label">SOURCE</span>
+            <strong id="log-detail-source" class="detail-val">-</strong>
+          </div>
+          <div class="detail-cell">
+            <span class="detail-label">STATUS</span>
+            <span id="log-detail-status" class="detail-val">-</span>
+          </div>
+          <div class="detail-cell full">
+            <span class="detail-label">ENDPOINT / TARGET</span>
+            <code id="log-detail-endpoint" class="detail-code">-</code>
+          </div>
+          <div class="detail-cell full">
+            <span class="detail-label">SUMMARY</span>
+            <p id="log-detail-summary" class="detail-summary">-</p>
+          </div>
+        </div>
+        <div class="form-divider">RAW JSON PAYLOAD</div>
+        <pre id="log-detail-json" class="json-viewer font-mono"></pre>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="log-detail-copy" class="button ghost">Copy JSON</button>
+        <button type="button" id="log-detail-dismiss" class="button primary">Close</button>
+      </div>
+    </div>
   </div>
 
   <!-- Create / Edit Schedule Modal Dialog -->
@@ -600,6 +1138,44 @@
         <button id="save-form" type="submit" class="button primary">Save Schedule</button>
       </div>
     </form>
+  </div>
+
+
+  <!-- Terminal Log Viewer Modal Dialog -->
+  <div id="terminal-log-dialog" class="overlay" hidden>
+    <div class="modal-dialog modal-large">
+      <div class="modal-header">
+        <div>
+          <div class="modal-eyebrow">STDOUT / STDERR CONSOLE</div>
+          <h2 id="terminal-log-title">Terminal Log</h2>
+        </div>
+        <button type="button" id="terminal-log-close" class="icon-button" aria-label="Close dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="terminal-modal-meta">
+          <div class="meta-row">
+            <span class="detail-label">COMMAND:</span>
+            <code id="terminal-log-cmd" class="detail-code"></code>
+          </div>
+          <div class="meta-row">
+            <span class="detail-label">LOG FILE:</span>
+            <span id="terminal-log-path" class="font-mono text-muted"></span>
+          </div>
+        </div>
+        <pre id="terminal-log-console" class="terminal-viewer"></pre>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" id="terminal-log-copy" class="button secondary">Copy Output</button>
+        <button type="button" onclick="document.getElementById('terminal-log-dialog').hidden = true" class="button ghost">Close</button>
+      </div>
+    </div>
   </div>
 
   <!-- Toast Notification Alert -->
