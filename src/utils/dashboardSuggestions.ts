@@ -4,6 +4,7 @@ import os from "os";
 import { filterSuggestions, getActiveCommandContext } from "./text.js";
 import { getCachedModelIds, getInstalledSkills, getModelPresets, listHistorySessions, getTrustedDirectories } from "../core/config.js";
 import { registry } from "../core/commands/registry.js";
+import { loadModelConfig } from "../core/config/jsonConfig.js";
 import { backgroundTasks } from "../core/tools.js";
 import {
   MUSE_TUNNEL_SUGGESTIONS,
@@ -454,21 +455,39 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         } catch { /* no locally registered MCP owners */ }
         return [...found].sort((a,b) => a-b);
       })();
+      const ports = [9227, ...knownPorts].filter((port,i,all) => all.indexOf(port) === i);
+      if (sub === "remove" || sub === "delete") {
+        let names: string[] = [];
+        try {
+          names = Object.keys(loadModelConfig().mcpServers || {}).slice(0, 30)
+            .filter(name => /^[A-Za-z0-9_.-]{1,64}$/.test(name));
+        } catch { /* no available local configured client list */ }
+        return filterSuggestions([
+          `/mcp ${sub}`,
+          ...names.map(name => `/mcp ${sub} ${name}`),
+        ], query);
+      }
+      if (sub === "list" || sub === "add" || sub === "add-http") {
+        return filterSuggestions([`/mcp ${sub}`], query);
+      }
       if (sub === "help") return filterSuggestions(["/mcp help"], query);
       if (sub === "logs" || sub === "log") {
         const prefix = sub === "log" ? "/mcp log" : "/mcp logs";
-        const ports = [9227, ...knownPorts].filter((port,i,all) => all.indexOf(port) === i);
         return filterSuggestions([
           prefix,
           ...ports.map(port => `${prefix} --port ${port}`),
+          ...ports.map(port => `${prefix} --mcp-port ${port}`),
           ...ports.map(port => `${prefix} --port ${port} --tail 20`),
+          ...ports.map(port => `${prefix} --mcp-port ${port} --tail 20`),
         ], query);
       }
       if (sub === "reload") {
         return filterSuggestions([
           "/mcp reload",
-          "/mcp reload --port 9227",
-          ...knownPorts.map(port => `/mcp reload --port ${port}`),
+          ...ports.flatMap(port => [
+            `/mcp reload --port ${port}`,
+            `/mcp reload --mcp-port ${port}`,
+          ]),
         ], query);
       }
       // Keep tool-catalog mode suggestions within /mcp use rather than mixing
@@ -480,39 +499,53 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       if (sub === "tunnel") {
         const action = parts[2]?.toLowerCase();
         if (action === "start") {
-          const startSuggestions = [
-            ...MCP_TUNNEL_SUGGESTIONS.filter((suggestion) => suggestion.startsWith("/mcp tunnel start")),
-            "/mcp tunnel start --mcp-auth oauth",
-            "/mcp tunnel start --mcp-auth static-bearer",
-            "/mcp tunnel start --allow-dangerous",
-            "/mcp tunnel start --mcp-port 9227",
-          ];
-          return filterSuggestions(startSuggestions, query);
+          const prefix = "/mcp tunnel start";
+          return filterSuggestions([
+            prefix,
+            `${prefix} --provider cloudflare`,
+            `${prefix} --provider openai --tunnel-id`,
+            `${prefix} --mcp-auth oauth`,
+            `${prefix} --mcp-auth static-bearer`,
+            `${prefix} --allow-dangerous`,
+            ...ports.flatMap(port => [
+              `${prefix} --port ${port}`,
+              `${prefix} --mcp-port ${port}`,
+              `${prefix} --provider cloudflare --mcp-auth oauth --mcp-port ${port}`,
+            ]),
+          ], query);
         }
         if (action === "stop") {
-          const stopSuggestions = [
-            "/mcp tunnel stop",
-            "/mcp tunnel stop --mcp-port 9227",
-          ];
-          try {
-            const dir = path.join(os.homedir(), ".superagent-r");
-            if (fs.existsSync(dir)) {
-              for (const f of fs.readdirSync(dir)) {
-                const mcpMatch = f.match(/^mcp-(\d+)\.json$/);
-                if (mcpMatch) stopSuggestions.push(`/mcp tunnel stop --mcp-port ${mcpMatch[1]}`);
-                const openaiMatch = f.match(/^openai-tunnel-(\d+)\.json$/);
-                if (openaiMatch) stopSuggestions.push(`/mcp tunnel stop --mcp-port ${openaiMatch[1]}`);
-              }
-            }
-          } catch {}
-          return filterSuggestions(stopSuggestions, query);
+          const prefix = "/mcp tunnel stop";
+          return filterSuggestions([
+            prefix, `${prefix} --force`,
+            ...ports.flatMap(port => [
+              `${prefix} --port ${port}`,
+              `${prefix} --mcp-port ${port}`,
+              `${prefix} --mcp-port ${port} --force`,
+            ]),
+          ], query);
         }
         if (action === "help") return filterSuggestions(["/mcp tunnel help"], query);
         if (action === "providers") {
           return filterSuggestions(["/mcp tunnel providers"], query);
         }
+        if (action === "config") {
+          // Only action names: NEVER complete values of tunnel IDs or API keys.
+          return filterSuggestions([
+            "/mcp tunnel config",
+            "/mcp tunnel config status",
+            "/mcp tunnel config show",
+            "/mcp tunnel config set-id",
+            "/mcp tunnel config set-tunnel-id",
+            "/mcp tunnel config set-key-env",
+            "/mcp tunnel config set-key",
+            "/mcp tunnel config set-api-key",
+            "/mcp tunnel config clear-id",
+            "/mcp tunnel config clear-key",
+            "/mcp tunnel config clear",
+          ], query);
+        }
         if (action === "token") {
-          const ports = [9227, ...knownPorts].filter((port,i,all)=>all.indexOf(port)===i);
           const base = ["/mcp tunnel token regenerate", "/mcp tunnel token rotate"];
           const options = base.flatMap(prefix => [
             prefix,
@@ -526,31 +559,44 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         if (action === "reload" || action === "restart" || action === "logs" || action === "log") {
           const base = action === "log" ? "logs" : action;
           const prefix = `/mcp tunnel ${base}`;
-          const ports = [9227, ...knownPorts].filter((port,i,all) => all.indexOf(port) === i);
           const options = [
             prefix,
-            ...ports.map(port => `${prefix} --port ${port}`),
+            ...ports.flatMap(port => [
+              `${prefix} --port ${port}`,
+              `${prefix} --mcp-port ${port}`,
+            ]),
           ];
           if (action === "restart") {
             options.push(`${prefix} --full`);
-            options.push(...ports.map(port => `${prefix} --port ${port} --full`));
+            options.push(...ports.flatMap(port => [
+              `${prefix} --port ${port} --full`,
+              `${prefix} --mcp-port ${port} --full`,
+              `${prefix} --mcp-port ${port} --full --force`,
+            ]));
           }
           if (action === "logs" || action === "log") {
             options.push(...ports.flatMap(port => [
               `${prefix} --port ${port} --tail 20`,
               `${prefix} --port ${port} --tail 100`,
+              `${prefix} --mcp-port ${port} --tail 20`,
             ]));
           }
           return filterSuggestions(options, query);
         }
         if (action === "doctor") {
-          return filterSuggestions(["/mcp tunnel doctor --provider openai", "/mcp tunnel doctor --provider cloudflare"], query);
+          return filterSuggestions([
+            "/mcp tunnel doctor",
+            "/mcp tunnel doctor --provider openai",
+            "/mcp tunnel doctor --provider cloudflare",
+            "/mcp tunnel doctor --provider openai --profile",
+            "/mcp tunnel doctor --provider openai --tunnel-id",
+          ], query);
         }
         if (action === "list") {
           return filterSuggestions(["/mcp tunnel list"], query);
         }
         if (action === "status") {
-          return filterSuggestions(["/mcp tunnel status", "/mcp tunnel status --mcp-port 9227"], query);
+          return filterSuggestions(["/mcp tunnel status"], query);
         }
         return filterSuggestions(MCP_TUNNEL_SUGGESTIONS, query);
       }
@@ -559,6 +605,7 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/mcp add",
         "/mcp add-http",
         "/mcp remove",
+        "/mcp delete",
         "/mcp reload",
         "/mcp help",
         "/mcp logs",

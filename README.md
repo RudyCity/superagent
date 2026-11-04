@@ -522,6 +522,17 @@ new owner is refused if credential storage cannot persist across
 backend generations. After adding MCP tools, ChatGPT's cached tool
 catalog may still require refreshing its MCP session.
 
+**Interactive MCP command suggestions:** T-Line autocomplete covers the
+supported `/mcp` and `/mcp tunnel` subcommands, including nested
+`config status|show|set-id|set-tunnel-id|set-key-env|set-key|set-api-key|clear-id|clear-key|clear`,
+`token regenerate|rotate`, `restart --full [--force]`,
+`stop --force`, `doctor --provider openai|cloudflare`,
+`logs --tail 20|100`, `use gateway|full|status`, and
+`--port`/`--mcp-port` aliases. Available MCP ports and configured
+removal names are suggested from local state, not embedded deployment
+values. Sensitive API key values are never auto-completed; the
+`status` command is not incorrectly shown with unsupported port flags.
+
 See [stable-URL MCP blue-green reload and migration audit](docs/audits/2026-11-04-superagent-mcp-stable-url-bluegreen-reload.md).
 
 #### Adaptive MCP Tools: discovery, gateway mode and reconnect

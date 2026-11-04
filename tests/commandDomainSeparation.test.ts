@@ -66,6 +66,41 @@ describe("command domain separation", () => {
       .toContain("/mcp tunnel token regenerate --mcp-port 9227");
   });
 
+  it("covers the entire MCP tunnel config parser action matrix without suggesting API key values", () => {
+    const query = "/mcp tunnel config";
+    const options = getDashboardSuggestions(query, query.length);
+    for (const action of [
+      "status", "show", "set-id", "set-tunnel-id",
+      "set-key-env", "set-key", "set-api-key",
+      "clear-id", "clear-key", "clear",
+    ]) {
+      expect(options).toContain("/mcp tunnel config " + action);
+    }
+    expect(options.some(value => value.includes("CONTROL_PLANE_API_KEY="))).toBe(false);
+    expect(getDashboardSuggestions("/mcp tunnel config clear-k", 26))
+      .toContain("/mcp tunnel config clear-key");
+  });
+
+  it("covers backend lifecycle and port aliases with safe token, stop and forced full-restart options", () => {
+    const contains = (query: string, expected: string) =>
+      expect(getDashboardSuggestions(query, query.length)).toContain(expected);
+    for (const action of ["start", "stop", "reload", "restart", "logs", "token", "doctor", "status", "list", "providers", "config", "help"]) {
+      expect(getDashboardSuggestions("/mcp tunnel " + action, ("/mcp tunnel " + action).length).length).toBeGreaterThan(0);
+    }
+    contains("/mcp tunnel stop", "/mcp tunnel stop --mcp-port 9227 --force");
+    contains("/mcp tunnel restart", "/mcp tunnel restart --mcp-port 9227 --full --force");
+    contains("/mcp tunnel reload", "/mcp tunnel reload --mcp-port 9227");
+    contains("/mcp tunnel logs", "/mcp tunnel logs --mcp-port 9227 --tail 20");
+    contains("/mcp tunnel doctor", "/mcp tunnel doctor --provider openai --profile");
+    contains("/mcp tunnel start", "/mcp tunnel start --provider cloudflare --mcp-auth oauth --mcp-port 9227");
+    contains("/mcp reload", "/mcp reload --mcp-port 9227");
+    contains("/mcp logs", "/mcp logs --mcp-port 9227 --tail 20");
+    contains("/mcp tunnel token regenerate", "/mcp tunnel token regenerate --mcp-port 9227");
+    const status = getDashboardSuggestions("/mcp tunnel status", "/mcp tunnel status".length);
+    expect(status).not.toContain("/mcp tunnel status --mcp-port 9227");
+    expect(getDashboardSuggestions("/mcp delete", "/mcp delete".length)).toContain("/mcp delete");
+  });
+
   it("keeps REST/SSE tunnel suggestions under /server", () => {
     const query = "/server tunnel";
     const suggestions = getDashboardSuggestions(query, query.length);

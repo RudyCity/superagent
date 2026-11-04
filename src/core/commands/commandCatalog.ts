@@ -156,6 +156,9 @@ export const MCP_TUNNEL_SUGGESTIONS = [
   "/mcp tunnel config set-id",
   "/mcp tunnel config set-key-env",
   "/mcp tunnel config set-key",
+  "/mcp tunnel config clear-id",
+  "/mcp tunnel config clear-key",
+  "/mcp tunnel config clear",
   "/mcp tunnel list",
   "/mcp tunnel start --provider cloudflare",
   "/mcp tunnel start --provider openai --tunnel-id",
@@ -168,6 +171,7 @@ export const MCP_TUNNEL_SUGGESTIONS = [
   "/mcp tunnel stop",
   "/mcp tunnel status",
   "/mcp tunnel doctor --provider openai",
+  "/mcp tunnel doctor --provider cloudflare",
 ];
 
 export const SENOPATI_RUNTIME_SUGGESTIONS = [
