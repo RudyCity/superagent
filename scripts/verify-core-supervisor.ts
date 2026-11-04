@@ -9,6 +9,8 @@ import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { requestCoreSupervisor } from "../src/core/runtime/coreSupervisor.js";
+import { dispatchCoreLifecycleMcpTool } from "../src/core/mcp/tools/coreLifecycleMcpTools.js";
+import { manageCoreTool } from "../src/core/tools/coreLifecycleTools.js";
 import { coreCheckpointPath, readCoreCheckpoint } from "../src/core/runtime/coreSupervisorCheckpoint.js";
 
 async function freePort(): Promise<number> {
@@ -169,7 +171,15 @@ try {
   if ((await requestCoreSupervisor("status", publicPort)).affinitySessions !== 1) {
     throw new Error("Core supervisor did not pin initialized session");
   }
-  const next = await requestCoreSupervisor("restart", publicPort);
+  // Real MCP lifecycle dispatcher: same supervisor as CLI, with write consent.
+  const mcpStatus = await dispatchCoreLifecycleMcpTool("superagent_core_status", {port:publicPort});
+  if (mcpStatus.isError || JSON.parse(mcpStatus.content[0].text).activeWorkerPid !== initial.active.pid)
+    throw new Error("MCP did not report the same authenticated initial Core owner");
+  const mcpRestart = await dispatchCoreLifecycleMcpTool("superagent_core_restart", {
+    port:publicPort,confirm:true,
+  });
+  if (mcpRestart.isError) throw new Error("MCP Core restart failed: "+mcpRestart.content[0].text);
+  const next = JSON.parse(mcpRestart.content[0].text).status as Awaited<ReturnType<typeof requestCoreSupervisor>>;
   if (next.supervisorPid !== owner.pid) throw new Error("Supervisor ownership changed unexpectedly");
   ownedPids.add(next.active.pid);
   if (next.active.pid === initial.active.pid) throw new Error("Worker generation did not change");
@@ -203,7 +213,12 @@ try {
 
   // Manual rollback only changes the default route; pre-existing sessions
   // on both generations MUST remain bound to their owning worker.
-  const rolledBack = await requestCoreSupervisor("rollback", publicPort);
+  // Agent tool follows the same control path and verifies returned worker.
+  const agentRollback = await manageCoreTool.execute({
+    action:"rollback",port:publicPort,confirm:true,
+  },root);
+  if (agentRollback.startsWith("Error:")) throw new Error("Agent rollback failed: "+agentRollback);
+  const rolledBack = JSON.parse(agentRollback).status as Awaited<ReturnType<typeof requestCoreSupervisor>>;
   if (rolledBack.active.pid !== initial.active.pid ||
       rolledBack.lastRollback?.reason !== "operator-requested") {
     throw new Error("Manual rollback did not switch to the verified previous generation");
@@ -364,7 +379,7 @@ try {
   if ((await fetch("http://127.0.0.1:" + channelPort + "/_channel/health")).status !== 200) {
     throw new Error("Independent channel host died after API core recovery/restart");
   }
-  console.log("PASS isolated core + independent T-Line/channel owners: handover, drain, hard crash, recovery + restart");
+  console.log("PASS isolated Core via MCP + agent tool: authenticated worker restart, agent rollback, session handover, drain, crash/recovery; tunnels unaffected");
 } finally {
   killOwned(channelOwner?.pid ?? 0);
   killOwned(transportOwner?.pid ?? 0);

@@ -244,6 +244,46 @@ For source changes, a separate supervisor can keep the REST/SSE/WebSocket port a
 
 Run from the repository: bun src/cli.tsx core start --port 7888, then bun src/cli.tsx core status or bun src/cli.tsx core restart. The equivalent slash commands are /core status and /core restart. Build first when running via dist/cli.js. Starting this mode on a port already occupied by an unsupervised server is intentionally refused.
 
+**Development Core restart through MCP or AI agent (opt-in supervisor):**
+The same authenticated supervisor control path is exposed through direct
+MCP tools `superagent_core_status` (read-only), `superagent_core_restart`,
+`superagent_core_rollback` and `superagent_core_drain`. Gateway mode
+advertises these four tools directly once the connected MCP backend loads this
+version. The Master, Superagent and Chrome-extension agent toolsets also
+provide `manage_core` with `action=status|restart|rollback|drain`.
+
+For development, first start an *unoccupied* supervised port using
+`bun src/cli.tsx core start --port 7888`; workers launched from the
+TypeScript source pick up code edits on a later worker restart. When using the
+compiled `dist/cli.js`, run `bun run build` **before** invoking restart.
+No tool silently compiles code, kills an unsupervised process or steals a port.
+
+MCP restart example (via `superagent_tool_execute` in Gateway mode):
+
+```json
+{"name":"superagent_core_restart","arguments":{"port":7888,"confirm":true}}
+```
+
+Agent tool equivalent: `manage_core({ action: "restart", port: 7888,
+confirm: true })`. The other mutating actions use the same `confirm:true`
+requirement; `status` does not. MCP mutations require locally enabled YOLO
+and the normal dangerous-tool authorization (OAuth
+`mcp:tools:write` plus tunnel opt-in as applicable), including through the
+gateway; read-only tokens may inspect status but cannot roll workers. The
+supervisor independently checks readiness before switching, and the control
+path verifies unchanged supervisor identity/public port, the new worker PID
+and retention of the former session owner. A missing/stale supervisor, an
+unsupervised development Core or an unsafe owner fails closed. Repeated rolls
+are bounded by the existing worker retention and drain policy; they never
+restart a Cloudflare/OpenAI MCP Tunnel or claim to restart the interactive
+CLI/T-Line itself. A running legacy MCP backend must first load this code
+through a separately authorized update; the tools do not appear magically
+in existing MCP sessions.
+
+Real isolated E2E: `bun scripts/verify-core-supervisor.ts` now exercises
+MCP-driven restart, agent-driven rollback, session handover, guarded drain,
+crash and recovery without touching active production ports or tunnels.
+
 Phase 2 also pins successful session IDs to their original API workers, including session-bound chat JSON, SSE and upgrade routes after restart. New sessions use the new worker. Existing clients should send their session ID when reconnecting; session data stays inside its original process. This is API-core rolling handover, **not full zero-downtime migration of in-memory sessions or live MCP tool processes**. Old workers remain alive rather than being force-killed; a full transport/session supervisor and verified generation drain are future work. See docs/plans/2026-10-25-superagent-core-rolling-restart.md. Manual isolated smoke: bun scripts/verify-core-supervisor.ts.
 
 Phase 3a: /core rollback (or superagent core rollback) switches new traffic back to a previously retained, health-checked worker. A detected active worker exit triggers attempted automatic rollback, without terminating any tunnel or healthy worker. Restart fails closed at four retained workers: there is **no** unverified cleanup or forced process kill to make room. Monitor with /core status. Verified draining and a persistent transport/session host remain future work.

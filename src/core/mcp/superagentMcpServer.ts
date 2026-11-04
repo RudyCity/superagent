@@ -186,6 +186,7 @@ function toResolvedProjectContext(target: ResolvedProjectTarget | null): Resolve
 import { PROJECT_REGISTRY_TOOL_NAMES, WORKSPACE_SCOPED_MCP_TOOLS } from "./mcpWorkspacePolicy.js";
 import { BRAIN_MCP_TOOL_DEFS, dispatchBrainMcpTool, dispatchBrainPublishMcpTool } from "./tools/brainMcpTools.js";
 import { MOTION_MCP_TOOL_DEFS, dispatchMotionMcpTool } from "./tools/motionMcpTools.js";
+import { CORE_LIFECYCLE_MCP_TOOL_DEFS, dispatchCoreLifecycleMcpTool } from "./tools/coreLifecycleMcpTools.js";
 import {
   MCP_GATEWAY_TOOL_DEFS,
   MCP_GATEWAY_TOOL_NAMES,
@@ -558,6 +559,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...BRAIN_MCP_TOOL_DEFS,
     ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
     ...MOTION_MCP_TOOL_DEFS,
+    ...CORE_LIFECYCLE_MCP_TOOL_DEFS,
     ...MCP_GATEWAY_TOOL_DEFS,
     ...DELEGATE_MCP_TOOL_DEFS,
 ];
@@ -948,6 +950,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleMerge(args);
         case "superagent_manage":
           return await handleManage(args);
+        case "superagent_core_status":
+        case "superagent_core_restart":
+        case "superagent_core_rollback":
+        case "superagent_core_drain":
+          return await dispatchCoreLifecycleMcpTool(name, args);
         case "superagent_server_health":
           return await handleServerHealth();
         case "superagent_get_remote_status":

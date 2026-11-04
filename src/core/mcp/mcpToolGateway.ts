@@ -84,9 +84,14 @@ export type GatewayToolDef = { name: string; description?: string; inputSchema?:
 const gatewayNames = new Set<string>(Object.values(MCP_GATEWAY_TOOL_NAMES));
 const eagerProjectWorkspaceNames = new Set<string>(MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES);
 const eagerDelegateNames = new Set<string>(MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES);
+export const MCP_GATEWAY_EAGER_CORE_TOOL_NAMES = Object.freeze([
+  "superagent_core_status", "superagent_core_restart",
+  "superagent_core_rollback", "superagent_core_drain",
+] as const);
+const eagerCoreNames = new Set<string>(MCP_GATEWAY_EAGER_CORE_TOOL_NAMES);
 
 export function isGatewayInitiallyAdvertisedTool(name: string): boolean {
-  return gatewayNames.has(name) || eagerProjectWorkspaceNames.has(name) || eagerDelegateNames.has(name);
+  return gatewayNames.has(name) || eagerProjectWorkspaceNames.has(name) || eagerDelegateNames.has(name) || eagerCoreNames.has(name);
 }
 
 export function getGatewayInitiallyAdvertisedTools<T extends GatewayToolDef>(allAuthorized: T[]): T[] {
