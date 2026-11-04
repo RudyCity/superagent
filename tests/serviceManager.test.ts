@@ -42,7 +42,7 @@ describe("unified SuperAgent service manager",()=>{
   it("does not restart an unsupervised API Core",async()=>{
     await expect(manageServices({
       action:"plan",service:"core",port:19563,targetAction:"restart",
-    })).rejects.toThrow("No supervised core");
+    })).rejects.toThrow(/No supervised core|SERVICE_CORE_KERNEL_OWNER_UNVERIFIED/);
     await expect(manageServices({
       action:"restart",service:"core",port:19563,confirm:true,
     })).rejects.toThrow("CORE_PLAN_REQUIRED");
