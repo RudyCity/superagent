@@ -1,8 +1,95 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="122" fill="#182743"/>
-  <circle cx="256" cy="256" r="154" fill="#2d6cdf"/>
-  <circle cx="256" cy="256" r="121" fill="#eff6ff"/>
-  <path d="M256 155v108l77 53" fill="none" stroke="#1b396b" stroke-width="29" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="256" cy="256" r="17" fill="#2d6cdf"/>
-  <path d="M148 110l-33-24m248 24 33-24" fill="none" stroke="#82c9ff" stroke-width="21" stroke-linecap="round"/>
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bg-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#0b1120" />
+      <stop offset="100%" stop-color="#040711" />
+    </linearGradient>
+
+    <!-- Outer Border Rim Gradient -->
+    <linearGradient id="rim-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.6" />
+      <stop offset="50%" stop-color="#1e293b" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.5" />
+    </linearGradient>
+
+    <!-- Top Facet (Cyan Glow) -->
+    <linearGradient id="facet-top" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3fc" />
+      <stop offset="100%" stop-color="#38bdf8" />
+    </linearGradient>
+
+    <!-- Left Facet (Electric Cobalt) -->
+    <linearGradient id="facet-left" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+
+    <!-- Right Facet (Deep Indigo) -->
+    <linearGradient id="facet-right" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+
+    <!-- Central Energy Core Glow -->
+    <radialGradient id="core-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.85" />
+      <stop offset="40%" stop-color="#0284c7" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Accent Circuit Line Gradient -->
+    <linearGradient id="circuit-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" stop-opacity="0" />
+      <stop offset="50%" stop-color="#38bdf8" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Filter Glow -->
+    <filter id="neon-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Squircle Base -->
+  <rect x="16" y="16" width="480" height="480" rx="116" fill="url(#bg-grad)" stroke="url(#rim-grad)" stroke-width="4" />
+
+  <!-- Subtle Radial Ambient Glow behind Core -->
+  <circle cx="256" cy="256" r="170" fill="url(#core-glow)" />
+
+  <!-- Outer Orbit Rings (Cron & Automation Pulse) -->
+  <circle cx="256" cy="256" r="168" fill="none" stroke="rgba(56, 189, 248, 0.15)" stroke-width="2" stroke-dasharray="14 10" />
+  <circle cx="256" cy="256" r="132" fill="none" stroke="rgba(59, 130, 246, 0.22)" stroke-width="1.5" />
+
+  <!-- Orbit Satellites (Cron nodes) -->
+  <circle cx="256" cy="88" r="5" fill="#38bdf8" filter="url(#neon-glow)" />
+  <circle cx="424" cy="256" r="4" fill="#60a5fa" />
+  <circle cx="256" cy="424" r="5" fill="#38bdf8" />
+  <circle cx="88" cy="256" r="4" fill="#3b82f6" />
+
+  <!-- Main Multi-Tier Isometric Core (SuperAgent Diamond / Hex-Prism) -->
+  <g filter="url(#neon-glow)">
+    <!-- Top Face -->
+    <polygon points="256,128 368,192 256,256 144,192" fill="url(#facet-top)" />
+
+    <!-- Left Face -->
+    <polygon points="144,192 256,256 256,384 144,320" fill="url(#facet-left)" />
+
+    <!-- Right Face -->
+    <polygon points="256,256 368,192 368,320 256,384" fill="url(#facet-right)" />
+
+    <!-- Isometric Tier Crease / Internal Highlight Lines -->
+    <line x1="256" y1="256" x2="256" y2="384" stroke="rgba(255,255,255,0.45)" stroke-width="2" />
+    <line x1="144" y1="192" x2="256" y2="256" stroke="rgba(255,255,255,0.6)" stroke-width="2.5" />
+    <line x1="368" y1="192" x2="256" y2="256" stroke="rgba(255,255,255,0.25)" stroke-width="2" />
+    <polygon points="256,128 368,192 256,256 144,192" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="2" />
+  </g>
+
+  <!-- Inner Power Core Pulse (Floating Diamond) -->
+  <polygon points="256,214 286,236 256,258 226,236" fill="#ffffff" opacity="0.9" filter="url(#neon-glow)" />
+
+  <!-- Horizontal Energy Scan Line -->
+  <line x1="64" y1="256" x2="448" y2="256" stroke="url(#circuit-grad)" stroke-width="2" />
 </svg>
