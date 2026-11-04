@@ -241,16 +241,17 @@ export async function stopAllManagedServices(ctx: SlashCommandContext): Promise<
     }
     if (museTunnels.length === 0) outcomes.push("Muse WebSocket tunnel: no active tunnel found.");
 
-    // Stop any remaining Cloudflare MCP tunnels after the MCP server has been closed.
+    // The MCP server/managed owner path already owns shutdown for all
+    // discovered MCP server ports, including their cloudflared child.
+    // Never attempt a second direct tunnel stop after a successful stop,
+    // drain, failed owner verification or a concurrent owner replacement.
+    // An independent unregistered Cloudflare MCP tunnel may still be
+    // stopped via the tunnel registry's own ownership validation.
     const mcpTunnels = tunnels.filter((tunnel) => tunnel.serviceKind === "mcp-http");
     for (const tunnel of mcpTunnels) {
       if (handledMcpPorts.has(tunnel.port)) {
-        const server = (await import("../mcp/mcpTunnel.js")).listActiveMcpServers().find((entry) => entry.port === tunnel.port);
-        if (server && server.pid !== process.pid) {
-          let lease = null;
-          try { lease = (await import("../runtime/mcpManagedTunnelOwner.js")).readManagedMcpTunnelLease(tunnel.port); } catch {}
-          if (!lease) continue;
-        }
+        outcomes.push(`Cloudflare MCP tunnel port ${tunnel.port}: no duplicate stop (handled by MCP server owner path).`);
+        continue;
       }
       try {
         const stopped = await stopQuickTunnel(tunnel.port, "mcp-http");

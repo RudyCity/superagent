@@ -132,13 +132,53 @@ describe("aggregate service status and stop-all", () => {
     expect(mocks.stopMcpTunnel).toHaveBeenCalledWith(9227);
     expect(mocks.stopMcpTunnel).not.toHaveBeenCalledWith(9228);
     expect(mocks.stopOwnedMuseTunnel).toHaveBeenCalledWith(9225);
-    expect(mocks.stopQuickTunnel).toHaveBeenCalledWith(9227, "mcp-http");
+    expect(mocks.stopQuickTunnel).not.toHaveBeenCalledWith(9227, "mcp-http");
     expect(mocks.stopQuickTunnel).toHaveBeenCalledWith(7888, "superagent-http");
     expect(mocks.stopQuickTunnel).not.toHaveBeenCalledWith(8123, expect.anything());
     expect(mocks.stopAllMuseWatchers).toHaveBeenCalledOnce();
     expect(output).toContain("owned by PID");
     expect(output).toContain("ownership cannot be verified");
     expect(output).toContain("Saved Telegram/MCP configuration was not deleted");
+  });
+
+  it("never double-stops the Cloudflare tunnel after a reloadable MCP owner is stopped", async () => {
+    mocks.listActiveMcpServers.mockReturnValue([
+      {port:9229, pid:4567, reloadable:true, tunnelProvider:"cloudflare", authMode:"oauth"},
+    ]);
+    mocks.listActiveTunnels.mockReturnValue([
+      {port:9229, pid:4567, serviceKind:"mcp-http", publicUrl:"https://example.trycloudflare.com"},
+    ]);
+    mocks.readManagedMcpTunnelLease.mockReturnValue({
+      version:1, kind:"managed_mcp_tunnel_owner", pid:4567, port:9229,
+      nonce:"a".repeat(64), createdAt:Date.now(), workspace:"/test",
+    });
+    const {ctx,lines}=context();
+    await stopAllManagedServices(ctx);
+    expect(mocks.stopManagedMcpTunnelOwner).toHaveBeenCalledOnce();
+    expect(mocks.stopManagedMcpTunnelOwner).toHaveBeenCalledWith(9229,{force:true});
+    expect(mocks.stopQuickTunnel).not.toHaveBeenCalledWith(9229,"mcp-http");
+    expect(lines.at(-1)?.content).toContain("no duplicate stop");
+    expect(lines.at(-1)?.content).toContain("STOPPED (managed owner PID 4567)");
+  });
+
+  it("does not bypass owner failure or cross-process ownership with a direct cloudflared stop", async () => {
+    mocks.listActiveMcpServers.mockReturnValue([
+      {port:9229,pid:4567,reloadable:true,tunnelProvider:"cloudflare",authMode:"oauth"},
+    ]);
+    mocks.listActiveTunnels.mockReturnValue([
+      {port:9229,pid:4567,serviceKind:"mcp-http",publicUrl:"https://example.trycloudflare.com"},
+    ]);
+    mocks.readManagedMcpTunnelLease.mockReturnValue({
+      version:1,kind:"managed_mcp_tunnel_owner",pid:4567,port:9229,
+      nonce:"a".repeat(64),createdAt:Date.now(),workspace:"/test",
+    });
+    mocks.stopManagedMcpTunnelOwner.mockRejectedValue(new Error("MCP owner identity changed"));
+    const {ctx,lines}=context();
+    await stopAllManagedServices(ctx);
+    expect(mocks.stopManagedMcpTunnelOwner).toHaveBeenCalledOnce();
+    expect(mocks.stopQuickTunnel).not.toHaveBeenCalledWith(9229,"mcp-http");
+    expect(lines.at(-1)?.content).toContain("MCP owner identity changed");
+    expect(lines.at(-1)?.content).toContain("no duplicate stop");
   });
 
   it("stops independent managed MCP tunnel owners when lease matches PID", async () => {
