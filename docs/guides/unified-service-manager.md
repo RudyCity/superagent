@@ -36,9 +36,9 @@ change services. The tool covers:
 | T-Line transport | 7891 | private owner record + local health + kernel PID | **plan → start/stop/restart** when idle and no public ingress |
 | Independent Channel Host | 7892 | private owner record + health + kernel PID | **plan → start/stop/restart** (idle mode tested) |
 | Muse/Telegram independent watchers | 9225 WSS / 7892 controller | channel owner + task/recovery checks | **plan → start/stop/restart** only on independent owners, configured modes and no pending recovery |
-| Vision UI-DETR-1 | 8095 | local /health and model_loaded | unavailable: HTTP health is not process ownership |
-| Guardian | 7888 protected Core | Guardian lease (not proof of ownership) | unavailable |
-| Daemon scheduler | embedded in Core | Core ownership and daemon architecture | unavailable |
+| Vision UI-DETR-1 | 8095 | private tokenized owner + local /health + kernel PID | **plan → start/stop/restart** only for independently managed Vision; Core-spawned Vision is never adopted |
+| Guardian | 7888 protected Core | managed Guardian private control, verified Core checkpoint and kernel PID | **plan → start/stop/restart** watchdog only; Core unaffected |
+| Daemon scheduler | embedded in supervised Core | authenticated Core REST + exact worker PID and active job check | **plan → start/stop/restart** scheduler only; never cancel active jobs |
 | Tray | desktop process | no independent HTTP server | unavailable |
 | REST/SSE & Muse Cloudflare tunnels | 7888 / 9225 | Cloudflare registry + exact process command identity | **plan → stop** only with public-disruption acknowledgment; never automatic URL-changing restart |
 | Process supervisor | embedded | internal process registry | unavailable |
@@ -73,6 +73,52 @@ retained old session owner. Always reuse the **same operationId** after
 a response timeout. This is an opt-in Core supervisor rolling restart,
 not a restart of the interactive CLI/T-Line, LLM state or MCP server.
 It refuses an unsupervised Core, mismatched port/owner and stale build.
+
+### Vision server (isolated managed owner only)
+
+`plan -> start|stop|restart` is permitted only for a Vision process
+launched with a private owner record. Legacy/Core-owned port 8095 is
+intentionally **not** adopted or terminated. A busy inference call blocks
+shutdown. The Vision start preflight requires an installed Python environment
+with compatible Torch, Transformers and RFDETR packages; tests stub the heavy
+detector without altering the owner-control protocol.
+
+### Core Guardian watchdog (Core supervisor stays up)
+
+```json
+{"name":"superagent_manage_services","arguments":{
+  "service":"guardian","port":7888,"action":"plan","targetAction":"start"
+}}
+```
+
+Guardian attaches to an already authenticated, checkpointed supervised Core.
+Its plan returns `expectedSupervisorPid`, `expectedOwnerPid`,
+`expectedInstanceId`, `operationId`, and `noCoreShutdown:true`.
+To execute, copy these exact fields, change `action` to
+`start`, and set `confirm:true`. For `restart` or `stop`,
+create a NEW plan; old/foreign guardian processes cannot be adopted.
+Stopping Guardian does not stop the Core supervisor or its workers, and it
+cannot silently take over an unsupervised Core.
+
+### Daemon scheduler (not a separate process)
+
+```json
+{"name":"superagent_manage_services","arguments":{
+  "service":"daemon","port":7888,"action":"plan","targetAction":"stop"
+}}
+```
+
+This targets the *running Core worker's* authenticated
+`/api/daemon/status|start|stop` interface—not the caller's MCP process.
+The plan returns `expectedWorkerPid`, `expectedSupervisorPid`,
+`expectedRunning`, `operationId`, `noActiveJobs:true`.
+Pass these fields unchanged with `service:"daemon"`, `action:"stop"`,
+`confirm:true`; equivalent `start` and `restart` require their own plans.
+When any daemon job is active, the operation fails closed; no scheduled task
+is cancelled or duplicated by this lifecycle operation. Worker changes
+between plan and execution are rejected, and completed operation IDs are
+deduplicated by a durable receipt. New job creation, deletion and schedules
+remain under existing daemon-specific tools, not this lifecycle command.
 
 ### Reload MCP backend without changing URL
 

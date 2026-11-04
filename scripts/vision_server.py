@@ -1,6 +1,9 @@
 import sys
 import os
 import json
+import hmac
+import re
+import threading
 import base64
 import io
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -36,6 +39,18 @@ from rfdetr.detr import RFDETRMedium
 
 # Global model container (lazy-loaded)
 detector = None
+
+# Optional LOCAL ownership contract. Legacy servers have NO remote mutation
+# endpoint; only an explicitly managed and tokenized child can shut down.
+MANAGED_VISION_TOKEN = os.environ.get("SUPERAGENT_VISION_OWNER_TOKEN", "")
+MANAGED_VISION_INSTANCE = os.environ.get("SUPERAGENT_VISION_OWNER_INSTANCE", "")
+MANAGED_VISION_ENABLED = bool(
+    re.fullmatch(r"[a-f0-9]{64}", MANAGED_VISION_TOKEN)
+    and re.fullmatch(r"[a-f0-9]{32}", MANAGED_VISION_INSTANCE)
+)
+request_lock = threading.Lock()
+active_requests = 0
+managed_vision_stopping = False
 CLASSES = ['button', 'field', 'heading', 'iframe', 'image', 'label', 'link', 'text']
 
 def get_detector():
@@ -102,8 +117,54 @@ def annotate_som(img: Image.Image, elements: list) -> str:
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("utf-8")
 
 class VisionRequestHandler(BaseHTTPRequestHandler):
-    @torch.inference_mode()
     def do_POST(self):
+        global active_requests, managed_vision_stopping
+        if self.path == "/_superagent/vision/lifecycle":
+            if not MANAGED_VISION_ENABLED or self.client_address[0] != "127.0.0.1":
+                self.send_error(404)
+                return
+            given = self.headers.get("Authorization", "")
+            if not hmac.compare_digest(given, "Bearer " + MANAGED_VISION_TOKEN):
+                self.send_error(401)
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if length < 2 or length > 256:
+                    self.send_error(413)
+                    return
+                command = json.loads(self.rfile.read(length).decode("utf-8"))
+                if command != {"action": "stop", "instanceId": MANAGED_VISION_INSTANCE}:
+                    self.send_error(400)
+                    return
+                with request_lock:
+                    if active_requests != 0 or managed_vision_stopping:
+                        self.send_error(409, "Vision inference still active or shutdown started")
+                        return
+                    managed_vision_stopping = True
+                payload = b'{"ok":true,"stopping":true}'
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(payload)
+                self.wfile.flush()
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                self.send_error(400)
+            return
+        with request_lock:
+            if managed_vision_stopping:
+                self.send_error(503, "Managed Vision shutdown in progress")
+                return
+            active_requests += 1
+        try:
+            self.do_POST_inference()
+        finally:
+            with request_lock:
+                active_requests -= 1
+
+    @torch.inference_mode()
+    def do_POST_inference(self):
         content_length = int(self.headers.get('Content-Length', 0))
         body = self.rfile.read(content_length)
 
@@ -212,7 +273,13 @@ class VisionRequestHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self.send_json_response({
                 "status": "healthy",
-                "model_loaded": detector is not None
+                "model_loaded": detector is not None,
+                **({
+                    "managed": True,
+                    "ownerPid": os.getpid(),
+                    "instanceId": MANAGED_VISION_INSTANCE,
+                    "activeRequests": active_requests,
+                } if MANAGED_VISION_ENABLED else {})
             })
         else:
             self.send_response(404)
@@ -248,6 +315,8 @@ def run(port=8095):
         httpd.serve_forever()
     except KeyboardInterrupt:
         pass
+    finally:
+        httpd.server_close()
     print("Stopping Vision Server...")
 
 if __name__ == '__main__':

@@ -23,6 +23,9 @@ import {planSidecarService,executeSidecarService,type SidecarService} from "./ma
 import {readTransportOwner} from "./transportHost.js";
 import {readChannelHostDiscovery} from "./channelHost.js";
 import {planOwnedTunnelStop,stopOwnedTunnel} from "./ownedTunnelLifecycle.js";
+import {planManagedVision,executeManagedVision,inspectManagedVision} from "./managedVisionControl.js";
+import {planManagedGuardian,executeManagedGuardian,inspectManagedGuardian} from "./managedGuardianControl.js";
+import {planDaemonLifecycle,executeDaemonLifecycle,inspectDaemonScheduler} from "./managedDaemonControl.js";
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
@@ -34,6 +37,8 @@ export type ManageServicesArgs = {
   confirm?:boolean; operationId?:string; expectedBuildDigest?:string;
   expectedOwnerPid?:number; expectedPublicUrl?:string;
   expectedInstanceId?:string; noPublicIngress?:boolean;
+  expectedSupervisorPid?:number; noCoreShutdown?:boolean;
+  expectedWorkerPid?:number; expectedRunning?:boolean; noActiveJobs?:boolean;
   expectedLocalUrl?:string;allowPublicDisruption?:boolean;
   corePort?:number;channelMode?:"idle"|"muse-ws"|"telegram-fallback";wsPort?:number;
 };
@@ -62,7 +67,9 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
   const allowed=new Set(["action","service","port","targetAction","confirm",
     "operationId","expectedBuildDigest","expectedOwnerPid","expectedPublicUrl",
     "expectedInstanceId","noPublicIngress","corePort","channelMode","wsPort",
-    "expectedLocalUrl","allowPublicDisruption"]);
+    "expectedLocalUrl","allowPublicDisruption",
+    "expectedSupervisorPid","noCoreShutdown",
+    "expectedWorkerPid","expectedRunning","noActiveJobs"]);
   if(Object.keys(v).some(k=>!allowed.has(k)))throw new Error("SERVICE_UNEXPECTED_ARGUMENT");
   if(!["inventory","status","plan","restart","rollback","drain","reload","start","stop","doctor"].includes(String(v.action)))
     throw new Error("SERVICE_UNKNOWN_ACTION");
@@ -81,6 +88,18 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
     throw new Error("SERVICE_INVALID_INSTANCE_ID");
   if(v.noPublicIngress!==undefined&&typeof v.noPublicIngress!=="boolean")
     throw new Error("SERVICE_INVALID_INGRESS_GUARD");
+  if(v.expectedSupervisorPid!==undefined&&
+     (!Number.isSafeInteger(v.expectedSupervisorPid)||Number(v.expectedSupervisorPid)<=0))
+    throw new Error("SERVICE_INVALID_SUPERVISOR_PID");
+  if(v.noCoreShutdown!==undefined&&typeof v.noCoreShutdown!=="boolean")
+    throw new Error("SERVICE_INVALID_CORE_PROTECTION");
+  if(v.expectedWorkerPid!==undefined&&
+     (!Number.isSafeInteger(v.expectedWorkerPid)||Number(v.expectedWorkerPid)<=0))
+    throw new Error("SERVICE_INVALID_WORKER_PID");
+  if(v.expectedRunning!==undefined&&typeof v.expectedRunning!=="boolean")
+    throw new Error("SERVICE_INVALID_RUNNING_EXPECTATION");
+  if(v.noActiveJobs!==undefined&&typeof v.noActiveJobs!=="boolean")
+    throw new Error("SERVICE_INVALID_SCHEDULER_JOB_PROTECTION");
   if(v.allowPublicDisruption!==undefined&&typeof v.allowPublicDisruption!=="boolean")
     throw new Error("SERVICE_INVALID_PUBLIC_DISRUPTION_ACK");
   if(v.expectedLocalUrl!==undefined&&
@@ -196,20 +215,29 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
   }
   if(service==="vision") {
     const response=await probe(port!,"/health");
+    const ownership=await inspectManagedVision(port!);
+    const verified=ownership.verified===true;
     return snap(service,port,!response?"inactive":
-      response.body?.model_loaded===true?"active":"degraded",
-      owner,false,["status"],!response?"Vision helper not responding":
-      response.body?.model_loaded===true?
-      "Vision responsive/model loaded; kernel ownership not authenticated":
-      "Vision HTTP responsive, but model not loaded or health incomplete",
-      response?{httpStatus:response.status,modelLoaded:response.body?.model_loaded===true}:undefined);
+      verified?(response.body?.model_loaded?"active":"degraded"):"unverified",
+      verified?ownership.ownerPid??null:owner,verified,
+      verified?["status","plan","stop","restart"]:["status"],
+      verified?"Managed Vision owner with authenticated local health and kernel PID":
+      !response?"Vision helper not responding":
+      "Core-spawned or unverified Vision server; do not adopt or kill",
+      response?{httpStatus:response.status,modelLoaded:response.body?.model_loaded===true,
+        activeRequests:ownership.activeRequests??null}:undefined);
   }
   if(service==="guardian") {
-    let lease:ReturnType<typeof readCoreGuardianLease>=null;
-    try{lease=readCoreGuardianLease(port!);}catch{}
-    return snap(service,port,lease?"unverified":"inactive",lease?.pid??null,
-      false,["status"],lease?"Guardian lease alone is not verified process ownership":
-      "No Core Guardian lease",lease?{clientMode:lease.clientMode}:undefined);
+    const managed=await inspectManagedGuardian(port!);
+    const lease=readCoreGuardianLease(port!);
+    return snap(service,port,
+      managed.verified?"active":lease?"unverified":"inactive",
+      managed.ownerPid??lease?.pid??null,managed.verified,
+      managed.verified?["status","plan","restart","stop"]:["status"],
+      managed.verified?"Authenticated independent Core Guardian watchdog":
+        managed.reason??"No authenticated Guardian owner",
+      {clientMode:lease?.clientMode??null,coreSupervisorPid:lease?.supervisorPid??null,
+        managed:managed.verified,coreUnaffected:true});
   }
   if(service==="rest_tunnel"||service==="muse_tunnel") {
     // A public URL or a Cloudflare registry record is NOT a verified owner.
@@ -226,9 +254,17 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
       tunnel?{publicUrl:tunnel.publicUrl,registeredTunnelPid:tunnel.pid,
         localBackendListenerPid:owner,kind:serviceKind}:undefined);
   }
-  if(service==="daemon")
-    return snap(service,port,"embedded",null,false,["status"],
-      "Daemon/cron scheduler runs within API Core; it is not a standalone server");
+  if(service==="daemon") {
+    const status=await inspectDaemonScheduler(port!);
+    return snap(service,port,
+      status.verified?(status.running?"active":"embedded"):"unverified",
+      status.verified?status.workerPid??null:null,status.verified,
+      status.verified?["status","plan","start","stop","restart"]:["status"],
+      status.reason,
+      {embeddedInCore:true,running:status.verified?status.running:null,
+        activeJobs:status.activeJobs??null,totalJobs:status.totalJobs??null,
+        coreSupervisorPid:status.supervisorPid??null});
+  }
   if(service==="tray")
     return snap(service,undefined,"unknown",null,false,["status"],
       "Tauri Tray is a desktop application, not a network server; use its native controls");
@@ -282,6 +318,15 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       return {service,...await prepareCoreLifecycle(args.targetAction,port!)};
     }
     if(service==="mcp"&&args.targetAction==="reload")return planMcpReload(port!);
+    if(service==="daemon"&&(args.targetAction==="start"||
+       args.targetAction==="stop"||args.targetAction==="restart"))
+      return planDaemonLifecycle(args.targetAction,port!);
+    if(service==="guardian"&&(args.targetAction==="start"||
+       args.targetAction==="stop"||args.targetAction==="restart"))
+      return planManagedGuardian(args.targetAction,port!);
+    if(service==="vision"&&(args.targetAction==="start"||
+       args.targetAction==="stop"||args.targetAction==="restart"))
+      return planManagedVision(args.targetAction,port!);
     if((service==="rest_tunnel"||service==="muse_tunnel")&&args.targetAction==="stop")
       return planOwnedTunnelStop(service,port!);
     if(["transport","channel_host","muse","telegram"].includes(service)&&
@@ -327,6 +372,43 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       expectedPublicUrl:args.expectedPublicUrl,
       expectedLocalUrl:args.expectedLocalUrl,
       allowPublicDisruption:true,
+    });
+  }
+  if(service==="daemon"&&(action==="start"||action==="stop"||action==="restart")){
+    if(!args.operationId||!args.expectedSupervisorPid||
+       !args.expectedWorkerPid||typeof args.expectedRunning!=="boolean"||
+       args.noActiveJobs!==true)
+      throw new Error("SERVICE_DAEMON_PLAN_REQUIRED");
+    return executeDaemonLifecycle({
+      service:"daemon",action,port:port!,confirm:true,
+      operationId:args.operationId,
+      expectedSupervisorPid:args.expectedSupervisorPid,
+      expectedWorkerPid:args.expectedWorkerPid,
+      expectedRunning:args.expectedRunning,
+      noActiveJobs:true,note:"Verified in-process Core scheduler only",
+    });
+  }
+  if(service==="guardian"&&(action==="start"||action==="stop"||action==="restart")){
+    if(!args.operationId||args.expectedOwnerPid===undefined||
+       !args.expectedInstanceId||!args.expectedSupervisorPid||
+       args.noCoreShutdown!==true)
+      throw new Error("SERVICE_GUARDIAN_PLAN_REQUIRED");
+    return executeManagedGuardian({
+      service:"guardian",action,port:port!,operationId:args.operationId,
+      expectedOwnerPid:args.expectedOwnerPid,
+      expectedInstanceId:args.expectedInstanceId,
+      expectedSupervisorPid:args.expectedSupervisorPid,
+      noCoreShutdown:true,confirm:true,note:"Guardian watchdog only, Core unaffected",
+    });
+  }
+  if(service==="vision"&&(action==="start"||action==="stop"||action==="restart")){
+    if(!args.operationId||args.expectedOwnerPid===undefined||
+       !args.expectedInstanceId||args.noPublicIngress!==true)
+      throw new Error("SERVICE_VISION_PLAN_REQUIRED");
+    return executeManagedVision({
+      service:"vision",action,port:port!,operationId:args.operationId,
+      expectedOwnerPid:args.expectedOwnerPid,expectedInstanceId:args.expectedInstanceId,
+      noPublicIngress:true,confirm:true,note:"Explicitly managed Vision instance only",
     });
   }
   if(service==="mcp"&&action==="reload") {

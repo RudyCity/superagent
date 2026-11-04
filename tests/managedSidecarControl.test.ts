@@ -9,6 +9,9 @@ import {readTransportOwner} from "../src/core/runtime/transportHost.js";
 import {readChannelHostDiscovery} from "../src/core/runtime/channelHost.js";
 import {readListenerOwners} from "../src/core/runtime/coreMcpOwnershipAudit.js";
 
+const profileBefore=process.env.SUPERAGENT_CONFIG_DIR;
+const testProfile=fs.mkdtempSync(path.join(os.tmpdir(),"managed-sidecar-e2e-"));
+process.env.SUPERAGENT_CONFIG_DIR=testProfile;
 const own=new Map<number,number>();
 async function randomPort(){
   const server=net.createServer();
@@ -29,10 +32,14 @@ function ownedCleanup(pid:number) {
     else process.kill(pid,"SIGTERM");
   }catch{}
 }
-afterAll(()=>{
+afterAll(async()=>{
   for(const [port,pid] of own) {
     if(readListenerOwners()?.get(port)===pid)ownedCleanup(pid);
   }
+  await new Promise(resolve=>setTimeout(resolve,450));
+  if(profileBefore===undefined)delete process.env.SUPERAGENT_CONFIG_DIR;
+  else process.env.SUPERAGENT_CONFIG_DIR=profileBefore;
+  fs.rmSync(testProfile,{recursive:true,force:true,maxRetries:10,retryDelay:250});
 });
 async function prepare(service:"transport"|"channel_host",port:number,targetAction:"start"|"stop"|"restart"){
   return await manageServices({
@@ -96,6 +103,6 @@ describe("SuperAgent opt-in owned sidecar lifecycle integration",()=>{
       await expect(prepare("transport",port,"start")).rejects.toThrow();
     }finally{await new Promise<void>(resolve=>listener.close(()=>resolve()));}
     await expect(manageServices({action:"stop",service:"vision",port,confirm:true}))
-      .rejects.toThrow("SERVICE_UNSUPPORTED_MUTATION");
+      .rejects.toThrow("SERVICE_VISION_PLAN_REQUIRED");
   },30000);
 });
