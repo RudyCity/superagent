@@ -9,6 +9,7 @@ import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { getPackageRootDir, getRootConfigDir } from "../config/paths.js";
+import {getActiveReleaseBinary} from "./trayReleaseStore.js";
 
 type Environment = NodeJS.ProcessEnv;
 
@@ -75,7 +76,13 @@ export function trayExecutableCandidates(
   configDir: string,
   explicitPath?: string,
 ): string[] {
+  // A verified immutable release is always preferred to the legacy
+  // installed filename and build-tree debug executable.
+  let activeRelease:string|null=null;
+  try{activeRelease=getActiveReleaseBinary(configDir);}
+  catch{return [];} // A corrupted manifest must never launch a fallback.
   const candidates = [
+    activeRelease,
     explicitPath,
     path.join(configDir, "bin", "superagent-tray.exe"),
     path.join(projectRoot, "apps", "superagent-tray", "src-tauri", "target", "release", "superagent-tray.exe"),

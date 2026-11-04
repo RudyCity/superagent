@@ -8,7 +8,7 @@ import path from "node:path";
 import {getRootConfigDir} from "../config/paths.js";
 import {validateCoreOperationId} from "./coreLifecycleLedger.js";
 
-type State = "pending"|"completed";
+type State = "pending"|"completed"|"reviewed";
 type Receipt = {
   operationHash:string; fingerprint:string;state:State;
   startedAt:number;completedAt?:number; afterPid?:number;
@@ -35,7 +35,7 @@ export class ManagedSidecarLedger {
          new Set(value.receipts.map(x=>x.operationHash)).size!==value.receipts.length||
          value.receipts.some(x=>!x||!/^[a-f0-9]{64}$/.test(x.operationHash)||
            !/^[a-f0-9]{64}$/.test(x.fingerprint)||
-           !["pending","completed"].includes(x.state)||
+           !["pending","completed","reviewed"].includes(x.state)||
            !Number.isSafeInteger(x.startedAt)||x.startedAt<=0||
            (x.afterPid!==undefined&&(!Number.isSafeInteger(x.afterPid)||x.afterPid<0))))
         throw new Error("SIDECAR_LEDGER_CORRUPT");
@@ -66,6 +66,38 @@ export class ManagedSidecarLedger {
       return result;
     }finally{fs.closeSync(fd);try{fs.rmSync(this.lock,{force:true});}catch{}}
   }
+  /** Redacted operation receipts, used to reconcile uncertain outcomes. */
+  inspect():Array<{hashPrefix:string;state:State;startedAt:number;completedAt?:number}> {
+    return this.read().receipts.map(x=>({
+      hashPrefix:x.operationHash.slice(0,16),state:x.state,
+      startedAt:x.startedAt,completedAt:x.completedAt,
+    }));
+  }
+  /**
+   * Mark an ambiguous operation as manually reviewed, NEVER completed.
+   * The caller must authenticate the expected service as ABSENT and obtain
+   * explicit operator acknowledgement; this method never stops a process.
+   */
+  reconcile(id:string,ownerAbsent:boolean,confirmed:boolean){
+    validateCoreOperationId(id);
+    if(!ownerAbsent||confirmed!==true)
+      throw new Error("SIDECAR_RECONCILE_REQUIRES_OWNER_ABSENCE_AND_APPROVAL");
+    return this.mutate(state=>{
+      const rec=state.receipts.find(x=>x.operationHash===hash(id));
+      if(rec?.state==="reviewed")
+        return {operationHashPrefix:rec.operationHash.slice(0,16),
+          state:"reviewed" as const,executedAgain:false,
+          note:"Previously reconciled; no process operation performed."};
+      if(!rec||rec.state!=="pending")
+        throw new Error("SIDECAR_NO_PENDING_OPERATION");
+      if(Date.now()-rec.startedAt<120000)
+        throw new Error("SIDECAR_RECONCILE_COOLDOWN_120_SECONDS");
+      rec.state="reviewed";rec.completedAt=Date.now();
+      return {operationHashPrefix:rec.operationHash.slice(0,16),
+        state:"reviewed" as const,executedAgain:false,
+        note:"Unknown outcome reviewed; no process started/stopped. Original operation ID is never replayable."};
+    });
+  }
   /** Read-only preflight: no ledger is created for unauthorized/mismatched owners. */
   lookup(id:string,fingerprint:string):{replayed:boolean;afterPid?:number}|null {
     validateCoreOperationId(id);
@@ -74,6 +106,7 @@ export class ManagedSidecarLedger {
     if(!found)return null;
     if(found.fingerprint!==fingerprint)throw new Error("SIDECAR_OPERATION_ID_CONFLICT");
     if(found.state==="pending")throw new Error("SIDECAR_OPERATION_UNCERTAIN_PENDING");
+    if(found.state==="reviewed")throw new Error("SIDECAR_OPERATION_REVIEWED_NOT_REPLAYABLE");
     return {replayed:true,afterPid:found.afterPid};
   }
   begin(id:string,fingerprint:string):{replayed:boolean;afterPid?:number}{
@@ -84,6 +117,7 @@ export class ManagedSidecarLedger {
       if(existing){
         if(existing.fingerprint!==fingerprint)throw new Error("SIDECAR_OPERATION_ID_CONFLICT");
         if(existing.state==="pending")throw new Error("SIDECAR_OPERATION_UNCERTAIN_PENDING");
+        if(existing.state==="reviewed")throw new Error("SIDECAR_OPERATION_REVIEWED_NOT_REPLAYABLE");
         return {replayed:true,afterPid:existing.afterPid};
       }
       if(state.receipts.some(x=>x.state==="pending"))
