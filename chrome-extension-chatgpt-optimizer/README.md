@@ -6,7 +6,7 @@ Ekstensi Chrome **Manifest V3**, berdiri sendiri dan khusus untuk `https://chatg
 
 1. Buka `chrome://extensions`, aktifkan **Developer mode**.
 2. Klik **Load unpacked**, lalu pilih folder:
-   `D:\backup from pc asus\Documents Development\superagent\ChatGPT Optimizer`
+   `D:\backup from pc asus\Documents Development\superagent\chrome-extension-chatgpt-optimizer`
 3. **Reload tab ChatGPT yang sudah terbuka sekali** agar content script terpasang.
 4. Pin **ChatGPT Optimizer** ke toolbar, klik ikonnya untuk membuka pengaturan.
 
@@ -55,7 +55,7 @@ Reload is blocked if a response is generating, an unsent draft exists, an attach
 
 **Independent Chrome profiles:** the extension sees only tabs belonging to the Chrome profile in which it is installed. Install ChatGPT Optimizer separately in each profile; it cannot reload a chat belonging to a different profile.
 
-**After renaming:** Chrome may still reference the former unpacked directory. Go to `chrome://extensions`, remove the old unpacked installation and use **Load unpacked** to select the new `ChatGPT Optimizer` folder. The extension ID may change, which can reset per-extension settings.
+**After renaming:** Chrome may still reference the former unpacked directory. Go to `chrome://extensions`, remove the old unpacked installation and use **Load unpacked** to select the new `chrome-extension-chatgpt-optimizer` folder. The extension ID may change, which can reset per-extension settings.
 
 ## Privasi dan keamanan
 
@@ -73,12 +73,12 @@ From the SuperAgent repository root:
 
 ```powershell
 bun --bun x vitest run tests/chatgptLiteExtension.test.ts tests/chatgptOptimizerSidebar.test.ts tests/chatgptOptimizerTabReload.test.ts
-node --check "ChatGPT Optimizer/policy.js"
-node --check "ChatGPT Optimizer/content.js"
-node --check "ChatGPT Optimizer/sidebar.js"
-node --check "ChatGPT Optimizer/tab-reload.js"
-node --check "ChatGPT Optimizer/popup.js"
-node --check "ChatGPT Optimizer/popup-reload.js"
+node --check "chrome-extension-chatgpt-optimizer/policy.js"
+node --check "chrome-extension-chatgpt-optimizer/content.js"
+node --check "chrome-extension-chatgpt-optimizer/sidebar.js"
+node --check "chrome-extension-chatgpt-optimizer/tab-reload.js"
+node --check "chrome-extension-chatgpt-optimizer/popup.js"
+node --check "chrome-extension-chatgpt-optimizer/popup-reload.js"
 bun --bun x tsc --noEmit
 ```
 
@@ -98,4 +98,4 @@ Tests cover safe DOM optimization, sidebar synchronization, permissions, selecte
 - `../tests/chatgptOptimizerSidebar.test.ts` — sidebar behavior and safety tests.
 - `../tests/chatgptOptimizerTabReload.test.ts` — specific-chat reload safety and isolation tests.
 
-Version: 0.3.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "ChatGPT Optimizer/generate-icons.mjs"`. No separate SuperAgent server or background daemon is required.
+Version: 0.3.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No separate SuperAgent server or background daemon is required.

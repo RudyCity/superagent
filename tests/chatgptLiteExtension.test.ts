@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import vm from "node:vm";
 
-const base = new URL("../ChatGPT Optimizer/", import.meta.url);
+const base = new URL("../chrome-extension-chatgpt-optimizer/", import.meta.url);
 const policyCode = fs.readFileSync(new URL("policy.js", base), "utf8");
 const contentCode = fs.readFileSync(new URL("content.js", base), "utf8");
 const manifest = JSON.parse(fs.readFileSync(new URL("manifest.json", base), "utf8"));

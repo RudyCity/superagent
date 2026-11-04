@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import vm from "node:vm";
 
-const base = new URL("../ChatGPT Optimizer/", import.meta.url);
+const base = new URL("../chrome-extension-chatgpt-optimizer/", import.meta.url);
 const probeCode = fs.readFileSync(new URL("tab-reload.js", base), "utf8");
 const popupCode = fs.readFileSync(new URL("popup-reload.js", base), "utf8");
 
