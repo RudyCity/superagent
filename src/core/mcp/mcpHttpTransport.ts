@@ -293,6 +293,8 @@ export interface McpOAuthServerConfig {
   publicBaseUrl: string;
   /** SHA-256 hex of the one-time bootstrap approval code. */
   bootstrapCodeHash: string;
+  getBootstrapCodeHash?: () => string;
+  consumeBootstrapCode?: (usedHash: string) => void;
 }
 
 export interface McpHttpServerOptions {
@@ -366,6 +368,8 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       store: oauthStore,
       publicBaseUrl: opts.oauth.publicBaseUrl,
       bootstrapCodeHash: opts.oauth.bootstrapCodeHash,
+      getBootstrapCodeHash: opts.oauth.getBootstrapCodeHash,
+      consumeBootstrapCode: opts.oauth.consumeBootstrapCode,
     };
   } else {
     if (opts.oauthStore) throw new Error("OAuth store supplied to non-OAuth listener");

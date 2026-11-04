@@ -30,6 +30,10 @@ export interface McpOAuthRoutesConfig {
   publicBaseUrl: string;
   /** SHA-256 hex of the one-time bootstrap approval code. */
   bootstrapCodeHash: string;
+  /** Optional owner-managed verifier for rotating bootstrap approval codes. */
+  getBootstrapCodeHash?: () => string;
+  /** Consume only after successful approval; existing legacy flows stay compatible. */
+  consumeBootstrapCode?: (usedHash: string) => void;
   /** If true (default), unknown clients are auto-registered on first authorize.
    *  Owner approval via the bootstrap code remains mandatory. */
   autoRegisterClients?: boolean;
@@ -838,7 +842,9 @@ async function handleOAuthRouteInternal(
       return json(400, { error: "access_denied", error_description: "owner denied the authorization request" });
     }
     // Verify the one-time bootstrap code in constant time.
-    if (!constantTimeEqual(sha256Hex(form["bootstrap_code"] || ""), config.bootstrapCodeHash)) {
+    const providedBootstrapHash = sha256Hex(form["bootstrap_code"] || "");
+    if (!constantTimeEqual(providedBootstrapHash,
+      config.getBootstrapCodeHash?.() ?? config.bootstrapCodeHash)) {
       return json(403, { error: "access_denied", error_description: "invalid bootstrap approval code" });
     }
     const approved = decision === "approve" || Boolean(form["bootstrap_code"]);
@@ -846,6 +852,7 @@ async function handleOAuthRouteInternal(
     if (!result.ok) {
       return json(400, { error: "access_denied", error_description: result.error });
     }
+    config.consumeBootstrapCode?.(providedBootstrapHash);
     const redirect = new URL(pending.redirectUri);
     redirect.searchParams.set("code", result.code);
     if (pending.state) redirect.searchParams.set("state", pending.state);

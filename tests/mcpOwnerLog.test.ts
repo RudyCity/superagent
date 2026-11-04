@@ -42,6 +42,16 @@ describe("MCP owner lifecycle journal: safe metadata only", () => {
     expect(fs.readFileSync(mcpOwnerLogPath(port), "utf8")).not.toContain(privateMessage);
   });
 
+  it("records bootstrap rotation/consumption events without any secret or hashed verifier", () => {
+    const secret = "one-time-approval-secret-should-never-be-in-journal";
+    appendMcpOwnerLog(port,"bootstrap_rotated",{ownerPid:111,backendPid:222,code:secret});
+    appendMcpOwnerLog(port,"bootstrap_consumed",{ownerPid:111,backendPid:222});
+    const events = readMcpOwnerLogs(port);
+    expect(events.map(e=>e.event)).toEqual(["bootstrap_rotated","bootstrap_consumed"]);
+    expect(events[0].code).toBeUndefined();
+    expect(fs.readFileSync(mcpOwnerLogPath(port),"utf8")).not.toContain(secret);
+  });
+
   it("refuses invalid ports/tail values and reports empty legacy journal", () => {
     expect(formatMcpOwnerLogs(port)).toContain("no reloadable-owner events");
     expect(() => readMcpOwnerLogs(port, 101)).toThrow("tail must be 1..100");

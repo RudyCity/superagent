@@ -117,6 +117,8 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/mcp tunnel restart": "Backend-only reload on supported Cloudflare owners; legacy owners fail safely.",
   "/mcp tunnel restart --full": "Explicitly stop and restart the owner and public tunnel (Quick Tunnel URL may change).",
   "/mcp tunnel logs": "Read bounded, credential-free MCP backend lifecycle events.",
+  "/mcp tunnel token regenerate": "Rotate one-use OAuth owner approval code without restarting tunnel or changing URL.",
+  "/mcp tunnel token rotate": "Alias: regenerate a new one-use OAuth bootstrap approval code.",
   "/mcp tunnel stop": "Stop an MCP tunnel.",
   "/mcp tunnel status": "Show MCP tunnel status.",
   "/mcp tunnel doctor": "Diagnose one MCP tunnel provider; use --provider openai or --provider cloudflare.",
@@ -508,6 +510,18 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         if (action === "help") return filterSuggestions(["/mcp tunnel help"], query);
         if (action === "providers") {
           return filterSuggestions(["/mcp tunnel providers"], query);
+        }
+        if (action === "token") {
+          const ports = [9227, ...knownPorts].filter((port,i,all)=>all.indexOf(port)===i);
+          const base = ["/mcp tunnel token regenerate", "/mcp tunnel token rotate"];
+          const options = base.flatMap(prefix => [
+            prefix,
+            ...ports.flatMap(port => [
+              `${prefix} --port ${port}`,
+              `${prefix} --mcp-port ${port}`,
+            ]),
+          ]);
+          return filterSuggestions(options, query);
         }
         if (action === "reload" || action === "restart" || action === "logs" || action === "log") {
           const base = action === "log" ? "logs" : action;

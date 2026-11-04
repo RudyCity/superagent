@@ -18,8 +18,10 @@ import { generateBootstrapCode } from "../mcp/mcpOAuthRoutes.js";
 import {
   sanitizedMcpIngressHeaders, isPermittedMcpIngressPath,
 } from "./mcpIngressStage.js";
-import type {
-  ReloadableBackendOptions, BackendWorkerReply,
+import {
+  DISABLED_BOOTSTRAP_HASH,
+  type ReloadableBackendOptions, type BackendWorkerReply,
+  type BootstrapRotateRequest,
 } from "./mcpReloadableBackend.js";
 import { MCP_TOOL_DEFINITIONS, DISABLED_MCP_TOOLS } from "../mcp/superagentMcpServer.js";
 import { appendMcpOwnerLog } from "./mcpOwnerLog.js";
@@ -130,11 +132,12 @@ export async function startReloadableMcpTunnelOwner(
   let draining = false;
   let closing = false;
   let reloading = false;
+  let rotatingBootstrap = false;
   let baseUrl = "";
   let oauthPersistent = true;
   let bearerToken = generateMcpBearerToken();
   const bootCode = generateBootstrapCode();
-  const bootCodeHash = bootCode.codeHash;
+  let bootCodeHash = bootCode.codeHash;
   let initialBoot = bootCode.code;
   let cleanupTimer: ReturnType<typeof setInterval> | undefined;
   let publicTunnelOwned = false;
@@ -163,6 +166,69 @@ export async function startReloadableMcpTunnelOwner(
   function requestCount(): number {
     return [...generations].reduce((total, gen) => total + gen.inFlight, 0);
   }
+  /** Update a single trusted child over IPC and wait for an explicit ACK.
+   * No bootstrap plaintext ever enters child messages or log files.
+   */
+  async function setBootstrapHash(gen: BackendGeneration, hash: string): Promise<void> {
+    if (!gen.alive) throw new Error("MCP_BOOTSTRAP_BACKEND_UNAVAILABLE");
+    const requestId = crypto.randomBytes(8).toString("hex");
+    await new Promise<void>((resolve, reject) => {
+      let done = false;
+      const finish = (err?: Error) => {
+        if (done) return;
+        done = true; clearTimeout(timeout);
+        gen.child.off("message", onMessage);
+        gen.child.off("exit", onExit);
+        if (err) reject(err); else resolve();
+      };
+      const onExit = () => finish(new Error("MCP_BOOTSTRAP_BACKEND_UNAVAILABLE"));
+      const onMessage = (data: unknown) => {
+        const ack = data as Partial<BackendWorkerReply> | null;
+        if (ack?.type === "mcp-reload-worker-bootstrap-rotated" &&
+            ack.requestId === requestId) finish();
+      };
+      const timeout = setTimeout(
+        () => finish(new Error("MCP_BOOTSTRAP_ACK_TIMEOUT")), 4_000,
+      );
+      gen.child.on("message", onMessage);
+      gen.child.once("exit", onExit);
+      try {
+        gen.child.send({
+          type:"mcp-reload-worker-bootstrap-rotate",
+          requestId, codeHash:hash,
+        } satisfies BootstrapRotateRequest, error => {
+          if (error) finish(new Error("MCP_BOOTSTRAP_IPC_FAILED"));
+        });
+      } catch { finish(new Error("MCP_BOOTSTRAP_IPC_FAILED")); }
+    });
+  }
+  function onBootstrapConsumed(gen: BackendGeneration, message: unknown): void {
+    const event = message as Partial<BackendWorkerReply> | null;
+    if (event?.type !== "mcp-reload-worker-bootstrap-consumed" ||
+        gen !== current || event.hash !== bootCodeHash) return;
+    bootCodeHash = DISABLED_BOOTSTRAP_HASH;
+    record("bootstrap_consumed", {backendPid:gen.pid});
+    // Old OAuth authorization endpoints are routed to the current worker only.
+  }
+  async function rotateBootstrap(): Promise<{ success:true; code:string; url:string; backendPid:number }> {
+    if (opts.authMode !== "oauth") throw new Error("MCP_BOOTSTRAP_OAUTH_REQUIRED");
+    if (closing || draining || reloading || rotatingBootstrap) {
+      throw new Error("MCP_BOOTSTRAP_ROTATION_BUSY");
+    }
+    const serving = current;
+    if (!serving?.alive) throw new Error("MCP_BOOTSTRAP_BACKEND_UNAVAILABLE");
+    rotatingBootstrap = true;
+    try {
+      const next = generateBootstrapCode();
+      await setBootstrapHash(serving, next.codeHash);
+      bootCodeHash = next.codeHash;
+      record("bootstrap_rotated", {backendPid:serving.pid});
+      return {
+        success:true, code:next.code, url:baseUrl + "/mcp",
+        backendPid:serving.pid,
+      };
+    } finally { rotatingBootstrap = false; }
+  }
   function retireOld(): void {
     for (const gen of generations) {
       if (gen === current || gen.retireAt === null) continue;
@@ -184,11 +250,22 @@ export async function startReloadableMcpTunnelOwner(
       bootstrapCodeHash: bootCodeHash,
       auditLogPath: opts.auditLogPath,
     });
+    gen.child.on("message", message => onBootstrapConsumed(gen, message));
+    gen.child.once("exit", () => {
+      // Fail closed if this worker dies before delivering a successful
+      // one-time-code consumption event. A later backend reload must not
+      // resurrect a possibly already-used approval code.
+      if (!closing && opts.authMode === "oauth" && gen === current &&
+          bootCodeHash !== DISABLED_BOOTSTRAP_HASH) {
+        bootCodeHash = DISABLED_BOOTSTRAP_HASH;
+        record("bootstrap_invalidated_on_crash", {backendPid:gen.pid});
+      }
+    });
     generations.add(gen);
     return gen;
   }
   async function reload(): Promise<{success: boolean; pid: number; previousPid: number | null; url: string}> {
-    if (reloading || closing || draining) {
+    if (reloading || closing || draining || rotatingBootstrap) {
       record("backend_reload_failed", {backendPid:current?.pid, code:"MCP_RELOAD_BUSY_OR_DRAINING"});
       throw new Error("MCP_RELOAD_BUSY_OR_DRAINING");
     }
@@ -205,7 +282,12 @@ export async function startReloadableMcpTunnelOwner(
     record("backend_reload_started", {backendPid:current.pid});
     try {
       // Stage the next generation before modifying the serving generation.
+      const expectedBootstrapHash = bootCodeHash;
       const next = await launch();
+      // A successful approval might consume the code while next was starting.
+      if (opts.authMode === "oauth" && expectedBootstrapHash !== bootCodeHash) {
+        await setBootstrapHash(next, bootCodeHash);
+      }
       if (opts.authMode === "oauth" && !next.oauthStatePersistent) {
         generations.delete(next);
         try { next.child.kill("SIGTERM"); } catch {}
@@ -278,6 +360,22 @@ export async function startReloadableMcpTunnelOwner(
         res.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"});
         res.end(JSON.stringify(status())); return;
       }
+      if (pathname === "/_internal/owner/bootstrap/rotate" && req.method === "POST") {
+        // The owner control lease is only accepted on loopback. This is an
+        // explicit privileged operator action: never auto-rotate on failure.
+        void rotateBootstrap().then(out => {
+          res.writeHead(200, {
+            "Content-Type":"application/json", "Cache-Control":"no-store",
+            "Pragma":"no-cache", "Referrer-Policy":"no-referrer",
+          });
+          res.end(JSON.stringify(out)); // only time plaintext is returned
+        }).catch(error => {
+          res.writeHead(409, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+          res.end(JSON.stringify({
+            error:error instanceof Error ? error.message : "MCP_BOOTSTRAP_ROTATION_FAILED",
+          }));
+        }); return;
+      }
       if (pathname === "/_internal/owner/reload" && req.method === "POST") {
         void reload().then(out => {
           res.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"});
@@ -310,7 +408,10 @@ export async function startReloadableMcpTunnelOwner(
     }
     const sid = req.headers["mcp-session-id"];
     const sessionId = typeof sid === "string" ? sid : "";
-    const target = (sessionId && sessions.get(sessionId)) || current;
+    // OAuth pairing never goes to a retired generation, even when the
+    // request presents an MCP session ID from that old generation.
+    const oauthPairingRoute = pathname === "/oauth/authorize";
+    const target = (!oauthPairingRoute && sessionId && sessions.get(sessionId)) || current;
     if (!target?.alive) {
       res.writeHead(503, {"Cache-Control":"no-store"});
       res.end(JSON.stringify({error:"MCP backend unavailable"})); return;

@@ -164,7 +164,7 @@ export function cleanManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
 
 function requestOwner(
   lease: ManagedMcpTunnelLease,
-  operation: "status" | "drain" | "stop" | "stop?force=1" | "reload",
+  operation: "status" | "drain" | "stop" | "stop?force=1" | "reload" | "bootstrap/rotate",
 ): Promise<{ statusCode: number; body: Record<string, unknown> | null }> {
   return new Promise((resolve) => {
     let settled = false;
@@ -178,7 +178,7 @@ function requestOwner(
       port: lease.port,
       path: `/_internal/owner/${operation}`,
       method: operation === "status" ? "GET" : "POST",
-      timeout: operation === "reload" ? 60_000 : 1800,
+      timeout: operation === "reload" ? 60_000 : operation === "bootstrap/rotate" ? 7_000 : 1800,
       headers: {
         Authorization: "Bearer " + lease.nonce,
         Accept: "application/json",
@@ -550,6 +550,47 @@ export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
  * Reload compiled MCP backend without restarting its public tunnel or owner.
  * Fail closed for legacy owners and any public URL/identity change.
  */
+/**
+ * Privileged operator-only bootstrap pairing code rotation. The public MCP
+ * endpoint/issuer, existing OAuth refresh/access grants and Cloudflare process
+ * are unchanged. Code plaintext is returned only through the authenticated
+ * private loopback owner control response; never persisted.
+ */
+export async function regenerateManagedMcpBootstrapCode(port: number): Promise<{
+  publicUrl: string; code: string; backendPid: number;
+}> {
+  assertPort(port);
+  const lease = readManagedMcpTunnelLease(port);
+  if (!lease) throw new Error("MCP_BOOTSTRAP_NO_MANAGED_OWNER");
+  await verifyManagedOwnerIdentity(lease, {timeoutMs: 3000});
+  const before = await probeManagedMcpTunnelOwner(lease);
+  const state = readMcpStateFile(getMcpStateFile(port));
+  if (!before || (before as any).reloadable !== true ||
+      !state?.publicUrl || state.pid !== lease.pid) {
+    throw new Error("MCP_BOOTSTRAP_LEGACY_OWNER: hot rotation requires a reloadable Cloudflare owner");
+  }
+  if (!before.oauthEnabled || state.authMode !== "oauth") {
+    throw new Error("MCP_BOOTSTRAP_OAUTH_REQUIRED");
+  }
+  if (before.draining) throw new Error("MCP_BOOTSTRAP_OWNER_DRAINING");
+  const response = await requestOwner(lease, "bootstrap/rotate");
+  const result = response.body;
+  if (response.statusCode !== 200 || result?.success !== true ||
+      typeof result.code !== "string" ||
+      !/^[a-zA-Z0-9_-]{24,128}$/.test(result.code) ||
+      result.url !== state.publicUrl || !Number.isSafeInteger(result.backendPid)) {
+    throw new Error(typeof result?.error === "string" && /^MCP_[A-Z0-9_]+$/.test(result.error)
+      ? result.error : "MCP_BOOTSTRAP_ROTATION_NOT_CONFIRMED");
+  }
+  const after = await probeManagedMcpTunnelOwner(lease);
+  const sameState = readMcpStateFile(getMcpStateFile(port));
+  if (!after || after.pid !== before.pid || after.startedAt !== before.startedAt ||
+      sameState?.publicUrl !== state.publicUrl) {
+    throw new Error("MCP_BOOTSTRAP_URL_OR_OWNER_CHANGED");
+  }
+  return {publicUrl:state.publicUrl, code:result.code, backendPid:Number(result.backendPid)};
+}
+
 export async function reloadManagedMcpTunnelBackend(port: number): Promise<{
   success: true; port: number; publicUrl: string;
   backendPid: number; previousBackendPid: number | null;

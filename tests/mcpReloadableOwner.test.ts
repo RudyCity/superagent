@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import net from "node:net";
 import path from "node:path";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
@@ -110,6 +111,126 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
     expect(mock.stopQuickTunnel).toHaveBeenCalledTimes(1);
     expect(fs.existsSync(getMcpStateFile(port))).toBe(false);
   }, 70_000);
+
+  it("rotates a truly single-use OAuth bootstrap code without touching tunnel, issuer, owner, backend or existing grants", async () => {
+    const port = await nextPort();
+    const nonce = "b".repeat(64);
+    const owner = await startReloadableMcpTunnelOwner({
+      port, nonce, createdAt:Date.now(), cliEntry:path.resolve("dist/cli.js"),
+      authMode:"oauth", allowDangerous:false,
+    });
+    const root = "http://127.0.0.1:" + port;
+    const control = (url: string) => fetch(root + "/_internal/owner/" + url, {
+      method:"POST", headers:{Authorization:"Bearer " + nonce},
+    });
+    const clientId = "bootstrap-rotate-test";
+    const redirect = "https://chatgpt.example/oauth/callback";
+    let mintedAccessToken = "";
+    try {
+      const initial = owner.info.bootstrapCode;
+      expect(initial).toMatch(/^[a-zA-Z0-9_-]{24,}$/);
+      const before = await fetch(root + "/_internal/owner/status", {
+        headers:{Authorization:"Bearer " + nonce},
+      }).then(r=>r.json());
+      expect((await control("bootstrap/rotate")).status).toBe(200);
+      // A separate call is independently privileged and returns the *latest*
+      // code one time. The earlier code is not accepted after rotation.
+      const rotatedResponse = await control("bootstrap/rotate");
+      expect(rotatedResponse.status).toBe(200);
+      expect(rotatedResponse.headers.get("cache-control")).toBe("no-store");
+      const rotated = await rotatedResponse.json();
+      expect(rotated.code).toMatch(/^[a-zA-Z0-9_-]{24,}$/);
+      expect(rotated.code).not.toBe(initial);
+      expect(rotated.url).toBe(owner.info.publicUrl);
+      expect(rotated.backendPid).toBe(before.backendPid);
+      const after = await fetch(root + "/_internal/owner/status", {
+        headers:{Authorization:"Bearer " + nonce},
+      }).then(r=>r.json());
+      expect(after.pid).toBe(before.pid);
+      expect(after.backendPid).toBe(before.backendPid);
+      expect(mock.startQuickTunnel).toHaveBeenCalledTimes(1);
+      expect(mock.stopQuickTunnel).toHaveBeenCalledTimes(0);
+      expect((await fetch(root + "/_internal/owner/bootstrap/rotate",{
+        method:"POST",
+      })).status).toBe(401);
+      expect((await fetch(root + "/_internal/owner/bootstrap/rotate",{
+        method:"POST", headers:{Host:"unchanged-mcp.trycloudflare.com", Authorization:"Bearer "+nonce},
+      })).status).toBe(404);
+      async function beginApproval() {
+        const verifier = crypto.randomBytes(32).toString("base64url");
+        const challenge = crypto.createHash("sha256").update(verifier).digest("base64url");
+        const query = new URLSearchParams({
+          client_id:clientId, redirect_uri:redirect, code_challenge:challenge,
+          code_challenge_method:"S256", scope:"mcp:tools",
+        });
+        const page = await fetch(root + "/oauth/authorize?" + query);
+        expect(page.status).toBe(200);
+        const html = await page.text();
+        const id = /name="request_id" value="([^"]+)"/.exec(html)?.[1];
+        expect(id).toBeTruthy();
+        return {id:id!,verifier};
+      }
+      const approve = async (id: string, code:string) => fetch(root + "/oauth/authorize",{
+        method:"POST", redirect:"manual",
+        headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body:new URLSearchParams({request_id:id,bootstrap_code:code,decision:"approve"}),
+      });
+
+      const expired = await beginApproval();
+      expect((await approve(expired.id, initial!)).status).toBe(403);
+      const valid = await beginApproval();
+      const authorized = await approve(valid.id, rotated.code);
+      expect(authorized.status).toBe(302);
+      const authorizationCode = new URL(authorized.headers.get("location")!).searchParams.get("code");
+      expect(authorizationCode).toBeTruthy();
+      const exchange = await fetch(root + "/oauth/token",{
+        method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},
+        body:new URLSearchParams({
+          grant_type:"authorization_code", code:authorizationCode!,
+          client_id:clientId, redirect_uri:redirect, code_verifier:valid.verifier,
+        }),
+      });
+      expect(exchange.status).toBe(200);
+      const minted = await exchange.json();
+      mintedAccessToken = minted.access_token;
+      expect(mintedAccessToken).toBeTruthy();
+      const replay = await beginApproval();
+      expect((await approve(replay.id, rotated.code)).status).toBe(403);
+
+      // A reload must NOT resurrect a consumed approval code.
+      for(let retry=0;retry<30;retry++){
+        if(readMcpOwnerLogs(port).some(e=>e.event==="bootstrap_consumed")) break;
+        await new Promise(resolve=>setTimeout(resolve,20));
+      }
+      expect(readMcpOwnerLogs(port).map(e=>e.event)).toContain("bootstrap_consumed");
+      if (owner.info.oauthStatePersistent) {
+        const swapped = await control("reload");
+        expect(swapped.status).toBe(200);
+        const yetAnother = await beginApproval();
+        expect((await approve(yetAnother.id, rotated.code)).status).toBe(403);
+      }
+
+      const againResponse = await control("bootstrap/rotate");
+      expect(againResponse.status).toBe(200);
+      const again = await againResponse.json();
+      expect(again.code).not.toBe(rotated.code);
+      // The original OAuth token remains valid even after bootstrap changes.
+      const tokenCheck = await fetch(root + "/mcp",{
+        method:"GET",headers:{Authorization:"Bearer " + mintedAccessToken},
+      });
+      expect(tokenCheck.status).not.toBe(401);
+      const journal = fs.readFileSync(mcpOwnerLogPath(port),"utf8");
+      expect(journal).toContain("bootstrap_rotated");
+      expect(journal).toContain("bootstrap_consumed");
+      expect(journal).not.toContain(rotated.code);
+      expect(journal).not.toContain(again.code);
+      expect(fs.readFileSync(getMcpStateFile(port),"utf8")).not.toContain(again.code);
+    } finally {
+      await owner.close();
+      fs.rmSync(getMcpStateFile(port),{force:true});
+      fs.rmSync(mcpOwnerLogPath(port),{force:true});
+    }
+  },70_000);
 
   it("keeps OAuth issuer constant, or refuses reload if OAuth persistence is unavailable", async () => {
     const port = await nextPort();

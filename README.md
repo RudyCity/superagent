@@ -461,6 +461,7 @@ MCP servers and provider-specific tunnels live under `/mcp tunnel` or `superagen
 /mcp tunnel doctor --provider openai
 /mcp tunnel reload --port 8857
 /mcp tunnel logs --port 8857 --tail 20
+/mcp tunnel token regenerate --mcp-port 8857
 /mcp logs --port 8857 --tail 20
 /mcp tunnel restart --port 8857
 /mcp tunnel restart --port 8857 --full
@@ -489,6 +490,24 @@ rotated under `~/.superagent-r/mcp-owner-<port>-events.jsonl`. It
 contains only event identifiers, owner/backend PIDs, duration and
 sanitized status codes—never OAuth/bearer credentials, prompt text or
 ChatGPT responses. It is distinct from the MCP request audit.
+
+**Regenerate one-use OAuth approval code without changing the MCP URL:**
+Run `/mcp tunnel token regenerate --port <port>` (alias `rotate`,
+and `--mcp-port`/`-p` are accepted) on a **Reloadable Cloudflare
+OAuth owner**. The owner creates a fresh cryptographically random
+bootstrap approval code, updates the running MCP backend through private
+authenticated owner control and child IPC, and immediately invalidates
+the previous code. A successful new OAuth owner approval consumes the
+new code; regenerate again for the next new connection. Existing OAuth
+access/refresh tokens and grants remain valid. Cloudflare, public
+OAuth issuer, and the backend PID are unchanged. In the interactive TUI
+the code is copied to the local clipboard and intentionally **not**
+written into chat history; the explicit local CLI command
+`superagent mcp tunnel token regenerate --mcp-port <port>`
+prints it once to the operator's local terminal. Treat terminal
+scrollback and the clipboard as sensitive. The raw code is never
+recorded in lifecycle logs or MCP audit files. Legacy owners cannot
+perform hot rotation (fail closed); an owner must be migrated first.
 
 **Migration and safety:** A legacy owner (including an owner started
 before the blue-green implementation) refuses backend-only reload

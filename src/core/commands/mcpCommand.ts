@@ -22,6 +22,7 @@ export const mcpCommand: SlashCommand = {
         "/mcp tunnel reload --port <port> — blue-green backend reload; only reloadable Cloudflare owners",
         "/mcp tunnel restart --port <port> — alias for backend-only reload; fails safely on Legacy",
         "/mcp tunnel logs --port <port> --tail 20 — last 1..100 metadata-only lifecycle events",
+        "/mcp tunnel token regenerate --port <port> — replace one-use OAuth bootstrap approval code without changing URL",
         "/mcp tunnel restart --port <port> --full — explicit owner+tunnel restart; Quick URL may change",
         "/mcp use gateway|full|status — choose outgoing MCP tool catalog exposure",
         "Legacy owner needs one-time migration; OpenAI Secure MCP backend-only reload is unavailable.",
@@ -375,6 +376,34 @@ export const mcpCommand: SlashCommand = {
         await mcpCommand.execute("help", ctx);
         return;
       }
+      if (tunnelAction === "token") {
+        const operation = rawArgs[0]?.toLowerCase();
+        if (operation !== "regenerate" && operation !== "rotate") {
+          ctx.addLine({type:"error", content:"Use /mcp tunnel token regenerate --port <port>", timestamp:Date.now()});
+          return;
+        }
+        const options = rawArgs.slice(1);
+        const idx = options.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
+        const port = idx < 0 ? 9227 : Number(options[idx + 1]);
+        if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
+          ctx.addLine({type:"error", content:"Invalid MCP bootstrap rotation port.", timestamp:Date.now()});
+          return;
+        }
+        try {
+          const { regenerateManagedMcpBootstrapCode } = await import("../runtime/mcpManagedTunnelOwner.js");
+          const { copyTextToClipboard } = await import("../remoteAgent/cloudflareTunnel.js");
+          const updated = await regenerateManagedMcpBootstrapCode(port);
+          const copied = await copyTextToClipboard(updated.code);
+          ctx.addLine({type:copied ? "system" : "error",timestamp:Date.now(),
+            content:copied
+              ? `New one-time OAuth approval code copied to local clipboard. MCP URL unchanged: ${updated.publicUrl}. Existing OAuth connections preserved. Do not paste the code in chat.`
+              : "New approval code was generated but clipboard copy failed. Code was NOT displayed or saved to the TUI history; run the local CLI command to generate another.",
+          });
+        } catch (error) {
+          ctx.addLine({type:"error",content:error instanceof Error ? error.message : "MCP_BOOTSTRAP_ROTATION_FAILED",timestamp:Date.now()});
+        }
+        return;
+      }
       if (tunnelAction === "logs" || tunnelAction === "log") {
         const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
         const tailIdx = rawArgs.indexOf("--tail");
@@ -545,7 +574,7 @@ export const mcpCommand: SlashCommand = {
 
       ctx.addLine({
         type: "error",
-        content: `Unknown tunnel action "${tunnelAction}". Available: help, providers, config, start, stop, reload, restart, logs, list, status, doctor`,
+        content: `Unknown tunnel action "${tunnelAction}". Available: help, providers, config, start, stop, reload, restart, token, logs, list, status, doctor`,
         timestamp: now,
       });
       return;

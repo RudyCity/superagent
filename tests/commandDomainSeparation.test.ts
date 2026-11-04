@@ -55,6 +55,17 @@ describe("command domain separation", () => {
     expect(short).toContain("/mcp reload --port 9227");
   });
 
+  it("suggests OAuth code regeneration with both --port and --mcp-port aliases", () => {
+    const query = "/mcp tunnel token";
+    const found = getDashboardSuggestions(query,query.length);
+    expect(found).toContain("/mcp tunnel token regenerate");
+    expect(found).toContain("/mcp tunnel token regenerate --port 9227");
+    expect(found).toContain("/mcp tunnel token regenerate --mcp-port 9227");
+    const partial = "/mcp tunnel token regenerate --mcp";
+    expect(getDashboardSuggestions(partial,partial.length))
+      .toContain("/mcp tunnel token regenerate --mcp-port 9227");
+  });
+
   it("keeps REST/SSE tunnel suggestions under /server", () => {
     const query = "/server tunnel";
     const suggestions = getDashboardSuggestions(query, query.length);

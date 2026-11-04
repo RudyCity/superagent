@@ -16,7 +16,7 @@ Commands:
   use [gateway|full|status]              Select persistent MCP tool exposure for new sessions
   register                              Register Superagent as an MCP server to Antigravity (AGY)
   logs [--port N] [--tail 1..100]      Read metadata-only MCP owner lifecycle journal
-  tunnel <start|stop|reload|restart|logs|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
+  tunnel <start|stop|reload|restart|token|logs|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
 
 Examples:
    superagent mcp list
@@ -34,6 +34,7 @@ Examples:
    superagent mcp tunnel reload --port 8857
    superagent mcp logs --port 8857 --tail 20
    superagent mcp tunnel logs --port 8857 --tail 20
+   superagent mcp tunnel token regenerate --mcp-port 8857  # OAuth approval code only; URL unchanged
    superagent mcp tunnel restart --port 8857
    superagent mcp tunnel restart --port 8857 --full  # explicit full restart; Quick Tunnel URL can change
    superagent mcp tunnel list
@@ -268,6 +269,36 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       printMcpHelp();
       process.exit(0);
     }
+    if (tunnelAction === "token") {
+      const operation = rawArgs[0]?.toLowerCase();
+      if (operation !== "regenerate" && operation !== "rotate") {
+        console.error("Use: superagent mcp tunnel token regenerate --port <port>");
+        process.exit(1);
+      }
+      const options = rawArgs.slice(1);
+      const index = options.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
+      const port = index < 0 ? 9227 : Number(options[index + 1]);
+      if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
+        console.error("Invalid MCP bootstrap rotation port.");
+        process.exit(1);
+      }
+      try {
+        const { regenerateManagedMcpBootstrapCode } = await import("../runtime/mcpManagedTunnelOwner.js");
+        const updated = await regenerateManagedMcpBootstrapCode(port);
+        // Deliberately print the approval code only on an explicitly invoked
+        // local CLI. Never write it to persistent MCP audit, status or JSONL.
+        console.log("OAuth one-time bootstrap code regenerated. Existing MCP URL unchanged:");
+        console.log(updated.publicUrl);
+        console.log("NEW ONE-TIME BOOTSTRAP APPROVAL CODE (shown only once):");
+        console.log(updated.code);
+        console.log("Use once in OAuth owner approval; existing OAuth clients and tokens are unchanged.");
+        console.log("Keep terminal output private; never paste this code in an AI chat or shared log.");
+        process.exit(0);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : "MCP_BOOTSTRAP_ROTATION_FAILED");
+        process.exit(1);
+      }
+    }
     if (tunnelAction === "logs" || tunnelAction === "log") {
       const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
       const tailIdx = rawArgs.indexOf("--tail");
@@ -417,7 +448,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       }
     }
 
-    console.log(`Unknown tunnel action: "${tunnelAction}". Available: providers, start, stop, reload, restart, logs, list, status, doctor`);
+    console.log(`Unknown tunnel action: "${tunnelAction}". Available: providers, start, stop, reload, restart, token, logs, list, status, doctor`);
     process.exit(1);
   }
 

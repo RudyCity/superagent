@@ -13,6 +13,9 @@ const EVENT_NAMES = [
   "backend_reload_succeeded",
   "backend_reload_failed",
   "owner_stopping",
+  "bootstrap_rotated",
+  "bootstrap_consumed",
+  "bootstrap_invalidated_on_crash",
 ] as const;
 export type McpOwnerEventName = typeof EVENT_NAMES[number];
 

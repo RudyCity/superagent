@@ -25,7 +25,16 @@ export type BackendWorkerRequest = {
 
 export type BackendWorkerReply =
   | { type: "mcp-reload-worker-ready"; port: number; oauthStatePersistent: boolean }
-  | { type: "mcp-reload-worker-error"; message: string };
+  | { type: "mcp-reload-worker-error"; message: string }
+  | { type: "mcp-reload-worker-bootstrap-rotated"; requestId: string }
+  | { type: "mcp-reload-worker-bootstrap-consumed"; hash: string };
+
+export const DISABLED_BOOTSTRAP_HASH = "0".repeat(64);
+export type BootstrapRotateRequest = {
+  type: "mcp-reload-worker-bootstrap-rotate";
+  requestId: string;
+  codeHash: string;
+};
 
 export function validateReloadableBackendOptions(
   value: unknown,
@@ -49,22 +58,45 @@ export function validateReloadableBackendOptions(
 
 export async function startReloadableMcpBackend(
   opts: ReloadableBackendOptions,
-): Promise<{ handle: McpHttpServerHandle; oauthStatePersistent: boolean }> {
+  onConsumed?: (hash: string) => void,
+): Promise<{
+  handle: McpHttpServerHandle;
+  oauthStatePersistent: boolean;
+  rotateBootstrapHash: (hash: string) => void;
+}> {
   if (!validateReloadableBackendOptions(opts)) throw new Error("Invalid private MCP backend options");
   const issuer = new URL(opts.publicBaseUrl).origin;
   const oauth = opts.authMode === "oauth"
     ? createPersistentMcpOAuthStore({ issuer }) : undefined;
+  let liveBootstrapHash = opts.bootstrapCodeHash || DISABLED_BOOTSTRAP_HASH;
   const handle = await startMcpHttpServer({
     port: 0,
     allowDangerous: opts.allowDangerous,
     authMode: opts.authMode,
     bearerToken: opts.authMode === "static-bearer" ? opts.bearerToken : undefined,
     oauthStore: oauth?.store,
-    oauth: oauth ? { publicBaseUrl: issuer, bootstrapCodeHash: opts.bootstrapCodeHash! } : undefined,
+    oauth: oauth ? {
+      publicBaseUrl: issuer,
+      bootstrapCodeHash: opts.bootstrapCodeHash!,
+      getBootstrapCodeHash: () => liveBootstrapHash,
+      consumeBootstrapCode: usedHash => {
+        if (liveBootstrapHash !== usedHash) return;
+        liveBootstrapHash = DISABLED_BOOTSTRAP_HASH;
+        onConsumed?.(usedHash);
+      },
+    } : undefined,
     auditLogPath: opts.auditLogPath,
     hostOriginPolicy: { allowNoOrigin: true },
   });
-  return { handle, oauthStatePersistent: oauth?.persistent ?? true };
+  return {
+    handle, oauthStatePersistent: oauth?.persistent ?? true,
+    rotateBootstrapHash(hash: string) {
+      if (opts.authMode !== "oauth" || !/^[a-f0-9]{64}$/.test(hash)) {
+        throw new Error("MCP_BOOTSTRAP_ROTATION_INVALID_MODE_OR_HASH");
+      }
+      liveBootstrapHash = hash;
+    },
+  };
 }
 
 export async function runReloadableMcpBackendWorker(): Promise<never> {
@@ -74,6 +106,7 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
   let started = false;
   let closing = false;
   let handle: McpHttpServerHandle | undefined;
+  let rotateBootstrapHash: ((hash:string) => void) | undefined;
   const shutdown = async () => {
     if (closing) return;
     closing = true;
@@ -83,14 +116,33 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
   process.once("SIGTERM", () => { void shutdown(); });
   process.once("SIGINT", () => { void shutdown(); });
   process.on("message", (message: unknown) => {
+    const rotate = message as Partial<BootstrapRotateRequest> | null;
+    if (started && rotate?.type === "mcp-reload-worker-bootstrap-rotate") {
+      if (!rotateBootstrapHash || typeof rotate.requestId !== "string" ||
+          !/^[a-f0-9]{16}$/.test(rotate.requestId) ||
+          typeof rotate.codeHash !== "string" ||
+          !/^[a-f0-9]{64}$/.test(rotate.codeHash)) return;
+      rotateBootstrapHash(rotate.codeHash);
+      process.send?.({
+        type: "mcp-reload-worker-bootstrap-rotated",
+        requestId: rotate.requestId,
+      } satisfies BackendWorkerReply);
+      return;
+    }
     if (started) return;
     const m = message as Partial<BackendWorkerRequest> | null;
     if (m?.type !== "mcp-reload-worker-start") return;
     started = true;
     void (async () => {
       try {
-        const result = await startReloadableMcpBackend(m.options as ReloadableBackendOptions);
+        const result = await startReloadableMcpBackend(
+          m.options as ReloadableBackendOptions,
+          hash => process.send?.({
+            type: "mcp-reload-worker-bootstrap-consumed", hash,
+          } satisfies BackendWorkerReply),
+        );
         handle = result.handle;
+        rotateBootstrapHash = result.rotateBootstrapHash;
         process.send?.({
           type: "mcp-reload-worker-ready",
           port: handle.port,

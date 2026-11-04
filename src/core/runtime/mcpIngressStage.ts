@@ -9,7 +9,11 @@ import {readListenerOwners} from "./coreMcpOwnershipAudit.js";
 import {assertManagedMcpPort} from "./mcpOwnerStagingLease.js";
 
 export function isPermittedMcpIngressPath(method:string,path:string):boolean{
-  if(path.length>2048||path.includes("\\")||/%2f|%5c|%00/i.test(path))return false;
+  // Encoded separators inside the actual PATH remain prohibited. OAuth
+  // redirect_uri values in the QUERY legitimately contain %2F and must
+  // not be treated as path traversal or disallowed routing.
+  const pathOnly = path.split("?", 1)[0];
+  if(path.length>2048||pathOnly.includes("\\")||/%2f|%5c|%00/i.test(pathOnly))return false;
   let pathname:string;
   try{pathname=new URL(path,"http://127.0.0.1").pathname}catch{return false}
   if(pathname==="/mcp")return ["GET","POST","DELETE"].includes(method);

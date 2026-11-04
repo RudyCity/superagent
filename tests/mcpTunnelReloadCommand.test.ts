@@ -27,6 +27,30 @@ describe("MCP backend reload commands never fall back to tunnel restart", () => 
     expect(bare.stderr).toContain("interactive TUI");
   }, 70_000);
 
+  it("bootstrap token regeneration fails closed on unknown owners and never prints credentials", async () => {
+    const invalid = ctx();
+    await mcpCommand.execute("tunnel token regenerate --mcp-port 19997", invalid.handler);
+    expect(invalid.lines.at(-1)?.type).toBe("error");
+    expect(invalid.lines.at(-1)?.content).toContain("MCP_BOOTSTRAP_NO_MANAGED_OWNER");
+    const wrong = ctx();
+    await mcpCommand.execute("tunnel token regenerate --port 70000", wrong.handler);
+    expect(wrong.lines.at(-1)?.content).toContain("Invalid MCP bootstrap rotation port");
+    const guide = ctx();
+    await mcpCommand.execute("help", guide.handler);
+    expect(guide.lines.at(-1)?.content).toContain("token regenerate --port <port>");
+  });
+
+  it("standalone token command routes directly and fails on missing owner without opening an agent", () => {
+    const cli = path.resolve("dist/cli.js");
+    const result = spawnSync(process.execPath,[
+      cli,"mcp","tunnel","token","regenerate","--mcp-port","19997",
+    ], {cwd:process.cwd(), encoding:"utf8", timeout:20000, maxBuffer:64_000});
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("MCP_BOOTSTRAP_NO_MANAGED_OWNER");
+    expect(result.stderr).not.toContain("[Delegate]");
+    expect(result.stdout).not.toContain("APPROVAL CODE");
+  },30_000);
+
   it("uses fail-closed reload on an unregistered port for /mcp tunnel restart", async () => {
     const {lines, handler} = ctx();
     await mcpCommand.execute("tunnel restart --port 19997", handler);

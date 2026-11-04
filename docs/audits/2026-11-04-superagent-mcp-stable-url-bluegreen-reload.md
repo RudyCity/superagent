@@ -202,3 +202,65 @@ bridge was started.
 - Standalone `mcp logs` and `mcp reload --port` CLI routes
   verified; neither accidentally starts the agent or Delegate bridge.
 - Port `8857` production owner was not restarted or migrated.
+
+
+## OAuth one-use bootstrap code hot regeneration
+
+- `/mcp tunnel token regenerate --port N` and
+  `superagent mcp tunnel token regenerate --mcp-port N`
+  request a new, cryptographically random OAuth owner approval code
+  without restarting cloudflared, the ingress owner, the MCP backend,
+  or rotating the public issuer URL.
+- Owner-only POST `/_internal/owner/bootstrap/rotate` requires the
+  existing, process-bound lease credential, loopback socket and
+  exact local Host. The control request is authenticated by the owner;
+  a public MCP or OAuth caller cannot reach it.
+- The owner forwards **only the new SHA-256 code hash** to the
+  backend over trusted child IPC and waits for an explicit ACK.
+  The plaintext code is returned exactly once to the local CLI.
+  The TUI copies it to the clipboard and never adds it to chat history.
+- Bootstrap hash is consumed synchronously **after successful owner
+  approval**, not at first incorrect code attempt. Subsequent
+  approvals using the same code return access_denied until regenerated.
+  The owning process tracks consumption to ensure a later backend
+  reload does not resurrect a used code.
+- Only `bootstrap_rotated` and `bootstrap_consumed` event names,
+  timestamp and numeric process metadata enter the lifecycle journal.
+  The plaintext token, hash and pending authorization data are omitted.
+- Existing OAuth access tokens, refresh tokens, grants and issuer
+  remain untouched. This operation is unavailable on Legacy owners,
+  static bearer owners and OpenAI Secure MCP Tunnel legacy lifecycle.
+
+
+### Crash-safe approval-code handling
+
+The current OAuth worker's unexpected exit invalidates the owner
+bootstrap verifier before backend recovery, even if a consumption
+notification was lost due to that crash. The operator then regenerates
+a fresh code after recovery. This intentionally favors invalidating
+an unused code over accidentally resurrecting a spent code.
+Only `bootstrap_invalidated_on_crash` event metadata is journaled.
+
+
+### Verified implementation (2026-11-04)
+
+- Build: `bun run build` PASS.
+- Targeted security/CLI/OAuth/blue-green regression:
+  **104/104 PASS, 13 test suites**.
+- Real compiled-backend OAuth integration verifies:
+  - owner/control auth checks; public owner-control path never forwarded;
+  - old approval code rejected immediately after regeneration;
+  - new approval code accepted once and then rejected on replay;
+  - subsequent backend blue-green reload cannot resurrect spent code;
+  - an OAuth access token remains usable after code regeneration;
+  - unchanged Cloudflare mock start count, public URL, owner PID and
+    backend PID during rotation;
+  - no secret value in owner state or sanitized lifecycle journal.
+- Corrected ingress authorization-path validation to allow percent
+  encoding of an OAuth `redirect_uri` query value while still
+  prohibiting encoded separators in the actual URL path; R3/R6
+  security regression suites passed.
+- CLI/TUI commands and `--mcp-port`/`--port` suggestions verified.
+- Production port 8857 still has a Legacy MCP owner. Regeneration
+  must fail closed there until separately authorized one-time
+  architecture migration; do not claim production rotation happened.

@@ -18,6 +18,14 @@ describe("R3 ingress owner hard boundary",()=>{
    for(const [method,path] of bad)
       expect(isPermittedMcpIngressPath(method,path),method+" "+path).toBe(false);
  });
+ it("allows encoded OAuth redirect URI in query but forbids encoded separators in path",()=>{
+   const oauthQuery="/oauth/authorize?client_id=chatgpt&redirect_uri=https%3A%2F%2Fchatgpt.example%2Foauth%2Fcallback";
+   expect(isPermittedMcpIngressPath("GET",oauthQuery)).toBe(true);
+   expect(isPermittedMcpIngressPath("GET","/oauth%2Fauthorize?redirect_uri=https%3A%2F%2Fgood.test")).toBe(false);
+   expect(isPermittedMcpIngressPath("POST","/mcp%5c../_internal/owner/status?redirect_uri=https%3A%2F%2Fgood.test")).toBe(false);
+   expect(isPermittedMcpIngressPath("POST","/_internal/owner/bootstrap/rotate")).toBe(false);
+ });
+
  it("refuses a claimed MCP target without OS listener ownership",async()=>{
    await expect(startVerifiedMcpIngress({
      ingressPort:55211,targetPort:55212,targetPid:99999999,
