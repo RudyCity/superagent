@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import vm from "node:vm";
 
-const base = new URL("../chrome-extension-chatgpt-lite/", import.meta.url);
+const base = new URL("../ChatGPT Optimizer/", import.meta.url);
 const policyCode = fs.readFileSync(new URL("policy.js", base), "utf8");
 const sidebarCode = fs.readFileSync(new URL("sidebar.js", base), "utf8");
 const manifest = JSON.parse(fs.readFileSync(new URL("manifest.json", base), "utf8"));
@@ -177,7 +177,7 @@ describe("ChatGPT Optimizer: sidebar sync policy", () => {
   });
 
   it("manifest loads sidebar scripts with no new permissions or external origins", () => {
-    expect(manifest.content_scripts[0].js).toEqual(["policy.js", "content.js", "sidebar.js"]);
+    expect(manifest.content_scripts[0].js).toEqual(["policy.js", "content.js", "sidebar.js", "tab-reload.js"]);
     expect(manifest.content_scripts[0].css).toEqual(["content.css", "sidebar.css"]);
     expect(manifest.permissions).toEqual(["storage", "tabs"]);
     expect(manifest.host_permissions).toEqual(["https://chatgpt.com/*"]);

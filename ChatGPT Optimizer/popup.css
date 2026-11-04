@@ -48,6 +48,12 @@ small { display: block; color: var(--muted); font-size: 11px; line-height: 1.5; 
 .sidebar-settings-title { font-weight: 650; font-size: 13px; }
 .sidebar-sync-status { margin: -5px 0 0; font-size: 11px; color: var(--muted); line-height: 1.5; }
 button.refresh-sidebar { width: 100%; }
+.target-reload-settings { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 14px; }
+.reload-explanation { color: var(--muted); font-size: 11px; margin: -6px 0 0; line-height: 1.5; }
+.reload-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.reload-actions button { min-width: 0; font-size: 11px; }
+.reload-actions button.secondary { background: var(--accent-soft); color: var(--accent); }
+
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 17px; }
 button { border: 1px solid var(--accent); border-radius: 8px; background: var(--accent); color: var(--surface); padding: 9px; font: 600 12px var(--font); cursor: pointer; }
 button:hover { filter: brightness(1.09); }

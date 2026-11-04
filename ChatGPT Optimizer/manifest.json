@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "ChatGPT Optimizer",
-  "version": "0.2.0",
-  "description": "Optimize long conversations and refresh recent chats in the sidebar without reloading the active conversation.",
+  "version": "0.3.0",
+  "description": "Optimize long chats, sync the sidebar without a page reload, or safely reload a selected conversation tab on demand.",
   "permissions": [
     "storage",
     "tabs"
@@ -33,7 +33,8 @@
       "js": [
         "policy.js",
         "content.js",
-        "sidebar.js"
+        "sidebar.js",
+        "tab-reload.js"
       ],
       "css": [
         "content.css",

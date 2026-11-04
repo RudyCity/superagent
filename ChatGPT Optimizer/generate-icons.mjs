@@ -1,6 +1,6 @@
 /**
  * Deterministic Chrome PNG icons generated from a single original vector.
- * Run from the repository root: node chrome-extension-chatgpt-lite/generate-icons.mjs
+ * Run from the repository root: node "ChatGPT Optimizer/generate-icons.mjs"
  */
 import { readFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";

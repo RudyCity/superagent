@@ -6,7 +6,7 @@ Ekstensi Chrome **Manifest V3**, berdiri sendiri dan khusus untuk `https://chatg
 
 1. Buka `chrome://extensions`, aktifkan **Developer mode**.
 2. Klik **Load unpacked**, lalu pilih folder:
-   `D:\backup from pc asus\Documents Development\superagent\chrome-extension-chatgpt-lite`
+   `D:\backup from pc asus\Documents Development\superagent\ChatGPT Optimizer`
 3. **Reload tab ChatGPT yang sudah terbuka sekali** agar content script terpasang.
 4. Pin **ChatGPT Optimizer** ke toolbar, klik ikonnya untuk membuka pengaturan.
 
@@ -43,6 +43,20 @@ ChatGPT Optimizer checks for saved conversations from the signed-in ChatGPT acco
 
 **Important:** The extension does **not** force the built-in ChatGPT React cache to invalidate. Instead it adds an independently refreshed set of links under the left menu. Do not rely on these links for operations such as ChatGPT's built-in pin/unpin or deletion; those remain in the native list.
 
+## Reload a specific chat tab (v0.3.0)
+
+Use the extension popup's **Reload one chat tab** section:
+
+1. Select an open, saved ChatGPT conversation from the dropdown. Entries include its title, conversation ID suffix and browser window number.
+2. Click **Reload selected chat**. The extension checks the exact tab URL, verifies that the conversation is idle, and checks the URL again before calling `chrome.tabs.reload(tabId)`.
+3. **Only that selected tab** is reloaded. Other Chrome tabs and windows are not touched. Unlike sidebar synchronization, this is a full page reload of one tab.
+
+Reload is blocked if a response is generating, an unsent draft exists, an attachment/upload is pending, a dialog is open or the chat has not finished rendering. New/unsaved chat pages and non-ChatGPT pages cannot be selected. Use **Update tab list** after opening or closing tabs.
+
+**Independent Chrome profiles:** the extension sees only tabs belonging to the Chrome profile in which it is installed. Install ChatGPT Optimizer separately in each profile; it cannot reload a chat belonging to a different profile.
+
+**After renaming:** Chrome may still reference the former unpacked directory. Go to `chrome://extensions`, remove the old unpacked installation and use **Load unpacked** to select the new `ChatGPT Optimizer` folder. The extension ID may change, which can reset per-extension settings.
+
 ## Privasi dan keamanan
 
 - Izin terbatas pada `storage`, `tabs`, dan host `https://chatgpt.com/*`.
@@ -58,15 +72,17 @@ ChatGPT Optimizer checks for saved conversations from the signed-in ChatGPT acco
 From the SuperAgent repository root:
 
 ```powershell
-bun --bun x vitest run tests/chatgptLiteExtension.test.ts tests/chatgptOptimizerSidebar.test.ts
-node --check chrome-extension-chatgpt-lite/policy.js
-node --check chrome-extension-chatgpt-lite/content.js
-node --check chrome-extension-chatgpt-lite/sidebar.js
-node --check chrome-extension-chatgpt-lite/popup.js
+bun --bun x vitest run tests/chatgptLiteExtension.test.ts tests/chatgptOptimizerSidebar.test.ts tests/chatgptOptimizerTabReload.test.ts
+node --check "ChatGPT Optimizer/policy.js"
+node --check "ChatGPT Optimizer/content.js"
+node --check "ChatGPT Optimizer/sidebar.js"
+node --check "ChatGPT Optimizer/tab-reload.js"
+node --check "ChatGPT Optimizer/popup.js"
+node --check "ChatGPT Optimizer/popup-reload.js"
 bun --bun x tsc --noEmit
 ```
 
-Tests cover safe DOM optimization, permissions, sidebar response validation, authenticated first-party read requests, two independent browser simulations, session failure and disabled-state behavior.
+Tests cover safe DOM optimization, sidebar synchronization, permissions, selected-tab isolation, reload safety checks and failures. Real-browser multi-profile and live reload acceptance still require manual validation.
 
 **Verification boundary:** the test harness simulates extension DOM and network calls. The same-origin session+history request was separately verified in a live authenticated Chrome tab, without changing that tab. End-to-end testing with the unpacked extension installed in two real Chrome profiles is still required to certify compatibility after site updates.
 
@@ -77,7 +93,9 @@ Tests cover safe DOM optimization, permissions, sidebar response validation, aut
 - `content.js` / `content.css` — reversible message rendering optimization.
 - `sidebar.js` / `sidebar.css` — authenticated read-only history sync and extension-owned sidebar links.
 - `popup.html` / `popup.css` / `popup.js` — controls, statistics and manual sidebar refresh.
+- `tab-reload.js` / `popup-reload.js` — target-tab readiness checks and reload action.
 - `../tests/chatgptLiteExtension.test.ts` — message-rendering tests.
 - `../tests/chatgptOptimizerSidebar.test.ts` — sidebar behavior and safety tests.
+- `../tests/chatgptOptimizerTabReload.test.ts` — specific-chat reload safety and isolation tests.
 
-Version: 0.2.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node chrome-extension-chatgpt-lite/generate-icons.mjs`. No separate SuperAgent server or background daemon is required.
+Version: 0.3.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "ChatGPT Optimizer/generate-icons.mjs"`. No separate SuperAgent server or background daemon is required.
