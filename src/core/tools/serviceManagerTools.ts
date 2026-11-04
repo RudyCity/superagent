@@ -7,7 +7,7 @@ import { MANAGED_SERVICE_NAMES } from "../runtime/serviceManagerTypes.js";
 
 export const manageServicesTool:Tool={
   name:"manage_services",
-  description:"Unified control of SuperAgent services: inventory/status/doctor across Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, external tunnels and process supervisor. Use action=plan first for supervised Core restart/rollback/drain or Reloadable MCP backend reload. Mutations require confirm=true and the returned operationId/expected identity. Legacy Cloudflare Quick Tunnel URL is never changed. Sidecar start/stop/restart requires exact owner plan and no public ingress. Vision/Guardian/Tray remain status-only until independently verified owner control is available.",
+  description:"Unified control of SuperAgent services: inventory/status/doctor across Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, external tunnels and process supervisor. Use action=plan first for supervised Core restart/rollback/drain or Reloadable MCP backend reload. Mutations require confirm=true and the returned operationId/expected identity. Legacy Cloudflare Quick Tunnel URL is never changed. Sidecar start/stop/restart requires exact owner plan and no public ingress. Vision, Guardian and Tray start/stop/restart require verified independent owner and explicit confirmation; legacy instances are never adopted.",
   parameters:{
     type:"object",
     properties:{

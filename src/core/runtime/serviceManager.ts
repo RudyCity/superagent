@@ -26,6 +26,7 @@ import {planOwnedTunnelStop,stopOwnedTunnel} from "./ownedTunnelLifecycle.js";
 import {planManagedVision,executeManagedVision,inspectManagedVision} from "./managedVisionControl.js";
 import {planManagedGuardian,executeManagedGuardian,inspectManagedGuardian} from "./managedGuardianControl.js";
 import {planDaemonLifecycle,executeDaemonLifecycle,inspectDaemonScheduler} from "./managedDaemonControl.js";
+import {planManagedTray,executeManagedTray,inspectManagedTray} from "./managedTrayControl.js";
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
@@ -265,12 +266,29 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
         activeJobs:status.activeJobs??null,totalJobs:status.totalJobs??null,
         coreSupervisorPid:status.supervisorPid??null});
   }
-  if(service==="tray")
-    return snap(service,undefined,"unknown",null,false,["status"],
-      "Tauri Tray is a desktop application, not a network server; use its native controls");
-  if(service==="process_supervisor")
-    return snap(service,undefined,"embedded",null,false,["status"],
-      "Process Supervisor is an internal registry, not a standalone service");
+  if(service==="tray"){
+    const state=await inspectManagedTray();
+    return snap(service,state.controlPort, state.verified?"active":
+      state.ownerPid?"unverified":"inactive",state.ownerPid??null,
+      state.verified,state.verified?
+        ["status","plan","stop","restart"]:["status","plan","start"],
+      state.reason,{desktopProcess:true,coreUnaffected:true});
+  }
+  if(service==="process_supervisor"){
+    const {getProcessSupervisor}=await import("../process/processSupervisor.js");
+    const report=await getProcessSupervisor().getProcessDiagnostics({
+      callerWorkspaceRoot:process.cwd(),
+    });
+    return snap(service,undefined,report.isCorrupt?"degraded":"embedded",
+      null,false,["status","doctor"],
+      report.isCorrupt?"Process registry requires operator review":
+        "In-process ownership registry; managed process lifecycles are controlled through their individual service owners",
+      {workspaceScoped:true,registryCorrupt:report.isCorrupt,
+        tracked:report.totalTracked,activeOwned:report.activeOwnedCount,
+        historical:report.historicalCount,terminal:report.terminalCount,
+        identityMismatch:report.identityMismatchCount,
+        unverifiedPid:report.unverifiedPidCount});
+  }
   return snap(service,port,owner?"unverified":"unknown",owner,false,["status"],
     "Public tunnel must be managed via its dedicated owner; listener PID is not shutdown authorization");
 }
@@ -318,6 +336,13 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       return {service,...await prepareCoreLifecycle(args.targetAction,port!)};
     }
     if(service==="mcp"&&args.targetAction==="reload")return planMcpReload(port!);
+    if(service==="tray"&&(args.targetAction==="start"||
+       args.targetAction==="stop"||args.targetAction==="restart")){
+      const plan=await planManagedTray(args.targetAction);
+      if(port!==undefined&&plan.port!==port)
+        throw new Error("SERVICE_TRAY_OWNER_PORT_CHANGED");
+      return plan;
+    }
     if(service==="daemon"&&(args.targetAction==="start"||
        args.targetAction==="stop"||args.targetAction==="restart"))
       return planDaemonLifecycle(args.targetAction,port!);
@@ -340,6 +365,21 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       reason:"SERVICE_UNSUPPORTED_MUTATION: no authenticated remote lifecycle protocol; no PID kill or tunnel restart will be attempted"};
   }
   if(args.confirm!==true)throw new Error("SERVICE_CONFIRM_REQUIRED");
+  if(service==="tray"&&(action==="start"||action==="stop"||action==="restart")){
+    if(!args.operationId||args.expectedOwnerPid===undefined||
+       !args.expectedInstanceId||!args.expectedBuildDigest||
+       args.noCoreShutdown!==true)
+      throw new Error("SERVICE_TRAY_PLAN_REQUIRED");
+    return executeManagedTray({
+      service:"tray",action,operationId:args.operationId,
+      expectedOwnerPid:args.expectedOwnerPid,
+      expectedInstanceId:args.expectedInstanceId,
+      expectedBuildDigest:args.expectedBuildDigest,
+      ...(port!==undefined?{port}:{}),
+      noCoreShutdown:true,confirm:true,
+      note:"Verified Tray process only, Core/MCP/Muse/tunnel unaffected",
+    });
+  }
   if(service==="core"&&(action==="restart"||action==="rollback"||action==="drain")) {
     if(!args.operationId||!args.expectedBuildDigest)
       throw new Error("SERVICE_CORE_PLAN_REQUIRED: call action=plan first");

@@ -19,6 +19,7 @@ mod remote_service_detection;
 mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
+mod tray_lifecycle;
 
 /// Native window lifecycle is deliberately exposed through an allowlist,
 /// not the broad Tauri window permission surface. Webview can control
@@ -673,6 +674,13 @@ fn is_background_launch() -> bool {
 }
 
 fn main() {
+    #[cfg(debug_assertions)]
+    if std::env::args_os().any(|arg| arg == "--lifecycle-smoke") {
+        tray_lifecycle::run_headless_smoke(&config_dir().expect("Invalid test profile"))
+            .expect("Tray lifecycle smoke host refused to start");
+        return;
+    }
+
     // Read-only preferences diagnostic. Never starts a GUI or changes Core,
     // other processes, scheduler jobs, or the OS login startup registry.
     if std::env::args_os().any(|arg| arg == "--diagnose-settings") {
@@ -717,6 +725,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            tray_lifecycle::install(app.handle().clone(), &config_dir()?)?;
             // Windows native chrome must never appear above our custom
             // HTML titlebar, even if the host preserves caption style bits
             // for resize/snap compatibility. Enforce decorations=false
@@ -844,8 +853,13 @@ fn main() {
             start_core_server,
             stop_core_server
         ])
-        .run(tauri::generate_context!())
-        .expect("SuperAgent Tray could not start");
+        .build(tauri::generate_context!())
+        .expect("SuperAgent Tray could not build")
+        .run(|_app, event| {
+            if let tauri::RunEvent::Exit = event {
+                tray_lifecycle::cleanup();
+            }
+        });
 }
 
 #[cfg(test)]

@@ -39,9 +39,9 @@ change services. The tool covers:
 | Vision UI-DETR-1 | 8095 | private tokenized owner + local /health + kernel PID | **plan → start/stop/restart** only for independently managed Vision; Core-spawned Vision is never adopted |
 | Guardian | 7888 protected Core | managed Guardian private control, verified Core checkpoint and kernel PID | **plan → start/stop/restart** watchdog only; Core unaffected |
 | Daemon scheduler | embedded in supervised Core | authenticated Core REST + exact worker PID and active job check | **plan → start/stop/restart** scheduler only; never cancel active jobs |
-| Tray | desktop process | no independent HTTP server | unavailable |
+| Tray | desktop process, private loopback owner port | native private bearer + kernel PID + exact executable hash | **plan → start/stop/restart** only for verified Tray instance; existing legacy Tray never adopted |
 | REST/SSE & Muse Cloudflare tunnels | 7888 / 9225 | Cloudflare registry + exact process command identity | **plan → stop** only with public-disruption acknowledgment; never automatic URL-changing restart |
-| Process supervisor | embedded | internal process registry | unavailable |
+| Process supervisor | embedded | workspace-scoped process registry diagnostics | **status/doctor only**; process termination must use each service's verified owner |
 
 “Unavailable” means the manager rejects `start`/`stop`/`restart`
 with `SERVICE_UNSUPPORTED_MUTATION` rather than pretending a lifecycle
@@ -73,6 +73,42 @@ retained old session owner. Always reuse the **same operationId** after
 a response timeout. This is an opt-in Core supervisor rolling restart,
 not a restart of the interactive CLI/T-Line, LLM state or MCP server.
 It refuses an unsupervised Core, mismatched port/owner and stale build.
+
+### Tauri Tray (native desktop lifecycle)
+
+This is a *native desktop process*, not an HTTP server exposed publicly.
+A current Tray writes a private `tray-lifecycle-owner.json` file inside
+SuperAgent's config directory and listens on an ephemeral **127.0.0.1-only**
+control port. The record includes an OS-random bearer token and instance ID,
+not MCP secrets or other services' credentials. `manage_services` and
+`superagent_manage_services` verify the kernel listener PID, exact instance,
+trusted executable location and SHA-256 before returning a lifecycle plan.
+
+```json
+{"name":"superagent_manage_services","arguments":{
+  "service":"tray","action":"plan","targetAction":"restart"
+}}
+```
+
+Copy `operationId`, `expectedOwnerPid`, `expectedInstanceId`,
+`expectedBuildDigest`, `port` and `noCoreShutdown:true` from the plan.
+Execute with `service:"tray"`, `action:"restart"`, and `confirm:true`.
+For `start` with no existing Tray, `port` is omitted and owner PID is 0.
+A successful restart waits for the **old** Tray listener to exit before
+launching the same verified executable. Completed operation IDs replay the
+original result without another restart. Unknown PID, stale record, changed
+binary or ambiguous response always fails closed.
+
+The Tray lifecycle command NEVER stops or restarts Core, MCP, Muse,
+Telegram, Cloudflare, reminders or registered agent processes. No arbitrary
+`taskkill` or legacy desktop process adoption is allowed. A freshly built
+Tray binary must be installed/started before it can be controlled remotely.
+The debug binary supports a test-only headless lifecycle mode; production
+builds do not expose this mode.
+
+**Process Supervisor** is an embedded registry, not an independent server.
+Its unified `status`/`doctor` view reports only workspace-scoped aggregate
+ownership counters; per-service lifecycle controls remain separately gated.
 
 ### Vision server (isolated managed owner only)
 
