@@ -72,6 +72,7 @@ export class MuseWatcher {
   private transport!: RemoteTransport;
   private quickTunnelStarted = false;
   private tunnelMetadata: WatcherTunnelMetadata | null = null;
+  private lastTransportError?: string;
   private pendingChatReplies = new Map<string, {
     resolve: (reply: ChatEnvelope) => void;
     reject: (error: Error) => void;
@@ -266,6 +267,10 @@ export class MuseWatcher {
       tunnel: Boolean(this.quickTunnelStarted),
       tunnelUrl: this.tunnelMetadata?.publicUrl || this.tunnelMetadata?.wssUrl,
       tunnelPort: this.tunnelMetadata?.port,
+      museConnected: this.isRunning && this.transport?.isConnected(),
+      lastTransportError: (this.transport instanceof TelegramTransport
+        ? this.client.getPollHealth().lastError
+        : undefined) || this.lastTransportError,
     };
   }
 
@@ -274,6 +279,7 @@ export class MuseWatcher {
       return;
     }
 
+    this.lastTransportError = undefined;
     this.config = loadRemoteAgentConfig(this.options.customConfigPath);
     this.initWorkspaces();
     this.initTransport();
@@ -335,13 +341,25 @@ export class MuseWatcher {
 
     // Establish local service readiness before creating a public tunnel to it.
     if (this.transport.type === "telegram") {
-      transportStart.catch((err: any) => {
-        if (!abortSignal.aborted) {
-          logE2E("REMOTE-AGENT", `MuseWatcher transport error: ${err?.message || err}`);
-          this.emitLine("error", `[Muse Watch] Transport error: ${err?.message || err}`);
-          this.stop().catch(() => {});
-        }
-      });
+      // A Telegram poller must stay alive until explicitly aborted.
+      void transportStart.then(
+        () => {
+          if (!abortSignal.aborted && this.isRunning) {
+            this.lastTransportError = "Telegram polling exited unexpectedly.";
+            logE2E("REMOTE-AGENT", this.lastTransportError);
+            this.emitLine("error", "[Muse Watch] Telegram poller exited; watch mode is stopping.");
+            void this.stop().catch(() => {});
+          }
+        },
+        (err: any) => {
+          if (!abortSignal.aborted) {
+            this.lastTransportError = String(err?.message || err);
+            logE2E("REMOTE-AGENT", `MuseWatcher transport error: ${this.lastTransportError}`);
+            this.emitLine("error", `[Muse Watch] Transport error: ${this.lastTransportError}`);
+            void this.stop().catch(() => {});
+          }
+        },
+      );
     } else {
       try {
         await transportStart;
@@ -350,7 +368,8 @@ export class MuseWatcher {
           return;
         }
       } catch (err: any) {
-        logE2E("REMOTE-AGENT", `MuseWatcher transport startup failed: ${err?.message || err}`);
+        this.lastTransportError = String(err?.message || err);
+        logE2E("REMOTE-AGENT", `MuseWatcher transport startup failed: ${this.lastTransportError}`);
         await this.stop();
         throw err;
       }
@@ -872,10 +891,9 @@ export class MuseWatcher {
       );
       if (sent) journal?.transition(envelope.id, "delivered");
       if (!sent) {
-        this.emitLine(
-          "error",
-          `[Muse Watch] Failed to send tool results for batch ${envelope.id} via transport.`
-        );
+        this.lastTransportError = `task_result delivery failed for batch ${envelope.id} (${this.transport.type}).`;
+        logE2E("REMOTE-AGENT", `MuseWatcher ${this.lastTransportError}`);
+        this.emitLine("error", `[Muse Watch] ${this.lastTransportError} Reconcile outbox before any replay.`);
       }
 
       if (envelope.id && this.pendingReplyMessageIds.has(envelope.id)) {
@@ -890,8 +908,17 @@ export class MuseWatcher {
         }
       }
     } catch (err: any) {
+      this.lastTransportError = `Batch ${envelope.id} failed: ${String(err?.message || err)}`;
       logE2E("REMOTE-AGENT", `MuseWatcher batch execution error: ${err?.message || err}`);
-      this.emitLine("error", `[Muse Watch] Error executing tool batch: ${err?.message || err}`);
+      this.emitLine("error", `[Muse Watch] ${this.lastTransportError}`);
+      // Tool side effects may have occurred. Never fabricate a result or retry.
+      const notice = `[Muse Watch] Batch ${envelope.id} for task ${envelope.task_id} failed before confirmed task_result delivery. Execution may be partial; do NOT retry automatically. Reconcile the outbox/checkpoint with the operator.`;
+      try {
+        const sent = await this.transport.sendEnvelope({ v: 1, kind: "chat", text: notice }, meta);
+        if (!sent) logE2E("REMOTE-AGENT", `MuseWatcher could not deliver failure notice for batch ${envelope.id}`);
+      } catch (noticeError: any) {
+        logE2E("REMOTE-AGENT", `MuseWatcher failure notice transport error: ${noticeError?.message || noticeError}`);
+      }
     } finally {
       if (typingTimer) {
         clearInterval(typingTimer);

@@ -1,0 +1,17 @@
+{
+  "component": "SuperAgent Delegate (ChatGPT)",
+  "version": "1.5.0",
+  "archive": "superagent-delegate-1.5.0.zip",
+  "sha256": "f94c749c1d991c18e33ef282329339eacfc6118b97e2c50eaa6ef443bb274077",
+  "packagedFiles": {
+    "background.js": "74089fae558ebeb40e3cc10ddb4e29e4cedc35acca17ec59528e5947d02bd2bb",
+    "content.js": "cdde824bb0836e97fd99fed149724488b9ca241c5d9f3e6fcd1cf74b67747016",
+    "manifest.json": "a13fab2959fd45994244d63fbcc852d858289dfa66dd5ddc90eb0ef94b89f33b",
+    "popup.css": "b043a649822a52bac72f229fd8cb190eb30dddc40999588f8312924c12993e9a",
+    "popup.html": "eb6bcc9a828cabf5a96971f4adb5ac85c00aedfc610d4a87edf7e0cbfbc24ef9",
+    "popup.js": "68d58fc9c75dd6bd1a420e64f4a59713cde0a2a2577658881e3080f4440ea8f4",
+    "tabSingleton.js": "9a77100e2fd14ebd5b90966cf94c8c561b5f1e89777b6700c82701a48f3e86e3"
+  },
+  "scope": "chrome-extension-delegate only; no secrets or user data",
+  "note": "Package integrity does not itself certify a production deployment."
+}

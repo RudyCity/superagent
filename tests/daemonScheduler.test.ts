@@ -185,6 +185,59 @@ describe("DaemonScheduler", () => {
     } catch {}
   });
 
+  it("runs deterministic reminder without calling agent and records a durable success", async () => {
+    const runner = vi.fn(async () => "agent must never run");
+    scheduler.setAgentRunner(runner);
+    const job = scheduler.addJob({
+      kind: "reminder", name: "Morning standup", prompt: "Standup starts now.",
+      cronExpression: "0 9 * * *", workspace: tmpDir, maxRuns: 1,
+    });
+    const executed = await scheduler.triggerJobNow(job.id);
+    expect(executed).toEqual({ success: true, output: "Standup starts now." });
+    expect(runner).not.toHaveBeenCalled();
+    expect(scheduler.getJob(job.id)?.lastStatus).toBe("success");
+    const entries = listDaemonRuns({ jobId: job.id, limit: 10 });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].status).toBe("success");
+    expect(JSON.parse(entries[0].executionPolicyJson).runner).toBe("desktop-reminder-no-agent");
+
+    expect(() => scheduler.addJob({
+      kind: "reminder", name: "unsafe", prompt: "unsafe",
+      cronExpression: "0 9 * * *", workspace: tmpDir,
+      allowedTools: ["run_command"],
+    })).toThrow(/Reminder jobs cannot request tools/);
+    expect(() => scheduler.updateJob(job.id, { allowedTools: ["run_command"] }))
+      .toThrow(/Reminder jobs cannot be upgraded/);
+    expect(() => scheduler.updateJob(job.id, { mode: "multi" }))
+      .toThrow(/Reminder jobs cannot be upgraded/);
+
+    const edited = scheduler.updateJob(job.id, {
+      cronExpression: "30 10 * * *", maxRuns: null as any,
+    });
+    expect(edited?.cronExpression).toBe("30 10 * * *");
+    expect(edited?.maxRuns).toBeUndefined();
+    expect(new DaemonScheduler(tmpDir).getJob(job.id)?.maxRuns).toBeUndefined();
+  });
+
+  it("refuses to hydrate reminder jobs that request privileged tools", () => {
+    fs.writeFileSync(path.join(tmpDir, "daemon-jobs.json"), JSON.stringify([{
+      id: "corrupted-reminder", kind: "reminder", name: "Unsafe", prompt: "No",
+      cronExpression: "0 9 * * *", workspace: tmpDir, mode: "single",
+      enabled: true, createdAt: 1, runCount: 0, allowedTools: ["bash"],
+    }]), "utf-8");
+    expect(new DaemonScheduler(tmpDir).getJob("corrupted-reminder")).toBeNull();
+  });
+
+  it("uses SUPERAGENT_CONFIG_DIR for the default scheduler constructor", () => {
+    const fromConfig = new DaemonScheduler();
+    const created = fromConfig.addJob({
+      kind: "reminder", name: "Isolated reminder", prompt: "Reminder text",
+      cronExpression: "0 10 * * *", workspace: tmpDir,
+    });
+    const persisted = JSON.parse(fs.readFileSync(path.join(tmpDir, "daemon-jobs.json"), "utf8"));
+    expect(persisted.some((job: { id: string }) => job.id === created.id)).toBe(true);
+  });
+
   it("starts in idle status with no jobs", () => {
     const status = scheduler.getStatus();
     expect(status.running).toBe(false);

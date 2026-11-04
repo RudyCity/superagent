@@ -1,0 +1,18 @@
+[package]
+name = "superagent-desktop"
+version = "0.1.0"
+description = "SuperAgent tray and daemon cron manager"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = ["tray-icon"] }
+tauri-plugin-notification = "2.7"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["time", "macros"] }
+dirs = "6"
+sysinfo = "0.30.13"

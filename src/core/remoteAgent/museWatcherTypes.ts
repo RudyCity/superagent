@@ -25,6 +25,8 @@ export interface MuseWatcherStats {
   tunnelUrl?: string;
   tunnelPort?: number;
   museConnected?: boolean;
+  /** Last locally observed transport failure (no credentials). */
+  lastTransportError?: string;
 }
 
 export interface MuseWatcherOptions {

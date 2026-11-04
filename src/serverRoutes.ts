@@ -739,6 +739,25 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Authenticated, read-only service health for the local Tauri runtime panel.
+  // The server's existing /api bearer gate applies; never return remote URLs,
+  // bot identifiers, MCP tool definitions or protected transport credentials.
+  if (pathname === "/api/desktop/runtime-services") {
+    if (req.method !== "GET") { sendJSON(res, 405, { success: false, error: "Read-only endpoint." }); return true; }
+    try {
+      const [{ getRemoteServiceStatus }, { projectDesktopServices }] = await Promise.all([
+        import("./core/remoteAgent/remoteStatusService.js"),
+        import("./core/runtime/desktopServiceProjection.js"),
+      ]);
+      const services = projectDesktopServices(await getRemoteServiceStatus());
+      res.setHeader("Cache-Control", "no-store");
+      sendJSON(res, 200, services);
+    } catch {
+      sendJSON(res, 503, { success: false, error: "Runtime services temporarily unavailable." });
+    }
+    return true;
+  }
+
   // Status
   if (pathname === "/api/status" && req.method === "GET") {
     const session = resolveSession(req);

@@ -90,7 +90,11 @@ export class TelegramTransport implements RemoteTransport {
   }
 
   public isConnected(): boolean {
-    return this.isStarted && this.client.isPollerActive();
+    const health = this.client.getPollHealth();
+    return this.isStarted && this.client.isPollerActive() &&
+      typeof health.lastSuccessfulPollAt === "number" &&
+      Date.now() - health.lastSuccessfulPollAt < 60_000 &&
+      !health.lastError;
   }
 
   public getTransportInfo(): { type: "telegram"; details: string } {

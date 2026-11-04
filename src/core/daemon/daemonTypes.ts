@@ -1,4 +1,4 @@
-export type DaemonJobKind = "agent" | "system-memory-retention-sweep";
+export type DaemonJobKind = "agent" | "reminder" | "system-memory-retention-sweep";
 
 export interface DaemonJob {
   kind?: DaemonJobKind;

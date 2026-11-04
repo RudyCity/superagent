@@ -108,6 +108,7 @@ export const daemonCommand: SlashCommand = {
         const tagsIdx = parts.indexOf("--tags");
         const allowedToolsIdx = parts.indexOf("--allow-tools");
         const isMulti = parts.includes("--multi");
+        const isReminder = parts.includes("--reminder");
         const notifyGateway = parts.includes("--notify-gateway");
 
         const name = nameIdx !== -1 && parts[nameIdx + 1] ? parts[nameIdx + 1] : "";
@@ -133,7 +134,7 @@ export const daemonCommand: SlashCommand = {
             content: [
               "Missing required arguments for daemon add.",
               "Usage: /daemon add --name <name> --cron <cron> --prompt <task>",
-              "         [--workspace <path>] [--multi] [--notify-gateway]",
+              "         [--workspace <path>] [--reminder] [--multi] [--notify-gateway]",
               "         [--max-runs <n>] [--tags <tag1,tag2>] [--allow-tools <tool1,tool2>]",
               'Example: /daemon add --name nightly --cron "0 2 * * *" --prompt "Clean cache"',
             ].join("\n"),
@@ -162,6 +163,7 @@ export const daemonCommand: SlashCommand = {
             maxRuns: Number.isFinite(maxRuns) ? maxRuns : undefined,
             tags,
             allowedTools,
+            kind: isReminder ? "reminder" : "agent",
           });
           ctx.addLine({
             type: "system",
@@ -171,6 +173,7 @@ export const daemonCommand: SlashCommand = {
               `- Name     : ${job.name}`,
               `- Schedule : ${job.cronExpression} — ${describeCron(job.cronExpression)}`,
               `- Mode     : ${job.mode}`,
+              `- Type     : ${job.kind || "agent"}`,
               `- Extra tool grants: ${job.allowedTools?.length ? job.allowedTools.join(", ") : "none (read-only defaults)"}`,
               `- Notify   : ${job.notifyGateway ? "Yes" : "No"}`,
               `- Next run : ${job.nextRun ? new Date(job.nextRun).toLocaleString() : "Unknown"}`,

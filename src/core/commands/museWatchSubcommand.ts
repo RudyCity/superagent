@@ -66,7 +66,7 @@ export async function handleMuseWatchSubcommand(
     if (!stats || !stats.isRunning) {
       ctx.addLine({
         type: "system",
-        content: "[Muse Watch] Watch mode is INACTIVE. Run '/muse watch' or '/muse watch start' to activate. Use /telegram fallback status or /server tunnel status to inspect other services.",
+        content: "[Muse Watch] Watch mode is INACTIVE. Default: Telegram (run '/muse watch start'). Use '/muse watch start --ws' for WebSocket or '--tunnel' for a public Muse tunnel. Existing saved WebSocket settings do not override this command's Telegram default.",
         timestamp: now,
       });
       return;
@@ -77,8 +77,15 @@ export async function handleMuseWatchSubcommand(
       : `- Workspace         : ${stats.workspace}`;
 
     const lines = [
-      "Muse Watch Mode: ACTIVE",
+      "Muse Watch Mode: ACTIVE (process)",
       `- Transport         : ${stats.transportDetails || stats.transport || "telegram"}`,
+      `- Ingress Ready     : ${stats.museConnected ? "YES" : "NO (waiting for connection or healthy poller)"}`,
+      stats.lastTransportError ? `- Last Error        : ${stats.lastTransportError}` : null,
+      !stats.museConnected
+        ? stats.transport === "telegram"
+          ? "- Action            : Verify Telegram poller, bot credentials and conflicting getUpdates consumers."
+          : "- Action            : Connect Muse to WebSocket, or stop this watcher then run '/muse watch start' to switch to Telegram."
+        : null,
       stats.tunnelUrl ? `- Public URL        : ${stats.tunnelUrl}` : null,
       wsLines,
       `- Uptime            : ${stats.uptimeSeconds}s`,
@@ -142,7 +149,6 @@ export async function handleMuseWatchSubcommand(
   // Collect Muse-only watch options. Telegram fallback and REST/SSE exposure
   // are managed by their own command domains.
   const isWs = parts.some((p) => p === "--ws" || p === "--websocket");
-  const isTg = parts.some((p) => p === "--telegram" || p === "--tg");
   const isTunnel = parts.some((p) => p === "--tunnel" || p === "--quick-tunnel");
   const portArgIdx = parts.findIndex((p) => p === "--port" || p === "-p");
   let portOverride: number | undefined;
@@ -156,11 +162,11 @@ export async function handleMuseWatchSubcommand(
   }
 
   const cfg = loadRemoteAgentConfig();
+  // /muse watch start defaults to Telegram regardless of the saved
+  // transport setting. WebSocket remains an explicit opt-in.
   const transportType: RemoteAgentTransport = (isWs || isTunnel)
     ? "websocket"
-    : isTg
-      ? "telegram"
-      : (cfg.transport || "telegram");
+    : "telegram";
 
   const rawDirs = parts.slice(1).filter((p) => {
     if (p.toLowerCase() === "start") return false;
@@ -203,7 +209,7 @@ export async function handleMuseWatchSubcommand(
     }
     ctx.addLine({
       type: "system",
-      content: "[Muse Watch] Watch mode is already running. Superagent is actively controlled by Muse.\nRun '/muse watch stop' to deactivate.",
+      content: `[Muse Watch] Watch mode is already running using ${watcher?.getStats().transport || "unknown"}; the start command does not switch an active session. To switch transport safely, run '/muse watch stop' then '/muse watch start' (Telegram default).`,
       timestamp: now,
     });
     return;
@@ -265,9 +271,15 @@ export async function handleMuseWatchSubcommand(
     };
 
   try {
-    await startMuseWatcher(primaryWatcherOptions);
-
-
+    const watcher = await startMuseWatcher(primaryWatcherOptions);
+    const stats = watcher.getStats();
+    ctx.addLine({
+      type: stats.museConnected ? "system" : "error",
+      content: stats.museConnected
+        ? `[Muse Watch] Started: ${stats.transport} ingress ready.`
+        : `[Muse Watch] Started ${stats.transport} listener but ingress is NOT YET READY. ${stats.transport === "telegram" ? "Check Telegram polling and Bot API conflicts." : "Waiting for an authenticated Muse WebSocket client; Telegram batches are not received on this listener."}`,
+      timestamp: Date.now(),
+    });
   } catch (err: any) {
     ctx.addLine({
       type: "error",

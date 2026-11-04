@@ -34,6 +34,8 @@ export class MuseClient {
   private seenUpdateIds = new Set<number>();
   private readonly maxSeenUpdateIds = 2000;
   private lastSentMessageId?: number;
+  private lastSuccessfulPollAt?: number;
+  private lastPollError?: string;
 
   constructor(config: RemoteAgentConfig) {
     this.config = { ...config };
@@ -49,6 +51,14 @@ export class MuseClient {
 
   public isPollerActive(): boolean {
     return this.isPolling;
+  }
+
+  /** Poller activity alone is not readiness (409 conflicts can loop forever). */
+  public getPollHealth(): { lastSuccessfulPollAt?: number; lastError?: string } {
+    return {
+      lastSuccessfulPollAt: this.lastSuccessfulPollAt,
+      lastError: this.lastPollError,
+    };
   }
 
   public getLastSentMessageId(): number | undefined {
@@ -308,6 +318,8 @@ export class MuseClient {
     }
 
     this.isPolling = true;
+    this.lastSuccessfulPollAt = undefined;
+    this.lastPollError = undefined;
     let offset = 0;
     let consecutiveErrors = 0;
     const pollerStartTime = Math.floor(Date.now() / 1000);
@@ -335,12 +347,14 @@ export class MuseClient {
           if (res.status === 429) {
             const body = (await res.json().catch(() => ({}))) as any;
             const retryAfterSec = body?.parameters?.retry_after ?? 3;
+            this.lastPollError = `Telegram getUpdates 429 rate limited (retry after ${retryAfterSec}s)`;
             logE2E("REMOTE-AGENT", `pollEnvelopes 429 rate limit. Waiting ${retryAfterSec}s`);
             await new Promise((resolve) => setTimeout(resolve, retryAfterSec * 1000 + 500));
             continue;
           }
 
           if (res.status === 409) {
+            this.lastPollError = "Telegram getUpdates 409 Conflict: another poller or webhook owns this bot token.";
             logE2E("REMOTE-AGENT", `pollEnvelopes 409 Conflict (competing poller detected). Waiting 2000ms.`);
             await new Promise((resolve) => setTimeout(resolve, 2000));
             continue;
@@ -348,6 +362,7 @@ export class MuseClient {
 
           if (!res.ok) {
             consecutiveErrors++;
+            this.lastPollError = `Telegram getUpdates HTTP ${res.status}`;
             const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors), 15000);
             logE2E("REMOTE-AGENT", `pollEnvelopes HTTP error ${res.status}. Backoff ${backoffMs}ms`);
             await new Promise((resolve) => setTimeout(resolve, backoffMs));
@@ -356,9 +371,12 @@ export class MuseClient {
 
           const data = (await res.json()) as any;
           if (!data || !data.ok || !Array.isArray(data.result)) {
+            this.lastPollError = "Telegram getUpdates returned an invalid response.";
             continue;
           }
 
+          this.lastSuccessfulPollAt = Date.now();
+          this.lastPollError = undefined;
           consecutiveErrors = 0; // Reset consecutive errors on success
 
           if (data.result.length === 0) {
@@ -407,6 +425,7 @@ export class MuseClient {
             if (this.config.groupId !== undefined && this.config.groupId !== "") {
               if (String(chatId) !== String(this.config.groupId)) {
                 logE2E("REMOTE-AGENT", `Update ${updateId} ignored: chat ID ${chatId} != expected ${this.config.groupId}`);
+                if (typeof updateId === "number") offset = Math.max(offset, updateId + 1);
                 continue;
               }
             }
@@ -455,6 +474,7 @@ export class MuseClient {
 
             if (!envelope) {
               logE2E("REMOTE-AGENT", `Update ${updateId}: message did not yield envelope (pending assembly or empty text)`);
+              if (typeof updateId === "number") offset = Math.max(offset, updateId + 1);
               continue;
             }
 
@@ -465,6 +485,7 @@ export class MuseClient {
             ) {
               logE2E("REMOTE-AGENT", `Update ${updateId}: rejected unauthorized ${envelope.kind} from non-Muse sender ${senderId}`);
               console.warn(`[MuseClient] Rejected unauthorized ${envelope.kind} from sender ${senderId}`);
+              if (typeof updateId === "number") offset = Math.max(offset, updateId + 1);
               continue;
             }
 
@@ -477,6 +498,7 @@ export class MuseClient {
             if (!val.valid) {
               logE2E("REMOTE-AGENT", `Update ${updateId}: envelope rejected: ${val.error}`);
               console.warn(`[MuseClient] Envelope rejected: ${val.error}`);
+              if (typeof updateId === "number") offset = Math.max(offset, updateId + 1);
               continue;
             }
 
@@ -509,6 +531,7 @@ export class MuseClient {
           consecutiveErrors++;
           const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors), 15000);
           const sanitized = this.sanitizeError(err.message || String(err));
+          this.lastPollError = `Telegram getUpdates network error: ${sanitized}`;
           logE2E("REMOTE-AGENT", `Polling loop network error: ${sanitized}. Backoff ${backoffMs}ms`);
           await new Promise((resolve) => setTimeout(resolve, backoffMs));
         }

@@ -910,11 +910,17 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     if (action === "status") {
       const stats = getMuseWatcher()?.getStats();
       if (!stats || !stats.isRunning) {
-        console.log("[Muse Watch] Watch mode is INACTIVE.");
+        console.log("[Muse Watch] Watch mode is INACTIVE (default transport: Telegram).");
+        console.log("  Start Telegram ingress: superagent muse watch start");
+        console.log("  Start WebSocket ingress: superagent muse watch --ws");
+        console.log("  Telegram fallback is managed separately.");
         return;
       }
-      console.log("Muse Watch Mode: ACTIVE (controlled by Muse)");
+      console.log("Muse Watch Mode: ACTIVE (process)");
       console.log(`  Transport         : ${stats.transportDetails || stats.transport || "telegram"}`);
+      console.log(`  Ingress Ready     : ${stats.museConnected ? "YES" : "NO (not connected/healthy)"}`);
+      if (stats.lastTransportError) console.log(`  Last Error        : ${stats.lastTransportError}`);
+      if (!stats.museConnected) console.log("  Warning           : A running watcher is not proof a task_batch can reach it.");
       if (stats.workspaces && stats.workspaces.length > 1) {
         console.log(`  Watched Projects (${stats.workspaces.length}):`);
         stats.workspaces.forEach((w, i) => console.log(`    ${i + 1}. ${path.basename(w)} (${w})`));
@@ -956,7 +962,6 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
 
     // Default: start
     const isWs = args.some((a) => a === "--ws" || a === "--websocket");
-    const isTg = args.some((a) => a === "--telegram" || a === "--tg");
     const isTunnel = args.some((a) => a === "--tunnel" || a === "--quick-tunnel");
     const isHttps = args.some((a) => a === "--https" || a === "--http" || a === "--web");
     const portArgIdx = args.findIndex((a) => a === "--port" || a === "-p");
@@ -995,13 +1000,13 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     if (portOverride) {
       cfg.wsPort = portOverride;
     }
+    // Default Telegram even if remote-agent.json remembers a WebSocket
+    // transport from a previous explicit session.
     const transportType: RemoteAgentTransport = isHttps
       ? "https"
       : (isWs || isTunnel)
         ? "websocket"
-        : isTg
-          ? "telegram"
-          : (cfg.transport || "telegram");
+        : "telegram";
     const allWatched = targetDirs.length > 0 ? targetDirs : getWatchedWorkspaces(cfg);
 
     console.log(`[Muse Watch] Starting persistent watch mode (${transportType.toUpperCase()})...`);
@@ -1014,7 +1019,7 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
     if (isTunnel || isHttps) {
       console.log("[Muse Watch] Cloudflare quick ephemeral tunnel will be launched automatically.");
     }
-    console.log("[Muse Watch] Superagent is now controlled by Muse / Remote clients. Press Ctrl+C to stop.\n");
+    console.log("[Muse Watch] Establishing listener; incoming batches are unavailable until transport is ready.\n");
 
     try {
       const watcher = await startMuseWatcher({
@@ -1027,6 +1032,14 @@ export async function handleMuseCliCommand(args: string[]): Promise<void> {
         onLine: (line) => console.log(line.content),
         onProgress: (msg) => console.log(`[Muse Progress] ${msg}`),
       });
+
+      const readiness = watcher.getStats();
+      console.log(`[Muse Watch] Listener started (transport=${readiness.transport}, ingressReady=${Boolean(readiness.museConnected)}).`);
+      if (!readiness.museConnected) {
+        console.warn(readiness.transport === "telegram"
+          ? "[Muse Watch] Telegram polling not ready. Check getUpdates conflicts and bot configuration."
+          : "[Muse Watch] No authenticated WebSocket client connected. Telegram batches will not reach this listener.");
+      }
 
       const handleExit = async () => {
         console.log("\n[Muse Watch] Shutting down watcher...");

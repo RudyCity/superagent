@@ -1,9 +1,9 @@
 import fs from "fs";
 import path from "path";
-import os from "os";
+
 import { DaemonJob, DaemonStatus, DaemonConfig, DaemonJobKind } from "./daemonTypes.js";
 import { matchesCron, getNextCronTime, isValidCron } from "./cronParser.js";
-import { getWorkspaceId } from "../config/paths.js";
+import { getRootConfigDir, getWorkspaceId } from "../config/paths.js";
 import { redactMemorySecrets } from "../memoryLifecycle.js";
 import { insertDaemonRun, listDaemonRuns, updateDaemonRun } from "../storage/daemonRunLedger.js";
 
@@ -82,7 +82,9 @@ export class DaemonScheduler {
   private agentRunner?: (prompt: string, workspace: string, mode: "single" | "multi", signal?: AbortSignal) => Promise<string>;
 
   constructor(customConfigDir?: string, agentRunner?: (prompt: string, workspace: string, mode: "single" | "multi", signal?: AbortSignal) => Promise<string>) {
-    const baseDir = customConfigDir || path.join(os.homedir(), ".superagent-r");
+    // Honor the same Core config root as the HTTP server and Tauri desktop.
+    // CLI and isolated smoke tests must never mutate the default user's jobs.
+    const baseDir = customConfigDir || getRootConfigDir();
     this.jobsPath = path.join(baseDir, "daemon-jobs.json");
     this.backupPath = this.jobsPath + ".bak";
     this.logPath = path.join(baseDir, "daemon.log");
@@ -191,11 +193,18 @@ export class DaemonScheduler {
     if ((params.retryLimit ?? 0) > 0 && params.idempotent !== true) {
       throw new Error("Automatic retries require idempotent: true.");
     }
-    if (params.kind !== undefined && params.kind !== "agent" && params.kind !== "system-memory-retention-sweep") {
+    if (params.kind !== undefined && params.kind !== "agent" && params.kind !== "reminder" && params.kind !== "system-memory-retention-sweep") {
       throw new Error("Unsupported daemon job kind.");
     }
     if (params.kind === "system-memory-retention-sweep" && params.pinnedSkillVersion) {
       throw new Error("System memory maintenance jobs cannot pin a model skill.");
+    }
+    // A reminder is plain text for desktop/gateway delivery. It must never
+    // inherit model skills, tool grants, or multi-agent execution.
+    if (params.kind === "reminder" && (params.pinnedSkillVersion ||
+      (params.allowedTools?.length ?? 0) > 0 || params.mode === "multi" ||
+      (params.retryLimit ?? 0) > 0)) {
+      throw new Error("Reminder jobs cannot request tools, skills, multi-agent mode, or retries.");
     }
     if (params.pinnedSkillVersion !== undefined && !/^[a-z0-9]+(?:-[a-z0-9]+)*@[a-f0-9]{12}$/.test(params.pinnedSkillVersion.trim())) {
       throw new Error("pinnedSkillVersion must use the format skill-name@12-char-hash.");
@@ -243,6 +252,12 @@ export class DaemonScheduler {
   public updateJob(id: string, updates: Partial<DaemonJob>): DaemonJob | null {
     const job = this.jobs.get(id);
     if (!job) return null;
+    if (job.kind === "reminder" && (
+      (updates.allowedTools?.length ?? 0) > 0 || updates.pinnedSkillVersion ||
+      updates.mode === "multi" || (updates.retryLimit ?? 0) > 0
+    )) {
+      throw new Error("Reminder jobs cannot be upgraded to agent execution via PATCH.");
+    }
 
     const editable = new Set([
       "id", "name", "cronExpression", "prompt", "workspace", "mode", "enabled",
@@ -277,7 +292,10 @@ export class DaemonScheduler {
     if (updates.workspace !== undefined && (typeof updates.workspace !== "string" || !updates.workspace.trim())) {
       throw new Error("Daemon job workspace must be a non-empty string.");
     }
-    if (updates.maxRuns !== undefined && (!Number.isSafeInteger(updates.maxRuns) || updates.maxRuns < 1)) {
+    // REST desktop PATCH uses null to clear a one-shot limit when switching
+    // back to a recurring schedule. Create/add still requires a positive integer.
+    if (updates.maxRuns !== undefined && updates.maxRuns !== null &&
+      (!Number.isSafeInteger(updates.maxRuns) || updates.maxRuns < 1)) {
       throw new Error("maxRuns must be a positive integer.");
     }
     if (updates.notifyGateway !== undefined && typeof updates.notifyGateway !== "boolean") {
@@ -336,6 +354,7 @@ export class DaemonScheduler {
       ...updates,
       id: job.id, // Immutable
       createdAt: job.createdAt,
+      maxRuns: updates.maxRuns === null ? undefined : (updates.maxRuns ?? job.maxRuns),
       workspace: updates.workspace !== undefined ? path.resolve(updates.workspace || process.cwd()) : path.resolve(job.workspace || process.cwd()),
       allowedTools: updates.allowedTools !== undefined
         ? normalizeAllowedTools(updates.allowedTools)
@@ -520,14 +539,17 @@ export class DaemonScheduler {
       const isInjectedRunner = Boolean(this.agentRunner);
       const policySnapshot: Record<string, unknown> = {
         policyVersion: "daemon-headless-v1",
-        runner: job.kind === "system-memory-retention-sweep" ? "system-memory-retention-sweep" : isInjectedRunner ? "injected" : "default-headless",
+        runner: job.kind === "reminder" ? "desktop-reminder-no-agent" :
+          job.kind === "system-memory-retention-sweep" ? "system-memory-retention-sweep" : isInjectedRunner ? "injected" : "default-headless",
         workspacePath: configuredWorkspace,
         projectId,
         mode: job.mode,
         timeoutMs: timeoutMs ?? null,
         pinnedSkillVersion: job.pinnedSkillVersion ?? null,
         daemonSessionId,
-        fileLockGuard: job.kind === "system-memory-retention-sweep"
+        fileLockGuard: job.kind === "reminder"
+          ? "no-workspace-file-access"
+          : job.kind === "system-memory-retention-sweep"
           ? "internal-memory-maintenance-no-workspace-file-access"
           : (isInjectedRunner || explicitAllowedTools.some((tool) => !DEFAULT_HEADLESS_ALLOWED_TOOLS.includes(tool)))
             ? "block-write-capable-run-on-active-project-lock"
@@ -578,7 +600,7 @@ export class DaemonScheduler {
       // explicit tool grant outside the built-in read-only catalog may mutate
       // files. In those cases fail closed when another live session owns any
       // active lock in this project; read-only built-in jobs remain available.
-      const needsFileLockGuard = job.kind !== "system-memory-retention-sweep" && (isInjectedRunner ||
+      const needsFileLockGuard = job.kind !== "reminder" && job.kind !== "system-memory-retention-sweep" && (isInjectedRunner ||
         explicitAllowedTools.some((tool) => !DEFAULT_HEADLESS_ALLOWED_TOOLS.includes(tool)));
       if (needsFileLockGuard) {
         const { getLockStats } = await import("../storage/sharedMemory.js");
@@ -605,7 +627,8 @@ export class DaemonScheduler {
       if (!policyRecorded) throw new Error("Could not persist file-lock/session policy for daemon run " + runId);
       if (abortController.signal.aborted) throw createAbortError("Daemon job deadline expired.");
 
-      const pinnedSkill = job.kind === "system-memory-retention-sweep" ? null : await this.resolvePinnedSkill(job);
+      const pinnedSkill = job.kind === "reminder" || job.kind === "system-memory-retention-sweep"
+        ? null : await this.resolvePinnedSkill(job);
       if (pinnedSkill) {
         policySnapshot.pinnedSkillSha256 = pinnedSkill.contentSha256;
         executionPolicyJson = JSON.stringify(policySnapshot);
@@ -626,8 +649,10 @@ export class DaemonScheduler {
         if (abortController.signal.aborted) onAbort();
         else abortController.signal.addEventListener("abort", onAbort, { once: true });
       });
-      pinnedExecutionStarted = pinnedSkill !== null && job.kind !== "system-memory-retention-sweep";
-      const workPromise = job.kind === "system-memory-retention-sweep"
+      pinnedExecutionStarted = pinnedSkill !== null && job.kind !== "reminder" && job.kind !== "system-memory-retention-sweep";
+      const workPromise = job.kind === "reminder"
+        ? Promise.resolve(job.prompt)
+        : job.kind === "system-memory-retention-sweep"
         ? import("../memoryRetentionSweep.js").then(({ runMemoryRetentionSweep }) =>
             runMemoryRetentionSweep({ projectPath: job.workspace, apply: true }).then((result) => JSON.stringify(result)))
         : this.agentRunner
@@ -1071,12 +1096,18 @@ export class DaemonScheduler {
   private hydrateJobs(list: DaemonJob[]): void {
     for (const item of list) {
       if (!item || typeof item.id !== "string" || typeof item.prompt !== "string") continue;
-      if (item.kind !== undefined && item.kind !== "agent" && item.kind !== "system-memory-retention-sweep") {
+      if (item.kind !== undefined && item.kind !== "agent" && item.kind !== "reminder" && item.kind !== "system-memory-retention-sweep") {
         this.log("Skipping daemon job with unsupported kind: " + item.id);
         continue;
       }
       if (item.kind === "system-memory-retention-sweep" && item.pinnedSkillVersion) {
         this.log("Skipping memory-maintenance job with a pinned model skill: " + item.id);
+        continue;
+      }
+      if (item.kind === "reminder" && (item.pinnedSkillVersion ||
+        normalizeAllowedTools(item.allowedTools).length > 0 || item.mode === "multi" ||
+        (item.retryLimit ?? 0) > 0)) {
+        this.log("Skipping reminder with unsafe execution privileges: " + item.id);
         continue;
       }
       if (item.timeoutMs !== undefined && !isValidDaemonJobTimeout(item.timeoutMs)) {

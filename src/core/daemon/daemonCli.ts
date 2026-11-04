@@ -90,11 +90,16 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
       const retryLimitIndex = args.indexOf("--retry-limit");
       const retryDelayIndex = args.indexOf("--retry-delay-ms");
       const isIdempotent = args.includes("--idempotent");
+      const isReminder = args.includes("--reminder");
       const isMulti = args.includes("--multi");
       const notifyGateway = args.includes("--notify-gateway");
 
       const systemTask = systemTaskIndex !== -1 && args[systemTaskIndex + 1] ? args[systemTaskIndex + 1].toLowerCase() : undefined;
       const isMemorySweepTask = systemTask === "system-memory-retention-sweep";
+      if (isReminder && systemTask) {
+        console.log("Error: --reminder cannot be combined with --system-task.");
+        process.exit(1);
+      }
       if (systemTask && !isMemorySweepTask) {
         console.log("Error: Unsupported system task. Available: system-memory-retention-sweep");
         process.exit(1);
@@ -112,7 +117,7 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
 
       if (!name || !cron || !prompt) {
         console.log("Error: Missing required arguments for 'daemon add'.");
-        console.log("Usage: superagent daemon add --name <job_name> --cron <cron_expression> --prompt <task_prompt> [--system-task system-memory-retention-sweep]");
+        console.log("Usage: superagent daemon add --name <job_name> --cron <cron_expression> --prompt <task_prompt> [--reminder | --system-task system-memory-retention-sweep]");
         console.log("         [--workspace <path>] [--multi] [--notify-gateway] [--max-runs <n>] [--tags <t1,t2>]\n         [--timeout-ms <ms>] [--skill <name@12-char-hash>] [--idempotent --retry-limit <n> --retry-delay-ms <ms>]");
         process.exit(1);
       }
@@ -137,7 +142,7 @@ export async function handleDaemonCli(args: string[]): Promise<void> {
           retryDelayMs,
           idempotent: isIdempotent,
           pinnedSkillVersion,
-          kind: isMemorySweepTask ? "system-memory-retention-sweep" : "agent",
+          kind: isMemorySweepTask ? "system-memory-retention-sweep" : isReminder ? "reminder" : "agent",
         });
         console.log("Successfully added scheduled daemon job:");
         console.log(`- ID: ${job.id}`);

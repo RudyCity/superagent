@@ -1,0 +1,42 @@
+/* No React-owned nodes are removed; only our attributes drive presentation. */
+[data-sg-lite-hidden="1"] {
+  display: none !important;
+}
+[data-sg-lite-render="1"]:not([data-sg-lite-hidden="1"]) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
+}
+.sg-chatgpt-lite-ui {
+  --lite-bg: #15202b;
+  --lite-fg: #f7fafc;
+  --lite-subtle: #cbd5e1;
+  --lite-accent: #93c5fd;
+  position: fixed;
+  z-index: 2147483646;
+  right: 16px;
+  bottom: 98px;
+  width: min(236px, calc(100vw - 32px));
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--lite-bg);
+  color: var(--lite-fg);
+  box-shadow: 0 8px 30px #0005;
+  font: 12px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.sg-chatgpt-lite-ui strong { display: block; font-size: 13px; }
+.sg-chatgpt-lite-ui p { margin: 3px 0 10px; color: var(--lite-subtle); }
+.sg-chatgpt-lite-ui .sg-lite-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.sg-chatgpt-lite-ui button {
+  flex: 1 1 auto;
+  background: #2b3a49;
+  border: 1px solid #536475;
+  color: var(--lite-fg);
+  border-radius: 7px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.sg-chatgpt-lite-ui button:hover { background: #3e5368; }
+.sg-chatgpt-lite-ui button:focus-visible { outline: 2px solid var(--lite-accent); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .sg-chatgpt-lite-ui { bottom: 110px; right: 8px; width: 180px; }
+}

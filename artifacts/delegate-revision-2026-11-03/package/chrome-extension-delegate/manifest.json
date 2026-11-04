@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "SuperAgent Delegate (ChatGPT)",
+  "version": "1.0.0",
+  "description": "Local-only ChatGPT delegation for SuperAgent; separate from the existing SuperAgent extension.",
+  "permissions": ["tabs"],
+  "host_permissions": ["https://chatgpt.com/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": ["https://chatgpt.com/*"],
+    "js": ["content.js"],
+    "run_at": "document_idle",
+    "all_frames": false
+  }],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' ws://127.0.0.1:17341"
+  }
+}
