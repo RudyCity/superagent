@@ -595,7 +595,9 @@ Use one command to inspect all supported service domains, or shut down SuperAgen
 ```
 
 - `/status all` is read-only. It checks the Telegram Bot API and local fallback watcher, configured MCP client servers, MCP tunnel servers, REST/SSE tunnel, and Muse WebSocket tunnels.
-- `/stop all` disconnects configured MCP client servers, stops locally owned MCP tunnel servers, stops known Muse WebSocket and REST/SSE tunnel exposures, and stops local Muse/Telegram fallback watchers. Saved configuration and credentials are preserved.
+- `/stop all` (also `/stop --all`) disconnects configured MCP client servers, stops locally owned MCP tunnel servers, stops known Muse WebSocket and REST/SSE tunnel exposures, and stops local Muse/Telegram fallback watchers. Saved configuration and credentials are preserved.
+- MCP tunnel shutdown uses the verified owner lifecycle (Legacy or Reloadable). Once an MCP server port has been handled by that path, `/stop all` will **not** directly stop its Cloudflare tunnel a second time, including if owner verification or shutdown failed. Separate, unregistered MCP tunnel records still require Cloudflare's own ownership checks.
+- This is a **destructive service shutdown**, not a backend hot reload: stopping a Cloudflare Quick Tunnel may invalidate its public URL, which can change after a later start. Use `/mcp tunnel reload --port <port>` for backend-only updates on Reloadable owners.
 - The Telegram Bot API is remote and cannot be stopped by SuperAgent. MCP tunnels owned by another SuperAgent process are reported as skipped; tunnels with an unknown service kind are left untouched.
 - Run `/status all` again after shutdown to verify what remains active.
 
