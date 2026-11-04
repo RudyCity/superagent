@@ -866,6 +866,16 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Native Tauri lifecycle bridge: private loopback + existing Core bearer
+  // authentication + constrained service-manager protocol. Never an arbitrary
+  // command runner; owner and operator confirmation stay in manageServices.
+  if (pathname === "/api/desktop/lifecycle") {
+    const {handleNativeTrayLifecycleHttp}=
+      await import("./core/runtime/nativeTrayLifecycleBridge.js");
+    await handleNativeTrayLifecycleHttp(req,res,readBody,sendJSON);
+    return true;
+  }
+
   // Authenticated, read-only service health for the local Tauri runtime panel.
   // The server's existing /api bearer gate applies; never return remote URLs,
   // bot identifiers, MCP tool definitions or protected transport credentials.

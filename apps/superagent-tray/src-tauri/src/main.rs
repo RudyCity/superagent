@@ -20,6 +20,7 @@ mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
 mod tray_lifecycle;
+mod lifecycle_console;
 
 /// Native window lifecycle is deliberately exposed through an allowlist,
 /// not the broad Tauri window permission surface. Webview can control
@@ -83,6 +84,18 @@ fn set_tray_settings(
 ) -> Result<tray_settings::TraySettings, String> {
     tray_settings::save(&config_dir()?, &settings)?;
     Ok(settings)
+}
+
+#[tauri::command]
+async fn lifecycle_console_request(request: Value) -> Result<Value, String> {
+    // Validate once in native code before any Core HTTP request. Core
+    // validates independently, authenticates the exact selected owner, and
+    // rejects remote ingress. No generic URL or PID controls are exposed.
+    let body=lifecycle_console::validate(request)?;
+    core_request(Method::POST, "/api/desktop/lifecycle", Some(body))
+        .await
+        .and_then(|response| response.get("data").cloned()
+            .ok_or("Core did not return a lifecycle result".into()))
 }
 
 #[tauri::command]
@@ -412,6 +425,16 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // A managed MCP owner may take 60s for tunnel provisioning.
         // Never retry ambiguous create requests on timeout.
         Duration::from_secs(100)
+    } else if path == "/api/desktop/lifecycle" {
+        // Read-only navigation must not freeze the UI while the selected Core
+        // is offline. Mutating commands retain the operation ID after timeout;
+        // never automatically replay an ambiguous upgrade or restart.
+        match body.as_ref().and_then(|b|b.get("action")).and_then(Value::as_str) {
+            Some("dashboard"|"health"|"doctor"|"watchdog") => Duration::from_secs(24),
+            Some("profile"|"logs"|"status"|"inventory") => Duration::from_secs(10),
+            Some("plan") => Duration::from_secs(18),
+            _ => Duration::from_secs(120),
+        }
     } else if path == "/api/desktop/muse-lifecycle" {
         // Restart can re-establish the original Telegram/WS transport.
         Duration::from_secs(35)
@@ -845,6 +868,7 @@ fn main() {
             detect_runtime,
             select_runtime_core,
             service_action,
+            lifecycle_console_request,
             create_connection,
             regenerate_token,
             get_tray_settings,

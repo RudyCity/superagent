@@ -407,6 +407,7 @@ function navigateToPage(pageId) {
     if (typeof window.__superagentRuntimeRefresh === "function") {
       window.__superagentRuntimeRefresh();
     }
+    window.__superagentLifecycleRefresh?.();
   } else if (target === "history") {
     if (topEyebrow) topEyebrow.textContent = "AUDIT LEDGER";
     if (topTitle) topTitle.textContent = "Execution History";

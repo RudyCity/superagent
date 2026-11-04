@@ -9,6 +9,8 @@
   <script src="./titlebar.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./runtime.js" defer></script>
+  <script src="./lifecycle.js" defer></script>
+  <link rel="stylesheet" href="./lifecycle.css" />
   <script src="./settings.js" defer></script>
 </head>
 <body>
@@ -374,6 +376,90 @@
             </div>
           </div>
 
+          <section id="lifecycle-console" class="lifecycle-console" aria-labelledby="lifecycle-heading">
+            <div class="lifecycle-heading">
+              <div>
+                <div class="panel-eyebrow">OWNER-VERIFIED SERVICE CONTROL</div>
+                <h3 id="lifecycle-heading">Unified Lifecycle Supervisor</h3>
+                <p>Selected authenticated Core · health, dependencies, recovery policies, and planned service operations.</p>
+              </div>
+              <button id="lifecycle-refresh" type="button" class="button ghost">Refresh Lifecycle</button>
+            </div>
+            <div id="lifecycle-feedback" class="lifecycle-feedback" role="status" aria-live="polite">
+              Reading lifecycle status from selected Core...
+            </div>
+            <div class="lifecycle-metrics" id="lifecycle-metrics" aria-label="Supervisor readiness summary">
+              <div><strong id="lifecycle-ready">—</strong><small>Ready</small></div>
+              <div><strong id="lifecycle-degraded">—</strong><small>Degraded</small></div>
+              <div><strong id="lifecycle-unavailable">—</strong><small>Unavailable</small></div>
+              <div><strong id="lifecycle-release">—</strong><small>Tray Release</small></div>
+            </div>
+            <div class="lifecycle-layout">
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-services-heading">
+                <h4 id="lifecycle-services-heading">Service health &amp; dependencies</h4>
+                <div id="lifecycle-services" class="lifecycle-service-list" aria-live="polite"></div>
+              </section>
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-ops-heading">
+                <h4 id="lifecycle-ops-heading">Planned operation</h4>
+                <label class="lifecycle-field">Service
+                  <select id="lifecycle-service">
+                    <option value="tray">Tray</option>
+                    <option value="transport">T-Line Transport</option>
+                    <option value="channel_host">Channel Host</option>
+                    <option value="vision">Vision</option>
+                    <option value="guardian">Core Guardian</option>
+                    <option value="daemon">Daemon Scheduler</option>
+                  </select>
+                </label>
+                <label class="lifecycle-field">Action
+                  <select id="lifecycle-action">
+                    <option value="start">Start</option>
+                    <option value="stop">Stop</option>
+                    <option value="restart">Restart</option>
+                    <option value="upgrade">Upgrade Tray</option>
+                    <option value="rollback">Rollback Tray</option>
+                  </select>
+                </label>
+                <label class="lifecycle-field">Service port (for non-Tray services)
+                  <input id="lifecycle-port" type="number" min="1024" max="65535" value="7891" />
+                </label>
+                <div class="lifecycle-buttons">
+                  <button type="button" id="lifecycle-plan" class="button ghost">Prepare Plan</button>
+                  <button type="button" id="lifecycle-execute" class="button primary" disabled>Confirm &amp; Execute</button>
+                </div>
+                <div id="lifecycle-plan-details" class="lifecycle-plan-details" role="status">
+                  A plan verifies service ownership. Review it before confirmation.
+                </div>
+              </section>
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-profiles-heading">
+                <h4 id="lifecycle-profiles-heading">Recovery policy</h4>
+                <p class="lifecycle-hint">Off by default. Auto-recovery also requires an explicitly running watchdog worker.</p>
+                <label class="lifecycle-field">Service
+                  <select id="lifecycle-profile-service">
+                    <option value="tray">Tray</option>
+                    <option value="transport">Transport</option>
+                    <option value="channel_host">Channel Host</option>
+                    <option value="vision">Vision</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="daemon">Daemon</option>
+                  </select>
+                </label>
+                <label class="lifecycle-check"><input id="lifecycle-auto-recover" type="checkbox" /> Enable guarded recovery</label>
+                <label class="lifecycle-field">Failure threshold
+                  <input id="lifecycle-failure-threshold" type="number" min="2" max="12" value="3" />
+                </label>
+                <label class="lifecycle-field">Maximum restarts / hour
+                  <input id="lifecycle-max-restarts" type="number" min="0" max="6" value="2" />
+                </label>
+                <button type="button" id="lifecycle-save-profile" class="button ghost">Save Recovery Policy</button>
+                <div id="lifecycle-watchdog" class="lifecycle-hint" role="status">Watchdog status not loaded</div>
+              </section>
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-events-heading">
+                <h4 id="lifecycle-events-heading">Operation timeline</h4>
+                <div id="lifecycle-events" class="lifecycle-event-list">No lifecycle events loaded.</div>
+              </section>
+            </div>
+          </section>
           <div id="runtime-notes" class="runtime-notes" hidden></div>
         </section>
       </div>
