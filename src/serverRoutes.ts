@@ -229,6 +229,68 @@ export async function handleServerRoute(
     }));
   });
 
+  // Authenticated local MCP dispatch forwards to the SAME Chrome bridge that
+  // owns the paired profiles. The outer /api bearer gate is mandatory.
+  // No remote HTTP/URL targets and no arbitrary MCP name is accepted.
+  if (pathname === "/api/delegate/mcp-dispatch") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const localHost = /^(?:127\.0\.0\.1|localhost)(?::\d+)?$/i.test(String(req.headers.host || ""));
+    if (!local || !localHost || req.headers.origin) {
+      sendJSON(res, 403, { success: false, error: "DELEGATE_MCP_LOCAL_ONLY" });
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "DELEGATE_MCP_POST_REQUIRED" });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw, "utf8") > 105_000) {
+        sendJSON(res, 413, { success: false, error: "DELEGATE_MCP_PAYLOAD_TOO_LARGE" });
+        return true;
+      }
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_INVALID_REQUEST" });
+        return true;
+      }
+      const data = parsed as Record<string, unknown>;
+      if (typeof data.name !== "string") {
+        sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_INVALID_TOOL_NAME" });
+        return true;
+      }
+      const { DELEGATE_MCP_TOOL_NAMES, validateDelegateMcpArgs } =
+        await import("./core/mcp/tools/delegateMcpTools.js");
+      const invalid = validateDelegateMcpArgs(String(data.name || ""), data.arguments);
+      if (invalid || Object.keys(data).some(key => key !== "name" && key !== "arguments")) {
+        sendJSON(res, 400, { success: false, error: invalid || "DELEGATE_MCP_UNEXPECTED_FIELD" });
+        return true;
+      }
+      const {
+        delegateReadChatTool, delegateCreateChatTool,
+        delegateSendMessageTool, delegateStopGenerationTool,
+      } = await import("./core/tools/delegateTools.js");
+      const tools: Record<string, typeof delegateReadChatTool> = {
+        [DELEGATE_MCP_TOOL_NAMES.read]: delegateReadChatTool,
+        [DELEGATE_MCP_TOOL_NAMES.create]: delegateCreateChatTool,
+        [DELEGATE_MCP_TOOL_NAMES.send]: delegateSendMessageTool,
+        [DELEGATE_MCP_TOOL_NAMES.stop]: delegateStopGenerationTool,
+      };
+      const result = await tools[data.name as string].execute(
+        data.arguments as Record<string, unknown>, process.cwd());
+      const failed = result.startsWith("Error:");
+      sendJSON(res, failed ? 409 : 200, {
+        success: !failed,
+        ...(failed ? { error: result } : { result }),
+      });
+    } catch {
+      sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_INVALID_REQUEST" });
+    }
+    return true;
+  }
+
   // An explicit abort settles the read-only UI registry as well as the real
   // pending permission promise. Never turn historical metadata into authority.
   const markCancelledTlinePermission = (

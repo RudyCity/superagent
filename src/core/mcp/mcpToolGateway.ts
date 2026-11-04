@@ -30,6 +30,15 @@ export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
   "superagent_revoke_project_access",
 ] as const);
 
+// Stable, explicit MCP entrypoints for a connected Chrome Delegate profile.
+// Read is safe. Create/send/stop remain subject to the usual MCP write checks.
+export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([
+  "superagent_delegate_read_chat",
+  "superagent_delegate_create_chat",
+  "superagent_delegate_send_message",
+  "superagent_delegate_stop_generation",
+] as const);
+
 export const MCP_GATEWAY_TOOL_DEFS = [
   {
     name: MCP_GATEWAY_TOOL_NAMES.search,
@@ -74,9 +83,10 @@ export const MCP_GATEWAY_TOOL_DEFS = [
 export type GatewayToolDef = { name: string; description?: string; inputSchema?: Record<string, unknown> };
 const gatewayNames = new Set<string>(Object.values(MCP_GATEWAY_TOOL_NAMES));
 const eagerProjectWorkspaceNames = new Set<string>(MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES);
+const eagerDelegateNames = new Set<string>(MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES);
 
 export function isGatewayInitiallyAdvertisedTool(name: string): boolean {
-  return gatewayNames.has(name) || eagerProjectWorkspaceNames.has(name);
+  return gatewayNames.has(name) || eagerProjectWorkspaceNames.has(name) || eagerDelegateNames.has(name);
 }
 
 export function getGatewayInitiallyAdvertisedTools<T extends GatewayToolDef>(allAuthorized: T[]): T[] {

@@ -92,6 +92,7 @@ import {
   CHROME_MCP_TOOL_DEFS,
   dispatchChromeMcpTool,
 } from "./tools/chromeMcpTools.js";
+import { DELEGATE_MCP_TOOL_DEFS, dispatchDelegateMcpTool, delegateMcpObservation } from "./tools/delegateMcpTools.js";
 import {
   DIAGNOSTICS_MCP_TOOL_DEFS,
   dispatchDiagnosticsMcpTool,
@@ -558,6 +559,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
     ...MOTION_MCP_TOOL_DEFS,
     ...MCP_GATEWAY_TOOL_DEFS,
+    ...DELEGATE_MCP_TOOL_DEFS,
 ];
 
 const activeMcpServerInstances = new Set<Server>();
@@ -768,7 +770,9 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       if (typeof args.worktreePath === "string") args.worktreePath = targetWorkspace;
     }
     return runWithMcpWorkspace(targetWorkspace, async () => {
-      logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(args)}`);
+      logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(
+        delegateMcpObservation(name, args)?.args ?? args,
+      )}`);
 
       try {
         if (name === "superagent_browser_gateway") {
@@ -990,6 +994,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           if (chainRes) return chainRes;
           const remoteAgentRes = await dispatchRemoteAgentMcpTool(name, args);
           if (remoteAgentRes) return remoteAgentRes;
+          const delegateRes = await dispatchDelegateMcpTool(name, args);
+          if (delegateRes) return delegateRes;
           const chromeRes = await dispatchChromeMcpTool(name, args);
           if (chromeRes) return chromeRes;
           const diagRes = await dispatchDiagnosticsMcpTool(name, args);
@@ -1073,9 +1079,14 @@ function extractMcpResultText(result: unknown): string {
         ?? (info.ok ? (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) ? "allowed" : "not_applicable") : "denied");
       const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
         ?? (!info.ok ? "tool_execution_failed" : undefined);
+      const privateDelegate = delegateMcpObservation(toolName, rawArgs);
+      const safeInfo = privateDelegate ? {
+        ...info, args: privateDelegate.args,
+        ...(info.error ? { error: privateDelegate.error(info.error) } : {}),
+      } : info;
       try {
         onToolCall?.({
-          ...info,
+          ...safeInfo,
           correlationId: auditContext.correlationId,
           principalHash: auditContext.principalHash,
           projectId,

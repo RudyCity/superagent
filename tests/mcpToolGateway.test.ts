@@ -6,6 +6,7 @@ import {
 import {
   MCP_GATEWAY_TOOL_NAMES,
   MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES,
+  MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES,
   describeGatewayTool,
   searchGatewayTools,
   validateGatewayExecuteTarget,
@@ -54,6 +55,10 @@ describe("static MCP gateway catalog", () => {
       "superagent_check_project_health",
       "superagent_list_project_access",
     ]));
+    expect(advertised).toContain("superagent_delegate_read_chat");
+    for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES.slice(1)) {
+      expect(advertised).not.toContain(toolName);
+    }
     expect(advertised).not.toContain("superagent_switch_workspace");
     expect(advertised).not.toContain("superagent_register_project");
     expect(advertised).not.toContain("superagent_import_discovered_project");
@@ -100,6 +105,9 @@ describe("static MCP gateway catalog", () => {
     });
     const writerTools = (await list(server)).map((tool) => tool.name);
     expect(writerTools).toContain("superagent_switch_workspace");
+    for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES) {
+      expect(writerTools).toContain(toolName);
+    }
     expect(writerTools).not.toContain("superagent_register_project");
     expect(writerTools).not.toContain("superagent_import_discovered_project");
     expect(writerTools).not.toContain("superagent_sync_projects");

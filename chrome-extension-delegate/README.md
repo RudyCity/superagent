@@ -1,5 +1,39 @@
 # SuperAgent Delegate — isolated ChatGPT extension
 
+## Direct MCP tools — backend integration (2026-11-04)
+
+The **SuperAgent MCP connector** exposes these direct tools, independently
+from agent-internal `delegate.*` names:
+
+- `superagent_delegate_read_chat({connections:true})`: list connected Chrome profiles.
+- `superagent_delegate_read_chat({clientId, tabId?})`: read a ChatGPT tab through its DOM.
+- `superagent_delegate_create_chat({clientId?, tabId?})`: one explicit New chat action.
+- `superagent_delegate_send_message({message, clientId?, tabId?})`: send exactly once.
+- `superagent_delegate_stop_generation({clientId?, tabId?})`: Stop only on request.
+
+The connector does **not** use OpenAI API keys or ChatGPT internal endpoints:
+MCP → authenticated local SuperAgent HTTP `127.0.0.1:7888` →
+existing host-owned Delegate WebSocket `127.0.0.1:17341` →
+Chrome Extension → ChatGPT DOM.
+
+Read is available with MCP read scope. Create, send and stop require an
+authorized MCP write scope plus local YOLO enablement. They are hidden
+in read-only MCP catalogs. Gateway mode advertises authorized Delegate
+tools directly rather than requiring a natural-language discovery query.
+An R1 safe-owner restricted catalog does not gain browser access.
+
+**Activation:** Rebuild and restart the Core host before the new
+`/api/delegate/mcp-dispatch` route is present; separately restart/reconnect
+the MCP server/tunnel and refresh the ChatGPT connector's tool catalog.
+**Important:** In default fileless pairing mode, a Core restart rotates
+the Delegate secret and **requires the extension to pair again**. Avoid
+restarting the live host without arranging re-pairing.
+
+No MCP operation automatically reloads a ChatGPT page, sends again after a
+timeout, or logs message content. The activity journal stores redacted
+metadata only; the requested chat text is returned only to the authenticated
+caller.
+
 ## Automatic one-safe-tab mode — v1.5.0
 
 After loading the extension, a single Chrome profile automatically keeps

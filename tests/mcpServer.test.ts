@@ -132,6 +132,14 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     expect(toolNames).toContain("superagent_get_token_usage");
     expect(toolNames).not.toContain("superagent_remote_chrome");
     expect(toolNames).toContain("superagent_server_health");
+    expect(toolNames).toEqual(expect.arrayContaining([
+      "superagent_delegate_read_chat",
+      "superagent_delegate_create_chat",
+      "superagent_delegate_send_message",
+      "superagent_delegate_stop_generation",
+    ]));
+    expect(MCP_TOOL_CLASSIFICATION.superagent_delegate_read_chat).toBe("safe");
+    expect(MCP_TOOL_CLASSIFICATION.superagent_delegate_send_message).toBe("dangerous");
     expect(toolNames).toContain("superagent_get_remote_status");
 
     // Chrome CDP & Vision

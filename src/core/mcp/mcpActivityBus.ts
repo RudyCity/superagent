@@ -11,6 +11,7 @@
 
 import path from "path";
 import { EventEmitter } from "events";
+import { delegateMcpObservation } from "./tools/delegateMcpTools.js";
 import {
   summarizeArgs,
   sanitizeActivityOutput,
@@ -134,6 +135,18 @@ export function formatMcpActivityForChat(event: McpActivityEvent): string {
  * Payloads (output, error, args) are strictly sanitized and bounded before dispatch and storage.
  */
 export function emitMcpActivity(event: McpActivityEvent): void {
+  const privateDelegate = delegateMcpObservation(event.tool || "", event.args);
+  // No chat text or outgoing message text in JSONL, activity stream or UI.
+  // This also protects nested gateway invocations (superagent_tool_execute).
+  if (privateDelegate) {
+    event = {
+      ...event,
+      args: privateDelegate.args,
+      output: undefined,
+      outputMeta: undefined,
+      ...(event.error ? { error: privateDelegate.error(event.error) } : {}),
+    };
+  }
   const ws = event.workspace || getMcpWorkspacePath() || process.cwd();
 
   // M8 guardrail: throttle optional observability enrichment under critical memory pressure
