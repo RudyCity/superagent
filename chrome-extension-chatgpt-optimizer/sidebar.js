@@ -7,10 +7,9 @@
   const SETTINGS_KEY = "superagentChatGPTLiteSettings";
   const SCOPE = "chatgpt-optimizer-sidebar-v1";
   const policy = globalThis.ChatGPTLitePolicy;
-  const API_URLS = [
-    "/backend-api/conversations?exclude_conversation_origin=tpp&expand=false&hide_snorlax=false&is_archived=false&is_starred=false&limit=20&order=updated&offset=0",
-    "/backend-api/conversations?conversation_origin=tpp&expand=false&hide_snorlax=false&is_archived=false&is_starred=false&limit=20&order=updated&offset=0",
-  ];
+  // The primary ChatGPT list excludes TPP-specialized conversations whose
+  // destination may not use the regular /c/:id route.
+  const RECENTS_URL = "/backend-api/conversations?exclude_conversation_origin=tpp&expand=false&hide_snorlax=false&is_archived=false&is_starred=false&limit=20&order=updated&offset=0";
   const MIN_REFRESH_GAP_MS = 10_000;
   let settings = policy.normalizeSettings();
   let timer = null;
@@ -18,6 +17,7 @@
   let attachTimer = null;
   let container = null;
   let newest = [];
+  let renderedLinksKey = null;
   let running = null;
   let generation = 0;
   const status = {
@@ -89,11 +89,10 @@
     const section = recentSection(nav);
     if (!section) return false;
     if (!container) container = buildContainer();
-    // Keep the extension's UI directly below "Recents", before native links.
-    if (container.parentElement !== section) {
-      const nativeList = section.children[1] || null;
-      section.insertBefore(container, nativeList);
-    }
+    // NEVER inject into a React-owned sidebar list. React may reconcile its
+    // children at any time and can tear down the active conversation on mismatch.
+    // A body-level portal, outside ChatGPT's application root, remains isolated.
+    if (container.parentElement !== document.body) document.body.appendChild(container);
     const toggle = section.querySelector('button[data-app-action-sidebar-section-toggle]');
     container.hidden = toggle?.getAttribute("aria-expanded") === "false";
     return true;
@@ -107,7 +106,8 @@
     if (!ensurePlaced()) return;
     const nav = chatHistoryNav();
     const present = presentChatIds(nav);
-    const missing = newest.filter((item) => !present.has(item.id)).slice(0, 8);
+    const missing = status.phase === "error" ? [] :
+      newest.filter((item) => !present.has(item.id)).slice(0, 8);
     status.missingCount = missing.length;
 
     const info = container.querySelector(".sg-opt-sidebar-info");
@@ -120,14 +120,21 @@
       status.phase === "ready" && missing.length > 0 ? `${missing.length} recent chat(s) not in the built-in list` :
       status.phase === "ready" ? "Recent chats are up to date" : "Waiting for first sync";
     if (info && info.textContent !== summary) info.textContent = summary;
-    if (links) {
-      // Only touch extension-owned nodes. Never replace React's native links.
+    const linksKey = JSON.stringify(missing.map((item) => [item.id, item.title]));
+    if (links && renderedLinksKey !== linksKey) {
+      renderedLinksKey = linksKey;
+      // Only touch extension-owned nodes, and only when the list changes.
       links.replaceChildren();
       for (const item of missing) {
         const row = makeElement("li", "sg-opt-sidebar-item");
         const link = makeElement("a", "sg-opt-sidebar-link", item.title);
         link.setAttribute("href", `/c/${item.id}`);
-        link.setAttribute("title", item.title);
+        link.setAttribute("target", "_blank");
+        link.setAttribute("rel", "noopener noreferrer");
+        link.setAttribute("title", `${item.title} — open in a separate tab`);
+        // Native browser navigation opens a *new* tab; never replace the active
+        // working conversation or route through undocumented ChatGPT internals.
+        link.addEventListener("click", (event) => event.stopPropagation());
         row.appendChild(link);
         links.appendChild(row);
       }
@@ -154,15 +161,9 @@
     const accessToken = typeof session?.accessToken === "string" ? session.accessToken : "";
     if (!accessToken) throw new Error("Sign in to ChatGPT to sync recent chats");
     const headers = { Accept: "application/json", Authorization: `Bearer ${accessToken}` };
-    const results = await Promise.allSettled(API_URLS.map(async (url) => {
-      const response = await fetch(url, { ...opts, headers });
-      if (!response.ok) throw new Error("History request failed");
-      return normalizeResponse(await response.json());
-    }));
-    if (!results.some((result) => result.status === "fulfilled")) {
-      throw new Error("Recent-chat service is unavailable");
-    }
-    const items = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    const response = await fetch(RECENTS_URL, { ...opts, headers });
+    if (!response.ok) throw new Error("History request failed");
+    const items = normalizeResponse(await response.json());
     // Retain only sanitized titles and IDs in tab memory, never full messages,
     // session data, mapping/snippets or hidden token-bearing metadata.
     return policy.normalizeSidebarChats(items);
@@ -241,6 +242,7 @@
     if (!enabled()) {
       status.phase = "disabled";
       newest = [];
+      renderedLinksKey = null;
       container?.remove();
       disconnectObserver();
       return;

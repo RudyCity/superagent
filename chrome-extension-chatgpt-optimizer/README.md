@@ -34,14 +34,16 @@ Tidak perlu menjalankan server SuperAgent, API key, koneksi localhost, atau menj
 ChatGPT Optimizer checks for saved conversations from the signed-in ChatGPT account, **without reloading the active page**:
 
 - On page load, fetch the account's first-party recent-chat listing and refresh every **60 seconds** by default; change the interval to 30, 120 or 300 seconds in the extension popup. Checks pause while the tab is hidden.
-- Use **Refresh recent chats** in the sidebar's **Live updates** section, or **Refresh sidebar now** in the popup, to check immediately (rate limited to prevent repeated requests).
-- Chat IDs not present in ChatGPT's native sidebar appear as temporary links under **Recents → Live updates**. The original React-owned sidebar list is not rewritten; links disappear from the extension's list when ChatGPT's native list catches up.
+- Use **Refresh recent chats** in the floating **Live updates** panel, or **Refresh sidebar now** in the popup, to check immediately (rate limited to prevent repeated requests).
+- Regular chat IDs not present in ChatGPT's native sidebar appear in a **floating Live updates panel at the lower-left**, mounted under the page body outside the React app. This avoids changing native React-owned sidebar children.
+- **Clicking an extension-owned Live updates link opens a separate browser tab**. It never replaces or reloads the working chat tab. ChatGPT's native sidebar keeps its built-in routing.
+- Specialized TPP-origin conversations are excluded from ordinary `/c/{id}` links because their URLs may differ. Links disappear from the extension panel when the native sidebar catches up.
 - Works with two separate Chrome profiles **without Chrome Sync or a SuperAgent backend**, provided both are signed in to the **same ChatGPT account**. Each installation independently checks the account on chatgpt.com.
 - Existing tabs, active messages, unsent drafts, current chat URLs, and ongoing streams are not reloaded, clicked, or modified. The sync feature does not write to ChatGPT's server.
 - **An empty new chat is not necessarily stored in history.** It normally appears after the first message is sent and ChatGPT has saved it.
-- The sidebar section is tied to the current ChatGPT web markup and may need updating when the site changes. If the account/history endpoints fail, the feature displays an error instead of reporting a successful refresh. The native sidebar remains available.
+- Identifying Recents still depends on ChatGPT's current markup and may need updating. If the account/history endpoints fail, the extension hides stale links and reports an error. The native sidebar remains available.
 
-**Important:** The extension does **not** force the built-in ChatGPT React cache to invalidate. Instead it adds an independently refreshed set of links under the left menu. Do not rely on these links for operations such as ChatGPT's built-in pin/unpin or deletion; those remain in the native list.
+**Important:** The extension does **not** force ChatGPT's React cache to invalidate. It adds a separate read-only floating navigation panel. If a new chat is not yet accessible to the account, only the *new tab* may show an error; the original working chat stays untouched. Pin/unpin and deletion remain native features.
 
 ## Reload a specific chat tab (v0.3.0)
 
@@ -98,4 +100,4 @@ Tests cover safe DOM optimization, sidebar synchronization, permissions, selecte
 - `../tests/chatgptOptimizerSidebar.test.ts` — sidebar behavior and safety tests.
 - `../tests/chatgptOptimizerTabReload.test.ts` — specific-chat reload safety and isolation tests.
 
-Version: 0.3.0. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No separate SuperAgent server or background daemon is required.
+Version: 0.3.1. Icons are in `icons/icon.svg` and PNG 16/32/48/128 px. Regenerate with `node "chrome-extension-chatgpt-optimizer/generate-icons.mjs"`. No separate SuperAgent server or background daemon is required.

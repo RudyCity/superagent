@@ -39,7 +39,7 @@
     const unique = new Map();
     for (const item of Array.isArray(items) ? items : []) {
       if (!item || typeof item.id !== "string" || !/^[a-z0-9-]{8,80}$/i.test(item.id) ||
-          item.is_archived || item.is_temporary_chat) continue;
+          item.is_archived || item.is_temporary_chat || item.conversation_origin === "tpp") continue;
       const title = typeof item.title === "string"
         ? item.title.replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, 140) : "";
       const timestamp = Number.isFinite(Number(item.update_time)) ? Number(item.update_time) : 0;

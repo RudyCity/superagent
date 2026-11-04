@@ -18,6 +18,7 @@ class FakeNode {
   disabled = false;
   title = "";
   type = "";
+  listeners = new Map<string, (...args: any[]) => void>();
 
   constructor(tagName: string) { this.tagName = tagName.toUpperCase(); }
 
@@ -26,7 +27,8 @@ class FakeNode {
   }
   setAttribute(key: string, val: string) { this.attrs.set(key, val); }
   getAttribute(key: string) { return this.attrs.get(key) ?? null; }
-  addEventListener(_type: string, _fn: unknown) {}
+  addEventListener(type: string, fn: (...args: any[]) => void) { this.listeners.set(type, fn); }
+  dispatch(type: string, event: any) { this.listeners.get(type)?.(event); }
   append(...nodes: FakeNode[]) { for (const child of nodes) this.appendChild(child); }
   appendChild(node: FakeNode) { this.insertBefore(node, null); }
   insertBefore(node: FakeNode, ref: FakeNode | null) {
@@ -111,6 +113,7 @@ function setup(options: { items?: any[]; noToken?: boolean; apiFailure?: boolean
   };
   let now = 25000;
   let data = options.items || [record(1), record(2)];
+  let failing = !!options.apiFailure;
   let listener: Function = () => {};
   let settingsListener: Function = () => {};
   let requests: { url: string; hasAuthorization: boolean }[] = [];
@@ -127,7 +130,7 @@ function setup(options: { items?: any[]; noToken?: boolean; apiFailure?: boolean
     if (url === "/api/auth/session") {
       return { ok: true, json: async () => options.noToken ? {} : { accessToken: "fake-secret-never-saved" } };
     }
-    return { ok: !options.apiFailure, json: async () => ({ items: data, total: data.length }) };
+    return { ok: !failing, json: async () => ({ items: data, total: data.length }) };
   }
   const context: any = {
     chrome, document, window: { addEventListener: (type: string, cb: Function) => { windowListeners[type] = cb; } },
@@ -152,9 +155,10 @@ function setup(options: { items?: any[]; noToken?: boolean; apiFailure?: boolean
       superagentChatGPTLiteSettings: { newValue: newSettings },
     }, "local"),
     setData: (next: any[]) => { data = next; },
+    setFailure: (value: boolean) => { failing = value; },
     advance: (ms = 20000) => { now += ms; },
-    getLinks: () => (section.querySelector(".sg-opt-sidebar-links")?.querySelectorAll('a[href^="/c/"]') || []),
-    getLive: () => section.querySelector(".sg-opt-sidebar"),
+    getLinks: () => (body.querySelector(".sg-opt-sidebar-links")?.querySelectorAll('a[href^="/c/"]') || []),
+    getLive: () => body.querySelector(".sg-opt-sidebar"),
   };
 }
 
@@ -169,6 +173,7 @@ describe("ChatGPT Optimizer: sidebar sync policy", () => {
     const chats = p.normalizeSidebarChats([
       record(2, "Valid\nChat", 2), record(1, "", 1), record(2, "Updated title", 4),
       { id: "../../evil", title: "Invalid" }, { ...record(3), is_archived: true },
+      { ...record(4), conversation_origin: "tpp" },
     ]);
     expect(chats.length).toBe(2);
     expect(chats[0].title).toBe("Updated title");
@@ -182,6 +187,9 @@ describe("ChatGPT Optimizer: sidebar sync policy", () => {
     expect(manifest.permissions).toEqual(["storage", "tabs"]);
     expect(manifest.host_permissions).toEqual(["https://chatgpt.com/*"]);
     expect(sidebarCode).not.toMatch(/location\.reload|history\.pushState|\.innerHTML\s*=|document\.cookie|localStorage|WebSocket/);
+    expect(sidebarCode).not.toContain("section.insertBefore(container");
+    expect(sidebarCode).toContain('document.body.appendChild(container)');
+    expect(sidebarCode).not.toContain('link.setAttribute("target", "_self")');
   });
 });
 
@@ -194,9 +202,12 @@ describe("ChatGPT Optimizer: live recent list", () => {
     expect(result.state.phase).toBe("ready");
     expect(result.state.serverCount).toBe(2);
     expect(result.state.missingCount).toBe(1);
-    expect(h.getLive()?.parentElement).toBe(h.section);
+    expect(h.getLive()?.parentElement).toBe(h.body);
+    expect(h.section.children).toEqual([h.section.children[0], h.nativeList]);
     expect(h.getLinks().length).toBe(1);
     expect(h.getLinks()[0].getAttribute("href")).toBe(`/c/${chatId(2)}`);
+    expect(h.getLinks()[0].getAttribute("target")).toBe("_blank");
+    expect(h.getLinks()[0].getAttribute("rel")).toBe("noopener noreferrer");
     expect(h.nativeList.children[0].getAttribute("href")).toBe(`/c/${chatId(1)}`);
     expect(h.requests.some((r) => r.url.includes("/api/auth/session"))).toBe(true);
     expect(h.requests.filter((r) => r.url.includes("/backend-api/")).every((r) => r.hasAuthorization)).toBe(true);
@@ -225,6 +236,50 @@ describe("ChatGPT Optimizer: live recent list", () => {
     expect((await h.call("status")).state.missingCount).toBe(0);
     expect(h.getLinks().length).toBe(0);
     expect(h.nativeList.children.length).toBe(2);
+  });
+
+  it("does not navigate the active chat or bubble through React when a synced chat is clicked", async () => {
+    const h = setup();
+    await h.ready;
+    const link = h.getLinks()[0];
+    let stopped = false;
+    let cancelled = false;
+    link.dispatch("click", {
+      stopPropagation: () => { stopped = true; },
+      preventDefault: () => { cancelled = true; },
+    });
+    expect(stopped).toBe(true);
+    expect(cancelled).toBe(false);
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(h.getLive()?.parentElement).toBe(h.body);
+    expect(h.nav.children).toEqual([h.section]);
+    expect(h.nativeList.children).toHaveLength(1);
+  });
+
+  it("does not advertise specialized TPP conversations as ordinary /c links", async () => {
+    const h = setup({ items: [
+      record(1), record(2),
+      { ...record(3), conversation_origin: "tpp" },
+    ] });
+    await h.ready;
+    expect((await h.call("status")).state.serverCount).toBe(2);
+    expect(h.getLinks().length).toBe(1);
+    expect(h.requests.filter((r) => r.url.includes("/backend-api/")).length).toBe(1);
+    expect(h.requests.some((r) => r.url.includes("?conversation_origin=tpp&"))).toBe(false);
+  });
+
+  it("clears stale shortcut links when a later history request fails", async () => {
+    const h = setup();
+    await h.ready;
+    expect(h.getLinks()).toHaveLength(1);
+    h.setFailure(true);
+    h.advance(20000);
+    const result = await h.call("refresh");
+    expect(result.state.phase).toBe("error");
+    expect(result.state.missingCount).toBe(0);
+    expect(h.getLinks()).toHaveLength(0);
+    expect(h.nativeList.children).toHaveLength(1);
   });
 
   it("keeps two independent Chrome profiles synchronized via server reads", async () => {
