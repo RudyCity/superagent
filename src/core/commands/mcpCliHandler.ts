@@ -12,7 +12,7 @@ Commands:
   remove, rm <name>                     Remove an MCP server configuration
   use [gateway|full|status]              Select persistent MCP tool exposure for new sessions
   register                              Register Superagent as an MCP server to Antigravity (AGY)
-  tunnel <start|stop|restart|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
+  tunnel <start|stop|reload|restart|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
 
 Examples:
    superagent mcp list
@@ -27,7 +27,9 @@ Examples:
    superagent mcp tunnel start --provider cloudflare
    superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef
    superagent mcp tunnel doctor --provider openai --profile superagent-mcp
-   superagent mcp tunnel restart
+   superagent mcp tunnel reload --port 8857
+   superagent mcp tunnel restart --port 8857
+   superagent mcp tunnel restart --port 8857 --full  # explicit destructive restart
    superagent mcp tunnel list
    superagent mcp tunnel stop
 `);
@@ -222,6 +224,28 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       process.exit(docResult.success ? 0 : 1);
     }
 
+    if (tunnelAction === "reload" ||
+        (tunnelAction === "restart" && !rawArgs.includes("--full"))) {
+      const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
+      const port = portIdx < 0 ? 9227 : Number(rawArgs[portIdx + 1]);
+      if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+        console.error("Invalid MCP tunnel reload port.");
+        process.exit(1);
+      }
+      try {
+        const { reloadManagedMcpTunnelBackend } = await import("../runtime/mcpManagedTunnelOwner.js");
+        const result = await reloadManagedMcpTunnelBackend(port);
+        console.log("MCP backend reloaded without restarting Cloudflare Tunnel.");
+        console.log("MCP URL (unchanged): " + result.publicUrl);
+        console.log("New backend PID: " + result.backendPid);
+        process.exit(0);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        console.error("Tunnel URL preserved. For one-time migration use 'mcp tunnel restart --full' (URL may change).");
+        process.exit(1);
+      }
+    }
+
     if (tunnelAction === "restart") {
       const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
       let port = 9227;
@@ -244,7 +268,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       const active = listActiveMcpServers().find((server) => server.port === port);
       const lease = readManagedMcpTunnelLease(port);
       const hasForce = rawArgs.includes("--force") || rawArgs.includes("-f");
-      const restartArgs = rawArgs.filter((a) => a !== "--force" && a !== "-f");
+      const restartArgs = rawArgs.filter((a) => a !== "--force" && a !== "-f" && a !== "--full");
       const hasProvider = restartArgs.includes("--provider") || restartArgs.includes("--openai") ||
         restartArgs.includes("--openai-tunnel") || restartArgs.includes("--tunnel-id");
       if (active && !hasProvider) {
@@ -329,7 +353,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       }
     }
 
-    console.log(`Unknown tunnel action: "${tunnelAction}". Available: providers, start, stop, restart, list, status, doctor`);
+    console.log(`Unknown tunnel action: "${tunnelAction}". Available: providers, start, stop, reload, restart, list, status, doctor`);
     process.exit(1);
   }
 

@@ -80,7 +80,11 @@ if (process.argv[2] === "channel-host") {
   try {
     const { handleChannelHostCliCommand } = await import("./core/runtime/channelHost.js");
     const serving = await handleChannelHostCliCommand(process.argv.slice(3));
-    if (serving) await new Promise(() => {});
+    if (serving) {
+      void import("./core/runtime/trayAutoLauncher.js")
+        .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray()).catch(() => {});
+      await new Promise(() => {});
+    }
     process.exit(0);
   } catch (error) {
     console.error("[Channel Host] " + String(error));
@@ -92,7 +96,11 @@ if (process.argv[2] === "transport") {
   try {
     const { handleTransportCliCommand } = await import("./core/runtime/transportHost.js");
     const running = await handleTransportCliCommand(process.argv.slice(3));
-    if (running) await new Promise(() => {});
+    if (running) {
+      void import("./core/runtime/trayAutoLauncher.js")
+        .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray()).catch(() => {});
+      await new Promise(() => {});
+    }
     process.exit(0);
   } catch (error) {
     console.error("[Transport] " + String(error));
@@ -196,6 +204,15 @@ if (process.argv[2] === "mcp") {
       process.exit(1);
     }
     // The explicitly staged OAuth server lives until its owner closes it.
+  }
+  if (sub === "backend-worker") {
+    try {
+      const { runReloadableMcpBackendWorker } = await import("./core/runtime/mcpReloadableBackend.js");
+      await runReloadableMcpBackendWorker();
+    } catch (error) {
+      console.error("[MCP private backend] " + String(error));
+      process.exit(1);
+    }
   }
   if (sub === "tunnel-launcher") {
     try {
@@ -313,6 +330,8 @@ if (
   }
   const { startSuperagentMcpServer } = await import("./core/mcp/superagentMcpServer.js");
   await startSuperagentMcpServer({ workspace: resolvedWs });
+  void import("./core/runtime/trayAutoLauncher.js")
+    .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray()).catch(() => {});
   // Keep process alive while Stdio transport runs
   await new Promise(() => {});
 }

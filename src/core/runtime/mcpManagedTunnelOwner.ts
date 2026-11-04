@@ -15,6 +15,8 @@ import {
   type StartMcpTunnelOptions,
 } from "../mcp/mcpTunnel.js";
 import { describeMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
+import { getOpenAiMcpTunnelConfig } from "../mcp/openaiMcpTunnelConfig.js";
+import { startReloadableMcpTunnelOwner, type ReloadableMcpOwnerHandle } from "./mcpReloadableOwner.js";
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
 import { verifyWindowsProcessBirth } from "./mcpProcessBirth.js";
 import { copyTextToClipboard, isProcessRunning } from "../remoteAgent/cloudflareTunnel.js";
@@ -162,7 +164,7 @@ export function cleanManagedMcpTunnelLease(lease: ManagedMcpTunnelLease): void {
 
 function requestOwner(
   lease: ManagedMcpTunnelLease,
-  operation: "status" | "drain" | "stop" | "stop?force=1",
+  operation: "status" | "drain" | "stop" | "stop?force=1" | "reload",
 ): Promise<{ statusCode: number; body: Record<string, unknown> | null }> {
   return new Promise((resolve) => {
     let settled = false;
@@ -176,7 +178,7 @@ function requestOwner(
       port: lease.port,
       path: `/_internal/owner/${operation}`,
       method: operation === "status" ? "GET" : "POST",
-      timeout: 1800,
+      timeout: operation === "reload" ? 60_000 : 1800,
       headers: {
         Authorization: "Bearer " + lease.nonce,
         Accept: "application/json",
@@ -478,28 +480,54 @@ export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
     workspace: process.cwd(),
   };
   let stopping = false;
+  let reloadable: ReloadableMcpOwnerHandle | undefined;
+  let legacyStarted = false;
   const shutdown = async () => {
     if (stopping) return;
     stopping = true;
-    try { await stopMcpTunnel(port); }
+    try {
+      if (reloadable) await reloadable.close();
+      else await stopMcpTunnel(port);
+    }
     finally {
       cleanManagedMcpTunnelLease(lease);
       process.exit(0);
     }
   };
   try {
-    const info = await startMcpTunnel({
-      ...options,
-      ownerControlToken: nonce,
-      ownerStartedAt: createdAt,
-      ownerControlMode: OWNER_MODE,
-      ownerPublicTunnelStarted: true,
-      ownerStopHandler: shutdown,
-    });
+    // Cloudflare gets a durable ingress and a replaceable MCP backend.
+    // OpenAI Secure MCP Tunnel keeps its legacy lifecycle until its control
+    // plane transport supports independent backend swapping.
+    const openAiConfigured = Boolean(
+      process.env.OPENAI_MCP_TUNNEL_ID || getOpenAiMcpTunnelConfig().tunnelId,
+    );
+    const useReloadable = options.tunnelProvider === "cloudflare" ||
+      (!options.tunnelProvider && !options.tunnelId && !openAiConfigured);
+    let info: McpTunnelInfo;
+    if (useReloadable) {
+      reloadable = await startReloadableMcpTunnelOwner({
+        port, nonce, createdAt, cliEntry: process.argv[1] || "",
+        authMode: options.authMode || "static-bearer",
+        allowDangerous: Boolean(options.allowDangerous),
+        auditLogPath: options.auditLogPath,
+      });
+      info = reloadable.info;
+    } else {
+      info = await startMcpTunnel({
+        ...options,
+        ownerControlToken: nonce,
+        ownerStartedAt: createdAt,
+        ownerControlMode: OWNER_MODE,
+        ownerPublicTunnelStarted: true,
+        ownerStopHandler: shutdown,
+      });
+      legacyStarted = true;
+    }
     try {
       writeManagedMcpTunnelLease(lease);
     } catch (error) {
-      await stopMcpTunnel(port).catch(() => {});
+      if (reloadable) await reloadable.close().catch(() => {});
+      else if (legacyStarted) await stopMcpTunnel(port).catch(() => {});
       throw error;
     }
     process.once("SIGINT", () => { void shutdown(); });
@@ -516,6 +544,46 @@ export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
   }
   await new Promise<never>(() => {});
   throw new Error("unreachable");
+}
+
+/**
+ * Reload compiled MCP backend without restarting its public tunnel or owner.
+ * Fail closed for legacy owners and any public URL/identity change.
+ */
+export async function reloadManagedMcpTunnelBackend(port: number): Promise<{
+  success: true; port: number; publicUrl: string;
+  backendPid: number; previousBackendPid: number | null;
+}> {
+  assertPort(port);
+  const lease = readManagedMcpTunnelLease(port);
+  if (!lease) throw new Error("MCP_RELOAD_NO_MANAGED_OWNER");
+  await verifyManagedOwnerIdentity(lease, {timeoutMs: 3000});
+  const before = await probeManagedMcpTunnelOwner(lease);
+  const state = readMcpStateFile(getMcpStateFile(port));
+  if (!before || !state?.publicUrl || state.pid !== lease.pid ||
+      (before as any).reloadable !== true) {
+    throw new Error(
+      "MCP_RELOAD_LEGACY_OWNER: this owner cannot preserve its URL on restart; one-time migration required",
+    );
+  }
+  if (before.draining) throw new Error("MCP_RELOAD_OWNER_DRAINING");
+  const reply = await requestOwner(lease, "reload");
+  const data = reply.body;
+  if (reply.statusCode !== 200 || data?.success !== true ||
+      !Number.isSafeInteger(data.pid) || Number(data.pid) <= 0) {
+    throw new Error(typeof data?.error === "string" ? data.error : "MCP_RELOAD_FAILED");
+  }
+  const after = await probeManagedMcpTunnelOwner(lease);
+  const sameState = readMcpStateFile(getMcpStateFile(port));
+  if (!after || after.pid !== before.pid || after.startedAt !== before.startedAt ||
+      sameState?.publicUrl !== state.publicUrl || data.url !== state.publicUrl) {
+    throw new Error("MCP_RELOAD_IDENTITY_OR_PUBLIC_URL_CHANGED");
+  }
+  return {
+    success: true, port, publicUrl: state.publicUrl,
+    backendPid: Number(data.pid),
+    previousBackendPid: Number.isSafeInteger(data.previousPid) ? Number(data.previousPid) : null,
+  };
 }
 
 export async function stopManagedMcpTunnelOwner(

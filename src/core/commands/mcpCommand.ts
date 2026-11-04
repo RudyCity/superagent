@@ -242,6 +242,22 @@ export const mcpCommand: SlashCommand = {
       return;
     }
 
+    if (subcommand === "reload" && parts.slice(1).some(x => x === "--port" || x === "--mcp-port" || x === "-p")) {
+      const portIdx = parts.findIndex(x => x === "--port" || x === "--mcp-port" || x === "-p");
+      const port = Number(parts[portIdx + 1]);
+      try {
+        const { reloadManagedMcpTunnelBackend } = await import("../runtime/mcpManagedTunnelOwner.js");
+        const result = await reloadManagedMcpTunnelBackend(port);
+        ctx.addLine({ type: "system", content:
+          `MCP backend reloaded. URL unchanged: ${result.publicUrl}. New PID: ${result.backendPid}`,
+          timestamp: Date.now() });
+      } catch (error) {
+        ctx.addLine({ type: "error", content: error instanceof Error ? error.message : String(error),
+          timestamp: Date.now() });
+      }
+      return;
+    }
+
     if (subcommand === "reload") {
       ctx.addLine({
         type: "system",
@@ -334,6 +350,29 @@ export const mcpCommand: SlashCommand = {
         return;
       }
 
+      if (tunnelAction === "reload" ||
+          (tunnelAction === "restart" && !rawArgs.includes("--full"))) {
+        const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
+        const port = portIdx < 0 ? 9227 : Number(rawArgs[portIdx + 1]);
+        if (!Number.isInteger(port) || port < 1024 || port > 65535) {
+          ctx.addLine({type:"error", content:"Invalid MCP backend reload port.", timestamp: Date.now()});
+          return;
+        }
+        try {
+          const { reloadManagedMcpTunnelBackend } = await import("../runtime/mcpManagedTunnelOwner.js");
+          const result = await reloadManagedMcpTunnelBackend(port);
+          ctx.addLine({ type: "system",
+            content: `MCP backend reloaded without restarting the public tunnel. URL unchanged: ${result.publicUrl}. New backend PID: ${result.backendPid}.`,
+            timestamp: Date.now() });
+        } catch (error) {
+          ctx.addLine({ type: "error", content:
+            (error instanceof Error ? error.message : String(error)) +
+            " — Existing URL is unchanged. For an explicit one-time migration use '/mcp tunnel restart --full' (URL may change).",
+            timestamp: Date.now() });
+        }
+        return;
+      }
+
       if (tunnelAction === "restart") {
         const portIdx = rawArgs.findIndex((a) => a === "--port" || a === "--mcp-port" || a === "-p");
         let port = 9227;
@@ -356,7 +395,7 @@ export const mcpCommand: SlashCommand = {
         const active = listActiveMcpServers().find((server) => server.port === port);
         const lease = readManagedMcpTunnelLease(port);
         const hasForce = rawArgs.includes("--force") || rawArgs.includes("-f");
-        const restartArgs = rawArgs.filter((a) => a !== "--force" && a !== "-f");
+        const restartArgs = rawArgs.filter((a) => a !== "--force" && a !== "-f" && a !== "--full");
         const hasProvider = restartArgs.includes("--provider") || restartArgs.includes("--openai") ||
           restartArgs.includes("--openai-tunnel") || restartArgs.includes("--tunnel-id");
         if (active && !hasProvider) {
@@ -462,7 +501,7 @@ export const mcpCommand: SlashCommand = {
 
       ctx.addLine({
         type: "error",
-        content: `Unknown tunnel action "${tunnelAction}". Available: providers, config, start, stop, restart, list, status, doctor`,
+        content: `Unknown tunnel action "${tunnelAction}". Available: providers, config, start, stop, reload, restart, list, status, doctor`,
         timestamp: now,
       });
       return;
