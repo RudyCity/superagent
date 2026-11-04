@@ -12,6 +12,11 @@ import {trayExecutableCandidates} from "./trayAutoLauncher.js";
 import {readListenerOwners} from "./coreMcpOwnershipAudit.js";
 import {ManagedSidecarLedger,sidecarOperationFingerprint} from "./managedSidecarLedger.js";
 import {validateCoreOperationId} from "./coreLifecycleLedger.js";
+import {readTrayReleaseState,releaseBinaryPath,trustedTrayBuild,
+  stageTrustedTrayRelease,promoteTrayRelease,switchTrayReleaseBack,
+  fileSha256,stageInstalledTrayFallback,
+  restoreTrayReleaseState} from "./trayReleaseStore.js";
+import {execFileSync} from "node:child_process";
 
 type Action="start"|"stop"|"restart";
 type Owner={version:1;pid:number;instanceId:string;token:string;
@@ -25,8 +30,12 @@ function canonical(file:string) {
   return fs.realpathSync.native(file);
 }
 function candidates() {
-  return trayExecutableCandidates(getPackageRootDir(),getRootConfigDir(),
-    process.env.SUPERAGENT_TRAY_EXECUTABLE).filter(file=>{
+  const release=readTrayReleaseState();
+  const knownSlots=[release.activeDigest,release.previousDigest]
+    .filter((d):d is string=>typeof d==="string")
+    .map(d=>releaseBinaryPath(d));
+  return [...knownSlots,...trayExecutableCandidates(getPackageRootDir(),getRootConfigDir(),
+    process.env.SUPERAGENT_TRAY_EXECUTABLE)].filter(file=>{
       try {const st=fs.lstatSync(file);return st.isFile()&&!st.isSymbolicLink()&&
         path.extname(file).toLowerCase()===".exe";}catch{return false;}
     }).map(canonical);
@@ -117,11 +126,34 @@ function chooseBinary(){
   if(!paths.length)throw new Error("TRAY_TRUSTED_EXECUTABLE_NOT_INSTALLED");
   return paths[0];
 }
+export function legacyTrayProcessPids(ownedPid:number|null=null):number[] {
+  if(process.platform!=="win32")return [];
+  if(process.env.SUPERAGENT_TRAY_LIFECYCLE_TEST==="1"&&
+     process.env.VITEST!==undefined)return [];
+  let raw:string;
+  try{
+    raw=execFileSync("powershell.exe",[
+      "-NoProfile","-NonInteractive","-Command",
+      "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'superagent-tray.exe' } | Select-Object -ExpandProperty ProcessId | ConvertTo-Json -Compress",
+    ],{timeout:8000,encoding:"utf8",windowsHide:true,maxBuffer:16384});
+  }catch{throw new Error("TRAY_LEGACY_SCAN_UNAVAILABLE: cannot assert no duplicate UI");}
+  if(!raw.trim())return [];
+  let parsed:unknown;
+  try{parsed=JSON.parse(raw);}catch{throw new Error("TRAY_LEGACY_SCAN_UNPARSABLE");}
+  const ids=Array.isArray(parsed)?parsed:[parsed];
+  if(ids.some(v=>!Number.isSafeInteger(v)||Number(v)<=0))
+    throw new Error("TRAY_LEGACY_SCAN_INVALID_PID");
+  return [...new Set(ids as number[])].filter(pid=>pid!==ownedPid);
+}
+
 export async function planManagedTray(action:Action):Promise<Plan>{
   let pid=0,instanceId="absent",port:number|undefined;
   let executable:string;
   if(action==="start"){
-    await absent();executable=chooseBinary();
+    await absent();
+    if(legacyTrayProcessPids().length)
+      throw new Error("TRAY_LEGACY_RUNNING: close old Tray using its Quit menu");
+    executable=chooseBinary();
   }else{
     const owner=await verifiedOwner();
     pid=owner.pid;instanceId=owner.instanceId;port=owner.controlPort;
@@ -145,6 +177,10 @@ function fingerprint(args:TrayExecutionArgs){
     port:args.port??null,noCoreShutdown:true,
   });
 }
+function isPidAlive(pid:number){
+  try{process.kill(pid,0);return true;}
+  catch(e){return (e as NodeJS.ErrnoException).code!=="ESRCH";}
+}
 async function stopOwner(owner:Owner){
   const url="http://127.0.0.1:"+owner.controlPort+"/tray/control";
   const reply=await fetch(url,{
@@ -161,7 +197,10 @@ async function stopOwner(owner:Owner){
   while(Date.now()<deadline){
     if(!fs.existsSync(recordFile()) &&
        !verifiedPid(owner.controlPort,owner.pid)){
-      try {await freePort(owner.controlPort);return;}catch{}
+      try{
+        await freePort(owner.controlPort);
+        if(!isPidAlive(owner.pid))return;
+      }catch{}
     }
     await new Promise(resolve=>setTimeout(resolve,200));
   }
@@ -225,6 +264,8 @@ export async function executeManagedTray(args:TrayExecutionArgs){
        args.port!==undefined)
       throw new Error("TRAY_START_EXPECTED_NO_OWNER");
     await absent();
+    if(legacyTrayProcessPids().length)
+      throw new Error("TRAY_LEGACY_RUNNING: close old Tray using its Quit menu");
     executable=chooseBinary();
   }else {
     old=await verifiedOwner();
@@ -253,4 +294,139 @@ export async function executeManagedTray(args:TrayExecutionArgs){
   return {service:"tray",action:args.action,changed:true,replayed:false,
     ownerPid:started.pid,controlPort:started.controlPort,
     ...(old?{previousPid:old.pid}:{}),coreUnaffected:true};
+}
+
+export type TrayReleasePlan={
+  service:"tray";action:"upgrade"|"rollback";operationId:string;
+  expectedReleaseRevision:string;expectedBuildDigest:string;
+  expectedCurrentDigest:string|null;
+  expectedOwnerPid:number;expectedInstanceId:string;
+  port?:number;noCoreShutdown:true;note:string;
+};
+export async function planManagedTrayRelease(action:"upgrade"|"rollback"):
+  Promise<TrayReleasePlan>{
+  const state=readTrayReleaseState();
+  let owner:Owner|undefined;
+  const record=readManagedTrayOwner();
+  if(record)owner=await verifiedOwner();
+  // A legacy instance may be running without a new authenticated owner.
+  // It must be closed via its native Quit menu; never taskkill it.
+  const foreign=legacyTrayProcessPids(owner?.pid??null);
+  if(foreign.length)
+    throw new Error("TRAY_LEGACY_PROCESS_REQUIRES_USER_QUIT: unverified Tray PID(s) "+foreign.join(","));
+  const installed=owner?permitted(owner.executablePath):chooseBinary();
+  const currentDigest=fileSha256(installed);
+  const target=action==="upgrade"?
+    trustedTrayBuild().digest:state.previousDigest;
+  if(!target)throw new Error("TRAY_RELEASE_NO_ROLLBACK_TARGET");
+  if(target===currentDigest)
+    throw new Error("TRAY_RELEASE_ALREADY_ACTIVE");
+  return {service:"tray",action,operationId:crypto.randomUUID(),
+    expectedReleaseRevision:state.revision,
+    expectedBuildDigest:target,expectedCurrentDigest:currentDigest,
+    expectedOwnerPid:owner?.pid??0,
+    expectedInstanceId:owner?.instanceId??"absent",
+    ...(owner?{port:owner.controlPort}:{}),
+    noCoreShutdown:true,
+    note:"Transactional release: stage trusted SHA-256 build, gracefully stop verified Tray, launch + health attestation; rollback on failure. Never closes legacy/unowned processes or touches Core/MCP/tunnel.",
+  };
+}
+export async function executeManagedTrayRelease(args:TrayReleasePlan&{confirm:boolean}){
+  if(args.confirm!==true||args.noCoreShutdown!==true)
+    throw new Error("TRAY_RELEASE_EXPLICIT_APPROVAL_REQUIRED");
+  validateCoreOperationId(args.operationId);
+  if(!["upgrade","rollback"].includes(args.action)||
+     !/^[a-f0-9]{64}$/.test(args.expectedBuildDigest)||
+     !/^(?:000000000000000000000000|[a-f0-9]{24})$/.test(args.expectedReleaseRevision)||
+     (args.expectedCurrentDigest!==null&&!/^[a-f0-9]{64}$/.test(args.expectedCurrentDigest))||
+     !Number.isSafeInteger(args.expectedOwnerPid)||args.expectedOwnerPid<0||
+     !(args.expectedInstanceId==="absent"||/^[a-f0-9]{32}$/.test(args.expectedInstanceId)))
+    throw new Error("TRAY_RELEASE_INVALID_PLAN");
+  const ledger=new ManagedSidecarLedger("tray",45322);
+  const signature=sidecarOperationFingerprint({
+    service:"tray",action:args.action,
+    revision:args.expectedReleaseRevision,target:args.expectedBuildDigest,
+    current:args.expectedCurrentDigest,
+    ownerPid:args.expectedOwnerPid,instanceId:args.expectedInstanceId,
+    port:args.port??null,noCoreShutdown:true,
+  });
+  const replay=ledger.lookup(args.operationId,signature);
+  if(replay?.replayed){
+    const current=readTrayReleaseState();
+    if(current.activeDigest!==args.expectedBuildDigest)
+      throw new Error("TRAY_RELEASE_REPLAY_VERSION_CHANGED");
+    if((await verifiedOwner()).pid!==replay.afterPid)
+      throw new Error("TRAY_RELEASE_REPLAY_OWNER_CHANGED");
+    return {service:"tray",action:args.action,replayed:true,
+      changed:false,ownerPid:replay.afterPid,
+      activeBuildDigest:current.activeDigest};
+  }
+  const state=readTrayReleaseState();
+  if(state.revision!==args.expectedReleaseRevision)
+    throw new Error("TRAY_RELEASE_REVISION_CONFLICT");
+  const oldRecord=readManagedTrayOwner();
+  const old=oldRecord?await verifiedOwner():undefined;
+  if(old?.pid!== (args.expectedOwnerPid||undefined)||
+     (old?.instanceId??"absent")!==args.expectedInstanceId||
+     (old?.controlPort??undefined)!==args.port)
+    throw new Error("TRAY_RELEASE_OWNER_CHANGED_SINCE_PLAN");
+  if(legacyTrayProcessPids(old?.pid??null).length)
+    throw new Error("TRAY_LEGACY_PROCESS_REQUIRES_USER_QUIT");
+  const oldExecutable=old?permitted(old.executablePath):chooseBinary();
+  if(fileSha256(oldExecutable)!==args.expectedCurrentDigest)
+    throw new Error("TRAY_RELEASE_BASE_CHANGED_SINCE_PLAN");
+  let newExecutable:string;
+  let fallbackDigest:string|null=null;
+  if(args.action==="upgrade"){
+    const candidate=trustedTrayBuild();
+    if(candidate.digest!==args.expectedBuildDigest)
+      throw new Error("TRAY_RELEASE_BUILD_CHANGED_SINCE_PLAN");
+    newExecutable=stageTrustedTrayRelease(candidate.path,candidate.digest);
+    if(!state.activeDigest){
+      fallbackDigest=fileSha256(oldExecutable);
+      if(fallbackDigest!==candidate.digest)
+        stageInstalledTrayFallback(oldExecutable,fallbackDigest);
+    }
+  }else{
+    if(state.previousDigest!==args.expectedBuildDigest)
+      throw new Error("TRAY_RELEASE_ROLLBACK_TARGET_CHANGED");
+    newExecutable=releaseBinaryPath(args.expectedBuildDigest);
+    if(fileSha256(newExecutable)!==args.expectedBuildDigest)
+      throw new Error("TRAY_RELEASE_ROLLBACK_SLOT_CORRUPT");
+  }
+  // Stage and validate before mutating the active owner or journal.
+  ledger.begin(args.operationId,signature);
+  let promoted=false,activatedRevision:string|undefined;
+  let oldStopped=false;
+  try {
+    if(old){await stopOwner(old);oldStopped=true;}
+    else await absent();
+    if(legacyTrayProcessPids().length)
+      throw new Error("TRAY_UNVERIFIED_PROCESS_REMAINS_AFTER_STOP");
+    const next=promoteTrayRelease(args.expectedBuildDigest,state.revision,
+      getRootConfigDir(),fallbackDigest??undefined);
+    promoted=true;activatedRevision=next.revision;
+    const launched=await startBinary(newExecutable);
+    if(fileSha256(launched.executablePath)!==args.expectedBuildDigest)
+      throw new Error("TRAY_RELEASE_NEW_PROCESS_DIGEST_MISMATCH");
+    ledger.complete(args.operationId,launched.pid);
+    return {service:"tray",action:args.action,replayed:false,changed:true,
+      previousPid:old?.pid??null,ownerPid:launched.pid,
+      activeBuildDigest:args.expectedBuildDigest,
+      previousBuildDigest:state.activeDigest??fallbackDigest,
+      coreUnaffected:true,verified:true};
+  }catch(e){
+    // Never claim success on an ambiguous stop/start. Best effort rollback
+    // only if the new owner is absent; if it may be alive, fail closed.
+    if(promoted&&activatedRevision){
+      try {
+        if(!readManagedTrayOwner() && !legacyTrayProcessPids().length){
+          restoreTrayReleaseState(state,activatedRevision);
+          if(oldStopped)await startBinary(oldExecutable);
+        }
+      }catch{}
+    }
+    throw new Error("TRAY_RELEASE_OUTCOME_UNCERTAIN: "+
+      (e instanceof Error?e.message:"unknown")+"; inspect lifecycle and owner before retry");
+  }
 }

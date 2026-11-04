@@ -26,15 +26,23 @@ import {planOwnedTunnelStop,stopOwnedTunnel} from "./ownedTunnelLifecycle.js";
 import {planManagedVision,executeManagedVision,inspectManagedVision} from "./managedVisionControl.js";
 import {planManagedGuardian,executeManagedGuardian,inspectManagedGuardian} from "./managedGuardianControl.js";
 import {planDaemonLifecycle,executeDaemonLifecycle,inspectDaemonScheduler} from "./managedDaemonControl.js";
-import {planManagedTray,executeManagedTray,inspectManagedTray} from "./managedTrayControl.js";
+import {
+  planManagedTray,executeManagedTray,inspectManagedTray,
+  planManagedTrayRelease,executeManagedTrayRelease,legacyTrayProcessPids,
+} from "./managedTrayControl.js";
+import {readTrayReleaseState} from "./trayReleaseStore.js";
+import {readLifecycleSettings,configureLifecycleProfile,dependencyOrder} from "./lifecycleProfiles.js";
+import {readLifecycleEvents,recordLifecycleEvent,operationHashPrefix} from "./lifecycleTimeline.js";
+import {ManagedSidecarLedger} from "./managedSidecarLedger.js";
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export type ServiceAction =
-  "inventory"|"status"|"plan"|"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"doctor";
+  "inventory"|"status"|"plan"|"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"doctor"
+  |"health"|"dashboard"|"logs"|"profile"|"configure"|"reconcile"|"upgrade"|"watchdog";
 export type ManageServicesArgs = {
   action:ServiceAction; service?:ManagedServiceName|"all"; port?:number;
-  targetAction?:"restart"|"rollback"|"drain"|"reload"|"start"|"stop";
+  targetAction?:"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"upgrade";
   confirm?:boolean; operationId?:string; expectedBuildDigest?:string;
   expectedOwnerPid?:number; expectedPublicUrl?:string;
   expectedInstanceId?:string; noPublicIngress?:boolean;
@@ -42,6 +50,11 @@ export type ManageServicesArgs = {
   expectedWorkerPid?:number; expectedRunning?:boolean; noActiveJobs?:boolean;
   expectedLocalUrl?:string;allowPublicDisruption?:boolean;
   corePort?:number;channelMode?:"idle"|"muse-ws"|"telegram-fallback";wsPort?:number;
+  revision?:string;autoRecover?:boolean;startOnBoot?:boolean;
+  failureThreshold?:number;maxRestartsPerHour?:number;intervalSeconds?:number;
+  reviewed?:boolean;limit?:number;
+  expectedReleaseRevision?:string;
+  expectedCurrentDigest?:string|null;
 };
 export type ServiceStatus = {
   service:ManagedServiceName; port?:number;
@@ -70,16 +83,20 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
     "expectedInstanceId","noPublicIngress","corePort","channelMode","wsPort",
     "expectedLocalUrl","allowPublicDisruption",
     "expectedSupervisorPid","noCoreShutdown",
-    "expectedWorkerPid","expectedRunning","noActiveJobs"]);
+    "expectedWorkerPid","expectedRunning","noActiveJobs",
+    "revision","autoRecover","startOnBoot","failureThreshold",
+    "maxRestartsPerHour","intervalSeconds","reviewed","limit",
+    "expectedReleaseRevision","expectedCurrentDigest"]);
   if(Object.keys(v).some(k=>!allowed.has(k)))throw new Error("SERVICE_UNEXPECTED_ARGUMENT");
-  if(!["inventory","status","plan","restart","rollback","drain","reload","start","stop","doctor"].includes(String(v.action)))
+  if(!["inventory","status","plan","restart","rollback","drain","reload","start","stop","doctor",
+    "health","dashboard","logs","profile","configure","reconcile","upgrade","watchdog"].includes(String(v.action)))
     throw new Error("SERVICE_UNKNOWN_ACTION");
   if(v.service!==undefined&&v.service!=="all"&&
      (typeof v.service!=="string"||!known.has(v.service)))throw new Error("SERVICE_UNKNOWN_TARGET");
   if(v.port!==undefined)validateServicePort(v.port);
   if(v.confirm!==undefined&&typeof v.confirm!=="boolean")throw new Error("SERVICE_INVALID_CONFIRM");
   if(v.targetAction!==undefined&&
-     !["restart","rollback","drain","reload","start","stop"].includes(String(v.targetAction)))
+     !["restart","rollback","drain","reload","start","stop","upgrade"].includes(String(v.targetAction)))
     throw new Error("SERVICE_INVALID_TARGET_ACTION");
   if(v.expectedOwnerPid!==undefined&&
      (!Number.isSafeInteger(v.expectedOwnerPid)||Number(v.expectedOwnerPid)<0))
@@ -118,8 +135,28 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
      (typeof v.expectedBuildDigest!=="string"||!/^[a-f0-9]{64}$/.test(v.expectedBuildDigest)))
     throw new Error("SERVICE_INVALID_BUILD_DIGEST");
   if(v.operationId!==undefined)validateCoreOperationId(v.operationId);
+  if(v.expectedReleaseRevision!==undefined&&
+     (typeof v.expectedReleaseRevision!=="string"||
+      !/^[a-f0-9]{24}$/.test(v.expectedReleaseRevision)))
+    throw new Error("SERVICE_TRAY_RELEASE_REVISION_INVALID");
+  if(v.expectedCurrentDigest!==undefined&&v.expectedCurrentDigest!==null&&
+     (typeof v.expectedCurrentDigest!=="string"||
+      !/^[a-f0-9]{64}$/.test(v.expectedCurrentDigest)))
+    throw new Error("SERVICE_TRAY_CURRENT_DIGEST_INVALID");
+  if(v.revision!==undefined&&(typeof v.revision!=="string"||
+     !/^(?:default|[a-f0-9]{24})$/.test(v.revision)))
+    throw new Error("SERVICE_PROFILE_INVALID_REVISION");
+  for(const key of ["autoRecover","startOnBoot","reviewed"]){
+    if(v[key]!==undefined&&typeof v[key]!=="boolean")
+      throw new Error("SERVICE_PROFILE_INVALID_BOOLEAN");
+  }
+  for(const key of ["failureThreshold","maxRestartsPerHour","intervalSeconds","limit"]){
+    if(v[key]!==undefined&&(!Number.isSafeInteger(v[key])||Number(v[key])<0||
+       Number(v[key])>300))
+      throw new Error("SERVICE_PROFILE_INVALID_NUMERIC");
+  }
   if((v.service===undefined||v.service==="all")&&
-     !["inventory","status","doctor"].includes(String(v.action)))
+     !["inventory","status","doctor","health","dashboard","logs","profile","watchdog"].includes(String(v.action)))
     throw new Error("SERVICE_SINGLE_TARGET_REQUIRED");
   return v as ManageServicesArgs;
 }
@@ -317,16 +354,132 @@ async function planMcpReload(port:number) {
     expectedPublicUrl:state.publicUrl,
     note:"Verified backend-only reload; public Cloudflare URL must remain unchanged"};
 }
-export async function manageServices(raw:unknown):Promise<unknown> {
+async function manageServicesInternal(raw:unknown):Promise<unknown> {
   const args=validateManageServicesArgs(raw);
   const action=args.action,service=args.service??"all";
   const port=service==="all" ? undefined :
     (args.port!==undefined || defaultPorts[service]!==undefined)
       ? validateServicePort(args.port,defaultPorts[service])
       : undefined;
-  if(action==="status"||action==="inventory"||action==="doctor")
+  if(action==="status"||action==="inventory")
     return {action,readOnly:true,services:await inspectServices(service,port),
-      note:"Only owner-authenticated processes may be modified; public tunnel URLs are never rotated."};
+      note:"Owner-scoped status; no process/tunnel mutation."};
+  if(action==="watchdog"){
+    const {runLifecycleWatchdog}=await import("./lifecycleWatchdog.js");
+    return runLifecycleWatchdog({
+      execute:args.confirm===true,
+      ...(service==="all"?{}:{service}),
+    });
+  }
+  if(action==="profile"){
+    const state=readLifecycleSettings();
+    return {action,readOnly:true,revision:state.revision,updatedAt:state.updatedAt,
+      order:dependencyOrder(state.profiles),
+      profiles:service==="all"?state.profiles:state.profiles.filter(x=>x.service===service)};
+  }
+  if(action==="logs"){
+    return {action,readOnly:true,
+      events:readLifecycleEvents({
+        ...(service==="all"?{}:{service}),
+        limit:args.limit??50,
+      }),
+      note:"Bounded metadata only: no tokens, user messages, prompts or raw operation IDs."};
+  }
+  if(action==="health"||action==="doctor"||action==="dashboard"){
+    const states=await inspectServices(service,port);
+    const profile=readLifecycleSettings();
+    const allStates=service==="all"?states:await inspectServices("all");
+    const byName=new Map(allStates.map(x=>[x.service,x]));
+    const checks=states.map(item=>{
+      const policy=profile.profiles.find(x=>x.service===item.service)!;
+      const deps=policy.dependsOn.map(dep=>({service:dep,
+        state:byName.get(dep)?.state??"unknown",
+        verified:byName.get(dep)?.ownershipVerified??false}));
+      const blocked=deps.some(d=>d.state!=="active"&&d.state!=="embedded");
+      const available=item.state==="active"||item.state==="embedded";
+      const ready=available&&!blocked&&
+        (item.service!=="vision"||item.details?.modelLoaded===true)&&
+        (item.service!=="transport"||item.details?.backendReady===true);
+      return {service:item.service,state:item.state,ownerVerified:item.ownershipVerified,
+        alive:available,ready,dependsOn:deps,dependencyBlocked:blocked,
+        reason:item.reason,recoveryPolicy:{enabled:policy.autoRecover,
+          threshold:policy.failureThreshold,maxPerHour:policy.maxRestartsPerHour}};
+    });
+    const answer:any={action,readOnly:true,services:states,checks,
+      summary:{total:checks.length,ready:checks.filter(x=>x.ready).length,
+        degraded:checks.filter(x=>x.alive&&!x.ready).length,
+        unavailable:checks.filter(x=>!x.alive).length},
+      note:"Monitoring is read-only; configuration does not grant permission to restart a process."};
+    if(action==="dashboard"){
+      answer.timeline=readLifecycleEvents({limit:args.limit??30});
+      answer.dependencyOrder=dependencyOrder(profile.profiles);
+      answer.profileRevision=profile.revision;
+      answer.trayRelease=readTrayReleaseState();
+    }
+    return answer;
+  }
+  if(action==="configure"){
+    if(service==="all"||args.confirm!==true||!args.revision)
+      throw new Error("SERVICE_PROFILE_REVISION_AND_CONFIRM_REQUIRED");
+    const updated=configureLifecycleProfile({
+      service,revision:args.revision,startOnBoot:args.startOnBoot,
+      autoRecover:args.autoRecover,maxRestartsPerHour:args.maxRestartsPerHour,
+      failureThreshold:args.failureThreshold,intervalSeconds:args.intervalSeconds,
+    });
+    return {action,service,changed:true,revision:updated.revision,
+      profile:updated.profiles.find(x=>x.service===service)};
+  }
+  if(action==="reconcile"){
+    if(service==="all"||!args.operationId||args.confirm!==true||
+       args.reviewed!==true)
+      throw new Error("SERVICE_RECONCILE_REQUIRES_EXPLICIT_OPERATOR_REVIEW");
+    if(service==="core"||service==="mcp"||service==="process_supervisor"||
+       service==="rest_tunnel"||service==="muse_tunnel")
+      throw new Error("SERVICE_RECONCILE_USE_OWNER_SPECIFIC_PROTOCOL");
+    const state=(await inspectServices(service,port))[0];
+    if(state.state!=="inactive"||state.ownerPid!==null)
+      throw new Error("SERVICE_RECONCILE_OWNER_MUST_BE_VERIFIED_ABSENT");
+    // Absence of a verified managed service is not enough: a foreign
+    // listener, stale owner lease or legacy process still makes the
+    // outcome ambiguous and must never be manually marked reviewed.
+    const listeners=readListenerOwners();
+    if(port!==undefined&&!listeners)
+      throw new Error("SERVICE_RECONCILE_KERNEL_PORT_OWNERSHIP_UNAVAILABLE");
+    if(port!==undefined&&listeners?.has(port))
+      throw new Error("SERVICE_RECONCILE_PORT_STILL_BOUND");
+    if(service==="muse"||service==="telegram")
+      throw new Error("SERVICE_RECONCILE_CHANNEL_ALIAS_REQUIRES_EXACT_CHANNEL_HOST_PORT");
+    if(service==="channel_host"){
+      try {
+        (await import("./channelHost.js")).readChannelHostDiscovery(port!);
+        throw new Error("SERVICE_RECONCILE_CHANNEL_OWNER_RECORD_PRESENT");
+      }catch(e) {
+        if((e as NodeJS.ErrnoException).code!=="ENOENT")throw e;
+      }
+    }
+    if(service==="transport"&&readTransportOwner(port!))
+      throw new Error("SERVICE_RECONCILE_TRANSPORT_OWNER_RECORD_PRESENT");
+    if(service==="vision"&&
+       fs.existsSync((await import("./managedVisionControl.js")).visionOwnerFile(port!)))
+      throw new Error("SERVICE_RECONCILE_VISION_OWNER_RECORD_PRESENT");
+    if(service==="tray"&&fs.existsSync(
+      path.join(getRootConfigDir(),"tray-lifecycle-owner.json")))
+      throw new Error("SERVICE_RECONCILE_TRAY_OWNER_RECORD_PRESENT");
+    if(service==="tray"&&legacyTrayProcessPids().length)
+      throw new Error("SERVICE_RECONCILE_LEGACY_TRAY_MAY_BE_RUNNING");
+    const journalPort=service==="tray"?
+      (args.targetAction==="upgrade"?45322:45321):port!;
+    const ledger=new ManagedSidecarLedger(service,journalPort);
+    const result=ledger.reconcile(args.operationId,true,true);
+    if(["tray","transport","channel_host","vision","guardian"].includes(service)){
+      const {reviewWatchdogPending}=await import("./lifecycleWatchdog.js");
+      try{reviewWatchdogPending(service,args.operationId);}
+      catch(e){
+        if(!(e instanceof Error)||!e.message.includes("PENDING_ID_MISMATCH"))throw e;
+      }
+    }
+    return {service,action,...result};
+  }
   if(action==="plan") {
     if(service==="core"&&
       (args.targetAction==="restart"||args.targetAction==="rollback"||args.targetAction==="drain")) {
@@ -336,6 +489,9 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       return {service,...await prepareCoreLifecycle(args.targetAction,port!)};
     }
     if(service==="mcp"&&args.targetAction==="reload")return planMcpReload(port!);
+    if(service==="tray"&&(args.targetAction==="upgrade"||
+       args.targetAction==="rollback"))
+      return planManagedTrayRelease(args.targetAction);
     if(service==="tray"&&(args.targetAction==="start"||
        args.targetAction==="stop"||args.targetAction==="restart")){
       const plan=await planManagedTray(args.targetAction);
@@ -365,6 +521,24 @@ export async function manageServices(raw:unknown):Promise<unknown> {
       reason:"SERVICE_UNSUPPORTED_MUTATION: no authenticated remote lifecycle protocol; no PID kill or tunnel restart will be attempted"};
   }
   if(args.confirm!==true)throw new Error("SERVICE_CONFIRM_REQUIRED");
+  if(service==="tray"&&(action==="upgrade"||action==="rollback")){
+    if(!args.operationId||!args.expectedBuildDigest||
+       !args.expectedReleaseRevision||args.expectedCurrentDigest===undefined||
+       args.expectedOwnerPid===undefined||!args.expectedInstanceId||
+       args.noCoreShutdown!==true)
+      throw new Error("SERVICE_TRAY_RELEASE_PLAN_REQUIRED");
+    return executeManagedTrayRelease({
+      service:"tray",action,operationId:args.operationId,confirm:true,
+      expectedBuildDigest:args.expectedBuildDigest,
+      expectedReleaseRevision:args.expectedReleaseRevision,
+      expectedCurrentDigest:args.expectedCurrentDigest,
+      expectedOwnerPid:args.expectedOwnerPid,
+      expectedInstanceId:args.expectedInstanceId,
+      ...(port===undefined?{}:{port}),
+      noCoreShutdown:true,
+      note:"Only content-addressed trusted Tray binary; rollback if launch fails",
+    });
+  }
   if(service==="tray"&&(action==="start"||action==="stop"||action==="restart")){
     if(!args.operationId||args.expectedOwnerPid===undefined||
        !args.expectedInstanceId||!args.expectedBuildDigest||
@@ -485,4 +659,38 @@ export async function manageServices(raw:unknown):Promise<unknown> {
   }
   throw new Error("SERVICE_UNSUPPORTED_MUTATION: no verified owner-scoped control path for "+
     service+" "+action+"; processes and tunnels were not changed");
+}
+
+/** One metadata-only audit envelope for every mutation and preflight. */
+export async function manageServices(raw:unknown):Promise<unknown>{
+  const args=validateManageServicesArgs(raw);
+  if(["status","inventory","doctor","health","dashboard", "profile","logs"].includes(args.action)||
+    args.action==="watchdog"&&args.confirm!==true)
+    return manageServicesInternal(args);
+  const service=args.service??"all",since=Date.now();
+  const fields:any={at:since,service:service==="all"?"process_supervisor":service,
+    action:args.action,
+    ...(args.operationId?{operationHashPrefix:operationHashPrefix(args.operationId)}:{}),
+    ...(args.port?{port:args.port}:{})};
+  // Preflight prevents unaudited mutation if the private audit journal is unusable.
+  recordLifecycleEvent({...fields,outcome:"planned"});
+  try{
+    const result=await manageServicesInternal(args);
+    const data=result as Record<string,any>;
+    recordLifecycleEvent({...fields,at:Date.now(),
+      durationMs:Math.min(Date.now()-since,3600000),
+      outcome:data?.replayed===true?"replayed":"succeeded",
+      ...(Number.isSafeInteger(data?.ownerPid)&&data.ownerPid>0?{ownerPid:data.ownerPid}:{}),
+      ...(typeof data?.activeBuildDigest==="string"?
+        {buildDigestPrefix:data.activeBuildDigest.slice(0,16)}:{})});
+    return result;
+  }catch(e){
+    const message=e instanceof Error?e.message:"SERVICE_FAILED";
+    const match=message.match(/[A-Z][A-Z0-9_]{2,63}/);
+    recordLifecycleEvent({...fields,at:Date.now(),
+      durationMs:Math.min(Date.now()-since,3600000),
+      outcome:/UNCERTAIN|PENDING|UNKNOWN|TIMEOUT/.test(message)?"uncertain":"blocked",
+      errorCode:match?.[0]??"SERVICE_FAILED"});
+    throw e;
+  }
 }

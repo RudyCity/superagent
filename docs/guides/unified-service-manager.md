@@ -268,3 +268,132 @@ The OAuth loopback integration starts only an isolated Core supervisor and
 MCP HTTP server on disposable ports. It tests the unified manager via the
 real OAuth MCP transport, including verified rollback and idempotent retry.
 No production or public tunnel is modified.
+
+## Unified Runtime Supervisor expansion (2026-11-05)
+
+These operations extend the same existing **agent** tool
+`manage_services` and **MCP** tool `superagent_manage_services`.
+They do not register a new generic process-kill or host-control tool.
+MCP mutation still requires the existing write OAuth scope and local
+dangerous-operation permission; a read-only credential cannot execute it.
+
+### Read-only monitoring
+
+| Action | Meaning | Security boundary |
+|---|---|---|
+| `inventory`, `status` | Existing per-service status/owner | Legacy response fields unchanged |
+| `health`, `doctor` | Liveness, readiness, dependency checks | Inspects owners without changing them |
+| `dashboard` | Status + dependency order + timeline + release summary | A structured MCP/agent response, not a native Tauri page |
+| `logs` | Bounded lifecycle event timeline (`limit` 1–200) | No bearer token, URL secret, prompts or raw operation IDs |
+| `profile` | Read declarative profiles, revision and dependency order | Default auto-recovery and auto-start are OFF |
+| `watchdog` (no `confirm`) | Evaluate advisory recovery candidates | No process mutation |
+
+`dashboard` is returned as machine-readable JSON for clients to render.
+Native Tray UI integration with this dashboard is separate from the core
+runtime supervisor API.
+
+### Strict service profiles
+
+Use `action:"profile"` to receive a revision and an exact profile.
+A profile can be updated only by an authorized writer:
+
+```json
+{"name":"superagent_manage_services","arguments":{
+  "action":"configure","service":"tray","revision":"<exact revision from profile>",
+  "autoRecover":true,"failureThreshold":3,
+  "maxRestartsPerHour":2,"intervalSeconds":30,"confirm":true
+}}
+```
+
+The revision is an optimistic concurrency lock; write requests also acquire
+an exclusive local lock. Dependency edges and the allowed operation
+set are **immutable policy**, not user-supplied process commands.
+Core, MCP, Quick Tunnels and the process registry cannot be made automatic
+recovery targets. `startOnBoot` means at most one attempt after the watchdog
+worker is explicitly started during a boot; it does **not** install a Windows
+Startup shortcut, service or scheduled task.
+
+### Watchdog, cooldown and unknown outcomes
+
+A one-time advisory check is `action:"watchdog"`. An explicitly approved
+recovery tick uses `action:"watchdog", "confirm":true`. A separate
+long-lived opt-in worker is provided:
+
+```powershell
+bun scripts/lifecycle-watchdog.ts --once
+$env:SUPERAGENT_LIFECYCLE_WATCHDOG_APPROVED="1"
+bun scripts/lifecycle-watchdog.ts --apply --once
+```
+
+The watchdog is NOT automatically installed or enabled. It checks at least
+two failed observations (configurable), optional explicit dependency readiness,
+the per-hour restart budget, a one-per-boot start guard and an exclusive
+single-worker lock. Only a **verified absent** independent service may be
+started through that service's existing planned owner control. It never
+interrupts an active Core session or restarts MCP/tunnel endpoints.
+
+An uncertain operation ID is retained as pending. Repeated requests must
+not repeat the side effect. After the cooldown and an **independent** owner
+absence check, the operator can use `reconcile` with `confirm:true`,
+`reviewed:true` and the original operation ID. Reconciliation only marks
+the receipt as reviewed; it never runs a compensating start/stop.
+Bound ports, legacy Tray processes, stale discovery records and ambiguous
+Muse/Telegram channel aliases fail closed. Original reviewed operation IDs
+remain non-replayable.
+
+### Transactional Tray release and rollback
+
+A Tray upgrade is explicitly planned:
+
+```json
+{"name":"superagent_manage_services","arguments":{
+  "action":"plan","service":"tray","targetAction":"upgrade"
+}}
+```
+
+A production upgrade requires the trusted native **release** build at
+`apps/superagent-tray/src-tauri/target/release/superagent-tray.exe`.
+Debug builds are accepted **only** by the isolated Vitest headless smoke
+harness. From the plan, copy `operationId`,
+`expectedReleaseRevision`, `expectedBuildDigest`,
+`expectedCurrentDigest` (may be null), `expectedOwnerPid`,
+`expectedInstanceId`, `port` (if present), and
+`noCoreShutdown:true`. Execute `action:"upgrade"`, `confirm:true`.
+
+The upgrade verifies the compiled build hash, copies it into a private
+content-addressed immutable release slot, keeps the previously installed
+binary for rollback, checks the native Tray owner and verifies no unknown
+duplicate Tray process exists, then gracefully stops only the authenticated
+Tray. It promotes the release manifest under a lock, launches the new
+version, checks its exact file hash and PID through the private IPC,
+and returns a durable operation receipt. If activation fails, it attempts
+to restore the previous pointer **only if no unexpected owner remains**.
+Ambiguous failures are reported for operator review; they are never
+automatically retried.
+
+Rollback uses the same contract with
+`action:"plan", "targetAction":"rollback"` followed by
+`action:"rollback", "confirm":true`. The system never calls
+`taskkill` on an unknown Tray or takes over a legacy Tray without a native
+owner record. A legacy Tray must be closed through its own Quit menu before
+upgrading; this is an intentional safety gate.
+
+The existing protected Core/MCP, watcher reconciliation and Quick Tunnel
+rules remain unchanged. In particular, a random Cloudflare Quick Tunnel URL
+is **never** assumed to survive full process restart.
+
+### Verification (no production mutations)
+
+```bash
+bun run build
+bun --bun x tsc --noEmit
+bun --bun x vitest run tests/lifecycleSupervisorPolicy.test.ts tests/lifecycleWatchdog.test.ts tests/managedSidecarLedger.test.ts tests/serviceManager.test.ts tests/serviceManagerMcp.test.ts
+bun --bun x vitest run tests/managedTrayControl.test.ts tests/trayTransactionalUpgrade.test.ts --maxWorkers=1
+```
+
+The last command launches **only** its own Tauri debug headless workers,
+using disposable configuration profiles; native Tray production, Core,
+MCP, Muse and Cloudflare are not modified. Verify the latest build
+and restart only the intended authenticated MCP backend in a separately
+approved deployment window before asserting that connected clients use
+the new tool schema.
