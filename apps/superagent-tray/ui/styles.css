@@ -184,6 +184,117 @@
   border-radius: var(--radius-sm);
   margin-top: 12px;
 }
+.runtime-result-line {
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+.runtime-result-line strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  margin-right: 6px;
+}
+.runtime-result-endpoint {
+  font-family: var(--font-mono);
+  color: #38bdf8;
+  word-break: break-all;
+}
+.runtime-token-box, .runtime-snippet-box {
+  margin-top: 12px;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.runtime-token-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  gap: 8px;
+}
+.runtime-token-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.runtime-token-badge.secondary {
+  color: var(--text-secondary);
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.2);
+}
+.runtime-copy-inline {
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  transition: all 0.15s ease;
+}
+.runtime-copy-inline:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-strong);
+}
+.runtime-copy-inline:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+.runtime-token-val {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: #38bdf8;
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  padding: 10px 12px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+}
+.runtime-snippet-val {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--bg-base);
+  border: 1px solid var(--border-subtle);
+  padding: 10px 12px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: all;
+  line-height: 1.5;
+}
+.runtime-result-note {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+.runtime-inline-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-medium);
+  color: #38bdf8;
+  user-select: all;
+}
 .tray-settings-panel {
   max-width: 960px;
 }
@@ -540,6 +651,37 @@ button:disabled {
   background: var(--danger);
   box-shadow: 0 0 0 3px var(--danger-muted);
   animation: none;
+}
+
+.connection-start-btn {
+  width: 100%;
+  margin: 6px 0 2px;
+  padding: 8px 12px;
+  font-size: 11.5px;
+  font-weight: 650;
+  gap: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+  border: 1px solid rgba(56, 189, 248, 0.45);
+  box-shadow: 0 0 14px rgba(37, 99, 235, 0.35);
+  border-radius: var(--radius-sm);
+  color: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.connection-start-btn:hover {
+  background: linear-gradient(135deg, #0369a1 0%, #1d4ed8 100%);
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.55);
+  transform: translateY(-1px);
+}
+.connection-start-btn:active {
+  transform: translateY(0);
+}
+.connection-start-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
 }
 
 @keyframes pulse-dot {
@@ -1458,13 +1600,67 @@ tbody tr:hover {
   line-height: 1.4;
 }
 
+/* Form Inputs & Component System */
+.form-group input,
+.form-group textarea,
+.form-group select {
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-medium);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font-size: 13px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.form-group input:hover,
+.form-group textarea:hover,
+.form-group select:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-elevated);
+}
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+  background: var(--bg-surface-elevated);
+  outline: none;
+}
+
+/* Custom Select with SVG Chevron */
+.select-wrapper {
+  position: relative;
+  display: flex;
+}
+.select-wrapper select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 32px;
+  cursor: pointer;
+}
+.select-wrapper::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--text-secondary);
+  pointer-events: none;
+}
+
 /* Toggle Switch Control */
 .toggle-control {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   cursor: pointer;
   user-select: none;
+  padding: 4px 0;
 }
 
 .toggle-control input {
@@ -1472,13 +1668,13 @@ tbody tr:hover {
 }
 
 .toggle-slider {
-  width: 36px;
-  height: 20px;
-  background: var(--bg-surface-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-pill);
+  width: 40px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border-medium);
+  border-radius: 9999px;
   position: relative;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease, box-shadow 0.2s ease;
   flex-shrink: 0;
 }
 
@@ -1487,25 +1683,26 @@ tbody tr:hover {
   position: absolute;
   top: 2px;
   left: 2px;
-  width: 14px;
-  height: 14px;
-  background: var(--text-secondary);
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
   border-radius: 50%;
-  transition: transform var(--transition-fast), background var(--transition-fast);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 
 .toggle-control input:checked + .toggle-slider {
   background: var(--accent);
   border-color: var(--accent);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.45);
 }
 
 .toggle-control input:checked + .toggle-slider::before {
-  transform: translateX(16px);
-  background: #ffffff;
+  transform: translateX(18px);
 }
 
 .toggle-label {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 550;
   color: var(--text-primary);
 }

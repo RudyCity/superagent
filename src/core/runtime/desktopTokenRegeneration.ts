@@ -59,7 +59,7 @@ const liveAdapter:TokenRotationAdapter = {
 export async function regenerateTrayToken(
   request:TrayTokenTarget,
   deps?:TokenRotationAdapter
-):Promise<{success:true;kind:string;port:number;pid:number;copied:boolean;message:string}> {
+):Promise<{success:true;kind:string;port:number;pid:number;copied:boolean;code?:string;setupSnippet?:string;message:string}> {
   const input=parseTrayTokenTarget(request);
   const adapter=deps ?? liveAdapter;
   if (input.kind === "mcp") {
@@ -76,11 +76,12 @@ export async function regenerateTrayToken(
         !/^[a-zA-Z0-9_-]{24,128}$/.test(result.code)) {
       throw new Error("Owner returned an invalid OAuth approval-code response");
     }
-    const copied=await adapter.copySecretToClipboard(
-      "SuperAgent MCP OAuth approval\nEndpoint: " + result.publicUrl +
-      "\nOne-time bootstrap code: " + result.code
-    );
+    const setupSnippet = "SuperAgent MCP OAuth approval\nEndpoint: " + result.publicUrl +
+      "\nOne-time bootstrap code: " + result.code;
+    const copied=await adapter.copySecretToClipboard(setupSnippet);
     return {success:true,kind:input.kind,port:input.port,pid:input.pid,
+      code:result.code,
+      setupSnippet,
       copied,
       message:copied
         ? "New MCP OAuth bootstrap approval code copied to OS clipboard. Public URL and existing OAuth grants remain unchanged."

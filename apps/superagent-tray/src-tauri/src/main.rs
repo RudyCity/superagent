@@ -5,10 +5,11 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::PathBuf,
+    process::Command,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
-    menu::{Menu, MenuItem},
+    menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     Emitter, Manager, WindowEvent,
 };
@@ -239,6 +240,129 @@ async fn create_connection(payload: Value) -> Result<Value, String> {
     let target = server_info()?;
     let body = connection_body(payload, target.port)?;
     core_request(Method::POST, "/api/desktop/create-connection", Some(body)).await
+}
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn find_superagent_executable() -> Result<(PathBuf, Vec<String>), String> {
+    if let Some(exe) = std::env::var_os("SUPERAGENT_EXECUTABLE") {
+        let p = PathBuf::from(exe);
+        if p.exists() {
+            return Ok((p, vec![]));
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        let bun_sa = home.join(".bun").join("bin").join("superagent.exe");
+        if bun_sa.exists() {
+            return Ok((bun_sa, vec![]));
+        }
+        let local_sa = home.join(".superagent-r").join("bin").join("superagent.exe");
+        if local_sa.exists() {
+            return Ok((local_sa, vec![]));
+        }
+        let bun_exe = home.join(".bun").join("bin").join("bun.exe");
+        if bun_exe.exists() {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            let dist_cli = cwd.join("dist").join("cli.js");
+            if dist_cli.exists() {
+                return Ok((bun_exe, vec![dist_cli.to_string_lossy().to_string()]));
+            }
+        }
+    }
+    Ok((PathBuf::from("superagent"), vec![]))
+}
+
+async fn launch_server_process(port: u16) -> Result<u32, String> {
+    let probe_url = format!("http://127.0.0.1:{}/api/status", port);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(1500))
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    if let Ok(resp) = client.get(&probe_url).send().await {
+        if resp.status().is_success() {
+            return Ok(0);
+        }
+    }
+
+    let (exe, extra_args) = find_superagent_executable()?;
+    let mut cmd = Command::new(&exe);
+    for arg in extra_args {
+        cmd.arg(arg);
+    }
+    cmd.arg("--server")
+       .arg(port.to_string())
+       .arg("--client-mode")
+       .arg("tline");
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    let child = cmd.spawn().map_err(|e| format!("Failed to spawn SuperAgent server: {}", e))?;
+    let pid = child.id();
+
+    for _ in 0..14 {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        if let Ok(resp) = client.get(&probe_url).send().await {
+            if resp.status().is_success() {
+                return Ok(pid);
+            }
+        }
+    }
+    Ok(pid)
+}
+
+#[tauri::command]
+async fn start_core_server(port: Option<u16>) -> Result<Value, String> {
+    let target = port.unwrap_or(7888);
+    let pid = launch_server_process(target).await?;
+    let already_running = pid == 0;
+    Ok(json!({
+        "success": true,
+        "port": target,
+        "pid": pid,
+        "alreadyRunning": already_running,
+        "message": if already_running {
+            "SuperAgent Core server is already running".to_string()
+        } else {
+            format!("SuperAgent Core server started on port {}", target)
+        }
+    }))
+}
+
+#[tauri::command]
+async fn stop_core_server(port: Option<u16>) -> Result<Value, String> {
+    let target = port.unwrap_or(7888);
+    let dir = config_dir()?;
+    let info_path = dir.join("server-info.json");
+    if !info_path.exists() {
+        return Err("No active server-info.json found to stop".into());
+    }
+    let content = std::fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
+    let val: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    let pid = val["pid"].as_u64().ok_or_else(|| "Missing PID in server-info.json".to_string())? as u32;
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let status = Command::new("taskkill")
+            .args(&["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status()
+            .map_err(|e| e.to_string())?;
+        if !status.success() {
+            return Err("Failed to terminate Core process".into());
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = Command::new("kill").arg(pid.to_string()).status();
+    }
+    Ok(json!({ "success": true, "port": target, "pid": pid, "message": "Core server stopped" }))
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -606,13 +730,29 @@ fn main() {
                     window.hide()?;
                 }
             }
-            let open = MenuItem::with_id(app, "open", "Open Cron Manager", true, None::<&str>)?;
-            let add = MenuItem::with_id(app, "add", "New Reminder", true, None::<&str>)?;
+            let status_item = MenuItem::with_id(app, "status_info", "⚡ SuperAgent Tray · Active", false, None::<&str>)?;
+            let sep0 = PredefinedMenuItem::separator(app)?;
+            let open = MenuItem::with_id(app, "open", "📊 Open Dashboard", true, None::<&str>)?;
+            let start_server = MenuItem::with_id(app, "start_server", "🟢 Start Core Server (:7888)", true, None::<&str>)?;
             let runtime =
-                MenuItem::with_id(app, "runtime", "Runtime Detection", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Tray Settings", true, None::<&str>)?;
+                MenuItem::with_id(app, "runtime", "🔍 Runtime Detection", true, None::<&str>)?;
+            let add = MenuItem::with_id(app, "add", "➕ New Reminder", true, None::<&str>)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let settings = MenuItem::with_id(app, "settings", "⚙️ Tray Settings", true, None::<&str>)?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "Quit SuperAgent Tray", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open, &add, &runtime, &settings, &quit])?;
+            let menu = Menu::with_items(app, &[
+                &status_item,
+                &sep0,
+                &open,
+                &start_server,
+                &runtime,
+                &add,
+                &sep1,
+                &settings,
+                &sep2,
+                &quit,
+            ])?;
             TrayIconBuilder::new()
                 .icon(
                     app.default_window_icon()
@@ -624,6 +764,14 @@ fn main() {
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
                     "open" => show_main(app, false),
+                    "start_server" => {
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = launch_server_process(7888).await;
+                            show_main(&handle, false);
+                            let _ = handle.emit("desktop-server-started", 7888);
+                        });
+                    }
                     "add" => show_main(app, true),
                     "runtime" => {
                         show_main(app, false);
@@ -692,7 +840,9 @@ fn main() {
             regenerate_token,
             get_tray_settings,
             set_tray_settings,
-            tray_window_action
+            tray_window_action,
+            start_core_server,
+            stop_core_server
         ])
         .run(tauri::generate_context!())
         .expect("SuperAgent Tray could not start");

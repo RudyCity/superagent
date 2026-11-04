@@ -93,9 +93,22 @@ export function parseNewTrayConnection(raw: unknown, localCorePort: number): New
 
 export interface TrayCreationAdapter {
   registerMcpClient(request: Extract<NewTrayConnection,{kind:"mcp-client"}>): Promise<void>;
-  createMcpTunnel(request: Extract<NewTrayConnection,{kind:"mcp-tunnel"}>): Promise<{pid:number; endpoint:string; provider:string; setupCopied?:boolean}>;
+  createMcpTunnel(request: Extract<NewTrayConnection,{kind:"mcp-tunnel"}>): Promise<{
+    pid: number;
+    endpoint: string;
+    provider: string;
+    setupCopied?: boolean;
+    bootstrapCode?: string;
+    setupSnippet?: string;
+  }>;
   createCoreTunnel(request: Extract<NewTrayConnection,{kind:"core-tunnel"}>): Promise<{pid:number; endpoint:string}>;
-  createMuseTunnel(request: Extract<NewTrayConnection,{kind:"muse-tunnel"}>): Promise<{pid:number; endpoint:string; setupCopied?:boolean}>;
+  createMuseTunnel(request: Extract<NewTrayConnection,{kind:"muse-tunnel"}>): Promise<{
+    pid: number;
+    endpoint: string;
+    setupCopied?: boolean;
+    token?: string;
+    setupSnippet?: string;
+  }>;
 }
 
 const liveAdapter: TrayCreationAdapter = {
@@ -110,7 +123,7 @@ const liveAdapter: TrayCreationAdapter = {
     });
   },
   async createMcpTunnel(request) {
-    const {startManagedMcpTunnelOwner,copyManagedMcpExtensionSetupToClipboard} =
+    const {startManagedMcpTunnelOwner,copyManagedMcpExtensionSetupToClipboard,buildManagedMcpExtensionSetup} =
       await import("./mcpManagedTunnelOwner.js");
     // Explicit safe tool exposure only. Existing owner checks duplicate ports.
     const args = ["--mcp-port", String(request.port), "--provider", request.provider,
@@ -120,10 +133,17 @@ const liveAdapter: TrayCreationAdapter = {
     if (!entry) throw new Error("No SuperAgent CLI entry for managed MCP owner startup");
     const result = await startManagedMcpTunnelOwner(args,entry,process.cwd());
     // The one-time OAuth bootstrap code is copied directly by Core to the
-    // user's OS clipboard; it is never returned to the Tauri WebView.
+    // user's OS clipboard and also returned for display in the authenticated tray.
     const setupCopied = await copyManagedMcpExtensionSetupToClipboard(result);
-    return {pid:result.pid, endpoint:result.info.publicUrl,
-      provider:result.info.tunnelProvider,setupCopied};
+    const setupSnippet = buildManagedMcpExtensionSetup(result.info) ?? undefined;
+    return {
+      pid: result.pid,
+      endpoint: result.info.publicUrl,
+      provider: result.info.tunnelProvider,
+      setupCopied,
+      bootstrapCode: result.info.bootstrapCode,
+      setupSnippet,
+    };
   },
   async createCoreTunnel({port}) {
     const {getTunnelStatus,startQuickTunnel,claimTunnelServiceKind,stopQuickTunnel} =
@@ -204,9 +224,14 @@ const liveAdapter: TrayCreationAdapter = {
       wssUrl:tunnel.wssUrl, token, publicUrl:tunnel.publicUrl,
       workspaces:configured,
     });
-    // The credential never passes through the HTML/JS result or runtime logs.
     const setupCopied = await copyTextToClipboard(prompt);
-    return {pid:tunnel.pid!,endpoint:tunnel.wssUrl,setupCopied};
+    return {
+      pid: tunnel.pid!,
+      endpoint: tunnel.wssUrl,
+      setupCopied,
+      token,
+      setupSnippet: prompt,
+    };
   },
 };
 
@@ -225,11 +250,21 @@ export async function createTrayConnection(
     }
     if (request.kind === "mcp-tunnel") {
       const data = await adapter.createMcpTunnel(request);
-      return {success:true,kind:request.kind,state:"running",port:request.port,
-        pid:data.pid,endpoint:data.endpoint,provider:data.provider,setupCopied:data.setupCopied===true,
-        message:data.setupCopied
+      return {
+        success: true,
+        kind: request.kind,
+        state: "running",
+        port: request.port,
+        pid: data.pid,
+        endpoint: data.endpoint,
+        provider: data.provider,
+        bootstrapCode: data.bootstrapCode,
+        setupSnippet: data.setupSnippet,
+        setupCopied: data.setupCopied === true,
+        message: data.setupCopied
           ? "MCP tunnel started; private setup and one-time OAuth approval code copied to the local OS clipboard. Keep it private."
-          : "MCP tunnel started. For the one-time OAuth approval code run: superagent mcp tunnel token regenerate --port " + request.port};
+          : "MCP tunnel started. For the one-time OAuth approval code run: superagent mcp tunnel token regenerate --port " + request.port,
+      };
     }
     if (request.kind === "core-tunnel") {
       const data=await adapter.createCoreTunnel(request);
@@ -238,11 +273,20 @@ export async function createTrayConnection(
         message:"Cloudflare HTTPS tunnel started for this Core. API Bearer authentication remains required."};
     }
     const data=await adapter.createMuseTunnel(request);
-    return {success:true,kind:request.kind,state:"running",port:request.port,
-      pid:data.pid,endpoint:data.endpoint,setupCopied:data.setupCopied===true,
-      message:data.setupCopied
+    return {
+      success: true,
+      kind: request.kind,
+      state: "running",
+      port: request.port,
+      pid: data.pid,
+      endpoint: data.endpoint,
+      token: data.token,
+      setupSnippet: data.setupSnippet,
+      setupCopied: data.setupCopied === true,
+      message: data.setupCopied
         ? "Muse WSS tunnel started; its private connection prompt was copied to the local OS clipboard. Treat the bearer token as a password."
-        : "Muse WSS tunnel started, but clipboard setup failed. Read the protected local tray-muse-" + request.port + ".json owner configuration to get the private token."};
+        : "Muse WSS tunnel started, but clipboard setup failed. Read the protected local tray-muse-" + request.port + ".json owner configuration to get the private token.",
+    };
   } finally {
     creating=false;
   }

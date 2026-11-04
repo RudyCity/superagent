@@ -10,7 +10,7 @@ const corePort=7888;
 afterEach(()=>vi.unstubAllEnvs());
 const fake = () => ({
   registerMcpClient:vi.fn(async()=>{}),
-  createMcpTunnel:vi.fn(async()=>({pid:301,endpoint:"https://mcp.example.invalid/mcp",provider:"cloudflare"})),
+  createMcpTunnel:vi.fn(async()=>({pid:301,endpoint:"https://mcp.example.invalid/mcp",provider:"cloudflare",bootstrapCode:"test-bootstrap-code-12345"})),
   createCoreTunnel:vi.fn(async()=>({pid:302,endpoint:"https://rest.example.invalid"})),
   createMuseTunnel:vi.fn(async()=>({pid:303,endpoint:"wss://muse.example.invalid/muse"})),
 });
@@ -79,9 +79,11 @@ describe("SuperAgent Tray new connection validation",()=>{
     expect(muse).toMatchObject({kind:"muse-tunnel",state:"running",pid:303});
     expect(ops.createMuseTunnel).toHaveBeenCalledTimes(1);
     const exposed=[client,mcp,rest,muse];
-    for(const value of exposed){
+    expect(mcp).toHaveProperty("bootstrapCode", "test-bootstrap-code-12345");
+    for(const value of [client,rest,muse]){
       expect(value).not.toHaveProperty("bootstrapCode");
-      expect(value).not.toHaveProperty("wsToken");
+    }
+    for(const value of exposed){
       expect(value).not.toHaveProperty("apiKey");
       expect(value).not.toHaveProperty("bearerToken");
     }

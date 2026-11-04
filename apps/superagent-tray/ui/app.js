@@ -120,6 +120,10 @@ function connection(isOnline, message) {
   $("connection-detail").textContent = isOnline
     ? `127.0.0.1:${window.__SUPERAGENT_CORE_PORT || "selected"} · Secured via Rust IPC`
     : String(message || "Core is offline").slice(0, 180);
+  const startBtn = $("btn-start-core");
+  if (startBtn) {
+    startBtn.hidden = isOnline;
+  }
 }
 
 function setBanner(message, buttonText, action) {
@@ -442,6 +446,33 @@ function install() {
   $("frequency")?.addEventListener("change", updateFrequency);
   $("kind")?.addEventListener("change", updateKinds);
   $("job-form")?.addEventListener("submit", saveForm);
+
+  const startBtn = $("btn-start-core");
+  if (startBtn) {
+    startBtn.addEventListener("click", async () => {
+      startBtn.disabled = true;
+      const originalHtml = startBtn.innerHTML;
+      startBtn.innerHTML = `<span>Starting Core (:7888)...</span>`;
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error("Tauri IPC is not available");
+        const res = await invoke("start_core_server", { port: 7888 });
+        toast(res?.message || "Core server started");
+        await refresh();
+        if (typeof runtimeRefresh === "function") await runtimeRefresh();
+      } catch (err) {
+        errors(err);
+      } finally {
+        startBtn.disabled = false;
+        startBtn.innerHTML = originalHtml;
+      }
+    });
+  }
+
+  window.__TAURI__?.event?.listen?.("desktop-server-started", async () => {
+    await refresh();
+    if (typeof runtimeRefresh === "function") await runtimeRefresh();
+  });
 
   window.addEventListener("superagent-core-selected", refresh);
 

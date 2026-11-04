@@ -235,6 +235,36 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.requested.filter(a=>a.action==="create_connection")).toHaveLength(4);
   });
 
+  it("displays one-time OAuth approval code in the create connection result view", async () => {
+    const ui=mountRuntime({
+      scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,selectedCorePort:7888,
+      cores:[{port:7888,pid:100,state:"online",selected:true,pidVerified:true}],
+      processes:[],independentHosts:[],remoteServices:[],
+    });
+    const origInvoke = ui.context.window.__TAURI__.core.invoke;
+    ui.context.window.__TAURI__.core.invoke = async (action: string, args: any) => {
+      if (action === "create_connection") {
+        return {
+          success: true,
+          endpoint: "https://sodium-test.trycloudflare.com/mcp",
+          bootstrapCode: "test-oauth-bootstrap-code-999",
+          setupSnippet: "MCP URL : https://sodium-test.trycloudflare.com/mcp\nBootstrap : test-oauth-bootstrap-code-999",
+          message: "MCP tunnel started; code copied.",
+        };
+      }
+      return origInvoke(action, args);
+    };
+    await new Promise(resolve=>setImmediate(resolve));
+    const submit=() => vm.runInContext("runtimeCreateConnection({preventDefault(){}})",ui.context) as Promise<void>;
+    ui.byId("runtime-create-kind").value="mcp-tunnel";
+    ui.byId("runtime-create-port").value="9267";
+    ui.byId("runtime-create-provider").value="cloudflare";
+    await submit();
+    expect(ui.byId("runtime-create-result").hidden).toBe(false);
+    expect(ui.byId("runtime-create-result").textContent).toContain("test-oauth-bootstrap-code-999");
+    expect(ui.byId("runtime-create-result").textContent).toContain("One-Time OAuth Approval Code");
+  });
+
   it("does not attempt new connection when the selected Core is offline", async () => {
     const ui=mountRuntime({
       scannedAt:Date.now(),healthyCoreCount:0,activeProcessCount:0,

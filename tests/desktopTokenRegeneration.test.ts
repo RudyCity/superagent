@@ -37,25 +37,30 @@ describe("SuperAgent Tray token regeneration",()=>{
     expect(a.rotateMcpBootstrap).not.toHaveBeenCalled();
     expect(a.copySecretToClipboard).not.toHaveBeenCalled();
   });
-  it("regenerates only the one-time MCP OAuth approval code and copies locally",async()=>{
+  it("regenerates only the one-time MCP OAuth approval code, returning code and copying locally",async()=>{
     const a=fake();
     const result=await regenerateTrayToken({kind:"mcp",port:8857,pid:22228},a);
-    expect(result).toMatchObject({success:true,kind:"mcp",port:8857,pid:22228,copied:true});
+    expect(result).toMatchObject({
+      success: true,
+      kind: "mcp",
+      port: 8857,
+      pid: 22228,
+      copied: true,
+      code: oneTimeCode,
+    });
     expect(a.rotateMcpBootstrap).toHaveBeenCalledExactlyOnceWith(8857);
     expect(a.copySecretToClipboard).toHaveBeenCalledOnce();
     expect(a.copySecretToClipboard.mock.calls[0][0]).toContain(oneTimeCode);
     expect(a.copySecretToClipboard.mock.calls[0][0]).toContain("https://trusted.example.invalid/mcp");
-    expect(JSON.stringify(result)).not.toContain(oneTimeCode);
-    expect(JSON.stringify(result)).not.toContain("trusted.example.invalid");
-    expect(result).not.toHaveProperty("code");
+    expect(result.code).toBe(oneTimeCode);
+    expect(result.setupSnippet).toContain(oneTimeCode);
   });
   it("never claims code was copied when clipboard delivery fails",async()=>{
     const a=fake();
     a.copySecretToClipboard.mockResolvedValueOnce(false);
     const result=await regenerateTrayToken({kind:"mcp",port:8857,pid:22228},a);
-    expect(result).toMatchObject({success:true,copied:false});
+    expect(result).toMatchObject({success:true,copied:false,code:oneTimeCode});
     expect(result.message).toContain("clipboard copy failed");
-    expect(JSON.stringify(result)).not.toContain(oneTimeCode);
   });
   it("rejects invalid owner response and legacy unsupported rotation",async()=>{
     const a=fake();

@@ -366,9 +366,15 @@ async function runtimeRegenerateToken(event) {
   try {
     const result=await runtimeInvoke("regenerate_token",{kind,port,pid});
     if (result?.success!==true) throw new Error("Owner did not verify token rotation");
-    if (feedback) feedback.textContent=String(result.message||
-      (result.copied ? "Token rotated and copied to OS clipboard" :
-        "Token rotated; clipboard copy unavailable"));
+    if (feedback) {
+      if (result.code) {
+        feedback.innerHTML = `Token rotated! Code: <code class="runtime-inline-code">${runtimeEscape(result.code)}</code> (copied to clipboard)`;
+      } else {
+        feedback.textContent=String(result.message||
+          (result.copied ? "Token rotated and copied to OS clipboard" :
+            "Token rotated; clipboard copy unavailable"));
+      }
+    }
     await runtimeRefresh();
   } catch(error) {
     if (feedback) feedback.textContent="Token regeneration rejected or not verified: "+String(error);
@@ -442,9 +448,107 @@ async function runtimeCreateConnection(event) {
       ? "MCP configuration saved" : "Connection owner started successfully";
     if (resultView) {
       resultView.hidden = false;
-      resultView.textContent = (result.endpoint ? `Endpoint: ${result.endpoint}\n` : "") +
-        (result.name ? `Name: ${result.name}\n` : "") +
-        (result.message || "Connection created");
+      let text = (result.endpoint ? `Endpoint: ${result.endpoint}\n` : "") +
+        (result.name ? `Name: ${result.name}\n` : "");
+      if (result.bootstrapCode) {
+        text += `One-Time OAuth Approval Code: ${result.bootstrapCode}\n\n`;
+      }
+      if (result.setupSnippet) {
+        text += `Setup Details:\n${result.setupSnippet}\n\n`;
+      }
+      text += (result.message || "Connection created");
+
+      if (typeof document.createElement === "function" && typeof resultView.replaceChildren === "function") {
+        resultView.replaceChildren();
+
+        if (result.endpoint) {
+          const endpointP = document.createElement("div");
+          endpointP.className = "runtime-result-line";
+          endpointP.innerHTML = `<strong>Endpoint:</strong> <span class="runtime-result-endpoint">${runtimeEscape(result.endpoint)}</span>`;
+          resultView.appendChild(endpointP);
+        }
+
+        if (result.name) {
+          const nameP = document.createElement("div");
+          nameP.className = "runtime-result-line";
+          nameP.innerHTML = `<strong>Name:</strong> <span>${runtimeEscape(result.name)}</span>`;
+          resultView.appendChild(nameP);
+        }
+
+        if (result.bootstrapCode) {
+          const tokenBox = document.createElement("div");
+          tokenBox.className = "runtime-token-box";
+
+          const tokenHead = document.createElement("div");
+          tokenHead.className = "runtime-token-box-head";
+          const tokenLabel = document.createElement("span");
+          tokenLabel.className = "runtime-token-badge";
+          tokenLabel.textContent = "ONE-TIME OAUTH CODE";
+          const copyCodeBtn = document.createElement("button");
+          copyCodeBtn.type = "button";
+          copyCodeBtn.className = "button ghost runtime-copy-inline";
+          copyCodeBtn.textContent = "Copy Code";
+          copyCodeBtn.addEventListener("click", async () => {
+            try {
+              if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(result.bootstrapCode);
+              }
+              copyCodeBtn.textContent = "Copied!";
+              setTimeout(() => { copyCodeBtn.textContent = "Copy Code"; }, 2000);
+            } catch {
+              copyCodeBtn.textContent = "Copy failed";
+            }
+          });
+          tokenHead.append(tokenLabel, copyCodeBtn);
+
+          const tokenVal = document.createElement("pre");
+          tokenVal.className = "runtime-token-val";
+          tokenVal.textContent = result.bootstrapCode;
+
+          tokenBox.append(tokenHead, tokenVal);
+          resultView.appendChild(tokenBox);
+        }
+
+        if (result.setupSnippet) {
+          const snippetBox = document.createElement("div");
+          snippetBox.className = "runtime-snippet-box";
+          const snippetHead = document.createElement("div");
+          snippetHead.className = "runtime-token-box-head";
+          const snippetLabel = document.createElement("span");
+          snippetLabel.className = "runtime-token-badge secondary";
+          snippetLabel.textContent = "EXTENSION SETUP";
+          const copySnippetBtn = document.createElement("button");
+          copySnippetBtn.type = "button";
+          copySnippetBtn.className = "button ghost runtime-copy-inline";
+          copySnippetBtn.textContent = "Copy Setup";
+          copySnippetBtn.addEventListener("click", async () => {
+            try {
+              if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(result.setupSnippet);
+              }
+              copySnippetBtn.textContent = "Copied!";
+              setTimeout(() => { copySnippetBtn.textContent = "Copy Setup"; }, 2000);
+            } catch {
+              copySnippetBtn.textContent = "Copy failed";
+            }
+          });
+          snippetHead.append(snippetLabel, copySnippetBtn);
+
+          const snippetVal = document.createElement("pre");
+          snippetVal.className = "runtime-snippet-val";
+          snippetVal.textContent = result.setupSnippet;
+
+          snippetBox.append(snippetHead, snippetVal);
+          resultView.appendChild(snippetBox);
+        }
+
+        const msgDiv = document.createElement("div");
+        msgDiv.className = "runtime-result-note";
+        msgDiv.textContent = result.message || "Connection created";
+        resultView.appendChild(msgDiv);
+      } else {
+        resultView.textContent = text;
+      }
     }
     await runtimeRefresh();
   } catch (error) {
