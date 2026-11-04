@@ -230,7 +230,7 @@ The `control_chrome_vision` tool provides **human-like visual perception and spa
 | `/skills` | List installed skills or synthesize new ones (`/skills synthesize <title>`) |
 | `/install` | Install a skill from skills.sh (e.g. `/install vercel-labs/skills/find-skills`) |
 | `/memory` | Manage and inspect RMemory long-term memory: status, sync, search, add, delete, list-scenes, read-scene, read-persona |
-| `/mcp` | Manage MCP servers and tunnel providers: `list`, `add`, `remove`, `reload`, `use gateway|full|status`; tunnel actions include `providers`, `config` (OpenAI Tunnel ID/key: `set-id`, `set-key-env`, `set-key`, `status`, `clear-id`, `clear-key`, `clear`), `start`, `stop`, `restart`, `list`, `status`, `doctor` |
+| `/mcp` | Manage MCP servers and tunnel providers: `list`, `add`, `remove`, `reload` (outbound), `reload --port <port>` (local backend), `use gateway|full|status`; tunnel actions include `providers`, `config`, `start`, `stop`, `reload`, `restart` (backend-only by default), `restart --full` (public tunnel restart), `logs`, `list`, `status`, `doctor` |
 | `/macro` | Manage and run browser macro presets: list, run, delete |
 | `/muse` | Coordinate Muse tasks and watch sessions; `/muse tunnel` controls Muse WebSocket only |
 | `/telegram` | Manage direct Telegram bot/group operations: `status`, `doctor`, `send`, `config`, `fallback` |
@@ -457,10 +457,53 @@ MCP servers and provider-specific tunnels live under `/mcp tunnel` or `superagen
 /mcp tunnel start --provider openai --tunnel-id <id>
 /mcp tunnel list
 /mcp tunnel status
+/mcp help
 /mcp tunnel doctor --provider openai
-/mcp tunnel restart
-/mcp tunnel stop
+/mcp tunnel reload --port 8857
+/mcp tunnel logs --port 8857 --tail 20
+/mcp logs --port 8857 --tail 20
+/mcp tunnel restart --port 8857
+/mcp tunnel restart --port 8857 --full
+/mcp tunnel stop --port 8857
 ```
+
+**MCP stable-URL backend reload (Cloudflare Quick Tunnel):** On a *reloadable* owner,
+`/mcp tunnel reload --port <port>`, `/mcp tunnel restart --port <port>`,
+and `/mcp reload --port <port>` all start a new private backend first and
+switch new requests only after it is ready. The public URL, Cloudflare
+process and OAuth issuer stay unchanged; existing MCP sessions remain with
+their original backend until they end. Use `/mcp tunnel status` to see
+`Reloadable` versus `Legacy`, the active backend PID/generation, and the
+last successful reload. The **bare** `/mcp reload` in the interactive
+TUI refreshes *outbound* MCP clients, not the locally hosted MCP backend.
+The standalone CLI requires `superagent mcp reload --port <port>` for a
+hosted reload; it cannot manipulate another running TUI's outbound
+MCP clients.
+
+**Lifecycle log:** `/mcp tunnel logs --port <port> --tail 20` (alias
+`/mcp logs --port <port> --tail 20`, or CLI command
+`superagent mcp tunnel logs --port <port> --tail 20`) reads up to 100
+recent owner lifecycle events: started, reload started/succeeded/failed,
+and owner stopping. The per-port local JSONL journal is bounded and
+rotated under `~/.superagent-r/mcp-owner-<port>-events.jsonl`. It
+contains only event identifiers, owner/backend PIDs, duration and
+sanitized status codes—never OAuth/bearer credentials, prompt text or
+ChatGPT responses. It is distinct from the MCP request audit.
+
+**Migration and safety:** A legacy owner (including an owner started
+before the blue-green implementation) refuses backend-only reload
+instead of silently restarting Cloudflare. A **one-time**
+`/mcp tunnel restart --port <port> --full` may change the Cloudflare
+Quick Tunnel URL, break existing sessions and require connector
+reconfiguration. OpenAI Secure MCP Tunnel currently uses the legacy
+owner lifecycle; backend-only reload is not supported for it.
+For a hostname that survives even a full tunnel or machine restart,
+use a Cloudflare Named Tunnel with a fixed domain. OAuth reload on a
+new owner is refused if credential storage cannot persist across
+backend generations. After adding MCP tools, ChatGPT's cached tool
+catalog may still require refreshing its MCP session.
+
+See [stable-URL MCP blue-green reload and migration audit](docs/audits/2026-11-04-superagent-mcp-stable-url-bluegreen-reload.md).
 
 #### Adaptive MCP Tools: discovery, gateway mode and reconnect
 
@@ -482,7 +525,7 @@ superagent mcp use full        # Opt in to the original/full tool catalog
 
 In the interactive terminal (including T-Line), typing `/mcp use` shows contextual suggestions for `gateway`, `full`, and `status`. Partial inputs such as `/mcp use g` autocomplete via `Tab`; tunnel suggestions remain under `/mcp tunnel`.
 
-If no mode has been saved, Gateway is selected automatically. An existing explicit `full` selection is preserved until changed to Gateway. The selected mode persists in `~/.superagent-r/mcp-tool-exposure.json` (Windows: `%USERPROFILE%\.superagent-r\mcp-tool-exposure.json`), separate from providers and workspaces. Set `SUPERAGENT_MCP_TOOL_EXPOSURE=gateway` or `full` to override the saved setting for the current process. **Restart/reconnect the owning MCP server or tunnel after changing mode**; existing MCP sessions are not switched or terminated automatically. Other processes can continue in their existing mode until restarted.
+If no mode has been saved, Gateway is selected automatically. An existing explicit `full` selection is preserved until changed to Gateway. The selected mode persists in `~/.superagent-r/mcp-tool-exposure.json` (Windows: `%USERPROFILE%\.superagent-r\mcp-tool-exposure.json`), separate from providers and workspaces. Set `SUPERAGENT_MCP_TOOL_EXPOSURE=gateway` or `full` to override the saved setting for the current process. **Reload the backend on a reloadable Cloudflare owner** (`/mcp tunnel reload --port <port>`), or reconnect a client session after changing mode. Existing MCP sessions retain their previous backend catalog until they end. Legacy owners may require a separately planned one-time full restart; do not restart the public tunnel merely to update a tool catalog. Other processes can continue in their existing mode until restarted.
 
 Gateway calls in authorized sessions:
 

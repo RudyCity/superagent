@@ -6,13 +6,17 @@ export function printMcpHelp(): void {
 Usage: superagent mcp <command> [options]
 
 Commands:
+  help                                  Show this help
   list, ls                              List configured MCP servers
+  reload --port N                       Reload hosted backend while keeping Cloudflare URL unchanged
+  (Bare /mcp reload refreshes outbound MCP clients in the running TUI only.)
   add <name> <command> [args...]        Add an MCP server configuration
   add-http <name> <url> [--oauth]       Add a remote Streamable HTTP MCP server
   remove, rm <name>                     Remove an MCP server configuration
   use [gateway|full|status]              Select persistent MCP tool exposure for new sessions
   register                              Register Superagent as an MCP server to Antigravity (AGY)
-  tunnel <start|stop|reload|restart|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
+  logs [--port N] [--tail 1..100]      Read metadata-only MCP owner lifecycle journal
+  tunnel <start|stop|reload|restart|logs|list|status|doctor|providers|config>  Manage MCP tunnels and OpenAI credentials
 
 Examples:
    superagent mcp list
@@ -28,10 +32,16 @@ Examples:
    superagent mcp tunnel start --provider openai --tunnel-id tunnel_0123456789abcdef
    superagent mcp tunnel doctor --provider openai --profile superagent-mcp
    superagent mcp tunnel reload --port 8857
+   superagent mcp logs --port 8857 --tail 20
+   superagent mcp tunnel logs --port 8857 --tail 20
    superagent mcp tunnel restart --port 8857
-   superagent mcp tunnel restart --port 8857 --full  # explicit destructive restart
+   superagent mcp tunnel restart --port 8857 --full  # explicit full restart; Quick Tunnel URL can change
    superagent mcp tunnel list
    superagent mcp tunnel stop
+
+Backend-only reload works on reloadable Cloudflare owners, not legacy or OpenAI tunnel owners.
+Bare "mcp reload" refreshes outbound clients; "mcp reload --port N" refreshes the hosted backend.
+A legacy owner needs a one-time --full migration, which may change its Quick Tunnel URL.
 `);
 }
 
@@ -41,6 +51,36 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
   if (!subcommand || subcommand === "help" || subcommand === "--help" || subcommand === "-h") {
     printMcpHelp();
     process.exit(0);
+  }
+
+  if (subcommand === "logs" || subcommand === "log") {
+    await handleMcpCliCommand(["tunnel", "logs", ...args.slice(1)]);
+    return;
+  }
+
+  if (subcommand === "reload") {
+    const rest = args.slice(1);
+    const portIdx = rest.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
+    if (portIdx < 0) {
+      console.error("Standalone MCP CLI cannot reload outbound clients owned by another live session.");
+      console.error("Use /mcp reload in the interactive TUI, or 'superagent mcp reload --port <port>' for a hosted backend.");
+      process.exit(2);
+    }
+    const port = Number(rest[portIdx + 1]);
+    if (!Number.isSafeInteger(port) || port < 1024 || port > 65535) {
+      console.error("Invalid hosted MCP backend reload port.");
+      process.exit(1);
+    }
+    try {
+      const { reloadManagedMcpTunnelBackend } = await import("../runtime/mcpManagedTunnelOwner.js");
+      const result = await reloadManagedMcpTunnelBackend(port);
+      console.log("MCP backend reloaded; public URL unchanged: " + result.publicUrl);
+      console.log("New backend PID: " + result.backendPid);
+      process.exit(0);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
   }
 
   if (subcommand === "use") {
@@ -224,6 +264,30 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       process.exit(docResult.success ? 0 : 1);
     }
 
+    if (tunnelAction === "help") {
+      printMcpHelp();
+      process.exit(0);
+    }
+    if (tunnelAction === "logs" || tunnelAction === "log") {
+      const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
+      const tailIdx = rawArgs.indexOf("--tail");
+      const port = portIdx < 0 ? 9227 : Number(rawArgs[portIdx + 1]);
+      const tail = tailIdx < 0 ? 20 : Number(rawArgs[tailIdx + 1]);
+      if (!Number.isSafeInteger(port) || port < 1024 || port > 65535 ||
+          !Number.isSafeInteger(tail) || tail < 1 || tail > 100) {
+        console.error("Invalid MCP lifecycle log port or tail (1..100).");
+        process.exit(1);
+      }
+      try {
+        const { formatMcpOwnerLogs } = await import("../runtime/mcpOwnerLog.js");
+        console.log(formatMcpOwnerLogs(port, tail));
+        process.exit(0);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    }
+
     if (tunnelAction === "reload" ||
         (tunnelAction === "restart" && !rawArgs.includes("--full"))) {
       const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
@@ -353,7 +417,7 @@ export async function handleMcpCliCommand(args: string[]): Promise<void> {
       }
     }
 
-    console.log(`Unknown tunnel action: "${tunnelAction}". Available: providers, start, stop, reload, restart, list, status, doctor`);
+    console.log(`Unknown tunnel action: "${tunnelAction}". Available: providers, start, stop, reload, restart, logs, list, status, doctor`);
     process.exit(1);
   }
 

@@ -150,6 +150,7 @@ export const MCP_USE_SUGGESTIONS = [
 ] as const;
 
 export const MCP_TUNNEL_SUGGESTIONS = [
+  "/mcp tunnel help",
   "/mcp tunnel providers",
   "/mcp tunnel config status",
   "/mcp tunnel config set-id",
@@ -158,7 +159,10 @@ export const MCP_TUNNEL_SUGGESTIONS = [
   "/mcp tunnel list",
   "/mcp tunnel start --provider cloudflare",
   "/mcp tunnel start --provider openai --tunnel-id",
+  "/mcp tunnel reload",
   "/mcp tunnel restart",
+  "/mcp tunnel restart --full",
+  "/mcp tunnel logs",
   "/mcp tunnel stop",
   "/mcp tunnel status",
   "/mcp tunnel doctor --provider openai",
@@ -221,6 +225,11 @@ export function getMcpTunnelProvidersHelp(): string {
     "  /mcp tunnel config set-key <runtime-api-key>",
     "  /mcp tunnel config set-key-env",
     "  /mcp tunnel config status",
+    "  /mcp tunnel reload --port <port>             (backend only, unchanged URL on reloadable Cloudflare owners)",
+    "  /mcp tunnel logs --port <port> --tail 20     (private lifecycle metadata)",
+    "  /mcp tunnel restart --port <port> --full    (owner+tunnel; Quick Tunnel URL may change)",
+    "  Bare /mcp reload refreshes outbound MCP clients; use --port to reload the local backend.",
+    "  Legacy owners require one-time migration; OpenAI Secure MCP backend-only reload is not yet supported.",
     "  (or set OPENAI_MCP_TUNNEL_ID and run /mcp tunnel start --provider openai)",
   ].join("\n");
 }

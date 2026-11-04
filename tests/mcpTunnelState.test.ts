@@ -99,6 +99,30 @@ describe("mcpTunnel disk state (cross-workspace listing)", () => {
     expect(readMcpStateFile(file2)).toBeNull();
   });
 
+  it("renders accurate legacy vs reloadable MCP owner and read-only log hints", () => {
+    const stamp = Date.now();
+    const fresh = sampleState({
+      reloadable:true, backendPid:4242, backendGeneration:3,
+      lastReloadAt:stamp, tunnelProvider:"cloudflare",
+    });
+    fs.writeFileSync(getMcpStateFile(TEST_PORT), JSON.stringify(fresh));
+    const fromDisk = readMcpStateFile(getMcpStateFile(TEST_PORT));
+    expect(fromDisk?.backendPid).toBe(4242);
+    expect(fromDisk?.backendGeneration).toBe(3);
+    const rendered = formatActiveMcpServers([{...fresh,uptimeSeconds:5}]);
+    expect(rendered).toContain("Reloadable");
+    expect(rendered).toContain("PID 4242 | generation 3");
+    expect(rendered).toContain("Last reload");
+    expect(rendered).toContain("/mcp tunnel reload --port " + TEST_PORT);
+    expect(rendered).toContain("/mcp tunnel logs --port " + TEST_PORT);
+    const legacy = formatActiveMcpServers([{
+      ...sampleState({reloadable:false,tunnelProvider:"cloudflare"}),uptimeSeconds:5,
+    }]);
+    expect(legacy).toContain("Legacy (backend-only reload unavailable)");
+    expect(legacy).toContain("may rotate");
+    expect(legacy).not.toContain("PID 4242");
+  });
+
   it("formatActiveMcpServers renders section header and NONE ACTIVE", () => {
     const empty = formatActiveMcpServers([]);
     expect(empty).toContain("Active MCP Servers: NONE ACTIVE");

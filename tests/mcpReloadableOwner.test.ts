@@ -15,7 +15,8 @@ vi.mock("../src/core/remoteAgent/cloudflareTunnel.js", async orig => {
   return { ...actual, ...mock };
 });
 import { startReloadableMcpTunnelOwner } from "../src/core/runtime/mcpReloadableOwner.js";
-import { getMcpStateFile } from "../src/core/mcp/mcpTunnel.js";
+import { getMcpStateFile, readMcpStateFile } from "../src/core/mcp/mcpTunnel.js";
+import { readMcpOwnerLogs, mcpOwnerLogPath } from "../src/core/runtime/mcpOwnerLog.js";
 
 const nextPort = async () => new Promise<number>((resolve, reject) => {
   const srv = net.createServer();
@@ -58,6 +59,8 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       const state1 = (await control("status")).body;
       expect(state1.reloadable).toBe(true);
       expect(state1.backendGenerations).toBe(1);
+      expect(readMcpStateFile(getMcpStateFile(port))?.reloadable).toBe(true);
+      expect(readMcpOwnerLogs(port).map(e => e.event)).toContain("owner_started");
       const getClient = async () => {
         const c = new Client({name:"hot-reload-test", version:"1.0.0"}, {capabilities:{}});
         await c.connect(new StreamableHTTPClientTransport(new URL(local + "/mcp"), {
@@ -78,6 +81,13 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       expect(state2.startedAt).toBe(state1.startedAt);
       expect(state2.backendPid).not.toBe(state1.backendPid);
       expect(state2.backendGenerations).toBe(2);
+      const snapshot = readMcpStateFile(getMcpStateFile(port));
+      expect(snapshot?.backendPid).toBe(state2.backendPid);
+      expect(snapshot?.backendGeneration).toBe(2);
+      expect(snapshot?.lastReloadAt).toBeTypeOf("number");
+      expect(readMcpOwnerLogs(port).map(e => e.event)).toEqual(expect.arrayContaining([
+        "owner_started", "backend_reload_started", "backend_reload_succeeded",
+      ]));
       expect(mock.startQuickTunnel).toHaveBeenCalledTimes(1);
       expect(mock.stopQuickTunnel).toHaveBeenCalledTimes(0);
       // The old session is routed by its original MCP session-id.
@@ -95,6 +105,7 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       await old?.close().catch(() => undefined);
       await owner.close();
       fs.rmSync(getMcpStateFile(port), { force:true });
+      fs.rmSync(mcpOwnerLogPath(port), { force:true });
     }
     expect(mock.stopQuickTunnel).toHaveBeenCalledTimes(1);
     expect(fs.existsSync(getMcpStateFile(port))).toBe(false);
@@ -141,6 +152,7 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
     } finally {
       await owner.close();
       fs.rmSync(getMcpStateFile(port), {force:true});
+      fs.rmSync(mcpOwnerLogPath(port), {force:true});
     }
   }, 70_000);
 });

@@ -735,6 +735,11 @@ export function formatManagedMcpTunnelStartup(
     "Agent handoff (safe to paste):",
     "  Use the connected SuperAgent MCP server. Discover projects and tools first. Never request, echo, or store MCP credentials in chat.",
     "",
+    ...(info.tunnelProvider === "cloudflare" ? [
+      `Reload backend (same URL): /mcp tunnel reload --port ${stopPort}`,
+      `MCP lifecycle log: /mcp tunnel logs --port ${stopPort} --tail 20`,
+    ] : ["OpenAI Secure MCP Tunnel: backend-only reload unavailable"]),
+    `Full owner/tunnel restart (URL may change): /mcp tunnel restart --port ${stopPort} --full`,
     `Stop: /mcp tunnel stop --port ${stopPort}`,
     "Advanced client/Python details: /mcp tunnel status",
   );

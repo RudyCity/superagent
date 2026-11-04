@@ -92,10 +92,13 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/yolo off": "Disable YOLO mode and restore standard confirmation prompts",
   "/yolo status": "Check current YOLO mode status (scoped, full, or inactive)",
   "/mcp": "Manage MCP servers and MCP tunnel providers.",
+  "/mcp help": "Read MCP command help, backend reload safety and one-time migration notes.",
+  "/mcp logs": "Read private MCP owner lifecycle events without credentials or message content.",
   "/mcp list": "List configured MCP servers.",
   "/mcp add": "Register an external MCP server.",
   "/mcp remove": "Remove a configured MCP server.",
-  "/mcp reload": "Reload MCP server configurations.",
+  "/mcp reload": "Reconnect configured outbound MCP clients (no local tunnel restart).",
+  "/mcp reload --port": "Hot-reload the local MCP backend at a specific port without changing its Cloudflare URL.",
   "/mcp use": "Display or select MCP tool exposure mode for newly started servers.",
   "/mcp use gateway": "Use compact MCP gateway with search, describe, execute, and status.",
   "/mcp use full": "Use the complete authorized MCP tools catalog (compatibility option).",
@@ -110,7 +113,10 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/mcp tunnel start --mcp-auth oauth": "Enable OAuth 2.1 and PKCE authentication.",
   "/mcp tunnel start --mcp-auth static-bearer": "Use static Bearer authentication.",
   "/mcp tunnel start --allow-dangerous": "Opt in to potentially destructive MCP tools.",
-  "/mcp tunnel restart": "Restart an MCP tunnel while preserving its provider when possible.",
+  "/mcp tunnel reload": "Blue-green MCP backend reload; preserve Cloudflare Tunnel URL and active sessions.",
+  "/mcp tunnel restart": "Backend-only reload on supported Cloudflare owners; legacy owners fail safely.",
+  "/mcp tunnel restart --full": "Explicitly stop and restart the owner and public tunnel (Quick Tunnel URL may change).",
+  "/mcp tunnel logs": "Read bounded, credential-free MCP backend lifecycle events.",
   "/mcp tunnel stop": "Stop an MCP tunnel.",
   "/mcp tunnel status": "Show MCP tunnel status.",
   "/mcp tunnel doctor": "Diagnose one MCP tunnel provider; use --provider openai or --provider cloudflare.",
@@ -433,6 +439,36 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
 
     if (mainCommand === "/mcp") {
       const sub = parts[1]?.toLowerCase();
+      // Suggest configured ports, never a hardcoded deployment-specific port.
+      const knownPorts = (() => {
+        const found = new Set<number>();
+        try {
+          for (const file of fs.readdirSync(path.join(os.homedir(), ".superagent-r"))) {
+            const match = /^mcp-(\d+)\.json$/.exec(file);
+            const port = match ? Number(match[1]) : 0;
+            if (port >= 1024 && port <= 65535) found.add(port);
+            if (found.size >= 16) break;
+          }
+        } catch { /* no locally registered MCP owners */ }
+        return [...found].sort((a,b) => a-b);
+      })();
+      if (sub === "help") return filterSuggestions(["/mcp help"], query);
+      if (sub === "logs" || sub === "log") {
+        const prefix = sub === "log" ? "/mcp log" : "/mcp logs";
+        const ports = [9227, ...knownPorts].filter((port,i,all) => all.indexOf(port) === i);
+        return filterSuggestions([
+          prefix,
+          ...ports.map(port => `${prefix} --port ${port}`),
+          ...ports.map(port => `${prefix} --port ${port} --tail 20`),
+        ], query);
+      }
+      if (sub === "reload") {
+        return filterSuggestions([
+          "/mcp reload",
+          "/mcp reload --port 9227",
+          ...knownPorts.map(port => `/mcp reload --port ${port}`),
+        ], query);
+      }
       // Keep tool-catalog mode suggestions within /mcp use rather than mixing
       // unrelated tunnel commands. Handles /mcp use, /mcp use <partial>,
       // and trailing spaces for T-Line Tab cycling.
@@ -469,11 +505,29 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
           } catch {}
           return filterSuggestions(stopSuggestions, query);
         }
+        if (action === "help") return filterSuggestions(["/mcp tunnel help"], query);
         if (action === "providers") {
           return filterSuggestions(["/mcp tunnel providers"], query);
         }
-        if (action === "restart") {
-          return filterSuggestions(["/mcp tunnel restart", "/mcp tunnel restart --provider openai", "/mcp tunnel restart --provider cloudflare"], query);
+        if (action === "reload" || action === "restart" || action === "logs" || action === "log") {
+          const base = action === "log" ? "logs" : action;
+          const prefix = `/mcp tunnel ${base}`;
+          const ports = [9227, ...knownPorts].filter((port,i,all) => all.indexOf(port) === i);
+          const options = [
+            prefix,
+            ...ports.map(port => `${prefix} --port ${port}`),
+          ];
+          if (action === "restart") {
+            options.push(`${prefix} --full`);
+            options.push(...ports.map(port => `${prefix} --port ${port} --full`));
+          }
+          if (action === "logs" || action === "log") {
+            options.push(...ports.flatMap(port => [
+              `${prefix} --port ${port} --tail 20`,
+              `${prefix} --port ${port} --tail 100`,
+            ]));
+          }
+          return filterSuggestions(options, query);
         }
         if (action === "doctor") {
           return filterSuggestions(["/mcp tunnel doctor --provider openai", "/mcp tunnel doctor --provider cloudflare"], query);
@@ -492,6 +546,8 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
         "/mcp add-http",
         "/mcp remove",
         "/mcp reload",
+        "/mcp help",
+        "/mcp logs",
         "/mcp use",
         ...MCP_USE_SUGGESTIONS,
         "/mcp tunnel",

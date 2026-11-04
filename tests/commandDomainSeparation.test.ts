@@ -36,6 +36,25 @@ describe("command domain separation", () => {
     expect(suggestions).toContain("/mcp tunnel start --provider openai --tunnel-id");
   });
 
+  it("suggests safe MCP reload, bounded lifecycle logs, and explicit full restart", () => {
+    const reload = getDashboardSuggestions("/mcp tunnel reload", "/mcp tunnel reload".length);
+    expect(reload).toContain("/mcp tunnel reload");
+    expect(reload).toContain("/mcp tunnel reload --port 9227");
+    const logs = getDashboardSuggestions("/mcp tunnel logs", "/mcp tunnel logs".length);
+    expect(logs).toContain("/mcp tunnel logs --port 9227 --tail 20");
+    const restart = getDashboardSuggestions("/mcp tunnel restart", "/mcp tunnel restart".length);
+    expect(restart).toContain("/mcp tunnel restart --full");
+    expect(restart).not.toContain("/mcp tunnel restart --provider cloudflare");
+    expect(getDashboardSuggestions("/mcp help", "/mcp help".length)).toContain("/mcp help");
+    expect(getDashboardSuggestions("/mcp logs", "/mcp logs".length))
+      .toContain("/mcp logs --port 9227 --tail 20");
+    expect(getDashboardSuggestions("/mcp tunnel help", "/mcp tunnel help".length))
+      .toContain("/mcp tunnel help");
+    const short = getDashboardSuggestions("/mcp reload", "/mcp reload".length);
+    expect(short).toContain("/mcp reload");
+    expect(short).toContain("/mcp reload --port 9227");
+  });
+
   it("keeps REST/SSE tunnel suggestions under /server", () => {
     const query = "/server tunnel";
     const suggestions = getDashboardSuggestions(query, query.length);

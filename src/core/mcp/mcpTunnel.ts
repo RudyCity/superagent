@@ -131,6 +131,11 @@ export interface McpServerState {
   oauthPublicBaseUrl?: string;
   /** True when OAuth tokens survive an owner restart for this issuer. */
   oauthStatePersistent?: boolean;
+  /** True only for durable Cloudflare ingress with replaceable MCP backend. */
+  reloadable?: boolean;
+  backendPid?: number;
+  backendGeneration?: number;
+  lastReloadAt?: number;
   heartbeat?: TunnelHeartbeatStatus;
 }
 
@@ -186,6 +191,14 @@ export function readMcpStateFile(filePath: string): McpServerState | null {
       adminUrl: s.adminUrl,
       oauthPublicBaseUrl: s.oauthPublicBaseUrl,
       oauthStatePersistent: s.oauthStatePersistent === true,
+      reloadable: s.reloadable === true,
+      backendPid: Number.isSafeInteger(s.backendPid) && Number(s.backendPid) > 0
+        ? Number(s.backendPid) : undefined,
+      backendGeneration: Number.isSafeInteger(s.backendGeneration) && Number(s.backendGeneration) > 0
+        ? Number(s.backendGeneration) : undefined,
+      lastReloadAt: Number.isSafeInteger(s.lastReloadAt) && Number(s.lastReloadAt) > 0 &&
+        Number(s.lastReloadAt) <= 8_640_000_000_000_000
+        ? Number(s.lastReloadAt) : undefined,
     };
   } catch {
     return null;
@@ -652,6 +665,10 @@ export function listActiveMcpServers(): ActiveMcpInfo[] {
         openAiTunnelId: active.openAiTunnelId,
         oauthPublicBaseUrl: active.oauthPublicBaseUrl,
         adminUrl: state?.adminUrl,
+        reloadable: state?.reloadable === true,
+        backendPid: state?.backendPid,
+        backendGeneration: state?.backendGeneration,
+        lastReloadAt: state?.lastReloadAt,
       }),
     );
   }
@@ -699,6 +716,26 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
       `   - Local URL  : ${s.localUrl}`,
       `   - Auth mode  : ${authMode} | Tool exposure configured: ${toolMode} (effective permissions depend on YOLO, OAuth and grants)`,
     );
+    if (s.tunnelProvider === "cloudflare") {
+      if (s.reloadable === true) {
+        lines.push(
+          "   - MCP owner  : Reloadable (Cloudflare ingress stays online)",
+          `   - Backend    : PID ${s.backendPid ?? "unknown"} | generation ${s.backendGeneration ?? "unknown"}`,
+          `   - Reload     : /mcp tunnel reload --port ${s.port} (public URL preserved)`,
+        );
+        if (s.lastReloadAt) {
+          lines.push(`   - Last reload: ${new Date(s.lastReloadAt).toISOString()}`);
+        }
+      } else {
+        lines.push(
+          "   - MCP owner  : Legacy (backend-only reload unavailable)",
+          "   - Migration  : A full owner restart may rotate this Quick Tunnel URL",
+        );
+      }
+      lines.push(`   - Log        : /mcp tunnel logs --port ${s.port}`);
+    } else {
+      lines.push("   - MCP owner  : Provider managed (backend-only reload not supported here)");
+    }
     if (s.openAiTunnelId) {
       lines.push(`   - Tunnel ID  : ${s.openAiTunnelId}`);
     }
@@ -729,6 +766,9 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
   lines.push(
     "",
     "Commands:",
+    "  Reload backend (new owner)  : /mcp tunnel reload --port <port>",
+    "  Recent lifecycle log        : /mcp tunnel logs --port <port> --tail 20",
+    "  Full restart (URL may change): /mcp tunnel restart --port <port> --full",
     "  Stop MCP server (owner only): /mcp tunnel stop --port <port>",
     "  Refresh listing             : /mcp tunnel status",
   );

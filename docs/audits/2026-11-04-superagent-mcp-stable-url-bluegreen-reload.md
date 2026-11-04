@@ -132,3 +132,73 @@ modified as part of the code-only deployment.
 - Production port `8857` remains on its original legacy owner until a
   separately authorized migration. Calling backend-only reload there
   fails closed rather than silently changing its URL.
+
+
+## Help, autocomplete and metadata-only owner logging (2026-11-04 update)
+
+- `/mcp help` and `superagent mcp --help` now explicitly distinguish
+  bare `/mcp reload` (outbound connections) from `/mcp reload --port`
+  and `/mcp tunnel reload --port` (blue-green hosted backend).
+- `/mcp tunnel restart --port` is backend-only on reloadable owners;
+  explicit `--full` is needed to restart Cloudflare, potentially
+  rotating a Quick Tunnel URL. Legacy owners fail closed.
+- `/mcp tunnel logs --port 8857 --tail 20` and aliases
+  `/mcp logs`, `superagent mcp logs`, and
+  `superagent mcp tunnel logs` read the new lifecycle journal.
+- Local status output differentiates Legacy versus Reloadable,
+  shows the latest backend PID and generation, last reload time, and
+  recommended commands. Interactive startup help includes reload/logs.
+- T-Line/dashboard autocomplete advertises help, safe reload,
+  log tail, and separately labeled destructive full restart; known
+  ports are discovered from existing per-port MCP state files.
+- `src/core/runtime/mcpOwnerLog.ts` writes allowlisted
+  `owner_started`, `backend_reload_started`,
+  `backend_reload_succeeded`, `backend_reload_failed`,
+  and `owner_stopping` events. This is a separate, bounded
+  per-port 256 KiB JSONL journal with rotation and a maximum
+  100-event read; only numeric PIDs/durations and a small fixed
+  allowlist of MCP error codes are admitted, with no OAuth tokens,
+  client credentials, arbitrary raw error text, prompts or responses.
+- Owner status receipts expose only `reloadable`,
+  `backendPid`, `backendGeneration`, and `lastReloadAt`.
+  Preflight denials are logged with safe error codes.
+
+### New verification
+
+- `tests/mcpOwnerLog.test.ts`: secrets never stored, bounded tail,
+  rotation, file-safety checks and invalid-argument handling.
+- `tests/mcpReloadableOwner.test.ts`: blue-green worker integration
+  validates state receipt updates and lifecycle journal entries.
+- `tests/mcpTunnelState.test.ts`: correct Legacy/Reloadable
+  status formatting and owner metadata.
+- `tests/mcpTunnelReloadCommand.test.ts`:
+  read-only logs, help and aliases, rejected invalid port/tail.
+- `tests/commandDomainSeparation.test.ts`:
+  safe reload/log/full-restart suggestion discovery.
+- CLI read-only smoke: `bun dist/cli.js mcp --help` and
+  `bun dist/cli.js mcp tunnel logs --port 8857 --tail 5`.
+
+**Live guard:** current port 8857 is still PID 22228,
+`https://backed-large-license-causing.trycloudflare.com/mcp`,
+OAuth legacy owner. It has no reloadable-owner journal yet. Code
+and tests do not migrate or restart it.
+
+
+### Standalone CLI dispatch smoke
+
+`src/cli.tsx` dispatches `mcp logs`, `mcp log`, and
+`mcp reload` before launching the agent. The standalone CLI
+implements `mcp reload --port <port>`; a bare `mcp reload`
+reports that only the live interactive TUI can refresh its own
+outbound clients. Read-only smoke of `bun dist/cli.js mcp logs`
+and a deliberately nonexistent reload port confirmed no delegate
+bridge was started.
+
+
+### Final regression (read-only production boundary)
+
+- `bun run build`: PASS.
+- 10 relevant Vitest suites: **67/67 passed**.
+- Standalone `mcp logs` and `mcp reload --port` CLI routes
+  verified; neither accidentally starts the agent or Delegate bridge.
+- Port `8857` production owner was not restarted or migrated.

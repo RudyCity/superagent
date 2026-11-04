@@ -22,6 +22,7 @@ import type {
   ReloadableBackendOptions, BackendWorkerReply,
 } from "./mcpReloadableBackend.js";
 import { MCP_TOOL_DEFINITIONS, DISABLED_MCP_TOOLS } from "../mcp/superagentMcpServer.js";
+import { appendMcpOwnerLog } from "./mcpOwnerLog.js";
 
 const WORKER_START_MS = 30_000;
 const OLD_GENERATION_TTL = 4 * 60 * 60_000 + 5 * 60_000;
@@ -137,6 +138,27 @@ export async function startReloadableMcpTunnelOwner(
   let initialBoot = bootCode.code;
   let cleanupTimer: ReturnType<typeof setInterval> | undefined;
   let publicTunnelOwned = false;
+  let reloadCount = 0;
+  let lastReloadAt: number | undefined;
+  function record(event: Parameters<typeof appendMcpOwnerLog>[1], fields: {
+    backendPid?: number; previousBackendPid?: number;
+    durationMs?: number; code?: string;
+  } = {}): void {
+    try { appendMcpOwnerLog(opts.port, event, {ownerPid:process.pid, ...fields}); }
+    catch { /* Logging must not affect MCP operation */ }
+  }
+  function updateOwnerState(): void {
+    try {
+      const file = getMcpStateFile(opts.port);
+      const state = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>;
+      if (state.pid !== process.pid || state.publicUrl !== baseUrl + "/mcp") return;
+      fs.writeFileSync(file, JSON.stringify({
+        ...state, reloadable:true, backendPid:current?.pid ?? null,
+        backendGeneration:reloadCount + 1,
+        ...(lastReloadAt !== undefined ? {lastReloadAt} : {}),
+      }, null, 2) + String.fromCharCode(10), {mode:0o600});
+    } catch { /* keep serving even if status persistence fails */ }
+  }
 
   function requestCount(): number {
     return [...generations].reduce((total, gen) => total + gen.inFlight, 0);
@@ -166,12 +188,21 @@ export async function startReloadableMcpTunnelOwner(
     return gen;
   }
   async function reload(): Promise<{success: boolean; pid: number; previousPid: number | null; url: string}> {
-    if (reloading || closing || draining) throw new Error("MCP_RELOAD_BUSY_OR_DRAINING");
+    if (reloading || closing || draining) {
+      record("backend_reload_failed", {backendPid:current?.pid, code:"MCP_RELOAD_BUSY_OR_DRAINING"});
+      throw new Error("MCP_RELOAD_BUSY_OR_DRAINING");
+    }
     if (opts.authMode === "oauth" && !oauthPersistent) {
+      record("backend_reload_failed", {backendPid:current?.pid, code:"MCP_RELOAD_OAUTH_NOT_PERSISTENT"});
       throw new Error("MCP_RELOAD_OAUTH_NOT_PERSISTENT: refusing to invalidate active OAuth credentials");
     }
-    if (!current) throw new Error("MCP_RELOAD_NO_BACKEND");
+    if (!current) {
+      record("backend_reload_failed", {code:"MCP_RELOAD_NO_BACKEND"});
+      throw new Error("MCP_RELOAD_NO_BACKEND");
+    }
     reloading = true;
+    const started = Date.now();
+    record("backend_reload_started", {backendPid:current.pid});
     try {
       // Stage the next generation before modifying the serving generation.
       const next = await launch();
@@ -188,9 +219,23 @@ export async function startReloadableMcpTunnelOwner(
       }
       previous.retireAt = Date.now() + OLD_GENERATION_TTL;
       current = next;
+      reloadCount++;
+      lastReloadAt = Date.now();
       retireOld();
+      updateOwnerState();
+      record("backend_reload_succeeded", {
+        backendPid:next.pid, previousBackendPid:previous.pid,
+        durationMs:Date.now()-started,
+      });
       return { success: true, pid: next.pid, previousPid: previous.pid,
         url: baseUrl + "/mcp" };
+    } catch (error) {
+      const match = error instanceof Error ? error.message.match(/^MCP_[A-Z0-9_]+/) : null;
+      record("backend_reload_failed", {
+        backendPid:current?.pid, durationMs:Date.now()-started,
+        code:match?.[0] || "MCP_BACKEND_RELOAD_FAILED",
+      });
+      throw error;
     } finally {
       reloading = false;
     }
@@ -208,6 +253,7 @@ export async function startReloadableMcpTunnelOwner(
       publicTunnelStarted: publicTunnelOwned,
       backendPid: current?.pid ?? null, backendGenerations: generations.size,
       reloadable: true, publicUrl: baseUrl ? baseUrl + "/mcp" : "",
+      backendGeneration:reloadCount + 1, lastReloadAt:lastReloadAt ?? null,
     };
   }
 
@@ -308,6 +354,7 @@ export async function startReloadableMcpTunnelOwner(
   const close = async (): Promise<void> => {
     if (closing) return;
     closing = true;
+    record("owner_stopping", {backendPid:current?.pid});
     if (cleanupTimer) clearInterval(cleanupTimer);
     if (publicTunnelOwned) await stopQuickTunnel(opts.port, "mcp-http").catch(() => {});
     for (const gen of generations) {
@@ -356,6 +403,9 @@ export async function startReloadableMcpTunnelOwner(
       authMode: opts.authMode, tunnelProvider: "cloudflare",
       oauthStatePersistent: oauthPersistent,
     }, null, 2) + "\n", { mode: 0o600 });
+
+    updateOwnerState();
+    record("owner_started", {backendPid:current.pid});
 
     const info: McpTunnelInfo = {
       publicUrl: baseUrl + "/mcp",

@@ -12,6 +12,27 @@ export const mcpCommand: SlashCommand = {
     const parts = args.trim().split(/\s+/).filter(Boolean);
     const subcommand = parts[0]?.toLowerCase();
 
+    if (subcommand === "help" || subcommand === "--help") {
+      ctx.addLine({type:"system", timestamp:now, content:[
+        "SuperAgent MCP — help",
+        "/mcp list | add | add-http | remove — configured outbound MCP servers",
+        "/mcp reload — reconnect configured outbound MCP servers (no public tunnel restart)",
+        "/mcp reload --port <port> — reload local MCP backend, public Cloudflare URL unchanged",
+        "/mcp tunnel status | list — inspect owner mode (Reloadable or Legacy), URL and backend PID",
+        "/mcp tunnel reload --port <port> — blue-green backend reload; only reloadable Cloudflare owners",
+        "/mcp tunnel restart --port <port> — alias for backend-only reload; fails safely on Legacy",
+        "/mcp tunnel logs --port <port> --tail 20 — last 1..100 metadata-only lifecycle events",
+        "/mcp tunnel restart --port <port> --full — explicit owner+tunnel restart; Quick URL may change",
+        "/mcp use gateway|full|status — choose outgoing MCP tool catalog exposure",
+        "Legacy owner needs one-time migration; OpenAI Secure MCP backend-only reload is unavailable.",
+        "Never use --full unless a possible connector URL change is intended.",
+      ].join(String.fromCharCode(10))});
+      return;
+    }
+    if (subcommand === "logs" || subcommand === "log") {
+      await mcpCommand.execute("tunnel logs " + parts.slice(1).join(" "), ctx);
+      return;
+    }
     if (subcommand === "use") {
       const { mcpToolExposureCommand } = await import("../mcp/mcpToolExposure.js");
       const result = mcpToolExposureCommand(parts.slice(1));
@@ -350,6 +371,29 @@ export const mcpCommand: SlashCommand = {
         return;
       }
 
+      if (tunnelAction === "help") {
+        await mcpCommand.execute("help", ctx);
+        return;
+      }
+      if (tunnelAction === "logs" || tunnelAction === "log") {
+        const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
+        const tailIdx = rawArgs.indexOf("--tail");
+        const port = portIdx < 0 ? 9227 : Number(rawArgs[portIdx + 1]);
+        const tail = tailIdx < 0 ? 20 : Number(rawArgs[tailIdx + 1]);
+        if (!Number.isSafeInteger(port) || port < 1024 || port > 65535 ||
+            !Number.isSafeInteger(tail) || tail < 1 || tail > 100) {
+          ctx.addLine({type:"error", content:"Invalid MCP lifecycle log port or tail (1..100).", timestamp:Date.now()});
+          return;
+        }
+        try {
+          const { formatMcpOwnerLogs } = await import("../runtime/mcpOwnerLog.js");
+          ctx.addLine({type:"system", content:formatMcpOwnerLogs(port, tail), timestamp:Date.now()});
+        } catch (error) {
+          ctx.addLine({type:"error", content:error instanceof Error ? error.message : String(error), timestamp:Date.now()});
+        }
+        return;
+      }
+
       if (tunnelAction === "reload" ||
           (tunnelAction === "restart" && !rawArgs.includes("--full"))) {
         const portIdx = rawArgs.findIndex(a => a === "--port" || a === "--mcp-port" || a === "-p");
@@ -501,7 +545,7 @@ export const mcpCommand: SlashCommand = {
 
       ctx.addLine({
         type: "error",
-        content: `Unknown tunnel action "${tunnelAction}". Available: providers, config, start, stop, reload, restart, list, status, doctor`,
+        content: `Unknown tunnel action "${tunnelAction}". Available: help, providers, config, start, stop, reload, restart, logs, list, status, doctor`,
         timestamp: now,
       });
       return;
