@@ -74,8 +74,8 @@
     </section>
 
     <section class="settings target-reload-settings" aria-label="Reload a specific conversation">
-      <div class="sidebar-settings-title">Reload one chat tab</div>
-      <p class="reload-explanation">Reloads only your selected tab. Also retries “Could not load this ChatGPT conversation” once per click; it won't fix deleted or inaccessible chats.</p>
+      <div class="sidebar-settings-title">Retry failed chat content</div>
+      <p class="reload-explanation">Klik “Try again” bawaan ChatGPT untuk chat yang gagal dimuat, tanpa reload halaman. Jika kontrol tidak tersedia, tindakan dibatalkan.</p>
       <div class="field">
         <label for="reload-chat-select">Open conversations</label>
         <select id="reload-chat-select">
@@ -83,7 +83,7 @@
         </select>
       </div>
       <div class="reload-actions">
-        <button id="reload-chat" type="button">Reload selected chat</button>
+        <button id="reload-chat" type="button">Retry chat only</button>
         <button id="refresh-chat-tabs" type="button" class="secondary">Update tab list</button>
       </div>
       <p class="sidebar-sync-status" id="reload-chat-status" role="status">Select a conversation tab first.</p>

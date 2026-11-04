@@ -5,97 +5,115 @@ import vm from "node:vm";
 const base = new URL("../chrome-extension-chatgpt-optimizer/", import.meta.url);
 const probeCode = fs.readFileSync(new URL("tab-reload.js", base), "utf8");
 const popupCode = fs.readFileSync(new URL("popup-reload.js", base), "utf8");
-
-const chatUrl = (id: string) => `https://chatgpt.com/c/${id}`;
-const CHAT_A = chatUrl("12345678-abcd-1234-abcd-123456789001");
-const CHAT_B = chatUrl("12345678-abcd-1234-abcd-123456789002");
+const manifest = JSON.parse(fs.readFileSync(new URL("manifest.json", base), "utf8"));
+const CHAT_A = "https://chatgpt.com/c/12345678-abcd-1234-abcd-123456789001";
+const CHAT_B = "https://chatgpt.com/c/12345678-abcd-1234-abcd-123456789002";
+const ERROR = "Could not load this ChatGPT conversation";
 
 function safetyFixture(options: {
   path?: string;
+  readyState?: string;
   draft?: string;
   generating?: boolean;
   attachment?: boolean;
   dialog?: boolean;
-  loading?: boolean;
-  composer?: boolean;
-  messages?: boolean;
   errorText?: string;
-  errorQuoted?: boolean;
+  quoted?: boolean;
   errorHidden?: boolean;
+  retryLabel?: string;
+  retryDisabled?: boolean;
+  missingRetry?: boolean;
+  onlyLoadedChat?: boolean;
 } = {}) {
   let listener: Function = () => {};
-  const editor = {
-    isConnected: true,
-    value: options.draft ?? "",
-    getClientRects: () => [1],
+  let nativeClicks = 0;
+  const isVisible = () => [1];
+  const editor = { isConnected: true, value: options.draft || "", getClientRects: isVisible };
+  const stop = {
+    isConnected: true, getClientRects: isVisible,
+    getAttribute: (name: string) => name === "aria-label" ? "Stop generating" : null,
+    matches: (selector: string) => selector.includes("stop-button"),
   };
-  const control = {
+  const retry = {
     isConnected: true,
-    getClientRects: () => [1],
-    getAttribute: (name: string) =>
-      name === "aria-label" && options.generating ? "Stop generating" : "",
-    matches: (selector: string) => !!options.generating && selector.includes("stop-button"),
+    getClientRects: isVisible,
+    disabled: !!options.retryDisabled,
+    innerText: options.retryLabel === undefined ? "Try again" : options.retryLabel,
+    getAttribute: (name: string) => name === "aria-disabled" && options.retryDisabled ? "true" : null,
+    closest: (_selector: string) => null,
+    click: () => { nativeClicks++; },
   };
-  const node = { isConnected: true, getClientRects: () => [1] };
-  const errorNode = {
-    isConnected: true,
-    getClientRects: () => options.errorHidden ? [] : [1],
-    textContent: options.errorText || "",
-    closest: (_selector: string) => options.errorQuoted ? { tagName: "ARTICLE" } : null,
+  const body = {
+    matches: (selector: string) => selector.includes("body"),
+    parentElement: null,
+    querySelectorAll: () => [],
+  };
+  const card = {
+    matches: (_selector: string) => false,
+    parentElement: body,
+    querySelectorAll: (_selector: string) => options.missingRetry ? [] : [retry],
+  };
+  const heading = {
+    isConnected: true, getClientRects: () => options.errorHidden ? [] : [1],
+    textContent: options.errorText || ERROR,
+    closest: (_selector: string) => options.quoted ? { tagName: "ARTICLE" } : null,
+    parentElement: card,
   };
   const document = {
-    readyState: options.loading ? "loading" : "complete",
+    readyState: options.readyState || "complete",
     querySelectorAll: (selector: string) => {
-      if (selector.includes("#prompt-textarea")) return options.composer === false ? [] : [editor];
-      if (selector === "button") return options.generating ? [control] : [];
-      if (selector.includes("attachment-preview")) return options.attachment ? [node] : [];
-      if (selector.includes('dialog[open]')) return options.dialog ? [node] : [];
-      if (selector.includes("main h1")) return options.errorText ? [errorNode] : [];
-      if (selector.includes("data-message-author-role")) return options.messages === false ? [] : [node];
+      if (selector.includes("#prompt-textarea")) return options.onlyLoadedChat ? [] : [editor];
+      if (selector === "button") return options.generating ? [stop] : [];
+      if (selector.includes("attachment-preview")) return options.attachment ? [editor] : [];
+      if (selector.includes('dialog[open]')) return options.dialog ? [editor] : [];
+      if (selector.includes("main h1")) return options.onlyLoadedChat ? [] : [heading];
       return [];
     },
   };
   const chrome = {
     runtime: {
-      id: "extension-id",
-      onMessage: { addListener: (fn: Function) => { listener = fn; } },
+      id: "optimizer-ext",
+      onMessage: { addListener(fn: Function) { listener = fn; } },
     },
   };
-  vm.runInNewContext(probeCode, {
-    chrome, location: { pathname: options.path || "/c/12345678-abcd-1234-abcd-123456789001" }, document,
-  });
-  function call(senderId = "extension-id", action = "inspect_reload"): any {
+  const context = {
+    chrome, document,
+    location: { pathname: options.path ?? "/c/12345678-abcd-1234-abcd-123456789001" },
+    Date,
+  };
+  vm.runInNewContext(probeCode, context);
+  function call(action = "inspect_retry", expectedPath?: string, senderId = "optimizer-ext") {
     let response: any;
-    const result = listener({
-      scope: "chatgpt-optimizer-target-reload-v1", action,
+    const returned = listener({
+      scope: "chatgpt-optimizer-target-reload-v1",
+      action, expectedPath,
     }, { id: senderId }, (out: any) => { response = out; });
-    return { response, result };
+    return { response, returned };
   }
-  return { call };
+  return { call, clicks: () => nativeClicks };
 }
 
 class FakeElement {
-  id: string;
-  tagName: string;
   value = "";
   textContent = "";
-  title = "";
   disabled = false;
+  title = "";
   style: Record<string, string> = {};
   children: FakeElement[] = [];
   events: Record<string, () => void> = {};
-  constructor(tag: string, id = "") { this.tagName = tag.toUpperCase(); this.id = id; }
+  constructor(public tag: string) {}
   appendChild(node: FakeElement) { this.children.push(node); return node; }
-  replaceChildren(...nodes: FakeElement[]) { this.children = [...nodes]; this.value = ""; }
-  addEventListener(name: string, cb: () => void) { this.events[name] = cb; }
+  replaceChildren(...nodes: FakeElement[]) { this.children = nodes; this.value = ""; }
+  addEventListener(name: string, fn: () => void) { this.events[name] = fn; }
   trigger(name: string) { this.events[name]?.(); }
 }
 
 function popupFixture(options: {
-  tabs?: Array<{ id: number; url: string; title: string; windowId: number }>;
+  tabs?: { id: number; url: string; title: string; windowId: number }[];
   activeId?: number;
-  safety?: { ok: boolean; safe?: boolean; recovery?: boolean; reason?: string };
-  secondUrl?: string;
+  safety?: any;
+  action?: any;
+  changedUrl?: string;
   noContent?: boolean;
 } = {}) {
   const tabs = options.tabs || [
@@ -103,32 +121,36 @@ function popupFixture(options: {
     { id: 102, url: CHAT_B, title: "Conversation B", windowId: 2 },
   ];
   const nodes: Record<string, FakeElement> = Object.fromEntries(
-    ["reload-chat-select", "reload-chat", "refresh-chat-tabs", "reload-chat-status"].map(
-      (id) => [id, new FakeElement("div", id)],
-    ),
+    ["reload-chat-select", "reload-chat", "refresh-chat-tabs", "reload-chat-status"]
+      .map((id) => [id, new FakeElement(id)]),
   );
-  const calls = { queried: [] as string[], inspected: [] as number[], reloaded: [] as number[], fetched: 0 };
+  const sent: { tabId: number; message: any }[] = [];
+  const reloaded: number[] = [];
   const fetchCounts = new Map<number, number>();
   const chrome = {
     tabs: {
       async query(query: any) {
-        calls.queried.push(query.url ? "all" : "active");
         return query.url ? tabs : tabs.filter((tab) => tab.id === (options.activeId ?? 101));
       },
-      async get(tabId: number) {
-        const result = tabs.find((tab) => tab.id === tabId);
-        if (!result) throw Error("Tab gone");
-        const count = (fetchCounts.get(tabId) || 0) + 1;
-        fetchCounts.set(tabId, count);
-        return { ...result, url: count >= 2 && options.secondUrl ? options.secondUrl : result.url };
+      async get(id: number) {
+        const tab = tabs.find((item) => item.id === id);
+        if (!tab) throw new Error("Missing tab");
+        const count = (fetchCounts.get(id) || 0) + 1;
+        fetchCounts.set(id, count);
+        return { ...tab, url: count >= 2 && options.changedUrl ? options.changedUrl : tab.url };
       },
       async sendMessage(tabId: number, message: any) {
-        calls.inspected.push(tabId);
-        expect(message).toEqual({ scope: "chatgpt-optimizer-target-reload-v1", action: "inspect_reload" });
-        if (options.noContent) throw Error("Not connected");
-        return options.safety || { ok: true, safe: true, reason: "The selected conversation is idle." };
+        sent.push({ tabId, message });
+        if (options.noContent) throw new Error("No content script");
+        if (message.action === "inspect_retry") return options.safety || {
+          ok: true, safe: true, recovery: true, method: "native_try_again",
+        };
+        if (message.action === "retry_conversation") return options.action || {
+          ok: true, triggered: true, method: "native_try_again",
+        };
+        throw new Error("Unexpected action");
       },
-      async reload(tabId: number) { calls.reloaded.push(tabId); },
+      async reload(id: number) { reloaded.push(id); },
     },
   };
   const document = {
@@ -140,149 +162,165 @@ function popupFixture(options: {
     await new Promise<void>((resolve) => setImmediate(resolve));
     await new Promise<void>((resolve) => setImmediate(resolve));
   };
-  return { nodes, calls, tick };
+  return { nodes, sent, reloaded, tick };
 }
 
-describe("ChatGPT Optimizer: selected-chat reload guard", () => {
-  it("allows reload inspection for idle, fully loaded saved conversations", () => {
-    expect(safetyFixture().call().response).toEqual({
-      ok: true, safe: true, reason: "The selected conversation is idle.",
+describe("ChatGPT Optimizer: native retry probe", () => {
+  it("finds the native Try again control in the conversation error card", () => {
+    const h = safetyFixture();
+    expect(h.call().response).toMatchObject({
+      ok: true, safe: true, recovery: true, method: "native_try_again",
     });
+    expect(h.clicks()).toBe(0);
   });
 
-  it("blocks generating, draft, uploading, dialog, loading and incomplete conversations", () => {
-    for (const scenario of [
-      { generating: true }, { draft: "Please don't lose my work" },
-      { attachment: true }, { dialog: true }, { loading: true },
-      { composer: false }, { messages: false }, { path: "/" },
-    ]) {
-      const { response } = safetyFixture(scenario).call();
-      expect(response.ok).toBe(true);
-      expect(response.safe).toBe(false);
-      expect(typeof response.reason).toBe("string");
-      expect(JSON.stringify(response)).not.toContain("Please don't lose my work");
+  it("triggers only the native control, without changing the URL or reloading", () => {
+    const h = safetyFixture();
+    const result = h.call("retry_conversation", "/c/12345678-abcd-1234-abcd-123456789001");
+    expect(result.response).toMatchObject({
+      ok: true, triggered: true, method: "native_try_again",
+    });
+    expect(h.clicks()).toBe(1);
+    expect(h.call("inspect_retry").response.safe).toBe(false);
+  });
+
+  it("rejects a different chat path before attempting a retry", () => {
+    const h = safetyFixture();
+    expect(h.call("retry_conversation", "/c/12345678-abcd-1234-abcd-123456789099").response.safe).toBe(false);
+    expect(h.clicks()).toBe(0);
+  });
+
+  it("does not confuse quoted or hidden error text with the actual error screen", () => {
+    for (const options of [{ quoted: true }, { errorHidden: true }, { onlyLoadedChat: true },
+      { errorText: "User said: Could not load this ChatGPT conversation" }]) {
+      const h = safetyFixture(options);
+      expect(h.call("retry_conversation").response.safe).toBe(false);
+      expect(h.clicks()).toBe(0);
     }
   });
 
-  it("offers one targeted recovery reload on the actual conversation load error", () => {
-    const response = safetyFixture({
-      composer: false, messages: false,
-      errorText: "Could not load this ChatGPT conversation",
-    }).call().response;
-    expect(response).toEqual({
-      ok: true, safe: true, recovery: true,
-      reason: "ChatGPT reports a failed conversation load. A targeted reload may retry it.",
-    });
-  });
-
-  it("does not treat quoted, hidden or unrelated error text as a failed conversation", () => {
-    for (const scenario of [
-      { composer: false, messages: false, errorText: "Could not load this ChatGPT conversation", errorQuoted: true },
-      { composer: false, messages: false, errorText: "Could not load this ChatGPT conversation", errorHidden: true },
-      { composer: false, messages: false, errorText: "Could not load any other chat" },
-      { composer: false, messages: false, errorText: "Could not load this ChatGPT conversation", path: "/" },
+  it("never retries when a draft, streaming response, attachment or dialog is present", () => {
+    for (const options of [
+      { draft: "Do not lose this draft" },
+      { generating: true },
+      { attachment: true },
+      { dialog: true },
+      { readyState: "loading" },
     ]) {
-      expect(safetyFixture(scenario).call().response.safe).toBe(false);
+      const h = safetyFixture(options);
+      const result = h.call("retry_conversation").response;
+      expect(result.safe).toBe(false);
+      expect(JSON.stringify(result)).not.toContain("Do not lose this draft");
+      expect(h.clicks()).toBe(0);
     }
   });
 
-  it("refuses recovery if a draft, generation, attachment, dialog or loading state is present", () => {
-    const errorText = "Could not load this ChatGPT conversation";
-    for (const scenario of [
-      { generating: true }, { draft: "Unsent work" },
-      { attachment: true }, { dialog: true }, { loading: true },
+  it("reports when ChatGPT's Try again control is absent, renamed or disabled", () => {
+    for (const options of [
+      { missingRetry: true }, { retryLabel: "Regenerate response" },
+      { retryDisabled: true },
     ]) {
-      const response = safetyFixture({ errorText, messages: false, ...scenario }).call().response;
-      expect(response.safe).toBe(false);
-      expect(response.recovery).toBeUndefined();
-      expect(JSON.stringify(response)).not.toContain("Unsent work");
+      const h = safetyFixture(options);
+      expect(h.call("retry_conversation").response.safe).toBe(false);
+      expect(h.clicks()).toBe(0);
     }
   });
 
-  it("recognizes the error with extra whitespace and a trailing period", () => {
-    expect(safetyFixture({
-      composer: false, messages: false,
-      errorText: " Could not   load this ChatGPT conversation. ",
-    }).call().response.recovery).toBe(true);
-  });
-
-  it("ignores messages from other extensions and unknown actions", () => {
-    const fixture = safetyFixture();
-    expect(fixture.call("wrong-extension")).toEqual({ response: undefined, result: false });
-    expect(fixture.call("extension-id", "reload_now").response).toEqual({
-      ok: false, reason: "Unknown action",
+  it("will not retry an unsaved page or accept external extension commands", () => {
+    const notChat = safetyFixture({ path: "/" });
+    expect(notChat.call("retry_conversation").response.safe).toBe(false);
+    const h = safetyFixture();
+    expect(h.call("retry_conversation", undefined, "unknown-extension")).toEqual({
+      response: undefined, returned: false,
     });
+    expect(h.call("reload_page").response).toEqual({ ok: false, reason: "Unknown action" });
+    expect(h.clicks()).toBe(0);
   });
 
-  it("reloads only the selected chat tab, not other open Chrome tabs", async () => {
+  it("enforces a retry cooldown; no automatic retry loop", () => {
+    const h = safetyFixture();
+    expect(h.call("retry_conversation").response.triggered).toBe(true);
+    expect(h.call("retry_conversation").response.safe).toBe(false);
+    expect(h.clicks()).toBe(1);
+  });
+});
+
+describe("ChatGPT Optimizer: popup's selected-chat in-page recovery", () => {
+  it("never calls chrome.tabs.reload or changes active tab URL", () => {
+    expect(popupCode).not.toMatch(/chrome\.tabs\.reload|chrome\.tabs\.update|location\.reload|location\.assign|location\.replace/);
+    expect(probeCode).not.toMatch(/location\.reload|location\.assign|history\.pushState|history\.replaceState|\.innerHTML\s*=/);
+    expect(manifest.permissions).toEqual(["storage", "tabs"]);
+    expect(manifest.version).toBe("0.3.3");
+  });
+
+  it("triggers in-page retry only on the selected tab", async () => {
     const p = popupFixture();
     await p.tick();
-    expect(p.nodes["reload-chat-select"].children).toHaveLength(3);
+    expect(p.nodes["reload-chat-select"].children.length).toBe(3);
     p.nodes["reload-chat-select"].value = "102";
     p.nodes["reload-chat"].trigger("click");
     await p.tick();
-    expect(p.calls.inspected).toEqual([102]);
-    expect(p.calls.reloaded).toEqual([102]);
-    expect(p.nodes["reload-chat-status"].textContent).toContain("All other tabs are untouched");
+    expect(p.sent.map((s) => s.tabId)).toEqual([102, 102]);
+    expect(p.sent.map((s) => s.message.action)).toEqual(["inspect_retry", "retry_conversation"]);
+    expect(p.sent[0].message.expectedPath).toBe("/c/12345678-abcd-1234-abcd-123456789002");
+    expect(p.reloaded).toEqual([]);
+    expect(p.nodes["reload-chat-status"].textContent).toContain("Page was not reloaded");
   });
 
-  it("retries the selected failed chat once without affecting other tabs", async () => {
-    const p = popupFixture({
-      safety: {
-        ok: true, safe: true, recovery: true,
-        reason: "ChatGPT reports a failed conversation load. A targeted reload may retry it.",
-      },
-    });
-    await p.tick();
-    p.nodes["reload-chat-select"].value = "102";
-    p.nodes["reload-chat"].trigger("click");
-    await p.tick();
-    expect(p.calls.inspected).toEqual([102]);
-    expect(p.calls.reloaded).toEqual([102]);
-    expect(p.nodes["reload-chat-status"].textContent).toContain("Recovery retry requested");
-    expect(p.nodes["reload-chat-status"].textContent).toContain("this tab only");
-  });
-
-  it("does not reload a tab whose safety inspection reports a draft or stream", async () => {
-    const p = popupFixture({ safety: { ok: true, safe: false, reason: "An unsent message draft is present." } });
+  it("blocks action if the selected tab navigates after inspection", async () => {
+    const p = popupFixture({ changedUrl: CHAT_B });
     await p.tick();
     p.nodes["reload-chat"].trigger("click");
     await p.tick();
-    expect(p.calls.inspected).toEqual([101]);
-    expect(p.calls.reloaded).toEqual([]);
-    expect(p.nodes["reload-chat-status"].textContent).toContain("draft");
-  });
-
-  it("blocks reload if the selected tab navigates after inspection", async () => {
-    const p = popupFixture({ secondUrl: CHAT_B });
-    await p.tick();
-    p.nodes["reload-chat"].trigger("click");
-    await p.tick();
-    expect(p.calls.inspected).toEqual([101]);
-    expect(p.calls.reloaded).toEqual([]);
+    expect(p.sent.map((s) => s.message.action)).toEqual(["inspect_retry"]);
+    expect(p.reloaded).toEqual([]);
     expect(p.nodes["reload-chat-status"].textContent).toContain("changed");
   });
 
-  it("fails closed when the content script is not installed", async () => {
+  it("does nothing if no native retry control is available", async () => {
+    const p = popupFixture({
+      safety: { ok: true, safe: false, reason: "Native Try again control not found" },
+    });
+    await p.tick();
+    p.nodes["reload-chat"].trigger("click");
+    await p.tick();
+    expect(p.sent).toHaveLength(1);
+    expect(p.reloaded).toEqual([]);
+    expect(p.nodes["reload-chat-status"].textContent).toContain("not found");
+  });
+
+  it("reports failure without pretending recovery succeeded", async () => {
+    const p = popupFixture({
+      action: { ok: true, triggered: false, reason: "Try again disappeared" },
+    });
+    await p.tick();
+    p.nodes["reload-chat"].trigger("click");
+    await p.tick();
+    expect(p.sent).toHaveLength(2);
+    expect(p.reloaded).toEqual([]);
+    expect(p.nodes["reload-chat-status"].textContent).toContain("disappeared");
+  });
+
+  it("rejects unconnected content scripts without a tab reload", async () => {
     const p = popupFixture({ noContent: true });
     await p.tick();
     p.nodes["reload-chat"].trigger("click");
     await p.tick();
-    expect(p.calls.reloaded).toEqual([]);
-    expect(p.nodes["reload-chat-status"].textContent).toContain("Could not reload safely");
+    expect(p.reloaded).toEqual([]);
+    expect(p.nodes["reload-chat-status"].textContent).toContain("Could not reach the selected ChatGPT tab");
   });
 
-  it("excludes other sites and unsaved/new-chat pages from selection", async () => {
-    const p = popupFixture({ tabs: [
-      { id: 1, url: "https://evil.example/c/12345678-abcd-1234-abcd-123456789003", title: "Wrong host", windowId: 1 },
-      { id: 2, url: "https://chatgpt.com/", title: "New chat", windowId: 1 },
-      { id: 3, url: CHAT_B, title: "Chat B", windowId: 2 },
-    ], activeId: 1 });
+  it("filters out other origins and new/unsaved chat pages", async () => {
+    const p = popupFixture({
+      tabs: [
+        { id: 1, url: "https://wrong.example/c/12345678-abcd-1234-abcd-123456789003", title: "Wrong", windowId: 1 },
+        { id: 2, url: "https://chatgpt.com/", title: "New chat", windowId: 1 },
+        { id: 3, url: CHAT_B, title: "Chat B", windowId: 2 },
+      ],
+      activeId: 2,
+    });
     await p.tick();
-    expect(p.nodes["reload-chat-select"].children).toHaveLength(2);
+    expect(p.nodes["reload-chat-select"].children.length).toBe(2);
     expect(p.nodes["reload-chat-select"].value).toBe("3");
-    p.nodes["reload-chat"].trigger("click");
-    await p.tick();
-    expect(p.calls.reloaded).toEqual([3]);
   });
 });

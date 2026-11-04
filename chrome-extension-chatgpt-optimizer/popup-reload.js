@@ -1,4 +1,4 @@
-/* Only selected, idle saved-chat tabs can be reloaded. Never touches other tabs. */
+/* Retry a failed conversation in-place using ChatGPT's native control; never reload a tab. */
 (() => {
   "use strict";
   const SCOPE = "chatgpt-optimizer-target-reload-v1";
@@ -61,7 +61,7 @@
       }
       select.value = nextSelection;
       message(openChatTabs.length
-        ? `${openChatTabs.length} open chat tab(s). Only the selected tab will reload.`
+        ? `${openChatTabs.length} open chat tab(s). Retry affects only the selected chat.`
         : "Open a saved ChatGPT conversation first.");
     } catch {
       openChatTabs = [];
@@ -88,11 +88,12 @@
         message("That chat tab changed. Update the tab list and try again.", true);
         return;
       }
+      const expectedPath = new URL(selected.url).pathname;
       const inspected = await chrome.tabs.sendMessage(tabId, {
-        scope: SCOPE, action: "inspect_reload",
+        scope: SCOPE, action: "inspect_retry", expectedPath,
       });
       if (!inspected?.ok || !inspected.safe) {
-        message(inspected?.reason || "Unable to verify chat safety. Reload blocked.", true);
+        message(inspected?.reason || "In-page chat retry is unavailable. The page was not reloaded.", true);
         return;
       }
       const verifiedTab = await chrome.tabs.get(tabId);
@@ -100,12 +101,16 @@
         message("The selected chat changed while checking. Reload blocked.", true);
         return;
       }
-      await chrome.tabs.reload(tabId);
-      message(inspected.recovery
-        ? "Recovery retry requested for this tab only. If ChatGPT still cannot load it, check account access or try again later."
-        : "Reload requested for the selected chat tab. All other tabs are untouched.");
+      const result = await chrome.tabs.sendMessage(tabId, {
+        scope: SCOPE, action: "retry_conversation", expectedPath,
+      });
+      if (!result?.ok || !result.triggered) {
+        message(result?.reason || "In-page retry could not be triggered. No page reload occurred.", true);
+        return;
+      }
+      message("ChatGPT's Try again was triggered inside the selected chat. Page was not reloaded; recovery is not yet confirmed.");
     } catch {
-      message("Could not reload safely. Check that the ChatGPT tab is open and ready.", true);
+      message("Could not reach the selected ChatGPT tab. No page reload was performed.", true);
     } finally {
       reloadBusy = false;
       updateButton();
