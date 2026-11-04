@@ -21,11 +21,23 @@ describe("unified SuperAgent service manager",()=>{
     expect(JSON.stringify(inventory)).not.toContain("authToken");
     expect(JSON.stringify(inventory)).not.toContain("ipcToken");
   },25000);
+  it("reports process registry counts without exposing foreign workspace entries",async()=>{
+    const out=await manageServices({action:"doctor",service:"process_supervisor"}) as any;
+    const item=out.services[0];
+    expect(item.state==="embedded"||item.state==="degraded").toBe(true);
+    expect(item.details.workspaceScoped).toBe(true);
+    expect(item.actions).toContain("status");
+    expect(item.actions).not.toContain("restart");
+    expect(item.details).toHaveProperty("tracked");
+    expect(item.details).not.toHaveProperty("entries");
+    await expect(manageServices({action:"stop",service:"process_supervisor",confirm:true}))
+      .rejects.toThrow("SERVICE_UNSUPPORTED_MUTATION");
+  });
   it("does not permit kill, start, stop or reload on unowned services",async()=>{
     await expect(manageServices({action:"restart",service:"vision",port:19461}))
       .rejects.toThrow("CONFIRM_REQUIRED");
     await expect(manageServices({action:"stop",service:"tray",confirm:true}))
-      .rejects.toThrow("UNSUPPORTED_MUTATION");
+      .rejects.toThrow("SERVICE_TRAY_PLAN_REQUIRED");
     await expect(manageServices({
       action:"plan",service:"transport",targetAction:"restart",port:19561,
     })).rejects.toThrow("SIDECAR_OWNER_UNVERIFIED");
