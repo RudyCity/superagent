@@ -16,7 +16,7 @@
 }
 .muse-file-send-row { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:17px; }
 .muse-file-send-row label { color:var(--text-muted, #94a3b8); font-size:.8rem; font-weight:650; }
-.muse-file-send-row select { flex:1; min-width:220px; max-width:460px; }
+.muse-file-send-row .select-wrapper { flex:1; min-width:220px; max-width:460px; }
 .muse-file-send-row button { margin-left:auto; }
 .muse-files-note { margin:12px 0 0; font-size:.8rem; line-height:1.55; color:var(--text-muted, #94a3b8); }
 .muse-file-progress-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; }
@@ -38,15 +38,16 @@
 .muse-file-unverified { display:block; font-size:.7rem; margin-top:5px; color:var(--text-muted, #94a3b8); }
 .muse-file-retry { white-space:nowrap; font-size:.73rem; padding:6px 10px; }
 .muse-file-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
-.muse-file-settings-grid label { display:flex; gap:8px; flex-direction:column; font-size:.83rem; color:var(--text-muted,#94a3b8); }
-.muse-file-settings-grid select { width:100%; }
-.muse-file-settings-footer { grid-column:1/-1; display:flex; align-items:center; gap:16px; }
+.muse-file-settings-grid .form-group { display:flex; gap:6px; flex-direction:column; margin:0; }
+.muse-file-settings-grid .form-group label { font-size:.83rem; font-weight:650; color:var(--text-secondary,#94a3b8); }
+.muse-file-settings-grid .select-wrapper { width:100%; }
+.muse-file-settings-footer { grid-column:1/-1; display:flex; align-items:center; gap:16px; margin-top:6px; }
 #muse-files-settings-feedback { color:var(--text-muted,#94a3b8); font-size:.83rem; }
 #page-muse-files .table-wrap { overflow-x:auto; }
 #page-muse-files .data-table { min-width:620px; }
 @media (max-width:850px) {
   .muse-file-stats { grid-template-columns:1fr; }
   .muse-file-settings-grid { grid-template-columns:1fr; }
-  .muse-file-send-row select { max-width:none; }
+  .muse-file-send-row .select-wrapper { max-width:none; }
 }
 @media (prefers-reduced-motion:reduce) { #muse-files-progress-fill { transition:none; } }

@@ -149,6 +149,9 @@
   color: var(--text-secondary);
   font-size: 12px;
 }
+.runtime-create-field .select-wrapper {
+  width: 100%;
+}
 .runtime-create-field input, .runtime-create-field select {
   width: 100%;
   color: var(--text-primary);
@@ -1776,6 +1779,33 @@ tbody tr:hover {
   color: var(--text-primary);
 }
 
+.toggle-control.sm {
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.toggle-control.sm .toggle-slider {
+  width: 32px;
+  height: 18px;
+}
+
+.toggle-control.sm .toggle-slider::before {
+  width: 12px;
+  height: 12px;
+  top: 2px;
+  left: 2px;
+}
+
+.toggle-control.sm input:checked + .toggle-slider::before {
+  transform: translateX(14px);
+}
+
+.toggle-control.sm .toggle-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
 .modal-footer {
   padding: 16px 24px;
   border-top: 1px solid var(--border-subtle);
@@ -2520,6 +2550,20 @@ tbody tr:hover {
 
 .launch-inputs .select-wrapper {
   flex: 0 0 280px;
+}
+
+.launch-inputs .select-wrapper select {
+  height: 38px;
+  background: var(--bg-surface-sunken);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 0 32px 0 14px;
+}
+
+.launch-inputs .select-wrapper select:focus {
+  border-color: var(--accent);
 }
 
 .launch-inputs .input-control {

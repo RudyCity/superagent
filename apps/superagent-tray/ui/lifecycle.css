@@ -31,6 +31,7 @@
 .lifecycle-event {display:flex;flex-direction:column;gap:4px}
 .lifecycle-event-time {font-size:11px;color:var(--text-secondary,#94a3b8)}
 .lifecycle-field {display:flex;flex-direction:column;gap:5px;margin:10px 0;color:var(--text-secondary,#94a3b8);font-size:12px}
+.lifecycle-field .select-wrapper {width:100%}
 .lifecycle-field input,.lifecycle-field select {
  color:var(--text-primary,#e2e8f0);background:var(--bg-base,#0f172a);
  border:1px solid var(--border-medium,#334155);border-radius:7px;padding:9px;
