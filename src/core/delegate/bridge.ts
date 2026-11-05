@@ -7,6 +7,9 @@ import { writeDelegateConnectionAudit, flushDelegateConnectionAudit, safeAuditTe
 export type DelegateMethod =
   | "delegate.create_chat"
   | "delegate.read_chat"
+  | "delegate.list_chats"
+  | "delegate.read_chat_full"
+  | "delegate.search_history"
   | "delegate.send_message"
   | "delegate.stop_generation";
 

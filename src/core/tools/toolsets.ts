@@ -10,6 +10,9 @@ import { Tool } from "./types.js";
 import {
   delegateCreateChatTool,
   delegateReadChatTool,
+  delegateListChatsTool,
+  delegateReadChatFullTool,
+  delegateSearchHistoryTool,
   delegateSendMessageTool,
   delegateStopGenerationTool,
 } from "./delegateTools.js";
@@ -436,6 +439,9 @@ export function withModeAwareDiscoveryTools(tools: Tool[], isExtensionChatMode: 
 export const delegateToolset: Tool[] = [
   delegateCreateChatTool,
   delegateReadChatTool,
+  delegateListChatsTool,
+  delegateReadChatFullTool,
+  delegateSearchHistoryTool,
   delegateSendMessageTool,
   delegateStopGenerationTool,
 ];

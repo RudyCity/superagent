@@ -45,6 +45,47 @@ function prepareTarget(
   return { clientId: clientId as string | undefined, params };
 }
 
+function prepareHistoryTarget(
+  args: Record<string, unknown>,
+  allowedKeys: string[],
+): { clientId?: string; params: Record<string, unknown> } {
+  const keys = Object.keys(args || {});
+  if (keys.some(key => !["clientId", ...allowedKeys].includes(key))) {
+    throw new Error("DELEGATE_INVALID_ARGUMENT: Unexpected delegate history argument");
+  }
+  const clientId = args?.clientId;
+  if (clientId !== undefined &&
+      (typeof clientId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(clientId))) {
+    throw new Error("DELEGATE_INVALID_CLIENT_ID: Use a clientId from delegate.read_chat({connections:true})");
+  }
+  const params = { ...args };
+  delete params.clientId;
+  return { clientId: clientId as string | undefined, params };
+}
+
+function historyTool(
+  name: DelegateMethod,
+  description: string,
+  parameters: Record<string, unknown>,
+  validate: (params: Record<string, unknown>) => void,
+  timeoutMs: number,
+): Tool {
+  return {
+    name, description, parameters,
+    async execute(args: Record<string, unknown>, _cwd: string, signal?: AbortSignal): Promise<string> {
+      try {
+        const allowedKeys = Object.keys((parameters as { properties?: Record<string, unknown> }).properties || {})
+          .filter(key => key !== "clientId");
+        const { clientId, params } = prepareHistoryTarget(args, allowedKeys);
+        validate(params);
+        return await delegateBridge.request(name, params, signal, timeoutMs, clientId);
+      } catch (error) {
+        return "Error: " + (error instanceof Error ? error.message : String(error));
+      }
+    },
+  };
+}
+
 function tool(
   name: DelegateMethod,
   description: string,
@@ -92,16 +133,81 @@ export const delegateCreateChatTool: Tool = tool(
 
 export const delegateReadChatTool: Tool = tool(
   "delegate.read_chat",
-  "Read the selected ChatGPT chat. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading. Use {connections:true} to list connected Chrome profiles without opening a tab. With multiple connections choose clientId explicitly.",
+  "Read the selected ChatGPT chat. Detects ChatGPT's visible 'Message delivery timed out. Please try again.' state as delivery_timeout. The extension recovers that UI timeout with one guarded follow-up message, 'continue until done', without clicking Retry or replaying the original request. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading. Use {connections:true} to list connected Chrome profiles without opening a tab. With multiple connections choose clientId explicitly.",
   schema({ ...optionalTarget, connections: {
     type: "boolean", description: "Return list of connected Chrome profiles without accessing any ChatGPT tabs.",
   } }),
   20_000, false, true,
 );
 
+export const delegateListChatsTool: Tool = historyTool(
+  "delegate.list_chats",
+  "List ChatGPT conversation history from the selected Chrome profile without changing the user's active chat. Uses an inactive read-only worker tab and scrolls the Chat history sidebar to load older entries. Paginate with cursor/limit until next_cursor is null.",
+  schema({
+    clientId: optionalTarget.clientId,
+    cursor: { type: "integer", minimum: 0, maximum: 5000, description: "Zero-based history offset." },
+    limit: { type: "integer", minimum: 1, maximum: 200, description: "Chats per page; default 50." },
+  }),
+  (params) => {
+    if (params.cursor !== undefined && (!Number.isSafeInteger(params.cursor) || Number(params.cursor) < 0 || Number(params.cursor) > 5000)) {
+      throw new Error("DELEGATE_INVALID_CURSOR: cursor must be an integer from 0 to 5000");
+    }
+    if (params.limit !== undefined && (!Number.isSafeInteger(params.limit) || Number(params.limit) < 1 || Number(params.limit) > 200)) {
+      throw new Error("DELEGATE_INVALID_LIMIT: limit must be an integer from 1 to 200");
+    }
+  },
+  60_000,
+);
+
+export const delegateReadChatFullTool: Tool = historyTool(
+  "delegate.read_chat_full",
+  "Read a historical ChatGPT conversation by chatId in an inactive read-only worker tab. It scrolls through virtualized/older turns, returns paginated messages, and never sends, retries, or modifies the user's active chat.",
+  schema({
+    clientId: optionalTarget.clientId,
+    chatId: { type: "string", minLength: 8, maxLength: 180, description: "Conversation ID returned by delegate.list_chats." },
+    cursor: { type: "integer", minimum: 0, description: "Zero-based message offset." },
+    limit: { type: "integer", minimum: 1, maximum: 80, description: "Messages per page; default 40." },
+  }, ["chatId"]),
+  (params) => {
+    if (typeof params.chatId !== "string" || !/^[a-zA-Z0-9:_-]{8,180}$/.test(params.chatId)) {
+      throw new Error("DELEGATE_INVALID_CHAT_ID: use a chatId returned by delegate.list_chats");
+    }
+    if (params.cursor !== undefined && (!Number.isSafeInteger(params.cursor) || Number(params.cursor) < 0)) {
+      throw new Error("DELEGATE_INVALID_CURSOR: cursor must be a non-negative integer");
+    }
+    if (params.limit !== undefined && (!Number.isSafeInteger(params.limit) || Number(params.limit) < 1 || Number(params.limit) > 80)) {
+      throw new Error("DELEGATE_INVALID_LIMIT: limit must be an integer from 1 to 80");
+    }
+  },
+  90_000,
+);
+
+export const delegateSearchHistoryTool: Tool = historyTool(
+  "delegate.search_history",
+  "Search ChatGPT history titles and message content through an inactive read-only worker tab. Scans up to maxChats conversations and returns matching chat IDs/titles with snippets; no active chat, draft, or conversation is modified.",
+  schema({
+    clientId: optionalTarget.clientId,
+    query: { type: "string", minLength: 1, maxLength: 500 },
+    limit: { type: "integer", minimum: 1, maximum: 50, description: "Maximum matching conversations; default 20." },
+    maxChats: { type: "integer", minimum: 1, maximum: 500, description: "Maximum conversations to scan; default 100." },
+  }, ["query"]),
+  (params) => {
+    if (typeof params.query !== "string" || !params.query.trim() || params.query.length > 500) {
+      throw new Error("DELEGATE_INVALID_QUERY: query must be 1 to 500 characters");
+    }
+    if (params.limit !== undefined && (!Number.isSafeInteger(params.limit) || Number(params.limit) < 1 || Number(params.limit) > 50)) {
+      throw new Error("DELEGATE_INVALID_LIMIT: limit must be an integer from 1 to 50");
+    }
+    if (params.maxChats !== undefined && (!Number.isSafeInteger(params.maxChats) || Number(params.maxChats) < 1 || Number(params.maxChats) > 500)) {
+      throw new Error("DELEGATE_INVALID_MAX_CHATS: maxChats must be an integer from 1 to 500");
+    }
+  },
+  300_000,
+);
+
 export const delegateSendMessageTool: Tool = tool(
   "delegate.send_message",
-  "Send once to the chosen Chrome profile (clientId) and optional tabId. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Never resend on timeout. With multiple connections, selection is mandatory.",
+  "Send once to the chosen Chrome profile (clientId) and optional tabId. If ChatGPT later shows its delivery-timeout banner, the extension sends one distinct guarded follow-up, 'continue until done'; it never clicks Retry or resends the original message. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Transport/RPC timeouts are never retried. With multiple connections, selection is mandatory.",
   schema({
     ...optionalTarget,
     message: { type: "string", minLength: 1, maxLength: 100_000 },

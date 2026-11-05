@@ -31,9 +31,12 @@ export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
 ] as const);
 
 // Stable, explicit MCP entrypoints for a connected Chrome Delegate profile.
-// Read is safe. Create/send/stop remain subject to the usual MCP write checks.
+// Live/history readers are safe. Create/send/stop remain subject to MCP write checks.
 export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([
   "superagent_delegate_read_chat",
+  "superagent_delegate_list_chats",
+  "superagent_delegate_read_chat_full",
+  "superagent_delegate_search_history",
   "superagent_delegate_create_chat",
   "superagent_delegate_send_message",
   "superagent_delegate_stop_generation",

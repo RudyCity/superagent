@@ -5,8 +5,16 @@ const PROTOCOL = "superagent-delegate-v1";
 const METHODS = new Set([
   "delegate.create_chat",
   "delegate.read_chat",
+  "delegate.list_chats",
+  "delegate.read_chat_full",
+  "delegate.search_history",
   "delegate.send_message",
   "delegate.stop_generation",
+]);
+const HISTORY_METHODS = new Set([
+  "delegate.list_chats",
+  "delegate.read_chat_full",
+  "delegate.search_history",
 ]);
 
 const RECONNECT_MIN_MS = 1_000;
@@ -406,6 +414,159 @@ async function openChatTab() {
   }
 }
 
+function validateHistoryChatId(value) {
+  if (typeof value !== "string" || value.length < 8 || value.length > 180 ||
+      !/^[a-zA-Z0-9:_-]+$/.test(value)) {
+    throw error("DELEGATE_INVALID_CHAT_ID", "chatId must be a valid ChatGPT conversation ID.");
+  }
+  return value;
+}
+
+async function createHistoryWorkerTab() {
+  const tab = await chrome.tabs.create({
+    url: "https://chatgpt.com/#delegate-history-worker",
+    active: false,
+  });
+  if (!Number.isSafeInteger(tab?.id) || tab.id < 1) {
+    throw error("CHATGPT_HISTORY_WORKER_OPEN_FAILED", "Could not create the read-only history worker tab.");
+  }
+  await waitForContentScript(tab.id, 15_000);
+  return tab;
+}
+
+async function closeHistoryWorkerTab(tabId) {
+  try { await chrome.tabs.remove(tabId); } catch {}
+}
+
+async function navigateHistoryWorker(tabId, chatId, requestId) {
+  const clean = validateHistoryChatId(chatId);
+  return await executeHistoryContent(
+    tabId, requestId + ":open:" + clean, "delegate.open_history_chat", { chatId: clean });
+}
+
+async function executeHistoryContent(tabId, id, method, params = {}) {
+  const result = await chrome.tabs.sendMessage(tabId, {
+    scope: PROTOCOL,
+    action: "execute",
+    id,
+    method,
+    params,
+  });
+  if (!result || typeof result !== "object") {
+    throw error("DELEGATE_NO_RESPONSE", "History worker returned no result.");
+  }
+  if (result.ok !== true) {
+    throw result.error || error("DELEGATE_HISTORY_TAB_ERROR", "History worker request failed.");
+  }
+  return result.result;
+}
+
+async function dispatchHistoryRequest(request) {
+  const worker = await createHistoryWorkerTab();
+  try {
+    if (request.method === "delegate.list_chats") {
+      return await executeHistoryContent(
+        worker.id, request.id + ":list", "delegate.list_chats", request.params || {});
+    }
+
+    if (request.method === "delegate.read_chat_full") {
+      await navigateHistoryWorker(worker.id, request.params?.chatId, request.id + ":full-nav");
+      const params = { ...(request.params || {}) };
+      delete params.chatId;
+      return await executeHistoryContent(
+        worker.id, request.id + ":full", "delegate.read_chat_full", params);
+    }
+
+    if (request.method === "delegate.search_history") {
+      const query = typeof request.params?.query === "string" ? request.params.query.trim() : "";
+      const resultLimit = Number(request.params?.limit ?? 20);
+      const maxChats = Number(request.params?.maxChats ?? 100);
+      if (!query || query.length > 500) {
+        throw error("DELEGATE_INVALID_QUERY", "query must be 1 to 500 characters.");
+      }
+      if (!Number.isSafeInteger(resultLimit) || resultLimit < 1 || resultLimit > 50) {
+        throw error("DELEGATE_INVALID_LIMIT", "limit must be an integer from 1 to 50.");
+      }
+      if (!Number.isSafeInteger(maxChats) || maxChats < 1 || maxChats > 500) {
+        throw error("DELEGATE_INVALID_MAX_CHATS", "maxChats must be an integer from 1 to 500.");
+      }
+
+      const listing = await executeHistoryContent(
+        worker.id, request.id + ":search-list", "delegate.list_chats",
+        { cursor: 0, limit: Math.min(200, maxChats) });
+      let chats = Array.isArray(listing?.chats) ? listing.chats : [];
+      let cursor = listing?.next_cursor;
+      while (chats.length < maxChats && cursor !== null && cursor !== undefined) {
+        const page = await executeHistoryContent(
+          worker.id, request.id + ":search-list:" + chats.length, "delegate.list_chats",
+          { cursor: Number(cursor), limit: Math.min(200, maxChats - chats.length) });
+        if (!Array.isArray(page?.chats) || page.chats.length === 0) {
+          cursor = null;
+          break;
+        }
+        chats = chats.concat(page.chats);
+        cursor = page.next_cursor;
+      }
+      chats = chats.slice(0, maxChats);
+
+      const needle = query.toLowerCase();
+      const results = [];
+      let scannedChats = 0;
+      let skippedChats = 0;
+      for (const chat of chats) {
+        if (results.length >= resultLimit) break;
+        scannedChats++;
+        const title = String(chat?.title || "");
+        if (title.toLowerCase().includes(needle)) {
+          results.push({
+            chat_id: chat.chat_id,
+            title,
+            url: chat.url,
+            title_match: true,
+            snippets: [],
+          });
+          continue;
+        }
+        try {
+          await navigateHistoryWorker(worker.id, chat.chat_id, request.id + ":search-nav:" + scannedChats);
+          const match = await executeHistoryContent(
+            worker.id, request.id + ":search:" + scannedChats,
+            "delegate.search_current_chat", { query, maxMatches: 3 });
+          if (match?.matched) {
+            results.push({
+              chat_id: chat.chat_id,
+              title: title || match.title || "Untitled chat",
+              url: chat.url,
+              title_match: !!match.title_match,
+              snippets: Array.isArray(match.snippets) ? match.snippets : [],
+              loaded_complete: match.loaded_complete !== false,
+              total_message_count: Number(match.total_message_count || 0),
+            });
+          }
+        } catch {
+          skippedChats++;
+        }
+      }
+
+      return {
+        query,
+        results,
+        returned: results.length,
+        scanned_chats: scannedChats,
+        skipped_chats: skippedChats,
+        listed_chats: chats.length,
+        history_complete: cursor === null || cursor === undefined,
+        max_chats: maxChats,
+        result_limit: resultLimit,
+      };
+    }
+
+    throw error("DELEGATE_UNKNOWN_METHOD", "Unsupported history method.");
+  } finally {
+    await closeHistoryWorkerTab(worker.id);
+  }
+}
+
 const singleton = globalThis.createDelegateTabSingleton({
   chrome,
   enabled: () => initialized && enabled,
@@ -418,6 +579,9 @@ const singleton = globalThis.createDelegateTabSingleton({
 singleton.register();
 
 async function dispatchToTab(request) {
+  if (HISTORY_METHODS.has(request.method)) {
+    return { ok: true, result: await dispatchHistoryRequest(request) };
+  }
   const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
   const exactTab = request.params?.tabId;
   if (exactTab === undefined && tabs.length > 1) {

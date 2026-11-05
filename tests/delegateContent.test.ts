@@ -35,16 +35,23 @@ type Response = { ok: boolean; result?: any; error?: {code: string; message: str
 
 function setup(options: {
   path?: string;
+  search?: string;
+  hash?: string;
   composerStyle?: "legacy" | "prosemirror";
   composer?: FakeTextarea | null;
   turns?: FakeTurn[];
   modernTurns?: FakeTurn[];
+  chatLinks?: any[];
   buttons?: any[];
+  bodyText?: string;
 } = {}) {
   const turns: FakeTurn[] = options.turns || [];
   const modernTurns: FakeTurn[] = options.modernTurns || [];
+  const chatLinks = options.chatLinks || [];
   const buttons = options.buttons || [];
   const composer = options.composer === undefined ? new FakeTextarea() : options.composer;
+  const body = { innerText: options.bodyText || "" };
+  const documentElement = { innerText: options.bodyText || "" };
   let listener: (
     request: any,
     sender: any,
@@ -59,7 +66,9 @@ function setup(options: {
     },
   };
   const document = {
-    documentElement: {},
+    body,
+    documentElement,
+    title: "History Test Chat",
     querySelectorAll(selector: string) {
       if ((options.composerStyle === "prosemirror" && selector.includes("data-composer-markdown")) ||
         (options.composerStyle !== "prosemirror" && selector.includes("#prompt-textarea"))) {
@@ -68,19 +77,28 @@ function setup(options: {
       if (selector === "button" || selector === "a, button") return buttons;
       if (selector === "[data-message-author-role]") return turns;
       if (selector.includes("data-chatgpt-search-unit-key")) return modernTurns;
+      if (selector.startsWith('a[href^="/c/"]')) return chatLinks;
       return [];
     },
+    querySelector() { return null; },
   };
+  const mutationObservers: FakeMutationObserver[] = [];
   class FakeMutationObserver {
-    observe() {}
-    disconnect() {}
+    active = false;
+    constructor(private readonly callback: () => void) { mutationObservers.push(this); }
+    observe() { this.active = true; }
+    disconnect() { this.active = false; }
+    trigger() { if (this.active) this.callback(); }
   }
   const ctx = {
     chrome,
     document,
     location: {
       pathname: options.path || "/c/example",
-      href: "https://chatgpt.com" + (options.path || "/c/example"),
+      search: options.search || "",
+      hash: options.hash || "",
+      origin: "https://chatgpt.com",
+      href: "https://chatgpt.com" + (options.path || "/c/example") + (options.search || "") + (options.hash || ""),
     },
     MutationObserver: FakeMutationObserver,
     HTMLTextAreaElement: FakeTextarea,
@@ -118,7 +136,15 @@ function setup(options: {
     );
     return reply;
   }
-  return { call, inspect, turns, buttons, composer, location: ctx.location };
+  async function mutate(nextBodyText?: string): Promise<void> {
+    if (nextBodyText !== undefined) {
+      body.innerText = nextBodyText;
+      documentElement.innerText = nextBodyText;
+    }
+    for (const observer of mutationObservers) observer.trigger();
+    await new Promise(resolve => setTimeout(resolve, 280));
+  }
+  return { call, inspect, mutate, turns, buttons, composer, body, location: ctx.location };
 }
 
 function turn(role: "assistant" | "user", text: string): FakeTurn {
@@ -132,12 +158,13 @@ function turn(role: "assistant" | "user", text: string): FakeTurn {
   };
 }
 
-function modernTurn(role: "assistant" | "user", text: string, state?: string): FakeTurn {
+function modernTurn(role: "assistant" | "user", text: string, state?: string, turnIndex = 0): FakeTurn {
+  const slot = role === "assistant" ? 2 : 0;
   return {
     isConnected: true,
     getClientRects: () => [1],
     getAttribute: (name: string) =>
-      name === "data-chatgpt-search-unit-key" ? "fallback-turn-0:0:" + role : null,
+      name === "data-chatgpt-search-unit-key" ? `fallback-turn-${turnIndex}:${slot}:${role}` : null,
     querySelector: () => null,
     closest: state ? () => ({
       getAttribute: (name: string) => name === "data-talvt-turn-state" ? state : null,
@@ -159,6 +186,18 @@ function modernButton(label: "Send" | "Stop", onClick: () => void) {
   };
 }
 
+function retryButton(onClick: () => void) {
+  return {
+    isConnected: true,
+    disabled: false,
+    getClientRects: () => [1],
+    getAttribute: (name: string) => name === "aria-label" ? "Retry" : null,
+    matches: () => false,
+    textContent: "Retry",
+    click: onClick,
+  };
+}
+
 function button(kind: "send" | "stop" | "new", onClick: () => void) {
   return {
     isConnected: true,
@@ -171,6 +210,16 @@ function button(kind: "send" | "stop" | "new", onClick: () => void) {
       kind === "send" ? "send-button" : kind === "stop" ? "stop-button" : "create-new-chat-button"
     ),
     textContent: kind === "new" ? "New chat" : "",
+    click: onClick,
+  };
+}
+
+function chatLink(chatId: string, title: string, onClick: () => void = () => {}) {
+  return {
+    parentElement: null,
+    getAttribute: (name: string) => name === "href" ? `/c/${chatId}`
+      : name === "aria-label" ? title : null,
+    textContent: title,
     click: onClick,
   };
 }
@@ -233,6 +282,187 @@ describe("delegate content script (simulated DOM)", () => {
     expect(result.ok).toBe(true);
     expect(result.result.status).toBe("waiting_for_input");
     expect(result.result.messages).toEqual([]);
+  });
+
+  it("lists chat history with cursor pagination without navigating the active chat", async () => {
+    const sim = setup({
+      path: "/",
+      chatLinks: [
+        chatLink("chat-history-001", "History One"),
+        chatLink("chat-history-002", "History Two"),
+        chatLink("chat-history-003", "History Three"),
+      ],
+    });
+    const first = await sim.call("delegate.list_chats", { cursor: 0, limit: 2 });
+    expect(first.ok).toBe(true);
+    expect(first.result.chats.map((chat: any) => chat.title)).toEqual(["History One", "History Two"]);
+    expect(first.result.next_cursor).toBe(2);
+    expect(first.result.complete).toBe(true);
+    expect(sim.location.pathname).toBe("/");
+
+    const second = await sim.call("delegate.list_chats", { cursor: 2, limit: 2 });
+    expect(second.ok).toBe(true);
+    expect(second.result.chats.map((chat: any) => chat.chat_id)).toEqual(["chat-history-003"]);
+    expect(second.result.next_cursor).toBeNull();
+  });
+
+  it("reads a historical conversation fully and paginates messages", async () => {
+    const sim = setup({
+      path: "/c/chat-history-001",
+      hash: "#delegate-history-worker",
+      modernTurns: [
+        modernTurn("user", "first question", undefined, 0),
+        modernTurn("assistant", "first answer", undefined, 0),
+      ],
+    });
+    const first = await sim.call("delegate.read_chat_full", { cursor: 0, limit: 1 });
+    expect(first.ok).toBe(true);
+    expect(first.result.chat_id).toBe("chat-history-001");
+    expect(first.result.total_message_count).toBe(2);
+    expect(first.result.loaded_complete).toBe(true);
+    expect(first.result.messages).toEqual([
+      { index: 0, role: "user", text: "first question", text_truncated: false },
+    ]);
+    expect(first.result.next_cursor).toBe(1);
+
+    const second = await sim.call("delegate.read_chat_full", { cursor: 1, limit: 80 });
+    expect(second.ok).toBe(true);
+    expect(second.result.messages[0]).toMatchObject({ role: "assistant", text: "first answer" });
+    expect(second.result.next_cursor).toBeNull();
+  });
+
+  it("opens a history chat through one sidebar SPA click instead of a page reload", async () => {
+    const modernTurns = [
+      modernTurn("user", "loaded through sidebar"),
+      modernTurn("assistant", "sidebar loaded reply"),
+    ];
+    let sim: ReturnType<typeof setup>;
+    sim = setup({
+      path: "/",
+      hash: "#delegate-history-worker",
+      modernTurns,
+      chatLinks: [chatLink("chat-history-004", "History Four", () => {
+        sim.location.pathname = "/c/chat-history-004";
+        sim.location.href = "https://chatgpt.com/c/chat-history-004";
+      })],
+    });
+    const result = await sim.call("delegate.open_history_chat", { chatId: "chat-history-004" });
+    expect(result.ok).toBe(true);
+    expect(result.result).toMatchObject({ chat_id: "chat-history-004", already_open: false });
+    expect(sim.location.pathname).toBe("/c/chat-history-004");
+  });
+
+  it("reports ChatGPT's own unavailable-history state explicitly", async () => {
+    const sim = setup({
+      path: "/c/chat-history-005",
+      hash: "#delegate-history-worker",
+      modernTurns: [],
+      bodyText: "Could not load this ChatGPT conversation Try again",
+    });
+    const result = await sim.call("delegate.read_chat_full", { cursor: 0, limit: 20 });
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("CHATGPT_HISTORY_UNAVAILABLE");
+  });
+
+  it("finds matching message snippets inside a historical conversation", async () => {
+    const sim = setup({
+      path: "/c/chat-history-002",
+      hash: "#delegate-history-worker",
+      modernTurns: [
+        modernTurn("user", "question about delegate history"),
+        modernTurn("assistant", "The unique history needle appears here."),
+      ],
+    });
+    const result = await sim.call("delegate.search_current_chat", {
+      query: "unique history needle", maxMatches: 3,
+    });
+    expect(result.ok).toBe(true);
+    expect(result.result.matched).toBe(true);
+    expect(result.result.snippets).toHaveLength(1);
+    expect(result.result.snippets[0]).toMatchObject({ role: "assistant" });
+    expect(result.result.snippets[0].snippet).toContain("unique history needle");
+  });
+
+  it("keeps history worker strictly read-only even when a delivery-timeout banner appears", async () => {
+    let retries = 0;
+    let sends = 0;
+    const sim = setup({
+      path: "/",
+      hash: "#delegate-history-worker",
+      composer: new FakeTextarea(),
+      bodyText: "Message delivery timed out. Please try again.",
+      buttons: [
+        retryButton(() => retries++),
+        modernButton("Send", () => sends++),
+      ],
+    });
+    await sim.mutate("Message delivery timed out. Please try again.");
+    expect(sends).toBe(0);
+    expect(retries).toBe(0);
+  });
+
+  it("detects the visible ChatGPT delivery-timeout banner without clicking Retry", async () => {
+    let retries = 0;
+    const sim = setup({
+      composer: null,
+      bodyText: "Message delivery timed out. Please try again.",
+      buttons: [retryButton(() => retries++)],
+    });
+    const result = await sim.call("delegate.read_chat");
+    expect(result.ok).toBe(true);
+    expect(result.result.status).toBe("delivery_timeout");
+    expect(result.result.delivery_error).toBe(true);
+    expect(result.result.retry_available).toBe(true);
+    expect(result.result.error_message).toBe("Message delivery timed out. Please try again.");
+    expect(result.result.timeout_recovery_message).toBe("continue until done");
+    expect(retries).toBe(0);
+    expect(sim.inspect().reason).toBe("delivery_timeout");
+  });
+
+  it("auto-recovers a delivery timeout once with continue until done and never clicks Retry", async () => {
+    let retries = 0;
+    let sends = 0;
+    const turns: FakeTurn[] = [turn("user", "original task")];
+    const composer = new FakeTextarea();
+    const sim = setup({
+      turns,
+      composer,
+      buttons: [
+        retryButton(() => retries++),
+        modernButton("Send", () => {
+          sends++;
+          const sent = composer.value;
+          composer.value = "";
+          turns.push(turn("user", sent));
+        }),
+      ],
+    });
+    await sim.mutate("Message delivery timed out. Please try again.");
+    expect(sends).toBe(1);
+    expect(retries).toBe(0);
+    expect(turns.at(-1)?.textContent).toBe("continue until done");
+
+    // The same still-visible timeout episode must never cause a second continuation.
+    await sim.mutate("Message delivery timed out. Please try again.");
+    expect(sends).toBe(1);
+    expect(retries).toBe(0);
+  });
+
+  it("preserves a user draft instead of auto-recovering a delivery timeout", async () => {
+    let retries = 0;
+    let sends = 0;
+    const composer = new FakeTextarea("my unfinished draft");
+    const sim = setup({
+      composer,
+      buttons: [
+        retryButton(() => retries++),
+        modernButton("Send", () => sends++),
+      ],
+    });
+    await sim.mutate("Message delivery timed out. Please try again.");
+    expect(composer.value).toBe("my unfinished draft");
+    expect(sends).toBe(0);
+    expect(retries).toBe(0);
   });
 
   it("reads current ChatGPT fallback turn markers and strips UI role prefixes", async () => {

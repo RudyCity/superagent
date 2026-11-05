@@ -28,16 +28,21 @@ afterEach(() => {
 });
 
 describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", () => {
-  it("defines four distinct direct MCP tools with no arbitrary target URI", () => {
+  it("defines seven distinct direct MCP tools with no arbitrary target URI", () => {
     expect(DELEGATE_MCP_TOOL_DEFS.map(x => x.name)).toEqual([
-      "superagent_delegate_read_chat", "superagent_delegate_create_chat",
-      "superagent_delegate_send_message", "superagent_delegate_stop_generation",
+      "superagent_delegate_read_chat",
+      "superagent_delegate_list_chats",
+      "superagent_delegate_read_chat_full",
+      "superagent_delegate_search_history",
+      "superagent_delegate_create_chat",
+      "superagent_delegate_send_message",
+      "superagent_delegate_stop_generation",
     ]);
     expect(DELEGATE_MCP_TOOL_DEFS.every(x => x.inputSchema.additionalProperties === false)).toBe(true);
     expect(DELEGATE_MCP_TOOL_DEFS.some(x => "url" in x.inputSchema.properties)).toBe(false);
   });
 
-  it("strictly validates chat IDs, list-only reads and dangerous mutations", () => {
+  it("strictly validates live chat and history arguments", () => {
     const read = DELEGATE_MCP_TOOL_NAMES.read;
     const send = DELEGATE_MCP_TOOL_NAMES.send;
     expect(validateDelegateMcpArgs(read, { connections: true })).toBeNull();
@@ -45,19 +50,30 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     expect(validateDelegateMcpArgs(read, { clientId: "bad" })).toBe("DELEGATE_INVALID_CLIENT_ID");
     expect(validateDelegateMcpArgs(read, { url: "https://external.example/" })).toBe("DELEGATE_UNEXPECTED_ARGUMENT");
     expect(validateDelegateMcpArgs(read, { tabId: -5 })).toBe("DELEGATE_INVALID_TAB_ID");
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.list, { cursor: 0, limit: 50 })).toBeNull();
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.list, { limit: 201 })).toBe("DELEGATE_INVALID_LIMIT");
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.readFull, { chatId: "6aebe337-eaf0-83ec-8658-055863973410", limit: 40 })).toBeNull();
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.readFull, { chatId: "bad" })).toBe("DELEGATE_INVALID_CHAT_ID");
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.search, { query: "delegate", maxChats: 100 })).toBeNull();
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.search, { query: "" })).toBe("DELEGATE_INVALID_QUERY");
     expect(validateDelegateMcpArgs(send, {})).toBe("DELEGATE_INVALID_MESSAGE");
     expect(validateDelegateMcpArgs(send, {message:"hello"})).toBeNull();
     expect(validateDelegateMcpArgs(send, { message: "hi", stop: true })).toBe("DELEGATE_UNEXPECTED_ARGUMENT");
   });
 
-  it("read-only OAuth exposes only read, never write or stop, in gateway mode", async () => {
+  it("read-only OAuth exposes live/history readers, never mutations, in gateway mode", async () => {
     const server = createSuperagentMcpServer({
       authMode: "oauth", toolExposure: "gateway",
       getIdentity: () => ({ mode: "oauth", subject: "reader", scopes: ["mcp:tools"] }),
     });
     try {
       const names = await listed(server);
-      expect(names).toContain(DELEGATE_MCP_TOOL_NAMES.read);
+      for (const name of [
+        DELEGATE_MCP_TOOL_NAMES.read,
+        DELEGATE_MCP_TOOL_NAMES.list,
+        DELEGATE_MCP_TOOL_NAMES.readFull,
+        DELEGATE_MCP_TOOL_NAMES.search,
+      ]) expect(names).toContain(name);
       for (const name of [DELEGATE_MCP_TOOL_NAMES.create, DELEGATE_MCP_TOOL_NAMES.send, DELEGATE_MCP_TOOL_NAMES.stop]) {
         expect(names).not.toContain(name);
       }

@@ -16,6 +16,8 @@ function fixture(
   const tabCalls: Array<{tabId: number; action: string}> = [];
   const injections: Array<{tabId: number;files: string[]}> = [];
   const createdTabs: Array<{id: number;url: string;active?: boolean}> = [];
+  const updatedTabs: Array<{id:number;url?:string;active?:boolean}> = [];
+  const removedTabs: number[] = [];
   let injected = false;
   const sockets: FakeSocket[] = [];
   const badges: Array<{ text?: string; color?: string; title?: string }> = [];
@@ -91,13 +93,38 @@ function fixture(
       },
       get: async (id: number) => tabs.find(t => t.id === id),
       query: async () => tabs,
-      sendMessage: async (tabId: number, message: { action: string }) => {
+      update: async (id: number, options: {url?: string; active?: boolean}) => {
+        const tab = tabs.find(t => t.id === id);
+        if (!tab) throw new Error("missing tab");
+        if (options.url !== undefined) tab.url = options.url;
+        if (options.active !== undefined) tab.active = options.active;
+        updatedTabs.push({ id, ...options });
+        return tab;
+      },
+      remove: async (id: number) => {
+        const index = tabs.findIndex(t => t.id === id);
+        if (index >= 0) tabs.splice(index, 1);
+        removedTabs.push(id);
+      },
+      sendMessage: async (tabId: number, message: { action: string; method?: string; params?: any }) => {
         tabCalls.push({ tabId, action: message.action });
         if (message.action === "probe" && needsInjection && !injected) {
           throw new Error("Receiving end does not exist");
         }
-        return message.action === "probe"
-          ? { ready: true } : { ok: true, result: { status: "waiting_for_input" } };
+        if (message.action === "probe") return { ready: true };
+        if (message.method === "delegate.list_chats") return { ok: true, result: {
+          chats: [
+            { chat_id: "chat-history-001", title: "History One", url: "https://chatgpt.com/c/chat-history-001" },
+            { chat_id: "chat-history-002", title: "History Two", url: "https://chatgpt.com/c/chat-history-002" },
+          ], complete: true, next_cursor: null,
+        } };
+        if (message.method === "delegate.read_chat_full") return { ok: true, result: {
+          chat_id: "chat-history-001", messages: [{ index: 0, role: "user", text: "hello" }], next_cursor: null,
+        } };
+        if (message.method === "delegate.search_current_chat") return { ok: true, result: {
+          matched: false, title_match: false, snippets: [], loaded_complete: true, total_message_count: 2,
+        } };
+        return { ok: true, result: { status: "waiting_for_input" } };
       },
     },
   };
@@ -129,7 +156,7 @@ function fixture(
       resolve,
     ));
   }
-  return { ask, update, sockets, badges, timers, stored, tabCalls, injections, createdTabs };
+  return { ask, update, sockets, badges, timers, stored, tabCalls, injections, createdTabs, updatedTabs, removedTabs };
 }
 
 describe("Delegate connection status", () => {
@@ -243,6 +270,73 @@ describe("Delegate connection status", () => {
     ]);
     const result = sockets[0].sent.find(value => value.type === "response");
     expect(result.ok).toBe(true);
+  });
+
+  it("uses an inactive disposable history worker even when multiple user ChatGPT tabs exist", async () => {
+    const { sockets, createdTabs, removedTabs, tabCalls } = fixture([
+      { id: 101, url: "https://chatgpt.com/", active: true },
+      { id: 202, url: "https://chatgpt.com/c/abc", active: false },
+    ]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "history-list", method: "delegate.list_chats",
+      params: { cursor: 0, limit: 10 },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(createdTabs).toEqual([{
+      id: 203, url: "https://chatgpt.com/#delegate-history-worker", active: false,
+    }]);
+    expect(tabCalls).toContainEqual({ tabId: 203, action: "probe" });
+    expect(tabCalls).toContainEqual({ tabId: 203, action: "execute" });
+    expect(removedTabs).toEqual([203]);
+    const response = sockets[0].sent.find(value => value.type === "response");
+    expect(response.error).toBeUndefined();
+    expect(response).toMatchObject({ ok: true });
+    expect(response.result.chats).toHaveLength(2);
+  });
+
+  it("reads a historical chat by navigating only the inactive worker tab", async () => {
+    const { sockets, createdTabs, updatedTabs, removedTabs } = fixture([
+      { id: 101, url: "https://chatgpt.com/c/user-active", active: true },
+    ]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "history-full", method: "delegate.read_chat_full",
+      params: { chatId: "chat-history-001", cursor: 0, limit: 40 },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(createdTabs).toEqual([{
+      id: 102, url: "https://chatgpt.com/#delegate-history-worker", active: false,
+    }]);
+    expect(updatedTabs).toEqual([]);
+    expect(removedTabs).toEqual([102]);
+    const response = sockets[0].sent.find(value => value.type === "response");
+    expect(response).toMatchObject({ ok: true, result: { chat_id: "chat-history-001" } });
+  });
+
+  it("searches history through one disposable worker and closes it after scanning", async () => {
+    const { sockets, createdTabs, updatedTabs, removedTabs } = fixture([
+      { id: 101, url: "https://chatgpt.com/c/user-active", active: true },
+    ]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "history-search", method: "delegate.search_history",
+      params: { query: "needle-not-in-title", limit: 10, maxChats: 2 },
+    });
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(createdTabs).toEqual([{
+      id: 102, url: "https://chatgpt.com/#delegate-history-worker", active: false,
+    }]);
+    expect(updatedTabs).toEqual([]);
+    expect(removedTabs).toEqual([102]);
+    const response = sockets[0].sent.find(value => value.type === "response");
+    expect(response).toMatchObject({
+      ok: true,
+      result: { returned: 0, scanned_chats: 2, skipped_chats: 0, listed_chats: 2 },
+    });
   });
 
   it("keeps an explicit missing tabId strict instead of opening a replacement tab", async () => {

@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import net from "node:net";
 import WebSocket from "ws";
 import { DelegateBridge } from "../src/core/delegate/bridge.js";
-import { delegateReadChatTool, delegateCreateChatTool } from "../src/core/tools/delegateTools.js";
+import {
+  delegateReadChatTool, delegateListChatsTool, delegateReadChatFullTool,
+  delegateSearchHistoryTool, delegateCreateChatTool,
+} from "../src/core/tools/delegateTools.js";
 import { getToolByName, getToolDefinitions } from "../src/core/tools/index.js";
 import {
   delegateToolset, masterToolset, superagentToolset, chromeExtensionToolset,
@@ -13,6 +16,9 @@ import {
 const names = [
   "delegate.create_chat",
   "delegate.read_chat",
+  "delegate.list_chats",
+  "delegate.read_chat_full",
+  "delegate.search_history",
   "delegate.send_message",
   "delegate.stop_generation",
 ];
@@ -60,7 +66,7 @@ afterEach(async () => {
 });
 
 describe("delegate registration and visibility", () => {
-  it("exports exactly four conforming Tool objects, without modifying Master", () => {
+  it("exports seven conforming Delegate tools, including read-only history tools, without modifying Master", () => {
     expect(delegateToolset.map((x) => x.name)).toEqual(names);
     for (const t of delegateToolset) {
       expect(t.parameters.type).toBe("object");
@@ -71,7 +77,7 @@ describe("delegate registration and visibility", () => {
     }
   });
 
-  it("registers the four tools in the global lookup catalog", () => {
+  it("registers all Delegate tools in the global lookup catalog", () => {
     const catalog = getToolDefinitions();
     for (const name of names) {
       expect(getToolByName(name)?.name).toBe(name);
@@ -104,16 +110,22 @@ describe("delegate registration and visibility", () => {
   });
 });
 
-  it("supports safe connection discovery within the original four tools", async () => {
+  it("supports safe connection discovery and strict history schemas", async () => {
     const list = JSON.parse(await delegateReadChatTool.execute({ connections: true }, process.cwd()));
     expect(list.count).toBe(0);
     expect(list.connections).toEqual([]);
     const readParams = delegateReadChatTool.parameters as { properties: Record<string, unknown> };
     const createParams = delegateCreateChatTool.parameters as { properties: Record<string, unknown> };
+    const listParams = delegateListChatsTool.parameters as { properties: Record<string, unknown> };
+    const fullParams = delegateReadChatFullTool.parameters as { properties: Record<string, unknown>; required?: string[] };
+    const searchParams = delegateSearchHistoryTool.parameters as { properties: Record<string, unknown>; required?: string[] };
     expect(readParams.properties.connections).toBeTruthy();
     expect(readParams.properties.clientId).toBeTruthy();
     expect(createParams.properties.clientId).toBeTruthy();
     expect(createParams.properties.tabId).toBeTruthy();
+    expect(listParams.properties.cursor).toBeTruthy();
+    expect(fullParams.required).toContain("chatId");
+    expect(searchParams.required).toContain("query");
   });
 
 describe("delegate bridge", () => {

@@ -6,7 +6,10 @@ The **SuperAgent MCP connector** exposes these direct tools, independently
 from agent-internal `delegate.*` names:
 
 - `superagent_delegate_read_chat({connections:true})`: list connected Chrome profiles.
-- `superagent_delegate_read_chat({clientId, tabId?})`: read a ChatGPT tab through its DOM.
+- `superagent_delegate_read_chat({clientId, tabId?})`: read the currently selected ChatGPT tab.
+- `superagent_delegate_list_chats({clientId?, cursor?, limit?})`: paginate ChatGPT history titles + chat IDs.
+- `superagent_delegate_read_chat_full({clientId?, chatId, cursor?, limit?})`: read a historical conversation including older/virtualized turns.
+- `superagent_delegate_search_history({clientId?, query, limit?, maxChats?})`: search history titles and message content with snippets.
 - `superagent_delegate_create_chat({clientId?, tabId?})`: one explicit New chat action.
 - `superagent_delegate_send_message({message, clientId?, tabId?})`: send exactly once.
 - `superagent_delegate_stop_generation({clientId?, tabId?})`: Stop only on request.
@@ -16,11 +19,13 @@ MCP → authenticated local SuperAgent HTTP `127.0.0.1:7888` →
 existing host-owned Delegate WebSocket `127.0.0.1:17341` →
 Chrome Extension → ChatGPT DOM.
 
-Read is available with MCP read scope. Create, send and stop require an
-authorized MCP write scope plus local YOLO enablement. They are hidden
-in read-only MCP catalogs. Gateway mode advertises authorized Delegate
-tools directly rather than requiring a natural-language discovery query.
-An R1 safe-owner restricted catalog does not gain browser access.
+Live read plus `list_chats`, `read_chat_full`, and `search_history` are available
+with MCP read scope. History operations use a separate inactive worker tab and
+never navigate the user's active ChatGPT tab. Create, send and stop require an
+authorized MCP write scope plus local YOLO enablement. They are hidden in
+read-only MCP catalogs. Gateway mode advertises authorized Delegate tools
+directly rather than requiring a natural-language discovery query. An R1
+safe-owner restricted catalog does not gain browser access.
 
 **Activation:** Rebuild and restart the Core host before the new
 `/api/delegate/mcp-dispatch` route is present; separately restart/reconnect
@@ -29,10 +34,54 @@ the MCP server/tunnel and refresh the ChatGPT connector's tool catalog.
 the Delegate secret and **requires the extension to pair again**. Avoid
 restarting the live host without arranging re-pairing.
 
-No MCP operation automatically reloads a ChatGPT page, sends again after a
-timeout, or logs message content. The activity journal stores redacted
-metadata only; the requested chat text is returned only to the authenticated
-caller.
+No MCP operation automatically reloads a ChatGPT page or replays the original
+message after an RPC/network timeout. For ChatGPT's explicit visible
+"Message delivery timed out. Please try again." UI state only, the content
+script sends one distinct guarded continuation message, `continue until done`,
+without clicking Retry. The activity journal stores redacted metadata only;
+the requested chat text is returned only to the authenticated caller.
+
+## Full ChatGPT history reader — v1.6.0
+
+Delegate can now enumerate the ChatGPT history sidebar, read a selected
+historical conversation beyond the currently rendered turn window, and search
+conversation titles plus message content. All three history operations are
+read-only from the user's perspective: the service worker creates one inactive
+`#delegate-history-worker` tab, performs the requested scan/navigation there,
+and closes that worker in a `finally` path. Historical conversations are opened
+through the ChatGPT sidebar SPA link instead of a hard page reload. The active
+chat, its draft, and its scroll position are never used as the history crawler.
+
+`delegate.list_chats` returns stable `chat_id`, title, URL, and `next_cursor`.
+Continue pagination until `next_cursor` is null. `delegate.read_chat_full`
+accepts a `chatId` from that listing and returns message pages with
+`next_cursor`, `total_message_count`, and `loaded_complete`. It walks upward
+through a virtualized conversation to discover older turns before paging the
+result. `delegate.search_history` first enumerates history, then checks titles
+and, when needed, opens each candidate in the same disposable worker and
+returns matching snippets. `maxChats` bounds the amount of history scanned in
+a single search call.
+
+The history worker disables delivery-timeout continuation recovery, so a stale
+error banner encountered while browsing old chats can never send
+`continue until done`. Arbitrary URLs are not accepted; historical navigation
+is constructed only from validated ChatGPT conversation IDs.
+
+## Delivery-timeout continuation recovery — v1.5.3
+
+When ChatGPT renders the delivery-timeout banner together with a visible
+Retry control, `delegate.read_chat` reports `status: "delivery_timeout"`,
+`delivery_error: true`, `retry_available: true`, and the normalized error
+message. The tab is protected from automatic duplicate-tab cleanup while the
+error is present.
+
+The content script does **not** click Retry and does **not** replay the
+uncertain original prompt. If the composer is empty and ChatGPT is not
+generating, it sends the separate follow-up `continue until done` exactly
+once for that visible timeout episode. An unsent draft, active generation,
+or an already-last `continue until done` message blocks duplicate recovery.
+The recovery lock resets only after the timeout banner disappears, so a later
+independent timeout can be recovered once as well.
 
 ## Current ChatGPT DOM compatibility — v1.5.2
 

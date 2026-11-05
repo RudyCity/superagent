@@ -47,9 +47,12 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   // The gateway router is safe to invoke: it re-authorizes the selected
   // target and cannot elevate scopes or bypass the HTTP tool allowlist.
   superagent_tool_execute: "safe",
-  // The MCP reader can inspect the user's already-connected browser, not
-  // mutate it. All mutation variants require local YOLO and OAuth write scope.
+  // Delegate history/readers inspect the already-connected ChatGPT profile
+  // through isolated read-only worker tabs. Mutating chat controls remain dangerous.
   superagent_delegate_read_chat: "safe",
+  superagent_delegate_list_chats: "safe",
+  superagent_delegate_read_chat_full: "safe",
+  superagent_delegate_search_history: "safe",
   // ---- dangerous: mutation / execution / control ----
   superagent_delegate_create_chat: "dangerous",
   superagent_delegate_send_message: "dangerous",

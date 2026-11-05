@@ -5,6 +5,9 @@ import { getServerAuthToken } from "../../utils/serverSecurity.js";
 
 export const DELEGATE_MCP_TOOL_NAMES = {
   read: "superagent_delegate_read_chat",
+  list: "superagent_delegate_list_chats",
+  readFull: "superagent_delegate_read_chat_full",
+  search: "superagent_delegate_search_history",
   create: "superagent_delegate_create_chat",
   send: "superagent_delegate_send_message",
   stop: "superagent_delegate_stop_generation",
@@ -27,11 +30,40 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
 export const DELEGATE_MCP_TOOL_DEFS = [
   {
     name: DELEGATE_MCP_TOOL_NAMES.read,
-    description: "Read the current ChatGPT chat through the connected Delegate extension, or list paired Chrome profiles with {connections:true}. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading; connections:true never opens a tab.",
+    description: "Read the current ChatGPT chat through the connected Delegate extension, or list paired Chrome profiles with {connections:true}. Detects ChatGPT's visible delivery-timeout banner as status=delivery_timeout; the extension handles that UI state with one guarded 'continue until done' follow-up without clicking Retry. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading; connections:true never opens a tab.",
     inputSchema: schema({
       ...optionalTarget,
       connections: { type: "boolean", description: "Only list paired Chrome Delegate profiles; no ChatGPT DOM read." },
     }),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.list,
+    description: "List ChatGPT history from the connected Chrome profile using an inactive read-only worker tab. Scrolls the Chat history sidebar to load older chats; paginate with cursor/limit until next_cursor is null.",
+    inputSchema: schema({
+      clientId,
+      cursor: { type: "integer", minimum: 0, maximum: 5000 },
+      limit: { type: "integer", minimum: 1, maximum: 200 },
+    }),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.readFull,
+    description: "Read a historical ChatGPT conversation by chatId through an inactive read-only worker tab, including older/virtualized turns. Paginate message output with cursor/limit.",
+    inputSchema: schema({
+      clientId,
+      chatId: { type: "string", minLength: 8, maxLength: 180 },
+      cursor: { type: "integer", minimum: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 80 },
+    }, ["chatId"]),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.search,
+    description: "Search ChatGPT history titles and message content without modifying the user's active chat. Scans up to maxChats conversations and returns matching chats with snippets.",
+    inputSchema: schema({
+      clientId,
+      query: { type: "string", minLength: 1, maxLength: 500 },
+      limit: { type: "integer", minimum: 1, maximum: 50 },
+      maxChats: { type: "integer", minimum: 1, maximum: 500 },
+    }, ["query"]),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.create,
@@ -40,7 +72,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.send,
-    description: "Send one message through the selected ChatGPT web tab. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Requires MCP write permission; never retries on timeout or disconnection.",
+    description: "Send one message through the selected ChatGPT web tab. If ChatGPT later shows its delivery-timeout banner, the extension sends one distinct guarded follow-up, 'continue until done'; it never clicks Retry or resends the original request. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Transport/RPC timeouts are never retried.",
     inputSchema: schema({
       ...optionalTarget,
       message: { type: "string", minLength: 1, maxLength: 100_000 },
@@ -95,7 +127,13 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
     ? ["clientId", "tabId", "message"]
     : name === DELEGATE_MCP_TOOL_NAMES.read
       ? ["clientId", "tabId", "connections"]
-      : ["clientId", "tabId"];
+      : name === DELEGATE_MCP_TOOL_NAMES.list
+        ? ["clientId", "cursor", "limit"]
+        : name === DELEGATE_MCP_TOOL_NAMES.readFull
+          ? ["clientId", "chatId", "cursor", "limit"]
+          : name === DELEGATE_MCP_TOOL_NAMES.search
+            ? ["clientId", "query", "limit", "maxChats"]
+            : ["clientId", "tabId"];
   if (keys.some(key => !allowed.includes(key))) return "DELEGATE_UNEXPECTED_ARGUMENT";
   if (args.clientId !== undefined &&
     (typeof args.clientId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(args.clientId)))
@@ -110,6 +148,28 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
   if (name === DELEGATE_MCP_TOOL_NAMES.send &&
     (typeof args.message !== "string" || !args.message.trim() || args.message.length > 100_000))
     return "DELEGATE_INVALID_MESSAGE";
+  if (name === DELEGATE_MCP_TOOL_NAMES.list) {
+    if (args.cursor !== undefined && (!Number.isSafeInteger(args.cursor) || Number(args.cursor) < 0 || Number(args.cursor) > 5000))
+      return "DELEGATE_INVALID_CURSOR";
+    if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 200))
+      return "DELEGATE_INVALID_LIMIT";
+  }
+  if (name === DELEGATE_MCP_TOOL_NAMES.readFull) {
+    if (typeof args.chatId !== "string" || !/^[a-zA-Z0-9:_-]{8,180}$/.test(args.chatId))
+      return "DELEGATE_INVALID_CHAT_ID";
+    if (args.cursor !== undefined && (!Number.isSafeInteger(args.cursor) || Number(args.cursor) < 0))
+      return "DELEGATE_INVALID_CURSOR";
+    if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 80))
+      return "DELEGATE_INVALID_LIMIT";
+  }
+  if (name === DELEGATE_MCP_TOOL_NAMES.search) {
+    if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 500)
+      return "DELEGATE_INVALID_QUERY";
+    if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 50))
+      return "DELEGATE_INVALID_LIMIT";
+    if (args.maxChats !== undefined && (!Number.isSafeInteger(args.maxChats) || Number(args.maxChats) < 1 || Number(args.maxChats) > 500))
+      return "DELEGATE_INVALID_MAX_CHATS";
+  }
   return null;
 }
 
@@ -125,6 +185,10 @@ export async function dispatchDelegateMcpTool(
   const port = 7888;
   try {
     const token = getServerAuthToken(port);
+    const timeoutMs = name === DELEGATE_MCP_TOOL_NAMES.search ? 305_000
+      : name === DELEGATE_MCP_TOOL_NAMES.readFull ? 95_000
+        : name === DELEGATE_MCP_TOOL_NAMES.list ? 65_000
+          : name === DELEGATE_MCP_TOOL_NAMES.send ? 36_000 : 26_000;
     const response = await fetch(`http://127.0.0.1:${port}/api/delegate/mcp-dispatch`, {
       method: "POST",
       headers: {
@@ -132,7 +196,7 @@ export async function dispatchDelegateMcpTool(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ name, arguments: args }),
-      signal: AbortSignal.timeout(name === DELEGATE_MCP_TOOL_NAMES.send ? 36_000 : 26_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const payload: unknown = await response.json();
     if (!isPlainObject(payload)) throw new Error("DELEGATE_HOST_INVALID_RESPONSE");
