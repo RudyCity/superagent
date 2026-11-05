@@ -15,6 +15,7 @@ import { HistoryCompactor } from "./HistoryCompactor.js";
 import { buildBudgetedPromptContext } from "./PromptContextBudget.js";
 import { getAgentActiveModelName } from "./AgentUtils.js";
 import { scopeSystemPromptForDomain } from "./PromptDomainScope.js";
+import { taskPromptModules } from "./TaskPromptModules.js";
 import type { Agent } from "../agent.js";
 
 export class ContextBuilder {
@@ -352,6 +353,14 @@ export class ContextBuilder {
     const lastUserMessage = messages.slice().reverse().find((m: any) => m.role === "user");
     const userInputText = lastUserMessage ? (typeof lastUserMessage.content === "string" ? lastUserMessage.content : "") : "";
     const lowerInput = userInputText.toLowerCase();
+    const recentUserTurns = allMessages.filter((m: any) => m.role === "user");
+    const previousUserContext = recentUserTurns.slice(-3, -1)
+      .map((m: any) => typeof m.content === "string" ? m.content : "")
+      .join("\n");
+    const taskSpecificGuidance = taskPromptModules(userInputText, {
+      continuationContext: previousUserContext,
+      goal: agent.goalMode || "",
+    });
 
     let activeMode = "implement";
     if (agent.activeModeOverride) {
@@ -457,6 +466,7 @@ export class ContextBuilder {
     const executionDirective = getExecutionGuidance(maxIterationsStr, hasSubagents && !skipHeavyContext, isGoalMode);
     const scopedIdentityPrompt = scopeSystemPromptForDomain(activeSystemPrompt, agent.currentClassification?.domain);
     const systemPrompt = [scopedIdentityPrompt, toolRestrictionNotice, runtimeCapabilitiesText, activeModeNotice,
+      taskSpecificGuidance,
       toolDiscoveryInstruction, executionDirective, goalModeAddendum, brainWorkspaceNotice, budgetedSystemContext.text]
       .filter(Boolean).join("\n");
     const stepsRemaining = maxIterations === Infinity ? Infinity : (maxIterations - 1);

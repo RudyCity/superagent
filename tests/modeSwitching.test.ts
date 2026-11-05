@@ -194,6 +194,22 @@ describe("Operational Mode Switching Feature", () => {
   });
 
   describe("ContextBuilder integration with operational modes", () => {
+    it("attaches PDF guidance only for PDF work in a real agent context", async () => {
+      const { ContextBuilder } = await import("../src/core/agent/ContextBuilder.js");
+      mockAgent.getHistory().addUserMessage("Tolong edit PDF ruang sidang");
+      const context = await ContextBuilder.buildContext(mockAgent);
+      expect(context.finalSystemPrompt).toContain("PDF DOCUMENT WORKFLOW");
+      expect(context.finalSystemPrompt).toContain("PDF_MUTATIONS");
+    });
+
+    it("selects Delegate browser guidance for browser work in a real agent context", async () => {
+      const { ContextBuilder } = await import("../src/core/agent/ContextBuilder.js");
+      mockAgent.getHistory().addUserMessage("Buka halaman Chrome via Delegate CDP");
+      const context = await ContextBuilder.buildContext(mockAgent);
+      expect(context.finalSystemPrompt).toContain("# BROWSER EXECUTION");
+      expect(context.finalSystemPrompt).toContain("transport:'delegate'");
+      expect(context.finalSystemPrompt).not.toContain("# PDF DOCUMENT WORKFLOW");
+    });
     it("should inject ask mode guidance with switch_mode recommendation when in ask mode", async () => {
       const { ContextBuilder } = await import("../src/core/agent/ContextBuilder.js");
       mockAgent.currentClassification = {
