@@ -22,7 +22,25 @@
     loading: false,
     pollTimer: null,
     countdownTimer: null,
+    unreachable: false,
   };
+  let statusRequest = null;
+
+  function showListenerFeedback(message, error = false) {
+    const feedback = $("delegate-listener-feedback");
+    if (!feedback) return;
+    feedback.hidden = false;
+    feedback.textContent = message;
+    feedback.className = error ? "delegate-listener-feedback error" : "delegate-listener-feedback";
+  }
+
+  function explainListenerFailure(error) {
+    const message = String(error?.message || error || "Unknown Core error");
+    if (/EADDRINUSE|address already in use|DELEGATE_BRIDGE_BIND_FAILED|port 17341 in use/i.test(message)) {
+      return "Port 17341 sedang dimiliki proses lain atau worker Core lama. Listener belum dimulai pada Core aktif. Lakukan handover terverifikasi, bukan kill proses, lalu coba lagi.";
+    }
+    return "Gagal mengubah listener: " + message.slice(0, 280);
+  }
 
   const escapeHtml = (str) =>
     String(str ?? "").replace(/[&<>"']/g, (char) => ({
@@ -100,17 +118,24 @@
     return res.json();
   }
 
-  async function fetchDelegateStatus() {
-    if (delegateState.loading) return;
-    delegateState.loading = true;
+  async function fetchDelegateStatus(options = {}) {
+    // A status poll must not swallow the explicit refresh after Start/Stop.
+    if (statusRequest) {
+      if (!options.force) return statusRequest;
+      await statusRequest.catch(() => {});
+    }
+    const run = (async () => {
+      delegateState.loading = true;
+      const refreshBtn = $("delegate-refresh-btn");
+      if (refreshBtn) refreshBtn.disabled = true;
 
-    const refreshBtn = $("delegate-refresh-btn");
-    if (refreshBtn) refreshBtn.disabled = true;
-
-    try {
-      const data = await invokeDelegate("status");
-      if (data) {
-        delegateState.running = data.running === true;
+      try {
+        const data = await invokeDelegate("status");
+        if (!data || data.success === false || typeof data.running !== "boolean") {
+          throw new Error("Core tidak memberikan status listener yang valid.");
+        }
+        delegateState.unreachable = false;
+        delegateState.running = data.running;
         delegateState.port = data.port || 17341;
         delegateState.endpoint = data.endpoint || `ws://127.0.0.1:${delegateState.port}`;
         delegateState.activeProfiles = data.activeProfiles || [];
@@ -119,17 +144,25 @@
         delegateState.pairingExpiresAt = data.pairingExpiresAt || null;
         delegateState.pairingTtlMs = data.pairingTtlMs || null;
         delegateState.authMode = data.authMode || "pairing_required";
-
         renderDelegateUI();
+        return data;
+      } catch (err) {
+        console.warn("[Delegate] Failed to fetch status:", err);
+        // Do not misrepresent a disconnected Core as a stopped listener.
+        delegateState.unreachable = true;
+        delegateState.running = false;
+        renderDelegateUI();
+        showListenerFeedback("Status listener tidak dapat dibaca dari Core. " +
+          String(err?.message || err).slice(0, 180), true);
+        return null;
+      } finally {
+        delegateState.loading = false;
+        if (refreshBtn) refreshBtn.disabled = false;
       }
-    } catch (err) {
-      console.warn("[Delegate] Failed to fetch status:", err);
-      delegateState.running = false;
-      renderDelegateUI();
-    } finally {
-      delegateState.loading = false;
-      if (refreshBtn) refreshBtn.disabled = false;
-    }
+    })();
+    statusRequest = run;
+    try { return await run; }
+    finally { if (statusRequest === run) statusRequest = null; }
   }
 
   function startCountdown() {
@@ -194,7 +227,8 @@
       statusDot.className = delegateState.running ? "status-dot online" : "status-dot offline";
     }
     if (statusText) {
-      statusText.textContent = delegateState.running ? "Listener Active" : "Listener Stopped";
+      statusText.textContent = delegateState.unreachable ? "Core Unreachable"
+        : delegateState.running ? "Listener Active" : "Listener Stopped";
     }
     if (endpointEl) {
       endpointEl.textContent = delegateState.endpoint;
@@ -272,15 +306,33 @@
     // Toggle Listener Start / Stop
     $("delegate-listener-toggle")?.addEventListener("click", async () => {
       const btn = $("delegate-listener-toggle");
-      if (btn) btn.disabled = true;
+      if (!btn || btn.disabled) return;
+      const action = delegateState.running ? "stop" : "start";
+      const shouldRun = action === "start";
+      btn.disabled = true;
+      if (delegateState.unreachable) {
+        showListenerFeedback("Core tidak terjangkau. Periksa koneksi Core lalu tekan Refresh terlebih dahulu.", true);
+        btn.disabled = false;
+        return;
+      }
+      showListenerFeedback(shouldRun ? "Mengaktifkan listener..." : "Menghentikan listener...");
       try {
-        const action = delegateState.running ? "stop" : "start";
-        await invokeDelegate(action);
-        await fetchDelegateStatus();
+        const result = await invokeDelegate(action);
+        if (result?.success === false || result?.running !== shouldRun) {
+          throw new Error(result?.error || "Core tidak mengonfirmasi perubahan listener.");
+        }
+        await fetchDelegateStatus({ force: true });
+        if (delegateState.running !== shouldRun || delegateState.unreachable) {
+          throw new Error("Hasil perubahan listener tidak cocok dengan status Core.");
+        }
+        showListenerFeedback(shouldRun
+          ? "Listener aktif pada port 17341. Jika Chrome belum CONNECTED, buka popup Delegate dan klik Reconnect."
+          : "Listener dihentikan. Proses Core, MCP, dan tunnel tetap berjalan.");
       } catch (err) {
-        alert(`Failed to ${delegateState.running ? "stop" : "start"} delegate bridge: ${err.message || err}`);
+        showListenerFeedback(explainListenerFailure(err), true);
+        try { await fetchDelegateStatus({ force: true }); } catch {}
       } finally {
-        if (btn) btn.disabled = false;
+        btn.disabled = false;
       }
     });
 

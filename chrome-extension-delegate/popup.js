@@ -310,7 +310,11 @@ $("reconnect").addEventListener("click", async () => {
     renderStatus(result.status);
     $("action-note").textContent = result.started
       ? "Koneksi baru dicoba. Tidak ada pesan yang dikirim ulang."
-      : "Koneksi masih aktif atau sedang dijalankan.";
+      : result.reason === "pairing_required"
+        ? "Pairing lama ditolak server. Masukkan kode pairing baru dari SuperAgent Tray, lalu klik Save Pairing."
+        : result.reason === "disabled"
+          ? "Aktifkan toggle koneksi Delegate dahulu."
+          : "Koneksi masih aktif atau sedang dijalankan.";
   } catch {
     $("action-note").textContent = "Gagal menghubungkan. Periksa server.";
   }

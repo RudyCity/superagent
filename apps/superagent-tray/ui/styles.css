@@ -2459,6 +2459,26 @@ tbody tr:hover {
   align-items: center;
 }
 
+.delegate-listener-feedback {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(16, 185, 129, 0.08);
+  color: #86efac;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.delegate-listener-feedback.error {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+  color: #fca5a5;
+}
+
+.delegate-listener-feedback[hidden] { display: none; }
+
 .delegate-hint {
   font-size: 11.5px;
   line-height: 1.45;

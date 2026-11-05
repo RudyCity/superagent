@@ -9,7 +9,7 @@ const delegateJs = fs.readFileSync(
   "utf8"
 );
 
-function mountDelegateUi(mockStatus?: any) {
+function mountDelegateUi(mockStatus?: any, options: { startError?: string; statusError?: string } = {}) {
   const elements = new Map<string, any>();
   const listeners = new Map<string, (e: any) => any>();
   const invokeCalls: Array<{ action: string; payload: any }> = [];
@@ -101,6 +101,7 @@ function mountDelegateUi(mockStatus?: any) {
         invoke: vi.fn(async (cmd: string, args: any) => {
           if (cmd === "get_delegate_status") {
             invokeCalls.push({ action: "status", payload: null });
+            if (options.statusError) throw new Error(options.statusError);
             return statusData;
           }
           if (cmd === "delegate_action") {
@@ -116,7 +117,9 @@ function mountDelegateUi(mockStatus?: any) {
               return { success: true };
             }
             if (args.action === "start" || args.action === "stop") {
-              return { success: true };
+              if (args.action === "start" && options.startError) throw new Error(options.startError);
+              statusData.running = args.action === "start";
+              return { success: true, running: statusData.running };
             }
           }
           return { success: true };
@@ -251,6 +254,43 @@ describe("Desktop Delegate UI Controller", () => {
 
     const tbody = mounted.getOrCreateElement("delegate-profiles-tbody");
     expect(tbody.innerHTML).toContain("No Chrome extensions currently connected");
+  });
+
+  it("starts the real listener only when Core confirms running and refreshes UI", async () => {
+    const mounted = mountDelegateUi({
+      running: false, port: 17341, endpoint: "ws://127.0.0.1:17341",
+      activeProfiles: [], openSockets: 0, pairingCode: null,
+    });
+    await mounted.windowMock.__superagentDelegateRefresh();
+    const click = mounted.listeners.get("delegate-listener-toggle:click");
+    expect(click).toBeDefined();
+    await click!({});
+    expect(mounted.invokeCalls.some(call => call.action === "start")).toBe(true);
+    expect(mounted.getOrCreateElement("delegate-status-text").textContent).toBe("Listener Active");
+    expect(mounted.getOrCreateElement("delegate-listener-toggle").textContent).toBe("Stop Listener");
+    expect(mounted.getOrCreateElement("delegate-listener-feedback").textContent).toContain("Listener aktif");
+    expect(mounted.getOrCreateElement("delegate-listener-toggle").disabled).toBe(false);
+  });
+
+  it("explains stale worker EADDRINUSE visibly and never claims start succeeded", async () => {
+    const mounted = mountDelegateUi({
+      running: false, port: 17341, activeProfiles: [], openSockets: 0, pairingCode: null,
+    }, { startError: "Core HTTP 400: DELEGATE_BRIDGE_BIND_FAILED: EADDRINUSE port 17341" });
+    await mounted.windowMock.__superagentDelegateRefresh();
+    await mounted.listeners.get("delegate-listener-toggle:click")!({});
+    expect(mounted.getOrCreateElement("delegate-listener-feedback").textContent).toContain("worker Core lama");
+    expect(mounted.getOrCreateElement("delegate-status-text").textContent).toBe("Listener Stopped");
+    expect(mounted.getOrCreateElement("delegate-listener-toggle").disabled).toBe(false);
+    expect(mounted.windowMock.alert).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes an unreachable Core from a stopped listener and refuses unsafe toggle", async () => {
+    const mounted = mountDelegateUi(undefined, { statusError: "Core offline" });
+    await mounted.windowMock.__superagentDelegateRefresh();
+    expect(mounted.getOrCreateElement("delegate-status-text").textContent).toBe("Core Unreachable");
+    await mounted.listeners.get("delegate-listener-toggle:click")!({});
+    expect(mounted.invokeCalls.some(call => call.action === "start")).toBe(false);
+    expect(mounted.getOrCreateElement("delegate-listener-feedback").textContent).toContain("Core tidak terjangkau");
   });
 
   it("disconnects an active client when disconnect button is clicked", async () => {

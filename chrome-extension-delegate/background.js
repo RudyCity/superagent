@@ -291,7 +291,8 @@ function connect() {
 }
 
 function manualReconnect() {
-  if (!enabled) return { started: false, status: getConnectionStatus() };
+  if (!enabled) return { started: false, reason: "disabled", status: getConnectionStatus() };
+  if (authBlocked) return { started: false, reason: "pairing_required", status: getConnectionStatus() };
   if (socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) {
     return { started: false, status: getConnectionStatus() };
   }

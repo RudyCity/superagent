@@ -453,6 +453,11 @@ describe("Delegate connection status", () => {
     expect(ask("get_status").status.connected).toBe(false);
     expect(ask("get_status").status.nextRetryAt).toBeNull();
     expect(sockets).toHaveLength(2);
+    // Reconnect cannot bypass a rejected/expired pair code.
+    const retry = ask("reconnect");
+    expect(retry.started).toBe(false);
+    expect(retry.reason).toBe("pairing_required");
+    expect(sockets).toHaveLength(2);
     const next = await update("set_pairing", { token: "ABCD-EFGH" });
     expect(next.ok).toBe(true);
     expect(sockets).toHaveLength(3);
