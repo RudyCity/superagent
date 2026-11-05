@@ -192,6 +192,7 @@
     --ease-out: cubic-bezier(0, 0, .2, 1);
     --ease-in-out: cubic-bezier(.4, 0, .2, 1);
     --animate-spin: spin 1s linear infinite;
+    --animate-ping: ping 1s cubic-bezier(0, 0, .2, 1) infinite;
     --animate-pulse: pulse 2s cubic-bezier(.4, 0, .6, 1) infinite;
     --blur-md: 12px;
     --aspect-video: 16 / 9;
@@ -709,6 +710,10 @@
     margin-top: calc(var(--spacing) * 4);
   }
 
+  .mt-\[13px\] {
+    margin-top: 13px;
+  }
+
   .mr-2 {
     margin-right: calc(var(--spacing) * 2);
   }
@@ -767,6 +772,10 @@
 
   .ml-2 {
     margin-left: calc(var(--spacing) * 2);
+  }
+
+  .ml-\[7px\] {
+    margin-left: 7px;
   }
 
   .ml-auto {
@@ -905,6 +914,10 @@
 
   .h-\[30px\] {
     height: 30px;
+  }
+
+  .h-\[31px\] {
+    height: 31px;
   }
 
   .h-\[80px\] {
@@ -1243,6 +1256,10 @@
 
   .transform {
     transform: var(--tw-rotate-x, ) var(--tw-rotate-y, ) var(--tw-rotate-z, ) var(--tw-skew-x, ) var(--tw-skew-y, );
+  }
+
+  .animate-ping {
+    animation: var(--animate-ping);
   }
 
   .animate-pulse {
@@ -2319,6 +2336,10 @@
     padding-block: 1px;
   }
 
+  .py-\[11px\] {
+    padding-block: 11px;
+  }
+
   .pt-0 {
     padding-top: 0;
   }
@@ -2597,6 +2618,10 @@
     tab-size: 5;
   }
 
+  .tab-202 {
+    tab-size: 202;
+  }
+
   .text-amber-warning {
     color: var(--color-amber-warning);
   }
@@ -2805,6 +2830,11 @@
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
 
+  .shadow-\[0_0_20px_rgba\(139\,92\,246\,0\.5\)\] {
+    --tw-shadow: 0 0 20px var(--tw-shadow-color, #8b5cf680);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
   .shadow-inner {
     --tw-shadow: inset 0 2px 4px 0 var(--tw-shadow-color, #0000000d);
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
@@ -2918,6 +2948,12 @@
     transition-duration: var(--tw-duration, var(--default-transition-duration));
   }
 
+  .transition-\[transform\,opacity\] {
+    transition-property: transform, opacity;
+    transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
+    transition-duration: var(--tw-duration, var(--default-transition-duration));
+  }
+
   .transition-all {
     transition-property: all;
     transition-timing-function: var(--tw-ease, var(--default-transition-timing-function));
@@ -3014,6 +3050,14 @@
     project: p-beta;
   }
 
+  .\[project\:p_a\] {
+    project: p a;
+  }
+
+  .\[project\:p_b\] {
+    project: p b;
+  }
+
   .\[project\:p_project_a\] {
     project: p project a;
   }
@@ -3032,6 +3076,14 @@
 
   .\[project\:projectName\] {
     project: projectName;
+  }
+
+  .\[project\:superagent\] {
+    project: superagent;
+  }
+
+  .\[seconds\:2\.\.259200\] {
+    seconds: 2..2592;
   }
 
   .\[tier\:master\] {
@@ -5319,6 +5371,13 @@ select option {
   syntax: "*";
   inherits: false;
   initial-value: "";
+}
+
+@keyframes ping {
+  75%, 100% {
+    opacity: 0;
+    transform: scale(2);
+  }
 }
 
 @keyframes pulse {
