@@ -35,7 +35,7 @@ from PIL import Image, ImageOps
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DATA = pathlib.Path.home() / ".superagent-r" / "datasets" / "mdpbench-public"
 ANNOT = DATA / "MDPBench_public.json"
-MANIFEST = DATA / "selected-real-documents.json"
+LEGACY_MANIFEST = DATA / "selected-real-documents.json"
 CACHE = DATA / "images"
 OCR_PY = pathlib.Path.home() / ".superagent-r" / "venvs" / "pdf-ocr-rapid" / (
     "Scripts/python.exe" if os.name == "nt" else "bin/python"
@@ -121,6 +121,15 @@ def choose(rows: list[dict], per_lang: int) -> list[dict]:
         raise ValueError("Deterministic source-group selection failed.")
     return sorted(selected, key=lambda x: (x["lang"], x["filename"]))
 
+def manifest_path(per_lang: int) -> pathlib.Path:
+    # Preserve the already-sealed 10+10 pilot manifest. Larger release-gate
+    # corpora receive independent locks so expanding evaluation never mutates
+    # earlier evidence.
+    if per_lang == 10 and LEGACY_MANIFEST.exists():
+        return LEGACY_MANIFEST
+    return DATA / f"selected-real-documents-{per_lang}x2.json"
+
+
 def expected_manifest(per_lang: int) -> dict:
     rows = choose(read_annotations(), per_lang)
     return {
@@ -137,9 +146,10 @@ def expected_manifest(per_lang: int) -> dict:
 
 def provision(per_lang: int) -> None:
     manifest = expected_manifest(per_lang)
+    lock = manifest_path(per_lang)
     CACHE.mkdir(parents=True, exist_ok=True)
-    if MANIFEST.exists():
-        prior = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    if lock.exists():
+        prior = json.loads(lock.read_text(encoding="utf-8"))
         for key in ("count", "cases", "sourceAnnotationSHA256"):
             # Prior cases contain hashes/download data; compare selection only.
             if key == "cases":
@@ -184,12 +194,16 @@ def provision(per_lang: int) -> None:
         if (i+1) % 10 == 0:
             print(f"Verified public images: {i+1}/{manifest['count']}", flush=True)
     manifest["cases"] = downloaded
-    if MANIFEST.exists():
-        old=json.loads(MANIFEST.read_text("utf8"))
+    manifest["uniqueSourceGroups"] = {
+        lang: len(set(x["group"] for x in downloaded if x["lang"] == lang))
+        for lang in ("id", "en")
+    }
+    if lock.exists():
+        old=json.loads(lock.read_text("utf8"))
         if old != manifest:
             raise ValueError("Existing image lock differs; preserve previous record.")
     else:
-        MANIFEST.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",encoding="utf-8")
+        lock.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",encoding="utf-8")
     print(json.dumps({"status":"verified","cases":manifest["count"],
        "languages":dict(collections.Counter(x["lang"] for x in downloaded)),
        "uniqueSourceGroups":{lang:len(set(x["group"] for x in downloaded if x["lang"]==lang))
@@ -204,16 +218,127 @@ def score_recall(gold: str, predicted: str) -> dict:
     hit=sum((want & got).values())
     return {"hit":hit,"gold":sum(want.values()),"ocr":sum(got.values())}
 
+def preprocess_case(inp: pathlib.Path, out: pathlib.Path) -> None:
+    with Image.open(inp) as image:
+        if image.width * image.height > 100_000_000:
+            raise ValueError("Refuse source image larger than 100 million pixels.")
+        image.draft("RGB", (2200, 2200))
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        image.thumbnail((2200, 2200), Image.Resampling.LANCZOS)
+        image.save(out, optimize=False)
+
+
+def evaluate_direct(per_lang: int, engine: str, start: int, count: int, output: pathlib.Path) -> None:
+    """Benchmark-only direct runner; production OCR worker remains capped at 20 pages."""
+    lock = manifest_path(per_lang)
+    if not lock.is_file():
+        raise ValueError("Provision the requested locked corpus before evaluation.")
+    manifest = json.loads(lock.read_text("utf8"))
+    expected = expected_manifest(per_lang)
+    if (manifest["count"] != expected["count"] or
+        any(any(x[k] != y[k] for k in ("filename","lang","goldSha256"))
+            for x,y in zip(manifest["cases"], expected["cases"]))):
+        raise ValueError("Dataset selection / annotation lock changed.")
+    if engine not in ("tiny","small","medium","tesseract"):
+        raise ValueError("Unsupported pinned OCR engine.")
+    if start < 0 or count < 1 or count > 100 or start + count > manifest["count"]:
+        raise ValueError("Direct benchmark range must contain 1..100 locked cases.")
+    if output.exists():
+        raise ValueError("Output already exists; cannot overwrite evidence.")
+
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import pdf_ocr_backend as backend
+    import psutil
+
+    if engine in backend.TIERS:
+        backend.verify((engine,))
+    else:
+        backend.verify(())
+    registry = backend.load_registry()
+    if engine in backend.TIERS:
+        model_hashes = {
+            name: info["sha256"] for name,info in registry["artifacts"].items()
+            if name.endswith(f"_{engine}")
+        }
+    else:
+        model_hashes = {
+            name: info["sha256"] for name,info in registry["artifacts"].items()
+            if name.startswith("tesseract_")
+        }
+    process = psutil.Process(os.getpid())
+    benchmark_start = time.perf_counter()
+    worker_start = time.perf_counter()
+    worker = backend.load_rapid(engine) if engine in backend.TIERS else None
+    model_load_seconds = time.perf_counter() - worker_start
+    peak_rss = process.memory_info().rss
+    gold_by_name = {case["filename"]: case for case in read_annotations()}
+    results = []
+    with tempfile.TemporaryDirectory(prefix="superagent-mdpbench-direct-") as temp:
+        temp_path = pathlib.Path(temp)
+        for n, case in enumerate(manifest["cases"][start:start+count]):
+            inp = CACHE / case["filename"]
+            raw = inp.read_bytes()
+            if sha(raw) != case["imageSha256"]:
+                raise ValueError("Public document image changed since provisioning.")
+            preprocessed = temp_path / "page.png"
+            preprocess_case(inp, preprocessed)
+            page_start = time.perf_counter()
+            ocr = backend.use_rapid(worker, preprocessed) if worker is not None else backend.tesseract(preprocessed, "auto")
+            elapsed = time.perf_counter() - page_start
+            peak_rss = max(peak_rss, process.memory_info().rss)
+            ground = gold_by_name[case["filename"]]["gold"]
+            rec = score_recall(ground, ocr["text"])
+            results.append({
+                "caseId": start+n, "lang": case["lang"], "condition": case["condition"],
+                "sourceGroupHash": sha(case["group"].encode())[:16],
+                "imageSha256": case["imageSha256"],
+                "annotatedTokenHits": rec["hit"], "annotatedGoldTokens": rec["gold"],
+                "recognizedTokens": rec["ocr"], "runtimeSeconds": round(elapsed,5),
+                "ocrTextSha256": sha(ocr["text"].encode("utf8")),
+                "lineCount": ocr["lineCount"],
+            })
+    report = {
+        "status":"completed","dataset":"MDPBench public Apache-2.0",
+        "annotationSourceSha256":ANNOT_SHA,"selectionSeed":SEED,
+        "languageCount":per_lang,"engine":engine,"start":start,"count":count,
+        "actualInference":True,"trainedOwnModel":False,
+        "benchmarkHarness":"direct-import-same-pinned-backend",
+        "productionWorkerPageLimitUnchanged":20,
+        "metric":"order-independent annotated layout-text token overlap; NOT page CER/WER, bbox F1 or exhaustive transcription",
+        "preprocessing":"PIL EXIF transpose, RGB, downscale to <=2200x2200, no synthetic alterations",
+        "runtimeSec":round(time.perf_counter()-benchmark_start,3),
+        "modelLoadSeconds":round(model_load_seconds,5),
+        "modelHashes":model_hashes,
+        "observedRssBytes":peak_rss,
+        "cases":results,
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2, ensure_ascii=False)+"\n",encoding="utf8")
+    by=collections.defaultdict(lambda:collections.Counter())
+    for row in results:
+        by[row["lang"]].update({"hits":row["annotatedTokenHits"],
+           "reference":row["annotatedGoldTokens"],"recognized":row["recognizedTokens"],"pages":1})
+    summary={lang:{"pages":c["pages"],
+       "annotatedTokenRecall":round(c["hits"]/max(1,c["reference"]),4),
+       "annotatedTokenPrecision":round(c["hits"]/max(1,c["recognized"]),4)}
+       for lang,c in by.items()}
+    print(json.dumps({"status":"completed","engine":engine,"start":start,"count":count,
+                      "direct":True,"byLanguage":summary},ensure_ascii=False))
+
+
 def evaluate(per_lang: int, engine: str, start: int, count: int, output: pathlib.Path) -> None:
-    manifest=json.loads(MANIFEST.read_text("utf8"))
+    lock = manifest_path(per_lang)
+    if not lock.is_file():
+        raise ValueError("Provision the requested locked corpus before evaluation.")
+    manifest=json.loads(lock.read_text("utf8"))
     expected=expected_manifest(per_lang)
     if (manifest["count"]!=expected["count"] or
         any(any(x[k]!=y[k] for k in ("filename","lang","goldSha256")) for x,y in zip(manifest["cases"],expected["cases"]))):
         raise ValueError("Dataset selection / annotation lock changed.")
     if engine not in ("tiny","small","medium","tesseract"):
         raise ValueError("Unsupported pinned OCR engine.")
-    if start<0 or count<1 or count>15 or start+count>manifest["count"]:
-        raise ValueError("Use a valid range with up to 15 cases per process.")
+    if start<0 or count<1 or count>20 or start+count>manifest["count"]:
+        raise ValueError("Use a valid range with up to 20 cases per process.")
     if output.exists():
         raise ValueError("Output already exists; cannot overwrite evidence.")
     from PIL import Image
@@ -291,6 +416,8 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--prepare",action="store_true")
     ap.add_argument("--evaluate",action="store_true")
+    ap.add_argument("--evaluate-direct",action="store_true",
+                    help="Benchmark only: reuse the same pinned OCR backend in-process for up to 100 locked pages.")
     ap.add_argument("--per-language",type=int,default=10)
     ap.add_argument("--engine",default="tiny")
     ap.add_argument("--start",type=int,default=0)
@@ -301,6 +428,13 @@ def main():
         ap.error("per-language must be 1..160")
     if args.prepare:
         provision(args.per_language)
+    elif args.evaluate_direct:
+        if not args.output:
+            ap.error("--output required for --evaluate-direct")
+        out=(ROOT / args.output).resolve()
+        if not out.is_relative_to(ROOT) or out.suffix.lower()!=".json":
+            raise ValueError("Output must be a repository JSON relative path.")
+        evaluate_direct(args.per_language,args.engine,args.start,args.count,out)
     elif args.evaluate:
         if not args.output:
             ap.error("--output required for --evaluate")

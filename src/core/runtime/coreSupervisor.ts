@@ -202,8 +202,13 @@ export async function runCoreSupervisor(
     throw new Error("Recovery client mode differs from saved supervisor");
   }
   const controlToken = crypto.randomBytes(32).toString("hex");
-  // Stable bearer across crash recovery for reconnecting clients.
-  const serverToken = checkpoint?.serverToken || crypto.randomBytes(24).toString("hex");
+  // Stable bearer across crash recovery and guarded legacy recycle so local
+  // clients do not lose authentication during ownership migration.
+  const recycleToken = process.env.SUPERAGENT_CORE_RECYCLE_SERVER_TOKEN;
+  if (recycleToken !== undefined && !/^[A-Za-z0-9._~-]{24,256}$/.test(recycleToken))
+    throw new Error("CORE_RECYCLE_SERVER_TOKEN_INVALID");
+  const serverToken = checkpoint?.serverToken || recycleToken || crypto.randomBytes(24).toString("hex");
+  delete process.env.SUPERAGENT_CORE_RECYCLE_SERVER_TOKEN;
   const inspectToken = checkpoint?.inspectToken || crypto.randomBytes(32).toString("hex");
   let active: Generation | undefined;
   const retained: Generation[] = [];
@@ -900,6 +905,8 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core operations --port PORT  # pending/completed operation receipts, no secret IDs");
     console.log("superagent core reconcile-operation --port PORT --operation-id ID --observed-pid PID --acknowledge-unknown  # operator-only, after 120s review");
     console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
+    console.log("superagent core recycle-plan [--port 7888]  # read-only plan for a verified legacy direct Core");
+    console.log("superagent core recycle [--port 7888] --approve RECYCLE_LEGACY_CORE  # guarded graceful migration to supervised Core");
     console.log("superagent core guard [--port 7888] [--client-mode tline|chrome-extension] [--adopt-running] [--stop-on-stdin]  # opt-in owned Core crash recovery");
     console.log("superagent core guard-status [--port 7888]  # conservative guardian registration and verified Core identity");
     console.log("superagent core boot [--port 7888] [--client-mode tline|chrome-extension]  # safe logon/bootstrap, never resets dead worker state");
@@ -915,6 +922,43 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core lifecycle-observe [--port 7888] [--samples 3]  # bounded authenticated GET-only health samples");
     console.log("superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID  # one-shot GET-only T-Line probe");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
+    return;
+  }
+  if (action === "recycle-plan" || action === "recycle") {
+    const { planLegacyCoreRecycle, scheduleLegacyCoreRecycle } =
+      await import("./coreLegacyRecycle.js");
+    const plan = await planLegacyCoreRecycle(port);
+    if (action === "recycle-plan") {
+      console.log(JSON.stringify(plan, null, 2));
+      return;
+    }
+    const approveIdx = argv.indexOf("--approve");
+    if (approveIdx < 0 || argv[approveIdx + 1] !== "RECYCLE_LEGACY_CORE")
+      throw new Error("CORE_RECYCLE_APPROVAL_REQUIRED: --approve RECYCLE_LEGACY_CORE");
+    console.log(JSON.stringify(await scheduleLegacyCoreRecycle(plan, true), null, 2));
+    return;
+  }
+  if (action === "recycle-worker") {
+    const read = (name: string) => {
+      const idx = argv.indexOf(name);
+      return idx < 0 ? "" : String(argv[idx + 1] || "");
+    };
+    const expectedOwnerPid = Number(read("--expected-owner-pid"));
+    const clientMode = read("--client-mode");
+    if (!Number.isSafeInteger(expectedOwnerPid) || expectedOwnerPid <= 0 ||
+        (clientMode !== "tline" && clientMode !== "chrome-extension"))
+      throw new Error("CORE_RECYCLE_HELPER_INVALID_ARGUMENTS");
+    const { runLegacyCoreRecycleWorker } = await import("./coreLegacyRecycle.js");
+    await runLegacyCoreRecycleWorker({
+      service: "core", action: "recycle", port,
+      operationId: read("--operation-id"),
+      expectedOwnerPid,
+      expectedProcessIdentity: read("--expected-process-identity"),
+      expectedLegacyCommandDigest: read("--expected-command-digest"),
+      expectedBuildDigest: read("--expected-build"),
+      clientMode,
+      note: "internal recycle helper",
+    });
     return;
   }
   if (action === "operations" || action === "reconcile-operation") {
@@ -1112,6 +1156,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, boot, boot-audit, reconcile, recovery-cases, recovery-canary, ownership-audit, ownership-inventory, rollout-audit, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, recycle-plan, recycle, boot, boot-audit, reconcile, recovery-cases, recovery-canary, ownership-audit, ownership-inventory, rollout-audit, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

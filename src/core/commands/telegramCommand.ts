@@ -35,6 +35,7 @@ export async function handleTelegramCommand(args: string, ctx: SlashCommandConte
       "  /telegram status                  Show Telegram configuration and API status",
       "  /telegram doctor                  Diagnose Telegram token, group, and bot access",
       "  /telegram send <message>          Send only to the configured Telegram group",
+      "  /telegram file <path>             Send a document attachment (max 8 MiB)",
       "  /telegram config                 View Telegram settings (secrets masked)",
       "  /telegram config <key> <value>    Set botToken, groupId, or museBotId",
       "  /telegram fallback status|start|stop",
@@ -120,6 +121,31 @@ export async function handleTelegramCommand(args: string, ctx: SlashCommandConte
 
     checks.push("", failed ? "Result: Telegram setup needs attention." : "Result: required Telegram settings are present; review the API checks above.");
     emit(ctx, failed ? "error" : "system", checks.join("\n"), now);
+    return;
+  }
+
+  if (action === "file" || action === "send-file") {
+    const filePath = parts.slice(1).join(" ").trim().replace(/^(["'])(.*)\1$/, "$2");
+    if (!filePath) {
+      emit(ctx, "error", "Usage: /telegram file <path>", now);
+      return;
+    }
+    const cfg = loadRemoteAgentConfig();
+    if (!cfg.botToken || !cfg.groupId) {
+      emit(ctx, "error", "Telegram botToken and groupId must be configured first.", now);
+      return;
+    }
+    try {
+      const { resolveTransferSource } = await import("../remoteAgent/museFileTransfer.js");
+      const { MuseClient } = await import("../remoteAgent/museClient.js");
+      const source = await resolveTransferSource(filePath, ctx.agent?.workingDirectory || process.cwd());
+      const receipt = await new MuseClient(cfg).sendDocument(cfg.groupId, source);
+      emit(ctx, "system", "[Telegram] Document sent: " + receipt.name + " (" + receipt.size +
+        " bytes, SHA-256 " + receipt.sha256 + ", message " + receipt.messageId +
+        "). Muse download is not confirmed.", now);
+    } catch (error: any) {
+      emit(ctx, "error", "Telegram file send failed: " + (error?.message || String(error)), now);
+    }
     return;
   }
 

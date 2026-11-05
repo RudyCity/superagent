@@ -951,6 +951,93 @@ export async function handleServerRoute(
     return true;
   }
 
+  // File Transfer Manager for the *local authenticated* SuperAgent Tray.
+  // These routes reject browser Origin/proxy ingress and expose only validated,
+  // fixed actions. File paths originate from the native one-use file dialog
+  // ticket, not from a free-text input in the WebView.
+  if (pathname.startsWith("/api/desktop/muse-files/")) {
+    res.setHeader("Cache-Control", "no-store");
+    const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const host = /^(?:127\\.0\\.0\\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
+    if (!loopback || !host || req.headers.origin || req.headers["x-forwarded-for"] ||
+        req.headers["x-forwarded-host"] || req.headers["cf-connecting-ip"] || req.headers["cf-ray"]) {
+      sendJSON(res, 403, { success: false, error: "MUSE_FILE_MANAGER_LOCAL_AUTHENTICATED_ONLY" });
+      return true;
+    }
+    const action = pathname.slice("/api/desktop/muse-files/".length);
+    const methods: Record<string, string> = {
+      status: "GET", settings: "POST", start: "POST", pause: "POST",
+      resume: "POST", cancel: "POST",
+    };
+    if (!Object.hasOwn(methods, action)) {
+      sendJSON(res, 404, { success: false, error: "Unknown file transfer action" });
+      return true;
+    }
+    if (req.method !== methods[action]) {
+      sendJSON(res, 405, { success: false, error: methods[action] + " required" });
+      return true;
+    }
+    try {
+      const { getDesktopMuseFileManager } = await import("./core/runtime/desktopMuseFileManager.js");
+      const manager = getDesktopMuseFileManager();
+      if (action === "status") {
+        sendJSON(res, 200, manager.status());
+        return true;
+      }
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw, "utf8") > 4096) {
+        sendJSON(res, 413, { success: false, error: "Transfer control payload too large" });
+        return true;
+      }
+      const body: unknown = JSON.parse(raw);
+      if (!body || typeof body !== "object" || Array.isArray(body)) throw Error("Expected object");
+      const data = body as Record<string, unknown>;
+      const required: Record<string, string> = {
+        start: "filePath,kind", pause: "id", resume: "id",
+        cancel: "id", settings: "settings",
+      };
+      if (Object.keys(data).sort().join(",") !== required[action]) {
+        throw Error("Unexpected file-transfer control fields");
+      }
+      let result: unknown;
+      if (action === "start") {
+        result = await manager.start(data.filePath as string, data.kind as any);
+      } else if (action === "settings") {
+        result = { success: true, settings: manager.updateSettings(data.settings) };
+      } else {
+        if (typeof data.id !== "string" ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(data.id)) {
+          throw Error("Invalid transfer job identifier");
+        }
+        if (action === "pause") result = manager.pause(data.id);
+        else if (action === "resume") result = await manager.resume(data.id);
+        else result = manager.cancel(data.id);
+      }
+      sendJSON(res, 200, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "File transfer action failed";
+      // Never return local file paths or transport credentials to the WebView.
+      const safe = message.includes("Cannot") || message.includes("Invalid") ||
+        message.includes("Muse") || message.includes("Telegram") ||
+        message.includes("transfer") || message.includes("paused")
+        ? message.replace(/[A-Za-z]:\\[^\s]+/g, "[local path]")
+          .replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]").slice(0, 240)
+        : "File transfer action could not be completed";
+      sendJSON(res, 409, { success: false, error: safe });
+    }
+    return true;
+  }
+
+  // Native Tauri lifecycle bridge: private loopback + existing Core bearer
+  // authentication + constrained service-manager protocol. Never an arbitrary
+  // command runner; owner and operator confirmation stay in manageServices.
+  if (pathname === "/api/desktop/lifecycle") {
+    const {handleNativeTrayLifecycleHttp}=
+      await import("./core/runtime/nativeTrayLifecycleBridge.js");
+    await handleNativeTrayLifecycleHttp(req,res,readBody,sendJSON);
+    return true;
+  }
+
   // Authenticated, read-only service health for the local Tauri runtime panel.
   // The server's existing /api bearer gate applies; never return remote URLs,
   // bot identifiers, MCP tool definitions or protected transport credentials.
@@ -1102,7 +1189,7 @@ export async function handleServerRoute(
       const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
       const runningOnly = parsedUrl.searchParams.get("runningOnly") === "true";
       const search = parsedUrl.searchParams.get("search") || undefined;
-      const result = DesktopTerminalManager.listTasks({ runningOnly, search });
+      const result = await DesktopTerminalManager.listTasks({ runningOnly, search });
       sendJSON(res, 200, { success: true, ...result });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err?.message || "Failed to list terminal tasks" });
@@ -1169,7 +1256,7 @@ export async function handleServerRoute(
         return true;
       }
       const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
-      const result = DesktopTerminalManager.getLogs(taskId);
+      const result = await DesktopTerminalManager.getLogs(taskId);
       sendJSON(res, 200, { success: true, ...result });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err?.message || "Failed to get terminal logs" });

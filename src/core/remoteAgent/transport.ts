@@ -1,6 +1,7 @@
 import { RemoteAgentEnvelope } from "./protocol.js";
 import { RemoteAgentConfig, maskToken } from "./config.js";
 import { MuseClient } from "./museClient.js";
+import type { TelegramDocumentReceipt } from "./museClient.js";
 
 export interface RemoteEnvelopeMeta {
   messageId?: number;
@@ -25,6 +26,8 @@ export interface RemoteTransport {
     onProgress?: (message: string) => void
   ): Promise<boolean>;
   sendChatAction?(action?: string): Promise<boolean>;
+  /** File delivery is explicit and does not modify chat/envelope behavior. */
+  sendDocument?(filePath: string, caption?: string): Promise<TelegramDocumentReceipt>;
   isConnected(): boolean;
   getTransportInfo(): { type: "telegram" | "websocket" | "https"; details: string };
 }
@@ -87,6 +90,11 @@ export class TelegramTransport implements RemoteTransport {
 
   public async sendChatAction(action: string = "typing"): Promise<boolean> {
     return this.client.sendChatAction(this.config.groupId, action);
+  }
+
+  public async sendDocument(filePath: string, caption?: string): Promise<TelegramDocumentReceipt> {
+    if (!this.config.groupId) throw new Error("Telegram group ID not configured");
+    return this.client.sendDocument(this.config.groupId, filePath, caption);
   }
 
   public isConnected(): boolean {

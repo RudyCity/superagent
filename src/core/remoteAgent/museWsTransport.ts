@@ -15,6 +15,10 @@ import {
   ReplayValidator,
 } from "./museWsAuth.js";
 import { logE2E } from "../utils/unifiedLogger.js";
+import { DurableMuseFileReceiver } from "./museFileReceiverPersistent.js";
+import type {
+  FileOfferEnvelope, FileChunkEnvelope, FileCompleteEnvelope, FileReceivedReceipt,
+} from "./museFileTransfer.js";
 
 const DEFAULT_WS_PORT = 9225;
 const DEFAULT_WS_HOST = "127.0.0.1";
@@ -497,9 +501,24 @@ export class MuseWsClientTransport implements RemoteTransport {
   private isStarted = false;
   private shouldReconnect = true;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private readonly fileReceiver: DurableMuseFileReceiver | null;
+  private fileReceiverCleanupTimer: NodeJS.Timeout | null = null;
+  private onFileReceived?: (receipt: FileReceivedReceipt) => void | Promise<void>;
 
-  constructor(config: RemoteAgentConfig, private customConfigPath?: string) {
+  constructor(
+    config: RemoteAgentConfig,
+    private customConfigPath?: string,
+    receiveOptions: {
+      directory?: string;
+      onReceived?: (receipt: FileReceivedReceipt) => void | Promise<void>;
+    } = {},
+  ) {
     this.config = { ...config };
+    // Opt-in only: this code may also run as the SuperAgent watcher client.
+    // Never start an inbound receiver unless a specific directory is configured.
+    const directory = receiveOptions.directory || process.env.SUPERAGENT_MUSE_FILE_RECEIVE_DIR;
+    this.fileReceiver = directory ? new DurableMuseFileReceiver(directory) : null;
+    this.onFileReceived = receiveOptions.onReceived;
   }
 
   public async start(onEnvelope: EnvelopeHandler, abortSignal?: AbortSignal): Promise<void> {
@@ -507,9 +526,17 @@ export class MuseWsClientTransport implements RemoteTransport {
     this.isStarted = true;
     this.shouldReconnect = true;
     this.onEnvelopeHandler = onEnvelope;
-
     if (!this.config.wsRemoteUrl) {
       throw new Error("WebSocket client mode requires wsRemoteUrl to be configured.");
+    }
+    if (this.fileReceiver) {
+      await this.fileReceiver.prune();
+      this.fileReceiverCleanupTimer = setInterval(() => {
+        void this.fileReceiver?.prune().catch((error) => {
+          logE2E("REMOTE-AGENT", "Muse file receiver cleanup failed: " + String(error));
+        });
+      }, 15 * 60_000);
+      this.fileReceiverCleanupTimer.unref?.();
     }
 
     if (abortSignal) {
@@ -585,6 +612,20 @@ export class MuseWsClientTransport implements RemoteTransport {
               return;
             }
 
+            if (this.fileReceiver &&
+                (validation.envelope.kind === "file_offer" ||
+                 validation.envelope.kind === "file_chunk" ||
+                 validation.envelope.kind === "file_complete")) {
+              const frame = validation.envelope as
+                FileOfferEnvelope | FileChunkEnvelope | FileCompleteEnvelope;
+              const ack = await this.fileReceiver.receive(frame);
+              if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(ack));
+              if (frame.kind === "file_complete" && ack.ok) {
+                const receipt = await this.fileReceiver.getReceipt(frame.transfer_id);
+                if (receipt) await this.onFileReceived?.(receipt);
+              }
+              return;
+            }
             if (this.onEnvelopeHandler) {
               await this.onEnvelopeHandler(validation.envelope, {
                 transport: "websocket",
@@ -653,6 +694,10 @@ export class MuseWsClientTransport implements RemoteTransport {
   public async stop(): Promise<void> {
     this.shouldReconnect = false;
     this.isStarted = false;
+    if (this.fileReceiverCleanupTimer) {
+      clearInterval(this.fileReceiverCleanupTimer);
+      this.fileReceiverCleanupTimer = null;
+    }
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

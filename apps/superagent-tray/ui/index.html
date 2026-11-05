@@ -6,13 +6,17 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' asset:; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost https://ipc.localhost" />
   <title>SuperAgent Tray · Automation &amp; Runtime Console</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./muse-files.css" />
   <script src="./titlebar.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./runtime.js" defer></script>
+  <script src="./lifecycle.js" defer></script>
+  <link rel="stylesheet" href="./lifecycle.css" />
   <script src="./settings.js" defer></script>
   <script src="./logs.js" defer></script>
   <script src="./delegate.js" defer></script>
   <script src="./terminal.js" defer></script>
+  <script src="./muse-files.js" defer></script>
 </head>
 <body>
   <!-- Native Windows decorations are disabled; these controls use strict
@@ -122,6 +126,12 @@
             <line x1="12" y1="19" x2="20" y2="19"></line>
           </svg>
           <span>Terminal Processes</span>
+        </a>
+        <a class="nav-link" href="#muse-files" data-page="muse-files" id="nav-muse-files">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3"/>
+          </svg>
+          <span>Muse File Transfer</span>
         </a>
         <a class="nav-link" href="#settings" data-page="settings" id="nav-settings">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -233,6 +243,11 @@
               </svg>
               <span>Refresh Processes</span>
             </button>
+          </div>
+
+          <div id="actions-muse-files" class="action-group" hidden>
+            <button type="button" id="muse-files-refresh" class="button ghost">Refresh Status</button>
+            <button type="button" id="muse-files-top-select" class="button primary">Choose File</button>
           </div>
 
           <!-- Chrome Delegate Page Actions -->
@@ -450,6 +465,156 @@
             </div>
           </div>
 
+          <section id="lifecycle-console" class="lifecycle-console" aria-labelledby="lifecycle-heading">
+            <div class="lifecycle-heading">
+              <div>
+                <div class="panel-eyebrow">OWNER-VERIFIED SERVICE CONTROL</div>
+                <h3 id="lifecycle-heading">Unified Lifecycle Supervisor</h3>
+                <p>Selected authenticated Core · health, dependencies, recovery policies, and planned service operations.</p>
+              </div>
+              <button id="lifecycle-refresh" type="button" class="button ghost">Refresh Lifecycle</button>
+            </div>
+            <div id="lifecycle-feedback" class="lifecycle-feedback" role="status" aria-live="polite">
+              Reading lifecycle status from selected Core...
+            </div>
+            <div class="lifecycle-metrics" id="lifecycle-metrics" aria-label="Supervisor readiness summary">
+              <div><strong id="lifecycle-ready">—</strong><small>Ready</small></div>
+              <div><strong id="lifecycle-degraded">—</strong><small>Degraded</small></div>
+              <div><strong id="lifecycle-unavailable">—</strong><small>Unavailable</small></div>
+              <div><strong id="lifecycle-release">—</strong><small>Tray Release</small></div>
+            </div>
+            <!-- Recycle System: Global & Service-Scoped Migration Console -->
+            <section id="lifecycle-recycle-system" class="recycle-system-panel" aria-labelledby="recycle-system-heading">
+              <div class="recycle-system-header">
+                <div>
+                  <div class="panel-eyebrow">GLOBAL &amp; SERVICE-SCOPED MIGRATION</div>
+                  <h4 id="recycle-system-heading">Recycle System (Legacy -&gt; Managed Lifecycle)</h4>
+                  <p>Migrate legacy or unverified service owners into the supervised lifecycle. Preserves verified MCP owners, public tunnels, and OAuth credentials.</p>
+                </div>
+                <div class="recycle-system-actions">
+                  <button id="recycle-analyze-btn" type="button" class="button ghost">Analyze Recycle</button>
+                  <button id="recycle-plan-btn" type="button" class="button ghost" disabled>Prepare Recycle Plan</button>
+                  <button id="recycle-confirm-btn" type="button" class="button primary" disabled>Confirm &amp; Execute Recycle</button>
+                  <button id="recycle-reconcile-btn" type="button" class="button ghost" disabled>Reconcile</button>
+                </div>
+              </div>
+
+              <div id="recycle-status-banner" class="recycle-status-banner" role="status" aria-live="polite">
+                Click &quot;Analyze Recycle&quot; to inspect legacy services and compute non-mutating dispositions.
+              </div>
+
+              <!-- Progress Timeline -->
+              <div id="recycle-timeline-strip" class="recycle-timeline-strip" hidden>
+                <div class="timeline-step" data-step="precheck"><span class="step-dot"></span><span class="step-label">Precheck</span></div>
+                <div class="timeline-arrow">&rarr;</div>
+                <div class="timeline-step" data-step="draining"><span class="step-dot"></span><span class="step-label">Draining</span></div>
+                <div class="timeline-arrow">&rarr;</div>
+                <div class="timeline-step" data-step="migrating"><span class="step-dot"></span><span class="step-label">Migrating</span></div>
+                <div class="timeline-arrow">&rarr;</div>
+                <div class="timeline-step" data-step="verifying"><span class="step-dot"></span><span class="step-label">Verifying</span></div>
+                <div class="timeline-arrow">&rarr;</div>
+                <div class="timeline-step" data-step="completed"><span class="step-dot"></span><span class="step-label">Done</span></div>
+              </div>
+
+              <!-- Plan Details Card -->
+              <div id="recycle-plan-card" class="recycle-plan-card" hidden>
+                <div class="recycle-plan-summary">
+                  <div class="metric"><strong id="recycle-metric-id">&mdash;</strong><small>Operation ID</small></div>
+                  <div class="metric"><strong id="recycle-metric-mutations">0</strong><small>Mutations</small></div>
+                  <div class="metric"><strong id="recycle-metric-noops">0</strong><small>Preserved / No-ops</small></div>
+                  <div class="metric"><strong id="recycle-metric-blocked">0</strong><small>Blocked</small></div>
+                  <div class="metric"><strong id="recycle-metric-expires">&mdash;</strong><small>Valid Until</small></div>
+                </div>
+                <p class="recycle-tunnel-notice">&#128737;&#65039; <strong>Invariant:</strong> Public Cloudflare tunnel URLs and reloadable MCP sessions are preserved without mutation.</p>
+              </div>
+
+              <!-- Disposition Table -->
+              <div class="recycle-table-wrapper">
+                <table class="recycle-table" aria-label="Service Recycle Dispositions">
+                  <thead>
+                    <tr>
+                      <th>Service</th>
+                      <th>Current State</th>
+                      <th>Owner PID</th>
+                      <th>Proposed Disposition</th>
+                      <th>Dependencies</th>
+                      <th>Risk / Blocker Note</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recycle-table-body">
+                    <tr><td colspan="6" class="text-muted">No recycle analysis performed yet. Click &quot;Analyze Recycle&quot; above.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <div class="lifecycle-layout">
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-services-heading">
+                <h4 id="lifecycle-services-heading">Service health &amp; dependencies</h4>
+                <div id="lifecycle-services" class="lifecycle-service-list" aria-live="polite"></div>
+              </section>
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-ops-heading">
+                <h4 id="lifecycle-ops-heading">Planned operation</h4>
+                <label class="lifecycle-field">Service
+                  <select id="lifecycle-service">
+                    <option value="core">Core</option>
+                    <option value="tray">Tray</option>
+                    <option value="transport">T-Line Transport</option>
+                    <option value="channel_host">Channel Host</option>
+                    <option value="vision">Vision</option>
+                    <option value="guardian">Core Guardian</option>
+                    <option value="daemon">Daemon Scheduler</option>
+                  </select>
+                </label>
+                <label class="lifecycle-field">Action
+                  <select id="lifecycle-action">
+                    <option value="start">Start</option>
+                    <option value="stop">Stop</option>
+                    <option value="restart">Restart</option>
+                    <option value="recycle">Recycle Migration</option>
+                    <option value="upgrade">Upgrade Tray</option>
+                    <option value="rollback">Rollback Tray</option>
+                  </select>
+                </label>
+                <label class="lifecycle-field">Service port (for non-Tray services)
+                  <input id="lifecycle-port" type="number" min="1024" max="65535" value="7888" />
+                </label>
+                <div class="lifecycle-buttons">
+                  <button type="button" id="lifecycle-plan" class="button ghost">Prepare Plan</button>
+                  <button type="button" id="lifecycle-execute" class="button primary" disabled>Confirm &amp; Execute</button>
+                </div>
+                <div id="lifecycle-plan-details" class="lifecycle-plan-details" role="status">
+                  A plan verifies service ownership. Review it before confirmation.
+                </div>
+              </section>
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-profiles-heading">
+                <h4 id="lifecycle-profiles-heading">Recovery policy</h4>
+                <p class="lifecycle-hint">Off by default. Auto-recovery also requires an explicitly running watchdog worker.</p>
+                <label class="lifecycle-field">Service
+                  <select id="lifecycle-profile-service">
+                    <option value="tray">Tray</option>
+                    <option value="transport">Transport</option>
+                    <option value="channel_host">Channel Host</option>
+                    <option value="vision">Vision</option>
+                    <option value="guardian">Guardian</option>
+                    <option value="daemon">Daemon</option>
+                  </select>
+                </label>
+                <label class="lifecycle-check"><input id="lifecycle-auto-recover" type="checkbox" /> Enable guarded recovery</label>
+                <label class="lifecycle-field">Failure threshold
+                  <input id="lifecycle-failure-threshold" type="number" min="2" max="12" value="3" />
+                </label>
+                <label class="lifecycle-field">Maximum restarts / hour
+                  <input id="lifecycle-max-restarts" type="number" min="0" max="6" value="2" />
+                </label>
+                <button type="button" id="lifecycle-save-profile" class="button ghost">Save Recovery Policy</button>
+                <div id="lifecycle-watchdog" class="lifecycle-hint" role="status">Watchdog status not loaded</div>
+              </section>
+              <section class="lifecycle-pane" aria-labelledby="lifecycle-events-heading">
+                <h4 id="lifecycle-events-heading">Operation timeline</h4>
+                <div id="lifecycle-events" class="lifecycle-event-list">No lifecycle events loaded.</div>
+              </section>
+            </div>
+          </section>
           <div id="runtime-notes" class="runtime-notes" hidden></div>
         </section>
       </div>
@@ -506,6 +671,7 @@
                   <option value="logs">Connection Logs</option>
                   <option value="delegate">Chrome Delegate</option>
                   <option value="terminal">Terminal Processes</option>
+                  <option value="muse-files">Muse File Transfer</option>
                 </select>
               </label>
             </div>
@@ -1033,10 +1199,10 @@
             </div>
             <div class="terminal-table-filters">
               <label class="terminal-toggle-label">
-                <input type="checkbox" id="terminal-filter-running" checked />
+                <input type="checkbox" id="terminal-filter-running" />
                 <span>Running Only</span>
               </label>
-              <div class="search-box">
+              <div class="terminal-search-box">
                 <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <circle cx="11" cy="11" r="8"></circle>
                   <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -1075,12 +1241,135 @@
         </section>
       </div>
 
+      <!-- Muse File Transfer Manager: only the native Tauri bridge can select a file -->
+      <div id="page-muse-files" class="page-view" hidden>
+        <section class="muse-file-stats" aria-label="Muse transfer connectivity">
+          <article class="stat-card">
+            <div class="stat-header"><span class="stat-label">MUSE WEBSOCKET</span><span class="stat-chip" id="muse-files-ws-chip">Checking</span></div>
+            <strong id="muse-files-ws-state" class="stat-value">Unknown</strong>
+            <div class="stat-sub" id="muse-files-ws-detail">Waiting for Core</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header"><span class="stat-label">TELEGRAM</span><span class="stat-chip">Bot API</span></div>
+            <strong id="muse-files-telegram-state" class="stat-value">Unknown</strong>
+            <div class="stat-sub">Bot API acceptance is not Muse ingestion</div>
+          </article>
+          <article class="stat-card">
+            <div class="stat-header"><span class="stat-label">RECENT TRANSFERS</span><span class="stat-chip">Local</span></div>
+            <strong id="muse-files-history-count" class="stat-value">0</strong>
+            <div class="stat-sub">Persisted securely in Core configuration</div>
+          </article>
+        </section>
+
+        <div id="muse-files-banner" class="banner" role="alert" hidden></div>
+
+        <section class="panel muse-files-panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">SECURE FILE DELIVERY</div><h2>Send to Muse</h2>
+              <p>Select a file with the native file picker. Maximum 8 MiB; only one active transfer.</p></div>
+          </div>
+          <div class="muse-file-picker">
+            <div class="muse-file-picker-main">
+              <span class="muse-file-picker-icon" aria-hidden="true">⇧</span>
+              <div><strong id="muse-files-selected-name">No file selected</strong>
+                <p id="muse-files-selected-meta">CSV, JSON, XLSX, TXT, PDF, ZIP</p></div>
+            </div>
+            <button type="button" id="muse-files-choose" class="button ghost">Browse Files</button>
+          </div>
+          <div class="muse-file-send-row">
+            <label for="muse-files-transport">Channel</label>
+            <select id="muse-files-transport">
+              <option value="muse-websocket">Muse WebSocket · verified SHA-256 receipt</option>
+              <option value="telegram">Telegram document · Bot API acceptance only</option>
+            </select>
+            <button type="button" id="muse-files-send" class="button primary" disabled>Send File</button>
+          </div>
+          <p class="muse-files-note">A live Cloudflare tunnel alone does not prove the Muse receiver is connected. Pause/resume requires WebSocket; Telegram uploads cannot be safely paused once submitted.</p>
+        </section>
+
+        <section class="panel muse-files-panel" aria-live="polite">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">CURRENT DELIVERY</div><h2>Transfer Progress</h2></div>
+            <span id="muse-files-current-status" class="stat-chip">Idle</span>
+          </div>
+          <div id="muse-files-empty" class="empty-state">No transfer started. Choose a file above.</div>
+          <div id="muse-files-progress-area" hidden>
+            <div class="muse-file-progress-heading">
+              <div><strong id="muse-files-progress-name">—</strong><p id="muse-files-progress-detail">Preparing transfer</p></div>
+              <strong id="muse-files-progress-percent">0%</strong>
+            </div>
+            <div class="muse-files-track" id="muse-files-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div id="muse-files-progress-fill"></div>
+            </div>
+            <div class="muse-file-progress-metrics">
+              <span id="muse-files-progress-bytes">0 MiB / 0 MiB</span>
+              <span id="muse-files-progress-rate">— MiB/s</span>
+              <span id="muse-files-progress-eta">ETA —</span>
+            </div>
+            <div class="muse-file-actions">
+              <button type="button" id="muse-files-pause" class="button ghost" disabled>Pause</button>
+              <button type="button" id="muse-files-resume" class="button ghost" disabled>Resume</button>
+              <button type="button" id="muse-files-cancel" class="button ghost danger" disabled>Cancel</button>
+            </div>
+            <p id="muse-files-progress-error" class="muse-files-error" hidden></p>
+          </div>
+        </section>
+
+        <section class="panel muse-files-panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">TRANSFER LEDGER</div><h2>Transfer History</h2>
+              <p>Inspect outcomes, then manually retry interrupted WebSocket deliveries.</p></div>
+            <div class="panel-tools">
+              <select id="muse-files-filter" aria-label="Filter transfer history">
+                <option value="all">All statuses</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="paused">Paused</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table" aria-label="Muse transfer history">
+              <thead><tr><th>FILE</th><th>CHANNEL</th><th>STATUS</th><th>STARTED</th><th class="text-right">ACTION</th></tr></thead>
+              <tbody id="muse-files-history-table"><tr><td colspan="5" class="empty-state">No transfer history yet.</td></tr></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel muse-files-panel">
+          <div class="panel-head">
+            <div><div class="panel-eyebrow">LOCAL PREFERENCES</div><h2>Transfer Settings</h2>
+              <p>Receiver destination and incoming retention belong to Muse and must be configured there.</p></div>
+          </div>
+          <form id="muse-files-settings" class="muse-file-settings-grid">
+            <label>Maximum file size
+              <select id="muse-files-limit"><option value="1">1 MiB</option><option value="2">2 MiB</option><option value="4">4 MiB</option><option value="6">6 MiB</option><option value="8">8 MiB</option></select>
+            </label>
+            <label>Local history retention
+              <select id="muse-files-retention"><option value="1">1 day</option><option value="7">7 days</option><option value="14">14 days</option><option value="30">30 days</option></select>
+            </label>
+            <label>Polling interval
+              <select id="muse-files-poll"><option value="1">1 second</option><option value="2">2 seconds</option><option value="5">5 seconds</option><option value="10">10 seconds</option></select>
+            </label>
+            <label>Default transport
+              <select id="muse-files-default"><option value="muse-websocket">Muse WebSocket</option><option value="telegram">Telegram</option></select>
+            </label>
+            <div class="muse-file-settings-footer">
+              <button type="submit" id="muse-files-save-settings" class="button primary">Save Settings</button>
+              <span id="muse-files-settings-feedback" role="status"></span>
+            </div>
+          </form>
+        </section>
+      </div>
+
       <!-- Footer Info -->
       <footer class="footer">
         <div class="footer-left">
           <span>SuperAgent Tray</span>
           <span class="footer-sep">•</span>
           <span>Tauri Desktop Companion</span>
+          <span class="footer-sep">•</span>
+          <span id="tray-version" aria-label="Tray version">Version unavailable</span>
         </div>
         <div class="footer-right">
           <span id="timezone"></span>

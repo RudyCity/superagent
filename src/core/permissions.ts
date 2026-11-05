@@ -30,6 +30,13 @@ export const MODIFYING_TOOLS = [
   "replace_file_content",
   "multi_replace_file_content",
   "apply_patch",
+  "pdf_edit",
+  "pdf_split",
+  "pdf_render",
+  "pdf_redact_raster",
+  "pdf_edit_vector_exact",
+  "pdf_sign",
+  "pdf_ocr_searchable",
 ];
 
 const DANGEROUS_PATTERNS = [
@@ -286,6 +293,9 @@ export function extractCandidateFilePaths(args: Record<string, unknown> = {}): s
     args.file,
     args.AbsolutePath,
     args.absolutePath,
+    args.inputPath,
+    args.outputPath,
+    args.outputPrefix,
   ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
   candidatePaths.push(...single);
 
@@ -369,6 +379,7 @@ export function isSuperagentOutOfBounds(
   const fileModifyingTools = [
     "write", "write_to_file", "edit", "replace_file_content",
     "multi_replace_file_content", "apply_patch",
+    "pdf_edit", "pdf_split", "pdf_render", "pdf_redact_raster", "pdf_edit_vector_exact", "pdf_sign", "pdf_ocr_searchable",
     "superagent_write_file", "superagent_replace_file_content", "superagent_apply_patch",
   ];
   const fileReadingTools = [

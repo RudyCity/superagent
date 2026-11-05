@@ -1,3 +1,6 @@
+import { validateFileTransferEnvelope } from "./museFileTransfer.js";
+import type { FileOfferEnvelope, FileChunkEnvelope, FileCompleteEnvelope, FileAckEnvelope } from "./museFileTransfer.js";
+
 export interface TaskContextMessage {
   role: "user" | "assistant";
   content: string;
@@ -240,7 +243,11 @@ export type RemoteAgentEnvelope =
   | ReadyEnvelope
   | WelcomeEnvelope
   | PingEnvelope
-  | PongEnvelope;
+  | PongEnvelope
+  | FileOfferEnvelope
+  | FileChunkEnvelope
+  | FileCompleteEnvelope
+  | FileAckEnvelope;
 
 export const CHUNK_HEADER_PREFIX = "MUSEBUS";
 export const DEFAULT_MAX_CHUNK_SIZE = 3800;
@@ -508,6 +515,10 @@ export function validateEnvelope(
     "welcome",
     "ping",
     "pong",
+    "file_offer",
+    "file_chunk",
+    "file_complete",
+    "file_ack",
   ];
   if (!validKinds.includes(envelope.kind)) {
     return { valid: false, error: `Unknown envelope kind: ${envelope.kind}` };
@@ -530,6 +541,14 @@ export function validateEnvelope(
 
   // 5. Per-kind schema validation
   switch (envelope.kind) {
+    case "file_offer":
+    case "file_chunk":
+    case "file_complete":
+    case "file_ack": {
+      const issue = validateFileTransferEnvelope(envelope);
+      if (issue) return { valid: false, error: issue };
+      break;
+    }
     case "task_request": {
       if (!envelope.id || typeof envelope.id !== "string") {
         return { valid: false, error: "task_request missing valid 'id'" };

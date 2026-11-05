@@ -174,6 +174,11 @@ export function getProjectCapabilityForTool(toolName: string, args: Record<strin
   // Canonical Studio MCP names must receive the SAME write/execute permissions as legacy Motion tools.
   toolName = toolName.replace(/^superagent_studio_/, "superagent_motion_");
   if (toolName === "superagent_brain_publish") return "write";
+  // PDF render/split/redaction also create files; never grant them using read-only project access.
+  if (["superagent_pdf_render", "superagent_pdf_edit", "superagent_pdf_split", "superagent_pdf_redact_raster", "superagent_pdf_edit_vector_exact", "superagent_pdf_sign", "superagent_pdf_ocr_searchable"].includes(toolName)) return "write";
+  if (["superagent_pdf_inspect", "superagent_pdf_extract", "superagent_pdf_ocr", "superagent_pdf_verify", "superagent_pdf_verify_signature"].includes(toolName)) return "read";
+  // Exporting a local file to a remote party needs a project write grant, not read-only access.
+  if (toolName === "superagent_telegram_send_file" || toolName === "superagent_muse_send_file") return "write";
   if (toolName === "superagent_exec_command" || toolName === "superagent_office_cli" || toolName === "superagent_cli_bridge") return "execute";
   if (toolName === "superagent_motion_render" || toolName === "superagent_motion_generate" ||
       toolName === "superagent_motion_revise" || toolName === "superagent_motion_cancel") return "execute";

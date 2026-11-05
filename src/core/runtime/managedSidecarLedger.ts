@@ -18,7 +18,7 @@ const hash=(text:string)=>crypto.createHash("sha256").update(text).digest("hex")
 export class ManagedSidecarLedger {
   readonly file:string;
   readonly lock:string;
-  constructor(readonly service:"transport"|"channel_host"|"rest_tunnel"|"muse_tunnel"|"vision"|"guardian"|"daemon"|"tray",readonly port:number){
+  constructor(readonly service:"core"|"transport"|"channel_host"|"rest_tunnel"|"muse_tunnel"|"vision"|"guardian"|"daemon"|"tray",readonly port:number){
     if(!Number.isSafeInteger(port)||port<1024||port>65535)
       throw new Error("SIDECAR_LEDGER_INVALID_PORT");
     this.file=path.join(getRootConfigDir(),`service-owner-${service}-${port}.json`);

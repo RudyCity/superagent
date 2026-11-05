@@ -16,6 +16,13 @@ export const WRITE_TOOLS = new Set([
   "superagent_write_files",
   "superagent_replace_file_content",
   "superagent_apply_patch",
+  "pdf_edit",
+  "pdf_split",
+  "pdf_render",
+  "pdf_redact_raster",
+  "pdf_edit_vector_exact",
+  "pdf_sign",
+  "pdf_ocr_searchable",
 ]);
 
 export const READ_TOOLS = new Set([
@@ -26,6 +33,10 @@ export const READ_TOOLS = new Set([
   "read_file",
   "superagent_read_file",
   "superagent_read_files",
+  "pdf_inspect",
+  "pdf_extract",
+  "pdf_verify",
+  "pdf_verify_signature",
 ]);
 
 export interface ReadTarget {

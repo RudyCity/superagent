@@ -482,7 +482,7 @@ export class ToolExecutor {
           agent.onEvent({ type: "tool_end", toolResult: blocked, description });
           continue;
         }
-        const filePath = rawTargets[0] || String(tc.args.filePath ?? tc.args.file_path ?? tc.args.TargetFile ?? "");
+        const filePath = rawTargets[0] || String(tc.args.outputPath ?? tc.args.outputPrefix ?? tc.args.filePath ?? tc.args.file_path ?? tc.args.TargetFile ?? "");
         const resolvedFilePath = filePath ? resolveTarget(filePath) : "";
         const batchFile = writeBatch.find((entry) => rawPathOf(entry) && canonicalTarget(rawPathOf(entry)) === canonicalTarget(filePath));
         const isPlanFile = !!resolvedFilePath && canonicalTarget(resolvedFilePath) === canonicalTarget(planFilePath);

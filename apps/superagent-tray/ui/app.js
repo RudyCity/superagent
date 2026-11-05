@@ -357,7 +357,7 @@ async function onRowClick(event) {
 }
 
 function navigateToPage(pageId) {
-  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "terminal", "settings"];
+  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "terminal", "muse-files", "settings"];
   const target = validPages.includes(pageId) ? pageId : "jobs";
 
   if (window.location.hash !== `#${target}`) {
@@ -387,6 +387,7 @@ function navigateToPage(pageId) {
   const actionsLogs = $("actions-logs");
   const actionsDelegate = $("actions-delegate");
   const actionsTerminal = $("actions-terminal");
+  const actionsMuseFiles = $("actions-muse-files");
 
   // Every page first hides all other page-specific actions.
   if (actionsJobs) actionsJobs.hidden = true;
@@ -395,6 +396,7 @@ function navigateToPage(pageId) {
   if (actionsLogs) actionsLogs.hidden = true;
   if (actionsDelegate) actionsDelegate.hidden = true;
   if (actionsTerminal) actionsTerminal.hidden = true;
+  if (actionsMuseFiles) actionsMuseFiles.hidden = true;
 
   if (target === "jobs") {
     if (topEyebrow) topEyebrow.textContent = "AUTOMATION CONSOLE";
@@ -409,6 +411,7 @@ function navigateToPage(pageId) {
     if (typeof window.__superagentRuntimeRefresh === "function") {
       window.__superagentRuntimeRefresh();
     }
+    window.__superagentLifecycleRefresh?.();
   } else if (target === "history") {
     if (topEyebrow) topEyebrow.textContent = "AUDIT LEDGER";
     if (topTitle) topTitle.textContent = "Execution History";
@@ -441,6 +444,13 @@ function navigateToPage(pageId) {
     if (typeof window.__superagentTerminalRefresh === "function") {
       window.__superagentTerminalRefresh();
     }
+  } else if (target === "muse-files") {
+    if (topEyebrow) topEyebrow.textContent = "SECURE FILE DELIVERY";
+    if (topTitle) topTitle.textContent = "Muse File Transfer";
+    if (topDesc) topDesc.textContent =
+      "Send documents to Muse, monitor checksum-verified delivery, resume interrupted uploads, and review history.";
+    if (actionsMuseFiles) actionsMuseFiles.hidden = false;
+    window.__superagentMuseFilesRefresh?.();
   } else if (target === "settings") {
     if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
     if (topTitle) topTitle.textContent = "Tray Settings";
@@ -533,6 +543,9 @@ function install() {
     navigateToPage("terminal");
   });
 
+  window.__TAURI__?.event?.listen?.("desktop-open-muse-files", () => {
+    navigateToPage("muse-files");
+  });
   window.__TAURI__?.event?.listen?.("desktop-open-settings", () => {
     navigateToPage("settings");
   });
@@ -549,6 +562,14 @@ function install() {
   window.addEventListener("tray-settings-changed", (event) => {
     trayConfigureJobsRefresh(event.detail?.jobsRefreshSeconds);
   });
+  window.__TAURI__?.core?.invoke?.("get_tray_version")
+    .then((version) => {
+      const el = $("tray-version");
+      if (el && typeof version === "string" && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/.test(version)) {
+        el.textContent = `Version ${version}`;
+      }
+    })
+    .catch(() => {});
   refresh();
   trayConfigureJobsRefresh(30);
 }

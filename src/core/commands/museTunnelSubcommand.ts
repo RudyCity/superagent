@@ -695,6 +695,43 @@ export async function handleMuseTunnelSubcommand(
     return;
   }
 
+  // /muse tunnel file <path> — authenticated file transfer to Muse.
+  if (rawAction === "file" || rawAction === "send-file") {
+    const actionIdx = parts.findIndex((p) => p.toLowerCase() === rawAction);
+    const requested = parts.slice(actionIdx + 1).join(" ").trim().replace(/^(["'])(.*)\1$/, "$2");
+    if (!requested) {
+      ctx.addLine({ type: "error", content: "Usage: /muse tunnel file <path|status|cancel>", timestamp: now });
+      return;
+    }
+    try {
+      const { getMuseWatcherStrict } = await import("../remoteAgent/museWatcherRegistry.js");
+      const watcher = getMuseWatcherStrict(port);
+      if (!watcher) throw new Error("No active Muse watcher on configured WebSocket port");
+      if (requested === "status") {
+        ctx.addLine({ type: "system", content: "[Muse File] " +
+          JSON.stringify(watcher.getFileTransferStatus()), timestamp: now });
+        return;
+      }
+      if (requested === "cancel") {
+        const cancelled = watcher.cancelFileTransfer();
+        ctx.addLine({ type: "system", content: cancelled
+          ? "[Muse File] Active upload cancelled. Checkpoint remains available for resume."
+          : "[Muse File] No running upload to cancel.", timestamp: now });
+        return;
+      }
+      const receipt = await watcher.sendFile(requested, ctx.agent?.workingDirectory || process.cwd());
+      ctx.addLine({
+        type: "system",
+        content: "[Muse File] Received verified ACK: " + receipt.name + " (" + receipt.size +
+          " bytes, SHA-256 " + receipt.sha256 + ", transfer " + receipt.transferId + ")",
+        timestamp: Date.now(),
+      });
+    } catch (error: any) {
+      ctx.addLine({ type: "error", content: "[Muse File] " + (error?.message || String(error)), timestamp: now });
+    }
+    return;
+  }
+
   // /muse tunnel msg <text> — send message to connected Muse via tunnel
   if (rawAction === "msg" || rawAction === "message" || rawAction === "chat") {
     const actionIdx = parts.findIndex((p) => p.toLowerCase() === rawAction);
@@ -741,6 +778,9 @@ export async function handleMuseTunnelSubcommand(
     "  /muse tunnel status          - Check Muse WebSocket tunnel status",
     "  /muse tunnel doctor          - Diagnose Muse WebSocket/Cloudflare prerequisites",
     "  /muse tunnel msg <message>   - Send a chat message to connected Muse",
+    "  /muse tunnel file <path>     - Transfer workspace file to Muse with SHA-256 ACK",
+    "  /muse tunnel file status     - Show transfer progress, percent and resume state",
+    "  /muse tunnel file cancel     - Cancel active upload (checkpoint retained)",
     "  /muse tunnel prompt          - View/copy the Muse connection prompt",
     "  /muse tunnel guide           - Show this Muse-only setup guide",
     "  /tunnel                     - Deprecated Muse-only alias for /muse tunnel",

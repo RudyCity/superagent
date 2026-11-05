@@ -93,6 +93,7 @@ import {
   dispatchChromeMcpTool,
 } from "./tools/chromeMcpTools.js";
 import { DELEGATE_MCP_TOOL_DEFS, dispatchDelegateMcpTool, delegateMcpObservation } from "./tools/delegateMcpTools.js";
+import { PDF_MCP_TOOL_DEFS, PDF_MCP_TOOL_NAMES, dispatchPdfMcpTool } from "./tools/pdfMcpTools.js";
 import {
   DIAGNOSTICS_MCP_TOOL_DEFS,
   dispatchDiagnosticsMcpTool,
@@ -564,6 +565,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...SERVICE_MANAGER_MCP_TOOL_DEFS,
     ...MCP_GATEWAY_TOOL_DEFS,
     ...DELEGATE_MCP_TOOL_DEFS,
+    ...PDF_MCP_TOOL_DEFS,
 ];
 
 const activeMcpServerInstances = new Set<Server>();
@@ -998,13 +1000,23 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
             }
             return dispatchBrainPublishMcpTool(name, args, principal, resolvedProjectTarget.project.root)!;
           }
+          if (PDF_MCP_TOOL_NAMES.has(name)) {
+            // PDF manipulation is local filesystem work. Never reinterpret ssh:/chain:
+            // project locators as local paths or bypass project grant / YOLO checks.
+            if (sshUriTarget || chainUriTarget || (providerContext && providerContext.providerKind !== "local")) {
+              return { content: [{ type: "text", text: "PDF editing is supported only for authorized local workspaces." }], isError: true };
+            }
+            const allowPdfWrite = !lockSafeTools && getYoloModeState() !== "off"
+              && (authMode !== "oauth" || Boolean(getIdentity?.()?.scopes?.includes("mcp:tools:write")));
+            return await dispatchPdfMcpTool(name, args, targetWorkspace, { allowWrite: allowPdfWrite });
+          }
           const motionRes = await dispatchMotionMcpTool(name, args, targetWorkspace);
           if (motionRes) return motionRes;
           const projectRes = await dispatchProjectMcpTool(name, args, identity?.subject ? identity : null);
           if (projectRes) return projectRes;
           const chainRes = await dispatchWorkspaceChainMcpTool(name, args, targetWorkspace);
           if (chainRes) return chainRes;
-          const remoteAgentRes = await dispatchRemoteAgentMcpTool(name, args);
+          const remoteAgentRes = await dispatchRemoteAgentMcpTool(name, args, targetWorkspace);
           if (remoteAgentRes) return remoteAgentRes;
           const delegateRes = await dispatchDelegateMcpTool(name, args);
           if (delegateRes) return delegateRes;

@@ -23,6 +23,7 @@ export const MUSE_TUNNEL_SUGGESTIONS = [
   "/muse tunnel doctor",
   "/muse tunnel prompt",
   "/muse tunnel guide",
+  "/muse tunnel file",
 ];
 
 export const MUSE_HOST_SUGGESTIONS = [
@@ -42,6 +43,7 @@ export const TELEGRAM_SUGGESTIONS = [
   "/telegram status",
   "/telegram doctor",
   "/telegram send",
+  "/telegram file",
   "/telegram config",
   "/telegram fallback status",
   "/telegram fallback start",

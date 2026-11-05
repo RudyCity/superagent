@@ -1,4 +1,8 @@
 import { RemoteAgentConfig, maskToken } from "./config.js";
+import { promises as fs } from "node:fs";
+import { createHash } from "node:crypto";
+import path from "node:path";
+import { FILE_TRANSFER_MAX_BYTES } from "./museFileTransfer.js";
 import { acquireTelegramPollingLease } from "./telegramPollingLease.js";
 import {
   RemoteAgentEnvelope,
@@ -8,11 +12,16 @@ import {
 } from "./protocol.js";
 import { logE2E } from "../utils/unifiedLogger.js";
 
-/**
- * Note on Telegram Bot API File Limits (for future file transfer work):
- * Bot API allows bots to send files up to 50 MB and download files up to 20 MB.
- * For v1, transport is restricted to text JSON envelopes only.
- */
+/** Telegram attachment receipt confirms Telegram acceptance, not Muse ingestion. */
+export interface TelegramDocumentReceipt {
+  ok: true;
+  chatId: string | number;
+  messageId: number;
+  fileId?: string;
+  name: string;
+  size: number;
+  sha256: string;
+}
 
 export interface MuseClientOptions {
   config: RemoteAgentConfig;
@@ -221,6 +230,57 @@ export class MuseClient {
       }
       return false;
     }
+  }
+
+  /**
+   * Send a local file as an actual Telegram document using multipart/form-data.
+   * This does not use sendMessage or MUSEBUS and does not change text behavior.
+   * Retries are intentionally disabled: an ambiguous network failure may already
+   * have delivered a document, and retrying could duplicate it.
+   */
+  public async sendDocument(
+    chatId: string | number,
+    filePath: string,
+    caption?: string,
+  ): Promise<TelegramDocumentReceipt> {
+    const token = this.config.botToken;
+    if (!token) throw new Error("Bot token is not configured.");
+    if (caption && caption.length > 1024) throw new Error("Telegram caption exceeds 1024 characters");
+    const stat = await fs.lstat(filePath);
+    if (!stat.isFile() || stat.isSymbolicLink() || stat.size > FILE_TRANSFER_MAX_BYTES) {
+      throw new Error("Document must be a regular non-symlink file of at most 8 MiB");
+    }
+    const bytes = await fs.readFile(filePath);
+    if (bytes.length > FILE_TRANSFER_MAX_BYTES) throw new Error("Document exceeds 8 MiB");
+    const name = path.basename(filePath);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    if (caption) form.append("caption", caption);
+    form.append("document", new Blob([new Uint8Array(bytes)], {
+      type: name.toLowerCase().endsWith(".csv") ? "text/csv" : "application/octet-stream",
+    }), name);
+
+    let data: any;
+    try {
+      const res = await fetch("https://api.telegram.org/bot" + token + "/sendDocument", {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(60_000),
+      });
+      data = await res.json();
+      if (!res.ok || !data?.ok || typeof data?.result?.message_id !== "number") {
+        throw new Error("Telegram sendDocument failed (HTTP " + res.status + "): " +
+          (data?.description || "invalid delivery receipt"));
+      }
+    } catch (error: any) {
+      throw new Error(this.sanitizeError(error?.message || String(error)));
+    }
+    return {
+      ok: true, chatId, messageId: data.result.message_id,
+      fileId: data.result.document?.file_id,
+      name, size: bytes.length, sha256,
+    };
   }
 
   /**

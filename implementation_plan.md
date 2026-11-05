@@ -368,3 +368,61 @@ Following the authoritative independent manual audit, this plan implements corre
 - **REST Robustness**: Sanitize unescaped attributes in WP REST responses (`loading="lazy"`, `decoding="async"`) before parsing.
 - **Verification Gate**: 100% public `/en/<slug>/` DOM verification for HTTP 200, English H1 title, non-empty English body, `hasFallback == False`, and matching image counts.
 - **Audit Deliverable**: `docs/audits/2026-10-28-wp-latest-50-english-translation-report.md`.
+
+
+---
+
+# Global Lifecycle Recycle Implementation Plan (2026-11-05)
+
+## 1. Architecture & Non-Negotiable Safety Invariants
+- Read-only evidence + owner verification -> graceful shutdown -> managed owner startup -> attestation + health verification -> normal managed lifecycle.
+- **NO arbitrary PID kill**: PID alone never authorizes mutation.
+- **NO silent owner adoption**: Migration requires an explicit owner-bound recycle plan.
+- **NO public tunnel rotation**: Cloudflare tunnel URLs stay unchanged.
+- **NO MCP OAuth/session migration**: Verified reloadable MCP is preserved (`KEEP`).
+- **NO task replay**: Interrupted or unknown agent tasks are never replayed automatically.
+- **NO auto-recycle from watchdog**: Watchdog only restarts managed owners; recycle is operator-controlled.
+- **Durable idempotency**: Operation IDs are idempotency keys; replayed operations return prior recorded result.
+- **Fail-closed execution**: Stale builds, birth identity mismatches, or missing listeners fail closed before mutation.
+
+## 2. Component Design & Phasing
+
+### P0. Core Legacy Recycle Tests
+- Test harness covering:
+  - Plan generation and validation (`planLegacyCoreRecycle`).
+  - Validation failure cases: fake PID, birth identity mismatch, command line mismatch, target build change, missing listener.
+  - Graceful `/api/shutdown` invocation.
+  - Idempotent replay lookups in `ManagedSidecarLedger`.
+  - Fix test timeout in `tests/serviceManager.test.ts`.
+
+### P0. Tray Guarded Legacy Recycle (`src/core/runtime/trayLegacyRecycle.ts`)
+- Collect process descriptor (Win32_Process CommandLine, ExecutablePath), SHA-256 digest, PID birth identity.
+- Reject unrelated binaries named `superagent-tray.exe`.
+- Graceful exit channel:
+  1. Authenticated loopback IPC (`/tray/control`).
+  2. Native WM_CLOSE window-close request to exact Tray window/PID (no `taskkill /F`).
+  3. Fail closed if unavailable (`BLOCKED_USER_QUIT_REQUIRED`).
+- Atomic binary transition using `trayReleaseStore.ts` and managed launch.
+- Rollback capability to previous trusted digest.
+
+### P0. Vision Guarded Legacy Recycle (`src/core/runtime/visionLegacyRecycle.ts`)
+- Evidence verification: port 8095 listener, birth identity, script fingerprint (`scripts/vision_server.py`), `/health` response, model state.
+- Drain active requests: wait for `activeRequests == 0` within bounded timeout, or fail closed.
+- Graceful stop channel in `scripts/vision_server.py` and adapter.
+- Managed startup creating `vision-owner-<port>.json` with token and instance ID.
+
+### P1. Global Disposition Planner (`src/core/runtime/globalLifecycleRecycle.ts`)
+- Dispositions: `KEEP`, `START`, `RESTART`, `RELOAD`, `RECYCLE`, `VERIFY_ONLY`, `SKIP_INACTIVE`, `BLOCKED`.
+- Deterministic dependency order: Core -> Daemon -> Guardian -> Transport -> Channel Host -> Muse / Telegram -> Vision -> Tray -> MCP -> Tunnels -> Supervisor.
+- Plan object: `version: 1`, `operationId`, `createdAt`, `expiresAt` (5 minutes), `dependencyOrder`, `children`, `publicTunnelMutationAllowed: false`, `arbitraryPidKillAllowed: false`.
+
+### P1. Durable Global Executor & Reconcile (`src/core/runtime/globalLifecycleRecycle.ts`)
+- State machine: `PLANNED` -> `PRECHECK` -> `DRAINING` -> `MIGRATING` -> `VERIFYING` -> `COMPLETED`.
+- Global durable ledger stored in `~/.superagent-r/global-recycle-ledger.json`.
+- Stop on uncertain mutation or dependency failure.
+- Reconciliation without mutation re-execution.
+
+### P1. UI, CLI, MCP & Agent Parity
+- Native Tray Recycle System UI in `apps/superagent-tray/` (`Analyze Recycle`, per-service table, plan review, confirmation, progress timeline).
+- CLI commands: `superagent lifecycle recycle-plan`, `recycle`, `recycle-status`, `reconcile`.
+- MCP tools & Agent tools updated with full parameter and action support.

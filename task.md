@@ -507,3 +507,58 @@
   - [x] Run `bun run build` and focused test suites with real exit codes recorded
   - [x] Produce execution report `docs/plans/2026-10-28-superagent-linux-cdp-m0-m1-execution-report.md`
   - [x] Update project walkthrough with verifiable evidence
+
+
+---
+
+## SuperAgent Global Lifecycle Recycle (2026-11-05 Master Plan)
+
+- [ ] **P0: Stabilize Core Existing Recycle Tests & Engine**
+  - [ ] Add comprehensive tests for Core Legacy Recycle in `tests/coreLegacyRecycle.test.ts`
+  - [ ] Test plan generation, verification of listener PID, birth identity, command digest, target build digest
+  - [ ] Test rejection on fake PID, birth identity mismatch, command mismatch, target build change
+  - [ ] Test graceful `/api/shutdown` handling and exit verification
+  - [ ] Test operation idempotency and replay lookup via `ManagedSidecarLedger`
+  - [ ] Fix timeout on CIM query in `tests/serviceManager.test.ts`
+- [ ] **P0: Tray Guarded Legacy Recycle**
+  - [ ] Create `src/core/runtime/trayLegacyRecycle.ts`
+  - [ ] Implement evidence collector (executable path, SHA-256 digest, PID, birth identity, product metadata, lookalike rejection)
+  - [ ] Implement graceful legacy exit channel (loopback IPC -> native window-close WM_CLOSE message -> fail closed `BLOCKED_USER_QUIT_REQUIRED`, zero `taskkill /F`)
+  - [ ] Implement atomic binary transition via `trayReleaseStore.ts` with rollback support
+  - [ ] Wire `action=plan targetAction=recycle service=tray` and `action=recycle service=tray` into `serviceManager.ts`
+  - [ ] Add comprehensive tests in `tests/trayLegacyRecycle.test.ts`
+- [ ] **P0: Vision Guarded Legacy Recycle**
+  - [ ] Create `src/core/runtime/visionLegacyRecycle.ts`
+  - [ ] Implement evidence collector (port 8095 listener, birth identity, script fingerprint, `/health` response, model state, active requests)
+  - [ ] Implement active-request drain check (`activeRequests == 0` or wait for drain; fail closed if unverified)
+  - [ ] Implement graceful stop channel in `scripts/vision_server.py` and adapter
+  - [ ] Implement managed launch and attestation reusing `managedVisionControl.ts` ownership contract
+  - [ ] Wire `action=plan targetAction=recycle service=vision` and `action=recycle service=vision` into `serviceManager.ts`
+  - [ ] Add comprehensive tests in `tests/visionLegacyRecycle.test.ts`
+- [ ] **P1: Global Disposition Planner & Dry-Run Engine**
+  - [ ] Create `src/core/runtime/globalLifecycleRecycle.ts`
+  - [ ] Implement per-service disposition resolver (`KEEP`, `START`, `RESTART`, `RELOAD`, `RECYCLE`, `VERIFY_ONLY`, `SKIP_INACTIVE`, `BLOCKED`)
+  - [ ] Enforce dependency graph (Core -> Daemon -> Guardian -> Transport -> Channel Host -> Muse / Telegram -> Vision -> Tray -> MCP -> Tunnels -> Supervisor)
+  - [ ] Enforce MCP `KEEP` for verified reloadable owner; skip optional inactive services by default
+  - [ ] Generate bounded, typed `GlobalRecyclePlan` with 5-minute expiration and zero raw secrets
+  - [ ] Wire `action=plan service=all targetAction=recycle` into `serviceManager.ts`
+- [ ] **P1: Durable Idempotent Global Executor & Reconcile**
+  - [ ] Implement global transaction state machine (`PLANNED` -> `PRECHECK` -> `DRAINING` -> `MIGRATING` -> `VERIFYING` -> `COMPLETED`)
+  - [ ] Implement durable metadata ledger `GlobalRecycleLedger` (`~/.superagent-r/global-recycle-ledger.json`)
+  - [ ] Enforce pre-mutation re-validation, dependency stops, and fail-closed error handling
+  - [ ] Implement `reconcileGlobalLifecycleRecycle` for safe inspection without repeating mutations
+  - [ ] Wire `action=recycle service=all` and `action=reconcile service=all` into `serviceManager.ts`
+- [ ] **P1: MCP, Agent Tool & CLI Parity**
+  - [ ] Expose `service="all"` plan/recycle/reconcile in MCP tool schemas (`serviceManagerMcpTools.ts`)
+  - [ ] Expose in agent tool schemas (`serviceManagerTools.ts`)
+  - [ ] Add CLI commands `superagent lifecycle recycle-plan`, `recycle`, `recycle-status`, `reconcile`
+- [ ] **P1: Native Tray Recycle System UI**
+  - [ ] Update Tauri/Rust `lifecycle_console.rs` validation to allow global recycle & per-service recycle
+  - [ ] Update `nativeTrayLifecycleBridge.ts` loopback adapter
+  - [ ] Build **Recycle System** UI in `apps/superagent-tray/ui/` with Analyze Recycle, per-service disposition table, plan review, confirmation modal, and progress timeline
+- [ ] **P2: Full Test Verification & Live Plan-Only Acceptance**
+  - [ ] Run complete Vitest suite across all lifecycle tests
+  - [ ] Run `bun run build`
+  - [ ] Run Cargo checks in `apps/superagent-tray/src-tauri`
+  - [ ] Perform live plan-only acceptance probe against live workstation services without mutating live processes
+  - [ ] Update `walkthrough.md` with complete evidence and results

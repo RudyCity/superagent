@@ -16,11 +16,19 @@ use tauri::{
 use tauri_plugin_notification::NotificationExt;
 
 mod connection_logs;
+mod muse_file_transfer;
 mod remote_service_detection;
 mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
 mod tray_lifecycle;
+mod lifecycle_console;
+
+/// Reads the installed binary version from the Tauri package metadata.
+#[tauri::command]
+fn get_tray_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
+}
 
 /// Native window lifecycle is deliberately exposed through an allowlist,
 /// not the broad Tauri window permission surface. Webview can control
@@ -192,6 +200,18 @@ async fn apply_muse_settings() -> Result<Value, String> {
     let pid = registered.pid.ok_or("Selected Core PID is unavailable")?;
     core_request(Method::POST, "/api/desktop/muse-lifecycle",
         Some(json!({"action":"apply-restart","pid":pid}))).await
+}
+
+#[tauri::command]
+async fn lifecycle_console_request(request: Value) -> Result<Value, String> {
+    // Validate once in native code before any Core HTTP request. Core
+    // validates independently, authenticates the exact selected owner, and
+    // rejects remote ingress. No generic URL or PID controls are exposed.
+    let body=lifecycle_console::validate(request)?;
+    core_request(Method::POST, "/api/desktop/lifecycle", Some(body))
+        .await
+        .and_then(|response| response.get("data").cloned()
+            .ok_or("Core did not return a lifecycle result".into()))
 }
 
 #[tauri::command]
@@ -639,6 +659,16 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // A managed MCP owner may take 60s for tunnel provisioning.
         // Never retry ambiguous create requests on timeout.
         Duration::from_secs(100)
+    } else if path == "/api/desktop/lifecycle" {
+        // Read-only navigation must not freeze the UI while the selected Core
+        // is offline. Mutating commands retain the operation ID after timeout;
+        // never automatically replay an ambiguous upgrade or restart.
+        match body.as_ref().and_then(|b|b.get("action")).and_then(Value::as_str) {
+            Some("dashboard"|"health"|"doctor"|"watchdog") => Duration::from_secs(24),
+            Some("profile"|"logs"|"status"|"inventory") => Duration::from_secs(10),
+            Some("plan") => Duration::from_secs(18),
+            _ => Duration::from_secs(120),
+        }
     } else if path == "/api/desktop/muse-lifecycle" {
         // Restart can re-establish the original Telegram/WS transport.
         Duration::from_secs(35)
@@ -954,6 +984,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
+        .manage(muse_file_transfer::MuseFileSelection::default())
         .setup(|app| {
             tray_lifecycle::install(app.handle().clone(), &config_dir()?)?;
             // Windows native chrome must never appear above our custom
@@ -970,6 +1002,10 @@ fn main() {
                 }
             }
             let status_item = MenuItem::with_id(app, "status_info", "⚡ SuperAgent Tray · Active", false, None::<&str>)?;
+            let version_item = MenuItem::with_id(
+                app, "version_info",
+                format!("Version {}", app.package_info().version), false, None::<&str>
+            )?;
             let sep0 = PredefinedMenuItem::separator(app)?;
             let open = MenuItem::with_id(app, "open", "📊 Open Dashboard", true, None::<&str>)?;
             let start_server = MenuItem::with_id(app, "start_server", "🟢 Start Core Server (:7888)", true, None::<&str>)?;
@@ -981,6 +1017,8 @@ fn main() {
                 MenuItem::with_id(app, "delegate", "🌐 Chrome Delegate", true, None::<&str>)?;
             let terminal =
                 MenuItem::with_id(app, "terminal", "💻 Terminal Processes", true, None::<&str>)?;
+            let muse_files =
+                MenuItem::with_id(app, "muse_files", "📁 Muse File Transfer", true, None::<&str>)?;
             let add = MenuItem::with_id(app, "add", "➕ New Reminder", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let settings = MenuItem::with_id(app, "settings", "⚙️ Tray Settings", true, None::<&str>)?;
@@ -988,6 +1026,7 @@ fn main() {
             let quit = MenuItem::with_id(app, "quit", "Quit SuperAgent Tray", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
                 &status_item,
+                &version_item,
                 &sep0,
                 &open,
                 &start_server,
@@ -995,6 +1034,7 @@ fn main() {
                 &conn_logs,
                 &delegate,
                 &terminal,
+                &muse_files,
                 &add,
                 &sep1,
                 &settings,
@@ -1036,6 +1076,10 @@ fn main() {
                     "terminal" => {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-terminal", ());
+                    }
+                    "muse_files" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-muse-files", ());
                     }
                     "settings" => {
                         show_main(app, false);
@@ -1096,9 +1140,11 @@ fn main() {
             detect_runtime,
             select_runtime_core,
             service_action,
+            lifecycle_console_request,
             create_connection,
             regenerate_token,
             get_tray_settings,
+            get_tray_version,
             set_tray_settings,
             get_muse_telegram_settings,
             set_muse_telegram_settings,
@@ -1115,7 +1161,10 @@ fn main() {
             kill_terminal_task,
             launch_terminal_task,
             get_terminal_logs,
-            get_terminal_presets
+            get_terminal_presets,
+            muse_file_transfer::muse_file_pick,
+            muse_file_transfer::muse_file_start,
+            muse_file_transfer::muse_file_control
         ])
         .build(tauri::generate_context!())
         .expect("SuperAgent Tray could not build")

@@ -216,6 +216,7 @@ export const bashTool: Tool = {
           workspaceRoot: cwd,
           launchIntent: "headless",
           cleanupPolicy: "caller_owned",
+          taskId: cmdLogger.id,
         });
         procRecordId = reg.recordId;
       } catch {}
@@ -435,6 +436,7 @@ export const runCommandTool: Tool = {
           workspaceRoot: targetCwd,
           launchIntent: "headless",
           cleanupPolicy: "caller_owned",
+          taskId: cmdLogger.id,
         });
         procRecordId = reg.recordId;
       } catch {}

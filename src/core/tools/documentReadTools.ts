@@ -124,7 +124,9 @@ async function parseDocumentBuffer(
   }
 
   // Office files: try officecli on local binary with fetched buffer saved to temp file.
-  if (ext === "docx" || ext === "xlsx" || ext === "xls" || ext === "pdf") {
+  // PDF is handled by pdf-parse first; OfficeCLI's "view text" syntax is
+  // incompatible with several installed releases and can stall OCR fallback.
+  if (ext === "docx" || ext === "xlsx" || ext === "xls") {
     try {
       const { isOfficeCliInstalledLocally, getLocalOfficeCliPath } = await import("../androidSetup.js");
       const bin = (await isOfficeCliInstalledLocally()) ? getLocalOfficeCliPath() : "officecli";
@@ -162,9 +164,17 @@ async function parseDocumentBuffer(
         if (PDFParseCtor.name === "PDFParse") {
           // New v2.x class-based API
           const instance = new PDFParseCtor({ data: buffer });
-          const result = await instance.getText();
-          text = result.text ? result.text.trim() : "";
-          await instance.destroy();
+          try {
+            const result = await instance.getText();
+            // pdf-parse v2 appends '-- page N of M --' delimiters to result.text,
+            // even when a scanned PDF contains NO selectable text. Check each
+            // page's actual text to ensure image-only PDFs reach local OCR.
+            text = Array.isArray(result.pages)
+              ? result.pages.map((page: { text?: string }) => page.text || "").join("\n\n").trim()
+              : typeof result.text === "string" ? result.text.trim() : "";
+          } finally {
+            await instance.destroy();
+          }
         } else {
           // Old v1.x function-based API
           const data = await PDFParseCtor(buffer);

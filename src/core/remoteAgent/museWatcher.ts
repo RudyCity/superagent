@@ -32,6 +32,8 @@ import { executeBatch } from "./batchExecutor.js";
 import { MuseRecoveryOrchestrator } from "./museRecoveryOrchestrator.js";
 import { formatReadableSummary } from "./formatSummary.js";
 import { logE2E } from "../utils/unifiedLogger.js";
+import { FileTransferSender, resolveTransferSource } from "./museFileTransfer.js";
+import type { FileAckEnvelope, FileTransferReceipt } from "./museFileTransfer.js";
 import {
   MuseWatcherStats,
   MuseWatcherOptions,
@@ -75,6 +77,12 @@ export class MuseWatcher {
   private workspaces: string[] = [];
   private readonly configRevision: string;
   private transport!: RemoteTransport;
+  private readonly fileSender = new FileTransferSender((frame) => this.transport.sendEnvelope(frame));
+  private fileTransferProgress: {
+    state: "idle" | "transferring" | "completed" | "failed" | "cancelled";
+    name?: string; transferId?: string; bytes: number; total: number;
+    percent: number; resumed?: boolean; error?: string; updatedAt: number;
+  } = { state: "idle", bytes: 0, total: 0, percent: 0, updatedAt: 0 };
   private quickTunnelStarted = false;
   private tunnelMetadata: WatcherTunnelMetadata | null = null;
   private lastTransportError?: string;
@@ -557,6 +565,11 @@ export class MuseWatcher {
     else this.endPresence();
     this.clearActiveTaskIdentity();
     this.rejectPendingChatReplies(new Error("Muse watcher stopped before the chat reply arrived."));
+    this.fileSender.abort();
+    if (this.fileTransferProgress.state === "transferring") {
+      this.fileTransferProgress.state = "cancelled";
+      this.fileTransferProgress.updatedAt = Date.now();
+    }
     this.batchQueue = [];
     this.activeBatchIds.clear();
     this.pendingReplyMessageIds.clear();
@@ -609,6 +622,13 @@ export class MuseWatcher {
     this.lastActiveAt = Date.now();
 
     switch (envelope.kind) {
+      case "file_ack": {
+        // The WebSocket transport validates authentication before dispatch.
+        if (meta?.transport === "websocket" && this.transport.type === "websocket") {
+          this.fileSender.handleAck(envelope as FileAckEnvelope);
+        }
+        break;
+      }
       case "task_batch": {
         this.enqueueBatch(envelope as TaskBatchEnvelope, meta);
         break;
@@ -1192,6 +1212,66 @@ export class MuseWatcher {
   /**
    * Sends a steering/intervention chat message directly to Muse over transport.
    */
+  public getFileTransferStatus() {
+    return { ...this.fileTransferProgress };
+  }
+
+  public cancelFileTransfer(): boolean {
+    if (this.fileTransferProgress.state !== "transferring") return false;
+    this.fileTransferProgress.state = "cancelled";
+    this.fileTransferProgress.updatedAt = Date.now();
+    this.fileSender.abort();
+    return true;
+  }
+
+  /** Transfer an explicitly selected workspace file to an authenticated Muse receiver. */
+  public async sendFile(filePath: string, workspaceRoot: string): Promise<FileTransferReceipt> {
+    if (!this.isRunning || this.transport.type !== "websocket" || !this.transport.isConnected()) {
+      throw new Error("Connected Muse WebSocket watcher required for file transfer");
+    }
+    if (this.fileTransferProgress.state === "transferring") {
+      throw new Error("Another Muse file upload is still active");
+    }
+    const safePath = await resolveTransferSource(filePath, workspaceRoot);
+    const stat = await fs.promises.stat(safePath);
+    this.fileTransferProgress = {
+      state: "transferring", name: path.basename(safePath),
+      bytes: 0, total: stat.size, percent: 0, updatedAt: Date.now(),
+    };
+    let lastAnnounced = 0;
+    try {
+      const receipt = await this.fileSender.sendFile(safePath, {
+        checkpointDir: path.join(getRootConfigDir(), "muse-file-outbox"),
+        onProgress: (progress) => {
+          if (this.fileTransferProgress.state !== "transferring") return;
+          this.fileTransferProgress = {
+            ...this.fileTransferProgress, ...progress, state: "transferring",
+            updatedAt: Date.now(),
+          };
+          const milestone = Math.floor(progress.percent / 10) * 10;
+          if (milestone > lastAnnounced) {
+            lastAnnounced = milestone;
+            this.emitLine("system", "[Muse File] " + progress.percent +
+              "% (" + progress.bytes + "/" + progress.total + " bytes)" +
+              (progress.resumed ? " [resumed]" : ""));
+          }
+        },
+      });
+      this.fileTransferProgress = {
+        ...this.fileTransferProgress, state: "completed", transferId: receipt.transferId,
+        bytes: receipt.size, total: receipt.size, percent: 100, updatedAt: Date.now(),
+      };
+      return receipt;
+    } catch (error: any) {
+      this.fileTransferProgress = {
+        ...this.fileTransferProgress,
+        state: this.fileTransferProgress.state === "cancelled" ? "cancelled" : "failed",
+        error: String(error?.message || error).slice(0, 500), updatedAt: Date.now(),
+      };
+      throw error;
+    }
+  }
+
   public async sendSteeringMessage(text: string): Promise<boolean> {
     if (!this.transport || !this.isRunning) {
       return false;

@@ -128,6 +128,10 @@ describe("Remote-agent MCP tools", () => {
       superagent_telegram_send_to_muse: "dangerous",
       superagent_muse_chat_status: "safe",
       superagent_muse_chat: "dangerous",
+      superagent_muse_send_file: "dangerous",
+      superagent_muse_file_status: "safe",
+      superagent_muse_file_cancel: "dangerous",
+      superagent_telegram_send_file: "dangerous",
     });
   });
 

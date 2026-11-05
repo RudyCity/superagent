@@ -506,6 +506,9 @@ Superagent can pair with an external AI agent (**Muse**) acting as a remote cogn
 /muse tunnel stop all
 /muse tunnel doctor
 /muse tunnel prompt
+/muse tunnel file <path>
+/muse tunnel file status
+/muse tunnel file cancel
 ```
 
 **Direct Telegram integration**
@@ -517,10 +520,13 @@ Use `/telegram` for bot/group configuration and direct messages. A direct Telegr
 /telegram doctor
 /telegram config
 /telegram send <message>
+/telegram file <path>
 /telegram fallback status
 /telegram fallback start
 /telegram fallback stop
 ```
+
+**File transfer (opt-in):** Telegram attachment uses Bot API multipart sendDocument; Muse file transfer uses authenticated WebSocket chunks and SHA-256 with per-chunk ACK/retry, persistent checkpoints, and interrupted-upload resume. MCP tools: superagent_telegram_send_file, superagent_muse_send_file (dangerous), superagent_muse_file_status (safe), and superagent_muse_file_cancel (dangerous). Local CSV 0.5–6 MiB is tested (8 MiB cap). The opt-in MuseWsClientTransport receiver can persist verified files to a private directory when configured with SUPERAGENT_MUSE_FILE_RECEIVE_DIR; deploying/integrating it with an external Muse application is still required for production. See [Muse file transfer design and receiver requirements](docs/guides/muse-file-transfer.md).
 
 **MCP tunnel providers**
 

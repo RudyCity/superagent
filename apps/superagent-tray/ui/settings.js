@@ -50,7 +50,7 @@ function traySettingsValidate(value) {
       ![10,20,30,60,120].includes(value.runtimeScanSeconds) ||
       ![15,30,60,120].includes(value.jobsRefreshSeconds) ||
       ![15,30,60,120].includes(value.notificationPollSeconds) ||
-      !["jobs","runtime","history","logs","delegate","terminal"].includes(value.startupPage)) {
+      !["jobs","runtime","history","logs","delegate","terminal","muse-files"].includes(value.startupPage)) {
     throw new Error("Tray settings contain an unsupported value");
   }
   return value;
