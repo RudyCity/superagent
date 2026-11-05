@@ -253,8 +253,20 @@
           </div>
 
           <div id="actions-muse-files" class="action-group" hidden>
-            <button type="button" id="muse-files-refresh" class="button ghost">Refresh Status</button>
-            <button type="button" id="muse-files-top-select" class="button primary">Choose File</button>
+            <button type="button" id="muse-files-refresh" class="button ghost" title="Refresh transfer status">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>Refresh Status</span>
+            </button>
+            <button type="button" id="muse-files-top-select" class="button primary" title="Choose file to send">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <span>Choose File</span>
+            </button>
           </div>
 
           <!-- Chrome Delegate Page Actions -->
@@ -1276,84 +1288,210 @@
 
       <!-- Muse File Transfer Manager: only the native Tauri bridge can select a file -->
       <div id="page-muse-files" class="page-view" hidden>
+        <!-- Telemetry Stats Cards -->
         <section class="muse-file-stats" aria-label="Muse transfer connectivity">
           <article class="stat-card">
-            <div class="stat-header"><span class="stat-label">MUSE WEBSOCKET</span><span class="stat-chip" id="muse-files-ws-chip">Checking</span></div>
+            <div class="stat-header">
+              <div class="muse-stat-head-left">
+                <svg class="muse-stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                  <line x1="12" y1="20" x2="12.01" y2="20"></line>
+                </svg>
+                <span class="stat-label">MUSE WEBSOCKET</span>
+              </div>
+              <span class="stat-chip" id="muse-files-ws-chip">Checking</span>
+            </div>
             <strong id="muse-files-ws-state" class="stat-value">Unknown</strong>
             <div class="stat-sub" id="muse-files-ws-detail">Waiting for Core</div>
           </article>
+
           <article class="stat-card">
-            <div class="stat-header"><span class="stat-label">TELEGRAM</span><span class="stat-chip">Bot API</span></div>
+            <div class="stat-header">
+              <div class="muse-stat-head-left">
+                <svg class="muse-stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                <span class="stat-label">TELEGRAM</span>
+              </div>
+              <span class="stat-chip">Bot API</span>
+            </div>
             <strong id="muse-files-telegram-state" class="stat-value">Unknown</strong>
             <div class="stat-sub">Bot API acceptance is not Muse ingestion</div>
           </article>
+
           <article class="stat-card">
-            <div class="stat-header"><span class="stat-label">RECENT TRANSFERS</span><span class="stat-chip">Local</span></div>
+            <div class="stat-header">
+              <div class="muse-stat-head-left">
+                <svg class="muse-stat-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <polyline points="12 8 12 12 14 14"></polyline>
+                  <path d="M3.05 11a9 9 0 1 1 .5 4m-.5 5v-5h5"></path>
+                </svg>
+                <span class="stat-label">RECENT TRANSFERS</span>
+              </div>
+              <span class="stat-chip">Local</span>
+            </div>
             <strong id="muse-files-history-count" class="stat-value">0</strong>
             <div class="stat-sub">Persisted securely in Core configuration</div>
           </article>
         </section>
 
+        <!-- Alert / Notice Banner -->
         <div id="muse-files-banner" class="banner" role="alert" hidden></div>
 
+        <!-- Panel 1: File Send & Selection -->
         <section class="panel muse-files-panel">
           <div class="panel-head">
-            <div><div class="panel-eyebrow">SECURE FILE DELIVERY</div><h2>Send to Muse</h2>
-              <p>Select a file with the native file picker. Maximum 8 MiB; only one active transfer.</p></div>
-          </div>
-          <div class="muse-file-picker">
-            <div class="muse-file-picker-main">
-              <span class="muse-file-picker-icon" aria-hidden="true">⇧</span>
-              <div><strong id="muse-files-selected-name">No file selected</strong>
-                <p id="muse-files-selected-meta">CSV, JSON, XLSX, TXT, PDF, ZIP</p></div>
+            <div>
+              <div class="panel-eyebrow">SECURE FILE DELIVERY</div>
+              <h2>Send to Muse</h2>
+              <p>Select a file with the native file picker. Maximum 8 MiB with single active transfer protection.</p>
             </div>
-            <button type="button" id="muse-files-choose" class="button ghost">Browse Files</button>
           </div>
-          <div class="muse-file-send-row">
-            <label for="muse-files-transport">Channel</label>
-            <div class="select-wrapper">
-              <select id="muse-files-transport">
-                <option value="muse-websocket">Muse WebSocket · verified SHA-256 receipt</option>
-                <option value="telegram">Telegram document · Bot API acceptance only</option>
-              </select>
+          <div class="muse-panel-body">
+            <div class="muse-file-picker">
+              <div class="muse-file-picker-main">
+                <span class="muse-file-picker-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="17 8 12 3 7 8"></polyline>
+                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                  </svg>
+                </span>
+                <div class="muse-file-picker-text">
+                  <strong id="muse-files-selected-name">No file selected</strong>
+                  <p id="muse-files-selected-meta">Supported formats: CSV, JSON, XLSX, TXT, PDF, ZIP</p>
+                </div>
+              </div>
+              <button type="button" id="muse-files-choose" class="button ghost">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+                <span>Browse Files</span>
+              </button>
             </div>
-            <button type="button" id="muse-files-send" class="button primary" disabled>Send File</button>
+
+            <div class="muse-file-send-row">
+              <div class="muse-file-channel-field">
+                <label for="muse-files-transport">
+                  <span>Channel</span>
+                  <span class="stat-sub">Verification model</span>
+                </label>
+                <div class="select-wrapper">
+                  <select id="muse-files-transport">
+                    <option value="muse-websocket">Muse WebSocket (verified SHA-256 receipt)</option>
+                    <option value="telegram">Telegram document (Bot API acceptance only)</option>
+                  </select>
+                </div>
+              </div>
+              <button type="button" id="muse-files-send" class="button primary muse-file-send-btn" disabled>
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="22" y1="2" x2="11" y2="13"></line>
+                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                </svg>
+                <span>Send File</span>
+              </button>
+            </div>
+
+            <div class="muse-files-security-note">
+              <svg class="note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+              </svg>
+              <p class="muse-files-note">A live Cloudflare tunnel alone does not prove the Muse receiver is connected. Pause/resume requires WebSocket; Telegram uploads cannot be safely paused once submitted.</p>
+            </div>
           </div>
-          <p class="muse-files-note">A live Cloudflare tunnel alone does not prove the Muse receiver is connected. Pause/resume requires WebSocket; Telegram uploads cannot be safely paused once submitted.</p>
         </section>
 
+        <!-- Panel 2: Transfer Progress -->
         <section class="panel muse-files-panel" aria-live="polite">
           <div class="panel-head">
-            <div><div class="panel-eyebrow">CURRENT DELIVERY</div><h2>Transfer Progress</h2></div>
+            <div>
+              <div class="panel-eyebrow">CURRENT DELIVERY</div>
+              <h2>Transfer Progress</h2>
+            </div>
             <span id="muse-files-current-status" class="stat-chip">Idle</span>
           </div>
-          <div id="muse-files-empty" class="empty-state">No transfer started. Choose a file above.</div>
-          <div id="muse-files-progress-area" hidden>
-            <div class="muse-file-progress-heading">
-              <div><strong id="muse-files-progress-name">—</strong><p id="muse-files-progress-detail">Preparing transfer</p></div>
-              <strong id="muse-files-progress-percent">0%</strong>
+          <div class="muse-panel-body">
+            <div id="muse-files-empty" class="empty-state muse-files-empty-state">
+              <div class="empty-icon-wrap" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                  <line x1="12" y1="18" x2="12" y2="12"></line>
+                  <line x1="9" y1="15" x2="15" y2="15"></line>
+                </svg>
+              </div>
+              <h3 class="empty-title">No Active Transfer</h3>
+              <p class="empty-desc">No transfer started. Choose a file above to begin streaming with verified checksum receipts.</p>
             </div>
-            <div class="muse-files-track" id="muse-files-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-              <div id="muse-files-progress-fill"></div>
+
+            <div id="muse-files-progress-area" class="muse-file-progress-container" hidden>
+              <div class="muse-file-progress-heading">
+                <div class="muse-file-progress-title-block">
+                  <strong id="muse-files-progress-name">-</strong>
+                  <p id="muse-files-progress-detail">Preparing transfer</p>
+                </div>
+                <strong id="muse-files-progress-percent">0%</strong>
+              </div>
+
+              <div class="muse-files-track" id="muse-files-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                <div id="muse-files-progress-fill"></div>
+              </div>
+
+              <div class="muse-file-progress-metrics">
+                <div class="muse-metric-card">
+                  <span class="muse-metric-label">Data Volume</span>
+                  <span id="muse-files-progress-bytes" class="muse-metric-value">0 MiB / 0 MiB</span>
+                </div>
+                <div class="muse-metric-card">
+                  <span class="muse-metric-label">Throughput</span>
+                  <span id="muse-files-progress-rate" class="muse-metric-value">- MiB/s</span>
+                </div>
+                <div class="muse-metric-card">
+                  <span class="muse-metric-label">Estimated Time</span>
+                  <span id="muse-files-progress-eta" class="muse-metric-value">ETA -</span>
+                </div>
+              </div>
+
+              <div class="muse-file-actions">
+                <button type="button" id="muse-files-pause" class="button ghost" disabled title="Pause WebSocket transfer">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                  </svg>
+                  <span>Pause</span>
+                </button>
+                <button type="button" id="muse-files-resume" class="button ghost" disabled title="Resume transfer from checkpoint">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  <span>Resume</span>
+                </button>
+                <button type="button" id="muse-files-cancel" class="button ghost danger" disabled title="Cancel active transfer">
+                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                  </svg>
+                  <span>Cancel</span>
+                </button>
+              </div>
+
+              <p id="muse-files-progress-error" class="muse-files-error" hidden></p>
             </div>
-            <div class="muse-file-progress-metrics">
-              <span id="muse-files-progress-bytes">0 MiB / 0 MiB</span>
-              <span id="muse-files-progress-rate">— MiB/s</span>
-              <span id="muse-files-progress-eta">ETA —</span>
-            </div>
-            <div class="muse-file-actions">
-              <button type="button" id="muse-files-pause" class="button ghost" disabled>Pause</button>
-              <button type="button" id="muse-files-resume" class="button ghost" disabled>Resume</button>
-              <button type="button" id="muse-files-cancel" class="button ghost danger" disabled>Cancel</button>
-            </div>
-            <p id="muse-files-progress-error" class="muse-files-error" hidden></p>
           </div>
         </section>
 
+        <!-- Panel 3: Transfer History -->
         <section class="panel muse-files-panel">
           <div class="panel-head">
-            <div><div class="panel-eyebrow">TRANSFER LEDGER</div><h2>Transfer History</h2>
-              <p>Inspect outcomes, then manually retry interrupted WebSocket deliveries.</p></div>
+            <div>
+              <div class="panel-eyebrow">TRANSFER LEDGER</div>
+              <h2>Transfer History</h2>
+              <p>Inspect outcomes, then manually retry interrupted WebSocket deliveries.</p>
+            </div>
             <div class="panel-tools">
               <div class="select-wrapper sm">
                 <select id="muse-files-filter" aria-label="Filter transfer history">
@@ -1367,20 +1505,37 @@
           </div>
           <div class="table-wrap">
             <table class="data-table" aria-label="Muse transfer history">
-              <thead><tr><th>FILE</th><th>CHANNEL</th><th>STATUS</th><th>STARTED</th><th class="text-right">ACTION</th></tr></thead>
-              <tbody id="muse-files-history-table"><tr><td colspan="5" class="empty-state">No transfer history yet.</td></tr></tbody>
+              <thead>
+                <tr>
+                  <th>FILE</th>
+                  <th>CHANNEL</th>
+                  <th>STATUS</th>
+                  <th>STARTED</th>
+                  <th class="text-right">ACTION</th>
+                </tr>
+              </thead>
+              <tbody id="muse-files-history-table">
+                <tr><td colspan="5" class="empty-state">No transfer history yet.</td></tr>
+              </tbody>
             </table>
           </div>
         </section>
 
+        <!-- Panel 4: Transfer Settings -->
         <section class="panel muse-files-panel">
           <div class="panel-head">
-            <div><div class="panel-eyebrow">LOCAL PREFERENCES</div><h2>Transfer Settings</h2>
-              <p>Receiver destination and incoming retention belong to Muse and must be configured there.</p></div>
+            <div>
+              <div class="panel-eyebrow">LOCAL PREFERENCES</div>
+              <h2>Transfer Settings</h2>
+              <p>Receiver destination and incoming retention belong to Muse and must be configured there.</p>
+            </div>
           </div>
           <form id="muse-files-settings" class="muse-file-settings-grid">
             <div class="form-group">
-              <label for="muse-files-limit">Maximum file size</label>
+              <div class="muse-setting-label-block">
+                <label for="muse-files-limit">Maximum file size</label>
+                <small>Upper limit for file transfer payload buffer.</small>
+              </div>
               <div class="select-wrapper">
                 <select id="muse-files-limit">
                   <option value="1">1 MiB</option>
@@ -1392,7 +1547,10 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="muse-files-retention">Local history retention</label>
+              <div class="muse-setting-label-block">
+                <label for="muse-files-retention">Local history retention</label>
+                <small>Retention window for local delivery receipt logs.</small>
+              </div>
               <div class="select-wrapper">
                 <select id="muse-files-retention">
                   <option value="1">1 day</option>
@@ -1403,7 +1561,10 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="muse-files-poll">Polling interval</label>
+              <div class="muse-setting-label-block">
+                <label for="muse-files-poll">Polling interval</label>
+                <small>Background status refresh frequency.</small>
+              </div>
               <div class="select-wrapper">
                 <select id="muse-files-poll">
                   <option value="1">1 second</option>
@@ -1414,7 +1575,10 @@
               </div>
             </div>
             <div class="form-group">
-              <label for="muse-files-default">Default transport</label>
+              <div class="muse-setting-label-block">
+                <label for="muse-files-default">Default transport</label>
+                <small>Primary transport route for newly picked files.</small>
+              </div>
               <div class="select-wrapper">
                 <select id="muse-files-default">
                   <option value="muse-websocket">Muse WebSocket</option>
@@ -1423,7 +1587,14 @@
               </div>
             </div>
             <div class="muse-file-settings-footer">
-              <button type="submit" id="muse-files-save-settings" class="button primary">Save Settings</button>
+              <button type="submit" id="muse-files-save-settings" class="button primary">
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                  <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                  <polyline points="7 3 7 8 15 8"></polyline>
+                </svg>
+                <span>Save Settings</span>
+              </button>
               <span id="muse-files-settings-feedback" role="status"></span>
             </div>
           </form>

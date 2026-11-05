@@ -56,7 +56,7 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
       healthyCoreCount: 1, activeProcessCount: 1, selectedCorePort: 7888,
       cores: [{
         port: 7888, pid: 123, state: "online", selected: true,
-        evidence: "authenticated /api/status", version: "1.14.62",
+        evidence: "authenticated /api/status", version: "1.14.63",
         pidVerified: true,
         daemon: { running: true, activeJobs: 1, totalJobs: 3 },
         gateway: { enabled: false },

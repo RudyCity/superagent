@@ -12,7 +12,7 @@ const museFileBytes = (value) =>
   (Math.max(0, Number(value) || 0) / 1048576).toFixed(2) + " MiB";
 const museFileDate = (ms) => {
   const num = Number(ms);
-  return Number.isFinite(num) && num > 0 ? new Date(num).toLocaleString() : "—";
+  return Number.isFinite(num) && num > 0 ? new Date(num).toLocaleString() : "-";
 };
 
 const museFileState = {
@@ -118,10 +118,10 @@ function museFileRenderProgress(job) {
   set("muse-files-progress-bytes", museFileBytes(bytes) + " / " + museFileBytes(total));
   set("muse-files-progress-rate",
     museFileState.rate > 0 && state === "transferring"
-      ? (museFileState.rate / 1048576).toFixed(2) + " MiB/s" : "— MiB/s");
+      ? (museFileState.rate / 1048576).toFixed(2) + " MiB/s" : "- MiB/s");
   set("muse-files-progress-eta",
     state === "transferring" && museFileState.rate > 0 && total > bytes
-      ? "ETA ~" + Math.ceil((total - bytes) / museFileState.rate) + "s" : "ETA —");
+      ? "ETA ~" + Math.ceil((total - bytes) / museFileState.rate) + "s" : "ETA -");
   set("muse-files-progress-detail",
     job.kind === "telegram"
       ? (state === "completed" ? "Accepted by Telegram · Muse ingestion not confirmed" : "Telegram Bot API · no chunk progress available")

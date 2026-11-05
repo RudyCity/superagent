@@ -762,7 +762,7 @@ mod tests {
             let good = request.contains(&format!("Bearer {}", expected))
                 && request.starts_with("GET /api/status ");
             let response = if good {
-                r#"{"status":"online","version":"1.14.62"}"#
+                r#"{"status":"online","version":"1.14.63"}"#
             } else {
                 r#"{"error":"Unauthorized"}"#
             };

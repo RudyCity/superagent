@@ -1,53 +1,712 @@
-/* Muse File Transfer Manager. Scoped to its page; does not change legacy Tray pages. */
-#page-muse-files { --muse-accent: #38bdf8; }
-.muse-file-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin-bottom:18px; }
-.muse-files-panel { margin-bottom:18px; }
+/* SuperAgent Tray · Muse File Transfer Manager
+ * Scoped to #page-muse-files and its components.
+ * Design Language: High-Precision Cyberpunk Telemetry & Engineering Workstation
+ * Standards: Antislop Core Filter, WCAG AA Contrast, Hardware Acceleration, Reduced Motion
+ */
+
+#page-muse-files {
+  --muse-accent: #38bdf8;
+  --muse-accent-rgb: 56, 189, 248;
+  --muse-accent-hover: #7dd3fc;
+  --muse-accent-glow: rgba(56, 189, 248, 0.25);
+  --muse-surface: var(--bg-surface, #0f1523);
+  --muse-surface-raised: var(--bg-surface-raised, #141c2e);
+  --muse-surface-elevated: var(--bg-surface-elevated, #1a243a);
+  --muse-border-subtle: var(--border-subtle, rgba(255, 255, 255, 0.07));
+  --muse-border-medium: var(--border-medium, rgba(255, 255, 255, 0.12));
+  --muse-border-strong: var(--border-strong, rgba(255, 255, 255, 0.2));
+  --muse-border-focus: var(--border-focus, #38bdf8);
+
+  /* Max width constraint prevents awkward stretching on maximized 1080p/4K desktop monitors */
+  max-width: 1240px;
+  width: 100%;
+}
+
+/* ==========================================================================
+   1. Telemetry Stat Cards
+   ========================================================================== */
+.muse-file-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.muse-file-stats .stat-card {
+  position: relative;
+  background: var(--muse-surface);
+  border: 1px solid var(--muse-border-subtle);
+  border-radius: var(--radius-md, 10px);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: transform var(--transition-fast, 150ms ease), border-color var(--transition-fast, 150ms ease), box-shadow var(--transition-fast, 150ms ease);
+  overflow: hidden;
+}
+
+.muse-file-stats .stat-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(56, 189, 248, 0.4), transparent);
+  opacity: 0;
+  transition: opacity var(--transition-fast, 150ms ease);
+}
+
+.muse-file-stats .stat-card:hover {
+  border-color: var(--muse-border-medium);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.muse-file-stats .stat-card:hover::before {
+  opacity: 1;
+}
+
+.muse-stat-head-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.muse-stat-icon {
+  width: 14px;
+  height: 14px;
+  color: var(--muse-accent);
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.muse-file-stats .stat-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-secondary, #94a3b8);
+  text-transform: uppercase;
+}
+
+.muse-file-stats .stat-chip {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill, 9999px);
+  background: var(--muse-surface-raised);
+  color: var(--text-muted, #94a3b8);
+  border: 1px solid var(--muse-border-subtle);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.muse-file-stats .stat-chip.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.muse-file-stats .stat-chip.success::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.muse-file-stats .stat-value {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.4px;
+  color: var(--text-primary, #f8fafc);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+.muse-file-stats .stat-sub {
+  font-size: 11.5px;
+  color: var(--text-muted, #64748b);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+/* ==========================================================================
+   2. Alert / Status Banner
+   ========================================================================== */
+#muse-files-banner {
+  margin-bottom: 20px;
+  padding: 12px 18px;
+  border-radius: var(--radius-md, 10px);
+  font-size: 12.5px;
+  font-weight: 550;
+  line-height: 1.45;
+  background: rgba(245, 158, 11, 0.09);
+  border: 1px solid rgba(245, 158, 11, 0.32);
+  color: #fde68a;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: muse-fade-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+#muse-files-banner.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+}
+
+/* ==========================================================================
+   3. Panel Containers
+   ========================================================================== */
+.muse-files-panel {
+  background: var(--muse-surface);
+  border: 1px solid var(--muse-border-subtle);
+  border-radius: var(--radius-lg, 14px);
+  margin-bottom: 22px;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
+  transition: border-color var(--transition-fast, 150ms ease);
+}
+
+.muse-files-panel:hover {
+  border-color: var(--muse-border-medium);
+}
+
+.muse-files-panel .panel-head {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--muse-border-subtle);
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.muse-files-panel .panel-head h2 {
+  margin: 2px 0 4px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text-primary, #f8fafc);
+}
+
+.muse-files-panel .panel-head p {
+  margin: 0;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.muse-panel-body {
+  padding: 22px 24px;
+}
+
+/* ==========================================================================
+   4. Native File Picker & Dropzone
+   ========================================================================== */
 .muse-file-picker {
-  border:1px dashed var(--border-color, #475569); border-radius:14px;
-  padding:20px; background:rgba(56,189,248,.045);
-  display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;
+  border: 1px dashed rgba(56, 189, 248, 0.35);
+  border-radius: var(--radius-md, 12px);
+  padding: 20px 22px;
+  background: radial-gradient(ellipse at top left, rgba(56, 189, 248, 0.06) 0%, rgba(15, 21, 35, 0.4) 100%);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  transition: all var(--transition-fast, 150ms ease);
+  position: relative;
 }
-.muse-file-picker-main { display:flex; gap:14px; align-items:center; min-width:0; }
-.muse-file-picker-main strong { display:block; font-size:1.02rem; overflow-wrap:anywhere; }
-.muse-file-picker-main p { margin:5px 0 0; color:var(--text-muted, #94a3b8); font-size:.82rem; }
+
+.muse-file-picker:hover,
+.muse-file-picker:focus-within {
+  border-color: var(--muse-accent);
+  background: radial-gradient(ellipse at top left, rgba(56, 189, 248, 0.1) 0%, rgba(20, 28, 46, 0.6) 100%);
+  box-shadow: 0 0 20px rgba(56, 189, 248, 0.12);
+}
+
+.muse-file-picker-main {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 300px;
+}
+
 .muse-file-picker-icon {
-  display:grid; place-items:center; flex:0 0 52px; width:52px; height:52px;
-  border-radius:13px; color:#38bdf8; background:rgba(56,189,248,.12); font-size:28px; font-weight:600;
+  display: grid;
+  place-items: center;
+  flex: 0 0 50px;
+  width: 50px;
+  height: 50px;
+  border-radius: 12px;
+  color: var(--muse-accent);
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.14) 0%, rgba(37, 99, 235, 0.14) 100%);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  box-shadow: 0 2px 10px rgba(56, 189, 248, 0.15);
+  transition: transform var(--transition-fast, 150ms ease);
 }
-.muse-file-send-row { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:17px; }
-.muse-file-send-row label { color:var(--text-muted, #94a3b8); font-size:.8rem; font-weight:650; }
-.muse-file-send-row .select-wrapper { flex:1; min-width:220px; max-width:460px; }
-.muse-file-send-row button { margin-left:auto; }
-.muse-files-note { margin:12px 0 0; font-size:.8rem; line-height:1.55; color:var(--text-muted, #94a3b8); }
-.muse-file-progress-heading { display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:14px; }
-.muse-file-progress-heading p { margin:4px 0 0; color:var(--text-muted, #94a3b8); font-size:.85rem; }
-#muse-files-progress-percent { font-variant-numeric:tabular-nums; font-size:1.35rem; }
-.muse-files-track { width:100%; height:10px; overflow:hidden; border-radius:100px; background:rgba(148,163,184,.2); }
-#muse-files-progress-fill { background:linear-gradient(90deg,#0ea5e9,#22c55e); width:0%; height:100%; border-radius:100px; transition:width .22s ease; }
-.muse-file-progress-metrics { display:flex; gap:12px; flex-wrap:wrap; justify-content:space-between; margin-top:12px; color:var(--text-muted, #94a3b8); font-size:.8rem; }
-.muse-file-actions { display:flex; gap:8px; margin-top:16px; }
-.muse-files-error { color:var(--danger, #fca5a5); font-size:.84rem; overflow-wrap:anywhere; }
+
+.muse-file-picker:hover .muse-file-picker-icon {
+  transform: scale(1.04);
+}
+
+.muse-file-picker-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke: var(--muse-accent);
+}
+
+.muse-file-picker-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.muse-file-picker-text strong {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--text-primary, #f8fafc);
+  overflow-wrap: anywhere;
+  letter-spacing: -0.2px;
+}
+
+.muse-file-picker-text p {
+  margin: 4px 0 0;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ==========================================================================
+   5. Channel Selection & Send Actions
+   ========================================================================== */
+.muse-file-send-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--muse-border-subtle);
+  flex-wrap: wrap;
+}
+
+.muse-file-channel-field {
+  flex: 0 1 440px;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.muse-file-channel-field label {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.3px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.muse-file-channel-field .select-wrapper {
+  width: 100%;
+}
+
+.muse-file-send-btn {
+  margin-left: 0;
+  min-width: 130px;
+  height: 38px;
+  padding: 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  flex-shrink: 0;
+}
+
+.muse-files-security-note {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--muse-surface-raised);
+  border: 1px solid var(--muse-border-subtle);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  max-width: 850px;
+}
+
+.muse-files-security-note .note-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--muse-accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.muse-files-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary, #94a3b8);
+}
+
+/* ==========================================================================
+   6. Transfer Progress Area & Empty State
+   ========================================================================== */
+.muse-files-empty-state {
+  padding: 42px 24px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.muse-files-empty-state .empty-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--muse-surface-raised);
+  border: 1px solid var(--muse-border-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #64748b);
+  margin-bottom: 4px;
+}
+
+.muse-files-empty-state .empty-title {
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--text-primary, #f8fafc);
+  margin: 0;
+}
+
+.muse-files-empty-state .empty-desc {
+  font-size: 12.5px;
+  color: var(--text-secondary, #94a3b8);
+  max-width: 440px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+.muse-file-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.muse-file-progress-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.muse-file-progress-title-block {
+  min-width: 0;
+  flex: 1;
+}
+
+.muse-file-progress-title-block strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #f8fafc);
+  letter-spacing: -0.3px;
+  overflow-wrap: anywhere;
+}
+
+.muse-file-progress-title-block p {
+  margin: 4px 0 0;
+  color: var(--text-secondary, #94a3b8);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#muse-files-progress-percent {
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.5px;
+  color: var(--muse-accent);
+  line-height: 1;
+  text-shadow: 0 0 14px rgba(56, 189, 248, 0.4);
+}
+
+.muse-files-track {
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  border-radius: var(--radius-pill, 9999px);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+  position: relative;
+}
+
+#muse-files-progress-fill {
+  background: linear-gradient(90deg, #0284c7 0%, #38bdf8 65%, #60a5fa 100%);
+  width: 0%;
+  height: 100%;
+  border-radius: var(--radius-pill, 9999px);
+  transition: width 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.45);
+}
+
+.muse-file-progress-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.muse-metric-card {
+  background: var(--muse-surface-raised);
+  border: 1px solid var(--muse-border-subtle);
+  border-radius: var(--radius-sm, 8px);
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.muse-metric-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: var(--text-muted, #64748b);
+  text-transform: uppercase;
+}
+
+.muse-metric-value {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary, #f8fafc);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.muse-file-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.muse-files-error {
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm, 8px);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   7. Transfer Ledger Table & Status Tags
+   ========================================================================== */
+#page-muse-files .table-wrap {
+  overflow-x: auto;
+}
+
+#page-muse-files .data-table {
+  width: 100%;
+  min-width: 650px;
+  border-collapse: collapse;
+}
+
+#page-muse-files .data-table th {
+  padding: 12px 20px;
+  background: var(--muse-surface-raised);
+  color: var(--text-muted, #64748b);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--muse-border-subtle);
+}
+
+#page-muse-files .data-table td {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--muse-border-subtle);
+  vertical-align: middle;
+  font-size: 12.5px;
+}
+
+#page-muse-files .data-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
 .muse-file-status {
-  display:inline-block; border:1px solid rgba(148,163,184,.25); padding:4px 8px;
-  border-radius:20px; font-size:.73rem; text-transform:capitalize;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 3px 9px;
+  border-radius: var(--radius-pill, 9999px);
+  font-size: 11px;
+  font-weight: 650;
+  text-transform: capitalize;
+  letter-spacing: 0.2px;
+  line-height: 1.2;
 }
-.muse-file-status-completed { border-color:rgba(34,197,94,.35); color:#4ade80; }
-.muse-file-status-transferring { border-color:rgba(56,189,248,.35); color:#38bdf8; }
-.muse-file-status-failed,.muse-file-status-cancelled { border-color:rgba(248,113,113,.3); color:#f87171; }
-.muse-file-status-paused { border-color:rgba(251,191,36,.4); color:#fbbf24; }
-.muse-file-unverified { display:block; font-size:.7rem; margin-top:5px; color:var(--text-muted, #94a3b8); }
-.muse-file-retry { white-space:nowrap; font-size:.73rem; padding:6px 10px; }
-.muse-file-settings-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
-.muse-file-settings-grid .form-group { display:flex; gap:6px; flex-direction:column; margin:0; }
-.muse-file-settings-grid .form-group label { font-size:.83rem; font-weight:650; color:var(--text-secondary,#94a3b8); }
-.muse-file-settings-grid .select-wrapper { width:100%; }
-.muse-file-settings-footer { grid-column:1/-1; display:flex; align-items:center; gap:16px; margin-top:6px; }
-#muse-files-settings-feedback { color:var(--text-muted,#94a3b8); font-size:.83rem; }
-#page-muse-files .table-wrap { overflow-x:auto; }
-#page-muse-files .data-table { min-width:620px; }
-@media (max-width:850px) {
-  .muse-file-stats { grid-template-columns:1fr; }
-  .muse-file-settings-grid { grid-template-columns:1fr; }
-  .muse-file-send-row .select-wrapper { max-width:none; }
+
+.muse-file-status-completed {
+  border-color: rgba(34, 197, 94, 0.35);
+  color: #4ade80;
+  background: rgba(34, 197, 94, 0.1);
 }
-@media (prefers-reduced-motion:reduce) { #muse-files-progress-fill { transition:none; } }
+
+.muse-file-status-transferring {
+  border-color: rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.muse-file-status-failed,
+.muse-file-status-cancelled {
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.muse-file-status-paused {
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.muse-file-unverified {
+  display: block;
+  font-size: 10.5px;
+  margin-top: 4px;
+  color: #fde68a;
+}
+
+.muse-file-retry {
+  white-space: nowrap;
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm, 6px);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ==========================================================================
+   8. Transfer Settings: Elegant Preference Rows
+   ========================================================================== */
+.muse-file-settings-grid {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 24px 22px;
+}
+
+.muse-file-settings-grid .form-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--muse-border-subtle);
+}
+
+.muse-setting-label-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 580px;
+}
+
+.muse-setting-label-block label {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-primary, #f8fafc);
+  letter-spacing: -0.1px;
+}
+
+.muse-setting-label-block small {
+  color: var(--text-secondary, #94a3b8);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.muse-file-settings-grid .select-wrapper {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+.muse-file-settings-footer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 16px;
+}
+
+#muse-files-settings-feedback {
+  color: #34d399;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+/* ==========================================================================
+   9. Animations & Media Queries
+   ========================================================================== */
+@keyframes muse-fade-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 900px) {
+  .muse-file-stats {
+    grid-template-columns: 1fr;
+  }
+  .muse-file-settings-grid .form-group {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .muse-file-settings-grid .select-wrapper {
+    width: 100%;
+  }
+  .muse-file-progress-metrics {
+    grid-template-columns: 1fr;
+  }
+  .muse-file-send-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .muse-file-send-btn {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #muse-files-progress-fill,
+  .muse-file-stats .stat-card,
+  #muse-files-banner {
+    transition: none !important;
+    animation: none !important;
+  }
+}

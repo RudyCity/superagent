@@ -1,3 +1,10 @@
+## [1.14.63] - 2026-11-05
+### Muse file transfer UI and maximized window default
+- Fix loopback host verification regex literal double-escape in `serverRoutes.ts` preventing false-positive HTTP 403 `MUSE_FILE_MANAGER_LOCAL_AUTHENTICATED_ONLY` for local desktop requests.
+- Configure SuperAgent Tray desktop companion window to open maximized by default in `tauri.conf.json` and `main.rs`.
+- Refactor Muse File Transfer Manager layout with container max-width, balanced file picker dropzone, grouped channel and action buttons, and horizontal setting preference rows.
+- Align SuperAgent Tray and Core package versions across `package.json`, `Cargo.toml`, and `tauri.conf.json`.
+
 ## [1.14.62] - 2026-10-31
 ### RMemory status semantics
 - Replace the misleading persistent `🧠 Mem: CHECKING` state with `🧠 Mem: READY` when RMemory is enabled but its lazy index has not been initialized yet.

@@ -1038,6 +1038,7 @@ fn main() {
                 if is_background_launch() {
                     window.hide()?;
                 } else {
+                    let _ = window.maximize();
                     let _ = window.show();
                     let _ = window.unminimize();
                     let _ = window.set_focus();
