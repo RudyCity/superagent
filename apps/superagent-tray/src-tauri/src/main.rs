@@ -501,6 +501,16 @@ fn find_superagent_executable() -> Result<(PathBuf, Vec<String>), String> {
             return Ok((p, vec![]));
         }
     }
+    // Check adjacent binary (bundled installer placing superagent alongside superagent-tray)
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            let sibling_name = if cfg!(windows) { "superagent.exe" } else { "superagent" };
+            let sibling_sa = exe_dir.join(sibling_name);
+            if sibling_sa.exists() {
+                return Ok((sibling_sa, vec![]));
+            }
+        }
+    }
     if let Some(home) = dirs::home_dir() {
         let bun_sa = home.join(".bun").join("bin").join("superagent.exe");
         if bun_sa.exists() {

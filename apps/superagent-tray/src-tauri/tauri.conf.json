@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "SuperAgent Tray",
-  "version": "0.1.0",
-  "identifier": "click.superagent.tray",
+  "productName": "SuperAgent",
+  "version": "1.14.62",
+  "identifier": "click.superagent.app",
   "build": {
     "frontendDist": "../ui"
   },
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "SuperAgent Tray · Cron & Runtime",
+        "title": "SuperAgent · Runtime & Desktop Companion",
         "decorations": false,
         "resizable": true,
         "minimizable": true,
@@ -36,6 +36,24 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": [
+      "../../../dist/**/*",
+      "../../../package.json"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "nsis_hooks.nsh"
+      }
+    },
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37",
+          "libappindicator3-1 | libayatana-appindicator3-1"
+        ]
+      }
+    }
   }
 }

@@ -1,8 +1,16 @@
 [package]
 name = "superagent-tray"
-version = "0.1.0"
+version = "1.14.62"
 description = "SuperAgent tray and daemon cron manager"
 edition = "2021"
+
+[[bin]]
+name = "superagent-tray"
+path = "src/main.rs"
+
+[[bin]]
+name = "superagent"
+path = "src/cli_launcher.rs"
 
 [build-dependencies]
 tauri-build = { version = "2.7", features = [] }

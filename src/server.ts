@@ -897,8 +897,14 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     if (process.env.SUPERAGENT_CORE_WORKER !== "1" || process.env.SUPERAGENT_CORE_VISION_OWNER === "1") {
     try {
       const { execa } = await import("execa");
+      const { applyProcessIntent } = await import("./core/process/processSpawnPolicy.js");
       const scriptPath = path.join(getPackageRootDir(), "scripts", "vision_server.py");
-      visionServerProcess = execa("python", [scriptPath, "8095"], { windowsHide: true });
+      const pythonOpts = applyProcessIntent(
+        { stdio: "ignore" as const, reject: false },
+        "headless",
+        { caller: "server.visionServer", executable: "python" }
+      );
+      visionServerProcess = execa("python", [scriptPath, "8095"], pythonOpts);
       if (!silent) {
         console.log("🚀 Starting Python UI-DETR-1 Vision Server on port 8095...");
       }
