@@ -34,6 +34,21 @@ timeout, or logs message content. The activity journal stores redacted
 metadata only; the requested chat text is returned only to the authenticated
 caller.
 
+## On-demand ChatGPT tab opening — v1.5.1
+
+Delegate no longer requires a ChatGPT tab to be opened manually before the
+first RPC. When a selected Chrome profile has zero chatgpt.com tabs and the
+request does not specify tabId, the extension opens https://chatgpt.com/ in
+that same profile, waits up to 15 seconds for the bundled content script to
+become ready, and then continues the original create_chat, read_chat,
+send_message, or explicit stop_generation request.
+
+This fallback is intentionally strict. If the caller supplied an exact tabId
+and that tab does not exist, Delegate still returns CHATGPT_TAB_NOT_FOUND
+instead of opening or selecting another tab. Multiple existing ChatGPT tabs
+also still require explicit selection. Automatic opening never retries a
+mutation, never reloads a page, and never signs in on behalf of the user.
+
 ## Automatic one-safe-tab mode — v1.5.0
 
 After loading the extension, a single Chrome profile automatically keeps
@@ -221,7 +236,8 @@ A future multi-ID allowlist would be preferable for high-trust production use.
 
 1. In Chrome, open `chrome://extensions`, enable Developer mode, and
    **Load unpacked** from `chrome-extension-delegate/`.
-2. Keep a logged-in `https://chatgpt.com/` tab open in the same Chrome profile.
+2. Sign in to `https://chatgpt.com/` in that Chrome profile. A tab does not
+   need to remain open; Delegate opens one automatically on the first RPC.
 3. Start or restart the rebuilt SuperAgent backend **before** testing the
    extension. A supported CLI or server startup creates the listener at
    `127.0.0.1:17341` (no need to call a delegate tool first). For a

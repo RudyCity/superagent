@@ -27,7 +27,7 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
 export const DELEGATE_MCP_TOOL_DEFS = [
   {
     name: DELEGATE_MCP_TOOL_NAMES.read,
-    description: "Read the current ChatGPT chat through the connected Delegate extension, or list paired Chrome profiles with {connections:true}. Read-only; does not navigate or send.",
+    description: "Read the current ChatGPT chat through the connected Delegate extension, or list paired Chrome profiles with {connections:true}. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading; connections:true never opens a tab.",
     inputSchema: schema({
       ...optionalTarget,
       connections: { type: "boolean", description: "Only list paired Chrome Delegate profiles; no ChatGPT DOM read." },
@@ -35,12 +35,12 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.create,
-    description: "Explicitly start a new ChatGPT chat once in the selected browser tab. Requires MCP write permission; never reloads or retries a click.",
+    description: "Explicitly start a new ChatGPT chat once. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness. Requires MCP write permission; never reloads or retries a click.",
     inputSchema: schema(optionalTarget),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.send,
-    description: "Send one message through the selected ChatGPT web tab. Requires MCP write permission; never retries on timeout or disconnection.",
+    description: "Send one message through the selected ChatGPT web tab. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Requires MCP write permission; never retries on timeout or disconnection.",
     inputSchema: schema({
       ...optionalTarget,
       message: { type: "string", minLength: 1, maxLength: 100_000 },
@@ -48,7 +48,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.stop,
-    description: "Explicitly click Stop generation in the selected ChatGPT tab. Requires MCP write permission; never runs automatically.",
+    description: "Explicitly click Stop generation in the selected ChatGPT tab. If no ChatGPT tab exists and tabId is omitted, Delegate may open https://chatgpt.com/ first; an explicit missing tabId never falls back. Requires MCP write permission; never runs automatically.",
     inputSchema: schema(optionalTarget),
   },
 ];

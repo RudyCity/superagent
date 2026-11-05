@@ -86,13 +86,13 @@ function tool(
 
 export const delegateCreateChatTool: Tool = tool(
   "delegate.create_chat",
-  "Start a new ChatGPT chat exactly once. For multiple Chrome profiles choose clientId from delegate.read_chat({connections:true}). Optional tabId selects an exact ChatGPT tab. Never reloads to recover.",
+  "Start a new ChatGPT chat exactly once. If the selected Chrome profile has no ChatGPT tab and tabId is omitted, Delegate opens https://chatgpt.com/ automatically, waits for readiness, then continues. For multiple Chrome profiles choose clientId from delegate.read_chat({connections:true}). Optional tabId selects an exact ChatGPT tab and never falls back.",
   schema(optionalTarget),
 );
 
 export const delegateReadChatTool: Tool = tool(
   "delegate.read_chat",
-  "Read the selected ChatGPT chat (no side effects). Use {connections:true} to list connected Chrome profiles and clientId values. With multiple connections choose clientId explicitly.",
+  "Read the selected ChatGPT chat. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading. Use {connections:true} to list connected Chrome profiles without opening a tab. With multiple connections choose clientId explicitly.",
   schema({ ...optionalTarget, connections: {
     type: "boolean", description: "Return list of connected Chrome profiles without accessing any ChatGPT tabs.",
   } }),
@@ -101,7 +101,7 @@ export const delegateReadChatTool: Tool = tool(
 
 export const delegateSendMessageTool: Tool = tool(
   "delegate.send_message",
-  "Send once to the chosen Chrome profile (clientId) and optional tabId. Never resend on timeout. With multiple connections, selection is mandatory.",
+  "Send once to the chosen Chrome profile (clientId) and optional tabId. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Never resend on timeout. With multiple connections, selection is mandatory.",
   schema({
     ...optionalTarget,
     message: { type: "string", minLength: 1, maxLength: 100_000 },
@@ -111,6 +111,6 @@ export const delegateSendMessageTool: Tool = tool(
 
 export const delegateStopGenerationTool: Tool = tool(
   "delegate.stop_generation",
-  "Stop ChatGPT generation only on explicit invocation, directed to an optional clientId and tabId. Never used as timeout recovery.",
+  "Stop ChatGPT generation only on explicit invocation, directed to an optional clientId and tabId. If no ChatGPT tab exists and tabId is omitted, Delegate may open https://chatgpt.com/ first; an explicit missing tabId never falls back. Never used as timeout recovery.",
   schema(optionalTarget),
 );

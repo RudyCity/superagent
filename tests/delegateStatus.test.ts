@@ -15,6 +15,7 @@ function fixture(
 ) {
   const tabCalls: Array<{tabId: number; action: string}> = [];
   const injections: Array<{tabId: number;files: string[]}> = [];
+  const createdTabs: Array<{id: number;url: string;active?: boolean}> = [];
   let injected = false;
   const sockets: FakeSocket[] = [];
   const badges: Array<{ text?: string; color?: string; title?: string }> = [];
@@ -81,6 +82,13 @@ function fixture(
       },
     },
     tabs: {
+      create: async (options: {url: string; active?: boolean}) => {
+        const id = Math.max(0, ...tabs.map(tab => tab.id)) + 1;
+        const created = { id, url: options.url, active: options.active };
+        tabs.push(created);
+        createdTabs.push({ ...created });
+        return created;
+      },
       get: async (id: number) => tabs.find(t => t.id === id),
       query: async () => tabs,
       sendMessage: async (tabId: number, message: { action: string }) => {
@@ -121,7 +129,7 @@ function fixture(
       resolve,
     ));
   }
-  return { ask, update, sockets, badges, timers, stored, tabCalls, injections };
+  return { ask, update, sockets, badges, timers, stored, tabCalls, injections, createdTabs };
 }
 
 describe("Delegate connection status", () => {
@@ -217,6 +225,39 @@ describe("Delegate connection status", () => {
     const result = sockets[0].sent.find(value => value.type === "response");
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe("CHATGPT_MULTIPLE_TABS");
+  });
+
+  it("automatically opens ChatGPT when no tab exists and continues the requested RPC once", async () => {
+    const { sockets, tabCalls, createdTabs } = fixture([]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "auto-open", method: "delegate.send_message",
+      params: { message: "hello" },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(createdTabs).toEqual([{ id: 1, url: "https://chatgpt.com/", active: true }]);
+    expect(tabCalls).toEqual([
+      { tabId: 1, action: "probe" },
+      { tabId: 1, action: "execute" },
+    ]);
+    const result = sockets[0].sent.find(value => value.type === "response");
+    expect(result.ok).toBe(true);
+  });
+
+  it("keeps an explicit missing tabId strict instead of opening a replacement tab", async () => {
+    const { sockets, createdTabs } = fixture([]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "missing-explicit", method: "delegate.read_chat",
+      params: { tabId: 999 },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(createdTabs).toEqual([]);
+    const result = sockets[0].sent.find(value => value.type === "response");
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("CHATGPT_TAB_NOT_FOUND");
   });
 
   it("probes and dispatches to the exact selected tabId only", async () => {
