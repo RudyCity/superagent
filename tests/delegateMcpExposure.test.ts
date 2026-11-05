@@ -28,12 +28,16 @@ afterEach(() => {
 });
 
 describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", () => {
-  it("defines seven distinct direct MCP tools with no arbitrary target URI", () => {
+  it("defines eleven distinct direct MCP tools with no arbitrary target URI", () => {
     expect(DELEGATE_MCP_TOOL_DEFS.map(x => x.name)).toEqual([
       "superagent_delegate_read_chat",
       "superagent_delegate_list_chats",
       "superagent_delegate_read_chat_full",
       "superagent_delegate_search_history",
+      "superagent_delegate_sync_history",
+      "superagent_delegate_search_index",
+      "superagent_delegate_doctor",
+      "superagent_delegate_run_until_done",
       "superagent_delegate_create_chat",
       "superagent_delegate_send_message",
       "superagent_delegate_stop_generation",
@@ -61,7 +65,7 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     expect(validateDelegateMcpArgs(send, { message: "hi", stop: true })).toBe("DELEGATE_UNEXPECTED_ARGUMENT");
   });
 
-  it("read-only OAuth exposes live/history readers, never mutations, in gateway mode", async () => {
+  it("read-only OAuth exposes live/history/index diagnostics, never mutations, in gateway mode", async () => {
     const server = createSuperagentMcpServer({
       authMode: "oauth", toolExposure: "gateway",
       getIdentity: () => ({ mode: "oauth", subject: "reader", scopes: ["mcp:tools"] }),
@@ -73,11 +77,17 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
         DELEGATE_MCP_TOOL_NAMES.list,
         DELEGATE_MCP_TOOL_NAMES.readFull,
         DELEGATE_MCP_TOOL_NAMES.search,
+        DELEGATE_MCP_TOOL_NAMES.searchIndex,
+        DELEGATE_MCP_TOOL_NAMES.doctor,
       ]) expect(names).toContain(name);
-      for (const name of [DELEGATE_MCP_TOOL_NAMES.create, DELEGATE_MCP_TOOL_NAMES.send, DELEGATE_MCP_TOOL_NAMES.stop]) {
-        expect(names).not.toContain(name);
-      }
-      await expect(invoke(server, DELEGATE_MCP_TOOL_NAMES.send, {
+      for (const name of [
+        DELEGATE_MCP_TOOL_NAMES.sync,
+        DELEGATE_MCP_TOOL_NAMES.runUntilDone,
+        DELEGATE_MCP_TOOL_NAMES.create,
+        DELEGATE_MCP_TOOL_NAMES.send,
+        DELEGATE_MCP_TOOL_NAMES.stop,
+      ]) expect(names).not.toContain(name);
+      await expect(invoke(server, DELEGATE_MCP_TOOL_NAMES.runUntilDone, {
         message: "must-not-send",
       })).rejects.toThrow(/mcp:tools:write/);
     } finally {

@@ -8,6 +8,8 @@ const METHODS = new Set([
   "delegate.list_chats",
   "delegate.read_chat_full",
   "delegate.search_history",
+  "delegate.doctor",
+  "delegate.set_timeout_recovery",
   "delegate.send_message",
   "delegate.stop_generation",
 ]);

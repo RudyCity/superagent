@@ -14,6 +14,7 @@
   const inFlight = new Set();
   let sendActive = false;
   let newChatActive = false;
+  let timeoutRecoveryEnabled = true;
   let timeoutRecoveryLocked = false;
   let timeoutRecoveryRunning = false;
   let timeoutRecoveryTimer;
@@ -683,6 +684,10 @@
       timeoutRecoveryLocked = false;
       return;
     }
+    if (!timeoutRecoveryEnabled) {
+      timeoutRecoveryLocked = true;
+      return;
+    }
     timeoutRecoveryTimer = setTimeout(() => {
       void recoverDeliveryTimeout();
     }, 200);
@@ -694,7 +699,7 @@
       timeoutRecoveryLocked = false;
       return;
     }
-    if (timeoutRecoveryLocked || timeoutRecoveryRunning || sendActive || newChatActive || stopButton()) return;
+    if (!timeoutRecoveryEnabled || timeoutRecoveryLocked || timeoutRecoveryRunning || sendActive || newChatActive || stopButton()) return;
 
     const input = composer();
     if (!input || norm(input.innerText || input.value || input.textContent)) return;
@@ -762,6 +767,25 @@
     return { stop_requested: true, ...readChat() };
   }
 
+  function doctor() {
+    const timeout = deliveryTimeoutState();
+    const currentTurns = turns();
+    const latest = currentTurns[currentTurns.length - 1];
+    return {
+      ready: true,
+      history_worker: HISTORY_WORKER,
+      logged_in: !loginRequired(),
+      composer_visible: !!composer(),
+      send_visible: !!sendButton(),
+      stop_visible: !!stopButton(),
+      retry_visible: !!retryButton(),
+      delivery_timeout: !!timeout,
+      turn_count: currentTurns.length,
+      latest_role: latest ? roleOfTurn(latest) : null,
+      pathname: location.pathname,
+    };
+  }
+
   async function dispatch(method, params) {
     switch (method) {
       case "delegate.create_chat":
@@ -773,6 +797,14 @@
       case "delegate.open_history_chat": return await openHistoryChat(params);
       case "delegate.read_chat_full": return await readChatFull(params);
       case "delegate.search_current_chat": return await searchCurrentChat(params);
+      case "delegate.doctor": return doctor();
+      case "delegate.set_timeout_recovery": {
+        const enabled = params?.enabled !== false;
+        timeoutRecoveryEnabled = enabled;
+        if (!enabled && deliveryTimeoutState()) timeoutRecoveryLocked = true;
+        if (enabled && !deliveryTimeoutState()) timeoutRecoveryLocked = false;
+        return { timeout_recovery_enabled: timeoutRecoveryEnabled };
+      }
       case "delegate.send_message":
         if (sendActive || newChatActive) fail("DELEGATE_SEND_IN_FLIGHT", "Another send or new-chat operation is in progress; this request was not submitted.");
         sendActive = true;

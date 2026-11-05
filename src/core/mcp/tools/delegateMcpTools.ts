@@ -8,6 +8,10 @@ export const DELEGATE_MCP_TOOL_NAMES = {
   list: "superagent_delegate_list_chats",
   readFull: "superagent_delegate_read_chat_full",
   search: "superagent_delegate_search_history",
+  sync: "superagent_delegate_sync_history",
+  searchIndex: "superagent_delegate_search_index",
+  doctor: "superagent_delegate_doctor",
+  runUntilDone: "superagent_delegate_run_until_done",
   create: "superagent_delegate_create_chat",
   send: "superagent_delegate_send_message",
   stop: "superagent_delegate_stop_generation",
@@ -64,6 +68,45 @@ export const DELEGATE_MCP_TOOL_DEFS = [
       limit: { type: "integer", minimum: 1, maximum: 50 },
       maxChats: { type: "integer", minimum: 1, maximum: 500 },
     }, ["query"]),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.sync,
+    description: "Incrementally sync ChatGPT history into the local Delegate SQLite index without changing the active chat.",
+    inputSchema: schema({
+      clientId,
+      maxChats: { type: "integer", minimum: 1, maximum: 500 },
+      refreshRecent: { type: "integer", minimum: 0, maximum: 100 },
+      force: { type: "boolean" },
+    }),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.searchIndex,
+    description: "Search the local Delegate SQLite history index without browser navigation.",
+    inputSchema: schema({
+      clientId,
+      query: { type: "string", minLength: 1, maxLength: 500 },
+      limit: { type: "integer", minimum: 1, maximum: 50 },
+    }, ["query"]),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.doctor,
+    description: "Read-only Delegate diagnostics for bridge, browser DOM compatibility, and local history-index health.",
+    inputSchema: schema({ clientId, tabId }),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.runUntilDone,
+    description: "Send one task and monitor until an explicit completion marker appears, with bounded continuations/runtime and optional stall recovery. Requires write permission.",
+    inputSchema: schema({
+      clientId,
+      tabId,
+      message: { type: "string", minLength: 1, maxLength: 100_000 },
+      maxContinuations: { type: "integer", minimum: 0, maximum: 8 },
+      pollMs: { type: "integer", minimum: 500, maximum: 5000 },
+      stallMs: { type: "integer", minimum: 15000, maximum: 300000 },
+      maxRuntimeMs: { type: "integer", minimum: 30000, maximum: 900000 },
+      recoverStall: { type: "boolean" },
+      completionMarker: { type: "string", minLength: 1, maxLength: 120 },
+    }, ["message"]),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.create,
@@ -133,7 +176,15 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
           ? ["clientId", "chatId", "cursor", "limit"]
           : name === DELEGATE_MCP_TOOL_NAMES.search
             ? ["clientId", "query", "limit", "maxChats"]
-            : ["clientId", "tabId"];
+            : name === DELEGATE_MCP_TOOL_NAMES.sync
+              ? ["clientId", "maxChats", "refreshRecent", "force"]
+              : name === DELEGATE_MCP_TOOL_NAMES.searchIndex
+                ? ["clientId", "query", "limit"]
+                : name === DELEGATE_MCP_TOOL_NAMES.doctor
+                  ? ["clientId", "tabId"]
+                  : name === DELEGATE_MCP_TOOL_NAMES.runUntilDone
+                    ? ["clientId", "tabId", "message", "maxContinuations", "pollMs", "stallMs", "maxRuntimeMs", "recoverStall", "completionMarker"]
+                    : ["clientId", "tabId"];
   if (keys.some(key => !allowed.includes(key))) return "DELEGATE_UNEXPECTED_ARGUMENT";
   if (args.clientId !== undefined &&
     (typeof args.clientId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(args.clientId)))
@@ -162,13 +213,38 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
     if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 80))
       return "DELEGATE_INVALID_LIMIT";
   }
-  if (name === DELEGATE_MCP_TOOL_NAMES.search) {
+  if (name === DELEGATE_MCP_TOOL_NAMES.search || name === DELEGATE_MCP_TOOL_NAMES.searchIndex) {
     if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 500)
       return "DELEGATE_INVALID_QUERY";
     if (args.limit !== undefined && (!Number.isSafeInteger(args.limit) || Number(args.limit) < 1 || Number(args.limit) > 50))
       return "DELEGATE_INVALID_LIMIT";
+  }
+  if (name === DELEGATE_MCP_TOOL_NAMES.search &&
+      args.maxChats !== undefined && (!Number.isSafeInteger(args.maxChats) || Number(args.maxChats) < 1 || Number(args.maxChats) > 500))
+    return "DELEGATE_INVALID_MAX_CHATS";
+  if (name === DELEGATE_MCP_TOOL_NAMES.sync) {
     if (args.maxChats !== undefined && (!Number.isSafeInteger(args.maxChats) || Number(args.maxChats) < 1 || Number(args.maxChats) > 500))
       return "DELEGATE_INVALID_MAX_CHATS";
+    if (args.refreshRecent !== undefined && (!Number.isSafeInteger(args.refreshRecent) || Number(args.refreshRecent) < 0 || Number(args.refreshRecent) > 100))
+      return "DELEGATE_INVALID_REFRESH_RECENT";
+    if (args.force !== undefined && typeof args.force !== "boolean")
+      return "DELEGATE_INVALID_FORCE";
+  }
+  if (name === DELEGATE_MCP_TOOL_NAMES.runUntilDone) {
+    if (typeof args.message !== "string" || !args.message.trim() || args.message.length > 100_000)
+      return "DELEGATE_INVALID_MESSAGE";
+    if (args.maxContinuations !== undefined && (!Number.isSafeInteger(args.maxContinuations) || Number(args.maxContinuations) < 0 || Number(args.maxContinuations) > 8))
+      return "DELEGATE_INVALID_CONTINUATIONS";
+    if (args.pollMs !== undefined && (!Number.isSafeInteger(args.pollMs) || Number(args.pollMs) < 500 || Number(args.pollMs) > 5000))
+      return "DELEGATE_INVALID_POLL_MS";
+    if (args.stallMs !== undefined && (!Number.isSafeInteger(args.stallMs) || Number(args.stallMs) < 15000 || Number(args.stallMs) > 300000))
+      return "DELEGATE_INVALID_STALL_MS";
+    if (args.maxRuntimeMs !== undefined && (!Number.isSafeInteger(args.maxRuntimeMs) || Number(args.maxRuntimeMs) < 30000 || Number(args.maxRuntimeMs) > 900000))
+      return "DELEGATE_INVALID_RUNTIME_MS";
+    if (args.recoverStall !== undefined && typeof args.recoverStall !== "boolean")
+      return "DELEGATE_INVALID_RECOVER_STALL";
+    if (args.completionMarker !== undefined && (typeof args.completionMarker !== "string" || !args.completionMarker.trim() || args.completionMarker.length > 120))
+      return "DELEGATE_INVALID_COMPLETION_MARKER";
   }
   return null;
 }
@@ -185,10 +261,12 @@ export async function dispatchDelegateMcpTool(
   const port = 7888;
   try {
     const token = getServerAuthToken(port);
-    const timeoutMs = name === DELEGATE_MCP_TOOL_NAMES.search ? 305_000
-      : name === DELEGATE_MCP_TOOL_NAMES.readFull ? 95_000
-        : name === DELEGATE_MCP_TOOL_NAMES.list ? 65_000
-          : name === DELEGATE_MCP_TOOL_NAMES.send ? 36_000 : 26_000;
+    const timeoutMs = name === DELEGATE_MCP_TOOL_NAMES.runUntilDone ? 910_000
+      : name === DELEGATE_MCP_TOOL_NAMES.sync ? 910_000
+        : name === DELEGATE_MCP_TOOL_NAMES.search ? 305_000
+          : name === DELEGATE_MCP_TOOL_NAMES.readFull ? 95_000
+            : name === DELEGATE_MCP_TOOL_NAMES.list ? 65_000
+              : name === DELEGATE_MCP_TOOL_NAMES.send ? 36_000 : 26_000;
     const response = await fetch(`http://127.0.0.1:${port}/api/delegate/mcp-dispatch`, {
       method: "POST",
       headers: {

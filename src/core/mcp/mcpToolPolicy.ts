@@ -47,13 +47,17 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   // The gateway router is safe to invoke: it re-authorizes the selected
   // target and cannot elevate scopes or bypass the HTTP tool allowlist.
   superagent_tool_execute: "safe",
-  // Delegate history/readers inspect the already-connected ChatGPT profile
-  // through isolated read-only worker tabs. Mutating chat controls remain dangerous.
+  // Delegate readers inspect the already-connected ChatGPT profile. Local
+  // index search/doctor are read-only; syncing the SQLite mirror is a local write.
   superagent_delegate_read_chat: "safe",
   superagent_delegate_list_chats: "safe",
   superagent_delegate_read_chat_full: "safe",
   superagent_delegate_search_history: "safe",
+  superagent_delegate_search_index: "safe",
+  superagent_delegate_doctor: "safe",
   // ---- dangerous: mutation / execution / control ----
+  superagent_delegate_sync_history: "dangerous",
+  superagent_delegate_run_until_done: "dangerous",
   superagent_delegate_create_chat: "dangerous",
   superagent_delegate_send_message: "dangerous",
   superagent_delegate_stop_generation: "dangerous",

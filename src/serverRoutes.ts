@@ -270,7 +270,8 @@ export async function handleServerRoute(
       }
       const {
         delegateReadChatTool, delegateListChatsTool, delegateReadChatFullTool,
-        delegateSearchHistoryTool, delegateCreateChatTool,
+        delegateSearchHistoryTool, delegateSyncHistoryTool, delegateSearchIndexTool,
+        delegateDoctorTool, delegateRunUntilDoneTool, delegateCreateChatTool,
         delegateSendMessageTool, delegateStopGenerationTool,
       } = await import("./core/tools/delegateTools.js");
       const tools: Record<string, typeof delegateReadChatTool> = {
@@ -278,6 +279,10 @@ export async function handleServerRoute(
         [DELEGATE_MCP_TOOL_NAMES.list]: delegateListChatsTool,
         [DELEGATE_MCP_TOOL_NAMES.readFull]: delegateReadChatFullTool,
         [DELEGATE_MCP_TOOL_NAMES.search]: delegateSearchHistoryTool,
+        [DELEGATE_MCP_TOOL_NAMES.sync]: delegateSyncHistoryTool,
+        [DELEGATE_MCP_TOOL_NAMES.searchIndex]: delegateSearchIndexTool,
+        [DELEGATE_MCP_TOOL_NAMES.doctor]: delegateDoctorTool,
+        [DELEGATE_MCP_TOOL_NAMES.runUntilDone]: delegateRunUntilDoneTool,
         [DELEGATE_MCP_TOOL_NAMES.create]: delegateCreateChatTool,
         [DELEGATE_MCP_TOOL_NAMES.send]: delegateSendMessageTool,
         [DELEGATE_MCP_TOOL_NAMES.stop]: delegateStopGenerationTool,

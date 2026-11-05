@@ -19,6 +19,10 @@ const names = [
   "delegate.list_chats",
   "delegate.read_chat_full",
   "delegate.search_history",
+  "delegate.sync_history",
+  "delegate.search_index",
+  "delegate.doctor",
+  "delegate.run_until_done",
   "delegate.send_message",
   "delegate.stop_generation",
 ];
