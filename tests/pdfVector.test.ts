@@ -56,6 +56,32 @@ beforeAll(async () => {
     moveText(40,500),PDFOperator.of("TJ",[unsafeArray]),endText(),popGraphicsState(),
   );
   await fs.writeFile(path.join(dir,"tj-unsafe.pdf"),await unsafeDoc.save({useObjectStreams:false}));
+
+  const multiDoc=await PDFDocument.create();
+  const multiPage=multiDoc.addPage([400,570]);
+  const multiFont=await multiDoc.embedFont(StandardFonts.Helvetica);
+  const multiKey=multiPage.node.newFontDictionary(multiFont.name,multiFont.ref);
+  multiPage.pushOperators(
+    pushGraphicsState(),beginText(),setFontAndSize(multiKey,15),moveText(40,500),
+    PDFOperator.of("Tj",[PDFString.of("PRIVATE")]),
+    PDFOperator.of("Tj",[PDFString.of(" NOTE")]),
+    endText(),popGraphicsState(),
+  );
+  multiPage.drawText("Public information",{x:40,y:450,font:multiFont,size:15});
+  await fs.writeFile(path.join(dir,"multi-tj.pdf"),await multiDoc.save({useObjectStreams:false}));
+
+  const multiUnsafeDoc=await PDFDocument.create();
+  const multiUnsafePage=multiUnsafeDoc.addPage([400,570]);
+  const multiUnsafeFont=await multiUnsafeDoc.embedFont(StandardFonts.Helvetica);
+  const multiUnsafeKey=multiUnsafePage.node.newFontDictionary(multiUnsafeFont.name,multiUnsafeFont.ref);
+  multiUnsafePage.pushOperators(
+    pushGraphicsState(),beginText(),setFontAndSize(multiUnsafeKey,15),moveText(40,500),
+    PDFOperator.of("Tj",[PDFString.of("PRIVATE")]),
+    moveText(0,0),
+    PDFOperator.of("Tj",[PDFString.of(" NOTE")]),
+    endText(),popGraphicsState(),
+  );
+  await fs.writeFile(path.join(dir,"multi-tj-unsafe.pdf"),await multiUnsafeDoc.save({useObjectStreams:false}));
   if (embeddedFontReady) {
     const unicodeDoc=await PDFDocument.create();
     unicodeDoc.registerFontkit(fontkit);
@@ -63,6 +89,21 @@ beforeAll(async () => {
     const unicodePage=unicodeDoc.addPage([640,300]);
     unicodePage.drawText("Pendidikan – Cafe Ké",{x:40,y:190,size:20,font:embedded});
     await fs.writeFile(path.join(dir,"unicode-embedded.pdf"),await unicodeDoc.save({useObjectStreams:false}));
+
+    const unicodeTjDoc=await PDFDocument.create();
+    unicodeTjDoc.registerFontkit(fontkit);
+    const embeddedTj=await unicodeTjDoc.embedFont(await fs.readFile(embeddedFontPath),{subset:true});
+    const unicodeTjPage=unicodeTjDoc.addPage([640,300]);
+    const unicodeTjKey=unicodeTjPage.node.newFontDictionary(embeddedTj.name,embeddedTj.ref);
+    const unicodeTjArray=PDFArray.withContext(unicodeTjDoc.context);
+    unicodeTjArray.push(embeddedTj.encodeText("Pendidikan – "));
+    unicodeTjArray.push(PDFNumber.of(-20));
+    unicodeTjArray.push(embeddedTj.encodeText("Cafe Ké"));
+    unicodeTjPage.pushOperators(
+      pushGraphicsState(),beginText(),setFontAndSize(unicodeTjKey,20),
+      moveText(40,190),PDFOperator.of("TJ",[unicodeTjArray]),endText(),popGraphicsState(),
+    );
+    await fs.writeFile(path.join(dir,"unicode-embedded-tj.pdf"),await unicodeTjDoc.save({useObjectStreams:false}));
   }
   const metadata=await PDFDocument.create();
   const mpage=metadata.addPage([400,570]);
@@ -124,6 +165,28 @@ describe("Strict vector-preserving PDF text modification", () => {
     expect(changedOutside).toBeLessThan(10);
   },30000);
 
+  it.skipIf(!embeddedFontReady)("replaces a fragmented embedded Type0 Identity-H Unicode TJ run",async()=>{
+    const info=await inspectPdf({inputPath:"unicode-embedded-tj.pdf"},dir);
+    const result=await editPdfVectorExact({
+      inputPath:"unicode-embedded-tj.pdf",outputPath:"unicode-embedded-tj-edited.pdf",
+      expectedInputSha256:info.sha256,page:1,mode:"replace_exact",
+      targetText:"Pendidikan – Cafe Ké",replacementText:"Pendidikan – Café Ke",
+      fontPolicy:"embedded_subset",
+    },dir);
+    expect(result.status).toBe("verified");
+    expect(result.verificationScopes.matchedTextOperator).toBe("unique_embedded_Type0_IdentityH_Tj_or_bounded_TJ");
+    const parser=new PDFParse({data:Uint8Array.from(await fs.readFile(path.join(dir,"unicode-embedded-tj-edited.pdf")))});
+    try{
+      const text=(await parser.getText()).text;
+      expect(text).toContain("Pendidikan – Café Ke");
+      expect(text).not.toContain("Pendidikan – Cafe Ké");
+    }finally{await parser.destroy()}
+    const before=await preview("unicode-embedded-tj.pdf");
+    const after=await preview("unicode-embedded-tj-edited.pdf");
+    expect(before.width).toBe(after.width);
+    expect(before.height).toBe(after.height);
+  },30000);
+
   it.skipIf(!embeddedFontReady)("rejects new missing embedded glyph and refuses embedded redaction",async()=>{
     const info=await inspectPdf({inputPath:"unicode-embedded.pdf"},dir);
     const base={inputPath:"unicode-embedded.pdf",expectedInputSha256:info.sha256,
@@ -136,6 +199,37 @@ describe("Strict vector-preserving PDF text modification", () => {
       .rejects.toMatchObject({code:"unsupported_content"});
     await expect(fs.stat(path.join(dir,"unicode-missing.pdf"))).rejects.toMatchObject({code:"ENOENT"});
   },30000);
+  it("replaces a strictly consecutive multi-Tj line without overlay or reflow",async()=>{
+    const info=await inspectPdf({inputPath:"multi-tj.pdf"},dir);
+    const result=await editPdfVectorExact({
+      inputPath:"multi-tj.pdf",outputPath:"multi-tj-edited.pdf",
+      expectedInputSha256:info.sha256,page:1,mode:"replace_exact",
+      targetText:"PRIVATE NOTE",replacementText:"PUBLIC NOTE",
+    },dir);
+    expect(result.status).toBe("verified");
+    expect(result.verificationScopes.matchedTextOperator).toBe("unique_consecutive_multi_Tj_sequence");
+    const parser=new PDFParse({data:Uint8Array.from(await fs.readFile(path.join(dir,"multi-tj-edited.pdf")))});
+    try{
+      const text=(await parser.getText()).text;
+      expect(text).toContain("PUBLIC NOTE");
+      expect(text).not.toContain("PRIVATE NOTE");
+    }finally{await parser.destroy()}
+    const before=await preview("multi-tj.pdf");
+    const after=await preview("multi-tj-edited.pdf");
+    expect(before.width).toBe(after.width);
+    expect(before.height).toBe(after.height);
+  },30000);
+
+  it("refuses multi-Tj target when a positioning operator occurs between fragments",async()=>{
+    const info=await inspectPdf({inputPath:"multi-tj-unsafe.pdf"},dir);
+    await expect(editPdfVectorExact({
+      inputPath:"multi-tj-unsafe.pdf",outputPath:"multi-tj-unsafe-out.pdf",
+      expectedInputSha256:info.sha256,page:1,mode:"replace_exact",
+      targetText:"PRIVATE NOTE",replacementText:"PUBLIC NOTE",
+    },dir)).rejects.toMatchObject({code:"unsupported_content"});
+    await expect(fs.stat(path.join(dir,"multi-tj-unsafe-out.pdf"))).rejects.toMatchObject({code:"ENOENT"});
+  },30000);
+
   it("replaces an exact Standard-14 Tj text operator without moving other vectors", async () => {
     const source = await inspectPdf({ inputPath: "input.pdf" }, dir);
     const result = await editPdfVectorExact({

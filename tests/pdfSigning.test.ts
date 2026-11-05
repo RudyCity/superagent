@@ -13,6 +13,7 @@ const previousSecret = process.env.SUPERAGENT_PDF_P12_PASSWORD;
 const previousCA = process.env.SUPERAGENT_PDF_CA_BUNDLE;
 const previousCRL = process.env.SUPERAGENT_PDF_CA_CRL_BUNDLE;
 const previousTSA = process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE;
+const previousOCSP = process.env.SUPERAGENT_PDF_OCSP_RESPONSE;
 const padesPython = path.join(os.homedir(), ".superagent-r", "venvs", "pdf-pades",
   process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
 const padesAvailable = fsSync.existsSync(padesPython);
@@ -44,6 +45,55 @@ beforeAll(async () => {
     "-addext","extendedKeyUsage=critical,timeStamping",
     "-addext","basicConstraints=critical,CA:TRUE"]);
   const base = root.replace(/\\/g, "/");
+  await fs.mkdir(path.join(root,"ocsp-newcerts"));
+  await fs.writeFile(path.join(root,"ocsp-index.txt"),"");
+  await fs.writeFile(path.join(root,"ocsp-serial"),"2000\n");
+  openssl(["req","-x509","-newkey","rsa:2048","-nodes","-days","1",
+    "-keyout","ocsp-ca.key","-out","ocsp-ca.crt",
+    "-subj","/CN=SuperAgent Offline OCSP Root",
+    "-addext","basicConstraints=critical,CA:TRUE",
+    "-addext","keyUsage=critical,keyCertSign,cRLSign,digitalSignature"]);
+  await fs.writeFile(path.join(root,"ocsp-ca.conf"),[
+    "[ ca ]","default_ca = local_ca",
+    "[ local_ca ]","database = " + base + "/ocsp-index.txt",
+    "serial = " + base + "/ocsp-serial","new_certs_dir = " + base + "/ocsp-newcerts",
+    "private_key = " + base + "/ocsp-ca.key","certificate = " + base + "/ocsp-ca.crt",
+    "default_md = sha256","default_days = 1","policy = policy_default",
+    "unique_subject = no","x509_extensions = leaf_ext","copy_extensions = copy",
+    "[ policy_default ]","commonName = supplied",
+    "[ leaf_ext ]","basicConstraints = critical,CA:FALSE",
+    "keyUsage = critical,digitalSignature,nonRepudiation",
+    "authorityInfoAccess = OCSP;URI:http://127.0.0.1:9/ocsp",
+    "subjectKeyIdentifier = hash","authorityKeyIdentifier = keyid,issuer",
+  ].join("\n")+"\n");
+  openssl(["req","-new","-newkey","rsa:2048","-nodes",
+    "-keyout","ocsp-leaf.key","-out","ocsp-leaf.csr",
+    "-subj","/CN=SuperAgent Offline OCSP Leaf"]);
+  openssl(["ca","-batch","-config","ocsp-ca.conf","-in","ocsp-leaf.csr","-out","ocsp-leaf.crt","-notext"]);
+  openssl(["pkcs12","-export","-out","ocsp-leaf.p12",
+    "-inkey","ocsp-leaf.key","-in","ocsp-leaf.crt","-certfile","ocsp-ca.crt",
+    "-passout","pass:temporary-test-only"]);
+  openssl(["ocsp","-index","ocsp-index.txt","-rsigner","ocsp-ca.crt","-rkey","ocsp-ca.key",
+    "-CA","ocsp-ca.crt","-issuer","ocsp-ca.crt","-cert","ocsp-leaf.crt",
+    "-respout","ocsp-good.der","-ndays","1"]);
+  openssl(["ca","-config","ocsp-ca.conf","-revoke","ocsp-leaf.crt"]);
+  openssl(["ocsp","-index","ocsp-index.txt","-rsigner","ocsp-ca.crt","-rkey","ocsp-ca.key",
+    "-CA","ocsp-ca.crt","-issuer","ocsp-ca.crt","-cert","ocsp-leaf.crt",
+    "-respout","ocsp-revoked.der","-ndays","1"]);
+  if (padesAvailable) {
+    const staleFixture=spawnSync(padesPython,[path.resolve("tests/fixtures/pdf_ocsp_stale_fixture.py")],{
+      cwd:root,windowsHide:true,encoding:"utf8",timeout:10000,
+      input:JSON.stringify({
+        caCertPath:path.join(root,"ocsp-ca.crt"),
+        caKeyPath:path.join(root,"ocsp-ca.key"),
+        leafCertPath:path.join(root,"ocsp-leaf.crt"),
+        outputPath:path.join(root,"ocsp-stale.der"),
+      }),
+    });
+    if (staleFixture.status !== 0) {
+      throw new Error("Stale OCSP fixture failure: " + String(staleFixture.stderr).slice(0,300));
+    }
+  }
   await fs.writeFile(path.join(root, "ca-index.txt"), "");
   await fs.writeFile(path.join(root, "ca-serial"), "1000\n");
   await fs.writeFile(path.join(root, "ca-crlnumber"), "1000\n");
@@ -83,6 +133,8 @@ afterAll(async () => {
   else process.env.SUPERAGENT_PDF_CA_CRL_BUNDLE = previousCRL;
   if (previousTSA === undefined) delete process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE;
   else process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE = previousTSA;
+  if (previousOCSP === undefined) delete process.env.SUPERAGENT_PDF_OCSP_RESPONSE;
+  else process.env.SUPERAGENT_PDF_OCSP_RESPONSE = previousOCSP;
   if (root) await fs.rm(root, { recursive: true, force: true });
 });
 beforeEach(async () => {
@@ -99,7 +151,9 @@ afterEach(async () => {
   else process.env.SUPERAGENT_PDF_CA_CRL_BUNDLE = previousCRL;
   if (previousTSA === undefined) delete process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE;
   else process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE = previousTSA;
-  for (const file of ["signed.pdf", "timestamped.pdf", "no-sig.pdf", "bad.pdf", "wrong.pdf"]) {
+  if (previousOCSP === undefined) delete process.env.SUPERAGENT_PDF_OCSP_RESPONSE;
+  else process.env.SUPERAGENT_PDF_OCSP_RESPONSE = previousOCSP;
+  for (const file of ["signed.pdf", "ocsp-signed.pdf", "multi-signed.pdf", "lta-signed.pdf", "bad-byte-range.pdf", "timestamped.pdf", "no-sig.pdf", "bad.pdf", "wrong.pdf"]) {
     await fs.rm(path.join(root, file), { force: true }).catch(() => undefined);
   }
 });
@@ -175,11 +229,62 @@ describe("Strict PDF CMS signature", () => {
       engine:"pyHanko",engineVersion:"0.38.1",offline:true,networkFetching:false,
       signatureCount:1,cryptographicIntegrity:"valid",certificateTrust:"trusted",
       padesStructuralConformance:"not_certified",
+      padesEvidenceLevelCandidate:"B-B-like-evidence",
+      padesProfileEvidence:{
+        cadesDetached:true,
+        trustedSignatureTimestampPerSignature:false,
+        validatedRevocationMaterial:false,
+        documentTimestampEvidenceRecordPerSignature:false,
+      },
     });
     expect(independent.signatures[0]).toMatchObject({
       intact:true,cryptographicallyValid:true,trusted:true,revoked:false,
       bottomLine:true,coverage:"ENTIRE_FILE",modificationLevel:"NONE",
     });
+  },30000);
+
+  it.skipIf(!padesAvailable)("validates two incremental PDF signatures independently and refuses ambiguous single-signature OpenSSL mode",async()=>{
+    const fixtureScript=path.resolve("tests/fixtures/pdf_pades_multisig_fixture.py");
+    const generated=spawnSync(padesPython,[fixtureScript],{
+      cwd:root,windowsHide:true,encoding:"utf8",timeout:20000,
+      input:JSON.stringify({
+        inputPath:path.join(root,"input.pdf"),
+        outputPath:path.join(root,"multi-signed.pdf"),
+        p12Path:path.join(root,"pades-certificate.p12"),
+      }),
+    });
+    expect(generated.status).toBe(0);
+    expect(JSON.parse(generated.stdout.trim())).toMatchObject({status:"created",signatureCount:2});
+
+    await expect(verifyPdfSignature({
+      inputPath:"multi-signed.pdf",
+    },root)).rejects.toMatchObject({code:"unsupported_signature"});
+
+    process.env.SUPERAGENT_PDF_CA_BUNDLE=path.join(root,"pades-public.crt");
+    const report=await verifyPdfSignature({
+      inputPath:"multi-signed.pdf",verifyIndependentPades:true,
+    },root);
+    expect(report).toMatchObject({
+      status:"verified",
+      cryptographicSignatureValid:true,
+      certificateTrusted:"trusted_by_operator_store",
+      padesProfile:"not_structurally_certified",
+    });
+    const independent=report.independentValidation as any;
+    expect(independent.signatureCount).toBe(2);
+    expect(independent.cryptographicIntegrity).toBe("valid");
+    expect(independent.certificateTrust).toBe("trusted");
+    expect(independent.signatures).toHaveLength(2);
+    for(const signature of independent.signatures){
+      expect(signature).toMatchObject({
+        intact:true,
+        cryptographicallyValid:true,
+        trusted:true,
+        revoked:false,
+      });
+    }
+    expect(independent.signatures[1].coverage).toBe("ENTIRE_FILE");
+    expect(independent.signatures[0].coverage).not.toBe("UNCLEAR");
   },30000);
 
   it.skipIf(!padesAvailable)("validates an actual RFC3161 signature timestamp offline and rejects the wrong TSA trust root",async()=>{
@@ -211,8 +316,25 @@ describe("Strict PDF CMS signature", () => {
     expect(trusted.embeddedValidationEvidence).toMatchObject({ocsps:0,crls:0});
     const report=trusted.independentValidation as any;
     expect(report.revocationValidation).toBe("not_available");
+    expect(report.formalAdesPolicy).toMatchObject({
+      standard:"ETSI EN 319 102-1",basicSection:"5.3",withTimeSection:"5.5",
+      networkFetching:false,certificateFetching:false,
+    });
+    expect(report.signatures[0].adesBasic).toMatchObject({status:"PASSED"});
+    expect(report.signatures[0].adesWithTime).toMatchObject({status:"PASSED"});
+    expect(report.signatures[0].adesLta).toMatchObject({
+      status:"PASSED",hasDocumentTimestampEvidenceRecord:false,
+      oldestEvidenceRecordTimestamp:null,
+    });
     expect(report.signatures[0].signatureTimestamp).toMatchObject({
       trusted:true,revoked:false,time:"2026-11-05T01:23:45+00:00",
+    });
+    expect(report.padesEvidenceLevelCandidate).toBe("B-T-like-evidence");
+    expect(report.padesProfileEvidence).toMatchObject({
+      cadesDetached:true,
+      trustedSignatureTimestampPerSignature:true,
+      validatedRevocationMaterial:false,
+      documentTimestampEvidenceRecordPerSignature:false,
     });
 
     process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE=path.join(root,"untrusted-public.crt");
@@ -222,6 +344,113 @@ describe("Strict PDF CMS signature", () => {
     expect(wrongTsa.status).toBe("partial");
     expect(wrongTsa.cryptographicSignatureValid).toBe(true);
     expect(wrongTsa.timestampAuthority).toBe("invalid_or_untrusted");
+    const wrongReport=wrongTsa.independentValidation as any;
+    expect(wrongReport.signatures[0].adesBasic.status).toBe("PASSED");
+    expect(wrongReport.signatures[0].adesWithTime.status).not.toBe("PASSED");
+  },30000);
+
+  it.skipIf(!padesAvailable)("validates offline DSS plus document timestamp evidence without falsely certifying structural PAdES",async()=>{
+    const fixtureScript=path.resolve("tests/fixtures/pdf_pades_lta_fixture.py");
+    const generated=spawnSync(padesPython,[fixtureScript],{
+      cwd:root,windowsHide:true,encoding:"utf8",timeout:30000,
+      input:JSON.stringify({
+        inputPath:path.join(root,"input.pdf"),
+        outputPath:path.join(root,"lta-signed.pdf"),
+        p12Path:path.join(root,"ocsp-leaf.p12"),
+        signerCaPath:path.join(root,"ocsp-ca.crt"),
+        ocspPath:path.join(root,"ocsp-good.der"),
+        tsaCertPath:path.join(root,"tsa-public.crt"),
+        tsaKeyPath:path.join(root,"tsa-private.key"),
+      }),
+    });
+    expect(generated.status).toBe(0);
+    expect(JSON.parse(generated.stdout.trim())).toMatchObject({
+      status:"created",networkFetching:false,
+    });
+
+    process.env.SUPERAGENT_PDF_CA_BUNDLE=path.join(root,"ocsp-ca.crt");
+    process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE=path.join(root,"tsa-public.crt");
+    process.env.SUPERAGENT_PDF_OCSP_RESPONSE=path.join(root,"ocsp-good.der");
+    const report=await verifyPdfSignature({
+      inputPath:"lta-signed.pdf",verifyIndependentPades:true,
+    },root);
+    expect(report).toMatchObject({
+      status:"verified",
+      cryptographicSignatureValid:true,
+      certificateTrusted:"trusted_by_operator_store",
+      certificateRevocation:"valid_by_revocation_evidence",
+      timestampAuthority:"valid",
+      padesProfile:"not_structurally_certified",
+    });
+    const independent=report.independentValidation as any;
+    expect(independent.signatureCount).toBe(1);
+    expect(independent.documentTimestampCount).toBeGreaterThanOrEqual(1);
+    expect(independent.embeddedSignatureObjectCount).toBeGreaterThanOrEqual(2);
+    expect(independent.embeddedValidationEvidence.ocsps).toBeGreaterThan(0);
+    expect(independent.documentTimestamps.length).toBeGreaterThanOrEqual(1);
+    expect(independent.documentTimestamps.every((ts:any)=>
+      ts.intact===true&&ts.cryptographicallyValid===true&&ts.trusted===true&&ts.revoked===false
+    )).toBe(true);
+    expect(independent.padesProfileEvidence.validatedRevocationMaterial).toBe(true);
+    expect(independent.padesProfileEvidence.documentTimestampEvidenceRecordPerSignature).toBe(true);
+    expect(independent.padesStructuralConformance).toBe("not_certified");
+    expect(independent.padesEvidenceLevelCandidate).toBe("B-LTA-like-evidence");
+  },40000);
+
+  it.skipIf(!padesAvailable)("uses operator-controlled offline OCSP DER evidence and distinguishes good from revoked",async()=>{
+    const source=await inspectPdf({inputPath:"input.pdf"},root);
+    await signPdf({
+      inputPath:"input.pdf",outputPath:"ocsp-signed.pdf",certificatePath:"ocsp-leaf.p12",
+      expectedInputSha256:source.sha256,confirmSign:true,
+    },root);
+    process.env.SUPERAGENT_PDF_CA_BUNDLE=path.join(root,"ocsp-ca.crt");
+    process.env.SUPERAGENT_PDF_OCSP_RESPONSE=path.join(root,"ocsp-good.der");
+    const good=await verifyPdfSignature({
+      inputPath:"ocsp-signed.pdf",verifyIndependentPades:true,
+    },root);
+    expect(good).toMatchObject({
+      cryptographicSignatureValid:true,
+      certificateTrusted:"trusted_by_operator_store",
+      certificateRevocation:"valid_by_revocation_evidence",
+      ocspStatus:"operator_ocsp_evidence_checked",
+    });
+    const goodIndependent=good.independentValidation as any;
+    expect(goodIndependent.operatorOcspEvidence).toMatchObject({configured:true});
+    expect(goodIndependent.revocationValidation).toBe("checked_no_revocation");
+    expect(goodIndependent.revocationSources).toContain("operator_ocsp");
+    expect(goodIndependent.padesEvidenceLevelCandidate).toBe("B-B-like-evidence");
+    expect(goodIndependent.padesProfileEvidence.validatedRevocationMaterial).toBe(true);
+
+    process.env.SUPERAGENT_PDF_OCSP_RESPONSE=path.join(root,"ocsp-revoked.der");
+    const revoked=await verifyPdfSignature({
+      inputPath:"ocsp-signed.pdf",verifyIndependentPades:true,
+    },root);
+    expect(revoked.status).toBe("partial");
+    expect(revoked.cryptographicSignatureValid).toBe(true);
+    expect(revoked.certificateRevocation).toBe("revoked");
+    expect(revoked.ocspStatus).toBe("operator_ocsp_evidence_reports_revoked");
+    expect((revoked.independentValidation as any).revocationValidation).toBe("revoked");
+  },30000);
+
+  it.skipIf(!padesAvailable)("downgrades cryptographically valid but expired operator OCSP evidence",async()=>{
+    const source=await inspectPdf({inputPath:"input.pdf"},root);
+    await signPdf({
+      inputPath:"input.pdf",outputPath:"ocsp-signed.pdf",certificatePath:"ocsp-leaf.p12",
+      expectedInputSha256:source.sha256,confirmSign:true,
+    },root);
+    process.env.SUPERAGENT_PDF_CA_BUNDLE=path.join(root,"ocsp-ca.crt");
+    process.env.SUPERAGENT_PDF_OCSP_RESPONSE=path.join(root,"ocsp-stale.der");
+    const stale=await verifyPdfSignature({
+      inputPath:"ocsp-signed.pdf",verifyIndependentPades:true,
+    },root);
+    expect(stale.status).toBe("partial");
+    expect(stale.cryptographicSignatureValid).toBe(true);
+    expect(stale.certificateTrusted).toBe("untrusted_or_unverifiable");
+    expect(stale.certificateRevocation).toBe("indeterminate");
+    expect(stale.ocspStatus).toBe("operator_ocsp_evidence_indeterminate");
+    const independent=stale.independentValidation as any;
+    expect(independent.revocationValidation).toBe("indeterminate");
+    expect(independent.padesProfileEvidence.validatedRevocationMaterial).toBe(false);
   },30000);
 
   it("checks offline operator CRLs without network and distinguishes verified from absent evidence", async () => {
@@ -277,6 +506,21 @@ describe("Strict PDF CMS signature", () => {
     await expect(signPdf({...base,certificatePath:"ephemeral-certificate.p12",passwordEnv:"HOME"},root))
       .rejects.toMatchObject({code:"secret_policy"});
   });
+  it("rejects malformed ByteRange coverage before trusting CMS contents", async () => {
+    const source=await inspectPdf({inputPath:"input.pdf"},root);
+    await signPdf({
+      inputPath:"input.pdf",outputPath:"signed.pdf",certificatePath:"ephemeral-certificate.p12",
+      expectedInputSha256:source.sha256,confirmSign:true,
+    },root);
+    const bytes=await fs.readFile(path.join(root,"signed.pdf"));
+    const text=bytes.toString("latin1");
+    const mutated=text.replace(/\/ByteRange\s*\[\s*0\b/, match=>match.replace(/0(?=\s*$|\s)/,"1"));
+    expect(mutated).not.toBe(text);
+    await fs.writeFile(path.join(root,"bad-byte-range.pdf"),Buffer.from(mutated,"latin1"));
+    await expect(verifyPdfSignature({inputPath:"bad-byte-range.pdf"},root))
+      .rejects.toMatchObject({code:"invalid_signature"});
+  });
+
   it("detects a tampered post-signature PDF and reports invalid signature", async () => {
     const source = await inspectPdf({inputPath:"input.pdf"},root);
     await signPdf({

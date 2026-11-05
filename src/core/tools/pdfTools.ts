@@ -142,12 +142,12 @@ export const pdfRedactRasterTool = wrapped(
 );
 export const pdfEditVectorExactTool = wrapped(
   "pdf_edit_vector_exact",
-  "CONSTRAINED exact original PDF text edit, not a general layout/reflow engine. Default standard14 policy permits one unique simple ASCII Tj or bounded fragmented TJ for replacement or scoped redaction. Optional fontPolicy=embedded_subset allows replacement ONLY of a uniquely mapped Type0/Identity-H Tj Latin ID/EN Unicode run using already-present embedded subset glyphs; missing glyphs, overflow, complex mappings and embedded-font redaction fail closed. Never claim full-document sanitization.",
+  "CONSTRAINED exact original PDF text edit, not a general layout/reflow engine. Default standard14 policy permits one unique ASCII Tj, bounded fragmented TJ, or strictly consecutive multi-Tj sequence in one BT object; any intervening layout/state operator fails closed. Optional fontPolicy=embedded_subset allows replacement ONLY of one uniquely mapped Type0/Identity-H Latin ID/EN Unicode Tj or bounded fragmented TJ run using already-present embedded subset glyphs; missing glyphs, excessive kerning, overflow, complex mappings and embedded-font redaction fail closed. Never claim full-document sanitization.",
   {
     inputPath: file, outputPath: { type: "string" }, page: { type: "integer", minimum: 1, maximum: 500 },
     expectedInputSha256: { type: "string" },
     mode: { type: "string", enum: ["replace_exact", "redact_exact"] },
-    fontPolicy: { type: "string", enum: ["standard14", "embedded_subset"], description: "Explicit opt-in for embedded Type0 Identity-H CID Latin Unicode Tj replacement using existing mapped glyphs only. Not for redaction or reflow." },
+    fontPolicy: { type: "string", enum: ["standard14", "embedded_subset"], description: "Explicit opt-in for embedded Type0 Identity-H CID Latin Unicode Tj or bounded fragmented TJ replacement using existing mapped glyphs only. Not for redaction or reflow." },
     targetText: { type: "string", maxLength: 200 },
     replacementText: { type: "string", maxLength: 200 },
     confirmRedact: { type: "boolean" },
@@ -167,12 +167,12 @@ export const pdfSignTool = wrapped(
 );
 export const pdfVerifySignatureTool = wrapped(
   "pdf_verify_signature",
-  "Verify PDF signatures locally. Default path validates one detached CMS/ByteRange with OpenSSL; optional verifyTrustedChain and verifyOfflineCrl use ONLY operator trust files. Optional verifyIndependentPades runs pinned pyHanko 0.38.1 offline over embedded signatures, explicit operator CA roots, embedded revocation evidence and RFC3161 timestamp tokens when present. It never fetches AIA/OCSP/CRL/TSA URLs. Full structural PAdES B-B/B-T/B-LT/B-LTA conformance is NOT certified.",
+  "Verify PDF signatures locally. Default path validates one detached CMS/ByteRange with OpenSSL; optional verifyTrustedChain and verifyOfflineCrl use ONLY operator trust files. Optional verifyIndependentPades runs pinned pyHanko 0.38.1 offline over embedded signatures, explicit operator CA roots, embedded DSS revocation evidence, optional operator SUPERAGENT_PDF_OCSP_RESPONSE (DER), and RFC3161 timestamp tokens. It never fetches AIA/OCSP/CRL/TSA URLs. Full structural PAdES B-B/B-T/B-LT/B-LTA conformance is NOT certified.",
   {
     inputPath: file,
     verifyTrustedChain: { type: "boolean", description: "Check operator SUPERAGENT_PDF_CA_BUNDLE trust anchors, not tool-provided CA." },
     verifyOfflineCrl: { type: "boolean", description: "Offline only: requires SUPERAGENT_PDF_CA_BUNDLE and SUPERAGENT_PDF_CA_CRL_BUNDLE, both operator-configured. No network or prompt-supplied trust/CRL." },
-    verifyIndependentPades: { type: "boolean", description: "Run pinned pyHanko offline validator using operator SUPERAGENT_PDF_CA_BUNDLE and optional SUPERAGENT_PDF_TSA_CA_BUNDLE. Evaluates embedded timestamp/revocation evidence but does not certify all PAdES structural-profile requirements." },
+    verifyIndependentPades: { type: "boolean", description: "Run pinned pyHanko offline validator using operator SUPERAGENT_PDF_CA_BUNDLE, optional SUPERAGENT_PDF_TSA_CA_BUNDLE, optional offline SUPERAGENT_PDF_OCSP_RESPONSE DER, plus embedded timestamp/revocation evidence. No network; not structural PAdES certification." },
   }, ["inputPath"],
   async (args, cwd, signal) => (await import("../pdf/pdfSigning.js")).verifyPdfSignature(args, cwd, signal),
 );

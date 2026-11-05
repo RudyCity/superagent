@@ -223,7 +223,10 @@ export async function verifyPdfSignature(args: Record<string, unknown>, cwd: str
     const revocationValidation = String(independent.revocationValidation || "not_available");
     const evidence = (independent.embeddedValidationEvidence && typeof independent.embeddedValidationEvidence === "object")
       ? independent.embeddedValidationEvidence as Record<string, unknown> : {};
+    const operatorOcsp = (independent.operatorOcspEvidence && typeof independent.operatorOcspEvidence === "object")
+      ? independent.operatorOcspEvidence as Record<string, unknown> : {};
     const ocspCount = Number(evidence.ocsps || 0);
+    const operatorOcspConfigured = operatorOcsp.configured === true;
     return {
       status: independent.status === "verified" ? "verified" : "partial",
       path: input.file,
@@ -232,15 +235,23 @@ export async function verifyPdfSignature(args: Record<string, unknown>, cwd: str
       certificateTrusted: independent.certificateTrust === "trusted"
         ? "trusted_by_operator_store" : "untrusted_or_unverifiable",
       certificateRevocation: revocationValidation === "revoked" ? "revoked"
-        : revocationValidation === "checked_no_revocation" ? "valid_by_embedded_revocation_evidence"
+        : revocationValidation === "checked_no_revocation" ? "valid_by_revocation_evidence"
           : revocationValidation === "indeterminate" ? "indeterminate"
             : "not_available",
       timestampAuthority: independent.trustedTimestampStatus,
-      ocspStatus: ocspCount > 0
+      ocspStatus: operatorOcspConfigured
         ? (revocationValidation === "checked_no_revocation"
-          ? "embedded_ocsp_evidence_checked"
-          : "embedded_ocsp_evidence_present_indeterminate")
-        : "not_available",
+          ? "operator_ocsp_evidence_checked"
+          : revocationValidation === "revoked"
+            ? "operator_ocsp_evidence_reports_revoked"
+            : "operator_ocsp_evidence_indeterminate")
+        : ocspCount > 0
+          ? (revocationValidation === "checked_no_revocation"
+            ? "embedded_ocsp_evidence_checked"
+            : revocationValidation === "revoked"
+              ? "embedded_ocsp_evidence_reports_revoked"
+              : "embedded_ocsp_evidence_present_indeterminate")
+          : "not_available",
       padesProfile: "not_structurally_certified",
       embeddedValidationEvidence: evidence,
       independentValidation: independent,

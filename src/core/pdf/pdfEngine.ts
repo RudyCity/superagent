@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import {
   PDFDocument, degrees, rgb, StandardFonts, PDFTextField, PDFCheckBox,
   PDFDropdown, PDFRadioGroup, PDFOptionList, PDFSignature, PDFName, PDFDict,
+  PDFArray, PDFStream,
 } from "pdf-lib";
 import { PDFParse } from "pdf-parse";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -565,6 +566,108 @@ export async function splitPdf(args: Record<string, unknown>, cwd: string, signa
  * Regions are integer screenshot PIXEL coordinates, origin TOP-LEFT, scale=1.
  * A previous pdf_render preview at scale=1 can provide exact coordinates.
  */
+const FORENSIC_METADATA_LABEL = "SuperAgent secure raster redaction";
+const FORBIDDEN_RASTER_CATALOG_KEYS = [
+  "AcroForm", "Names", "OpenAction", "AA", "OCProperties", "Outlines",
+  "StructTreeRoot", "Metadata", "PieceInfo", "Perms", "Collection", "AF",
+] as const;
+const FORBIDDEN_RASTER_OBJECT_KEYS = new Set([
+  "JS", "EmbeddedFiles", "EF", "Filespec", "FileAttachment", "RichMedia",
+  "OCG", "OCMD", "Metadata", "AF", "OpenAction",
+]);
+const FORBIDDEN_ACTION_TYPES = new Set([
+  "JavaScript", "Launch", "GoToR", "SubmitForm", "ImportData",
+  "Rendition", "RichMediaExecute", "URI",
+]);
+function sanitizeRasterMetadata(doc: PDFDocument): void {
+  doc.setProducer(FORENSIC_METADATA_LABEL);
+  doc.setCreator(FORENSIC_METADATA_LABEL);
+  // Avoid leaking the source document's title/author/subject/keywords and avoid
+  // adding a wall-clock redaction timestamp to an otherwise deterministic scrub.
+  const scrubEpoch = new Date("1970-01-01T00:00:00.000Z");
+  doc.setCreationDate(scrubEpoch);
+  doc.setModificationDate(scrubEpoch);
+}
+function verifyRasterForensicStructure(bytes: Uint8Array, doc: PDFDocument) {
+  const catalogForbidden = FORBIDDEN_RASTER_CATALOG_KEYS.filter(
+    key => doc.catalog.has(PDFName.of(key)),
+  );
+  if (catalogForbidden.length) {
+    failure("verification_failed", "Raster-redacted output retained forbidden catalog entries: " + catalogForbidden.join(", "));
+  }
+  if (doc.getTitle() || doc.getAuthor() || doc.getSubject() || doc.getKeywords()) {
+    failure("verification_failed", "Raster-redacted output retained descriptive source metadata.");
+  }
+  if (doc.getProducer() !== FORENSIC_METADATA_LABEL || doc.getCreator() !== FORENSIC_METADATA_LABEL) {
+    failure("verification_failed", "Raster-redacted output metadata was not reset to the scrubbed producer/creator.");
+  }
+
+  let interactiveObjects = 0;
+  let formXObjects = 0;
+  for (const [, object] of doc.context.enumerateIndirectObjects()) {
+    const dict = object instanceof PDFDict ? object : object instanceof PDFStream ? object.dict : undefined;
+    if (!dict) continue;
+    const keys = dict.keys().map(key => key.decodeText());
+    if (keys.some(key => FORBIDDEN_RASTER_OBJECT_KEYS.has(key))) interactiveObjects++;
+    const action = dict.lookupMaybe(PDFName.of("S"), PDFName)?.decodeText();
+    if (action && FORBIDDEN_ACTION_TYPES.has(action)) interactiveObjects++;
+    const subtype = dict.lookupMaybe(PDFName.of("Subtype"), PDFName)?.decodeText();
+    if (subtype === "Form") formXObjects++;
+    if (subtype && ["FileAttachment", "RichMedia", "Movie", "Sound", "Screen"].includes(subtype)) {
+      interactiveObjects++;
+    }
+  }
+  if (interactiveObjects || formXObjects) {
+    failure("verification_failed", "Raster-redacted output retained interactive/hidden PDF objects.");
+  }
+
+  let annotations = 0;
+  let imageXObjects = 0;
+  for (const page of doc.getPages()) {
+    const annots = page.node.lookupMaybe(PDFName.Annots, PDFArray);
+    annotations += annots?.size() ?? 0;
+    const resources = page.node.lookupMaybe(PDFName.Resources, PDFDict);
+    if (!resources) failure("verification_failed", "Raster-redacted page is missing a resource dictionary.");
+    for (const resourceName of ["Font", "ExtGState", "Properties", "Pattern", "Shading"]) {
+      const dict = resources.lookupMaybe(PDFName.of(resourceName), PDFDict);
+      if (dict && dict.keys().length) {
+        failure("verification_failed", "Raster-redacted page retained non-image resource: " + resourceName);
+      }
+    }
+    const xObjects = resources.lookupMaybe(PDFName.XObject, PDFDict);
+    if (!xObjects || xObjects.keys().length !== 1) {
+      failure("verification_failed", "Every raster-redacted page must contain exactly one image XObject.");
+    }
+    for (const key of xObjects.keys()) {
+      const stream = xObjects.lookupMaybe(key, PDFStream);
+      const subtype = stream?.dict.lookupMaybe(PDFName.of("Subtype"), PDFName)?.decodeText();
+      if (!stream || subtype !== "Image") {
+        failure("verification_failed", "Raster-redacted page contains a non-image XObject.");
+      }
+      imageXObjects++;
+    }
+  }
+  if (annotations) failure("verification_failed", "Raster-redacted output retained annotations.");
+
+  const raw = Buffer.from(bytes).toString("latin1");
+  const startXrefCount = (raw.match(/(?:^|[\r\n])startxref[\r\n]/g) || []).length;
+  const eofCount = (raw.match(/%%EOF\s*(?:$|[\r\n])/g) || []).length;
+  if (startXrefCount !== 1 || eofCount !== 1) {
+    failure("verification_failed", "Raster-redacted output must be a single fresh PDF revision with one xref/EOF.");
+  }
+  return {
+    catalogForbiddenEntries: 0,
+    interactiveOrHiddenObjects: 0,
+    annotations: 0,
+    formXObjects: 0,
+    imageXObjects,
+    pageCount: doc.getPageCount(),
+    sourceDescriptiveMetadataCopied: false,
+    producer: FORENSIC_METADATA_LABEL,
+    incrementalRevisionMarkers: { startxref: startXrefCount, eof: eofCount },
+  };
+}
+
 export async function redactPdfRaster(args: Record<string, unknown>, cwd: string, signal?: AbortSignal) {
   const root = await rootDir(cwd);
   if (args.confirmDestructiveRasterization !== true) {
@@ -616,6 +719,7 @@ export async function redactPdfRaster(args: Record<string, unknown>, cwd: string
     failure("preview_required", "Secure raster redaction requires exact SHA-256 preview hashes for every page at scale=1 after visual review.");
   }
   const outputDoc = await PDFDocument.create();
+  sanitizeRasterMetadata(outputDoc);
   const parser = new PDFParse({ data: Uint8Array.from(input.bytes) });
   let verifiedPixels = 0;
   const sourceRenders: Array<{ page: number; sha256: string }> = [];
@@ -661,7 +765,14 @@ export async function redactPdfRaster(args: Record<string, unknown>, cwd: string
   if (!verifiedPixels) failure("invalid_input", "No pixels were redacted.");
   const save = await outputDoc.save({ useObjectStreams: false });
   const verifiedDoc = await pdfDoc(save);
-  if (verifiedDoc.getPageCount() !== original.getPageCount() || fields(verifiedDoc).length) {
+  if (verifiedDoc.getPageCount() !== original.getPageCount()) {
+    failure("verification_failed", "Reconstructed document does not preserve page count.");
+  }
+  // Do NOT call doc.getForm()/fields() here: pdf-lib materializes an empty
+  // /AcroForm catalog entry as a side effect. The forensic verifier below
+  // inspects the raw catalog/object graph without mutating it.
+  const forensicStructure = verifyRasterForensicStructure(save, verifiedDoc);
+  if (forensicStructure.imageXObjects !== original.getPageCount()) {
     failure("verification_failed", "Reconstructed document does not satisfy image-only structure.");
   }
   // PDF.js may transfer/detach its input buffer into a worker. Keep output bytes separate.
@@ -738,6 +849,7 @@ export async function redactPdfRaster(args: Record<string, unknown>, cwd: string
     pageCount: original.getPageCount(), verifiedOpaqueBlackPixels: verifiedPixels,
     verifiedUntouchedPixels, verifiedPagesAfterSerialization,
     sourceRenders,
+    forensicStructure,
     warnings: [
       "All pages converted to raster images; selectable text, links, bookmarks, annotations, form fields, accessibility structure, and vector fidelity are lost.",
       "Only submitted rectangles were covered. Check every visible occurrence of sensitive content in a rendered preview.",
@@ -745,6 +857,10 @@ export async function redactPdfRaster(args: Record<string, unknown>, cwd: string
     ],
     verificationScopes: {
       originalContentStreams: "removed_by_reconstruction",
+      sourceMetadataAttachmentsActionsLayers: "verified_not_copied_by_fresh_object_graph_reconstruction",
+      annotationsAndFormXObjects: "verified_absent",
+      incrementalHistory: "verified_single_fresh_xref_and_eof",
+      pageXObjects: "exactly_one_image_xobject_per_page",
       outputTextLayer: "verified_absent",
       targetPixels: "verified_opaque_black_after_serialization_and_rerender",
       unaffectedPixels: "pixel_parity_checked_outside_authorized_rectangles",

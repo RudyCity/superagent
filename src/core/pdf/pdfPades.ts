@@ -36,7 +36,14 @@ export async function verifyPdfPadesIndependent(
   let tsaCaBundle:string|undefined;
   if(process.env.SUPERAGENT_PDF_TSA_CA_BUNDLE)
     tsaCaBundle=await operatorFile("SUPERAGENT_PDF_TSA_CA_BUNDLE","Independent TSA trust validation");
-  const payload=JSON.stringify({inputPath,caBundle,...(tsaCaBundle?{tsaCaBundle}:{})});
+  let operatorOcspResponse:string|undefined;
+  if(process.env.SUPERAGENT_PDF_OCSP_RESPONSE)
+    operatorOcspResponse=await operatorFile("SUPERAGENT_PDF_OCSP_RESPONSE","Independent offline OCSP validation");
+  const payload=JSON.stringify({
+    inputPath,caBundle,
+    ...(tsaCaBundle?{tsaCaBundle}:{}),
+    ...(operatorOcspResponse?{operatorOcspResponse}:{}),
+  });
   return await new Promise((resolve,reject)=>{
     const child=spawn(python,[BACKEND],{shell:false,windowsHide:true,stdio:["pipe","pipe","pipe"],signal});
     let stdout="",stderr="",settled=false;

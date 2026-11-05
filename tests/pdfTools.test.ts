@@ -186,6 +186,59 @@ describe("SuperAgent PDF editing toolset", () => {
     expect((await fs.readFile(path.join(dir, "input.pdf"))).equals(Buffer.from(original))).toBe(true);
   });
 
+  it("reconstructs a dirty PDF without metadata, attachments, JavaScript, forms, annotations or old revisions", async () => {
+    const dirty = await PDFDocument.create();
+    const font = await dirty.embedFont(StandardFonts.Helvetica);
+    const page = dirty.addPage([400,600]);
+    page.drawText("PRIVATE FORENSIC TARGET",{x:45,y:540,size:18,font});
+    dirty.setTitle("TOP SECRET SOURCE TITLE");
+    dirty.setAuthor("PRIVATE AUTHOR");
+    dirty.setSubject("PRIVATE SUBJECT");
+    dirty.setKeywords(["PRIVATE","HIDDEN"]);
+    dirty.addJavaScript("private-script","app.alert('PRIVATE JAVASCRIPT')");
+    await dirty.attach(Buffer.from("PRIVATE ATTACHMENT CONTENT"),"private-secret.txt",{
+      mimeType:"text/plain",description:"PRIVATE ATTACHMENT DESCRIPTION",
+    });
+    const field=dirty.getForm().createTextField("privateField");
+    field.setText("PRIVATE FORM VALUE");
+    field.addToPage(page,{x:45,y:470,width:200,height:24});
+    await fs.writeFile(path.join(dir,"dirty.pdf"),await dirty.save({useObjectStreams:false}));
+
+    const info=await inspectPdf({inputPath:"dirty.pdf"},dir);
+    expect(info.title).toBe("TOP SECRET SOURCE TITLE");
+    expect(info.forms.length).toBe(1);
+    const preview=await renderPdf({inputPath:"dirty.pdf",outputPrefix:"dirty-review",scale:1,pages:[1]},dir);
+    const result=await redactPdfRaster({
+      inputPath:"dirty.pdf",outputPath:"dirty-redacted.pdf",
+      expectedInputSha256:info.sha256,confirmDestructiveRasterization:true,
+      expectedPreviewHashes:{"1":preview.images[0].sha256},
+      regions:[{page:1,x:35,y:25,width:270,height:55}],
+    },dir);
+    expect(result.status).toBe("verified");
+    expect(result.forensicStructure).toMatchObject({
+      catalogForbiddenEntries:0,
+      interactiveOrHiddenObjects:0,
+      annotations:0,
+      formXObjects:0,
+      imageXObjects:1,
+      pageCount:1,
+      sourceDescriptiveMetadataCopied:false,
+      incrementalRevisionMarkers:{startxref:1,eof:1},
+    });
+    const outputInfo=await inspectPdf({inputPath:"dirty-redacted.pdf"},dir);
+    expect(outputInfo.forms).toHaveLength(0);
+    expect(outputInfo.title ?? null).toBeNull();
+    expect(outputInfo.author ?? null).toBeNull();
+    const outputText=await extractPdf({inputPath:"dirty-redacted.pdf"},dir);
+    expect(outputText.pages.every(page=>page.text.trim()==="")).toBe(true);
+    const raw=(await fs.readFile(path.join(dir,"dirty-redacted.pdf"))).toString("latin1");
+    for(const marker of [
+      "TOP SECRET SOURCE TITLE","PRIVATE AUTHOR","PRIVATE SUBJECT",
+      "private-secret.txt","PRIVATE ATTACHMENT CONTENT","PRIVATE JAVASCRIPT",
+      "PRIVATE FORM VALUE",
+    ]) expect(raw).not.toContain(marker);
+  },30000);
+
   it("denies raster redaction when preview hash mismatches", async () => {
     const info = await inspectPdf({ inputPath: "input.pdf" }, dir);
     const review = await renderPdf({ inputPath: "input.pdf", outputPrefix: "mismatch-review", scale: 1, pages: [1,2,3] }, dir);

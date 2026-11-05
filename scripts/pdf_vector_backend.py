@@ -159,10 +159,6 @@ def edit(request: dict) -> dict:
     new_text = validate(request.get("replacementText"), "replacementText") if mode == "replace_exact" else None
     if new_text == target:
         reject("invalid_input", "Replacement must differ from target.")
-    original_text = extract_text(str(source))
-    if original_text.count(target) != 1:
-        reject("ambiguous_text", "Target must appear exactly once across the extracted document.")
-    bbox = load_bbox(str(source), page_num, target)
     # Incremental updates can preserve old, recoverable revision bytes.
     # A normalized rewrite normally drops them, but this restricted backend
     # refuses to certify removal without a complete historical object audit.
@@ -218,6 +214,57 @@ def edit(request: dict) -> dict:
         if any(str(op) in UNSAFE_OPERATORS for _, op in original_ops):
             reject("unsupported_content", "Text state, XObject or marked-content operators cannot be safely mapped.")
 
+        # Restricted multi-run support: several consecutive literal Tj shows in
+        # ONE BT..ET object may form a single visual line. There must be no
+        # positioning/state/operator between the fragments. This preserves the
+        # original font/text matrix and replaces only the first show while
+        # removing the remaining source fragments.
+        multi_tj_candidate = None
+        if font_policy == "standard14":
+            in_text = False
+            block_shows = []
+            block_between = []
+            previous_show_idx = None
+            for idx, (operands, operator) in enumerate(original_ops):
+                name = str(operator)
+                if name == "BT":
+                    in_text = True
+                    block_shows = []
+                    block_between = []
+                    previous_show_idx = None
+                    continue
+                if name == "ET":
+                    if len(block_shows) >= 2 and all(item[1] == "Tj" for item in block_shows):
+                        combined = "".join(item[2] for item in block_shows)
+                        if combined == target:
+                            if block_between:
+                                reject("unsupported_content", "Multi-run target has intervening text/layout operators; refuse ambiguous geometry.")
+                            if multi_tj_candidate is not None:
+                                reject("ambiguous_text", "Target maps to more than one multi-run text object.")
+                            multi_tj_candidate = [item[0] for item in block_shows]
+                    in_text = False
+                    continue
+                if not in_text:
+                    continue
+                if name in ("Tj", "TJ"):
+                    if name != "Tj" or len(operands) != 1 or not isinstance(operands[0], pikepdf.String):
+                        block_shows.append((idx, name, ""))
+                    else:
+                        value = str(operands[0])
+                        if not value or not all(32 <= ord(c) <= 126 for c in value):
+                            reject("unsupported_content", "Multi-run Tj fragments must be printable ASCII.")
+                        block_shows.append((idx, name, value))
+                    previous_show_idx = idx
+                elif previous_show_idx is not None:
+                    # Any operator after the first show and before ET makes
+                    # relative placement/state ambiguous for multi-run editing.
+                    block_between.append(idx)
+
+        original_text = extract_text(str(source))
+        if original_text.count(target) != 1:
+            reject("ambiguous_text", "Target must appear exactly once across the extracted document.")
+        bbox = load_bbox(str(source), page_num, target)
+
         font_refs = resources.get("/Font", {})
         cid_map = None
         cid_reverse = None
@@ -242,13 +289,22 @@ def edit(request: dict) -> dict:
         count_text_shows = 0
         seen_targets = []
         replacement_ops = []
-        for operands, operator in original_ops:
+        multi_first = multi_tj_candidate[0] if multi_tj_candidate else None
+        multi_rest = set(multi_tj_candidate[1:]) if multi_tj_candidate else set()
+        for op_index, (operands, operator) in enumerate(original_ops):
             name = str(operator)
             if name == "BT":
                 active_text = True
                 count_text_shows = 0
             if name in ("Tj", "TJ"):
                 count_text_shows += 1
+                if multi_tj_candidate and op_index == multi_first:
+                    seen_targets.append(len(replacement_ops))
+                    if mode == "replace_exact":
+                        replacement_ops.append(([pikepdf.String(new_text)], operator))
+                    continue
+                if multi_tj_candidate and op_index in multi_rest:
+                    continue
                 if len(operands) != 1:
                     reject("unsupported_content", "Text-show must have exactly one operand.")
                 if name == "Tj":
@@ -265,19 +321,30 @@ def edit(request: dict) -> dict:
                     else:
                         shown = str(operands[0])
                 else:
-                    if font_policy == "embedded_subset":
-                        reject("unsupported_content", "Embedded CID Unicode editing currently supports a single Tj operator, not TJ.")
                     # A single TJ array may fragment one line over strings
-                    # and bounded numeric kerning adjustments. Refuse CID,
-                    # nested objects and large offsets rather than guessing.
+                    # and bounded numeric kerning adjustments. Embedded
+                    # Identity-H fragments are decoded through the exact same
+                    # verified ToUnicode map as a Tj operator.
                     if not isinstance(operands[0], pikepdf.Array):
                         reject("unsupported_content", "TJ must contain one simple array.")
                     pieces = []
                     for fragment in operands[0]:
                         if isinstance(fragment, pikepdf.String):
-                            chunk = str(fragment)
-                            if not chunk or not all(32 <= ord(c) <= 126 for c in chunk):
-                                reject("unsupported_content", "TJ fragments must be printable ASCII.")
+                            if font_policy == "embedded_subset":
+                                raw = bytes(fragment)
+                                if not raw or len(raw) % 2:
+                                    reject("unsupported_font", "CID TJ fragment has invalid two-byte glyph encoding.")
+                                try:
+                                    chunk = "".join(
+                                        cid_map[raw[i:i+2]]
+                                        for i in range(0, len(raw), 2)
+                                    )
+                                except KeyError:
+                                    reject("unsupported_font", "CID TJ glyph code is absent from ToUnicode mapping.")
+                            else:
+                                chunk = str(fragment)
+                                if not chunk or not all(32 <= ord(c) <= 126 for c in chunk):
+                                    reject("unsupported_content", "TJ fragments must be printable ASCII.")
                             pieces.append(chunk)
                         elif isinstance(fragment, (int, float)) and not isinstance(fragment, bool):
                             if not -100 <= float(fragment) <= 100:
@@ -292,16 +359,16 @@ def edit(request: dict) -> dict:
                         reject("unsupported_content", "Target must be the only text-show in its text object.")
                     seen_targets.append(len(replacement_ops))
                     if mode == "replace_exact":
+                        encoded = b"".join(cid_reverse[char] for char in new_text) if font_policy == "embedded_subset" else new_text
                         if name == "TJ":
-                            replacement_ops.append(([pikepdf.Array([pikepdf.String(new_text)])], operator))
+                            replacement_ops.append(([pikepdf.Array([pikepdf.String(encoded)])], operator))
                         else:
-                            encoded = b"".join(cid_reverse[char] for char in new_text) if font_policy == "embedded_subset" else new_text
                             replacement_ops.append(([pikepdf.String(encoded)], operator))
                     # Removing TJ removes all original target text fragments;
                     # preserving the rest of the BT object and vector artwork.
                     continue
             if name == "ET":
-                if active_text and seen_targets and count_text_shows > 1:
+                if active_text and seen_targets and count_text_shows > 1 and not multi_tj_candidate:
                     reject("unsupported_content", "Multiple shows in a target BT object are ambiguous.")
                 active_text = False
             replacement_ops.append((operands, operator))
@@ -364,7 +431,11 @@ def edit(request: dict) -> dict:
         "vectorGraphicsPreserved": True,
         "selectableTextOutsideTargetPreserved": True,
         "verificationScopes": {
-            "matchedTextOperator": "unique_Tj_or_bounded_TJ" if font_policy == "standard14" else "unique_embedded_Type0_IdentityH_Tj",
+            "matchedTextOperator": (
+                "unique_consecutive_multi_Tj_sequence" if multi_tj_candidate
+                else "unique_Tj_or_bounded_TJ" if font_policy == "standard14"
+                else "unique_embedded_Type0_IdentityH_Tj_or_bounded_TJ"
+            ),
             "fontPolicy": font_policy,
             "originalTextAbsentInExtraction": True,
             "targetOperatorRemoved": True,
@@ -373,7 +444,7 @@ def edit(request: dict) -> dict:
             "hiddenMetadataOrOtherSensitiveInfo": "unsupported_containers_refused_not_forensically_certified",
         },
         "warnings": [
-            "Supports only one exact ASCII Standard-14 Tj or bounded fragmented TJ text operator; other PDF structures fail closed.",
+            "Supports one exact Standard-14 Tj/bounded TJ/multi-Tj or one embedded Type0 Identity-H Tj/bounded TJ run; other PDF structures fail closed.",
             "No document reflow; replacement may differ in width and visual fit. Review render before use.",
             "Vector redaction removes the exact content stream operator, but cannot independently certify all sensitive information in metadata or linked objects.",
         ],
