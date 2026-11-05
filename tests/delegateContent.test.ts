@@ -12,6 +12,7 @@ type FakeTurn = {
   getClientRects: () => number[];
   getAttribute: (name: string) => string | null;
   querySelector: () => null;
+  closest?: (selector: string) => { getAttribute: (name: string) => string | null } | null;
   innerText: string;
   textContent: string;
 };
@@ -37,9 +38,11 @@ function setup(options: {
   composerStyle?: "legacy" | "prosemirror";
   composer?: FakeTextarea | null;
   turns?: FakeTurn[];
+  modernTurns?: FakeTurn[];
   buttons?: any[];
 } = {}) {
   const turns: FakeTurn[] = options.turns || [];
+  const modernTurns: FakeTurn[] = options.modernTurns || [];
   const buttons = options.buttons || [];
   const composer = options.composer === undefined ? new FakeTextarea() : options.composer;
   let listener: (
@@ -64,6 +67,7 @@ function setup(options: {
       }
       if (selector === "button" || selector === "a, button") return buttons;
       if (selector === "[data-message-author-role]") return turns;
+      if (selector.includes("data-chatgpt-search-unit-key")) return modernTurns;
       return [];
     },
   };
@@ -121,10 +125,37 @@ function turn(role: "assistant" | "user", text: string): FakeTurn {
   return {
     isConnected: true,
     getClientRects: () => [1],
-    getAttribute: () => role,
+    getAttribute: (name: string) => name === "data-message-author-role" ? role : null,
     querySelector: () => null,
     innerText: text,
     textContent: text,
+  };
+}
+
+function modernTurn(role: "assistant" | "user", text: string, state?: string): FakeTurn {
+  return {
+    isConnected: true,
+    getClientRects: () => [1],
+    getAttribute: (name: string) =>
+      name === "data-chatgpt-search-unit-key" ? "fallback-turn-0:0:" + role : null,
+    querySelector: () => null,
+    closest: state ? () => ({
+      getAttribute: (name: string) => name === "data-talvt-turn-state" ? state : null,
+    }) : undefined,
+    innerText: role === "assistant" ? "ChatGPT said:\n\n" + text : text,
+    textContent: role === "assistant" ? "ChatGPT said:\n\n" + text : text,
+  };
+}
+
+function modernButton(label: "Send" | "Stop", onClick: () => void) {
+  return {
+    isConnected: true,
+    disabled: false,
+    getClientRects: () => [1],
+    getAttribute: (name: string) => name === "aria-label" ? label : null,
+    matches: () => false,
+    textContent: "",
+    click: onClick,
   };
 }
 
@@ -204,6 +235,32 @@ describe("delegate content script (simulated DOM)", () => {
     expect(result.result.messages).toEqual([]);
   });
 
+  it("reads current ChatGPT fallback turn markers and strips UI role prefixes", async () => {
+    const sim = setup({
+      modernTurns: [
+        modernTurn("user", "hello modern"),
+        modernTurn("assistant", "modern reply"),
+      ],
+    });
+    const result = await sim.call("delegate.read_chat");
+    expect(result.ok).toBe(true);
+    expect(result.result.status).toBe("finished");
+    expect(result.result.messages.map((message: any) => [message.role, message.text])).toEqual([
+      ["user", "hello modern"],
+      ["assistant", "modern reply"],
+    ]);
+    expect(result.result.latest_response_text).toBe("modern reply");
+  });
+
+  it("reports a cancelled current turn as stopped instead of working forever", async () => {
+    const sim = setup({
+      modernTurns: [modernTurn("user", "cancel me", "cancelled")],
+    });
+    const result = await sim.call("delegate.read_chat");
+    expect(result.ok).toBe(true);
+    expect(result.result.status).toBe("stopped");
+  });
+
   it("submits one Send click and deduplicates identical request IDs", async () => {
     let clicks = 0;
     const turns: FakeTurn[] = [];
@@ -223,12 +280,37 @@ describe("delegate content script (simulated DOM)", () => {
     expect(clicks).toBe(1);
   });
 
+  it("supports the current bare Send aria-label", async () => {
+    let clicks = 0;
+    const turns: FakeTurn[] = [];
+    const sim = setup({
+      turns,
+      buttons: [modernButton("Send", () => {
+        clicks++;
+        turns.push(turn("user", "modern send"));
+      })],
+    });
+    const result = await sim.call("delegate.send_message", { message: "modern send" });
+    expect(result.ok).toBe(true);
+    expect(result.result.delivery).toBe("sent");
+    expect(clicks).toBe(1);
+  });
+
   it("never clicks Stop from read_chat and stops once only on explicit call", async () => {
     let stops = 0;
     const sim = setup({ buttons: [button("stop", () => stops++)] });
     const read = await sim.call("delegate.read_chat");
     expect(read.result.status).toBe("working");
     expect(stops).toBe(0);
+    const stopped = await sim.call("delegate.stop_generation");
+    expect(stopped.ok).toBe(true);
+    expect(stopped.result.stop_requested).toBe(true);
+    expect(stops).toBe(1);
+  });
+
+  it("supports the current bare Stop aria-label", async () => {
+    let stops = 0;
+    const sim = setup({ buttons: [modernButton("Stop", () => stops++)] });
     const stopped = await sim.call("delegate.stop_generation");
     expect(stopped.ok).toBe(true);
     expect(stopped.result.stop_requested).toBe(true);

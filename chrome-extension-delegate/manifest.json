@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SuperAgent Delegate (ChatGPT)",
-  "version": "1.5.1",
-  "description": "Local ChatGPT delegation with on-demand ChatGPT tab opening, single-safe-tab cleanup, multi-profile routing and connection audit.",
+  "version": "1.5.2",
+  "description": "Local ChatGPT delegation with current ChatGPT DOM compatibility, on-demand tab opening, safe single-tab cleanup, multi-profile routing and connection audit.",
   "permissions": [
     "tabs",
     "alarms",
