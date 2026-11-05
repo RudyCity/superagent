@@ -1,0 +1,88 @@
+{
+  "status": "completed",
+  "dataset": "MDPBench public Apache-2.0",
+  "annotationSourceSha256": "9b5f0f233917f5ab6c83c55dd526f66c930414254079097477d2ec5572e450f3",
+  "selectionSeed": 20261105,
+  "languageCount": 10,
+  "engine": "small",
+  "start": 5,
+  "count": 5,
+  "actualInference": true,
+  "trainedOwnModel": false,
+  "metric": "order-independent annotated layout-text token overlap; NOT page CER/WER, bbox F1 or exhaustive transcription",
+  "preprocessing": "PIL EXIF transpose, RGB, downscale to <=2200x2200, no synthetic alterations",
+  "runtimeSec": 19.185,
+  "modelHashes": {
+    "PP-OCRv6_det_small": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+    "PP-OCRv6_rec_small": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+    "PP-OCRv6_dict_small": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d"
+  },
+  "observedRssBytes": 148914176,
+  "cases": [
+    {
+      "caseId": 5,
+      "lang": "en",
+      "condition": "base",
+      "sourceGroupHash": "4ee4d56213cf8952",
+      "imageSha256": "349031e6cc7405ff918f51fd86fad3d01947cf2f2e3298d1b7775741a0822523",
+      "annotatedTokenHits": 60,
+      "annotatedGoldTokens": 60,
+      "recognizedTokens": 304,
+      "runtimeSeconds": 3.36113,
+      "ocrTextSha256": "e6734f7c5d5c34e94116132fdd6d3d3c547e2f6f9291098804d9af47ccb2942c",
+      "lineCount": 252
+    },
+    {
+      "caseId": 6,
+      "lang": "en",
+      "condition": "base",
+      "sourceGroupHash": "100740209c55766d",
+      "imageSha256": "0fc48b1811994f28bc4ebf73c15fc903d5cfdcb2f0b878580d15a8498e0cb044",
+      "annotatedTokenHits": 765,
+      "annotatedGoldTokens": 768,
+      "recognizedTokens": 772,
+      "runtimeSeconds": 4.82109,
+      "ocrTextSha256": "5baf497a782e8fc6499d927ff3ddaf92288df83f64e6b320939237e93f46f94f",
+      "lineCount": 110
+    },
+    {
+      "caseId": 7,
+      "lang": "en",
+      "condition": "base",
+      "sourceGroupHash": "a50453bd4fe1beec",
+      "imageSha256": "2ae27f3a9284810bf7ce479ac8921359ccf00b7ebee1017b5e8da3e28ebe4af4",
+      "annotatedTokenHits": 627,
+      "annotatedGoldTokens": 673,
+      "recognizedTokens": 770,
+      "runtimeSeconds": 5.09389,
+      "ocrTextSha256": "82a8a7e4efc49a64536b225e3e1632bd4061f6ac8d2c6c131b9f6a06d943d7d8",
+      "lineCount": 146
+    },
+    {
+      "caseId": 8,
+      "lang": "en",
+      "condition": "base",
+      "sourceGroupHash": "1bc17c81ade3b4fd",
+      "imageSha256": "1bccb6043b40446e4c0b2e2772abf04db1aa784384e3d312e6e08cfa98572673",
+      "annotatedTokenHits": 186,
+      "annotatedGoldTokens": 193,
+      "recognizedTokens": 190,
+      "runtimeSeconds": 2.20661,
+      "ocrTextSha256": "2a7bd2e01243840224baa25535022b79b0db820a020fe8174d3ae322943a9e8b",
+      "lineCount": 31
+    },
+    {
+      "caseId": 9,
+      "lang": "en",
+      "condition": "base",
+      "sourceGroupHash": "59710a03766c3856",
+      "imageSha256": "2fea47743eed2bae256a65649009d6d9e9412578c5b85857f5d266cd07de6c2f",
+      "annotatedTokenHits": 23,
+      "annotatedGoldTokens": 26,
+      "recognizedTokens": 84,
+      "runtimeSeconds": 1.42968,
+      "ocrTextSha256": "ddd632f8257bbc6ee752cdc8c4b83fd625ca5a79d158247f4c2ab3ecb6d3325b",
+      "lineCount": 57
+    }
+  ]
+}

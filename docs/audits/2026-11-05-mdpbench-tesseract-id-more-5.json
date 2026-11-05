@@ -1,0 +1,87 @@
+{
+  "status": "completed",
+  "dataset": "MDPBench public Apache-2.0",
+  "annotationSourceSha256": "9b5f0f233917f5ab6c83c55dd526f66c930414254079097477d2ec5572e450f3",
+  "selectionSeed": 20261105,
+  "languageCount": 10,
+  "engine": "tesseract",
+  "start": 15,
+  "count": 5,
+  "actualInference": true,
+  "trainedOwnModel": false,
+  "metric": "order-independent annotated layout-text token overlap; NOT page CER/WER, bbox F1 or exhaustive transcription",
+  "preprocessing": "PIL EXIF transpose, RGB, downscale to <=2200x2200, no synthetic alterations",
+  "runtimeSec": 9.261,
+  "modelHashes": {
+    "tesseract_eng": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+    "tesseract_ind": "69786901da87ab8766c1ea7fbb10b28f2110c14da3f6c8f2735df131fba95d88"
+  },
+  "observedRssBytes": 37031936,
+  "cases": [
+    {
+      "caseId": 15,
+      "lang": "id",
+      "condition": "base",
+      "sourceGroupHash": "4c05cc502d6be1c4",
+      "imageSha256": "4018a2125d228cc47529c849f5f68fc438c879a477229b592c00097f600551c7",
+      "annotatedTokenHits": 725,
+      "annotatedGoldTokens": 828,
+      "recognizedTokens": 930,
+      "runtimeSeconds": 3.82489,
+      "ocrTextSha256": "4e10ed3e04d8dd8a6064cd9222cc33478febaf3e8b55b505b0889a95f30c2754",
+      "lineCount": 81
+    },
+    {
+      "caseId": 16,
+      "lang": "id",
+      "condition": "base",
+      "sourceGroupHash": "1d0b74aebfe3e090",
+      "imageSha256": "a701b1309421a9daed5a1c3f64b24a4df289f28bf7ff22ab6b17a96837872b4a",
+      "annotatedTokenHits": 22,
+      "annotatedGoldTokens": 89,
+      "recognizedTokens": 162,
+      "runtimeSeconds": 1.34167,
+      "ocrTextSha256": "b5d3f180cf803c472516130bf8b8c763329608c1b7ffa715cd5f403e9c1201af",
+      "lineCount": 30
+    },
+    {
+      "caseId": 17,
+      "lang": "id",
+      "condition": "base",
+      "sourceGroupHash": "098800e97d0081ce",
+      "imageSha256": "7dacdd23fc8992b39c4e5968835f34c71cc4ab94d44e2b3ed927a308c73c1e7b",
+      "annotatedTokenHits": 87,
+      "annotatedGoldTokens": 90,
+      "recognizedTokens": 87,
+      "runtimeSeconds": 0.98792,
+      "ocrTextSha256": "6f218a2c34deddc667f849aabe3e425089bdebab9b5377f5bddabd754d07772f",
+      "lineCount": 16
+    },
+    {
+      "caseId": 18,
+      "lang": "id",
+      "condition": "base",
+      "sourceGroupHash": "9e646805015cf6c5",
+      "imageSha256": "6054d1f2010d7e3b0d79def801a1e1d381e601d4cccdea50a217b4bc8b331adb",
+      "annotatedTokenHits": 217,
+      "annotatedGoldTokens": 219,
+      "recognizedTokens": 226,
+      "runtimeSeconds": 1.0505,
+      "ocrTextSha256": "e0b35980b2c169b97c3ac37bd8159502aa4ef6f6a22075c433de4b3b7dccc6a0",
+      "lineCount": 29
+    },
+    {
+      "caseId": 19,
+      "lang": "id",
+      "condition": "base",
+      "sourceGroupHash": "5674768b1d001a65",
+      "imageSha256": "fcbead51ec74d64819bf4d3019977c03d57517c0efa2057e68ba2d65b0f5d99a",
+      "annotatedTokenHits": 55,
+      "annotatedGoldTokens": 55,
+      "recognizedTokens": 146,
+      "runtimeSeconds": 0.61184,
+      "ocrTextSha256": "cf2adee038ff8ae02cd1a6c9d964998d4c5a3889ae55d58ef8f75359def3eab2",
+      "lineCount": 30
+    }
+  ]
+}

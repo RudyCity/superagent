@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "source": "RapidOCR 3.9.2 default_models.yaml + verified model and language assets",
+  "rapidocr": "3.9.2",
+  "onnxruntime": "1.23.2",
+  "fonts": {
+    "noto_sans_regular": {
+      "source": "https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+      "sha256": "b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5",
+      "bytes": 569208,
+      "license": "SIL Open Font License 1.1",
+      "licenseUrl": "https://github.com/googlefonts/noto-fonts/blob/main/LICENSE"
+    }
+  },
+  "artifacts": {
+    "PP-OCRv6_det_tiny": "f42c0fbd294d95eac1a550e131b277dac97462c8025fa4b6c3cec1b7894bd3d5",
+    "PP-OCRv6_rec_tiny": "e16e242de5937ad92609223f19bc2aff3727ee40b095f996907c24749bad251b",
+    "PP-OCRv6_dict_tiny": "c5cbe34ef40c29c4df07ed012bf96569cb69a2d2a01a07027e9f13cb832bd9cd",
+    "PP-OCRv6_det_small": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+    "PP-OCRv6_rec_small": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+    "PP-OCRv6_dict_small": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+    "PP-OCRv6_det_medium": "92078b7355007ccfffcd4c8cd441a3afd4538904d06881b29a155e1e679907c2",
+    "PP-OCRv6_rec_medium": "eef444829dbbe18d7fea59a3f6eb75647518d2b3a9568d27c92e42940204894b",
+    "PP-OCRv6_dict_medium": "b5f2bfe2bdd9448429e3e82b51c789775d9b42f2403d082b00662eb77e401c5d",
+    "tesseract_eng": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2",
+    "tesseract_ind": "69786901da87ab8766c1ea7fbb10b28f2110c14da3f6c8f2735df131fba95d88",
+    "rapidocr_bundled_cls": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c"
+  }
+}

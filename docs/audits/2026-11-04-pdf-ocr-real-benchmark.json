@@ -1,0 +1,191 @@
+{
+  "status": "completed",
+  "fixtureClass": "synthetic scanned PDF; independent predefined gold",
+  "seed": 41020261104,
+  "date": "2026-11-04",
+  "engine": "Tesseract CLI",
+  "engineVersion": "tesseract v5.5.0.20241111",
+  "installedModels": [
+    "eng"
+  ],
+  "pdfRendering": "SuperAgent scripts/pdf-cli.ts render scale 2",
+  "scope": "Actual OCR benchmark, not simulated. Does not benchmark PaddleOCR or natural real scans.",
+  "normalization": "Unicode casefold, ASCII alphanumerics only, collapse whitespace",
+  "meanCER": 0.0119,
+  "meanWER": 0.0365,
+  "byLanguage": {
+    "id": {
+      "n": 6,
+      "meanCER": 0.0114,
+      "meanWER": 0.0337
+    },
+    "en": {
+      "n": 6,
+      "meanCER": 0.0125,
+      "meanWER": 0.0394
+    }
+  },
+  "samples": [
+    {
+      "id": "sample-01",
+      "language": "id",
+      "quality": "clean",
+      "gold": "Pusat riset agroindustri mengadakan pelatihan pada hari Selasa.",
+      "prediction": "Pusat riset agroindustri mengadakan pelatihan pada hari Selasa.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.25,
+      "pdfSHA256": "ad0f504c2b13ea9458bf79b34ed3cff1e6af70fcd1f0747693fb7e2817d17d98",
+      "renderPNG_SHA256": "9b2308d7b58554f7e03b6f19f98131b07c8e19d81eb891c0afb019d5496c6447"
+    },
+    {
+      "id": "sample-02",
+      "language": "id",
+      "quality": "blur_skew",
+      "gold": "Nomor dokumen 1042 dan tanggal verifikasi 04 November 2026.",
+      "prediction": "Nomor dokumen 1042 dan tanggal verifikasi 04 November 2026.\na —",
+      "ocrModel": "eng",
+      "CER": 0.0345,
+      "WER": 0.1111,
+      "ocrSeconds": 0.224,
+      "pdfSHA256": "f7e358a59db5f881f76f81499727d9f76aa265603ed5600b0d75637de81e0f5b",
+      "renderPNG_SHA256": "3e299e228d26631bd0eeca24604282bee652ca02f238fe9c7edcbc03741e0e79"
+    },
+    {
+      "id": "sample-03",
+      "language": "id",
+      "quality": "noise_small_font",
+      "gold": "Pengelolaan limbah organik membantu meningkatkan mutu lingkungan.",
+      "prediction": "Pengelolaan limbah organik membantu meningkatkan mutu lingkungan.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.203,
+      "pdfSHA256": "460211d9db6236eca064bfefedffdd01109dce7237377af8b9ce8425e9d6875d",
+      "renderPNG_SHA256": "d217a2095b04ee1c2f86c79d1a59f8aac678ffc71f98516fdb2551f0a54f4e08"
+    },
+    {
+      "id": "sample-04",
+      "language": "id",
+      "quality": "clean",
+      "gold": "Petugas memeriksa hasil pengukuran sebelum laporan disahkan.",
+      "prediction": "Petugas memeriksa hasil pengukuran sebelum laporan disahkan.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.227,
+      "pdfSHA256": "cf212719108933fba8fb66b0b971d0ad0f5fbe29702da280038883053d6b2eb6",
+      "renderPNG_SHA256": "ab32fb2e33b72970ada674426f48c9a00f585b226ac65f20226263d46196a47b"
+    },
+    {
+      "id": "sample-05",
+      "language": "id",
+      "quality": "blur_skew",
+      "gold": "Jumlah peserta 38 orang dan total ruang yang dipakai 5 unit.",
+      "prediction": "Jumlah peserta 38 orang dan total ruang yang dipakai 5 unit.\na —",
+      "ocrModel": "eng",
+      "CER": 0.0339,
+      "WER": 0.0909,
+      "ocrSeconds": 0.233,
+      "pdfSHA256": "30837b622d81d87d5fdf075de5e7f4919219858fb87892c3741141e63fb9d738",
+      "renderPNG_SHA256": "5033607ee49413d1fe17f0f4ec90853e1d788b454d28bc993ae78f76d7d552ed"
+    },
+    {
+      "id": "sample-06",
+      "language": "id",
+      "quality": "noise_small_font",
+      "gold": "Mohon periksa nomor invoice 2026 1415 sebelum pembayaran.",
+      "prediction": "Mohon periksa nomor invoice 2026 1415 sebelum pembayaran.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.215,
+      "pdfSHA256": "8220040db7b3cd7da16f677b0c97b82549683885e8c33817ac56399b9d04ad09",
+      "renderPNG_SHA256": "622770bc74a0b1d60d86348f3d1c8c021709f0b6e4c1796888014126e39be5cf"
+    },
+    {
+      "id": "sample-07",
+      "language": "en",
+      "quality": "clean",
+      "gold": "The quality team reviewed every section of the public report.",
+      "prediction": "The quality team reviewed every section of the public report.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.197,
+      "pdfSHA256": "f058e448b2938c9ce15920c40c5e8f574033762478fd30c16b3a8168cc0dbe53",
+      "renderPNG_SHA256": "8b961eaf2cbc58acb24fbae81dfcd7eea96450874ba653e9b664183c503c53f5"
+    },
+    {
+      "id": "sample-08",
+      "language": "en",
+      "quality": "blur_skew",
+      "gold": "Receipt number 1042 was verified on November 04 2026.",
+      "prediction": "Receipt number 1042 was verified on November 04 2026.\na —",
+      "ocrModel": "eng",
+      "CER": 0.0385,
+      "WER": 0.1111,
+      "ocrSeconds": 0.224,
+      "pdfSHA256": "856a295fd3366f83f0b76e6dd0df62d64ce4e4ce153c9641b2b70ef07316edc1",
+      "renderPNG_SHA256": "b86aedc6ec57f31c17e7d199439d9c8633fed0d7e86a553fa85299e15d5cf988"
+    },
+    {
+      "id": "sample-09",
+      "language": "en",
+      "quality": "noise_small_font",
+      "gold": "Independent evaluation must not reuse training examples.",
+      "prediction": "Independent evaluation must not reuse training examples.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.204,
+      "pdfSHA256": "d5be75dbd39efbc904b5388e4a71bffd6b6d4274061ba58c7dc4bd5865723d9a",
+      "renderPNG_SHA256": "bbe421194a505487c2ba05f0253f1830b60dc8f2ed0e11225acd80e6e847b258"
+    },
+    {
+      "id": "sample-10",
+      "language": "en",
+      "quality": "clean",
+      "gold": "The project has three milestones and two major risks.",
+      "prediction": "The project has three milestones and two major risks.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.197,
+      "pdfSHA256": "054352da65e54bad2958b3f9d87eaaff084260a14a60731923fc9d47030b8643",
+      "renderPNG_SHA256": "c634fcd284b9bcea2c8c8adf410c14fb8280366a8b509df3aa67b280436c0592"
+    },
+    {
+      "id": "sample-11",
+      "language": "en",
+      "quality": "blur_skew",
+      "gold": "Please submit a signed contract before Friday afternoon.",
+      "prediction": "Please submit a signed contract before Friday afternoon.\na —",
+      "ocrModel": "eng",
+      "CER": 0.0364,
+      "WER": 0.125,
+      "ocrSeconds": 0.222,
+      "pdfSHA256": "863e3b77b4e3bc1368e674b802308bbcefadf3b183cd153586b62e76de50aa20",
+      "renderPNG_SHA256": "5dd0d7930679dd604145b896c2e461cbfedfa838a1de0dc1fd82a3bd1cbeb5f4"
+    },
+    {
+      "id": "sample-12",
+      "language": "en",
+      "quality": "noise_small_font",
+      "gold": "The invoice total is 128 dollars for four separate items.",
+      "prediction": "The invoice total is 128 dollars for four separate items.",
+      "ocrModel": "eng",
+      "CER": 0.0,
+      "WER": 0.0,
+      "ocrSeconds": 0.207,
+      "pdfSHA256": "b1dabe4c704bfea8e72b7540e027070c45108158b861c60dde12089fc25dbdec",
+      "renderPNG_SHA256": "53f978fb9ede1a002639606cf56295f4055e6065eaf91ce5041274684094417c"
+    }
+  ],
+  "limitations": [
+    "Only English traineddata installed unless ind listed",
+    "Synthetic fixtures are not field scans",
+    "Full production pdf_ocr fallback not benchmarked in this standalone Tesseract test"
+  ]
+}

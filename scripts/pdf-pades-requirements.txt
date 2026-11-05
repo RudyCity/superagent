@@ -1,0 +1,4 @@
+# Independent offline PDF signature/PAdES evidence validator.
+# pyHanko is MIT licensed. Network fetching is disabled by SuperAgent.
+pyHanko==0.38.1
+pyhanko-certvalidator==0.33.0

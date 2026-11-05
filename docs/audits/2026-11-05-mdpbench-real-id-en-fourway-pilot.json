@@ -1,0 +1,171 @@
+{
+  "status": "pilot_complete",
+  "date": "2026-11-05",
+  "dataset": "Delores-Lin/MDPBench public",
+  "license": "Apache-2.0",
+  "annotationsSha256": "9b5f0f233917f5ab6c83c55dd526f66c930414254079097477d2ec5572e450f3",
+  "independentOriginalDocuments": 20,
+  "pages": 20,
+  "languageCounts": {
+    "id": 10,
+    "en": 10
+  },
+  "pretrainedOnly": true,
+  "training": false,
+  "metricDefinition": "Bag-of-word overlap against annotated layout text. NOT page CER/WER, bbox IoU, calibrated recognition or human gold from complete PDF transcription.",
+  "limitations": "20 original images, incomplete/possibly noisy layout annotations, unannotated visible text, no dual human adjudication, no 200-page holdout, no hardware-tier performance.",
+  "results": {
+    "tiny": {
+      "id": {
+        "pages": 10,
+        "annotatedReferenceTokens": 2656,
+        "matchedTokens": 2577,
+        "recognizedTokens": 3164,
+        "annotatedTokenRecall": 0.9703,
+        "annotatedTokenPrecision": 0.8145,
+        "annotatedTokenF1": 0.8856,
+        "pageP50Seconds": 0.886,
+        "pageP95Seconds": 1.304,
+        "sourceGroups": 10
+      },
+      "en": {
+        "pages": 10,
+        "annotatedReferenceTokens": 4341,
+        "matchedTokens": 4141,
+        "recognizedTokens": 4951,
+        "annotatedTokenRecall": 0.9539,
+        "annotatedTokenPrecision": 0.8364,
+        "annotatedTokenF1": 0.8913,
+        "pageP50Seconds": 1.32,
+        "pageP95Seconds": 1.702,
+        "sourceGroups": 10
+      },
+      "all": {
+        "pages": 20,
+        "annotatedReferenceTokens": 6997,
+        "matchedTokens": 6718,
+        "recognizedTokens": 8115,
+        "annotatedTokenRecall": 0.9601,
+        "annotatedTokenPrecision": 0.8278,
+        "annotatedTokenF1": 0.8891,
+        "pageP50Seconds": 1.009,
+        "pageP95Seconds": 1.702,
+        "sourceGroups": 20
+      }
+    },
+    "small": {
+      "id": {
+        "pages": 10,
+        "annotatedReferenceTokens": 2656,
+        "matchedTokens": 2587,
+        "recognizedTokens": 3172,
+        "annotatedTokenRecall": 0.974,
+        "annotatedTokenPrecision": 0.8156,
+        "annotatedTokenF1": 0.8878,
+        "pageP50Seconds": 2.386,
+        "pageP95Seconds": 4.476,
+        "sourceGroups": 10
+      },
+      "en": {
+        "pages": 10,
+        "annotatedReferenceTokens": 4341,
+        "matchedTokens": 4153,
+        "recognizedTokens": 4993,
+        "annotatedTokenRecall": 0.9567,
+        "annotatedTokenPrecision": 0.8318,
+        "annotatedTokenF1": 0.8899,
+        "pageP50Seconds": 3.739,
+        "pageP95Seconds": 4.908,
+        "sourceGroups": 10
+      },
+      "all": {
+        "pages": 20,
+        "annotatedReferenceTokens": 6997,
+        "matchedTokens": 6740,
+        "recognizedTokens": 8165,
+        "annotatedTokenRecall": 0.9633,
+        "annotatedTokenPrecision": 0.8255,
+        "annotatedTokenF1": 0.8891,
+        "pageP50Seconds": 3.16,
+        "pageP95Seconds": 4.923,
+        "sourceGroups": 20
+      }
+    },
+    "medium": {
+      "id": {
+        "pages": 10,
+        "annotatedReferenceTokens": 2656,
+        "matchedTokens": 2596,
+        "recognizedTokens": 3179,
+        "annotatedTokenRecall": 0.9774,
+        "annotatedTokenPrecision": 0.8166,
+        "annotatedTokenF1": 0.8898,
+        "pageP50Seconds": 7.779,
+        "pageP95Seconds": 15.915,
+        "sourceGroups": 10
+      },
+      "en": {
+        "pages": 10,
+        "annotatedReferenceTokens": 4341,
+        "matchedTokens": 4144,
+        "recognizedTokens": 5003,
+        "annotatedTokenRecall": 0.9546,
+        "annotatedTokenPrecision": 0.8283,
+        "annotatedTokenF1": 0.887,
+        "pageP50Seconds": 13.215,
+        "pageP95Seconds": 16.944,
+        "sourceGroups": 10
+      },
+      "all": {
+        "pages": 20,
+        "annotatedReferenceTokens": 6997,
+        "matchedTokens": 6740,
+        "recognizedTokens": 8182,
+        "annotatedTokenRecall": 0.9633,
+        "annotatedTokenPrecision": 0.8238,
+        "annotatedTokenF1": 0.8881,
+        "pageP50Seconds": 11.503,
+        "pageP95Seconds": 18.176,
+        "sourceGroups": 20
+      }
+    },
+    "tesseract": {
+      "id": {
+        "pages": 10,
+        "annotatedReferenceTokens": 2656,
+        "matchedTokens": 2449,
+        "recognizedTokens": 3088,
+        "annotatedTokenRecall": 0.9221,
+        "annotatedTokenPrecision": 0.7931,
+        "annotatedTokenF1": 0.8527,
+        "pageP50Seconds": 1.073,
+        "pageP95Seconds": 1.951,
+        "sourceGroups": 10
+      },
+      "en": {
+        "pages": 10,
+        "annotatedReferenceTokens": 4341,
+        "matchedTokens": 3882,
+        "recognizedTokens": 5620,
+        "annotatedTokenRecall": 0.8943,
+        "annotatedTokenPrecision": 0.6907,
+        "annotatedTokenF1": 0.7794,
+        "pageP50Seconds": 2.235,
+        "pageP95Seconds": 4.167,
+        "sourceGroups": 10
+      },
+      "all": {
+        "pages": 20,
+        "annotatedReferenceTokens": 6997,
+        "matchedTokens": 6331,
+        "recognizedTokens": 8708,
+        "annotatedTokenRecall": 0.9048,
+        "annotatedTokenPrecision": 0.727,
+        "annotatedTokenF1": 0.8062,
+        "pageP50Seconds": 1.324,
+        "pageP95Seconds": 4.167,
+        "sourceGroups": 20
+      }
+    }
+  }
+}
