@@ -34,6 +34,15 @@ timeout, or logs message content. The activity journal stores redacted
 metadata only; the requested chat text is returned only to the authenticated
 caller.
 
+## Current ChatGPT DOM compatibility — v1.5.2
+
+The Delegate content script now accepts the current bare `aria-label="Send"`
+and `aria-label="Stop"` controls in addition to the older Send/Stop labels.
+Chat reading supports the current `data-chatgpt-search-unit-key` user and
+assistant markers, strips the visible "ChatGPT said:" wrapper from returned
+assistant text, and reports a cancelled current turn as `status: "stopped"`
+when ChatGPT exposes `data-talvt-turn-state="cancelled"`.
+
 ## On-demand ChatGPT tab opening — v1.5.1
 
 Delegate no longer requires a ChatGPT tab to be opened manually before the

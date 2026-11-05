@@ -15,9 +15,22 @@
   const visible = (el) => !!el && el.isConnected && el.getClientRects().length > 0;
   const norm = (text) => String(text || "").replace(/\s+/g, " ").trim();
 
-  const turns = () =>
-    Array.from(document.querySelectorAll("[data-message-author-role]"))
-      .filter(visible);
+  const roleOfTurn = (node) => {
+    const legacy = node.getAttribute("data-message-author-role");
+    if (legacy) return legacy;
+    const key = node.getAttribute("data-chatgpt-search-unit-key") || "";
+    if (key.endsWith(":user")) return "user";
+    if (key.endsWith(":assistant")) return "assistant";
+    return "unknown";
+  };
+
+  const turns = () => {
+    const legacy = Array.from(document.querySelectorAll("[data-message-author-role]"));
+    const modern = Array.from(document.querySelectorAll(
+      '[data-chatgpt-search-unit-key$=":user"], [data-chatgpt-search-unit-key$=":assistant"]'
+    ));
+    return [...new Set([...legacy, ...modern])].filter(visible);
+  };
 
   const composer = () =>
     Array.from(document.querySelectorAll(
@@ -33,12 +46,12 @@
 
   const buttons = () => Array.from(document.querySelectorAll("button")).filter(visible);
   const stopButton = () => buttons().find((b) =>
-    b.matches('[data-testid="stop-button"], [aria-label="Stop generating"], [aria-label="Stop generation"]') ||
-    /^(stop generating|stop generation|stop response)$/.test(norm(b.getAttribute("aria-label") || "").toLowerCase())
+    b.matches('[data-testid="stop-button"], [aria-label="Stop"], [aria-label="Stop generating"], [aria-label="Stop generation"]') ||
+    /^(stop|stop generating|stop generation|stop response)$/.test(norm(b.getAttribute("aria-label") || "").toLowerCase())
   );
   const sendButton = () => buttons().find((b) =>
-    b.matches('[data-testid="send-button"], [aria-label="Send prompt"], [aria-label="Send message"]') ||
-    /^send (prompt|message)$/.test(norm(b.getAttribute("aria-label") || "").toLowerCase())
+    b.matches('[data-testid="send-button"], [aria-label="Send"], [aria-label="Send prompt"], [aria-label="Send message"]') ||
+    /^send(?: prompt| message)?$/.test(norm(b.getAttribute("aria-label") || "").toLowerCase())
   );
 
   function loginRequired() {
@@ -88,10 +101,16 @@
     const totalCount = allTurns.length;
     const limitedTurns = allTurns.slice(-80);
     const messages = limitedTurns.map((node, index) => {
-      const role = node.getAttribute("data-message-author-role") || "unknown";
+      const role = roleOfTurn(node);
       const body = node.querySelector(".markdown, [data-message-content], [data-testid='conversation-turn-content']")
         || node;
-      const fullText = norm(body.innerText || body.textContent);
+      let fullText = norm(body.innerText || body.textContent);
+      const modernKey = node.getAttribute("data-chatgpt-search-unit-key") || "";
+      if (modernKey.endsWith(":assistant")) {
+        fullText = fullText.replace(/^chatgpt said:\s*/i, "");
+      } else if (modernKey.endsWith(":user")) {
+        fullText = fullText.replace(/^you said:\s*/i, "");
+      }
       return {
         index: totalCount - limitedTurns.length + index,
         role,
@@ -100,10 +119,15 @@
       };
     });
     const last = messages.at(-1);
+    const lastNode = limitedTurns.at(-1);
+    const lastState = typeof lastNode?.closest === "function"
+      ? lastNode.closest("[data-talvt-turn-state]")?.getAttribute("data-talvt-turn-state") || ""
+      : "";
     const running = !!stopButton();
     const ready = !!composer();
     let status = running ? "working" :
       !ready ? "unavailable" :
+      lastState === "cancelled" ? "stopped" :
       !last && location.pathname.startsWith("/c/") ? "unverified" :
       !last ? "waiting_for_input" : last.role === "user" ? "working" : "finished";
     const latest = [...messages].reverse().find((m) => m.role === "assistant");
@@ -186,7 +210,7 @@
     if (norm(input.innerText || input.value || input.textContent)) {
       fail("CHATGPT_DRAFT_PRESENT", "An unsent draft is already in the composer; it was preserved. No message was sent.");
     }
-    const previousUserTurns = turns().filter((node) => node.getAttribute("data-message-author-role") === "user").length;
+    const previousUserTurns = turns().filter((node) => roleOfTurn(node) === "user").length;
     writeComposer(input, message);
     // Confirm text is present before attempting to click Send.
     const entered = norm(input.innerText || input.value || input.textContent);
@@ -198,7 +222,7 @@
     submit.click(); // exactly one click, never Enter + click
     try {
       await waitFor(
-        () => turns().filter((node) => node.getAttribute("data-message-author-role") === "user").length > previousUserTurns,
+        () => turns().filter((node) => roleOfTurn(node) === "user").length > previousUserTurns,
         14_000,
         "Send was clicked but chat acknowledgement did not appear. Outcome uncertain; inspect via delegate.read_chat. Do not automatically resend."
       );
