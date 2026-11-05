@@ -12,13 +12,15 @@ import { BROWSER_TRANSPORT_RULE } from "./agent/TaskPromptModules.js";
 
 // ─── Shared Rule Blocks ───────────────────────────────────────
 
-const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: Blanket process termination is forbidden. Never kill the parent/runtime, user Chrome, or arbitrary shared processes. Never blanket-kill by image name. On EADDRINUSE inspect the owner first and reuse legitimate Core/MCP/Delegate bridges; only use destructive PID tools after verifying ownership and authorization.`;
+const PROTECT_PROCESS_RULE = `- PROTECT_PROCESS: Blanket process termination is forbidden. Never kill the parent/runtime, user Chrome, or arbitrary shared processes. Target PID ONLY after verifying ownership and authorization; never blanket-kill by image name. On EADDRINUSE inspect the owner first and reuse legitimate Core/MCP/Delegate bridges; only use destructive PID tools after verifying ownership and authorization.`;
 
 const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cases, logic pre-execution. Debug via terminal first; run build+test on new/updated files at END of repair process (100% pass).
 - ANTI_PATTERN: FORBIDDEN: // TODO, // FIXME, @ts-ignore, explicit any, incomplete edits, unverified mocks.
 - SELF_VERIFY: 3-step: Syntax → Types → Edge Cases.
 - CORE_INVARIANT: ID 3 invariants before editing critical files.
 - NO_ASSUMPTIONS: Inspect available evidence first; ask_question only for unresolved material ambiguity. Never guess; preserve permission gates.`;
+
+const PDF_WORKFLOW_RULE = `- PDF_WORKFLOW: For authorized PDF tasks, use describe_tool to discover pdf_inspect, pdf_verify, pdf_edit_vector_exact, pdf_sign, pdf_redact_raster, and pdf_verify_signature as needed. Inspect input first, verify output, and apply signing/redaction permissions. State when rendered PDF pages are not editable elements.`;
 
 const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes and ports pre-spawn (inspect_port, find_process) to prevent port/task duplication and collisions.`;
 
@@ -170,6 +172,7 @@ ${ZERO_DEFECT_POLICY_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
+${PDF_WORKFLOW_RULE}
 ${MANDATORY_HALLMARK_RULE}
 - WORKSPACE_LIMIT: File writes ONLY on: Implementation Plan, Task Tracking, Verification files. All other code edits BLOCKED.
 ${SCRATCH_AND_TRANSFER_RULE}
@@ -244,6 +247,7 @@ ${ZERO_DEFECT_POLICY_RULE}
 ${REASONING_RULE}
 ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
+${PDF_WORKFLOW_RULE}
 ${MANDATORY_HALLMARK_RULE}
 - WORKSPACE_LIMIT: Files ONLY within: ${worktreePath}. Parent/sibling BLOCKED.
 ${SCRATCH_AND_TRANSFER_RULE}

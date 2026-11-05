@@ -142,6 +142,7 @@ import { searchJournalTool } from "./academicSearchTools.js";
 import { readDocumentTool } from "./documentReadTools.js";
 import { pdfInspectTool, pdfExtractTool, pdfOcrTool, pdfOcrSearchableTool, pdfRenderTool, pdfEditTool, pdfSplitTool, pdfVerifyTool, pdfRedactRasterTool, pdfEditVectorExactTool, pdfSignTool, pdfVerifySignatureTool } from "./pdfTools.js";
 import { officeCliTool } from "./officeCliTools.js";
+import { MEDIA_TOOLS } from "./mediaTools.js";
 import { listChromeProfilesTool } from "./chromeProfileTools.js";
 import {
   launchChromeProfileTool,
@@ -288,6 +289,7 @@ export const allTools: Tool[] = [
   pdfVerifyTool,
   pdfVerifySignatureTool,
   officeCliTool,
+  ...MEDIA_TOOLS,
   readTool,
   writeTool,
   editTool,
