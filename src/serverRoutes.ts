@@ -1124,7 +1124,13 @@ export async function handleServerRoute(
     }
     try {
       const { delegateBridge } = await import("./core/delegate/bridge.js");
-      sendJSON(res, 200, { success: true, ...delegateBridge.getStatus() });
+      const { readDelegateListenerPreference } = await import("./core/delegate/delegateListenerPreference.js");
+      const desiredEnabled = readDelegateListenerPreference();
+      const status = delegateBridge.getStatus();
+      const { inspectDelegateListenerHealth } =
+        await import("./core/delegate/delegateListenerHealth.js");
+      const health = await inspectDelegateListenerHealth(status.running, desiredEnabled);
+      sendJSON(res, 200, { success: true, ...status, ...health });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err?.message || "Failed to inspect delegate status" });
     }
@@ -1139,6 +1145,10 @@ export async function handleServerRoute(
     }
     try {
       const { delegateBridge } = await import("./core/delegate/bridge.js");
+      if (!delegateBridge.isRunning()) {
+        sendJSON(res, 409, { success: false, error: "DELEGATE_LISTENER_NOT_RUNNING" });
+        return true;
+      }
       const pair = delegateBridge.renewPairingCode();
       sendJSON(res, 200, { success: true, ...pair });
     } catch (err: any) {
@@ -1180,20 +1190,63 @@ export async function handleServerRoute(
       const raw = await readBody(req);
       const body = JSON.parse(raw);
       const action = String(body.action || "");
-      const { delegateBridge } = await import("./core/delegate/bridge.js");
-      if (action === "start") {
-        await delegateBridge.start();
-        sendJSON(res, 200, { success: true, action: "started", ...delegateBridge.getStatus() });
-      } else if (action === "stop") {
-        if (delegateBridge.getStatus().pendingRequests > 0) {
-          sendJSON(res, 409, { success: false, error: "DELEGATE_BRIDGE_BUSY" });
+      if (action !== "start" && action !== "stop") {
+        sendJSON(res, 400, { success: false, error: "Action must be start or stop" });
+        return true;
+      }
+      const transient = body.transient === true;
+      if (!transient && action === "start" &&
+          process.env.SUPERAGENT_DELEGATE_BRIDGE === "0") {
+        sendJSON(res, 409, { success: false, error: "DELEGATE_DISABLED_BY_HOST_CONFIGURATION" });
+        return true;
+      }
+      if (transient) {
+        // Only the supervisor with the private inspection capability can
+        // transfer ownership without changing the operator's saved preference.
+        const { timingSafeEqual } = await import("node:crypto");
+        const secret = process.env.SUPERAGENT_CORE_INSPECT_TOKEN || "";
+        const provided = req.headers["x-superagent-internal-token"];
+        const value = typeof provided === "string" ? provided : "";
+        if (process.env.SUPERAGENT_CORE_WORKER !== "1" ||
+            secret.length !== 64 || value.length !== secret.length ||
+            !timingSafeEqual(Buffer.from(value), Buffer.from(secret))) {
+          sendJSON(res, 403, { success: false, error: "DELEGATE_TRANSIENT_SUPERVISOR_ONLY" });
           return true;
         }
-        await delegateBridge.close();
-        sendJSON(res, 200, { success: true, action: "stopped", ...delegateBridge.getStatus() });
-      } else {
-        sendJSON(res, 400, { success: false, error: "Action must be start or stop" });
       }
+      const { delegateBridge } = await import("./core/delegate/bridge.js");
+      const { applyDelegateListenerAction } = await import("./core/delegate/delegateListenerLifecycle.js");
+      await applyDelegateListenerAction(delegateBridge, action, {
+        transient,
+        recover: transient ? undefined : async () => {
+          const { recoverDelegateListenerFromRetained } =
+            await import("./core/delegate/delegateListenerRecovery.js");
+          await recoverDelegateListenerFromRetained(() => delegateBridge.start());
+        },
+        stopStale: transient ? undefined : async () => {
+          if (process.env.SUPERAGENT_CORE_WORKER !== "1") return;
+          const { stopRetainedDelegateListener } =
+            await import("./core/delegate/delegateListenerRecovery.js");
+          await stopRetainedDelegateListener();
+        },
+      });
+      const { readDelegateListenerPreference } = await import("./core/delegate/delegateListenerPreference.js");
+      const status = delegateBridge.getStatus();
+      const desiredEnabled = readDelegateListenerPreference();
+      const { inspectDelegateListenerHealth } =
+        await import("./core/delegate/delegateListenerHealth.js");
+      const health = await inspectDelegateListenerHealth(status.running, desiredEnabled);
+      if (!transient && !health.healthy) {
+        sendJSON(res, 409, { success: false,
+          error: health.portOwnerUnknown
+            ? "DELEGATE_LISTENER_PORT_OCCUPIED_BY_UNKNOWN_OWNER"
+            : "DELEGATE_LISTENER_STATE_UNVERIFIED",
+          ...status, ...health });
+        return true;
+      }
+      sendJSON(res, 200, { success: true,
+        action: action === "start" ? "started" : "stopped",
+        ...status, ...health });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err?.message || "Lifecycle action failed" });
     }

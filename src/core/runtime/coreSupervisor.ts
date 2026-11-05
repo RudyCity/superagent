@@ -7,7 +7,8 @@ import { getRootConfigDir } from "../config/paths.js";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { getProcessSupervisor } from "../process/processSupervisor.js";
-import { handoverCoreDelegateBridge } from "./coreDelegateHandover.js";
+import { handoverCoreDelegateBridge, callCoreWorkerDelegateBridge } from "./coreDelegateHandover.js";
+import { readDelegateListenerPreference } from "../delegate/delegateListenerPreference.js";
 import type { CoreDrainReport } from "./coreDrainInspection.js";
 import { inspectCoreBuild, type CoreBuildIdentity } from "./coreBuildIdentity.js";
 import { CoreLifecycleLedger, validateCoreOperationId } from "./coreLifecycleLedger.js";
@@ -282,6 +283,7 @@ export async function runCoreSupervisor(
         ...process.env,
         SUPERAGENT_CORE_WORKER: "1",
         SUPERAGENT_CORE_GENERATION_ID: generationId,
+        SUPERAGENT_CORE_PUBLIC_PORT: String(port),
         SUPERAGENT_CORE_INSPECT_TOKEN: inspectToken,
         // First generation owns the fixed-port vision helper and cannot be
         // retired automatically. Others are API-only (no sidecar listeners).
@@ -429,7 +431,20 @@ export async function runCoreSupervisor(
         const bridgeHandover = process.env.SUPERAGENT_DELEGATE_BRIDGE !== "0" &&
           process.env.SUPERAGENT_CORE_STAGING !== "1" && !workerExited(current);
         if (bridgeHandover) {
-          await handoverCoreDelegateBridge(current.port, candidate.port, serverToken);
+          await handoverCoreDelegateBridge(current.port, candidate.port, serverToken,
+            undefined, { inspectToken });
+        }
+        // If the old active worker crashed, its listener can no longer be
+        // handed over. Restore on the verified rollback candidate only when
+        // the operator's persisted preference is ON.
+        const restoreAfterCrash = !bridgeHandover && workerExited(current) &&
+          process.env.SUPERAGENT_DELEGATE_BRIDGE !== "0" &&
+          process.env.SUPERAGENT_CORE_STAGING !== "1" &&
+          readDelegateListenerPreference();
+        if (restoreAfterCrash) {
+          const restored = await callCoreWorkerDelegateBridge(candidate.port, "start",
+            serverToken, { transient: true, inspectToken });
+          if (!restored.running) throw new Error("CORE_DELEGATE_CRASH_RECOVERY_NOT_READY");
         }
         // Preserve all live sessions on the former active generation.
         const previousRetained = [...retained];
@@ -448,7 +463,15 @@ export async function runCoreSupervisor(
           retained.splice(0, retained.length, ...previousRetained);
           lastRollback = previousRollback;
           if (bridgeHandover) {
-            await handoverCoreDelegateBridge(candidate.port, current.port, serverToken);
+            await handoverCoreDelegateBridge(candidate.port, current.port, serverToken,
+              undefined, { inspectToken });
+          } else if (restoreAfterCrash) {
+            // The checkpoint failed: do not leave a listener running on an
+            // unpublished generation.
+            try {
+              await callCoreWorkerDelegateBridge(candidate.port, "stop",
+                serverToken, { transient: true, inspectToken });
+            } catch {}
           }
           throw error;
         }
@@ -475,7 +498,8 @@ export async function runCoreSupervisor(
       const handoverEnabled = previous && process.env.SUPERAGENT_DELEGATE_BRIDGE !== "0" &&
         process.env.SUPERAGENT_CORE_STAGING !== "1";
       if (handoverEnabled) {
-        try { await handoverCoreDelegateBridge(previous.port, candidate.port, serverToken); }
+        try { await handoverCoreDelegateBridge(previous.port, candidate.port, serverToken,
+            undefined, { inspectToken }); }
         catch (error) {
           // The candidate was never published; stop only our fresh child.
           try { candidate.child?.kill(); } catch {}
@@ -492,7 +516,8 @@ export async function runCoreSupervisor(
         if (handoverEnabled) {
           // Core ownership checkpoint failed. Restore the earlier Delegate
           // owner before removing the uncommitted candidate generation.
-          try { await handoverCoreDelegateBridge(candidate.port, previous.port, serverToken); }
+          try { await handoverCoreDelegateBridge(candidate.port, previous.port, serverToken,
+              undefined, { inspectToken }); }
           finally { try { candidate.child?.kill(); } catch {} }
         } else {
           try { candidate.child?.kill(); } catch {}

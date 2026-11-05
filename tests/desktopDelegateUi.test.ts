@@ -171,15 +171,9 @@ describe("DelegateBridge backend methods", () => {
     const isRunning = delegateBridge.isRunning();
     expect(typeof isRunning).toBe("boolean");
 
-    const pair = delegateBridge.renewPairingCode();
-    expect(pair).toHaveProperty("code");
-    expect(pair.code.length).toBe(9); // Format: "XXXX-XXXX"
-    expect(pair.code).toContain("-");
-    expect(pair.expiresAt).toBeGreaterThan(Date.now());
-
-    const retrieved = delegateBridge.getPairingCode();
-    expect(retrieved).not.toBeNull();
-    expect(retrieved?.code).toBe(pair.code);
+    // A stopped listener must never issue a misleading, unusable pairing code.
+    expect(() => delegateBridge.renewPairingCode()).toThrow("DELEGATE_LISTENER_NOT_RUNNING");
+    expect(delegateBridge.getPairingCode()).toBeNull();
 
     const disc = delegateBridge.disconnectClient("non-existent-client");
     expect(disc).toBe(false);
@@ -291,6 +285,19 @@ describe("Desktop Delegate UI Controller", () => {
     await mounted.listeners.get("delegate-listener-toggle:click")!({});
     expect(mounted.invokeCalls.some(call => call.action === "start")).toBe(false);
     expect(mounted.getOrCreateElement("delegate-listener-feedback").textContent).toContain("Core tidak terjangkau");
+  });
+
+  it("disables Renew Pairing Code while listener is stopped", async () => {
+    const mounted = mountDelegateUi({
+      running: false, desiredEnabled: false,
+      port: 17341, endpoint: "ws://127.0.0.1:17341",
+      activeProfiles: [], openSockets: 0, pairingCode: null,
+    });
+    await mounted.windowMock.__superagentDelegateRefresh();
+    expect(mounted.getOrCreateElement("delegate-pair-renew").disabled).toBe(true);
+    await mounted.listeners.get("delegate-pair-renew:click")!({});
+    expect(mounted.invokeCalls.filter(call => call.action === "renew-code")).toHaveLength(0);
+    expect(mounted.getOrCreateElement("delegate-listener-feedback").textContent).toContain("Start Listener dahulu");
   });
 
   it("disconnects an active client when disconnect button is clicked", async () => {

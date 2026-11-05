@@ -1,4 +1,5 @@
 import { delegateBridge } from "./bridge.js";
+import { readDelegateListenerPreference } from "./delegateListenerPreference.js";
 
 /**
  * Start the fixed loopback endpoint in the same process that executes delegate
@@ -19,6 +20,7 @@ export async function startDelegateBridgeForAgentHost(
     return false;
   }
   try {
+    if (!readDelegateListenerPreference()) return false;
     await delegateBridge.start();
     return true;
   } catch (error) {

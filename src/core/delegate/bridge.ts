@@ -93,6 +93,22 @@ export class DelegateBridge {
   private clients = new Map<string, ClientSession>();
   private pending = new Map<string, Pending>();
   private waiters = new Set<() => void>();
+  /** Synchronous RPC acceptance barrier for verified listener handover. */
+  private quiescing = false;
+
+  quiesceForStop(): void {
+    if (this.quiescing) throw new Error("DELEGATE_BRIDGE_QUIESCING");
+    this.quiescing = true;
+    // No await between preventing new requests and checking inflight work.
+    if (this.pending.size > 0) {
+      this.quiescing = false;
+      throw new Error("DELEGATE_BRIDGE_BUSY");
+    }
+  }
+
+  resumeAfterRejectedStop(): void {
+    this.quiescing = false;
+  }
 
   /** Optional test override. In deployed hosts the secret comes from process.env. */
   constructor(
@@ -203,6 +219,7 @@ export class DelegateBridge {
   }
 
   getPairingCode(): { code: string; expiresAt: number; ttlRemainingMs: number } | null {
+    if (!this.server || this.quiescing) return null;
     if (!this.pairingCode || !this.pairingIssuedAt) return null;
     const now = Date.now();
     const expiresAt = this.pairingIssuedAt + PAIR_CODE_TTL_MS;
@@ -215,6 +232,8 @@ export class DelegateBridge {
   }
 
   renewPairingCode(): { code: string; expiresAt: number; ttlRemainingMs: number } | null {
+    if (this.quiescing) throw new Error("DELEGATE_BRIDGE_QUIESCING");
+    if (!this.server) throw new Error("DELEGATE_LISTENER_NOT_RUNNING");
     if (!this.authenticatedToken) {
       this.authenticatedToken = this.getAuthToken();
     }
@@ -267,6 +286,7 @@ export class DelegateBridge {
   }
 
   async start(): Promise<void> {
+    if (this.quiescing) throw new Error("DELEGATE_BRIDGE_QUIESCING");
     if (this.server) return;
     if (this.starting) return this.starting;
     // Rehydrate only hashed, origin-bound pairing proofs. The Chrome bearer
@@ -283,6 +303,7 @@ export class DelegateBridge {
         port: this.port,
         maxPayload: MAX_RPC_FRAME_BYTES,
         verifyClient: (info: { origin?: string; req: IncomingMessage }) => {
+          if (this.quiescing) return false;
           const origin = info.origin || "";
           const validOrigin = /^chrome-extension:\/\/[a-p]{32}$/.test(origin);
           const allowed = validOrigin && (!expectedId || origin === `chrome-extension://${expectedId}`);
@@ -329,6 +350,10 @@ export class DelegateBridge {
   }
 
   private onConnection(socket: WebSocket, req: IncomingMessage): void {
+    if (this.quiescing) {
+      socket.close(1001, "DELEGATE_BRIDGE_QUIESCING");
+      return;
+    }
     const origin = String(req.headers.origin || "");
     const extensionId = origin.replace(/^chrome-extension:\/\//, "");
     const connectionId = randomUUID();
@@ -567,7 +592,9 @@ export class DelegateBridge {
     timeoutMs = 20_000,
     targetClientId?: string,
   ): Promise<string> {
+    if (this.quiescing) throw new Error("DELEGATE_BRIDGE_QUIESCING");
     const client = await this.connected(targetClientId, signal);
+    if (this.quiescing) throw new Error("DELEGATE_BRIDGE_QUIESCING");
     if (signal?.aborted) throw new Error("DELEGATE_ABORTED");
     const ws = client.socket;
     const id = randomUUID();
@@ -610,6 +637,7 @@ export class DelegateBridge {
   }
 
   async close(): Promise<void> {
+    this.quiescing = true;
     for (const [id, p] of this.pending) {
       clearTimeout(p.timer);
       p.detachAbort();
@@ -625,10 +653,23 @@ export class DelegateBridge {
     this.pairedClients.clear();
     if (this.pairingTimeout) clearTimeout(this.pairingTimeout);
     this.pairingTimeout = undefined;
-    if (server) await new Promise<void>(resolve => server.close(() => resolve()));
+    if (server) {
+      // A legacy/idle Chrome socket may never reply to a polite close. The
+      // stop operation must release its owned WebSocket listener in bounded
+      // time so a supervisor takeover cannot time out while the port lingers.
+      const timeout = setTimeout(() => {
+        for (const socket of server.clients) {
+          try { socket.terminate(); } catch {}
+        }
+      }, 1500);
+      timeout.unref?.();
+      try { await new Promise<void>(resolve => server.close(() => resolve())); }
+      finally { clearTimeout(timeout); }
+    }
     this.audit("listener_closed");
     this.authenticatedToken = "";
     await flushDelegateConnectionAudit();
+    this.quiescing = false;
   }
 }
 

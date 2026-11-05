@@ -34,6 +34,7 @@ import {readTrayReleaseState} from "./trayReleaseStore.js";
 import {readLifecycleSettings,configureLifecycleProfile,dependencyOrder} from "./lifecycleProfiles.js";
 import {readLifecycleEvents,recordLifecycleEvent,operationHashPrefix} from "./lifecycleTimeline.js";
 import {ManagedSidecarLedger} from "./managedSidecarLedger.js";
+import {trayReconcileLedgerPort} from "./trayReconcileLedgerSelection.js";
 import {planLegacyCoreRecycle,scheduleLegacyCoreRecycle} from "./coreLegacyRecycle.js";
 import {planLegacyTrayRecycle,executeLegacyTrayRecycle} from "./trayLegacyRecycle.js";
 import {planLegacyVisionRecycle,executeLegacyVisionRecycle} from "./visionLegacyRecycle.js";
@@ -513,7 +514,7 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
     if(service==="tray"&&legacyTrayProcessPids().length)
       throw new Error("SERVICE_RECONCILE_LEGACY_TRAY_MAY_BE_RUNNING");
     const journalPort=service==="tray"?
-      (args.targetAction==="upgrade"?45322:45321):port!;
+      trayReconcileLedgerPort(args.targetAction):port!;
     const ledger=new ManagedSidecarLedger(service,journalPort);
     const result=ledger.reconcile(args.operationId,true,true);
     if(["tray","transport","channel_host","vision","guardian"].includes(service)){

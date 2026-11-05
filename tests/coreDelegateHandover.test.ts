@@ -73,6 +73,19 @@ describe("supervised Core Delegate bridge handover", () => {
     expect(calls).toEqual(["50301:status", "50302:start"]);
   });
 
+  it("marks supervisor handovers transient with an internal capability", async () => {
+    const mock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true, text: async () => JSON.stringify({ success: true, ...status(false) }),
+    } as Response);
+    await callCoreWorkerDelegateBridge(50301, "stop", "a".repeat(64), {
+      transient: true, inspectToken: "b".repeat(64),
+    });
+    const request = mock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toEqual({ action: "stop", transient: true });
+    expect((request.headers as Record<string, string>)["x-superagent-internal-token"])
+      .toBe("b".repeat(64));
+  });
+
   it("uses authenticated, fixed loopback endpoints and rejects malformed replies", async () => {
     const mock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true, text: async () => JSON.stringify({ success: true, ...status(true) }),

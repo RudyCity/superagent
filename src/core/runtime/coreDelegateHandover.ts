@@ -12,12 +12,19 @@ export interface DelegateWorkerBridgeStatus {
   activeProfiles: Array<{ clientId: string }>;
 }
 
+import { readDelegateListenerPreference } from "../delegate/delegateListenerPreference.js";
+
 export type DelegateBridgeOperation = "status" | "start" | "stop";
+export interface DelegateBridgeCallOptions {
+  transient?: boolean;
+  inspectToken?: string;
+}
 export type DelegateBridgeCall = (
   workerPort: number, action: DelegateBridgeOperation, serverToken: string,
+  options?: DelegateBridgeCallOptions,
 ) => Promise<DelegateWorkerBridgeStatus>;
 
-export const callCoreWorkerDelegateBridge: DelegateBridgeCall = async (workerPort, action, serverToken) => {
+export const callCoreWorkerDelegateBridge: DelegateBridgeCall = async (workerPort, action, serverToken, options = {}) => {
   if (!Number.isSafeInteger(workerPort) || workerPort < 1024 || workerPort > 65535 ||
       typeof serverToken !== "string" || serverToken.length < 24)
     throw new Error("CORE_DELEGATE_UNVERIFIED_WORKER");
@@ -29,8 +36,12 @@ export const callCoreWorkerDelegateBridge: DelegateBridgeCall = async (workerPor
       headers: {
         Authorization: "Bearer " + serverToken,
         ...(action === "status" ? {} : { "Content-Type": "application/json" }),
+        ...(options.transient && options.inspectToken
+          ? { "x-superagent-internal-token": options.inspectToken } : {}),
       },
-      ...(action === "status" ? {} : { body: JSON.stringify({ action }) }),
+      ...(action === "status" ? {} : { body: JSON.stringify({
+        action, ...(options.transient ? { transient: true } : {}),
+      }) }),
       signal: AbortSignal.timeout(5000),
     },
   );
@@ -42,8 +53,11 @@ export const callCoreWorkerDelegateBridge: DelegateBridgeCall = async (workerPor
   const state = value as Record<string, unknown>;
   if (state.success !== true || typeof state.running !== "boolean" ||
       state.port !== 17341 || !Number.isSafeInteger(state.openSockets) ||
-      !Array.isArray(state.activeProfiles) ||
-      (state.pendingRequests !== undefined && !Number.isSafeInteger(state.pendingRequests)))
+      (state.openSockets as number) < 0 || (state.openSockets as number) > 64 ||
+      !Array.isArray(state.activeProfiles) || state.activeProfiles.length > 32 ||
+      (state.pendingRequests !== undefined &&
+        (!Number.isSafeInteger(state.pendingRequests) ||
+         (state.pendingRequests as number) < 0 || (state.pendingRequests as number) > 1024)))
     throw new Error("CORE_DELEGATE_WORKER_BAD_STATUS");
   return state as unknown as DelegateWorkerBridgeStatus;
 };
@@ -60,26 +74,35 @@ function assertHandoverSafe(status: DelegateWorkerBridgeStatus): void {
 export async function handoverCoreDelegateBridge(
   previousWorkerPort: number, nextWorkerPort: number, serverToken: string,
   call: DelegateBridgeCall = callCoreWorkerDelegateBridge,
+  options: { desiredEnabled?: boolean; inspectToken?: string } = {},
 ): Promise<void> {
   if (previousWorkerPort === nextWorkerPort) return;
+  if (call === callCoreWorkerDelegateBridge &&
+      (typeof options.inspectToken !== "string" ||
+       !/^[a-f0-9]{64}$/.test(options.inspectToken))) {
+    throw new Error("CORE_DELEGATE_SUPERVISOR_CAPABILITY_REQUIRED");
+  }
+  const enabled = options.desiredEnabled ?? readDelegateListenerPreference();
+  const transient = options.inspectToken
+    ? { transient: true, inspectToken: options.inspectToken } : {};
   const old = await call(previousWorkerPort, "status", serverToken);
   assertHandoverSafe(old);
-  // The old worker may have disabled Delegate intentionally; supervisor-wide
-  // SUPERAGENT_DELEGATE_BRIDGE=0 is checked by the caller.
   const stopped = old.running
-    ? await call(previousWorkerPort, "stop", serverToken)
+    ? await call(previousWorkerPort, "stop", serverToken, transient)
     : old;
   if (stopped.running)
     throw new Error("CORE_DELEGATE_OLD_LISTENER_NOT_RELEASED");
+  // Respect deliberate OFF. Do not bring the listener up on a new generation.
+  if (!enabled) return;
   try {
-    const started = await call(nextWorkerPort, "start", serverToken);
+    const started = await call(nextWorkerPort, "start", serverToken, transient);
     if (!started.running) throw new Error("CORE_DELEGATE_NEW_LISTENER_NOT_READY");
   } catch (error) {
     if (old.running) {
-      try { await call(previousWorkerPort, "start", serverToken); }
-      catch {
-        throw new Error("CORE_DELEGATE_HANDOVER_AND_ROLLBACK_FAILED");
-      }
+      try {
+        const restored = await call(previousWorkerPort, "start", serverToken, transient);
+        if (!restored.running) throw new Error("CORE_DELEGATE_ROLLBACK_UNVERIFIED");
+      } catch { throw new Error("CORE_DELEGATE_HANDOVER_AND_ROLLBACK_FAILED"); }
     }
     throw error;
   }

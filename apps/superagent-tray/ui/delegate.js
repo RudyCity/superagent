@@ -23,6 +23,7 @@
     pollTimer: null,
     countdownTimer: null,
     unreachable: false,
+    desiredEnabled: true,
   };
   let statusRequest = null;
 
@@ -38,6 +39,12 @@
     const message = String(error?.message || error || "Unknown Core error");
     if (/EADDRINUSE|address already in use|DELEGATE_BRIDGE_BIND_FAILED|port 17341 in use/i.test(message)) {
       return "Port 17341 sedang dimiliki proses lain atau worker Core lama. Listener belum dimulai pada Core aktif. Lakukan handover terverifikasi, bukan kill proses, lalu coba lagi.";
+    }
+    if (/DELEGATE_RECOVERY_NO_UNIQUE_VERIFIED_OWNER|DELEGATE_RECOVERY_ACTIVE_WORKER_UNVERIFIED/.test(message)) {
+      return "Port 17341 dimiliki proses yang tidak bisa diverifikasi sebagai worker Core sebelumnya. Untuk keamanan, SuperAgent tidak menutup proses itu.";
+    }
+    if (/DELEGATE_BRIDGE_BUSY|DELEGATE_RECOVERY_OWNER_INFLIGHT_UNVERIFIED/.test(message)) {
+      return "Delegate masih menangani permintaan. Selesaikan permintaan aktif sebelum memindahkan listener.";
     }
     return "Gagal mengubah listener: " + message.slice(0, 280);
   }
@@ -136,6 +143,9 @@
         }
         delegateState.unreachable = false;
         delegateState.running = data.running;
+        delegateState.desiredEnabled = typeof data.desiredEnabled === "boolean"
+          ? data.desiredEnabled : data.running;
+        delegateState.portOwnerUnknown = data.portOwnerUnknown === true;
         delegateState.port = data.port || 17341;
         delegateState.endpoint = data.endpoint || `ws://127.0.0.1:${delegateState.port}`;
         delegateState.activeProfiles = data.activeProfiles || [];
@@ -151,6 +161,9 @@
         // Do not misrepresent a disconnected Core as a stopped listener.
         delegateState.unreachable = true;
         delegateState.running = false;
+        delegateState.pairingCode = null;
+        delegateState.pairingExpiresAt = null;
+        delegateState.pairingTtlMs = null;
         renderDelegateUI();
         showListenerFeedback("Status listener tidak dapat dibaca dari Core. " +
           String(err?.message || err).slice(0, 180), true);
@@ -236,6 +249,14 @@
     if (toggleBtn) {
       toggleBtn.textContent = delegateState.running ? "Stop Listener" : "Start Listener";
       toggleBtn.className = delegateState.running ? "button ghost danger" : "button primary";
+    }
+
+    const renewBtn = $("delegate-pair-renew");
+    if (renewBtn) renewBtn.disabled = !delegateState.running || delegateState.unreachable;
+    if (!delegateState.unreachable && delegateState.portOwnerUnknown) {
+      showListenerFeedback("Port 17341 sedang dipakai proses lain atau worker Core lama. Start Listener hanya akan mencoba pemulihan dari worker yang terverifikasi.", true);
+    } else if (!delegateState.unreachable && delegateState.desiredEnabled && !delegateState.running) {
+      showListenerFeedback("Listener seharusnya aktif tetapi sedang mati. Klik Start Listener untuk pemulihan aman.", true);
     }
 
     // 2. Summary stats
@@ -339,6 +360,10 @@
     // Renew Pairing Code
     $("delegate-pair-renew")?.addEventListener("click", async () => {
       const btn = $("delegate-pair-renew");
+      if (!delegateState.running || delegateState.unreachable) {
+        showListenerFeedback("Start Listener dahulu sebelum membuat kode pairing.", true);
+        return;
+      }
       if (btn) btn.disabled = true;
       try {
         const res = await invokeDelegate("renew-code");
@@ -354,7 +379,7 @@
       } catch (err) {
         alert(`Failed to renew pairing code: ${err.message || err}`);
       } finally {
-        if (btn) btn.disabled = false;
+        if (btn) btn.disabled = !delegateState.running || delegateState.unreachable;
       }
     });
 
