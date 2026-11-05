@@ -12,6 +12,7 @@ use std::{
     thread,
     time::Duration,
 };
+use sysinfo::{Pid, System};
 use tauri::AppHandle;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -44,6 +45,19 @@ fn write_owner(dir: &Path, owner: &TrayOwner) -> Result<(), String> {
         return Err("Tray owner directory is unsafe".into());
     }
     let file=owner_path(dir);
+    if file.exists() {
+        if let Ok(bytes) = fs::read(&file) {
+            if let Ok(existing) = serde_json::from_slice::<TrayOwner>(&bytes) {
+                let mut system = System::new();
+                system.refresh_processes();
+                if system.process(Pid::from_u32(existing.pid)).is_none() {
+                    let _ = fs::remove_file(&file);
+                }
+            } else {
+                let _ = fs::remove_file(&file);
+            }
+        }
+    }
     let mut handle=OpenOptions::new().create_new(true).write(true)
         .open(&file).map_err(|_| "Existing Tray owner record: never overwrite or adopt another process".to_string())?;
     let encoded=serde_json::to_vec(owner).map_err(|e| e.to_string())?;
@@ -180,5 +194,33 @@ mod tests{
         assert!(eq_secret(&x,&x));
         assert!(!eq_secret(&x, &format!("{}x",x)));
         assert!(!eq_secret(&x,&"a".repeat(64)));
+    }
+
+    #[test]
+    fn cleans_up_stale_owner_from_dead_pid() {
+        let temp = std::env::temp_dir().join(format!("tray-stale-test-{}", uuid::Uuid::new_v4().simple()));
+        let _ = fs::create_dir_all(&temp);
+        let stale = TrayOwner {
+            version: 1,
+            pid: 4294967290,
+            instance_id: "dead-instance".into(),
+            token: private_random_hex(),
+            control_port: 59999,
+            executable_path: "fake".into(),
+        };
+        let file = owner_path(&temp);
+        let _ = fs::write(&file, serde_json::to_vec(&stale).unwrap());
+        assert!(file.exists());
+
+        let new_owner = TrayOwner {
+            version: 1,
+            pid: std::process::id(),
+            instance_id: "live-instance".into(),
+            token: private_random_hex(),
+            control_port: 59998,
+            executable_path: "live".into(),
+        };
+        assert!(write_owner(&temp, &new_owner).is_ok());
+        let _ = fs::remove_dir_all(&temp);
     }
 }

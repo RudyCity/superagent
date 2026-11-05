@@ -946,6 +946,7 @@ async fn poll_reminders(
 fn show_main(app: &tauri::AppHandle, new_reminder: bool) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
+        let _ = window.unminimize();
         let _ = window.set_focus();
         if new_reminder {
             let _ = app.emit("desktop-create-reminder", ());
@@ -958,6 +959,19 @@ fn is_background_launch() -> bool {
 }
 
 fn main() {
+    #[cfg(windows)]
+    {
+        // Prevent GPU driver injection crashes (e.g. NVIDIA NvMemMapStoragex.dll access violation)
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--disable-gpu --disable-gpu-compositing");
+    }
+
+    std::panic::set_hook(Box::new(|info| {
+        let msg = format!("PANIC: {}\nLocation: {:?}\n", info, info.location());
+        if let Some(home) = dirs::home_dir() {
+            let log_file = home.join(".superagent-r").join("tray-panic.log");
+            let _ = std::fs::write(log_file, &msg);
+        }
+    }));
     #[cfg(debug_assertions)]
     if std::env::args_os().any(|arg| arg == "--lifecycle-smoke") {
         tray_lifecycle::run_headless_smoke(&config_dir().expect("Invalid test profile"))
@@ -1023,6 +1037,10 @@ fn main() {
                 // starts still open the main window by default.
                 if is_background_launch() {
                     window.hide()?;
+                } else {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
                 }
             }
             let status_item = MenuItem::with_id(app, "status_info", "⚡ SuperAgent Tray · Active", false, None::<&str>)?;
@@ -1194,8 +1212,16 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("SuperAgent Tray could not build")
         .run(|_app, event| {
-            if let tauri::RunEvent::Exit = event {
-                tray_lifecycle::cleanup();
+            match event {
+                tauri::RunEvent::ExitRequested { api, .. } => {
+                    // Tray applications run indefinitely in the notification area
+                    // until the user explicitly selects "Quit SuperAgent Tray".
+                    api.prevent_exit();
+                }
+                tauri::RunEvent::Exit => {
+                    tray_lifecycle::cleanup();
+                }
+                _ => {}
             }
         });
 }
