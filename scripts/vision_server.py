@@ -44,6 +44,8 @@ detector = None
 # endpoint; only an explicitly managed and tokenized child can shut down.
 MANAGED_VISION_TOKEN = os.environ.get("SUPERAGENT_VISION_OWNER_TOKEN", "")
 MANAGED_VISION_INSTANCE = os.environ.get("SUPERAGENT_VISION_OWNER_INSTANCE", "")
+LEGACY_RECYCLE_TOKEN = os.environ.get("SUPERAGENT_VISION_LEGACY_RECYCLE_TOKEN", "")
+LEGACY_RECYCLE_ENABLED = bool(re.fullmatch(r"[a-f0-9]{64}", LEGACY_RECYCLE_TOKEN))
 MANAGED_VISION_ENABLED = bool(
     re.fullmatch(r"[a-f0-9]{64}", MANAGED_VISION_TOKEN)
     and re.fullmatch(r"[a-f0-9]{32}", MANAGED_VISION_INSTANCE)
@@ -119,6 +121,33 @@ def annotate_som(img: Image.Image, elements: list) -> str:
 class VisionRequestHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         global active_requests, managed_vision_stopping
+        if self.path == "/_superagent/vision/recycle_shutdown":
+            if not LEGACY_RECYCLE_ENABLED:
+                self.send_error(404)
+                return
+            if self.client_address[0] not in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+                self.send_error(403)
+                return
+            if self.headers.get("Origin") or self.headers.get("X-Forwarded-For"):
+                self.send_error(403)
+                return
+            if not hmac.compare_digest(self.headers.get("Authorization", ""), "Bearer " + LEGACY_RECYCLE_TOKEN):
+                self.send_error(401)
+                return
+            with request_lock:
+                if active_requests != 0 or managed_vision_stopping:
+                    self.send_error(409, "Vision inference still active or shutdown started")
+                    return
+                managed_vision_stopping = True
+            payload = b'{"ok":true,"stopping":true}'
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(payload)
+            self.wfile.flush()
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
         if self.path == "/_superagent/vision/lifecycle":
             if not MANAGED_VISION_ENABLED or self.client_address[0] != "127.0.0.1":
                 self.send_error(404)
@@ -274,6 +303,8 @@ class VisionRequestHandler(BaseHTTPRequestHandler):
             self.send_json_response({
                 "status": "healthy",
                 "model_loaded": detector is not None,
+                "supportsGracefulRecycle": LEGACY_RECYCLE_ENABLED,
+                "activeRequests": active_requests,
                 **({
                     "managed": True,
                     "ownerPid": os.getpid(),

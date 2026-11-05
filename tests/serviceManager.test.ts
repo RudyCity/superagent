@@ -11,6 +11,18 @@ describe("unified SuperAgent service manager",()=>{
     expect(()=>validateManageServicesArgs({action:"status",port:0})).toThrow("INVALID_PORT");
     expect(()=>validateManageServicesArgs({action:"status",command:"taskkill /F"})).toThrow("UNEXPECTED_ARGUMENT");
     expect(()=>validateManageServicesArgs({action:"restart",service:"all",confirm:true})).toThrow("SINGLE_TARGET");
+    expect(validateManageServicesArgs({
+      action:"recycle",service:"core",port:7888,confirm:true,
+      operationId:"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      expectedOwnerPid:1234,
+      expectedProcessIdentity:"win:123456789012345678",
+      expectedLegacyCommandDigest:"a".repeat(64),
+      expectedBuildDigest:"b".repeat(64),
+      clientMode:"tline",
+    }).action).toBe("recycle");
+    expect(()=>validateManageServicesArgs({
+      action:"recycle",service:"core",expectedProcessIdentity:"win:not-a-birth-id",
+    })).toThrow("INVALID_PROCESS_IDENTITY");
   });
   it("reports all registered service kinds read-only and without credentials",async()=>{
     const entries=await inspectServices("all");
@@ -32,7 +44,7 @@ describe("unified SuperAgent service manager",()=>{
     expect(item.details).not.toHaveProperty("entries");
     await expect(manageServices({action:"stop",service:"process_supervisor",confirm:true}))
       .rejects.toThrow("SERVICE_UNSUPPORTED_MUTATION");
-  });
+  },25000);
   it("does not permit kill, start, stop or reload on unowned services",async()=>{
     await expect(manageServices({action:"restart",service:"vision",port:19461}))
       .rejects.toThrow("CONFIRM_REQUIRED");

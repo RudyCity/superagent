@@ -27,7 +27,7 @@ const dependencies:Record<ManagedServiceName,ManagedServiceName[]>={
   process_supervisor:[],
 };
 const allowedActions:Record<ManagedServiceName,string[]>={
-  core:["status","restart","rollback","drain"],
+  core:["status","restart","rollback","drain","recycle"],
   mcp:["status","reload"],
   transport:["status","start","stop","restart"],
   channel_host:["status","start","stop","restart"],

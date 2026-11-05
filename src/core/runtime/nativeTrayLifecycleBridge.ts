@@ -25,20 +25,25 @@ export function parseNativeTrayLifecycleRequest(raw:unknown):ManageServicesArgs 
     throw new Error("DESKTOP_LIFECYCLE_ACTION_DENIED");
   if(operation.service&&operation.service!=="all"&&!SERVICES.has(operation.service))
     throw new Error("DESKTOP_LIFECYCLE_TUNNEL_MUTATION_UNAVAILABLE");
-  if(operation.action==="plan"&&
-     (!operation.service||operation.service==="all"||
-      !operation.targetAction||!PLAN.has(operation.targetAction)))
-    throw new Error("DESKTOP_LIFECYCLE_EXACT_PLAN_REQUIRED");
-  if(operation.action==="plan"&&
-     ((operation.service==="core"&&operation.targetAction!=="recycle")||
-      operation.service==="mcp"||operation.service==="muse"||
-      operation.service==="telegram"||operation.service==="process_supervisor"))
-    throw new Error("DESKTOP_LIFECYCLE_PLAN_TARGET_RESTRICTED");
+  if(operation.action==="plan"){
+    const isGlobalRecycle = operation.service === "all" && operation.targetAction === "recycle";
+    if(!isGlobalRecycle && (!operation.service||operation.service==="all"||!operation.targetAction||!PLAN.has(operation.targetAction)))
+      throw new Error("DESKTOP_LIFECYCLE_EXACT_PLAN_REQUIRED");
+    if(!isGlobalRecycle &&
+       ((operation.service==="core"&&operation.targetAction!=="recycle")||
+        operation.service==="mcp"||operation.service==="muse"||
+        operation.service==="telegram"||operation.service==="process_supervisor"))
+      throw new Error("DESKTOP_LIFECYCLE_PLAN_TARGET_RESTRICTED");
+  }
   if(MUTATE.has(operation.action)){
-    if(!operation.service||operation.service==="all"||operation.confirm!==true)
+    const isRecycleMutation = operation.action === "recycle" &&
+      (operation.service === "all" || operation.service === "core" || operation.service === "tray" || operation.service === "vision");
+    const isReconcileMutation = operation.action === "reconcile" &&
+      (operation.service === "all" || ["tray","transport","channel_host","vision","guardian","daemon"].includes(operation.service ?? ""));
+    if(!operation.service||(!isRecycleMutation && !isReconcileMutation && operation.service==="all")||operation.confirm!==true)
       throw new Error("DESKTOP_LIFECYCLE_EXPLICIT_CONFIRMATION_REQUIRED");
     if(!["tray","transport","channel_host","vision","guardian","daemon"].includes(operation.service)&&
-       !(operation.service==="core"&&operation.action==="recycle"))
+       !isRecycleMutation && !isReconcileMutation)
       throw new Error("DESKTOP_LIFECYCLE_MUTATION_TARGET_RESTRICTED");
     if(operation.action!=="configure"&&operation.action!=="reconcile"&&
        typeof operation.operationId!=="string")

@@ -252,6 +252,13 @@ export async function scheduleLegacyCoreRecycle(
   assertPlan(plan);
   if (confirm !== true) throw new Error("CORE_RECYCLE_EXPLICIT_CONFIRMATION_REQUIRED");
 
+  const prior = new ManagedSidecarLedger('core', plan.port)
+    .lookup(plan.operationId, recycleFingerprint(plan));
+  if (prior?.replayed) {
+    return {service:'core' as const,action:'recycle' as const,changed:false,
+      replayed:true,scheduled:false,ownerPid:prior.afterPid??null};
+  }
+
   const evidence = await captureLegacyEvidence(plan.port);
   if (
     evidence.ownerPid !== plan.expectedOwnerPid ||

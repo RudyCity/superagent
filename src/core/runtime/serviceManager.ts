@@ -34,17 +34,23 @@ import {readTrayReleaseState} from "./trayReleaseStore.js";
 import {readLifecycleSettings,configureLifecycleProfile,dependencyOrder} from "./lifecycleProfiles.js";
 import {readLifecycleEvents,recordLifecycleEvent,operationHashPrefix} from "./lifecycleTimeline.js";
 import {ManagedSidecarLedger} from "./managedSidecarLedger.js";
+import {planLegacyCoreRecycle,scheduleLegacyCoreRecycle} from "./coreLegacyRecycle.js";
+import {planLegacyTrayRecycle,executeLegacyTrayRecycle} from "./trayLegacyRecycle.js";
+import {planLegacyVisionRecycle,executeLegacyVisionRecycle} from "./visionLegacyRecycle.js";
+import {planGlobalLifecycleRecycle,executeGlobalLifecycleRecycle,reconcileGlobalLifecycleRecycle} from "./globalLifecycleRecycle.js";
 
 import { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export { MANAGED_SERVICE_NAMES, type ManagedServiceName } from "./serviceManagerTypes.js";
 export type ServiceAction =
   "inventory"|"status"|"plan"|"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"doctor"
-  |"health"|"dashboard"|"logs"|"profile"|"configure"|"reconcile"|"upgrade"|"watchdog";
+  |"health"|"dashboard"|"logs"|"profile"|"configure"|"reconcile"|"upgrade"|"watchdog"|"recycle";
 export type ManageServicesArgs = {
   action:ServiceAction; service?:ManagedServiceName|"all"; port?:number;
-  targetAction?:"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"upgrade";
+  targetAction?:"restart"|"rollback"|"drain"|"reload"|"start"|"stop"|"upgrade"|"recycle";
   confirm?:boolean; operationId?:string; expectedBuildDigest?:string;
   expectedOwnerPid?:number; expectedPublicUrl?:string;
+  expectedProcessIdentity?:string; expectedLegacyCommandDigest?:string; expectedExecutablePath?:string;
+  clientMode?:"tline"|"chrome-extension";
   expectedInstanceId?:string; noPublicIngress?:boolean;
   expectedSupervisorPid?:number; noCoreShutdown?:boolean;
   expectedWorkerPid?:number; expectedRunning?:boolean; noActiveJobs?:boolean;
@@ -86,21 +92,31 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
     "expectedWorkerPid","expectedRunning","noActiveJobs",
     "revision","autoRecover","startOnBoot","failureThreshold",
     "maxRestartsPerHour","intervalSeconds","reviewed","limit",
-    "expectedReleaseRevision","expectedCurrentDigest"]);
+    "expectedReleaseRevision","expectedCurrentDigest",
+    "expectedProcessIdentity","expectedLegacyCommandDigest","clientMode","expectedExecutablePath"]);
   if(Object.keys(v).some(k=>!allowed.has(k)))throw new Error("SERVICE_UNEXPECTED_ARGUMENT");
   if(!["inventory","status","plan","restart","rollback","drain","reload","start","stop","doctor",
-    "health","dashboard","logs","profile","configure","reconcile","upgrade","watchdog"].includes(String(v.action)))
+    "health","dashboard","logs","profile","configure","reconcile","upgrade","watchdog","recycle"].includes(String(v.action)))
     throw new Error("SERVICE_UNKNOWN_ACTION");
   if(v.service!==undefined&&v.service!=="all"&&
      (typeof v.service!=="string"||!known.has(v.service)))throw new Error("SERVICE_UNKNOWN_TARGET");
   if(v.port!==undefined)validateServicePort(v.port);
   if(v.confirm!==undefined&&typeof v.confirm!=="boolean")throw new Error("SERVICE_INVALID_CONFIRM");
   if(v.targetAction!==undefined&&
-     !["restart","rollback","drain","reload","start","stop","upgrade"].includes(String(v.targetAction)))
+     !["restart","rollback","drain","reload","start","stop","upgrade","recycle"].includes(String(v.targetAction)))
     throw new Error("SERVICE_INVALID_TARGET_ACTION");
   if(v.expectedOwnerPid!==undefined&&
      (!Number.isSafeInteger(v.expectedOwnerPid)||Number(v.expectedOwnerPid)<0))
     throw new Error("SERVICE_INVALID_OWNER_PID");
+  if(v.expectedProcessIdentity!==undefined&&
+     (typeof v.expectedProcessIdentity!=="string"||
+      !/^(?:win:\d{15,20}|linux:[a-f0-9-]{36}:\d+)$/.test(v.expectedProcessIdentity)))
+    throw new Error("SERVICE_INVALID_PROCESS_IDENTITY");
+  if(v.expectedLegacyCommandDigest!==undefined&&
+     (typeof v.expectedLegacyCommandDigest!=="string"||!/^[a-f0-9]{64}$/.test(v.expectedLegacyCommandDigest)))
+    throw new Error("SERVICE_INVALID_LEGACY_COMMAND_DIGEST");
+  if(v.clientMode!==undefined&&!["tline","chrome-extension"].includes(String(v.clientMode)))
+    throw new Error("SERVICE_INVALID_CLIENT_MODE");
   if(v.expectedInstanceId!==undefined&&(typeof v.expectedInstanceId!=="string"||
      !(/^[a-f0-9]{32}$/.test(v.expectedInstanceId)||v.expectedInstanceId==="absent")))
     throw new Error("SERVICE_INVALID_INSTANCE_ID");
@@ -156,7 +172,9 @@ export function validateManageServicesArgs(raw:unknown):ManageServicesArgs {
       throw new Error("SERVICE_PROFILE_INVALID_NUMERIC");
   }
   if((v.service===undefined||v.service==="all")&&
-     !["inventory","status","doctor","health","dashboard","logs","profile","watchdog"].includes(String(v.action)))
+     !["inventory","status","doctor","health","dashboard","logs","profile","watchdog","recycle"].includes(String(v.action))&&
+     !(v.action==="plan"&&v.targetAction==="recycle")&&
+     !(v.action==="reconcile"))
     throw new Error("SERVICE_SINGLE_TARGET_REQUIRED");
   return v as ManageServicesArgs;
 }
@@ -190,8 +208,9 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
           sessionCount:s.affinitySessions,buildFresh:s.currentBuild?.fresh??null});
     }catch {
       const response=await probe(port!,"/api/status");
-      return snap(service,port,response?"unverified":"inactive",owner,false,["status"],
-        response?"API responds without supervised Core ownership; restart blocked":
+      return snap(service,port,response?"unverified":"inactive",owner,false,
+        response?["status","plan","recycle"]:["status"],
+        response?"Legacy Core API responds without supervised ownership; guarded recycle available":
           "No authenticated Core supervisor or responsive API");
     }
   }
@@ -430,9 +449,10 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
       profile:updated.profiles.find(x=>x.service===service)};
   }
   if(action==="reconcile"){
-    if(service==="all"||!args.operationId||args.confirm!==true||
-       args.reviewed!==true)
+    if(!args.operationId||args.confirm!==true||args.reviewed!==true)
       throw new Error("SERVICE_RECONCILE_REQUIRES_EXPLICIT_OPERATOR_REVIEW");
+    if(service==="all")
+      return reconcileGlobalLifecycleRecycle(args.operationId,args.reviewed);
     if(service==="core"||service==="mcp"||service==="process_supervisor"||
        service==="rest_tunnel"||service==="muse_tunnel")
       throw new Error("SERVICE_RECONCILE_USE_OWNER_SPECIFIC_PROTOCOL");
@@ -481,6 +501,14 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
     return {service,action,...result};
   }
   if(action==="plan") {
+    if((service==="all"||service===undefined)&&args.targetAction==="recycle")
+      return planGlobalLifecycleRecycle();
+    if(service==="core"&&args.targetAction==="recycle")
+      return planLegacyCoreRecycle(port!);
+    if(service==="tray"&&args.targetAction==="recycle")
+      return planLegacyTrayRecycle(args.expectedOwnerPid);
+    if(service==="vision"&&args.targetAction==="recycle")
+      return planLegacyVisionRecycle(port!);
     if(service==="core"&&
       (args.targetAction==="restart"||args.targetAction==="rollback"||args.targetAction==="drain")) {
       const status=(await inspectServices("core",port))[0];
@@ -553,6 +581,59 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
       noCoreShutdown:true,confirm:true,
       note:"Verified Tray process only, Core/MCP/Muse/tunnel unaffected",
     });
+  }
+  if(service==="all"&&action==="recycle"){
+    if(!args.operationId)
+      throw new Error("SERVICE_GLOBAL_RECYCLE_PLAN_REQUIRED");
+    const {GlobalRecycleLedger,executeGlobalLifecycleRecycle}=await import('./globalLifecycleRecycle.js');
+    const ledger=new GlobalRecycleLedger();
+    const plan=ledger.getPlan(args.operationId);
+    return executeGlobalLifecycleRecycle(plan,true);
+  }
+  if(service==="tray"&&action==="recycle"){
+    if(!args.operationId||args.expectedOwnerPid===undefined||
+       !args.expectedProcessIdentity||!args.expectedBuildDigest||
+       args.noCoreShutdown!==true)
+      throw new Error("SERVICE_TRAY_RECYCLE_PLAN_REQUIRED");
+    return executeLegacyTrayRecycle({
+      service:"tray",action:"recycle",operationId:args.operationId,
+      expectedOwnerPid:args.expectedOwnerPid,
+      expectedProcessIdentity:args.expectedProcessIdentity,
+      expectedExecutablePath:args.expectedExecutablePath as string ?? "",
+      expectedLegacyDigest:args.expectedCurrentDigest as string ?? args.expectedBuildDigest,
+      targetBuildDigest:args.expectedBuildDigest,
+      noCoreShutdown:true,
+      note:"Guarded Tray legacy recycle",
+    },true);
+  }
+  if(service==="vision"&&action==="recycle"){
+    if(!args.operationId||args.expectedOwnerPid===undefined||
+       !args.expectedProcessIdentity||!args.expectedBuildDigest||
+       args.noPublicIngress!==true)
+      throw new Error("SERVICE_VISION_RECYCLE_PLAN_REQUIRED");
+    return executeLegacyVisionRecycle({
+      service:"vision",action:"recycle",port:port!,operationId:args.operationId,
+      expectedOwnerPid:args.expectedOwnerPid,
+      expectedProcessIdentity:args.expectedProcessIdentity,
+      expectedScriptDigest:args.expectedBuildDigest,
+      supportsGracefulShutdown:true,
+      noPublicIngress:true,
+      note:"Guarded Vision legacy recycle",
+    },true);
+  }
+  if(service==="core"&&action==="recycle") {
+    if(!args.operationId||args.expectedOwnerPid===undefined||
+       !args.expectedProcessIdentity||!args.expectedLegacyCommandDigest||
+       !args.expectedBuildDigest||!args.clientMode)
+      throw new Error("SERVICE_CORE_RECYCLE_PLAN_REQUIRED: call action=plan targetAction=recycle first");
+    return scheduleLegacyCoreRecycle({
+      service:"core",action:"recycle",port:port!,operationId:args.operationId,
+      expectedOwnerPid:args.expectedOwnerPid,
+      expectedProcessIdentity:args.expectedProcessIdentity,
+      expectedLegacyCommandDigest:args.expectedLegacyCommandDigest,
+      expectedBuildDigest:args.expectedBuildDigest,clientMode:args.clientMode,
+      note:"Guarded legacy Core recycle plan",
+    },true);
   }
   if(service==="core"&&(action==="restart"||action==="rollback"||action==="drain")) {
     if(!args.operationId||!args.expectedBuildDigest)

@@ -11,10 +11,10 @@ export const SERVICE_MANAGER_MCP_TOOL_DEFS=[{
   inputSchema:{
     type:"object",
     properties:{
-      action:{type:"string",enum:["inventory","status","doctor","health","dashboard","logs","profile","configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade"]},
+      action:{type:"string",enum:["inventory","status","doctor","health","dashboard","logs","profile","configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
       service:{type:"string",enum:["all",...MANAGED_SERVICE_NAMES]},
       port:{type:"integer",minimum:1024,maximum:65535},
-      targetAction:{type:"string",enum:["start","stop","restart","rollback","drain","reload","upgrade"]},
+      targetAction:{type:"string",enum:["start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
       confirm:{type:"boolean",description:"Must be true for mutations."},
       operationId:{type:"string",minLength:16,maxLength:128},
       expectedBuildDigest:{type:"string",pattern:"^[a-f0-9]{64}$"},
@@ -30,6 +30,10 @@ export const SERVICE_MANAGER_MCP_TOOL_DEFS=[{
       reviewed:{type:"boolean",description:"Operator confirmed uncertain operation outcome, requires no owner present."},
       limit:{type:"integer",minimum:1,maximum:200},
       expectedOwnerPid:{type:"integer",minimum:0},
+      expectedProcessIdentity:{type:"string",description:"Exact process birth identity returned by Core recycle planning."},
+      expectedLegacyCommandDigest:{type:"string",pattern:"^[a-f0-9]{64}$"},
+      clientMode:{type:"string",enum:["tline","chrome-extension"]},
+      expectedExecutablePath:{type:"string",description:"Exact executable path for Tray legacy recycle."},
       expectedPublicUrl:{type:"string"},
       expectedInstanceId:{type:"string",description:"From sidecar start/stop/restart plan: instance id or absent."},
       expectedSupervisorPid:{type:"integer",minimum:1,

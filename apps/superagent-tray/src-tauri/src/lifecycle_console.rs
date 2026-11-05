@@ -28,13 +28,13 @@ const FIELDS: &[&str] = &[
     "expectedSupervisorPid", "noCoreShutdown", "expectedWorkerPid",
     "expectedRunning", "noActiveJobs", "expectedProcessIdentity",
     "expectedLegacyCommandDigest", "clientMode", "expectedReleaseRevision",
-    "expectedCurrentDigest", "revision", "autoRecover", "startOnBoot",
+    "expectedCurrentDigest", "expectedExecutablePath", "revision", "autoRecover", "startOnBoot",
     "failureThreshold", "maxRestartsPerHour", "intervalSeconds",
     "reviewed", "limit",
 ];
 pub fn validate(input: Value) -> Result<Value,String> {
     let value=input.as_object().ok_or("Lifecycle command must be an object")?;
-    if value.len()>28 || value.keys().any(|key| !FIELDS.contains(&key.as_str())) {
+    if value.len()>32 || value.keys().any(|key| !FIELDS.contains(&key.as_str())) {
         return Err("Unexpected lifecycle field".into());
     }
     let action=value.get("action").and_then(Value::as_str).ok_or("Action is required")?;
@@ -42,8 +42,9 @@ pub fn validate(input: Value) -> Result<Value,String> {
     let service=value.get("service").and_then(Value::as_str).unwrap_or("all");
     if !SERVICES.contains(&service){return Err("Service is not allowlisted".into());}
     if MUTATIONS.contains(&action) {
-        let core_recycle=service=="core" && action=="recycle";
-        if (!TARGETS.contains(&service) && !core_recycle) ||
+        let is_recycle = action == "recycle" && (service == "all" || service == "core" || service == "tray" || service == "vision");
+        let is_reconcile = action == "reconcile" && (service == "all" || TARGETS.contains(&service));
+        if (!TARGETS.contains(&service) && !is_recycle && !is_reconcile) ||
             value.get("confirm")!=Some(&Value::Bool(true)) {
             return Err("Native lifecycle mutation requires exact service and confirmation".into());
         }
@@ -55,8 +56,8 @@ pub fn validate(input: Value) -> Result<Value,String> {
     }
     if action=="plan"{
         let operation=value.get("targetAction").and_then(Value::as_str).unwrap_or("");
-        let core_recycle=service=="core" && operation=="recycle";
-        if (!TARGETS.contains(&service) && !core_recycle) ||
+        let is_recycle = operation == "recycle" && (service == "all" || service == "core" || service == "tray" || service == "vision");
+        if (!TARGETS.contains(&service) && !is_recycle) ||
             !["start","stop","restart","upgrade","rollback","recycle"].contains(&operation) ||
             (service=="core" && operation!="recycle") {
             return Err("Native lifecycle plan target is restricted".into());
@@ -95,6 +96,12 @@ mod tests {
         assert!(validate(json!({"action":"plan","service":"tray","targetAction":"upgrade"})).is_ok());
         assert!(validate(json!({"action":"plan","service":"core","port":7888,
             "targetAction":"recycle"})).is_ok());
+        assert!(validate(json!({"action":"plan","service":"all","targetAction":"recycle"})).is_ok());
+        assert!(validate(json!({"action":"plan","service":"vision","targetAction":"recycle"})).is_ok());
+        assert!(validate(json!({"action":"recycle","service":"all","confirm":true,
+            "operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})).is_ok());
+        assert!(validate(json!({"action":"reconcile","service":"all","confirm":true,
+            "operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","reviewed":true})).is_ok());
         assert!(validate(json!({"action":"plan","service":"core","port":7888,
             "targetAction":"restart"})).is_err());
         assert!(validate(json!({"action":"configure","service":"tray","confirm":true,

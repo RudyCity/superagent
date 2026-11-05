@@ -126,6 +126,16 @@ if (process.argv[2] === "core") {
   }
 }
 
+if (process.argv[2] === "lifecycle") {
+  try {
+    const { handleLifecycleCliCommand } = await import("./core/commands/lifecycleCliHandler.js");
+    await handleLifecycleCliCommand(process.argv.slice(3));
+    process.exit(0);
+  } catch (error) {
+    console.error("[Lifecycle] " + String(error));
+    process.exit(1);
+  }
+}
 if (process.argv[2] === "login") {
   const { handleLoginCliCommand } = await import("./core/commands/loginCliHandler.js");
   await handleLoginCliCommand(process.argv.slice(3));
