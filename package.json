@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.63",
+  "version": "1.14.64",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
@@ -35,6 +35,10 @@
     "tray:check": "cargo check --manifest-path apps/superagent-tray/src-tauri/Cargo.toml",
     "tray:test": "cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml",
     "tray:build": "bun x @tauri-apps/cli build --config apps/superagent-tray/src-tauri/tauri.conf.json",
+    "installer:prepare": "bun scripts/prepare-standalone-windows.ts",
+    "installer:verify": "bun scripts/verify-standalone-windows.ts",
+    "installer:package": "bun scripts/build-standalone-windows.ts",
+    "installer:build": "bun run build && cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml && bun run installer:prepare && bun run installer:verify && bun run installer:package",
     "integration:tline": "bun scripts/bun-tline-bridge-smoke.ts",
     "compat:bun": "bun scripts/bun-dependency-compat-smoke.ts",
     "doctor:launcher": "bun scripts/repair-bun-global-launcher.ts",

@@ -1,6 +1,6 @@
 [package]
 name = "superagent-tray"
-version = "1.14.63"
+version = "1.14.64"
 description = "SuperAgent tray and daemon cron manager"
 edition = "2021"
 

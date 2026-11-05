@@ -9,6 +9,8 @@
 3. The desktop reads `~/.superagent-r/server-info.json` (or `SUPERAGENT_CONFIG_DIR/server-info.json`) **only in Rust**. It connects **only to 127.0.0.1**, never to a URL supplied by the webview. It does not send the token to JavaScript. Select **Start scheduler** once in the UI; the daemon only fires while the SuperAgent Core process is alive.
 4. A native unsigned Windows debug executable was built and verified at `src-tauri/target/debug/superagent-tray.exe` using `CARGO_NET_OFFLINE=true cargo tauri build --no-bundle --debug --ci`. Use `cargo tauri build` from this folder to package. For real Windows toast notifications, install the signed/unpacked app; Windows notification plugin support in dev may vary.
 
+Windows x64 **standalone setup and GitHub prerelease procedure**: see [Windows Standalone Installer](../../docs/guides/windows-standalone-installer.md). The bundled CLI, Core and Bun runtime are independent of a global Bun/Node install.
+
 ## Automatic startup with SuperAgent
 
 On Windows, **SuperAgent Tray launches automatically and silently** when a real long-lived SuperAgent process starts: interactive CLI, REST/API server, Core Supervisor, MCP server, T-Line Transport, or Muse/Telegram Channel Host. Starting a second or third SuperAgent process will **not** create a second tray or a second reminder poller: the native `tauri-plugin-single-instance` instance guard handles it before the window starts.

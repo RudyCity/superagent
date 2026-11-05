@@ -50,3 +50,7 @@ gumroad_assets/
 /build/superagent/quality/
 
 demo-studio-output/
+
+# Generated self-contained installer inputs (never commit bundled executables/deps)
+/apps/superagent-tray/src-tauri/binaries/
+/apps/superagent-tray/src-tauri/resources/standalone/

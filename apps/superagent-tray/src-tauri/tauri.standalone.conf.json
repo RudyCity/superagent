@@ -1,0 +1,15 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/bun"
+    ],
+    "resources": {
+      "resources/standalone/": "standalone/"
+    },
+    "windows": {
+      "nsis": {
+        "compression": "zlib"
+      }
+    }
+  }
+}

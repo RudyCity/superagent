@@ -16,7 +16,18 @@ fn find_cli_script() -> Option<PathBuf> {
             if sibling_dist.exists() {
                 return Some(sibling_dist);
             }
-            // 2. Bundled resource: resources/dist/cli.js or resources/cli.js (Tauri bundle on Windows/Linux)
+            // 2. Self-contained installer resources on Windows live under $INSTDIR/standalone.
+            // Tauri externalBin installs Bun and this launcher alongside the app executable.
+            let standalone_cli = exe_dir.join("standalone").join("dist").join("cli.js");
+            if standalone_cli.exists() {
+                return Some(standalone_cli);
+            }
+            // Also honor alternate resource directory layouts for portable/legacy installs.
+            let resource_cli = exe_dir.join("resources").join("standalone").join("dist").join("cli.js");
+            if resource_cli.exists() {
+                return Some(resource_cli);
+            }
+            // 3. Legacy bundled resource: resources/dist/cli.js or resources/cli.js
             let res_dist = exe_dir.join("resources").join("dist").join("cli.js");
             if res_dist.exists() {
                 return Some(res_dist);

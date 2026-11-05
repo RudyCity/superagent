@@ -1,3 +1,11 @@
+## [1.14.64] - 2026-11-05
+### Windows standalone installer and automated release candidate
+- Bundle the pinned Bun 1.4.2 runtime, Core distribution and frozen production dependencies inside the Windows installer.
+- Package a native SuperAgent CLI launcher alongside the Tray application and verify a portable CLI without global Bun or Node.
+- Build and verify NSIS packages on Windows CI, publish versioned GitHub prerelease artifacts with SHA-256 checksums.
+- Correct NSIS post-install PATH registration to be idempotent and remove only the installer-owned addition during uninstall.
+- External Python, Office and AI model dependencies remain optional and are not silently installed.
+
 ## [1.14.63] - 2026-11-05
 ### Muse file transfer UI and maximized window default
 - Fix loopback host verification regex literal double-escape in `serverRoutes.ts` preventing false-positive HTTP 403 `MUSE_FILE_MANAGER_LOCAL_AUTHENTICATED_ONLY` for local desktop requests.

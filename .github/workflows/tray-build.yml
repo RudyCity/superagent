@@ -1,19 +1,30 @@
-name: SuperAgent Multi-OS Installer & Tray Build
+name: SuperAgent Installer and Tray CI
 on:
   push:
     branches: [main]
     paths:
       - "apps/superagent-tray/**"
       - ".github/workflows/tray-build.yml"
+      - "scripts/prepare-standalone-windows.ts"
+      - "scripts/verify-standalone-windows.ts"
+      - "scripts/build-standalone-windows.ts"
       - "src/**"
       - "package.json"
+      - "bun.lock"
   pull_request:
     paths:
       - "apps/superagent-tray/**"
       - ".github/workflows/tray-build.yml"
+      - "scripts/prepare-standalone-windows.ts"
+      - "scripts/verify-standalone-windows.ts"
+      - "scripts/build-standalone-windows.ts"
       - "src/**"
       - "package.json"
+      - "bun.lock"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   tray-build:
@@ -22,67 +33,103 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-x64
-            os: windows-latest
+          - platform: windows-x64-standalone
+            os: windows-2025
           - platform: linux-x64
             os: ubuntu-24.04
           - platform: macos-arm64
             os: macos-latest
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 90
+    env:
+      CI: "true"
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Linux system dependencies (WebKitGTK, AppIndicator)
+      - name: Install Linux system dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            libwebkit2gtk-4.1-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            build-essential \
-            curl \
-            wget \
-            file
-          sudo apt-get install -y -qq libayatana-appindicator3-dev || sudo apt-get install -y -qq libappindicator3-dev || true
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file
+          sudo apt-get install -y -qq libayatana-appindicator3-dev || sudo apt-get install -y -qq libappindicator3-dev
 
-      - name: Setup Rust toolchain
+      - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Rust Cache
+      - name: Rust dependency cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "apps/superagent-tray/src-tauri -> target"
 
-      - name: Setup Bun
+      - name: Install Bun 1.4.2
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
 
-      - name: Install dependencies
+      - name: Install locked dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build SuperAgent Core
+      - name: Build Core
         run: bun run build
 
-      - name: Test Tray Rust backend
+      - name: Verify Chrome extension JavaScript
+        run: bun run verify:extension-js
+
+      - name: Core installer and media regression
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts
+
+      - name: Test native tray
         run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
 
-      - name: Build SuperAgent Package & Installer
-        run: |
-          cd apps/superagent-tray
-          bunx @tauri-apps/cli build --ci
+      - name: Build Windows CLI launcher
+        if: runner.os == 'Windows'
+        run: cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
 
-      - name: Upload Build Artifacts
+      - name: Prepare embedded runtime, Core and production modules
+        if: runner.os == 'Windows'
+        run: bun run installer:prepare
+
+      - name: Portable CLI smoke test without global Bun/Node
+        if: runner.os == 'Windows'
+        run: bun run installer:verify
+
+      - name: Build Windows standalone NSIS installer
+        if: runner.os == 'Windows'
+        run: bun run installer:package
+
+      - name: Build standard non-Windows Tray package
+        if: runner.os != 'Windows'
+        run: bun x @tauri-apps/cli@2.12.4 build --ci
+
+      - name: Verify Windows setup payload
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $p = "apps/superagent-tray/src-tauri/target/release/bundle/nsis/SuperAgent_${v}_x64-setup.exe"
+          if (!(Test-Path $p)) { throw "Missing standalone NSIS installer: $p" }
+          if ((Get-Item $p).Length -lt 20000000) { throw "Installer unexpectedly small" }
+          Get-FileHash $p -Algorithm SHA256 | Format-List
+
+      - name: Test actual NSIS installation and uninstall on disposable runner
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-installed-standalone-windows.ps1
+
+      - name: Upload Windows installer
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: superagent-installer-${{ matrix.platform }}
-          path: |
-            apps/superagent-tray/src-tauri/target/release/bundle/
-            apps/superagent-tray/src-tauri/target/release/superagent-tray
-            apps/superagent-tray/src-tauri/target/release/superagent-tray.exe
-            apps/superagent-tray/src-tauri/target/release/superagent
-            apps/superagent-tray/src-tauri/target/release/superagent.exe
-          if-no-files-found: warn
+          name: superagent-windows-x64-standalone
+          path: apps/superagent-tray/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload other platform artifacts
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: superagent-tray-${{ matrix.platform }}
+          path: apps/superagent-tray/src-tauri/target/release/bundle/
+          if-no-files-found: error
+          retention-days: 15

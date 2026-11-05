@@ -1,19 +1,41 @@
-; Custom NSIS hooks for SuperAgent Windows Installer
-; Automatically registers the installation directory into the User's PATH
+; Windows NSIS hooks (Tauri v2 hook names).
+; Add only the CLI folder we own to the current user's PATH, never another user's path.
+!include "LogicLib.nsh"
+!include "StrFunc.nsh"
+${StrStr}
+${UnStrRep}
 
-!macro customInstall
-  DetailPrint "Registering SuperAgent in User PATH..."
-  ReadRegStr $0 HKCU "Environment" "PATH"
-  ${If} $0 == ""
-    WriteRegExpandStr HKCU "Environment" "PATH" "$INSTDIR"
-  ${Else}
-    WriteRegExpandStr HKCU "Environment" "PATH" "$0;$INSTDIR"
+!macro NSIS_HOOK_POSTINSTALL
+  ; Do not append duplicates, including when repairing/reinstalling.
+  ReadRegStr $0 HKCU "Environment" "Path"
+  ${StrStr} $1 ";$0;" ";$INSTDIR;"
+  ${If} $1 == ""
+    ${If} $0 == ""
+      WriteRegExpandStr HKCU "Environment" "Path" "$INSTDIR"
+    ${Else}
+      WriteRegExpandStr HKCU "Environment" "Path" "$0;$INSTDIR"
+    ${EndIf}
+    WriteRegStr HKCU "Software\RudyCity\SuperAgent" "AddedPath" "$INSTDIR"
   ${EndIf}
-  ; Broadcast WM_SETTINGCHANGE (0x001A) so open shells and desktop refresh environment
   SendMessage 0xFFFF 0x001A 0 "STR:Environment" /TIMEOUT=5000
 !macroend
 
-!macro customUnInstall
-  ; Broadcast environment change on uninstall
+!macro NSIS_HOOK_POSTUNINSTALL
+  ReadRegStr $2 HKCU "Software\RudyCity\SuperAgent" "AddedPath"
+  ; Never remove a pre-existing user PATH entry or another installation's entry.
+  ${If} $2 == "$INSTDIR"
+    ReadRegStr $0 HKCU "Environment" "Path"
+    ${UnStrRep} $1 ";$0;" ";$INSTDIR;" ";"
+    ; Remove the two synthetic boundary delimiters.
+    StrLen $3 $1
+    ${If} $3 > 1
+      StrCpy $1 $1 -1 1
+      WriteRegExpandStr HKCU "Environment" "Path" "$1"
+    ${Else}
+      DeleteRegValue HKCU "Environment" "Path"
+    ${EndIf}
+    DeleteRegValue HKCU "Software\RudyCity\SuperAgent" "AddedPath"
+    DeleteRegKey /ifempty HKCU "Software\RudyCity\SuperAgent"
+  ${EndIf}
   SendMessage 0xFFFF 0x001A 0 "STR:Environment" /TIMEOUT=5000
 !macroend
