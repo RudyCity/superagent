@@ -1,5 +1,6 @@
 import { MOTION_MCP_TOOL_NAMES } from "./tools/motionMcpTools.js";
 import { PDF_MCP_TOOL_NAMES } from "./tools/pdfMcpTools.js";
+import { MEDIA_MCP_TOOL_NAMES } from "./tools/mediaMcpTools.js";
 
 export const PROJECT_REGISTRY_TOOL_NAMES = new Set([
   "superagent_list_projects", "superagent_get_project", "superagent_discover_projects",
@@ -24,4 +25,5 @@ export const WORKSPACE_SCOPED_MCP_TOOLS = new Set([
   "superagent_motion_render", "superagent_motion_jobs", "superagent_motion_storage", "superagent_motion_queue_recovery", "superagent_motion_supervisor", "superagent_motion_status", "superagent_motion_recovery", "superagent_motion_cancel",
   ...MOTION_MCP_TOOL_NAMES,
   ...PDF_MCP_TOOL_NAMES,
+  ...MEDIA_MCP_TOOL_NAMES,
 ]);

@@ -10,6 +10,7 @@ import { BRAIN_MCP_TOOL_CLASSIFICATIONS } from "./tools/brainMcpTools.js";
 import { CORE_LIFECYCLE_MCP_TOOL_CLASSIFICATIONS } from "./tools/coreLifecycleMcpTools.js";
 import { SERVICE_MANAGER_MCP_TOOL_CLASSIFICATIONS } from "./tools/serviceManagerMcpTools.js";
 import { PDF_MCP_TOOL_CLASSIFICATIONS } from "./tools/pdfMcpTools.js";
+import { MEDIA_MCP_TOOL_CLASSIFICATIONS } from "./tools/mediaMcpTools.js";
 
 /**
  * Tool classification for behavior annotations and the tunnel allowlist.
@@ -96,6 +97,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   ...CORE_LIFECYCLE_MCP_TOOL_CLASSIFICATIONS,
   ...SERVICE_MANAGER_MCP_TOOL_CLASSIFICATIONS,
   ...PDF_MCP_TOOL_CLASSIFICATIONS,
+  ...MEDIA_MCP_TOOL_CLASSIFICATIONS,
 };
 
 /**

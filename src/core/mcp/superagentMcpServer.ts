@@ -94,6 +94,7 @@ import {
 } from "./tools/chromeMcpTools.js";
 import { DELEGATE_MCP_TOOL_DEFS, dispatchDelegateMcpTool, delegateMcpObservation } from "./tools/delegateMcpTools.js";
 import { PDF_MCP_TOOL_DEFS, PDF_MCP_TOOL_NAMES, dispatchPdfMcpTool } from "./tools/pdfMcpTools.js";
+import { MEDIA_MCP_TOOL_DEFS, MEDIA_MCP_TOOL_NAMES, dispatchMediaMcpTool } from "./tools/mediaMcpTools.js";
 import {
   DIAGNOSTICS_MCP_TOOL_DEFS,
   dispatchDiagnosticsMcpTool,
@@ -566,6 +567,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...MCP_GATEWAY_TOOL_DEFS,
     ...DELEGATE_MCP_TOOL_DEFS,
     ...PDF_MCP_TOOL_DEFS,
+    ...MEDIA_MCP_TOOL_DEFS,
 ];
 
 const activeMcpServerInstances = new Set<Server>();
@@ -1000,6 +1002,14 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
             }
             return dispatchBrainPublishMcpTool(name, args, principal, resolvedProjectTarget.project.root)!;
           }
+           if (MEDIA_MCP_TOOL_NAMES.has(name)) {
+             if (sshUriTarget || chainUriTarget || (providerContext && providerContext.providerKind !== "local")) {
+               return { content: [{ type: "text", text: "Media processing requires an authorized local workspace." }], isError: true };
+             }
+             const allowMediaWrite = !lockSafeTools && getYoloModeState() !== "off"
+               && (authMode !== "oauth" || Boolean(getIdentity?.()?.scopes?.includes("mcp:tools:write")));
+             return await dispatchMediaMcpTool(name, args, targetWorkspace, { allowWrite: allowMediaWrite });
+           }
           if (PDF_MCP_TOOL_NAMES.has(name)) {
             // PDF manipulation is local filesystem work. Never reinterpret ssh:/chain:
             // project locators as local paths or bypass project grant / YOLO checks.
