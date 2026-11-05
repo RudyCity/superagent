@@ -152,7 +152,12 @@ export function loadAndSyncPersistedTasks(): void {
 
     for (const item of list) {
       let isAlive = false;
-      if (item.pid > 0) {
+      const alreadyExited = item.hasExited || !!item.completedAt || (item.exitCode !== null && item.exitCode !== undefined);
+      if (alreadyExited) {
+        // Once marked exited or completed in storage, the task never comes back to life.
+        // Never query process.kill(pid, 0) because recycled PIDs in OS will falsely match.
+        isAlive = false;
+      } else if (item.pid > 0) {
         try {
           process.kill(item.pid, 0);
           isAlive = true;
@@ -163,15 +168,17 @@ export function loadAndSyncPersistedTasks(): void {
         isAlive = true;
       }
 
-      const hasExited = !isAlive;
+      const hasExited = alreadyExited || !isAlive;
       const exitCode = hasExited ? (item.exitCode ?? -1) : null;
       const completedAt = hasExited ? (item.completedAt ?? Date.now()) : undefined;
 
       const existing = backgroundTasks.get(item.id);
       if (existing) {
         let itemChanged = false;
-        if (existing.hasExited !== hasExited) {
-          existing.hasExited = hasExited;
+        // Once marked exited in memory, a task can never be resurrected by a recycled PID
+        const effectiveHasExited = existing.hasExited ? true : hasExited;
+        if (existing.hasExited !== effectiveHasExited) {
+          existing.hasExited = effectiveHasExited;
           existing.exitCode = exitCode;
           existing.completedAt = completedAt;
           itemChanged = true;

@@ -1765,6 +1765,16 @@ export function deleteWorkspaceTaskFromDb(workspaceId: string, taskId: string): 
   } catch {}
 }
 
+export function pruneExitedWorkspaceTasksFromDb(workspaceId: string): number {
+  try {
+    const db = getHistoryDb();
+    const result = db.prepare("DELETE FROM workspace_tasks WHERE workspace_id = ? AND (has_exited = 1 OR completed_at IS NOT NULL)").run(workspaceId);
+    return Number(result.changes || 0);
+  } catch {
+    return 0;
+  }
+}
+
 export function deleteWorkspaceDataFromDb(workspaceId: string): void {
   try {
     const db = getHistoryDb();

@@ -1,3 +1,7 @@
+// Prevents additional console window on Windows in both release and debug builds.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "windows"]
+
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -481,6 +485,11 @@ async fn get_terminal_presets() -> Result<Value, String> {
     core_request(Method::GET, "/api/desktop/terminal/presets", None).await
 }
 
+#[tauri::command]
+async fn prune_terminal_tasks() -> Result<Value, String> {
+    core_request(Method::POST, "/api/desktop/terminal/prune", None).await
+}
+
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -534,7 +543,10 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
     cmd.arg("--server")
        .arg(port.to_string())
        .arg("--client-mode")
-       .arg("tline");
+       .arg("tline")
+       .stdin(std::process::Stdio::null())
+       .stdout(std::process::Stdio::null())
+       .stderr(std::process::Stdio::null());
 
     #[cfg(windows)]
     {
@@ -591,6 +603,9 @@ async fn stop_core_server(port: Option<u16>) -> Result<Value, String> {
         use std::os::windows::process::CommandExt;
         let status = Command::new("taskkill")
             .args(&["/PID", &pid.to_string(), "/T", "/F"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .creation_flags(CREATE_NO_WINDOW)
             .status()
             .map_err(|e| e.to_string())?;
@@ -1162,6 +1177,7 @@ fn main() {
             launch_terminal_task,
             get_terminal_logs,
             get_terminal_presets,
+            prune_terminal_tasks,
             muse_file_transfer::muse_file_pick,
             muse_file_transfer::muse_file_start,
             muse_file_transfer::muse_file_control

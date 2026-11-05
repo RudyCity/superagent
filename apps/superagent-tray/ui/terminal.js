@@ -14,7 +14,7 @@
     presets: [],
     runningCount: 0,
     totalCount: 0,
-    runningOnly: false, // Default to recent MCP/agent execution history; Running Only is opt-in
+    runningOnly: true, // Default to running processes; All Tasks history is opt-in
     searchQuery: "",
     loading: false,
     pollTimer: null,
@@ -65,6 +65,9 @@
       if (action === "presets") {
         return invoke("get_terminal_presets");
       }
+      if (action === "prune") {
+        return invoke("prune_terminal_tasks");
+      }
     }
 
     // HTTP loopback fallback
@@ -89,6 +92,9 @@
       url = `/api/desktop/terminal/logs?taskId=${encodeURIComponent(payload.taskId)}`;
     } else if (action === "presets") {
       url = "/api/desktop/terminal/presets";
+    } else if (action === "prune") {
+      url = "/api/desktop/terminal/prune";
+      method = "POST";
     }
 
     const res = await fetch(url, {
@@ -309,6 +315,20 @@
   function setupEventListeners() {
     // Refresh button
     $("terminal-refresh-btn")?.addEventListener("click", fetchTerminalTasks);
+
+    // Prune completed/stale tasks button
+    $("terminal-prune-btn")?.addEventListener("click", async () => {
+      const btn = $("terminal-prune-btn");
+      if (btn) btn.disabled = true;
+      try {
+        await invokeTerminal("prune");
+        await fetchTerminalTasks();
+      } catch (err) {
+        console.warn("[Terminal] Failed to prune tasks:", err);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    });
 
     // Filter toggle (Running Only vs All)
     $("terminal-filter-running")?.addEventListener("change", (e) => {

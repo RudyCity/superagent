@@ -16,7 +16,7 @@ import {
   notifyTasksChanged,
 } from "../tools/state.js";
 import { killProcessTree } from "../tools/helpers.js";
-import { getWorkspaceTasksFromDb } from "../storage/historyDb.js";
+import { getWorkspaceTasksFromDb, pruneExitedWorkspaceTasksFromDb } from "../storage/historyDb.js";
 import { getWorkspaceId } from "../config/paths.js";
 import { getWorkspaceTasksLogDir } from "../config.js";
 import { applyProcessIntent } from "../process/processSpawnPolicy.js";
@@ -99,10 +99,11 @@ export class DesktopTerminalManager {
     // 1. Ingest persisted SQLite tasks
     for (const item of dbTasks) {
       const pid = item.pid || 0;
-      const isAlive = checkPidAlive(pid);
       const isTerminal = item.id.startsWith("term-") || !!item.isDetachedWindow;
-      // A persisted PID can be reused. Without an owned child handle it cannot
-      // establish liveness or authorize a Stop action.
+      const hasExited = !!item.completedAt || (item.exitCode !== null && item.exitCode !== undefined) || item.hasExited;
+      // If it already completed or exited in storage, it is strictly exited.
+      // Recycled OS PIDs must never cause historical completed tasks to appear as unverified or active.
+      const isAlive = !hasExited && checkPidAlive(pid);
       const status: DesktopTerminalTaskInfo["status"] = isAlive
         ? "unverified"
         : item.exitCode !== null && item.exitCode !== undefined
@@ -287,6 +288,48 @@ export class DesktopTerminalManager {
     } catch {}
 
     return { success: true, pid: targetPid };
+  }
+
+  /**
+   * Prune completed, dead, or exited background tasks from memory and database storage.
+   */
+  static pruneStaleTasks(workspaceRoot?: string): {
+    success: boolean;
+    prunedCount: number;
+    remainingRunningCount: number;
+  } {
+    let prunedCount = 0;
+
+    // 1. Clean up dead or finished tasks in memory
+    for (const [id, task] of backgroundTasks.entries()) {
+      const pid = task.process?.pid || 0;
+      const hasExited = task.hasExited === true || task.process?.killed;
+      const isAlive = !hasExited && checkPidAlive(pid);
+      if (!isAlive) {
+        backgroundTasks.delete(id);
+        prunedCount++;
+      }
+    }
+
+    // 2. Clean up completed records from SQLite
+    const workspaceId = getWorkspaceId(workspaceRoot);
+    const dbPruned = pruneExitedWorkspaceTasksFromDb(workspaceId);
+    prunedCount += dbPruned;
+
+    try {
+      savePersistedTasks();
+      notifyTasksChanged();
+    } catch {}
+
+    const remainingRunningCount = Array.from(backgroundTasks.values()).filter(
+      (t) => !t.hasExited && checkPidAlive(t.process?.pid || 0)
+    ).length;
+
+    return {
+      success: true,
+      prunedCount,
+      remainingRunningCount,
+    };
   }
 
   /**

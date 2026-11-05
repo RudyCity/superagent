@@ -237,6 +237,13 @@
               </svg>
               <span>Stop All</span>
             </button>
+            <button id="terminal-prune-btn" class="button ghost" title="Prune completed and dead tasks">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+              </svg>
+              <span>Prune Completed</span>
+            </button>
             <button id="terminal-refresh-btn" class="button primary" title="Refresh running terminal processes">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
@@ -1199,7 +1206,7 @@
             </div>
             <div class="terminal-table-filters">
               <label class="terminal-toggle-label">
-                <input type="checkbox" id="terminal-filter-running" />
+                <input type="checkbox" id="terminal-filter-running" checked />
                 <span>Running Only</span>
               </label>
               <div class="terminal-search-box">

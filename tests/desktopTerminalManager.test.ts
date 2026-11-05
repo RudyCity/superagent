@@ -50,6 +50,13 @@ describe("DesktopTerminalManager backend service", () => {
     const killed = DesktopTerminalManager.killTask(res.taskId);
     expect(killed.success).toBe(true);
   });
+
+  it("prunes completed and stale background tasks safely", () => {
+    const res = DesktopTerminalManager.pruneStaleTasks();
+    expect(res.success).toBe(true);
+    expect(typeof res.prunedCount).toBe("number");
+    expect(typeof res.remainingRunningCount).toBe("number");
+  });
 });
 
 function mountTerminalUi(mockResponse?: any) {
@@ -186,6 +193,13 @@ function mountTerminalUi(mockResponse?: any) {
               command: args.command || "echo hello",
             };
           }
+          if (cmd === "prune_terminal_tasks") {
+            return {
+              success: true,
+              prunedCount: 1,
+              remainingRunningCount: 0,
+            };
+          }
           return { success: true };
         }),
       },
@@ -222,7 +236,7 @@ function mountTerminalUi(mockResponse?: any) {
 }
 
 describe("Desktop Terminal UI Controller", () => {
-  it("shows unverified MCP PIDs without offering an unsafe Stop button", async () => {
+  it("shows unverified MCP PIDs when viewing all tasks without offering an unsafe Stop button", async () => {
     const mounted = mountTerminalUi({
       tasks: [{
         id: "mcp-old-process",
@@ -236,11 +250,20 @@ describe("Desktop Terminal UI Controller", () => {
       }],
       runningCount: 0, totalCount: 1, presets: [],
     });
+    mounted.windowMock.__superagentTerminalState.runningOnly = false;
     await mounted.windowMock.__superagentTerminalRefresh();
     const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
     expect(html).toContain("Unverified PID");
     expect(html).toContain("MCP");
     expect(html).not.toContain("terminal-kill-btn");
+  });
+
+  it("triggers task pruning when clicking prune completed button", async () => {
+    const mounted = mountTerminalUi();
+    const pruneBtn = mounted.getOrCreateElement("terminal-prune-btn");
+    await pruneBtn.dispatchEvent({ type: "click" });
+    const pruneCalls = mounted.invokeCalls.filter((c) => c.cmd === "prune_terminal_tasks");
+    expect(pruneCalls.length).toBe(1);
   });
   it("fetches tasks and renders metrics and table rows", async () => {
     const mounted = mountTerminalUi();

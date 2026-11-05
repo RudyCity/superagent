@@ -1220,6 +1220,23 @@ export async function handleServerRoute(
     return true;
   }
 
+  if (pathname === "/api/desktop/terminal/prune") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    try {
+      const wsPath = resolveWorkspacePath(req);
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const result = DesktopTerminalManager.pruneStaleTasks(wsPath ?? undefined);
+      sendJSON(res, 200, { ...result });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || "Failed to prune terminal tasks" });
+    }
+    return true;
+  }
+
   if (pathname === "/api/desktop/terminal/launch") {
     res.setHeader("Cache-Control", "no-store");
     if (req.method !== "POST") {
