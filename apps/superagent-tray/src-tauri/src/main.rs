@@ -1,5 +1,4 @@
 // Prevents additional console window on Windows in both release and debug builds.
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 #![windows_subsystem = "windows"]
 
 use reqwest::Method;
