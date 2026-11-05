@@ -7,6 +7,7 @@ import {
   loadRemoteAgentConfig,
   RemoteAgentConfig,
   getWatchedWorkspaces,
+  getMuseRuntimeConfigRevision,
 } from "./config.js";
 import {
   RemoteAgentEnvelope,
@@ -72,6 +73,7 @@ export class MuseWatcher {
   private batchQueue: BatchQueueItem[] = [];
   private isProcessingQueue = false;
   private workspaces: string[] = [];
+  private readonly configRevision: string;
   private transport!: RemoteTransport;
   private quickTunnelStarted = false;
   private tunnelMetadata: WatcherTunnelMetadata | null = null;
@@ -90,6 +92,7 @@ export class MuseWatcher {
   constructor(options: MuseWatcherOptions = {}) {
     this.options = options;
     this.config = loadRemoteAgentConfig(options.customConfigPath);
+    this.configRevision = getMuseRuntimeConfigRevision(this.config);
     this.client = new MuseClient(this.config);
     this.initWorkspaces();
     this.initTransport();
@@ -272,6 +275,7 @@ export class MuseWatcher {
       queuedBatches: this.batchQueue.length,
       transport: transportInfo?.type,
       transportDetails: transportInfo?.details,
+      configRevision: this.configRevision,
       tunnel: Boolean(this.quickTunnelStarted),
       tunnelUrl: this.tunnelMetadata?.publicUrl || this.tunnelMetadata?.wssUrl,
       tunnelPort: this.tunnelMetadata?.port,

@@ -559,6 +559,113 @@
             </div>
           </form>
         </section>
+
+        <section class="panel tray-settings-panel muse-telegram-settings-panel" aria-labelledby="muse-telegram-settings-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">MUSE CONTROL</div>
+              <h2 id="muse-telegram-settings-title">Muse Settings</h2>
+              <p>Configure Telegram, watched workspaces, WebSocket transport and opt-in auto-start. Secrets are write-only from this WebView.</p>
+            </div>
+            <span id="muse-telegram-status" class="subtle-badge">Checking…</span>
+          </div>
+          <form id="muse-telegram-settings-form">
+            <div class="tray-settings-section">
+              <h3>Telegram credentials &amp; routing</h3>
+              <label class="tray-field-row">
+                <span><strong>Bot Token</strong>
+                  <small id="muse-telegram-token-hint">Leave blank to keep the configured token. The saved token is never returned to this UI.</small></span>
+                <input id="muse-telegram-bot-token" type="password" autocomplete="new-password"
+                  spellcheck="false" placeholder="Leave blank to keep current token" />
+              </label>
+              <div class="muse-settings-status-line" id="muse-token-storage">Credential storage: checking…</div>
+              <label class="tray-field-row">
+                <span><strong>Group ID</strong>
+                  <small>Telegram chat/group ID watched by Muse. Supergroups commonly use a negative numeric ID.</small></span>
+                <input id="muse-telegram-group-id" type="text" inputmode="numeric"
+                  autocomplete="off" spellcheck="false" placeholder="-1001234567890" />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Muse Bot ID</strong>
+                  <small>Authorized Telegram sender ID for Muse task envelopes. Numeric ID only.</small></span>
+                <input id="muse-telegram-bot-id" type="text" inputmode="numeric"
+                  autocomplete="off" spellcheck="false" placeholder="123456789" />
+              </label>
+              <label class="tray-switch-row">
+                <span><strong>Clear saved Bot Token</strong>
+                  <small>Explicitly remove the stored Telegram token on Save.</small></span>
+                <input id="muse-telegram-clear-token" type="checkbox" />
+              </label>
+            </div>
+
+            <div class="tray-settings-section">
+              <h3>Watched Workspaces</h3>
+              <div class="muse-workspace-editor">
+                <input id="muse-workspace-input" type="text" autocomplete="off" spellcheck="false"
+                  placeholder="Absolute project path, e.g. G:\project\cika" />
+                <button type="button" class="button ghost" id="muse-workspace-add">Add</button>
+                <button type="button" class="button ghost" id="muse-workspace-remove">Remove selected</button>
+              </div>
+              <select id="muse-workspace-list" class="muse-workspace-list" size="5" aria-label="Watched Muse workspaces"></select>
+              <label class="tray-field-row">
+                <span><strong>Default Workspace</strong>
+                  <small>Primary workspace used when an incoming Muse task does not specify a configured target.</small></span>
+                <select id="muse-default-workspace"></select>
+              </label>
+            </div>
+
+            <div class="tray-settings-section">
+              <h3>WebSocket</h3>
+              <label class="tray-field-row">
+                <span><strong>Mode</strong><small>Server listens locally; client connects to a configured remote Muse endpoint.</small></span>
+                <select id="muse-ws-mode"><option value="server">Server</option><option value="client">Client</option></select>
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Port</strong><small>Local Muse WebSocket port. Reserved SuperAgent ports are rejected.</small></span>
+                <input id="muse-ws-port" type="number" min="1024" max="65535" value="9225" />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Path</strong><small>Simple local WebSocket path, normally <code>/muse</code>.</small></span>
+                <input id="muse-ws-path" type="text" autocomplete="off" spellcheck="false" value="/muse" />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Remote URL</strong><small>Required only in client mode. Use ws:// or wss:// without embedded credentials.</small></span>
+                <input id="muse-ws-remote-url" type="text" autocomplete="off" spellcheck="false" placeholder="wss://example/muse" />
+              </label>
+              <div class="muse-settings-inline-actions">
+                <span id="muse-ws-token-status" class="muse-settings-status-line">WebSocket token: checking…</span>
+                <button type="button" class="button ghost" id="muse-ws-token-regenerate">Generate / Regenerate WS Token</button>
+              </div>
+            </div>
+
+            <div class="tray-settings-section">
+              <h3>Lifecycle</h3>
+              <label class="tray-field-row">
+                <span><strong>Auto-start Muse with Core</strong>
+                  <small>Explicit opt-in. Never starts a public tunnel. Telegram uses a cross-process singleton polling lease.</small></span>
+                <select id="muse-auto-start">
+                  <option value="off">Off</option>
+                  <option value="telegram">Telegram</option>
+                  <option value="websocket">WebSocket</option>
+                </select>
+              </label>
+              <div id="muse-config-stale" class="muse-settings-status-line">Runtime configuration status: checking…</div>
+            </div>
+
+            <p class="tray-settings-note">
+              Non-secret Muse settings remain in <code>~/.superagent-r/remote-agent.json</code>.
+              On Windows, Telegram tokens saved here are moved to DPAPI CurrentUser protected storage.
+              Telegram Doctor validates Bot API, group membership, Muse sender membership, webhook state and local polling ownership without sending a message.
+            </p>
+            <div id="muse-telegram-doctor" class="muse-doctor-results" hidden></div>
+            <div class="tray-settings-actions">
+              <button type="submit" class="button primary" id="muse-telegram-save">Save Muse Settings</button>
+              <button type="button" class="button ghost" id="muse-telegram-test">Run Telegram Doctor</button>
+              <button type="button" class="button ghost" id="muse-apply-restart" disabled>Apply &amp; Restart Muse</button>
+              <span id="muse-telegram-feedback" role="status" aria-live="polite"></span>
+            </div>
+          </form>
+        </section>
       </div>
 
       <!-- ================= PAGE 5: CONNECTION LOGS ================= -->

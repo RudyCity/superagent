@@ -1,4 +1,5 @@
 import { RemoteAgentConfig, maskToken } from "./config.js";
+import { acquireTelegramPollingLease } from "./telegramPollingLease.js";
 import {
   RemoteAgentEnvelope,
   encodeEnvelope,
@@ -317,6 +318,9 @@ export class MuseClient {
       throw new Error("Bot token is not configured.");
     }
 
+    // Cross-process singleton lease: two local SuperAgent processes must never
+    // compete on Telegram getUpdates for the same bot token.
+    const pollingLease = await acquireTelegramPollingLease(token);
     this.isPolling = true;
     this.lastSuccessfulPollAt = undefined;
     this.lastPollError = undefined;
@@ -538,6 +542,7 @@ export class MuseClient {
       }
     } finally {
       this.isPolling = false;
+      await pollingLease.release().catch(() => {});
       logE2E("REMOTE-AGENT", "Polling loop terminated");
     }
   }

@@ -86,6 +86,114 @@ fn set_tray_settings(
     Ok(settings)
 }
 
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct MuseTelegramSettingsInput {
+    bot_token: String,
+    group_id: String,
+    muse_bot_id: String,
+    clear_bot_token: bool,
+    workspaces: Vec<String>,
+    default_workspace: String,
+    ws_port: u16,
+    ws_path: String,
+    ws_mode: String,
+    ws_remote_url: String,
+    auto_start_mode: String,
+}
+
+impl MuseTelegramSettingsInput {
+    fn validate(&self) -> Result<(), String> {
+        let numeric = |value: &str, allow_negative: bool| {
+            let trimmed=value.trim();
+            if trimmed.is_empty() { return true; }
+            let digits=if allow_negative { trimmed.strip_prefix('-').unwrap_or(trimmed) } else { trimmed };
+            !digits.is_empty() && digits.len()<=20 && digits.bytes().all(|b|b.is_ascii_digit())
+        };
+        let token=self.bot_token.trim();
+        if token.len()>256 || token.chars().any(char::is_whitespace) {
+            return Err("Telegram bot token is malformed".into());
+        }
+        if !numeric(&self.group_id,true) {
+            return Err("Telegram Group ID must be numeric".into());
+        }
+        if !numeric(&self.muse_bot_id,false) {
+            return Err("Muse Bot ID must be numeric".into());
+        }
+        if self.workspaces.is_empty() || self.workspaces.len() > 32 ||
+            self.workspaces.iter().any(|p| p.len()>500 || !std::path::Path::new(p).is_absolute()) {
+            return Err("Muse watched workspaces must contain 1-32 absolute paths".into());
+        }
+        if !self.workspaces.iter().any(|p| p == &self.default_workspace) {
+            return Err("Default workspace must be one of the watched workspaces".into());
+        }
+        if self.ws_port < 1024 || [7888,7891,7892,9227].contains(&self.ws_port) {
+            return Err("Muse WebSocket port is invalid or reserved".into());
+        }
+        if self.ws_path.is_empty() || self.ws_path.len()>96 || !self.ws_path.starts_with('/') ||
+            self.ws_path.contains("//") || self.ws_path.chars().any(|c| !(c.is_ascii_alphanumeric() || "/_-".contains(c))) {
+            return Err("Muse WebSocket path is invalid".into());
+        }
+        if !["server","client"].contains(&self.ws_mode.as_str()) {
+            return Err("Muse WebSocket mode is invalid".into());
+        }
+        if self.ws_mode=="client" &&
+            !(self.ws_remote_url.starts_with("ws://") || self.ws_remote_url.starts_with("wss://")) {
+            return Err("Muse WebSocket client mode requires ws:// or wss:// remote URL".into());
+        }
+        if !["off","telegram","websocket"].contains(&self.auto_start_mode.as_str()) {
+            return Err("Muse auto-start mode is invalid".into());
+        }
+        Ok(())
+    }
+}
+
+#[tauri::command]
+async fn get_muse_telegram_settings() -> Result<Value, String> {
+    core_request(Method::GET, "/api/desktop/muse-telegram-settings", None).await
+}
+
+#[tauri::command]
+async fn set_muse_telegram_settings(settings: MuseTelegramSettingsInput) -> Result<Value, String> {
+    settings.validate()?;
+    core_request(Method::POST, "/api/desktop/muse-telegram-settings", Some(json!({
+        "action":"save",
+        "settings":{
+            "botToken":settings.bot_token.trim(),
+            "groupId":settings.group_id.trim(),
+            "museBotId":settings.muse_bot_id.trim(),
+            "clearBotToken":settings.clear_bot_token,
+            "workspaces":settings.workspaces,
+            "defaultWorkspace":settings.default_workspace,
+            "wsPort":settings.ws_port,
+            "wsPath":settings.ws_path,
+            "wsMode":settings.ws_mode,
+            "wsRemoteUrl":settings.ws_remote_url,
+            "autoStartMode":settings.auto_start_mode,
+        }
+    }))).await
+}
+
+#[tauri::command]
+async fn test_muse_telegram_settings() -> Result<Value, String> {
+    core_request(Method::POST, "/api/desktop/muse-telegram-settings",
+        Some(json!({"action":"test"}))).await
+}
+
+#[tauri::command]
+async fn regenerate_muse_ws_token() -> Result<Value, String> {
+    core_request(Method::POST, "/api/desktop/muse-telegram-settings",
+        Some(json!({"action":"regenerate-ws-token"}))).await
+}
+
+#[tauri::command]
+async fn apply_muse_settings() -> Result<Value, String> {
+    let registered = server_info()?;
+    let pid = registered.pid.ok_or("Selected Core PID is unavailable")?;
+    core_request(Method::POST, "/api/desktop/muse-lifecycle",
+        Some(json!({"action":"apply-restart","pid":pid}))).await
+}
+
 #[tauri::command]
 async fn service_action(
     kind: String,
@@ -96,17 +204,24 @@ async fn service_action(
     // Only native, verified service owners may be controlled. No arbitrary
     // command, PID termination, URL, endpoint or bearer token from the UI.
     if kind == "muse-core" {
-        if !["stop", "restart"].contains(&action.as_str()) {
+        if !["stop", "restart", "apply-restart", "start-telegram", "start-websocket", "start-tunnel"]
+            .contains(&action.as_str()) {
             return Err("Invalid Muse lifecycle action".into());
         }
         let registered = server_info()?;
         if registered.port != port || registered.pid != Some(pid) {
             return Err("Choose the registered Core first; Muse lifecycle target mismatch".into());
         }
+        let body = match action.as_str() {
+            "start-telegram" => json!({"action":"start","mode":"telegram","port":9225,"pid":pid}),
+            "start-websocket" => json!({"action":"start","mode":"websocket","port":9225,"pid":pid}),
+            "start-tunnel" => json!({"action":"start","mode":"tunnel","port":9225,"pid":pid}),
+            _ => json!({ "action": action, "pid": pid }),
+        };
         return core_request(
             Method::POST,
             "/api/desktop/muse-lifecycle",
-            Some(json!({ "action": action, "pid": pid })),
+            Some(body),
         )
         .await;
     }
@@ -527,6 +642,9 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
     } else if path == "/api/desktop/muse-lifecycle" {
         // Restart can re-establish the original Telegram/WS transport.
         Duration::from_secs(35)
+    } else if path == "/api/desktop/muse-telegram-settings" {
+        // Test may need a bounded Telegram Bot API round-trip.
+        Duration::from_secs(20)
     } else if path == "/api/daemon/jobs/run" {
         // Manual agent jobs can legitimately run for the Core's 5-minute
         // default limit. Returning a 4s timeout would invite duplicate runs.
@@ -982,6 +1100,11 @@ fn main() {
             regenerate_token,
             get_tray_settings,
             set_tray_settings,
+            get_muse_telegram_settings,
+            set_muse_telegram_settings,
+            test_muse_telegram_settings,
+            regenerate_muse_ws_token,
+            apply_muse_settings,
             tray_window_action,
             start_core_server,
             stop_core_server,

@@ -89,7 +89,8 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-core-count").textContent).toBe("1");
     expect(ui.byId("runtime-process-count").textContent).toBe("1");
     expect(ui.byId("runtime-servers").innerHTML).toContain("Core · :7888");
-    expect(ui.byId("runtime-servers").innerHTML).toContain("Listener present, connection not ready");
+    expect(ui.byId("runtime-servers").innerHTML).toContain("via telegram");
+    expect(ui.byId("runtime-servers").innerHTML).toContain("connection not ready");
     expect(ui.byId("runtime-processes").innerHTML).not.toContain("<img src=x>");
     expect(ui.byId("runtime-processes").innerHTML).toContain("&lt;img src=x&gt;");
     expect(ui.byId("runtime-independent").innerHTML).toContain("Core backend not ready");
@@ -141,6 +142,65 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
       args:{kind:"muse-core",action:"stop",port:7888,pid:1234}});
     expect(ui.byId("runtime-remote").innerHTML).toContain("runtime-lifecycle");
     expect(ui.byId("runtime-servers").innerHTML).toContain("Stop Muse");
+  });
+
+  it("shows explicit Muse start modes when Core is verified and no watcher is active", async () => {
+    const ui = mountRuntime({
+      scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,selectedCorePort:7888,
+      cores:[{
+        port:7888,pid:4321,pidVerified:true,state:"online",selected:true,
+        services:{muse:{ownerPresent:false,watcherActive:false}},
+      }],
+      processes:[],independentHosts:[],remoteServices:[],
+    });
+    await new Promise(resolve=>setImmediate(resolve));
+    const html=ui.byId("runtime-servers").innerHTML;
+    expect(html).toContain("Start Muse · Telegram");
+    expect(html).toContain("Start Muse · WebSocket");
+    expect(html).toContain("Start Muse · Tunnel");
+
+    const click=(action:string)=>vm.runInContext(
+      `runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{
+        runtimeKind:"muse-core",runtimeAction:"${action}",
+        runtimePort:"7888",runtimePid:"4321"
+      }})}})`,ui.context) as Promise<void>;
+
+    await click("start-telegram");
+    expect(ui.requested).toContainEqual({
+      action:"service_action",
+      args:{kind:"muse-core",action:"start-telegram",port:7888,pid:4321},
+    });
+  });
+
+  it("renders stale Muse runtime detail and guards Apply & Restart by fresh Core state",async()=>{
+    const ui=mountRuntime({
+      scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,selectedCorePort:7888,
+      cores:[{
+        port:7888,pid:4444,pidVerified:true,state:"online",selected:true,
+        services:{muse:{
+          ownerPresent:true,watcherActive:true,transport:"telegram",connected:true,
+          configStale:true,uptimeSeconds:75,workspaceCount:2,queuedBatches:0,
+          activeTask:false,lastTransportError:null,
+        }},
+      }],
+      processes:[],independentHosts:[],remoteServices:[],
+    });
+    await new Promise(resolve=>setImmediate(resolve));
+    const html=ui.byId("runtime-servers").innerHTML;
+    expect(html).toContain("settings stale");
+    expect(html).toContain("2 workspaces");
+    expect(html).toContain("Apply &amp; Restart");
+
+    await vm.runInContext(`runtimeServiceAction({target:{closest:()=>({
+      disabled:false,dataset:{
+        runtimeKind:"muse-core",runtimeAction:"apply-restart",
+        runtimePort:"7888",runtimePid:"4444"
+      }
+    })}})`,ui.context);
+    expect(ui.requested).toContainEqual({
+      action:"service_action",
+      args:{kind:"muse-core",action:"apply-restart",port:7888,pid:4444},
+    });
   });
 
   it("regenerates only supported, freshly verified owner tokens after confirmation",async()=>{

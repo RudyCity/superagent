@@ -21,6 +21,8 @@ export interface MuseWatcherStats {
   queuedBatches?: number;
   transport?: string;
   transportDetails?: string;
+  /** Hash of the effective Muse settings loaded when this watcher was created. */
+  configRevision?: string;
   tunnel?: boolean;
   tunnelUrl?: string;
   tunnelPort?: number;

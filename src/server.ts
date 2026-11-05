@@ -1124,6 +1124,12 @@ export async function runServer(port: number, silent = false, defaultClientMode:
         .then(({ autoLaunchSuperAgentTray }) => autoLaunchSuperAgentTray())
         .catch(() => {});
     }
+    // Muse auto-start is explicit opt-in in remote-agent.json. It never starts
+    // a public tunnel, and its Telegram path is protected by a cross-process
+    // polling lease so blue/green workers cannot both own getUpdates.
+    void import("./core/runtime/museAutoStart.js")
+      .then(({scheduleMuseAutoStart})=>scheduleMuseAutoStart())
+      .catch(()=>{});
     // The dedicated Delegate Chrome extension is a WebSocket CLIENT.
     // Start the local listener when the SuperAgent server is ready, not
     // on the first delegate tool invocation (which left port 17341 closed).

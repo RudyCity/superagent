@@ -33,10 +33,15 @@ export interface TunnelServiceStatus {
   watcherActive: boolean;
   watcherTransport?: string;
   watcherDetails?: string;
+  watcherConfigRevision?: string;
   museConnected?: boolean;
   uptimeSeconds?: number;
   tasksCompleted?: number;
   batchesExecuted?: number;
+  queuedBatches?: number;
+  workspaceCount?: number;
+  lastActiveAt?: number;
+  lastTransportError?: string;
   /** Task existence only; identity is workspace-scoped and withheld. */
   activeTaskPresent?: boolean;
 }
@@ -125,15 +130,25 @@ export async function getRemoteServiceStatus(
       let uptimeSeconds: number | undefined;
       let tasksCompleted: number | undefined;
       let batchesExecuted: number | undefined;
+      let watcherConfigRevision: string | undefined;
+      let queuedBatches: number | undefined;
+      let workspaceCount: number | undefined;
+      let lastActiveAt: number | undefined;
+      let lastTransportError: string | undefined;
       let activeTaskPresent = false;
 
       if (watcher && watcherActive) {
         const stats = watcher.getStats();
         watcherTransport = stats.transport;
         watcherDetails = stats.transportDetails;
+        watcherConfigRevision = stats.configRevision;
         uptimeSeconds = stats.uptimeSeconds;
         tasksCompleted = stats.tasksCompleted;
         batchesExecuted = stats.batchesExecuted;
+        queuedBatches = stats.queuedBatches ?? 0;
+        workspaceCount = stats.workspaces?.length ?? 0;
+        lastActiveAt = stats.lastActiveAt;
+        lastTransportError = stats.lastTransportError;
         activeTaskPresent = Boolean(stats.activeTaskId);
 
         try {
@@ -159,10 +174,15 @@ export async function getRemoteServiceStatus(
         watcherActive,
         watcherTransport,
         watcherDetails,
+        watcherConfigRevision,
         museConnected,
         uptimeSeconds,
         tasksCompleted,
         batchesExecuted,
+        queuedBatches,
+        workspaceCount,
+        lastActiveAt,
+        lastTransportError,
         activeTaskPresent,
       };
     } catch {}

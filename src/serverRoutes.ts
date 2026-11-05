@@ -843,6 +843,68 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Local-only Muse Telegram configuration for SuperAgent Tray.
+  // Bot tokens are write-only from the WebView perspective: GET returns only
+  // configured/masked state; POST save/test never returns the raw credential.
+  if (pathname === "/api/desktop/muse-telegram-settings") {
+    res.setHeader("Cache-Control","no-store");
+    const loopback=["127.0.0.1","::1","::ffff:127.0.0.1"]
+      .includes(req.socket.remoteAddress||"");
+    const host=/^(?:127\.0\.0\.1|localhost):([0-9]{2,5})$/i
+      .exec(String(req.headers.host||""));
+    if (!loopback || !host || req.headers.origin || req.headers["x-forwarded-for"] ||
+        req.headers["x-forwarded-host"] || req.headers["cf-connecting-ip"] || req.headers["cf-ray"]) {
+      sendJSON(res,403,{success:false,error:"MUSE_TELEGRAM_SETTINGS_LOCAL_ONLY"});
+      return true;
+    }
+    try {
+      const {
+        readMuseTelegramSettings,
+        updateMuseTelegramSettings,
+        testMuseTelegramSettings,
+        regenerateMuseWsTokenForTray,
+      } = await import("./core/runtime/desktopMuseTelegramSettings.js");
+      if (req.method==="GET") {
+        sendJSON(res,200,{success:true,settings:await readMuseTelegramSettings()});
+        return true;
+      }
+      if (req.method!=="POST") {
+        sendJSON(res,405,{success:false,error:"GET or POST required"});
+        return true;
+      }
+      const raw=await readBody(req);
+      if (Buffer.byteLength(raw,"utf8")>16384) {
+        sendJSON(res,413,{success:false,error:"Muse settings request too large"});
+        return true;
+      }
+      const body=JSON.parse(raw) as Record<string,unknown>;
+      if (!body || Array.isArray(body) || typeof body!=="object") {
+        sendJSON(res,400,{success:false,error:"Invalid Muse settings request"});
+        return true;
+      }
+      if (body.action==="test" && Object.keys(body).sort().join(",")==="action") {
+        sendJSON(res,200,{success:true,test:await testMuseTelegramSettings()});
+        return true;
+      }
+      if (body.action==="save" && Object.keys(body).sort().join(",")==="action,settings") {
+        sendJSON(res,200,{success:true,settings:await updateMuseTelegramSettings(body.settings)});
+        return true;
+      }
+      if (body.action==="regenerate-ws-token" &&
+          Object.keys(body).sort().join(",")==="action") {
+        sendJSON(res,200,await regenerateMuseWsTokenForTray());
+        return true;
+      }
+      sendJSON(res,400,{success:false,error:"Unsupported Muse settings action"});
+    } catch (error) {
+      const safe=(error instanceof Error?error.message:"Muse Telegram settings rejected")
+        .replace(/[0-9]{5,20}:[A-Za-z0-9_-]{20,180}/g,"[REDACTED_BOT_TOKEN]")
+        .slice(0,240);
+      sendJSON(res,409,{success:false,error:safe});
+    }
+    return true;
+  }
+
   // Authenticated, fixed-shape Muse lifecycle control for the local tray.
   // Only this Core's watcher instance may be stopped/restarted, and active
   // work is explicitly refused (no PID kill, token forwarding, or replay).
@@ -859,14 +921,28 @@ export async function handleServerRoute(
       }
       const body = JSON.parse(raw) as Record<string,unknown>;
       if (!body || Array.isArray(body) || typeof body !== "object" ||
-        Object.keys(body).sort().join(",") !== "action,pid" ||
-        !["stop","restart"].includes(String(body.action)) ||
-        body.pid !== process.pid) {
+          body.pid !== process.pid) {
         sendJSON(res, 400, {success:false,error:"Invalid or mismatched Core lifecycle target"});
         return true;
       }
+      const action=String(body.action||"");
+      if (action==="start") {
+        if (Object.keys(body).sort().join(",") !== "action,mode,pid,port" ||
+            !["telegram","websocket","tunnel"].includes(String(body.mode)) ||
+            !Number.isSafeInteger(body.port) || Number(body.port)<1024 || Number(body.port)>65535) {
+          sendJSON(res,400,{success:false,error:"Invalid Muse start request"});
+          return true;
+        }
+      } else if (!["stop","restart","apply-restart"].includes(action) ||
+                 Object.keys(body).sort().join(",") !== "action,pid") {
+        sendJSON(res,400,{success:false,error:"Invalid Muse lifecycle request"});
+        return true;
+      }
       const {controlCoreLocalMuse} = await import("./core/runtime/desktopMuseLifecycle.js");
-      const result = await controlCoreLocalMuse(body.action as string, body.pid as number);
+      const result = await controlCoreLocalMuse(action, body.pid as number,
+        action==="start"
+          ? {mode:body.mode as "telegram"|"websocket"|"tunnel",port:Number(body.port)}
+          : {});
       sendJSON(res, 200, result);
     } catch (error) {
       sendJSON(res, 409, {success:false,error:

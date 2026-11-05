@@ -344,17 +344,24 @@
   accent-color: var(--accent);
   cursor: pointer;
 }
-.tray-field-row select {
+.tray-field-row select,
+.tray-field-row input[type="text"],
+.tray-field-row input[type="password"],
+.tray-field-row input[type="number"] {
   min-width: 155px;
-  max-width: 215px;
+  width: min(360px, 46%);
+  max-width: 360px;
   padding: 10px 12px;
   color: var(--text-primary);
   background: var(--bg-surface);
   border: 1px solid var(--border-medium);
   border-radius: var(--radius-sm);
-  cursor: pointer;
 }
-.tray-field-row select:focus-visible, .tray-switch-row input:focus-visible {
+.tray-field-row select { cursor: pointer; }
+.tray-field-row input::placeholder { color: var(--text-muted); }
+.tray-field-row select:focus-visible,
+.tray-field-row input:focus-visible,
+.tray-switch-row input:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 3px;
 }
@@ -376,18 +383,73 @@
   gap: 12px;
   padding: 22px 26px;
 }
-.tray-settings-actions #settings-feedback {
+.tray-settings-actions #settings-feedback,
+.tray-settings-actions #muse-telegram-feedback {
   flex: 1 1 270px;
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.5;
+}
+.muse-telegram-settings-panel {
+  margin-top: 18px;
+}
+.muse-settings-status-line {
+  margin: 8px 0 12px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.muse-settings-inline-actions,
+.muse-workspace-editor {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+.muse-workspace-editor input {
+  flex: 1 1 360px;
+  min-width: 220px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+}
+.muse-workspace-list {
+  width: 100%;
+  min-height: 116px;
+  padding: 8px;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.muse-doctor-results {
+  margin: 12px 26px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.65;
 }
 @media (max-width: 750px) {
   .tray-switch-row, .tray-field-row {
     align-items: flex-start;
     flex-wrap: wrap;
   }
-  .tray-field-row select { max-width: 100%; }
+  .tray-field-row select,
+  .tray-field-row input[type="text"],
+  .tray-field-row input[type="password"],
+  .tray-field-row input[type="number"] {
+    width: 100%;
+    max-width: 100%;
+  }
 }
 
 :root {

@@ -71,32 +71,54 @@ function runtimeServerCard(server) {
   const telegram = services?.telegram;
   const channelHosts = services?.channelHosts;
 
-  const museLabel = muse?.watcherActive && !muse?.connected
-    ? "Listener present, connection not ready"
-    : muse?.transport ? `via ${muse.transport}` : "";
+  const museDetail = [];
+  if (muse?.transport) museDetail.push("via "+muse.transport);
+  if (Number.isFinite(muse?.uptimeSeconds)) museDetail.push(Math.floor(muse.uptimeSeconds)+"s uptime");
+  if (Number.isFinite(muse?.workspaceCount)) museDetail.push(String(muse.workspaceCount)+" workspaces");
+  if (Number.isFinite(muse?.queuedBatches) && muse.queuedBatches>0) museDetail.push(String(muse.queuedBatches)+" queued");
+  if (muse?.activeTask) museDetail.push("task active");
+  if (muse?.configStale) museDetail.push("settings stale");
+  if (muse?.lastTransportError) museDetail.push("error: "+String(muse.lastTransportError).slice(0,80));
+  if (muse?.watcherActive && !muse?.connected) museDetail.push("connection not ready");
+  const museLabel = museDetail.join(" · ");
 
   const button = online
     ? server.selected
       ? '<span class="runtime-current">✓ Selected for Cron</span>'
       : `<button class="button ghost runtime-select" type="button" data-runtime-port="${server.port}">Use This Core</button>`
     : '<span class="subtle-badge">Server unreachable</span>';
-  // A Core-local watcher is controllable only via the authenticated owner API.
+  // Core-local Muse Watch can be started only through this authenticated Core.
   // Other CLI-hosted Muse watchers are never mapped to this Core by PID guess.
-  const localMuse = online && server.pidVerified === true &&
-    Number.isSafeInteger(server.pid) && server.pid > 0 && muse?.ownerPresent === true;
-  const museControls = localMuse ? `<div class="runtime-lifecycle-group">
+  const coreMuseTarget = online && server.pidVerified === true &&
+    Number.isSafeInteger(server.pid) && server.pid > 0;
+  const localMuse = coreMuseTarget && muse?.ownerPresent === true;
+  const museControls = !coreMuseTarget ? "" : muse?.watcherActive
+    ? `<div class="runtime-lifecycle-group">
       <button type="button" class="button ghost runtime-lifecycle"
         data-runtime-kind="muse-core" data-runtime-action="stop"
-        data-runtime-port="${server.port}" data-runtime-pid="${server.pid}"
-        ${muse.watcherActive ? "" : "disabled"}>Stop Muse</button>
+        data-runtime-port="${server.port}" data-runtime-pid="${server.pid}">Stop Muse</button>
       <button type="button" class="button ghost runtime-lifecycle"
         data-runtime-kind="muse-core" data-runtime-action="restart"
         data-runtime-port="${server.port}" data-runtime-pid="${server.pid}">Restart Muse</button>
-      ${muse?.watcherActive && muse.transport === "websocket" ? `<button
+      ${muse.configStale ? `<button type="button" class="button ghost runtime-lifecycle"
+        data-runtime-kind="muse-core" data-runtime-action="apply-restart"
+        data-runtime-port="${server.port}" data-runtime-pid="${server.pid}">Apply &amp; Restart</button>` : ""}
+      ${muse.transport === "websocket" ? `<button
         type="button" class="button ghost runtime-regenerate-token"
         data-runtime-kind="muse-core" data-runtime-port="${server.port}"
         data-runtime-pid="${server.pid}">Regenerate Muse Token</button>` : ""}
-    </div>` : "";
+    </div>`
+    : `<div class="runtime-lifecycle-group">
+      <button type="button" class="button ghost runtime-lifecycle"
+        data-runtime-kind="muse-core" data-runtime-action="start-telegram"
+        data-runtime-port="${server.port}" data-runtime-pid="${server.pid}">Start Muse · Telegram</button>
+      <button type="button" class="button ghost runtime-lifecycle"
+        data-runtime-kind="muse-core" data-runtime-action="start-websocket"
+        data-runtime-port="${server.port}" data-runtime-pid="${server.pid}">Start Muse · WebSocket</button>
+      <button type="button" class="button ghost runtime-lifecycle"
+        data-runtime-kind="muse-core" data-runtime-action="start-tunnel"
+        data-runtime-port="${server.port}" data-runtime-pid="${server.pid}">Start Muse · Tunnel</button>
+    </div>`;
 
   return `<article class="runtime-instance">
     <div class="runtime-instance-head">
@@ -263,19 +285,29 @@ async function runtimeServiceAction(event) {
   if (!button || runtimeActionBusy || button.disabled) return;
   const { runtimeKind: kind, runtimeAction: action, runtimePort, runtimePid } = button.dataset;
   const port = Number(runtimePort), pid = Number(runtimePid);
+  const startAction = ["start-telegram","start-websocket","start-tunnel"].includes(action);
+  const applyAction = action === "apply-restart";
   const service = kind === "muse-core"
     ? (() => {
         const core = runtimeLastResult?.cores?.find(item =>
           item.port === port && item.pid === pid && item.state === "online" &&
-          item.pidVerified === true && item.services?.muse?.ownerPresent === true);
-        return core ? {kind, port, pid, canStop:core.services.muse.watcherActive===true,
-          canRestart:true} : null;
+          item.pidVerified === true);
+        if (!core) return null;
+        const museState=core.services?.muse;
+        return {kind,port,pid,
+          canStart:museState?.watcherActive!==true,
+          canStop:museState?.watcherActive===true,
+          canRestart:museState?.ownerPresent===true,
+          canApply:museState?.watcherActive===true && museState?.configStale===true};
       })()
     : runtimeLastResult?.remoteServices?.find(item =>
         item.kind === kind && item.port === port && item.pid === pid);
   if (!service || !Number.isSafeInteger(port) || port < 1 || port > 65535 ||
       !Number.isSafeInteger(pid) || pid < 1 ||
-      (action === "stop" ? service.canStop !== true : action === "restart" ? service.canRestart !== true : true)) {
+      (action === "stop" ? service.canStop !== true :
+       action === "restart" ? service.canRestart !== true :
+       applyAction ? service.canApply !== true :
+       startAction ? service.canStart !== true : true)) {
     return;
   }
   const label = kind === "mcp" ? "MCP managed owner"
@@ -283,12 +315,21 @@ async function runtimeServiceAction(event) {
     : kind === "muse-core" ? "Core-local Muse Watch" : kind;
   const warning = action === "stop"
     ? "Stop will close this owner's connections. Active sessions/tasks block safe stopping."
-    : kind === "mcp"
-      ? "Restart reloads the MCP backend and preserves its public tunnel URL when supported."
-      : kind === "muse-core"
-        ? "Restart preserves this Core-owned watcher's configuration and callbacks. Active/queued tasks and tunnel-owned watchers are rejected."
-        : "Restart creates a new supervised Core generation while retaining existing session owners.";
-  if (!window.confirm(`${action === "stop" ? "Stop" : "Restart"} ${label} :${port} (PID ${pid})?\n\n${warning}\n\nThis action cannot be undone from this dialog.`)) return;
+    : applyAction
+      ? "Apply the latest saved Muse settings by rebuilding the idle watcher. Active/queued tasks and public tunnel owners are rejected."
+    : startAction
+      ? action === "start-telegram"
+        ? "Start Muse Watch with the saved Telegram bot/group configuration. Existing remote tasks are never interrupted."
+        : action === "start-websocket"
+          ? "Start Muse WebSocket using the saved mode, port, path and credentials. Server mode copies its private connection string to your clipboard."
+          : "Start Muse WebSocket plus a Cloudflare tunnel. This creates a public WSS endpoint and copies its private connection prompt to your clipboard."
+      : kind === "mcp"
+        ? "Restart reloads the MCP backend and preserves its public tunnel URL when supported."
+        : kind === "muse-core"
+          ? "Restart preserves this Core-owned watcher's current in-memory configuration. Active/queued tasks and tunnel-owned watchers are rejected."
+          : "Restart creates a new supervised Core generation while retaining existing session owners.";
+  const verb=startAction ? "Start" : applyAction ? "Apply & Restart" : action === "stop" ? "Stop" : "Restart";
+  if (!window.confirm(`${verb} ${label} :${port} (PID ${pid})?\n\n${warning}\n\nThis action cannot be undone from this dialog.`)) return;
   runtimeActionBusy = true;
   button.disabled = true;
   const message = rt("runtime-action-feedback");
@@ -297,7 +338,7 @@ async function runtimeServiceAction(event) {
   try {
     const result = await runtimeInvoke("service_action", { kind, action, port, pid });
     if (result?.success !== true) throw new Error("The service owner did not confirm the operation");
-    message.textContent = result.message || `${label} ${action} confirmed.`;
+    message.textContent = result.message || `${label} ${startAction ? "start" : action} confirmed.`;
     await runtimeRefresh();
   } catch (error) {
     message.textContent = `Lifecycle action not performed or not verified: ${String(error)}`;
