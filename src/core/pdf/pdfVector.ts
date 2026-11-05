@@ -11,6 +11,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { PDFParse } from "pdf-parse";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import {
   bytesFromPdf, hash, isSigned, outputPath, pdfDoc, publish, PdfOperationError, rootDir,
 } from "./pdfEngine.js";
@@ -84,6 +85,27 @@ export async function editPdfVectorExact(args: Record<string, unknown>, cwd: str
   if (fontPolicy !== "standard14" && fontPolicy !== "embedded_subset") {
     deny("invalid_input", "fontPolicy must be standard14 or embedded_subset.");
   }
+  let fitBounds: {x0:number;y0:number;x1:number;y1:number}|undefined;
+  if (args.fitBounds !== undefined) {
+    if (mode !== "replace_exact" || fontPolicy !== "embedded_subset" ||
+        typeof args.fitBounds !== "object" || args.fitBounds === null || Array.isArray(args.fitBounds)) {
+      deny("invalid_input", "fitBounds is only supported for embedded-subset text replacement.");
+    }
+    const raw=args.fitBounds as Record<string,unknown>;
+    if (Object.keys(raw).sort().join(",") !== "x0,x1,y0,y1") {
+      deny("invalid_input", "fitBounds requires exactly x0,y0,x1,y1.");
+    }
+    const values=["x0","y0","x1","y1"].map(k=>raw[k]);
+    if (values.some(v=>typeof v!=="number" || !Number.isFinite(v))) {
+      deny("invalid_input", "fitBounds values must be finite numbers.");
+    }
+    fitBounds={x0:values[0] as number,y0:values[1] as number,x1:values[2] as number,y1:values[3] as number};
+    if (!(fitBounds.x1>fitBounds.x0 && fitBounds.y1>fitBounds.y0 &&
+          fitBounds.x1-fitBounds.x0>=10 && fitBounds.x1-fitBounds.x0<=450 &&
+          fitBounds.y1-fitBounds.y0>=6 && fitBounds.y1-fitBounds.y0<=120)) {
+      deny("invalid_input", "fitBounds must define a bounded visible page region.");
+    }
+  }
   if (fontPolicy === "embedded_subset" && mode === "redact_exact") {
     deny("unsupported_content", "Embedded Unicode redaction requires a separate, forensically verified workflow.");
   }
@@ -114,6 +136,13 @@ export async function editPdfVectorExact(args: Record<string, unknown>, cwd: str
   if (output === input.file) deny("path_denied", "In-place PDF editing is not permitted.");
   const sourceDoc = await pdfDoc(input.bytes);
   if (args.page > sourceDoc.getPageCount()) deny("invalid_input", "Selected page does not exist.");
+  if (fitBounds) {
+    const pg = sourceDoc.getPage((args.page as number)-1);
+    const {width,height}=pg.getSize();
+    if (fitBounds.x0 < 0 || fitBounds.y0 < 0 || fitBounds.x1 > width || fitBounds.y1 > height) {
+      deny("invalid_input", "fitBounds must be inside the source page.");
+    }
+  }
   const stageDir = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-pdf-vector-"));
   await fs.chmod(stageDir, 0o700).catch(() => undefined);
   try {
@@ -121,6 +150,7 @@ export async function editPdfVectorExact(args: Record<string, unknown>, cwd: str
     const result = await runPython({
       mode, fontPolicy, page: args.page, inputPath: input.file, stagingPath,
       targetText: target, replacementText: replacement, expectedInputSha256: input.sha256,
+      ...(fitBounds ? {fitBounds} : {}),
     }, root, signal);
     const bytes = await fs.readFile(stagingPath);
     if (bytes.length > 100 * 1024 * 1024 || hash(bytes) !== result.stagingSha256) {
@@ -132,8 +162,15 @@ export async function editPdfVectorExact(args: Record<string, unknown>, cwd: str
     try {
       const resultText = await parser.getText();
       const content = resultText.pages.map(page => page.text).join("\n");
-      if (content.includes(target as string)) deny("verification_failed", "Original target remains in selectable PDF text.");
-      if (mode === "replace_exact" && !content.includes(replacement as string)) deny("verification_failed", "Replacement not extractable.");
+      const visibleLines=resultText.pages.flatMap(page=>page.text.split(/\r?\n/));
+      const normalizeLine=(text:string)=>text.trim().replace(/\s+/g," ");
+      if (visibleLines.some(line=>normalizeLine(line)===normalizeLine(target as string))) {
+        deny("verification_failed", "Original target remains as a selectable PDF text line.");
+      }
+      if (mode === "replace_exact" &&
+          visibleLines.filter(line=>normalizeLine(line)===normalizeLine(replacement as string)).length!==1) {
+        deny("verification_failed", "Replacement not extractable as exactly one text line.");
+      }
       if (mode === "redact_exact") {
         // Conservative additional check for uncompressed plaintext or hex
         // leftovers outside the content stream; this is not an all-encoding proof.
@@ -144,6 +181,47 @@ export async function editPdfVectorExact(args: Record<string, unknown>, cwd: str
         }
       }
     } finally { await parser.destroy(); }
+    if (fitBounds) {
+      const approved = result.verificationScopes &&
+        (result.verificationScopes as Record<string, unknown>).approvedFitBounds;
+      if (!Array.isArray(approved) || approved.length !== 4 ||
+          approved.some((value,idx) => typeof value !== "number" ||
+             Math.abs(value - [fitBounds.x0,fitBounds.y0,fitBounds.x1,fitBounds.y1][idx]) > 0.001)) {
+        deny("verification_failed", "Python backend did not certify the exact approved fit bounds.");
+      }
+      const sourceRenderer = new PDFParse({data:Uint8Array.from(input.bytes)});
+      const outputRenderer = new PDFParse({data:Uint8Array.from(bytes)});
+      try {
+        const [before, after] = await Promise.all([
+          sourceRenderer.getScreenshot({partial:[args.page as number],scale:1,imageBuffer:true,imageDataUrl:false}),
+          outputRenderer.getScreenshot({partial:[args.page as number],scale:1,imageBuffer:true,imageDataUrl:false}),
+        ]);
+        const a=before.pages[0], b=after.pages[0];
+        if (!a?.data || !b?.data || a.width!==b.width || a.height!==b.height ||
+            a.width*a.height > 12_000_000) {
+          deny("verification_failed", "Cannot verify pixel parity outside the approved fit region.");
+        }
+        const [imgA,imgB]=await Promise.all([loadImage(Buffer.from(a.data)),loadImage(Buffer.from(b.data))]);
+        const cA=createCanvas(a.width,a.height), cB=createCanvas(b.width,b.height);
+        const ctxA=cA.getContext("2d"), ctxB=cB.getContext("2d");
+        ctxA.drawImage(imgA,0,0);ctxB.drawImage(imgB,0,0);
+        const pa=ctxA.getImageData(0,0,a.width,a.height).data;
+        const pb=ctxB.getImageData(0,0,b.width,b.height).data;
+        const left=Math.floor(fitBounds.x0)-2,right=Math.ceil(fitBounds.x1)+2;
+        const top=Math.floor(a.height-fitBounds.y1)-2,bottom=Math.ceil(a.height-fitBounds.y0)+2;
+        for(let y=0;y<a.height;y++)for(let x=0;x<a.width;x++){
+          if(x>=left && x<=right && y>=top && y<=bottom)continue;
+          const i=(y*a.width+x)*4;
+          if(Math.abs(pa[i]-pb[i])>2 || Math.abs(pa[i+1]-pb[i+1])>2 ||
+             Math.abs(pa[i+2]-pb[i+2])>2 || Math.abs(pa[i+3]-pb[i+3])>2){
+            deny("verification_failed", "Edited PDF changed rendered pixels outside approved fitBounds.");
+          }
+        }
+      } finally {
+        await sourceRenderer.destroy().catch(()=>undefined);
+        await outputRenderer.destroy().catch(()=>undefined);
+      }
+    }
     if (signal?.aborted) deny("cancelled", "Operation cancelled before publication.");
     if (hash(await fs.readFile(input.file)) !== input.sha256) deny("hash_mismatch", "Original PDF changed during transformation.");
     const sha256 = await publish(output, bytes, signal);

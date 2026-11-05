@@ -142,14 +142,16 @@ export const pdfRedactRasterTool = wrapped(
 );
 export const pdfEditVectorExactTool = wrapped(
   "pdf_edit_vector_exact",
-  "CONSTRAINED exact original PDF text edit, not a general layout/reflow engine. Default standard14 policy permits one unique ASCII Tj, bounded fragmented TJ, or strictly consecutive multi-Tj sequence in one BT object; any intervening layout/state operator fails closed. Optional fontPolicy=embedded_subset allows replacement ONLY of one uniquely mapped Type0/Identity-H Latin ID/EN Unicode Tj or bounded fragmented TJ run using already-present embedded subset glyphs; missing glyphs, excessive kerning, overflow, complex mappings and embedded-font redaction fail closed. Never claim full-document sanitization.",
+  "CONSTRAINED exact original PDF text edit, not a general layout/reflow engine. Default standard14 policy permits one unique ASCII Tj, bounded fragmented TJ, or strictly consecutive multi-Tj sequence. fontPolicy=embedded_subset supports one uniquely mapped Type0/Identity-H Latin ID/EN Tj/TJ run using existing glyphs, including simple sequential ToUnicode bfrange mappings and pages with untouched Image XObjects. Optional fitBounds explicitly approves a bounded page region for wider replacement text; baseline is preserved and horizontal scale will never drop below 65%. Form/unknown XObjects, missing glyphs, unsupported mappings and embedded-font redaction fail closed.",
   {
     inputPath: file, outputPath: { type: "string" }, page: { type: "integer", minimum: 1, maximum: 500 },
     expectedInputSha256: { type: "string" },
     mode: { type: "string", enum: ["replace_exact", "redact_exact"] },
-    fontPolicy: { type: "string", enum: ["standard14", "embedded_subset"], description: "Explicit opt-in for embedded Type0 Identity-H CID Latin Unicode Tj or bounded fragmented TJ replacement using existing mapped glyphs only. Not for redaction or reflow." },
+    fontPolicy: { type: "string", enum: ["standard14", "embedded_subset"], description: "Explicit opt-in for embedded Type0 Identity-H CID Latin Unicode Tj or bounded fragmented TJ replacement using existing mapped glyphs only. Not for redaction." },
+    fitBounds: { type: "object", description: "Optional explicit approved region for embedded-subset replacement in bottom-left PDF points. Original target and verified replacement must remain inside. Allows bounded horizontal fitting only.", required:["x0","y0","x1","y1"], properties:{x0:{type:"number"},y0:{type:"number"},x1:{type:"number"},y1:{type:"number"}}, additionalProperties:false },
     targetText: { type: "string", maxLength: 200 },
     replacementText: { type: "string", maxLength: 200 },
+
     confirmRedact: { type: "boolean" },
   }, ["inputPath", "outputPath", "expectedInputSha256", "page", "mode", "targetText"],
   async (args, cwd, signal) => (await import("../pdf/pdfVector.js")).editPdfVectorExact(args, cwd, signal),

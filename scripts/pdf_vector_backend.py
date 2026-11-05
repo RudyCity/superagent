@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """Conservative pikepdf (MPL-2.0) content-stream operations for SuperAgent.
 
-This is deliberately NOT a general-purpose text editor. It supports ONE exact
-ASCII text-show operator in ONE simple, noninteractive, unrotated PDF page.
-Reject complex font encodings, XObjects, marked content, reused/ambiguous text,
-encrypted/signed PDFs, suspicious graphics/text state, or missing bbox.
-No source edits are made. The TypeScript caller verifies and publishes output.
+This is deliberately NOT a general-purpose text editor. It supports ONE unique
+verified text line in an unrotated, uncropped, noninteractive PDF page: a
+restricted Standard-14 Tj/TJ/multi-Tj path or an embedded Type0 Identity-H
+Latin Tj/TJ path using existing glyphs. Simple sequential ToUnicode bfrange,
+untouched Image XObjects, preserved graphics-state/Tr=0 operators and explicit
+bounded fit geometry are supported for replacement. Form/unknown XObjects,
+arbitrary reflow, complex CMaps, signed/encrypted PDFs and ambiguous geometry
+still fail closed. No source edits are made; the TypeScript caller independently
+verifies extraction, integrity and publication.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import decimal
+import math
 import os
 import re
 import sys
@@ -21,7 +27,7 @@ import pikepdf
 from pdfminer.high_level import extract_pages, extract_text
 from pdfminer.layout import LTTextBox, LTTextContainer, LTTextLine
 
-UNSAFE_OPERATORS = {"'", '"', "Do", "BI", "EI", "BDC", "BMC", "EMC", "Tz", "Tr", "Ts"}
+UNSAFE_OPERATORS = {"'", '"', "BI", "EI", "BDC", "BMC", "EMC", "Tz", "Ts"}
 TEXT_SHOW = {"Tj", "TJ", "'", '"'}
 
 
@@ -46,11 +52,19 @@ def each_line(layout):
                 continue
 
 
-def load_bbox(path: str, page_number: int, target: str):
+def normalize_visible_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def load_bbox(path: str, page_number: int, target: str, collapse_whitespace: bool = False):
     found = []
+    expected = normalize_visible_text(target) if collapse_whitespace else target
     for page_layout in extract_pages(path, page_numbers=[page_number - 1]):
         for line in each_line(page_layout):
-            if line.get_text().strip() == target:
+            actual = line.get_text().strip()
+            if collapse_whitespace:
+                actual = normalize_visible_text(actual)
+            if actual == expected:
                 found.append(tuple(float(round(v, 3)) for v in line.bbox))
     if len(found) != 1:
         reject("ambiguous_text_geometry", "Expected one unique visible text line with exactly the target string.")
@@ -100,9 +114,9 @@ def embedded_subset_cmap(font):
         cmap_text = cmap_bytes.decode("ascii")
     except UnicodeError:
         reject("unsupported_font", "CID CMap must be bounded ASCII syntax.")
-    if re.search(r"beginbfrange|usecmap", cmap_text, re.IGNORECASE):
-        reject("unsupported_font", "Ranged/inherited CID CMaps need a separate font engine.")
-    if "<0000><ffff>" not in cmap_text.replace(" ", ""):
+    if re.search(r"usecmap", cmap_text, re.IGNORECASE):
+        reject("unsupported_font", "Inherited CID CMaps need a separate font engine.")
+    if not re.search(r"<0000>\s*<FFFF>", cmap_text, re.IGNORECASE):
         reject("unsupported_font", "Expected a fixed two-byte Identity-H character code space.")
     mappings = {}
     for block in re.findall(r"beginbfchar\s*(.*?)\s*endbfchar", cmap_text, re.DOTALL):
@@ -118,6 +132,31 @@ def embedded_subset_cmap(font):
             if len(decoded) != 1 or src in mappings:
                 reject("unsupported_font", "CID CMap has ambiguous one-to-one mappings.")
             mappings[src] = decoded
+    for block in re.findall(r"beginbfrange\s*(.*?)\s*endbfrange", cmap_text, re.DOTALL):
+        for line in block.splitlines():
+            if not line.strip():
+                continue
+            match = re.fullmatch(
+                r"\s*<([0-9A-Fa-f]{4})>\s+<([0-9A-Fa-f]{4})>\s+<([0-9A-Fa-f]{4,8})>\s*",
+                line,
+            )
+            if not match:
+                reject("unsupported_font", "Only simple sequential CID bfrange mappings are supported.")
+            start = int(match.group(1), 16)
+            end = int(match.group(2), 16)
+            if end < start or end - start > 255:
+                reject("unsupported_font", "CID bfrange is invalid or too large.")
+            destination = bytes.fromhex(match.group(3))
+            destination_value = int.from_bytes(destination, "big")
+            for offset, code in enumerate(range(start, end + 1)):
+                src = code.to_bytes(2, "big")
+                try:
+                    decoded = (destination_value + offset).to_bytes(len(destination), "big").decode("utf-16-be")
+                except (OverflowError, UnicodeDecodeError):
+                    reject("unsupported_font", "CID bfrange contains invalid Unicode code points.")
+                if len(decoded) != 1 or src in mappings:
+                    reject("unsupported_font", "CID bfrange has ambiguous one-to-one mappings.")
+                mappings[src] = decoded
     if not 1 <= len(mappings) <= 256:
         reject("unsupported_font", "CID mapping size is unsupported.")
     reverse = {}
@@ -159,6 +198,18 @@ def edit(request: dict) -> dict:
     new_text = validate(request.get("replacementText"), "replacementText") if mode == "replace_exact" else None
     if new_text == target:
         reject("invalid_input", "Replacement must differ from target.")
+    fit_bounds = request.get("fitBounds")
+    if fit_bounds is not None:
+        if mode != "replace_exact" or font_policy != "embedded_subset" or not isinstance(fit_bounds, dict):
+            reject("invalid_input", "fitBounds is only supported for embedded-subset text replacement.")
+        if set(fit_bounds) != {"x0", "y0", "x1", "y1"}:
+            reject("invalid_input", "fitBounds requires exactly x0,y0,x1,y1 in bottom-left PDF points.")
+        if not all(type(fit_bounds[k]) in (int, float) and math.isfinite(fit_bounds[k]) for k in fit_bounds):
+            reject("invalid_input", "fitBounds must contain finite numeric page coordinates.")
+        x0, y0, x1, y1 = (float(fit_bounds[k]) for k in ("x0", "y0", "x1", "y1"))
+        if not (10 <= x1 - x0 <= 450 and 6 <= y1 - y0 <= 120):
+            reject("invalid_input", "fitBounds must be a bounded visible page region.")
+        fit_bounds = (x0, y0, x1, y1)
     # Incremental updates can preserve old, recoverable revision bytes.
     # A normalized rewrite normally drops them, but this restricted backend
     # refuses to certify removal without a complete historical object audit.
@@ -195,24 +246,61 @@ def edit(request: dict) -> dict:
         ):
             reject("unsupported_interactive", "Nonempty AcroForms and annotations cannot be preserved safely in exact-edit mode.")
         resources = page.obj.get("/Resources", pikepdf.Dictionary())
-        if len(resources.get("/XObject", {})) > 0:
-            reject("unsupported_content", "XObjects require an advanced geometry engine.")
-        for state in resources.get("/ExtGState", {}).values():
-            # pdf-lib uses GS objects for normal opacity=1. Preserve those
-            # verbatim; fail on any transparency, blend or advanced state.
-            if (float(state.get("/ca", 1)) != 1.0
-                or float(state.get("/CA", 1)) != 1.0
-                or str(state.get("/BM", "/Normal")) != "/Normal"
-                or any(str(key) not in {"/Type", "/ca", "/CA", "/BM"} for key in state.keys())):
-                reject("unsupported_content", "Nontrivial transparency or graphics state cannot be verified.")
-        if "/Pattern" in resources or "/Shading" in resources:
-            reject("unsupported_content", "Patterns and shadings are not supported for verified local editing.")
+        xobjects = resources.get("/XObject", {})
+        if mode == "redact_exact" and len(xobjects) > 0:
+            reject("unsupported_content", "Exact vector redaction still refuses XObjects; use reviewed raster redaction.")
+        image_xobjects = set()
+        for xobject_name, xobject in xobjects.items():
+            if str(xobject.get("/Subtype", "")) != "/Image":
+                reject("unsupported_content", "Only untouched Image XObjects are supported for exact text replacement.")
+            image_xobjects.add(str(xobject_name))
+        ext_states = resources.get("/ExtGState", {})
+        if len(ext_states) > 64:
+            reject("unsupported_content", "ExtGState dictionary is too large for restricted exact editing.")
+        if mode == "redact_exact":
+            for state in ext_states.values():
+                # Redaction adds new opaque paint and therefore remains strict:
+                # any pre-existing transparency/blend state requires a broader
+                # renderer-aware sanitization path.
+                if (float(state.get("/ca", 1)) != 1.0
+                    or float(state.get("/CA", 1)) != 1.0
+                    or str(state.get("/BM", "/Normal")) != "/Normal"
+                    or any(str(key) not in {"/Type", "/ca", "/CA", "/BM"} for key in state.keys())):
+                    reject("unsupported_content", "Nontrivial transparency or graphics state cannot be certified for exact redaction.")
+        if len(resources.get("/Pattern", {})) > 0 or len(resources.get("/Shading", {})) > 0:
+            reject("unsupported_content", "Nonempty patterns and shadings are not supported for verified local editing.")
 
         original_ops = list(pikepdf.parse_content_stream(page))
         if not original_ops or len(original_ops) > 12000:
             reject("unsupported_content", "Empty or overly complex content stream.")
-        if any(str(op) in UNSAFE_OPERATORS for _, op in original_ops):
-            reject("unsupported_content", "Text state, XObject or marked-content operators cannot be safely mapped.")
+        for operands, op in original_ops:
+            name = str(op)
+            if name == "Tr" and mode == "replace_exact":
+                if len(operands) == 1 and float(operands[0]) == 0:
+                    continue  # Ordinary fill text rendering; preserved unchanged.
+            if name in UNSAFE_OPERATORS:
+                reject("unsupported_content", "Unsupported text state, inline image or marked-content operators cannot be safely mapped.")
+        image_do_sequence = []
+        graphics_state_sequence = []
+        text_render_mode_sequence = []
+        ext_state_names = {str(k) for k in ext_states.keys()}
+        for operands, op in original_ops:
+            if str(op) == "Tr":
+                if len(operands) != 1 or float(operands[0]) != 0.0:
+                    reject("unsupported_content", "Only normal fill text rendering mode Tr=0 is supported.")
+                text_render_mode_sequence.append(0)
+                continue
+            name = str(op)
+            if name == "gs":
+                if len(operands) != 1 or str(operands[0]) not in ext_state_names:
+                    reject("unsupported_content", "Graphics-state invocation does not resolve to page ExtGState.")
+                graphics_state_sequence.append(str(operands[0]))
+                continue
+            if name != "Do":
+                continue
+            if len(operands) != 1 or str(operands[0]) not in image_xobjects:
+                reject("unsupported_content", "XObject invocation does not resolve to an approved Image XObject.")
+            image_do_sequence.append(str(operands[0]))
 
         # Restricted multi-run support: several consecutive literal Tj shows in
         # ONE BT..ET object may form a single visual line. There must be no
@@ -260,20 +348,37 @@ def edit(request: dict) -> dict:
                     # relative placement/state ambiguous for multi-run editing.
                     block_between.append(idx)
 
+        collapse_whitespace = mode == "replace_exact"
+        expected_visible = normalize_visible_text(target) if collapse_whitespace else target
         original_text = extract_text(str(source))
-        if original_text.count(target) != 1:
-            reject("ambiguous_text", "Target must appear exactly once across the extracted document.")
-        bbox = load_bbox(str(source), page_num, target)
+        matching_lines = sum(
+            1 for line in original_text.splitlines()
+            if (normalize_visible_text(line) if collapse_whitespace else line.strip()) == expected_visible
+        )
+        if matching_lines != 1:
+            reject("ambiguous_text", "Target must map to exactly one extracted visual line.")
+        bbox = load_bbox(str(source), page_num, target, collapse_whitespace)
+        if fit_bounds is not None:
+            media = [float(v) for v in page.obj.MediaBox]
+            if (not media[0] <= fit_bounds[0] < fit_bounds[2] <= media[2] or
+                not media[1] <= fit_bounds[1] < fit_bounds[3] <= media[3]):
+                reject("invalid_input", "fitBounds must lie inside the source page MediaBox.")
+            if (bbox[0] < fit_bounds[0] - 0.5 or bbox[1] < fit_bounds[1] - 0.5 or
+                bbox[2] > fit_bounds[2] + 0.5 or bbox[3] > fit_bounds[3] + 0.5):
+                reject("fit_bounds_invalid", "Original target line is not inside the approved fitBounds.")
 
         font_refs = resources.get("/Font", {})
-        cid_map = None
-        cid_reverse = None
+        embedded_maps = {}
         if font_policy == "embedded_subset":
-            if len(font_refs) != 1:
-                reject("unsupported_font", "Unicode editing currently needs exactly one embedded font resource.")
-            cid_map, cid_reverse = embedded_subset_cmap(next(iter(font_refs.values())))
-            if any(character not in cid_reverse for character in new_text):
-                reject("missing_glyph", "A replacement glyph is not in the original embedded font subset.")
+            if not font_refs or len(font_refs) > 16:
+                reject("unsupported_font", "Embedded Unicode editing requires a bounded page font resource dictionary.")
+            for font_name, font in font_refs.items():
+                try:
+                    embedded_maps[str(font_name)] = embedded_subset_cmap(font)
+                except Unsupported:
+                    # Preserve unrelated fonts verbatim. The font actually
+                    # active for the unique target must pass the strict parser.
+                    embedded_maps[str(font_name)] = None
         else:
             if not font_refs or len(font_refs) > 2:
                 reject("unsupported_font", "Exactly one or two simple Standard-14 font resources are supported.")
@@ -286,16 +391,23 @@ def edit(request: dict) -> dict:
                 if "/ToUnicode" in font or "/FontDescriptor" in font:
                     reject("unsupported_font", "Complex font mappings and embedded glyphs require explicit policy.")
         active_text = False
+        active_font_name = None
         count_text_shows = 0
         seen_targets = []
         replacement_ops = []
+        replacement_show_index = None
         multi_first = multi_tj_candidate[0] if multi_tj_candidate else None
         multi_rest = set(multi_tj_candidate[1:]) if multi_tj_candidate else set()
         for op_index, (operands, operator) in enumerate(original_ops):
             name = str(operator)
             if name == "BT":
                 active_text = True
+                active_font_name = None
                 count_text_shows = 0
+            if name == "Tf":
+                if len(operands) != 2:
+                    reject("unsupported_content", "Tf must contain a font resource and size.")
+                active_font_name = str(operands[0])
             if name in ("Tj", "TJ"):
                 count_text_shows += 1
                 if multi_tj_candidate and op_index == multi_first:
@@ -311,13 +423,19 @@ def edit(request: dict) -> dict:
                     if not isinstance(operands[0], pikepdf.String):
                         reject("unsupported_content", "Tj must contain one literal string.")
                     if font_policy == "embedded_subset":
-                        raw = bytes(operands[0])
-                        if not raw or len(raw) % 2:
-                            reject("unsupported_font", "CID operator has invalid two-byte glyph encoding.")
-                        try:
-                            shown = "".join(cid_map[raw[i:i+2]] for i in range(0, len(raw), 2))
-                        except KeyError:
-                            reject("unsupported_font", "Original glyph code is absent from ToUnicode mapping.")
+                        active_mapping = embedded_maps.get(active_font_name)
+                        if active_mapping is None:
+                            shown = None
+                        else:
+                            cid_map, _ = active_mapping
+                            raw = bytes(operands[0])
+                            if not raw or len(raw) % 2:
+                                shown = None
+                                raw = b""
+                            try:
+                                shown = "".join(cid_map[raw[i:i+2]] for i in range(0, len(raw), 2))
+                            except KeyError:
+                                shown = None
                     else:
                         shown = str(operands[0])
                 else:
@@ -331,35 +449,65 @@ def edit(request: dict) -> dict:
                     for fragment in operands[0]:
                         if isinstance(fragment, pikepdf.String):
                             if font_policy == "embedded_subset":
+                                active_mapping = embedded_maps.get(active_font_name)
+                                if active_mapping is None:
+                                    pieces = []
+                                    break
+                                cid_map, _ = active_mapping
                                 raw = bytes(fragment)
                                 if not raw or len(raw) % 2:
-                                    reject("unsupported_font", "CID TJ fragment has invalid two-byte glyph encoding.")
+                                    pieces = []
+                                    break
                                 try:
                                     chunk = "".join(
                                         cid_map[raw[i:i+2]]
                                         for i in range(0, len(raw), 2)
                                     )
                                 except KeyError:
-                                    reject("unsupported_font", "CID TJ glyph code is absent from ToUnicode mapping.")
+                                    pieces = []
+                                    break
                             else:
                                 chunk = str(fragment)
                                 if not chunk or not all(32 <= ord(c) <= 126 for c in chunk):
                                     reject("unsupported_content", "TJ fragments must be printable ASCII.")
                             pieces.append(chunk)
-                        elif isinstance(fragment, (int, float)) and not isinstance(fragment, bool):
+                        elif isinstance(fragment, (int, float, decimal.Decimal)) and not isinstance(fragment, bool):
                             if not -100 <= float(fragment) <= 100:
+                                if font_policy == "embedded_subset":
+                                    pieces = []
+                                    break
                                 reject("unsupported_content", "TJ kerning offset exceeds bounded safe range.")
                         else:
+                            if font_policy == "embedded_subset":
+                                pieces = []
+                                break
                             reject("unsupported_content", "TJ contains unsupported encoded objects.")
-                    if not pieces or sum(map(len, pieces)) > 200:
-                        reject("unsupported_content", "TJ operand is empty or oversized.")
-                    shown = "".join(pieces)
-                if shown == target:
+                    if not pieces:
+                        shown = None
+                    elif sum(map(len, pieces)) > 200:
+                        reject("unsupported_content", "TJ operand is oversized.")
+                    else:
+                        shown = "".join(pieces)
+                shown_matches_target = (
+                    shown is not None and
+                    (normalize_visible_text(shown) if collapse_whitespace else shown) == expected_visible
+                )
+                if shown_matches_target:
                     if not active_text or count_text_shows != 1:
                         reject("unsupported_content", "Target must be the only text-show in its text object.")
                     seen_targets.append(len(replacement_ops))
+                    replacement_show_index = len(replacement_ops)
                     if mode == "replace_exact":
-                        encoded = b"".join(cid_reverse[char] for char in new_text) if font_policy == "embedded_subset" else new_text
+                        if font_policy == "embedded_subset":
+                            active_mapping = embedded_maps.get(active_font_name)
+                            if active_mapping is None:
+                                reject("unsupported_font", "Target uses an unsupported embedded font mapping.")
+                            _, cid_reverse = active_mapping
+                            if any(character not in cid_reverse for character in new_text):
+                                reject("missing_glyph", "A replacement glyph is not in the target embedded font subset.")
+                            encoded = b"".join(cid_reverse[char] for char in new_text)
+                        else:
+                            encoded = new_text
                         if name == "TJ":
                             replacement_ops.append(([pikepdf.Array([pikepdf.String(encoded)])], operator))
                         else:
@@ -377,6 +525,36 @@ def edit(request: dict) -> dict:
 
         stroke_count = count_vector_strokes(original_ops)
         page.obj.Contents = pdf.make_stream(pikepdf.unparse_content_stream(replacement_ops))
+        fitted_horizontal_scale = 100
+        if fit_bounds is not None:
+            # Measure the replacement using an independent PDF layout reader.
+            # Only the single matched text-show may be horizontally compressed.
+            # Restore Tz=100 immediately afterward so later text stays intact.
+            measure_path = output.with_name(output.name + ".measure.pdf")
+            if measure_path.exists():
+                reject("already_exists", "Temporary layout measurement already exists.")
+            try:
+                pdf.save(str(measure_path), object_stream_mode=pikepdf.ObjectStreamMode.disable)
+                provisional = load_bbox(str(measure_path), page_num, new_text, True)
+                if abs(provisional[0] - bbox[0]) > 0.75 or abs(provisional[1] - bbox[1]) > 0.75:
+                    reject("layout_mismatch", "Replacement moved before bounded fit was applied.")
+                width = provisional[2] - provisional[0]
+                available = fit_bounds[2] - provisional[0] - 1.0
+                if width <= 0 or available <= 0:
+                    reject("fit_overflow", "Approved fitBounds have no usable text width.")
+                if width > available:
+                    fitted_horizontal_scale = math.floor(99.0 * available / width)
+                    if fitted_horizontal_scale < 65:
+                        reject("fit_overflow", "Text requires excessive horizontal compression.")
+                    if replacement_show_index is None:
+                        reject("verification_failed", "Target text-show index unavailable.")
+                    replacement_ops.insert(replacement_show_index,
+                        ([int(fitted_horizontal_scale)], pikepdf.Operator("Tz")))
+                    replacement_ops.insert(replacement_show_index + 2,
+                        ([100], pikepdf.Operator("Tz")))
+                    page.obj.Contents = pdf.make_stream(pikepdf.unparse_content_stream(replacement_ops))
+            finally:
+                measure_path.unlink(missing_ok=True)
         if mode == "redact_exact":
             x0, y0, x1, y1 = bbox
             # Add a non-raster vector rectangle precisely around the original
@@ -391,18 +569,31 @@ def edit(request: dict) -> dict:
 
     # Independent rendering/text decoding step from pdfminer.six.
     after_text = extract_text(str(output))
-    if target in after_text:
+    remaining_target_lines = sum(
+        1 for line in after_text.splitlines()
+        if (normalize_visible_text(line) if collapse_whitespace else line.strip()) == expected_visible
+    )
+    if remaining_target_lines:
         reject("verification_failed", "Original target is still extractable after rewrite; do not publish.")
     if mode == "replace_exact":
-        if after_text.count(new_text) != 1:
+        replacement_visible = normalize_visible_text(new_text)
+        replacement_count = sum(
+            1 for line in after_text.splitlines()
+            if normalize_visible_text(line) == replacement_visible
+        )
+        if replacement_count != 1:
             reject("verification_failed", "Replacement is not extractable exactly once.")
-        after_box = load_bbox(str(output), page_num, new_text)
+        after_box = load_bbox(str(output), page_num, new_text, True)
         # Do not claim perfect layout: no reflow takes place; the replacement
         # baseline starts at the exact source operator position, and other
         # drawing operators remain in the same order.
         if abs(after_box[0] - bbox[0]) > 0.75 or abs(after_box[1] - bbox[1]) > 0.75:
             reject("layout_mismatch", "Replacement moved the text baseline.")
-        if font_policy == "embedded_subset" and (after_box[2] > bbox[2] + 0.5 or after_box[3] > bbox[3] + 0.5):
+        if fit_bounds is not None:
+            if (after_box[0] < fit_bounds[0] - 0.75 or after_box[1] < fit_bounds[1] - 0.75 or
+                after_box[2] > fit_bounds[2] + 0.75 or after_box[3] > fit_bounds[3] + 0.75):
+                reject("fit_overflow", "Replacement leaves approved fitBounds after independent PDF extraction.")
+        elif font_policy == "embedded_subset" and (after_box[2] > bbox[2] + 0.5 or after_box[3] > bbox[3] + 0.5):
             reject("layout_overflow", "Embedded-font replacement exceeds the original text bounding box; refuse unapproved reflow.")
     with pikepdf.Pdf.open(str(output)) as after:
         target_page = after.pages[page_num - 1]
@@ -414,6 +605,24 @@ def edit(request: dict) -> dict:
                 remaining = "".join(str(v) for v in operands[0] if isinstance(v, pikepdf.String))
                 if target in remaining:
                     reject("verification_failed", "Original text still exists in fragmented TJ content.")
+        final_image_do_sequence = [
+            str(operands[0]) for operands, op in final_ops
+            if str(op) == "Do" and len(operands) == 1
+        ]
+        if final_image_do_sequence != image_do_sequence:
+            reject("verification_failed", "Image XObject invocation sequence changed unexpectedly.")
+        final_graphics_state_sequence = [
+            str(operands[0]) for operands, op in final_ops
+            if str(op) == "gs" and len(operands) == 1
+        ]
+        if final_graphics_state_sequence != graphics_state_sequence:
+            reject("verification_failed", "Graphics-state invocation sequence changed unexpectedly.")
+        final_text_render_mode_sequence = [
+            float(operands[0]) for operands, op in final_ops
+            if str(op) == "Tr" and len(operands) == 1
+        ]
+        if final_text_render_mode_sequence != text_render_mode_sequence:
+            reject("verification_failed", "Text rendering mode sequence changed unexpectedly.")
         if mode == "replace_exact" and count_vector_strokes(final_ops) != stroke_count:
             reject("verification_failed", "Nontext vector painting operators changed unexpectedly.")
         if mode == "redact_exact" and count_vector_strokes(final_ops) != stroke_count + 1:
@@ -429,6 +638,7 @@ def edit(request: dict) -> dict:
         "replacementText": new_text if mode == "replace_exact" else None,
         "originalBoundingBox": bbox,
         "vectorGraphicsPreserved": True,
+        "imageXObjectsPreserved": bool(image_do_sequence),
         "selectableTextOutsideTargetPreserved": True,
         "verificationScopes": {
             "matchedTextOperator": (
@@ -437,14 +647,20 @@ def edit(request: dict) -> dict:
                 else "unique_embedded_Type0_IdentityH_Tj_or_bounded_TJ"
             ),
             "fontPolicy": font_policy,
+            "approvedFitBounds": list(fit_bounds) if fit_bounds is not None else None,
+            "horizontalScalePercent": fitted_horizontal_scale,
+            "imageXObjects": "preserved_verbatim" if image_do_sequence else "none",
+            "graphicsStateOperators": "preserved_verbatim" if graphics_state_sequence else "none",
+            "textRenderMode": "Tr=0_preserved" if text_render_mode_sequence else "default",
             "originalTextAbsentInExtraction": True,
+            "sourceWhitespaceMatch": "collapsed_unique_visual_line" if collapse_whitespace else "exact",
             "targetOperatorRemoved": True,
             "vectorPaintOperatorCount": "preserved" if mode == "replace_exact" else "preserved_plus_black_rectangle",
             "fullLayoutPixelParity": "not_certified",
             "hiddenMetadataOrOtherSensitiveInfo": "unsupported_containers_refused_not_forensically_certified",
         },
         "warnings": [
-            "Supports one exact Standard-14 Tj/bounded TJ/multi-Tj or one embedded Type0 Identity-H Tj/bounded TJ run; other PDF structures fail closed.",
+            "Supports one exact Standard-14 Tj/bounded TJ/multi-Tj or one embedded Type0 Identity-H Tj/bounded TJ run; untouched Image XObjects are allowed only for replacement, while Form/unknown XObjects fail closed.",
             "No document reflow; replacement may differ in width and visual fit. Review render before use.",
             "Vector redaction removes the exact content stream operator, but cannot independently certify all sensitive information in metadata or linked objects.",
         ],

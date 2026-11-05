@@ -89,6 +89,19 @@ beforeAll(async () => {
     const unicodePage=unicodeDoc.addPage([640,300]);
     unicodePage.drawText("Pendidikan – Cafe Ké",{x:40,y:190,size:20,font:embedded});
     await fs.writeFile(path.join(dir,"unicode-embedded.pdf"),await unicodeDoc.save({useObjectStreams:false}));
+    const imageDoc=await PDFDocument.create();
+    imageDoc.registerFontkit(fontkit);
+    const imageFont=await imageDoc.embedFont(await fs.readFile(embeddedFontPath),{subset:true});
+    const imagePage=imageDoc.addPage([640,300]);
+    imagePage.drawText("Pendidikan – Cafe Ké",{x:40,y:190,size:20,font:imageFont});
+    imagePage.drawText("Unchanged",{x:40,y:100,size:12,font:await imageDoc.embedFont(StandardFonts.Helvetica)});
+    const colorCanvas=createCanvas(32,32);
+    const colorContext=colorCanvas.getContext("2d");
+    colorContext.fillStyle="#2563eb";
+    colorContext.fillRect(0,0,32,32);
+    const embeddedImage=await imageDoc.embedPng(colorCanvas.toBuffer("image/png"));
+    imagePage.drawImage(embeddedImage,{x:520,y:190,width:32,height:32});
+    await fs.writeFile(path.join(dir,"unicode-embedded-image.pdf"),await imageDoc.save({useObjectStreams:false}));
 
     const unicodeTjDoc=await PDFDocument.create();
     unicodeTjDoc.registerFontkit(fontkit);
@@ -163,6 +176,62 @@ describe("Strict vector-preserving PDF text modification", () => {
       if(Math.abs(before.rgba[i]-after.rgba[i])>3) changedOutside++;
     }
     expect(changedOutside).toBeLessThan(10);
+  },30000);
+
+  it.skipIf(!embeddedFontReady)("fits an embedded Unicode replacement inside approved PDF bounds while preserving images and unrelated text",async()=>{
+    const source=await inspectPdf({inputPath:"unicode-embedded-image.pdf"},dir);
+    const args={
+      inputPath:"unicode-embedded-image.pdf",expectedInputSha256:source.sha256,
+      page:1,mode:"replace_exact",fontPolicy:"embedded_subset",
+      targetText:"Pendidikan – Cafe Ké",
+      replacementText:"Pendidikan – Cafe Ké Pendidikan",
+    };
+    await expect(editPdfVectorExact({...args,outputPath:"unicode-overflow.pdf"},dir))
+      .rejects.toMatchObject({code:"layout_overflow"});
+    const result=await editPdfVectorExact({
+      ...args,outputPath:"unicode-embedded-image-fitted.pdf",
+      fitBounds:{x0:35,y0:170,x1:380,y1:220},
+    },dir);
+    expect(result.status).toBe("verified");
+    expect(result.verificationScopes.imageXObjects).toBe("preserved_verbatim");
+    expect(result.verificationScopes.approvedFitBounds).toEqual([35,170,380,220]);
+    expect(result.verificationScopes.horizontalScalePercent).toBeGreaterThanOrEqual(65);
+    const parser=new PDFParse({data:Uint8Array.from(await fs.readFile(path.join(dir,"unicode-embedded-image-fitted.pdf")))});
+    try {
+      const content=(await parser.getText()).text;
+      expect(content).toContain(args.replacementText);
+      expect(content).toContain("Unchanged");
+      expect(content).not.toContain(args.targetText+"\n");
+    }finally{await parser.destroy()}
+    await expect(editPdfVectorExact({
+      ...args,outputPath:"unicode-wrong-bounds.pdf",
+      fitBounds:{x0:300,y0:170,x1:390,y1:220},
+    },dir)).rejects.toMatchObject({code:"fit_bounds_invalid"});
+    await expect(fs.stat(path.join(dir,"unicode-wrong-bounds.pdf"))).rejects.toMatchObject({code:"ENOENT"});
+  },30000);
+
+  it.skipIf(!embeddedFontReady)("permits explicit bounded expansion for a wider embedded-font replacement",async()=>{
+    const info=await inspectPdf({inputPath:"unicode-embedded.pdf"},dir);
+    const base={
+      inputPath:"unicode-embedded.pdf",expectedInputSha256:info.sha256,page:1,
+      mode:"replace_exact" as const,fontPolicy:"embedded_subset",
+      targetText:"Pendidikan – Cafe Ké",replacementText:"Pendidikan Pendidikan",
+    };
+    await expect(editPdfVectorExact({...base,outputPath:"unicode-overflow-strict.pdf"},dir))
+      .rejects.toMatchObject({code:"layout_overflow"});
+    const fitted=await editPdfVectorExact({
+      ...base,outputPath:"unicode-overflow-fitted.pdf",
+      fitBounds:{x0:35,y0:175,x1:350,y1:220},
+    },dir);
+    expect(fitted.status).toBe("verified");
+    expect(fitted.verificationScopes.approvedFitBounds).toEqual([35,175,350,220]);
+    expect(Number(fitted.verificationScopes.horizontalScalePercent)).toBeGreaterThanOrEqual(65);
+    const parser=new PDFParse({data:Uint8Array.from(await fs.readFile(path.join(dir,"unicode-overflow-fitted.pdf")))});
+    try{
+      const text=(await parser.getText()).text;
+      expect(text).toContain("Pendidikan Pendidikan");
+      expect(text).not.toContain("Pendidikan – Cafe Ké");
+    }finally{await parser.destroy()}
   },30000);
 
   it.skipIf(!embeddedFontReady)("replaces a fragmented embedded Type0 Identity-H Unicode TJ run",async()=>{
