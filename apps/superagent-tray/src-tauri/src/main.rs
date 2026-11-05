@@ -1127,7 +1127,10 @@ fn main() {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-settings", ());
                     }
-                    "quit" => app.exit(0),
+                    "quit" => {
+                        tray_lifecycle::cleanup();
+                        std::process::exit(0);
+                    }
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -1173,7 +1176,8 @@ fn main() {
                 } else {
                     // Explicit setting: closing window quits this utility.
                     // It never stops Core, tunnels or user agents.
-                    window.app_handle().exit(0);
+                    tray_lifecycle::cleanup();
+                    std::process::exit(0);
                 }
             }
         })
@@ -1213,10 +1217,13 @@ fn main() {
         .expect("SuperAgent Tray could not build")
         .run(|_app, event| {
             match event {
-                tauri::RunEvent::ExitRequested { api, .. } => {
-                    // Tray applications run indefinitely in the notification area
-                    // until the user explicitly selects "Quit SuperAgent Tray".
-                    api.prevent_exit();
+                tauri::RunEvent::ExitRequested { code, api, .. } => {
+                    if code.is_some() {
+                        tray_lifecycle::cleanup();
+                    } else {
+                        // All windows closed / hidden - keep app alive in notification area
+                        api.prevent_exit();
+                    }
                 }
                 tauri::RunEvent::Exit => {
                     tray_lifecycle::cleanup();
