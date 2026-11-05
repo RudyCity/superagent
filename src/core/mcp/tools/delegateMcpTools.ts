@@ -249,6 +249,32 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
   return null;
 }
 
+/** Delegate-browser MCP calls use the existing Core bridge, never a second WS listener. */
+export async function dispatchDelegateBrowserMcpTool(
+  name: "superagent_chrome_cdp" | "superagent_chrome_vision",
+  args: Record<string, unknown>,
+): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
+  try {
+    const port = 7888;
+    const token = getServerAuthToken(port);
+    const response = await fetch("http://127.0.0.1:" + port + "/api/delegate/mcp-dispatch", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+      body: JSON.stringify({ name, arguments: args }),
+      signal: AbortSignal.timeout(name === "superagent_chrome_vision" ? 180_000 : 95_000),
+    });
+    const payload: unknown = await response.json();
+    if (!isPlainObject(payload)) throw new Error("DELEGATE_HOST_INVALID_RESPONSE");
+    if (response.ok && payload.success === true && typeof payload.result === "string") {
+      return { content: [{ type: "text", text: payload.result }] };
+    }
+    return { content: [{ type: "text", text: typeof payload.error === "string"
+      ? payload.error : "DELEGATE_CDP_HOST_REQUEST_FAILED" }], isError: true };
+  } catch {
+    return { content: [{ type: "text", text: "DELEGATE_CDP_HOST_UNAVAILABLE_OR_TIMEOUT: Core at 127.0.0.1:7888 did not confirm the browser operation. No retry was performed; inspect the tab before attempting a write again." }], isError: true };
+  }
+}
+
 export async function dispatchDelegateMcpTool(
   name: string, args: Record<string, unknown>,
 ): Promise<{ content: Array<{type: "text"; text: string}>; isError?: boolean } | null> {

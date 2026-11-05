@@ -1,4 +1,8 @@
 import { randomUUID, randomBytes, createHash, timingSafeEqual } from "node:crypto";
+import {
+  defaultDelegatePairStorePath, digestDelegateToken, loadDelegatePairProofs,
+  matchesDelegateTokenDigest, saveDelegatePairProofs, type PairedClientProof,
+} from "./pairedClientStore.js";
 import { readFileSync, statSync } from "node:fs";
 import WebSocket, { WebSocketServer } from "ws";
 import type { IncomingMessage } from "node:http";
@@ -84,7 +88,8 @@ export class DelegateBridge {
   private pairingIssuedAt = 0;
   private pairingTimeout: ReturnType<typeof setTimeout> | undefined;
   private badPairAttempts: number[] = [];
-  private pairedClients = new Map<string, { extensionId: string; token: string }>();
+  private pairedClients = new Map<string, PairedClientProof>();
+  private readonly persistentPairStorePath?: string;
   private clients = new Map<string, ClientSession>();
   private pending = new Map<string, Pending>();
   private waiters = new Set<() => void>();
@@ -95,7 +100,14 @@ export class DelegateBridge {
     private readonly tokenOverride?: string,
     private readonly auditSink: DelegateAuditSink = writeDelegateConnectionAudit,
     private readonly pairingNotice: (line: string) => void = line => console.info(line),
-  ) {}
+    pairStorePath?: string,
+  ) {
+    this.persistentPairStorePath = pairStorePath ?? (
+      port === 17341 && tokenOverride === undefined &&
+      !process.env.VITEST && process.env.NODE_ENV !== "test"
+        ? defaultDelegatePairStorePath() : undefined
+    );
+  }
 
   private audit(event: DelegateAuditEvent, details: Partial<DelegateAuditRecord> = {}): void {
     const record: DelegateAuditRecord = {
@@ -213,11 +225,17 @@ export class DelegateBridge {
   disconnectClient(clientId: string): boolean {
     const client = this.clients.get(clientId);
     if (!client) return false;
+    const next = new Map(this.pairedClients);
+    next.delete(clientId);
+    // An explicit disconnect also revokes the stored proof across restarts.
+    // Persist the revocation before acknowledging it.
+    if (this.persistentPairStorePath && next.size !== this.pairedClients.size)
+      saveDelegatePairProofs(this.persistentPairStorePath, next);
+    this.clients.delete(clientId);
+    this.pairedClients = next;
     try {
       client.socket.close(1000, "MANUALLY_DISCONNECTED");
     } catch {}
-    this.clients.delete(clientId);
-    this.pairedClients.delete(clientId);
     this.broadcastConnections();
     return true;
   }
@@ -230,6 +248,7 @@ export class DelegateBridge {
       endpoint: "ws://127.0.0.1:" + this.port,
       activeProfiles: this.listConnections(),
       openSockets: this.server?.clients.size ?? 0,
+      pendingRequests: this.pending.size,
       pairingCode: pair ? pair.code : null,
       pairingExpiresAt: pair ? pair.expiresAt : null,
       pairingTtlMs: pair ? pair.ttlRemainingMs : null,
@@ -250,6 +269,10 @@ export class DelegateBridge {
   async start(): Promise<void> {
     if (this.server) return;
     if (this.starting) return this.starting;
+    // Rehydrate only hashed, origin-bound pairing proofs. The Chrome bearer
+    // itself is never stored by the Core, and pairing survives worker recycle.
+    if (this.persistentPairStorePath)
+      this.pairedClients = loadDelegatePairProofs(this.persistentPairStorePath);
     // Snapshot the configured key at startup. A missing/rotated token file
     // must not throw inside a websocket 'message' callback and crash the host.
     this.authenticatedToken = this.getAuthToken();
@@ -364,7 +387,7 @@ export class DelegateBridge {
         const validCredential = !token ||
           tokenMatches(token, msg.authToken) ||
           (profileToken?.extensionId === extensionId &&
-            tokenMatches(profileToken.token, msg.authToken));
+            matchesDelegateTokenDigest(profileToken.tokenDigest, msg.authToken));
         const wantPair = !validCredential && typeof msg.pairingCode === "string";
         if (!validCredential && !wantPair) {
           reject("DELEGATE_AUTH_FAILED");
@@ -397,7 +420,16 @@ export class DelegateBridge {
 
         const issuedClientToken = wantPair ? randomBytes(32).toString("hex") : undefined;
         if (issuedClientToken) {
-          this.pairedClients.set(clientId, { extensionId, token: issuedClientToken });
+          const next = new Map(this.pairedClients);
+          next.set(clientId, { extensionId, tokenDigest: digestDelegateToken(issuedClientToken) });
+          try {
+            if (this.persistentPairStorePath)
+              saveDelegatePairProofs(this.persistentPairStorePath, next);
+          } catch {
+            reject("DELEGATE_PAIR_PERSIST_FAILED");
+            return;
+          }
+          this.pairedClients = next;
         }
         const nextActive: ClientSession = { clientId, label, extensionId, extensionVersion, capabilities, connectedAt: Date.now(), connectionId, socket };
         active = nextActive;

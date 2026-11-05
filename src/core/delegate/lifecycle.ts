@@ -13,7 +13,8 @@ export async function startDelegateBridgeForAgentHost(
   if (
     process.env.VITEST ||
     process.env.NODE_ENV === "test" ||
-    process.env.SUPERAGENT_DELEGATE_BRIDGE === "0"
+    process.env.SUPERAGENT_DELEGATE_BRIDGE === "0" ||
+    process.env.SUPERAGENT_CORE_DELEGATE_OWNER === "0"
   ) {
     return false;
   }

@@ -263,9 +263,28 @@ export async function handleServerRoute(
       }
       const { DELEGATE_MCP_TOOL_NAMES, validateDelegateMcpArgs } =
         await import("./core/mcp/tools/delegateMcpTools.js");
-      const invalid = validateDelegateMcpArgs(String(data.name || ""), data.arguments);
+      const browserTool = data.name === "superagent_chrome_cdp" || data.name === "superagent_chrome_vision";
+      const invalid = browserTool
+        ? (await import("./core/mcp/tools/chromeMcpTools.js"))
+            .validateDelegateBrowserHostArgs(data.name, data.arguments)
+        : validateDelegateMcpArgs(String(data.name || ""), data.arguments);
       if (invalid || Object.keys(data).some(key => key !== "name" && key !== "arguments")) {
         sendJSON(res, 400, { success: false, error: invalid || "DELEGATE_MCP_UNEXPECTED_FIELD" });
+        return true;
+      }
+      if (browserTool) {
+        const { handleControlChromeCdp, handleControlChromeVision } =
+          await import("./core/mcp/tools/chromeMcpTools.js");
+        const browserArgs = data.arguments as Record<string, unknown>;
+        const response = data.name === "superagent_chrome_cdp"
+          ? await handleControlChromeCdp(browserArgs, { hostOwned: true })
+          : await handleControlChromeVision(browserArgs, { hostOwned: true });
+        const result = response.content.map(item => item.type === "text" ? item.text : "").join("\n");
+        const failed = response.isError === true;
+        sendJSON(res, failed ? 409 : 200, {
+          success: !failed,
+          ...(failed ? { error: result } : { result }),
+        });
         return true;
       }
       const {
@@ -958,7 +977,7 @@ export async function handleServerRoute(
   if (pathname.startsWith("/api/desktop/muse-files/")) {
     res.setHeader("Cache-Control", "no-store");
     const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
-    const host = /^(?:127\\.0\\.0\\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
+    const host = /^(?:127\.0\.0\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
     if (!loopback || !host || req.headers.origin || req.headers["x-forwarded-for"] ||
         req.headers["x-forwarded-host"] || req.headers["cf-connecting-ip"] || req.headers["cf-ray"]) {
       sendJSON(res, 403, { success: false, error: "MUSE_FILE_MANAGER_LOCAL_AUTHENTICATED_ONLY" });
@@ -1166,6 +1185,10 @@ export async function handleServerRoute(
         await delegateBridge.start();
         sendJSON(res, 200, { success: true, action: "started", ...delegateBridge.getStatus() });
       } else if (action === "stop") {
+        if (delegateBridge.getStatus().pendingRequests > 0) {
+          sendJSON(res, 409, { success: false, error: "DELEGATE_BRIDGE_BUSY" });
+          return true;
+        }
         await delegateBridge.close();
         sendJSON(res, 200, { success: true, action: "stopped", ...delegateBridge.getStatus() });
       } else {

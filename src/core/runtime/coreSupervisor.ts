@@ -7,6 +7,7 @@ import { getRootConfigDir } from "../config/paths.js";
 import path from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { getProcessSupervisor } from "../process/processSupervisor.js";
+import { handoverCoreDelegateBridge } from "./coreDelegateHandover.js";
 import type { CoreDrainReport } from "./coreDrainInspection.js";
 import { inspectCoreBuild, type CoreBuildIdentity } from "./coreBuildIdentity.js";
 import { CoreLifecycleLedger, validateCoreOperationId } from "./coreLifecycleLedger.js";
@@ -288,6 +289,9 @@ export async function runCoreSupervisor(
         // Launch fixed-port vision helper only once from generation #1.
         // Subsequent workers can use the same helper without binding 8095 again.
         SUPERAGENT_CORE_VISION_OWNER: staging ? "0" : active ? "0" : "1",
+        // The supervisor explicitly hands over the single Delegate listener.
+        // New blue-green candidates must never race the current owner for 17341.
+        SUPERAGENT_CORE_DELEGATE_OWNER: staging || active ? "0" : "1",
         SUPERAGENT_SERVER_AUTH_TOKEN: serverToken,
       },
     });
@@ -422,6 +426,11 @@ export async function runCoreSupervisor(
         if (!await workerResponsive(candidate)) continue;
         const outcome = applyCoreRollback(current, retained, candidate.pid, !workerExited(current));
         if (!outcome) continue;
+        const bridgeHandover = process.env.SUPERAGENT_DELEGATE_BRIDGE !== "0" &&
+          process.env.SUPERAGENT_CORE_STAGING !== "1" && !workerExited(current);
+        if (bridgeHandover) {
+          await handoverCoreDelegateBridge(current.port, candidate.port, serverToken);
+        }
         // Preserve all live sessions on the former active generation.
         const previousRetained = [...retained];
         const previousRollback = lastRollback;
@@ -438,6 +447,9 @@ export async function runCoreSupervisor(
           active = current;
           retained.splice(0, retained.length, ...previousRetained);
           lastRollback = previousRollback;
+          if (bridgeHandover) {
+            await handoverCoreDelegateBridge(candidate.port, current.port, serverToken);
+          }
           throw error;
         }
         return status();
@@ -460,6 +472,16 @@ export async function runCoreSupervisor(
     try {
       const candidate = await spawnWorker();
       const previous = active;
+      const handoverEnabled = previous && process.env.SUPERAGENT_DELEGATE_BRIDGE !== "0" &&
+        process.env.SUPERAGENT_CORE_STAGING !== "1";
+      if (handoverEnabled) {
+        try { await handoverCoreDelegateBridge(previous.port, candidate.port, serverToken); }
+        catch (error) {
+          // The candidate was never published; stop only our fresh child.
+          try { candidate.child?.kill(); } catch {}
+          throw error;
+        }
+      }
       if (active) retained.push(active); // never kill existing generation
       active = candidate;
       try {
@@ -467,7 +489,14 @@ export async function runCoreSupervisor(
       } catch (error) {
         active = previous;
         if (previous) retained.pop();
-        try { candidate.child?.kill(); } catch {}
+        if (handoverEnabled) {
+          // Core ownership checkpoint failed. Restore the earlier Delegate
+          // owner before removing the uncommitted candidate generation.
+          try { await handoverCoreDelegateBridge(candidate.port, previous.port, serverToken); }
+          finally { try { candidate.child?.kill(); } catch {} }
+        } else {
+          try { candidate.child?.kill(); } catch {}
+        }
         throw error;
       }
       return status();

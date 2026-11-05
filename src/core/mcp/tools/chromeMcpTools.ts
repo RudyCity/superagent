@@ -13,6 +13,27 @@ import {
 import { launchChromeProfileTool } from "../../tools/chromeBrowserTools.js";
 import { listChromeProfilesTool } from "../../tools/chromeProfileTools.js";
 import { resolveMcpWorkspace } from "./workspaceContext.js";
+import { resolveBrowserTransport } from "../../browserTransport/router.js";
+import { dispatchDelegateBrowserMcpTool } from "./delegateMcpTools.js";
+
+/** MCP must never bind the Core-owned Delegate WebSocket port. */
+function needsDelegateCoreHost(args: any): boolean {
+  let payload: Record<string, any> = {};
+  try {
+    const value = typeof args?.payload === "string" ? JSON.parse(args.payload) : args?.payload;
+    if (value && typeof value === "object" && !Array.isArray(value)) payload = value;
+  } catch { /* Let normal tool validation report malformed payloads. */ }
+  const transport = args?.transport ?? payload.transport;
+  const targetId = args?.targetId ?? payload.targetId;
+  const delegateClientId = args?.delegateClientId ?? payload.delegateClientId ?? args?.connectionId ?? payload.connectionId;
+  const delegateTabId = args?.delegateTabId ?? payload.delegateTabId;
+  try {
+    return resolveBrowserTransport({
+      transport, targetId, delegateClientId, delegateTabId,
+      command: String(args?.command || ""),
+    }) !== "managed";
+  } catch { return false; }
+}
 
 function toResult(res: unknown): McpToolResult {
   const text = typeof res === "string" ? res : JSON.stringify(res, null, 2);
@@ -27,8 +48,11 @@ function toResult(res: unknown): McpToolResult {
   };
 }
 
-export async function handleControlChromeCdp(args: any): Promise<McpToolResult> {
+export async function handleControlChromeCdp(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
   try {
+    if (!options.hostOwned && needsDelegateCoreHost(args)) {
+      return await dispatchDelegateBrowserMcpTool("superagent_chrome_cdp", args || {});
+    }
     const res = await controlChromeCdpTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
@@ -39,8 +63,11 @@ export async function handleControlChromeCdp(args: any): Promise<McpToolResult> 
   }
 }
 
-export async function handleControlChromeVision(args: any): Promise<McpToolResult> {
+export async function handleControlChromeVision(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
   try {
+    if (!options.hostOwned && needsDelegateCoreHost(args)) {
+      return await dispatchDelegateBrowserMcpTool("superagent_chrome_vision", args || {});
+    }
     const visionPayload: Record<string, unknown> =
       typeof args?.payload === "string" ? JSON.parse(args.payload || "{}") : { ...(args?.payload || {}) };
     if (args?.agentId !== undefined && visionPayload.agentId === undefined) visionPayload.agentId = args.agentId;
@@ -121,6 +148,50 @@ export async function handleListChromeProfiles(args: any): Promise<McpToolResult
       isError: true,
     };
   }
+}
+
+/** Authenticated Core endpoint accepts only Delegate-routed MCP browser operations. */
+export function validateDelegateBrowserHostArgs(name: string, args: unknown): string | null {
+  if (name !== "superagent_chrome_cdp" && name !== "superagent_chrome_vision")
+    return "DELEGATE_CDP_UNKNOWN_TOOL";
+  if (!args || typeof args !== "object" || Array.isArray(args))
+    return "DELEGATE_CDP_INVALID_ARGUMENTS";
+  const input = args as Record<string, unknown>;
+  const def = CHROME_MCP_TOOL_DEFS.find(item => item.name === name);
+  const props = def?.inputSchema.properties as Record<string, any> | undefined;
+  if (!props || Object.keys(input).some(key => !Object.hasOwn(props, key)))
+    return "DELEGATE_CDP_UNEXPECTED_ARGUMENT";
+  if (typeof input.command !== "string" || !props.command.enum.includes(input.command))
+    return "DELEGATE_CDP_INVALID_COMMAND";
+  if (input.payload !== undefined && typeof input.payload !== "string")
+    return "DELEGATE_CDP_INVALID_PAYLOAD";
+  let payload: Record<string, unknown> = {};
+  if (typeof input.payload === "string") {
+    try {
+      const parsed: unknown = JSON.parse(input.payload);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        return "DELEGATE_CDP_INVALID_PAYLOAD";
+      payload = parsed as Record<string, unknown>;
+    } catch { return "DELEGATE_CDP_INVALID_PAYLOAD"; }
+  }
+  for (const key of ["transport", "delegateClientId", "connectionId", "targetId", "delegateTabId"] as const) {
+    const value = input[key] ?? payload[key];
+    if (value === undefined) continue;
+    if (key === "delegateTabId") {
+      if (!Number.isSafeInteger(value) || Number(value) < 1) return "DELEGATE_CDP_INVALID_TAB";
+    } else if (typeof value !== "string" || value.length > 420)
+      return "DELEGATE_CDP_INVALID_TARGET";
+  }
+  try {
+    const route = resolveBrowserTransport({
+      transport: (input.transport ?? payload.transport) as any,
+      targetId: (input.targetId ?? payload.targetId) as string | undefined,
+      delegateClientId: (input.delegateClientId ?? payload.delegateClientId ?? input.connectionId ?? payload.connectionId) as string | undefined,
+      delegateTabId: (input.delegateTabId ?? payload.delegateTabId) as number | undefined,
+      command: input.command,
+    });
+    return route === "managed" ? "DELEGATE_CDP_TRANSPORT_REQUIRED" : null;
+  } catch { return "DELEGATE_CDP_INVALID_TRANSPORT"; }
 }
 
 export const CHROME_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
