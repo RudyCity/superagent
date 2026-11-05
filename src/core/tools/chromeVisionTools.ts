@@ -27,6 +27,10 @@ import { fileURLToPath } from "url";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { withCdpTargetWrite, withCdpTargetRead } from "./chromeCdpSessionManager.js";
 import { createHash } from "node:crypto";
+import { delegateCdpTransport } from "../delegate/cdpTransport.js";
+import { delegateTargetId, parseBrowserTargetId } from "../browserTransport/targetIdentity.js";
+import { resolveBrowserTransport } from "../browserTransport/router.js";
+import { authorizeDelegateTarget, noteDelegateWriteSuccess, withDelegateTargetLock } from "../browserTransport/sessionCoordinator.js";
 
 function cdpHost(): string {
   return process.env.SUPERAGENT_CDP_HOST || "127.0.0.1";
@@ -162,6 +166,9 @@ interface CdpTarget {
   title: string;
   url: string;
   webSocketDebuggerUrl: string;
+  transport?: "managed" | "delegate";
+  connectionId?: string;
+  tabId?: number;
 }
 
 export interface VisionElement {
@@ -175,12 +182,22 @@ export interface VisionElement {
 }
 
 // Perception must never bleed between agents or Chrome targets.
-const visionAgentContext = new AsyncLocalStorage<{ agentId?: string; sessionToken?: string }>();
+const visionAgentContext = new AsyncLocalStorage<{
+  agentId?: string;
+  sessionToken?: string;
+  transport?: "managed" | "delegate";
+  delegateClientId?: string;
+  delegateTabId?: number;
+}>();
 type VisionCache = { target: CdpTarget; elements: VisionElement[]; screenshot: string; at: number };
 const visionCaches = new Map<string, VisionCache>();
 let legacyLastTargetId: string | undefined;
-const visionKey = (target: CdpTarget) =>
-  `${cdpPort()}:${visionAgentContext.getStore()?.agentId || "legacy"}:${target.id}`;
+const visionKey = (target: CdpTarget) => {
+  const actor = visionAgentContext.getStore()?.agentId || "legacy";
+  return target.transport === "delegate"
+    ? `delegate:${target.connectionId || "unknown"}:${target.tabId || 0}:${actor}:${target.id}`
+    : `managed:${cdpPort()}:${actor}:${target.id}`;
+};
 const cachedVision = (target: CdpTarget): VisionCache | undefined => {
   const cached = visionCaches.get(visionKey(target));
   if (!cached || Date.now() - cached.at > 120_000 || cached.target.url !== target.url) return undefined;
@@ -269,26 +286,86 @@ function httpPostJson(host: string, port: number, path: string, payload: any): P
 }
 
 async function listPageTargets(): Promise<CdpTarget[]> {
+  const context = visionAgentContext.getStore();
+  if (context?.transport === "delegate") {
+    const targets = await delegateCdpTransport.listTargets(context.delegateClientId);
+    return targets.map((target) => ({
+      id: delegateTargetId(target.connectionId, target.tabId!),
+      type: "page",
+      title: target.title || "",
+      url: target.url || "",
+      webSocketDebuggerUrl: `delegate://${encodeURIComponent(target.connectionId)}/${target.tabId}`,
+      transport: "delegate" as const,
+      connectionId: target.connectionId,
+      tabId: target.tabId,
+    }));
+  }
   const targets: any = await httpGetJson(cdpHost(), cdpPort(), "/json/list");
   if (!Array.isArray(targets)) throw new Error("Unexpected /json/list response.");
-  return targets.filter((t: any) => t && t.type === "page" && t.webSocketDebuggerUrl);
+  return targets
+    .filter((t: any) => t && t.type === "page" && t.webSocketDebuggerUrl)
+    .map((t: any) => ({ ...t, transport: "managed" as const, connectionId: String(cdpPort()) }));
 }
 
 async function pickTarget(targetId?: string): Promise<CdpTarget> {
-  const pages = await listPageTargets();
-  if (!pages.length) throw new Error("No open Chrome tabs found.");
-  if (targetId) {
-    const t = pages.find((p) => p.id === targetId || p.id.startsWith(targetId));
-    if (!t) throw new Error(`No tab matches targetId '${targetId}'.`);
-    return t;
+  const context = visionAgentContext.getStore();
+  const parsed = targetId ? parseBrowserTargetId(targetId) : null;
+  if (parsed?.kind === "delegate") {
+    if (context?.transport === "managed") throw new Error("Delegate target cannot be used with managed vision transport.");
+    const targets = await delegateCdpTransport.listTargets(parsed.connectionId);
+    const selected = targets.find((target) => target.tabId === parsed.tabId);
+    if (!selected) throw new Error(`No Delegate tab matches targetId '${targetId}'.`);
+    return {
+      id: delegateTargetId(selected.connectionId, selected.tabId!),
+      type: "page",
+      title: selected.title || "",
+      url: selected.url || "",
+      webSocketDebuggerUrl: `delegate://${encodeURIComponent(selected.connectionId)}/${selected.tabId}`,
+      transport: "delegate",
+      connectionId: selected.connectionId,
+      tabId: selected.tabId,
+    };
   }
-  if (visionAgentContext.getStore()?.agentId && pages.length > 1) {
-    throw new Error("Multiple CDP tabs: specify targetId for agent-scoped vision operations.");
+  const managedId = parsed?.kind === "managed" ? parsed.targetId : targetId;
+  const pages = await listPageTargets();
+  if (!pages.length) throw new Error(context?.transport === "delegate" ? "No controllable Delegate tabs found." : "No open Chrome tabs found.");
+  if (context?.transport === "delegate" && context.delegateTabId) {
+    const selected = pages.find((page) => page.tabId === context.delegateTabId);
+    if (!selected) throw new Error(`No Delegate tab matches delegateTabId '${context.delegateTabId}'.`);
+    return selected;
+  }
+  if (managedId) {
+    const selected = pages.find((p) => p.id === managedId || p.id.startsWith(managedId));
+    if (!selected) throw new Error(`No tab matches targetId '${targetId}'.`);
+    return selected;
+  }
+  if ((context?.agentId || context?.transport === "delegate") && pages.length > 1) {
+    throw new Error(context?.transport === "delegate"
+      ? "Multiple Delegate tabs: specify delegateTabId or a qualified targetId for vision operations."
+      : "Multiple CDP tabs: specify targetId for agent-scoped vision operations.");
   }
   return pages[0];
 }
 
 async function cdpSend(wsUrl: string, method: string, params: Record<string, unknown> = {}): Promise<any> {
+  const delegate = /^delegate:\/\/([^/]+)\/(\d+)$/.exec(wsUrl);
+  if (delegate) {
+    const connectionId = decodeURIComponent(delegate[1]);
+    const tabId = Number(delegate[2]);
+    const target = { kind: "delegate" as const, connectionId, targetId: `tab:${tabId}`, tabId };
+    await delegateCdpTransport.attach(target);
+    try {
+      return await delegateCdpTransport.command(
+        target,
+        method,
+        params,
+        undefined,
+        method === "Runtime.evaluate" ? { trustedGenerated: true } : {},
+      );
+    } finally {
+      try { await delegateCdpTransport.detach(target); } catch {}
+    }
+  }
   const { WebSocket } = await import("ws");
   return new Promise((resolve, reject) => {
     const ws: any = new WebSocket(wsUrl, { handshakeTimeout: cdpTimeoutMs() });
@@ -672,18 +749,31 @@ print(f"UI-DETR-1 model cached at: {path}")
 }
 
 async function cmdStatus(): Promise<string> {
+  const context = visionAgentContext.getStore();
   let cdpOk = false;
-  try {
-    await httpGetJson(cdpHost(), cdpPort(), "/json/version");
-    cdpOk = true;
-  } catch {
-    cdpOk = false;
+  let chromeLine: string;
+  if (context?.transport === "delegate") {
+    try {
+      const health = await delegateCdpTransport.health(context.delegateClientId);
+      cdpOk = health.ok;
+      chromeLine = `- Chrome Delegate-CDP (${context.delegateClientId || "auto"}): ${cdpOk ? "connected" : "not ready"}`;
+    } catch (error: any) {
+      chromeLine = `- Chrome Delegate-CDP: not reachable (${String(error?.code || error?.message || error)})`;
+    }
+  } else {
+    try {
+      await httpGetJson(cdpHost(), cdpPort(), "/json/version");
+      cdpOk = true;
+    } catch {
+      cdpOk = false;
+    }
+    chromeLine = `- Chrome CDP (port ${cdpPort()}): ${cdpOk ? "connected" : "not reachable"}`;
   }
   const serviceUp = await visionHealth();
   const pythonCmd = await findPython();
   const lines = [
     "UI-DETR-1 Set-of-Mark (SoM) Vision Status:",
-    `- Chrome CDP (port ${cdpPort()}): ${cdpOk ? "connected" : "not reachable"}`,
+    chromeLine,
     `- Vision daemon (port ${visionPort()}): ${serviceUp ? "running" : "stopped (auto-starts on demand)"}`,
     `- Model: racineai/UI-DETR-1 (~535MB RF-DETR Medium)`,
     `- Endpoints: /detect, /perceive (SoM tags), /diff (visual state verification)`,
@@ -725,6 +815,13 @@ export const controlChromeVisionTool: Tool = {
         ],
         description: "Vision command to execute.",
       },
+      transport: { type: "string", enum: ["managed", "delegate", "auto"], description: "Vision browser transport. Omitted remains managed." },
+      delegateClientId: { type: "string", description: "Connected Delegate Chrome profile ID." },
+      delegateTabId: { type: "number", description: "Explicit Delegate Chrome tab ID." },
+      connectionId: { type: "string", description: "Optional backend connection ID; Delegate uses clientId." },
+      targetId: { type: "string", description: "Managed or backend-qualified Delegate target ID." },
+      agentId: { type: "string", description: "Stable browser session owner ID." },
+      sessionToken: { type: "string", description: "Capability returned by claim_target when the tab is claimed." },
       payload: {
         type: "string",
         description:
@@ -752,6 +849,10 @@ export const controlChromeVisionTool: Tool = {
     }
     if (args.agentId !== undefined && payload.agentId === undefined) payload.agentId = args.agentId;
     if (args.targetId !== undefined && payload.targetId === undefined) payload.targetId = args.targetId;
+    if (args.transport !== undefined && payload.transport === undefined) payload.transport = args.transport;
+    if (args.delegateClientId !== undefined && payload.delegateClientId === undefined) payload.delegateClientId = args.delegateClientId;
+    if (args.delegateTabId !== undefined && payload.delegateTabId === undefined) payload.delegateTabId = args.delegateTabId;
+    if (args.connectionId !== undefined && payload.connectionId === undefined) payload.connectionId = args.connectionId;
     const execute = async (): Promise<string> => {
     switch (command) {
       case "perceive_page":
@@ -781,7 +882,49 @@ export const controlChromeVisionTool: Tool = {
     };
     const agentId = payload.agentId === undefined ? undefined : String(payload.agentId);
     const sessionToken = payload.sessionToken === undefined ? undefined : String(payload.sessionToken);
-    return visionAgentContext.run({ agentId, sessionToken }, async () => {
+    const delegateClientId = String(payload.delegateClientId ?? payload.connectionId ?? "") || undefined;
+    const delegateTabId = payload.delegateTabId === undefined ? undefined : Number(payload.delegateTabId);
+    let route: "managed" | "delegate" | "auto";
+    try {
+      route = resolveBrowserTransport({
+        transport: payload.transport,
+        targetId: payload.targetId,
+        delegateClientId,
+        delegateTabId,
+        command: command === "status" || command === "setup" ? "transport_status" : "navigate",
+      });
+    } catch (error: any) {
+      throw new Error((error?.code ? error.code + ": " : "") + error.message);
+    }
+    if (route === "auto" && !["status", "setup"].includes(command)) {
+      throw new Error("BROWSER_TRANSPORT_AMBIGUOUS: vision mutations require an explicit backend-qualified target.");
+    }
+    const transport = route === "delegate" ? "delegate" : "managed";
+    return visionAgentContext.run({ agentId, sessionToken, transport, delegateClientId, delegateTabId }, async () => {
+      if (transport === "delegate") {
+        if (["status", "setup"].includes(command)) return execute();
+        const target = await pickTarget(payload.targetId || (!agentId ? legacyLastTargetId : undefined));
+        if (!target.connectionId || !target.tabId) throw new Error("Delegate vision target identity is incomplete.");
+        return withDelegateTargetLock(target.connectionId, target.tabId, async () => {
+          const write = ["click_id", "type_id", "click_label", "type_label"].includes(command);
+          const expectedRevisionRaw = payload.expectedRevision;
+          const expectedRevision = expectedRevisionRaw === undefined ? undefined : Number(expectedRevisionRaw);
+          if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) {
+            throw new Error("expectedRevision must be a non-negative integer.");
+          }
+          authorizeDelegateTarget(
+            target.connectionId!,
+            target.tabId!,
+            agentId,
+            sessionToken,
+            write,
+            expectedRevision,
+          );
+          const result = await executeWithTarget(target.id);
+          if (write) noteDelegateWriteSuccess(target.connectionId!, target.tabId!, agentId, sessionToken);
+          return result;
+        });
+      }
       if (["click_id", "type_id", "click_label", "type_label"].includes(command)) {
         const target = await pickTarget(payload.targetId || (!agentId ? legacyLastTargetId : undefined));
         return withCdpTargetWrite(cdpPort(), target.id, agentId, () =>

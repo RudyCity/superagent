@@ -14,7 +14,7 @@
         <h1>SuperAgent Delegate</h1>
         <p>Kelola koneksi Chrome lokal</p>
       </div>
-      <span class="version">v1.5.0</span>
+      <span class="version">v1.8.0</span>
     </header>
 
     <section class="control-card" aria-labelledby="enabled-heading">
@@ -28,6 +28,20 @@
           <span class="toggle-track" aria-hidden="true"></span>
         </label>
       </div>
+    </section>
+
+    <section class="control-card" aria-labelledby="cdp-enabled-heading">
+      <div class="setting-line">
+        <div class="setting-description">
+          <h2 id="cdp-enabled-heading">Delegate-CDP</h2>
+          <p>Kontrol tab web yang sudah login melalui chrome.debugger. OFF secara default.</p>
+        </div>
+        <label class="toggle">
+          <input id="cdp-enabled" type="checkbox" role="switch" aria-label="Aktifkan Delegate-CDP">
+          <span class="toggle-track" aria-hidden="true"></span>
+        </label>
+      </div>
+      <p id="cdp-status" class="helper">CDP transport nonaktif.</p>
     </section>
 
     <section class="status-panel" aria-labelledby="status-heading">

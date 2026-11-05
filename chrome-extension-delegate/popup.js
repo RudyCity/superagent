@@ -146,7 +146,17 @@ function renderStatus(status) {
   $("client-id").textContent = status?.clientId || "Memuat...";
   $("auth-state").textContent = status?.authConfigured ? "TERPASANG" : "BELUM ADA";
   $("enabled").checked = status?.enabled !== false;
-  if (!updating) $("enabled").disabled = false;
+  $("cdp-enabled").checked = status?.cdp?.enabled === true;
+  const attachmentCount = Number(status?.cdp?.attachmentCount || 0);
+  const attachedTabIds = Array.isArray(status?.cdp?.attachments)
+    ? status.cdp.attachments.map((entry) => Number(entry?.tabId)).filter(Number.isSafeInteger)
+    : [];
+  $("cdp-status").textContent = status?.cdp?.enabled === true
+    ? attachmentCount > 0
+      ? `CDP aktif • ${attachmentCount} tab sedang dikontrol${attachedTabIds.length ? ` (tab ${attachedTabIds.join(", ")})` : ""}. Detach otomatis setelah operasi selesai.`
+      : "CDP aktif • tidak ada tab yang sedang dikontrol. Halaman internal Chrome/extension/DevTools tetap diblokir."
+    : "CDP transport nonaktif. Aktifkan hanya saat ingin mengontrol sesi Chrome yang sudah login.";
+  if (!updating) { $("enabled").disabled = false; $("cdp-enabled").disabled = false; }
   if (status?.clientId !== latestClientId && !updating) {
     latestClientId = status.clientId || null;
     $("profile-label").value = String(status?.profileLabel || "Chrome Delegate");
@@ -227,6 +237,29 @@ $("enabled").addEventListener("change", async () => {
   } finally {
     updating = false;
     $("enabled").disabled = false;
+    await refreshStatus();
+  }
+});
+
+$("cdp-enabled").addEventListener("change", async () => {
+  updating = true;
+  $("cdp-enabled").disabled = true;
+  const next = $("cdp-enabled").checked;
+  try {
+    const result = await chrome.runtime.sendMessage({
+      scope: PROTOCOL, action: "set_cdp_enabled", enabled: next,
+    });
+    if (!result?.ok) throw new Error(result?.error || "Gagal memperbarui Delegate-CDP.");
+    renderStatus(result.status);
+    $("action-note").textContent = next
+      ? "Delegate-CDP aktif. SuperAgent dapat attach hanya ke tab yang dipilih."
+      : "Delegate-CDP dimatikan dan attachment debugger milik SuperAgent dilepas.";
+  } catch (reason) {
+    $("cdp-enabled").checked = !next;
+    $("action-note").textContent = String(reason?.message || reason);
+  } finally {
+    updating = false;
+    $("cdp-enabled").disabled = false;
     await refreshStatus();
   }
 });

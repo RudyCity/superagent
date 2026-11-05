@@ -1,3 +1,4 @@
+if (typeof importScripts === "function") importScripts("cdpPolicy.js", "cdpBridge.js");
 importScripts("tabSingleton.js");
 /* Dedicated ChatGPT Delegate service worker: fixed localhost RPC only. */
 const ENDPOINT = "ws://127.0.0.1:17341";
@@ -12,6 +13,14 @@ const METHODS = new Set([
   "delegate.set_timeout_recovery",
   "delegate.send_message",
   "delegate.stop_generation",
+  "delegate.cdp.list_targets",
+  "delegate.cdp.attach",
+  "delegate.cdp.detach",
+  "delegate.cdp.command",
+  "delegate.cdp.health",
+  "delegate.cdp.attachments",
+  "delegate.cdp.events",
+  "delegate.cdp.tab_action",
 ]);
 const HISTORY_METHODS = new Set([
   "delegate.list_chats",
@@ -41,15 +50,30 @@ let authToken = "";
 let pairingCode = "";
 let authBlocked = false;
 let connectedClients = [];
+let delegateCdpEnabled = false;
+let cdpDisconnectCleanupTimer = null;
 
 const inFlight = new Set();
 const completed = new Map();
+const cdpBridge = typeof globalThis.createDelegateCdpBridge === "function"
+  ? globalThis.createDelegateCdpBridge({
+      chrome,
+      enabled: () => enabled && delegateCdpEnabled,
+      clientId: () => clientId || "",
+    })
+  : {
+      cleanup: async () => {},
+      dispatch: async () => { throw error("DELEGATE_CDP_EXTENSION_UNAVAILABLE", "Delegate-CDP bridge is unavailable."); },
+    };
 
 function error(code, message) {
   return { code, message };
 }
 
 function getConnectionStatus() {
+  const cdpAttachments = delegateCdpEnabled && typeof cdpBridge.listAttachments === "function"
+    ? cdpBridge.listAttachments()
+    : [];
   return {
     state: connectionStatus,
     enabled,
@@ -67,6 +91,17 @@ function getConnectionStatus() {
     retryCount: failures,
     inFlight: inFlight.size,
     tabPolicy: singleton.status(),
+    cdp: {
+      enabled: delegateCdpEnabled,
+      capability: "delegate-cdp-v1",
+      attached: cdpAttachments.length > 0,
+      attachmentCount: cdpAttachments.length,
+      attachments: cdpAttachments.map((entry) => ({
+        tabId: entry.tabId,
+        attachedAt: entry.attachedAt,
+        lastUsedAt: entry.lastUsedAt,
+      })),
+    },
   };
 }
 
@@ -151,6 +186,7 @@ function connect() {
       label: profileLabel,
       extensionVersion: chrome.runtime.getManifest().version,
       browserUserAgent: typeof navigator === "object" ? navigator.userAgent : "unknown",
+      capabilities: ["delegate-semantic-v1", "delegate-cdp-v1"],
       ...(pairingCode ? { pairingCode } : (authToken ? { authToken } : {})),
     }));
   });
@@ -164,6 +200,8 @@ function connect() {
       handshakeTimer = null;
       const accepted = () => {
         if (socket !== ws) return;
+        if (cdpDisconnectCleanupTimer !== null) clearTimeout(cdpDisconnectCleanupTimer);
+        cdpDisconnectCleanupTimer = null;
         failures = 0;
         authBlocked = false;
         isReady = true;
@@ -227,6 +265,11 @@ function connect() {
         : "Koneksi terputus. Pastikan server SuperAgent berjalan.";
     }
     connectedClients = [];
+    if (cdpDisconnectCleanupTimer !== null) clearTimeout(cdpDisconnectCleanupTimer);
+    cdpDisconnectCleanupTimer = setTimeout(() => {
+      cdpDisconnectCleanupTimer = null;
+      if (!isReady) void cdpBridge.cleanup();
+    }, 3_000);
     if (event.code === 1008 && [
       "DELEGATE_AUTH_FAILED", "DELEGATE_PAIR_CODE_INVALID", "DELEGATE_PAIR_RATE_LIMIT",
       "DELEGATE_PAIR_RESPONSE_INVALID", "DELEGATE_PAIR_STORAGE_FAILED",
@@ -267,6 +310,9 @@ async function setEnabled(next) {
   enabled = next;
   if (!enabled) {
     cancelRetry();
+    if (cdpDisconnectCleanupTimer !== null) clearTimeout(cdpDisconnectCleanupTimer);
+    cdpDisconnectCleanupTimer = null;
+    void cdpBridge.cleanup();
     isReady = false;
     lastError = null;
     connectedClients = [];
@@ -279,6 +325,17 @@ async function setEnabled(next) {
     connect();
     singleton.schedule();
   }
+  return { ok: true, status: getConnectionStatus() };
+}
+
+async function setDelegateCdpEnabled(next) {
+  if (typeof next !== "boolean") return { ok: false, error: "DELEGATE_CDP_INVALID_ENABLED" };
+  if (!next && inFlight.size > 0) {
+    return { ok: false, error: "DELEGATE_BUSY: wait for active requests before disabling Delegate-CDP." };
+  }
+  delegateCdpEnabled = next;
+  await chrome.storage.local.set({ delegateCdpEnabled: next });
+  if (!next) await cdpBridge.cleanup();
   return { ok: true, status: getConnectionStatus() };
 }
 
@@ -368,12 +425,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       .then(respond, e => respond({ ok: false, error: String(e?.message || e) }));
     return true;
   }
-  if (["set_enabled", "set_label", "set_pairing"].includes(message.action)) {
+  if (["set_enabled", "set_cdp_enabled", "set_label", "set_pairing"].includes(message.action)) {
     const task = message.action === "set_enabled"
       ? setEnabled(message.enabled)
-      : message.action === "set_label"
-        ? setProfileLabel(message.label)
-        : setPairingToken(message.token);
+      : message.action === "set_cdp_enabled"
+        ? setDelegateCdpEnabled(message.enabled)
+        : message.action === "set_label"
+          ? setProfileLabel(message.label)
+          : setPairingToken(message.token);
     task.then(respond, (reason) =>
       respond({ ok: false, error: String(reason?.message || reason) }));
     return true;
@@ -620,12 +679,17 @@ async function handleRequest(request) {
   inFlight.add(request.id);
   let response;
   try {
-    const result = await dispatchToTab(request);
-    if (!result || typeof result !== "object") throw error(
-      "DELEGATE_NO_RESPONSE", "ChatGPT tab returned no result. Do not auto-resend.");
-    if (result.ok !== true) throw result.error ||
-      error("DELEGATE_TAB_ERROR", "Request failed in ChatGPT tab");
-    response = { type: "response", id: request.id, ok: true, result: result.result };
+    if (request.method.startsWith("delegate.cdp.")) {
+      const result = await cdpBridge.dispatch(request.method, request.params || {});
+      response = { type: "response", id: request.id, ok: true, result };
+    } else {
+      const result = await dispatchToTab(request);
+      if (!result || typeof result !== "object") throw error(
+        "DELEGATE_NO_RESPONSE", "ChatGPT tab returned no result. Do not auto-resend.");
+      if (result.ok !== true) throw result.error ||
+        error("DELEGATE_TAB_ERROR", "Request failed in ChatGPT tab");
+      response = { type: "response", id: request.id, ok: true, result: result.result };
+    }
   } catch (reason) {
     response = {
       type: "response", id: request.id, ok: false,
@@ -670,9 +734,10 @@ chrome.storage.local.setAccessLevel({ accessLevel: "TRUSTED_CONTEXTS" }, () => {
     return;
   }
   chrome.storage.local.get(
-  ["delegateEnabled", "delegateClientId", "delegateProfileLabel", "delegateAuthToken"],
+  ["delegateEnabled", "delegateCdpEnabled", "delegateClientId", "delegateProfileLabel", "delegateAuthToken"],
   (saved) => {
     enabled = saved?.delegateEnabled !== false;
+    delegateCdpEnabled = saved?.delegateCdpEnabled === true;
     authToken = typeof saved?.delegateAuthToken === "string" ? saved.delegateAuthToken : "";
     clientId = typeof saved?.delegateClientId === "string" &&
       /^[a-zA-Z0-9_-]{8,80}$/.test(saved.delegateClientId)

@@ -48,6 +48,9 @@ import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, 
   setCdpSharing, inviteCdpAgent, joinCdpTarget, leaveCdpTarget, revokeCdpAgent, handoverCdpTarget, getCdpParticipation,
   type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
+import { executeDelegateChromeCommand } from "../delegate/cdpTransport.js";
+import { getBrowserTransport, resolveBrowserTransport } from "../browserTransport/router.js";
+import { parseBrowserTargetId, serializeBrowserTarget } from "../browserTransport/targetIdentity.js";
 import {
   detectGoogleWorkspaceApp,
   buildWorkspaceReadRoute,
@@ -710,7 +713,7 @@ export const controlChromeCdpTool: Tool = {
       command: {
         type: "string",
         enum: [
-          "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status",
+          "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "transport_status",
           "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
@@ -718,6 +721,10 @@ export const controlChromeCdpTool: Tool = {
         ],
         description: "CDP command to execute on the real Chrome browser.",
       },
+      transport: { type: "string", enum: ["managed", "delegate", "auto"], description: "Browser transport. Omitted remains managed for v1.8 compatibility." },
+      delegateClientId: { type: "string", description: "Explicit connected Delegate Chrome profile ID." },
+      delegateTabId: { type: "number", description: "Explicit Chrome tab ID inside the selected Delegate profile." },
+      connectionId: { type: "string", description: "Optional backend connection identity; for Delegate this is the clientId." },
       payload: {
         type: "string",
         description:
@@ -789,7 +796,7 @@ export const controlChromeCdpTool: Tool = {
     },
     required: ["command"],
   },
-  execute: async (args: Record<string, unknown>) => {
+  execute: async (args: Record<string, unknown>, _cwd: string, signal?: AbortSignal) => {
     let command = String(args.command || args.cmd || "");
     if (!command) {
       if (args.preset || args.device || args.orientation) command = "emulate_device";
@@ -817,7 +824,7 @@ export const controlChromeCdpTool: Tool = {
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
     }
-    const targetId = args.targetId ? String(args.targetId) : payload.targetId ? String(payload.targetId) : undefined;
+    let targetId = args.targetId ? String(args.targetId) : payload.targetId ? String(payload.targetId) : undefined;
     const agentId = args.agentId !== undefined ? args.agentId : payload.agentId;
     const sessionToken = args.sessionToken !== undefined ? args.sessionToken : payload.sessionToken;
     const revisionArg = payload.expectedRevision ?? args.expectedRevision;
@@ -828,6 +835,90 @@ export const controlChromeCdpTool: Tool = {
       priority: Number(payload.priority ?? args.priority ?? 5),
       waitMs: Number(payload.queue_wait_ms ?? args.queue_wait_ms ?? 8000),
       expectedRevision };
+
+    const requestedTransport = String(args.transport ?? payload.transport ?? "") as "" | "managed" | "delegate" | "auto";
+    const delegateClientId = String(args.delegateClientId ?? payload.delegateClientId ?? args.connectionId ?? payload.connectionId ?? "") || undefined;
+    const delegateTabRaw = args.delegateTabId ?? payload.delegateTabId;
+    const delegateTabId = delegateTabRaw === undefined ? undefined : Number(delegateTabRaw);
+    if (delegateTabId !== undefined && (!Number.isSafeInteger(delegateTabId) || delegateTabId < 1)) {
+      return "control_chrome_cdp failed: delegateTabId must be a positive integer.";
+    }
+    let route: "managed" | "delegate" | "auto";
+    try {
+      route = resolveBrowserTransport({
+        transport: requestedTransport || undefined,
+        targetId,
+        delegateClientId,
+        delegateTabId,
+        command,
+      });
+    } catch (error: any) {
+      return "control_chrome_cdp failed: " + (error?.code ? error.code + ": " : "") + error.message;
+    }
+
+    if (route === "delegate") {
+      try {
+        return await executeDelegateChromeCommand(
+          command,
+          { ...args, delegateClientId, delegateTabId, targetId },
+          { ...payload, delegateClientId, delegateTabId, targetId },
+          signal,
+        );
+      } catch (error: any) {
+        return "control_chrome_cdp failed: " + (error?.code ? error.code + ": " : "") + error.message;
+      }
+    }
+
+    if (route === "auto") {
+      if (command === "list_targets") {
+        const [managedResult, delegateResult] = await Promise.allSettled([
+          getBrowserTransport("managed").listTargets(undefined, signal),
+          getBrowserTransport("delegate").listTargets(delegateClientId, signal),
+        ]);
+        const targets = [
+          ...(managedResult.status === "fulfilled" ? managedResult.value : []),
+          ...(delegateResult.status === "fulfilled" ? delegateResult.value : []),
+        ].map(target => ({
+          transport: target.kind,
+          connectionId: target.connectionId,
+          targetId: serializeBrowserTarget(target),
+          ...(target.tabId ? { tabId: target.tabId } : {}),
+          ...(target.title !== undefined ? { title: target.title } : {}),
+          ...(target.url !== undefined ? { url: target.url } : {}),
+        }));
+        const errors = [
+          ...(managedResult.status === "rejected" ? [{ transport: "managed", message: String(managedResult.reason?.message || managedResult.reason) }] : []),
+          ...(delegateResult.status === "rejected" ? [{ transport: "delegate", message: String(delegateResult.reason?.message || delegateResult.reason) }] : []),
+        ];
+        return JSON.stringify({ targets, ...(errors.length ? { errors } : {}) });
+      }
+      if (!["list_targets", "transport_status", "list_sessions", "coordinator_status"].includes(command)) {
+        return "control_chrome_cdp failed: BROWSER_TRANSPORT_AMBIGUOUS: transport=auto requires an explicit qualified target for this command.";
+      }
+      const delegateResult = await executeDelegateChromeCommand(
+        command, { ...args, transport: "delegate", delegateClientId }, { ...payload, delegateClientId }, signal,
+      ).catch((error: any) => "control_chrome_cdp failed: " + (error?.code ? error.code + ": " : "") + error.message);
+      const managedPayload = { ...payload };
+      delete managedPayload.transport;
+      delete managedPayload.delegateClientId;
+      delete managedPayload.delegateTabId;
+      delete managedPayload.connectionId;
+      const managedResult = await controlChromeCdpTool.execute(
+        { ...args, transport: "managed", delegateClientId: undefined, delegateTabId: undefined, connectionId: undefined, payload: managedPayload },
+        _cwd, signal,
+      );
+      return ["[managed]", managedResult, "", "[delegate]", delegateResult].join("\n");
+    }
+
+    const qualifiedTarget = targetId ? parseBrowserTargetId(targetId) : null;
+    if (qualifiedTarget?.kind === "managed") {
+      targetId = qualifiedTarget.targetId;
+      if (payload.debug_port === undefined) payload.debug_port = Number(qualifiedTarget.connectionId);
+    }
+
+    if (command === "transport_status") {
+      return JSON.stringify({ transport: "managed", host: cdpHost(), port: cdpPort(), sessions: await listCdpSessions() });
+    }
 
     if (payload.debug_port !== undefined) {
       const port = Number(payload.debug_port);

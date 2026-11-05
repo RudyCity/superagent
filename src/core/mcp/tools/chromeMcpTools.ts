@@ -46,6 +46,10 @@ export async function handleControlChromeVision(args: any): Promise<McpToolResul
     if (args?.agentId !== undefined && visionPayload.agentId === undefined) visionPayload.agentId = args.agentId;
     if (args?.targetId !== undefined && visionPayload.targetId === undefined) visionPayload.targetId = args.targetId;
     if (args?.sessionToken !== undefined && visionPayload.sessionToken === undefined) visionPayload.sessionToken = args.sessionToken;
+    if (args?.transport !== undefined && visionPayload.transport === undefined) visionPayload.transport = args.transport;
+    if (args?.delegateClientId !== undefined && visionPayload.delegateClientId === undefined) visionPayload.delegateClientId = args.delegateClientId;
+    if (args?.delegateTabId !== undefined && visionPayload.delegateTabId === undefined) visionPayload.delegateTabId = args.delegateTabId;
+    if (args?.connectionId !== undefined && visionPayload.connectionId === undefined) visionPayload.connectionId = args.connectionId;
     const res = await controlChromeVisionTool.execute(
       { command: args?.command, payload: JSON.stringify(visionPayload) },
       resolveMcpWorkspace(args?.workspace).path
@@ -165,7 +169,7 @@ export const CHROME_MCP_TOOL_DEFS = [
   {
     name: "superagent_chrome_cdp",
     description:
-      "Automate real Google Chrome browser directly via Chrome DevTools Protocol (CDP port 9222). " +
+      "Automate Chrome through dual transports: managed local CDP (default, backward compatible) or Delegate-CDP for an already-open authenticated Chrome profile. " +
       "Commands: list_targets, claim_target, share_target, invite_agent, join_target, leave_target, revoke_agent, handover_target, stop_sharing, session_participants, shared_snapshot, release_target, recover_session, list_sessions, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, read_terminal_delta, write_terminal, send_terminal_key, execute_terminal, watch_terminal, list_terminal_sessions, monitor_terminal_agents, clear_terminal_sessions, recover_terminal, discover_desktop_targets, " +
       "extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, " +
       "get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
@@ -177,7 +181,7 @@ export const CHROME_MCP_TOOL_DEFS = [
         command: {
           type: "string",
           enum: [
-            "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "heartbeat_session",
+            "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "transport_status", "heartbeat_session",
             "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
             "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
             "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "execute_terminal", "watch_terminal", "list_terminal_sessions", "monitor_terminal_agents", "clear_terminal_sessions", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
@@ -189,6 +193,10 @@ export const CHROME_MCP_TOOL_DEFS = [
           ],
           description: "CDP command to execute on real Chrome browser.",
         },
+        transport: { type: "string", enum: ["managed", "delegate", "auto"], description: "Browser transport selector. Omitted remains managed for backward compatibility." },
+        delegateClientId: { type: "string", description: "Connected Delegate profile clientId; required when multiple Delegate profiles are online." },
+        delegateTabId: { type: "number", description: "Positive Chrome tabId inside the selected Delegate profile." },
+        connectionId: { type: "string", description: "Optional backend connection ID; Delegate uses clientId." },
         payload: {
           type: "string",
           description: "Optional JSON payload with command parameters.",
@@ -265,7 +273,11 @@ export const CHROME_MCP_TOOL_DEFS = [
           description:
             "JSON payload. Pass agentId and targetId for multi-agent isolation; perceive_page before click_id/type_id.",
         },
-        targetId: { type: "string", description: "Chrome CDP target ID. Required for agent-scoped vision operations with multiple tabs." },
+        transport: { type: "string", enum: ["managed", "delegate", "auto"], description: "Vision browser transport; omitted remains managed." },
+        delegateClientId: { type: "string", description: "Connected Delegate profile ID." },
+        delegateTabId: { type: "number", description: "Explicit Delegate Chrome tab ID." },
+        connectionId: { type: "string", description: "Optional backend connection ID; Delegate uses clientId." },
+        targetId: { type: "string", description: "Managed or backend-qualified Delegate target ID. Required for ambiguous multi-tab vision operations." },
         agentId: { type: "string", description: "Stable agent ID shared with superagent_chrome_cdp." },
         sessionToken: { type: "string", description: "Capability returned by claim_target, required on a claimed tab." },
       },

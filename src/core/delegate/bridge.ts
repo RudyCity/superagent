@@ -13,7 +13,15 @@ export type DelegateMethod =
   | "delegate.doctor"
   | "delegate.set_timeout_recovery"
   | "delegate.send_message"
-  | "delegate.stop_generation";
+  | "delegate.stop_generation"
+  | "delegate.cdp.list_targets"
+  | "delegate.cdp.attach"
+  | "delegate.cdp.detach"
+  | "delegate.cdp.command"
+  | "delegate.cdp.health"
+  | "delegate.cdp.attachments"
+  | "delegate.cdp.events"
+  | "delegate.cdp.tab_action";
 
 type Pending = {
   socket: WebSocket;
@@ -27,6 +35,8 @@ type ClientSession = {
   clientId: string;
   label: string;
   extensionId: string;
+  extensionVersion: string;
+  capabilities: string[];
   connectedAt: number;
   connectionId: string;
   socket: WebSocket;
@@ -36,6 +46,8 @@ export type DelegateClientInfo = {
   clientId: string;
   label: string;
   extensionId: string;
+  extensionVersion: string;
+  capabilities: string[];
   connectedAt: number;
 };
 
@@ -169,8 +181,8 @@ export class DelegateBridge {
   listConnections(): DelegateClientInfo[] {
     return [...this.clients.values()]
       .filter(c => c.socket.readyState === WebSocket.OPEN)
-      .map(({ clientId, label, extensionId, connectedAt }) => ({
-        clientId, label, extensionId, connectedAt,
+      .map(({ clientId, label, extensionId, extensionVersion, capabilities, connectedAt }) => ({
+        clientId, label, extensionId, extensionVersion, capabilities: [...capabilities], connectedAt,
       }))
       .sort((a, b) => a.connectedAt - b.connectedAt || a.clientId.localeCompare(b.clientId));
   }
@@ -364,7 +376,11 @@ export class DelegateBridge {
           return;
         }
         const label = safeAuditText(msg.label, 48) || "Chrome Delegate";
-        const extensionVersion = safeAuditText(msg.extensionVersion, 32);
+        const extensionVersion = safeAuditText(msg.extensionVersion, 32) || "";
+        const capabilities = Array.isArray(msg.capabilities)
+          ? msg.capabilities.filter((value): value is string =>
+              typeof value === "string" && /^[a-z0-9._-]{1,64}$/i.test(value)).slice(0, 32)
+          : [];
         const browserUserAgent = safeAuditText(msg.browserUserAgent, 180);
 
         const existing = this.clients.get(clientId);
@@ -383,8 +399,9 @@ export class DelegateBridge {
         if (issuedClientToken) {
           this.pairedClients.set(clientId, { extensionId, token: issuedClientToken });
         }
-        active = { clientId, label, extensionId, connectedAt: Date.now(), connectionId, socket };
-        this.clients.set(clientId, active);
+        const nextActive: ClientSession = { clientId, label, extensionId, extensionVersion, capabilities, connectedAt: Date.now(), connectionId, socket };
+        active = nextActive;
+        this.clients.set(clientId, nextActive);
         clearTimeout(helloTimer);
         socket.send(JSON.stringify({
           type: "hello_ack", protocol: PROTOCOL,
