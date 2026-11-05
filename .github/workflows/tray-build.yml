@@ -1,0 +1,79 @@
+name: SuperAgent Tray Multi-OS Build
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/superagent-tray/**"
+      - ".github/workflows/tray-build.yml"
+  pull_request:
+    paths:
+      - "apps/superagent-tray/**"
+      - ".github/workflows/tray-build.yml"
+  workflow_dispatch:
+
+jobs:
+  tray-build:
+    name: Tray / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-latest
+          - platform: linux-x64
+            os: ubuntu-24.04
+          - platform: macos-arm64
+            os: macos-latest
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies (WebKitGTK, AppIndicator)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/superagent-tray/src-tauri -> target"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test Tray Rust backend
+        run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
+
+      - name: Build SuperAgent Tray
+        run: |
+          cd apps/superagent-tray
+          bunx @tauri-apps/cli build --ci
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: superagent-tray-${{ matrix.platform }}
+          path: |
+            apps/superagent-tray/src-tauri/target/release/bundle/
+            apps/superagent-tray/src-tauri/target/release/superagent-tray
+            apps/superagent-tray/src-tauri/target/release/superagent-tray.exe
+          if-no-files-found: warn

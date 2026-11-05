@@ -34,17 +34,20 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Install FFmpeg for media integration tests
+      - name: Install FFmpeg and Chromium for media and browser integration tests
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg ripgrep
+          sudo apt-get install -y -qq ffmpeg ripgrep chromium-browser || sudo apt-get install -y -qq ffmpeg ripgrep chromium || true
           ffmpeg -version
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run build
-      - run: bun --bun x vitest run --maxWorkers=4 --reporter=dot
+      - name: Run vitest regression
+        run: bun --bun x vitest run --maxWorkers=2 --poolOptions.threads.maxThreads=2 --reporter=dot
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
   security:
     name: Dependency high-critical release gate
     runs-on: ubuntu-24.04

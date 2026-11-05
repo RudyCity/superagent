@@ -174,7 +174,8 @@ export async function renderStudioBrowserVideo(
     browser = await chromium.launch({
       executablePath, headless: true, timeout: 20000,
       args: ["--no-first-run", "--disable-extensions", "--disable-background-networking",
-        "--disable-features=WebRtcHideLocalIpsWithMdns"],
+        "--disable-features=WebRtcHideLocalIpsWithMdns", "--no-sandbox", "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage", "--disable-gpu"],
     });
     const context = await browser.newContext({
       viewport: { width: profile.width, height: profile.height },

@@ -43,6 +43,26 @@ function parseNetstat(stdout:string):Map<number,number>{
   return map;
 }
 export function readListenerOwners(): Map<number,number>|null {
+  if (process.platform === "linux") {
+    try {
+      const map = new Map<number, number>();
+      const out = execFileSync("ss", ["-tlnp"], { encoding: "utf8", timeout: 4000 });
+      for (const line of out.split("\n")) {
+        const portMatch = line.match(/:(\d+)\s+/);
+        const pidMatch = line.match(/pid=(\d+)/);
+        if (portMatch && pidMatch) {
+          const port = Number(portMatch[1]);
+          const pid = Number(pidMatch[1]);
+          if (validPort(port) && Number.isSafeInteger(pid) && pid > 0) {
+            map.set(port, pid);
+          }
+        }
+      }
+      return map;
+    } catch {
+      return null;
+    }
+  }
   if(process.platform!=="win32")return null; // fail closed on unsupported OS
   try{
     const output=execFileSync("netstat.exe",["-ano","-p","TCP"],{
