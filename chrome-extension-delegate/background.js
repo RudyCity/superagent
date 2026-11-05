@@ -390,7 +390,20 @@ async function waitForContentScript(tabId, ms = 4500) {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   throw error("CHATGPT_TAB_NOT_READY",
-    "ChatGPT content script is unavailable. Open a logged-in chatgpt.com tab and try again.");
+    "ChatGPT content script is unavailable. Sign in to chatgpt.com and try again.");
+}
+
+async function openChatTab() {
+  try {
+    const tab = await chrome.tabs.create({ url: "https://chatgpt.com/", active: true });
+    if (!Number.isSafeInteger(tab?.id) || tab.id < 1) {
+      throw new Error("Chrome did not return a valid tab ID.");
+    }
+    return tab;
+  } catch {
+    throw error("CHATGPT_TAB_OPEN_FAILED",
+      "Delegate could not open chatgpt.com in this Chrome profile.");
+  }
 }
 
 const singleton = globalThis.createDelegateTabSingleton({
@@ -411,10 +424,15 @@ async function dispatchToTab(request) {
     throw error("CHATGPT_MULTIPLE_TABS",
       "Multiple ChatGPT tabs in this Chrome profile. Choose an exact tabId from the Delegate popup. No action was dispatched.");
   }
-  const tab = exactTab === undefined ? selectChatTab(tabs) : tabs.find((t) => t.id === exactTab);
+  let tab = exactTab === undefined ? selectChatTab(tabs) : tabs.find((t) => t.id === exactTab);
+  let waitMs = 4500;
+  if (!tab && exactTab === undefined && tabs.length === 0) {
+    tab = await openChatTab();
+    waitMs = 15_000;
+  }
   if (!tab) throw error("CHATGPT_TAB_NOT_FOUND",
     exactTab === undefined ? "No ChatGPT tab in this Chrome profile." : "Requested tabId not found in this Chrome profile.");
-  await waitForContentScript(tab.id);
+  await waitForContentScript(tab.id, waitMs);
 
   // Exactly one mutation dispatch. Never resend on timeout or reconnection.
   return chrome.tabs.sendMessage(tab.id, {
