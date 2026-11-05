@@ -16,16 +16,19 @@ import {
   notifyTasksChanged,
 } from "../tools/state.js";
 import { killProcessTree } from "../tools/helpers.js";
-import { getWorkspaceTasksFromDb, saveWorkspaceTaskToDb } from "../storage/historyDb.js";
+import { getWorkspaceTasksFromDb } from "../storage/historyDb.js";
 import { getWorkspaceId } from "../config/paths.js";
 import { getWorkspaceTasksLogDir } from "../config.js";
 import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+import { getProcessSupervisor } from "../process/processSupervisor.js";
+import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
+import { getCommandLogsDir } from "../tools/commandLogger.js";
 
 export interface DesktopTerminalTaskInfo {
   id: string;
   command: string;
   pid: number;
-  status: "running" | "exited" | "killed";
+  status: "running" | "exited" | "killed" | "unverified";
   cwd: string;
   windowLabel?: string;
   isDetachedWindow?: boolean;
@@ -36,6 +39,8 @@ export interface DesktopTerminalTaskInfo {
   logPath?: string;
   lastOutput?: string;
   isTerminal: boolean;
+  source?: "mcp" | "agent" | "background" | "tray";
+  canStop?: boolean;
 }
 
 export interface TerminalPresetInfo {
@@ -76,11 +81,11 @@ export class DesktopTerminalManager {
   /**
    * List all terminal and background tasks, checking OS process aliveness.
    */
-  static listTasks(options?: { runningOnly?: boolean; search?: string }): {
+  static async listTasks(options?: { runningOnly?: boolean; search?: string }): Promise<{
     tasks: DesktopTerminalTaskInfo[];
     runningCount: number;
     totalCount: number;
-  } {
+  }> {
     try {
       loadAndSyncPersistedTasks();
     } catch {}
@@ -96,8 +101,10 @@ export class DesktopTerminalManager {
       const pid = item.pid || 0;
       const isAlive = checkPidAlive(pid);
       const isTerminal = item.id.startsWith("term-") || !!item.isDetachedWindow;
-      const status: "running" | "exited" | "killed" = isAlive
-        ? "running"
+      // A persisted PID can be reused. Without an owned child handle it cannot
+      // establish liveness or authorize a Stop action.
+      const status: DesktopTerminalTaskInfo["status"] = isAlive
+        ? "unverified"
         : item.exitCode !== null && item.exitCode !== undefined
         ? "exited"
         : "killed";
@@ -115,10 +122,67 @@ export class DesktopTerminalManager {
         logPath: item.logPath,
         isTerminal,
         lastOutput: readLogTail(item.logPath, 5),
+        source: isTerminal ? "tray" : "background",
+        canStop: false,
       });
     }
 
-    // 2. Overlay live in-memory background tasks
+    // 2. Ingest foreground shell executions recorded by Process Supervisor.
+    // MCP superagent_exec_command records component=mcp_exec_command.
+    // Agent bash/run_command records component=shell_tool.
+    try {
+      const supervisor = getProcessSupervisor();
+      await supervisor.initialize();
+      for (const record of supervisor.getRegistry().listRecords()) {
+        if (record.component !== "mcp_exec_command" && record.component !== "shell_tool") continue;
+
+        const command = record.sanitizedArgs.join(" ").trim() || record.executable || "(unknown command)";
+        const cwd = record.ownership?.workspaceRoot || process.cwd();
+        const stateClaimsRunning = record.state === "registered" || record.state === "running";
+        const pidAlive = typeof record.pid === "number" && checkPidAlive(record.pid);
+        // Presence alone is not ownership. Verify the recorded process birth
+        // fingerprint and generation before showing it as actively running.
+        const observedIdentity = stateClaimsRunning && pidAlive && record.creationIdentity
+          ? await readProcessStartIdentity(record.pid)
+          : null;
+        const ownership = supervisor.getRegistry().verifyOwnership(
+          record.recordId, observedIdentity,
+          pidAlive ? "pid_present_unverified" : "pid_absent",
+        );
+        const isRunning = stateClaimsRunning && ownership.status === "verified_owner";
+        const status: DesktopTerminalTaskInfo["status"] = isRunning
+          ? "running"
+          : record.state === "terminated"
+          ? "killed"
+          : stateClaimsRunning && pidAlive
+          ? "unverified"
+          : "exited";
+        const commandLogId = record.ownership?.taskId;
+        const logPath = commandLogId && /^cmd_\d{10,16}_[a-z0-9]{5}$/.test(commandLogId)
+          ? path.join(getCommandLogsDir(), `${commandLogId}.log`)
+          : undefined;
+
+        merged.set(record.recordId, {
+          id: record.recordId,
+          command,
+          pid: record.pid || 0,
+          status,
+          cwd,
+          windowLabel: record.component === "mcp_exec_command" ? "MCP command" : "Agent command",
+          startedAt: record.startedAt ?? record.registeredAt,
+          completedAt: record.exitedAt,
+          exitCode: record.exitCode,
+          durationMs: record.terminalObservation?.durationMs,
+          logPath,
+          lastOutput: readLogTail(logPath, 5),
+          isTerminal: true,
+          source: record.component === "mcp_exec_command" ? "mcp" : "agent",
+          canStop: false,
+        });
+      }
+    } catch {}
+
+    // 3. Overlay live in-memory background tasks
     for (const [id, task] of backgroundTasks.entries()) {
       const pid = task.process?.pid || 0;
       const hasExited = task.hasExited === true || task.process?.killed;
@@ -147,6 +211,8 @@ export class DesktopTerminalManager {
         logPath: task.logPath,
         isTerminal: id.startsWith("term-") || !!task.isDetachedWindow,
         lastOutput: outputPreview,
+        source: id.startsWith("term-") || !!task.isDetachedWindow ? "tray" : "background",
+        canStop: true,
       });
     }
 
@@ -165,15 +231,18 @@ export class DesktopTerminalManager {
           t.id.toLowerCase().includes(q) ||
           t.command.toLowerCase().includes(q) ||
           (t.windowLabel && t.windowLabel.toLowerCase().includes(q)) ||
+          t.cwd.toLowerCase().includes(q) ||
+          (t.source && t.source.toLowerCase().includes(q)) ||
           String(t.pid).includes(q)
       );
     }
 
-    // Sort: running first, then by id descending
+    // Sort: running first, then newest execution first across all sources.
     allTasks.sort((a, b) => {
       if (a.status === "running" && b.status !== "running") return -1;
       if (b.status === "running" && a.status !== "running") return 1;
-      return b.id.localeCompare(a.id);
+      return (b.startedAt ?? b.completedAt ?? 0) - (a.startedAt ?? a.completedAt ?? 0)
+        || b.id.localeCompare(a.id);
     });
 
     return {
@@ -208,18 +277,9 @@ export class DesktopTerminalManager {
       backgroundTasks.delete(taskId);
       notifyTasksChanged();
     } else {
-      const workspaceId = getWorkspaceId();
-      const dbTasks = getWorkspaceTasksFromDb(workspaceId) || [];
-      const item = dbTasks.find((t) => t.task_id === taskId || t.id === taskId);
-      if (item && item.pid) {
-        targetPid = item.pid;
-        try {
-          killProcessTree(item.pid);
-        } catch {}
-        item.hasExited = true;
-        item.completedAt = Date.now();
-        saveWorkspaceTaskToDb(workspaceId, item);
-      }
+      // A historical DB PID is not a live process lease. Never signal it:
+      // Windows can reuse PIDs after the original process has exited.
+      return { success: false, error: "Terminal task has no live owned process handle; stored PID cannot be stopped safely." };
     }
 
     try {
@@ -232,12 +292,12 @@ export class DesktopTerminalManager {
   /**
    * Fetch complete or tail logs for a task.
    */
-  static getLogs(taskId: string, maxBytes = 128 * 1024): {
+  static async getLogs(taskId: string, maxBytes = 128 * 1024): Promise<{
     taskId: string;
     command: string;
     logPath?: string;
     content: string;
-  } {
+  }> {
     const task = backgroundTasks.get(taskId);
     let logPath = task?.logPath;
     let command = task?.command || "";
@@ -250,6 +310,21 @@ export class DesktopTerminalManager {
         logPath = item.logPath;
         command = item.command || "";
       }
+    }
+
+    if (!logPath) {
+      try {
+        const supervisor = getProcessSupervisor();
+        await supervisor.initialize();
+        const record = supervisor.getRegistry().getRecord(taskId);
+        if (record && (record.component === "mcp_exec_command" || record.component === "shell_tool")) {
+          command = record.sanitizedArgs.join(" ").trim() || record.executable || "";
+          const commandLogId = record.ownership?.taskId;
+          if (commandLogId && /^cmd_\d{10,16}_[a-z0-9]{5}$/.test(commandLogId)) {
+            logPath = path.join(getCommandLogsDir(), `${commandLogId}.log`);
+          }
+        }
+      } catch {}
     }
 
     let content = "";

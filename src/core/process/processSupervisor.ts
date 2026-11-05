@@ -152,6 +152,9 @@ export interface ProcessDiagnosticReport {
   terminalCount: number;
   identityMismatchCount: number;
   unverifiedPidCount: number;
+  /** Running-looking records whose PID is absent or reused, without changing
+   * stored lifecycle state or touching any OS process. */
+  stalePidCount: number;
   entries: ProcessDiagnosticEntry[];
 }
 
@@ -421,11 +424,9 @@ export class ProcessSupervisor {
       },
     });
 
-    try {
-      await this.registry.save();
-    } catch {
-      // Best-effort
-    }
+    // A terminal observation must reach the registry before a command is
+    // reported as complete.  Silent persistence errors leave ghost runners.
+    await this.registry.save();
 
     return updated ?? null;
   }
@@ -467,6 +468,7 @@ export class ProcessSupervisor {
         terminalCount: 0,
         identityMismatchCount: 0,
         unverifiedPidCount: 0,
+        stalePidCount: 0,
         entries: [],
       };
     }
@@ -476,6 +478,7 @@ export class ProcessSupervisor {
     let terminalCount = 0;
     let identityMismatchCount = 0;
     let unverifiedPidCount = 0;
+    let stalePidCount = 0;
 
     const entries: ProcessDiagnosticEntry[] = [];
 
@@ -504,6 +507,11 @@ export class ProcessSupervisor {
           ? await readProcessStartIdentity(record.pid).catch(() => null)
           : null;
       const check = this.registry.verifyOwnership(record.recordId, observedIdentity);
+      const stalePid = (record.state === "running" || record.state === "registered") &&
+        typeof record.pid === "number" &&
+        (check.pidObservation === "pid_absent" ||
+          check.status === "identity_mismatch_blocked");
+      if (stalePid) stalePidCount++;
 
       // Aggregate counts strictly over matching records
       if (check.isOwnedByCurrentRuntime) {
@@ -549,7 +557,7 @@ export class ProcessSupervisor {
         exitedAt: record.exitedAt,
         exitCode: record.exitCode,
         signal: record.signal,
-        reason: check.reason,
+        reason: stalePid ? "STALE: process PID absent or identity mismatched; no process was signalled. " + check.reason : check.reason,
       });
     }
 
@@ -564,6 +572,7 @@ export class ProcessSupervisor {
       terminalCount,
       identityMismatchCount,
       unverifiedPidCount,
+      stalePidCount,
       entries,
     };
   }

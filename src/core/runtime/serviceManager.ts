@@ -14,7 +14,7 @@ import { controlCoreLifecycle, prepareCoreLifecycle } from "./coreLifecycleContr
 import { validateCoreOperationId } from "./coreLifecycleLedger.js";
 import { readCoreGuardianLease } from "./coreGuardian.js";
 import { listVerifiedChannelHosts } from "./channelHost.js";
-import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
+import { readListenerOwners, readMcpStateInventory } from "./coreMcpOwnershipAudit.js";
 import { getMcpStateFile, readMcpStateFile } from "../mcp/mcpTunnel.js";
 import { readManagedMcpTunnelLease, probeManagedMcpTunnelOwner,
   verifyManagedOwnerIdentity, reloadManagedMcpTunnelBackend } from "./mcpManagedTunnelOwner.js";
@@ -74,6 +74,28 @@ const defaultPorts:Partial<Record<ManagedServiceName,number>>={
   rest_tunnel:7888,muse_tunnel:9225,
 };
 const known=new Set<string>(MANAGED_SERVICE_NAMES);
+
+/** Use an OS listener and matching owner record, not a hard-coded MCP port. */
+export function discoverObservedMcpPort(
+  listeners:Map<number,number>|null,
+  records:ReadonlyArray<{port:number;pid:number;startedAt?:number}> = readMcpStateInventory().records,
+):number {
+  if(!listeners)return defaultPorts.mcp!;
+  const matches=records.filter(r=>Number.isSafeInteger(r.port)&&
+    r.port>=1024&&r.port<=65535&&Number.isSafeInteger(r.pid)&&r.pid>0&&
+    listeners.get(r.port)===r.pid);
+  if(matches.length===0)return defaultPorts.mcp!;
+  matches.sort((a,b)=>(b.startedAt??0)-(a.startedAt??0)||
+    Number(b.port===defaultPorts.mcp)-Number(a.port===defaultPorts.mcp)||
+    a.port-b.port);
+  return matches[0].port;
+}
+function observedMcpPort(listeners:Map<number,number>|null):number {
+  const records=readMcpStateInventory().records.map(r=>({
+    ...r,startedAt:readMcpStateFile(getMcpStateFile(r.port))?.startedAt,
+  }));
+  return discoverObservedMcpPort(listeners,records);
+}
 export function validateServicePort(input:unknown,fallback?:number):number {
   const v=input===undefined?fallback:input;
   if(typeof v!=="number"||!Number.isSafeInteger(v)||v<1024||v>65535)
@@ -343,7 +365,8 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
         tracked:report.totalTracked,activeOwned:report.activeOwnedCount,
         historical:report.historicalCount,terminal:report.terminalCount,
         identityMismatch:report.identityMismatchCount,
-        unverifiedPid:report.unverifiedPidCount});
+        unverifiedPid:report.unverifiedPidCount,
+        stalePid:report.stalePidCount});
   }
   return snap(service,port,owner?"unverified":"unknown",owner,false,["status"],
     "Public tunnel must be managed via its dedicated owner; listener PID is not shutdown authorization");
@@ -353,7 +376,8 @@ export async function inspectServices(service:ManagedServiceName|"all"="all",por
   const listeners=readListenerOwners();
   return Promise.all(names.map(async name=>{
     try {
-      const selected=service==="all"||port===undefined?defaultPorts[name]:port;
+      const selected=service!=="all"&&port!==undefined?port:
+        name==="mcp"?observedMcpPort(listeners):defaultPorts[name];
       return await inspectOne(name,selected,listeners);
     }catch(e) {
       return snap(name,defaultPorts[name],"unknown",null,false,["status"],
@@ -378,7 +402,8 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
   const action=args.action,service=args.service??"all";
   const port=service==="all" ? undefined :
     (args.port!==undefined || defaultPorts[service]!==undefined)
-      ? validateServicePort(args.port,defaultPorts[service])
+      ? validateServicePort(args.port,args.port!==undefined?undefined:
+          service==="mcp"?observedMcpPort(readListenerOwners()):defaultPorts[service])
       : undefined;
   if(action==="status"||action==="inventory")
     return {action,readOnly:true,services:await inspectServices(service,port),

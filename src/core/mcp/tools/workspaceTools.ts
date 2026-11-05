@@ -190,6 +190,7 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
         lifecycle: "ephemeral",
         cleanupPolicy: "caller_owned",
         workspaceRoot: String(targetCwd),
+        taskId: cmdLogger.id,
       });
       procRecordId = reg.recordId;
     } catch {}
@@ -197,7 +198,11 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
     const proc = traceChildProcess(execa(formattedCommand, mcpExecOpts), { caller: "workspaceTools.handleExecCommand", executable: String(shellPath), args: [formattedCommand], cwd: String(targetCwd), intent: "headless", options: mcpExecOpts });
     childPid = proc.pid;
     if (procRecordId && childPid) {
-      void getProcessSupervisor().recordProcessSpawn(procRecordId, childPid).catch(() => {});
+      try {
+        await getProcessSupervisor().recordProcessSpawn(procRecordId, childPid);
+      } catch (trackingError) {
+        console.warn("[MCP exec] Failed to persist child spawn:", trackingError);
+      }
     }
 
     const record = (data: Buffer | string) => {
@@ -211,12 +216,19 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       proc.stderr?.on("data", record);
     }
     const result = await proc;
+    let trackingWarning: string | undefined;
     if (procRecordId) {
-      void getProcessSupervisor().recordProcessExit(procRecordId, {
-        exitCode: result.exitCode ?? null,
-        signal: null,
-        source: "workspaceTools.handleExecCommand",
-      }).catch(() => {});
+      try {
+        const recorded = await getProcessSupervisor().recordProcessExit(procRecordId, {
+          exitCode: result.exitCode ?? null,
+          signal: null,
+          source: "workspaceTools.handleExecCommand",
+        });
+        if (!recorded) throw new Error("process record unavailable before exit");
+      } catch (trackingError) {
+        trackingWarning = "Process exit observation could not be persisted";
+        console.warn("[MCP exec] " + trackingWarning + ":", trackingError);
+      }
     }
     const remaining = decoder.end();
     if (remaining) { cmdLogger.write(remaining); capture.append(remaining); }
@@ -229,6 +241,7 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       "CommandId: " + cmdLogger.id,
       "Log: " + cmdLogger.logPath,
       "Captured characters: " + capture.totalChars,
+      trackingWarning ? "Tracking warning: " + trackingWarning : "",
       capture.clipped ? "Output preview is bounded. Fetch the full log with superagent_exec_command(commandId=\"" + cmdLogger.id + "\", offsetBytes=0, maxBytes=12000), then continue using nextOffsetBytes." : "",
       capture.totalChars ? "\n--- COMBINED OUTPUT ---\n" + capture.preview(cmdLogger.id) : "",
     ].filter(Boolean).join("\n");
@@ -238,17 +251,21 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       isError: result.exitCode !== 0,
     };
   } catch (err: any) {
-    if (procRecordId) {
-      void getProcessSupervisor().recordProcessExit(procRecordId, {
-        exitCode: -1,
-        signal: null,
-        source: "workspaceTools.handleExecCommand.error",
-      }).catch(() => {});
-    }
-    cmdLogger?.end(null, err instanceof Error ? err.message : String(err));
     if (childPid) {
       killProcessTree(childPid);
     }
+    if (procRecordId) {
+      try {
+        await getProcessSupervisor().recordProcessExit(procRecordId, {
+          exitCode: -1,
+          signal: null,
+          source: "workspaceTools.handleExecCommand.error",
+        });
+      } catch (trackingError) {
+        console.warn("[MCP exec] Failed to persist error exit:", trackingError);
+      }
+    }
+    cmdLogger?.end(null, err instanceof Error ? err.message : String(err));
     return {
       content: [{ type: "text", text: `Command execution error: ${err.message}` }],
       isError: true,

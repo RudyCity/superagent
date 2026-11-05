@@ -14,7 +14,7 @@
     presets: [],
     runningCount: 0,
     totalCount: 0,
-    runningOnly: true, // Default to showing currently running terminals
+    runningOnly: false, // Default to recent MCP/agent execution history; Running Only is opt-in
     searchQuery: "",
     loading: false,
     pollTimer: null,
@@ -199,18 +199,27 @@
         const isRunning = t.status === "running";
         const statusBadge = isRunning
           ? `<span class="pill pill-success"><span class="pill-dot"></span>Running</span>`
+          : t.status === "unverified"
+          ? `<span class="pill pill-muted">Unverified PID</span>`
           : t.status === "exited"
-          ? `<span class="pill pill-muted">Exited (${t.exitCode ?? 0})</span>`
+          ? `<span class="pill pill-muted">Exited${t.exitCode == null ? "" : ` (${t.exitCode})`}</span>`
           : `<span class="pill pill-danger">Killed</span>`;
 
         const displayLabel = t.windowLabel || t.command.split(" ")[0] || "terminal";
         const pidBadge = t.pid > 0 ? `<code class="font-mono text-cyan">${t.pid}</code>` : "-";
+        const sourceLabel = t.source === "mcp"
+          ? "MCP"
+          : t.source === "agent"
+          ? "Agent"
+          : t.source === "background"
+          ? "Background"
+          : "Tray";
 
         return `<tr class="terminal-task-row" data-task-id="${escapeHtml(t.id)}">
           <td>
             <div class="terminal-task-name">
               <strong class="terminal-title">${escapeHtml(displayLabel)}</strong>
-              <small class="font-mono text-muted">${escapeHtml(t.id)}</small>
+              <small class="font-mono text-muted">${escapeHtml(sourceLabel)} · ${escapeHtml(t.id)}</small>
             </div>
           </td>
           <td>
@@ -233,7 +242,7 @@
                 View Logs
               </button>
               ${
-                isRunning
+                isRunning && t.canStop !== false
                   ? `<button type="button" class="button ghost sm danger terminal-kill-btn" data-task-id="${escapeHtml(
                       t.id
                     )}" data-pid="${t.pid}" data-cmd="${escapeHtml(t.command)}" title="Terminate running process tree">

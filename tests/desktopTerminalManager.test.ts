@@ -11,8 +11,13 @@ const terminalJs = fs.readFileSync(
 );
 
 describe("DesktopTerminalManager backend service", () => {
-  it("lists tasks and reflects running vs exited status", () => {
-    const list = DesktopTerminalManager.listTasks();
+  it("refuses to stop a historical PID without an owned live handle", () => {
+    const result = DesktopTerminalManager.killTask("historical-mcp-process-with-no-live-handle");
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("no live owned process handle");
+  });
+  it("lists tasks and reflects running vs exited status", async () => {
+    const list = await DesktopTerminalManager.listTasks();
     expect(list).toHaveProperty("tasks");
     expect(list).toHaveProperty("runningCount");
     expect(list).toHaveProperty("totalCount");
@@ -33,12 +38,12 @@ describe("DesktopTerminalManager backend service", () => {
     expect(res.taskId.startsWith("term-bg-")).toBe(true);
     expect(res.pid).toBeGreaterThan(0);
 
-    const listed = DesktopTerminalManager.listTasks({ runningOnly: true });
+    const listed = await DesktopTerminalManager.listTasks({ runningOnly: true });
     const found = listed.tasks.find((t) => t.id === res.taskId);
     expect(found).toBeDefined();
     expect(found?.status).toBe("running");
 
-    const logs = DesktopTerminalManager.getLogs(res.taskId);
+    const logs = await DesktopTerminalManager.getLogs(res.taskId);
     expect(logs.taskId).toBe(res.taskId);
     expect(typeof logs.content).toBe("string");
 
@@ -217,6 +222,26 @@ function mountTerminalUi(mockResponse?: any) {
 }
 
 describe("Desktop Terminal UI Controller", () => {
+  it("shows unverified MCP PIDs without offering an unsafe Stop button", async () => {
+    const mounted = mountTerminalUi({
+      tasks: [{
+        id: "mcp-old-process",
+        command: "git status",
+        pid: 12345,
+        status: "unverified",
+        cwd: "D:/project/app",
+        source: "mcp",
+        isTerminal: true,
+        canStop: false,
+      }],
+      runningCount: 0, totalCount: 1, presets: [],
+    });
+    await mounted.windowMock.__superagentTerminalRefresh();
+    const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
+    expect(html).toContain("Unverified PID");
+    expect(html).toContain("MCP");
+    expect(html).not.toContain("terminal-kill-btn");
+  });
   it("fetches tasks and renders metrics and table rows", async () => {
     const mounted = mountTerminalUi();
     await mounted.windowMock.__superagentTerminalRefresh();
