@@ -5,9 +5,8 @@ on:
     paths:
       - "apps/superagent-tray/**"
       - ".github/workflows/tray-build.yml"
-      - "scripts/prepare-standalone-windows.ts"
-      - "scripts/verify-standalone-windows.ts"
-      - "scripts/build-standalone-windows.ts"
+      - "scripts/*standalone*.ts"
+      - "scripts/verify-installed-standalone-windows.ps1"
       - "src/**"
       - "package.json"
       - "bun.lock"
@@ -15,9 +14,7 @@ on:
     paths:
       - "apps/superagent-tray/**"
       - ".github/workflows/tray-build.yml"
-      - "scripts/prepare-standalone-windows.ts"
-      - "scripts/verify-standalone-windows.ts"
-      - "scripts/build-standalone-windows.ts"
+      - "scripts/*standalone*.ts"
       - "src/**"
       - "package.json"
       - "bun.lock"
@@ -28,108 +25,96 @@ permissions:
 
 jobs:
   tray-build:
-    name: Package / ${{ matrix.platform }}
+    name: Standalone / ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: windows-x64-standalone
+          - platform: windows-x64
             os: windows-2025
           - platform: linux-x64
             os: ubuntu-24.04
           - platform: macos-arm64
-            os: macos-latest
+            os: macos-15
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
+    timeout-minutes: 110
     env:
       CI: "true"
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux system dependencies
+      - name: Linux packaging dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file
           sudo apt-get install -y -qq libayatana-appindicator3-dev || sudo apt-get install -y -qq libappindicator3-dev
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust dependency cache
-        uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "apps/superagent-tray/src-tauri -> target"
-
-      - name: Install Bun 1.4.2
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-
-      - name: Install locked dependencies
-        run: bun install --frozen-lockfile
-
+      - run: bun install --frozen-lockfile
       - name: Build Core
         run: bun run build
-
-      - name: Verify Chrome extension JavaScript
+      - name: Verify Chrome extension syntax
         run: bun run verify:extension-js
-
-      - name: Core installer and media regression
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts
-
-      - name: Test native tray
+      - name: Core & packaging regression
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/unixStandaloneInstaller.test.ts
+      - name: Native Rust regression
         run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
-
-      - name: Build Windows CLI launcher
-        if: runner.os == 'Windows'
+      - name: Build CLI launcher
         run: cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
-
-      - name: Prepare embedded runtime, Core and production modules
+      - name: Prepare Windows standalone distribution
         if: runner.os == 'Windows'
         run: bun run installer:prepare
-
-      - name: Portable CLI smoke test without global Bun/Node
+      - name: Verify portable Windows CLI
         if: runner.os == 'Windows'
         run: bun run installer:verify
-
-      - name: Build Windows standalone NSIS installer
+      - name: Package Windows setup
         if: runner.os == 'Windows'
         run: bun run installer:package
-
-      - name: Build standard non-Windows Tray package
+      - name: Prepare Unix standalone distribution
         if: runner.os != 'Windows'
-        run: bun x @tauri-apps/cli@2.12.4 build --ci
-
-      - name: Verify Windows setup payload
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $p = "apps/superagent-tray/src-tauri/target/release/bundle/nsis/SuperAgent_${v}_x64-setup.exe"
-          if (!(Test-Path $p)) { throw "Missing standalone NSIS installer: $p" }
-          if ((Get-Item $p).Length -lt 20000000) { throw "Installer unexpectedly small" }
-          Get-FileHash $p -Algorithm SHA256 | Format-List
-
-      - name: Test actual NSIS installation and uninstall on disposable runner
+        run: bun run installer:prepare:unix
+      - name: Verify portable Unix CLI
+        if: runner.os != 'Windows'
+        run: bun run installer:verify:unix
+      - name: Package macOS DMG or Linux DEB/AppImage
+        if: runner.os != 'Windows'
+        run: bun run installer:package:unix
+      - name: Verify installed Windows setup on disposable runner
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/verify-installed-standalone-windows.ps1
-
-      - name: Upload Windows installer
+      - name: Verify packaged Unix launcher and payload
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash scripts/verify-packaged-standalone-unix.sh
+      - name: Upload Windows setup
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: superagent-windows-x64-standalone
+          name: superagent-standalone-windows-x64
           path: apps/superagent-tray/src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 30
-
-      - name: Upload other platform artifacts
-        if: runner.os != 'Windows'
+      - name: Upload macOS DMG
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: superagent-tray-${{ matrix.platform }}
-          path: apps/superagent-tray/src-tauri/target/release/bundle/
+          name: superagent-standalone-macos-arm64
+          path: apps/superagent-tray/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
-          retention-days: 15
+          retention-days: 30
+      - name: Upload Linux DEB and AppImage
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: superagent-standalone-linux-x64
+          path: |
+            apps/superagent-tray/src-tauri/target/release/bundle/deb/*.deb
+            apps/superagent-tray/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+          retention-days: 30

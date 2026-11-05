@@ -30,7 +30,7 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(hooks).toContain("AddedPath");
     expect(hooks).toContain("AddedPath");
   });
-  it("uses prerelease-only tag gates and restricts release publication to Windows NSIS", () => {
+  it("uses prerelease-only tag gates and requires all three platform assets before GitHub prerelease publishing", () => {
     const workflow = read(".github/workflows/release-windows-standalone.yml");
     expect(workflow).toContain("contents: write");
     expect(workflow).toContain("v*-rc.*");
@@ -38,7 +38,11 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(workflow).toContain("SHA256SUMS.txt");
     expect(workflow).toContain("bun run installer:verify");
     expect(workflow).toContain("bun run installer:package");
-    expect(read(".github/workflows/tray-build.yml")).toContain("superagent-windows-x64-standalone");
+    expect(workflow).toContain("macos-arm64");
+    expect(workflow).toContain("linux-x64");
+    expect(workflow).toContain("needs: [build]");
+    expect(workflow).toContain("bun run installer:package:unix");
+    expect(read(".github/workflows/tray-build.yml")).toContain("superagent-standalone-windows-x64");
   });
   it("never commits runtime executables or bundled third-party dependencies", () => {
     const ignore = read(".gitignore");

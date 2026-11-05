@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/bun"
+    ],
+    "resources": {
+      "resources/standalone/": "standalone/"
+    }
+  }
+}

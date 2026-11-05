@@ -57,3 +57,28 @@ Such capabilities should report unavailable until provisioned.
 
 Do not promote this release candidate into a production runtime cutover until the
 repository's R0–R7 release controls and operator approvals are satisfied.
+
+## macOS arm64 and Linux x64 self-contained packages
+
+The Tauri release matrix also packages macOS arm64 into a DMG and Linux x64 into
+DEB and AppImage. Each builds a platform-native `superagent` CLI, ships Bun 1.4.2
+in the executable directory and stages the same frozen production dependencies
+as a `standalone/` resource. On macOS the Core entrypoint is located beneath
+`Contents/Resources/standalone/`; on Linux DEB/AppImage under the Tauri
+application library resource directory. The CLI uses platform-specific relative
+paths and does not require a system-wide Bun or Node installation.
+
+To build on the matching host:
+
+```bash
+bun install --frozen-lockfile
+bun run installer:build:unix
+```
+
+GitHub CI tests the unbundled CLI with PATH excluding Bun/Node and validates
+macOS .app resource content or extracts the Linux DEB and runs its installed CLI.
+Both checks must pass before a multi-OS prerelease can be published. DMG and
+AppImage are **not** a promise of platform code-signing/notarization; distributing
+unsigned beta installers may trigger platform security prompts. Linux also needs
+the usual host GTK/WebKit runtime dependencies; a self-contained JS runtime does
+not statically bundle every system UI library.

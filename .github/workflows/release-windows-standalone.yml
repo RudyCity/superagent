@@ -1,4 +1,4 @@
-name: SuperAgent Windows Standalone Prerelease
+name: SuperAgent Multi-OS Standalone Prerelease
 on:
   push:
     tags:
@@ -6,35 +6,40 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: standalone-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  build-and-publish:
-    name: Verify, package, publish Windows x64
+  build:
+    name: Build & test ${{ matrix.platform }}
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: windows-2025
-    timeout-minutes: 90
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            os: windows-2025
+          - platform: macos-arm64
+            os: macos-15
+          - platform: linux-x64
+            os: ubuntu-24.04
     env:
       CI: "true"
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Verify immutable tag matches package version
-        shell: pwsh
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          if ($tag -notmatch '^v(\d+\.\d+\.\d+)-rc\.\d+$') { throw "Only release candidates are allowed" }
-          if ($Matches[1] -ne $version) { throw "Tag and package version do not match" }
-          if ((git status --porcelain).Length -gt 0) { throw "Source checkout is dirty" }
-
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file
+          sudo apt-get install -y -qq libayatana-appindicator3-dev || sudo apt-get install -y -qq libappindicator3-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -42,55 +47,111 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
-
+      - name: Verify release-candidate tag matches package version
+        shell: bash
+        run: |
+          bun -e 'const v = require("./package.json").version; const ref = process.env.GITHUB_REF_NAME || ""; const prefix = "v" + v + "-rc."; const suffix = ref.slice(prefix.length); if (!ref.startsWith(prefix) || !suffix.length || !suffix.split("").every(c => c >= "0" && c <= "9")) throw Error("Release tag/version mismatch"); console.log(ref)'
       - name: Locked install
         run: bun install --frozen-lockfile
-
       - name: Build Core
         run: bun run build
-
-      - name: Verify extension JavaScript
+      - name: Verify extension syntax
         run: bun run verify:extension-js
-
-      - name: Bounded Core regression gate
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts
-
+      - name: Core & package regression gate
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts
       - name: Test native Tray
         run: bun run tray:test
-
-      - name: Build native CLI launcher
+      - name: Compile native CLI
         run: cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
-
-      - name: Prepare production-only standalone resources
+      - name: Stage Windows portable resources
+        if: runner.os == 'Windows'
         run: bun run installer:prepare
-
-      - name: Assert portable CLI starts without installed Bun/Node
+      - name: Verify Windows portable Core
+        if: runner.os == 'Windows'
         run: bun run installer:verify
-
-      - name: Package signed-source but unsigned-application NSIS setup
+      - name: Build standalone Windows NSIS
+        if: runner.os == 'Windows'
         run: bun run installer:package
-
-      - name: Verify versioned installer and write SHA256 checksums
-        shell: pwsh
-        run: |
-          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $setup = "apps/superagent-tray/src-tauri/target/release/bundle/nsis/SuperAgent_${v}_x64-setup.exe"
-          if (!(Test-Path $setup)) { throw "Missing setup artifact $setup" }
-          if ((Get-Item $setup).Length -lt 20000000) { throw "Truncated setup artifact" }
-          $sum = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
-          "$sum  $(Split-Path -Leaf $setup)" | Set-Content SHA256SUMS.txt -Encoding utf8NoBOM
-          Get-Content SHA256SUMS.txt
-
-      - name: Install, run CLI and uninstall on disposable Windows runner
+      - name: Stage macOS or Linux portable resources
+        if: runner.os != 'Windows'
+        run: bun run installer:prepare:unix
+      - name: Verify Unix portable Core
+        if: runner.os != 'Windows'
+        run: bun run installer:verify:unix
+      - name: Build macOS DMG or Linux DEB/AppImage
+        if: runner.os != 'Windows'
+        run: bun run installer:package:unix
+      - name: Install, test, uninstall on disposable Windows runner
+        if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/verify-installed-standalone-windows.ps1
-
-      - name: Publish prerelease assets only after all gates pass
+      - name: Verify assembled Unix bundle and CLI
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash scripts/verify-packaged-standalone-unix.sh
+      - name: Validate Windows installer
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
           $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
           $setup = "apps/superagent-tray/src-tauri/target/release/bundle/nsis/SuperAgent_${v}_x64-setup.exe"
-          gh release create $tag $setup SHA256SUMS.txt --repo "${{ github.repository }}" --verify-tag --prerelease --generate-notes --title "SuperAgent $v Standalone Windows (RC)"
+          if (!(Test-Path $setup) -or (Get-Item $setup).Length -lt 20000000) { throw "Missing or truncated Windows installer" }
+      - name: Upload Windows installer
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          path: apps/superagent-tray/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+      - name: Upload macOS installer
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-macos-arm64
+          path: apps/superagent-tray/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+      - name: Upload Linux packages
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux-x64
+          path: |
+            apps/superagent-tray/src-tauri/target/release/bundle/deb/*.deb
+            apps/superagent-tray/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+  publish:
+    name: Publish only after all three OS gates pass
+    needs: [build]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Require Windows, macOS and Linux assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          exe=(release-assets/*-setup.exe)
+          dmg=(release-assets/*.dmg)
+          deb=(release-assets/*.deb)
+          appimage=(release-assets/*.AppImage)
+          test "${#exe[@]}" -eq 1
+          test "${#dmg[@]}" -eq 1
+          test "${#deb[@]}" -eq 1
+          test "${#appimage[@]}" -eq 1
+          (cd release-assets && sha256sum ./* | sed 's# \*#  #' > ../SHA256SUMS.txt)
+          cat SHA256SUMS.txt
+      - name: Publish GitHub prerelease
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" release-assets/* SHA256SUMS.txt \
+            --repo "${{ github.repository }}" --verify-tag --prerelease --generate-notes \
+            --title "SuperAgent standalone ${{ github.ref_name }} (Windows / macOS / Linux)"

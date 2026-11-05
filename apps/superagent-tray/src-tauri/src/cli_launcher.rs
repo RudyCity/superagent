@@ -36,7 +36,19 @@ fn find_cli_script() -> Option<PathBuf> {
             if res_direct.exists() {
                 return Some(res_direct);
             }
-            // 3. macOS bundle: ../Resources/dist/cli.js or ../Resources/cli.js
+            // Native standalone macOS .app: Contents/MacOS -> Contents/Resources.
+            let mac_standalone = exe_dir.join("..").join("Resources").join("standalone").join("dist").join("cli.js");
+            if mac_standalone.exists() {
+                return Some(mac_standalone);
+            }
+            // Native Linux .deb or AppImage: usr/bin -> usr/lib/superagent.
+            for installed_name in ["superagent", "superagent-tray", "super-agent", "SuperAgent"] {
+                let linux_standalone = exe_dir.join("..").join("lib").join(installed_name).join("standalone").join("dist").join("cli.js");
+                if linux_standalone.exists() {
+                    return Some(linux_standalone);
+                }
+            }
+            // 3. Legacy macOS bundle: ../Resources/dist/cli.js or ../Resources/cli.js
             let mac_res_dist = exe_dir.join("..").join("Resources").join("dist").join("cli.js");
             if mac_res_dist.exists() {
                 return Some(mac_res_dist);

@@ -1,5 +1,6 @@
 ## [1.14.64] - 2026-11-05
 ### Windows standalone installer and automated release candidate
+- Extend standalone packaging to macOS ARM64 DMG and Linux x64 DEB/AppImage with platform-local Bun and Core, native CLI smoke checks, and multi-OS release gates.
 - Bundle the pinned Bun 1.4.2 runtime, Core distribution and frozen production dependencies inside the Windows installer.
 - Package a native SuperAgent CLI launcher alongside the Tray application and verify a portable CLI without global Bun or Node.
 - Build and verify NSIS packages on Windows CI, publish versioned GitHub prerelease artifacts with SHA-256 checksums.
