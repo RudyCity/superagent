@@ -31,6 +31,12 @@ public final class LanPolicyChecks {
         check(!LanPolicy.privateIntranetPeer("10.200.4.187", "127.0.0.1"), "loopback denied");
         check(!LanPolicy.privateIntranetPeer("10.200.4.187", "8.8.8.8"), "public denied");
         check(!LanPolicy.privateIntranetPeer("10.200.4.187", "10.200.04.27"), "ambiguous IPv4 denied");
+        check("10.200.84.27".equals(LanPolicy.canonicalIpv4("::ffff:10.200.84.27")), "mapped IPv4 compact");
+        check("10.200.84.27".equals(LanPolicy.canonicalIpv4("0:0:0:0:0:ffff:10.200.84.27")), "mapped IPv4 expanded");
+        check(LanPolicy.sameIpv4("10.200.4.187", "::ffff:10.200.4.187"), "mapped local equality");
+        check(LanPolicy.privateIntranetPeer("::ffff:10.200.4.187", "::ffff:10.200.84.27"), "mapped routed campus /16");
+        check(LanPolicy.canonicalIpv4("::ffff:10.200.04.27") == null, "mapped ambiguous denied");
+        check(LanPolicy.canonicalIpv4("2001:db8::1") == null, "native IPv6 denied");
         System.out.println("ANDROID_LAN_POLICY_PASS " + cases + " checks");
     }
 }

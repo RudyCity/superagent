@@ -8,8 +8,8 @@ android {
         applicationId 'click.superagent.lanclient'
         minSdk 29
         targetSdk 35
-        versionCode 8
-        versionName '0.7.1-routed-lan-preview'
+        versionCode 11
+        versionName '0.7.4-ephemeral-tls-preview'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

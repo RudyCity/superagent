@@ -4,18 +4,41 @@ package click.superagent.lanclient;
 public final class LanPolicy {
     private LanPolicy() {}
 
-    public static long ipv4(String raw) {
-        if (raw == null) return -1;
-        String[] parts = raw.split("\\.", -1);
-        if (parts.length != 4) return -1;
-        long value = 0;
-        for (String part : parts) {
-            if (!part.matches("(0|[1-9][0-9]{0,2})")) return -1;
-            int octet = Integer.parseInt(part);
-            if (octet > 255) return -1;
-            value = (value << 8) | octet;
+    public static String canonicalIpv4(String raw) {
+        if (raw == null) return null;
+        String value = raw;
+        String lower = value.toLowerCase(java.util.Locale.ROOT);
+        if (lower.startsWith("::ffff:")) {
+            value = value.substring(7);
+        } else if (lower.startsWith("0:0:0:0:0:ffff:")) {
+            value = value.substring(15);
         }
+        String[] parts = value.split("\\.", -1);
+        if (parts.length != 4) return null;
+        StringBuilder canonical = new StringBuilder();
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i];
+            if (!part.matches("(0|[1-9][0-9]{0,2})")) return null;
+            int octet = Integer.parseInt(part);
+            if (octet > 255) return null;
+            if (i > 0) canonical.append('.');
+            canonical.append(octet);
+        }
+        return canonical.toString();
+    }
+
+    public static long ipv4(String raw) {
+        String canonical = canonicalIpv4(raw);
+        if (canonical == null) return -1;
+        String[] parts = canonical.split("\\.", -1);
+        long value = 0;
+        for (String part : parts) value = (value << 8) | Integer.parseInt(part);
         return value;
+    }
+
+    public static boolean sameIpv4(String a, String b) {
+        String left = canonicalIpv4(a), right = canonicalIpv4(b);
+        return left != null && left.equals(right);
     }
 
     public static boolean isPrivate(String ip) {

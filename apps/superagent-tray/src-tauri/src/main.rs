@@ -394,7 +394,7 @@ async fn create_connection(payload: Value) -> Result<Value, String> {
 /// authenticated loopback Core. It never receives Core bearer or pair/session tokens.
 #[tauri::command]
 async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "open", "exec", "close", "revoke",  "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"];
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
     let data = payload.unwrap_or_else(|| json!({}));
     let obj = data.as_object().ok_or("Invalid LAN payload")?;
@@ -402,6 +402,8 @@ async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Va
         "discover" => &["segment", "targetIp"],
         "list" => &[],
         "pair" => &["host", "port", "code", "fingerprint", "controller", "segment"],
+        "pair_complete" => &["requestId", "code", "verified"],
+        "pair_cancel" => &["requestId"],
         "exec" => &["deviceId", "command"],
         "input" => &["deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text"],
         "file_offer" => &["deviceId", "direction", "name", "size", "sha256"],
@@ -455,6 +457,19 @@ async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Va
             }
         }
 
+    } else if action == "pair_complete" {
+        let request_id = data["requestId"].as_str().ok_or("Pair request ID required")?;
+        let code = data["code"].as_str().ok_or("Pair code required")?;
+        if request_id.len() != 36 || !request_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+            || code.len() != 8 || !code.bytes().all(|b| b.is_ascii_digit())
+            || data.get("verified").and_then(Value::as_bool) != Some(true) {
+            return Err("Invalid local pairing completion".into());
+        }
+    } else if action == "pair_cancel" {
+        let request_id = data["requestId"].as_str().ok_or("Pair request ID required")?;
+        if request_id.len() != 36 || !request_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+            return Err("Invalid pair request ID".into());
+        }
     } else if !["discover", "list"].contains(&action.as_str()) {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
         if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {

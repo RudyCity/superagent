@@ -37,6 +37,8 @@ export interface SegmentDiscoveryResponse {
   name: string;
   fingerprint: string;
   platform: "windows" | "android";
+  appVersion?: string;
+  buildCode?: number;
 }
 
 /** Datagram is untrusted: require exact v2, expected tag and source-address equality. */
@@ -52,9 +54,15 @@ export function parseSegmentDiscoveryResponse(
       || typeof value.fingerprint !== "string" || !/^[0-9a-f]{64}$/.test(value.fingerprint)
       || typeof value.name !== "string" || value.name.length > 60
       || !/^[^\x00-\x1f\x7f]*$/.test(value.name)
-      || (value.platform !== "android" && value.platform !== "windows")) return null;
+      || (value.platform !== "android" && value.platform !== "windows")
+      || (value.appVersion !== undefined &&
+          (typeof value.appVersion !== "string" || !/^[0-9A-Za-z.+_-]{1,48}$/.test(value.appVersion)))
+      || (value.buildCode !== undefined &&
+          (!Number.isSafeInteger(value.buildCode) || Number(value.buildCode) < 1 || Number(value.buildCode) > 1_000_000_000))) return null;
   return {
     version: 2, segmentTag: expectedTag, address: value.address, port: Number(value.port),
     fingerprint: value.fingerprint, name: value.name, platform: value.platform,
+    ...(typeof value.appVersion === "string" ? { appVersion: value.appVersion } : {}),
+    ...(Number.isSafeInteger(value.buildCode) ? { buildCode: Number(value.buildCode) } : {}),
   };
 }

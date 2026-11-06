@@ -29,6 +29,7 @@ import {planDaemonLifecycle,executeDaemonLifecycle,inspectDaemonScheduler} from 
 import {
   planManagedTray,executeManagedTray,inspectManagedTray,
   planManagedTrayRelease,executeManagedTrayRelease,legacyTrayProcessPids,
+  reviewStaleTrayReceiptWithVerifiedSuccessor,
 } from "./managedTrayControl.js";
 import {readTrayReleaseState} from "./trayReleaseStore.js";
 import {readLifecycleSettings,configureLifecycleProfile,dependencyOrder} from "./lifecycleProfiles.js";
@@ -487,8 +488,15 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
       profile:updated.profiles.find(x=>x.service===service)};
   }
   if(action==="reconcile"){
-    if(!args.operationId||args.confirm!==true||args.reviewed!==true)
+    if(args.confirm!==true||args.reviewed!==true)
       throw new Error("SERVICE_RECONCILE_REQUIRES_EXPLICIT_OPERATOR_REVIEW");
+    if(service==="tray"&&!args.operationId){
+      if(args.targetAction!=="restart"&&args.targetAction!=="upgrade"&&args.targetAction!=="rollback")
+        throw new Error("SERVICE_TRAY_STALE_RECONCILE_TARGET_REQUIRED");
+      return {service,action,...await reviewStaleTrayReceiptWithVerifiedSuccessor(args.targetAction)};
+    }
+    if(!args.operationId)
+      throw new Error("SERVICE_RECONCILE_REQUIRES_OPERATION_ID");
     if(service==="all")
       return reconcileGlobalLifecycleRecycle(args.operationId,args.reviewed);
     if(service==="core"||service==="mcp"||service==="process_supervisor"||

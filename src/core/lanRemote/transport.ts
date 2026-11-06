@@ -84,6 +84,18 @@ export function privateIntranetPeer(peerAddress: string): boolean {
   return lanInterfaces().some((adapter) =>
     samePrivateIntranetAllocation(adapter.address, peerAddress));
 }
+/** Bind outbound TLS to a currently verified physical adapter in the peer's
+ * private /16 allocation. Do not use the OS default route's source address,
+ * which may belong to another adapter and be rejected by the target. */
+export function outboundLanSource(peerAddress: string): string {
+  const candidates = lanInterfaces().filter((adapter) =>
+    samePrivateIntranetAllocation(adapter.address, peerAddress));
+  const exact = candidates.find((adapter) =>
+    sameOnLink(adapter.address, adapter.netmask, peerAddress));
+  const chosen = exact ?? candidates[0];
+  if (!chosen) throw new Error("No approved physical private interface for LAN target.");
+  return chosen.address;
+}
 function equal(a: string, b: string): boolean {
   const x = Buffer.from(a), y = Buffer.from(b);
   return x.length === y.length && crypto.timingSafeEqual(x, y);

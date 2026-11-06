@@ -1,27 +1,39 @@
 package click.superagent.lanclient;
 
-import android.security.keystore.KeyGenParameterSpec;
-import android.security.keystore.KeyProperties;
-
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.security.Signature;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.security.spec.ECGenParameterSpec;
+import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
+
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLServerSocket;
-import javax.security.auth.x500.X500Principal;
 
 /**
- * Generates the target's private RSA key INSIDE Android Keystore, not in APK assets.
- * TLS 1.3 server certificate is self-signed and must be explicitly pinned
- * by comparing all 64 hex digits displayed on this phone.
+ * Creates an ephemeral software EC P-256 TLS identity for each LAN sharing
+ * lifetime. Some Android vendor Keymaster implementations reject Conscrypt's
+ * raw RSA/ECDSA handshake operations even for otherwise valid Keystore keys.
+ *
+ * The private key exists only in process memory and is never persisted or
+ * exported. The self-signed certificate is still authenticated by requiring
+ * the controller to compare/pin its complete SHA-256 fingerprint before it
+ * sends the one-time pairing code.
  */
 public final class LanIdentity {
-    private static final String ALIAS = "superagent_lan_android_tls_v1";
+    private static final SecureRandom RANDOM = new SecureRandom();
     private LanIdentity() {}
 
     public static final class ServerIdentity {
@@ -35,44 +47,143 @@ public final class LanIdentity {
     }
 
     public static ServerIdentity getOrCreate() throws Exception {
-        KeyStore store = KeyStore.getInstance("AndroidKeyStore");
-        store.load(null);
-        if (store.containsAlias(ALIAS)) {
-            X509Certificate existing = (X509Certificate) store.getCertificate(ALIAS);
-            if (existing == null || existing.getNotAfter().before(new Date())) {
-                store.deleteEntry(ALIAS);
+        KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"), RANDOM);
+        KeyPair pair = generator.generateKeyPair();
+        X509Certificate cert = selfSigned(pair);
+
+        char[] password = randomPassword();
+        KeyStore store = KeyStore.getInstance("PKCS12");
+        store.load(null, password);
+        store.setKeyEntry("superagent-lan", pair.getPrivate(), password,
+                new Certificate[] { cert });
+
+        KeyManagerFactory keys = KeyManagerFactory.getInstance(
+                KeyManagerFactory.getDefaultAlgorithm());
+        keys.init(store, password);
+        java.util.Arrays.fill(password, '\0');
+
+        SSLContext tls = SSLContext.getInstance("TLSv1.3");
+        tls.init(keys.getKeyManagers(), null, RANDOM);
+        return new ServerIdentity(tls, sha256(cert.getEncoded()));
+    }
+
+    private static char[] randomPassword() {
+        byte[] bytes = new byte[24];
+        RANDOM.nextBytes(bytes);
+        StringBuilder value = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) value.append(String.format(Locale.US, "%02x", b & 0xff));
+        java.util.Arrays.fill(bytes, (byte) 0);
+        return value.toString().toCharArray();
+    }
+
+    private static X509Certificate selfSigned(KeyPair pair) throws Exception {
+        long now = System.currentTimeMillis();
+        byte[] algorithm = sequence(oid(new int[] {1, 2, 840, 10045, 4, 3, 2}));
+        byte[] name = sequence(set(sequence(
+                oid(new int[] {2, 5, 4, 3}),
+                utf8("SuperAgent Android LAN Client"))));
+        byte[] validity = sequence(
+                generalizedTime(new Date(now - 60_000L)),
+                generalizedTime(new Date(now + 24L * 60 * 60 * 1000)));
+        byte[] tbs = sequence(
+                tagged(0xa0, integer(BigInteger.valueOf(2))),
+                integer(new BigInteger(120, RANDOM).abs().add(BigInteger.ONE)),
+                algorithm,
+                name,
+                validity,
+                name,
+                pair.getPublic().getEncoded());
+
+        Signature signer = Signature.getInstance("SHA256withECDSA");
+        signer.initSign(pair.getPrivate(), RANDOM);
+        signer.update(tbs);
+        byte[] signature = signer.sign();
+
+        byte[] encoded = sequence(tbs, algorithm, bitString(signature));
+        X509Certificate cert = (X509Certificate) CertificateFactory.getInstance("X.509")
+                .generateCertificate(new ByteArrayInputStream(encoded));
+        cert.checkValidity(new Date(now));
+        cert.verify(pair.getPublic());
+        return cert;
+    }
+
+    private static String sha256(byte[] bytes) throws Exception {
+        byte[] hash = MessageDigest.getInstance("SHA-256").digest(bytes);
+        StringBuilder out = new StringBuilder(64);
+        for (byte value : hash) out.append(String.format(Locale.US, "%02x", value & 0xff));
+        return out.toString();
+    }
+
+    private static byte[] generalizedTime(Date value) {
+        SimpleDateFormat format = new SimpleDateFormat("yyyyMMddHHmmss'Z'", Locale.US);
+        format.setTimeZone(TimeZone.getTimeZone("UTC"));
+        return tagged(0x18, format.format(value).getBytes(StandardCharsets.US_ASCII));
+    }
+
+    private static byte[] utf8(String value) {
+        return tagged(0x0c, value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static byte[] integer(BigInteger value) {
+        return tagged(0x02, value.toByteArray());
+    }
+
+    private static byte[] bitString(byte[] value) {
+        byte[] bits = new byte[value.length + 1];
+        System.arraycopy(value, 0, bits, 1, value.length);
+        return tagged(0x03, bits);
+    }
+
+    private static byte[] oid(int[] components) {
+        ByteArrayOutputStream body = new ByteArrayOutputStream();
+        body.write(components[0] * 40 + components[1]);
+        for (int i = 2; i < components.length; i++) {
+            long value = components[i];
+            int count = 1;
+            long cursor = value;
+            while ((cursor >>>= 7) != 0) count++;
+            for (int shift = (count - 1) * 7; shift >= 0; shift -= 7) {
+                int next = (int) ((value >>> shift) & 0x7f);
+                if (shift != 0) next |= 0x80;
+                body.write(next);
             }
         }
-        if (!store.containsAlias(ALIAS)) {
-            KeyPairGenerator generator = KeyPairGenerator.getInstance(
-                    KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore");
-            long now = System.currentTimeMillis();
-            KeyGenParameterSpec settings = new KeyGenParameterSpec.Builder(
-                    ALIAS, KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
-                    .setKeySize(2048)
-                    .setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384)
-                    .setSignaturePaddings(
-                            KeyProperties.SIGNATURE_PADDING_RSA_PSS,
-                            KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-                    .setCertificateSubject(new X500Principal("CN=SuperAgent Android LAN Client"))
-                    .setCertificateSerialNumber(new BigInteger(64, new SecureRandom()).abs().add(BigInteger.ONE))
-                    .setCertificateNotBefore(new Date(now - 60_000))
-                    .setCertificateNotAfter(new Date(now + 365L * 24 * 60 * 60 * 1000))
-                    .build();
-            generator.initialize(settings);
-            generator.generateKeyPair();
-            store.load(null);
-        }
-        X509Certificate cert = (X509Certificate) store.getCertificate(ALIAS);
-        if (cert == null) throw new IllegalStateException("No AndroidKeystore TLS certificate available.");
-        byte[] hash = MessageDigest.getInstance("SHA-256").digest(cert.getEncoded());
-        StringBuilder fingerprint = new StringBuilder(64);
-        for (byte value : hash) fingerprint.append(String.format(java.util.Locale.US, "%02x", value & 0xff));
+        return tagged(0x06, body.toByteArray());
+    }
 
-        KeyManagerFactory keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        keys.init(store, null);
-        SSLContext tls = SSLContext.getInstance("TLSv1.3");
-        tls.init(keys.getKeyManagers(), null, new SecureRandom());
-        return new ServerIdentity(tls, fingerprint.toString());
+    private static byte[] sequence(byte[]... values) {
+        return tagged(0x30, join(values));
+    }
+
+    private static byte[] set(byte[]... values) {
+        return tagged(0x31, join(values));
+    }
+
+    private static byte[] join(byte[]... values) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        for (byte[] value : values) out.write(value, 0, value.length);
+        return out.toByteArray();
+    }
+
+    private static byte[] tagged(int tag, byte[] value) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        out.write(tag);
+        writeLength(out, value.length);
+        out.write(value, 0, value.length);
+        return out.toByteArray();
+    }
+
+    private static void writeLength(ByteArrayOutputStream out, int length) {
+        if (length < 128) {
+            out.write(length);
+            return;
+        }
+        int bytes = 0;
+        int value = length;
+        while (value != 0) { bytes++; value >>>= 8; }
+        out.write(0x80 | bytes);
+        for (int shift = (bytes - 1) * 8; shift >= 0; shift -= 8)
+            out.write((length >>> shift) & 0xff);
     }
 }

@@ -146,6 +146,46 @@ export function legacyTrayProcessPids(ownedPid:number|null=null):number[] {
   return [...new Set(ids as number[])].filter(pid=>pid!==ownedPid);
 }
 
+function verifiedTrayProcessStartedAt(pid:number):number {
+  if(process.platform!=="win32")
+    throw new Error("TRAY_SUCCESSOR_REVIEW_UNSUPPORTED_PLATFORM");
+  let raw:string;
+  try {
+    raw=execFileSync("powershell.exe",[
+      "-NoProfile","-NonInteractive","-Command",
+      "$p=Get-Process -Id "+String(pid)+" -ErrorAction Stop; "+
+      "([DateTimeOffset]$p.StartTime.ToUniversalTime()).ToUnixTimeMilliseconds()",
+    ],{timeout:8000,encoding:"utf8",windowsHide:true,maxBuffer:4096}).trim();
+  } catch {
+    throw new Error("TRAY_SUCCESSOR_START_TIME_UNAVAILABLE");
+  }
+  const value=Number(raw);
+  if(!Number.isSafeInteger(value)||value<1||value>Date.now()+5000)
+    throw new Error("TRAY_SUCCESSOR_START_TIME_INVALID");
+  return value;
+}
+
+export async function reviewStaleTrayReceiptWithVerifiedSuccessor(
+  targetAction:"restart"|"upgrade"|"rollback",
+){
+  const owner=await verifiedOwner();
+  assertTrayRestartForeignProcessFree(legacyTrayProcessPids(owner.pid));
+  const startedAt=verifiedTrayProcessStartedAt(owner.pid);
+  const journalPort=targetAction==="upgrade"||targetAction==="rollback"?45322:45321;
+  const otherPort=journalPort===45321?45322:45321;
+  if(new ManagedSidecarLedger("tray",otherPort).inspect().some(x=>x.state==="pending"))
+    throw new Error("TRAY_OTHER_JOURNAL_PENDING_REQUIRES_SEPARATE_REVIEW");
+  const reviewed=new ManagedSidecarLedger("tray",journalPort)
+    .reviewStalePendingAfterVerifiedSuccessor(startedAt,true);
+  return {
+    ...reviewed,
+    ownerPid:owner.pid,
+    controlPort:owner.controlPort,
+    successorStartedAt:startedAt,
+    coreUnaffected:true,
+  };
+}
+
 /** Pending lifecycle and release receipts make the native UI state uncertain. */
 export function assertTrayJournalsClear():void {
   for(const port of [45321,45322]){

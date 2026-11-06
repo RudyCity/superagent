@@ -1,4 +1,4 @@
-import {describe,it,expect,afterEach} from "vitest";
+import {describe,it,expect,afterEach,vi} from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import {ManagedSidecarLedger,sidecarOperationFingerprint}
@@ -38,5 +38,20 @@ describe("sidecar operation journal",()=>{
     expect(()=>recovered.lookup(id,fp)).toThrow("SIDECAR_OPERATION_UNCERTAIN_PENDING");
     expect(()=>recovered.begin("sidecar-unrelated-op-0002",fp))
       .toThrow("SIDECAR_OPERATION_UNCERTAIN_PENDING");
+  });
+  it("reviews a stale receipt only when a verified successor clearly started later",()=>{
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(1_000_000);
+      const journal=create(),id="sidecar-stale-stop-000003";
+      journal.begin(id,sidecarOperationFingerprint({action:"stop",port:19943}));
+      vi.setSystemTime(1_300_000);
+      expect(()=>journal.reviewStalePendingAfterVerifiedSuccessor(1_001_000,true))
+        .toThrow("SIDECAR_SUCCESSOR_DID_NOT_START_AFTER_PENDING_OPERATION");
+      expect(journal.inspect()[0].state).toBe("pending");
+      expect(journal.reviewStalePendingAfterVerifiedSuccessor(1_010_000,true))
+        .toMatchObject({state:"reviewed",executedAgain:false});
+      expect(journal.inspect()[0].state).toBe("reviewed");
+    } finally { vi.useRealTimers(); }
   });
 });

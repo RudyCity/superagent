@@ -13,10 +13,14 @@ import {
   getAndroidUiSchema, clickAndroidUiElement, offerLanFile, putLanFileChunk,
   getLanFileChunk, finalizeLanFile, abortLanFile,
 } from "../lanRemote/controller.js";
+import {
+  cancelLanPairRequest, completeLanPairRequest, createLanPairRequest,
+  getLanPairRequest, listLanPairRequests,
+} from "../lanRemote/pairRequestBroker.js";
 
-export type TrayLanAction =  "discover" | "list" | "pair" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_finish" | "file_abort";
+export type TrayLanAction = "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_finish" | "file_abort";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["discover", "list", "pair", "open", "exec", "close", "revoke", "screen", "input",  "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"]);
+const actions = new Set<TrayLanAction>(["discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"]);
 
 export function parseTrayLanAction(input: unknown): { action: TrayLanAction; args: LanArgs } {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("Invalid LAN request.");
@@ -26,6 +30,10 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
   const allowed: Record<TrayLanAction, string[]> = {
     discover: ["action", "segment", "targetIp"], list: ["action"],
     pair: ["action", "host", "port", "code", "fingerprint", "controller", "segment"],
+    pair_request: ["action", "host", "port", "fingerprint", "controller", "segment"],
+    pair_status: ["action", "requestId"],
+    pair_complete: ["action", "requestId", "code", "verified"],
+    pair_cancel: ["action", "requestId"],
     open: ["action", "deviceId"], exec: ["action", "deviceId", "command"],
     close: ["action", "deviceId"], revoke: ["action", "deviceId"],
     file_offer: ["action", "deviceId", "direction", "name", "size", "sha256"],
@@ -49,9 +57,9 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
         (typeof data.targetIp !== "string" || !privateIntranetPeer(data.targetIp)))
       throw Error("Direct target must be a private IPv4 in the physical adapter's /16 intranet.");
   }
-  if (action === "pair") {
+  if (action === "pair" || action === "pair_request") {
     if (typeof data.host !== "string" || !/^(?:\d{1,3}\.){3}\d{1,3}$/.test(data.host)) throw Error("Target IPv4 required.");
-    if (typeof data.code !== "string" || !/^\d{8}$/.test(data.code)) throw Error("Eight-digit code required.");
+    if (action === "pair" && (typeof data.code !== "string" || !/^\d{8}$/.test(data.code))) throw Error("Eight-digit code required.");
     if (typeof data.fingerprint !== "string" || !/^[a-f0-9]{64}$/i.test(data.fingerprint)) throw Error("Full SHA-256 fingerprint required.");
     if (data.port !== undefined && (!Number.isInteger(data.port) || Number(data.port) < 1024 || Number(data.port) > 65534)) throw Error("Invalid LAN port.");
     if (data.controller !== undefined &&
@@ -60,7 +68,14 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
         (typeof data.segment !== "string" || data.segment !== data.segment.trim() ||
         !/^[A-Za-z0-9][A-Za-z0-9 _.-]{2,31}$/.test(data.segment)))
       throw Error("Invalid network segment for pairing.");
-  } else if (["open", "exec", "close", "revoke",  "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"].includes(action)) {
+  } else if (["pair_status", "pair_cancel", "pair_complete"].includes(action)) {
+    if (typeof data.requestId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.requestId))
+      throw Error("Valid pairing request ID required.");
+    if (action === "pair_complete") {
+      if (typeof data.code !== "string" || !/^\d{8}$/.test(data.code)) throw Error("Eight-digit code required.");
+      if (data.verified !== true) throw Error("Local fingerprint confirmation required.");
+    }
+  } else if (["open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"].includes(action)) {
     if (typeof data.deviceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.deviceId)) throw Error("Valid paired device ID required.");
     if (action === "exec" &&
       (typeof data.command !== "string" || !data.command.trim() || data.command.length > 2000)) throw Error("PowerShell command must contain 1–2000 characters.");
@@ -130,13 +145,24 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
   const { action, args } = parseTrayLanAction(input);
   if (action === "discover") return { success: true,
     devices: await discoverLanDevices(args.segment as string, 1500, args.targetIp as string | undefined) };
-  if (action === "list") return { success: true, devices: listLanDevices() };
-  // Closing/revoking access decreases privilege and remains available even after YOLO is turned off.
-  if (!isFullYoloMode() && !["close", "revoke", "file_abort"].includes(action)) {
+  if (action === "list") return { success: true, devices: listLanDevices(), pairingRequests: listLanPairRequests() };
+  if (action === "pair_status") return { success: true, request: getLanPairRequest(String(args.requestId)) };
+  // Closing/revoking/cancelling access decreases privilege and remains available even after YOLO is turned off.
+  if (!isFullYoloMode() && !["close", "revoke", "file_abort", "pair_cancel"].includes(action)) {
     throw Error("Full YOLO must be enabled locally for remote LAN pairing and execution. Target approval is also required.");
   }
   const id = String(args.deviceId ?? "");
   switch (action) {
+    case "pair_request": return { success: true, request: createLanPairRequest({
+      host: args.host as string, port: args.port as number | undefined,
+      fingerprint: args.fingerprint as string, controller: args.controller as string | undefined,
+      segment: args.segment as string | undefined,
+    }) };
+    case "pair_complete": {
+      const completed = await completeLanPairRequest(String(args.requestId), args.code as string);
+      return { success: true, request: completed.request, device: completed.device };
+    }
+    case "pair_cancel": return { success: true, request: cancelLanPairRequest(String(args.requestId)) };
     case "pair": return { success: true, device: await pairLanDevice({
       host: args.host as string, port: args.port as number | undefined, code: args.code as string,
        fingerprint: args.fingerprint as string, controller: args.controller as string | undefined,

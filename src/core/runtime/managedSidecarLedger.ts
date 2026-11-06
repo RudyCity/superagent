@@ -98,6 +98,32 @@ export class ManagedSidecarLedger {
         note:"Unknown outcome reviewed; no process started/stopped. Original operation ID is never replayable."};
     });
   }
+
+  /**
+   * Review one stale pending receipt when a caller has independently verified
+   * that a newer owner instance exists and started after the ambiguous work.
+   * This never replays, completes, starts, or stops any process.
+   */
+  reviewStalePendingAfterVerifiedSuccessor(successorStartedAt:number,confirmed:boolean){
+    if(confirmed!==true||!Number.isSafeInteger(successorStartedAt)||successorStartedAt<1)
+      throw new Error("SIDECAR_SUCCESSOR_REVIEW_REQUIRES_VERIFIED_EVIDENCE");
+    return this.mutate(state=>{
+      const pending=state.receipts.filter(x=>x.state==="pending");
+      if(pending.length!==1)
+        throw new Error(pending.length===0?"SIDECAR_NO_PENDING_OPERATION":
+          "SIDECAR_MULTIPLE_PENDING_OPERATIONS");
+      const rec=pending[0];
+      const now=Date.now();
+      if(now-rec.startedAt<120000)
+        throw new Error("SIDECAR_RECONCILE_COOLDOWN_120_SECONDS");
+      if(successorStartedAt<=rec.startedAt+5000||successorStartedAt>now+5000)
+        throw new Error("SIDECAR_SUCCESSOR_DID_NOT_START_AFTER_PENDING_OPERATION");
+      rec.state="reviewed";rec.completedAt=now;
+      return {operationHashPrefix:rec.operationHash.slice(0,16),
+        state:"reviewed" as const,executedAgain:false,
+        note:"Stale ambiguous receipt reviewed against a newer verified owner; no process operation performed."};
+    });
+  }
   /** Read-only preflight: no ledger is created for unauthorized/mismatched owners. */
   lookup(id:string,fingerprint:string):{replayed:boolean;afterPid?:number}|null {
     validateCoreOperationId(id);

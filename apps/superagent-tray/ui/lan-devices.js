@@ -3,8 +3,8 @@
 /** LAN Devices manager. Native Tauri -> selected authenticated Core only. */
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { discovered: [], paired: [], selected: null, busy: false, scanning: false,
-    presetFor: null, presetPlatform: null, segmentRevision: 0 };
+  const state = { discovered: [], paired: [], pairingRequests: [], selected: null, pairRequestId: null,
+    busy: false, scanning: false, presetFor: null, presetPlatform: null, segmentRevision: 0 };
   const invoke = (action, payload = {}) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("SuperAgent Tray native runtime is unavailable.");
@@ -68,12 +68,15 @@
         const platform = device.platform === "android" ? "Android"
           : device.platform === "windows" ? "Windows" : "Unverified target";
         const direct = device.discoveryMode === "tls-unverified";
+        const remoteBuild = device.appVersion && device.buildCode
+          ? " · v" + device.appVersion + " · Build " + device.buildCode : "";
         const detail = direct
           ? "TLS certificate observed · network segment NOT verified · compare fingerprint on target"
-          : platform + " · Segment matched · compare TLS fingerprint";
+          : platform + remoteBuild + " · Segment matched · compare TLS fingerprint";
         const { div, actions } = item(device.name || platform + " LAN Client",
           device.address + ":" + device.port, detail, "Unpaired");
         actions.append(button("Use for pairing", () => {
+          state.pairRequestId = null;
           $("lan-pair-ip").value = device.address;
           $("lan-pair-port").value = String(device.port);
           $("lan-pair-fingerprint").value = device.fingerprint;
@@ -87,6 +90,46 @@
             : "Fingerprint filled from discovery. Compare all 64 characters against the target's own screen before pairing.");
         }, false, state.busy));
         discovery.append(div);
+      }
+    }
+    const pairRequests = $("lan-pair-requests");
+    if (pairRequests) {
+      pairRequests.replaceChildren();
+      if (!state.pairingRequests.length) {
+        pairRequests.append(empty("No MCP pairing requests waiting for local completion."));
+      }
+      for (const request of state.pairingRequests) {
+        const status = request.state === "pending" ? "Waiting for local code"
+          : request.state === "completing" ? "Waiting for target approval"
+          : request.state === "paired" ? "Paired"
+          : request.state === "failed" ? "Failed"
+          : request.state === "cancelled" ? "Cancelled" : "Expired";
+        const extra = (request.controller || "MCP controller") + " · fingerprint " +
+          String(request.fingerprint || "").slice(0, 16) + "…" +
+          (request.error ? " · " + request.error : "");
+        const entry = item("MCP pairing request", request.host + ":" + request.port, extra, status);
+        if (request.state === "pending") {
+          entry.actions.append(button("Complete locally", () => {
+            state.pairRequestId = request.requestId;
+            $("lan-pair-ip").value = request.host;
+            $("lan-pair-port").value = String(request.port);
+            $("lan-pair-fingerprint").value = request.fingerprint;
+            $("lan-pair-label").value = request.controller || "SuperAgent MCP";
+            if (request.segment && $("lan-segment-name")) $("lan-segment-name").value = request.segment;
+            $("lan-pair-code").value = "";
+            $("lan-verified").checked = false;
+            pairStatus("MCP request loaded. Compare the full fingerprint on the target, enter the fresh 8-digit code locally, then request pairing.");
+            $("lan-pair-form")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+            $("lan-pair-code")?.focus?.();
+          }, false, state.busy));
+          entry.actions.append(button("Cancel", async () => {
+            try { await invoke("pair_cancel", { requestId: request.requestId }); }
+            catch (error) { notice("Cannot cancel MCP pairing request: " + String(error), true); }
+            if (state.pairRequestId === request.requestId) state.pairRequestId = null;
+            await refresh();
+          }, true, state.busy));
+        }
+        pairRequests.append(entry.div);
       }
     }
     const paired = $("lan-paired");
@@ -176,6 +219,7 @@
     try {
       const reply = await invoke("list");
       state.paired = Array.isArray(reply.devices) ? reply.devices : [];
+      state.pairingRequests = Array.isArray(reply.pairingRequests) ? reply.pairingRequests : [];
       if (!state.paired.some((device) => device.id === state.selected)) state.selected = state.paired[0]?.id || null;
       paint();
     } catch (error) { notice("Cannot read paired devices: " + String(error), true); }
@@ -269,14 +313,15 @@
     state.busy = true;
     paint();
     notice(progress);
-    if (action === "pair") {
+    if (action === "pair" || action === "pair_complete") {
       pairStatus("Pairing request sent. Approve the prompt on Android or type APPROVE in the Windows client. This may take up to 90 seconds.");
       if ($("lan-pair-submit")) $("lan-pair-submit").textContent = "Waiting for device approval...";
     }
     try {
       const reply = await invoke(action, payload);
-      if (action === "pair") {
+      if (action === "pair" || action === "pair_complete") {
         state.selected = reply.device?.id || null;
+        state.pairRequestId = null;
         $("lan-pair-code").value = "";
         $("lan-verified").checked = false;
         pairStatus("Pairing approved. In Paired devices & sessions, select Request session to ask for separate access.");
@@ -294,11 +339,11 @@
             : "Phone owner approved a one-step media volume adjustment.")
           : result.ok ? "Remote command completed." : "Remote command returned an error.", !result.ok);
       } else notice(action === "open" ? "Session approved by the target laptop." :
-        action === "pair" ? "Pairing approved. Request a separate terminal session." :
+        (action === "pair" || action === "pair_complete") ? "Pairing approved. Request a separate terminal session." :
         action === "revoke" ? "Pairing revoked on the target laptop." : "Session disconnected.");
     } catch (error) {
       notice("LAN action failed: " + String(error), true);
-      if (action === "pair") {
+      if (action === "pair" || action === "pair_complete") {
         const detail = String(error);
         const help = /Full YOLO/i.test(detail)
           ? "Enable Full YOLO locally in SuperAgent before requesting remote pairing."
@@ -308,7 +353,7 @@
         pairStatus("Pairing failed: " + help, true);
       }
     } finally {
-      if (action === "pair") {
+      if (action === "pair" || action === "pair_complete") {
         $("lan-pair-code").value = "";
         if ($("lan-pair-submit")) $("lan-pair-submit").textContent = "Request pairing";
       }
@@ -353,7 +398,12 @@
       }
       const payload = validatePairForm();
       if (!payload) return;
-      void operation("pair", payload, "Pairing request sent. Awaiting the target owner's approval.");
+      if (state.pairRequestId) {
+        void operation("pair_complete", { requestId: state.pairRequestId, code: payload.code, verified: true },
+          "Completing MCP pairing locally. Awaiting the target owner's approval.");
+      } else {
+        void operation("pair", payload, "Pairing request sent. Awaiting the target owner's approval.");
+      }
     });
     $("lan-command-form")?.addEventListener("submit", (event) => {
       event.preventDefault();

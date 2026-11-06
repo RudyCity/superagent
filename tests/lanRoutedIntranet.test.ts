@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  lanInterfaces, onLinkToPeer, privateIntranetPeer, samePrivateIntranetAllocation,
+  lanInterfaces, onLinkToPeer, privateIntranetPeer, samePrivateIntranetAllocation, outboundLanSource,
 } from "../src/core/lanRemote/transport.js";
 import { discoverLanDevices } from "../src/core/lanRemote/controller.js";
 import { parseTrayLanAction } from "../src/core/runtime/trayLanBridge.js";
@@ -40,6 +40,19 @@ describe("explicit routed private-intranet device selection", () => {
       if (samePrivateIntranetAllocation(first.address, routed)) {
         expect(privateIntranetPeer(routed)).toBe(true);
       }
+    }
+  });
+  it("chooses a verified physical interface in the target's private allocation", () => {
+    const adapters = lanInterfaces();
+    for (const adapter of adapters) {
+      expect(outboundLanSource(adapter.address)).toBe(adapter.address);
+    }
+    for (const ip of ["8.8.8.8", "127.0.0.1", "169.254.1.2"]) {
+      expect(() => outboundLanSource(ip)).toThrow(/approved physical private interface/);
+    }
+    const matchingCampus = adapters.find((a) => a.address.startsWith("10.200."));
+    if (matchingCampus) {
+      expect(outboundLanSource("10.200.4.187")).toBe(matchingCampus.address);
     }
   });
 });

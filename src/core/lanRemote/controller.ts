@@ -1,7 +1,8 @@
 import tls from "node:tls";
+import net from "node:net";
 import dgram from "node:dgram";
 import crypto from "node:crypto";
-import { lanInterfaces, onLinkToPeer, privateIntranetPeer, LAN_PORT, type LanInterface } from "./transport.js";
+import { lanInterfaces, onLinkToPeer, privateIntranetPeer, outboundLanSource, LAN_PORT, type LanInterface } from "./transport.js";
 import { discoveryRequestForSegment, networkSegmentTag, parseSegmentDiscoveryResponse } from "./networkSegment.js";
 import { isAllowedAndroidLanCommand, requiresAndroidOwnerActionApproval } from "./androidCapabilities.js";
 
@@ -34,7 +35,8 @@ async function request(host: string, port: number, fingerprint: string, body: ob
   maxWait = 120_000, maxReplyChars = 256 * 1024): Promise<Reply[]> {
   assertHost(host, port, fingerprint);
   return await new Promise<Reply[]>((resolve, reject) => {
-    const socket = tls.connect({ host, port, rejectUnauthorized: false, minVersion: "TLSv1.3", maxVersion: "TLSv1.3" });
+    const transport = net.connect({ host, port, localAddress: outboundLanSource(host) });
+    const socket = tls.connect({ socket: transport, rejectUnauthorized: false, minVersion: "TLSv1.3", maxVersion: "TLSv1.3" });
     const responses: Reply[] = [];
     let completed = false, text = "";
     const done = (error?: Error) => {
@@ -45,7 +47,13 @@ async function request(host: string, port: number, fingerprint: string, body: ob
       else resolve(responses);
     };
     socket.setTimeout(maxWait, () => done(new Error("LAN request timed out.")));
-    socket.once("error", (error) => done(error));
+    socket.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ECONNRESET") {
+        done(new Error("LAN TLS handshake was reset by target or network. Check the target app is actively sharing, and verify Windows uses the physical Wi-Fi route to the target IP (not another adapter)."));
+        return;
+      }
+      done(error);
+    });
     socket.once("secureConnect", () => {
       const cert = socket.getPeerCertificate(true);
       if (!cert.raw) { done(new Error("Missing server certificate.")); return; }
@@ -379,10 +387,9 @@ export async function revokeLanDevice(id: string): Promise<void> {
 async function directTlsFingerprint(host: string): Promise<string | null> {
   if (!privateIntranetPeer(host)) return null;
   return await new Promise<string | null>((resolve) => {
-    const socket = tls.connect({
-      host, port: LAN_PORT, rejectUnauthorized: false,
-      minVersion: "TLSv1.3", maxVersion: "TLSv1.3",
-    });
+    const transport = net.connect({ host, port: LAN_PORT, localAddress: outboundLanSource(host) });
+    const socket = tls.connect({ socket: transport, rejectUnauthorized: false,
+      minVersion: "TLSv1.3", maxVersion: "TLSv1.3" });
     let settled = false;
     const finish = (value: string | null) => {
       if (settled) return;
@@ -402,6 +409,7 @@ async function directTlsFingerprint(host: string): Promise<string | null> {
 export interface DiscoveryResult {
   address: string; port: number; name: string; fingerprint: string;
   platform: "android" | "windows" | "unknown"; segmentTag: string;
+  appVersion?: string; buildCode?: number;
   discoveryMode?: "tls-unverified";
 }
 export async function discoverLanDevices(segmentName: string, waitMs = 1500, targetIp?: string): Promise<DiscoveryResult[]> {
@@ -427,7 +435,9 @@ export async function discoverLanDevices(segmentName: string, waitMs = 1500, tar
         if (!device) return;
         const valueResult: DiscoveryResult = { address: remote.address, port: device.port,
           name: device.name, fingerprint: device.fingerprint,
-          platform: device.platform, segmentTag: device.segmentTag };
+          platform: device.platform, segmentTag: device.segmentTag,
+          ...(device.appVersion ? { appVersion: device.appVersion } : {}),
+          ...(device.buildCode ? { buildCode: device.buildCode } : {}) };
         results.set(remote.address + ":" + valueResult.port, valueResult);
       } catch {}
     });

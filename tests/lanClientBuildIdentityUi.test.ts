@@ -10,8 +10,8 @@ describe("Visible LAN Client build identifiers", () => {
     expect(activity).toContain("appBuildLabel()");
     expect(activity).toContain("info.versionName");
     expect(activity).toContain("info.getLongVersionCode()");
-    expect(gradle).toContain("versionCode 8");
-    expect(gradle).toContain("versionName '0.7.1-routed-lan-preview'");
+    expect(gradle).toContain("versionCode 11");
+    expect(gradle).toContain("versionName '0.7.4-ephemeral-tls-preview'");
   });
 
   it("shows the Tray version plus a build stamped into the Windows binary", () => {

@@ -124,6 +124,18 @@ public final class LanClientServer implements AutoCloseable {
         this.approvedAction = approvedAction;
     }
 
+    private String appVersionName() {
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+        } catch (Exception ignored) { return "unknown"; }
+    }
+
+    private long appBuildCode() {
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).getLongVersionCode();
+        } catch (Exception ignored) { return 0; }
+    }
+
     /**
      * Discovery grouping only; never replaces pinned TLS, one-time pairing
      * code or physical owner consent. Must be supplied before listener binds.
@@ -248,8 +260,11 @@ public final class LanClientServer implements AutoCloseable {
                 if (listener == null) return;
                 SSLSocket socket = (SSLSocket) listener.accept();
                 if (!running.get()) { closeQuietly(socket); return; }
-                if (!LanNetwork.permitsPeer(context, link, socket.getInetAddress().getHostAddress())
-                        || !link.ip.equals(socket.getLocalAddress().getHostAddress())) {
+                String remoteIp = LanPolicy.canonicalIpv4(socket.getInetAddress().getHostAddress());
+                String localIp = LanPolicy.canonicalIpv4(socket.getLocalAddress().getHostAddress());
+                if (remoteIp == null || localIp == null
+                        || !LanNetwork.permitsPeer(context, link, remoteIp)
+                        || !LanPolicy.sameIpv4(link.ip, localIp)) {
                     closeQuietly(socket);
                     continue;
                 }
@@ -291,6 +306,8 @@ public final class LanClientServer implements AutoCloseable {
                             .put("port", PORT)
                             .put("name", "Android " + Build.MODEL)
                             .put("platform", "android")
+                            .put("appVersion", appVersionName())
+                            .put("buildCode", appBuildCode())
                             .put("fingerprint", info.fingerprint);
                     byte[] reply = response.toString().getBytes(StandardCharsets.UTF_8);
                     datagram.send(new DatagramPacket(reply, reply.length,
@@ -314,8 +331,8 @@ public final class LanClientServer implements AutoCloseable {
             peer.setEnabledProtocols(new String[] {"TLSv1.3"});
             peer.setSoTimeout(150_000);
             peer.startHandshake();
-            String ip = peer.getInetAddress().getHostAddress();
-            if (!running.get() || !LanNetwork.permitsPeer(context, link, ip)) return;
+            String ip = LanPolicy.canonicalIpv4(peer.getInetAddress().getHostAddress());
+            if (ip == null || !running.get() || !LanNetwork.permitsPeer(context, link, ip)) return;
             String raw = readBoundedLine(peer.getInputStream());
             JSONObject request = new JSONObject(raw);
             handle(peer, request, ip);
