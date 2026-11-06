@@ -164,7 +164,7 @@ function mountTerminalUi(mockResponse?: any) {
           if (cmd === "get_terminal_tasks") {
             let tasks = currentData.tasks;
             if (args?.runningOnly) {
-              tasks = tasks.filter((t: any) => t.status === "running");
+              tasks = tasks.filter((t: any) => t.status === "running" || t.status === "paused");
             }
             return {
               tasks,
@@ -177,6 +177,9 @@ function mountTerminalUi(mockResponse?: any) {
           }
           if (cmd === "kill_terminal_task") {
             return { success: true };
+          }
+          if (cmd === "control_terminal_task") {
+            return { success: true, taskId: args.taskId, status: args.action === "pause" ? "paused" : "running" };
           }
           if (cmd === "get_terminal_logs") {
             return {
@@ -355,6 +358,68 @@ describe("Desktop Terminal UI Controller", () => {
 
     await mounted.getOrCreateElement("terminal-kill-all-btn").dispatchEvent({ type: "click" });
     expect(mounted.invokeCalls.some((entry) => entry.cmd === "kill_terminal_task")).toBe(false);
+  });
+
+  it("offers Start only for restartable stopped Tray tasks", async () => {
+    const mounted = mountTerminalUi({tasks: [
+      { id: "term-bg-abcdefg", command: "npm run dev", pid: 0,
+        cwd: "D:/project/app", status: "killed", canStart: true },
+      { id: "external-win-567", command: "unknown.exe", pid: 567,
+        cwd: "-", status: "running", source: "external",
+        canStart: false, canPause: false, canStop: false },
+    ], runningCount: 1, totalCount: 2, presets: [] });
+    mounted.windowMock.__superagentTerminalState.runningOnly = false;
+    await mounted.windowMock.__superagentTerminalRefresh();
+    const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
+    expect(html).toContain('data-action="start" data-task-id="term-bg-abcdefg"');
+    expect(html).not.toContain('data-action="pause" data-task-id="external-win-567"');
+    expect(html).not.toContain('data-action="start" data-task-id="external-win-567"');
+
+    const btn = mounted.getOrCreateElement("btn-start");
+    btn.dataset.taskId = "term-bg-abcdefg";
+    btn.dataset.action = "start";
+    btn.classList.add("terminal-control-btn");
+    await mounted.listeners.get("terminal-tasks-tbody:click")!({ target: btn });
+    expect(mounted.invokeCalls).toContainEqual({
+      cmd: "control_terminal_task",
+      args: { taskId: "term-bg-abcdefg", action: "start" },
+    });
+  });
+
+  it("renders Pause and Resume for exclusively owned tasks and dispatches both actions", async () => {
+    const running = mountTerminalUi({ tasks: [{
+      id: "term-bg-pause12", command: "npm run dev", pid: 143,
+      cwd: "D:/project/app", status: "running", canPause: true, canStop: true,
+    }], runningCount: 1, totalCount: 1, presets: [] });
+    await running.windowMock.__superagentTerminalRefresh();
+    expect(running.getOrCreateElement("terminal-tasks-tbody").innerHTML)
+      .toContain('data-action="pause"');
+    const pause = running.getOrCreateElement("btn-pause");
+    pause.classList.add("terminal-control-btn");
+    pause.dataset.taskId = "term-bg-pause12";
+    pause.dataset.action = "pause";
+    await running.listeners.get("terminal-tasks-tbody:click")!({ target: pause });
+    expect(running.invokeCalls).toContainEqual({
+      cmd: "control_terminal_task", args: { taskId: "term-bg-pause12", action: "pause" },
+    });
+
+    const paused = mountTerminalUi({ tasks: [{
+      id: "term-bg-pause12", command: "npm run dev", pid: 143,
+      cwd: "D:/project/app", status: "paused", canResume: true, canStop: true,
+    }], runningCount: 0, totalCount: 1, presets: [] });
+    await paused.windowMock.__superagentTerminalRefresh();
+    const html = paused.getOrCreateElement("terminal-tasks-tbody").innerHTML;
+    expect(html).toContain("Paused");
+    expect(html).toContain('data-action="resume"');
+    expect(html).toContain("terminal-kill-btn");
+    const resume = paused.getOrCreateElement("btn-resume");
+    resume.classList.add("terminal-control-btn");
+    resume.dataset.taskId = "term-bg-pause12";
+    resume.dataset.action = "resume";
+    await paused.listeners.get("terminal-tasks-tbody:click")!({ target: resume });
+    expect(paused.invokeCalls).toContainEqual({
+      cmd: "control_terminal_task", args: { taskId: "term-bg-pause12", action: "resume" },
+    });
   });
 
   it("quick launches a terminal command via the launch form", async () => {

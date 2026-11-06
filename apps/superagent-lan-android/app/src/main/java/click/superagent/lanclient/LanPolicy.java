@@ -26,6 +26,16 @@ public final class LanPolicy {
                 || (n & 0xffff0000L) == 0xc0a80000L;
     }
 
+    /** Narrow routed-intranet exception for explicitly addressed private peers.
+     * A /16 cap keeps a campus allocation reachable without accepting arbitrary
+     * RFC1918 addresses, VPN endpoints or public hosts. Pairing still requires
+     * the displayed TLS fingerprint, one-time code, and local owner approval. */
+    public static boolean privateIntranetPeer(String local, String peer) {
+        long a = ipv4(local), b = ipv4(peer);
+        return a >= 0 && b >= 0 && isPrivate(local) && isPrivate(peer)
+                && (a >>> 16) == (b >>> 16);
+    }
+
     public static boolean sameSubnet(String local, int prefix, String peer) {
         long a = ipv4(local), b = ipv4(peer);
         if (!isPrivate(local) || !isPrivate(peer) || prefix < 8 || prefix > 30 || a < 0 || b < 0) return false;

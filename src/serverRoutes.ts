@@ -976,6 +976,43 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Local-only and bearer-authenticated LAN Client management for SuperAgent Tray.
+  // No pairing code, remote command, or terminal credential is written to Core logs.
+  if (pathname === "/api/desktop/lan-support") {
+    res.setHeader("Cache-Control", "no-store");
+    const peer = req.socket.remoteAddress || "";
+    const host = String(req.headers.host || "");
+    const localPeer = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer);
+    const localHost = /^(?:127\.0\.0\.1|localhost):[0-9]{2,5}$/i.test(host);
+    if (!localPeer || !localHost || req.headers.origin ||
+        req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"] ||
+        req.headers["cf-connecting-ip"] || req.headers["cf-ray"]) {
+      sendJSON(res, 403, { success: false, error: "LAN_TRAY_LOCAL_ONLY" });
+      return true;
+    }
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required" });
+      return true;
+    }
+    try {
+      const body = await readBody(req);
+      if (Buffer.byteLength(body, "utf8") > 8192) {
+        sendJSON(res, 413, { success: false, error: "LAN request too large" });
+        return true;
+      }
+      const { dispatchTrayLanAction } = await import("./core/runtime/trayLanBridge.js");
+      const result = await dispatchTrayLanAction(JSON.parse(body || "{}"));
+      sendJSON(res, 200, result);
+    } catch (error) {
+      // Never reflect untrusted remote output, pairing secrets or command text.
+      const reason = error instanceof Error ? error.message : "LAN support operation failed";
+      const safe = reason.replace(/[a-f0-9]{64}/gi, "[fingerprint]")
+        .replace(/\b\d{8}\b/g, "[code]").slice(0, 220);
+      sendJSON(res, 409, { success: false, error: safe });
+    }
+    return true;
+  }
+
   // Authenticated, fixed-shape Muse lifecycle control for the local tray.
   // Only this Core's watcher instance may be stopped/restarted, and active
   // work is explicitly refused (no PID kill, token forwarding, or replay).
@@ -1483,6 +1520,32 @@ export async function handleServerRoute(
       sendJSON(res, 200, { ...result });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err?.message || "Failed to kill terminal task" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/terminal/control") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    try {
+      const body = JSON.parse((await readBody(req)) || "{}");
+      const taskId = typeof body.taskId === "string" ? body.taskId.trim() : "";
+      const action = body.action;
+      if (!/^term-bg-[a-z0-9]{7}$/.test(taskId) ||
+          !["start", "pause", "resume"].includes(action)) {
+        sendJSON(res, 400, { success: false, error: "Valid Tray taskId and start/pause/resume action are required" });
+        return true;
+      }
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const result = action === "start"
+        ? DesktopTerminalManager.startTask(taskId)
+        : await DesktopTerminalManager.controlTask(taskId, action);
+      sendJSON(res, 200, result);
+    } catch (err: any) {
+      sendJSON(res, 409, { success: false, error: err?.message || "Terminal control action failed" });
     }
     return true;
   }

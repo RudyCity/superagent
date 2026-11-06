@@ -11,6 +11,100 @@
 
 Windows, macOS and Linux **standalone installers and GitHub prerelease procedure**: see [Windows Standalone Installer](../../docs/guides/windows-standalone-installer.md). The bundled CLI, Core and Bun runtime are independent of a global Bun/Node install.
 
+## LAN Devices — same-network laptop support
+
+Open **LAN Devices** from the sidebar or Windows notification-area tray menu.
+This management view is a front end to the existing SuperAgent LAN Client,
+not a second independent remote-control server.
+
+1. Copy `artifacts/lan-client/superagent-lan-client.exe` to the Windows laptop to support.
+   Run it normally (not as Administrator), and keep its terminal window visible.
+2. In the updated SuperAgent Tray, choose **LAN Devices → Scan LAN**. Discovery
+   uses physical, private local IPv4 networks; enter the target IP manually if
+   UDP broadcasts are blocked. Never forward ports or use public Internet.
+3. Compare the complete SHA-256 certificate fingerprint shown on the **target**
+   laptop with the fingerprint displayed in Tray, then provide the 8-digit
+   pairing code and check the verification box. The target user must type
+   `approve` to approve pairing (120-second code window).
+4. Select the paired device and click **Request session**. The target user
+   must type `approve` again. The controller can then run a bounded PowerShell
+   command as the logged-in non-admin Windows user.
+5. Click **Disconnect** to close the active session, or **Revoke** to cancel
+   the target pairing. The target's `stop` and `revoke` commands can always
+   terminate support without the controller.
+
+**Security boundaries:** The WebView calls only the allowlisted native
+`lan_support_action` command; Rust uses the selected, bearer-authenticated
+loopback Core via `/api/desktop/lan-support`. Private pairing/session tokens
+remain solely in the Core process, never the Tray WebView or settings JSON.
+Read-only discover/list work under normal Core authentication; **pair/open/exec** require the operator's existing **Full YOLO** state, and pair/open additionally require physical approval at the target. **Close/revoke remain available as emergency disconnection actions** with an authenticated Core even if YOLO is later turned off.
+No local firewall rule, Windows service, privileged terminal, Internet relay,
+or unattended access is created automatically.
+
+**Lifecycle note:** Pairings are in the current Core process memory, not
+shared implicitly with separately supervised MCP owners. Restarting Core
+invalidates the Tray's local pairings. Pair again after a Core restart.
+Independent MCP sessions have their own in-memory pairing state; this view
+does not claim to display or control pairings owned by a separate MCP process.
+
+**Implementation:** `src/core/runtime/trayLanBridge.ts`,
+`src/serverRoutes.ts`, `src/core/lanRemote/controller.ts`,
+`src-tauri/src/main.rs`, `ui/lan-devices.js`, `ui/lan-devices.css`,
+and `ui/index.html`.
+
+**Verification:** `bun --bun x vitest run tests/desktopTrayLanUi.test.ts
+tests/trayLanBridge.test.ts tests/trayLanEndToEnd.test.ts
+tests/lanRemote.test.ts`; `cargo test --manifest-path
+apps/superagent-tray/src-tauri/Cargo.toml`; `bun run build`.
+The native Windows Tray and LAN Client builds have been produced, but
+a two-physical-laptop acceptance test, signed installer, PAKE, automatic
+firewall cleanup and production security review are still pending.
+
+### Android LAN Client
+
+The same LAN Devices page now supports **Android phones as target devices**
+using the supervised companion APK in [apps/superagent-lan-android](../superagent-lan-android/README.md).
+The phone owner starts sharing, confirms a complete SHA-256 TLS fingerprint,
+approves pairing and separately approves each diagnostic session. The phone
+reports its platform as Android so Tray displays expanded Android diagnostics
+and separately approved local-action presets; those actions can open a Settings
+screen on the phone for the owner or adjust media volume one step. Opening
+Settings stops sharing and requires new pairing. Diagnostic options
+include device information, network checks, storage, battery, memory,
+Wi-Fi status, display, audio, sensors, app-self information and uptime.
+There is no arbitrary Android shell, ADB, root, app installation,
+hidden remote screen control or silent system settings changes.
+The Android client stops sharing when its Activity is no longer visible
+unless an owner-approved MediaProjection foreground service is active. Target-side on-device TLS Keystore and real two-device LAN behavior
+still need physical Android acceptance tests; build/lint passing is not enough.
+
+### Android schema-first control (v0.4.0 preview)
+
+The Tray UI now starts with **Android Accessibility schema**: a compact
+revisioned list of roles, clickable element IDs and normalized bounds.
+No UI text, messages or password values are transmitted. Unchanged screens
+send only an unchanged-revision receipt. Semantic clicks are checked against
+the current view hierarchy to reject stale targets. JPEG screenshot
+compression/transmission is **disabled by default**; a single screenshot is
+available only through **Capture one screenshot (fallback)**. No OCR,
+cloud image processing or screenshot polling occurs in semantic mode.
+The same explicit phone-owner permissions, STOP SHARING control and
+on-link TLS authorization continue to apply. See the Android README.
+
+### Android live screen and touch (v0.3.0 preview)
+
+LAN Devices includes a new Android screen viewer using temporary in-memory
+JPEG snapshots from the authenticated Core. The owner must explicitly
+approve pairing, support session and Android system MediaProjection capture,
+and separately enable Android Accessibility and remote touch. Once enabled,
+Tray supports tap, drag/swipe, Back, Home, Recents and non-password text
+entry, plus an End remote session button. The phone displays a visible
+foreground capture notification with an immediate STOP SHARING action.
+Core validates touch coordinates and Android authorization on each call.
+No screenshots or remote text are persisted, and there is no root, ADB,
+screen-lock bypass, hidden control or unattended mode. See the Android
+README above for the complete opt-in and test limitations.
+
 ## Automatic startup with SuperAgent
 
 On Windows, **SuperAgent Tray launches automatically and silently** when a real long-lived SuperAgent process starts: interactive CLI, REST/API server, Core Supervisor, MCP server, T-Line Transport, or Muse/Telegram Channel Host. Starting a second or third SuperAgent process will **not** create a second tray or a second reminder poller: the native `tauri-plugin-single-instance` instance guard handles it before the window starts.
@@ -134,6 +228,36 @@ The **Stop** and **Restart** buttons are present on service cards and enabled **
 - This prototype intentionally does **not** alter Muse Watch transport or auto-replay stalled Telegram batches.
 
 See `docs/plans/2026-11-04-superagent-tauri-tray-cron-management.md` for decisions and release gates.
+
+
+### LAN file exchange (Windows + Android, preview v0.5.0)
+
+LAN Devices now includes Send file, Receive owner's shared file, Cancel and
+progress. Each target file requires physical target-side approval. The target
+owner chooses shared source files using the Android document picker or the
+Windows client share command; the controller cannot browse target folders.
+Incoming target files go to Downloads/SuperAgent LAN after full SHA-256 check.
+Files received by Tray prompt a native Save As and cannot overwrite existing
+files. 4 MiB per file and 4096-byte TLS chunks; no transfer resume yet.
+
+
+### LAN folders and network segment (v0.6.0 preview)
+
+Start Windows/Android LAN Clients only after entering their mandatory network
+segment name. Tray LAN Devices now has an explicit segment input; Scan LAN
+returns only v2 responses matching a SHA-256 tag derived from that name.
+Changing segment clears prior and in-flight discovery results. This is
+a discovery filter, NOT a security boundary or a secret.
+
+Tray can send selected folders (HTML/WebView native directory picker) and
+receive a folder explicitly shared by the target owner. Windows target:
+share-folder "C:older\chosen-by-owner" in its client console. Android:
+Choose folder to share via the Android system tree picker, then Start sharing.
+The SAFOLDER1 container preserves relative nested paths and per-file SHA-256,
+up to 64 files/4 MiB total. The target separately approves each transfer.
+Extract into a newly created directory; never accept arbitrary remote
+filesystem paths or overwrite an existing file. Android phone E2E remains
+unverified.
 
 ## Support the project
 

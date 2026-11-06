@@ -26,6 +26,11 @@ public final class LanPolicyChecks {
         check(!LanPolicy.sameSubnet("192.168.1.4", 31, "192.168.1.5"), "too narrow");
         check(!LanPolicy.sameSubnet("192.168.1.4", 0, "192.168.1.5"), "wildcard");
         check(!LanPolicy.sameSubnet("192.168.1.4", 24, "127.0.0.1"), "loopback peer");
+        check(LanPolicy.privateIntranetPeer("10.200.4.187", "10.200.84.27"), "routed campus /16");
+        check(!LanPolicy.privateIntranetPeer("10.200.4.187", "10.201.84.27"), "different private /16");
+        check(!LanPolicy.privateIntranetPeer("10.200.4.187", "127.0.0.1"), "loopback denied");
+        check(!LanPolicy.privateIntranetPeer("10.200.4.187", "8.8.8.8"), "public denied");
+        check(!LanPolicy.privateIntranetPeer("10.200.4.187", "10.200.04.27"), "ambiguous IPv4 denied");
         System.out.println("ANDROID_LAN_POLICY_PASS " + cases + " checks");
     }
 }

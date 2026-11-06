@@ -52,7 +52,7 @@ impl TraySettings {
         if ![15, 30, 60, 120].contains(&self.notification_poll_seconds) {
             return Err("Notification poll interval must be 15, 30, 60, or 120 seconds".into());
         }
-        if !["jobs", "runtime", "history", "logs", "delegate", "terminal", "muse-files"].contains(&self.startup_page.as_str()) {
+        if !["jobs", "runtime", "history", "logs", "delegate", "terminal", "muse-files", "lan-devices"].contains(&self.startup_page.as_str()) {
             return Err("Unsupported Tray startup page".into());
         }
         Ok(())

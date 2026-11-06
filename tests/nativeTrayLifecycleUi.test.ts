@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 const script=fs.readFileSync(path.resolve("apps/superagent-tray/ui/lifecycle.js"),"utf8");
 const html=fs.readFileSync(path.resolve("apps/superagent-tray/ui/index.html"),"utf8");
-function mount(options:{allow?:boolean;mutationError?:boolean;safeRestart?:boolean}={}){
+function mount(options:{allow?:boolean;mutationError?:boolean;safeRestart?:boolean;muse?:boolean}={}){
   const nodes=new Map<string,any>(),handlers=new Map<string,Function>();
   const requests:Record<string,any>[]=[];
   const confirmations=vi.fn(()=>options.allow??true);
@@ -35,7 +35,9 @@ function mount(options:{allow?:boolean;mutationError?:boolean;safeRestart?:boole
     const q=args.request;
     if(q.action==="dashboard")return {summary:{ready:3,degraded:1,unavailable:9},
       checks:[{service:"tray",state:"active",alive:true,ready:true,
-        ownerVerified:true,reason:"safe",dependsOn:[]}],
+        ownerVerified:true,reason:"safe",dependsOn:[]},
+        ...(options.muse ? [{service:"muse",state:"inactive",alive:false,ready:false,
+          ownerVerified:false,reason:"No independent channel host",dependsOn:[]}] : [])],
       trayRelease:{activeDigest:"a".repeat(64)},
       safeLifecycle:{
         core:{ready:options.safeRestart===true,mutationAuthorized:false,reasons:options.safeRestart?[]:["BUILD_STALE"]},
@@ -65,8 +67,11 @@ function mount(options:{allow?:boolean;mutationError?:boolean;safeRestart?:boole
   const listeners=new Map<string,Function>();
   const context=vm.createContext({
     document:{getElementById:node,createElement:(tag:string)=>{
-      const x:any={tag,textContent:"",className:"",children:[],
-        append(...items:any[]){x.children.push(...items);}};return x;
+      const x:any={tag,textContent:"",className:"",children:[],disabled:false,
+        append(...items:any[]){x.children.push(...items);},
+        replaceChildren(...items:any[]){x.children=items;},
+        setAttribute:vi.fn(),
+        addEventListener(event:string,cb:Function){x["on"+event]=cb;}};return x;
     }},
     window:{__TAURI__:{core:{invoke}},confirm:confirmations,
       addEventListener:(name:string,cb:Function)=>listeners.set(name,cb)},
@@ -170,5 +175,28 @@ describe("native lifecycle Runtime panel",()=>{
       service:"tray",revision:"d".repeat(24),confirm:true,
       autoRecover:true,failureThreshold:3,maxRestartsPerHour:2,
     });
+  });
+  it("exposes Muse Watch start modes in the unified supervisor only for verified Core",async()=>{
+    const m=mount({muse:true});
+    const museAction=vi.fn();
+    m.window.__superagentMuseQuickAction=museAction;
+    m.window.__superagentMuseControlState=()=>({
+      available:true,running:false,ownerPresent:false,port:7888,pid:1111,
+    });
+    await m.window.__superagentLifecycleRefresh(true);
+    const card=m.node("lifecycle-services").children.find((x:any)=>
+      x.children.some((child:any)=>child.textContent==="Core-local Muse Watch"));
+    expect(card).toBeDefined();
+    const controls=card.children.find((x:any)=>x.className==="runtime-lifecycle-group");
+    const start=controls.children.find((x:any)=>x.textContent==="Start Muse · Telegram");
+    expect(start.disabled).toBe(false);
+    start.onclick();
+    expect(museAction).toHaveBeenCalledWith("start-telegram");
+    expect(m.requests.every(q=>["dashboard","profile","logs","watchdog"].includes(q.action))).toBe(true);
+
+    m.window.__superagentMuseControlState=()=>({available:false,running:false});
+    m.window.__superagentLifecycleUpdateMuseControls();
+    const disabled=controls.children.find((x:any)=>x.textContent==="Start Muse · Telegram");
+    expect(disabled.disabled).toBe(true);
   });
 });

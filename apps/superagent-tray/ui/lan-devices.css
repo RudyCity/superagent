@@ -1,0 +1,221 @@
+/* Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 */
+/* LAN Client manager adopts existing SuperAgent Tray tokens. */
+.lan-overview { display:flex; justify-content:space-between; gap:24px; padding:26px 28px; border:1px solid var(--border-medium); background:var(--bg-surface); border-radius:var(--radius-lg); margin-bottom:20px; }
+.lan-overview-title { min-width:0; max-width:590px; }
+.lan-kicker { color:var(--cyan); font-size:10px; font-weight:700; letter-spacing:.14em; }
+.lan-overview h2 { margin:8px 0 10px; font-size:22px; font-weight:650; line-height:1.25; color:var(--text-primary); overflow-wrap:anywhere; }
+.lan-overview p { margin:0; font-size:13px; line-height:1.65; color:var(--text-secondary); }
+.lan-overview-steps { display:flex; flex-direction:column; justify-content:center; gap:12px; min-width:150px; color:var(--text-secondary); font-size:12px; }
+.lan-overview-steps span { display:flex; align-items:center; gap:12px; }
+.lan-overview-steps b { font-family:var(--font-mono); color:var(--accent-hover); font-size:12px; }
+.lan-panel { margin-bottom:18px; }
+.lan-device-list { padding:18px 22px 22px; display:grid; gap:10px; }
+.lan-empty { border:1px dashed var(--border-medium); border-radius:var(--radius-md); padding:24px; font-size:13px; line-height:1.6; color:var(--text-muted); }
+.lan-device { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:14px; border:1px solid var(--border-subtle); background:var(--bg-surface-raised); padding:15px; border-radius:var(--radius-md); }
+.lan-device[aria-selected="true"] { border-color:var(--accent); background:var(--accent-muted); }
+.lan-device-info { min-width:0; flex:1 1 190px; display:flex; flex-direction:column; gap:5px; }
+.lan-device-info strong { color:var(--text-primary); font-size:14px; overflow-wrap:anywhere; }
+.lan-device-meta { font-size:12px; color:var(--text-secondary); overflow-wrap:anywhere; font-family:var(--font-mono); }
+.lan-device-state { font-size:11px; color:var(--text-muted); }
+.lan-device-state.connected { color:var(--success); }
+.lan-device-actions { display:flex; gap:7px; flex-wrap:wrap; }
+.lan-device-actions .button { font-size:11px; padding:8px 10px; white-space:nowrap; }
+.lan-device-actions .danger { color:var(--danger); }
+.lan-pair-grid { padding:20px 22px 0; display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1.25fr) minmax(0,1.5fr); gap:12px; }
+.lan-pair-grid label, #lan-command-form label { display:flex; flex-direction:column; gap:8px; font-size:12px; font-weight:600; color:var(--text-secondary); min-width:0; }
+.lan-pair-grid .lan-wide { grid-column:1/-1; }
+.lan-pair-grid input, #lan-command { box-sizing:border-box; width:100%; min-width:0; border-radius:var(--radius-sm); background:var(--bg-base); border:1px solid var(--border-medium); padding:11px 12px; font-size:13px; color:var(--text-primary); outline:0; font-family:var(--font-sans); }
+.lan-pair-grid input:focus-visible, #lan-command:focus-visible { border-color:var(--border-focus); box-shadow:0 0 0 2px var(--accent-muted); }
+.lan-mono { font-family:var(--font-mono) !important; font-size:11px !important; }
+.lan-verify { margin:15px 22px 0; display:flex; align-items:flex-start; gap:10px; color:var(--text-secondary); font-size:12px; line-height:1.6; }
+.lan-verify input { margin-top:3px; accent-color:var(--accent); }
+.lan-form-actions { display:flex; align-items:center; gap:16px; padding:16px 22px 22px; flex-wrap:wrap; }
+.lan-help { font-size:12px; color:var(--text-muted); }
+.lan-help code { font-family:var(--font-mono); }
+.lan-pair-status { margin:0 22px 20px; padding:10px 12px; border:1px solid var(--border-medium); border-radius:var(--radius-sm); color:var(--text-secondary); background:var(--bg-base); font-size:12px; line-height:1.6; overflow-wrap:anywhere; }
+.lan-pair-status.error { color:var(--danger); border-color:var(--danger); }
+.lan-pair-grid input[aria-invalid="true"] { border-color:var(--danger); }
+.lan-verify input[aria-invalid="true"] { outline:2px solid var(--danger); outline-offset:2px; }
+#lan-command-form { padding:18px 22px 12px; }
+.lan-command-row { display:flex; gap:10px; margin-top:8px; }
+.lan-command-row input { flex:1; font-family:var(--font-mono) !important; }
+.lan-command-row .button { white-space:nowrap; }
+#lan-command:disabled { opacity:.55; }
+.lan-output-head { padding:0 22px 8px; display:flex; align-items:center; justify-content:space-between; color:var(--text-secondary); font-size:12px; }
+.lan-output { margin:0 22px 16px; padding:16px; max-height:300px; min-height:120px; box-sizing:border-box; overflow:auto; white-space:pre-wrap; word-break:break-word; border:1px solid var(--border-medium); border-radius:var(--radius-sm); background:var(--bg-base); color:var(--text-primary); font-family:var(--font-mono); font-size:12px; line-height:1.6; user-select:text; }
+.lan-security-note { margin:0; padding:0 22px 20px; color:var(--text-muted); font-size:11px; line-height:1.6; }
+#lan-banner { margin-bottom:14px; }
+@media(max-width:850px){ .lan-overview{ flex-direction:column; gap:16px; } .lan-overview-steps{ flex-direction:row; flex-wrap:wrap; gap:15px; } .lan-pair-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:570px){ .lan-overview{padding:20px;} .lan-pair-grid{grid-template-columns:minmax(0,1fr);} .lan-command-row{flex-direction:column;} .lan-device-actions .button{flex:1;} }
+
+.lan-command-presets {
+  display:block; width:100%; box-sizing:border-box; margin:11px 0 0;
+  border:1px solid var(--border-medium); border-radius:var(--radius-sm);
+  background:var(--bg-surface-raised); color:var(--text-primary);
+  padding:11px 12px; font:12px var(--font-mono); outline:0;
+}
+.lan-command-presets:focus-visible { border-color:var(--border-focus); box-shadow:0 0 0 2px var(--accent-muted); }
+.lan-command-presets:disabled { opacity:.55; }
+
+/* Android consent-based live screen viewer. No persistent frame storage. */
+.lan-screen-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.3fr) minmax(240px, .75fr);
+  gap: 20px;
+  padding: 20px 22px 24px;
+}
+.lan-screen-display {
+  background: var(--bg-base);
+  border: 1px solid var(--border-medium);
+  border-radius: 14px;
+  min-height: 330px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.lan-screen-placeholder {
+  padding: 44px 25px;
+  font-size: 13px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.7;
+  max-width: 390px;
+}
+#lan-screen-image {
+  width: 100%;
+  height: auto;
+  max-height: 580px;
+  object-fit: contain;
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+  background: #0a111e;
+}
+#lan-screen-image[hidden] { display: none !important; }
+.lan-screen-caption {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+.lan-screen-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lan-screen-controls > .button {
+  width: 100%;
+  justify-content: center;
+}
+.lan-screen-controls .button:disabled { opacity: .55; cursor: not-allowed; }
+.lan-screen-keypad {
+  display: flex;
+  gap: 6px;
+}
+.lan-screen-keypad .button {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+}
+.lan-screen-control-label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+#lan-screen-text {
+  resize: vertical;
+  min-height: 62px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  border: 1px solid var(--border-medium);
+  color: var(--text-primary);
+  font: 12px var(--font-mono);
+}
+#lan-screen-text:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+.lan-screen-controls .lan-security-note {
+  padding: 0;
+  margin: 8px 0 0;
+}
+@media(max-width: 860px) {
+  .lan-screen-layout { grid-template-columns: minmax(0,1fr); }
+  .lan-screen-display { min-height: 250px; }
+}
+
+.lan-schema-info {
+  padding: 13px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+}
+.lan-schema-status {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.lan-schema-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.lan-schema-node {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  text-align: left;
+  padding: 9px 10px;
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-medium);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font: 12px var(--font-mono);
+}
+.lan-schema-node:hover:enabled { border-color: var(--border-focus); }
+.lan-schema-node:disabled { opacity: .6; cursor: default; }
+.lan-schema-id { font-size: 10px; color: var(--text-muted); }
+
+.lan-transfer-panel { padding: 20px 22px 24px; display: flex; flex-direction: column; gap: 12px; }
+.lan-file-source { color: var(--text-primary); width: 100%; padding: 12px;
+  border: 1px solid var(--border-medium); border-radius: var(--radius-sm); box-sizing: border-box; }
+.lan-transfer-actions { display: flex; flex-wrap: wrap; gap: 9px; }
+.lan-transfer-actions .button { flex: 1 1 145px; justify-content: center; }
+.lan-file-progress { width: 100%; height: 12px; }
+.lan-file-info { font-size: 12px; color: var(--text-secondary); margin: 0; line-height: 1.6; }
+
+/* Explicit per-segment discovery: empty/malformed segment is not a scan-all fallback. */
+.lan-segment-control {
+  display: inline-flex; flex-direction: column; gap: 5px; min-width: 180px;
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+}
+#lan-segment-name {
+  box-sizing: border-box; min-width: 180px; max-width: 245px;
+  background: var(--bg-base); color: var(--text-primary);
+  border: 1px solid var(--border-medium); border-radius: var(--radius-sm);
+  padding: 8px 10px; font: 12px var(--font-mono);
+}
+#lan-segment-name:focus-visible {
+  outline: 2px solid var(--border-focus); outline-offset: 2px;
+}
+#lan-segment-name:invalid:not(:placeholder-shown) { border-color: var(--danger); }
+.lan-folder-picker {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px; border: 1px dashed var(--border-medium);
+  border-radius: var(--radius-sm); background: var(--bg-surface-raised);
+}
+.lan-folder-picker .button { align-self: flex-start; }
+.lan-folder-picker .button:disabled { opacity: .55; cursor: not-allowed; }
+@media (max-width: 620px) {
+  .lan-folder-picker .button { width: 100%; }
+  .lan-segment-control, #lan-segment-name { min-width: 0; width: 100%; max-width: none; }
+}

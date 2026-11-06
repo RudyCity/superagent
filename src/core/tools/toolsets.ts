@@ -116,6 +116,7 @@ import {
   controlIsolatedCdpTool,
 } from "./advancedAutomationTools.js";
 import { controlChromeCdpTool } from "./chromeCdpTools.js";
+import { lanSupportTool } from "./lanSupportTool.js";
 import { controlChromeVisionTool } from "./chromeVisionTools.js";
 import { runListTools, runDescribeTool } from "./toolDiscoveryTools.js";
 
@@ -320,6 +321,7 @@ export const superagentToolset: Tool[] = [
   ripgrepSearchTool,
   bashTool,
   runCommandTool,
+  lanSupportTool,
   runBackgroundProcessTool,
   manageBackgroundProcessTool,
   inspectPortTool,

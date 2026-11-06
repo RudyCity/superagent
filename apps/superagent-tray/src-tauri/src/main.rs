@@ -20,6 +20,8 @@ use tauri_plugin_notification::NotificationExt;
 
 mod connection_logs;
 mod muse_file_transfer;
+mod lan_file_save;
+mod lan_folder_save;
 mod remote_service_detection;
 mod runtime_control;
 mod runtime_detection;
@@ -31,6 +33,12 @@ mod lifecycle_console;
 #[tauri::command]
 fn get_tray_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
+}
+
+/// Build number is stamped at compile time, not guessed from the running Core.
+#[tauri::command]
+fn get_tray_build_number() -> &'static str {
+    env!("SUPERAGENT_TRAY_BUILD_NUMBER")
 }
 
 /// Native window lifecycle is deliberately exposed through an allowlist,
@@ -382,6 +390,181 @@ async fn create_connection(payload: Value) -> Result<Value, String> {
     core_request(Method::POST, "/api/desktop/create-connection", Some(body)).await
 }
 
+/// The WebView may only invoke fixed LAN Client operations through the selected,
+/// authenticated loopback Core. It never receives Core bearer or pair/session tokens.
+#[tauri::command]
+async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Value, String> {
+    const ALL: &[&str] = &["discover", "list", "pair", "open", "exec", "close", "revoke",  "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"];
+    if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
+    let data = payload.unwrap_or_else(|| json!({}));
+    let obj = data.as_object().ok_or("Invalid LAN payload")?;
+    let allowed: &[&str] = match action.as_str() {
+        "discover" => &["segment", "targetIp"],
+        "list" => &[],
+        "pair" => &["host", "port", "code", "fingerprint", "controller", "segment"],
+        "exec" => &["deviceId", "command"],
+        "input" => &["deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text"],
+        "file_offer" => &["deviceId", "direction", "name", "size", "sha256"],
+        "file_put" => &["deviceId", "transferId", "seq", "data"],
+        "file_get" => &["deviceId", "transferId", "seq"],
+        "file_finish" | "file_abort" => &["deviceId", "transferId"],
+        "schema" => &["deviceId", "knownRevision"],
+        "element" => &["deviceId", "elementId", "revision", "kind"],
+        _ => &["deviceId"],
+    };
+    if obj.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err("Unexpected LAN argument".into());
+    }
+    if action == "discover" {
+        let segment = data["segment"].as_str().ok_or("Network segment is required")?;
+        if segment.len() < 3 || segment.len() > 32 || segment.trim() != segment
+            || !segment.bytes().next().unwrap_or(b'-').is_ascii_alphanumeric()
+            || !segment.bytes().all(|b| b.is_ascii_alphanumeric() || b" _.-".contains(&b)) {
+            return Err("Invalid network segment name".into());
+        }
+        if let Some(ip) = data.get("targetIp") {
+            ip.as_str().ok_or("Invalid direct IPv4 target")?
+                .parse::<std::net::Ipv4Addr>().map_err(|_| "Invalid direct IPv4 target")?;
+        }
+    }
+    if action == "pair" {
+        let host = data["host"].as_str().ok_or("Target IPv4 required")?;
+        let code = data["code"].as_str().ok_or("Pair code required")?;
+        let fingerprint = data["fingerprint"].as_str().ok_or("Fingerprint required")?;
+        if host.len() > 15 || !host.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+            || code.len() != 8 || !code.bytes().all(|b| b.is_ascii_digit())
+            || fingerprint.len() != 64 || !fingerprint.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("Invalid LAN pairing details".into());
+        }
+        if let Some(port) = data.get("port") {
+            let port = port.as_u64().ok_or("Invalid LAN port")?;
+            if !(1024..=65534).contains(&port) { return Err("Invalid LAN port".into()); }
+        }
+        if let Some(label) = data.get("controller") {
+            let label = label.as_str().ok_or("Invalid controller label")?;
+            if label.len() > 60 || !label.chars().all(|c| c.is_ascii_alphanumeric() || " _.-".contains(c)) {
+                return Err("Invalid controller label".into());
+            }
+        }
+        if let Some(segment) = data.get("segment") {
+            let segment = segment.as_str().ok_or("Invalid network segment")?;
+            if segment.len() < 3 || segment.len() > 32 || segment.trim() != segment
+                || !segment.bytes().next().unwrap_or(b'-').is_ascii_alphanumeric()
+                || !segment.bytes().all(|b| b.is_ascii_alphanumeric() || b" _.-".contains(&b)) {
+                return Err("Invalid network segment".into());
+            }
+        }
+
+    } else if !["discover", "list"].contains(&action.as_str()) {
+        let id = data["deviceId"].as_str().ok_or("Device ID required")?;
+        if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+            return Err("Invalid device ID".into());
+        }
+    }
+    if action == "exec" {
+        let command = data["command"].as_str().ok_or("Remote command required")?;
+        if command.trim().is_empty() || command.len() > 2000 {
+            return Err("Remote command length must be 1–2000".into());
+        }
+    }
+    if action.starts_with("file_") {
+        if action == "file_offer" {
+            let direction = data["direction"].as_str().ok_or("File direction required")?;
+            if direction != "upload" && direction != "download" {
+                return Err("Invalid file direction".into());
+            }
+            if direction == "download" &&
+                ["name","size","sha256"].iter().any(|key| data.get(*key).is_some()) {
+                return Err("Remote file is selected at the target only".into());
+            }
+            if direction == "upload" {
+                let name = data["name"].as_str().ok_or("File name required")?;
+                let ok = !name.is_empty() && name.len() <= 96 && !name.starts_with('.')
+                    && !name.ends_with('.') && !name.ends_with(' ')
+                    && name.bytes().all(|b| b.is_ascii_alphanumeric() || b" _.-()".contains(&b));
+                if !ok { return Err("Unsafe file name".into()); }
+                let size = data["size"].as_u64().ok_or("File size required")?;
+                let hash = data["sha256"].as_str().ok_or("File hash required")?;
+                if !(1..=4 * 1024 * 1024).contains(&size) || hash.len()!=64
+                    || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    return Err("Invalid file size or digest".into());
+                }
+            }
+        } else {
+            let id = data["transferId"].as_str().ok_or("Transfer ID required")?;
+            if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+                return Err("Invalid transfer handle".into());
+            }
+            if action == "file_put" || action == "file_get" {
+                let seq = data["seq"].as_u64().ok_or("File sequence required")?;
+                if seq > 1024 { return Err("Too many file chunks".into()); }
+            }
+            if action == "file_put" {
+                let b64 = data["data"].as_str().ok_or("File data required")?;
+                if b64.is_empty() || b64.len() > 5464 ||
+                    !b64.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b)) {
+                    return Err("Invalid base64 file chunk".into());
+                }
+            }
+        }
+    }
+    if action == "schema" {
+        if let Some(revision) = data.get("knownRevision") {
+            let value = revision.as_u64().ok_or("Schema revision must be nonnegative integer")?;
+            if value > 1_000_000_000 { return Err("Schema revision outside bounds".into()); }
+        }
+    }
+    if action == "element" {
+        let rev = data["revision"].as_u64().ok_or("UI revision must be an integer")?;
+        if rev == 0 || rev > 1_000_000_000 { return Err("UI revision out of bounds".into()); }
+        if data["kind"].as_str() != Some("click") {
+            return Err("Unsupported UI element action".into());
+        }
+        let id = data["elementId"].as_str().ok_or("UI element path required")?;
+        let parts: Vec<&str> = id.split('.').collect();
+        if id.len() > 48 || parts.is_empty() || parts.len() > 13 || parts[0] != "0"
+            || parts[1..].iter().any(|part| part.is_empty() || part.len() > 2
+                || !part.bytes().all(|b| b.is_ascii_digit())) {
+            return Err("Invalid semantic UI element ID".into());
+        }
+    }
+    if action == "input" {
+        let kind = data["kind"].as_str().ok_or("Input kind required")?;
+        let fields: &[&str] = match kind {
+            "tap" => &["x", "y"],
+            "swipe" => &["x", "y", "endX", "endY", "durationMs"],
+            "back" | "home" | "recents" => &[],
+            "text" => &["text"],
+            _ => return Err("Unsupported Android input".into()),
+        };
+        if obj.keys().any(|k| k != "deviceId" && k != "kind" && !fields.contains(&k.as_str())) {
+            return Err("Unexpected Android input field".into());
+        }
+        for coord in if kind == "tap" { vec!["x", "y"] }
+                     else if kind == "swipe" { vec!["x", "y", "endX", "endY"] }
+                     else { vec![] } {
+            let value = data[coord].as_f64().ok_or("Invalid input coordinate")?;
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+                return Err("Input coordinate out of bounds".into());
+            }
+        }
+        if kind == "swipe" {
+            let ms = data["durationMs"].as_u64().ok_or("Invalid swipe duration")?;
+            if !(100..=1500).contains(&ms) { return Err("Swipe duration invalid".into()); }
+        }
+        if kind == "text" {
+            let text = data["text"].as_str().ok_or("Input text required")?;
+            if text.is_empty() || text.chars().count() > 160 || text.chars().any(|c| c as u32 == 10 || c as u32 == 13) {
+                return Err("Text input invalid".into());
+            }
+        }
+    }
+    let mut body = Map::new();
+    body.insert("action".into(), Value::String(action));
+    body.extend(obj.iter().map(|(key, value)| (key.clone(), value.clone())));
+    core_request(Method::POST, "/api/desktop/lan-support", Some(Value::Object(body))).await
+}
+
 #[tauri::command]
 async fn get_delegate_status() -> Result<Value, String> {
     core_request(Method::GET, "/api/desktop/delegate/status", None).await
@@ -412,6 +595,31 @@ async fn delegate_action(action: String, payload: Option<Value>) -> Result<Value
                 Some(json!({"action": "stop"})),
             )
             .await
+        }
+        "orchestrator-status" => {
+            core_request(Method::GET, "/api/desktop/delegate/orchestrator", None).await
+        }
+        "orchestrator" => {
+            let data = payload.ok_or("Missing multi-tab command")?;
+            let obj = data.as_object().ok_or("Invalid multi-tab payload")?;
+            let command = obj.get("action").and_then(Value::as_str).ok_or("Action required")?;
+            let allowed: &[&str] = match command {
+                "new-tab" => &["clientId"],
+                "claim" | "release" => &["clientId", "tabId", "workerId"],
+                "enqueue" => &["requestId", "clientId", "tabId", "workerId", "message", "title", "priority", "chatId", "maxRuntimeMs"],
+                "parallel" => &["requestId", "clientId", "tabIds", "goal"],
+                "cancel" | "reconcile" | "stop-generation" => &["taskId"],
+                "forward" => &["sourceTaskId", "requestId", "clientId", "tabId", "workerId", "priority"],
+                "aggregate" => &["taskIds"],
+                "set-concurrency" => &["maxConcurrent"],
+                _ => return Err("Unsupported multi-tab command".into()),
+            };
+            if obj.keys().any(|key| key != "action" && !allowed.contains(&key.as_str())) {
+                return Err("Unexpected multi-tab command field".into());
+            }
+            let serialized = serde_json::to_vec(&data).map_err(|_| "Invalid multi-tab payload")?;
+            if serialized.len() > 25_000 { return Err("Multi-tab payload too large".into()); }
+            core_request(Method::POST, "/api/desktop/delegate/orchestrator", Some(data)).await
         }
         _ => Err("Unsupported delegate action".into()),
     }
@@ -449,6 +657,23 @@ async fn kill_terminal_task(task_id: String) -> Result<Value, String> {
         Method::POST,
         "/api/desktop/terminal/kill",
         Some(json!({ "taskId": task_id })),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn control_terminal_task(task_id: String, action: String) -> Result<Value, String> {
+    if !matches!(action.as_str(), "start" | "pause" | "resume") {
+        return Err("Invalid terminal control action".into());
+    }
+    if !task_id.starts_with("term-bg-") || task_id.len() != 15 ||
+        !task_id[8..].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()) {
+        return Err("Invalid Tray terminal task ID".into());
+    }
+    core_request(
+        Method::POST,
+        "/api/desktop/terminal/control",
+        Some(json!({ "taskId": task_id, "action": action })),
     )
     .await
 }
@@ -693,6 +918,25 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
             Some("plan") => Duration::from_secs(18),
             _ => Duration::from_secs(120),
         }
+    } else if path == "/api/desktop/lan-support" {
+        // Pairing / session approval is a physical action at the target console.
+        // Avoid replaying ambiguous requests when the owner is slow to approve.
+        match body.as_ref().and_then(|b| b.get("action")).and_then(Value::as_str) {
+            Some("pair" | "open" | "file_offer") => Duration::from_secs(125),
+            Some("file_put" | "file_get" | "file_finish" | "file_abort") => Duration::from_secs(18),
+            Some("exec") if body.as_ref().and_then(|b| b.get("command"))
+                .and_then(Value::as_str).is_some_and(|command|
+                    command.starts_with("android.action.")) => Duration::from_secs(120),
+            Some("exec") => Duration::from_secs(50),
+            Some("screen" | "input" | "schema" | "element") => Duration::from_secs(12),
+            Some("discover") => Duration::from_secs(8),
+            _ => Duration::from_secs(15),
+        }
+    } else if path == "/api/desktop/terminal/control" {
+        // Windows suspends/resumes a verified owned process tree through a
+        // bounded PowerShell/CIM probe; 4 seconds can report a false timeout.
+        // Never automatically retry a timed-out non-idempotent lifecycle call.
+        Duration::from_secs(25)
     } else if path == "/api/desktop/muse-lifecycle" {
         // Restart can re-establish the original Telegram/WS transport.
         Duration::from_secs(35)
@@ -1062,6 +1306,8 @@ fn main() {
                 MenuItem::with_id(app, "terminal", "💻 Terminal Processes", true, None::<&str>)?;
             let muse_files =
                 MenuItem::with_id(app, "muse_files", "📁 Muse File Transfer", true, None::<&str>)?;
+            let lan_devices =
+                MenuItem::with_id(app, "lan_devices", "🖧 LAN Devices", true, None::<&str>)?;
             let add = MenuItem::with_id(app, "add", "➕ New Reminder", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
             let settings = MenuItem::with_id(app, "settings", "⚙️ Tray Settings", true, None::<&str>)?;
@@ -1078,6 +1324,7 @@ fn main() {
                 &delegate,
                 &terminal,
                 &muse_files,
+                &lan_devices,
                 &add,
                 &sep1,
                 &settings,
@@ -1123,6 +1370,10 @@ fn main() {
                     "muse_files" => {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-muse-files", ());
+                    }
+                    "lan_devices" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-lan-devices", ());
                     }
                     "settings" => {
                         show_main(app, false);
@@ -1192,6 +1443,7 @@ fn main() {
             regenerate_token,
             get_tray_settings,
             get_tray_version,
+            get_tray_build_number,
             set_tray_settings,
             get_muse_telegram_settings,
             set_muse_telegram_settings,
@@ -1204,15 +1456,19 @@ fn main() {
             get_connection_logs,
             get_delegate_status,
             delegate_action,
+            lan_support_action,
             get_terminal_tasks,
             kill_terminal_task,
+            control_terminal_task,
             launch_terminal_task,
             get_terminal_logs,
             get_terminal_presets,
             prune_terminal_tasks,
             muse_file_transfer::muse_file_pick,
             muse_file_transfer::muse_file_start,
-            muse_file_transfer::muse_file_control
+            muse_file_transfer::muse_file_control,
+            lan_file_save::lan_file_save,
+            lan_folder_save::lan_folder_save
         ])
         .build(tauri::generate_context!())
         .expect("SuperAgent Tray could not build")

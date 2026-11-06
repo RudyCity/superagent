@@ -7,6 +7,7 @@
   <title>SuperAgent Tray · Automation &amp; Runtime Console</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./muse-files.css" />
+  <link rel="stylesheet" href="./lan-devices.css" />
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <script src="./titlebar.js" defer></script>
   <script src="./app.js" defer></script>
@@ -19,6 +20,9 @@
   <script src="./delegate-multitab.js" defer></script>
   <script src="./terminal.js" defer></script>
   <script src="./muse-files.js" defer></script>
+  <script src="./lan-devices.js" defer></script>
+  <script src="./lan-screen-viewer.js" defer></script>
+  <script src="./lan-file-transfer.js" defer></script>
 </head>
 <body>
   <!-- Native Windows decorations are disabled; these controls use strict
@@ -134,6 +138,13 @@
             <path d="M12 3v12m-4-4 4 4 4-4M4 17v3h16v-3"/>
           </svg>
           <span>Muse File Transfer</span>
+        </a>
+        <a class="nav-link" href="#lan-devices" data-page="lan-devices" id="nav-lan-devices">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="5" width="13" height="10" rx="2"></rect>
+            <path d="M6 19h8M9 15v4M18 9h4v9h-4z"></path>
+          </svg>
+          <span>LAN Devices</span>
         </a>
         <a class="nav-link" href="#settings" data-page="settings" id="nav-settings">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -279,6 +290,22 @@
               </svg>
               <span>Choose File</span>
             </button>
+          </div>
+
+          <!-- LAN Client management actions -->
+          <div id="actions-lan-devices" class="action-group" hidden>
+            <label class="lan-segment-control" for="lan-segment-name">Network segment
+              <input id="lan-segment-name" type="text" minlength="3" maxlength="32"
+                pattern="[A-Za-z0-9][A-Za-z0-9 _.-]{2,31}" autocomplete="off"
+                spellcheck="false" placeholder="office-lan" required
+                title="3–32 characters: letters, numbers, space, underscore, period or hyphen; start with a letter or number" />
+            </label>
+            <button type="button" id="lan-paired-refresh" class="button ghost">Refresh devices</button>
+            <label class="lan-segment-control" for="lan-direct-ip">Target IPv4 (optional)
+              <input id="lan-direct-ip" type="text" inputmode="decimal" autocomplete="off"
+                spellcheck="false" placeholder="10.200.4.187" title="Enter a specific private IPv4 if the devices are on routed campus subnets" />
+            </label>
+            <button type="button" id="lan-discovery-scan" class="button primary">Scan LAN</button>
           </div>
 
           <!-- Chrome Delegate Page Actions -->
@@ -694,6 +721,190 @@
         </section>
       </div>
 
+      <!-- ================= LAN SUPPORT MANAGER ================= -->
+      <div id="page-lan-devices" class="page-view" hidden>
+<!-- Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 -->
+        <section class="lan-overview" aria-label="Local support workflow">
+          <div class="lan-overview-title">
+            <span class="lan-kicker">REMOTE SUPPORT / PRIVATE NETWORK</span>
+            <h2>Connect only when the other laptop agrees.</h2>
+            <p>SuperAgent LAN Client must be open on the target laptop. Pairing and every new terminal session require a separate approval typed on that laptop.</p>
+          </div>
+          <div class="lan-overview-steps" aria-label="Connection steps">
+            <span><b>01</b> Discover</span>
+            <span><b>02</b> Pair</span>
+            <span><b>03</b> Approve</span>
+            <span><b>04</b> Support</span>
+          </div>
+        </section>
+
+        <div id="lan-banner" class="banner" role="status" aria-live="polite" hidden></div>
+
+        <section class="panel lan-panel" aria-labelledby="lan-discovery-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">STEP 01 / DISCOVERY</div>
+              <h2 id="lan-discovery-title">Available LAN devices</h2>
+              <p>Scan your local subnet, or supply a specific private IPv4 above for routed intranet discovery. The network segment must match. UDP may be blocked between subnets; manual pairing still requires the displayed fingerprint, code and on-device approval.</p>
+            </div>
+            <span id="lan-discovery-status" class="subtle-badge">Not scanned</span>
+          </div>
+          <div id="lan-discovered" class="lan-device-list" aria-live="polite">
+            <div class="lan-empty">No scan yet. Start the LAN Client on the other laptop, then select <strong>Scan LAN</strong>.</div>
+          </div>
+        </section>
+
+        <section class="panel lan-panel" aria-labelledby="lan-pair-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">STEP 02 / PAIRING</div>
+              <h2 id="lan-pair-title">Pair a device</h2>
+              <p>Select <strong>Use for pairing</strong> after scanning, then enter the current 8-digit code from the Android phone or Windows client and compare the full certificate fingerprint on that device. Pairing always requires owner approval.</p>
+            </div>
+            <span class="subtle-badge">2-minute code</span>
+          </div>
+          <form id="lan-pair-form" autocomplete="off" novalidate>
+            <div class="lan-pair-grid">
+              <label>Target IPv4
+                <input id="lan-pair-ip" type="text" inputmode="decimal" placeholder="192.168.1.105" spellcheck="false" required />
+              </label>
+              <label>Port
+                <input id="lan-pair-port" type="number" value="17845" min="1024" max="65534" required />
+              </label>
+              <label>Pairing code
+                <input id="lan-pair-code" type="password" inputmode="numeric" pattern="[0-9]{8}" maxlength="8" placeholder="8 digits" autocomplete="off" required />
+              </label>
+              <label>Controller label
+                <input id="lan-pair-label" type="text" maxlength="60" value="SuperAgent Tray" spellcheck="false" required />
+              </label>
+              <label class="lan-wide">Target SHA-256 certificate fingerprint
+                <input id="lan-pair-fingerprint" class="lan-mono" type="text" minlength="64" maxlength="64" placeholder="64 hexadecimal characters printed on target laptop" spellcheck="false" autocomplete="off" required />
+              </label>
+            </div>
+            <label class="lan-verify">
+              <input id="lan-verified" type="checkbox" required />
+              <span>I compared all 64 fingerprint characters with the fingerprint displayed on the target device.</span>
+            </label>
+            <div class="lan-form-actions">
+              <button id="lan-pair-submit" type="submit" class="button primary">Request pairing</button>
+              <span class="lan-help">On Android, approve the prompt on the phone. On Windows, type <code>approve</code> in the client. Pairing does not open a remote session.</span>
+            </div>
+            <p id="lan-pair-status" class="lan-pair-status" role="status" aria-live="polite">Select a device, enter its current code, and verify the fingerprint before requesting pairing.</p>
+          </form>
+        </section>
+
+        <section class="panel lan-panel" aria-labelledby="lan-paired-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">STEP 03 / APPROVAL</div>
+              <h2 id="lan-paired-title">Paired devices &amp; sessions</h2>
+              <p>Only one approved terminal session is allowed per target. Close or revoke access as soon as support is finished.</p>
+            </div>
+            <span id="lan-paired-count" class="subtle-badge">0 paired</span>
+          </div>
+          <div id="lan-paired" class="lan-device-list" aria-live="polite">
+            <div class="lan-empty">No paired devices in this Core process.</div>
+          </div>
+        </section>
+
+        <section class="panel lan-panel" aria-labelledby="lan-terminal-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">STEP 04 / TERMINAL</div>
+              <h2 id="lan-terminal-title">Remote terminal &amp; diagnostics</h2>
+              <p>Windows: non-elevated PowerShell. Android: expanded diagnostics and per-action-approved Settings/volume assistance. No unattended access.</p>
+            </div>
+            <span id="lan-session-status" class="subtle-badge">No active session</span>
+          </div>
+          <form id="lan-command-form">
+            <label for="lan-command" id="lan-command-mode">Command for selected Windows or Android device</label>
+            <select id="lan-command-presets" class="lan-command-presets" aria-label="Suggested remote command" disabled>
+              <option value="">Choose a recommended command</option>
+            </select>
+            <div class="lan-command-row">
+              <input id="lan-command" type="text" maxlength="2000" spellcheck="false" placeholder="Get-ComputerInfo | Select-Object WindowsProductName" disabled />
+              <button id="lan-command-run" class="button primary" type="submit" disabled>Run command</button>
+            </div>
+            <div class="lan-command-row" id="lan-android-quick-actions" hidden>
+              <button id="lan-health-quick" type="button" class="button ghost" disabled>Android health snapshot</button>
+              <button id="lan-support-quick" type="button" class="button ghost" disabled>Screen / support status</button>
+            </div>
+          </form>
+          <div class="lan-output-head"><span>Command output</span><button id="lan-output-clear" type="button" class="button ghost">Clear</button></div>
+          <pre id="lan-output" class="lan-output" aria-live="polite">Select a paired device and request an approved session.</pre>
+          <p class="lan-security-note">LAN-only preview. Android diagnostics are read-only; actions require separate approval on the phone. Settings open locally and disconnect sharing. Volume changes one step per approval. Android remote touch requires explicit on-device Accessibility and input consent; no arbitrary Android shell, root or ADB. Full TLS fingerprint comparison and target approval are required. PAKE, signed releases and cross-device security review remain pending.</p>
+        </section>
+
+        <section id="lan-file-panel" class="panel lan-panel" aria-labelledby="lan-files-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">STEP 05 / FILE EXCHANGE</div>
+              <h2 id="lan-files-title">Send &amp; receive files · Windows / Android</h2>
+              <p>Private, owner-approved LAN file transfers. 4 MiB per file. Chunked TLS 1.3 and SHA-256 verification. No remote filesystem browsing or automatic overwrite.</p>
+            </div>
+            <span id="lan-file-state" class="subtle-badge">No active transfer</span>
+          </div>
+          <div class="lan-transfer-panel">
+            <label class="lan-screen-control-label" for="lan-file-source">Send a locally selected file to the selected device</label>
+            <input type="file" id="lan-file-source" class="lan-file-source" />
+            <div class="lan-transfer-actions">
+              <button type="button" class="button primary" id="lan-file-send" disabled>Send file to device</button>
+              <button type="button" class="button ghost" id="lan-file-receive" disabled>Receive owner's shared file</button>
+              <button type="button" class="button ghost danger" id="lan-file-cancel" disabled>Cancel transfer</button>
+            </div>
+            <div class="lan-folder-picker">
+              <label class="lan-screen-control-label" for="lan-folder-source">Send an explicitly selected folder (Windows / Android)</label>
+              <input type="file" id="lan-folder-source" class="lan-file-source" webkitdirectory multiple />
+              <p id="lan-folder-support" class="lan-file-info">Folder support requires a WebKit-compatible native directory picker.</p>
+              <button type="button" class="button primary" id="lan-folder-send" disabled>Send selected folder (.safolder)</button>
+            </div>
+            <progress id="lan-file-progress" max="100" value="0" class="lan-file-progress"></progress>
+            <p id="lan-file-info" aria-live="polite" class="lan-file-info">First pair and open a support session. On a Windows target, choose a source with <code>share &lt;path&gt;</code> in its LAN Client console. On Android, tap Choose document to share. Every file requires separate target-side approval.</p>
+          </div>
+        </section>
+
+        <!-- Android full-screen support is explicitly opted into on the target phone. -->
+        <section id="lan-screen-panel" class="panel lan-panel" aria-labelledby="lan-screen-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">STEP 05 / ANDROID · LIVE SCREEN</div>
+              <h2 id="lan-screen-title">Android schema-first control</h2>
+              <p>Use a private, bounded Accessibility UI schema by default. Request a screenshot only when visual fallback is needed. Owner capture and remote touch consent remain mandatory.</p>
+            </div>
+            <span id="lan-screen-status" class="subtle-badge">Screen off</span>
+          </div>
+          <div class="lan-screen-layout">
+            <div class="lan-screen-display">
+              <div id="lan-screen-placeholder" class="lan-screen-placeholder">
+                Select an approved Android session, then approve screen sharing on the phone.
+              </div>
+              <img id="lan-screen-image" alt="Owner-approved live Android screen (tap or swipe to interact)" draggable="false" hidden />
+              <p class="lan-screen-caption">Visual fallback only · Click to tap · Drag to swipe · No screenshot polling</p>
+            </div>
+            <div class="lan-screen-controls">
+              <div class="lan-schema-info">
+                <div id="lan-schema-status" class="lan-schema-status">Awaiting approved UI schema</div>
+                <div id="lan-schema-list" class="lan-schema-list" aria-live="polite"></div>
+                <p class="lan-screen-caption">No text contents or password values leave the Android device. Actions target the current schema revision only.</p>
+              </div>
+              <button id="lan-screen-start" type="button" class="button primary">Start schema-first control</button>
+              <button id="lan-screen-capture" type="button" class="button ghost" disabled>Capture one screenshot (fallback)</button>
+              <button id="lan-screen-stop" type="button" class="button ghost" disabled>Stop viewing</button>
+              <div class="lan-screen-keypad">
+                <button id="lan-screen-back" type="button" class="button ghost" disabled>Back</button>
+                <button id="lan-screen-home" type="button" class="button ghost" disabled>Home</button>
+                <button id="lan-screen-recents" type="button" class="button ghost" disabled>Recents</button>
+              </div>
+              <label for="lan-screen-text" class="lan-screen-control-label">Text for a focused, non-password field</label>
+              <textarea id="lan-screen-text" maxlength="160" rows="3" placeholder="Type only information you are authorized to enter" disabled></textarea>
+              <button id="lan-screen-send-text" type="button" class="button ghost" disabled>Send text</button>
+              <button id="lan-screen-disconnect" type="button" class="button ghost danger" disabled>End remote session</button>
+              <p class="lan-security-note">Schema-first: no repeating screenshots, OCR or cloud image analysis. Screenshot fallback is manual and single-frame. No root, lock-screen bypass, hidden capture or keylogging. The phone owner can revoke access at any moment.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
       <!-- ================= PAGE 4: TRAY SETTINGS ================= -->
       <div id="page-settings" class="page-view" hidden>
         <section class="panel tray-settings-panel" aria-labelledby="settings-title">
@@ -729,6 +940,7 @@
                   <option value="delegate">Chrome Delegate</option>
                   <option value="terminal">Terminal Processes</option>
                   <option value="muse-files">Muse File Transfer</option>
+                  <option value="lan-devices">LAN Devices</option>
                 </select>
               </label>
             </div>
@@ -1182,6 +1394,60 @@
             </table>
           </div>
         </section>
+
+        <section class="panel delegate-multitab-panel" aria-labelledby="multitab-heading">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">PARALLEL CHATGPT WORKERS</div>
+              <h2 id="multitab-heading">Multi-Tab Orchestrator</h2>
+              <p>Monitor live ChatGPT tabs, queue isolated tasks, and reconcile uncertain outcomes without replaying Send.</p>
+            </div>
+            <button id="multitab-refresh" class="button secondary" type="button">Refresh</button>
+          </div>
+          <div class="multitab-summary">
+            <span id="multitab-count-tabs">0 tabs</span>
+            <span id="multitab-count-active">0 running</span>
+            <span id="multitab-count-queued">0 queued</span>
+            <span id="multitab-count-unknown">0 uncertain</span>
+          </div>
+          <p id="multitab-feedback" class="delegate-hint text-secondary" role="status" aria-live="polite">Select a connected profile and tab.</p>
+          <div class="multitab-columns">
+            <div class="multitab-card">
+              <h3>Browser Tabs</h3>
+              <div id="multitab-tabs" class="multitab-items"><p class="text-secondary">No live tab data.</p></div>
+              <button type="button" id="multitab-new-tab" class="button secondary">+ Open new ChatGPT tab</button>
+              <h3>Tab Ownership</h3>
+              <div class="multitab-controls">
+                <label for="multitab-worker">Worker ID</label>
+                <input id="multitab-worker" maxlength="64" value="worker-a" autocomplete="off" spellcheck="false">
+                <button id="multitab-claim" type="button" class="button secondary">Claim selected tab</button>
+                <button id="multitab-release" type="button" class="button ghost">Release selected tab</button>
+              </div>
+            </div>
+            <div class="multitab-card">
+              <h3>Task Queue</h3>
+              <label for="multitab-concurrency">Max concurrent tabs</label>
+              <select id="multitab-concurrency">
+                <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+                <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                <option value="7">7</option><option value="8">8</option>
+              </select>
+              <label for="multitab-priority">Priority</label>
+              <select id="multitab-priority"><option value="5">Normal (5)</option><option value="9">High (9)</option><option value="1">Low (1)</option></select>
+              <label for="multitab-message">Task for selected tab</label>
+              <textarea id="multitab-message" rows="6" maxlength="20000" placeholder="Describe the worker task..." spellcheck="false"></textarea>
+              <button type="button" id="multitab-enqueue" class="button primary">Queue task</button>
+              <button type="button" id="multitab-parallel" class="button secondary">Launch parallel across profile tabs (2–8)</button>
+              <button type="button" id="multitab-ack-send" class="button ghost sm">Acknowledge uncertain send after inspection</button>
+              <p class="delegate-hint">Sending is exactly once per request ID. After an unknown outcome, use Reconcile; never blind Retry.</p>
+              <h3>Task History</h3>
+              <div id="multitab-tasks" class="multitab-items"><p class="text-secondary">No tasks yet.</p></div>
+              <button type="button" id="multitab-aggregate" class="button secondary">Aggregate completed results</button>
+              <label for="multitab-aggregate-output">Combined worker results</label>
+              <textarea id="multitab-aggregate-output" rows="5" readonly placeholder="Results will be listed here after aggregation."></textarea>
+            </div>
+          </div>
+        </section>
       </div>
 
       <!-- ================= PAGE 6: TERMINAL PROCESSES ================= -->
@@ -1253,7 +1519,7 @@
             <div>
               <div class="panel-eyebrow">ACTIVE PROCESS SUPERVISOR</div>
               <h2>Launched Terminals &amp; Subprocesses</h2>
-              <p>Monitor live terminals, inspect output logs, and stop active processes.</p>
+              <p>Start stopped Tray tasks, pause/resume owned processes, inspect logs, and stop active tasks. External processes remain read-only.</p>
             </div>
             <div class="terminal-table-filters">
               <label class="toggle-control sm">
@@ -1623,6 +1889,8 @@
           <span>Tauri Desktop Companion</span>
           <span class="footer-sep">•</span>
           <span id="tray-version" aria-label="Tray version">Version unavailable</span>
+          <span class="footer-sep">•</span>
+          <span id="tray-build-number" aria-label="Tray build number">Build unavailable</span>
         </div>
         <div class="footer-right">
           <span id="timezone"></span>

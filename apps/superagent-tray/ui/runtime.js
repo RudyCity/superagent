@@ -89,8 +89,9 @@ function runtimeServerCard(server) {
     : '<span class="subtle-badge">Server unreachable</span>';
   // Core-local Muse Watch can be started only through this authenticated Core.
   // Other CLI-hosted Muse watchers are never mapped to this Core by PID guess.
-  const coreMuseTarget = online && server.pidVerified === true &&
-    Number.isSafeInteger(server.pid) && server.pid > 0;
+  const coreMuseTarget = online && server.port === runtimeLastResult?.selectedCorePort &&
+    server.pidVerified === true && Number.isSafeInteger(server.pid) && server.pid > 0 &&
+    typeof muse?.watcherActive === "boolean";
   const localMuse = coreMuseTarget && muse?.ownerPresent === true;
   const museControls = !coreMuseTarget ? "" : muse?.watcherActive
     ? `<div class="runtime-lifecycle-group">
@@ -241,6 +242,88 @@ function runtimeRemoteCard(service) {
         : ""}
   </article>`;
 }
+function runtimeSelectedMuseCore(snapshot = runtimeLastResult) {
+  return snapshot?.cores?.find(core =>
+    core.port === snapshot.selectedCorePort && core.state === "online" &&
+    core.pidVerified === true && Number.isSafeInteger(core.pid) && core.pid > 0) || null;
+}
+
+function runtimeMuseControlState(snapshot = runtimeLastResult) {
+  const core = runtimeSelectedMuseCore(snapshot);
+  const muse = core?.services?.muse;
+  return {
+    available: Boolean(core) && typeof muse?.watcherActive === "boolean",
+    coreAvailable: Boolean(core), running: muse?.watcherActive === true,
+    ownerPresent: muse?.ownerPresent === true, configStale: muse?.configStale === true,
+    port: core?.port, pid: core?.pid,
+  };
+}
+
+function runtimeQuickControls(snapshot) {
+  const state = runtimeMuseControlState(snapshot);
+  const target = state.available
+    ? `data-runtime-kind="muse-core" data-runtime-port="${state.port}" data-runtime-pid="${state.pid}"`
+    : "";
+  const button = (action, label, enabled) =>
+    `<button type="button" class="button ghost runtime-lifecycle" ${target}
+      data-runtime-action="${action}" ${enabled ? "" : "disabled"}>${label}</button>`;
+  const muse = state.running
+    ? button("stop", "Stop Muse Watch", state.ownerPresent) +
+      button("restart", "Restart Muse Watch", state.ownerPresent) +
+      (state.configStale ? button("apply-restart", "Apply &amp; Restart", state.ownerPresent) : "")
+    : button("start-telegram", "Start Muse · Telegram", state.available) +
+      button("start-websocket", "Start Muse · WebSocket", state.available) +
+      button("start-tunnel", "Start Muse · Tunnel", state.available);
+  const reason = !state.coreAvailable
+    ? "Start or select a verified local Core to enable Muse controls."
+    : !state.available ? "Selected Core did not report Muse state. Update Core before using Muse controls."
+      : state.running ? "Muse Watch is running on the selected Core." :
+        "Choose a transport. Save Muse settings before startup.";
+  return `<section class="runtime-instance" aria-label="Service quick controls">
+    <div class="runtime-instance-head"><strong>Service Quick Controls</strong>
+      ${runtimeStatusPill(state.running ? "active" : state.available ? "idle" : "unverified")}</div>
+    <div class="runtime-evidence">${runtimeEscape(reason)}</div>
+    <div class="runtime-instance-footer">
+      <div class="runtime-lifecycle-group">${muse}</div>
+      <button type="button" class="button ghost runtime-quick-open"
+        data-runtime-open="mcp" ${state.coreAvailable ? "" : "disabled"}>Host MCP Tunnel</button>
+      <button type="button" class="button ghost runtime-quick-open"
+        data-runtime-open="lifecycle">Other Service Controls</button>
+    </div>
+  </section>`;
+}
+
+function runtimeQuickNavigation(event) {
+  const button = event.target?.closest?.("button.runtime-quick-open");
+  if (!button || button.disabled) return;
+  if (button.dataset.runtimeOpen === "mcp") {
+    if (!runtimeSelectedMuseCore()) return;
+    const panel = rt("runtime-create-panel");
+    const select = rt("runtime-create-kind");
+    if (panel) panel.hidden = false;
+    if (select) select.value = "mcp-tunnel";
+    runtimeCreateKindChanged();
+    panel?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  } else if (button.dataset.runtimeOpen === "lifecycle") {
+    rt("lifecycle-console")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }
+}
+
+window.__superagentMuseControlState = runtimeMuseControlState;
+window.__superagentMuseQuickAction = async (action) => {
+  const state = runtimeMuseControlState();
+  const starts = ["start-telegram", "start-websocket", "start-tunnel"];
+  if (!state.available || (starts.includes(action) && state.running) ||
+      (["stop", "restart", "apply-restart"].includes(action) &&
+       (!state.running || !state.ownerPresent)) ||
+      (action === "apply-restart" && !state.configStale)) return;
+  await runtimeServiceAction({ target: { closest: () => ({
+    disabled: false,
+    dataset: { runtimeKind: "muse-core", runtimeAction: action,
+      runtimePort: String(state.port), runtimePid: String(state.pid) },
+  }) } });
+};
+
 function runtimeRender(snapshot) {
   runtimeLastResult = snapshot;
   rt("runtime-core-count").textContent = String(snapshot.healthyCoreCount || 0);
@@ -252,9 +335,9 @@ function runtimeRender(snapshot) {
   rt("runtime-scanned").textContent = `Scanned ${scanned.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
 
   const servers = Array.isArray(snapshot.cores) ? snapshot.cores : [];
-  rt("runtime-servers").innerHTML = servers.length
+  rt("runtime-servers").innerHTML = runtimeQuickControls(snapshot) + (servers.length
     ? servers.map(runtimeServerCard).join("")
-    : '<p class="empty-state">No registered SuperAgent server-info records found. Start Core, then click Scan Now.</p>';
+    : '<p class="empty-state">No registered SuperAgent server-info records found. Start Core, then click Scan Now.</p>');
 
   const processes = Array.isArray(snapshot.processes) ? snapshot.processes : [];
   rt("runtime-processes").innerHTML = processes.length
@@ -278,6 +361,7 @@ function runtimeRender(snapshot) {
     "Online status requires an authentic loopback HTTP response with bearer authentication. Process discovery validates OS PID, creation time, and fresh heartbeats. " +
     "Local Core summaries do not establish global MCP/Muse status. The independent MCP, Cloudflare and Muse Watch cards use owner records, live PID and endpoint/heartbeat evidence. No credentials or tunnel URLs are displayed.";
   rt("runtime-notes").hidden = false;
+  window.__superagentLifecycleUpdateMuseControls?.();
 }
 
 async function runtimeServiceAction(event) {
@@ -290,12 +374,12 @@ async function runtimeServiceAction(event) {
   const service = kind === "muse-core"
     ? (() => {
         const core = runtimeLastResult?.cores?.find(item =>
-          item.port === port && item.pid === pid && item.state === "online" &&
-          item.pidVerified === true);
+          item.port === port && item.port === runtimeLastResult?.selectedCorePort &&
+          item.pid === pid && item.state === "online" && item.pidVerified === true);
         if (!core) return null;
         const museState=core.services?.muse;
         return {kind,port,pid,
-          canStart:museState?.watcherActive!==true,
+          canStart:museState?.watcherActive===false,
           canStop:museState?.watcherActive===true,
           canRestart:museState?.ownerPresent===true,
           canApply:museState?.watcherActive===true && museState?.configStale===true};
@@ -658,6 +742,7 @@ function runtimeInstall() {
   runtimeCreateKindChanged();
   rt("runtime-refresh")?.addEventListener("click", runtimeRefresh);
   rt("runtime-servers")?.addEventListener("click", runtimeSelect);
+  rt("runtime-servers")?.addEventListener("click", runtimeQuickNavigation);
   rt("runtime-remote")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-remote")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeServiceAction);

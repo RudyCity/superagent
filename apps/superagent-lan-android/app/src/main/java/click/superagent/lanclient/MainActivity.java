@@ -3,6 +3,7 @@ package click.superagent.lanclient;
 import android.app.Activity;
 import android.Manifest;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageInfo;
 import android.app.NotificationManager;
 import android.media.projection.MediaProjectionManager;
 import android.media.projection.MediaProjectionConfig;
@@ -56,6 +57,15 @@ public final class MainActivity extends Activity {
     private TextView screenState;
     private EditText segmentInput;
 
+    private String appBuildLabel() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return "Version " + info.versionName + " · Build " + info.getLongVersionCode();
+        } catch (PackageManager.NameNotFoundException ignored) {
+            return "Version unavailable";
+        }
+    }
+
     private int dp(int n) { return (int) (n * getResources().getDisplayMetrics().density + 0.5f); }
     private TextView label(String value, int size, int color, boolean bold) {
         TextView t = new TextView(this);
@@ -99,6 +109,7 @@ public final class MainActivity extends Activity {
 
         add(layout, label("SUPERAGENT · PRIVATE LAN", 11, 0xff7daeff, true), 0);
         add(layout, label("Android LAN Client", 27, Color.WHITE, true), 6);
+        add(layout, label(appBuildLabel(), 12, 0xff7daeff, false), 2);
         add(layout, label("Consent-based support while this app stays open. No background service, ADB, root, or Internet relay.", 13, 0xffafbed2, false), 6);
 
         section(layout, "NETWORK SEGMENT · REQUIRED");

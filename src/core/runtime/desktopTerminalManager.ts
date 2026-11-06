@@ -24,12 +24,18 @@ import { getProcessSupervisor } from "../process/processSupervisor.js";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { getCommandLogsDir } from "../tools/commandLogger.js";
 import { discoverExternalTerminalProcesses } from "./externalTerminalProcesses.js";
+import { suspendOwnedTerminalProcess, resumeOwnedTerminalProcess, type SuspendedProcess } from "./desktopTerminalSuspend.js";
+
+// Never populated from persisted PIDs or external discovery. Only this Core's live spawn handles.
+const ownedTerminalIdentities = new Map<string, Promise<string | null>>();
+const pausedTerminalTrees = new Map<string, SuspendedProcess[]>();
+const terminalControls = new Set<string>();
 
 export interface DesktopTerminalTaskInfo {
   id: string;
   command: string;
   pid: number;
-  status: "running" | "exited" | "killed" | "unverified";
+  status: "running" | "paused" | "exited" | "killed" | "unverified";
   cwd: string;
   windowLabel?: string;
   isDetachedWindow?: boolean;
@@ -42,6 +48,9 @@ export interface DesktopTerminalTaskInfo {
   isTerminal: boolean;
   source?: "mcp" | "agent" | "background" | "tray" | "external";
   canStop?: boolean;
+  canStart?: boolean;
+  canPause?: boolean;
+  canResume?: boolean;
   canViewLogs?: boolean;
 }
 
@@ -127,6 +136,8 @@ export class DesktopTerminalManager {
         lastOutput: readLogTail(item.logPath, 5),
         source: isTerminal ? "tray" : "background",
         canStop: false,
+        canStart: item.id.startsWith("term-bg-") && !isAlive && !!item.command?.trim() &&
+          !!item.cwd && fs.existsSync(item.cwd),
       });
     }
 
@@ -190,8 +201,10 @@ export class DesktopTerminalManager {
       const pid = task.process?.pid || 0;
       const hasExited = task.hasExited === true || task.process?.killed;
       const isAlive = !hasExited && checkPidAlive(pid);
-      const status: "running" | "exited" | "killed" = isAlive
-        ? "running"
+      const hasOwnedHandle = typeof task.process?.on === "function" &&
+        (!id.startsWith("term-bg-") || ownedTerminalIdentities.has(id));
+      const status: DesktopTerminalTaskInfo["status"] = isAlive
+        ? (!hasOwnedHandle ? "unverified" : pausedTerminalTrees.has(id) ? "paused" : "running")
         : task.exitCode !== null && task.exitCode !== undefined
         ? "exited"
         : "killed";
@@ -215,7 +228,11 @@ export class DesktopTerminalManager {
         isTerminal: id.startsWith("term-") || !!task.isDetachedWindow,
         lastOutput: outputPreview,
         source: id.startsWith("term-") || !!task.isDetachedWindow ? "tray" : "background",
-        canStop: true,
+        canStop: isAlive && hasOwnedHandle,
+        canStart: id.startsWith("term-bg-") && !isAlive && !!task.command?.trim(),
+        canPause: id.startsWith("term-bg-") && isAlive && hasOwnedHandle &&
+          !pausedTerminalTrees.has(id),
+        canResume: id.startsWith("term-bg-") && isAlive && hasOwnedHandle && pausedTerminalTrees.has(id),
       });
     }
 
@@ -223,7 +240,7 @@ export class DesktopTerminalManager {
     // Observing a listener never authorizes signaling the PID.
     const representedRunningPids = new Set(
       [...merged.values()]
-        .filter((task) => task.status === "running" && task.pid > 0)
+        .filter((task) => (task.status === "running" || task.status === "paused") && task.pid > 0)
         .map((task) => task.pid),
     );
     for (const observed of await discoverExternalTerminalProcesses()) {
@@ -249,7 +266,7 @@ export class DesktopTerminalManager {
     const totalCount = allTasks.length;
 
     if (options?.runningOnly) {
-      allTasks = allTasks.filter((t) => t.status === "running");
+      allTasks = allTasks.filter((t) => t.status === "running" || t.status === "paused");
     }
 
     if (options?.search) {
@@ -267,8 +284,8 @@ export class DesktopTerminalManager {
 
     // Sort: running first, then newest execution first across all sources.
     allTasks.sort((a, b) => {
-      if (a.status === "running" && b.status !== "running") return -1;
-      if (b.status === "running" && a.status !== "running") return 1;
+      if (["running", "paused"].includes(a.status) && !["running", "paused"].includes(b.status)) return -1;
+      if (["running", "paused"].includes(b.status) && !["running", "paused"].includes(a.status)) return 1;
       return (b.startedAt ?? b.completedAt ?? 0) - (a.startedAt ?? a.completedAt ?? 0)
         || b.id.localeCompare(a.id);
     });
@@ -289,6 +306,11 @@ export class DesktopTerminalManager {
 
     if (task) {
       targetPid = task.process?.pid;
+      if (task.hasExited || !targetPid || !checkPidAlive(targetPid) ||
+          typeof task.process?.on !== "function" ||
+          (taskId.startsWith("term-bg-") && !ownedTerminalIdentities.has(taskId))) {
+        return { success: false, error: "No verified active owned process handle is available" };
+      }
       try {
         if (targetPid) killProcessTree(targetPid);
       } catch {}
@@ -302,7 +324,14 @@ export class DesktopTerminalManager {
           );
         } catch {}
       }
-      backgroundTasks.delete(taskId);
+      // Persist the stopped task BEFORE dropping its live child handle, so
+      // the historical command remains restartable without PID reuse.
+      try { savePersistedTasks(); } catch {}
+      // Retain terminated Tray tasks in the history view for explicit Start;
+      // other background task types keep their prior removal behavior.
+      if (!taskId.startsWith("term-bg-")) backgroundTasks.delete(taskId);
+      pausedTerminalTrees.delete(taskId);
+      ownedTerminalIdentities.delete(taskId);
       notifyTasksChanged();
     } else {
       // A historical DB PID is not a live process lease. Never signal it:
@@ -315,6 +344,78 @@ export class DesktopTerminalManager {
     } catch {}
 
     return { success: true, pid: targetPid };
+  }
+
+  /**
+   * Restart a previously Tray-launched task as a NEW process and task record.
+   * A historical PID is never reused, signaled or treated as ownership.
+   */
+  static startTask(taskId: string) {
+    if (!/^term-bg-[a-z0-9]{7}$/.test(taskId)) {
+      throw new Error("Only Tray-launched terminal tasks may be started again");
+    }
+    const current = backgroundTasks.get(taskId);
+    const stored = (getWorkspaceTasksFromDb(getWorkspaceId()) || [])
+      .find((item) => item.id === taskId);
+    const oldTask = current || stored;
+    if (!oldTask || !oldTask.command?.trim()) {
+      throw new Error("Original Tray command is not available");
+    }
+    const pid = current?.process?.pid || stored?.pid || 0;
+    if ((current && !current.hasExited && checkPidAlive(pid)) ||
+        (!current && stored && !stored.hasExited && !stored.completedAt && checkPidAlive(pid))) {
+      throw new Error("Terminal task is already active or has an unverified live PID");
+    }
+    if (!oldTask.cwd || !fs.existsSync(oldTask.cwd) || !fs.statSync(oldTask.cwd).isDirectory()) {
+      throw new Error("Original terminal working directory is unavailable");
+    }
+    return this.launchTask({ command: oldTask.command, cwd: oldTask.cwd });
+  }
+
+  /**
+   * Pause/resume OS execution without killing or relaunching the task.
+   * The task must have a real child-process handle created by THIS Core.
+   * Restored/observed process entries can never gain signaling capability.
+   */
+  static async controlTask(taskId: string, action: "pause" | "resume") {
+    if (!/^term-bg-[a-z0-9]{7}$/.test(taskId)) {
+      throw new Error("Pause/Resume is restricted to Tray-owned terminal processes");
+    }
+    const task = backgroundTasks.get(taskId);
+    const pid = task?.process?.pid;
+    const identityPromise = ownedTerminalIdentities.get(taskId);
+    if (!task || task.hasExited || !Number.isSafeInteger(pid) || pid <= 0 ||
+        typeof task.process?.on !== "function" || !identityPromise || !checkPidAlive(pid)) {
+      throw new Error("No live Tray-owned process handle is available");
+    }
+    if (terminalControls.has(taskId)) throw new Error("A terminal control action is already in progress");
+    terminalControls.add(taskId);
+    try {
+      const paused = pausedTerminalTrees.get(taskId);
+      if (action === "pause" && paused) throw new Error("Terminal is already paused");
+      if (action === "resume" && !paused) throw new Error("Terminal is not paused");
+      const expectedIdentity = await identityPromise;
+      const actualIdentity = await readProcessStartIdentity(pid);
+      if (!expectedIdentity || expectedIdentity !== actualIdentity) {
+        throw new Error("Terminal process creation identity cannot be verified");
+      }
+      if (action === "pause") {
+        const processes = await suspendOwnedTerminalProcess(pid, expectedIdentity);
+        pausedTerminalTrees.set(taskId, processes);
+      } else {
+        await resumeOwnedTerminalProcess(pid, expectedIdentity, paused!);
+        pausedTerminalTrees.delete(taskId);
+      }
+      const message = "[Terminal " + action + "d via SuperAgent Tray at " +
+        new Date().toISOString() + "]\n";
+      if (task.logPath) {
+        try { fs.appendFileSync(task.logPath, message); } catch {}
+      }
+      notifyTasksChanged();
+      return { success: true, taskId, status: action === "pause" ? "paused" : "running" };
+    } finally {
+      terminalControls.delete(taskId);
+    }
   }
 
   /**
@@ -536,6 +637,8 @@ export class DesktopTerminalManager {
     };
 
     backgroundTasks.set(taskId, taskObj as any);
+    if (proc.pid) ownedTerminalIdentities.set(taskId, readProcessStartIdentity(proc.pid));
+    try { savePersistedTasks(); } catch {}
     notifyTasksChanged();
 
     proc.all?.on("data", (data: Buffer) => {
@@ -550,6 +653,8 @@ export class DesktopTerminalManager {
     proc.on("close", (code: number | null) => {
       (taskObj as any).hasExited = true;
       (taskObj as any).exitCode = code;
+      ownedTerminalIdentities.delete(taskId);
+      pausedTerminalTrees.delete(taskId);
       taskObj.output.push(`\n[Process exited with code ${code}]`);
       try {
         fs.appendFileSync(logPath, `\n[Process exited with code ${code}]\n`);

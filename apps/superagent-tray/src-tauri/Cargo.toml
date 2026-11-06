@@ -28,3 +28,6 @@ dirs = "6"
 sysinfo = "0.30.13"
 
 uuid = { version = "1", features = ["v4"] }
+
+base64 = "0.22"
+sha2 = "0.10"

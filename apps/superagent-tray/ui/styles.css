@@ -2700,6 +2700,15 @@ tbody tr:hover {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
+.terminal-panel .table-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 190px;
+}
+
 .terminal-task-name {
   display: flex;
   flex-direction: column;

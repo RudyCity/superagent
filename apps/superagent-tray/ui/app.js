@@ -357,7 +357,7 @@ async function onRowClick(event) {
 }
 
 function navigateToPage(pageId) {
-  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "terminal", "muse-files", "settings"];
+  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "terminal", "muse-files", "lan-devices", "settings"];
   const target = validPages.includes(pageId) ? pageId : "jobs";
 
   if (window.location.hash !== `#${target}`) {
@@ -388,6 +388,7 @@ function navigateToPage(pageId) {
   const actionsDelegate = $("actions-delegate");
   const actionsTerminal = $("actions-terminal");
   const actionsMuseFiles = $("actions-muse-files");
+  const actionsLanDevices = $("actions-lan-devices");
 
   // Every page first hides all other page-specific actions.
   if (actionsJobs) actionsJobs.hidden = true;
@@ -397,6 +398,7 @@ function navigateToPage(pageId) {
   if (actionsDelegate) actionsDelegate.hidden = true;
   if (actionsTerminal) actionsTerminal.hidden = true;
   if (actionsMuseFiles) actionsMuseFiles.hidden = true;
+  if (actionsLanDevices) actionsLanDevices.hidden = true;
 
   if (target === "jobs") {
     if (topEyebrow) topEyebrow.textContent = "AUTOMATION CONSOLE";
@@ -451,6 +453,12 @@ function navigateToPage(pageId) {
       "Send documents to Muse, monitor checksum-verified delivery, resume interrupted uploads, and review history.";
     if (actionsMuseFiles) actionsMuseFiles.hidden = false;
     window.__superagentMuseFilesRefresh?.();
+  } else if (target === "lan-devices") {
+    if (topEyebrow) topEyebrow.textContent = "PRIVATE NETWORK SUPPORT";
+    if (topTitle) topTitle.textContent = "LAN Devices";
+    if (topDesc) topDesc.textContent = "Discover, pair and support Windows laptops on the same physical local network.";
+    if (actionsLanDevices) actionsLanDevices.hidden = false;
+    window.__superagentLanRefresh?.();
   } else if (target === "settings") {
     if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
     if (topTitle) topTitle.textContent = "Tray Settings";
@@ -546,6 +554,9 @@ function install() {
   window.__TAURI__?.event?.listen?.("desktop-open-muse-files", () => {
     navigateToPage("muse-files");
   });
+  window.__TAURI__?.event?.listen?.("desktop-open-lan-devices", () => {
+    navigateToPage("lan-devices");
+  });
   window.__TAURI__?.event?.listen?.("desktop-open-settings", () => {
     navigateToPage("settings");
   });
@@ -567,6 +578,14 @@ function install() {
       const el = $("tray-version");
       if (el && typeof version === "string" && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/.test(version)) {
         el.textContent = `Version ${version}`;
+      }
+    })
+    .catch(() => {});
+  window.__TAURI__?.core?.invoke?.("get_tray_build_number")
+    .then((build) => {
+      const el = $("tray-build-number");
+      if (el && typeof build === "string" && /^\d{10,12}$/.test(build)) {
+        el.textContent = `Build ${build}`;
       }
     })
     .catch(() => {});

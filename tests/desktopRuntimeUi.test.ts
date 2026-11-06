@@ -357,4 +357,56 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.requested).toContainEqual({ action: "select_runtime_core", args: { port: 8888 } });
     expect(ui.events).toContain("superagent-core-selected");
   });
+  it("shows Muse start controls but blocks an unverified Core",async()=>{
+    const ui=mountRuntime({
+      scannedAt:Date.now(),healthyCoreCount:0,activeProcessCount:0,
+      selectedCorePort:7888,
+      cores:[{port:7888,pid:200,pidVerified:false,state:"unverified",
+        services:{muse:{watcherActive:false}}}],
+      processes:[],independentHosts:[],remoteServices:[],
+    });
+    await new Promise(resolve=>setImmediate(resolve));
+    const html=ui.byId("runtime-servers").innerHTML;
+    expect(html).toContain("Service Quick Controls");
+    expect(html).toContain("Start Muse · Telegram");
+    expect(html).toContain('data-runtime-action="start-telegram" disabled');
+    expect(html).toContain("Start or select a verified local Core");
+    await (vm.runInContext('window.__superagentMuseQuickAction("start-telegram")',
+      ui.context) as Promise<void>);
+    expect(ui.requested.filter(x=>x.action==="service_action")).toHaveLength(0);
+  });
+
+  it("fails closed when authenticated Core omits Muse state",async()=>{
+    const ui=mountRuntime({
+      scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,
+      selectedCorePort:7888,
+      cores:[{port:7888,pid:301,pidVerified:true,state:"online",
+        services:{mcp:{active:true}}}],
+      processes:[],independentHosts:[],remoteServices:[],
+    });
+    await new Promise(resolve=>setImmediate(resolve));
+    const html=ui.byId("runtime-servers").innerHTML;
+    expect(html).toContain("Selected Core did not report Muse state");
+    expect(html).toContain('data-runtime-action="start-telegram" disabled');
+    expect(html).toContain('data-runtime-open="mcp" >Host MCP Tunnel');
+    await (vm.runInContext('window.__superagentMuseQuickAction("start-telegram")',
+      ui.context) as Promise<void>);
+    expect(ui.requested.filter(x=>x.action==="service_action")).toHaveLength(0);
+  });
+
+  it("opens MCP tunnel setup without launching any service",async()=>{
+    const ui=mountRuntime({
+      scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,
+      selectedCorePort:7888,
+      cores:[{port:7888,pid:300,pidVerified:true,state:"online",
+        services:{muse:{watcherActive:false}}}],
+      processes:[],independentHosts:[],remoteServices:[],
+    });
+    await new Promise(resolve=>setImmediate(resolve));
+    await vm.runInContext(`runtimeQuickNavigation({target:{closest:()=>({
+      disabled:false,dataset:{runtimeOpen:"mcp"}})}})`,ui.context);
+    expect(ui.byId("runtime-create-kind").value).toBe("mcp-tunnel");
+    expect(ui.byId("runtime-create-panel").hidden).toBe(false);
+    expect(ui.requested.filter(x=>x.action==="create_connection")).toHaveLength(0);
+  });
 });

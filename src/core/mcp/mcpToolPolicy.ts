@@ -4,6 +4,7 @@ import { DIAGNOSTICS_MCP_TOOL_CLASSIFICATIONS } from "./tools/diagnosticsMcpTool
 import { PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS } from "./tools/planSkillsMcpTools.js";
 import { NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS } from "./tools/networkContentMcpTools.js";
 import { REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS } from "./tools/remoteAgentMcpTools.js";
+import { LAN_MCP_TOOL_CLASSIFICATIONS } from "./tools/lanMcpTools.js";
 import { PROJECT_MCP_TOOL_CLASSIFICATIONS } from "./tools/projectTools.js";
 import { WORKSPACE_CHAIN_MCP_TOOL_CLASSIFICATIONS } from "./tools/workspaceChainMcpTools.js";
 import { BRAIN_MCP_TOOL_CLASSIFICATIONS } from "./tools/brainMcpTools.js";
@@ -91,6 +92,7 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   ...PLAN_SKILLS_MCP_TOOL_CLASSIFICATIONS,
   ...NETWORK_CONTENT_MCP_TOOL_CLASSIFICATIONS,
   ...REMOTE_AGENT_MCP_TOOL_CLASSIFICATIONS,
+  ...LAN_MCP_TOOL_CLASSIFICATIONS,
   ...PROJECT_MCP_TOOL_CLASSIFICATIONS,
   ...WORKSPACE_CHAIN_MCP_TOOL_CLASSIFICATIONS,
   ...BRAIN_MCP_TOOL_CLASSIFICATIONS,

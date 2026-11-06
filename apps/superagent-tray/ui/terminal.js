@@ -53,6 +53,9 @@
       if (action === "kill") {
         return invoke("kill_terminal_task", { taskId: payload.taskId });
       }
+      if (["start", "pause", "resume"].includes(action)) {
+        return invoke("control_terminal_task", { taskId: payload.taskId, action });
+      }
       if (action === "launch") {
         return invoke("launch_terminal_task", {
           command: payload.command || null,
@@ -84,6 +87,10 @@
       url = "/api/desktop/terminal/kill";
       method = "POST";
       body = JSON.stringify(payload);
+    } else if (["start", "pause", "resume"].includes(action)) {
+      url = "/api/desktop/terminal/control";
+      method = "POST";
+      body = JSON.stringify({ taskId: payload.taskId, action });
     } else if (action === "launch") {
       url = "/api/desktop/terminal/launch";
       method = "POST";
@@ -180,7 +187,7 @@
     // 2. Kill all button visibility
     const killAllBtn = $("terminal-kill-all-btn");
     if (killAllBtn) {
-      killAllBtn.disabled = !terminalState.tasks.some((task) => task.status === "running" && task.canStop !== false);
+      killAllBtn.disabled = !terminalState.tasks.some((task) => (task.status === "running" || task.status === "paused") && task.canStop !== false);
     }
 
     // 3. Tasks Table
@@ -203,8 +210,11 @@
     tbody.innerHTML = terminalState.tasks
       .map((t) => {
         const isRunning = t.status === "running";
+        const isPaused = t.status === "paused";
         const statusBadge = isRunning
           ? `<span class="pill pill-success"><span class="pill-dot"></span>Running</span>`
+          : isPaused
+          ? `<span class="pill pill-muted">Paused</span>`
           : t.status === "unverified"
           ? `<span class="pill pill-muted">Unverified PID</span>`
           : t.status === "exited"
@@ -247,8 +257,17 @@
               ${t.canViewLogs === false
                 ? `<span class="text-muted" title="This process was started outside SuperAgent; its logs are not captured.">Logs unavailable</span>`
                 : `<button type="button" class="button ghost sm terminal-logs-btn" data-task-id="${escapeHtml(t.id)}" title="Inspect terminal stdout logs">View Logs</button>`}
+              ${t.canStart === true && !isRunning && !isPaused
+                ? `<button type="button" class="button ghost sm terminal-control-btn" data-action="start" data-task-id="${escapeHtml(t.id)}" title="Start a new process with the original command and working directory">Start</button>`
+                : ""}
+              ${t.canPause === true && isRunning
+                ? `<button type="button" class="button ghost sm terminal-control-btn" data-action="pause" data-task-id="${escapeHtml(t.id)}" title="Suspend the owned process tree without terminating it">Pause</button>`
+                : ""}
+              ${t.canResume === true && isPaused
+                ? `<button type="button" class="button ghost sm terminal-control-btn" data-action="resume" data-task-id="${escapeHtml(t.id)}" title="Resume the suspended process tree">Resume</button>`
+                : ""}
               ${
-                isRunning && t.canStop !== false
+                (isRunning || isPaused) && t.canStop !== false
                   ? `<button type="button" class="button ghost sm danger terminal-kill-btn" data-task-id="${escapeHtml(
                       t.id
                     )}" data-pid="${t.pid}" data-cmd="${escapeHtml(t.command)}" title="Terminate running process tree">
@@ -344,7 +363,7 @@
 
     // Kill All Running button
     $("terminal-kill-all-btn")?.addEventListener("click", async () => {
-      const running = terminalState.tasks.filter((t) => t.status === "running" && t.canStop !== false);
+      const running = terminalState.tasks.filter((t) => (t.status === "running" || t.status === "paused") && t.canStop !== false);
       if (!running.length) return;
 
       if (!confirm(`Are you sure you want to terminate ALL ${running.length} running terminal process(es)?`)) {
@@ -387,12 +406,29 @@
       }
     });
 
-    // Table actions delegation (View Logs, Stop)
+    // Table actions delegation (View Logs, Start, Pause, Resume, Stop)
     $("terminal-tasks-tbody")?.addEventListener("click", async (e) => {
       const logsBtn = e.target.closest(".terminal-logs-btn");
       if (logsBtn) {
         const taskId = logsBtn.dataset.taskId;
         if (taskId) openLogModal(taskId);
+        return;
+      }
+
+      const controlBtn = e.target.closest(".terminal-control-btn");
+      if (controlBtn) {
+        const taskId = controlBtn.dataset.taskId;
+        const action = controlBtn.dataset.action;
+        if (!taskId || !["start", "pause", "resume"].includes(action)) return;
+        controlBtn.disabled = true;
+        try {
+          const result = await invokeTerminal(action, { taskId });
+          if (result?.success === false) throw new Error(result.error || "Control action failed");
+          await fetchTerminalTasks();
+        } catch (err) {
+          alert(`Failed to ${action} terminal task: ${err.message || err}`);
+          controlBtn.disabled = false;
+        }
         return;
       }
 

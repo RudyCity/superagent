@@ -61,6 +61,6 @@ public final class LanNetwork {
     public static boolean permitsPeer(Context context, Link startedOn, String peerIp) {
         Link now = current(context);
         return startedOn != null && startedOn.matches(now)
-                && LanPolicy.sameSubnet(startedOn.ip, startedOn.prefix, peerIp);
+                && LanPolicy.privateIntranetPeer(startedOn.ip, peerIp);
     }
 }
