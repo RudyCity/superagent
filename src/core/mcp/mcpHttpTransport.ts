@@ -71,6 +71,22 @@ export function generateMcpBearerToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+/**
+ * Stateless MCP requests do not have an MCP session id, but Delegate-CDP
+ * claims still need a stable authenticated actor across consecutive calls.
+ * Bind that actor to the exact verified credential (plus auth mode/subject)
+ * rather than to the short-lived stateless Server instance.
+ *
+ * The returned value is not a credential: credentialHash is already SHA-256
+ * and is domain-separated + hashed again before use.
+ */
+export function deriveStatelessDelegatePrincipalSessionId(identity: McpIdentity): string {
+  return "stateless-" + sha256Hex(
+    "superagent:delegate-mcp:stateless:v1\0" +
+    identity.mode + "\0" + identity.subject + "\0" + identity.credentialHash
+  );
+}
+
 export function isAuthorized(req: http.IncomingMessage, expectedToken: string): boolean {
   return verifyStaticBearer(extractBearerToken(req), expectedToken);
 }
@@ -808,6 +824,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         allowDangerous: opts.allowDangerous,
         lockSafeTools: ownerStatelessLockSafeTools,
         getIdentity: () => identity,
+        delegatePrincipalSessionId: deriveStatelessDelegatePrincipalSessionId(identity as McpIdentity),
         workspace: process.cwd(),
         skipResourcesAndPrompts: isToolOnlyRequest,
       } as McpServerOptions);

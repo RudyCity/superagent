@@ -243,6 +243,13 @@ export interface McpServerOptions {
   lockSafeTools?: boolean;
   /** Optional getter for active client identity (OAuth scopes / subject). */
   getIdentity?: () => { mode: "static-bearer" | "oauth"; subject: string; scopes?: string[]; credentialHash?: string } | null;
+  /**
+   * Stable authenticated connection key used only for Delegate actor binding.
+   * Stateful transports normally omit this and keep their per-server UUID.
+   * Stateless HTTP callers must provide a credential-bound deterministic value
+   * so a claim_target capability remains usable by the next tool call.
+   */
+  delegatePrincipalSessionId?: string;
   /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */
   workspace?: string;
   /** Gateway (default): compact discovery and authorized execution; full: standalone tools. */

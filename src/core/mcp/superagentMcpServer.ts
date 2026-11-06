@@ -672,6 +672,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
   let activeProjectGrantRequired = false;
   // Stable for this server/transport session; never derived from a project cwd.
   const connectionBrainSessionId = crypto.randomUUID();
+  // Delegate leases are multi-call capabilities. Stateful MCP servers keep the
+  // per-transport UUID above, while stateless HTTP execution injects a stable,
+  // credential-bound key so consecutive calls retain the same authenticated
+  // actor instead of creating a fresh owner on every request.
+  const delegatePrincipalSessionId = options.delegatePrincipalSessionId || connectionBrainSessionId;
   // Actor identity is generated per authenticated MCP transport. App/client
   // names from initialize.clientInfo are informational, never authorization.
   const crossIdeGateway = new CrossIdeCdpGateway({
@@ -1036,7 +1041,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
            const delegateMcpConnection = identity &&
              (identity.mode === "oauth" || identity.mode === "static-bearer") &&
              typeof identity.subject === "string" && identity.subject.trim()
-             ? { sessionId: connectionBrainSessionId, mode: identity.mode, subject: identity.subject }
+             ? { sessionId: delegatePrincipalSessionId, mode: identity.mode, subject: identity.subject }
              : undefined;
            const delegateRes = await dispatchDelegateMcpTool(name, args, delegateMcpConnection);
            if (delegateRes) return delegateRes;

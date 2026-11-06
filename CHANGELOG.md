@@ -5,6 +5,12 @@
 - Add owner-initiated, single-attempt USB ADB installer with 120-second default timeout, version verification and non-replay behavior after uncertain results.
 - Verify Lite/Debug Gradle builds, signing and Android Lint; physical-device E2E remains pending. Tray/controller LAN integration is still in progress in the shared checkout.
 
+## [1.14.65] - 2026-11-06
+### Delegate-CDP stateless MCP lease continuity
+- Keep the authenticated Delegate-CDP actor stable across stateless MCP tool calls by binding it to the verified credential instead of a per-request server UUID.
+- Restore multi-call lease flows such as `claim_target -> close_tab` without weakening profile/tab isolation or raw CDP policy.
+- Verify live `close_tab` against connected Delegate extension versions 1.9.0 and 1.9.2 after URL-preserving MCP backend reload.
+
 ## [1.14.64] - 2026-11-05
 ### Windows standalone installer and automated release candidate
 - Extend standalone packaging to macOS ARM64 DMG and Linux x64 DEB/AppImage with platform-local Bun and Core, native CLI smoke checks, and multi-OS release gates.
