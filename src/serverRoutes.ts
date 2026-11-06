@@ -229,92 +229,144 @@ export async function handleServerRoute(
     }));
   });
 
-  // Authenticated local MCP dispatch forwards to the SAME Chrome bridge that
-  // owns the paired profiles. The outer /api bearer gate is mandatory.
-  // No remote HTTP/URL targets and no arbitrary MCP name is accepted.
+  // Only the SAME Core-owned Delegate bridge may execute forwarded MCP calls.
+  // The outer /api bearer gate is retained, but bearer + loopback alone never
+  // establish originating MCP identity. Signed, one-use attestations do.
   if (pathname === "/api/delegate/mcp-dispatch") {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
     const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
     const localHost = /^(?:127\.0\.0\.1|localhost)(?::\d+)?$/i.test(String(req.headers.host || ""));
-    if (!local || !localHost || req.headers.origin) {
+    if (!local || !localHost || req.headers.origin || req.headers.referer ||
+        req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"] ||
+        req.headers["x-forwarded-proto"] || req.headers["cf-connecting-ip"] ||
+        req.headers["cf-ray"]) {
       sendJSON(res, 403, { success: false, error: "DELEGATE_MCP_LOCAL_ONLY" });
+      return true;
+    }
+    const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
+    const bearer = typeof req.headers.authorization === "string" &&
+      /^Bearer [^\s]+$/.test(req.headers.authorization);
+    const headerToken = typeof req.headers["x-auth-token"] === "string" &&
+      req.headers["x-auth-token"].length > 0;
+    if ((!bearer && !headerToken) || !isRequestAuthorized(req, parsedUrl)) {
+      sendJSON(res, 401, { success: false, error: "DELEGATE_MCP_AUTH_REQUIRED" });
       return true;
     }
     if (req.method !== "POST") {
       sendJSON(res, 405, { success: false, error: "DELEGATE_MCP_POST_REQUIRED" });
       return true;
     }
+
+    let parsed: unknown;
     try {
       const raw = await readBody(req);
       if (Buffer.byteLength(raw, "utf8") > 105_000) {
         sendJSON(res, 413, { success: false, error: "DELEGATE_MCP_PAYLOAD_TOO_LARGE" });
         return true;
       }
-      const parsed: unknown = JSON.parse(raw);
+      parsed = JSON.parse(raw);
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_INVALID_REQUEST" });
         return true;
       }
-      const data = parsed as Record<string, unknown>;
-      if (typeof data.name !== "string") {
-        sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_INVALID_TOOL_NAME" });
-        return true;
-      }
-      const { DELEGATE_MCP_TOOL_NAMES, validateDelegateMcpArgs } =
-        await import("./core/mcp/tools/delegateMcpTools.js");
-      const browserTool = data.name === "superagent_chrome_cdp" || data.name === "superagent_chrome_vision";
-      const invalid = browserTool
-        ? (await import("./core/mcp/tools/chromeMcpTools.js"))
-            .validateDelegateBrowserHostArgs(data.name, data.arguments)
-        : validateDelegateMcpArgs(String(data.name || ""), data.arguments);
-      if (invalid || Object.keys(data).some(key => key !== "name" && key !== "arguments")) {
-        sendJSON(res, 400, { success: false, error: invalid || "DELEGATE_MCP_UNEXPECTED_FIELD" });
-        return true;
-      }
-      if (browserTool) {
-        const { handleControlChromeCdp, handleControlChromeVision } =
-          await import("./core/mcp/tools/chromeMcpTools.js");
-        const browserArgs = data.arguments as Record<string, unknown>;
-        const response = data.name === "superagent_chrome_cdp"
-          ? await handleControlChromeCdp(browserArgs, { hostOwned: true })
-          : await handleControlChromeVision(browserArgs, { hostOwned: true });
-        const result = response.content.map(item => item.type === "text" ? item.text : "").join("\n");
-        const failed = response.isError === true;
-        sendJSON(res, failed ? 409 : 200, {
-          success: !failed,
-          ...(failed ? { error: result } : { result }),
-        });
-        return true;
-      }
-      const {
-        delegateReadChatTool, delegateListChatsTool, delegateReadChatFullTool,
-        delegateSearchHistoryTool, delegateSyncHistoryTool, delegateSearchIndexTool,
-        delegateDoctorTool, delegateRunUntilDoneTool, delegateCreateChatTool,
-        delegateSendMessageTool, delegateStopGenerationTool,
-      } = await import("./core/tools/delegateTools.js");
-      const tools: Record<string, typeof delegateReadChatTool> = {
-        [DELEGATE_MCP_TOOL_NAMES.read]: delegateReadChatTool,
-        [DELEGATE_MCP_TOOL_NAMES.list]: delegateListChatsTool,
-        [DELEGATE_MCP_TOOL_NAMES.readFull]: delegateReadChatFullTool,
-        [DELEGATE_MCP_TOOL_NAMES.search]: delegateSearchHistoryTool,
-        [DELEGATE_MCP_TOOL_NAMES.sync]: delegateSyncHistoryTool,
-        [DELEGATE_MCP_TOOL_NAMES.searchIndex]: delegateSearchIndexTool,
-        [DELEGATE_MCP_TOOL_NAMES.doctor]: delegateDoctorTool,
-        [DELEGATE_MCP_TOOL_NAMES.runUntilDone]: delegateRunUntilDoneTool,
-        [DELEGATE_MCP_TOOL_NAMES.create]: delegateCreateChatTool,
-        [DELEGATE_MCP_TOOL_NAMES.send]: delegateSendMessageTool,
-        [DELEGATE_MCP_TOOL_NAMES.stop]: delegateStopGenerationTool,
-      };
-      const result = await tools[data.name as string].execute(
-        data.arguments as Record<string, unknown>, process.cwd());
-      const failed = result.startsWith("Error:");
-      sendJSON(res, failed ? 409 : 200, {
-        success: !failed,
-        ...(failed ? { error: result } : { result }),
-      });
     } catch {
       sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_INVALID_REQUEST" });
+      return true;
+    }
+
+    try {
+      const { withVerifiedDelegateForwardedPrincipal } =
+        await import("./core/browserTransport/delegateForwardedPrincipal.js");
+      // Do not inspect or dispatch caller-provided names or arguments until the
+      // verifier authenticates their MAC, target, age, and consumes the nonce.
+      // All downstream awaited operations retain the verified MCP ALS principal.
+      await withVerifiedDelegateForwardedPrincipal(parsed, async verified => {
+        const { name, arguments: args } = verified;
+        const { DELEGATE_MCP_TOOL_NAMES, validateDelegateMcpArgs } =
+          await import("./core/mcp/tools/delegateMcpTools.js");
+        const browserTool = name === "superagent_chrome_cdp" || name === "superagent_chrome_vision";
+        // A valid MAC binds each selector, but a signed request can still
+        // combine contradictory qualified target/profile/tab hints. Reject
+        // these before reaching *any* host-owned browser handler.
+        if (browserTool && verified.target.targetId) {
+          const { parseBrowserTargetId } =
+            await import("./core/browserTransport/targetIdentity.js");
+          const target = parseBrowserTargetId(verified.target.targetId);
+          if (!target || target.kind !== "delegate" ||
+              (verified.target.clientId !== null &&
+               target.connectionId !== verified.target.clientId) ||
+              (verified.target.tabId !== null &&
+               target.tabId !== verified.target.tabId)) {
+            sendJSON(res, 403, { success: false, error: "DELEGATE_MCP_TARGET_DENIED" });
+            return;
+          }
+        }
+        const invalid = browserTool
+          ? (await import("./core/mcp/tools/chromeMcpTools.js"))
+              .validateDelegateBrowserHostArgs(name, args)
+          : validateDelegateMcpArgs(name, args);
+        if (invalid) {
+          // Do not leak raw caller payloads or secret-bearing validation messages.
+          sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_ARGUMENTS_REJECTED" });
+          return;
+        }
+        if (browserTool) {
+          const { handleControlChromeCdp, handleControlChromeVision } =
+            await import("./core/mcp/tools/chromeMcpTools.js");
+          const response = name === "superagent_chrome_cdp"
+            ? await handleControlChromeCdp(args, { hostOwned: true })
+            : await handleControlChromeVision(args, { hostOwned: true });
+          const failed = response.isError === true;
+          const result = response.content.map(item => item.type === "text" ? item.text : "").join("\n");
+          sendJSON(res, failed ? 409 : 200, {
+            success: !failed,
+            ...(failed ? { error: "DELEGATE_MCP_TOOL_FAILED" } : { result }),
+          });
+          return;
+        }
+        const {
+          delegateReadChatTool, delegateListChatsTool, delegateReadChatFullTool,
+          delegateSearchHistoryTool, delegateSyncHistoryTool, delegateSearchIndexTool,
+          delegateDoctorTool, delegateRunUntilDoneTool, delegateCreateChatTool,
+          delegateSendMessageTool, delegateStopGenerationTool,
+        } = await import("./core/tools/delegateTools.js");
+        const tools: Record<string, typeof delegateReadChatTool> = {
+          [DELEGATE_MCP_TOOL_NAMES.read]: delegateReadChatTool,
+          [DELEGATE_MCP_TOOL_NAMES.list]: delegateListChatsTool,
+          [DELEGATE_MCP_TOOL_NAMES.readFull]: delegateReadChatFullTool,
+          [DELEGATE_MCP_TOOL_NAMES.search]: delegateSearchHistoryTool,
+          [DELEGATE_MCP_TOOL_NAMES.sync]: delegateSyncHistoryTool,
+          [DELEGATE_MCP_TOOL_NAMES.searchIndex]: delegateSearchIndexTool,
+          [DELEGATE_MCP_TOOL_NAMES.doctor]: delegateDoctorTool,
+          [DELEGATE_MCP_TOOL_NAMES.runUntilDone]: delegateRunUntilDoneTool,
+          [DELEGATE_MCP_TOOL_NAMES.create]: delegateCreateChatTool,
+          [DELEGATE_MCP_TOOL_NAMES.send]: delegateSendMessageTool,
+          [DELEGATE_MCP_TOOL_NAMES.stop]: delegateStopGenerationTool,
+        };
+        const handler = tools[name];
+        if (!handler) {
+          sendJSON(res, 400, { success: false, error: "DELEGATE_MCP_TOOL_NOT_ALLOWED" });
+          return;
+        }
+        const result = await handler.execute(args, process.cwd());
+        const failed = result.startsWith("Error:");
+        sendJSON(res, failed ? 409 : 200, {
+          success: !failed,
+          ...(failed ? { error: "DELEGATE_MCP_TOOL_FAILED" } : { result }),
+        });
+      });
+    } catch (error) {
+      // All verifier failures are explicit denies, including when private
+      // channel bootstrap is absent. Never echo the MAC, token, target or URL.
+      const code = error instanceof Error ? error.message : "";
+      const replay = code === "DELEGATE_FORWARD_REPLAY" ||
+        code === "DELEGATE_FORWARD_REPLAY_CACHE_FULL";
+      sendJSON(res, replay ? 409 : 403, {
+        success: false,
+        error: replay ? "DELEGATE_MCP_ATTESTATION_REPLAY" : "DELEGATE_MCP_ATTESTATION_DENIED",
+      });
     }
     return true;
   }
@@ -1111,6 +1163,145 @@ export async function handleServerRoute(
       sendJSON(res, 200, result);
     } catch {
       sendJSON(res, 500, { success: false, error: "Failed to read connection logs." });
+    }
+    return true;
+  }
+
+  // Minimal CDP lease inventory for an authenticated LOCAL operator only.
+  // Core's outer /api bearer gate remains mandatory; verify it again here so
+  // direct route callers cannot bypass the privacy boundary. Query-string
+  // tokens are not accepted by this sensitive endpoint.
+  if (pathname === "/api/delegate/multitab/status") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const localHost = /^(?:127\.0\.0\.1|localhost)(?::[0-9]{2,5})?$/i.test(String(req.headers.host || ""));
+    if (!local || !localHost || req.headers.origin || req.headers.referer ||
+        req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"] ||
+        req.headers["x-forwarded-proto"] || req.headers["cf-connecting-ip"] ||
+        req.headers["cf-ray"]) {
+      sendJSON(res, 403, { success: false, error: "DELEGATE_TRAY_LOCAL_ONLY" });
+      return true;
+    }
+    const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
+    const bearer = typeof req.headers.authorization === "string" &&
+      /^Bearer [^\s]+$/.test(req.headers.authorization);
+    const headerToken = typeof req.headers["x-auth-token"] === "string" &&
+      req.headers["x-auth-token"].length > 0;
+    if ((!bearer && !headerToken) || !isRequestAuthorized(req, parsedUrl)) {
+      sendJSON(res, 401, { success: false, error: "DELEGATE_TRAY_AUTH_REQUIRED" });
+      return true;
+    }
+    if (req.method !== "GET") {
+      sendJSON(res, 405, { success: false, error: "DELEGATE_TRAY_GET_ONLY" });
+      return true;
+    }
+    const clientId = parsedUrl.searchParams.get("clientId");
+    if (parsedUrl.searchParams.has("token") ||
+        [...parsedUrl.searchParams.keys()].some(key => key !== "clientId") ||
+        (clientId !== null && !/^[A-Za-z0-9_-]{8,80}$/.test(clientId))) {
+      sendJSON(res, 400, { success: false, error: "DELEGATE_TRAY_INVALID_FILTER" });
+      return true;
+    }
+    try {
+      const { readDelegateTrayStatus } =
+        await import("./core/delegate/delegateStatusProjection.js");
+      sendJSON(res, 200, { success: true, transport: "delegate",
+        ...readDelegateTrayStatus(clientId ?? undefined) });
+    } catch {
+      // Never disclose raw coordinator, journal, profile or filesystem errors.
+      sendJSON(res, 503, { success: false, error: "DELEGATE_TRAY_STATUS_UNKNOWN" });
+    }
+    return true;
+  }
+
+  // Native Tray multi-tab orchestration. Authenticated by Core's global bearer gate,
+  // and further restricted to localhost. Never accept arbitrary delegate RPC names.
+  if (pathname === "/api/desktop/delegate/orchestrator") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const host = /^(?:127\.0\.0\.1|localhost)(?::\d+)?$/i.test(String(req.headers.host || ""));
+    if (!local || !host || req.headers.origin) {
+      sendJSON(res, 403, { success: false, error: "MULTITAB_LOCAL_ONLY" });
+      return true;
+    }
+    if (req.method !== "GET" && req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "MULTITAB_METHOD_INVALID" });
+      return true;
+    }
+    try {
+      const { delegateMultiTabOrchestrator: orchestrator } =
+        await import("./core/delegate/multiTabOrchestrator.js");
+      if (req.method === "GET") {
+        void orchestrator.reconcilePendingReadOnly().catch(() => {});
+        // Native Tauri already requests this URL via its authenticated Core
+        // bridge. Provide the same safe CDP projection without modifying Rust.
+        // Never expose CDP sessions to a direct unverified route invocation.
+        let cdpStatus: { sessionsStatus: "known" | "unknown"; sessions: unknown[];
+          observedAt?: number; truncated?: boolean } =
+          { sessionsStatus: "unknown", sessions: [] };
+        const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
+        const hasHeaderCredential = Boolean(req.headers.authorization || req.headers["x-auth-token"]);
+        if (hasHeaderCredential && isRequestAuthorized(req, parsedUrl)) {
+          try {
+            const { readDelegateTrayStatus } =
+              await import("./core/delegate/delegateStatusProjection.js");
+            cdpStatus = readDelegateTrayStatus();
+          } catch {
+            // Preserve the orchestrator dashboard but mark CDP data unknown.
+          }
+        }
+        sendJSON(res, 200, { success: true, ...orchestrator.snapshot(),
+          profiles: await orchestrator.tabs(), ...cdpStatus });
+        return true;
+      }
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw, "utf8") > 25_000) {
+        sendJSON(res, 413, { success: false, error: "MULTITAB_PAYLOAD_TOO_LARGE" });
+        return true;
+      }
+      const body: unknown = JSON.parse(raw);
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        sendJSON(res, 400, { success: false, error: "MULTITAB_INVALID_BODY" });
+        return true;
+      }
+      const args = body as Record<string, unknown>;
+      const action = args.action;
+      const allowed: Record<string, string[]> = {
+        "new-tab": ["clientId"],
+        "claim": ["clientId", "tabId", "workerId"],
+        "release": ["clientId", "tabId", "workerId"],
+        "enqueue": ["requestId", "clientId", "tabId", "workerId", "message", "title", "priority", "chatId", "maxRuntimeMs"],
+        "parallel": ["requestId", "clientId", "tabIds", "goal"],
+        "cancel": ["taskId"],
+        "reconcile": ["taskId"],
+        "stop-generation": ["taskId"],
+        "forward": ["sourceTaskId", "requestId", "clientId", "tabId", "workerId", "priority"],
+        "aggregate": ["taskIds"],
+        "set-concurrency": ["maxConcurrent"],
+      };
+      if (typeof action !== "string" || !Object.hasOwn(allowed, action) ||
+          Object.keys(args).some(key => key !== "action" && !allowed[action].includes(key))) {
+        sendJSON(res, 400, { success: false, error: "MULTITAB_ACTION_NOT_ALLOWED" });
+        return true;
+      }
+      const result = action === "new-tab" ? await orchestrator.newTab(args.clientId)
+        : action === "claim" ? orchestrator.claim(args.clientId, args.tabId, args.workerId)
+        : action === "release" ? (orchestrator.release(args.clientId, args.tabId, args.workerId), { released: true })
+        : action === "enqueue" ? orchestrator.enqueue(args)
+        : action === "parallel" ? orchestrator.enqueueParallel(args)
+        : action === "cancel" ? orchestrator.cancel(args.taskId)
+        : action === "reconcile" ? await orchestrator.reconcile(args.taskId)
+        : action === "stop-generation" ? await orchestrator.stopTask(args.taskId)
+        : action === "forward" ? orchestrator.forward(args)
+        : action === "set-concurrency" ? { maxConcurrent: orchestrator.setConcurrency(args.maxConcurrent) }
+        : orchestrator.aggregate(args.taskIds);
+      sendJSON(res, 200, { success: true, result });
+    } catch (error) {
+      sendJSON(res, 409, { success: false, error: String(
+        error instanceof Error ? error.message : error).slice(0, 280) });
     }
     return true;
   }

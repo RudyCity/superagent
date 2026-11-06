@@ -49,6 +49,7 @@ import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, 
   type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
 import { executeDelegateChromeCommand } from "../delegate/cdpTransport.js";
+import { isDelegateMcpBoundary, assertDelegateMcpActorForCommand } from "../browserTransport/delegatePrincipalPolicy.js";
 import { getBrowserTransport, resolveBrowserTransport } from "../browserTransport/router.js";
 import { parseBrowserTargetId, serializeBrowserTarget } from "../browserTransport/targetIdentity.js";
 import {
@@ -858,6 +859,8 @@ export const controlChromeCdpTool: Tool = {
 
     if (route === "delegate") {
       try {
+        // Verify the bound MCP actor before any Delegate bridge dispatch.
+        assertDelegateMcpActorForCommand(command, args.agentId, payload.agentId);
         return await executeDelegateChromeCommand(
           command,
           { ...args, delegateClientId, delegateTabId, targetId },
@@ -877,7 +880,8 @@ export const controlChromeCdpTool: Tool = {
         ]);
         const targets = [
           ...(managedResult.status === "fulfilled" ? managedResult.value : []),
-          ...(delegateResult.status === "fulfilled" ? delegateResult.value : []),
+          // MCP transport inventory cannot expose sessions belonging to other actors.
+          ...(delegateResult.status === "fulfilled" && !isDelegateMcpBoundary() ? delegateResult.value : []),
         ].map(target => ({
           transport: target.kind,
           connectionId: target.connectionId,

@@ -15,6 +15,11 @@ import { listChromeProfilesTool } from "../../tools/chromeProfileTools.js";
 import { resolveMcpWorkspace } from "./workspaceContext.js";
 import { resolveBrowserTransport } from "../../browserTransport/router.js";
 import { dispatchDelegateBrowserMcpTool } from "./delegateMcpTools.js";
+import {
+  runWithDelegateMcpBoundary,
+  assertDelegateMcpActorForCommand, type AuthenticatedDelegateMcpConnection,
+} from "../../browserTransport/delegatePrincipalPolicy.js";
+import { runWithTrustedDelegateForwardingConnection } from "../../browserTransport/delegateForwardedPrincipal.js";
 
 /** MCP must never bind the Core-owned Delegate WebSocket port. */
 function needsDelegateCoreHost(args: any): boolean {
@@ -49,24 +54,40 @@ function toResult(res: unknown): McpToolResult {
 }
 
 export async function handleControlChromeCdp(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
-  try {
-    if (!options.hostOwned && needsDelegateCoreHost(args)) {
-      return await dispatchDelegateBrowserMcpTool("superagent_chrome_cdp", args || {});
+  return runWithDelegateMcpBoundary(async () => {
+    try {
+      if (needsDelegateCoreHost(args)) {
+        let payload: Record<string, unknown> = {};
+        try { payload = typeof args?.payload === "string" ? JSON.parse(args.payload) : (args?.payload || {}); } catch {}
+        // Validate in the MCP process BEFORE proxy forwarding; a Core bearer token
+        // does not prove which MCP session originally requested the operation.
+        assertDelegateMcpActorForCommand(String(args?.command || ""), args?.agentId, payload?.agentId);
+        if (!options.hostOwned) {
+          return await dispatchDelegateBrowserMcpTool("superagent_chrome_cdp", args || {});
+        }
+      }
+      const res = await controlChromeCdpTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
+      return toResult(res);
+    } catch (err: any) {
+      return {
+        content: [{ type: "text", text: `control_chrome_cdp error: ${err?.message || String(err)}` }],
+        isError: true,
+      };
     }
-    const res = await controlChromeCdpTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
-    return toResult(res);
-  } catch (err: any) {
-    return {
-      content: [{ type: "text", text: `control_chrome_cdp error: ${err?.message || String(err)}` }],
-      isError: true,
-    };
-  }
+  });
 }
 
 export async function handleControlChromeVision(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
+  return runWithDelegateMcpBoundary(async () => {
   try {
-    if (!options.hostOwned && needsDelegateCoreHost(args)) {
-      return await dispatchDelegateBrowserMcpTool("superagent_chrome_vision", args || {});
+    if (needsDelegateCoreHost(args)) {
+      // Vision's separate host/proxy executor does not yet carry an authenticated
+      // per-MCP-session scope. Block protected Delegate operations instead of
+      // trusting agentId in a forwarded request.
+      if (args?.command !== "status") {
+        throw new Error("DELEGATE_MCP_VISION_PRINCIPAL_UNVERIFIED: Delegated vision requires trusted per-session host binding.");
+      }
+      if (!options.hostOwned) return await dispatchDelegateBrowserMcpTool("superagent_chrome_vision", args || {});
     }
     const visionPayload: Record<string, unknown> =
       typeof args?.payload === "string" ? JSON.parse(args.payload || "{}") : { ...(args?.payload || {}) };
@@ -88,6 +109,7 @@ export async function handleControlChromeVision(args: any, options: { hostOwned?
       isError: true,
     };
   }
+  });
 }
 
 export async function handleListRunningChrome(args: any): Promise<McpToolResult> {
@@ -412,7 +434,17 @@ export const CHROME_MCP_TOOL_DEFS = [
   },
 ];
 
-export async function dispatchChromeMcpTool(name: string, args: any): Promise<McpToolResult | null> {
+/**
+ * The MCP server may pass its verified transport context as argument 3.
+ * This MUST be constructed from connectionBrainSessionId + getIdentity(),
+ * never from MCP tool arguments or a forwarded Core request.
+ */
+export async function dispatchChromeMcpTool(
+  name: string, args: any, trustedConnection?: AuthenticatedDelegateMcpConnection,
+): Promise<McpToolResult | null> {
+  if (trustedConnection) {
+    return runWithTrustedDelegateForwardingConnection(trustedConnection, () => dispatchChromeMcpTool(name, args));
+  }
   switch (name) {
     case "superagent_chrome_cdp":
     case "superagent_control_chrome_cdp":

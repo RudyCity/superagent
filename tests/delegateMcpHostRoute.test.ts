@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+// Focus this legacy suite on HTTP auth/input guards. Signed forwarding is
+// exercised separately in delegateForwardedHostDispatch.test.ts.
+vi.mock("../src/core/utils/serverSecurity.js", async importOriginal => ({
+  ...(await importOriginal<typeof import("../src/core/utils/serverSecurity.js")>()),
+  isRequestAuthorized: () => true,
+}));
 import { handleServerRoute } from "../src/serverRoutes.js";
 
 type Reply = { status: number; payload: any };
@@ -11,6 +17,7 @@ async function invokeHost(input: {
     method: input.method || "POST",
     headers: {
       host: input.host || "127.0.0.1:7888",
+      authorization: "Bearer isolated-test-capability",
       ...(input.origin ? { origin: input.origin } : {}),
     },
     socket: { remoteAddress: input.remote || "127.0.0.1" },
@@ -35,13 +42,11 @@ async function invokeHost(input: {
 }
 
 describe("Host-owned Delegate MCP route", () => {
-  it("reads paired-client roster from the same host bridge without creating another socket", async () => {
+  it("rejects unsigned roster reads before touching the host bridge", async () => {
     const reply = await invokeHost();
-    expect(reply.status).toBe(200);
-    expect(reply.payload.success).toBe(true);
-    expect(JSON.parse(reply.payload.result)).toEqual(expect.objectContaining({
-      connections: expect.any(Array), count: expect.any(Number),
-    }));
+    expect(reply).toMatchObject({
+      status: 403, payload: { success: false, error: "DELEGATE_MCP_ATTESTATION_DENIED" },
+    });
   });
   it("rejects non-loopback and browser-origin requests", async () => {
     expect((await invokeHost({ remote: "192.0.2.50" })).status).toBe(403);
@@ -53,20 +58,22 @@ describe("Host-owned Delegate MCP route", () => {
     expect(reply.status).toBe(405);
   });
   it("strictly rejects malformed, oversized, or mutation-without-message payloads", async () => {
-    expect((await invokeHost({ name: "delegate.send_message" })).status).toBe(400);
-    expect((await invokeHost({ name: ["superagent_delegate_read_chat"] })).status).toBe(400);
-    expect((await invokeHost({ name: "superagent_delegate_send_message", args: {} })).status).toBe(400);
-    expect((await invokeHost({ body: '{"name":"superagent_delegate_read_chat","arguments":{},"extra":1}' })).status).toBe(400);
+    // Parse-level defects remain 400; syntactically valid but unsigned requests
+    // must be denied before argument/tool dispatch, regardless of their fields.
+    expect((await invokeHost({ name: "delegate.send_message" })).status).toBe(403);
+    expect((await invokeHost({ name: ["superagent_delegate_read_chat"] })).status).toBe(403);
+    expect((await invokeHost({ name: "superagent_delegate_send_message", args: {} })).status).toBe(403);
+    expect((await invokeHost({ body: '{"name":"superagent_delegate_read_chat","arguments":{},"extra":1}' })).status).toBe(403);
     expect((await invokeHost({ body: "malformed" })).status).toBe(400);
     expect((await invokeHost({ body: "x".repeat(105_001) })).status).toBe(413);
   });
-  it("never guesses or creates a new ChatGPT chat for unknown profile IDs", async () => {
+  it("does not route unsigned messages to an unknown profile", async () => {
     const reply = await invokeHost({
       name: "superagent_delegate_read_chat",
       args: { clientId: "this-client-does-not-exist" },
     });
-    expect(reply.status).toBe(409);
-    expect(reply.payload.success).toBe(false);
-    expect(reply.payload.error).toContain("Error:");
+    expect(reply).toMatchObject({
+      status: 403, payload: { success: false, error: "DELEGATE_MCP_ATTESTATION_DENIED" },
+    });
   });
 });

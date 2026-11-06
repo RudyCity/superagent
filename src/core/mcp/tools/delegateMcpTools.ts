@@ -2,6 +2,10 @@
  * The MCP transport may run in another process: never instantiate a second
  * DelegateBridge and never re-send chat messages on HTTP/network failures. */
 import { getServerAuthToken } from "../../utils/serverSecurity.js";
+import {
+  signDelegateForwardedRequest, runWithTrustedDelegateForwardingConnection,
+} from "../../browserTransport/delegateForwardedPrincipal.js";
+import type { AuthenticatedDelegateMcpConnection } from "../../browserTransport/delegatePrincipalPolicy.js";
 
 export const DELEGATE_MCP_TOOL_NAMES = {
   read: "superagent_delegate_read_chat",
@@ -27,6 +31,10 @@ const tabId = {
   description: "Exact ChatGPT tab ID. If several protected tabs remain, specify this explicitly.",
 };
 const optionalTarget = { clientId, tabId };
+const requestId = {
+  type: "string", minLength: 8, maxLength: 80,
+  description: "Stable idempotency key. Reuse never re-dispatches, including after uncertain RPC outcomes.",
+};
 const schema = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object" as const, properties, required, additionalProperties: false,
 });
@@ -95,10 +103,11 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.runUntilDone,
-    description: "Send one task and monitor until an explicit completion marker appears, with bounded continuations/runtime and optional stall recovery. Requires write permission.",
+    description: "Send and monitor on an explicit clientId/tabId. Holds the shared target lock; never replays uncertain sends.",
     inputSchema: schema({
       clientId,
       tabId,
+      requestId,
       message: { type: "string", minLength: 1, maxLength: 100_000 },
       maxContinuations: { type: "integer", minimum: 0, maximum: 8 },
       pollMs: { type: "integer", minimum: 500, maximum: 5000 },
@@ -110,21 +119,22 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.create,
-    description: "Explicitly start a new ChatGPT chat once. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness. Requires MCP write permission; never reloads or retries a click.",
-    inputSchema: schema(optionalTarget),
+    description: "Start a ChatGPT chat on explicit clientId/tabId, or newTab:true for an independent tab in clientId.",
+    inputSchema: schema({ ...optionalTarget, requestId, newTab: { type: "boolean", description: "Open an independent ChatGPT tab; mutually exclusive with tabId." } }),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.send,
-    description: "Send one message through the selected ChatGPT web tab. If ChatGPT later shows its delivery-timeout banner, the extension sends one distinct guarded follow-up, 'continue until done'; it never clicks Retry or resends the original request. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Transport/RPC timeouts are never retried.",
+    description: "Send once to explicit clientId and tabId; optional requestId prevents replay after uncertain RPC outcomes. No implicit tab fallback.",
     inputSchema: schema({
       ...optionalTarget,
+      requestId,
       message: { type: "string", minLength: 1, maxLength: 100_000 },
     }, ["message"]),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.stop,
-    description: "Explicitly click Stop generation in the selected ChatGPT tab. If no ChatGPT tab exists and tabId is omitted, Delegate may open https://chatgpt.com/ first; an explicit missing tabId never falls back. Requires MCP write permission; never runs automatically.",
-    inputSchema: schema(optionalTarget),
+    description: "Explicit Stop generation only for clientId/tabId; no implicit fallback or automatic retry.",
+    inputSchema: schema({ ...optionalTarget, requestId }),
   },
 ];
 
@@ -167,8 +177,10 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
   if (!isPlainObject(args)) return "DELEGATE_INVALID_ARGUMENTS";
   const keys = Object.keys(args);
   const allowed = name === DELEGATE_MCP_TOOL_NAMES.send
-    ? ["clientId", "tabId", "message"]
-    : name === DELEGATE_MCP_TOOL_NAMES.read
+    ? ["clientId", "tabId", "message", "requestId"]
+    : name === DELEGATE_MCP_TOOL_NAMES.create
+      ? ["clientId", "tabId", "newTab", "requestId"]
+      : name === DELEGATE_MCP_TOOL_NAMES.read
       ? ["clientId", "tabId", "connections"]
       : name === DELEGATE_MCP_TOOL_NAMES.list
         ? ["clientId", "cursor", "limit"]
@@ -183,14 +195,23 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
                 : name === DELEGATE_MCP_TOOL_NAMES.doctor
                   ? ["clientId", "tabId"]
                   : name === DELEGATE_MCP_TOOL_NAMES.runUntilDone
-                    ? ["clientId", "tabId", "message", "maxContinuations", "pollMs", "stallMs", "maxRuntimeMs", "recoverStall", "completionMarker"]
-                    : ["clientId", "tabId"];
+                    ? ["clientId", "tabId", "message", "maxContinuations", "pollMs", "stallMs", "maxRuntimeMs", "recoverStall", "completionMarker", "requestId"]
+                    : ["clientId", "tabId", "requestId"];
   if (keys.some(key => !allowed.includes(key))) return "DELEGATE_UNEXPECTED_ARGUMENT";
   if (args.clientId !== undefined &&
     (typeof args.clientId !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(args.clientId)))
     return "DELEGATE_INVALID_CLIENT_ID";
   if (args.tabId !== undefined && (!Number.isSafeInteger(args.tabId) || Number(args.tabId) < 1))
     return "DELEGATE_INVALID_TAB_ID";
+  if (args.requestId !== undefined && (typeof args.requestId !== "string" ||
+      !/^[A-Za-z0-9_-]{8,80}$/.test(args.requestId)))
+    return "DELEGATE_INVALID_REQUEST_ID";
+  if (name === DELEGATE_MCP_TOOL_NAMES.create) {
+    if (args.newTab !== undefined && typeof args.newTab !== "boolean")
+      return "DELEGATE_INVALID_NEW_TAB";
+    if (args.newTab === true && args.tabId !== undefined)
+      return "DELEGATE_NEW_TAB_WITH_TAB_ID";
+  }
   if (name === DELEGATE_MCP_TOOL_NAMES.read && args.connections !== undefined) {
     if (typeof args.connections !== "boolean") return "DELEGATE_INVALID_CONNECTIONS";
     if (args.connections === true && keys.some(key => key !== "connections"))
@@ -256,11 +277,12 @@ export async function dispatchDelegateBrowserMcpTool(
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   try {
     const port = 7888;
+    const signedBody = signDelegateForwardedRequest(name, args);
     const token = getServerAuthToken(port);
     const response = await fetch("http://127.0.0.1:" + port + "/api/delegate/mcp-dispatch", {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
-      body: JSON.stringify({ name, arguments: args }),
+      body: JSON.stringify(signedBody),
       signal: AbortSignal.timeout(name === "superagent_chrome_vision" ? 180_000 : 95_000),
     });
     const payload: unknown = await response.json();
@@ -270,15 +292,22 @@ export async function dispatchDelegateBrowserMcpTool(
     }
     return { content: [{ type: "text", text: typeof payload.error === "string"
       ? payload.error : "DELEGATE_CDP_HOST_REQUEST_FAILED" }], isError: true };
-  } catch {
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (/^DELEGATE_FORWARD_[A-Z_]+$/.test(code))
+      return { content: [{ type: "text", text: code }], isError: true };
     return { content: [{ type: "text", text: "DELEGATE_CDP_HOST_UNAVAILABLE_OR_TIMEOUT: Core at 127.0.0.1:7888 did not confirm the browser operation. No retry was performed; inspect the tab before attempting a write again." }], isError: true };
   }
 }
 
 export async function dispatchDelegateMcpTool(
   name: string, args: Record<string, unknown>,
+  trustedConnection?: AuthenticatedDelegateMcpConnection,
 ): Promise<{ content: Array<{type: "text"; text: string}>; isError?: boolean } | null> {
   if (!nameSet.has(name)) return null;
+  if (trustedConnection) return runWithTrustedDelegateForwardingConnection(
+    trustedConnection, () => dispatchDelegateMcpTool(name, args),
+  );
   const invalid = validateDelegateMcpArgs(name, args);
   if (invalid) return { content: [{ type: "text", text: invalid }], isError: true };
 
@@ -286,6 +315,7 @@ export async function dispatchDelegateMcpTool(
   // Credentials never enter tool arguments, logs, or a browser.
   const port = 7888;
   try {
+    const signedBody = signDelegateForwardedRequest(name, args);
     const token = getServerAuthToken(port);
     const timeoutMs = name === DELEGATE_MCP_TOOL_NAMES.runUntilDone ? 910_000
       : name === DELEGATE_MCP_TOOL_NAMES.sync ? 910_000
@@ -299,7 +329,7 @@ export async function dispatchDelegateMcpTool(
         "Authorization": "Bearer " + token,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name, arguments: args }),
+      body: JSON.stringify(signedBody),
       signal: AbortSignal.timeout(timeoutMs),
     });
     const payload: unknown = await response.json();
@@ -314,7 +344,10 @@ export async function dispatchDelegateMcpTool(
       }],
       isError: true,
     };
-  } catch {
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (/^DELEGATE_FORWARD_[A-Z_]+$/.test(code))
+      return { content: [{ type: "text", text: code }], isError: true };
     // A transport timeout is NOT evidence the host did not click Send.
     // Never retry a mutation automatically; caller must inspect read_chat.
     return {

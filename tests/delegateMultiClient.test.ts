@@ -119,7 +119,7 @@ describe("multiple independent Chrome Delegate connections", () => {
       }));
     });
     const output = JSON.parse(await entry.bridge.request(
-      "delegate.send_message", { message: "single test message" },
+      "delegate.send_message", { message: "single test message", tabId: 7 },
       undefined, 2500, "chrome-personal-001",
     ));
     expect(output.selected).toBe("chrome-personal-001");

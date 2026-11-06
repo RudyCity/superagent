@@ -6,6 +6,8 @@ import {
   syncDelegateHistoryIndex,
 } from "../delegate/historySync.js";
 import { runDelegateUntilDone } from "../delegate/runUntilDone.js";
+import { delegateMultiTabOrchestrator } from "../delegate/multiTabOrchestrator.js";
+import { hasDelegateClaim, withDelegateTargetLock } from "../browserTransport/sessionCoordinator.js";
 
 const schema = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object", properties, required, additionalProperties: false,
@@ -22,12 +24,45 @@ const optionalTarget = {
   },
 };
 
+const requestIdParameter = {
+  type: "string", minLength: 8, maxLength: 80,
+  description: "Stable idempotency key: never resends after confirmed or uncertain result.",
+};
+
+/** Semantic Delegate writes share the Delegate-CDP FIFO target lock. */
+export async function withSemanticDelegateTarget<T>(
+  name: string, clientId: string | undefined, tabId: unknown, newTab: boolean,
+  fn: (clientId: string) => Promise<T>,
+): Promise<T> {
+  if (!clientId) throw new Error("DELEGATE_EXPLICIT_CLIENT_REQUIRED: Supply clientId for mutations");
+  if (!delegateBridge.listConnections().some(client => client.clientId === clientId)) {
+    throw new Error("DELEGATE_TARGET_NOT_CONNECTED: Explicit Chrome profile is offline");
+  }
+  if (newTab && name === "delegate.create_chat") return fn(clientId);
+  if (!Number.isSafeInteger(tabId) || Number(tabId) < 1) {
+    throw new Error("DELEGATE_EXPLICIT_TAB_REQUIRED: Supply exact tabId; no implicit mutation target");
+  }
+  return withDelegateTargetLock(clientId, Number(tabId), async () => {
+    if (!delegateBridge.listConnections().some(client => client.clientId === clientId)) {
+      throw new Error("DELEGATE_TARGET_NOT_CONNECTED: Target profile disconnected");
+    }
+    if (hasDelegateClaim(clientId, Number(tabId))) {
+      throw new Error("DELEGATE_CDP_TARGET_CLAIMED: Release CDP ownership before semantic mutation");
+    }
+    if (delegateMultiTabOrchestrator.isReserved(clientId, Number(tabId))) {
+      throw new Error("MULTITAB_TARGET_RESERVED: Release orchestrator reservation before direct mutation");
+    }
+    return fn(clientId);
+  });
+}
+
 function prepareTarget(
   args: Record<string, unknown>,
   allowMessage: boolean,
+  allowNewTab = false,
 ): { clientId?: string; params: Record<string, unknown> } {
   const keys = Object.keys(args || {});
-  if (keys.some(k => !["clientId", "tabId", ...(allowMessage ? ["message"] : [])].includes(k))) {
+  if (keys.some(k => !["clientId", "tabId", "requestId", ...(allowMessage ? ["message"] : []), ...(allowNewTab ? ["newTab"] : [])].includes(k))) {
     throw new Error("DELEGATE_INVALID_ARGUMENT: Unexpected delegate tool argument");
   }
   const clientId = args?.clientId;
@@ -36,11 +71,24 @@ function prepareTarget(
     throw new Error("DELEGATE_INVALID_CLIENT_ID: Use a clientId from delegate.read_chat({connections:true})");
   }
   const params: Record<string, unknown> = {};
+  if (args?.requestId !== undefined && (typeof args.requestId !== "string" ||
+      !/^[a-zA-Z0-9_-]{8,80}$/.test(args.requestId))) {
+    throw new Error("DELEGATE_INVALID_REQUEST_ID: Use 8-80 letters, digits, underscores or hyphens");
+  }
   if (args?.tabId !== undefined) {
     if (!Number.isSafeInteger(args.tabId) || (args.tabId as number) < 1) {
       throw new Error("DELEGATE_INVALID_TAB_ID: tabId must be a positive integer");
     }
     params.tabId = args.tabId;
+  }
+  if (allowNewTab && args?.newTab !== undefined) {
+    if (typeof args.newTab !== "boolean") {
+      throw new Error("DELEGATE_INVALID_NEW_TAB: newTab must be boolean");
+    }
+    if (args.newTab && params.tabId !== undefined) {
+      throw new Error("DELEGATE_INVALID_ARGUMENT: newTab cannot be combined with tabId");
+    }
+    if (args.newTab) params.newTab = true;
   }
   if (allowMessage) {
     if (typeof args.message !== "string" || !args.message.trim() || args.message.length > 100_000) {
@@ -99,6 +147,7 @@ function tool(
   timeoutMs = 20_000,
   allowMessage = false,
   allowConnectionList = false,
+  allowNewTab = false,
 ): Tool {
   return {
     name, description, parameters,
@@ -122,7 +171,13 @@ function tool(
           }
           delete copy.connections;
         }
-        const { clientId, params } = prepareTarget(copy, allowMessage);
+        const { clientId, params } = prepareTarget(copy, allowMessage, allowNewTab);
+        if (["delegate.create_chat", "delegate.send_message", "delegate.stop_generation"].includes(name)) {
+          return await withSemanticDelegateTarget(name, clientId, params.tabId, params.newTab === true,
+            selected => delegateBridge.executeOnce(args.requestId as string | undefined,
+              name, selected, params,
+              () => delegateBridge.request(name, params, signal, timeoutMs, selected)));
+        }
         return await delegateBridge.request(name, params, signal, timeoutMs, clientId);
       } catch (error) {
         return `Error: ${error instanceof Error ? error.message : String(error)}`;
@@ -133,8 +188,9 @@ function tool(
 
 export const delegateCreateChatTool: Tool = tool(
   "delegate.create_chat",
-  "Start a new ChatGPT chat exactly once. If the selected Chrome profile has no ChatGPT tab and tabId is omitted, Delegate opens https://chatgpt.com/ automatically, waits for readiness, then continues. For multiple Chrome profiles choose clientId from delegate.read_chat({connections:true}). Optional tabId selects an exact ChatGPT tab and never falls back.",
-  schema(optionalTarget),
+  "Start a new ChatGPT chat once. Set newTab:true to open a separate ChatGPT tab, leaving all existing conversations untouched, and return its tabId for follow-up commands. Without newTab, a tabId targets an existing conversation; multiple tabs require explicit tabId. For multiple profiles select clientId.",
+  schema({ ...optionalTarget, requestId: requestIdParameter, newTab: { type: "boolean", description: "Open a new independent ChatGPT tab instead of modifying an existing tab. Cannot combine with tabId." } }),
+  20_000, false, false, true,
 );
 
 export const delegateReadChatTool: Tool = tool(
@@ -304,6 +360,7 @@ export const delegateRunUntilDoneTool: Tool = {
   description: "Send one task and monitor ChatGPT until an explicit completion marker appears. Continuation count and total runtime are bounded. Optional stall recovery may stop a stalled generation before sending a distinct 'continue until done'.",
   parameters: schema({
     ...optionalTarget,
+    requestId: requestIdParameter,
     message: { type: "string", minLength: 1, maxLength: 100_000 },
     maxContinuations: { type: "integer", minimum: 0, maximum: 8 },
     pollMs: { type: "integer", minimum: 500, maximum: 5000 },
@@ -314,8 +371,11 @@ export const delegateRunUntilDoneTool: Tool = {
   }, ["message"]),
   async execute(args, _cwd, signal) {
     try {
-      return JSON.stringify(await runDelegateUntilDone({
-        clientId: typeof args.clientId === "string" ? args.clientId : undefined,
+      const runClient = typeof args.clientId === "string" ? args.clientId : undefined;
+      return await withSemanticDelegateTarget("delegate.run_until_done", runClient, args.tabId, false,
+        selected => delegateBridge.executeOnce(args.requestId as string | undefined,
+          "delegate.run_until_done", selected, args, async () => JSON.stringify(await runDelegateUntilDone({
+        clientId: selected,
         tabId: args.tabId as number | undefined,
         message: String(args.message || ""),
         maxContinuations: args.maxContinuations as number | undefined,
@@ -324,7 +384,7 @@ export const delegateRunUntilDoneTool: Tool = {
         maxRuntimeMs: args.maxRuntimeMs as number | undefined,
         recoverStall: args.recoverStall === true,
         completionMarker: typeof args.completionMarker === "string" ? args.completionMarker : undefined,
-      }, signal));
+      }, signal))));
     } catch (error) {
       return "Error: " + (error instanceof Error ? error.message : String(error));
     }
@@ -333,9 +393,10 @@ export const delegateRunUntilDoneTool: Tool = {
 
 export const delegateSendMessageTool: Tool = tool(
   "delegate.send_message",
-  "Send once to the chosen Chrome profile (clientId) and optional tabId. If ChatGPT later shows its delivery-timeout banner, the extension sends one distinct guarded follow-up, 'continue until done'; it never clicks Retry or resends the original message. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically and waits for readiness before the single send. Transport/RPC timeouts are never retried. With multiple connections, selection is mandatory.",
+  "Send once to an explicitly selected clientId and tabId. Optional requestId prevents replay even if RPC outcome is uncertain. Does not retry the original message.",
   schema({
     ...optionalTarget,
+    requestId: requestIdParameter,
     message: { type: "string", minLength: 1, maxLength: 100_000 },
   }, ["message"]),
   30_000, true,
@@ -343,6 +404,6 @@ export const delegateSendMessageTool: Tool = tool(
 
 export const delegateStopGenerationTool: Tool = tool(
   "delegate.stop_generation",
-  "Stop ChatGPT generation only on explicit invocation, directed to an optional clientId and tabId. If no ChatGPT tab exists and tabId is omitted, Delegate may open https://chatgpt.com/ first; an explicit missing tabId never falls back. Never used as timeout recovery.",
-  schema(optionalTarget),
+  "Stop ChatGPT generation only with explicit clientId and tabId. Optional requestId prevents reissuing an uncertain stop. Never performs implicit tab fallback.",
+  schema({ ...optionalTarget, requestId: requestIdParameter }),
 );

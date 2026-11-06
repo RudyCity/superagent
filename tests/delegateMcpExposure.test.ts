@@ -63,6 +63,10 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     expect(validateDelegateMcpArgs(send, {})).toBe("DELEGATE_INVALID_MESSAGE");
     expect(validateDelegateMcpArgs(send, {message:"hello"})).toBeNull();
     expect(validateDelegateMcpArgs(send, { message: "hi", stop: true })).toBe("DELEGATE_UNEXPECTED_ARGUMENT");
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.create, { newTab: true })).toBeNull();
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.create, { newTab: "true" })).toBe("DELEGATE_INVALID_NEW_TAB");
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.create, { newTab: true, tabId: 101 })).toBe("DELEGATE_NEW_TAB_WITH_TAB_ID");
+    expect(validateDelegateMcpArgs(read, { newTab: true })).toBe("DELEGATE_UNEXPECTED_ARGUMENT");
   });
 
   it("read-only OAuth exposes live/history/index diagnostics, never mutations, in gateway mode", async () => {
@@ -115,24 +119,17 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     }
   });
 
-  it("valid safe request reaches only 127.0.0.1 host RPC with a local bearer token", async () => {
-    const calls: Array<{url: string; init: RequestInit}> = [];
-    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
-      calls.push({ url, init });
-      return { ok: true, json: async () => ({
-        success: true, result: JSON.stringify({ connections: [], count: 0 }),
-      }) };
-    });
+  it("fails closed before local host RPC without a trusted MCP forwarding principal", async () => {
+    const fetcher = vi.fn(async () => ({
+      ok: true, json: async () => ({ success: true, result: '{"count":0}' }),
+    }));
+    vi.stubGlobal("fetch", fetcher);
     const output = await dispatchDelegateMcpTool(DELEGATE_MCP_TOOL_NAMES.read, { connections: true });
-    expect(output?.isError).toBeUndefined();
-    expect(output?.content[0].text).toContain('"count":0');
-    expect(calls).toHaveLength(1);
-    expect(calls[0].url).toBe("http://127.0.0.1:7888/api/delegate/mcp-dispatch");
-    expect(calls[0].init.method).toBe("POST");
-    expect((calls[0].init.headers as Record<string, string>).Authorization).toMatch(/^Bearer [a-f0-9]{48}$/);
-    expect(JSON.parse(calls[0].init.body as string)).toEqual({
-      name: DELEGATE_MCP_TOOL_NAMES.read, arguments: { connections: true },
-    });
+    expect(output?.isError).toBe(true);
+    expect(output?.content[0].text).toContain("DELEGATE_FORWARD_PRINCIPAL_REQUIRED");
+    expect(fetcher).not.toHaveBeenCalled();
+    // Signed host dispatch, bearer, nonce and profile binding are covered by
+    // delegateForwardedHostDispatch.test.ts and delegateForwardedPrincipal.test.ts.
   });
 
   it("redacts message and read-chat text from MCP activity, including gateway nesting", () => {
@@ -165,7 +162,7 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     expect(delegateMcpObservation("superagent_get_workspace", {message: secretMessage})).toBeNull();
   });
 
-  it("audits successful MCP dispatch without logging the message body", async () => {
+  it("audits fail-closed MCP dispatch without logging the message body", async () => {
     setYoloMode(true);
     const privateMessage = "sensitive-outgoing-chat-text";
     const traces: unknown[] = [];
@@ -180,7 +177,7 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     });
     try {
       const response = await invoke(server, DELEGATE_MCP_TOOL_NAMES.send, { message: privateMessage });
-      expect(response.isError).not.toBe(true);
+      expect(response.isError).toBe(true); // No private bridge key has been provisioned in this test.
       const audit = JSON.stringify(traces);
       expect(audit).toContain("contentRedacted");
       expect(audit).not.toContain(privateMessage);
@@ -189,7 +186,7 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     }
   });
 
-  it("invalid arguments and network timeout never send or retry a chat mutation", async () => {
+  it("invalid arguments or missing principal never send or retry a chat mutation", async () => {
     const fetcher = vi.fn(async () => { throw new Error("remote closed after click"); });
     vi.stubGlobal("fetch", fetcher);
     const bad = await dispatchDelegateMcpTool(DELEGATE_MCP_TOOL_NAMES.send, { message: "" });
@@ -197,7 +194,7 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     expect(fetcher).toHaveBeenCalledTimes(0);
     const uncertain = await dispatchDelegateMcpTool(DELEGATE_MCP_TOOL_NAMES.send, { message: "one send" });
     expect(uncertain?.isError).toBe(true);
-    expect(uncertain?.content[0].text).toContain("Do NOT automatically retry");
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(uncertain?.content[0].text).toContain("DELEGATE_FORWARD_PRINCIPAL_REQUIRED");
+    expect(fetcher).toHaveBeenCalledTimes(0);
   });
 });

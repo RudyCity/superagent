@@ -111,6 +111,7 @@ import {
   REMOTE_AGENT_MCP_TOOL_DEFS,
   dispatchRemoteAgentMcpTool,
 } from "./tools/remoteAgentMcpTools.js";
+import { LAN_MCP_TOOL_DEFS, dispatchLanMcpTool } from "./tools/lanMcpTools.js";
 import {
   PROJECT_MCP_TOOL_DEFS,
   dispatchProjectMcpTool,
@@ -558,6 +559,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...PLAN_SKILLS_MCP_TOOL_DEFS,
     ...NETWORK_CONTENT_MCP_TOOL_DEFS,
     ...REMOTE_AGENT_MCP_TOOL_DEFS,
+    ...LAN_MCP_TOOL_DEFS,
     ...PROJECT_MCP_TOOL_DEFS,
     ...BRAIN_MCP_TOOL_DEFS,
     ...WORKSPACE_CHAIN_MCP_TOOL_DEFS,
@@ -779,7 +781,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     }
     return runWithMcpWorkspace(targetWorkspace, async () => {
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(
-        delegateMcpObservation(name, args)?.args ?? args,
+        name.startsWith("superagent_lan_") ? { action: name, deviceId: args.deviceId, host: args.host, port: args.port } : (delegateMcpObservation(name, args)?.args ?? args),
       )}`);
 
       try {
@@ -1023,22 +1025,30 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           const motionRes = await dispatchMotionMcpTool(name, args, targetWorkspace);
           if (motionRes) return motionRes;
           const projectRes = await dispatchProjectMcpTool(name, args, identity?.subject ? identity : null);
-          if (projectRes) return projectRes;
-          const chainRes = await dispatchWorkspaceChainMcpTool(name, args, targetWorkspace);
-          if (chainRes) return chainRes;
-          const remoteAgentRes = await dispatchRemoteAgentMcpTool(name, args, targetWorkspace);
-          if (remoteAgentRes) return remoteAgentRes;
-          const delegateRes = await dispatchDelegateMcpTool(name, args);
-          if (delegateRes) return delegateRes;
-          const chromeRes = await dispatchChromeMcpTool(name, args);
-          if (chromeRes) return chromeRes;
-          const diagRes = await dispatchDiagnosticsMcpTool(name, args);
-          if (diagRes) return diagRes;
-          const planSkillsRes = await dispatchPlanSkillsMcpTool(name, args);
-          if (planSkillsRes) return planSkillsRes;
-          const networkRes = await dispatchNetworkContentMcpTool(name, args);
-          if (networkRes) return networkRes;
-          throw new McpError(ErrorCode.MethodNotFound, `Tool '${name}' not recognized.`);
+           if (projectRes) return projectRes;
+           const chainRes = await dispatchWorkspaceChainMcpTool(name, args, targetWorkspace);
+           if (chainRes) return chainRes;
+           const lanRes = await dispatchLanMcpTool(name, args);
+           if (lanRes) return lanRes;
+           const remoteAgentRes = await dispatchRemoteAgentMcpTool(name, args, targetWorkspace);
+           if (remoteAgentRes) return remoteAgentRes;
+           // Only verified transport/session identity is eligible for forwarding.
+           const delegateMcpConnection = identity &&
+             (identity.mode === "oauth" || identity.mode === "static-bearer") &&
+             typeof identity.subject === "string" && identity.subject.trim()
+             ? { sessionId: connectionBrainSessionId, mode: identity.mode, subject: identity.subject }
+             : undefined;
+           const delegateRes = await dispatchDelegateMcpTool(name, args, delegateMcpConnection);
+           if (delegateRes) return delegateRes;
+           const chromeRes = await dispatchChromeMcpTool(name, args, delegateMcpConnection);
+           if (chromeRes) return chromeRes;
+           const diagRes = await dispatchDiagnosticsMcpTool(name, args);
+           if (diagRes) return diagRes;
+           const planSkillsRes = await dispatchPlanSkillsMcpTool(name, args);
+            if (planSkillsRes) return planSkillsRes;
+            const networkRes = await dispatchNetworkContentMcpTool(name, args);
+            if (networkRes) return networkRes;
+            throw new McpError(ErrorCode.MethodNotFound, "Tool '" + name + "' not recognized.");
         }
       }
     } catch (err: any) {

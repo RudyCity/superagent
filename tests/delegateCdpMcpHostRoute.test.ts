@@ -1,10 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { handleControlChromeCdp, handleControlChromeVision, validateDelegateBrowserHostArgs } from "../src/core/mcp/tools/chromeMcpTools.js";
+import {
+  handleControlChromeCdp, handleControlChromeVision, validateDelegateBrowserHostArgs,
+} from "../src/core/mcp/tools/chromeMcpTools.js";
 import { controlChromeCdpTool } from "../src/core/tools/chromeCdpTools.js";
 import { delegateBridge } from "../src/core/delegate/bridge.js";
 import { handleServerRoute } from "../src/serverRoutes.js";
+import { runWithAuthenticatedDelegatePrincipal } from "../src/core/browserTransport/delegatePrincipalPolicy.js";
+import { ensureServerAuthToken } from "../src/core/utils/serverSecurity.js";
 
-// Keep all security helpers except the local bearer lookup for this fake MCP client.
+// Keep security utilities; replace only this fake MCP client's local bearer lookup.
 vi.mock("../src/core/utils/serverSecurity.js", async importOriginal => ({
   ...(await importOriginal<typeof import("../src/core/utils/serverSecurity.js")>()),
   getServerAuthToken: () => "delegate-cdp-test-token",
@@ -19,7 +23,11 @@ async function hostCall(name: string, args: Record<string, unknown>, options: {
   let reply: HostReply | undefined;
   const req: any = {
     method: options.method || "POST",
-    headers: { host: options.host || "127.0.0.1:7888", ...(options.origin ? { origin: options.origin } : {}) },
+    headers: {
+      host: options.host || "127.0.0.1:7888",
+      authorization: "Bearer " + ensureServerAuthToken(),
+      ...(options.origin ? { origin: options.origin } : {}),
+    },
     socket: { remoteAddress: options.remote || "127.0.0.1" },
   };
   const handled = await handleServerRoute(req, { setHeader() {} } as any,
@@ -36,7 +44,7 @@ async function hostCall(name: string, args: Record<string, unknown>, options: {
 }
 
 describe("Delegate-CDP MCP to Core owner bridge", () => {
-  it("forwards Delegate-CDP discovery once instead of binding a second listener", async () => {
+  it("does not forward unsigned discovery or create a second bridge", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true, json: async () => ({ success: true, result: "- id: delegate:chrome-test001:5" }),
     } as Response);
@@ -44,50 +52,51 @@ describe("Delegate-CDP MCP to Core owner bridge", () => {
     const result = await handleControlChromeCdp({
       command: "list_targets", transport: "delegate", delegateClientId: "chrome-test001",
     });
-    expect(result.isError).not.toBe(true);
-    expect(result.content[0].text).toContain("delegate:chrome-test001:5");
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, init] = fetchMock.mock.calls[0];
-    expect(String(url)).toBe("http://127.0.0.1:7888/api/delegate/mcp-dispatch");
-    expect(JSON.parse(String(init?.body))).toEqual({
-      name: "superagent_chrome_cdp",
-      arguments: { command: "list_targets", transport: "delegate", delegateClientId: "chrome-test001" },
-    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/DELEGATE_FORWARD_/);
+    expect(fetchMock).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("forwards auto discovery, qualified Delegate targets and vision; leaves managed CDP local", async () => {
+  it("requires signed MCP context for auto, qualified Delegate and vision; preserves managed CDP", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true, json: async () => ({ success: true, result: "owner response" }),
     } as Response);
-    expect((await handleControlChromeCdp({ command: "list_targets", transport: "auto" })).content[0].text)
-      .toBe("owner response");
-    expect((await handleControlChromeCdp({
+    const auto = await handleControlChromeCdp({ command: "list_targets", transport: "auto" });
+    const qualified = await handleControlChromeCdp({
       command: "snapshot", targetId: "delegate:chrome-test001:5",
-    })).content[0].text).toBe("owner response");
-    expect((await handleControlChromeVision({
+    });
+    const vision = await handleControlChromeVision({
       command: "status", payload: JSON.stringify({ transport: "delegate", delegateClientId: "chrome-test001" }),
-    })).content[0].text).toBe("owner response");
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(JSON.parse(String(fetchMock.mock.calls[2][1]?.body)).name).toBe("superagent_chrome_vision");
+    });
+    for (const result of [auto, qualified, vision]) {
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/DELEGATE_FORWARD_/);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
     const local = vi.spyOn(controlChromeCdpTool, "execute").mockResolvedValue("local managed result");
     const managed = await handleControlChromeCdp({ command: "list_targets", transport: "managed" });
     expect(managed.content[0].text).toBe("local managed result");
     expect(local).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("does not retry an uncertain rejected host operation", async () => {
+  it("never retries or forwards a mutation without a trusted signer bootstrap", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false, json: async () => ({ success: false, error: "DELEGATE_CDP_DENIED" }),
     } as Response);
-    const result = await handleControlChromeCdp({
+    // An authenticated principal alone cannot sign: only the trusted MCP
+    // forwarding scope plus private channel material grants that authority.
+    const result = await runWithAuthenticatedDelegatePrincipal({
+      sessionId: "aaaabbbb-cccc-4ddd-eeee-ffffffffffff",
+      mode: "oauth", subject: "orchestrator-test",
+    }, () => handleControlChromeCdp({
       command: "navigate", transport: "delegate", delegateClientId: "chrome-test001",
       delegateTabId: 5, url: "https://example.com/",
-    });
+    }));
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("DENIED");
-    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(result.content[0].text).toMatch(/DELEGATE_FORWARD_/);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("validates command, target and transport at Core boundary", () => {
@@ -114,16 +123,16 @@ describe("Delegate-CDP MCP to Core owner bridge", () => {
     })).toBe("DELEGATE_CDP_INVALID_PAYLOAD");
   });
 
-  it("Core dispatches exactly once through the owner-side tool and blocks non-local callers", async () => {
+  it("Core rejects unsigned host calls including reads before any browser action", async () => {
     const execution = vi.spyOn(controlChromeCdpTool, "execute").mockResolvedValue("Core sees browser tabs");
     const args = { command: "list_targets", transport: "delegate" };
-    const success = await hostCall("superagent_chrome_cdp", args);
-    expect(success).toEqual({ status: 200, payload: { success: true, result: "Core sees browser tabs" } });
-    expect(execution).toHaveBeenCalledOnce();
+    const unsigned = await hostCall("superagent_chrome_cdp", args);
+    expect(unsigned).toEqual({ status: 403,
+      payload: { success: false, error: "DELEGATE_MCP_ATTESTATION_DENIED" } });
     expect((await hostCall("superagent_chrome_cdp", args, { remote: "192.0.2.1" })).status).toBe(403);
     expect((await hostCall("superagent_chrome_cdp", args, { origin: "https://chatgpt.com" })).status).toBe(403);
-    expect((await hostCall("superagent_chrome_cdp", { ...args, transport: "managed" })).status).toBe(400);
-    expect((await hostCall("superagent_chrome_cdp", { ...args, command: "evil" })).status).toBe(400);
-    expect(execution).toHaveBeenCalledOnce();
+    expect((await hostCall("superagent_chrome_cdp", { ...args, transport: "managed" })).status).toBe(403);
+    expect((await hostCall("superagent_chrome_cdp", { ...args, command: "evil" })).status).toBe(403);
+    expect(execution).not.toHaveBeenCalled();
   });
 });

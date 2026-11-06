@@ -3,7 +3,10 @@ import {
   defaultDelegatePairStorePath, digestDelegateToken, loadDelegatePairProofs,
   matchesDelegateTokenDigest, saveDelegatePairProofs, type PairedClientProof,
 } from "./pairedClientStore.js";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, existsSync, mkdirSync, writeFileSync, renameSync, unlinkSync, chmodSync } from "node:fs";
+import path from "node:path";
+import { getRootConfigDir } from "../config/paths.js";
+import { hasDelegateClaim, listDelegateSessions } from "../browserTransport/sessionCoordinator.js";
 import WebSocket, { WebSocketServer } from "ws";
 import type { IncomingMessage } from "node:http";
 import { writeDelegateConnectionAudit, flushDelegateConnectionAudit, safeAuditText, type DelegateAuditEvent, type DelegateAuditRecord, type DelegateAuditSink } from "./connectionAudit.js";
@@ -11,6 +14,8 @@ import { writeDelegateConnectionAudit, flushDelegateConnectionAudit, safeAuditTe
 export type DelegateMethod =
   | "delegate.create_chat"
   | "delegate.read_chat"
+  | "delegate.peek_chat"
+  | "delegate.list_tabs"
   | "delegate.list_chats"
   | "delegate.read_chat_full"
   | "delegate.search_history"
@@ -60,6 +65,8 @@ const CLIENT_ID_PATTERN = /^[a-zA-Z0-9_-]{8,80}$/;
 const MAX_CONNECTED_CLIENTS = 8;
 const MAX_OPEN_SOCKETS = 32;
 const MAX_RPC_FRAME_BYTES = 2_000_000;
+const MAX_MUTATION_RECEIPTS = 4096;
+type MutationReceipt = { key: string; fingerprint: string; status: "pending" | "confirmed" | "uncertain" };
 const PAIR_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PAIR_CODE_TTL_MS = 10 * 60_000;
 const MAX_BAD_PAIR_ATTEMPTS = 5;
@@ -95,6 +102,88 @@ export class DelegateBridge {
   private waiters = new Set<() => void>();
   /** Synchronous RPC acceptance barrier for verified listener handover. */
   private quiescing = false;
+  private readonly mutationReceipts = new Map<string, MutationReceipt>();
+  private readonly mutationReceiptPath?: string;
+  private receiptsLoaded = false;
+
+  /** Persist only hashes, status and request identity; never persist chat text. */
+  private loadMutationReceipts(): void {
+    if (this.receiptsLoaded) return;
+    if (this.mutationReceiptPath && existsSync(this.mutationReceiptPath)) {
+      const stat = statSync(this.mutationReceiptPath);
+      if (!stat.isFile() || stat.size > 1_000_000) throw new Error("DELEGATE_RECEIPT_JOURNAL_UNSAFE");
+      let parsed: unknown;
+      try { parsed = JSON.parse(readFileSync(this.mutationReceiptPath, "utf8")); }
+      catch { throw new Error("DELEGATE_RECEIPT_JOURNAL_CORRUPT"); }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+          (parsed as Record<string, unknown>).version !== 1 ||
+          !Array.isArray((parsed as Record<string, unknown>).receipts) ||
+          ((parsed as Record<string, unknown>).receipts as unknown[]).length > MAX_MUTATION_RECEIPTS) {
+        throw new Error("DELEGATE_RECEIPT_JOURNAL_CORRUPT");
+      }
+      for (const item of (parsed as { receipts: unknown[] }).receipts) {
+        if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("DELEGATE_RECEIPT_JOURNAL_CORRUPT");
+        const entry = item as MutationReceipt;
+        if (!/^[a-f0-9]{64}$/.test(entry.key) ||
+            !/^[a-f0-9]{64}$/.test(entry.fingerprint) ||
+            !["pending", "confirmed", "uncertain"].includes(entry.status) ||
+            this.mutationReceipts.has(entry.key)) throw new Error("DELEGATE_RECEIPT_JOURNAL_CORRUPT");
+        this.mutationReceipts.set(entry.key, entry);
+      }
+    }
+    this.receiptsLoaded = true;
+  }
+
+  private persistMutationReceipts(): void {
+    if (!this.mutationReceiptPath) return;
+    const folder = path.dirname(this.mutationReceiptPath);
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const temporary = this.mutationReceiptPath + "." + process.pid + "." + randomUUID() + ".tmp";
+    try {
+      writeFileSync(temporary, JSON.stringify({
+        version: 1, receipts: [...this.mutationReceipts.values()],
+      }), { encoding: "utf8", mode: 0o600, flag: "wx" });
+      renameSync(temporary, this.mutationReceiptPath);
+      if (process.platform !== "win32") chmodSync(this.mutationReceiptPath, 0o600);
+    } finally {
+      try { if (existsSync(temporary)) unlinkSync(temporary); } catch { /* no masking */ }
+    }
+  }
+
+  /** One request ID is single-use, even after timeout/restart. Never replays a click. */
+  async executeOnce<T>(
+    requestId: string | undefined, method: string, clientId: string,
+    params: Record<string, unknown>, operation: () => Promise<T>,
+  ): Promise<T> {
+    if (requestId === undefined) return operation();
+    if (!/^[A-Za-z0-9_-]{8,80}$/.test(requestId)) throw new Error("DELEGATE_INVALID_REQUEST_ID");
+    this.loadMutationReceipts();
+    const key = createHash("sha256").update(requestId).digest("hex");
+    const fingerprint = createHash("sha256")
+      .update(JSON.stringify({ method, clientId, params })).digest("hex");
+    const old = this.mutationReceipts.get(key);
+    if (old) {
+      if (old.fingerprint !== fingerprint) throw new Error("DELEGATE_REQUEST_ID_REUSE_CONFLICT");
+      throw new Error("DELEGATE_REQUEST_ALREADY_" + old.status.toUpperCase() +
+        ": No replay. Verify the exact tab using read-only inspection.");
+    }
+    if (this.mutationReceipts.size >= MAX_MUTATION_RECEIPTS) {
+      throw new Error("DELEGATE_RECEIPT_JOURNAL_FULL: New mutations blocked; operator review required");
+    }
+    const receipt: MutationReceipt = { key, fingerprint, status: "pending" };
+    this.mutationReceipts.set(key, receipt);
+    this.persistMutationReceipts(); // write-ahead; must succeed before browser RPC
+    try {
+      const result = await operation();
+      receipt.status = "confirmed";
+      this.persistMutationReceipts();
+      return result;
+    } catch (error) {
+      receipt.status = "uncertain"; // fail closed, including transport timeout
+      this.persistMutationReceipts();
+      throw error;
+    }
+  }
 
   quiesceForStop(): void {
     if (this.quiescing) throw new Error("DELEGATE_BRIDGE_QUIESCING");
@@ -117,7 +206,13 @@ export class DelegateBridge {
     private readonly auditSink: DelegateAuditSink = writeDelegateConnectionAudit,
     private readonly pairingNotice: (line: string) => void = line => console.info(line),
     pairStorePath?: string,
+    mutationReceiptPath?: string,
   ) {
+    this.mutationReceiptPath = mutationReceiptPath ?? (
+      port === 17341 && tokenOverride === undefined &&
+      !process.env.VITEST && process.env.NODE_ENV !== "test"
+        ? path.join(getRootConfigDir(), "delegate-semantic-mutation-receipts.json") : undefined
+    );
     this.persistentPairStorePath = pairStorePath ?? (
       port === 17341 && tokenOverride === undefined &&
       !process.env.VITEST && process.env.NODE_ENV !== "test"
@@ -596,6 +691,32 @@ export class DelegateBridge {
     const client = await this.connected(targetClientId, signal);
     if (this.quiescing) throw new Error("DELEGATE_BRIDGE_QUIESCING");
     if (signal?.aborted) throw new Error("DELEGATE_ABORTED");
+    if (["delegate.create_chat", "delegate.send_message", "delegate.stop_generation",
+         "delegate.set_timeout_recovery"].includes(method)) {
+      if (!targetClientId) throw new Error("DELEGATE_EXPLICIT_CLIENT_REQUIRED: Mutation requires clientId");
+      const tabId = params.tabId;
+      if (tabId === undefined && !(method === "delegate.create_chat" && params.newTab === true)) {
+        throw new Error("DELEGATE_EXPLICIT_TAB_REQUIRED: Mutation cannot use implicit tab selection");
+      }
+      if (tabId !== undefined && (!Number.isSafeInteger(tabId) || Number(tabId) < 1)) {
+        throw new Error("DELEGATE_INVALID_TAB_ID");
+      }
+      if (tabId !== undefined && hasDelegateClaim(client.clientId, Number(tabId))) {
+        throw new Error("DELEGATE_CDP_TARGET_CLAIMED: Semantic mutation denied on CDP-owned tab");
+      }
+    }
+    // read_chat's extension timeout recovery can send an automatic follow-up.
+    // A CDP-claimed tab must be inspected with side-effect-free peek_chat only.
+    let safeMethod = method;
+    if (method === "delegate.read_chat") {
+      if (params.tabId === undefined &&
+          listDelegateSessions().some(session => session.clientId === client.clientId)) {
+        throw new Error("DELEGATE_EXPLICIT_TAB_REQUIRED: CDP ownership exists in this profile; select an exact read target");
+      }
+      if (typeof params.tabId === "number" && hasDelegateClaim(client.clientId, params.tabId)) {
+        safeMethod = "delegate.peek_chat";
+      }
+    }
     const ws = client.socket;
     const id = randomUUID();
     return new Promise<string>((resolve, reject) => {
@@ -623,7 +744,7 @@ export class DelegateBridge {
       signal?.addEventListener("abort", abort, { once: true });
       try {
         // Route once to the explicitly selected Chrome client; never broadcast.
-        ws.send(JSON.stringify({ type: "request", id, method, params }), err => {
+        ws.send(JSON.stringify({ type: "request", id, method: safeMethod, params }), err => {
           if (err) {
             cleanup();
             reject(new Error(`DELEGATE_TRANSPORT_FAILED: ${err.message}; not retried`));

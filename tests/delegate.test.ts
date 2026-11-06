@@ -158,7 +158,8 @@ describe("delegate bridge", () => {
     entry.ws.on("message", (raw) => {
       if (JSON.parse(raw.toString()).type === "request") transmissions++;
     });
-    await expect(entry.bridge.request("delegate.send_message", { message: "hello" }, undefined, 80))
+    await expect(entry.bridge.request("delegate.send_message", { message: "hello", tabId: 77 }, undefined, 80,
+      entry.bridge.listConnections()[0].clientId))
       .rejects.toThrow("DELEGATE_TIMEOUT");
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(transmissions).toBe(1);
@@ -180,7 +181,8 @@ describe("delegate bridge", () => {
       if (msg.type === "request") calls.push(msg.method);
     });
     const controller = new AbortController();
-    const pending = entry.bridge.request("delegate.send_message", { message: "hello" }, controller.signal, 2000);
+    const pending = entry.bridge.request("delegate.send_message", { message: "hello", tabId: 77 }, controller.signal, 2000,
+      entry.bridge.listConnections()[0].clientId);
     await new Promise((resolve) => setTimeout(resolve, 40));
     controller.abort();
     await expect(pending).rejects.toThrow("DELEGATE_ABORTED");

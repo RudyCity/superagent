@@ -1,12 +1,22 @@
 import { delegateBridge } from "./bridge.js";
+import { delegateMultiTabOrchestrator } from "./multiTabOrchestrator.js";
+import { executeFileUploadCommand, validateUploadPaths, type FileUploadCommand } from "../tools/chromeCdpFileUpload.js";
 import { noteDelegateAttachment, forgetDelegateAttachment, touchDelegateAttachment, listDelegateAttachments } from "./cdpAttachmentRegistry.js";
 import { assertDelegateCdpMethodAllowed, assertDelegateUrlAllowed } from "../browserTransport/delegateCdpPolicy.js";
 import { delegateTargetId, parseBrowserTargetId } from "../browserTransport/targetIdentity.js";
 import {
-  authorizeDelegateTarget, claimDelegateTarget, hasDelegateClaim, listDelegateSessions, noteDelegateWriteSuccess, releaseDelegateTarget, withDelegateTargetLock,
+  assertDelegateMcpActorForCommand, visibleDelegateSessions, isDelegateMcpBoundary,
+} from "../browserTransport/delegatePrincipalPolicy.js";
+import {
+  authorizeDelegateTarget, assertDelegateLeaseReady, enterDelegateProtectedCdpRpc,
+  claimDelegateTarget, recoverDelegateTarget, hasDelegateClaim,
+  listDelegateSessions, noteDelegateWriteSuccess, releaseDelegateTarget, withDelegateTargetLock,
+  setDelegateSharing, inviteDelegateAgent, joinDelegateTarget,
+  leaveDelegateTarget, revokeDelegateAgent, handoverDelegateTarget, getDelegateParticipation, heartbeatDelegateSession,
 } from "../browserTransport/sessionCoordinator.js";
 import { BrowserTransportError, type BrowserTargetRef, type BrowserTransport } from "../browserTransport/types.js";
 import { DELEGATE_V18_COMMANDS, unsupportedBrowserCommand } from "../browserTransport/commandCapabilities.js";
+import { getDelegateLeaseRuntimeStatus } from "../browserTransport/delegateLeaseRuntime.js";
 
 type RpcMethod =
   | "delegate.cdp.list_targets" | "delegate.cdp.attach" | "delegate.cdp.detach"
@@ -27,6 +37,7 @@ type DelegateTarget = {
 const WRITE_COMMANDS = new Set([
   "new_tab", "close_tab", "activate", "navigate", "evaluate", "click", "type", "handle_dialog",
   "move_cursor", "drag_and_drop", "emulate_device",
+  "upload_file", "handle_file_chooser",
 ]);
 const delegateCursorPositions = new Map<string, { x: number; y: number }>();
 
@@ -67,19 +78,28 @@ export class DelegateCdpHostTransport implements BrowserTransport {
   }
 
   async rpc<T = any>(method: RpcMethod, params: Record<string, unknown> = {}, signal?: AbortSignal, clientId?: string): Promise<T> {
-    this.assertClientCapability(clientId);
+    const isProtected = method === "delegate.cdp.attach" || method === "delegate.cdp.detach" ||
+      method === "delegate.cdp.command" || method === "delegate.cdp.tab_action";
+    // In durable mode a low-level caller must already be inside the global
+    // operation fence, with its RPC counted until resolution.
+    const finishRpc = isProtected ? enterDelegateProtectedCdpRpc() : undefined;
     try {
-      const raw = await delegateBridge.request(method, params, signal, 20_000, clientId);
-      return parseJson<T>(raw);
-    } catch (error: any) {
-      const message = String(error?.message || error);
-      if (/DELEGATE_TIMEOUT/.test(message)) {
-        const selected = delegateBridge.listConnections().find(client => !clientId || client.clientId === clientId);
-        if (selected && !selected.capabilities.includes("delegate-cdp-v1")) {
-          throw new BrowserTransportError("DELEGATE_CDP_EXTENSION_TOO_OLD", "Connected Delegate does not support CDP. Upgrade/reload Delegate 1.8.x.");
+      this.assertClientCapability(clientId);
+      try {
+        const raw = await delegateBridge.request(method, params, signal, 20_000, clientId);
+        return parseJson<T>(raw);
+      } catch (error: any) {
+        const message = String(error?.message || error);
+        if (/DELEGATE_TIMEOUT/.test(message)) {
+          const selected = delegateBridge.listConnections().find(client => !clientId || client.clientId === clientId);
+          if (selected && !selected.capabilities.includes("delegate-cdp-v1")) {
+            throw new BrowserTransportError("DELEGATE_CDP_EXTENSION_TOO_OLD", "Connected Delegate does not support CDP. Upgrade/reload Delegate 1.8.x.");
+          }
         }
+        throw error;
       }
-      throw error;
+    } finally {
+      finishRpc?.();
     }
   }
 
@@ -138,10 +158,27 @@ export const delegateCdpTransport = new DelegateCdpHostTransport();
 async function resolveTarget(
   args: Record<string, unknown>, payload: Record<string, unknown>, signal?: AbortSignal,
 ): Promise<BrowserTargetRef> {
-  const rawTarget = String(args.targetId ?? payload.targetId ?? "");
-  const parsed = rawTarget ? parseBrowserTargetId(rawTarget) : null;
-  let clientId = String(args.delegateClientId ?? payload.delegateClientId ?? parsed?.connectionId ?? "");
-  let tabId = Number(args.delegateTabId ?? payload.delegateTabId ?? parsed?.tabId ?? 0);
+  // A qualified ID is one atomic (profile, tab) selector: never splice in
+  // conflicting independent hints or silently fall back to a different tab.
+  if (args.targetId !== undefined && payload.targetId !== undefined && args.targetId !== payload.targetId)
+    throw new BrowserTransportError("DELEGATE_CDP_TARGET_CONFLICT", "Conflicting targetId values.");
+  const rawTarget = args.targetId ?? payload.targetId ?? "";
+  if (rawTarget && typeof rawTarget !== "string")
+    throw new BrowserTransportError("DELEGATE_CDP_TARGET_INVALID", "targetId must be a qualified string.");
+  const parsed = rawTarget ? parseBrowserTargetId(rawTarget as string) : null;
+  if (rawTarget && !parsed)
+    throw new BrowserTransportError("DELEGATE_CDP_TARGET_INVALID", "Invalid qualified Delegate targetId.");
+  const clients = [args.delegateClientId, payload.delegateClientId, args.connectionId, payload.connectionId]
+    .filter((v): v is string => v !== undefined) ;
+  const tabs = [args.delegateTabId, payload.delegateTabId].filter(v => v !== undefined);
+  if (clients.some(v => typeof v !== "string" || !/^[a-zA-Z0-9_-]{8,80}$/.test(v)) ||
+      new Set(clients).size > 1 || (parsed && clients.some(v => v !== parsed.connectionId)))
+    throw new BrowserTransportError("DELEGATE_CDP_PROFILE_CONFLICT", "Delegate profile selector mismatch.");
+  if (tabs.some(v => typeof v !== "number" || !Number.isSafeInteger(v) || v < 1) ||
+      new Set(tabs).size > 1 || (parsed && tabs.some(v => v !== parsed.tabId)))
+    throw new BrowserTransportError("DELEGATE_CDP_TAB_CONFLICT", "Delegate tab selector mismatch.");
+  let clientId = clients[0] ?? parsed?.connectionId ?? "";
+  let tabId = (tabs[0] as number | undefined) ?? parsed?.tabId ?? 0;
   if (parsed && parsed.kind !== "delegate") {
     throw new BrowserTransportError("BROWSER_TARGET_TRANSPORT_MISMATCH", "Managed target ID cannot be used with Delegate transport.");
   }
@@ -164,11 +201,20 @@ async function resolveTarget(
   return { kind: "delegate", connectionId: clientId, targetId: `tab:${tabId}`, tabId };
 }
 
-async function withAttached<T>(target: BrowserTargetRef, signal: AbortSignal | undefined, fn: () => Promise<T>): Promise<T> {
+async function withAttached<T>(
+  target: BrowserTargetRef, signal: AbortSignal | undefined, fn: () => Promise<T>,
+  authorize?: () => void, onComplete?: (value: T) => void,
+): Promise<T> {
   return withDelegateTargetLock(target.connectionId, target.tabId!, async () => {
+    // Authorization and expectedRevision must be evaluated AFTER entering the
+    // FIFO lock, not before waiting: otherwise two stale writers may both pass.
+    authorize?.();
     await delegateCdpTransport.attach(target, signal);
-    try { return await fn(); }
-    finally {
+    try {
+      const value = await fn();
+      onComplete?.(value);
+      return value;
+    } finally {
       try { await delegateCdpTransport.detach(target, signal); } catch {}
     }
   });
@@ -210,41 +256,119 @@ export async function executeDelegateChromeCommand(
   command = aliases[command] || command;
   const unsupported = unsupportedBrowserCommand("delegate", command);
   if (unsupported) return "control_chrome_cdp failed: " + unsupported;
-  const clientHint = String(args.delegateClientId ?? payload.delegateClientId ?? "") || undefined;
+  const clientHint = String(args.delegateClientId ?? payload.delegateClientId ?? args.connectionId ?? payload.connectionId ?? "") || undefined;
+  if (args.sessionToken !== undefined && payload.sessionToken !== undefined && args.sessionToken !== payload.sessionToken)
+    throw new BrowserTransportError("DELEGATE_CDP_TOKEN_CONFLICT", "Conflicting session capability values.");
+  // MCP requests without a trusted per-connection principal may inspect only
+  // anonymous inventory, never claim/operate a protected browser session.
+  const principalAgent = assertDelegateMcpActorForCommand(command, args.agentId, payload.agentId);
+  const sessionsForCaller = () => visibleDelegateSessions(listDelegateSessions());
 
   if (command === "transport_status") {
     const health = await delegateCdpTransport.health(clientHint, signal);
-    return JSON.stringify({ transport: "delegate", health, connections: delegateBridge.listConnections(), attachments: listDelegateAttachments() });
+    return JSON.stringify({ transport: "delegate", health,
+      durableLeaseRuntime: getDelegateLeaseRuntimeStatus(),
+      connections: isDelegateMcpBoundary() ? [] : delegateBridge.listConnections(),
+      attachments: isDelegateMcpBoundary() ? [] : listDelegateAttachments() });
   }
   if (command === "list_targets") {
-    const targets = await delegateCdpTransport.listTargets(clientHint, signal);
+    if (getDelegateLeaseRuntimeStatus().status === "BLOCKED")
+      return JSON.stringify({ status: "BLOCKED", durableLeaseRuntime: getDelegateLeaseRuntimeStatus(), targets: [] });
+    const allTargets = await delegateCdpTransport.listTargets(clientHint, signal);
+    const sessions = listDelegateSessions();
+    const visible = sessionsForCaller();
+    const targets = !isDelegateMcpBoundary() ? allTargets : allTargets.filter(t => {
+      const claimed = sessions.find(s => s.clientId === t.connectionId && s.tabId === t.tabId);
+      return !claimed || visible.includes(claimed);
+    });
     if (!targets.length) return "control_chrome_cdp: Delegate connected, but no controllable normal web tabs are open.";
     return targets.map(t => `- id: ${delegateTargetId(t.connectionId, t.tabId!)}\n  title: ${t.title || ""}\n  url: ${t.url || ""}\n  transport: delegate`).join("\n");
   }
-  if (command === "list_sessions") return JSON.stringify({ sessions: listDelegateSessions() });
-  if (command === "coordinator_status") {
-    return JSON.stringify({ transport: "delegate", sessions: listDelegateSessions(), attachments: listDelegateAttachments() });
+  if (command === "list_sessions" || command === "coordinator_status") {
+    const durableLeaseRuntime = getDelegateLeaseRuntimeStatus();
+    const visible = durableLeaseRuntime.status === "BLOCKED" ? [] : sessionsForCaller();
+    return JSON.stringify({ transport: "delegate", durableLeaseRuntime, sessions: visible,
+      ...(command === "coordinator_status" ? {
+        attachments: durableLeaseRuntime.status === "BLOCKED" || isDelegateMcpBoundary()
+          ? [] : listDelegateAttachments(),
+      } : {}) });
   }
   if (command === "new_tab") {
     const url = String(payload.url || args.url || "https://example.com/");
     assertDelegateUrlAllowed(url);
-    const result = await delegateCdpTransport.tabAction(clientHint, "new_tab", { url, active: true }, signal);
-    return JSON.stringify({ status: "opened", transport: "delegate", ...result });
+    assertDelegateLeaseReady();
+    return withDelegateTargetLock("__global_new_tab__", 0, async () => {
+      const result = await delegateCdpTransport.tabAction(clientHint, "new_tab", { url, active: true }, signal);
+      return JSON.stringify({ status: "opened", transport: "delegate", ...result });
+    });
   }
 
+  if (command === "recover_session") {
+    const qualified = args.targetId ?? payload.targetId;
+    const profile = args.delegateClientId ?? payload.delegateClientId ?? args.connectionId ?? payload.connectionId;
+    const tab = args.delegateTabId ?? payload.delegateTabId;
+    const explicitQualified = typeof qualified === "string" &&
+      parseBrowserTargetId(qualified)?.kind === "delegate";
+    const explicitPair = typeof profile === "string" && typeof tab === "number" &&
+      Number.isSafeInteger(tab) && tab > 0;
+    if (!explicitQualified && !explicitPair)
+      throw new BrowserTransportError("DELEGATE_LEASE_TARGET_REQUIRED",
+        "Recovery requires an explicit exact Delegate profile and tab (or qualified targetId).");
+  }
   const target = await resolveTarget(args, payload, signal);
-  const agentId = args.agentId !== undefined ? String(args.agentId) : payload.agentId !== undefined ? String(payload.agentId) : undefined;
+  const agentId = principalAgent;
   const sessionToken = args.sessionToken !== undefined ? String(args.sessionToken) : payload.sessionToken !== undefined ? String(payload.sessionToken) : undefined;
+  if ((command === "claim_target" || command === "recover_session" || WRITE_COMMANDS.has(command) ||
+       ["share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
+        "revoke_agent", "handover_target"].includes(command)) &&
+      delegateMultiTabOrchestrator.isReserved(target.connectionId, target.tabId!)) {
+    throw new BrowserTransportError("MULTITAB_TARGET_RESERVED",
+      "The tab is owned by the multi-tab orchestrator. Release its claim before a competing CDP mutation.");
+  }
 
-  if (command === "claim_target" || command === "recover_session") {
+  if (command === "recover_session") {
+    if (!agentId || !sessionToken)
+      throw new BrowserTransportError("DELEGATE_LEASE_RECOVERY_DENIED", "Original owner identity and capability are required.");
+    return withDelegateTargetLock(target.connectionId, target.tabId!, async () => {
+      // No debugger attach or browser mutation before exact profile/tab, owner,
+      // original token and old Core retirement have been verified on disk.
+      const session = recoverDelegateTarget(target.connectionId, target.tabId!, agentId, sessionToken);
+      return JSON.stringify({ status: "recovered", ...session });
+    }, true);
+  }
+  if (command === "claim_target") {
     if (!agentId) return "control_chrome_cdp failed: Delegate claim requires agentId.";
     return withDelegateTargetLock(target.connectionId, target.tabId!, async () => {
-      // Probe debugger ownership, then release it before issuing the logical
-      // claim. Normal operations attach only for their bounded duration.
       await delegateCdpTransport.attach(target, signal);
       await delegateCdpTransport.detach(target, signal);
       const session = claimDelegateTarget(target.connectionId, target.tabId!, agentId, sessionToken);
-      return JSON.stringify({ status: command === "recover_session" ? "recovered" : "claimed", ...session });
+      return JSON.stringify({ status: "claimed", ...session });
+    });
+  }
+  if (["heartbeat_session", "share_target", "stop_sharing", "invite_agent",
+       "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants"].includes(command)) {
+    if (!agentId) throw new BrowserTransportError("DELEGATE_CDP_AGENT_REQUIRED", "A named agentId is required.");
+    return withDelegateTargetLock(target.connectionId, target.tabId!, async () => {
+      const client = target.connectionId, tab = target.tabId!;
+      const member = String(args.memberId ?? payload.memberId ?? "");
+      switch (command) {
+        case "heartbeat_session": return JSON.stringify({ session: heartbeatDelegateSession(client, tab, agentId, sessionToken) });
+        case "share_target": return JSON.stringify({ status: "shared", session: setDelegateSharing(client, tab, agentId, sessionToken, true) });
+        case "stop_sharing": return JSON.stringify({ status: "isolated", session: setDelegateSharing(client, tab, agentId, sessionToken, false) });
+        case "invite_agent": return JSON.stringify(inviteDelegateAgent(client, tab, agentId, sessionToken,
+          member, String(args.role ?? payload.role ?? "") as "observer" | "contributor"));
+        case "join_target": return JSON.stringify({ status: "joined", ...joinDelegateTarget(client, tab, agentId,
+          String(args.inviteId ?? payload.inviteId ?? ""),
+          String(args.invitationToken ?? payload.invitationToken ?? "")) });
+        case "leave_target": return JSON.stringify({ status: "left",
+          session: leaveDelegateTarget(client, tab, agentId, sessionToken) });
+        case "revoke_agent": return JSON.stringify({ status: "revoked",
+          session: revokeDelegateAgent(client, tab, agentId, sessionToken, member) });
+        case "handover_target": return JSON.stringify({ status: "handed_over",
+          session: handoverDelegateTarget(client, tab, agentId, sessionToken, member) });
+        case "session_participants": return JSON.stringify({ session: getDelegateParticipation(client, tab, agentId, sessionToken) });
+      }
+      throw new BrowserTransportError("DELEGATE_CDP_COMMAND_INVALID", "Invalid shared-tab command.");
     });
   }
   if (command === "release_target") {
@@ -262,10 +386,9 @@ export async function executeDelegateChromeCommand(
   if (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)) {
     return "control_chrome_cdp failed: expectedRevision must be a non-negative integer.";
   }
-  authorizeDelegateTarget(target.connectionId, target.tabId!, agentId, sessionToken, write, expectedRevision);
-
   if (command === "activate") {
     return withDelegateTargetLock(target.connectionId, target.tabId!, async () => {
+      authorizeDelegateTarget(target.connectionId, target.tabId!, agentId, sessionToken, write, expectedRevision, true);
       const result = await delegateCdpTransport.tabAction(target.connectionId, "activate", { tabId: target.tabId }, signal);
       if (write) noteDelegateWriteSuccess(target.connectionId, target.tabId!, agentId, sessionToken);
       return JSON.stringify({ status: "activated", transport: "delegate", ...result });
@@ -273,6 +396,7 @@ export async function executeDelegateChromeCommand(
   }
   if (command === "close_tab") {
     return withDelegateTargetLock(target.connectionId, target.tabId!, async () => {
+      authorizeDelegateTarget(target.connectionId, target.tabId!, agentId, sessionToken, write, expectedRevision, true);
       const result = await delegateCdpTransport.tabAction(target.connectionId, "close_tab", { tabId: target.tabId }, signal);
       if (write) noteDelegateWriteSuccess(target.connectionId, target.tabId!, agentId, sessionToken);
       if (agentId && hasDelegateClaim(target.connectionId, target.tabId!)) {
@@ -283,6 +407,41 @@ export async function executeDelegateChromeCommand(
   }
 
   const operationResult = await withAttached(target, signal, async () => {
+    if (command === "list_file_inputs" || command === "upload_file" || command === "handle_file_chooser" || command === "verify_upload") {
+      const uploadWorkspace = String(args.__uploadWorkspace || process.cwd());
+      if (command === "handle_file_chooser" && payload.arm === true && !payload.triggerSelector) {
+        return "control_chrome_cdp failed: Delegate file chooser interception requires a triggerSelector and files in the same call (attachments are released between commands).";
+      }
+      const delegateSend = (method: string, params: Record<string, unknown> = {}) =>
+        delegateCdpTransport.command(target, method, params, signal, {
+          trustedGenerated: method === "Runtime.evaluate",
+          dangerousApproved: method !== "Runtime.evaluate",
+        });
+      if (command === "handle_file_chooser" && typeof payload.triggerSelector === "string") {
+        await validateUploadPaths(payload, uploadWorkspace);
+        await delegateSend("Page.enable", {});
+        await delegateSend("Page.setInterceptFileChooserDialog", { enabled: true });
+        try {
+          const expression = "(() => {const e=document.querySelector(" + JSON.stringify(payload.triggerSelector) + ");if(!e)return false;e.click();return true})()";
+          const clicked = await generatedWriteEval(target, expression, signal);
+          if (valueFromEvaluate(clicked) !== true) throw new Error("Delegate file chooser trigger element not found.");
+          const until = Date.now() + 3000;
+          while (Date.now() < until) {
+            const events = await delegateCdpTransport.events(target, false, signal);
+            if (events.some(e => e.method === "Page.fileChooserOpened" && e.backendNodeId > 0)) break;
+            await new Promise(resolve => setTimeout(resolve, 100));
+          }
+          return await executeFileUploadCommand("handle_file_chooser", delegateSend,
+            "delegate:" + target.connectionId + ":" + target.tabId, { ...payload, arm: false }, uploadWorkspace,
+            () => delegateCdpTransport.events(target, false, signal));
+        } finally {
+          await delegateSend("Page.setInterceptFileChooserDialog", { enabled: false }).catch(() => undefined);
+        }
+      }
+      return executeFileUploadCommand(command as FileUploadCommand, delegateSend,
+        "delegate:" + target.connectionId + ":" + target.tabId, payload, uploadWorkspace,
+        () => delegateCdpTransport.events(target, false, signal));
+    }
     if (command === "navigate") {
       const url = String(payload.url || args.url || "");
       if (!url) return 'control_chrome_cdp failed: command \'navigate\' needs a URL.';
@@ -304,7 +463,7 @@ export async function executeDelegateChromeCommand(
       const result = await generatedReadEval(target, expression, signal);
       return "control_chrome_cdp: page content (Delegate):\n" + JSON.stringify(valueFromEvaluate(result), null, 2);
     }
-    if (command === "snapshot") {
+    if (command === "snapshot" || command === "shared_snapshot") {
       const expression = `(() => Array.from(document.querySelectorAll('a,button,input,textarea,select,[role="button"],[role="link"],[tabindex]')).filter(e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0}).slice(0,250).map((e,i)=>({index:i+1,tag:e.tagName.toLowerCase(),text:(e.innerText||e.getAttribute("aria-label")||e.getAttribute("placeholder")||"").trim().slice(0,180),selector:e.id?"#"+CSS.escape(e.id):null})))()`;
       const result = await generatedReadEval(target, expression, signal);
       return "control_chrome_cdp: Delegate snapshot:\n" + JSON.stringify(valueFromEvaluate(result), null, 2);
@@ -439,9 +598,13 @@ export async function executeDelegateChromeCommand(
       return JSON.stringify({ status: "dialog_handled", transport: "delegate", result });
     }
     return "control_chrome_cdp failed: DELEGATE_CDP_CAPABILITY_UNSUPPORTED: '" + command + "' is not implemented by Delegate-CDP v1.8.";
+  },
+  () => authorizeDelegateTarget(target.connectionId, target.tabId!, agentId, sessionToken,
+    write, expectedRevision, false, command === "shared_snapshot"),
+  result => {
+    if (write && typeof result === "string" && !result.startsWith("control_chrome_cdp failed:")) {
+      noteDelegateWriteSuccess(target.connectionId, target.tabId!, agentId, sessionToken);
+    }
   });
-  if (write && !operationResult.startsWith("control_chrome_cdp failed:")) {
-    noteDelegateWriteSuccess(target.connectionId, target.tabId!, agentId, sessionToken);
-  }
   return operationResult;
 }
