@@ -1,7 +1,7 @@
 import { loadAgentSkills } from "./skills.js";
 import { resolveWindowsShell } from "../tools/helpers.js";
 import { GENERAL_ASSISTANT_IDENTITY } from "../assistantIdentity.js";
-import { BROWSER_TRANSPORT_RULE } from "../agent/TaskPromptModules.js";
+import { BROWSER_TRANSPORT_RULE, MEDIA_CORE_RULE } from "../agent/TaskPromptModules.js";
 
 export type Provider =
   | "anthropic"
@@ -148,6 +148,7 @@ ${GENERAL_ASSISTANT_IDENTITY}
 - ONLINE_WORKFLOWS: Perform requested online actions with authorized browser tools when possible; respect required approvals, access, and user interaction.
 - CONTINUOUS_BROWSER_WORKFLOW: If a browser action is authorized, inspect targets and continue through completion instead of stopping at launch. Verify live page state; never bypass 2FA/CAPTCHA or permissions.
 ${BROWSER_TRANSPORT_RULE}
+${MEDIA_CORE_RULE}
 ${shellPrompt}
 
 # OPERATING PRINCIPLES

@@ -1,5 +1,6 @@
 /** Local-first, bounded media conversion coordinator. All outputs are create-only. */
 import fs from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -167,6 +168,100 @@ async function sharpConvert(source: string, stage: string, options: MediaRequest
   await image.toFormat(format as keyof import("sharp").FormatEnum, format === "png" ? {} : { quality }).toFile(stage);
   return { backend: "sharp" };
 }
+/** Target KiB uses 1024-byte units. Size targets are best-effort. */
+export function compressionSettings(options: MediaRequest): { quality: number; targetBytes?: number } {
+  const quality = numberOption(options.quality, 85, 1, 100, "quality");
+  if (!Number.isInteger(quality)) problem("invalid_argument", "quality must be an integer");
+  if (options.targetBytes !== undefined && options.targetKB !== undefined) problem("invalid_argument", "Specify only one compression target");
+  const kb = options.targetKB !== undefined;
+  const raw = kb ? options.targetKB : options.targetBytes;
+  if (raw === undefined) return { quality };
+  if (typeof raw !== "number" || !Number.isSafeInteger(raw) || raw < 1 || raw > (kb ? MAX_OUTPUT / 1024 : MAX_OUTPUT)) {
+    problem("invalid_argument", "Compression target must be a bounded positive integer");
+  }
+  return { quality, targetBytes: raw * (kb ? 1024 : 1) };
+}
+
+/** Re-encode to one retained staged candidate; search is bounded to nine encodes. */
+async function compressRaster(source: string, stage: string, options: MediaRequest, signal?: AbortSignal) {
+  const { quality, targetBytes } = compressionSettings(options);
+  if (["width", "height", "left", "top", "fit", "allowEnlarge"].some(key => options[key] !== undefined)) {
+    problem("invalid_argument", "compress cannot resize or crop; use a separate operation");
+  }
+  const sharp = await sharpEngine();
+  const ext = path.extname(stage).toLowerCase();
+  const format = ({ ".jpg": "jpeg", ".jpeg": "jpeg", ".webp": "webp", ".avif": "avif", ".png": "png" } as Record<string, string>)[ext];
+  if (!format) problem("unsupported_format", "Compression requires JPEG, WebP, AVIF, or PNG output");
+  const inputExt = path.extname(source).toLowerCase();
+  const inputFormat = [".jpg", ".jpeg"].includes(inputExt) ? "jpeg" : inputExt.slice(1);
+  const meta = await sharp(source, { limitInputPixels: MAX_PIXELS }).metadata();
+  if ((meta.pages ?? 1) > 1 && options.frame === undefined) problem("multi_frame_requires_selection", "Select a frame of an animated image");
+  const frame = numberOption(options.frame, 0, 0, Math.max(0, (meta.pages ?? 1) - 1), "frame");
+  if (!Number.isInteger(frame)) problem("invalid_argument", "frame must be an integer");
+  const original = (await fs.stat(source)).size;
+  const warnings: string[] = [];
+  if (format === "jpeg" && meta.hasAlpha) warnings.push("JPEG flattens transparency onto white.");
+  if (format === "png" && options.quality !== undefined) warnings.push("PNG is lossless; quality is ignored.");
+  warnings.push(format === "png" ? "Lossless optimization can strip metadata." : "Lossy re-encoding can change pixels and strip metadata.");
+  type Candidate = { file: string; size: number; quality: number; fits: boolean };
+  let best: Candidate | undefined;
+  let attempts = 0;
+  async function encode(q: number) {
+    if (signal?.aborted) problem("cancelled", "Compression cancelled");
+    const file = path.join(path.dirname(stage), path.basename(stage, ext) + "-p" + q + ext);
+    let image = sharp(source, { limitInputPixels: MAX_PIXELS, page: frame, pages: 1, animated: false }).rotate();
+    if (format === "jpeg") image = image.flatten({ background: "#ffffff" });
+    const encoder = format === "png" ? image.png({ compressionLevel: 9, adaptiveFiltering: true })
+      : format === "jpeg" ? image.jpeg({ quality: q, mozjpeg: true })
+      : format === "webp" ? image.webp({ quality: q, effort: 4 })
+      : image.avif({ quality: q, effort: 4 });
+    await encoder.toFile(file);
+    attempts++;
+    const size = (await fs.stat(file)).size;
+    const candidate = { file, size, quality: q, fits: targetBytes !== undefined && size <= targetBytes };
+    const prefer = !best || (candidate.fits && !best.fits)
+      || (candidate.fits && best.fits && q > best.quality)
+      || (!candidate.fits && !best.fits && size < best.size);
+    if (prefer) {
+      if (best) await fs.unlink(best.file);
+      best = candidate;
+    } else await fs.unlink(file);
+    return candidate.fits;
+  }
+  const meetsCeiling = await encode(quality);
+  if (targetBytes !== undefined && !meetsCeiling && format !== "png" && quality > 1) {
+    if (await encode(1)) {
+      let low = 1, high = quality;
+      for (let n = 0; n < 7 && high - low > 1; n++) {
+        const mid = Math.floor((low + high) / 2);
+        if (await encode(mid)) low = mid;
+        else high = mid;
+      }
+    }
+  }
+  if (!best) problem("backend_error", "No compression candidate");
+  const sameCodec = inputFormat === format && (meta.pages ?? 1) === 1 && options.frame === undefined;
+  const skipped = sameCodec && best.size >= original;
+  const chosenQuality = skipped || format === "png" ? null : best.quality;
+  if (skipped) {
+    await fs.unlink(best.file);
+    await fs.copyFile(source, stage, fsConstants.COPYFILE_EXCL);
+    warnings.push("Already compressed: original bytes copied to avoid enlargement.");
+  } else await fs.rename(best.file, stage);
+  const achieved = skipped ? original : best.size;
+  const targetMet = targetBytes === undefined ? null : achieved <= targetBytes;
+  if (targetMet === false) warnings.push("Requested size was not achieved; target is not guaranteed.");
+  if (inputFormat !== format) warnings.push("Format conversion can increase image size.");
+  return { backend: "sharp", warnings, compression: {
+    originalSizeBytes: original, outputSizeBytes: achieved,
+    savedBytes: Math.max(0, original - achieved),
+    savingsPercent: Math.round((original - achieved) / original * 10000) / 100,
+    grewBytes: Math.max(0, achieved - original),
+    outputFormat: format, lossless: format === "png", chosenQuality,
+    targetBytes: targetBytes ?? null, targetMet, attempts, skipped, originalPreserved: true,
+  } };
+}
+
 export async function mediaInspect(args: MediaRequest, workspace: string): Promise<MediaResult> {
   const input = await scopedPath(workspace, getString(args.inputPath, "inputPath"), true);
   const ext = await validatedInput(input);
@@ -222,6 +317,15 @@ export async function mediaTransform(args: MediaRequest, workspace: string, sign
     watermarkSource = await scopedPath(workspace, getString(args.watermarkPath, "watermarkPath"), true);
     const watermarkType = await validatedInput(watermarkSource);
     if (!IMAGE_INPUTS.has(watermarkType)) problem("unsupported_format", "Watermark source must be a supported raster image");
+  }
+  if (action === "compress") {
+    let compression: Awaited<ReturnType<typeof compressRaster>>["compression"] | undefined;
+    const result = await runStaged(output, async stage => {
+      const answer = await compressRaster(source, stage, args, signal);
+      compression = answer.compression;
+      return { backend: answer.backend, warnings: answer.warnings };
+    });
+    return { ...result, compression };
   }
   return runStaged(output, stage => sharpConvert(source, stage, args, signal, watermarkSource));
 }

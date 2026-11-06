@@ -22,6 +22,12 @@ const ZERO_DEFECT_POLICY_RULE = `- ZERO_DEFECT: Validate syntax, types, edge cas
 
 const PDF_WORKFLOW_RULE = `- PDF_WORKFLOW: For authorized PDF tasks, use describe_tool to discover pdf_inspect, pdf_verify, pdf_edit_vector_exact, pdf_sign, pdf_redact_raster, and pdf_verify_signature as needed. Inspect input first, verify output, and apply signing/redaction permissions. State when rendered PDF pages are not editable elements.`;
 
+const MEDIA_WORKFLOW_RULE = `- MEDIA_ROUTING: For authorized local image/PDF/Office work, discover and describe media_inspect, media_capabilities, media_plan, media_transform and media_convert (MCP names may be superagent_media_*). Check actual exposed schemas and permissions; inspect input and run media_capabilities/media_plan preflight for route, fidelity, and required backends before writes. A listed capability does not prove the dependency is installed.
+- MEDIA_COMPRESSION: Use media_transform operation:'compress' only if exposed; select a new outputPath and format plus JPEG/WebP/AVIF quality or optional targetKB/targetBytes ONLY when those fields are in the live schema. PNG may support lossless optimization. Size targets are best-effort, never guaranteed; verify actual input/output bytes and reported savings, avoid unneeded enlarging outputs, and explicitly say when the target was not met.
+- MEDIA_TRANSFORMS: For remove_background use a transparent PNG and require an available local rembg backend/model; for upscale_ai require verified Real-ESRGAN availability, never fabricate recovered detail. Route resize/crop/rotate/watermark to supported image transforms with validated dimensions and watermark source.
+- MEDIA_CONVERSIONS: Use media_plan then media_convert for supported image↔PDF/Office (DOCX/XLSX/PPTX) and Office/PDF→images; choose a backend only after capability checks. Rasterized text/slides need not be editable; Office conversion may alter fonts, tables, pagination, slide layout, and fidelity. Never promise pixel-perfect or editable reconstruction.
+- MEDIA_OUTPUT_GUARD: Validate file signatures, workspace-scoped paths, supported formats, bounds, input hashes and approvals before mutation. Preserve source; outputs must be create-only and must not overwrite. Do not bypass missing dependencies, silently install/download models, or auto-upload. Verify produced file, actual byte size/hash and backend from observed tool results; report failures, missing hashes and partial results plainly. No hardcoded user response or fabricated completion.`;
+
 const ACTIVE_PROCESS_AWARENESS_RULE = `- ACTIVE_PROCESS_AWARENESS: Inspect active processes and ports pre-spawn (inspect_port, find_process) to prevent port/task duplication and collisions.`;
 
 const REASONING_RULE = `- DECISION_LOOP: Fix objective, constraints, criteria, affected interfaces pre-action. Evidence > inference.
@@ -61,6 +67,7 @@ const READ_ONLY_GATEWAY_RULES = `- RESPONSE: Terminal-rendered plain text. Allow
 - IMAGE_VISION: Visual tasks → instruct user "/image paste" or "/image attach <path>". Use vision as primary context.`;
 
 const AESTHETIC_AND_GATEWAY_RULES = `${READ_ONLY_GATEWAY_RULES}
+${MEDIA_WORKFLOW_RULE}
 - DOCUMENT_SCOPE: For PDF/document changes, discover authorized tools, inspect source and verify output; detailed PDF guidance is injected only for relevant tasks.
 - OS_SEP: PowerShell ";" | Git Bash "&&". Respect active shell.
 - COMMAND_LOGS: Foreground commands (run_command, bash) stream real-time logs to ~/.superagent-r/logs/latest-command.log and ~/.superagent-r/logs/commands/cmd_*.log. Live process tools reflect active log paths.

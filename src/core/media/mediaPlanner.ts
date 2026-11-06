@@ -2,7 +2,8 @@
  * This does not start any conversion or create any file.
  */
 import path from "node:path";
-import { mediaCapabilities, mediaInspect, mediaError, type MediaRequest } from "./mediaEngine.js";
+import fs from "node:fs/promises";
+import { mediaCapabilities, mediaInspect, mediaError, compressionSettings, type MediaRequest } from "./mediaEngine.js";
 
 const RASTERS = new Set(["png", "jpg", "jpeg", "webp", "avif", "tif", "tiff", "bmp", "gif"]);
 const OUTPUT_RASTERS = new Set(["png", "jpg", "jpeg", "webp", "avif", "tif", "tiff", "gif"]);
@@ -18,6 +19,21 @@ const planError = (code: string, message: string) => ({ status: "failed" as cons
 
 export async function mediaPlan(args: MediaRequest, workspace: string) {
   try {
+    // Read-only output path preflight mirrors the transform create-only workspace policy.
+    if (typeof args.outputPath !== "string" || !args.outputPath.trim()) {
+      return planError("invalid_argument", "outputPath must be a nonempty workspace path.");
+    }
+    const root = await fs.realpath(workspace);
+    const dest = path.resolve(root, args.outputPath);
+    const inside = (candidate: string) => {
+      const relative = path.relative(root, candidate);
+      return relative !== ".." && !relative.startsWith(".." + path.sep) && !path.isAbsolute(relative);
+    };
+    if (!inside(dest)) return planError("path_outside_workspace", "Output is outside the workspace.");
+    const parent = await fs.realpath(path.dirname(dest)).catch(() => null);
+    if (!parent) return planError("output_parent_missing", "Output parent must exist.");
+    if (!inside(parent)) return planError("path_outside_workspace", "Output parent resolves outside workspace.");
+    if (await fs.lstat(dest).then(() => true, () => false)) return planError("output_exists", "Output exists and cannot be overwritten.");
     const paths = Array.isArray(args.inputPaths) ? args.inputPaths : [args.inputPath];
     if (paths.length < 1 || paths.length > 50 || paths.some(item => typeof item !== "string" || !item.trim())) {
       return planError("invalid_argument", "Provide 1-50 input files.");
@@ -31,7 +47,12 @@ export async function mediaPlan(args: MediaRequest, workspace: string) {
     if (args.mode !== undefined && args.mode !== "convert" && args.mode !== "transform") {
       return planError("invalid_argument", "mode must be transform or convert.");
     }
-    const mode = args.mode === "transform" ? "transform" : "convert";
+    // Inferred transform intent makes operation=compress useful without redundant mode.
+    const mode = args.mode === "transform" || (args.mode === undefined && typeof args.operation === "string")
+      ? "transform" : "convert";
+    if (args.mode === "convert" && args.operation !== undefined) {
+      return planError("invalid_argument", "Explicit convert mode cannot also specify a transform operation.");
+    }
     let route: Route | null = null;
     if (mode === "transform") {
       const action = typeof args.operation === "string" ? args.operation : "";
@@ -57,8 +78,25 @@ export async function mediaPlan(args: MediaRequest, workspace: string) {
           const mark = await mediaInspect({ inputPath: args.watermarkPath }, workspace);
           if (!RASTERS.has(mark.format as string)) return planError("unsupported_format", "Watermark must be a raster image.");
         }
-        route = { backend: "sharp", requirements: ["sharp"], fidelity: ["jpg", "jpeg", "webp", "avif"].includes(target) ? "lossy_visual" : "lossless_visual",
-          warnings: action === "watermark" ? ["The watermark remains part of the resulting raster image, not an editable layer."] : [] };
+        if (action === "compress") {
+          if (!["jpg", "jpeg", "webp", "avif", "png"].includes(target)) {
+            return planError("unsupported_format", "Compression supports JPEG, WebP, AVIF, or PNG.");
+          }
+          compressionSettings(args);
+          if (["width", "height", "left", "top", "fit", "allowEnlarge"].some(key => args[key] !== undefined)) {
+            return planError("invalid_argument", "compress cannot resize/crop; use a separate operation.");
+          }
+          route = { backend: "sharp", requirements: ["sharp"], fidelity: target === "png" ? "lossless_visual" : "lossy_visual",
+            warnings: [
+              "Size target is best-effort, never guaranteed; at most nine encoder passes.",
+              target === "png" ? "PNG optimization is lossless; quality is ignored." : "Lossy output can change pixels and strip metadata.",
+              "If same-format recompression would enlarge the image, original bytes are copied instead.",
+              ["jpg", "jpeg"].includes(target) ? "JPEG flattens any transparency to white." : "Transparency is supported where the format allows.",
+            ] };
+        } else {
+          route = { backend: "sharp", requirements: ["sharp"], fidelity: ["jpg", "jpeg", "webp", "avif"].includes(target) ? "lossy_visual" : "lossless_visual",
+            warnings: action === "watermark" ? ["The watermark remains part of the resulting raster image, not an editable layer."] : [] };
+        }
       }
     } else {
       if (types.every(type => RASTERS.has(type))) {
@@ -96,6 +134,10 @@ export async function mediaPlan(args: MediaRequest, workspace: string) {
       status: "ok" as const, supported: true, ready: missing.length === 0, mode, inputFormats: types,
       targetFormat: target, backend: route.backend, requiredBackends: route.requirements, missingBackends: missing,
       fidelity: route.fidelity, warnings: route.warnings,
+      ...(mode === "transform" && args.operation === "compress" ? {
+        operation: "compress", requestedTargetBytes: compressionSettings(args).targetBytes ?? null,
+        targetGuaranteed: false, maxQualityAttempts: 9,
+      } : {}),
       inputHashes: inspected.map(item => item.sha256 as string),
       noFileCreated: true,
     };
