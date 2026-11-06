@@ -326,6 +326,37 @@ describe("Desktop Terminal UI Controller", () => {
     expect(killCalls[0].args).toEqual({ taskId: "term-bg-dev123" });
   });
 
+  it("renders externally launched processes read-only and excludes them from Kill All", async () => {
+    const mounted = mountTerminalUi({
+      tasks: [{
+        id: "external-win-31320",
+        command: "bun.exe (listening on :7100)",
+        pid: 31320,
+        status: "running",
+        cwd: "External process (working directory unavailable)",
+        windowLabel: "bun · :7100",
+        source: "external",
+        canStop: false,
+        canViewLogs: false,
+        isTerminal: true,
+      }],
+      runningCount: 1,
+      totalCount: 1,
+      presets: [],
+    });
+    await mounted.windowMock.__superagentTerminalRefresh();
+    const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
+    expect(html).toContain("External (read-only)");
+    expect(html).toContain("7100");
+    expect(html).toContain("Logs unavailable");
+    expect(html).not.toContain("terminal-kill-btn");
+    expect(html).not.toContain("terminal-logs-btn");
+    expect(mounted.getOrCreateElement("terminal-kill-all-btn").disabled).toBe(true);
+
+    await mounted.getOrCreateElement("terminal-kill-all-btn").dispatchEvent({ type: "click" });
+    expect(mounted.invokeCalls.some((entry) => entry.cmd === "kill_terminal_task")).toBe(false);
+  });
+
   it("quick launches a terminal command via the launch form", async () => {
     const mounted = mountTerminalUi();
     await mounted.windowMock.__superagentTerminalRefresh();

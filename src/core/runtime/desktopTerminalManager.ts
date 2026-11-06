@@ -23,6 +23,7 @@ import { applyProcessIntent } from "../process/processSpawnPolicy.js";
 import { getProcessSupervisor } from "../process/processSupervisor.js";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { getCommandLogsDir } from "../tools/commandLogger.js";
+import { discoverExternalTerminalProcesses } from "./externalTerminalProcesses.js";
 
 export interface DesktopTerminalTaskInfo {
   id: string;
@@ -39,8 +40,9 @@ export interface DesktopTerminalTaskInfo {
   logPath?: string;
   lastOutput?: string;
   isTerminal: boolean;
-  source?: "mcp" | "agent" | "background" | "tray";
+  source?: "mcp" | "agent" | "background" | "tray" | "external";
   canStop?: boolean;
+  canViewLogs?: boolean;
 }
 
 export interface TerminalPresetInfo {
@@ -214,6 +216,31 @@ export class DesktopTerminalManager {
         lastOutput: outputPreview,
         source: id.startsWith("term-") || !!task.isDetachedWindow ? "tray" : "background",
         canStop: true,
+      });
+    }
+
+    // External server processes have no SuperAgent ownership lease or child handle.
+    // Observing a listener never authorizes signaling the PID.
+    const representedRunningPids = new Set(
+      [...merged.values()]
+        .filter((task) => task.status === "running" && task.pid > 0)
+        .map((task) => task.pid),
+    );
+    for (const observed of await discoverExternalTerminalProcesses()) {
+      if (representedRunningPids.has(observed.pid)) continue;
+      const portsLabel = observed.ports.map((port) => ":" + port).join(", ");
+      const id = "external-win-" + observed.pid;
+      merged.set(id, {
+        id,
+        command: observed.name + " (listening on " + portsLabel + ")",
+        pid: observed.pid,
+        status: "running",
+        cwd: "External process (working directory unavailable)",
+        windowLabel: observed.name.replace(/\.exe$/i, "") + " · " + portsLabel,
+        isTerminal: true,
+        source: "external",
+        canStop: false,
+        canViewLogs: false,
       });
     }
 

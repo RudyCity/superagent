@@ -180,7 +180,7 @@
     // 2. Kill all button visibility
     const killAllBtn = $("terminal-kill-all-btn");
     if (killAllBtn) {
-      killAllBtn.disabled = terminalState.runningCount === 0;
+      killAllBtn.disabled = !terminalState.tasks.some((task) => task.status === "running" && task.canStop !== false);
     }
 
     // 3. Tasks Table
@@ -219,6 +219,8 @@
           ? "Agent"
           : t.source === "background"
           ? "Background"
+          : t.source === "external"
+          ? "External (read-only)"
           : "Tray";
 
         return `<tr class="terminal-task-row" data-task-id="${escapeHtml(t.id)}">
@@ -242,11 +244,9 @@
           <td>${statusBadge}</td>
           <td class="text-right">
             <div class="table-actions">
-              <button type="button" class="button ghost sm terminal-logs-btn" data-task-id="${escapeHtml(
-                t.id
-              )}" title="Inspect terminal stdout logs">
-                View Logs
-              </button>
+              ${t.canViewLogs === false
+                ? `<span class="text-muted" title="This process was started outside SuperAgent; its logs are not captured.">Logs unavailable</span>`
+                : `<button type="button" class="button ghost sm terminal-logs-btn" data-task-id="${escapeHtml(t.id)}" title="Inspect terminal stdout logs">View Logs</button>`}
               ${
                 isRunning && t.canStop !== false
                   ? `<button type="button" class="button ghost sm danger terminal-kill-btn" data-task-id="${escapeHtml(
@@ -344,7 +344,7 @@
 
     // Kill All Running button
     $("terminal-kill-all-btn")?.addEventListener("click", async () => {
-      const running = terminalState.tasks.filter((t) => t.status === "running");
+      const running = terminalState.tasks.filter((t) => t.status === "running" && t.canStop !== false);
       if (!running.length) return;
 
       if (!confirm(`Are you sure you want to terminate ALL ${running.length} running terminal process(es)?`)) {
