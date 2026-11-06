@@ -417,7 +417,8 @@ export async function configureDelegateChatOnLockedTarget(
           );
           const candidate = verified?.result?.value;
           if (candidate?.current === value.native_effort.target &&
-              candidate?.max === value.native_effort.max) {
+              Number.isSafeInteger(candidate?.max) &&
+              Number(candidate.max) >= value.native_effort.target) {
             post = candidate;
             break;
           }
