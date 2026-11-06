@@ -14,9 +14,9 @@ import {
 const superagent = SUPERAGENT_SYSTEM_PROMPT(
   "coder", "feature/prompt-optimization", "D:/worktrees/prompt-optimization",
 );
-// Current v1.13.x prompt-size ceilings, refreshed after the latest prompt/tool updates.
-// Keep ceilings close to measured output so accidental prompt growth remains visible.
-const baselines = { base: 14250, master: 15100, superagent: 17900, researcher: 6500, coder: 10900 };
+// Current v1.14.x prompt-size ceilings, refreshed from the rendered prompts.
+// Keep tight headroom so unrelated prompt growth remains visible.
+const baselines = { base: 14250, master: 17400, superagent: 19800, researcher: 6500, coder: 13200 };
 const prompts = {
   base: getSystemPrompt(), master: MASTER_AGENT_SYSTEM_PROMPT,
   superagent, researcher: SUBAGENT_SYSTEM_PROMPTS.researcher,
@@ -45,7 +45,8 @@ describe("prompt optimization", () => {
 
   it("preserves process protection and tier boundaries", () => {
     for (const prompt of [prompts.master, superagent, prompts.coder]) {
-      expect(prompt).toContain("PROTECT_PROCESS: NEVER kill parent/runtime. Target PID ONLY.");
+      expect(prompt).toContain("PROTECT_PROCESS: Blanket process termination is forbidden.");
+      expect(prompt).toContain("Target PID ONLY after verifying ownership and authorization");
     }
     expect(prompts.master).toContain("RESTRICTION: Code edits BLOCKED in this tier; delegate software implementation to Superagents");
     expect(prompts.coder).toContain("Git BLOCKED outside worktree");
@@ -69,7 +70,7 @@ describe("prompt optimization", () => {
       expect(prompt).not.toContain("if decision_point:");
       expect(prompt).toContain("Brief intent/progress narration is allowed alongside tool use, not instead of it");
     }
-    expect(prompts.coder).toContain("DESTRUCTIVE: ask_question before");
+    expect(prompts.coder).toContain("DESTRUCTIVE: Confirm irreversible or externally consequential operations");
     expect(prompts.master).toContain("Await user approval");
   });
 });

@@ -395,41 +395,84 @@ export async function configureDelegateChatOnLockedTarget(
           await new Promise(resolve => setTimeout(resolve, 160));
         }
 
-        const verifyExpression =
-          "(() => {" +
-          "const vis=n=>{if(!(n instanceof Element))return false;const s=getComputedStyle(n),r=n.getBoundingClientRect();return s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0};" +
-          "const clean=v=>String(v||'').replace(/\s+/g,' ').trim();" +
-          "const st=Array.from(document.querySelectorAll('[role=status]')).filter(vis).map(n=>clean(n.innerText||n.textContent)).find(t=>/\d+\s+of\s+\d+/i.test(t));" +
-          "const m=st&&st.match(/(\d+)\s+of\s+(\d+)/i);" +
-          "const out=Array.from(document.querySelectorAll('button,[role=button]')).filter(vis).find(n=>clean(n.getAttribute('aria-label')).toLowerCase().includes('select chatgpt model')||clean(n.innerText||n.textContent).toLowerCase().includes('thinking effort'));" +
-          "if(out?.getAttribute('aria-expanded')==='true')out.click();" +
-          "return {current:m?Number(m[1]):null,max:m?Number(m[2]):null,label:out?clean(out.innerText||out.textContent):null,status:st||null};" +
-          "})()";
-        let post: any = null;
+        // ChatGPT's power control previews ArrowLeft/ArrowRight changes but does
+        // not persist them until the focused control receives Enter. Commit
+        // explicitly before checking postconditions; otherwise the UI can show
+        // the requested level transiently and revert as soon as the menu closes.
+        await delegateCdpTransport.command(
+          target,
+          "Input.dispatchKeyEvent",
+          {
+            type: "rawKeyDown",
+            key: "Enter",
+            code: "Enter",
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+          },
+          signal,
+          { dangerousApproved: true },
+        );
+        await delegateCdpTransport.command(
+          target,
+          "Input.dispatchKeyEvent",
+          {
+            type: "keyUp",
+            key: "Enter",
+            code: "Enter",
+            windowsVirtualKeyCode: 13,
+            nativeVirtualKeyCode: 13,
+          },
+          signal,
+          { dangerousApproved: true },
+        );
+        await new Promise(resolve => setTimeout(resolve, 260));
+
+        // Enter commits ChatGPT's power selector. Verify only after releasing
+        // the mutating CDP session, using the same inspector exposed to callers;
+        // this reads persisted UI state instead of a transient React snapshot.
+        await delegateCdpTransport.detach(target, signal);
+        await new Promise(resolve => setTimeout(resolve, 220));
+
+        const effortMatches = (text: string): boolean => {
+          const normalized = text.toLowerCase();
+          return input.effort === "xhigh"
+            ? /\b(extra high|xhigh)\b/.test(normalized)
+            : input.effort === "high"
+              ? /\bhigh\b/.test(normalized) && !/\bextra high\b/.test(normalized)
+              : input.effort === "medium"
+                ? /\bmedium\b/.test(normalized)
+                : /\blow\b/.test(normalized);
+        };
+
+        let appliedEvidence = "";
         const deadline = Date.now() + 8_000;
         while (Date.now() < deadline) {
-          const verified: any = await delegateCdpTransport.command(
-            target,
-            "Runtime.evaluate",
-            { expression: verifyExpression, returnByValue: true, awaitPromise: false },
-            signal,
-            { dangerousApproved: true },
-          );
-          const candidate = verified?.result?.value;
-          if (candidate?.current === value.native_effort.target &&
-              Number.isSafeInteger(candidate?.max) &&
-              Number(candidate.max) >= value.native_effort.target) {
-            post = candidate;
-            break;
-          }
-          await new Promise(resolve => setTimeout(resolve, 120));
+          try {
+            const inspection = await inspectDelegateChatConfigurationOnLockedTarget(
+              clientId, tabId, signal,
+            );
+            const evidence = [
+              ...inspection.controls.map(row => row.text),
+              ...inspection.effort_candidates,
+              ...(inspection.effort_status_path || []).map(row => row.text),
+            ].filter(Boolean);
+            const matched = evidence.find(effortMatches);
+            if (matched) {
+              appliedEvidence = matched;
+              break;
+            }
+          } catch {}
+          await new Promise(resolve => setTimeout(resolve, 180));
         }
-        if (!post) throw new Error("CHATGPT_EFFORT_POSTCONDITION_FAILED");
+
+        if (!appliedEvidence) {
+          throw new Error("CHATGPT_EFFORT_POSTCONDITION_FAILED");
+        }
         return {
           ...(value.result as DelegateChatConfigResult),
           requested_effort: input.effort,
-          applied_effort: String(post.status || post.label || input.effort),
-          effort_control: "power-keyboard",
+          applied_effort: appliedEvidence,
+          effort_control: "power-keyboard-enter",
         };
       }
       const code = typeof value.code === "string" && /^[A-Z0-9_]+$/.test(value.code)
@@ -556,14 +599,21 @@ const INSPECT_CONFIG_SCRIPT = String.raw`(async () => {
       state: node.getAttribute("data-state"),
     }))
   ).slice(0, 160);
+  const relevant = before.filter(row => {
+    const text = clean([row.aria,row.testid,row.title,row.text].filter(Boolean).join(" "));
+    return /(select chatgpt model|select model|power|gpt-[0-9]|thinking effort|reasoning effort)/i.test(text);
+  });
+  const relevantSurface = effortSurfaceDebug.filter(row =>
+    /(select model|power|gpt-[0-9]|thinking effort|reasoning effort|(low|medium|high|extra high|xhigh))/i
+      .test(clean([row.aria,row.role,row.text].filter(Boolean).join(" "))));
   return {
-    controls: before,
-    model_candidates: before.map(label).filter(text =>
-      /(model|gpt|chatgpt|instant|thinking|pro|auto|work)/i.test(text)).slice(0, 100),
-    effort_candidates: before.map(label).filter(text =>
-      /(effort|reasoning|thinking|low|medium|high|extra high|xhigh)/i.test(text)).slice(0, 100),
-    effort_menu_candidates: [...new Set(effortMenu)].slice(0, 80),
-    effort_surface_debug: effortSurfaceDebug,
+    controls: relevant,
+    model_candidates: relevant.map(label).filter(text =>
+      /(model|gpt|chatgpt|thinking|power)/i.test(text)).slice(0, 40),
+    effort_candidates: relevant.map(label).filter(text =>
+      /(effort|reasoning|thinking|low|medium|high|extra high|xhigh)/i.test(text)).slice(0, 40),
+    effort_menu_candidates: [...new Set(effortMenu)].slice(0, 40),
+    effort_surface_debug: relevantSurface.slice(0, 60),
     effort_status_path: effortStatusPath,
   };
 })()`;

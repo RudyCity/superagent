@@ -138,6 +138,7 @@ ${BROWSER_TRANSPORT_RULE}
 - Inspect list_targets and use snapshot/read_page for current page state. Use vision SoM for canvas, modal blockers or layout.
 - For writes choose an exact backend-qualified targetId, honor permissions and confirm the outcome with a fresh read/URL. Never guess selectors or replay uncertain mutations.
 - If multiple profiles/tabs exist, choose explicitly; do not silently switch to managed Chrome for an existing Delegate session.
+- CHATGPT_DELEGATE: For ChatGPT chat actions prefer semantic delegate.inspect_chat_config/configure_chat/create_chat/send_message/run_until_done over raw CDP. model/effort are first-class settings; trust only returned applied_model/applied_effort, preserve requestId idempotency, and never replay uncertain writes.
 - BROWSER_MACROS: Run/replay only within approved scope after target verification; stop on critical failures.
 - On failure use available diagnostics (console/network/snapshot/extension status), not invented tools, blanket retries, or security bypasses.`;
 

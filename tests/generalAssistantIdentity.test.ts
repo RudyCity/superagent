@@ -36,6 +36,8 @@ describe("general-purpose assistant identity", () => {
 
   it("does not reintroduce coding-only identity in Muse, FastPath or MCP", () => {
     expect(DEFAULT_MUSE_SYSTEM_PROMPT).toContain("general-purpose AI reasoning partner");
+    expect(DEFAULT_MUSE_SYSTEM_PROMPT).toContain("inspect_chat_config");
+    expect(DEFAULT_MUSE_SYSTEM_PROMPT).toContain("applied_model/applied_effort");
     const fastPath = readFileSync(new URL("../src/core/agent/FastPath.ts", import.meta.url), "utf8");
     const mcp = readFileSync(new URL("../src/core/mcp/resourcesAndPrompts.ts", import.meta.url), "utf8");
     expect(fastPath).not.toContain("You are a helpful AI coding assistant");

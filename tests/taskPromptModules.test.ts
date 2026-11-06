@@ -44,8 +44,16 @@ describe("context-sensitive SuperAgent prompt optimization", () => {
     expect(prompt).toContain("transport:'delegate'");
     expect(prompt).toContain("transport:'managed'");
     expect(prompt).toContain("Do not auto-launch a new Chrome debug profile");
+    expect(prompt).toContain("CHATGPT_DELEGATE_ROUTING");
+    expect(prompt).toContain("delegate.configure_chat");
+    expect(prompt).toContain("delegate.run_until_done");
+    expect(prompt).toContain("applied_model/applied_effort");
+    expect(prompt).toContain("Never reuse a requestId after changing message/model/effort");
     expect(prompt).not.toContain(PDF_TASK_GUIDANCE);
     expect(SUBAGENT_SYSTEM_PROMPTS["chrome-agent"]).toContain("transport:'delegate'");
+    expect(SUBAGENT_SYSTEM_PROMPTS["chrome-agent"]).toContain("CHATGPT_DELEGATE");
+    expect(taskPromptModules("set ChatGPT model GPT-5.6 reasoning effort high"))
+      .toContain("CHATGPT_MODEL_EFFORT");
   });
 
   it("loads relevant module on an explicit continuation, not stale unrelated requests", () => {
