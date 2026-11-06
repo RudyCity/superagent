@@ -525,12 +525,57 @@ async function executeHistoryContent(tabId, id, method, params = {}) {
   return result.result;
 }
 
+async function listOpenConversationTabs() {
+  const tabs = await chrome.tabs.query({});
+  const unique = new Map();
+  for (const tab of tabs || []) {
+    if (!Number.isSafeInteger(tab?.id) || typeof tab?.url !== "string") continue;
+    const match = /^https:\/\/chatgpt\.com\/c\/([a-zA-Z0-9_-]{8,180})(?:[/?#]|$)/.exec(tab.url);
+    if (!match) continue;
+    const chatId = match[1];
+    if (unique.has(chatId)) continue;
+    unique.set(chatId, {
+      chat_id: chatId,
+      title: String(tab.title || "Untitled chat").slice(0, 2_000),
+      url: "https://chatgpt.com/c/" + chatId,
+    });
+  }
+  return [...unique.values()];
+}
+
+async function listChatsWithOpenTabFallback(workerId, requestId, params = {}) {
+  const listing = await executeHistoryContent(
+    workerId, requestId, "delegate.list_chats", params);
+  if (Array.isArray(listing?.chats) && listing.chats.length > 0) return listing;
+
+  const cursor = Number(params?.cursor ?? 0);
+  const limit = Number(params?.limit ?? 50);
+  if (!Number.isSafeInteger(cursor) || cursor < 0 ||
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 200) {
+    return listing;
+  }
+  const chats = await listOpenConversationTabs();
+  const page = chats.slice(cursor, cursor + limit);
+  const nextCursor = cursor + page.length < chats.length ? cursor + page.length : null;
+  return {
+    cursor,
+    limit,
+    chats: page,
+    returned: page.length,
+    scanned_unique: chats.length,
+    scan_steps: 0,
+    complete: false,
+    next_cursor: nextCursor,
+    fallback: "open_tabs",
+  };
+}
+
 async function dispatchHistoryRequest(request) {
   const worker = await createHistoryWorkerTab();
   try {
     if (request.method === "delegate.list_chats") {
-      return await executeHistoryContent(
-        worker.id, request.id + ":list", "delegate.list_chats", request.params || {});
+      return await listChatsWithOpenTabFallback(
+        worker.id, request.id + ":list", request.params || {});
     }
 
     if (request.method === "delegate.read_chat_full") {
@@ -555,14 +600,14 @@ async function dispatchHistoryRequest(request) {
         throw error("DELEGATE_INVALID_MAX_CHATS", "maxChats must be an integer from 1 to 500.");
       }
 
-      const listing = await executeHistoryContent(
-        worker.id, request.id + ":search-list", "delegate.list_chats",
+      const listing = await listChatsWithOpenTabFallback(
+        worker.id, request.id + ":search-list",
         { cursor: 0, limit: Math.min(200, maxChats) });
       let chats = Array.isArray(listing?.chats) ? listing.chats : [];
       let cursor = listing?.next_cursor;
       while (chats.length < maxChats && cursor !== null && cursor !== undefined) {
-        const page = await executeHistoryContent(
-          worker.id, request.id + ":search-list:" + chats.length, "delegate.list_chats",
+        const page = await listChatsWithOpenTabFallback(
+          worker.id, request.id + ":search-list:" + chats.length,
           { cursor: Number(cursor), limit: Math.min(200, maxChats - chats.length) });
         if (!Array.isArray(page?.chats) || page.chats.length === 0) {
           cursor = null;

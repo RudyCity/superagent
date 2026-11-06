@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", () => {
-  it("defines eleven distinct direct MCP tools with no arbitrary target URI", () => {
+  it("defines thirteen distinct direct MCP tools with no arbitrary target URI", () => {
     expect(DELEGATE_MCP_TOOL_DEFS.map(x => x.name)).toEqual([
       "superagent_delegate_read_chat",
       "superagent_delegate_list_chats",
@@ -38,6 +38,8 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
       "superagent_delegate_search_index",
       "superagent_delegate_doctor",
       "superagent_delegate_run_until_done",
+      "superagent_delegate_inspect_chat_config",
+      "superagent_delegate_configure_chat",
       "superagent_delegate_create_chat",
       "superagent_delegate_send_message",
       "superagent_delegate_stop_generation",
@@ -62,6 +64,10 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.search, { query: "" })).toBe("DELEGATE_INVALID_QUERY");
     expect(validateDelegateMcpArgs(send, {})).toBe("DELEGATE_INVALID_MESSAGE");
     expect(validateDelegateMcpArgs(send, {message:"hello"})).toBeNull();
+    expect(validateDelegateMcpArgs(send, { message: "hello", model: "GPT-5.6", effort: "high" })).toBeNull();
+    expect(validateDelegateMcpArgs(send, { message: "hello", effort: "ultra" })).toBe("DELEGATE_INVALID_EFFORT");
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.configure, { clientId: "profileAlpha123", tabId: 101, model: "GPT-5.6", effort: "high" })).toBeNull();
+    expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.configure, { clientId: "profileAlpha123", tabId: 101 })).toBe("DELEGATE_CHAT_CONFIG_REQUIRED");
     expect(validateDelegateMcpArgs(send, { message: "hi", stop: true })).toBe("DELEGATE_UNEXPECTED_ARGUMENT");
     expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.create, { newTab: true })).toBeNull();
     expect(validateDelegateMcpArgs(DELEGATE_MCP_TOOL_NAMES.create, { newTab: "true" })).toBe("DELEGATE_INVALID_NEW_TAB");

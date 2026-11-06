@@ -295,16 +295,50 @@ export function runWithTrustedDelegateForwardingConnection<T>(
 type Signer = ReturnType<typeof createDelegateForwardedSigner>;
 type Verifier = ReturnType<typeof createDelegateForwardedVerifier>;
 let signingInstance: Signer | undefined;
+let signingChannelId: string | undefined;
+let signingKeyFingerprint: string | undefined;
 let verificationInstance: Verifier | undefined;
 
+function signerFingerprint(material: DelegateForwardedChannelMaterial): {
+  channelId: string; fingerprint: string;
+} {
+  const { key, channelId } = validateMaterial(material);
+  return {
+    channelId,
+    fingerprint: createHash("sha256").update(key).digest("hex"),
+  };
+}
+
 /**
- * Called only by trusted lifecycle IPC bootstrap, never by an HTTP handler
- * accepting client keys. A process cannot silently replace a live key.
+ * Strict one-shot install retained for isolated fixtures and single-generation
+ * owners. Production MCP lifecycle uses provisionDelegateForwardedSigner()
+ * because a supervisor replacement intentionally rotates the private channel.
  */
 export function installDelegateForwardedSigner(material: DelegateForwardedChannelMaterial): void {
   if (signingInstance) denied("DELEGATE_FORWARD_BRIDGE_ALREADY_PROVISIONED");
+  const state = signerFingerprint(material);
   signingInstance = createDelegateForwardedSigner(material);
+  signingChannelId = state.channelId;
+  signingKeyFingerprint = state.fingerprint;
 }
+
+/**
+ * Trusted lifecycle provisioning for the MCP signer. Repeating the exact same
+ * material is idempotent. A new channelId is an explicit supervisor rotation.
+ * Reusing a channelId with different key bytes is rejected as a conflict.
+ */
+export function provisionDelegateForwardedSigner(material: DelegateForwardedChannelMaterial): void {
+  const state = signerFingerprint(material);
+  if (signingInstance && signingChannelId === state.channelId) {
+    if (signingKeyFingerprint !== state.fingerprint)
+      denied("DELEGATE_FORWARD_BRIDGE_MATERIAL_CONFLICT");
+    return;
+  }
+  signingInstance = createDelegateForwardedSigner(material);
+  signingChannelId = state.channelId;
+  signingKeyFingerprint = state.fingerprint;
+}
+
 export function installDelegateForwardedVerifier(material: DelegateForwardedChannelMaterial): void {
   if (verificationInstance) denied("DELEGATE_FORWARD_BRIDGE_ALREADY_PROVISIONED");
   verificationInstance = createDelegateForwardedVerifier(material);

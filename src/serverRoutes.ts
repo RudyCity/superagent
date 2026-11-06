@@ -262,7 +262,9 @@ export async function handleServerRoute(
     let parsed: unknown;
     try {
       const raw = await readBody(req);
-      if (Buffer.byteLength(raw, "utf8") > 105_000) {
+      // The signed envelope adds attestation metadata around arguments whose
+      // canonical payload is independently capped at 105,000 bytes.
+      if (Buffer.byteLength(raw, "utf8") > 112_000) {
         sendJSON(res, 413, { success: false, error: "DELEGATE_MCP_PAYLOAD_TOO_LARGE" });
         return true;
       }
@@ -329,8 +331,8 @@ export async function handleServerRoute(
         const {
           delegateReadChatTool, delegateListChatsTool, delegateReadChatFullTool,
           delegateSearchHistoryTool, delegateSyncHistoryTool, delegateSearchIndexTool,
-          delegateDoctorTool, delegateRunUntilDoneTool, delegateCreateChatTool,
-          delegateSendMessageTool, delegateStopGenerationTool,
+          delegateDoctorTool, delegateRunUntilDoneTool, delegateInspectChatConfigTool, delegateConfigureChatTool,
+          delegateCreateChatTool, delegateSendMessageTool, delegateStopGenerationTool,
         } = await import("./core/tools/delegateTools.js");
         const tools: Record<string, typeof delegateReadChatTool> = {
           [DELEGATE_MCP_TOOL_NAMES.read]: delegateReadChatTool,
@@ -341,6 +343,8 @@ export async function handleServerRoute(
           [DELEGATE_MCP_TOOL_NAMES.searchIndex]: delegateSearchIndexTool,
           [DELEGATE_MCP_TOOL_NAMES.doctor]: delegateDoctorTool,
           [DELEGATE_MCP_TOOL_NAMES.runUntilDone]: delegateRunUntilDoneTool,
+          [DELEGATE_MCP_TOOL_NAMES.inspectConfig]: delegateInspectChatConfigTool,
+          [DELEGATE_MCP_TOOL_NAMES.configure]: delegateConfigureChatTool,
           [DELEGATE_MCP_TOOL_NAMES.create]: delegateCreateChatTool,
           [DELEGATE_MCP_TOOL_NAMES.send]: delegateSendMessageTool,
           [DELEGATE_MCP_TOOL_NAMES.stop]: delegateStopGenerationTool,
@@ -352,9 +356,12 @@ export async function handleServerRoute(
         }
         const result = await handler.execute(args, process.cwd());
         const failed = result.startsWith("Error:");
+        const safeFailureCode = failed
+          ? (result.match(/(?:DELEGATE|CHATGPT)_[A-Z0-9_]+/)?.[0] || "DELEGATE_MCP_TOOL_FAILED")
+          : null;
         sendJSON(res, failed ? 409 : 200, {
           success: !failed,
-          ...(failed ? { error: "DELEGATE_MCP_TOOL_FAILED" } : { result }),
+          ...(failed ? { error: safeFailureCode } : { result }),
         });
       });
     } catch (error) {

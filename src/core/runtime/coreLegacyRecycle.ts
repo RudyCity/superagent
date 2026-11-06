@@ -14,6 +14,9 @@ import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
 import { inspectCoreBuild } from "./coreBuildIdentity.js";
 import { coreCheckpointPath } from "./coreSupervisorCheckpoint.js";
+import { auditCoreColdStart } from "./coreColdStartAudit.js";
+import { archiveVerifiedColdRuntimeState } from "./coreColdReset.js";
+import type { CoreColdSnapshot } from "./coreColdStartPolicy.js";
 import { requestCoreSupervisor } from "./coreSupervisor.js";
 import { ManagedSidecarLedger, sidecarOperationFingerprint } from "./managedSidecarLedger.js";
 import { validateCoreOperationId } from "./coreLifecycleLedger.js";
@@ -169,11 +172,42 @@ async function assertNoSupervisedOwner(port: number) {
   }
 }
 
+/**
+ * A stale supervisor checkpoint must never be deleted merely because a legacy
+ * listener is present. It may participate in guarded legacy migration only
+ * when every original worker is proven dead and durable effect evidence is
+ * fully reconciled. The live legacy listener is independently authenticated
+ * later in captureLegacyEvidence().
+ */
+export function legacyRecycleMayArchiveStaleSupervisorState(
+  snapshot: CoreColdSnapshot,
+): boolean {
+  return snapshot.ownerOnline === false &&
+    snapshot.checkpoint === "valid" &&
+    snapshot.workers === "all_dead" &&
+    snapshot.ambiguousTurns === 0 &&
+    Number.isSafeInteger(snapshot.persistedReceipts) &&
+    Number(snapshot.persistedReceipts) >= 0 &&
+    snapshot.receiptsWithAcceptedTurn === 0 &&
+    snapshot.sessionReceiptsReconciled === true &&
+    snapshot.externalEffectsReconciled === true &&
+    (!snapshot.discoveryPresent || snapshot.discoveryStale === true) &&
+    (!snapshot.guardianLeasePresent || snapshot.guardianLeaseStale === true);
+}
+
+async function verifyStaleSupervisorStateForLegacyRecycle(port: number): Promise<boolean> {
+  if (!fs.existsSync(coreCheckpointPath(port))) return false;
+  const audit = await auditCoreColdStart(port);
+  if (!legacyRecycleMayArchiveStaleSupervisorState(audit.snapshot)) {
+    throw new Error("CORE_RECYCLE_CHECKPOINT_REQUIRES_OPERATOR_REVIEW");
+  }
+  return true;
+}
+
 async function captureLegacyEvidence(port: number) {
   if (!validPort(port)) throw new Error("CORE_RECYCLE_INVALID_PORT");
   await assertNoSupervisedOwner(port);
-  if (fs.existsSync(coreCheckpointPath(port)))
-    throw new Error("CORE_RECYCLE_CHECKPOINT_PRESENT_USE_RECOVER");
+  const staleSupervisorState = await verifyStaleSupervisorStateForLegacyRecycle(port);
 
   const listeners = readListenerOwners();
   if (!listeners) throw new Error("CORE_RECYCLE_LISTENER_OWNERSHIP_UNAVAILABLE");
@@ -196,6 +230,7 @@ async function captureLegacyEvidence(port: number) {
     processIdentity: identity,
     commandDigest: hashText(descriptor.commandLine),
     clientMode: inferClientMode(descriptor.commandLine),
+    staleSupervisorState,
     serverInfo,
   };
 }
@@ -395,6 +430,15 @@ export async function runLegacyCoreRecycleWorker(plan: LegacyCoreRecyclePlan) {
 
     await requestLegacyShutdown(plan.port, evidence.serverInfo.authToken);
     await waitForLegacyExit(plan);
+
+    if (evidence.staleSupervisorState) {
+      // Only after the exact authenticated legacy listener has exited can the
+      // cold-start policy prove total runtime loss. Archive stale supervisor
+      // routing evidence atomically; never delete or overwrite it in place.
+      const archived = await archiveVerifiedColdRuntimeState(plan.port);
+      if (archived.reason !== "VERIFIED_TOTAL_RUNTIME_LOSS_NO_REPLAY")
+        throw new Error("CORE_RECYCLE_STALE_STATE_ARCHIVE_UNVERIFIED");
+    }
 
     const entry = targetEntry();
     const child = spawn(process.execPath, [

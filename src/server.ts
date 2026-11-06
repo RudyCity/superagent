@@ -893,8 +893,10 @@ export async function runServer(port: number, silent = false, defaultClientMode:
     process.on("SIGTERM", () => { cleanup(); process.exit(0); });
   } else {
     // Internal rolling generations share a single fixed-port vision helper.
-    // They must not start competing Python services at port 8095.
-    if (process.env.SUPERAGENT_CORE_WORKER !== "1" || process.env.SUPERAGENT_CORE_VISION_OWNER === "1") {
+    // Supervised Core workers never own fixed-port Vision. Vision is managed
+    // by its independent lifecycle; legacy direct servers retain historical
+    // startup behavior for backward compatibility.
+    if (process.env.SUPERAGENT_CORE_WORKER !== "1") {
     try {
       const { execa } = await import("execa");
       const { applyProcessIntent } = await import("./core/process/processSpawnPolicy.js");

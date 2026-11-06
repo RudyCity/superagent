@@ -17,6 +17,8 @@ import {
   delegateSearchIndexTool,
   delegateDoctorTool,
   delegateRunUntilDoneTool,
+  delegateInspectChatConfigTool,
+  delegateConfigureChatTool,
   delegateSendMessageTool,
   delegateStopGenerationTool,
 } from "./delegateTools.js";
@@ -480,6 +482,8 @@ export const delegateToolset: Tool[] = [
   delegateSearchIndexTool,
   delegateDoctorTool,
   delegateRunUntilDoneTool,
+  delegateInspectChatConfigTool,
+  delegateConfigureChatTool,
   delegateSendMessageTool,
   delegateStopGenerationTool,
 ];

@@ -46,3 +46,24 @@ export function evaluateCoreDrain(
     blockers, metrics: options.metrics,
   };
 }
+
+
+/**
+ * Narrow compatibility gate for the pre-isolation first supervised generation.
+ * It may retire only when the sole blockers are the historical transport/Vision
+ * ownership flags and every runtime activity counter is exactly zero.
+ */
+export function legacyRetainedCoreMayDrain(report: CoreDrainReport): boolean {
+  const allowed = new Set([
+    "transport isolation not verified",
+    "owns fixed-port vision helper",
+  ]);
+  if (report.transportIsolated !== false || report.visionOwner !== true ||
+      !Array.isArray(report.blockers) ||
+      report.blockers.some(blocker => !allowed.has(blocker))) {
+    return false;
+  }
+  const values = Object.values(report.metrics || {});
+  return values.length > 0 && values.every(value =>
+    Number.isSafeInteger(value) && Number(value) === 0);
+}

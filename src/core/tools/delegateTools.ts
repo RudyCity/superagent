@@ -1,6 +1,7 @@
 import type { Tool } from "./types.js";
 import { delegateBridge, type DelegateMethod } from "../delegate/bridge.js";
 import {
+  ensureDelegateHistoryIndexWarm,
   getDelegateHistoryIndexStats,
   searchDelegateHistoryIndex,
   syncDelegateHistoryIndex,
@@ -8,6 +9,17 @@ import {
 import { runDelegateUntilDone } from "../delegate/runUntilDone.js";
 import { delegateMultiTabOrchestrator } from "../delegate/multiTabOrchestrator.js";
 import { hasDelegateClaim, withDelegateTargetLock } from "../browserTransport/sessionCoordinator.js";
+import {
+  bindDelegateSemanticAffinity,
+  inspectDelegateSemanticAffinity,
+  resolveDelegateSemanticAffinity,
+} from "../delegate/semanticTabAffinity.js";
+import {
+  configureDelegateChatOnLockedTarget,
+  inspectDelegateChatConfigurationOnLockedTarget,
+  validateDelegateChatConfig,
+  type DelegateChatConfigRequest,
+} from "../delegate/chatConfiguration.js";
 
 const schema = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object", properties, required, additionalProperties: false,
@@ -28,6 +40,81 @@ const requestIdParameter = {
   type: "string", minLength: 8, maxLength: 80,
   description: "Stable idempotency key: never resends after confirmed or uncertain result.",
 };
+
+const modelParameter = {
+  type: "string", minLength: 2, maxLength: 80,
+  description: "Visible ChatGPT model label to select before the mutation, for example GPT-5.6. Matching is fail-closed if the UI option is absent or ambiguous.",
+};
+const effortParameter = {
+  type: "string", enum: ["low", "medium", "high", "xhigh"],
+  description: "ChatGPT reasoning effort to select before the mutation. Fails closed if the account/model UI does not expose that effort.",
+};
+
+function resolvedConnectedClientId(explicit?: string): string | undefined {
+  const clients = delegateBridge.listConnections();
+  if (explicit) return clients.some(client => client.clientId === explicit) ? explicit : undefined;
+  return clients.length === 1 ? clients[0].clientId : undefined;
+}
+
+async function resolveReadAffinityTab(
+  clientId: string,
+  signal?: AbortSignal,
+): Promise<number | undefined> {
+  const existing = resolveDelegateSemanticAffinity(clientId);
+  if (existing) return existing.tabId;
+
+  // Prefer Delegate-CDP inventory because it is a single browser query and
+  // does not probe every ChatGPT tab DOM. This is observation-only: the chosen
+  // tab is bound as "observed" and can never authorize a semantic mutation.
+  try {
+    const { delegateCdpTransport } = await import("../delegate/cdpTransport.js");
+    const rows = await delegateCdpTransport.rpc<any[]>(
+      "delegate.cdp.list_targets", {}, signal, clientId);
+    const tabs = Array.isArray(rows) ? rows.filter((tab: any) =>
+      Number.isSafeInteger(tab?.tabId) && Number(tab.tabId) > 0 &&
+      typeof tab?.url === "string" && /^https:\/\/chatgpt\.com\//.test(tab.url) &&
+      !String(tab.url).includes("delegate-history-worker")) : [];
+    const active = tabs.filter((tab: any) => tab.active === true);
+    const selected = active.length === 1 ? active[0] : tabs.length === 1 ? tabs[0] : undefined;
+    if (selected) {
+      bindDelegateSemanticAffinity(clientId, Number(selected.tabId), "observed");
+      return Number(selected.tabId);
+    }
+    if (tabs.length > 1) {
+      throw new Error(
+        "CHATGPT_MULTIPLE_TABS: Multiple ChatGPT tabs are available; choose an exact tabId. No action was dispatched.");
+    }
+  } catch (error) {
+    if (String((error as any)?.message || error).includes("CHATGPT_MULTIPLE_TABS")) throw error;
+    // Semantic-only profiles may not advertise Delegate-CDP. Fall through to
+    // the compatibility listing below.
+  }
+
+  const raw = await delegateBridge.request("delegate.list_tabs", {}, signal, 5_000, clientId);
+  let value: any;
+  try { value = JSON.parse(raw); } catch { return undefined; }
+  const tabs = Array.isArray(value?.tabs) ? value.tabs.filter((tab: any) =>
+    Number.isSafeInteger(tab?.tabId) && Number(tab.tabId) > 0 && tab?.ready !== false &&
+    typeof tab?.url === "string" && /^https:\/\/chatgpt\.com\//.test(tab.url) &&
+    !String(tab.url).includes("delegate-history-worker")) : [];
+  const active = tabs.filter((tab: any) => tab.active === true);
+  const selected = active.length === 1 ? active[0] : tabs.length === 1 ? tabs[0] : undefined;
+  if (!selected) {
+    if (tabs.length > 1) {
+      throw new Error(
+        "CHATGPT_MULTIPLE_TABS: Multiple ChatGPT tabs are available; choose an exact tabId. No action was dispatched.");
+    }
+    return undefined;
+  }
+  bindDelegateSemanticAffinity(clientId, Number(selected.tabId), "observed");
+  return Number(selected.tabId);
+}
+
+function bindExplicitTabIfPresent(clientId: string | undefined, params: Record<string, unknown>): void {
+  if (clientId && Number.isSafeInteger(params.tabId) && Number(params.tabId) > 0) {
+    bindDelegateSemanticAffinity(clientId, Number(params.tabId), "explicit");
+  }
+}
 
 /** Semantic Delegate writes share the Delegate-CDP FIFO target lock. */
 export async function withSemanticDelegateTarget<T>(
@@ -60,9 +147,13 @@ function prepareTarget(
   args: Record<string, unknown>,
   allowMessage: boolean,
   allowNewTab = false,
-): { clientId?: string; params: Record<string, unknown> } {
+  allowConfig = false,
+): { clientId?: string; params: Record<string, unknown>; config?: DelegateChatConfigRequest } {
   const keys = Object.keys(args || {});
-  if (keys.some(k => !["clientId", "tabId", "requestId", ...(allowMessage ? ["message"] : []), ...(allowNewTab ? ["newTab"] : [])].includes(k))) {
+  if (keys.some(k => !["clientId", "tabId", "requestId",
+      ...(allowMessage ? ["message"] : []),
+      ...(allowNewTab ? ["newTab"] : []),
+      ...(allowConfig ? ["model", "effort"] : [])].includes(k))) {
     throw new Error("DELEGATE_INVALID_ARGUMENT: Unexpected delegate tool argument");
   }
   const clientId = args?.clientId;
@@ -96,7 +187,15 @@ function prepareTarget(
     }
     params.message = args.message;
   }
-  return { clientId: clientId as string | undefined, params };
+  let config: DelegateChatConfigRequest | undefined;
+  if (allowConfig && (args.model !== undefined || args.effort !== undefined)) {
+    config = {
+      ...(args.model !== undefined ? { model: args.model as string } : {}),
+      ...(args.effort !== undefined ? { effort: args.effort as any } : {}),
+    };
+    validateDelegateChatConfig(config);
+  }
+  return { clientId: clientId as string | undefined, params, config };
 }
 
 function prepareHistoryTarget(
@@ -148,6 +247,7 @@ function tool(
   allowMessage = false,
   allowConnectionList = false,
   allowNewTab = false,
+  allowConfig = false,
 ): Tool {
   return {
     name, description, parameters,
@@ -171,14 +271,62 @@ function tool(
           }
           delete copy.connections;
         }
-        const { clientId, params } = prepareTarget(copy, allowMessage, allowNewTab);
+        const { clientId, params, config } = prepareTarget(copy, allowMessage, allowNewTab, allowConfig);
+        const selectedClient = resolvedConnectedClientId(clientId);
+        bindExplicitTabIfPresent(selectedClient, params);
         if (["delegate.create_chat", "delegate.send_message", "delegate.stop_generation"].includes(name)) {
-          return await withSemanticDelegateTarget(name, clientId, params.tabId, params.newTab === true,
+          // Mutations always require caller-selected profile identity. A single
+          // connected profile is still not implicit authorization to mutate it.
+          const mutationClient = clientId;
+          if (params.tabId === undefined && params.newTab !== true && mutationClient) {
+            const affinity = resolveDelegateSemanticAffinity(mutationClient, { write: true });
+            if (affinity) params.tabId = affinity.tabId;
+          }
+          const onceParams = config ? { ...params, ...config } : params;
+          const output = await withSemanticDelegateTarget(name, mutationClient, params.tabId, params.newTab === true,
             selected => delegateBridge.executeOnce(args.requestId as string | undefined,
-              name, selected, params,
-              () => delegateBridge.request(name, params, signal, timeoutMs, selected)));
+              name, selected, onceParams, async () => {
+                if (name === "delegate.send_message" && config) {
+                  await configureDelegateChatOnLockedTarget(
+                    selected, Number(params.tabId), config, signal);
+                }
+                const bridgeOutput = await delegateBridge.request(
+                  name, params, signal, timeoutMs, selected);
+                if (name !== "delegate.create_chat" || !config) return bridgeOutput;
+
+                let targetTab = Number(params.tabId);
+                let parsed: any = null;
+                try { parsed = JSON.parse(String(bridgeOutput)); } catch {}
+                if (params.newTab === true) targetTab = Number(parsed?.tabId);
+                if (!Number.isSafeInteger(targetTab) || targetTab < 1)
+                  throw new Error("DELEGATE_CONFIG_TARGET_NOT_CONFIRMED");
+
+                const apply = async () => configureDelegateChatOnLockedTarget(
+                  selected, targetTab, config, signal);
+                const applied = params.newTab === true
+                  ? await withSemanticDelegateTarget(
+                      "delegate.configure_chat", selected, targetTab, false, () => apply())
+                  : await apply();
+                return JSON.stringify({
+                  ...(parsed && typeof parsed === "object" ? parsed : { result: bridgeOutput }),
+                  chat_config: applied,
+                });
+              }));
+          if (name === "delegate.create_chat" && params.newTab === true && mutationClient) {
+            try {
+              const created = JSON.parse(String(output));
+              if (Number.isSafeInteger(created?.tabId) && Number(created.tabId) > 0) {
+                bindDelegateSemanticAffinity(mutationClient, Number(created.tabId), "created");
+              }
+            } catch {}
+          }
+          return output;
         }
-        return await delegateBridge.request(name, params, signal, timeoutMs, clientId);
+        if (name === "delegate.read_chat" && params.tabId === undefined && selectedClient) {
+          const affinityTab = await resolveReadAffinityTab(selectedClient, signal);
+          if (affinityTab !== undefined) params.tabId = affinityTab;
+        }
+        return await delegateBridge.request(name, params, signal, timeoutMs, selectedClient ?? clientId);
       } catch (error) {
         return `Error: ${error instanceof Error ? error.message : String(error)}`;
       }
@@ -188,9 +336,15 @@ function tool(
 
 export const delegateCreateChatTool: Tool = tool(
   "delegate.create_chat",
-  "Start a new ChatGPT chat once. Set newTab:true to open a separate ChatGPT tab, leaving all existing conversations untouched, and return its tabId for follow-up commands. Without newTab, a tabId targets an existing conversation; multiple tabs require explicit tabId. For multiple profiles select clientId.",
-  schema({ ...optionalTarget, requestId: requestIdParameter, newTab: { type: "boolean", description: "Open a new independent ChatGPT tab instead of modifying an existing tab. Cannot combine with tabId." } }),
-  20_000, false, false, true,
+  "Start a new ChatGPT chat once. Optional model/effort configure the resulting chat before follow-up work. Set newTab:true to open a separate ChatGPT tab, leaving existing conversations untouched, and return its tabId.",
+  schema({
+    ...optionalTarget,
+    requestId: requestIdParameter,
+    newTab: { type: "boolean", description: "Open a new independent ChatGPT tab instead of modifying an existing tab. Cannot combine with tabId." },
+    model: modelParameter,
+    effort: effortParameter,
+  }),
+  30_000, false, false, true, true,
 );
 
 export const delegateReadChatTool: Tool = tool(
@@ -298,16 +452,21 @@ export const delegateSearchIndexTool: Tool = {
     query: { type: "string", minLength: 1, maxLength: 500 },
     limit: { type: "integer", minimum: 1, maximum: 50 },
   }, ["query"]),
-  async execute(args) {
+  async execute(args, _cwd, signal) {
     try {
       if (typeof args.query !== "string" || !args.query.trim() || args.query.length > 500) {
         throw new Error("DELEGATE_INVALID_QUERY: query must be 1 to 500 characters");
       }
-      return JSON.stringify(searchDelegateHistoryIndex(
-        typeof args.clientId === "string" ? args.clientId : undefined,
-        args.query,
-        Number(args.limit ?? 20),
-      ));
+      const selectedClient = typeof args.clientId === "string" ? args.clientId : undefined;
+      const warm = await ensureDelegateHistoryIndexWarm(selectedClient, signal);
+      return JSON.stringify({
+        ...searchDelegateHistoryIndex(
+          selectedClient,
+          args.query,
+          Number(args.limit ?? 20),
+        ),
+        auto_sync_refreshed: warm.refreshed,
+      });
     } catch (error) {
       return "Error: " + (error instanceof Error ? error.message : String(error));
     }
@@ -328,9 +487,16 @@ export const delegateDoctorTool: Tool = {
       let browserError: string | null = null;
       if (selected) {
         try {
+          let selectedTab = Number.isSafeInteger(args.tabId) && Number(args.tabId) > 0
+            ? Number(args.tabId) : undefined;
+          if (selectedTab !== undefined) {
+            bindDelegateSemanticAffinity(selected.clientId, selectedTab, "explicit");
+          } else {
+            selectedTab = await resolveReadAffinityTab(selected.clientId, signal);
+          }
           browser = JSON.parse(await delegateBridge.request(
             "delegate.doctor",
-            args.tabId === undefined ? {} : { tabId: args.tabId },
+            selectedTab === undefined ? {} : { tabId: selectedTab },
             signal,
             20_000,
             selected.clientId,
@@ -348,6 +514,7 @@ export const delegateDoctorTool: Tool = {
         browser,
         browser_error: browserError,
         history_index: getDelegateHistoryIndexStats(selected?.clientId),
+        tab_affinity: selected ? inspectDelegateSemanticAffinity(selected.clientId) : null,
       });
     } catch (error) {
       return "Error: " + (error instanceof Error ? error.message : String(error));
@@ -368,13 +535,26 @@ export const delegateRunUntilDoneTool: Tool = {
     maxRuntimeMs: { type: "integer", minimum: 30000, maximum: 900000 },
     recoverStall: { type: "boolean" },
     completionMarker: { type: "string", minLength: 1, maxLength: 120 },
+    model: modelParameter,
+    effort: effortParameter,
   }, ["message"]),
   async execute(args, _cwd, signal) {
     try {
       const runClient = typeof args.clientId === "string" ? args.clientId : undefined;
+      const config: DelegateChatConfigRequest | undefined =
+        args.model !== undefined || args.effort !== undefined
+          ? {
+              ...(args.model !== undefined ? { model: args.model as string } : {}),
+              ...(args.effort !== undefined ? { effort: args.effort as any } : {}),
+            }
+          : undefined;
+      if (config) validateDelegateChatConfig(config);
       return await withSemanticDelegateTarget("delegate.run_until_done", runClient, args.tabId, false,
         selected => delegateBridge.executeOnce(args.requestId as string | undefined,
-          "delegate.run_until_done", selected, args, async () => JSON.stringify(await runDelegateUntilDone({
+          "delegate.run_until_done", selected, args, async () => {
+            if (config) await configureDelegateChatOnLockedTarget(
+              selected, Number(args.tabId), config, signal);
+            return JSON.stringify(await runDelegateUntilDone({
         clientId: selected,
         tabId: args.tabId as number | undefined,
         message: String(args.message || ""),
@@ -384,7 +564,71 @@ export const delegateRunUntilDoneTool: Tool = {
         maxRuntimeMs: args.maxRuntimeMs as number | undefined,
         recoverStall: args.recoverStall === true,
         completionMarker: typeof args.completionMarker === "string" ? args.completionMarker : undefined,
-      }, signal))));
+      }, signal));
+          }));
+    } catch (error) {
+      return "Error: " + (error instanceof Error ? error.message : String(error));
+    }
+  },
+};
+
+export const delegateInspectChatConfigTool: Tool = {
+  name: "delegate.inspect_chat_config",
+  description: "Read visible ChatGPT model/reasoning controls for one explicit Delegate tab. Read-only: never selects an option, navigates, or reads conversation text.",
+  parameters: schema({ ...optionalTarget }, ["clientId", "tabId"]),
+  async execute(args, _cwd, signal) {
+    try {
+      if (typeof args.clientId !== "string" ||
+          !/^[A-Za-z0-9_-]{8,80}$/.test(args.clientId) ||
+          !Number.isSafeInteger(args.tabId) || Number(args.tabId) < 1) {
+        throw new Error("DELEGATE_CONFIG_EXPLICIT_TARGET_REQUIRED");
+      }
+      if (!delegateBridge.listConnections().some(client => client.clientId === args.clientId)) {
+        throw new Error("DELEGATE_TARGET_NOT_CONNECTED");
+      }
+      return await withDelegateTargetLock(args.clientId, Number(args.tabId), async () =>
+        JSON.stringify(await inspectDelegateChatConfigurationOnLockedTarget(
+          args.clientId as string, Number(args.tabId), signal,
+        )),
+      );
+    } catch (error) {
+      return "Error: " + (error instanceof Error ? error.message : String(error));
+    }
+  },
+};
+
+export const delegateConfigureChatTool: Tool = {
+  name: "delegate.configure_chat",
+  description: "Set the visible ChatGPT model and/or reasoning effort on one explicit Delegate tab. Uses the fenced target lock and fails closed when the requested UI option is unavailable or ambiguous.",
+  parameters: schema({
+    ...optionalTarget,
+    requestId: requestIdParameter,
+    model: modelParameter,
+    effort: effortParameter,
+  }, ["clientId", "tabId"]),
+  async execute(args, _cwd, signal) {
+    try {
+      if (typeof args.clientId !== "string" ||
+          !/^[A-Za-z0-9_-]{8,80}$/.test(args.clientId) ||
+          !Number.isSafeInteger(args.tabId) || Number(args.tabId) < 1) {
+        throw new Error("DELEGATE_CONFIG_EXPLICIT_TARGET_REQUIRED");
+      }
+      const config: DelegateChatConfigRequest = {
+        ...(args.model !== undefined ? { model: args.model as string } : {}),
+        ...(args.effort !== undefined ? { effort: args.effort as any } : {}),
+      };
+      validateDelegateChatConfig(config);
+      return await withSemanticDelegateTarget(
+        "delegate.configure_chat", args.clientId, args.tabId, false,
+        selected => delegateBridge.executeOnce(
+          args.requestId as string | undefined,
+          "delegate.configure_chat",
+          selected,
+          { tabId: args.tabId, ...config },
+          async () => JSON.stringify(await configureDelegateChatOnLockedTarget(
+            selected, Number(args.tabId), config, signal)),
+        ),
+      );
     } catch (error) {
       return "Error: " + (error instanceof Error ? error.message : String(error));
     }
@@ -393,13 +637,15 @@ export const delegateRunUntilDoneTool: Tool = {
 
 export const delegateSendMessageTool: Tool = tool(
   "delegate.send_message",
-  "Send once to an explicitly selected clientId and tabId. Optional requestId prevents replay even if RPC outcome is uncertain. Does not retry the original message.",
+  "Send once to an explicitly selected clientId and tabId. Optional model/effort are applied before Send under the same target lock; requestId prevents replay after uncertain outcomes.",
   schema({
     ...optionalTarget,
     requestId: requestIdParameter,
     message: { type: "string", minLength: 1, maxLength: 100_000 },
+    model: modelParameter,
+    effort: effortParameter,
   }, ["message"]),
-  30_000, true,
+  45_000, true, false, false, true,
 );
 
 export const delegateStopGenerationTool: Tool = tool(

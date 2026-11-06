@@ -232,6 +232,43 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
     }
   },70_000);
 
+  it("self-recovers a crashed current backend without changing the owner or public URL", async () => {
+    const port = await nextPort();
+    const nonce = "c".repeat(64);
+    const owner = await startReloadableMcpTunnelOwner({
+      port, nonce, createdAt: Date.now(), cliEntry: path.resolve("dist/cli.js"),
+      authMode: "static-bearer", allowDangerous: false,
+    });
+    const root = "http://127.0.0.1:" + port;
+    const status = () => fetch(root + "/_internal/owner/status", {
+      headers: { Authorization: "Bearer " + nonce },
+    }).then(r => r.json());
+    try {
+      const before = await status();
+      expect(before.backendHealthy).toBe(true);
+      expect(before.autoRecovery?.enabled).toBe(true);
+      process.kill(before.backendPid, "SIGTERM");
+
+      let after: any = null;
+      for (let i = 0; i < 80; i++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        after = await status();
+        if (after.backendHealthy === true && after.backendPid !== before.backendPid) break;
+      }
+      expect(after.backendPid).not.toBe(before.backendPid);
+      expect(after.backendHealthy).toBe(true);
+      expect(after.pid).toBe(before.pid);
+      expect(after.publicUrl).toBe(before.publicUrl);
+      expect(after.autoRecovery.attemptsLastHour).toBeGreaterThanOrEqual(1);
+      expect(readMcpOwnerLogs(port).map(e => e.event)).toContain("backend_auto_recovered");
+      expect(mock.startQuickTunnel).toHaveBeenCalledTimes(1);
+    } finally {
+      await owner.close();
+      fs.rmSync(getMcpStateFile(port), {force:true});
+      fs.rmSync(mcpOwnerLogPath(port), {force:true});
+    }
+  }, 70_000);
+
   it("keeps OAuth issuer constant, or refuses reload if OAuth persistence is unavailable", async () => {
     const port = await nextPort();
     const nonce = "e".repeat(64);

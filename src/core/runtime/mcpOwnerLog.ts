@@ -12,6 +12,8 @@ const EVENT_NAMES = [
   "backend_reload_started",
   "backend_reload_succeeded",
   "backend_reload_failed",
+  "backend_auto_recovered",
+  "backend_auto_recovery_blocked",
   "owner_stopping",
   "bootstrap_rotated",
   "bootstrap_consumed",
@@ -41,6 +43,9 @@ const SAFE_ERROR_CODES = new Set([
   "MCP_RELOAD_OWNER_DRAINING",
   "MCP_RELOAD_LEGACY_OWNER",
   "MCP_RELOAD_NO_MANAGED_OWNER",
+  "MCP_AUTO_RECOVERY_RATE_LIMIT",
+  "MCP_AUTO_RECOVERY_OAUTH_NOT_PERSISTENT",
+  "MCP_AUTO_RECOVERY_FAILED",
 ]);
 
 function assertPort(port: number): void {

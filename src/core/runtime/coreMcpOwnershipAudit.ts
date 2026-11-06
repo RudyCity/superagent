@@ -28,17 +28,39 @@ export type CoreMcpOwnershipAssessment = {
 function validPort(p:number):boolean {return Number.isInteger(p)&&p>=1024&&p<=65535;}
 function parseNetstat(stdout:string):Map<number,number>{
   const map=new Map<number,number>();
+  const unknownListeners=new Set<number>();
+  const establishedOwners=new Map<number,number>();
+  const localEndpoint=/^(?:127\.0\.0\.1|0\.0\.0\.0|\[::1\]|\[::\]):(\d+)$/;
   for(const line of stdout.split(/\r?\n/)){
     const c=line.trim().split(/\s+/);
-    if(c.length<5||c[0].toUpperCase()!=="TCP"||c[3].toUpperCase()!=="LISTENING")continue;
-    const local=c[1]||"";
-    const match=local.match(/^(?:127\.0\.0\.1|0\.0\.0\.0|\[::1\]|\[::\]):(\d+)$/);
+    if(c.length<5||c[0].toUpperCase()!=="TCP")continue;
+    const match=(c[1]||"").match(localEndpoint);
     if(!match)continue;
     const port=Number(match[1]),pid=Number(c[4]);
-    if(validPort(port)&&Number.isSafeInteger(pid)&&pid>0){
-      if(map.has(port)&&map.get(port)!==pid)map.set(port,0);
-      else map.set(port,pid);
+    if(!validPort(port)||!Number.isSafeInteger(pid))continue;
+    const state=String(c[3]||"").toUpperCase();
+    if(state==="LISTENING"){
+      if(pid>0){
+        if(map.has(port)&&map.get(port)!==pid)map.set(port,0);
+        else map.set(port,pid);
+      }else{
+        unknownListeners.add(port);
+      }
+      continue;
     }
+    // Windows can transiently report PID 0 for a localhost LISTENING row while
+    // accepted server-side sockets still carry the owning PID. Infer only from
+    // exact local-port ESTABLISHED rows and only when all kernel rows agree.
+    if(state==="ESTABLISHED"&&pid>0){
+      const prior=establishedOwners.get(port);
+      if(prior===undefined)establishedOwners.set(port,pid);
+      else if(prior!==pid)establishedOwners.set(port,0);
+    }
+  }
+  for(const port of unknownListeners){
+    if(map.has(port)&&map.get(port)!==0)continue;
+    const inferred=establishedOwners.get(port);
+    map.set(port,inferred&&inferred>0?inferred:0);
   }
   return map;
 }

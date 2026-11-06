@@ -15,6 +15,7 @@ import { validateCoreOperationId } from "./coreLifecycleLedger.js";
 import { readCoreGuardianLease } from "./coreGuardian.js";
 import { listVerifiedChannelHosts } from "./channelHost.js";
 import { readListenerOwners, readMcpStateInventory } from "./coreMcpOwnershipAudit.js";
+import { verifyWindowsProcessBirth, type ProcessBirthVerdict } from "./mcpProcessBirth.js";
 import { getMcpStateFile, readMcpStateFile } from "../mcp/mcpTunnel.js";
 import { readManagedMcpTunnelLease, probeManagedMcpTunnelOwner,
   verifyManagedOwnerIdentity, reloadManagedMcpTunnelBackend } from "./mcpManagedTunnelOwner.js";
@@ -216,20 +217,82 @@ async function probe(port:number,resource:string):Promise<{status:number;body:an
   }catch{return null;}
 }
 
+type CoreServerInfoEvidence = {
+  port:number;pid:number;authToken:string;startedAt:number;
+};
+function readCoreServerInfoEvidence(port:number):CoreServerInfoEvidence|null {
+  try {
+    const file=path.join(getRootConfigDir(),"server-info-"+port+".json");
+    const stat=fs.lstatSync(file);
+    if(!stat.isFile()||stat.isSymbolicLink()||stat.nlink!==1||stat.size<20||stat.size>4096)
+      return null;
+    const value=JSON.parse(fs.readFileSync(file,"utf8")) as Partial<CoreServerInfoEvidence>;
+    if(value.port!==port||!Number.isSafeInteger(value.pid)||Number(value.pid)<=0||
+       typeof value.authToken!=="string"||!/^[a-f0-9]{48}$/.test(value.authToken)||
+       !Number.isSafeInteger(value.startedAt)||Number(value.startedAt)<=0)return null;
+    return value as CoreServerInfoEvidence;
+  }catch{return null;}
+}
+async function authenticatedCorePublicProbe(
+  port:number,token:string,
+):Promise<boolean>{
+  try{
+    const response=await fetch("http://127.0.0.1:"+port+"/api/status",{
+      method:"GET",headers:{Authorization:"Bearer "+token},
+      signal:AbortSignal.timeout(1600),redirect:"error",
+    });
+    await response.arrayBuffer();
+    return response.status===200;
+  }catch{return false;}
+}
+export function acceptsAuthenticatedCoreOwnerFallback(input:{
+  platform:string;kernelOwner:number|null;supervisorPid:number;
+  serverInfoPid:number|null;birth:ProcessBirthVerdict;publicProbe:boolean;
+}):boolean{
+  return input.platform==="win32"&&
+    (input.kernelOwner===0||input.kernelOwner===null)&&
+    Number.isSafeInteger(input.supervisorPid)&&input.supervisorPid>0&&
+    input.serverInfoPid===input.supervisorPid&&
+    input.birth==="matched"&&input.publicProbe===true;
+}
+
 async function inspectOne(service:ManagedServiceName,port:number|undefined,
   listeners:Map<number,number>|null):Promise<ServiceStatus> {
   const owner=port?listeners?.get(port)??null:null;
   if(service==="core") {
     try {
       const s=await requestCoreSupervisor("status",port!,2500);
+      let ownerVerified=s.supervisorPid===owner;
+      if(!ownerVerified&&(owner===0||owner===null)&&process.platform==="win32"){
+        const info=readCoreServerInfoEvidence(port!);
+        const birth=info&&info.pid===s.supervisorPid
+          ? verifyWindowsProcessBirth(s.supervisorPid,info.startedAt):"unverified";
+        const publicProbe=info&&info.pid===s.supervisorPid
+          ? await authenticatedCorePublicProbe(port!,info.authToken):false;
+        ownerVerified=acceptsAuthenticatedCoreOwnerFallback({
+          platform:process.platform,kernelOwner:owner,supervisorPid:s.supervisorPid,
+          serverInfoPid:info?.pid??null,birth,publicProbe,
+        });
+      }
       const verified=s.publicPort===port&&s.ownerContract?.role==="core-supervisor"&&
-        s.ownerContract?.mcpLifecycle==="not-owned"&&s.supervisorPid===owner;
-      return snap(service,port,verified?"active":"unverified",s.supervisorPid,verified,
+        s.ownerContract?.mcpLifecycle==="not-owned"&&ownerVerified;
+      const buildFresh=s.currentBuild?.fresh??null;
+      const state=verified?(buildFresh===false?"degraded":"active"):"unverified";
+      return snap(service,port,state,s.supervisorPid,verified,
         verified?["status","plan","restart","rollback","drain"]:["status"],
-        verified?"Authenticated Core supervisor + kernel listener":
-        "Core supervisor identity/kernel listener mismatch",
+        verified
+          ? buildFresh===false
+            ? "Authenticated Core supervisor is serving a stale compiled generation; rebuild/restart recommended"
+            : "Authenticated Core supervisor + kernel listener"
+          : "Core supervisor identity/kernel listener mismatch",
         {workerPid:s.active.pid,retainedWorkers:s.retained.length,
-          sessionCount:s.affinitySessions,buildFresh:s.currentBuild?.fresh??null});
+          sessionCount:s.affinitySessions,buildFresh,
+          ownerManagedRecovery:verified?"verified_rollback_monitor":null,
+          runtimeWarning:buildFresh===false?"SOURCE_DIST_DRIFT":null,
+          kernelListenerPid:owner,
+          ownershipEvidence:s.supervisorPid===owner
+            ?"kernel_listener_pid"
+            : verified?"authenticated_server_info_fallback":null});
     }catch {
       const response=await probe(port!,"/api/status");
       // A failed supervisor probe never proves that an existing listener
@@ -246,13 +309,13 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
     if(!registered)return snap(service,port,owner?"unverified":"inactive",owner,false,
       ["status"],owner?"Listener exists without MCP owner record":"No registered MCP owner");
     const lease=readManagedMcpTunnelLease(port!);
-    let verified=false,reloadable=false;
+    let verified=false,reloadable=false,live:any=null;
     if(lease?.pid===registered.pid&&owner===registered.pid) {
       try {
         await verifyManagedOwnerIdentity(lease,{timeoutMs:1100});
-        const live=await probeManagedMcpTunnelOwner(lease);
+        live=await probeManagedMcpTunnelOwner(lease);
         verified=Boolean(live&&live.pid===registered.pid);
-        reloadable=verified&&Boolean((live as any)?.reloadable)&&registered.reloadable===true;
+        reloadable=verified&&Boolean(live?.reloadable)&&registered.reloadable===true;
       }catch{}
     }
     const matched=owner===registered.pid;
@@ -263,7 +326,13 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
         "Legacy MCP owner: cannot guarantee same public URL on restart",
       {authMode:registered.authMode,tunnelProvider:registered.tunnelProvider,
         publicUrl:registered.publicUrl,registeredPid:registered.pid,
-        listenerPid:owner,reloadable});
+        listenerPid:owner,reloadable,
+        backendPid:live?.backendPid??registered.backendPid??null,
+        backendGenerations:live?.backendGenerations??null,
+        backendHealthy:live?.backendHealthy??null,
+        backendGenerationDetails:Array.isArray(live?.backendGenerationDetails)
+          ? live.backendGenerationDetails.slice(0,8):[],
+        ownerManagedRecovery:live?.autoRecovery??null});
   }
   if(service==="transport") {
     const response=await probe(port!,"/_transport/health");
@@ -445,16 +514,30 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
         state:byName.get(dep)?.state??"unknown",
         verified:byName.get(dep)?.ownershipVerified??false}));
       const blocked=deps.some(d=>d.state!=="active"&&d.state!=="embedded");
-      const available=item.state==="active"||item.state==="embedded";
+      const available=item.state==="active"||item.state==="embedded"||item.state==="degraded";
       // An unverified listener is not ready even when it responds.
       // The in-process process registry is the only ownerless exception.
-      const ready=available&&!blocked&&
+      const ready=(item.state==="active"||item.state==="embedded")&&!blocked&&
         (item.ownershipVerified||item.service==="process_supervisor")&&
         (item.service!=="vision"||item.details?.modelLoaded===true)&&
         (item.service!=="transport"||item.details?.backendReady===true);
+      const mcpRecoveryDetails=item.details?.ownerManagedRecovery;
+      const mcpRecoveryActive=item.service==="mcp"&&
+        item.ownershipVerified&&item.details?.reloadable===true&&
+        typeof mcpRecoveryDetails==="object"&&mcpRecoveryDetails!==null&&
+        "enabled" in mcpRecoveryDetails&&
+        (mcpRecoveryDetails as Record<string,unknown>).enabled===true;
+      const ownerManagedRecovery=item.service==="core"&&item.ownershipVerified
+        ? {enabled:true,strategy:"verified_supervisor_rollback_monitor"}
+        : mcpRecoveryActive
+          ? {enabled:true,strategy:"reloadable_owner_backend_recovery"}
+          : {enabled:false,strategy:null};
       return {service:item.service,state:item.state,ownerVerified:item.ownershipVerified,
         alive:available,ready,dependsOn:deps,dependencyBlocked:blocked,
-        reason:item.reason,recoveryPolicy:{enabled:policy.autoRecover,
+        reason:item.reason,recoveryPolicy:{
+          enabled:policy.autoRecover||ownerManagedRecovery.enabled,
+          configuredWatchdog:policy.autoRecover,
+          ownerManaged:ownerManagedRecovery,
           threshold:policy.failureThreshold,maxPerHour:policy.maxRestartsPerHour}};
     });
     const answer:any={action,readOnly:true,observedAt:Date.now(),services:states,checks,

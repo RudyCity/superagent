@@ -298,7 +298,7 @@ describe("Core Delegate forwarded host dispatch signed identity boundary", () =>
   it("keeps POST-only and bounded JSON, rejects invalid body without touching verifier", async () => {
     const execute = vi.spyOn(controlChromeCdpTool, "execute");
     expect((await call({}, { method: "GET" })).status).toBe(405);
-    expect((await call({}, { content: "x".repeat(105_001) })).status).toBe(413);
+    expect((await call({}, { content: "x".repeat(112_001) })).status).toBe(413);
     expect((await call({}, { content: "{broken" })).status).toBe(400);
     expect((await call([], {})).status).toBe(400);
     expect(fixture.calls).toBe(0);

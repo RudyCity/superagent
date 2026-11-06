@@ -23,6 +23,8 @@ const names = [
   "delegate.search_index",
   "delegate.doctor",
   "delegate.run_until_done",
+  "delegate.inspect_chat_config",
+  "delegate.configure_chat",
   "delegate.send_message",
   "delegate.stop_generation",
 ];
@@ -70,7 +72,7 @@ afterEach(async () => {
 });
 
 describe("delegate registration and visibility", () => {
-  it("exports seven conforming Delegate tools, including read-only history tools, without modifying Master", () => {
+  it("exports conforming Delegate tools, including chat configuration, without modifying Master", () => {
     expect(delegateToolset.map((x) => x.name)).toEqual(names);
     for (const t of delegateToolset) {
       expect(t.parameters.type).toBe("object");

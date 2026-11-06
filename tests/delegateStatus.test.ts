@@ -12,6 +12,7 @@ type Listener = (event?: any) => void;
 function fixture(
   tabs: Array<{ id: number; url: string; active?: boolean; status?: string; title?: string }> = [],
   needsInjection = false,
+  emptyHistory = false,
 ) {
   const tabCalls: Array<{tabId: number; action: string}> = [];
   const injections: Array<{tabId: number;files: string[]}> = [];
@@ -116,12 +117,14 @@ function fixture(
           ok: true,
           result: { ready: true, logged_in: true, stop_visible: tabId === 202 },
         };
-        if (message.method === "delegate.list_chats") return { ok: true, result: {
-          chats: [
-            { chat_id: "chat-history-001", title: "History One", url: "https://chatgpt.com/c/chat-history-001" },
-            { chat_id: "chat-history-002", title: "History Two", url: "https://chatgpt.com/c/chat-history-002" },
-          ], complete: true, next_cursor: null,
-        } };
+        if (message.method === "delegate.list_chats") return { ok: true, result: emptyHistory
+          ? { chats: [], complete: true, next_cursor: null }
+          : {
+              chats: [
+                { chat_id: "chat-history-001", title: "History One", url: "https://chatgpt.com/c/chat-history-001" },
+                { chat_id: "chat-history-002", title: "History Two", url: "https://chatgpt.com/c/chat-history-002" },
+              ], complete: true, next_cursor: null,
+            } };
         if (message.method === "delegate.read_chat_full") return { ok: true, result: {
           chat_id: "chat-history-001", messages: [{ index: 0, role: "user", text: "hello" }], next_cursor: null,
         } };
@@ -356,6 +359,36 @@ describe("Delegate connection status", () => {
     expect(response.error).toBeUndefined();
     expect(response).toMatchObject({ ok: true });
     expect(response.result.chats).toHaveLength(2);
+  });
+
+  it("falls back to currently open ChatGPT conversation tabs when the history sidebar yields zero chats", async () => {
+    const { sockets, createdTabs, removedTabs } = fixture([
+      { id: 101, url: "https://chatgpt.com/c/open-chat-0001", title: "Open Chat One", active: true },
+      { id: 102, url: "https://chatgpt.com/c/open-chat-0002?foo=1", title: "Open Chat Two", active: false },
+      { id: 103, url: "https://chatgpt.com/", title: "New chat", active: false },
+      { id: 104, url: "https://example.com/c/not-chatgpt", title: "Foreign", active: false },
+    ], false, true);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "history-open-tabs", method: "delegate.list_chats",
+      params: { cursor: 0, limit: 10 },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const response = sockets[0].sent.find(value => value.type === "response");
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        fallback: "open_tabs",
+        complete: false,
+        chats: [
+          { chat_id: "open-chat-0001", title: "Open Chat One", url: "https://chatgpt.com/c/open-chat-0001" },
+          { chat_id: "open-chat-0002", title: "Open Chat Two", url: "https://chatgpt.com/c/open-chat-0002" },
+        ],
+      },
+    });
+    expect(createdTabs.at(-1)?.url).toBe("https://chatgpt.com/#delegate-history-worker");
+    expect(removedTabs).toContain(createdTabs.at(-1)!.id);
   });
 
   it("reads a historical chat by navigating only the inactive worker tab", async () => {

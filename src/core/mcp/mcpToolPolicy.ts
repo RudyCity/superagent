@@ -61,6 +61,8 @@ export const MCP_TOOL_CLASSIFICATION: Record<string, "safe" | "dangerous"> = {
   // ---- dangerous: mutation / execution / control ----
   superagent_delegate_sync_history: "dangerous",
   superagent_delegate_run_until_done: "dangerous",
+  superagent_delegate_inspect_chat_config: "safe",
+  superagent_delegate_configure_chat: "dangerous",
   superagent_delegate_create_chat: "dangerous",
   superagent_delegate_send_message: "dangerous",
   superagent_delegate_stop_generation: "dangerous",

@@ -5,11 +5,16 @@ import net from "node:net";
 import os from "node:os";
 import { getRootConfigDir } from "../config/paths.js";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { fork, type ChildProcess } from "node:child_process";
 import { getProcessSupervisor } from "../process/processSupervisor.js";
 import { handoverCoreDelegateBridge, callCoreWorkerDelegateBridge } from "./coreDelegateHandover.js";
 import { readDelegateListenerPreference } from "../delegate/delegateListenerPreference.js";
-import type { CoreDrainReport } from "./coreDrainInspection.js";
+import { generateDelegateForwardedChannelMaterial } from "../browserTransport/delegateForwardedPrincipal.js";
+import {
+  provisionCoreWorkerDelegateForwardingVerifier,
+  startCoreSupervisorDelegateForwardingBroker,
+} from "./delegateForwardingLifecycle.js";
+import { legacyRetainedCoreMayDrain, type CoreDrainReport } from "./coreDrainInspection.js";
 import { inspectCoreBuild, type CoreBuildIdentity } from "./coreBuildIdentity.js";
 import { CoreLifecycleLedger, validateCoreOperationId } from "./coreLifecycleLedger.js";
 import {
@@ -214,6 +219,13 @@ export async function runCoreSupervisor(
   const serverToken = checkpoint?.serverToken || recycleToken || crypto.randomBytes(24).toString("hex");
   delete process.env.SUPERAGENT_CORE_RECYCLE_SERVER_TOKEN;
   const inspectToken = checkpoint?.inspectToken || crypto.randomBytes(32).toString("hex");
+  // One private forwarding channel lives for this supervisor lifetime. Every
+  // worker generation gets the verifier over parent/child IPC; MCP backends
+  // obtain the signer only from the supervisor's authenticated local IPC pipe.
+  const delegateForwardingMaterial = generateDelegateForwardedChannelMaterial();
+  let delegateForwardingBroker: Awaited<ReturnType<
+    typeof startCoreSupervisorDelegateForwardingBroker
+  >> | undefined;
   let active: Generation | undefined;
   const retained: Generation[] = [];
   const sessionAffinity = new CoreSessionAffinity();
@@ -221,6 +233,7 @@ export async function runCoreSupervisor(
   let lastRollback: CoreRuntimeStatus["lastRollback"];
   let lastDrain: CoreRuntimeStatus["lastDrain"];
   let recovered = false;
+  let autoDrainTimer: ReturnType<typeof setTimeout> | undefined;
   // Durable receipts remain outside Core's worker checkpoint and survive
   // supervisor crash/recovery. Unresolved operations are never replayed.
   const lifecycleLedger = new CoreLifecycleLedger(port);
@@ -256,10 +269,11 @@ export async function runCoreSupervisor(
   async function spawnWorker(): Promise<Generation> {
     const workerPort = await reserveLoopbackPort();
     const generationId = crypto.randomBytes(16).toString("hex");
-    // Isolated staging owns no shared helper/tunnel and may retire all of its
-    // own workers after session/inflight/transport drain verification.
+    // Supervised workers are API-only. Fixed-port helpers use independent
+    // owner lifecycles, and the single Delegate listener is transactionally
+    // handed over before an old worker becomes a retained drain candidate.
     const staging = process.env.SUPERAGENT_CORE_STAGING === "1";
-    const drainEligible = !!active || staging;
+    const drainEligible = true;
     const entry = coreEntry;
     const buildBefore = inspectCoreBuild(entry, { requireFreshCompiled: true });
     let workerRecordId: string | undefined;
@@ -276,10 +290,10 @@ export async function runCoreSupervisor(
       workerRecordId = reg.recordId;
     } catch {}
 
-    const child = spawn(process.execPath, [entry, "--server", String(workerPort), "--client-mode", clientMode], {
+    const child = fork(entry, ["--server", String(workerPort), "--client-mode", clientMode], {
+      execPath: process.execPath,
       cwd: process.cwd(),
-      stdio: "ignore",
-      windowsHide: true,
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
       detached: true,
       env: {
         ...process.env,
@@ -287,12 +301,13 @@ export async function runCoreSupervisor(
         SUPERAGENT_CORE_GENERATION_ID: generationId,
         SUPERAGENT_CORE_PUBLIC_PORT: String(port),
         SUPERAGENT_CORE_INSPECT_TOKEN: inspectToken,
-        // First generation owns the fixed-port vision helper and cannot be
-        // retired automatically. Others are API-only (no sidecar listeners).
-        SUPERAGENT_CORE_TRANSPORT_ISOLATED: drainEligible ? "1" : "0",
-        // Launch fixed-port vision helper only once from generation #1.
-        // Subsequent workers can use the same helper without binding 8095 again.
-        SUPERAGENT_CORE_VISION_OWNER: staging ? "0" : active ? "0" : "1",
+        // Retained workers are drainable only after the supervisor has
+        // completed Delegate-listener handoff and the authenticated drain
+        // report proves no live work remains.
+        SUPERAGENT_CORE_TRANSPORT_ISOLATED: "1",
+        // Vision has an independent managed lifecycle; Core workers must never
+        // own its fixed port or block generation retirement.
+        SUPERAGENT_CORE_VISION_OWNER: "0",
         // The supervisor explicitly hands over the single Delegate listener.
         // New blue-green candidates must never race the current owner for 17341.
         SUPERAGENT_CORE_DELEGATE_OWNER: staging || active ? "0" : "1",
@@ -310,13 +325,18 @@ export async function runCoreSupervisor(
         }).catch(() => {});
       });
     }
-    child.unref();
-    try { await ready(workerPort, child, serverToken); }
+    try {
+      await provisionCoreWorkerDelegateForwardingVerifier(
+        child, generationId, delegateForwardingMaterial,
+      );
+      await ready(workerPort, child, serverToken);
+    }
     catch (error) {
       // Only the candidate worker can be stopped on failure; active traffic is untouched.
       try { child.kill(); } catch {}
       throw error;
     }
+    child.unref();
     if (!child.pid) throw new Error("Worker PID unavailable");
     // Do not publish a candidate that was spawned while the source/dist tree
     // was changing. The old active worker remains untouched on failure.
@@ -477,6 +497,7 @@ export async function runCoreSupervisor(
           }
           throw error;
         }
+        scheduleConservativeAutoDrain();
         return status();
       }
       throw new Error("No responsive previous core worker; no session or tunnel was stopped");
@@ -526,14 +547,15 @@ export async function runCoreSupervisor(
         }
         throw error;
       }
+      scheduleConservativeAutoDrain();
       return status();
     } finally {
       restarting = false;
     }
   }
 
-  async function inspectForDrain(worker: Generation): Promise<CoreDrainReport | undefined> {
-    if (!worker.drainEligible || workerExited(worker)) return undefined;
+  async function inspectDrainReport(worker: Generation): Promise<CoreDrainReport | undefined> {
+    if (workerExited(worker)) return undefined;
     return new Promise(resolve => {
       const req = http.get({
         host: "127.0.0.1", port: worker.port,
@@ -552,9 +574,9 @@ export async function runCoreSupervisor(
           if (res.statusCode !== 200) { resolve(undefined); return; }
           try {
             const report = JSON.parse(Buffer.concat(parts).toString("utf8")) as CoreDrainReport;
-            resolve(report.pid === worker.pid && report.workerGenerationId === worker.generationId
-              && report.transportIsolated && !report.visionOwner &&
-              typeof report.safe === "boolean" && Array.isArray(report.blockers)
+            resolve(report.pid === worker.pid && report.workerGenerationId === worker.generationId &&
+              typeof report.safe === "boolean" && Array.isArray(report.blockers) &&
+              report.metrics && typeof report.metrics === "object"
               ? report : undefined);
           } catch { resolve(undefined); }
         });
@@ -562,6 +584,26 @@ export async function runCoreSupervisor(
       req.once("timeout", () => req.destroy());
       req.once("error", () => resolve(undefined));
     });
+  }
+
+  async function inspectForDrain(worker: Generation): Promise<CoreDrainReport | undefined> {
+    if (!worker.drainEligible) return undefined;
+    const report = await inspectDrainReport(worker);
+    return report?.transportIsolated && !report.visionOwner ? report : undefined;
+  }
+
+  async function inspectLegacyRetainedForDrain(worker: Generation): Promise<CoreDrainReport | undefined> {
+    if (worker.drainEligible || worker.adopted || workerExited(worker)) return undefined;
+    const report = await inspectDrainReport(worker);
+    if (!report || !legacyRetainedCoreMayDrain(report)) return undefined;
+    try {
+      const delegate = await callCoreWorkerDelegateBridge(worker.port, "status", serverToken);
+      if (delegate.running || delegate.openSockets !== 0 ||
+          (delegate.pendingRequests ?? 0) !== 0) return undefined;
+    } catch {
+      return undefined;
+    }
+    return report;
   }
 
   async function drain(): Promise<CoreRuntimeStatus> {
@@ -573,13 +615,18 @@ export async function runCoreSupervisor(
     try {
       for (const worker of candidates) {
         if (workerExited(worker)) {
-          // Keep the recorded dead generation and fail closed on its pinned
-          // sessions. Process liveness alone is not a safe cleanup permission.
-          blocked.push("PID " + worker.pid + ": worker already exited");
-          continue;
-        }
-        if (!worker.drainEligible || worker.adopted) {
-          blocked.push("PID " + worker.pid + ": owns helper or adopted process (cannot signal)");
+          // A dead generation with pinned sessions must remain as explicit
+          // unavailable-owner evidence. With no affinity left, retaining dead
+          // metadata only consumes the generation safety budget.
+          if (sessionAffinity.countForOwner(worker) > 0) {
+            blocked.push("PID " + worker.pid + ": worker exited but pinned sessions remain");
+            continue;
+          }
+          const deadIndex = retained.findIndex(item =>
+            item.pid === worker.pid && item.generationId === worker.generationId);
+          if (deadIndex >= 0) retained.splice(deadIndex, 1);
+          retiredPids.push(worker.pid);
+          persistCheckpoint();
           continue;
         }
         if (sessionAffinity.countForOwner(worker) > 0) {
@@ -590,28 +637,62 @@ export async function runCoreSupervisor(
           blocked.push("PID " + worker.pid + ": active HTTP/SSE/WebSocket requests");
           continue;
         }
-        const first = await inspectForDrain(worker);
-        if (!first?.safe) {
-          blocked.push("PID " + worker.pid + ": " + (first?.blockers.join(", ") || "inspection unavailable"));
+        const first = worker.drainEligible
+          ? await inspectForDrain(worker)
+          : await inspectLegacyRetainedForDrain(worker);
+        const firstAccepted = worker.drainEligible ? first?.safe === true : first !== undefined;
+        if (!firstAccepted) {
+          blocked.push("PID " + worker.pid + ": " +
+            (worker.drainEligible
+              ? (first?.blockers.join(", ") || "inspection unavailable")
+              : "legacy helper ownership not safely retired"));
           continue;
         }
         // Observe quiescence twice after a delay; reject a newly active worker.
         await pause(300);
-        const second = await inspectForDrain(worker);
-        if (!second?.safe || (inflight.get(worker.pid) || 0) !== 0 ||
+        const second = worker.drainEligible
+          ? await inspectForDrain(worker)
+          : await inspectLegacyRetainedForDrain(worker);
+        const secondAccepted = worker.drainEligible ? second?.safe === true : second !== undefined;
+        if (!secondAccepted || (inflight.get(worker.pid) || 0) !== 0 ||
             sessionAffinity.countForOwner(worker) !== 0) {
           blocked.push("PID " + worker.pid + ": changed state during drain verification");
           continue;
         }
-        // Only a supervisor-spawned, private, nonce-verified process with no
-        // sessions, jobs, subprocesses, streams or auxiliary listeners can
-        // be requested to stop. Never use taskkill /T or signal a tunnel PID.
-        const stopped = await new Promise<boolean>(resolve => {
-          if (!worker.child) { resolve(false); return; }
-          worker.child.once("exit", () => resolve(true));
-          if (!worker.child.kill("SIGTERM")) { resolve(false); return; }
-          setTimeout(() => resolve(workerExited(worker)), 2500).unref();
-        });
+        // A directly owned child may receive SIGTERM. A recovered/adopted
+        // worker has no ChildProcess handle, so never signal its PID; request
+        // the worker's authenticated graceful shutdown endpoint instead.
+        const stopped = worker.child
+          ? await new Promise<boolean>(resolve => {
+              worker.child!.once("exit", () => resolve(true));
+              if (!worker.child!.kill("SIGTERM")) { resolve(false); return; }
+              setTimeout(() => resolve(workerExited(worker)), 2500).unref();
+            })
+          : worker.adopted && worker.verified
+            ? await new Promise<boolean>(async resolve => {
+                try {
+                  const response = await fetch(
+                    "http://127.0.0.1:" + worker.port + "/api/shutdown",
+                    {
+                      method: "POST",
+                      headers: { Authorization: "Bearer " + serverToken },
+                      redirect: "error",
+                      signal: AbortSignal.timeout(3000),
+                    },
+                  );
+                  if (!response.ok) { resolve(false); return; }
+                  await response.arrayBuffer();
+                  const deadline = Date.now() + 5000;
+                  while (Date.now() < deadline) {
+                    if (workerExited(worker)) { resolve(true); return; }
+                    await pause(100);
+                  }
+                  resolve(workerExited(worker));
+                } catch {
+                  resolve(false);
+                }
+              })
+            : false;
         if (!stopped) {
           blocked.push("PID " + worker.pid + ": shutdown unconfirmed; retained");
           continue;
@@ -627,6 +708,27 @@ export async function runCoreSupervisor(
     } finally {
       restarting = false;
     }
+  }
+
+  function scheduleConservativeAutoDrain(delayMs = 1_500): void {
+    if (process.env.SUPERAGENT_CORE_AUTO_DRAIN_RETAINED === "0" || autoDrainTimer) return;
+    const eligible = retained.some(worker =>
+      worker.drainEligible && !worker.adopted && !workerExited(worker));
+    if (!eligible) return;
+    autoDrainTimer = setTimeout(() => {
+      autoDrainTimer = undefined;
+      if (restarting) {
+        scheduleConservativeAutoDrain(2_000);
+        return;
+      }
+      void drain().catch(() => {}).finally(() => {
+        if (retained.some(worker =>
+          worker.drainEligible && !worker.adopted && !workerExited(worker))) {
+          scheduleConservativeAutoDrain(30_000);
+        }
+      });
+    }, Math.max(250, delayMs));
+    autoDrainTimer.unref?.();
   }
 
   // On an observed active process exit, prefer a verified prior generation
@@ -900,6 +1002,17 @@ export async function runCoreSupervisor(
       control.listen(0, "127.0.0.1", () => resolve());
     });
     if (!checkpoint) active = await spawnWorker();
+    // Recovery may temporarily serve an adopted worker whose verifier belongs
+    // to the previous supervisor channel. Publishing the new broker is still
+    // safe: such requests fail attestation until an explicit restart creates a
+    // worker provisioned by this supervisor. The broker must already exist so
+    // MCP can rotate to that new channel without another owner replacement.
+    delegateForwardingBroker = await startCoreSupervisorDelegateForwardingBroker({
+      publicPort: port,
+      supervisorPid: process.pid,
+      controlToken,
+      material: delegateForwardingMaterial,
+    });
     const controlAddress = control.address();
     if (!controlAddress || typeof controlAddress === "string") throw new Error("Control port missing");
     persistCheckpoint();
@@ -920,8 +1033,12 @@ export async function runCoreSupervisor(
     console.log("Core supervisor listening on http://127.0.0.1:" + port);
     console.log("Worker PID " + active!.pid + "; use: superagent core restart --port " + port);
     if (recovered) console.log("Authenticated supervisor recovery completed; old sessions kept on original workers.");
+    scheduleConservativeAutoDrain();
     console.log("MCP, Muse and Telegram processes are not controlled by this supervisor.");
   } catch (error) {
+    if (autoDrainTimer) clearTimeout(autoDrainTimer);
+    clearInterval(failureMonitor);
+    await delegateForwardingBroker?.close().catch(() => {});
     control.close();
     listener.close();
     throw error;
@@ -958,6 +1075,7 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core restart [--port 7888]");
     console.log("superagent core rollback [--port 7888]");
     console.log("superagent core drain [--port 7888]");
+    console.log("superagent core retire-legacy-retained --port PORT --pid PID --confirm  # double-verified graceful cleanup of a quiescent pre-isolation retained worker");
     console.log("superagent core operations --port PORT  # pending/completed operation receipts, no secret IDs");
     console.log("superagent core reconcile-operation --port PORT --operation-id ID --observed-pid PID --acknowledge-unknown  # operator-only, after 120s review");
     console.log("superagent core recover [--port 7888] [--client-mode tline|chrome-extension]");
@@ -978,6 +1096,19 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     console.log("superagent core lifecycle-observe [--port 7888] [--samples 3]  # bounded authenticated GET-only health samples");
     console.log("superagent core reconnect-check --front-port 7891 --core-port 7888 --session-id ID  # one-shot GET-only T-Line probe");
     console.log("Requires opt-in supervisor startup; existing unsupervised processes are never replaced.");
+    return;
+  }
+  if (action === "retire-legacy-retained") {
+    const pidIdx = argv.indexOf("--pid");
+    const pid = pidIdx < 0 ? 0 : Number(argv[pidIdx + 1]);
+    if (!argv.includes("--confirm")) {
+      throw new Error("CORE_LEGACY_RETAINED_CONFIRM_REQUIRED: pass --confirm");
+    }
+    const { retireLegacyRetainedGeneration } =
+      await import("./coreLegacyRetainedRetire.js");
+    console.log(JSON.stringify(await retireLegacyRetainedGeneration({
+      port, pid, confirm: true,
+    }), null, 2));
     return;
   }
   if (action === "recycle-plan" || action === "recycle") {
@@ -1212,6 +1343,6 @@ export async function handleCoreCliCommand(argv: string[]): Promise<void> {
     await runCoreSupervisor(port, mode, action === "recover");
     return;
   }
-  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, recycle-plan, recycle, boot, boot-audit, reconcile, recovery-cases, recovery-canary, ownership-audit, ownership-inventory, rollout-audit, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
+  if (action !== "status" && action !== "restart" && action !== "rollback" && action !== "drain") throw new Error("Expected start, recover, recycle-plan, recycle, retire-legacy-retained, boot, boot-audit, reconcile, recovery-cases, recovery-canary, ownership-audit, ownership-inventory, rollout-audit, lifecycle-plan, lifecycle-observe, evidence-snapshot, reconnect-check, guard, guard-status, status, restart, rollback, drain or help");
   console.log(formatCoreSupervisorStatus(await requestCoreSupervisor(action, port)));
 }

@@ -65,7 +65,7 @@ describe("Host-owned Delegate MCP route", () => {
     expect((await invokeHost({ name: "superagent_delegate_send_message", args: {} })).status).toBe(403);
     expect((await invokeHost({ body: '{"name":"superagent_delegate_read_chat","arguments":{},"extra":1}' })).status).toBe(403);
     expect((await invokeHost({ body: "malformed" })).status).toBe(400);
-    expect((await invokeHost({ body: "x".repeat(105_001) })).status).toBe(413);
+    expect((await invokeHost({ body: "x".repeat(112_001) })).status).toBe(413);
   });
   it("does not route unsigned messages to an unknown profile", async () => {
     const reply = await invokeHost({

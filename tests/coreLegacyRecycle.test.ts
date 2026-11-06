@@ -7,6 +7,7 @@ import {
   scheduleLegacyCoreRecycle,
   runLegacyCoreRecycleWorker,
   readLegacyCoreProcessDescriptor,
+  legacyRecycleMayArchiveStaleSupervisorState,
   type LegacyCoreRecyclePlan,
 } from "../src/core/runtime/coreLegacyRecycle.js";
 import { ManagedSidecarLedger, sidecarOperationFingerprint } from "../src/core/runtime/managedSidecarLedger.js";
@@ -106,6 +107,40 @@ describe("Core Legacy Recycle", () => {
     await expect(runLegacyCoreRecycleWorker(plan)).rejects.toThrow(
       "CORE_RECYCLE_HELPER_CONTEXT_REQUIRED"
     );
+  });
+
+  it("only permits stale supervisor archive when durable evidence is fully reconciled", () => {
+    const safe = {
+      ownerOnline: false,
+      foreignListenerDetected: true,
+      discoveryPresent: true,
+      guardianLeasePresent: false,
+      discoveryStale: true,
+      guardianLeaseStale: false,
+      checkpoint: "valid" as const,
+      workers: "all_dead" as const,
+      ambiguousTurns: 0,
+      persistedReceipts: 33,
+      receiptsWithAcceptedTurn: 0,
+      sessionReceiptsReconciled: true,
+      externalEffectsReconciled: true,
+    };
+    expect(legacyRecycleMayArchiveStaleSupervisorState(safe)).toBe(true);
+    expect(legacyRecycleMayArchiveStaleSupervisorState({
+      ...safe, workers: "unknown",
+    })).toBe(false);
+    expect(legacyRecycleMayArchiveStaleSupervisorState({
+      ...safe, ambiguousTurns: 1,
+    })).toBe(false);
+    expect(legacyRecycleMayArchiveStaleSupervisorState({
+      ...safe, receiptsWithAcceptedTurn: 1, sessionReceiptsReconciled: false,
+    })).toBe(false);
+    expect(legacyRecycleMayArchiveStaleSupervisorState({
+      ...safe, discoveryStale: false,
+    })).toBe(false);
+    expect(legacyRecycleMayArchiveStaleSupervisorState({
+      ...safe, guardianLeasePresent: true, guardianLeaseStale: false,
+    })).toBe(false);
   });
 
   it("descriptor reader rejects invalid PIDs", () => {

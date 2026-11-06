@@ -12,6 +12,21 @@ describe("Phase 5m read-only Core/MCP process ownership",()=>{
     expect(out.get(6789)).toBe(13424);
     expect(out.get(9877)).toBe(10060);
   });
+  it("recovers PID-0 localhost listeners only from unanimous server-side established rows",()=>{
+    const out=parseWindowsListenerOwners([
+      "  TCP    127.0.0.1:9229   127.0.0.1:0       LISTENING     0",
+      "  TCP    127.0.0.1:9229   127.0.0.1:49202   ESTABLISHED   20364",
+      "  TCP    127.0.0.1:9229   127.0.0.1:58572   ESTABLISHED   20364",
+      "  TCP    127.0.0.1:49202  127.0.0.1:9229    ESTABLISHED   8456",
+    ].join("\r\n"));
+    expect(out.get(9229)).toBe(20364);
+    const ambiguous=parseWindowsListenerOwners([
+      "  TCP    127.0.0.1:9229   127.0.0.1:0       LISTENING     0",
+      "  TCP    127.0.0.1:9229   127.0.0.1:50001   ESTABLISHED   20364",
+      "  TCP    127.0.0.1:9229   127.0.0.1:50002   ESTABLISHED   99999",
+    ].join("\r\n"));
+    expect(ambiguous.get(9229)).toBe(0);
+  });
   it("blocks cutover when legacy API and live MCP listener share exact verified PID",async()=>{
     const data=await auditCoreMcpOwnership({
       corePort:7888,coreRegistration:"legacy_or_foreign",

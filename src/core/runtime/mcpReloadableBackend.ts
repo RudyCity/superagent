@@ -7,6 +7,8 @@
  */
 import { startMcpHttpServer, type McpHttpServerHandle } from "../mcp/mcpHttpTransport.js";
 import { createPersistentMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
+import { startMcpDelegateForwardingSubscription } from "./delegateForwardingLifecycle.js";
+import { resolveDelegateCorePort } from "./delegateCoreEndpoint.js";
 
 export interface ReloadableBackendOptions {
   port: number;
@@ -107,9 +109,11 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
   let closing = false;
   let handle: McpHttpServerHandle | undefined;
   let rotateBootstrapHash: ((hash:string) => void) | undefined;
+  let delegateForwarding: ReturnType<typeof startMcpDelegateForwardingSubscription> | undefined;
   const shutdown = async () => {
     if (closing) return;
     closing = true;
+    delegateForwarding?.close();
     try { await handle?.close(); } catch {}
     process.exit(0);
   };
@@ -135,6 +139,14 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
     started = true;
     void (async () => {
       try {
+        delegateForwarding = startMcpDelegateForwardingSubscription(resolveDelegateCorePort(), {
+          retryMs: 1000,
+          initialDeadlineMs: 1200,
+        });
+        // Delegate forwarding is optional for the MCP backend itself: if Core is
+        // temporarily unavailable, other MCP tools still start and the signer
+        // subscription keeps retrying in the background.
+        await delegateForwarding.firstReady;
         const result = await startReloadableMcpBackend(
           m.options as ReloadableBackendOptions,
           hash => process.send?.({

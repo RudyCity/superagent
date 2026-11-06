@@ -6,6 +6,7 @@ import {
   signDelegateForwardedRequest, runWithTrustedDelegateForwardingConnection,
 } from "../../browserTransport/delegateForwardedPrincipal.js";
 import type { AuthenticatedDelegateMcpConnection } from "../../browserTransport/delegatePrincipalPolicy.js";
+import { delegateCoreEndpoint } from "../../runtime/delegateCoreEndpoint.js";
 
 export const DELEGATE_MCP_TOOL_NAMES = {
   read: "superagent_delegate_read_chat",
@@ -16,6 +17,8 @@ export const DELEGATE_MCP_TOOL_NAMES = {
   searchIndex: "superagent_delegate_search_index",
   doctor: "superagent_delegate_doctor",
   runUntilDone: "superagent_delegate_run_until_done",
+  inspectConfig: "superagent_delegate_inspect_chat_config",
+  configure: "superagent_delegate_configure_chat",
   create: "superagent_delegate_create_chat",
   send: "superagent_delegate_send_message",
   stop: "superagent_delegate_stop_generation",
@@ -35,6 +38,15 @@ const requestId = {
   type: "string", minLength: 8, maxLength: 80,
   description: "Stable idempotency key. Reuse never re-dispatches, including after uncertain RPC outcomes.",
 };
+const model = {
+  type: "string", minLength: 2, maxLength: 80,
+  description: "Visible ChatGPT model label to select, for example GPT-5.6.",
+};
+const effort = {
+  type: "string", enum: ["low", "medium", "high", "xhigh"],
+  description: "Reasoning effort to select before the mutation.",
+};
+
 const schema = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object" as const, properties, required, additionalProperties: false,
 });
@@ -115,12 +127,31 @@ export const DELEGATE_MCP_TOOL_DEFS = [
       maxRuntimeMs: { type: "integer", minimum: 30000, maximum: 900000 },
       recoverStall: { type: "boolean" },
       completionMarker: { type: "string", minLength: 1, maxLength: 120 },
+      model,
+      effort,
     }, ["message"]),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.inspectConfig,
+    description: "Read only visible ChatGPT model/reasoning control labels and model-menu option labels for one explicit tab. Never reads conversation text or selects a model.",
+    inputSchema: schema({ clientId, tabId }, ["clientId", "tabId"]),
+  },
+  {
+    name: DELEGATE_MCP_TOOL_NAMES.configure,
+    description: "Set ChatGPT model and/or reasoning effort on one explicit Delegate tab. Fails closed if the visible UI option is unavailable or ambiguous.",
+    inputSchema: schema({
+      clientId,
+      tabId,
+      requestId,
+      model,
+      effort,
+    }, ["clientId", "tabId"]),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.create,
     description: "Start a ChatGPT chat on explicit clientId/tabId, or newTab:true for an independent tab in clientId.",
-    inputSchema: schema({ ...optionalTarget, requestId, newTab: { type: "boolean", description: "Open an independent ChatGPT tab; mutually exclusive with tabId." } }),
+    inputSchema: schema({ ...optionalTarget, requestId, model, effort,
+      newTab: { type: "boolean", description: "Open an independent ChatGPT tab; mutually exclusive with tabId." } }),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.send,
@@ -129,6 +160,8 @@ export const DELEGATE_MCP_TOOL_DEFS = [
       ...optionalTarget,
       requestId,
       message: { type: "string", minLength: 1, maxLength: 100_000 },
+      model,
+      effort,
     }, ["message"]),
   },
   {
@@ -177,9 +210,13 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
   if (!isPlainObject(args)) return "DELEGATE_INVALID_ARGUMENTS";
   const keys = Object.keys(args);
   const allowed = name === DELEGATE_MCP_TOOL_NAMES.send
-    ? ["clientId", "tabId", "message", "requestId"]
+    ? ["clientId", "tabId", "message", "requestId", "model", "effort"]
     : name === DELEGATE_MCP_TOOL_NAMES.create
-      ? ["clientId", "tabId", "newTab", "requestId"]
+      ? ["clientId", "tabId", "newTab", "requestId", "model", "effort"]
+      : name === DELEGATE_MCP_TOOL_NAMES.inspectConfig
+        ? ["clientId", "tabId"]
+      : name === DELEGATE_MCP_TOOL_NAMES.configure
+        ? ["clientId", "tabId", "requestId", "model", "effort"]
       : name === DELEGATE_MCP_TOOL_NAMES.read
       ? ["clientId", "tabId", "connections"]
       : name === DELEGATE_MCP_TOOL_NAMES.list
@@ -206,6 +243,21 @@ export function validateDelegateMcpArgs(name: string, args: unknown): string | n
   if (args.requestId !== undefined && (typeof args.requestId !== "string" ||
       !/^[A-Za-z0-9_-]{8,80}$/.test(args.requestId)))
     return "DELEGATE_INVALID_REQUEST_ID";
+  if (args.model !== undefined &&
+      (typeof args.model !== "string" || args.model.trim().length < 2 || args.model.trim().length > 80))
+    return "DELEGATE_INVALID_MODEL";
+  if (args.effort !== undefined &&
+      !["low", "medium", "high", "xhigh"].includes(String(args.effort)))
+    return "DELEGATE_INVALID_EFFORT";
+  if (name === DELEGATE_MCP_TOOL_NAMES.configure &&
+      args.model === undefined && args.effort === undefined)
+    return "DELEGATE_CHAT_CONFIG_REQUIRED";
+  if (name === DELEGATE_MCP_TOOL_NAMES.configure &&
+      (args.clientId === undefined || args.tabId === undefined))
+    return "DELEGATE_CONFIG_EXPLICIT_TARGET_REQUIRED";
+  if (name === DELEGATE_MCP_TOOL_NAMES.inspectConfig &&
+      (args.clientId === undefined || args.tabId === undefined))
+    return "DELEGATE_CONFIG_EXPLICIT_TARGET_REQUIRED";
   if (name === DELEGATE_MCP_TOOL_NAMES.create) {
     if (args.newTab !== undefined && typeof args.newTab !== "boolean")
       return "DELEGATE_INVALID_NEW_TAB";
@@ -276,10 +328,10 @@ export async function dispatchDelegateBrowserMcpTool(
   args: Record<string, unknown>,
 ): Promise<{ content: Array<{ type: "text"; text: string }>; isError?: boolean }> {
   try {
-    const port = 7888;
+    const { port, baseUrl } = delegateCoreEndpoint();
     const signedBody = signDelegateForwardedRequest(name, args);
     const token = getServerAuthToken(port);
-    const response = await fetch("http://127.0.0.1:" + port + "/api/delegate/mcp-dispatch", {
+    const response = await fetch(baseUrl + "/api/delegate/mcp-dispatch", {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
       body: JSON.stringify(signedBody),
@@ -296,7 +348,9 @@ export async function dispatchDelegateBrowserMcpTool(
     const code = error instanceof Error ? error.message : "";
     if (/^DELEGATE_FORWARD_[A-Z_]+$/.test(code))
       return { content: [{ type: "text", text: code }], isError: true };
-    return { content: [{ type: "text", text: "DELEGATE_CDP_HOST_UNAVAILABLE_OR_TIMEOUT: Core at 127.0.0.1:7888 did not confirm the browser operation. No retry was performed; inspect the tab before attempting a write again." }], isError: true };
+    let target = "configured Core";
+    try { target = "Core at 127.0.0.1:" + delegateCoreEndpoint().port; } catch {}
+    return { content: [{ type: "text", text: "DELEGATE_CDP_HOST_UNAVAILABLE_OR_TIMEOUT: " + target + " did not confirm the browser operation. No retry was performed; inspect the tab before attempting a write again." }], isError: true };
   }
 }
 
@@ -313,8 +367,8 @@ export async function dispatchDelegateMcpTool(
 
   // Only the loopback SuperAgent server owns the authenticated Chrome bridge.
   // Credentials never enter tool arguments, logs, or a browser.
-  const port = 7888;
   try {
+    const { port, baseUrl } = delegateCoreEndpoint();
     const signedBody = signDelegateForwardedRequest(name, args);
     const token = getServerAuthToken(port);
     const timeoutMs = name === DELEGATE_MCP_TOOL_NAMES.runUntilDone ? 910_000
@@ -323,7 +377,7 @@ export async function dispatchDelegateMcpTool(
           : name === DELEGATE_MCP_TOOL_NAMES.readFull ? 95_000
             : name === DELEGATE_MCP_TOOL_NAMES.list ? 65_000
               : name === DELEGATE_MCP_TOOL_NAMES.send ? 36_000 : 26_000;
-    const response = await fetch(`http://127.0.0.1:${port}/api/delegate/mcp-dispatch`, {
+    const response = await fetch(baseUrl + "/api/delegate/mcp-dispatch", {
       method: "POST",
       headers: {
         "Authorization": "Bearer " + token,
@@ -353,7 +407,7 @@ export async function dispatchDelegateMcpTool(
     return {
       content: [{
         type: "text",
-        text: "DELEGATE_HOST_UNAVAILABLE_OR_TIMEOUT: Local SuperAgent server on 127.0.0.1:7888 did not confirm the Delegate RPC. Verify the server is rebuilt and running. Do NOT automatically retry create_chat, send_message or stop_generation; inspect read_chat first.",
+        text: "DELEGATE_HOST_UNAVAILABLE_OR_TIMEOUT: Configured local SuperAgent Core did not confirm the Delegate RPC. Verify the selected Core endpoint is rebuilt and running. Do NOT automatically retry create_chat, send_message or stop_generation; inspect read_chat first.",
       }],
       isError: true,
     };

@@ -327,6 +327,16 @@
     };
   }
 
+  async function waitForHistorySurface() {
+    assertLogin();
+    if (chatAnchors().length > 0 || document.querySelector?.('nav[aria-label="Chat history"]')) return;
+    await waitFor(() => {
+      assertHistoryAvailable();
+      if (chatAnchors().length > 0 || document.querySelector?.('nav[aria-label="Chat history"]')) return true;
+      return null;
+    }, 10_000, "ChatGPT history sidebar did not become available.");
+  }
+
   function historyScroller() {
     const first = chatAnchors()[0];
     const fromAnchor = scrollableAncestor(first);
@@ -411,6 +421,7 @@
 
   async function listChats(params) {
     assertLogin();
+    await waitForHistorySurface();
     const cursor = Number(params?.cursor ?? 0);
     const limit = Number(params?.limit ?? 50);
     if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > 5000) {

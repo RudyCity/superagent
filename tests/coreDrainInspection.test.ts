@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateCoreDrain, type CoreDrainMetrics } from "../src/core/runtime/coreDrainInspection.js";
+import { evaluateCoreDrain, legacyRetainedCoreMayDrain, type CoreDrainMetrics } from "../src/core/runtime/coreDrainInspection.js";
 const empty: CoreDrainMetrics = {
   sessions: 0, sseClients: 0, browserClients: 0, pendingPrompts: 0,
   backgroundTasks: 0, agents: 0, cliBridgeSessions: 0,
@@ -22,6 +22,25 @@ describe("core worker drain inspection", () => {
       transportIsolated: true, visionOwner: false, metrics: { ...empty, sessions: -1 },
     }).safe).toBe(false);
   });
+  it("allows only a fully quiescent pre-isolation Vision owner through the legacy compatibility gate", () => {
+    const legacy = evaluateCoreDrain(15, "generation-15", {
+      transportIsolated: false, visionOwner: true, metrics: empty,
+    });
+    expect(legacy.safe).toBe(false);
+    expect(legacyRetainedCoreMayDrain(legacy)).toBe(true);
+
+    const active = evaluateCoreDrain(15, "generation-15", {
+      transportIsolated: false, visionOwner: true,
+      metrics: { ...empty, backgroundTasks: 1 },
+    });
+    expect(legacyRetainedCoreMayDrain(active)).toBe(false);
+
+    expect(legacyRetainedCoreMayDrain({
+      ...legacy,
+      blockers: [...legacy.blockers, "unexpected ownership blocker"],
+    })).toBe(false);
+  });
+
   it("never retires transport owners or fixed-port vision owners", () => {
     expect(evaluateCoreDrain(14, "generation-14", { transportIsolated: false, visionOwner: false, metrics: empty }).safe).toBe(false);
     expect(evaluateCoreDrain(14, "generation-14", { transportIsolated: true, visionOwner: true, metrics: empty }).safe).toBe(false);

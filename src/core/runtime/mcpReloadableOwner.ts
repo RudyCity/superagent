@@ -28,6 +28,8 @@ import { appendMcpOwnerLog } from "./mcpOwnerLog.js";
 
 const WORKER_START_MS = 30_000;
 const OLD_GENERATION_TTL = 4 * 60 * 60_000 + 5 * 60_000;
+const AUTO_RECOVERY_LIMIT_PER_HOUR = 2;
+const AUTO_RECOVERY_DELAY_MS = 750;
 export interface ReloadableOwnerOptions {
   port: number;
   nonce: string;
@@ -140,9 +142,12 @@ export async function startReloadableMcpTunnelOwner(
   let bootCodeHash = bootCode.codeHash;
   let initialBoot = bootCode.code;
   let cleanupTimer: ReturnType<typeof setInterval> | undefined;
+  let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
   let publicTunnelOwned = false;
   let reloadCount = 0;
   let lastReloadAt: number | undefined;
+  let lastAutoRecoveryAt: number | undefined;
+  let autoRecoveryAttempts: number[] = [];
   function record(event: Parameters<typeof appendMcpOwnerLog>[1], fields: {
     backendPid?: number; previousBackendPid?: number;
     durationMs?: number; code?: string;
@@ -241,6 +246,65 @@ export async function startReloadableMcpTunnelOwner(
       }
     }
   }
+
+  function scheduleBackendAutoRecovery(failed: BackendGeneration): void {
+    if (closing || draining || failed !== current || failed.alive || recoveryTimer) return;
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = undefined;
+      void recoverBackendAfterExit(failed);
+    }, AUTO_RECOVERY_DELAY_MS);
+    recoveryTimer.unref?.();
+  }
+
+  async function recoverBackendAfterExit(failed: BackendGeneration): Promise<void> {
+    if (closing || draining || reloading || rotatingBootstrap ||
+        failed !== current || failed.alive) return;
+    const now = Date.now();
+    autoRecoveryAttempts = autoRecoveryAttempts.filter(at => at > now - 60 * 60_000);
+    if (autoRecoveryAttempts.length >= AUTO_RECOVERY_LIMIT_PER_HOUR) {
+      record("backend_auto_recovery_blocked", {
+        backendPid: failed.pid, code: "MCP_AUTO_RECOVERY_RATE_LIMIT",
+      });
+      return;
+    }
+    if (opts.authMode === "oauth" && !oauthPersistent) {
+      record("backend_auto_recovery_blocked", {
+        backendPid: failed.pid, code: "MCP_AUTO_RECOVERY_OAUTH_NOT_PERSISTENT",
+      });
+      return;
+    }
+
+    reloading = true;
+    const started = Date.now();
+    try {
+      const next = await launch();
+      if (opts.authMode === "oauth" && !next.oauthStatePersistent) {
+        generations.delete(next);
+        try { next.child.kill("SIGTERM"); } catch {}
+        throw new Error("MCP_AUTO_RECOVERY_OAUTH_NOT_PERSISTENT");
+      }
+      failed.retireAt = Date.now() + OLD_GENERATION_TTL;
+      current = next;
+      reloadCount++;
+      lastReloadAt = Date.now();
+      lastAutoRecoveryAt = lastReloadAt;
+      autoRecoveryAttempts.push(lastReloadAt);
+      retireOld();
+      updateOwnerState();
+      record("backend_auto_recovered", {
+        backendPid: next.pid,
+        previousBackendPid: failed.pid,
+        durationMs: Date.now() - started,
+      });
+    } catch {
+      record("backend_auto_recovery_blocked", {
+        backendPid: failed.pid, code: "MCP_AUTO_RECOVERY_FAILED",
+        durationMs: Date.now() - started,
+      });
+    } finally {
+      reloading = false;
+    }
+  }
   async function launch(): Promise<BackendGeneration> {
     const gen = await createReloadWorker(opts.cliEntry, {
       port: opts.port, publicBaseUrl: baseUrl,
@@ -260,6 +324,7 @@ export async function startReloadableMcpTunnelOwner(
         bootCodeHash = DISABLED_BOOTSTRAP_HASH;
         record("bootstrap_invalidated_on_crash", {backendPid:gen.pid});
       }
+      scheduleBackendAutoRecovery(gen);
     });
     generations.add(gen);
     return gen;
@@ -326,6 +391,8 @@ export async function startReloadableMcpTunnelOwner(
     return sessions.size;
   }
   function status() {
+    const now = Date.now();
+    autoRecoveryAttempts = autoRecoveryAttempts.filter(at => at > now - 60 * 60_000);
     return {
       version: 1, kind: "private_mcp_owner", pid: process.pid,
       port: opts.port, startedAt: opts.createdAt, mode: "managed-tunnel",
@@ -334,6 +401,21 @@ export async function startReloadableMcpTunnelOwner(
       safeToolsOnly: !opts.allowDangerous, oauthEnabled: opts.authMode === "oauth",
       publicTunnelStarted: publicTunnelOwned,
       backendPid: current?.pid ?? null, backendGenerations: generations.size,
+      backendHealthy: current?.alive === true,
+      backendGenerationDetails: [...generations].map(gen => ({
+        pid: gen.pid,
+        current: gen === current,
+        alive: gen.alive,
+        sessions: gen.sessions.size,
+        inFlight: gen.inFlight,
+        retireAt: gen.retireAt,
+      })),
+      autoRecovery: {
+        enabled: true,
+        maxPerHour: AUTO_RECOVERY_LIMIT_PER_HOUR,
+        attemptsLastHour: autoRecoveryAttempts.length,
+        lastRecoveredAt: lastAutoRecoveryAt ?? null,
+      },
       reloadable: true, publicUrl: baseUrl ? baseUrl + "/mcp" : "",
       backendGeneration:reloadCount + 1, lastReloadAt:lastReloadAt ?? null,
     };
@@ -457,6 +539,7 @@ export async function startReloadableMcpTunnelOwner(
     closing = true;
     record("owner_stopping", {backendPid:current?.pid});
     if (cleanupTimer) clearInterval(cleanupTimer);
+    if (recoveryTimer) clearTimeout(recoveryTimer);
     if (publicTunnelOwned) await stopQuickTunnel(opts.port, "mcp-http").catch(() => {});
     for (const gen of generations) {
       try { gen.child.kill("SIGTERM"); } catch {}

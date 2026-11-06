@@ -41,6 +41,8 @@ export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([
   "superagent_delegate_search_index",
   "superagent_delegate_doctor",
   "superagent_delegate_run_until_done",
+  "superagent_delegate_inspect_chat_config",
+  "superagent_delegate_configure_chat",
   "superagent_delegate_create_chat",
   "superagent_delegate_send_message",
   "superagent_delegate_stop_generation",

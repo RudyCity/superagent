@@ -533,6 +533,11 @@ if (serverIndex !== -1) {
   }
 
   const hasTunnel = process.argv.includes("--tunnel") || process.argv.includes("-t");
+  if (process.env.SUPERAGENT_CORE_WORKER === "1") {
+    const { bootstrapCoreWorkerDelegateForwardingVerifier } =
+      await import("./core/runtime/delegateForwardingLifecycle.js");
+    await bootstrapCoreWorkerDelegateForwardingVerifier();
+  }
   const { runServer } = await import("./server.js");
   const serverInstance = await runServer(port, false, clientMode);
 
