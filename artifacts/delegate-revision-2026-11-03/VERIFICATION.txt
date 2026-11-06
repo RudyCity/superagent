@@ -1,8 +1,0 @@
-REVISED WORKSPACE FILES: src/core/tools/toolsets.ts, src/core/tools/index.ts, src/server.ts, scripts/verify-extension-js.mjs, src/core/tools/delegateTools.ts, src/core/delegate/bridge.ts, chrome-extension-delegate/manifest.json, chrome-extension-delegate/background.js, chrome-extension-delegate/content.js, chrome-extension-delegate/README.md, tests/delegate.test.ts, tests/delegateContent.test.ts, scripts/verify-delegate-discovery.ts
-UNCHANGED: types.ts, toolDiscoveryTools.ts, McpManager.ts, package.json, chrome-extension/
-Verified: bun --bun x tsc --noEmit (PASS)
-Verified: bun --bun x vitest run tests/delegate.test.ts tests/delegateContent.test.ts tests/extensionChatToolFilter.test.ts (29/29 PASS)
-Verified: bun run verify:extension-js (18 files PASS)
-Verified: bun scripts/verify-delegate-discovery.ts (single T-Line and extension show 4, master does not)
-NOT verified: loading unpacked extension and live chatgpt.com E2E (no Chrome running)
-No worktree created; no commit/push requested
