@@ -1550,6 +1550,42 @@ export async function handleServerRoute(
     return true;
   }
 
+  if (pathname === "/api/desktop/terminal/external") {
+    res.setHeader("Cache-Control", "no-store");
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "POST required." });
+      return true;
+    }
+    if (!isFullYoloMode()) {
+      sendJSON(res, 403, { success: false, error: "External process control requires local Full YOLO mode." });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (raw.length > 8192) throw new Error("External control request too large.");
+      const body = JSON.parse(raw || "{}");
+      const taskId = typeof body.taskId === "string" ? body.taskId : "";
+      const action = body.action;
+      if (!/^external-win-[1-9]\d{0,9}$/.test(taskId) ||
+          !["configure", "plan-stop", "stop", "start"].includes(action) ||
+          Object.keys(body).some((key) => !["taskId", "action", "operationId", "command", "cwd"].includes(key))) {
+        sendJSON(res, 400, { success: false, error: "Invalid external process lifecycle request." });
+        return true;
+      }
+      const { DesktopTerminalManager } = await import("./core/runtime/desktopTerminalManager.js");
+      const result = await DesktopTerminalManager.externalTaskAction({
+        taskId, action,
+        command: typeof body.command === "string" ? body.command : undefined,
+        cwd: typeof body.cwd === "string" ? body.cwd : undefined,
+        operationId: typeof body.operationId === "string" ? body.operationId : undefined,
+      });
+      sendJSON(res, 200, result);
+    } catch (err: any) {
+      sendJSON(res, 409, { success: false, error: err?.message || "External process control failed." });
+    }
+    return true;
+  }
+
   if (pathname === "/api/desktop/terminal/prune") {
     res.setHeader("Cache-Control", "no-store");
     if (req.method !== "POST") {

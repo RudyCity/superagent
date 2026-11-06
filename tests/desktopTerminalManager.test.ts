@@ -154,6 +154,7 @@ function mountTerminalUi(mockResponse?: any) {
     document: documentMock,
     navigator: { clipboard },
     confirm: vi.fn(() => true),
+    prompt: vi.fn().mockReturnValue(""),
     alert: vi.fn(),
     addEventListener: vi.fn(),
     removeEventListener: vi.fn(),
@@ -176,6 +177,13 @@ function mountTerminalUi(mockResponse?: any) {
             return { presets: currentData.presets };
           }
           if (cmd === "kill_terminal_task") {
+            return { success: true };
+          }
+          if (cmd === "external_terminal_task_action") {
+            if (args.action === "plan-stop") return {
+              success: true, operationId: "test-operation-001", pid: 31777,
+              name: "python.exe", ports: [8095], hasRestartCommand: true,
+            };
             return { success: true };
           }
           if (cmd === "control_terminal_task") {
@@ -350,14 +358,104 @@ describe("Desktop Terminal UI Controller", () => {
     await mounted.windowMock.__superagentTerminalRefresh();
     const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
     expect(html).toContain("External (read-only)");
+    expect(html).toContain("terminal-unavailable-btn");
+    expect(html).toContain("Start");
+    expect(html).toContain("Pause");
+    expect(html).toContain("Stop");
+    expect(html).toContain("Service Controls");
+    expect(html).toContain("Read-only · verify owner");
     expect(html).toContain("7100");
     expect(html).toContain("Logs unavailable");
     expect(html).not.toContain("terminal-kill-btn");
     expect(html).not.toContain("terminal-logs-btn");
     expect(mounted.getOrCreateElement("terminal-kill-all-btn").disabled).toBe(true);
+    expect(mounted.getOrCreateElement("terminal-filter-running").checked).toBe(false);
 
     await mounted.getOrCreateElement("terminal-kill-all-btn").dispatchEvent({ type: "click" });
     expect(mounted.invokeCalls.some((entry) => entry.cmd === "kill_terminal_task")).toBe(false);
+  });
+
+  it("opens Runtime Detection from external Service Controls without touching its PID", async () => {
+    const mounted = mountTerminalUi({
+      tasks: [{
+        id: "external-win-22880", command: "bun.exe (listening on :7888)",
+        pid: 22880, status: "running",
+        cwd: "External process (working directory unavailable)",
+        source: "external", canStop: false, canViewLogs: false,
+      }],
+      runningCount: 1, totalCount: 1, presets: [],
+    });
+    mounted.windowMock.navigateToPage = vi.fn();
+    await mounted.windowMock.__superagentTerminalRefresh();
+    const button = mounted.getOrCreateElement("manage-22880");
+    button.classList.add("terminal-manage-btn");
+    button.dataset.taskId = "external-win-22880";
+    await mounted.listeners.get("terminal-tasks-tbody:click")!({ target: button });
+    expect(mounted.windowMock.navigateToPage).toHaveBeenCalledWith("runtime");
+    expect(mounted.invokeCalls.some((entry) =>
+      ["kill_terminal_task", "control_terminal_task", "launch_terminal_task"].includes(entry.cmd)))
+      .toBe(false);
+  });
+
+  it("enables birth-verified external Stop and can configure and Start a stopped replacement", async () => {
+    const data = { tasks: [{
+      id: "external-win-31777", command: "python.exe (listening on :8095)",
+      pid: 31777, status: "running", source: "external", cwd: "-",
+      canStop: true, canConfigureStart: true, canViewLogs: false, isTerminal: true,
+    }], runningCount: 1, totalCount: 1, presets: [] };
+    const mounted = mountTerminalUi(data);
+    await mounted.windowMock.__superagentTerminalRefresh();
+    const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
+    expect(html).toContain('data-action="stop"');
+    expect(html).toContain('data-action="configure"');
+    expect(html).not.toContain('data-action="start"');
+    const btn = mounted.getOrCreateElement("external-stop");
+    btn.classList.add("terminal-external-btn");
+    btn.dataset.taskId = "external-win-31777";
+    btn.dataset.action = "stop";
+    await mounted.listeners.get("terminal-tasks-tbody:click")!({ target: btn });
+    expect(mounted.invokeCalls.filter((c) => c.cmd === "external_terminal_task_action").map((c) => c.args.action))
+      .toEqual(["plan-stop", "stop"]);
+    expect(mounted.windowMock.confirm).toHaveBeenCalledOnce();
+    expect(mounted.invokeCalls.some((c) => c.cmd === "kill_terminal_task")).toBe(false);
+
+    mounted.windowMock.prompt.mockReturnValueOnce("python app.py").mockReturnValueOnce("D:/project/app");
+    const configure = mounted.getOrCreateElement("external-configure");
+    configure.classList.add("terminal-external-btn");
+    configure.dataset.taskId = "external-win-31777";
+    configure.dataset.action = "configure";
+    await mounted.listeners.get("terminal-tasks-tbody:click")!({ target: configure });
+    expect(mounted.invokeCalls).toContainEqual({
+      cmd: "external_terminal_task_action", args: { taskId: "external-win-31777",
+        action: "configure", command: "python app.py", cwd: "D:/project/app", operationId: null },
+    });
+
+    data.tasks[0].status = "killed";
+    data.tasks[0].canStart = true;
+    data.tasks[0].canStop = false;
+    await mounted.windowMock.__superagentTerminalRefresh();
+    expect(mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML).toContain('data-action="start"');
+    const start = mounted.getOrCreateElement("external-start");
+    start.classList.add("terminal-external-btn");
+    start.dataset.taskId = "external-win-31777";
+    start.dataset.action = "start";
+    await mounted.listeners.get("terminal-tasks-tbody:click")!({ target: start });
+    expect(mounted.invokeCalls.some((c) => c.cmd === "external_terminal_task_action" && c.args.action === "start")).toBe(true);
+  });
+
+  it("never issues a stop after the user declines the external process confirmation", async () => {
+    const mounted = mountTerminalUi({ tasks: [{
+      id: "external-win-31777", command: "python.exe", pid: 31777, status: "running",
+      cwd: "-", source: "external", canStop: true, canConfigureStart: true,
+    }], runningCount: 1, totalCount: 1, presets: [] });
+    mounted.windowMock.confirm.mockReturnValue(false);
+    const stop = mounted.getOrCreateElement("declined-external-stop");
+    stop.classList.add("terminal-external-btn");
+    stop.dataset.taskId = "external-win-31777";
+    stop.dataset.action = "stop";
+    await mounted.listeners.get("terminal-tasks-tbody:click")!({ target: stop });
+    const actions = mounted.invokeCalls.filter((c) => c.cmd === "external_terminal_task_action").map((c) => c.args.action);
+    expect(actions).toEqual(["plan-stop"]);
   });
 
   it("offers Start only for restartable stopped Tray tasks", async () => {

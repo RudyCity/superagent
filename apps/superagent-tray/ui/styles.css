@@ -2709,6 +2709,19 @@ tbody tr:hover {
   min-width: 190px;
 }
 
+.terminal-panel .terminal-unavailable-btn {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.terminal-panel .terminal-control-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
 .terminal-task-name {
   display: flex;
   flex-direction: column;

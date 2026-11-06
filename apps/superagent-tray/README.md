@@ -11,6 +11,32 @@
 
 Windows, macOS and Linux **standalone installers and GitHub prerelease procedure**: see [Windows Standalone Installer](../../docs/guides/windows-standalone-installer.md). The bundled CLI, Core and Bun runtime are independent of a global Bun/Node install.
 
+## Terminal Processes — external Stop / Start
+
+Terminal Processes discovers Windows development listeners without retaining
+their command lines, environment variables or access tokens. For non-SuperAgent
+listeners with a verified creation fingerprint, the **Stop** button performs
+a one-time preflight, requires an explicit confirmation, rechecks the PID birth
+identity and protected ports, and stops only that process (never an arbitrary
+process tree). These actions require local **Full YOLO** and an authenticated
+Core connection.
+
+To start a stopped external listener, choose **Configure Start** and enter the
+exact command and absolute working directory. After Stop, use **Start** to
+launch a *new Tray-managed process* (new PID and task ID). SuperAgent cannot
+safely reconstruct an unknown environment or working directory from a PID;
+start recipes are held only in Core memory, and need to be reconfigured after
+a Core restart. The **Running Only** filter is off by default to expose stopped
+tasks. Logs for the original external process are unavailable.
+
+Core :7888, MCP :9229, Delegate bridge :17341, and other internal ports remain
+protected from raw external Stop. Use verified service-owner lifecycle controls
+instead. Pause/Resume is supported only for processes launched by Tray.
+
+Acceptance smoke: `SUPERAGENT_EXPLICIT_EXTERNAL_STOP_SMOKE=1 bun --bun x
+vitest run tests/externalTerminalStopSmoke.test.ts` creates and stops only its
+own disposable Bun listener; this opt-in test is never run against user services.
+
 ## LAN Devices — same-network laptop support
 
 Open **LAN Devices** from the sidebar or Windows notification-area tray menu.

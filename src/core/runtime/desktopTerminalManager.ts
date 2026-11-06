@@ -24,6 +24,8 @@ import { getProcessSupervisor } from "../process/processSupervisor.js";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { getCommandLogsDir } from "../tools/commandLogger.js";
 import { discoverExternalTerminalProcesses } from "./externalTerminalProcesses.js";
+import { observeExternalProcess, getStoppedExternalProcesses, configureExternalStart,
+  prepareExternalStop, stopExternalProcess, startStoppedExternal } from "./externalTerminalControl.js";
 import { suspendOwnedTerminalProcess, resumeOwnedTerminalProcess, type SuspendedProcess } from "./desktopTerminalSuspend.js";
 
 // Never populated from persisted PIDs or external discovery. Only this Core's live spawn handles.
@@ -51,6 +53,8 @@ export interface DesktopTerminalTaskInfo {
   canStart?: boolean;
   canPause?: boolean;
   canResume?: boolean;
+  canConfigureStart?: boolean;
+  controlReason?: string;
   canViewLogs?: boolean;
 }
 
@@ -245,6 +249,7 @@ export class DesktopTerminalManager {
     );
     for (const observed of await discoverExternalTerminalProcesses()) {
       if (representedRunningPids.has(observed.pid)) continue;
+      const controlState = observeExternalProcess(observed);
       const portsLabel = observed.ports.map((port) => ":" + port).join(", ");
       const id = "external-win-" + observed.pid;
       merged.set(id, {
@@ -256,9 +261,12 @@ export class DesktopTerminalManager {
         windowLabel: observed.name.replace(/\.exe$/i, "") + " · " + portsLabel,
         isTerminal: true,
         source: "external",
-        canStop: false,
+        ...controlState,
         canViewLogs: false,
       });
+    }
+    for (const stopped of getStoppedExternalProcesses()) {
+      if (!merged.has(stopped.id)) merged.set(stopped.id, stopped);
     }
 
     let allTasks = Array.from(merged.values());
@@ -415,6 +423,29 @@ export class DesktopTerminalManager {
       return { success: true, taskId, status: action === "pause" ? "paused" : "running" };
     } finally {
       terminalControls.delete(taskId);
+    }
+  }
+
+  /** External processes use explicit, one-shot identity-verified lifecycle control. */
+  static async externalTaskAction(params: {
+    taskId: string;
+    action: "configure" | "plan-stop" | "stop" | "start";
+    command?: string;
+    cwd?: string;
+    operationId?: string;
+  }) {
+    switch (params.action) {
+      case "configure":
+        return configureExternalStart(params.taskId, params.command || "", params.cwd || "");
+      case "plan-stop":
+        return prepareExternalStop(params.taskId);
+      case "stop":
+        return stopExternalProcess(params.taskId, params.operationId || "");
+      case "start":
+        return startStoppedExternal(params.taskId, (command, cwd) =>
+          this.launchTask({ command, cwd }));
+      default:
+        throw new Error("Unsupported external process action");
     }
   }
 

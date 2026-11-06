@@ -679,6 +679,35 @@ async fn control_terminal_task(task_id: String, action: String) -> Result<Value,
 }
 
 #[tauri::command]
+async fn external_terminal_task_action(
+    task_id: String,
+    action: String,
+    command: Option<String>,
+    cwd: Option<String>,
+    operation_id: Option<String>,
+) -> Result<Value, String> {
+    if !matches!(action.as_str(), "configure" | "plan-stop" | "stop" | "start") ||
+        !task_id.starts_with("external-win-") ||
+        task_id.len() > 23 || !task_id[13..].chars().all(|c| c.is_ascii_digit()) ||
+        task_id[13..].is_empty() {
+        return Err("Invalid external process action".into());
+    }
+    if command.as_ref().is_some_and(|s| s.len() > 2048) ||
+        cwd.as_ref().is_some_and(|s| s.len() > 600) ||
+        operation_id.as_ref().is_some_and(|s| s.len() > 64) {
+        return Err("External process action payload is too large".into());
+    }
+    core_request(
+        Method::POST,
+        "/api/desktop/terminal/external",
+        Some(json!({
+            "taskId": task_id, "action": action, "command": command,
+            "cwd": cwd, "operationId": operation_id
+        })),
+    ).await
+}
+
+#[tauri::command]
 async fn launch_terminal_task(
     command: Option<String>,
     preset_name: Option<String>,
@@ -932,6 +961,10 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
             Some("discover") => Duration::from_secs(8),
             _ => Duration::from_secs(15),
         }
+    } else if path == "/api/desktop/terminal/external" {
+        // External stop requires CIM birth verification and a second guarded
+        // PowerShell operation. Never retry a timeout automatically.
+        Duration::from_secs(30)
     } else if path == "/api/desktop/terminal/control" {
         // Windows suspends/resumes a verified owned process tree through a
         // bounded PowerShell/CIM probe; 4 seconds can report a false timeout.
@@ -1460,6 +1493,7 @@ fn main() {
             get_terminal_tasks,
             kill_terminal_task,
             control_terminal_task,
+            external_terminal_task_action,
             launch_terminal_task,
             get_terminal_logs,
             get_terminal_presets,

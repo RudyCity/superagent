@@ -14,7 +14,7 @@
     presets: [],
     runningCount: 0,
     totalCount: 0,
-    runningOnly: true, // Default to running processes; All Tasks history is opt-in
+    runningOnly: false, // Show stopped Tray tasks so their Start actions are discoverable.
     searchQuery: "",
     loading: false,
     pollTimer: null,
@@ -53,6 +53,13 @@
       if (action === "kill") {
         return invoke("kill_terminal_task", { taskId: payload.taskId });
       }
+      if (action === "external") {
+        return invoke("external_terminal_task_action", {
+          taskId: payload.taskId, action: payload.action,
+          command: payload.command ?? null, cwd: payload.cwd ?? null,
+          operationId: payload.operationId ?? null,
+        });
+      }
       if (["start", "pause", "resume"].includes(action)) {
         return invoke("control_terminal_task", { taskId: payload.taskId, action });
       }
@@ -83,6 +90,10 @@
       if (terminalState.runningOnly) q.set("runningOnly", "true");
       if (terminalState.searchQuery) q.set("search", terminalState.searchQuery);
       url = `/api/desktop/terminal/tasks?${q.toString()}`;
+    } else if (action === "external") {
+      url = "/api/desktop/terminal/external";
+      method = "POST";
+      body = JSON.stringify(payload);
     } else if (action === "kill") {
       url = "/api/desktop/terminal/kill";
       method = "POST";
@@ -174,6 +185,11 @@
         .join("");
   }
 
+  function unavailableControl(label, reason) {
+    return `<button type="button" class="button ghost sm terminal-unavailable-btn"
+      disabled aria-disabled="true" title="${escapeHtml(reason)}">${label}</button>`;
+  }
+
   function renderTerminalUI() {
     // 1. Metric counters
     const runningEl = $("terminal-stat-running");
@@ -187,7 +203,7 @@
     // 2. Kill all button visibility
     const killAllBtn = $("terminal-kill-all-btn");
     if (killAllBtn) {
-      killAllBtn.disabled = !terminalState.tasks.some((task) => (task.status === "running" || task.status === "paused") && task.canStop !== false);
+      killAllBtn.disabled = !terminalState.tasks.some((task) => (task.status === "running" || task.status === "paused") && task.source !== "external" && task.canStop !== false);
     }
 
     // 3. Tasks Table
@@ -211,6 +227,11 @@
       .map((t) => {
         const isRunning = t.status === "running";
         const isPaused = t.status === "paused";
+        const isExternal = t.source === "external";
+        const isUnverified = t.status === "unverified";
+        const readonlyReason = t.controlReason || (isExternal
+          ? "This process was observed outside SuperAgent. PID discovery is not permission to control it. Use verified service controls or relaunch it from Tray."
+          : "The process ownership is not verified; lifecycle actions are unavailable.");
         const statusBadge = isRunning
           ? `<span class="pill pill-success"><span class="pill-dot"></span>Running</span>`
           : isPaused
@@ -275,7 +296,28 @@
                     </button>`
                   : ""
               }
+              ${isExternal
+                ? `${t.canConfigureStart === true
+                    ? `<button type="button" class="button ghost sm terminal-external-btn" data-task-id="${escapeHtml(t.id)}" data-action="configure" title="Save the command and working directory for a replacement process">Configure Start</button>`
+                    : unavailableControl("Configure Start", readonlyReason)}
+                    ${t.canStart === true && !isRunning
+                      ? `<button type="button" class="button ghost sm terminal-external-btn" data-task-id="${escapeHtml(t.id)}" data-action="start">Start</button>`
+                      : unavailableControl("Start", isRunning ? "Stop this process before starting a replacement." : readonlyReason)}
+                    ${unavailableControl("Pause", "Pause requires a supervised process handle.")}
+                    ${isRunning && t.canStop === true
+                      ? `<button type="button" class="button ghost sm danger terminal-external-btn" data-task-id="${escapeHtml(t.id)}" data-action="stop" title="Verify identity and explicitly confirm external process termination">Stop</button>`
+                      : unavailableControl("Stop", readonlyReason)}
+                    <button type="button" class="button ghost sm terminal-manage-btn" data-task-id="${escapeHtml(t.id)}" title="Open verified service lifecycle controls">Service Controls</button>`
+                : isUnverified
+                ? `${unavailableControl("Start", readonlyReason)}
+                    ${unavailableControl("Pause", readonlyReason)}
+                    ${unavailableControl("Stop", readonlyReason)}
+                    <button type="button" class="button ghost sm terminal-manage-btn" data-task-id="${escapeHtml(t.id)}">Service Controls</button>`
+                : ""}
             </div>
+            ${isExternal || isUnverified
+              ? `<small class="terminal-control-hint" title="${escapeHtml(readonlyReason)}">${isExternal && t.canStop === true ? "External · stop requires confirmation" : "Read-only · verify owner in Runtime Detection"}</small>`
+              : ""}
           </td>
         </tr>`;
       })
@@ -349,8 +391,10 @@
       }
     });
 
-    // Filter toggle (Running Only vs All)
-    $("terminal-filter-running")?.addEventListener("change", (e) => {
+    // Filter toggle (Running Only vs All). Start with All Tasks visible.
+    const filter = $("terminal-filter-running");
+    if (filter) filter.checked = terminalState.runningOnly;
+    filter?.addEventListener("change", (e) => {
       terminalState.runningOnly = e.target.checked;
       fetchTerminalTasks();
     });
@@ -363,7 +407,7 @@
 
     // Kill All Running button
     $("terminal-kill-all-btn")?.addEventListener("click", async () => {
-      const running = terminalState.tasks.filter((t) => (t.status === "running" || t.status === "paused") && t.canStop !== false);
+      const running = terminalState.tasks.filter((t) => (t.status === "running" || t.status === "paused") && t.source !== "external" && t.canStop !== false);
       if (!running.length) return;
 
       if (!confirm(`Are you sure you want to terminate ALL ${running.length} running terminal process(es)?`)) {
@@ -408,6 +452,42 @@
 
     // Table actions delegation (View Logs, Start, Pause, Resume, Stop)
     $("terminal-tasks-tbody")?.addEventListener("click", async (e) => {
+      const manageBtn = e.target.closest(".terminal-manage-btn");
+      if (manageBtn) {
+        // Navigation only; never infer permission to signal an external PID.
+        window.navigateToPage?.("runtime");
+        return;
+      }
+      const externalBtn = e.target.closest(".terminal-external-btn");
+      if (externalBtn) {
+        const taskId = externalBtn.dataset.taskId;
+        const action = externalBtn.dataset.action;
+        if (!taskId || !["configure", "stop", "start"].includes(action)) return;
+        externalBtn.disabled = true;
+        try {
+          if (action === "configure") {
+            const command = window.prompt("Command for a NEW process (not automatically recovered):", "");
+            if (!command?.trim()) return;
+            const cwd = window.prompt("Absolute working directory for that command:", "");
+            if (!cwd?.trim()) return;
+            await invokeTerminal("external", { taskId, action, command, cwd });
+          } else if (action === "stop") {
+            const plan = await invokeTerminal("external", { taskId, action: "plan-stop" });
+            const confirmed = window.confirm(`Stop external ${plan.name} (PID ${plan.pid}, ports ${plan.ports.join(", ")})?\nThis forcibly stops this OS process. ${plan.hasRestartCommand ? "A start command has been saved." : "To restart it, configure the command and working directory."}`);
+            if (!confirmed) return;
+            await invokeTerminal("external", { taskId, action: "stop", operationId: plan.operationId });
+          } else {
+            if (!window.confirm("Start a NEW managed process using your saved command and working directory?")) return;
+            await invokeTerminal("external", { taskId, action: "start" });
+          }
+          await fetchTerminalTasks();
+        } catch (err) {
+          window.alert(`External process ${action} failed: ${err?.message || err}`);
+        } finally {
+          externalBtn.disabled = false;
+        }
+        return;
+      }
       const logsBtn = e.target.closest(".terminal-logs-btn");
       if (logsBtn) {
         const taskId = logsBtn.dataset.taskId;

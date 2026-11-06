@@ -2,7 +2,8 @@
  * Best-effort, read-only discovery of externally launched Windows development servers.
  *
  * These processes have no SuperAgent ownership lease or child-process handle.
- * Never expose their raw command lines or allow lifecycle actions based on a PID.
+ * Birth-verified, operator-confirmed controls live in externalTerminalControl.
+ * Raw command lines and environment secrets are never exposed.
  */
 
 import { execFile } from "node:child_process";
@@ -19,7 +20,7 @@ const WINDOWS_PROCESS_SNAPSHOT = [
   "Get-NetTCPConnection -ErrorAction SilentlyContinue | Where-Object {",
   "  $_.OwningProcess -gt 0 -and $_.LocalPort -ge 1024 -and",
   "  (($_.State -eq 'Listen' -or $_.State -eq 2) -or",
-  "    ($null -eq $_.State -and $_.RemotePort -eq 0 -and $_.LocalPort -ge 3000 -and $_.LocalPort -lt 49152))",
+  "    ($null -eq $_.State -and $_.RemotePort -eq 0 -and $_.LocalPort -ge 3000))",
   "} | ForEach-Object {",
   "  $key = [string]$_.OwningProcess",
   "  if (-not $portsByPid.ContainsKey($key)) { $portsByPid[$key] = @() }",
@@ -28,10 +29,11 @@ const WINDOWS_PROCESS_SNAPSHOT = [
   "$allowed = @('bun.exe', 'node.exe', 'deno.exe', 'python.exe', 'python3.exe', 'pythonw.exe', 'uvicorn.exe', 'rudy.exe', 'go.exe', 'cargo.exe', 'dotnet.exe', 'java.exe', 'ruby.exe', 'php.exe')",
   "$result = New-Object 'System.Collections.Generic.List[object]'",
   "if ($portsByPid.Count -gt 0) {",
-  "  Get-CimInstance Win32_Process -Property ProcessId,Name -ErrorAction SilentlyContinue | ForEach-Object {",
+  "  Get-CimInstance Win32_Process -Property ProcessId,Name,CreationDate -ErrorAction SilentlyContinue | ForEach-Object {",
   "    $key = [string]$_.ProcessId",
   "    if ($allowed -contains $_.Name -and $portsByPid.ContainsKey($key) -and $result.Count -lt 64) {",
-  "      $result.Add([pscustomobject]@{ ProcessId = $_.ProcessId; Name = $_.Name; Ports = @($portsByPid[$key]) })",
+  "      $ticks = if ($null -ne $_.CreationDate) { [string]$_.CreationDate.ToUniversalTime().Ticks } else { ''}",
+  "      $result.Add([pscustomobject]@{ ProcessId = $_.ProcessId; Name = $_.Name; Ports = @($portsByPid[$key]); CreationTicks = $ticks })",
   "    }",
   "  }",
   "}",
@@ -48,6 +50,7 @@ export interface ExternalTerminalProcess {
   pid: number;
   name: string;
   ports: number[];
+  creationIdentity?: string;
 }
 
 /** Validate and bound untrusted OS inventory results; no command lines are retained. */
@@ -69,11 +72,16 @@ export function parseExternalProcessSnapshot(raw: unknown): ExternalTerminalProc
       .slice(0, MAX_PORTS_PER_PROCESS);
     if (ports.length === 0) continue;
 
+    const creationTicks = String(value.CreationTicks ?? "");
+    const creationIdentity = /^\d{15,20}$/.test(creationTicks) ? `win:${creationTicks}` : undefined;
     const previous = grouped.get(pid);
     const allPorts = [...new Set([...(previous?.ports ?? []), ...ports])]
       .sort((a, b) => a - b)
       .slice(0, MAX_PORTS_PER_PROCESS);
-    grouped.set(pid, { pid, name, ports: allPorts });
+    grouped.set(pid, { pid, name, ports: allPorts,
+      ...(creationIdentity || previous?.creationIdentity
+        ? { creationIdentity: creationIdentity || previous?.creationIdentity } : {}),
+    });
     if (grouped.size >= MAX_PROCESSES) break;
   }
   return [...grouped.values()].sort((a, b) => a.ports[0] - b.ports[0] || a.pid - b.pid);
@@ -81,6 +89,8 @@ export function parseExternalProcessSnapshot(raw: unknown): ExternalTerminalProc
 
 let cache: { expiresAt: number; processes: ExternalTerminalProcess[] } | undefined;
 let pending: Promise<ExternalTerminalProcess[]> | undefined;
+
+export function invalidateExternalProcessCache(): void { cache = undefined; }
 
 /** Non-Windows hosts currently rely on SuperAgent's owned process registry. */
 export async function discoverExternalTerminalProcesses(): Promise<ExternalTerminalProcess[]> {
