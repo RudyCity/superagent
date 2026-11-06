@@ -586,6 +586,7 @@ button:disabled {
   position: sticky;
   top: var(--tray-titlebar-height);
   height: calc(100vh - var(--tray-titlebar-height));
+  overflow-y: auto;
 }
 
 .brand {
@@ -678,6 +679,33 @@ button:disabled {
   opacity: 1;
   color: var(--accent);
 }
+
+/* Optional community support link: never blocks runtime controls. */
+.support-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(251, 113, 133, 0.2);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.support-link:hover,
+.support-link:focus-visible {
+  color: #fecdd3;
+  border-color: rgba(251, 113, 133, 0.5);
+  background: rgba(251, 113, 133, 0.09);
+}
+.support-link:focus-visible { outline: 2px solid #fb7185; outline-offset: 2px; }
+.support-link svg { flex-shrink: 0; }
+.support-link span:last-child { font-size: 12px; opacity: 0.7; }
 
 /* Sidebar Bottom: Connection Info */
 .side-bottom {

@@ -134,3 +134,7 @@ The **Stop** and **Restart** buttons are present on service cards and enabled **
 - This prototype intentionally does **not** alter Muse Watch transport or auto-replay stalled Telegram batches.
 
 See `docs/plans/2026-11-04-superagent-tauri-tray-cron-management.md` for decisions and release gates.
+
+## Support the project
+
+SuperAgent Tray is part of the free and open-source SuperAgent project. If you find it useful, [support development on Ko-fi](https://ko-fi.com/rudycity). The sidebar link opens the public donation page; it is optional and unrelated to application authentication or feature access.

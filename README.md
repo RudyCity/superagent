@@ -5,6 +5,7 @@
 <p align="center">
   <a href="https://github.com/RudyCity/superagent/releases"><img alt="GitHub releases" src="https://img.shields.io/github/v/release/RudyCity/superagent?style=flat-square"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/RudyCity/superagent?style=flat-square"></a>
+  <a href="https://ko-fi.com/rudycity"><img alt="Support on Ko-fi" src="https://img.shields.io/badge/Support-Ko--fi-ff5e5b?style=flat-square"></a>
   <a href="https://bun.sh"><img alt="Bun runtime" src="https://img.shields.io/badge/runtime-Bun%201.4.2-black?style=flat-square"></a>
   <a href="https://github.com/RudyCity/t-line"><img alt="Desktop companion" src="https://img.shields.io/badge/desktop-t--line-00D1B2?style=flat-square"></a>
 </p>
@@ -131,6 +132,12 @@ On Windows with the native build toolchain, `bun run installer:build` stages, ve
 | [LAN client development preview](docs/guides/superagent-lan-client.md) | Windows/Android pairing, transfers and limitations |
 | [Android LAN companion](apps/superagent-lan-android/README.md) | Android permissions and physical-device release gates |
 | [Project documentation](docs/) | Design plans, audits and implementation notes |
+
+## Support development
+
+SuperAgent is developed and maintained as an open-source project. If it helps your workflow, you can [support independent development on Ko-fi](https://ko-fi.com/rudycity). Contributions help with maintenance, testing and infrastructure.
+
+**Donations are completely optional.** No SuperAgent feature, security update or support access is conditional on donating.
 
 ## License
 
