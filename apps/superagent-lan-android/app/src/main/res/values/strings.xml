@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SuperAgent LAN Client</string>
+    <string name="accessibility_name">SuperAgent remote touch (manual opt-in)</string>
+    <string name="accessibility_description">Allows taps, swipes, navigation and non-password text only while a user-approved LAN screen session and explicit input permission are active. No event recording or unattended control.</string>
+</resources>

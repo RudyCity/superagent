@@ -1,3 +1,10 @@
+## [Unreleased] - 2026-11-06
+### Android LAN companion and developer installer
+- Add consent-based Android LAN client source, including pairing, read-only diagnostics, explicitly approved screen sharing and file/folder exchange, and independent Lite/Debug builds.
+- Add Android 0.7.0 Health Snapshot and Support Status diagnostics with bounded JSON reporting, actionable advisory signals and no new privileged permissions.
+- Add owner-initiated, single-attempt USB ADB installer with 120-second default timeout, version verification and non-replay behavior after uncertain results.
+- Verify Lite/Debug Gradle builds, signing and Android Lint; physical-device E2E remains pending. Tray/controller LAN integration is still in progress in the shared checkout.
+
 ## [1.14.64] - 2026-11-05
 ### Windows standalone installer and automated release candidate
 - Extend standalone packaging to macOS ARM64 DMG and Linux x64 DEB/AppImage with platform-local Bun and Core, native CLI smoke checks, and multi-OS release gates.

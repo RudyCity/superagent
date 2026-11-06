@@ -1,0 +1,33 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'click.superagent.lanclient'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'click.superagent.lanclient'
+        minSdk 29
+        targetSdk 35
+        versionCode 7
+        versionName '0.7.0-health-preview'
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+        // Reduced-capability diagnostic build. Accessibility is excluded from
+        // the installed manifest, so remote touch and UI schema are unavailable.
+        lite {
+            initWith debug
+            matchingFallbacks = ['debug']
+            applicationIdSuffix '.lite'
+            versionNameSuffix '-lite'
+            signingConfig signingConfigs.debug
+            debuggable true
+        }
+    }
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <!-- This build has no Accessibility component and cannot accept remote gestures. -->
+        <service
+            android:name=".ControlledAccessibilityService"
+            tools:node="remove" />
+    </application>
+</manifest>
