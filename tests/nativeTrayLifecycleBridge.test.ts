@@ -106,4 +106,20 @@ describe("authenticated Core -> Tauri lifecycle strict boundary",()=>{
     expect(third.get()?.status).toBe(409);
     expect(JSON.stringify(third.get())).not.toContain("Bearer ");
   });
+
+  it("redacts actual Windows and UNC filesystem paths including spaces",()=>{
+    const slash=String.fromCharCode(92);
+    const local=["C:","Users","Real Operator","secret-folder","owner.json"].join(slash);
+    const unc=slash+slash+["host","private share","token.txt"].join(slash);
+    const result=sanitizeNativeLifecycleView({
+      reason:"Unverified "+local,
+      report:"Owner snapshot: "+unc,
+    });
+    const output=JSON.stringify(result);
+    expect(output).toContain("[path redacted]");
+    expect(output).not.toContain("Real Operator");
+    expect(output).not.toContain("secret-folder");
+    expect(output).not.toContain("private share");
+    expect(output).not.toContain("token.txt");
+  });
 });

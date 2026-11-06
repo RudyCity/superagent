@@ -44,7 +44,9 @@ afterAll(async()=>{
 describe("native lifecycle dashboard via actual authenticated Core",()=>{
   it("returns read-only profiles + dashboard and rejects unauthorized/remote/mutating requests",async()=>{
     const port=await randomPort();
-    supervisor=spawn(process.execPath,[path.join(process.cwd(),"src","cli.tsx"),
+    // The source CLI explicitly requires Bun; Node 24 cannot load .tsx entrypoints.
+    supervisor=spawn(process.platform==="win32"?"bun.exe":"bun",[
+      path.join(process.cwd(),"src","cli.tsx"),
       "core","start","--port",String(port)],{
       cwd:process.cwd(),stdio:"ignore",windowsHide:true,
       env:{...process.env,SUPERAGENT_CONFIG_DIR:dir,SUPERAGENT_CORE_STAGING:"1"},

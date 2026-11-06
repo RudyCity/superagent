@@ -44,9 +44,22 @@ pub fn validate(input: Value) -> Result<Value,String> {
     if MUTATIONS.contains(&action) {
         let is_recycle = action == "recycle" && (service == "all" || service == "core" || service == "tray" || service == "vision");
         let is_reconcile = action == "reconcile" && (service == "all" || TARGETS.contains(&service));
-        if (!TARGETS.contains(&service) && !is_recycle && !is_reconcile) ||
+        let is_owner_bound_core = service == "core" &&
+            ["restart", "rollback", "drain"].contains(&action);
+        if (!TARGETS.contains(&service) && !is_owner_bound_core && !is_recycle && !is_reconcile) ||
             value.get("confirm")!=Some(&Value::Bool(true)) {
             return Err("Native lifecycle mutation requires exact service and confirmation".into());
+        }
+        if is_owner_bound_core {
+            let digest_valid=value.get("expectedBuildDigest").and_then(Value::as_str)
+                .is_some_and(|s|s.len()==64&&s.bytes().all(|b|b.is_ascii_hexdigit()&&!b.is_ascii_uppercase()));
+            let pid_valid=|key:&str|value.get(key).and_then(Value::as_u64)
+                .is_some_and(|pid|pid>0&&pid<=u32::MAX as u64);
+            if value.get("port").and_then(Value::as_u64)!=Some(7888) ||
+                !digest_valid || !pid_valid("expectedSupervisorPid") ||
+                !pid_valid("expectedWorkerPid") {
+                return Err("CORE_OWNER_BOUND_PLAN_REQUIRED".into());
+            }
         }
         if action!="configure" && action!="reconcile" &&
             !value.get("operationId").and_then(Value::as_str)
@@ -57,9 +70,12 @@ pub fn validate(input: Value) -> Result<Value,String> {
     if action=="plan"{
         let operation=value.get("targetAction").and_then(Value::as_str).unwrap_or("");
         let is_recycle = operation == "recycle" && (service == "all" || service == "core" || service == "tray" || service == "vision");
-        if (!TARGETS.contains(&service) && !is_recycle) ||
-            !["start","stop","restart","upgrade","rollback","recycle"].contains(&operation) ||
-            (service=="core" && operation!="recycle") {
+        let is_owner_bound_core=service=="core" &&
+            ["restart","rollback","drain"].contains(&operation);
+        if (!TARGETS.contains(&service) && !is_owner_bound_core && !is_recycle) ||
+            !["start","stop","restart","upgrade","rollback","drain","recycle"].contains(&operation) ||
+            (service=="core" && !is_owner_bound_core && operation!="recycle") ||
+            (is_owner_bound_core && value.get("port").and_then(Value::as_u64)!=Some(7888)) {
             return Err("Native lifecycle plan target is restricted".into());
         }
     }
@@ -102,8 +118,22 @@ mod tests {
             "operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"})).is_ok());
         assert!(validate(json!({"action":"reconcile","service":"all","confirm":true,
             "operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","reviewed":true})).is_ok());
-        assert!(validate(json!({"action":"plan","service":"core","port":7888,
-            "targetAction":"restart"})).is_err());
+        for action in ["restart","rollback","drain"] {
+            assert!(validate(json!({"action":"plan","service":"core","port":7888,
+                "targetAction":action})).is_ok());
+            assert!(validate(json!({"action":"plan","service":"core","port":9228,
+                "targetAction":action})).is_err());
+            let owner_bound=json!({"action":action,"service":"core","port":7888,
+                "confirm":true,"operationId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                "expectedBuildDigest":"a".repeat(64),
+                "expectedSupervisorPid":101,"expectedWorkerPid":201});
+            assert!(validate(owner_bound.clone()).is_ok());
+            for missing in ["expectedBuildDigest","expectedSupervisorPid","expectedWorkerPid","port"] {
+                let mut bad=owner_bound.clone();
+                bad.as_object_mut().unwrap().remove(missing);
+                assert!(validate(bad).is_err(),"Missing {missing} must fail closed");
+            }
+        }
         assert!(validate(json!({"action":"configure","service":"tray","confirm":true,
             "revision":"default","autoRecover":false})).is_ok());
         for bad in [

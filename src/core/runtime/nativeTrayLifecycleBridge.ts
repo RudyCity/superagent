@@ -13,7 +13,7 @@ const MUTATE=new Set(["configure","reconcile","start","stop","restart",
   "upgrade","rollback","drain","reload","recycle"]);
 const PLAN=new Set(["start","stop","restart","upgrade","rollback","drain","reload","recycle"]);
 function errorCode(message:string){
-  const code=message.match(/(?:SERVICE|TRAY|DAEMON|GUARDIAN|VISION|SIDECAR|LIFECYCLE|MCP|CORE)_[A-Z0-9_]{2,90}/);
+  const code=message.match(/(?:SERVICE|TRAY|DAEMON|GUARDIAN|VISION|SIDECAR|LIFECYCLE|MCP|CORE|GLOBAL_RECYCLE)_[A-Z0-9_]{2,90}/);
   return code?.[0]??"DESKTOP_LIFECYCLE_REJECTED";
 }
 export function parseNativeTrayLifecycleRequest(raw:unknown):ManageServicesArgs {
@@ -93,7 +93,8 @@ export function sanitizeNativeLifecycleView(value:unknown,depth=0):unknown{
   if(typeof value==="string")
     return value.replace(/Bearer\s+[A-Za-z0-9_.~-]+/gi,"Bearer [REDACTED]")
       .replace(/https?:\/\/[^\s"'<>]+/gi,"[endpoint redacted]")
-      .replace(/[A-Za-z]:\[^\s"'<>]+/g,"[path redacted]")
+      .replace(/[A-Za-z]:\\[^\r\n"'<>]+/g,"[path redacted]")
+       .replace(/\\\\[^\r\n"'<>]+/g,"[path redacted]")
       .slice(0,800);
   if(typeof value==="number")return Number.isFinite(value)?value:null;
   if(typeof value==="boolean"||value===null)return value;

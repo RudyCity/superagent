@@ -220,7 +220,7 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
   const owner=port?listeners?.get(port)??null:null;
   if(service==="core") {
     try {
-      const s=await requestCoreSupervisor("status",port!,1200);
+      const s=await requestCoreSupervisor("status",port!,2500);
       const verified=s.publicPort===port&&s.ownerContract?.role==="core-supervisor"&&
         s.ownerContract?.mcpLifecycle==="not-owned"&&s.supervisorPid===owner;
       return snap(service,port,verified?"active":"unverified",s.supervisorPid,verified,
@@ -231,10 +231,13 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
           sessionCount:s.affinitySessions,buildFresh:s.currentBuild?.fresh??null});
     }catch {
       const response=await probe(port!,"/api/status");
-      return snap(service,port,response?"unverified":"inactive",owner,false,
+      // A failed supervisor probe never proves that an existing listener
+      // is inactive or legacy. Require a fresh owner-bound plan to mutate.
+      return snap(service,port,owner!==null||response?"unverified":"inactive",owner,false,
         response?["status","plan","recycle"]:["status"],
-        response?"Legacy Core API responds without supervised ownership; guarded recycle available":
-          "No authenticated Core supervisor or responsive API");
+        response?"Core HTTP responds but supervisor ownership is not currently attested; recycle requires independent preflight":
+          owner!==null?"Core listener exists but supervisor attestation is unavailable; mutation blocked":
+          "No Core supervisor, listener, or responsive API");
     }
   }
   if(service==="mcp") {
@@ -442,7 +445,10 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
         verified:byName.get(dep)?.ownershipVerified??false}));
       const blocked=deps.some(d=>d.state!=="active"&&d.state!=="embedded");
       const available=item.state==="active"||item.state==="embedded";
+      // An unverified listener is not ready even when it responds.
+      // The in-process process registry is the only ownerless exception.
       const ready=available&&!blocked&&
+        (item.ownershipVerified||item.service==="process_supervisor")&&
         (item.service!=="vision"||item.details?.modelLoaded===true)&&
         (item.service!=="transport"||item.details?.backendReady===true);
       return {service:item.service,state:item.state,ownerVerified:item.ownershipVerified,
@@ -450,7 +456,7 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
         reason:item.reason,recoveryPolicy:{enabled:policy.autoRecover,
           threshold:policy.failureThreshold,maxPerHour:policy.maxRestartsPerHour}};
     });
-    const answer:any={action,readOnly:true,services:states,checks,
+    const answer:any={action,readOnly:true,observedAt:Date.now(),services:states,checks,
       summary:{total:checks.length,ready:checks.filter(x=>x.ready).length,
         degraded:checks.filter(x=>x.alive&&!x.ready).length,
         unavailable:checks.filter(x=>!x.alive).length},
