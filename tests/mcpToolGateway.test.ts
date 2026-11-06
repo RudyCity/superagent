@@ -55,9 +55,18 @@ describe("static MCP gateway catalog", () => {
       "superagent_check_project_health",
       "superagent_list_project_access",
     ]));
-    expect(advertised).toContain("superagent_delegate_read_chat");
-    for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES.slice(1)) {
-      expect(advertised).not.toContain(toolName);
+    const safeDelegateTools = [
+      "superagent_delegate_read_chat",
+      "superagent_delegate_list_chats",
+      "superagent_delegate_read_chat_full",
+      "superagent_delegate_search_history",
+      "superagent_delegate_search_index",
+      "superagent_delegate_doctor",
+      "superagent_delegate_inspect_chat_config",
+    ];
+    for (const toolName of safeDelegateTools) expect(advertised).toContain(toolName);
+    for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES) {
+      if (!safeDelegateTools.includes(toolName)) expect(advertised).not.toContain(toolName);
     }
     expect(advertised).not.toContain("superagent_switch_workspace");
     expect(advertised).not.toContain("superagent_register_project");
