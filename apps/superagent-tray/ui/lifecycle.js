@@ -6,7 +6,7 @@
  */
 const life = (id) => document.getElementById(id);
 const lifecycleServices = new Set(["core","tray","transport","channel_host","vision","guardian","daemon"]);
-const lifecycleActions = new Set(["start","stop","restart","upgrade","rollback","recycle"]);
+const lifecycleActions = new Set(["start","stop","restart","upgrade","rollback","drain","recycle"]);
 const lifecyclePlanFields = [
   "service","port","operationId","expectedBuildDigest",
   "expectedReleaseRevision","expectedCurrentDigest",
@@ -53,15 +53,21 @@ function lifeUpdatePort(){
     port.disabled=service==="tray";
     if(service!=="tray"&&lifecyclePorts[service])port.value=String(lifecyclePorts[service]);
   }
-  if(service==="core"&&action!=="recycle")life("lifecycle-action").value="recycle";
-  else if(service!=="core"&&action==="recycle")life("lifecycle-action").value="restart";
-  if(action==="upgrade"||action==="rollback"){
-    if(service!=="tray")life("lifecycle-action").value=service==="core"?"recycle":"restart";
-  }
-  for(const option of Array.from(life("lifecycle-action")?.options||[])){
-    if(option.value==="upgrade"||option.value==="rollback")option.disabled=service!=="tray";
-    else if(option.value==="recycle")option.disabled=service!=="core";
-    else if(service==="core")option.disabled=true;
+  const choice=life("lifecycle-action");
+  if(service==="core"&&!["restart","rollback","drain","recycle"].includes(choice.value))
+    choice.value="restart";
+  else if(service!=="core"&&["recycle","drain"].includes(choice.value))
+    choice.value="restart";
+  else if(service!=="tray"&&service!=="core"&&["upgrade","rollback"].includes(choice.value))
+    choice.value="restart";
+  else if(service==="core"&&choice.value==="upgrade")
+    choice.value="restart";
+  for(const option of Array.from(choice?.options||[])){
+    if(option.value==="upgrade")option.disabled=service!=="tray";
+    else if(option.value==="rollback")option.disabled=service!=="tray"&&service!=="core";
+    else if(option.value==="recycle"||option.value==="drain")
+      option.disabled=service!=="core";
+    else if(service==="core")option.disabled=option.value!=="restart";
     else option.disabled=false;
   }
   lifeResetPlan();
@@ -106,6 +112,15 @@ function lifeRenderSummary(data){
     card.append(header,description);
     if(deps)card.append(lifeNode("small","Dependencies: "+deps,"lifecycle-service-note"));
     if(item.reason)card.append(lifeNode("small",item.reason,"lifecycle-service-note"));
+    if((item.service==="core"||item.service==="tray")&&data?.safeLifecycle){
+      const verdict=data.safeLifecycle[item.service];
+      const ready=verdict?.ready===true&&verdict?.mutationAuthorized===false;
+      const codes=Array.isArray(verdict?.reasons)?verdict.reasons.join(", "):"NO_VERIFIED_EVIDENCE";
+      card.append(lifeNode("small",
+        ready?"Safe Restart: READY for a new owner-bound plan; approval still required":
+        "Safe Restart: NO-GO · "+(verdict?.planErrorCode||codes),
+        "lifecycle-service-note"));
+    }
     holder.append(card);
   }
   if(!checks.length)holder.append(lifeNode("p","No service health data returned","lifecycle-hint"));
@@ -188,6 +203,11 @@ async function lifecyclePrepare(){
 
        typeof plan.operationId!=="string")
       throw new Error("Selected Core did not return a valid owner-bound plan.");
+    if(service==="core"&&["restart","rollback","drain"].includes(action)&&
+       (!Number.isSafeInteger(plan.expectedSupervisorPid)||
+        !Number.isSafeInteger(plan.expectedWorkerPid)||
+        typeof plan.expectedBuildDigest!=="string"))
+      throw new Error("CORE_OWNER_BOUND_PLAN_REQUIRED: update Core and prepare a new plan.");
     lifecyclePlan=Object.fromEntries(lifecyclePlanFields.filter(key=>
       Object.prototype.hasOwnProperty.call(plan,key)).map(key=>[key,plan[key]]));
     lifecyclePlan.action=action;
@@ -226,9 +246,17 @@ async function lifecycleExecute(){
       "\nDo not retry with a new ID if the result times out."))return;
   lifecycleBusy=true;
   let verifiedResult=false;
+  let mutationDispatched=false;
   life("lifecycle-execute").disabled=true;
-  lifeFeedback("Executing owner-verified operation. Awaiting an attested result...");
+  lifeFeedback("Revalidating safe restart readiness before execution...");
   try{
+    if(plan.action==="restart"&&["core","tray"].includes(plan.service)){
+      const snapshot=await lifecycleInvoke({action:"dashboard",limit:5});
+      const gate=snapshot?.safeLifecycle?.[plan.service];
+      if(gate?.ready!==true||gate?.mutationAuthorized!==false)
+        throw new Error("SAFE_LIFECYCLE_RESTART_NO_GO: resolve build/owner/journal blockers.");
+    }
+    mutationDispatched=true;
     const result=await lifecycleInvoke({...plan,confirm:true});
     if(result?.replayed===true)lifeFeedback("Previous result returned; no duplicate mutation performed.");
     else if(result?.scheduled===true)
@@ -239,11 +267,16 @@ async function lifecycleExecute(){
     lifeResetPlan("Operation completed. Prepare a new plan for another action.");
     verifiedResult=true;
   }catch(e){
-    // Preserve same operation ID in memory. Never auto-retry after a timeout.
-    life("lifecycle-plan-details").textContent=
-      "OUTCOME NOT VERIFIED\nOperation ID: "+plan.operationId+
-      "\nDo not create a new operation ID or retry automatically. Inspect lifecycle logs and reconcile through an authorized operator.\n"+String(e);
-    lifeFeedback("Operation result uncertain or rejected. Original operation ID retained.",true);
+    if(!mutationDispatched){
+      lifeResetPlan("Safe preflight rejected; nothing was executed.\n"+String(e));
+      lifeFeedback("Safe lifecycle NO-GO. No process was changed.",true);
+    }else{
+      // After an uncertain transport result never replay with a new ID.
+      life("lifecycle-plan-details").textContent=
+        "OUTCOME NOT VERIFIED\nOperation ID: "+plan.operationId+
+        "\nDo not retry automatically. Inspect logs and use operator reconciliation.\n"+String(e);
+      lifeFeedback("Operation result uncertain or rejected. Original operation ID retained.",true);
+    }
   }finally{
     lifecycleBusy=false;
     if(verifiedResult)await lifecycleRefresh(true);

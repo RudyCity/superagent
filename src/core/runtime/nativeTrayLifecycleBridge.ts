@@ -30,7 +30,8 @@ export function parseNativeTrayLifecycleRequest(raw:unknown):ManageServicesArgs 
     if(!isGlobalRecycle && (!operation.service||operation.service==="all"||!operation.targetAction||!PLAN.has(operation.targetAction)))
       throw new Error("DESKTOP_LIFECYCLE_EXACT_PLAN_REQUIRED");
     if(!isGlobalRecycle &&
-       ((operation.service==="core"&&operation.targetAction!=="recycle")||
+       ((operation.service==="core"&&
+         !["recycle","restart","rollback","drain"].includes(operation.targetAction!))||
         operation.service==="mcp"||operation.service==="muse"||
         operation.service==="telegram"||operation.service==="process_supervisor"))
       throw new Error("DESKTOP_LIFECYCLE_PLAN_TARGET_RESTRICTED");
@@ -42,9 +43,15 @@ export function parseNativeTrayLifecycleRequest(raw:unknown):ManageServicesArgs 
       (operation.service === "all" || ["tray","transport","channel_host","vision","guardian","daemon"].includes(operation.service ?? ""));
     if(!operation.service||(!isRecycleMutation && !isReconcileMutation && operation.service==="all")||operation.confirm!==true)
       throw new Error("DESKTOP_LIFECYCLE_EXPLICIT_CONFIRMATION_REQUIRED");
+    const isOwnerBoundCore=operation.service==="core"&&
+      ["restart","rollback","drain"].includes(operation.action);
     if(!["tray","transport","channel_host","vision","guardian","daemon"].includes(operation.service)&&
-       !isRecycleMutation && !isReconcileMutation)
+       !isOwnerBoundCore && !isRecycleMutation && !isReconcileMutation)
       throw new Error("DESKTOP_LIFECYCLE_MUTATION_TARGET_RESTRICTED");
+    if(isOwnerBoundCore&&
+       (!operation.expectedBuildDigest||!operation.expectedSupervisorPid||
+        !operation.expectedWorkerPid||operation.port!==7888))
+      throw new Error("DESKTOP_LIFECYCLE_CORE_OWNER_BOUND_PLAN_REQUIRED");
     if(operation.action!=="configure"&&operation.action!=="reconcile"&&
        typeof operation.operationId!=="string")
       throw new Error("DESKTOP_LIFECYCLE_OPERATION_ID_REQUIRED");

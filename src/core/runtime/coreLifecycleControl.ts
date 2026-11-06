@@ -28,7 +28,8 @@ function verify(s: CoreRuntimeStatus, port: number, owner?: number) {
 export async function controlCoreLifecycle(
   action: CoreLifecycleAction, port = 7888, confirm = false,
   request: typeof requestCoreSupervisor = requestCoreSupervisor,
-  options: { operationId?: string; expectedBuildDigest?: string } = {},
+  options: { operationId?: string; expectedBuildDigest?: string;
+    expectedSupervisorPid?: number; expectedWorkerPid?: number } = {},
 ) {
   coreAction(action); corePort(port);
   if (action !== "status" && confirm !== true)
@@ -39,6 +40,12 @@ export async function controlCoreLifecycle(
     throw new Error("CORE_BUILD_INVALID_EXPECTED_DIGEST");
   const before = await request("status", port, 2500);
   verify(before, port);
+  if (action !== "status" &&
+      (options.expectedSupervisorPid !== undefined &&
+       before.supervisorPid !== options.expectedSupervisorPid ||
+       options.expectedWorkerPid !== undefined &&
+       before.active.pid !== options.expectedWorkerPid))
+    throw new Error("CORE_CONTROL_OWNER_CHANGED_SINCE_PLAN");
   if (action === "status") return {
     action, port, changed: false, verified: true, supervisorPid: before.supervisorPid,
     previousWorkerPid: before.active.pid, activeWorkerPid: before.active.pid,
@@ -106,6 +113,8 @@ export async function prepareCoreLifecycle(
     buildMode: before.currentBuild.mode,
     codeChangedSinceActiveWorker: before.active.buildDigest !== before.currentBuild.digest,
     supervisorPid: before.supervisorPid, activeWorkerPid: before.active.pid,
+    expectedSupervisorPid: before.supervisorPid,
+    expectedWorkerPid: before.active.pid,
     retainedWorkerPids: before.retained.map(w => w.pid),
     note: "Read-only plan, not human authorization. Mutation still requires write scope and confirm:true.",
   };

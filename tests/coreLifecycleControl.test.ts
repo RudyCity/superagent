@@ -69,6 +69,16 @@ describe("authenticated agent/MCP Core lifecycle control",()=>{
       operationId:"core-test-unique-001",expectedBuildDigest:"f".repeat(64),
     })).rejects.toThrow("CORE_BUILD_CHANGED_SINCE_PLAN");
   });
+  it("binds a fresh plan to the exact old supervisor and worker PID",async()=>{
+    const send=vi.fn().mockResolvedValue(before);
+    await expect(controlCoreLifecycle("restart",17888,true,send,{
+      operationId:"core-guarded-operation-001",expectedBuildDigest:digest,
+      expectedSupervisorPid:101,expectedWorkerPid:999,
+    })).rejects.toThrow("CORE_CONTROL_OWNER_CHANGED_SINCE_PLAN");
+    expect(send.mock.calls.map(c=>c[0])).toEqual(["status"]);
+    const planned=await prepareCoreLifecycle("restart",17888,vi.fn().mockResolvedValue(before));
+    expect(planned).toMatchObject({expectedSupervisorPid:101,expectedWorkerPid:201});
+  });
   it("returns completed-operation replay without triggering a new generation",async()=>{
     const replay={...after,operation:{operationHashPrefix:"f".repeat(16),
       replayed:true,action:"restart" as const}};

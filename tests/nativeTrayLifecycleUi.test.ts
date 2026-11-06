@@ -5,7 +5,7 @@ import vm from "node:vm";
 
 const script=fs.readFileSync(path.resolve("apps/superagent-tray/ui/lifecycle.js"),"utf8");
 const html=fs.readFileSync(path.resolve("apps/superagent-tray/ui/index.html"),"utf8");
-function mount(options:{allow?:boolean;mutationError?:boolean}={}){
+function mount(options:{allow?:boolean;mutationError?:boolean;safeRestart?:boolean}={}){
   const nodes=new Map<string,any>(),handlers=new Map<string,Function>();
   const requests:Record<string,any>[]=[];
   const confirmations=vi.fn(()=>options.allow??true);
@@ -36,21 +36,26 @@ function mount(options:{allow?:boolean;mutationError?:boolean}={}){
     if(q.action==="dashboard")return {summary:{ready:3,degraded:1,unavailable:9},
       checks:[{service:"tray",state:"active",alive:true,ready:true,
         ownerVerified:true,reason:"safe",dependsOn:[]}],
-      trayRelease:{activeDigest:"a".repeat(64)}};
+      trayRelease:{activeDigest:"a".repeat(64)},
+      safeLifecycle:{
+        core:{ready:options.safeRestart===true,mutationAuthorized:false,reasons:options.safeRestart?[]:["BUILD_STALE"]},
+        tray:{ready:options.safeRestart===true,mutationAuthorized:false,reasons:options.safeRestart?[]:["UNCERTAIN_OPERATION"]},
+      }};
     if(q.action==="profile")return {revision:"d".repeat(24),
       profiles:[{service:"tray",autoRecover:false,failureThreshold:3,
         maxRestartsPerHour:2}]};
     if(q.action==="logs")return {events:[{service:"tray",action:"upgrade",
       outcome:"succeeded",at:1793830000000}]};
     if(q.action==="watchdog")return {services:[{service:"tray",action:"observe"}]};
-    if(q.action==="plan")return {service:"tray",action:q.targetAction,
+    if(q.action==="plan")return {service:q.service,action:q.targetAction,
       operationId:"c20e3373-662d-4a91-b20c-f8c34233863d",
       expectedOwnerPid:1234,expectedInstanceId:"a".repeat(32),
       expectedBuildDigest:"a".repeat(64),
+      expectedSupervisorPid:101,expectedWorkerPid:201,
       expectedReleaseRevision:"b".repeat(24),
       expectedCurrentDigest:"c".repeat(64),noCoreShutdown:true,
-      port:34567,note:"Only this attested Tray"};
-    if(q.action==="upgrade"){
+      port:q.service==="core"?7888:34567,note:"Only this attested owner"};
+    if(q.action==="upgrade"||q.action==="restart"){
       if(options.mutationError)throw Error("Request timed out: outcome unknown");
       return {verified:true,changed:true,ownerPid:5678};
     }
@@ -128,6 +133,33 @@ describe("native lifecycle Runtime panel",()=>{
       .toContain("c20e3373-662d-4a91-b20c-f8c34233863d");
     expect(m.node("lifecycle-feedback").textContent).toContain("uncertain");
     expect(m.node("lifecycle-execute").disabled).toBe(true);
+  });
+  it("blocks Core restart before dispatch when safe readiness is NO-GO",async()=>{
+    const m=mount({allow:true,safeRestart:false});
+    m.node("lifecycle-service").value="core";
+    m.handlers.get("lifecycle-service:change")?.();
+    expect(m.node("lifecycle-action").value).toBe("restart");
+    await m.click("lifecycle-plan");
+    expect(m.requests.find(q=>q.action==="plan")).toMatchObject({
+      service:"core",targetAction:"restart",port:7888,
+    });
+    await m.click("lifecycle-execute");
+    expect(m.requests.filter(q=>q.action==="restart")).toHaveLength(0);
+    expect(m.node("lifecycle-execute").disabled).toBe(true);
+    expect(m.node("lifecycle-feedback").textContent).toContain("NO-GO");
+  });
+  it("sends exactly one owner-bound Core restart after READY and approval",async()=>{
+    const m=mount({allow:true,safeRestart:true});
+    m.node("lifecycle-service").value="core";
+    m.handlers.get("lifecycle-service:change")?.();
+    await m.click("lifecycle-plan");
+    await m.click("lifecycle-execute");
+    expect(m.requests.filter(q=>q.action==="restart")).toHaveLength(1);
+    expect(m.requests.find(q=>q.action==="restart")).toMatchObject({
+      service:"core",port:7888,expectedSupervisorPid:101,
+      expectedWorkerPid:201,confirm:true,expectedBuildDigest:"a".repeat(64),
+    });
+    expect(m.confirmations).toHaveBeenCalledOnce();
   });
   it("uses revisioned profile updates only after confirmation",async()=>{
     const m=mount({allow:true});

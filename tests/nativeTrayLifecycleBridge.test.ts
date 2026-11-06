@@ -32,8 +32,11 @@ describe("authenticated Core -> Tauri lifecycle strict boundary",()=>{
     expect(parseNativeTrayLifecycleRequest({
       action:"plan",service:"core",port:7888,targetAction:"recycle",
     }).targetAction).toBe("recycle");
-    expect(()=>parseNativeTrayLifecycleRequest({
+    expect(parseNativeTrayLifecycleRequest({
       action:"plan",service:"core",port:7888,targetAction:"restart",
+    }).targetAction).toBe("restart");
+    expect(()=>parseNativeTrayLifecycleRequest({
+      action:"plan",service:"core",port:7888,targetAction:"start",
     })).toThrow("PLAN_TARGET_RESTRICTED");
     expect(()=>parseNativeTrayLifecycleRequest({action:"stop",service:"tray"}))
       .toThrow("EXPLICIT_CONFIRMATION");
@@ -46,6 +49,21 @@ describe("authenticated Core -> Tauri lifecycle strict boundary",()=>{
       .toThrow("MUTATION_TARGET_RESTRICTED");
     expect(()=>parseNativeTrayLifecycleRequest({action:"logs",
       url:"https://evil.example"})).toThrow("SERVICE_UNEXPECTED_ARGUMENT");
+  });
+  it("permits only explicit owner-bound Core restart and refuses stale/missing plan identity",()=>{
+    const op="123e4567-e89b-42d3-a456-426614174000";
+    const fields={action:"restart",service:"core",port:7888,confirm:true,
+      operationId:op,expectedBuildDigest:"a".repeat(64),
+      expectedSupervisorPid:101,expectedWorkerPid:201};
+    expect(parseNativeTrayLifecycleRequest(fields)).toMatchObject(fields);
+    expect(()=>parseNativeTrayLifecycleRequest({...fields,expectedWorkerPid:undefined}))
+      .toThrow("DESKTOP_LIFECYCLE_CORE_OWNER_BOUND_PLAN_REQUIRED");
+    expect(()=>parseNativeTrayLifecycleRequest({...fields,expectedSupervisorPid:undefined}))
+      .toThrow("DESKTOP_LIFECYCLE_CORE_OWNER_BOUND_PLAN_REQUIRED");
+    expect(()=>parseNativeTrayLifecycleRequest({...fields,confirm:false}))
+      .toThrow("DESKTOP_LIFECYCLE_EXPLICIT_CONFIRMATION_REQUIRED");
+    expect(()=>parseNativeTrayLifecycleRequest({...fields,action:"start"}))
+      .toThrow("DESKTOP_LIFECYCLE_MUTATION_TARGET_RESTRICTED");
   });
   it("requires loopback IP/host, no browser origin and no forwarded headers",()=>{
     expect(nativeLifecycleLoopbackOnly(request())).toBe(true);

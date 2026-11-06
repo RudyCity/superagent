@@ -146,7 +146,20 @@ export function legacyTrayProcessPids(ownedPid:number|null=null):number[] {
   return [...new Set(ids as number[])].filter(pid=>pid!==ownedPid);
 }
 
+/** Pending lifecycle and release receipts make the native UI state uncertain. */
+export function assertTrayJournalsClear():void {
+  for(const port of [45321,45322]){
+    if(new ManagedSidecarLedger("tray",port).inspect().some(x=>x.state==="pending"))
+      throw new Error("TRAY_LIFECYCLE_UNCERTAIN_PENDING_OPERATOR_REVIEW");
+  }
+}
+/** Never take a native UI through restart while any other instance exists. */
+export function assertTrayRestartForeignProcessFree(foreign: readonly number[]):void {
+  if(foreign.length)
+    throw new Error("TRAY_LEGACY_PROCESS_REQUIRES_USER_QUIT: unverified Tray PID(s) "+foreign.join(","));
+}
 export async function planManagedTray(action:Action):Promise<Plan>{
+  assertTrayJournalsClear();
   let pid=0,instanceId="absent",port:number|undefined;
   let executable:string;
   if(action==="start"){
@@ -157,6 +170,9 @@ export async function planManagedTray(action:Action):Promise<Plan>{
   }else{
     const owner=await verifiedOwner();
     pid=owner.pid;instanceId=owner.instanceId;port=owner.controlPort;
+    if(action==="restart"){
+      assertTrayRestartForeignProcessFree(legacyTrayProcessPids(owner.pid));
+    }
     executable=permitted(owner.executablePath);
   }
   return {service:"tray",action,operationId:crypto.randomUUID(),
@@ -251,6 +267,8 @@ export async function executeManagedTray(args:TrayExecutionArgs){
   const ledger=new ManagedSidecarLedger("tray",ledgerPort);
   const signature=fingerprint(args);
   const replay=ledger.lookup(args.operationId,signature);
+  if(!replay&&new ManagedSidecarLedger("tray",45322).inspect().some(x=>x.state==="pending"))
+    throw new Error("TRAY_LIFECYCLE_UNCERTAIN_PENDING_OPERATOR_REVIEW");
   if(replay?.replayed){
     if(replay.afterPid===0)await absent();
     else if((await verifiedOwner()).pid!==replay.afterPid)
@@ -274,6 +292,9 @@ export async function executeManagedTray(args:TrayExecutionArgs){
        old.controlPort!==args.port)
       throw new Error("TRAY_OWNER_CHANGED_SINCE_PLAN");
     executable=permitted(old.executablePath);
+    if(args.action==="restart"){
+      assertTrayRestartForeignProcessFree(legacyTrayProcessPids(old.pid));
+    }
   }
   if(hashFile(executable)!==args.expectedBuildDigest)
     throw new Error("TRAY_BINARY_CHANGED_SINCE_PLAN");
@@ -305,6 +326,7 @@ export type TrayReleasePlan={
 };
 export async function planManagedTrayRelease(action:"upgrade"|"rollback"):
   Promise<TrayReleasePlan>{
+  assertTrayJournalsClear();
   const state=readTrayReleaseState();
   let owner:Owner|undefined;
   const record=readManagedTrayOwner();
@@ -351,6 +373,8 @@ export async function executeManagedTrayRelease(args:TrayReleasePlan&{confirm:bo
     port:args.port??null,noCoreShutdown:true,
   });
   const replay=ledger.lookup(args.operationId,signature);
+  if(!replay&&new ManagedSidecarLedger("tray",45321).inspect().some(x=>x.state==="pending"))
+    throw new Error("TRAY_LIFECYCLE_UNCERTAIN_PENDING_OPERATOR_REVIEW");
   if(replay?.replayed){
     const current=readTrayReleaseState();
     if(current.activeDigest!==args.expectedBuildDigest)

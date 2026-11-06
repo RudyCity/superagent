@@ -460,6 +460,12 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
       answer.dependencyOrder=dependencyOrder(profile.profiles);
       answer.profileRevision=profile.revision;
       answer.trayRelease=readTrayReleaseState();
+      // Read-only, fail-closed restart readiness. No operation ID or
+      // authorization is returned and no service is stopped or restarted.
+      const { inspectSafeLifecycleReadiness, liveSafeLifecycleProvider } =
+        await import("./safeLifecycleController.js");
+      answer.safeLifecycle = await inspectSafeLifecycleReadiness(
+        liveSafeLifecycleProvider, allStates);
     }
     return answer;
   }
@@ -662,13 +668,16 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
     },true);
   }
   if(service==="core"&&(action==="restart"||action==="rollback"||action==="drain")) {
-    if(!args.operationId||!args.expectedBuildDigest)
-      throw new Error("SERVICE_CORE_PLAN_REQUIRED: call action=plan first");
+    if(!args.operationId||!args.expectedBuildDigest||
+       !args.expectedSupervisorPid||!args.expectedWorkerPid)
+      throw new Error("SERVICE_CORE_OWNER_BOUND_PLAN_REQUIRED: obtain a fresh owner-bound plan");
     const status=(await inspectServices("core",port))[0];
     if(process.platform==="win32"&&!status.ownershipVerified)
       throw new Error("SERVICE_CORE_KERNEL_OWNER_UNVERIFIED");
     return {service,...await controlCoreLifecycle(action,port!,true,undefined,
-      {operationId:args.operationId,expectedBuildDigest:args.expectedBuildDigest})};
+      {operationId:args.operationId,expectedBuildDigest:args.expectedBuildDigest,
+       expectedSupervisorPid:args.expectedSupervisorPid,
+       expectedWorkerPid:args.expectedWorkerPid})};
   }
   if(["transport","channel_host","muse","telegram"].includes(service)&&
      (action==="start"||action==="stop"||action==="restart")) {

@@ -29,6 +29,8 @@ export interface CoreRuntimeStatus {
   /** R4 opt-in desktop attestation. A PID match alone grants no control. */
   ownerContract?: {
     version: 1;
+    /** Runtime feature attestation, absent on legacy supervisors. */
+    safeLifecycleVersion?: 2;
     role: "core-supervisor";
     mcpLifecycle: "not-owned";
     replayPolicy: "explicit-resume-only";
@@ -332,7 +334,7 @@ export async function runCoreSupervisor(
     if (!active) throw new Error("No healthy core worker");
     return {
       ownerContract: {
-        version: 1, role: "core-supervisor",
+        version: 1, safeLifecycleVersion: 2, role: "core-supervisor",
         mcpLifecycle: "not-owned", replayPolicy: "explicit-resume-only",
       },
       supervisorPid: process.pid,
