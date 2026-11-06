@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "SuperAgent Delegate (ChatGPT)",
-  "version": "1.8.0",
-  "description": "Local ChatGPT delegation with indexed history sync/search, bounded run-until-done monitoring, diagnostics, full-history reads, timeout recovery and safe routing.",
+  "version": "1.9.0",
+  "description": "Multi-tab ChatGPT delegation with per-tab routing, indexed history, diagnostics and CDP, without automatic tab closures.",
   "permissions": [
     "tabs",
     "alarms",

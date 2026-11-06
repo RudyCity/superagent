@@ -364,7 +364,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "extract_links", "click", "type", "wait_for",
       "select_option",
       "check_form",
-      "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
+      "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
       "get_cookies", "inspect_media_devices",
       "mock_display_media", "handle_screen_share",
       "move_cursor", "show_cursor", "hide_cursor", "get_cursor",

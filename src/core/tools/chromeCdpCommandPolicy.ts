@@ -12,7 +12,7 @@ const reads = new Set([
   "check_form", "read_terminal", "read_terminal_delta", "list_terminal_sessions",
   "monitor_terminal_agents", "watch_terminal", "get_dialogs", "screenshot", "pdf",
   "get_cursor", "get_cookies", "page_audit", "accessibility_audit", "seo_audit",
-  "responsive_audit", "performance_metrics", "read_debug_capture",
+   "responsive_audit", "performance_metrics", "read_debug_capture", "list_file_inputs", "verify_upload",
 ]);
 export function classifyCdpCommand(command: string, payload: Record<string, unknown> = {}): CdpCommandClass {
   if (admin.has(command)) return "admin";

@@ -259,8 +259,40 @@ export function extractToolCallFilePaths(tc: ToolCall): string[] {
 
   if (Array.isArray(args.files)) {
     for (const f of args.files) {
-      const p = f?.filePath ?? f?.TargetFile ?? f?.targetFile ?? f?.path ?? f?.file;
+      const p = typeof f === "string" ? f : f?.filePath ?? f?.TargetFile ?? f?.targetFile ?? f?.path ?? f?.file;
       if (typeof p === "string" && p.trim()) paths.push(p.trim());
+    }
+  }
+
+  // Browser file uploads are local-file reads. Inspect both top-level arguments
+  // and the CDP payload (including an MCP JSON-string payload), so delegated
+  // fileScope cannot be bypassed with nested paths or outside-workspace flags.
+  const isBrowserTool = (name: unknown) => [
+    "control_chrome_cdp", "superagent_chrome_cdp", "superagent_control_chrome_cdp",
+  ].includes(String(name || ""));
+  const browserArgs = tc.name === "superagent_tool_execute" && isBrowserTool(args.name) &&
+    args.arguments && typeof args.arguments === "object"
+      ? args.arguments as Record<string, unknown> : isBrowserTool(tc.name) ? args : null;
+  if (browserArgs && ["upload_file", "handle_file_chooser"].includes(String(browserArgs.command || browserArgs.cmd || ""))) {
+    let nested: Record<string, unknown> = {};
+    try {
+      const payload = browserArgs.payload;
+      const parsed = typeof payload === "string" ? JSON.parse(payload) : payload;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        nested = parsed as Record<string, unknown>;
+      }
+    } catch { /* Invalid payload is rejected later by CDP validation. */ }
+    for (const source of [browserArgs, nested]) {
+      for (const key of ["filePath", "path"]) {
+        const value = source[key];
+        if (typeof value === "string" && value.trim()) paths.push(value.trim());
+      }
+      for (const key of ["files", "filePaths", "paths"]) {
+        const value = source[key];
+        if (Array.isArray(value)) for (const item of value) {
+          if (typeof item === "string" && item.trim()) paths.push(item.trim());
+        }
+      }
     }
   }
 

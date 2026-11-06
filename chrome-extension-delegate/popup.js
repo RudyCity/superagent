@@ -77,17 +77,18 @@ function renderClients(status) {
 }
 
 function renderTabs(tabs) {
-  const key = JSON.stringify(tabs.map(t => [t.id, t.active, t.ready]));
+  const key = JSON.stringify(tabs.map(t => [t.id, t.url, t.title, t.active, t.ready]));
   if (renderedTabsKey === key) return;
   renderedTabsKey = key;
   const container = $("tab-list");
   container.replaceChildren();
-  for (const tab of tabs.slice(0, 8)) {
+  for (const tab of tabs.slice(0, 100)) {
     const item = document.createElement("div");
     item.className = "tab-row";
     const label = document.createElement("span");
     label.textContent = "Tab #" + tab.id + (tab.active ? " • aktif" : "") +
-      (tab.ready ? " • siap" : " • belum siap");
+      (tab.ready ? " • siap" : " • belum siap") +
+      (tab.title ? " — " + String(tab.title).slice(0, 75) : "");
     const copy = document.createElement("button");
     copy.type = "button";
     copy.className = "copy-button";
@@ -196,15 +197,9 @@ async function refreshStatus() {
         }
       }));
       const readyCount = checked.filter(t => t.ready).length;
-      const policy = state.status === "fulfilled" && state.value?.ok
-        ? state.value.status?.tabPolicy : undefined;
-      const guarded = Number(policy?.protectedTabs?.length || 0);
-      const recentlyClosed = Date.now() - Number(policy?.lastClosedAt || 0) < 300_000
-        ? Number(policy?.lastClosedTabIds?.length || 0) : 0;
+
       $("tab-status").textContent = checked.length
-        ? readyCount + "/" + checked.length + " siap" +
-          (guarded ? " • " + guarded + " dilindungi" : "") +
-          (recentlyClosed ? " • " + recentlyClosed + " duplikat ditutup" : "")
+        ? readyCount + "/" + checked.length + " siap • mode multi-tab"
         : "Tidak ada tab";
       renderTabs(checked);
     } else {
@@ -217,6 +212,21 @@ async function refreshStatus() {
     refreshing = false;
   }
 }
+
+$("open-chat-tab").addEventListener("click", async () => {
+  const button = $("open-chat-tab");
+  button.disabled = true;
+  try {
+    const tab = await chrome.tabs.create({ url: "https://chatgpt.com/", active: true });
+    if (!Number.isSafeInteger(tab?.id)) throw new Error("Chrome tidak memberikan tabId.");
+    $("action-note").textContent = "Tab ChatGPT #" + tab.id + " dibuka. Gunakan ID ini untuk perintah Delegate.";
+  } catch (reason) {
+    $("action-note").textContent = String(reason?.message || reason);
+  } finally {
+    button.disabled = false;
+    await refreshStatus();
+  }
+});
 
 $("enabled").addEventListener("change", async () => {
   updating = true;

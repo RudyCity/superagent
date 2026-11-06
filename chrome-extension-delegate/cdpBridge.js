@@ -193,7 +193,9 @@
             defaultPromptLength: String(params?.defaultPrompt || "").length,
             messageLength: String(params?.message || "").length,
           }
-        : {};
+        : method === "Page.fileChooserOpened"
+          ? { backendNodeId: Number(params?.backendNodeId) || 0, mode: String(params?.mode || "").slice(0, 30) }
+          : {};
       rows.push({ method, at: Date.now(), ...safe });
       if (rows.length > MAX_EVENTS_PER_TAB) rows.splice(0, rows.length - MAX_EVENTS_PER_TAB);
       events.set(tabId, rows);

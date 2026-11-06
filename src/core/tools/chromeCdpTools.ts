@@ -41,6 +41,7 @@ import { CDP_DIAGNOSTIC_COMMANDS, executeCdpDiagnosticsCommand, recordCdpDebugEv
 import { saveCdpPdfArtifact } from "./chromeCdpArtifacts.js";
 
 import { executeCdpTerminalCommand } from "./chromeCdpTerminalCommands.js";
+import { captureFileChooserEvent, executeFileUploadCommand, type FileUploadCommand } from "./chromeCdpFileUpload.js";
 import { discoverDesktopTargets } from "./chromeCdpDesktop.js";
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -49,7 +50,9 @@ import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, 
   type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
 import { executeDelegateChromeCommand } from "../delegate/cdpTransport.js";
-import { isDelegateMcpBoundary, assertDelegateMcpActorForCommand } from "../browserTransport/delegatePrincipalPolicy.js";
+import {
+  isDelegateMcpBoundary, assertDelegateMcpActorForCommand,
+} from "../browserTransport/delegatePrincipalPolicy.js";
 import { getBrowserTransport, resolveBrowserTransport } from "../browserTransport/router.js";
 import { parseBrowserTargetId, serializeBrowserTarget } from "../browserTransport/targetIdentity.js";
 import {
@@ -457,6 +460,7 @@ async function openCdpConnection(target: CdpTarget): Promise<CdpConnection> {
       }
     } else if (msg && msg.id === undefined && typeof msg.method === "string") {
       recordCdpDebugEvent(target.id, msg.method, msg.params);
+      captureFileChooserEvent(target.id, msg.method, msg.params);
       handleIncomingCdpEvent(target.id, msg.method, msg.params, (m, p) => {
         try {
           ws.send(JSON.stringify({ id: conn.nextId++, method: m, params: p }));
@@ -705,7 +709,7 @@ export const _cdpTestHooks = {
 export const controlChromeCdpTool: Tool = {
   name: "control_chrome_cdp",
   description:
-    "Control the user's real Chrome via CDP port 9222 (--remote-debugging-port=9222); no extension required. Supports tabs/navigation, DOM snapshot/extraction, read_terminal for xterm.js/hterm, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, and UI transition verification. " +
+    "Control the user's real Chrome via CDP port 9222 (--remote-debugging-port=9222); no extension required. Supports tabs/navigation, DOM snapshot/extraction, read_terminal for xterm.js/hterm, click/type/forms, dialogs, screenshots/PDF, cookies, media, cursor/drag-and-drop, device emulation, upload_file/list_file_inputs/handle_file_chooser/verify_upload (direct CDP and optional Windows native Open dialog), and UI transition verification. " +
     "Audits: page_audit, accessibility_audit, seo_audit, responsive_audit, performance_metrics. Diagnostics: start_debug_capture/read_debug_capture/stop_debug_capture/clear_debug_capture for bounded console, exception, and network metadata. " +
     "Use evaluate only for trusted, intentional page JavaScript. Cookie values and large artifacts are summarized by default. Arguments can be passed at top level or inside payload.",
   parameters: {
@@ -716,7 +720,7 @@ export const controlChromeCdpTool: Tool = {
         enum: [
           "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "transport_status",
           "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
-          "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
+          "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
         ],
@@ -731,7 +735,18 @@ export const controlChromeCdpTool: Tool = {
         description:
           'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (generic visible text/headings/alerts/frames). read_workspace: {} (structured Google Docs/Sheets/Slides/Drive/Forms reader with verification). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. select_option: {"index": 5, "option": "Paket Basic"} or {"selector": "[role=combobox]", "option": "Yes"}. check_form: {"selector": "form"} (pre-flight check for missing required fields & submit readiness). drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
-      url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
+       files: { type: "array", items: { type: "string" }, description: "1-10 absolute local file paths for upload_file." },
+       filePath: { type: "string", description: "One absolute local path to upload." },
+       inputIndex: { type: "number", description: "Zero-based matching file input index when multiple exist." },
+       allowOutsideWorkspace: { type: "boolean", description: "Allow explicitly requested file outside workspace; requires confirmExternalFile=true." },
+       confirmExternalFile: { type: "boolean", description: "Explicit acknowledgment that file outside workspace may be sent to this website." },
+       successSelector: { type: "string", description: "Optional selector for page-level upload evidence; not proof of server storage." },
+       nativeDialog: { type: "boolean", description: "Opt-in Windows UI Automation fallback for an already-open native Chrome Open File dialog." },
+       confirmNativeDialog: { type: "boolean", description: "Explicit confirmation required to interact with native Windows dialog." },
+       windowTitle: { type: "string", description: "Optional exact native Open dialog title for disambiguation." },
+       arm: { type: "boolean", description: "handle_file_chooser: intercept next chooser (managed transport)." },
+       triggerSelector: { type: "string", description: "Delegate handle_file_chooser: click selector while interception is active." },
+       url: { type: "string", description: "Optional top-level URL convenience shortcut for new_tab or navigate." },
       index: { type: "number", description: "Optional top-level element index for click/type or terminal index for read/write_terminal." },
       text: { type: "string", description: "Optional top-level text convenience shortcut for type or wait_for." },
       selector: { type: "string", description: "Optional top-level CSS selector convenience shortcut for click, type, wait_for, select_option, check_form, or read_terminal." },
@@ -818,7 +833,7 @@ export const controlChromeCdpTool: Tool = {
       }
     }
     const convenienceKeys = [
-      "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
+      "files", "filePaths", "filePath", "paths", "path", "inputIndex", "input_index", "allowOutsideWorkspace", "confirmExternalFile", "successSelector", "expectedNames", "fileNames", "nativeDialog", "confirmNativeDialog", "windowTitle", "arm", "triggerSelector", "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
@@ -837,6 +852,8 @@ export const controlChromeCdpTool: Tool = {
       waitMs: Number(payload.queue_wait_ms ?? args.queue_wait_ms ?? 8000),
       expectedRevision };
 
+    const uploadWorkspace = typeof _cwd === "string" && _cwd ? _cwd
+      : typeof args.__uploadWorkspace === "string" ? args.__uploadWorkspace : process.cwd();
     const requestedTransport = String(args.transport ?? payload.transport ?? "") as "" | "managed" | "delegate" | "auto";
     const delegateClientId = String(args.delegateClientId ?? payload.delegateClientId ?? args.connectionId ?? payload.connectionId ?? "") || undefined;
     const delegateTabRaw = args.delegateTabId ?? payload.delegateTabId;
@@ -859,11 +876,12 @@ export const controlChromeCdpTool: Tool = {
 
     if (route === "delegate") {
       try {
-        // Verify the bound MCP actor before any Delegate bridge dispatch.
+        // Resolve before transport routing, not after a potentially unauthenticated
+        // bridge call. This also rejects forged agentId on read-only commands.
         assertDelegateMcpActorForCommand(command, args.agentId, payload.agentId);
         return await executeDelegateChromeCommand(
           command,
-          { ...args, delegateClientId, delegateTabId, targetId },
+          { ...args, delegateClientId, delegateTabId, targetId, __uploadWorkspace: uploadWorkspace },
           { ...payload, delegateClientId, delegateTabId, targetId },
           signal,
         );
@@ -880,7 +898,9 @@ export const controlChromeCdpTool: Tool = {
         ]);
         const targets = [
           ...(managedResult.status === "fulfilled" ? managedResult.value : []),
-          // MCP transport inventory cannot expose sessions belonging to other actors.
+          // In mixed transport inventory, Delegate's coordinator lives in Core
+          // and cannot be reliably filtered from a separate MCP process.
+          // Require explicit transport=delegate for principal-filtered listing.
           ...(delegateResult.status === "fulfilled" && !isDelegateMcpBoundary() ? delegateResult.value : []),
         ].map(target => ({
           transport: target.kind,
@@ -945,7 +965,7 @@ export const controlChromeCdpTool: Tool = {
           const selected = await pickTarget(targetId, false, !!agent);
           const result = await withCdpTargetWrite(cdpPort(), selected.id, agent, () =>
             cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
-              controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload }, {} as any)),
+               controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload, __uploadWorkspace: uploadWorkspace }, {} as any)),
               { ...opts, ownerOnly: command === "close_tab" || command === "activate" });
           if (command === "close_tab" && agent && typeof result === "string" &&
               result.startsWith("control_chrome_cdp: closed tab")) {
@@ -974,11 +994,11 @@ export const controlChromeCdpTool: Tool = {
           const selected = await pickTarget(targetId, false, !!agent);
           return await withCdpTargetRead(cdpPort(), selected.id, { ...opts, agentId: agent, sharedOnly: command === "shared_snapshot" }, () =>
             cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
-              controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload }, {} as any)));
+               controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload, __uploadWorkspace: uploadWorkspace }, {} as any)));
         } catch (error: any) { return "control_chrome_cdp failed: " + error.message; }
       }
       return cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
-        controlChromeCdpTool.execute({ ...args, payload }, {} as any));
+         controlChromeCdpTool.execute({ ...args, payload, __uploadWorkspace: uploadWorkspace }, {} as any));
     }
     try {
       if (["share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
@@ -1643,6 +1663,14 @@ export const controlChromeCdpTool: Tool = {
         case "verify_action": {
           const target = await pickTarget(targetId);
           return await executeVerifyAction(cdpSend, target, payload, attachScreenshotIfRequested);
+        }
+        case "list_file_inputs":
+        case "upload_file":
+        case "handle_file_chooser":
+        case "verify_upload": {
+          const target = await pickTarget(targetId);
+          return executeFileUploadCommand(command as FileUploadCommand,
+            (method, params) => cdpSend(target, method, params), target.id, payload, uploadWorkspace);
         }
         case "get_dialogs": {
           const target = await pickTarget(targetId, false);

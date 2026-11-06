@@ -448,6 +448,23 @@ describe("delegate content script (simulated DOM)", () => {
     expect(retries).toBe(0);
   });
 
+  it("peek_chat disables automatic timeout continuation without clicking Send or Retry", async () => {
+    let sends = 0;
+    let retries = 0;
+    const sim = setup({
+      turns: [turn("user", "original task")],
+      buttons: [
+        retryButton(() => retries++),
+        modernButton("Send", () => sends++),
+      ],
+    });
+    const peek = await sim.call("delegate.peek_chat");
+    expect(peek.ok).toBe(true);
+    await sim.mutate("Message delivery timed out. Please try again.");
+    expect(sends).toBe(0);
+    expect(retries).toBe(0);
+  });
+
   it("preserves a user draft instead of auto-recovering a delivery timeout", async () => {
     let retries = 0;
     let sends = 0;

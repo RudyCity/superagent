@@ -793,6 +793,13 @@
         newChatActive = true;
         try { return await createChat(); } finally { newChatActive = false; }
       case "delegate.read_chat": return readChat();
+      case "delegate.peek_chat":
+        // Orchestrator-only inspection. Cancel the legacy automatic timeout
+        // recovery before reading DOM; this action never clicks or sends.
+        timeoutRecoveryEnabled = false;
+        clearTimeout(timeoutRecoveryTimer);
+        if (deliveryTimeoutState()) timeoutRecoveryLocked = true;
+        return readChat();
       case "delegate.list_chats": return await listChats(params);
       case "delegate.open_history_chat": return await openHistoryChat(params);
       case "delegate.read_chat_full": return await readChatFull(params);

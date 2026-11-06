@@ -10,7 +10,7 @@ const background = readFileSync(
 
 type Listener = (event?: any) => void;
 function fixture(
-  tabs: Array<{ id: number; url: string; active?: boolean }> = [],
+  tabs: Array<{ id: number; url: string; active?: boolean; status?: string; title?: string }> = [],
   needsInjection = false,
 ) {
   const tabCalls: Array<{tabId: number; action: string}> = [];
@@ -112,6 +112,10 @@ function fixture(
           throw new Error("Receiving end does not exist");
         }
         if (message.action === "probe") return { ready: true };
+        if (message.method === "delegate.doctor") return {
+          ok: true,
+          result: { ready: true, logged_in: true, stop_visible: tabId === 202 },
+        };
         if (message.method === "delegate.list_chats") return { ok: true, result: {
           chats: [
             { chat_id: "chat-history-001", title: "History One", url: "https://chatgpt.com/c/chat-history-001" },
@@ -239,6 +243,28 @@ describe("Delegate connection status", () => {
     expect(ask("get_status", "https://chatgpt.com/c/1")).toBeUndefined();
   });
 
+  it("lists two live tabs with read-only status while retaining their identities", async () => {
+    const { sockets, tabCalls, removedTabs } = fixture([
+      { id: 101, url: "https://chatgpt.com/c/first", active: true, status: "complete", title: "First task" },
+      { id: 202, url: "https://chatgpt.com/c/second", active: false, status: "complete", title: "Second task" },
+    ]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({ type: "request", id: "list-two-tabs", method: "delegate.list_tabs", params: {} });
+    await new Promise(resolve => setTimeout(resolve, 25));
+    const result = sockets[0].sent.find(value => value.id === "list-two-tabs");
+    expect(result.ok).toBe(true);
+    expect(result.result.total).toBe(2);
+    expect(result.result.tabs).toEqual([
+      expect.objectContaining({ tabId: 101, title: "First task", status: "idle", ready: true }),
+      expect.objectContaining({ tabId: 202, title: "Second task", status: "generating", ready: true }),
+    ]);
+    expect(tabCalls).toEqual([
+      { tabId: 101, action: "execute" }, { tabId: 202, action: "execute" },
+    ]);
+    expect(removedTabs).toEqual([]);
+  });
+
   it("does not dispatch to a random ChatGPT tab when this profile has two", async () => {
     const { sockets, tabCalls } = fixture([
       { id: 101, url: "https://chatgpt.com/", active: true },
@@ -252,6 +278,42 @@ describe("Delegate connection status", () => {
     const result = sockets[0].sent.find(value => value.type === "response");
     expect(result.ok).toBe(false);
     expect(result.error.code).toBe("CHATGPT_MULTIPLE_TABS");
+  });
+
+  it("opens a separate ChatGPT tab with newTab:true while leaving existing chats alone", async () => {
+    const { sockets, tabCalls, createdTabs, removedTabs } = fixture([
+      { id: 101, url: "https://chatgpt.com/c/first", active: true },
+      { id: 202, url: "https://chatgpt.com/c/second", active: false },
+    ]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "multi-tab-new", method: "delegate.create_chat",
+      params: { newTab: true },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(createdTabs).toEqual([{ id: 203, url: "https://chatgpt.com/", active: true }]);
+    expect(tabCalls).toEqual([{ tabId: 203, action: "probe" }]);
+    expect(removedTabs).toEqual([]);
+    expect(sockets[0].sent.find(value => value.id === "multi-tab-new"))
+      .toMatchObject({ ok: true, result: { status: "new_chat", tabId: 203 } });
+  });
+
+  it("rejects a new tab request combined with an existing tabId", async () => {
+    const { sockets, tabCalls, createdTabs } = fixture([
+      { id: 101, url: "https://chatgpt.com/c/first", active: true },
+    ]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "conflict", method: "delegate.create_chat",
+      params: { newTab: true, tabId: 101 },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(createdTabs).toEqual([]);
+    expect(tabCalls).toEqual([]);
+    expect(sockets[0].sent.find(value => value.id === "conflict"))
+      .toMatchObject({ ok: false, error: { code: "DELEGATE_INVALID_ARGUMENT" } });
   });
 
   it("automatically opens ChatGPT when no tab exists and continues the requested RPC once", async () => {
@@ -337,6 +399,29 @@ describe("Delegate connection status", () => {
       ok: true,
       result: { returned: 0, scanned_chats: 2, skipped_chats: 0, listed_chats: 2 },
     });
+  });
+
+  it("routes concurrent messages to two exact tabs without cross-talk", async () => {
+    const { sockets, tabCalls, createdTabs } = fixture([
+      { id: 101, url: "https://chatgpt.com/c/first", active: true },
+      { id: 202, url: "https://chatgpt.com/c/second", active: false },
+    ]);
+    sockets[0].open();
+    sockets[0].message({ type: "hello_ack", protocol: "superagent-delegate-v1" });
+    sockets[0].message({
+      type: "request", id: "send-first", method: "delegate.send_message",
+      params: { tabId: 101, message: "first task" },
+    });
+    sockets[0].message({
+      type: "request", id: "send-second", method: "delegate.send_message",
+      params: { tabId: 202, message: "second task" },
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(tabCalls.filter(call => call.action === "execute"))
+      .toEqual([{ tabId: 101, action: "execute" }, { tabId: 202, action: "execute" }]);
+    expect(createdTabs).toEqual([]);
+    expect(sockets[0].sent.find(value => value.id === "send-first")?.ok).toBe(true);
+    expect(sockets[0].sent.find(value => value.id === "send-second")?.ok).toBe(true);
   });
 
   it("keeps an explicit missing tabId strict instead of opening a replacement tab", async () => {

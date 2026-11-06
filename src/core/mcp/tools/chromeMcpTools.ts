@@ -264,10 +264,10 @@ export const CHROME_MCP_TOOL_DEFS = [
     description:
       "Automate Chrome through dual transports: managed local CDP (default, backward compatible) or Delegate-CDP for an already-open authenticated Chrome profile. " +
       "Commands: list_targets, claim_target, share_target, invite_agent, join_target, leave_target, revoke_agent, handover_target, stop_sharing, session_participants, shared_snapshot, release_target, recover_session, list_sessions, new_tab, close_tab, activate, navigate, evaluate, snapshot, read_page, read_terminal, read_terminal_delta, write_terminal, send_terminal_key, execute_terminal, watch_terminal, list_terminal_sessions, monitor_terminal_agents, clear_terminal_sessions, recover_terminal, discover_desktop_targets, " +
-      "extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, screenshot, pdf, " +
+      "extract_links, click, type, wait_for, verify_action, get_dialogs, handle_dialog, list_file_inputs, upload_file, handle_file_chooser, verify_upload, screenshot, pdf, " +
       "get_cookies, inspect_media_devices, move_cursor, drag_and_drop, emulate_device. " +
       "Supports device/viewport emulation (mobile, tablet, desktop, reset), human-like Bézier cursor movement, " +
-      "realistic drag-and-drop, visual pointer overlay, native dialog interception, and UI transition verification.",
+      "realistic drag-and-drop, visual pointer overlay, native dialog interception, secure local file upload with DOM.setFileInputFiles (plus opt-in Windows Open dialog UI Automation), and UI transition verification.",
     inputSchema: {
       type: "object",
       properties: {
@@ -278,7 +278,7 @@ export const CHROME_MCP_TOOL_DEFS = [
             "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
             "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
             "snapshot", "read_page", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "execute_terminal", "watch_terminal", "list_terminal_sessions", "monitor_terminal_agents", "clear_terminal_sessions", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
-            "verify_action", "get_dialogs", "handle_dialog", "screenshot", "pdf",
+             "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
             "get_cookies", "inspect_media_devices", "media_devices", "move_cursor",
             "move_mouse", "show_cursor", "hide_cursor", "get_cursor",
             "drag_and_drop", "drag", "drag_drop",
@@ -294,7 +294,19 @@ export const CHROME_MCP_TOOL_DEFS = [
           type: "string",
           description: "Optional JSON payload with command parameters.",
         },
-        url: { type: "string", description: "Target URL for new_tab or navigate." },
+         files: { type: "array", items: { type: "string" }, description: "Absolute local files for browser upload, 1-10." },
+         filePath: { type: "string", description: "One absolute local file path." },
+         filePaths: { type: "array", items: { type: "string" }, description: "Alias for files." },
+         inputIndex: { type: "number", description: "Zero-based file input index." },
+         allowOutsideWorkspace: { type: "boolean", description: "Permit explicit path outside workspace only with confirmExternalFile=true." },
+         confirmExternalFile: { type: "boolean", description: "Explicit consent for outside-workspace file upload." },
+         successSelector: { type: "string", description: "Optional page evidence selector for verify_upload." },
+         nativeDialog: { type: "boolean", description: "Windows UI Automation fallback for already-open Open File dialog." },
+         confirmNativeDialog: { type: "boolean", description: "Explicit opt-in for native Windows picker mutation." },
+         windowTitle: { type: "string", description: "Optional exact picker window title." },
+         arm: { type: "boolean", description: "Intercept the next file chooser." },
+         triggerSelector: { type: "string", description: "Click the upload trigger while Delegate interception is active." },
+         url: { type: "string", description: "Target URL for new_tab or navigate." },
         index: { type: "number", description: "Interactive element index from snapshot, or zero-based terminal index for read/write commands." },
         terminal_id: { type: "string", description: "Opaque stable terminal ID provided by read_terminal; preferred over index for safe writes." },
         allow_dangerous: { type: "boolean", description: "Explicit approval to dispatch a potentially destructive shell command." },

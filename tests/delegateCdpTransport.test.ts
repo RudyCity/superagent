@@ -1,10 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { delegateBridge } from "../src/core/delegate/bridge.js";
 import { delegateCdpTransport } from "../src/core/delegate/cdpTransport.js";
+import { assertDelegateCdpMethodAllowed } from "../src/core/browserTransport/delegateCdpPolicy.js";
 
 afterEach(() => vi.restoreAllMocks());
 
 describe("host Delegate-CDP transport", () => {
+  it("classifies file upload CDP methods correctly without allowing arbitrary methods", () => {
+    expect(assertDelegateCdpMethodAllowed("DOM.describeNode")).toBe("read");
+    expect(assertDelegateCdpMethodAllowed("DOM.setFileInputFiles")).toBe("write");
+    expect(assertDelegateCdpMethodAllowed("Page.setInterceptFileChooserDialog")).toBe("write");
+    expect(() => assertDelegateCdpMethodAllowed("Network.getCookies")).toThrow();
+  });
+
   it("fails clearly when an old Delegate lacks delegate-cdp-v1", async () => {
     vi.spyOn(delegateBridge, "listConnections").mockReturnValue([{
       clientId: "chrome-old-001", label: "Old", extensionId: "a".repeat(32),

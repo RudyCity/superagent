@@ -6,6 +6,8 @@ const PROTOCOL = "superagent-delegate-v1";
 const METHODS = new Set([
   "delegate.create_chat",
   "delegate.read_chat",
+  "delegate.peek_chat",
+  "delegate.list_tabs",
   "delegate.list_chats",
   "delegate.read_chat_full",
   "delegate.search_history",
@@ -640,12 +642,70 @@ const singleton = globalThis.createDelegateTabSingleton({
 });
 singleton.register();
 
+async function listOpenChatTabs() {
+  const tabs = (await chrome.tabs.query({ url: "https://chatgpt.com/*" }))
+    .filter(tab => Number.isSafeInteger(tab.id) &&
+      /^https:\/\/chatgpt\.com(?:\/|$)/.test(tab.url || ""));
+  const capped = tabs.slice(0, 40);
+  const records = await Promise.all(capped.map(async tab => {
+    const row = {
+      tabId: tab.id,
+      title: String(tab.title || "").slice(0, 160),
+      url: String(tab.url || "").slice(0, 250),
+      active: tab.active === true,
+      status: "unavailable",
+      ready: false,
+    };
+    if (tab.status !== "complete" || tab.discarded) return row;
+    try {
+      // Read-only content diagnostics. Never attach CDP, navigate or click Send.
+      const info = await Promise.race([
+        chrome.tabs.sendMessage(tab.id, {
+          scope: PROTOCOL, action: "execute",
+          id: "list-tabs:" + tab.id + ":" + Date.now(),
+          method: "delegate.doctor", params: {},
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("tab_probe_timeout")), 1200)),
+      ]);
+      if (info?.ok === true && info.result?.ready === true) {
+        return {
+          ...row,
+          ready: true,
+          status: info.result.stop_visible === true ? "generating"
+            : info.result.logged_in === false ? "login_required" : "idle",
+        };
+      }
+    } catch {}
+    return row;
+  }));
+  return { tabs: records, total: tabs.length, truncated: tabs.length > capped.length };
+}
+
 async function dispatchToTab(request) {
+  if (request.method === "delegate.list_tabs") {
+    return { ok: true, result: await listOpenChatTabs() };
+  }
   if (HISTORY_METHODS.has(request.method)) {
     return { ok: true, result: await dispatchHistoryRequest(request) };
   }
   const tabs = await chrome.tabs.query({ url: "https://chatgpt.com/*" });
   const exactTab = request.params?.tabId;
+  if (request.method === "delegate.create_chat" &&
+      request.params?.newTab !== undefined &&
+      typeof request.params.newTab !== "boolean") {
+    throw error("DELEGATE_INVALID_NEW_TAB", "newTab must be a boolean.");
+  }
+  if (request.method === "delegate.create_chat" && request.params?.newTab === true) {
+    if (exactTab !== undefined) {
+      throw error("DELEGATE_INVALID_ARGUMENT", "newTab cannot be combined with tabId.");
+    }
+    // Start a new independent conversation without touching existing tabs.
+    const created = await openChatTab();
+    await waitForContentScript(created.id, 15_000);
+    return { ok: true, result: {
+      status: "new_chat", tabId: created.id, url: "https://chatgpt.com/",
+    } };
+  }
   if (exactTab === undefined && tabs.length > 1) {
     throw error("CHATGPT_MULTIPLE_TABS",
       "Multiple ChatGPT tabs in this Chrome profile. Choose an exact tabId from the Delegate popup. No action was dispatched.");

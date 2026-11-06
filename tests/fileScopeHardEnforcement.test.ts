@@ -104,6 +104,26 @@ describe("Delegated fileScope hard enforcement (DEEP-02)", () => {
     expect(deniedWrite.allowed).toBe(false);
   });
 
+  it("blocks browser CDP file-upload paths outside delegated fileScope, including MCP JSON payloads", () => {
+    expect(validateToolCallAgainstFileScope(fileScope, {
+      id: "cdp-allowed", name: "control_chrome_cdp",
+      args: { command: "upload_file", files: [authFile] },
+    }, workspaceRoot).allowed).toBe(true);
+    for (const args of [
+      { command: "upload_file", files: [otherFile], allowOutsideWorkspace: true, confirmExternalFile: true },
+      { command: "upload_file", payload: JSON.stringify({ files: [outsideFile] }) },
+      { command: "handle_file_chooser", payload: { nativeDialog: true, filePath: otherFile } },
+    ]) {
+      expect(validateToolCallAgainstFileScope(fileScope, {
+        id: "cdp-denied", name: "control_chrome_cdp", args,
+      }, workspaceRoot).allowed).toBe(false);
+    }
+    expect(validateToolCallAgainstFileScope(fileScope, {
+      id: "cdp-mcp-denied", name: "superagent_tool_execute",
+      args: { name: "superagent_chrome_cdp", arguments: { command: "upload_file", payload: JSON.stringify({ filePath: outsideFile }) } },
+    }, workspaceRoot).allowed).toBe(false);
+  });
+
   it("validates shell operations and blocks chdir or traversal escapes", () => {
     // Allowed cwd
     const allowedCwd = validateToolCallAgainstFileScope(

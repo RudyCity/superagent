@@ -6,6 +6,7 @@ function loadBridge(options: { attachConflict?: boolean } = {}) {
   const attached = new Set<number>();
   const calls: Array<{ method: string; params: any }> = [];
   const onDetach = { addListener: (_fn: any) => {} };
+  let onEventHandler: ((source: any, method: string, params: any) => void) | undefined;
   const chrome: any = {
     runtime: { lastError: undefined },
     debugger: {
@@ -26,6 +27,7 @@ function loadBridge(options: { attachConflict?: boolean } = {}) {
         cb(method === "Page.captureScreenshot" ? { data: "ZmFrZQ==" } : { ok: true });
       },
       onDetach,
+      onEvent: { addListener: (fn: any) => { onEventHandler = fn; } },
     },
     tabs: {
       query: (_query: any, cb: any) => cb([
@@ -46,13 +48,15 @@ function loadBridge(options: { attachConflict?: boolean } = {}) {
   const bridge = context.createDelegateCdpBridge({
     chrome, enabled: () => true, clientId: () => "chrome-work-001",
   });
-  return { bridge, attached, calls };
+  return { bridge, attached, calls, emitEvent: (method: string, params: any) =>
+    onEventHandler?.({ tabId: 10 }, method, params) };
 }
 
 describe("Delegate-CDP extension bridge", () => {
   it("keeps manifest content scripts narrow and adds explicit debugger permission", () => {
     const manifest = JSON.parse(readFileSync("chrome-extension-delegate/manifest.json", "utf8"));
-    expect(manifest.version).toBe("1.8.0");
+    // Delegate-CDP features are supported by 1.8+; 1.9 adds later bridge capabilities.
+    expect(manifest.version).toMatch(/^1\.(?:[89]|\d{2,})\.\d+$/);
     expect(manifest.permissions).toContain("debugger");
     expect(manifest.content_scripts[0].matches).toEqual(["https://chatgpt.com/*"]);
   });
@@ -78,6 +82,30 @@ describe("Delegate-CDP extension bridge", () => {
     expect(attached.has(10)).toBe(false);
     expect(bridge.listAttachments()).toEqual([]);
     expect(await bridge.health()).toMatchObject({ enabled: true, attachments: 0 });
+  });
+
+  it("allows the safe file upload protocol methods, including chooser events", async () => {
+    const { bridge, calls, emitEvent } = loadBridge();
+    await bridge.dispatch("delegate.cdp.attach", { tabId: 10 });
+    await bridge.dispatch("delegate.cdp.command", {
+      tabId: 10, method: "DOM.describeNode", params: { nodeId: 19 },
+    });
+    await bridge.dispatch("delegate.cdp.command", {
+      tabId: 10, method: "DOM.setFileInputFiles", params: { nodeId: 19, files: ["C:\temp\fixture.pdf"] },
+    });
+    await bridge.dispatch("delegate.cdp.command", {
+      tabId: 10, method: "Page.setInterceptFileChooserDialog", params: { enabled: true },
+    });
+    emitEvent("Page.fileChooserOpened", { backendNodeId: 412, mode: "selectSingle", privatePath: "hidden" });
+    const events = await bridge.dispatch("delegate.cdp.events", { tabId: 10 });
+    expect(events).toContainEqual(expect.objectContaining({
+      method: "Page.fileChooserOpened", backendNodeId: 412, mode: "selectSingle",
+    }));
+    expect(JSON.stringify(events)).not.toContain("privatePath");
+    expect(calls.map(c => c.method)).toEqual([
+      "DOM.describeNode", "DOM.setFileInputFiles", "Page.setInterceptFileChooserDialog",
+    ]);
+    await bridge.dispatch("delegate.cdp.detach", { tabId: 10 });
   });
 
   it("surfaces attachment telemetry in popup status code", () => {

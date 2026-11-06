@@ -4,12 +4,12 @@
   const READ = new Set([
     "Page.enable", "Runtime.enable", "DOM.enable", "Network.enable", "Log.enable", "Accessibility.enable",
     "Page.getFrameTree", "Page.getLayoutMetrics", "Page.captureScreenshot",
-    "Accessibility.getFullAXTree", "DOM.getDocument", "DOM.querySelector", "DOM.querySelectorAll", "DOM.getBoxModel",
+    "Accessibility.getFullAXTree", "DOM.getDocument", "DOM.querySelector", "DOM.querySelectorAll", "DOM.getBoxModel", "DOM.describeNode",
     "Runtime.evaluate",
   ]);
   const WRITE = new Set([
     "Page.navigate", "Input.dispatchMouseEvent", "Input.dispatchKeyEvent", "Input.insertText", "DOM.focus",
-    "Page.handleJavaScriptDialog", "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride",
+    "Page.handleJavaScriptDialog", "Page.setInterceptFileChooserDialog", "DOM.setFileInputFiles", "Emulation.setDeviceMetricsOverride", "Emulation.clearDeviceMetricsOverride",
     "Emulation.setTouchEmulationEnabled",
   ]);
   const DENIED = new Set([

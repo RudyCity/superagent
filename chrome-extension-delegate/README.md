@@ -10,7 +10,7 @@ from agent-internal `delegate.*` names:
 - `superagent_delegate_list_chats({clientId?, cursor?, limit?})`: paginate ChatGPT history titles + chat IDs.
 - `superagent_delegate_read_chat_full({clientId?, chatId, cursor?, limit?})`: read a historical conversation including older/virtualized turns.
 - `superagent_delegate_search_history({clientId?, query, limit?, maxChats?})`: search history titles and message content with snippets.
-- `superagent_delegate_create_chat({clientId?, tabId?})`: one explicit New chat action.
+- `superagent_delegate_create_chat({clientId?, tabId?, newTab?})`: with `newTab:true`, open a separate ChatGPT tab and return its `tabId`; otherwise start New chat in the selected tab.
 - `superagent_delegate_send_message({message, clientId?, tabId?})`: send exactly once.
 - `superagent_delegate_stop_generation({clientId?, tabId?})`: Stop only on request.
 
@@ -107,38 +107,34 @@ instead of opening or selecting another tab. Multiple existing ChatGPT tabs
 also still require explicit selection. Automatic opening never retries a
 mutation, never reloads a page, and never signs in on behalf of the user.
 
-## Automatic one-safe-tab mode — v1.5.0
+## Multi-tab mode — v1.9.0 (introduced in v1.8.1)
 
-After loading the extension, a single Chrome profile automatically keeps
-**one verified ChatGPT tab**. When two or more `https://chatgpt.com/*`
-tabs are present, the service worker chooses a deterministic primary
-(favoring an actively generating chat, unsent draft, pinned tab, then
-the currently active tab) and closes **only** redundant tabs that passed
-a fresh content-script safety inspection. This includes distinct completed
-ChatGPT conversations; completed chats remain in ChatGPT history.
+ChatGPT tabs are **never automatically closed** by the Delegate extension.
+Different conversations, identical conversation URLs, drafts, pending responses,
+and blank homepages all remain open. The popup lists tab IDs and has a
+**Buka tab ChatGPT baru** button. The service worker maintains a read-only
+`tabPolicy` snapshot (`mode: "multi-tab"`, `tabIds`, `activeTabId`,
+`remainingTabs`); no cleanup means no reloads or implicit chat mutations.
 
-The extension listens for tab creation, page completion, activation and
-removal, and checks existing tabs at startup. Cleanup is sequential and
-double-checks current URL, activation and DOM safety immediately before
-closing. While a Delegate RPC is in flight or the extension is OFF, no
-tabs are closed. It never reloads ChatGPT or sends/stops a chat to repair
-tab counts.
+To create a separate chat using MCP, call
+`superagent_delegate_create_chat({newTab:true,clientId:"<profile>"})`,
+then use the returned `tabId` with `superagent_delegate_send_message`,
+`superagent_delegate_read_chat`, or `superagent_delegate_run_until_done`.
+`newTab:true` and `tabId` are mutually exclusive. When two or more
+ChatGPT tabs already exist, semantic operations without `tabId` fail with
+`CHATGPT_MULTIPLE_TABS`; the extension never guesses. CDP can attach
+to multiple explicit targets independently and retains per-tab controls.
+History worker tabs remain temporary and are closed only by their owner
+after an explicit history-read/search operation. v1.9.0 additionally supports
+read-only `delegate.list_tabs`, returning up to 40 tab IDs, titles, URLs, readiness
+and generating/idle signals without enabling chrome.debugger. Unverifiable
+models and loading states are never guessed.
 
-**Exception, not silent data loss:** A generating chat, unsent draft,
-pending attachment, open dialog, pinned/audible tab, incomplete page or
-unavailable content script is protected. If any tab is still loading
-or unverified, cleanup is deferred for that group until it is safe
-to choose the primary. Up to eight short DOM-readiness retries and a
-30-second alarm fallback handle pages whose composer appears late. When several tabs are protected,
-more than one may remain open. The background status reports
-`tabPolicy.remainingTabs`, `primaryTabId`, `lastClosedTabIds`,
-`lastClosedAt` and `protectedTabs`. The popup shows recent safe closures
-for five minutes, even after later one-tab checks. If multiple tabs remain, existing Delegate tools still
-require an explicit `tabId` and never guess.
+## Historical note: v1.5.0 single-tab mode
 
-Only tabs inside **this Chrome profile** are managed. Separate Chrome
-profiles and incognito contexts are isolated; the extension never closes
-other extensions or browser profiles.
+Versions before v1.8.1 included automatic closure of verified idle tabs.
+That legacy behavior has been removed. Starting with v1.8.1, the extension
+keeps every ChatGPT tab open, including idle tabs and duplicate URLs.
 
 
 This extension is entirely separate from `chrome-extension/`. Its runtime consists of `manifest.json`, `background.js`,
@@ -270,11 +266,11 @@ back to another Chrome profile. No timeout, disconnect, or profile change
 automatically resends ChatGPT messages. Stop is explicit only.
 
 Several Chrome **windows of the same profile** share one extension
-service worker (one `clientId`). v1.5.0 automatically consolidates
-ChatGPT tabs when safe; see **Automatic one-safe-tab mode** above.
-The popup still lists surviving tab IDs and performs read-only content-script
+service worker (one `clientId`). v1.8.1 preserves all
+ChatGPT tabs; see **Multi-tab mode** above.
+The popup lists open tab IDs and performs read-only content-script
 probes, showing **siap** (ready) or **belum siap** without reloading.
-When multiple protected tabs remain, use an exact
+When multiple tabs are open, use an exact
 `{"clientId":"...","tabId":12345}`; requests without `tabId` return
 `CHATGPT_MULTIPLE_TABS` rather than arbitrarily choosing a tab.
 
