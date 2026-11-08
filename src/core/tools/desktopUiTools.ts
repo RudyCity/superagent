@@ -17,9 +17,15 @@ import crypto from "node:crypto";
 import {
   createNativeDesktopUiAdapter,
   createDesktopUiSession,
+  findDiscoveredWindows,
+  getDiscoveredActiveWindow,
+  listDiscoveredWindows,
+  MAX_WINDOW_DISCOVERY_LIMIT,
+  requireFreshWindowTarget,
   createLocalUiDetrVisionDetector,
   DesktopUiError,
   type DesktopActionReceipt,
+  type DesktopDiscoveredWindow,
   type DesktopKey,
   type DesktopModifier,
   type DesktopPoint,
@@ -29,6 +35,7 @@ import {
   type DesktopUiElement,
   type DesktopUiSchema,
   type DesktopVisionDetector,
+  type DesktopWindowDiscoveryResult,
   type DesktopWindowTarget,
   type NativeCapture,
 } from "../desktopUi/index.js";
@@ -43,6 +50,29 @@ export const LOCAL_DESKTOP_UI_OWNER = "local-agent";
 const DESKTOP_UI_TARGET_ALLOWLIST_ENV = "SUPERAGENT_DESKTOP_UI_ALLOWED_TARGETS";
 const DESKTOP_UI_VISION_UPLOAD_ENV = "SUPERAGENT_DESKTOP_UI_ALLOW_VISION_UPLOAD";
 const DESKTOP_UI_VISION_TOKEN_ENV = "SUPERAGENT_DESKTOP_UI_VISION_AUTH_TOKEN";
+
+export const DESKTOP_UI_DISCOVERY_COMMANDS = [
+  "list_windows",
+  "get_active_window",
+  "find_window",
+  "inspect_window",
+] as const;
+
+const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
+  list_windows: new Set(["command", "action", "limit"]),
+  get_active_window: new Set(["command", "action"]),
+  find_window: new Set(["command", "action", "query", "pid", "limit"]),
+  inspect_window: new Set(["command", "action", "pid", "nativeId", "includeScreenshotImage", "maxImageBytes"]),
+};
+
+export function assertDesktopUiDiscoveryCommandFields(args: Record<string, unknown>, command: string): void {
+  const allowed = DISCOVERY_COMMAND_FIELDS[command];
+  if (!allowed) return;
+  const extra = Object.keys(args).filter((key) => !allowed.has(key));
+  if (extra.length > 0) {
+    throw new DesktopUiError("INVALID_ACTION", `Unsupported field(s) for ${command}: ${extra.sort().join(", ")}.`);
+  }
+}
 
 export const VALID_DESKTOP_KEYS: ReadonlySet<DesktopKey> = new Set<DesktopKey>([
   "ENTER",
@@ -327,6 +357,34 @@ export class DesktopUiSessionManager {
     return activeAdapter.probe();
   }
 
+  async listWindows(params: { limit?: number; adapter?: DesktopUiAdapter } = {}): Promise<DesktopWindowDiscoveryResult> {
+    const adapter = params.adapter ?? createNativeDesktopUiAdapter();
+    return listDiscoveredWindows(adapter, params.limit);
+  }
+
+  async getActiveWindow(adapter?: DesktopUiAdapter): Promise<DesktopDiscoveredWindow | null> {
+    return getDiscoveredActiveWindow(adapter ?? createNativeDesktopUiAdapter());
+  }
+
+  async findWindow(params: { query: unknown; pid?: number; limit?: number; adapter?: DesktopUiAdapter }): Promise<DesktopWindowDiscoveryResult> {
+    const discovery = await this.listWindows({ limit: params.limit, adapter: params.adapter });
+    return { ...discovery, windows: findDiscoveredWindows(discovery, params.query, params.pid) };
+  }
+
+  async inspectWindow(params: { pid: number; nativeId: unknown; ownerPrincipal?: string; includeScreenshotImage?: boolean; maxImageBytes?: number; adapter?: DesktopUiAdapter }): Promise<{ window: DesktopDiscoveredWindow; schema: DesktopUiSchema; screenshotImage?: string; screenshotImageOmitted?: string }> {
+    const ownerPrincipal = normalizeOwnerPrincipal(params.ownerPrincipal);
+    const adapter = params.adapter ?? createNativeDesktopUiAdapter();
+    const discovery = await listDiscoveredWindows(adapter, MAX_WINDOW_DISCOVERY_LIMIT);
+    const target = requireFreshWindowTarget(discovery, params.pid, params.nativeId);
+    const opened = await this.openSession({ pid: target.pid, nativeId: target.nativeId, title: target.title, ownerPrincipal, allowInput: false, adapter, ttlMs: MIN_SESSION_TTL_MS });
+    try {
+      const snapshot = await this.snapshot({ sessionToken: opened.sessionToken, ownerPrincipal, includeScreenshotImage: params.includeScreenshotImage === true, maxImageBytes: params.maxImageBytes });
+      return { window: target, ...snapshot };
+    } finally {
+      this.closeSession(opened.sessionToken, ownerPrincipal);
+    }
+  }
+
   async openSession(params: OpenSessionParams): Promise<{
     sessionToken: string;
     target: DesktopWindowTarget;
@@ -603,6 +661,7 @@ function sanitizeDesktopUiLogValue(value: unknown, key = ""): unknown {
       return "[REDACTED_TOKEN]";
     }
     if (normalizedKey === "text") return "[REDACTED_TEXT]";
+    if (["title", "application", "query"].includes(normalizedKey)) return "[REDACTED_WINDOW_METADATA]";
     if (
       normalizedKey.includes("screenshotimage")
       || normalizedKey.includes("image_base64")
@@ -657,8 +716,8 @@ export const desktopUiTool: Tool = {
   name: "desktop_ui",
   description:
     "Perceive and automate native desktop application windows across Windows, macOS, and Linux using accessibility trees and local UI-DETR vision models. " +
-    "Commands: 'probe' (inspect OS UI capabilities), 'open' (scoped window session by PID/nativeId/title), 'snapshot' (perceptual schema and element tree), " +
-    "'action' (click, type, key, scroll targeting semantic elementId and exact revision/hash; raw coordinates are strictly forbidden), 'close' (release session). " +
+    "Commands include bounded read-only window discovery ('list_windows', 'get_active_window', 'find_window', 'inspect_window') plus existing probe/open/snapshot/action/close. " +
+    "Discovery never enables input; actions still target semantic elementId with exact revision/hash and forbid raw coordinates. " +
     "Native input requires explicit safe operator consent on the host.",
   parameters: {
     type: "object",
@@ -666,12 +725,12 @@ export const desktopUiTool: Tool = {
     properties: {
       command: {
         type: "string",
-        enum: ["probe", "open", "snapshot", "action", "close"],
+        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close"],
         description: "Desktop UI command to execute.",
       },
       action: {
         type: "string",
-        enum: ["probe", "open", "snapshot", "action", "close", "click", "type", "key", "scroll"],
+        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close", "click", "type", "key", "scroll"],
         description: "Alternative command name or action kind. command='action' with action='click' is supported.",
       },
       subAction: {
@@ -679,8 +738,10 @@ export const desktopUiTool: Tool = {
         enum: ["click", "type", "key", "scroll"],
         description: "Explicit action kind when command='action'.",
       },
-      pid: { type: "integer", minimum: 1, description: "Exact target process ID for 'open'." },
-      nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for 'open'." },
+      limit: { type: "integer", minimum: 1, maximum: MAX_WINDOW_DISCOVERY_LIMIT, description: "Bounded discovery result limit; default 50, hard cap 100." },
+      query: { type: "string", minLength: 1, maxLength: 256, description: "Case-insensitive application/title query for find_window." },
+      pid: { type: "integer", minimum: 1, description: "Exact process ID for open/inspect_window or optional find_window filter." },
+      nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for open/inspect_window." },
       title: { type: "string", minLength: 1, maxLength: 512, description: "Window title metadata for 'open'; never used as authorization." },
       allowInput: {
         type: "boolean",
@@ -751,19 +812,28 @@ export const desktopUiTool: Tool = {
       let command = typeof args.command === "string" ? args.command.trim().toLowerCase() : "";
       const rawAction = typeof args.action === "string" ? args.action.trim().toLowerCase() : "";
       if (!command) {
-        command = ["probe", "open", "snapshot", "action", "close"].includes(rawAction)
+        command = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close"].includes(rawAction as any)
           ? rawAction
           : ["click", "type", "key", "scroll"].includes(rawAction)
             ? "action"
             : "";
       }
       if (!command) {
-        throw new DesktopUiError("INVALID_ACTION", "Missing command. Valid commands: probe, open, snapshot, action, close.");
+        throw new DesktopUiError("INVALID_ACTION", "Missing desktop UI command.");
       }
+      assertDesktopUiDiscoveryCommandFields(args, command);
 
       switch (command) {
         case "probe":
           return JSON.stringify({ success: true, capabilities: await desktopUiSessionManager.probe() }, null, 2);
+        case "list_windows":
+          return JSON.stringify({ success: true, ...(await desktopUiSessionManager.listWindows({ limit: typeof args.limit === "number" ? args.limit : undefined })) }, null, 2);
+        case "get_active_window":
+          return JSON.stringify({ success: true, window: await desktopUiSessionManager.getActiveWindow() }, null, 2);
+        case "find_window":
+          return JSON.stringify({ success: true, ...(await desktopUiSessionManager.findWindow({ query: args.query, pid: typeof args.pid === "number" ? args.pid : undefined, limit: typeof args.limit === "number" ? args.limit : undefined })) }, null, 2);
+        case "inspect_window":
+          return JSON.stringify({ success: true, ...(await desktopUiSessionManager.inspectWindow({ pid: Number(args.pid), nativeId: args.nativeId, ownerPrincipal: LOCAL_DESKTOP_UI_OWNER, includeScreenshotImage: args.includeScreenshotImage === true, maxImageBytes: typeof args.maxImageBytes === "number" ? args.maxImageBytes : undefined })) }, null, 2);
         case "open": {
           const session = await desktopUiSessionManager.openSession({
             pid: Number(args.pid),
@@ -815,7 +885,7 @@ export const desktopUiTool: Tool = {
         default:
           throw new DesktopUiError(
             "INVALID_ACTION",
-            `Unknown desktop UI command '${command}'. Valid commands: probe, open, snapshot, action, close.`,
+            `Unknown desktop UI command '${command}'.`,
           );
       }
     } catch (error: any) {

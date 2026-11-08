@@ -6,9 +6,11 @@ import { createRestrictedProcessRunner, type DesktopProcessRunner } from "../pro
 import type {
   AccessibilitySnapshot,
   DesktopBounds,
+  DesktopDiscoveredWindow,
   DesktopUiAdapter,
   DesktopUiCapabilities,
   DesktopWindow,
+  DesktopWindowDiscoveryResult,
   DesktopWindowTarget,
   NativeCapture,
   NativeDesktopAction,
@@ -25,6 +27,104 @@ let screenRecording = false;
 try { accessibility = Boolean(se.UIElementsEnabled()); } catch (_) {}
 try { screenRecording = Boolean($.CGPreflightScreenCaptureAccess()); } catch (_) {}
 JSON.stringify({ accessibility, screenRecording });
+`;
+
+const DISCOVERY_SCRIPT = String.raw`
+ObjC.import("stdlib");
+ObjC.import("CoreGraphics");
+const payload = JSON.parse(ObjC.unwrap($.getenv("SUPERAGENT_DESKTOP_UI_PAYLOAD")));
+const limit = Number(payload.limit);
+if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+  throw new Error("INVALID_ACTION: discovery limit must be between 1 and 100");
+}
+const se = Application("System Events");
+if (!Boolean(se.UIElementsEnabled())) {
+  throw new Error("OS_PERMISSION_REQUIRED: macOS Accessibility permission is required for window discovery");
+}
+if (!Boolean($.CGPreflightScreenCaptureAccess())) {
+  throw new Error("OS_PERMISSION_REQUIRED: macOS Screen Recording permission is required for stable window discovery");
+}
+let infos = [];
+try {
+  infos = ObjC.deepUnwrap($.CGWindowListCopyWindowInfo(
+    Number($.kCGWindowListOptionOnScreenOnly) | Number($.kCGWindowListExcludeDesktopElements),
+    Number($.kCGNullWindowID)
+  ));
+} catch (_) {
+  throw new Error("OS_PERMISSION_REQUIRED: CoreGraphics window enumeration is unavailable");
+}
+if (!Array.isArray(infos)) throw new Error("PROCESS_FAILED: CoreGraphics returned no window list");
+
+function closeEnough(a, b) {
+  return Math.abs(Number(a) - Number(b)) <= 1;
+}
+function cgBounds(info) {
+  const b = info.kCGWindowBounds || {};
+  return { x:Number(b.X), y:Number(b.Y), width:Number(b.Width), height:Number(b.Height) };
+}
+function axFlag(win, name) {
+  try {
+    for (const attr of win.attributes()) {
+      if (String(attr.name()) === name) return Boolean(attr.value());
+    }
+  } catch (_) {}
+  return false;
+}
+
+const items = [];
+let skippedAmbiguous = 0;
+outer: for (const proc of se.applicationProcesses()) {
+  let pid = 0, application = "", frontmost = false, windows = [];
+  try {
+    pid = Number(proc.unixId());
+    application = String(proc.name() || "").slice(0, 256);
+    frontmost = Boolean(proc.frontmost());
+    windows = proc.windows();
+  } catch (_) { continue; }
+  if (!Number.isInteger(pid) || pid <= 0 || !application) continue;
+  for (const win of windows) {
+    if (items.length > limit) break outer;
+    let title = "", pos = null, size = null;
+    try {
+      title = String(win.name() || "").slice(0, 512);
+      pos = win.position();
+      size = win.size();
+    } catch (_) { continue; }
+    if (!title || Number(size[0]) <= 0 || Number(size[1]) <= 0) continue;
+    const bounds = { x:Number(pos[0]), y:Number(pos[1]), width:Number(size[0]), height:Number(size[1]) };
+    const candidates = [];
+    for (const info of infos) {
+      try {
+        if (Number(info.kCGWindowOwnerPID) !== pid) continue;
+        if (Number(info.kCGWindowLayer || 0) !== 0) continue;
+        const id = Number(info.kCGWindowNumber);
+        if (!Number.isFinite(id) || id <= 0) continue;
+        const b = cgBounds(info);
+        if (closeEnough(b.x, bounds.x) && closeEnough(b.y, bounds.y)
+          && closeEnough(b.width, bounds.width) && closeEnough(b.height, bounds.height)) {
+          candidates.push({ id, bounds: b });
+        }
+      } catch (_) {}
+    }
+    if (candidates.length !== 1) {
+      if (candidates.length > 1) skippedAmbiguous += 1;
+      continue;
+    }
+    let focused = false;
+    try { focused = Boolean(win.focused()); } catch (_) {}
+    const main = axFlag(win, "AXMain");
+    items.push({
+      pid,
+      nativeId: "cg:" + String(candidates[0].id),
+      title,
+      application,
+      active: Boolean(frontmost && (focused || main)),
+      bounds
+    });
+  }
+}
+const truncated = items.length > limit;
+JSON.stringify({ windows: items.slice(0, limit), limit, truncated, skippedAmbiguous });
 `;
 
 const TARGET_HELPER = String.raw`
@@ -288,6 +388,38 @@ function windowFrom(value: any): DesktopWindow {
   };
 }
 
+
+function requireDiscoveryLimit(limit: number): number {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new DesktopUiError("INVALID_ACTION", "Window discovery limit must be an integer between 1 and 100.");
+  }
+  return limit;
+}
+
+function discoveredWindowFrom(value: any): DesktopDiscoveredWindow {
+  const window = windowFrom(value);
+  if (typeof value?.application !== "string" || !value.application.trim()) {
+    throw new DesktopUiError("PROCESS_FAILED", "macOS discovery returned a window without an application name.");
+  }
+  return { ...window, application: value.application };
+}
+
+function discoveryResultFrom(value: any, limit: number): DesktopWindowDiscoveryResult {
+  const windows = Array.isArray(value?.windows) ? value.windows.map(discoveredWindowFrom) : [];
+  const seen = new Set<string>();
+  for (const window of windows) {
+    const identity = `${window.pid}:${window.nativeId}`;
+    if (seen.has(identity)) {
+      throw new DesktopUiError("PROCESS_FAILED", "macOS discovery returned a duplicate CoreGraphics window identity.");
+    }
+    seen.add(identity);
+  }
+  const skippedAmbiguous = Number.isInteger(value?.skippedAmbiguous) && value.skippedAmbiguous > 0
+    ? value.skippedAmbiguous
+    : undefined;
+  return { windows, limit, truncated: value?.truncated === true, ...(skippedAmbiguous ? { skippedAmbiguous } : {}) };
+}
+
 function sameWindow(a: DesktopWindow, b: DesktopWindow): boolean {
   return a.pid === b.pid
     && a.nativeId === b.nativeId
@@ -318,6 +450,7 @@ function mapMacError(
   if (message.includes("TARGET_NOT_FOUND")) return new DesktopUiError("TARGET_NOT_FOUND", message);
   if (message.includes("TARGET_NOT_ACTIVE")) return new DesktopUiError("TARGET_NOT_ACTIVE", message);
   if (message.includes("SCREENSHOT_UNAVAILABLE")) return new DesktopUiError("SCREENSHOT_UNAVAILABLE", message);
+  if (message.includes("OS_PERMISSION_REQUIRED")) return new DesktopUiError("OS_PERMISSION_REQUIRED", message);
   return asDesktopUiError(error, fallbackCode, fallbackMessage);
 }
 
@@ -381,6 +514,23 @@ export function createMacOsDesktopUiAdapter(
           errors: [message],
         };
       }
+    },
+
+
+    async listWindows(limit: number): Promise<DesktopWindowDiscoveryResult> {
+      const boundedLimit = requireDiscoveryLimit(limit);
+      try {
+        const result = await runJxa(DISCOVERY_SCRIPT, { limit: boundedLimit });
+        return discoveryResultFrom(parseJson(result.stdout, "macOS window discovery"), boundedLimit);
+      } catch (error) {
+        throw mapMacError(error, "OS_PERMISSION_REQUIRED", "macOS window discovery failed");
+      }
+    },
+
+    async getActiveWindow(): Promise<DesktopDiscoveredWindow | null> {
+      const discovery = await this.listWindows!(100);
+      const active = discovery.windows.filter((window) => window.active);
+      return active.length === 1 ? active[0] : null;
     },
 
     async capture(target): Promise<NativeCapture> {

@@ -792,7 +792,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         ? { action: name, deviceId: args.deviceId, host: args.host, port: args.port }
         : (delegateMcpObservation(name, args)?.args ?? args);
       const safeLogArgs = name === "superagent_desktop_ui"
-        ? sanitizeDesktopUiLogPayload(observedArgs as Record<string, unknown>)
+        ? { command: (observedArgs as any)?.command, action: (observedArgs as any)?.action }
         : observedArgs;
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(safeLogArgs)}`);
 
@@ -1081,7 +1081,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     } catch (err: any) {
       const rawError = err?.stack || err?.message || String(err);
       const safeError = name === "superagent_desktop_ui"
-        ? (sanitizeDesktopUiLogText(rawError) || "Desktop UI error")
+        ? "DESKTOP_UI_CALL_FAILED"
         : rawError;
       logMcp(`Error executing tool ${name}: ${safeError}`);
       return {
@@ -1112,6 +1112,12 @@ function extractMcpResultText(result: unknown): string {
   const handleMcpCall = async (request: any): Promise<any> => {
     const toolName = String((request.params as any)?.name || "");
     const rawArgs = (request.params as any)?.arguments || {};
+    const desktopCall = toolName === "superagent_desktop_ui" ||
+      (toolName === MCP_GATEWAY_TOOL_NAMES.execute && rawArgs.name === "superagent_desktop_ui");
+    const desktopArgs = toolName === "superagent_desktop_ui" ? rawArgs : rawArgs.arguments || {};
+    const desktopAuditArgs = sanitizeDesktopUiLogPayload(desktopArgs as Record<string, unknown>);
+    if (typeof desktopAuditArgs.title === "string") desktopAuditArgs.title = "[REDACTED_WINDOW_TITLE]";
+    if (typeof desktopAuditArgs.query === "string") desktopAuditArgs.query = "[REDACTED_SEARCH_QUERY]";
     const yoloState = getYoloModeState();
     const isDangerousUnlocked = canUnlockMcpDangerousTools({
       lockSafeTools, allowDangerous: Boolean(allowDangerous), yoloState,
@@ -1159,11 +1165,11 @@ function extractMcpResultText(result: unknown): string {
         ...info, args: privateDelegate.args,
         ...(info.error ? { error: privateDelegate.error(info.error) } : {}),
       } : info;
-      if (toolName === "superagent_desktop_ui") {
+      if (desktopCall) {
         safeInfo = {
           ...safeInfo,
-          args: sanitizeDesktopUiLogPayload((safeInfo.args || {}) as Record<string, unknown>),
-          ...(safeInfo.error ? { error: sanitizeDesktopUiLogText(safeInfo.error) } : {}),
+          args: desktopAuditArgs,
+          ...(safeInfo.error ? { error: "DESKTOP_UI_CALL_FAILED" } : {}),
         };
       }
       try {
@@ -1383,11 +1389,9 @@ function extractMcpResultText(result: unknown): string {
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
-      const safeActivityArgs = toolName === "superagent_desktop_ui"
-        ? sanitizeDesktopUiLogPayload((rawArgs || {}) as Record<string, unknown>)
-        : rawArgs;
-      const safeActivityOutput = toolName === "superagent_desktop_ui"
-        ? sanitizeDesktopUiLogText(outputText)
+      const safeActivityArgs = desktopCall ? desktopAuditArgs : rawArgs;
+      const safeActivityOutput = desktopCall
+        ? "[DESKTOP_UI_RESPONSE_REDACTED]"
         : outputText;
       emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
       emitMcpActivity({
@@ -1405,11 +1409,9 @@ function extractMcpResultText(result: unknown): string {
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
-      const safeActivityArgs = toolName === "superagent_desktop_ui"
-        ? sanitizeDesktopUiLogPayload((rawArgs || {}) as Record<string, unknown>)
-        : rawArgs;
-      const safeErrorMsg = toolName === "superagent_desktop_ui"
-        ? sanitizeDesktopUiLogText(errorMsg)
+      const safeActivityArgs = desktopCall ? desktopAuditArgs : rawArgs;
+      const safeErrorMsg = desktopCall
+        ? "DESKTOP_UI_CALL_FAILED"
         : errorMsg;
       emitAudit({
         tool: toolName,

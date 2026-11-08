@@ -6,9 +6,11 @@ import { createRestrictedProcessRunner, type DesktopProcessRunner } from "../pro
 import type {
   AccessibilitySnapshot,
   DesktopBounds,
+  DesktopDiscoveredWindow,
   DesktopUiAdapter,
   DesktopUiCapabilities,
   DesktopWindow,
+  DesktopWindowDiscoveryResult,
   DesktopWindowTarget,
   NativeCapture,
   NativeDesktopAction,
@@ -17,6 +19,71 @@ import type {
 const PYTHON3 = "/usr/bin/python3";
 const GNOME_SCREENSHOT = "/usr/bin/gnome-screenshot";
 const SCROT = "/usr/bin/scrot";
+
+const PYTHON_DISCOVERY_SCRIPT = String.raw`
+import json, os
+import gi
+gi.require_version("Atspi", "2.0")
+from gi.repository import Atspi
+payload = json.loads(os.environ["SUPERAGENT_DESKTOP_UI_PAYLOAD"])
+limit = int(payload.get("limit", 0))
+if limit < 1 or limit > 100:
+    raise RuntimeError("INVALID_ACTION: discovery limit must be between 1 and 100")
+desktop = Atspi.get_desktop(0)
+candidates = {}
+order = []
+ambiguous = set()
+scanned = 0
+scan_truncated = False
+for app_index in range(desktop.get_child_count()):
+    app = desktop.get_child_at_index(app_index)
+    try:
+        pid = int(app.get_process_id())
+        application = (app.get_name() or "")[:256]
+    except Exception:
+        continue
+    if pid <= 0 or not application:
+        continue
+    for win_index in range(app.get_child_count()):
+        if scanned >= 1000:
+            scan_truncated = True
+            break
+        scanned += 1
+        node = app.get_child_at_index(win_index)
+        try:
+            role = node.get_role_name() or ""
+            title = (node.get_name() or "")[:512]
+            if role not in ("frame", "window", "dialog") or not title:
+                continue
+            rect = node.get_component_iface().get_extents(Atspi.CoordType.SCREEN)
+            if rect.width <= 0 or rect.height <= 0:
+                continue
+            key = "%s\0%s" % (pid, title)
+            if key in candidates:
+                ambiguous.add(key)
+                continue
+            states = node.get_state_set()
+            candidates[key] = {
+                "pid": pid,
+                "nativeId": "atspi:%s:%s" % (pid, title),
+                "title": title,
+                "application": application,
+                "active": bool(states.contains(Atspi.StateType.ACTIVE)),
+                "bounds": {"x": rect.x, "y": rect.y, "width": rect.width, "height": rect.height}
+            }
+            order.append(key)
+        except Exception:
+            pass
+    if scan_truncated:
+        break
+windows = [candidates[key] for key in order if key not in ambiguous]
+print(json.dumps({
+    "windows": windows[:limit],
+    "limit": limit,
+    "truncated": bool(scan_truncated or len(windows) > limit),
+    "skippedAmbiguous": len(ambiguous)
+}))
+`;
 
 const PYTHON_WINDOW_SCRIPT = String.raw`
 import json, os
@@ -36,19 +103,19 @@ for i in range(desktop.get_child_count()):
         pass
 if target_app is None:
     raise RuntimeError("TARGET_NOT_FOUND: AT-SPI application not found")
-target_window = None
+matches = []
 for i in range(target_app.get_child_count()):
     node = target_app.get_child_at_index(i)
     try:
         name = node.get_name() or ""
         role = node.get_role_name() or ""
         if role in ("frame", "window", "dialog") and (not payload.get("title") or name == payload["title"]):
-            target_window = node
-            break
+            matches.append(node)
     except Exception:
         pass
-if target_window is None:
-    raise RuntimeError("TARGET_NOT_FOUND: AT-SPI window not found")
+if len(matches) != 1:
+    raise RuntimeError("TARGET_NOT_FOUND: AT-SPI window selection is absent or ambiguous")
+target_window = matches[0]
 component = target_window.get_component_iface()
 rect = component.get_extents(Atspi.CoordType.SCREEN)
 states = target_window.get_state_set()
@@ -84,18 +151,18 @@ for i in range(desktop.get_child_count()):
         pass
 if app is None:
     raise RuntimeError("TARGET_NOT_FOUND: AT-SPI application not found")
-win = None
+matches = []
 for i in range(app.get_child_count()):
     node = app.get_child_at_index(i)
     try:
         name = node.get_name() or ""
         if node.get_role_name() in ("frame", "window", "dialog") and (not payload.get("title") or name == payload["title"]):
-            win = node
-            break
+            matches.append(node)
     except Exception:
         pass
-if win is None:
-    raise RuntimeError("TARGET_NOT_FOUND: AT-SPI window not found")
+if len(matches) != 1:
+    raise RuntimeError("TARGET_NOT_FOUND: AT-SPI window selection is absent or ambiguous")
+win = matches[0]
 title = win.get_name() or ""
 resolved_native_id = "atspi:%s:%s" % (payload["pid"], title)
 if payload.get("nativeId") and payload["nativeId"] != resolved_native_id:
@@ -177,18 +244,18 @@ for i in range(desktop.get_child_count()):
         pass
 if app is None:
     raise RuntimeError("TARGET_NOT_FOUND: AT-SPI application not found")
-win = None
+matches = []
 for i in range(app.get_child_count()):
     node = app.get_child_at_index(i)
     try:
         name = node.get_name() or ""
         if node.get_role_name() in ("frame", "window", "dialog") and (not payload.get("title") or name == payload["title"]):
-            win = node
-            break
+            matches.append(node)
     except Exception:
         pass
-if win is None:
-    raise RuntimeError("TARGET_NOT_FOUND: AT-SPI window not found")
+if len(matches) != 1:
+    raise RuntimeError("TARGET_NOT_FOUND: AT-SPI window selection is absent or ambiguous")
+win = matches[0]
 title = win.get_name() or ""
 resolved_native_id = "atspi:%s:%s" % (payload["pid"], title)
 if payload.get("nativeId") and payload["nativeId"] != resolved_native_id:
@@ -268,6 +335,38 @@ function windowFrom(value: any): DesktopWindow {
     active: value.active === true,
     bounds: value.bounds,
   };
+}
+
+
+function requireDiscoveryLimit(limit: number): number {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new DesktopUiError("INVALID_ACTION", "Window discovery limit must be an integer between 1 and 100.");
+  }
+  return limit;
+}
+
+function discoveredWindowFrom(value: any): DesktopDiscoveredWindow {
+  const window = windowFrom(value);
+  if (typeof value?.application !== "string" || !value.application.trim()) {
+    throw new DesktopUiError("PROCESS_FAILED", "Linux discovery returned a window without an application name.");
+  }
+  return { ...window, application: value.application };
+}
+
+function discoveryResultFrom(value: any, limit: number): DesktopWindowDiscoveryResult {
+  const windows = Array.isArray(value?.windows) ? value.windows.map(discoveredWindowFrom) : [];
+  const seen = new Set<string>();
+  for (const window of windows) {
+    const identity = `${window.pid}:${window.nativeId}`;
+    if (seen.has(identity)) {
+      throw new DesktopUiError("PROCESS_FAILED", "Linux discovery returned a duplicate AT-SPI window identity.");
+    }
+    seen.add(identity);
+  }
+  const skippedAmbiguous = Number.isInteger(value?.skippedAmbiguous) && value.skippedAmbiguous > 0
+    ? value.skippedAmbiguous
+    : undefined;
+  return { windows, limit, truncated: value?.truncated === true, ...(skippedAmbiguous ? { skippedAmbiguous } : {}) };
 }
 
 function sameWindow(a: DesktopWindow, b: DesktopWindow): boolean {
@@ -361,6 +460,23 @@ export function createLinuxDesktopUiAdapter(
         ],
         errors,
       };
+    },
+
+
+    async listWindows(limit: number): Promise<DesktopWindowDiscoveryResult> {
+      const boundedLimit = requireDiscoveryLimit(limit);
+      try {
+        const result = await runPython(PYTHON_DISCOVERY_SCRIPT, { limit: boundedLimit });
+        return discoveryResultFrom(parseJson(result.stdout, "Linux AT-SPI window discovery"), boundedLimit);
+      } catch (error) {
+        throw asDesktopUiError(error, "ACCESSIBILITY_UNAVAILABLE", "Linux AT-SPI window discovery failed");
+      }
+    },
+
+    async getActiveWindow(): Promise<DesktopDiscoveredWindow | null> {
+      const discovery = await this.listWindows!(100);
+      const active = discovery.windows.filter((window) => window.active);
+      return active.length === 1 ? active[0] : null;
     },
 
     async capture(target): Promise<NativeCapture> {

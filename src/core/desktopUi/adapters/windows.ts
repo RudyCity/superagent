@@ -5,9 +5,11 @@ import { DesktopUiError, asDesktopUiError } from "../errors.js";
 import { createRestrictedProcessRunner, type DesktopProcessRunner } from "../processRunner.js";
 import type {
   AccessibilitySnapshot,
+  DesktopDiscoveredWindow,
   DesktopUiAdapter,
   DesktopUiCapabilities,
   DesktopWindow,
+  DesktopWindowDiscoveryResult,
   DesktopWindowTarget,
   NativeCapture,
   NativeDesktopAction,
@@ -42,6 +44,98 @@ if ($previous -eq [IntPtr]::Zero) {
   powershell = $PSVersionTable.PSVersion.ToString()
   dpiAware = $true
 } | ConvertTo-Json -Compress
+`;
+
+const DISCOVERY_SCRIPT = String.raw`
+$ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Drawing
+Add-Type @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+public static class DesktopUiWindowDiscovery {
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [StructLayout(LayoutKind.Sequential)]
+  public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hWnd, uint flags);
+  [DllImport("user32.dll", SetLastError=true)] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern int GetWindowTextLength(IntPtr hWnd);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
+  [DllImport("user32.dll", SetLastError=true)] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr value);
+  [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr hWnd);
+  [DllImport("user32.dll", SetLastError=true)] public static extern bool GetWindowDisplayAffinity(IntPtr hWnd, out uint affinity);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hWnd, uint attribute, out int value, int size);
+}
+"@
+$previousDpiContext = [DesktopUiWindowDiscovery]::SetThreadDpiAwarenessContext([IntPtr](-4))
+if ($previousDpiContext -eq [IntPtr]::Zero) {
+  throw "DPI_CONTEXT_UNAVAILABLE: PER_MONITOR_AWARE_V2 could not be established"
+}
+$payload = ConvertFrom-Json $env:SUPERAGENT_DESKTOP_UI_PAYLOAD
+$limit = [int]$payload.limit
+if ($limit -lt 1 -or $limit -gt 100) { throw "INVALID_ACTION: discovery limit must be between 1 and 100" }
+$foreground = [DesktopUiWindowDiscovery]::GetForegroundWindow()
+$items = New-Object System.Collections.Generic.List[object]
+$callback = [DesktopUiWindowDiscovery+EnumWindowsProc]{
+  param([IntPtr]$hwnd, [IntPtr]$lParam)
+  if ($items.Count -gt $limit) { return $false }
+  try {
+    if (-not [DesktopUiWindowDiscovery]::IsWindowVisible($hwnd)) { return $true }
+    if ([DesktopUiWindowDiscovery]::GetAncestor($hwnd, 2) -ne $hwnd) { return $true }
+    $classBuffer = New-Object System.Text.StringBuilder 256
+    [void][DesktopUiWindowDiscovery]::GetClassName($hwnd, $classBuffer, $classBuffer.Capacity)
+    if ($classBuffer.ToString() -in @("Shell_TrayWnd", "Progman", "WorkerW")) { return $true }
+    $cloaked = 0
+    $cloakResult = [DesktopUiWindowDiscovery]::DwmGetWindowAttribute($hwnd, 14, [ref]$cloaked, 4)
+    if ($cloakResult -ne 0 -or $cloaked -ne 0) { return $true }
+    [uint32]$affinity = 0
+    if (-not [DesktopUiWindowDiscovery]::GetWindowDisplayAffinity($hwnd, [ref]$affinity)) { return $true }
+    if ($affinity -ne 0) { return $true }
+    [uint32]$ownerPid = 0
+    [void][DesktopUiWindowDiscovery]::GetWindowThreadProcessId($hwnd, [ref]$ownerPid)
+    if ($ownerPid -le 0) { return $true }
+    $rect = New-Object DesktopUiWindowDiscovery+RECT
+    if (-not [DesktopUiWindowDiscovery]::GetWindowRect($hwnd, [ref]$rect)) { return $true }
+    $width = $rect.Right - $rect.Left
+    $height = $rect.Bottom - $rect.Top
+    if ($width -le 0 -or $height -le 0) { return $true }
+    $titleLength = [DesktopUiWindowDiscovery]::GetWindowTextLength($hwnd)
+    if ($titleLength -le 0) { return $true }
+    $titleBuffer = New-Object System.Text.StringBuilder ([Math]::Min(513, $titleLength + 1))
+    [void][DesktopUiWindowDiscovery]::GetWindowText($hwnd, $titleBuffer, $titleBuffer.Capacity)
+    $title = $titleBuffer.ToString()
+    if ([string]::IsNullOrWhiteSpace($title)) { return $true }
+    if ($title.Length -gt 512) { $title = $title.Substring(0, 512) }
+    try { $application = [System.Diagnostics.Process]::GetProcessById([int]$ownerPid).ProcessName } catch { return $true }
+    if ([string]::IsNullOrWhiteSpace($application)) { return $true }
+    if ($application.Length -gt 256) { $application = $application.Substring(0, 256) }
+    $dpi = [DesktopUiWindowDiscovery]::GetDpiForWindow($hwnd)
+    if ($dpi -le 0) { return $true }
+    $items.Add([pscustomobject]@{
+      pid = [int]$ownerPid
+      nativeId = $hwnd.ToInt64().ToString()
+      title = $title
+      application = $application
+      active = ($foreground -eq $hwnd)
+      scaleFactor = ([double]$dpi / 96.0)
+      bounds = [pscustomobject]@{ x=$rect.Left; y=$rect.Top; width=$width; height=$height }
+    })
+  } catch {}
+  return $true
+}
+[void][DesktopUiWindowDiscovery]::EnumWindows($callback, [IntPtr]::Zero)
+$truncated = $items.Count -gt $limit
+$windows = @($items | Select-Object -First $limit)
+[pscustomobject]@{
+  windows = $windows
+  limit = $limit
+  truncated = $truncated
+} | ConvertTo-Json -Depth 6 -Compress
 `;
 
 const WINDOW_PREAMBLE = String.raw`
@@ -406,6 +500,35 @@ function windowFrom(value: any): DesktopWindow {
   };
 }
 
+
+function requireDiscoveryLimit(limit: number): number {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+    throw new DesktopUiError("INVALID_ACTION", "Window discovery limit must be an integer between 1 and 100.");
+  }
+  return limit;
+}
+
+function discoveredWindowFrom(value: any): DesktopDiscoveredWindow {
+  const window = windowFrom(value);
+  if (typeof value?.application !== "string" || !value.application.trim()) {
+    throw new DesktopUiError("PROCESS_FAILED", "Windows discovery returned a window without an application name.");
+  }
+  return { ...window, application: value.application };
+}
+
+function discoveryResultFrom(value: any, limit: number): DesktopWindowDiscoveryResult {
+  const windows = Array.isArray(value?.windows) ? value.windows.map(discoveredWindowFrom) : [];
+  const seen = new Set<string>();
+  for (const window of windows) {
+    const identity = `${window.pid}:${window.nativeId}`;
+    if (seen.has(identity)) {
+      throw new DesktopUiError("PROCESS_FAILED", "Windows discovery returned a duplicate native window identity.");
+    }
+    seen.add(identity);
+  }
+  return { windows, limit, truncated: value?.truncated === true };
+}
+
 function mapWindowsError(error: unknown, fallbackCode: "SCREENSHOT_UNAVAILABLE" | "ACCESSIBILITY_UNAVAILABLE" | "INPUT_UNAVAILABLE", fallbackMessage: string): DesktopUiError {
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes("TARGET_NOT_FOUND")) {
@@ -468,6 +591,23 @@ export function createWindowsDesktopUiAdapter(
           errors: [message],
         };
       }
+    },
+
+
+    async listWindows(limit: number): Promise<DesktopWindowDiscoveryResult> {
+      const boundedLimit = requireDiscoveryLimit(limit);
+      try {
+        const result = await runPowerShell(DISCOVERY_SCRIPT, { limit: boundedLimit });
+        return discoveryResultFrom(parseJson(result.stdout, "Windows window discovery"), boundedLimit);
+      } catch (error) {
+        throw mapWindowsError(error, "ACCESSIBILITY_UNAVAILABLE", "Windows window discovery failed");
+      }
+    },
+
+    async getActiveWindow(): Promise<DesktopDiscoveredWindow | null> {
+      const discovery = await this.listWindows!(100);
+      const active = discovery.windows.filter((window) => window.active);
+      return active.length === 1 ? active[0] : null;
     },
 
     async capture(target: DesktopWindowTarget): Promise<NativeCapture> {

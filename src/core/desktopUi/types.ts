@@ -26,6 +26,17 @@ export interface DesktopWindow {
   scaleFactor?: number;
 }
 
+export interface DesktopDiscoveredWindow extends DesktopWindow {
+  application: string;
+}
+
+export interface DesktopWindowDiscoveryResult {
+  windows: DesktopDiscoveredWindow[];
+  limit: number;
+  truncated: boolean;
+  skippedAmbiguous?: number;
+}
+
 export interface DesktopUiElement {
   id: string;
   role: string;
@@ -136,6 +147,8 @@ export type NativeDesktopAction =
 export interface DesktopUiAdapter {
   readonly platform: DesktopPlatform;
   probe(): Promise<DesktopUiCapabilities>;
+  listWindows?(limit: number): Promise<DesktopWindowDiscoveryResult>;
+  getActiveWindow?(): Promise<DesktopDiscoveredWindow | null>;
   capture(target: DesktopWindowTarget): Promise<NativeCapture>;
   inspectAccessibility(target: DesktopWindowTarget, capture: NativeCapture): Promise<AccessibilitySnapshot>;
   dispatch(action: NativeDesktopAction): Promise<void>;

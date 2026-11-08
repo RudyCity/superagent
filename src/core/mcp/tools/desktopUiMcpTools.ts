@@ -1,8 +1,10 @@
 import type { McpToolResult } from "../types.js";
 import {
   DEFAULT_MAX_IMAGE_BYTES,
+  DESKTOP_UI_DISCOVERY_COMMANDS,
   MAX_SESSION_TTL_MS,
   MIN_SESSION_TTL_MS,
+  assertDesktopUiDiscoveryCommandFields,
   assertNoDesktopUiRawCoordinates,
   desktopUiSessionManager,
   sanitizeDesktopUiLogText,
@@ -10,6 +12,7 @@ import {
 } from "../../tools/desktopUiTools.js";
 import {
   DesktopUiError,
+  MAX_WINDOW_DISCOVERY_LIMIT,
   type DesktopKey,
   type DesktopModifier,
 } from "../../desktopUi/index.js";
@@ -24,7 +27,7 @@ export interface DesktopUiMcpContext {
 }
 
 const actionKinds = ["click", "type", "key", "scroll"] as const;
-const commands = ["probe", "open", "snapshot", "action", "close"] as const;
+const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close"] as const;
 
 const inputSchema = {
   type: "object",
@@ -45,8 +48,10 @@ const inputSchema = {
       enum: actionKinds,
       description: "Explicit action kind when command='action'.",
     },
-    pid: { type: "integer", minimum: 1, description: "Exact target process ID for open." },
-    nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for open." },
+    limit: { type: "integer", minimum: 1, maximum: MAX_WINDOW_DISCOVERY_LIMIT, description: "Bounded discovery result limit; default 50, hard cap 100." },
+    query: { type: "string", minLength: 1, maxLength: 256, description: "Case-insensitive application/title query for find_window." },
+    pid: { type: "integer", minimum: 1, description: "Exact process ID for open/inspect_window or optional find_window filter." },
+    nativeId: { type: "string", minLength: 1, maxLength: 256, description: "Exact native window ID for open/inspect_window." },
     title: { type: "string", minLength: 1, maxLength: 512, description: "Window title metadata; never authorization." },
     allowInput: {
       type: "boolean",
@@ -120,8 +125,8 @@ export const DESKTOP_UI_MCP_TOOL_DEFS = [
   {
     name: "superagent_desktop_ui",
     description:
-      "Dangerous host-local native desktop perception and semantic input for Windows, macOS, and Linux. "
-      + "Sessions are scoped to an exact PID/nativeId and authenticated MCP principal. "
+      "Dangerous host-local native desktop perception and semantic input for Windows, macOS, and Linux, including read-only window discovery and inspection. "
+      + "Discovery uses bounded exact native identities; sessions are scoped to an exact PID/nativeId and authenticated MCP principal. "
       + "Input additionally requires exact host consent, raw coordinates are forbidden, and every action requires the exact prior revision/SHA-256. "
       + "This tool is unavailable for SSH/chain workspaces. Chrome/Electron browser automation remains on the existing protected CDP tools.",
     inputSchema,
@@ -180,13 +185,26 @@ export async function dispatchDesktopUiMcpTool(
     assertNoDesktopUiRawCoordinates(rawArgs);
     const { command, rawAction } = resolveCommand(rawArgs);
     if (!command) {
-      throw new DesktopUiError("INVALID_ACTION", "Missing command. Valid commands: probe, open, snapshot, action, close.");
+      throw new DesktopUiError("INVALID_ACTION", "Missing desktop UI command.");
     }
+    assertDesktopUiDiscoveryCommandFields(rawArgs, command);
 
     let result: unknown;
     switch (command) {
       case "probe":
         result = { success: true, capabilities: await desktopUiSessionManager.probe() };
+        break;
+      case "list_windows":
+        result = { success: true, ...(await desktopUiSessionManager.listWindows({ limit: typeof rawArgs.limit === "number" ? rawArgs.limit : undefined })) };
+        break;
+      case "get_active_window":
+        result = { success: true, window: await desktopUiSessionManager.getActiveWindow() };
+        break;
+      case "find_window":
+        result = { success: true, ...(await desktopUiSessionManager.findWindow({ query: rawArgs.query, pid: typeof rawArgs.pid === "number" ? rawArgs.pid : undefined, limit: typeof rawArgs.limit === "number" ? rawArgs.limit : undefined })) };
+        break;
+      case "inspect_window":
+        result = { success: true, ...(await desktopUiSessionManager.inspectWindow({ pid: Number(rawArgs.pid), nativeId: rawArgs.nativeId, ownerPrincipal: context.principalId, includeScreenshotImage: rawArgs.includeScreenshotImage === true, maxImageBytes: typeof rawArgs.maxImageBytes === "number" ? rawArgs.maxImageBytes : undefined })) };
         break;
       case "open": {
         const session = await desktopUiSessionManager.openSession({
@@ -243,7 +261,7 @@ export async function dispatchDesktopUiMcpTool(
       default:
         throw new DesktopUiError(
           "INVALID_ACTION",
-          `Unknown desktop UI command '${command}'. Valid commands: probe, open, snapshot, action, close.`,
+          `Unknown desktop UI command '${command}'.`,
         );
     }
 

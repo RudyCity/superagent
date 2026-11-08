@@ -8,7 +8,7 @@ The native desktop module remains implemented under `src/core/desktopUi/**`. Thi
 
 Chrome and Electron browser automation continues to use the existing protected CDP/Delegate tools. Native desktop MCP does not add a second CDP path for operating-system applications.
 
-There is intentionally no window-discovery tool in this integration. The caller must already know the exact process ID and native window ID from a trusted host-side source.
+Window discovery is now available through list_windows, get_active_window, and find_window. The read-only inspect_window command requires an exact PID and native window ID found by a fresh host-side discovery pass. Discovery by title or application never grants permission to click or type; native input still requires exact host consent.
 
 ## Security model
 
@@ -143,3 +143,8 @@ Enable both opt-in host gates with the regular desktop unit and integration suit
 SUPERAGENT_DESKTOP_UI_NATIVE_E2E=1 SUPERAGENT_DESKTOP_UI_READONLY_E2E=1 bun --bun x vitest run tests/desktop-ui tests/desktop-ui-integration tests/desktop-ui-windows-e2e
 
 The in-process MCP native E2E verifies principal-scoped tool invocation, not deployment of the modified tool into the active Core worker.
+
+
+## Window discovery commands
+
+The desktop tool now supports list_windows, get_active_window, find_window, and inspect_window on Windows, macOS, and Linux. Read docs/desktop/2026-11-08-window-discovery.md for backend limitations, native window identity, optional screenshots, and exact-target requirements. Windows WinForms discovery and read-only inspection have passed an actual native host E2E; macOS and Linux still require real host certification. The running shared MCP service has not been reloaded for this change.
