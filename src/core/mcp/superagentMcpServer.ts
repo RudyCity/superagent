@@ -95,6 +95,8 @@ import {
 import { DELEGATE_MCP_TOOL_DEFS, dispatchDelegateMcpTool, delegateMcpObservation } from "./tools/delegateMcpTools.js";
 import { PDF_MCP_TOOL_DEFS, PDF_MCP_TOOL_NAMES, dispatchPdfMcpTool } from "./tools/pdfMcpTools.js";
 import { MEDIA_MCP_TOOL_DEFS, MEDIA_MCP_TOOL_NAMES, dispatchMediaMcpTool } from "./tools/mediaMcpTools.js";
+import { DESKTOP_UI_MCP_TOOL_DEFS, dispatchDesktopUiMcpTool } from "./tools/desktopUiMcpTools.js";
+import { sanitizeDesktopUiLogPayload, sanitizeDesktopUiLogText } from "../tools/desktopUiTools.js";
 import {
   DIAGNOSTICS_MCP_TOOL_DEFS,
   dispatchDiagnosticsMcpTool,
@@ -570,6 +572,7 @@ export const MCP_TOOL_DEFINITIONS = [
     ...DELEGATE_MCP_TOOL_DEFS,
     ...PDF_MCP_TOOL_DEFS,
     ...MEDIA_MCP_TOOL_DEFS,
+    ...DESKTOP_UI_MCP_TOOL_DEFS,
 ];
 
 const activeMcpServerInstances = new Set<Server>();
@@ -785,9 +788,13 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       if (typeof args.worktreePath === "string") args.worktreePath = targetWorkspace;
     }
     return runWithMcpWorkspace(targetWorkspace, async () => {
-      logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(
-        name.startsWith("superagent_lan_") ? { action: name, deviceId: args.deviceId, host: args.host, port: args.port } : (delegateMcpObservation(name, args)?.args ?? args),
-      )}`);
+      const observedArgs = name.startsWith("superagent_lan_")
+        ? { action: name, deviceId: args.deviceId, host: args.host, port: args.port }
+        : (delegateMcpObservation(name, args)?.args ?? args);
+      const safeLogArgs = name === "superagent_desktop_ui"
+        ? sanitizeDesktopUiLogPayload(observedArgs as Record<string, unknown>)
+        : observedArgs;
+      logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(safeLogArgs)}`);
 
       try {
         if (name === "superagent_browser_gateway") {
@@ -1045,8 +1052,23 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
              : undefined;
            const delegateRes = await dispatchDelegateMcpTool(name, args, delegateMcpConnection);
            if (delegateRes) return delegateRes;
-           const chromeRes = await dispatchChromeMcpTool(name, args, delegateMcpConnection);
-           if (chromeRes) return chromeRes;
+            const chromeRes = await dispatchChromeMcpTool(name, args, delegateMcpConnection);
+            if (chromeRes) return chromeRes;
+            const desktopPrincipalSource = identity?.credentialHash
+              ? `${identity.mode}:credential:${identity.credentialHash}`
+              : identity?.subject?.trim()
+                ? `${identity.mode}:subject:${identity.subject.trim()}`
+                : !identity && authMode !== "oauth"
+                  ? `local-stdio:${connectionBrainSessionId}`
+                  : "";
+            const desktopPrincipalId = desktopPrincipalSource
+              ? crypto.createHash("sha256").update(desktopPrincipalSource).digest("hex")
+              : "";
+            const desktopUiRes = await dispatchDesktopUiMcpTool(name, args, {
+              principalId: desktopPrincipalId,
+              workspace: targetWorkspace,
+            });
+            if (desktopUiRes) return desktopUiRes;
            const diagRes = await dispatchDiagnosticsMcpTool(name, args);
            if (diagRes) return diagRes;
            const planSkillsRes = await dispatchPlanSkillsMcpTool(name, args);
@@ -1057,7 +1079,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         }
       }
     } catch (err: any) {
-      logMcp(`Error executing tool ${name}: ${err?.stack || err?.message || String(err)}`);
+      const rawError = err?.stack || err?.message || String(err);
+      const safeError = name === "superagent_desktop_ui"
+        ? (sanitizeDesktopUiLogText(rawError) || "Desktop UI error")
+        : rawError;
+      logMcp(`Error executing tool ${name}: ${safeError}`);
       return {
         content: [{ type: "text", text: `Error executing ${name}: ${err?.message || String(err)}` }],
         isError: true,
@@ -1129,10 +1155,17 @@ function extractMcpResultText(result: unknown): string {
       const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
         ?? (!info.ok ? "tool_execution_failed" : undefined);
       const privateDelegate = delegateMcpObservation(toolName, rawArgs);
-      const safeInfo = privateDelegate ? {
+      let safeInfo = privateDelegate ? {
         ...info, args: privateDelegate.args,
         ...(info.error ? { error: privateDelegate.error(info.error) } : {}),
       } : info;
+      if (toolName === "superagent_desktop_ui") {
+        safeInfo = {
+          ...safeInfo,
+          args: sanitizeDesktopUiLogPayload((safeInfo.args || {}) as Record<string, unknown>),
+          ...(safeInfo.error ? { error: sanitizeDesktopUiLogText(safeInfo.error) } : {}),
+        };
+      }
       try {
         onToolCall?.({
           ...safeInfo,
@@ -1350,14 +1383,20 @@ function extractMcpResultText(result: unknown): string {
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
+      const safeActivityArgs = toolName === "superagent_desktop_ui"
+        ? sanitizeDesktopUiLogPayload((rawArgs || {}) as Record<string, unknown>)
+        : rawArgs;
+      const safeActivityOutput = toolName === "superagent_desktop_ui"
+        ? sanitizeDesktopUiLogText(outputText)
+        : outputText;
       emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
-        args: rawArgs,
+        args: safeActivityArgs,
         ok: !failed,
-        error: failed ? outputText : undefined,
-        output: failed ? undefined : outputText,
+        error: failed ? safeActivityOutput : undefined,
+        output: failed ? undefined : safeActivityOutput,
         durationMs,
         timestamp: Date.now(),
         workspace: effectiveWs,
@@ -1366,6 +1405,12 @@ function extractMcpResultText(result: unknown): string {
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
+      const safeActivityArgs = toolName === "superagent_desktop_ui"
+        ? sanitizeDesktopUiLogPayload((rawArgs || {}) as Record<string, unknown>)
+        : rawArgs;
+      const safeErrorMsg = toolName === "superagent_desktop_ui"
+        ? sanitizeDesktopUiLogText(errorMsg)
+        : errorMsg;
       emitAudit({
         tool: toolName,
         args: rawArgs,
@@ -1376,9 +1421,9 @@ function extractMcpResultText(result: unknown): string {
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
-        args: rawArgs,
+        args: safeActivityArgs,
         ok: false,
-        error: errorMsg,
+        error: safeErrorMsg,
         durationMs,
         timestamp: Date.now(),
         workspace: effectiveWs,

@@ -120,6 +120,7 @@ import {
 import { controlChromeCdpTool } from "./chromeCdpTools.js";
 import { lanSupportTool } from "./lanSupportTool.js";
 import { controlChromeVisionTool } from "./chromeVisionTools.js";
+import { desktopUiTool } from "./desktopUiTools.js";
 import { runListTools, runDescribeTool } from "./toolDiscoveryTools.js";
 
 import {
@@ -386,6 +387,7 @@ export const superagentToolset: Tool[] = [
   // ─── Chrome Automation & Browser Control (Extension-Free) ───
   controlChromeCdpTool,    // extension-free native Chrome DevTools Protocol automation (port 9222)
   controlChromeVisionTool, // local UI-DETR-1 vision AI automation (port 8095)
+  desktopUiTool,           // host-local native desktop UI with scoped consent
   listRunningChromeTool,   // inspect running Chrome windows, tabs, and profiles
   closeChromeProfileTool,  // close target Chrome profile window
   listChromeProfilesTool,  // list available Chrome user profiles
@@ -721,6 +723,7 @@ export const subagentToolsets: Record<string, Tool[]> = {
     webSearchTool,
     controlChromeCdpTool,
     controlChromeVisionTool,
+    desktopUiTool, // host-local native desktop QA
     screenshotTool,
     playwrightScreenshotTool,
     askQuestionTool,
