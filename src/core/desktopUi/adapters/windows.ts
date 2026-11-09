@@ -108,7 +108,7 @@ $callback = [DesktopUiWindowDiscovery+EnumWindowsProc]{
     if ($titleLength -le 0) { return $true }
     $titleBuffer = New-Object System.Text.StringBuilder ([Math]::Min(513, $titleLength + 1))
     [void][DesktopUiWindowDiscovery]::GetWindowText($hwnd, $titleBuffer, $titleBuffer.Capacity)
-    $title = $titleBuffer.ToString()
+    $title = [regex]::Replace($titleBuffer.ToString(), '[\x00-\x1F\x7F]', '')
     if ([string]::IsNullOrWhiteSpace($title)) { return $true }
     if ($title.Length -gt 512) { $title = $title.Substring(0, 512) }
     try { $application = [System.Diagnostics.Process]::GetProcessById([int]$ownerPid).ProcessName } catch { return $true }
@@ -199,7 +199,7 @@ if ($width -le 0 -or $height -le 0) {
 $titleLength = [DesktopUiNativeWindow]::GetWindowTextLength($hwnd)
 $titleBuffer = New-Object System.Text.StringBuilder ([Math]::Max(1, $titleLength + 1))
 [void][DesktopUiNativeWindow]::GetWindowText($hwnd, $titleBuffer, $titleBuffer.Capacity)
-$windowTitle = $titleBuffer.ToString()
+$windowTitle = [regex]::Replace($titleBuffer.ToString(), '[\x00-\x1F\x7F]', '')
 $active = [DesktopUiNativeWindow]::GetForegroundWindow() -eq $hwnd
 $dpi = [DesktopUiNativeWindow]::GetDpiForWindow($hwnd)
 if ($dpi -le 0) { throw "DPI_CONTEXT_UNAVAILABLE: GetDpiForWindow failed" }
@@ -269,9 +269,9 @@ while ($stack.Count -gt 0 -and $items.Count -lt 2000) {
           elseif ($nativeClass -match '^WindowsForms10\.EDIT\.') { $role = "Edit" }
         }
       }
-      $name = [string]$current.Name
-      $help = [string]$current.HelpText
-      $automationId = [string]$current.AutomationId
+      $name = [regex]::Replace([string]$current.Name, '[\x00-\x1F\x7F]', '')
+      $help = [regex]::Replace([string]$current.HelpText, '[\x00-\x1F\x7F]', '')
+      $automationId = [regex]::Replace([string]$current.AutomationId, '[\x00-\x1F\x7F]', '')
       $runtimeId = ""
       try { $runtimeId = (($node.GetRuntimeId()) -join ".") } catch {}
       $actionableRoles = @("Button","Edit","Hyperlink","MenuItem","CheckBox","RadioButton","ComboBox","ListItem","TabItem","Slider","Spinner")

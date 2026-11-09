@@ -87,6 +87,9 @@ describe("native platform security contracts", () => {
     expect(accessibilityScript).toContain("IsChild($hwnd, $nativeHandle)");
     expect(accessibilityScript).toContain("WindowsForms10");
     expect(accessibilityScript).toContain('if ($role -eq "Pane"');
+    expect(accessibilityScript).toContain(String.raw`[regex]::Replace([string]$current.Name, '[\x00-\x1F\x7F]', '')`);
+    expect(accessibilityScript).toContain(String.raw`[regex]::Replace([string]$current.HelpText, '[\x00-\x1F\x7F]', '')`);
+    expect(accessibilityScript).toContain(String.raw`[regex]::Replace([string]$current.AutomationId, '[\x00-\x1F\x7F]', '')`);
     expect(accessibilityScript).toContain("IsOffscreen -and ($actionableRoles -contains $role)");
     expect(accessibilityScript).not.toContain("IsKeyboardFocusable -or");
   });
