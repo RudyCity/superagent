@@ -303,10 +303,71 @@ function tool(
 
                 const apply = async () => configureDelegateChatOnLockedTarget(
                   selected, targetTab, config, signal);
-                const applied = params.newTab === true
-                  ? await withSemanticDelegateTarget(
-                      "delegate.configure_chat", selected, targetTab, false, () => apply())
-                  : await apply();
+                let applied;
+                try {
+                  applied = params.newTab === true
+                    ? await withSemanticDelegateTarget(
+                        "delegate.configure_chat", selected, targetTab, false, () => apply())
+                    : await apply();
+                } catch (error) {
+                  const code = error instanceof Error ? error.message : String(error);
+                  if (!(params.newTab === true && config.effort &&
+                        code === "CHATGPT_EFFORT_POSTCONDITION_FAILED")) throw error;
+
+                  // A freshly opened ChatGPT tab can commit the power change only
+                  // after CDP detaches. Verify the settled state without replaying
+                  // any model click, arrow key, create_chat, or send mutation.
+                  let settledMatch: {
+                    modelControl?: { text: string; aria: string | null };
+                    effortStatus?: string;
+                  } | null = null;
+                  const settleDeadline = Date.now() + 7_000;
+                  while (Date.now() < settleDeadline && !settledMatch) {
+                    await new Promise(resolve => setTimeout(resolve, 650));
+                    const settled = await withSemanticDelegateTarget(
+                      "delegate.inspect_chat_config", selected, targetTab, false,
+                      () => inspectDelegateChatConfigurationOnLockedTarget(
+                        selected, targetTab, signal),
+                    );
+                    const modelControl = settled.controls.find(row =>
+                      String(row.aria || "").toLowerCase().includes("select chatgpt model"));
+                    const effortStatus =
+                      settled.effort_status_path?.find(row => row.role === "status")?.text ||
+                      modelControl?.text || "";
+                    const statusText = [
+                      modelControl?.text || "",
+                      ...(settled.effort_status_path || []).map(row => row.text || ""),
+                    ].join(" ").toLowerCase();
+                    const effortMatches = config.effort === "xhigh"
+                      ? /(extra high|xhigh)/.test(statusText)
+                      : config.effort === "high"
+                        ? /high/.test(statusText) && !/extra high/.test(statusText)
+                        : config.effort === "medium"
+                          ? /medium/.test(statusText)
+                          : /low/.test(statusText);
+                    const requestedModel = String(config.model || "")
+                      .toLowerCase().replace(/^gpt[-\s]*/i, "").trim();
+                    const modelText = [
+                      modelControl?.text || "",
+                      ...(settled.model_candidates || []),
+                    ].join(" ").toLowerCase();
+                    const modelMatches = !requestedModel || modelText.includes(requestedModel);
+                    if (effortMatches && modelMatches) {
+                      settledMatch = { modelControl, effortStatus };
+                    }
+                  }
+                  if (!settledMatch) throw error;
+
+                  applied = {
+                    requested_model: config.model || null,
+                    requested_effort: config.effort || null,
+                    applied_model: config.model
+                      ? (settledMatch.modelControl?.text || config.model) : null,
+                    applied_effort: settledMatch.effortStatus || config.effort,
+                    model_control: config.model ? "settled-post-detach" : null,
+                    effort_control: "power-keyboard-settled",
+                  };
+                }
                 return JSON.stringify({
                   ...(parsed && typeof parsed === "object" ? parsed : { result: bridgeOutput }),
                   chat_config: applied,

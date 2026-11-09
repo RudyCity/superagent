@@ -12,6 +12,11 @@ const rust = fs.readFileSync(path.resolve("apps/superagent-tray/src-tauri/src/ma
 describe("LAN Client Tray request boundary", () => {
   it("enforces an exact action allowlist and disallows unrequested fields", () => {
     expect(parseTrayLanAction({ action: "list" })).toEqual({ action: "list", args: { action: "list" } });
+    expect(parseTrayLanAction({ action: "apk_download_qr" })).toEqual({
+      action: "apk_download_qr", args: { action: "apk_download_qr" },
+    });
+    expect(parseTrayLanAction({ action: "qr_heartbeat", kind: "connect", id: "1".repeat(36) }).action)
+      .toBe("qr_heartbeat");
     for (const input of [
       null, {}, [], { action: "shell" }, { action: "list", token: "abc" },
       { action: "open", host: "10.0.0.4" },
@@ -41,6 +46,22 @@ describe("LAN Client Tray request boundary", () => {
       await expect(dispatchTrayLanAction({ action: "open", deviceId: "85d1e5ab-42d1-4ed0-b71f-74a3f16523fe" }))
         .rejects.toThrow(/Full YOLO/);
     }
+  });
+});
+
+describe("QR tunnel auto-recovery contract", () => {
+  it("auto-ensures the owner-verified Core HTTPS tunnel for both QR actions", () => {
+    const bridge = fs.readFileSync(path.resolve("src/core/runtime/trayLanBridge.ts"), "utf8");
+    const helper = fs.readFileSync(path.resolve("src/core/runtime/ownedCoreHttpTunnel.ts"), "utf8");
+    expect((bridge.match(/ensureOwnedCoreHttpTunnel\(7888\)/g) || []).length).toBe(2);
+    expect(helper).toContain("const inFlight = new Map<number, Promise<EnsuredCoreHttpTunnel>>();");
+    expect(helper).toContain('serviceKind !== "superagent-http"');
+    expect(helper).toContain('claimTunnelServiceKind(port, "superagent-http")');
+    expect(helper).toContain("if (current) return await current;");
+    expect(helper).toContain('/api/device-tunnel/ping');
+    expect(helper).toContain("waitForPublicTunnelReady");
+    expect(html).toContain("this QR action starts and verifies it automatically");
+    expect(html).not.toContain("Start the Core HTTPS tunnel first, then create a QR");
   });
 });
 

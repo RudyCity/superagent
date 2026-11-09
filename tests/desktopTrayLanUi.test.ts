@@ -11,7 +11,8 @@ type MockNode = {
   children: MockNode[]; textContent: string; value: string; checked: boolean;
   hidden: boolean; disabled: boolean; listeners: Map<string, (e?: any) => unknown>;
   classList: { toggle: (name: string, on: boolean) => void };
-  type: string; className: string; focus: () => void;
+  type: string; className: string; focus: () => void; click: () => unknown; width: number; height: number; style: Record<string,string>;
+  getContext: (kind: string, options?: unknown) => any;
   addEventListener: (type: string, listener: (e?: any) => unknown) => void;
   append: (...items: MockNode[]) => void; replaceChildren: (...items: MockNode[]) => void;
   setAttribute: (name: string, value: string) => void;
@@ -20,9 +21,11 @@ function node(): MockNode {
   const el = {
     children: [] as MockNode[], textContent: "", value: "", checked: false,
     hidden: false, disabled: false, listeners: new Map<string, (e?: any) => unknown>(),
-    type: "", className: "",
+    type: "", className: "", width: 320, height: 320, style: {},
     classList: { toggle: () => {} },
     focus: () => {},
+    click: () => el.listeners.get("click")?.({ preventDefault() {} }),
+    getContext: () => ({ fillStyle: "", imageSmoothingEnabled: false, fillRect: () => {}, clearRect: () => {} }),
     addEventListener(type: string, listener: (e?: any) => unknown) { el.listeners.set(type, listener); },
     append(...items: MockNode[]) { el.children.push(...items); },
     replaceChildren(...items: MockNode[]) { el.children = items; },
@@ -45,7 +48,22 @@ function setup(platform: "windows" | "android" = "windows") {
       success: true,
       devices: [{ name: "<img src=x onerror=alert(1)>", address: "192.168.50.10", port: 17845, fingerprint, platform }],
     };
-    if (action === "list") return { success: true, devices: devices.map((d) => ({ ...d })) };
+    if (action === "list") return { success: true, devices: devices.map((d) => ({ ...d })), tunnelDevices: [] };
+    if (action === "tunnel_invite") return { success: true, invite: {
+      inviteId: "11111111-2222-4333-8444-555555555555",
+      expiresAt: Date.now() + 10 * 60_000,
+      setup: JSON.stringify({ url: "https://example.test", inviteId: "11111111-2222-4333-8444-555555555555", code: "0123456789" }),
+      qrMatrix: { size: 21, cells: "1".repeat(21 * 21) },
+    } };
+    if (action === "apk_download_qr") return { success: true, apk: {
+      heartbeatId: "a".repeat(64), expiresAt: Date.now() + 10 * 60_000,
+      size: 6_000_000, sha256: "b".repeat(64), filename: "SuperAgent-Android-test.apk",
+      qrMatrix: { size: 21, cells: "1".repeat(21 * 21) },
+    } };
+    if (action === "qr_heartbeat") return {
+      success: true, kind: payload.kind, id: payload.id, valid: true, state: "active",
+      tunnelActive: true, expiresAt: Date.now() + 20_000, remainingMs: 20_000,
+    };
     if (action === "pair") {
       devices = [{ id, host: payload.host, port: payload.port, fingerprint, label: "LAN Client", platform, connected: false }];
       return { success: true, device: { ...devices[0] } };
@@ -57,18 +75,80 @@ function setup(platform: "windows" | "android" = "windows") {
     throw Error("Unexpected LAN action " + action);
   };
   get("page-lan-devices").hidden = false;
-  const window = { __TAURI__: { core: { invoke } }, confirm: () => true } as any;
+  let heartbeatTick: (() => void) | null = null;
+  const window = {
+    __TAURI__: { core: { invoke } },
+    confirm: () => true,
+    setInterval: (fn: () => void) => { heartbeatTick = fn; return 1; },
+    clearInterval: () => {},
+    addEventListener: () => {},
+  } as any;
+  const document = {
+    readyState: "complete",
+    visibilityState: "visible",
+    getElementById: get,
+    createElement: node,
+    addEventListener: () => {},
+  } as any;
   vm.runInNewContext(script, {
-    document: { readyState: "complete", getElementById: get, createElement: node },
-    window, String, Number, Boolean, Error, Array, Object,
+    document, window, navigator: {}, String, Number, Boolean, Error, Array, Object, Date, Math,
   });
-  return { get, requests, window };
+  return { get, requests, window, heartbeat: () => heartbeatTick?.() };
 }
 const flush = async () => {
   for (let i = 0; i < 4; i++) await new Promise((resolve) => setImmediate(resolve));
 };
 async function click(el: MockNode) { await el.listeners.get("click")?.({ preventDefault() {} }); await flush(); }
 async function submit(el: MockNode) { await el.listeners.get("submit")?.({ preventDefault() {} }); await flush(); }
+
+describe("Device Tunnel Tray contract", () => {
+  it("keeps tunnel enrollment local while exposing tunnel device management", () => {
+    const html = fs.readFileSync(path.resolve("apps/superagent-tray/ui/index.html"), "utf8");
+    const native = fs.readFileSync(path.resolve("apps/superagent-tray/src-tauri/src/main.rs"), "utf8");
+    for (const id of ["lan-tunnel-invite", "lan-tunnel-status", "lan-tunnel-devices", "lan-tunnel-qr-card", "lan-tunnel-qr",
+      "lan-apk-download-qr", "lan-apk-qr-card", "lan-apk-qr", "lan-apk-status", "lan-apk-meta"])
+      expect(html).toContain('id="' + id + '"');
+    for (const action of ["tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke"])
+      expect(native).toContain('"' + action + '"');
+    expect(script).toContain('invoke("tunnel_invite")');
+    expect(script).toContain('invoke("apk_download_qr")');
+    expect(script).toContain('invoke("qr_heartbeat"');
+    expect(script).toContain("const QR_HEARTBEAT_MS = 5000");
+    expect(script).toContain("const QR_REFRESH_AHEAD_MS = 30000");
+    expect(script).toContain("requestQrRefresh(kind");
+    expect(script).toContain('lan-apk-qr');
+        expect(script).toContain('drawQrMatrix(qr, qrMatrix)');
+    expect(script).toContain('canvas.getContext("2d", { alpha: false })');
+    expect(script).toContain('ctx.fillRect');
+    expect(script).toContain('navigator.clipboard.writeText(setup)');
+    expect(script).toContain('invoke("tunnel_pair_request"');
+    expect(script).toContain('request.transport === "tunnel"');
+  });
+});
+
+describe("QR heartbeat behavior", () => {
+  it("automatically refreshes a connect QR when less than 30 seconds remain", async () => {
+    const ui = setup();
+    await flush();
+    await click(ui.get("lan-tunnel-invite"));
+    expect(ui.requests.filter((r) => r.action === "tunnel_invite")).toHaveLength(1);
+    ui.heartbeat();
+    await flush();
+    expect(ui.requests.some((r) => r.action === "qr_heartbeat" && r.payload.kind === "connect")).toBe(true);
+    expect(ui.requests.filter((r) => r.action === "tunnel_invite")).toHaveLength(2);
+  });
+
+  it("automatically refreshes an APK QR when less than 30 seconds remain", async () => {
+    const ui = setup();
+    await flush();
+    await click(ui.get("lan-apk-download-qr"));
+    expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(1);
+    ui.heartbeat();
+    await flush();
+    expect(ui.requests.some((r) => r.action === "qr_heartbeat" && r.payload.kind === "apk")).toBe(true);
+    expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(2);
+  });
+});
 
 describe("LAN Devices Tray UI behavior", () => {
   it("directed IPv4 scan uses exact target, clears stale results, and preserves segment", async () => {

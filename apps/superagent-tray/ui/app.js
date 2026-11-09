@@ -368,7 +368,7 @@ function navigateToPage(pageId) {
     }
   }
 
-  document.querySelectorAll(".navigation .nav-link").forEach((link) => {
+  document.querySelectorAll(".sidebar .nav-link").forEach((link) => {
     link.classList.toggle("active", link.dataset.page === target);
   });
 
@@ -522,7 +522,7 @@ function install() {
   window.addEventListener("superagent-core-selected", refresh);
 
   // Sidebar navigation links
-  document.querySelectorAll(".navigation .nav-link").forEach((link) => {
+  document.querySelectorAll(".sidebar .nav-link").forEach((link) => {
     link.addEventListener("click", (e) => {
       e.preventDefault();
       const page = link.dataset.page;

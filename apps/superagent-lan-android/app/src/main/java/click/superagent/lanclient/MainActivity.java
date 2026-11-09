@@ -33,6 +33,11 @@ import android.text.InputType;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
+import com.google.mlkit.vision.barcode.common.Barcode;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,14 +53,16 @@ public final class MainActivity extends Activity {
     private String sharedFileName;
     private volatile boolean preparingFolder;
     private volatile LanClientServer server;
+    private volatile TunnelRelayClient tunnelRelay;
     private volatile boolean visible;
     private volatile boolean launching;
     private AlertDialog approvalDialog;
     private final AtomicBoolean approvalPending = new AtomicBoolean(false);
     private TextView status, ip, code, fingerprint, paired, events, fileSelected;
     private Button start, stop, renew, revoke, copy, startScreen, stopScreen, touchToggle;
-    private TextView screenState;
-    private EditText segmentInput;
+    private Button tunnelScan, tunnelConnect, tunnelDisconnect;
+    private TextView screenState, tunnelState;
+    private EditText segmentInput, tunnelSetupInput;
 
     private String appBuildLabel() {
         try {
@@ -107,10 +114,10 @@ public final class MainActivity extends Activity {
         scroll.addView(layout);
         setContentView(scroll);
 
-        add(layout, label("SUPERAGENT · PRIVATE LAN", 11, 0xff7daeff, true), 0);
-        add(layout, label("Android LAN Client", 27, Color.WHITE, true), 6);
+        add(layout, label("SUPERAGENT · PRIVATE DEVICE", 11, 0xff7daeff, true), 0);
+        add(layout, label("Android Device Client", 27, Color.WHITE, true), 6);
         add(layout, label(appBuildLabel(), 12, 0xff7daeff, false), 2);
-        add(layout, label("Consent-based support while this app stays open. No background service, ADB, root, or Internet relay.", 13, 0xffafbed2, false), 6);
+        add(layout, label("Consent-based support while this app stays open. Direct LAN and optional reverse HTTPS tunnel are supported; no ADB, root, or hidden background access.", 13, 0xffafbed2, false), 6);
 
         section(layout, "NETWORK SEGMENT · REQUIRED");
         add(layout, label("Enter the same network segment on Windows and Android. It filters discovery, but cannot replace pairing or on-device approval.", 13, 0xffafbed2, false), 2);
@@ -128,6 +135,25 @@ public final class MainActivity extends Activity {
         add(layout, status, 2);
         start = action(layout, "Start LAN sharing", this::startSharing);
         stop = action(layout, "Stop sharing", this::stopSharing);
+
+        section(layout, "DEVICE TUNNEL · QR CONNECT");
+        add(layout, label("Scan the one-time QR shown in SuperAgent Tray. The phone enrolls and starts pairing automatically through outbound HTTPS; you only confirm the pairing approval on this phone.", 13, 0xffafbed2, false), 2);
+        tunnelScan = action(layout, "Scan QR & Connect", this::scanTunnelQr);
+        add(layout, label("Manual setup JSON is kept only as a recovery fallback.", 11, 0xff8194aa, false), 4);
+        tunnelSetupInput = new EditText(this);
+        tunnelSetupInput.setSingleLine(false);
+        tunnelSetupInput.setMinLines(2);
+        tunnelSetupInput.setMaxLines(4);
+        tunnelSetupInput.setHint("{\"url\":\"https://...\",\"inviteId\":\"...\",\"code\":\"...\"}");
+        tunnelSetupInput.setHintTextColor(0xff8194aa);
+        tunnelSetupInput.setTextColor(Color.WHITE);
+        tunnelSetupInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        tunnelSetupInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(1024)});
+        add(layout, tunnelSetupInput, 4);
+        tunnelState = label("Tunnel OFF", 14, Color.WHITE, true);
+        add(layout, tunnelState, 2);
+        tunnelConnect = action(layout, "Connect reverse HTTPS tunnel", this::connectTunnel);
+        tunnelDisconnect = action(layout, "Disconnect tunnel", this::disconnectTunnel);
 
         section(layout, "PAIRING DETAILS");
         add(layout, label("Phone IP / port", 12, 0xffafbed2, false), 0);
@@ -210,7 +236,7 @@ public final class MainActivity extends Activity {
         events.setTypeface(Typeface.MONOSPACE);
         events.setTextIsSelectable(true);
         add(layout, events, 0);
-        add(layout, label("v0.7.0 health + support status · Android 10+ · Schema-first", 11, 0xff8194aa, false), 24);
+        add(layout, label("Android 10+ · LAN + reverse HTTPS Device Tunnel · Schema-first", 11, 0xff8194aa, false), 24);
         refresh();
     }
 
@@ -223,6 +249,12 @@ public final class MainActivity extends Activity {
         if (renew != null) renew.setEnabled(on);
         if (revoke != null) revoke.setEnabled(on);
         if (copy != null) copy.setEnabled(on);
+        boolean tunnelOn = tunnelRelay != null && tunnelRelay.isRunning();
+        if (tunnelSetupInput != null) tunnelSetupInput.setEnabled(on && !tunnelOn && !launching);
+        if (tunnelScan != null) tunnelScan.setEnabled(!tunnelOn && !launching && !preparingFolder);
+        if (tunnelConnect != null) tunnelConnect.setEnabled(on && !tunnelOn);
+        if (tunnelDisconnect != null) tunnelDisconnect.setEnabled(tunnelOn);
+        if (tunnelState != null) tunnelState.setText(tunnelOn ? "Tunnel ON · outbound HTTPS" : "Tunnel OFF");
         if (paired != null) paired.setText(on ? live.state() : "No paired controllers");
         if (startScreen != null) startScreen.setEnabled(on && RemoteControlPermit.hasApprovedSession()
                 && !requestingCapture && !ScreenProjectionService.isActive());
@@ -295,7 +327,125 @@ public final class MainActivity extends Activity {
         }, "superagent-android-client-start").start();
     }
 
+    private void scanTunnelQr() {
+        if (tunnelRelay != null && tunnelRelay.isRunning()) return;
+        try {
+            GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                    .build();
+            GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(this, options);
+            notifyEvent("Opening QR scanner. Hold the phone steady about 20–35 cm from the QR.");
+            scanner.startScan()
+                    .addOnSuccessListener(barcode -> {
+                        String raw = barcode.getRawValue();
+                        if (raw == null || raw.isEmpty() || raw.length() > 2048) {
+                            notifyEvent("QR rejected: invalid or oversized payload.");
+                            return;
+                        }
+                        connectTunnelFromQr(raw);
+                    })
+                    .addOnCanceledListener(() -> notifyEvent("QR scan cancelled."))
+                    .addOnFailureListener(error -> notifyEvent(
+                            "QR scanner unavailable: " + error.getClass().getSimpleName()));
+        } catch (Exception error) {
+            notifyEvent("QR scanner unavailable: " + error.getClass().getSimpleName());
+        }
+    }
+
+    private void connectTunnelFromQr(String setup) {
+        LanClientServer live = server;
+        if (live != null && live.isRunning() && live.currentInfo() != null) {
+            String freshPairingCode = live.rotateCode();
+            if (code != null) code.setText("AUTO · QR pairing");
+            connectTunnelSetup(setup, freshPairingCode);
+            return;
+        }
+        if (launching || preparingFolder) {
+            notifyEvent("Device sharing is still starting; scan again after it is ready.");
+            return;
+        }
+        launching = true;
+        status.setText("Starting secure QR tunnel engine...");
+        refresh();
+        new Thread(() -> {
+            LanClientServer pending = new LanClientServer(
+                    this, this::requestApproval, this::notifyEvent, this::executeApprovedAction);
+            try {
+                if (sharedFileBytes != null && sharedFileName != null)
+                    pending.selectLocalFile(sharedFileName, sharedFileBytes);
+                LanClientServer.Info info = pending.start("qr-tunnel");
+                main.post(() -> {
+                    launching = false;
+                    if (!visible) { pending.close(); refresh(); return; }
+                    server = pending;
+                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                    status.setText("ON — QR tunnel · " + info.transport);
+                    ip.setText(info.ip + ":" + info.port);
+                    code.setText("AUTO · QR pairing");
+                    fingerprint.setText(info.fingerprint);
+                    if (segmentInput != null && segmentInput.getText().toString().trim().isEmpty())
+                        segmentInput.setText("qr-tunnel");
+                    refresh();
+                    connectTunnelSetup(setup, info.code);
+                });
+            } catch (Exception error) {
+                pending.close();
+                main.post(() -> {
+                    launching = false;
+                    status.setText("OFF — QR connection failed");
+                    notifyEvent("Cannot start QR tunnel engine: " + error.getMessage());
+                    refresh();
+                });
+            }
+        }, "superagent-android-qr-start").start();
+    }
+
+    private void connectTunnel() {
+        String setup = tunnelSetupInput == null ? "" : tunnelSetupInput.getText().toString().trim();
+        if (setup.isEmpty()) {
+            if (tunnelSetupInput != null) tunnelSetupInput.setError("Paste Device Tunnel setup JSON from SuperAgent Tray.");
+            return;
+        }
+        connectTunnelSetup(setup, null);
+    }
+
+    private void connectTunnelSetup(String setup, String pairingCodeOverride) {
+        LanClientServer live = server;
+        LanClientServer.Info info = live == null ? null : live.currentInfo();
+        if (live == null || !live.isRunning() || info == null) {
+            notifyEvent("Start device sharing before connecting Device Tunnel.");
+            return;
+        }
+        TunnelRelayClient existing = tunnelRelay;
+        if (existing != null && existing.isRunning()) return;
+        try {
+            TunnelRelayClient relay = new TunnelRelayClient(this::notifyEvent);
+            String pairingCode = pairingCodeOverride == null ? info.code : pairingCodeOverride;
+            relay.start(setup, info.ip, info.port, info.fingerprint, pairingCode,
+                    Build.MANUFACTURER + " " + Build.MODEL);
+            tunnelRelay = relay;
+            if (tunnelSetupInput != null) tunnelSetupInput.setText("");
+            notifyEvent("Connecting reverse HTTPS Device Tunnel...");
+            refresh();
+        } catch (Exception error) {
+            tunnelRelay = null;
+            notifyEvent("Cannot connect tunnel: " + error.getMessage());
+            refresh();
+        }
+    }
+
+    private void disconnectTunnel() {
+        TunnelRelayClient relay = tunnelRelay;
+        tunnelRelay = null;
+        if (relay != null) relay.stop();
+        notifyEvent("Device Tunnel disconnected.");
+        refresh();
+    }
+
     private void stopSharing() {
+        TunnelRelayClient relay = tunnelRelay;
+        tunnelRelay = null;
+        if (relay != null) relay.stop();
         RemoteControlPermit.revoke();
         ScreenProjectionService.stop(this);
         LanClientServer old = server;

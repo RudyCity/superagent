@@ -27,7 +27,9 @@ launch a *new Tray-managed process* (new PID and task ID). SuperAgent cannot
 safely reconstruct an unknown environment or working directory from a PID;
 start recipes are held only in Core memory, and need to be reconfigured after
 a Core restart. The **Running Only** filter is off by default to expose stopped
-tasks. Logs for the original external process are unavailable.
+tasks. Logs for the original external process are unavailable. Each table row
+uses a reusable accessible **⋯ Actions** menu; keyboard navigation, Escape,
+click-outside dismissal and viewport-aware upward placement are supported.
 
 Core :7888, MCP :9229, Delegate bridge :17341, and other internal ports remain
 protected from raw external Stop. Use verified service-owner lifecycle controls

@@ -279,12 +279,20 @@ export async function runCoreGuardian(options: {
       recoveries++;
       try {
         const ready = await identifyChild(port, ownedPid);
-        if (!ready.recovered) return { reason: "refused", recoveries };
+        if (!ready.recovered) throw new Error("Recovered Core did not report recovery state");
         checkpointFloorSavedAt = readCoreCheckpoint(port).savedAt;
         lease.supervisorPid = ownedPid;
         persistLease();
       } catch {
-        return { reason: "refused", recoveries };
+        try {
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+        } catch {}
+        child = undefined;
+        if (exits.length >= policy.maxRecoveries) {
+          return { reason: "budget_exhausted", recoveries };
+        }
+        await pause(Math.min(5_000, policy.backoffMs * 2 ** Math.min(exits.length, 4)));
+        continue;
       }
     }
     return { reason: "stopped", recoveries };

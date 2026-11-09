@@ -14,13 +14,17 @@ import {
   getLanFileChunk, finalizeLanFile, abortLanFile,
 } from "../lanRemote/controller.js";
 import {
-  cancelLanPairRequest, completeLanPairRequest, createLanPairRequest,
+  cancelLanPairRequest, completeLanPairRequest, createLanPairRequest, createTunnelPairRequest,
   getLanPairRequest, listLanPairRequests,
 } from "../lanRemote/pairRequestBroker.js";
+import { createDeviceTunnelInvite, getDeviceTunnelInviteStatus, listDeviceTunnelDevices, revokeDeviceTunnel, revokeDeviceTunnelInvite } from "../deviceTunnel/broker.js";
+import { buildDeviceTunnelQrPayload, renderDeviceTunnelQrDataUrl, renderDeviceTunnelQrMatrix } from "../deviceTunnel/qrInvite.js";
+import { createAndroidApkDownloadTicket, getAndroidApkDownloadTicketStatus, revokeAndroidApkDownloadTicket } from "../deviceTunnel/apkDownload.js";
+import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
-export type TrayLanAction = "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_finish" | "file_abort";
+export type TrayLanAction = "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_finish" | "file_abort";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"]);
+const actions = new Set<TrayLanAction>(["discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"]);
 
 export function parseTrayLanAction(input: unknown): { action: TrayLanAction; args: LanArgs } {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("Invalid LAN request.");
@@ -34,6 +38,9 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     pair_status: ["action", "requestId"],
     pair_complete: ["action", "requestId", "code", "verified"],
     pair_cancel: ["action", "requestId"],
+    tunnel_invite: ["action"], apk_download_qr: ["action"], qr_heartbeat: ["action", "kind", "id"], tunnel_list: ["action"],
+    tunnel_pair_request: ["action", "tunnelId", "fingerprint", "controller"],
+    tunnel_revoke: ["action", "tunnelId"],
     open: ["action", "deviceId"], exec: ["action", "deviceId", "command"],
     close: ["action", "deviceId"], revoke: ["action", "deviceId"],
     file_offer: ["action", "deviceId", "direction", "name", "size", "sha256"],
@@ -48,6 +55,12 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
   };
   const keys = Object.keys(data);
   if (keys.some((key) => !allowed[action].includes(key))) throw Error("Unexpected LAN request field.");
+  if (action === "qr_heartbeat") {
+    if (data.kind !== "connect" && data.kind !== "apk") throw Error("Invalid QR heartbeat kind.");
+    if (typeof data.id !== "string") throw Error("QR heartbeat ID required.");
+    if (data.kind === "connect" && !/^[a-f0-9-]{36}$/i.test(data.id)) throw Error("Invalid connect QR heartbeat ID.");
+    if (data.kind === "apk" && !/^[a-f0-9]{64}$/.test(data.id)) throw Error("Invalid APK QR heartbeat ID.");
+  }
   if (action === "discover") {
     if (typeof data.segment !== "string" || data.segment !== data.segment.trim() ||
         data.segment.length < 3 || data.segment.length > 32 ||
@@ -68,6 +81,17 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
         (typeof data.segment !== "string" || data.segment !== data.segment.trim() ||
         !/^[A-Za-z0-9][A-Za-z0-9 _.-]{2,31}$/.test(data.segment)))
       throw Error("Invalid network segment for pairing.");
+  } else if (action === "tunnel_pair_request") {
+    if (typeof data.tunnelId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.tunnelId))
+      throw Error("Valid tunnel device ID required.");
+    if (typeof data.fingerprint !== "string" || !/^[a-f0-9]{64}$/i.test(data.fingerprint))
+      throw Error("Full SHA-256 fingerprint required.");
+    if (data.controller !== undefined &&
+       (typeof data.controller !== "string" || data.controller.length > 60 || !/^[\w .-]+$/.test(data.controller)))
+      throw Error("Controller label invalid.");
+  } else if (action === "tunnel_revoke") {
+    if (typeof data.tunnelId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.tunnelId))
+      throw Error("Valid tunnel device ID required.");
   } else if (["pair_status", "pair_cancel", "pair_complete"].includes(action)) {
     if (typeof data.requestId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.requestId))
       throw Error("Valid pairing request ID required.");
@@ -141,18 +165,65 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
   return { action, args: data };
 }
 
+let latestConnectQrInviteId: string | null = null;
+let latestApkQrToken: string | null = null;
+
 export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
   const { action, args } = parseTrayLanAction(input);
   if (action === "discover") return { success: true,
     devices: await discoverLanDevices(args.segment as string, 1500, args.targetIp as string | undefined) };
-  if (action === "list") return { success: true, devices: listLanDevices(), pairingRequests: listLanPairRequests() };
+  if (action === "list") return { success: true, devices: listLanDevices(), pairingRequests: listLanPairRequests(), tunnelDevices: listDeviceTunnelDevices() };
+  if (action === "tunnel_list") return { success: true, devices: listDeviceTunnelDevices() };
+  if (action === "qr_heartbeat") {
+    const kind = args.kind as "connect" | "apk";
+    const id = String(args.id);
+    const { getTunnelStatus } = await import("../remoteAgent/cloudflareTunnel.js");
+    const tunnel = getTunnelStatus(7888);
+    const tunnelActive = Boolean(tunnel.isRunning && tunnel.serviceKind === "superagent-http" && tunnel.publicUrl);
+    const status = kind === "connect" ? getDeviceTunnelInviteStatus(id) : getAndroidApkDownloadTicketStatus(id);
+    return { success: true, kind, id, tunnelActive, serverNow: Date.now(), ...status };
+  }
+  if (action === "apk_download_qr") {
+    if (!isFullYoloMode()) throw Error("Full YOLO must be enabled locally before exposing a temporary APK download ticket.");
+    const tunnel = await ensureOwnedCoreHttpTunnel(7888);
+    if (latestApkQrToken) revokeAndroidApkDownloadTicket(latestApkQrToken);
+    const ticket = createAndroidApkDownloadTicket();
+    latestApkQrToken = ticket.token;
+    const baseUrl = tunnel.endpoint.replace(/\/$/, "");
+    const downloadUrl = `${baseUrl}/api/device-tunnel/android-apk/${ticket.token}`;
+    const qrMatrix = renderDeviceTunnelQrMatrix(downloadUrl);
+    return { success: true, apk: {
+      heartbeatId: ticket.token, downloadUrl, qrMatrix, expiresAt: ticket.expiresAt, size: ticket.size,
+      sha256: ticket.sha256, filename: ticket.filename,
+    } };
+  }
+  if (action === "tunnel_invite") {
+    if (!isFullYoloMode()) throw Error("Full YOLO must be enabled locally before creating a QR auto-pair invite.");
+    const tunnel = await ensureOwnedCoreHttpTunnel(7888);
+    if (latestConnectQrInviteId) revokeDeviceTunnelInvite(latestConnectQrInviteId);
+    const invite = createDeviceTunnelInvite();
+    latestConnectQrInviteId = invite.inviteId;
+    const baseUrl = tunnel.endpoint.replace(/\/$/, "");
+    const setup = JSON.stringify({ url: baseUrl, inviteId: invite.inviteId, code: invite.code });
+    const qrPayload = buildDeviceTunnelQrPayload({
+      baseUrl, inviteId: invite.inviteId, code: invite.code, expiresAt: invite.expiresAt,
+    });
+    const qrMatrix = renderDeviceTunnelQrMatrix(qrPayload);
+    return { success: true, invite: { inviteId: invite.inviteId, code: invite.code,
+      expiresAt: invite.expiresAt, baseUrl, setup, qrPayload, qrMatrix } };
+  }
   if (action === "pair_status") return { success: true, request: getLanPairRequest(String(args.requestId)) };
   // Closing/revoking/cancelling access decreases privilege and remains available even after YOLO is turned off.
-  if (!isFullYoloMode() && !["close", "revoke", "file_abort", "pair_cancel"].includes(action)) {
+  if (!isFullYoloMode() && !["close", "revoke", "file_abort", "pair_cancel", "tunnel_revoke"].includes(action)) {
     throw Error("Full YOLO must be enabled locally for remote LAN pairing and execution. Target approval is also required.");
   }
   const id = String(args.deviceId ?? "");
   switch (action) {
+    case "tunnel_pair_request": return { success: true, request: createTunnelPairRequest({
+      tunnelId: args.tunnelId as string, fingerprint: args.fingerprint as string,
+      controller: args.controller as string | undefined,
+    }) };
+    case "tunnel_revoke": revokeDeviceTunnel(args.tunnelId as string); return { success: true, state: "tunnel_device_revoked" };
     case "pair_request": return { success: true, request: createLanPairRequest({
       host: args.host as string, port: args.port as number | undefined,
       fingerprint: args.fingerprint as string, controller: args.controller as string | undefined,

@@ -9,6 +9,8 @@ const java = (name: string) => fs.readFileSync(
 const diagnostics = java("AndroidDiagnostics");
 const health = java("AndroidHealthSnapshot");
 const permit = java("RemoteControlPermit");
+const tunnel = java("TunnelRelayClient");
+const activity = java("MainActivity");
 const androidBuild = fs.readFileSync(path.join(root, "app/build.gradle"), "utf8");
 const manifest = fs.readFileSync(path.join(root, "app/src/main/AndroidManifest.xml"), "utf8");
 
@@ -42,13 +44,36 @@ describe("Android 0.7 standalone health and consent contract", () => {
     expect(health).not.toContain("inputConsent(true)");
     expect(health).not.toContain("projection(true)");
   });
+  it("supports an outbound-only HTTPS Device Tunnel without replacing local consent", () => {
+    expect(activity).toContain("DEVICE TUNNEL · QR CONNECT");
+    expect(activity).toContain("Scan QR & Connect");
+    expect(activity).toContain("GmsBarcodeScanning.getClient");
+    expect(activity).toContain("Barcode.FORMAT_QR_CODE");
+    expect(activity).not.toContain("enableAutoZoom()");
+    expect(activity).toContain("Hold the phone steady about 20–35 cm from the QR.");
+    expect(androidBuild).toContain("play-services-code-scanner:16.1.0");
+    expect(manifest).toContain("com.google.mlkit.vision.DEPENDENCIES");
+    expect(manifest).toContain("barcode_ui");
+    expect(activity).toContain("connectTunnelFromQr");
+    expect(activity).toContain("AUTO · QR pairing");
+    expect(activity).toContain("TunnelRelayClient");
+    expect(tunnel).toContain('"https".equalsIgnoreCase(url.getProtocol())');
+    expect(tunnel).toContain('setRequestProperty("Authorization", "Device " + authToken)');
+    expect(tunnel).toContain("relayLocal(");
+    expect(tunnel).toContain("/api/device-tunnel/qr-pair");
+    expect(tunnel).toContain('"sat".equals(setup.optString("k", ""))');
+    expect(tunnel).toContain('"superagent-device-tunnel".equals(setup.optString("kind", ""))');
+    expect(tunnel).toContain("Local TLS fingerprint changed.");
+    expect(tunnel).not.toContain("SUPERAGENT_SERVER_AUTH_TOKEN");
+    expect(tunnel).not.toContain("x-auth-token");
+  });
   it("maintains Android restricted-permission exclusions", () => {
     for (const forbidden of ["REQUEST_INSTALL_PACKAGES", "MANAGE_EXTERNAL_STORAGE",
       "QUERY_ALL_PACKAGES", "WRITE_SECURE_SETTINGS", "DEVICE_ADMIN"]) {
       expect(manifest).not.toContain(forbidden);
     }
-    expect(androidBuild).toContain("versionCode 11");
-    expect(androidBuild).toContain("versionName '0.7.4-ephemeral-tls-preview'");
+    expect(androidBuild).toContain("versionCode 14");
+    expect(androidBuild).toContain("versionName '0.9.1-qr-scan-fix'");
     expect(fs.existsSync(path.join(root, "gradle/wrapper/gradle-wrapper.jar"))).toBe(true);
   });
 });

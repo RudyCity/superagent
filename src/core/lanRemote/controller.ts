@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import { lanInterfaces, onLinkToPeer, privateIntranetPeer, outboundLanSource, LAN_PORT, type LanInterface } from "./transport.js";
 import { discoveryRequestForSegment, networkSegmentTag, parseSegmentDiscoveryResponse } from "./networkSegment.js";
 import { isAllowedAndroidLanCommand, requiresAndroidOwnerActionApproval } from "./androidCapabilities.js";
+import { listDeviceTunnelDevices, requestDeviceTunnel } from "../deviceTunnel/broker.js";
 
 export interface LanDevice {
   id: string;
@@ -15,14 +16,18 @@ export interface LanDevice {
   platform: "windows" | "android";
   paired: boolean;
   connected: boolean;
+  transport?: "lan" | "tunnel";
+  tunnelId?: string;
 }
 interface SavedSession extends LanDevice {
   pairId: string; pairToken: string; sessionId?: string; sessionToken?: string;
+  transport: "lan" | "tunnel";
 }
 const sessions = new Map<string, SavedSession>();
 export function listLanDevices(): LanDevice[] {
-  return [...sessions.values()].map(({ id, host, port, fingerprint, label, platform, sessionToken }) => ({
+  return [...sessions.values()].map(({ id, host, port, fingerprint, label, platform, sessionToken, transport, tunnelId }) => ({
     id, host, port, fingerprint, label, platform, paired: true, connected: Boolean(sessionToken),
+    transport, ...(tunnelId ? { tunnelId } : {}),
   }));
 }
 function assertHost(host: string, port: number, fingerprint: string) {
@@ -86,6 +91,24 @@ async function request(host: string, port: number, fingerprint: string, body: ob
     });
   });
 }
+async function requestSaved(device: SavedSession, body: Record<string, unknown>,
+  maxWait = 120_000, maxReplyChars = 256 * 1024): Promise<Reply[]> {
+  if (device.transport === "tunnel") {
+    if (!device.tunnelId) throw new Error("Tunnel device handle is incomplete.");
+    const frames = await requestDeviceTunnel(device.tunnelId, body, maxWait, maxReplyChars);
+    if (!Array.isArray(frames)) throw new Error("Malformed tunnel device reply.");
+    const parsed = frames as Reply[];
+    for (const frame of parsed) {
+      if (!frame || typeof frame !== "object" || Array.isArray(frame))
+        throw new Error("Malformed tunnel device reply.");
+      if (frame.ok === false && frame.event !== "done")
+        throw new Error(String(frame.error || "Operation denied."));
+    }
+    return parsed;
+  }
+  return await request(device.host, device.port, device.fingerprint, body, maxWait, maxReplyChars);
+}
+
 export async function pairLanDevice(input: { host: string; port?: number; code: string; fingerprint: string; controller?: string; segmentName?: string }): Promise<LanDevice> {
   if (!/^\d{8}$/.test(input.code)) throw new Error("Expected an 8-digit pairing code.");
   const host = input.host, port = input.port ?? LAN_PORT, fingerprint = input.fingerprint.toLowerCase();
@@ -102,11 +125,41 @@ export async function pairLanDevice(input: { host: string; port?: number; code: 
   const safeDeviceName = typeof reply.deviceName === "string"
     ? reply.deviceName.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 60) : "";
   const deviceLabel = safeDeviceName || (platform === "android" ? "Android" : "Windows") + " LAN Client (" + host + ")";
-  const entry: SavedSession = { id, host, port, fingerprint, label: deviceLabel, platform,
+  const entry: SavedSession = { id, host, port, fingerprint, label: deviceLabel, platform, transport: "lan",
     paired: true, connected: false, pairId: reply.pairId, pairToken: reply.pairToken };
   sessions.set(id, entry);
   return { id, host, port, fingerprint, label: entry.label, platform, paired: true, connected: false };
 }
+export async function pairTunnelDevice(input: {
+  tunnelId: string; code: string; fingerprint: string; controller?: string;
+}): Promise<LanDevice> {
+  if (!/^\d{8}$/.test(input.code)) throw new Error("Expected an 8-digit pairing code.");
+  const target = listDeviceTunnelDevices().find((device) => device.id === input.tunnelId);
+  if (!target) throw new Error("Unknown tunnel device.");
+  if (!target.online) throw new Error("Tunnel device is offline.");
+  const fingerprint = input.fingerprint.toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(fingerprint) || fingerprint !== target.fingerprint)
+    throw new Error("Tunnel device fingerprint mismatch.");
+  const label = (input.controller || "SuperAgent").trim().slice(0, 60);
+  const frames = await requestDeviceTunnel(target.id, { op: "pair", code: input.code, label }, 120_000);
+  const reply = (frames as Reply[])[0];
+  if (!reply || typeof reply.pairId !== "string" || typeof reply.pairToken !== "string")
+    throw new Error("Tunnel pairing failed.");
+  const id = crypto.randomUUID();
+  const platform = reply.platform === "android" ? "android" : "windows";
+  if (platform !== target.platform) throw new Error("Tunnel device platform identity changed.");
+  const safeDeviceName = typeof reply.deviceName === "string"
+    ? reply.deviceName.replace(/[\u0000-]/g, "").trim().slice(0, 60) : "";
+  const entry: SavedSession = {
+    id, host: "tunnel", port: 0, fingerprint, label: safeDeviceName || target.name,
+    platform, paired: true, connected: false, pairId: reply.pairId, pairToken: reply.pairToken,
+    transport: "tunnel", tunnelId: target.id,
+  };
+  sessions.set(id, entry);
+  return { id, host: entry.host, port: entry.port, fingerprint, label: entry.label, platform,
+    paired: true, connected: false, transport: "tunnel", tunnelId: target.id };
+}
+
 function getSession(id: string): SavedSession {
   const entry = sessions.get(id);
   if (!entry) throw new Error("Unknown LAN handle. Pair this laptop again.");
@@ -114,7 +167,7 @@ function getSession(id: string): SavedSession {
 }
 export async function openLanSession(id: string): Promise<LanDevice> {
   const d = getSession(id);
-  const [reply] = await request(d.host, d.port, d.fingerprint, { op: "open", pairId: d.pairId, pairToken: d.pairToken });
+  const [reply] = await requestSaved(d, { op: "open", pairId: d.pairId, pairToken: d.pairToken });
   if (!reply || typeof reply.sessionId !== "string" || typeof reply.sessionToken !== "string") throw new Error("Session approval failed.");
   d.sessionId = reply.sessionId;
   d.sessionToken = reply.sessionToken;
@@ -127,7 +180,7 @@ export async function execLanCommand(id: string, command: string): Promise<{ std
   if (d.platform === "android" && !isAllowedAndroidLanCommand(command)) {
     throw new Error("Android client only accepts supported diagnostic or owner-approved action identifiers.");
   }
-  const frames = await request(d.host, d.port, d.fingerprint, {
+  const frames = await requestSaved(d, {
     op: "exec", pairId: d.pairId, pairToken: d.pairToken,
     sessionId: d.sessionId, sessionToken: d.sessionToken, command,
   }, d.platform === "android" && requiresAndroidOwnerActionApproval(command) ? 115_000 : 40_000);
@@ -164,7 +217,7 @@ function authenticatedAndroid(id: string): SavedSession {
 
 export async function getAndroidScreenFrame(id: string): Promise<AndroidScreenFrame> {
   const d = authenticatedAndroid(id);
-  const frames = await request(d.host, d.port, d.fingerprint, {
+  const frames = await requestSaved(d, {
     op: "screen", pairId: d.pairId, pairToken: d.pairToken,
     sessionId: d.sessionId, sessionToken: d.sessionToken,
   }, 8_000, 600 * 1024);
@@ -201,7 +254,7 @@ export async function sendAndroidScreenInput(id: string, command: AndroidScreenI
   if (command.kind === "text" && (!command.text || command.text.length > 160
       || command.text.includes(String.fromCharCode(10)) || command.text.includes(String.fromCharCode(13))))
     throw Error("Remote text must be 1–160 characters and contain no newline.");
-  const [reply] = await request(d.host, d.port, d.fingerprint, {
+  const [reply] = await requestSaved(d, {
     op: "input", pairId: d.pairId, pairToken: d.pairToken,
     sessionId: d.sessionId, sessionToken: d.sessionToken, ...command,
   }, 8_000);
@@ -233,7 +286,7 @@ export async function getAndroidUiSchema(id: string, knownRevision = 0): Promise
   const d = authenticatedAndroid(id);
   if (!Number.isInteger(knownRevision) || knownRevision < 0 || knownRevision > 1_000_000_000)
     throw Error("Invalid last-known UI schema revision.");
-  const frames = await request(d.host, d.port, d.fingerprint, {
+  const frames = await requestSaved(d, {
     op: "schema", pairId: d.pairId, pairToken: d.pairToken,
     sessionId: d.sessionId, sessionToken: d.sessionToken, knownRevision,
   }, 5_000, 110_000);
@@ -273,7 +326,7 @@ export async function clickAndroidUiElement(id: string, revision: number, elemen
     throw Error("Invalid UI schema revision.");
   if (!/^0(?:[.]\d{1,2}){0,12}$/.test(elementId) || elementId.length > 48)
     throw Error("Invalid UI element path.");
-  const [reply] = await request(d.host, d.port, d.fingerprint, {
+  const [reply] = await requestSaved(d, {
     op: "element", pairId: d.pairId, pairToken: d.pairToken,
     sessionId: d.sessionId, sessionToken: d.sessionToken,
     kind: "click", revision, elementId,
@@ -317,7 +370,7 @@ export async function offerLanFile(id: string, direction: "upload" | "download",
       || !Number.isInteger(metadata.size) || metadata.size < 1 || metadata.size > LAN_TRANSFER_MAX
       || !/^[a-f0-9]{64}$/.test(metadata.sha256)))
     throw Error("Invalid upload metadata.");
-  const [reply] = await request(device.host, device.port, device.fingerprint,
+  const [reply] = await requestSaved(device,
     fileEnvelope(device, "file_offer", { direction, ...metadata }), 110_000);
   return checkedOffer(reply);
 }
@@ -326,7 +379,7 @@ export async function putLanFileChunk(id: string, transferId: string, seq: numbe
   if (!/^[a-f0-9-]{36}$/i.test(transferId) || !Number.isInteger(seq) || seq < 0 || seq > 1024
       || typeof data !== "string" || !/^[A-Za-z0-9+/]{1,5464}={0,2}$/.test(data))
     throw Error("Invalid transfer chunk.");
-  const [reply] = await request(device.host, device.port, device.fingerprint,
+  const [reply] = await requestSaved(device,
     fileEnvelope(device, "file_put", { transferId, seq, data }), 10_000);
   if (!reply || reply.ok !== true || reply.seq !== seq + 1
       || !Number.isInteger(reply.received) || Number(reply.received) > LAN_TRANSFER_MAX)
@@ -337,7 +390,7 @@ export async function getLanFileChunk(id: string, transferId: string, seq: numbe
   const device = authFile(id);
   if (!/^[a-f0-9-]{36}$/i.test(transferId) || !Number.isInteger(seq) || seq < 0 || seq > 1024)
     throw Error("Invalid chunk sequence.");
-  const [reply] = await request(device.host, device.port, device.fingerprint,
+  const [reply] = await requestSaved(device,
     fileEnvelope(device, "file_get", { transferId, seq }), 10_000, 8192);
   if (!reply || reply.ok !== true || reply.seq !== seq || typeof reply.data !== "string"
       || !/^[A-Za-z0-9+/]{1,5464}={0,2}$/.test(reply.data)
@@ -348,7 +401,7 @@ export async function getLanFileChunk(id: string, transferId: string, seq: numbe
 export async function finalizeLanFile(id: string, transferId: string) {
   const device = authFile(id);
   if (!/^[a-f0-9-]{36}$/i.test(transferId)) throw Error("Invalid transfer handle.");
-  const [reply] = await request(device.host, device.port, device.fingerprint,
+  const [reply] = await requestSaved(device,
     fileEnvelope(device, "file_finish", { transferId }), 20_000);
   if (!reply || reply.ok !== true || !Number.isInteger(reply.bytes) || Number(reply.bytes) > LAN_TRANSFER_MAX)
     throw Error("File not committed after verification.");
@@ -358,7 +411,7 @@ export async function finalizeLanFile(id: string, transferId: string) {
 export async function abortLanFile(id: string, transferId: string): Promise<void> {
   const device = authFile(id);
   if (!/^[a-f0-9-]{36}$/i.test(transferId)) throw Error("Invalid transfer handle.");
-  await request(device.host, device.port, device.fingerprint,
+  await requestSaved(device,
     fileEnvelope(device, "file_abort", { transferId }), 10_000);
 }
 
@@ -366,7 +419,7 @@ export async function closeLanSession(id: string): Promise<void> {
   const d = getSession(id);
   if (!d.sessionToken) return;
   try {
-    await request(d.host, d.port, d.fingerprint, {
+    await requestSaved(d, {
       op: "close", pairId: d.pairId, pairToken: d.pairToken, sessionId: d.sessionId, sessionToken: d.sessionToken,
     }, 10_000);
   } finally {
@@ -379,7 +432,7 @@ export async function closeLanSession(id: string): Promise<void> {
 }
 export async function revokeLanDevice(id: string): Promise<void> {
   const d = getSession(id);
-  try { await request(d.host, d.port, d.fingerprint, { op: "revoke", pairId: d.pairId, pairToken: d.pairToken }, 10_000); }
+  try { await requestSaved(d, { op: "revoke", pairId: d.pairId, pairToken: d.pairToken }, 10_000); }
   finally { sessions.delete(id); }
 }
 /** A direct target probe inspects only the public TLS certificate. It does not

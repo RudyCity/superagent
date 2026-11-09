@@ -376,7 +376,9 @@ export async function dispatchDelegateMcpTool(
         : name === DELEGATE_MCP_TOOL_NAMES.search ? 305_000
           : name === DELEGATE_MCP_TOOL_NAMES.readFull ? 95_000
             : name === DELEGATE_MCP_TOOL_NAMES.list ? 65_000
-              : name === DELEGATE_MCP_TOOL_NAMES.send ? 36_000 : 26_000;
+              : name === DELEGATE_MCP_TOOL_NAMES.create ||
+                  name === DELEGATE_MCP_TOOL_NAMES.configure ? 75_000
+                : name === DELEGATE_MCP_TOOL_NAMES.send ? 60_000 : 26_000;
     const response = await fetch(baseUrl + "/api/delegate/mcp-dispatch", {
       method: "POST",
       headers: {

@@ -30,10 +30,34 @@ const closed = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 });
 
+const DEVICE_MCP_ALIAS_TO_LEGACY: Record<string, string> = {
+  superagent_device_list: "superagent_lan_list_devices",
+  superagent_device_capabilities: "superagent_lan_capabilities",
+  superagent_device_pair_status: "superagent_lan_pair_status",
+  superagent_device_pair_cancel: "superagent_lan_pair_cancel",
+  superagent_device_session_open: "superagent_lan_session_open",
+  superagent_device_exec: "superagent_lan_device_exec",
+  superagent_device_android_diagnostic: "superagent_lan_android_diagnostic",
+  superagent_device_android_ui_schema: "superagent_lan_android_ui_schema",
+  superagent_device_android_ui_click: "superagent_lan_android_ui_click",
+  superagent_device_android_screen: "superagent_lan_android_screen",
+  superagent_device_android_input: "superagent_lan_android_input",
+  superagent_device_file_offer: "superagent_lan_file_offer",
+  superagent_device_file_put: "superagent_lan_file_put",
+  superagent_device_file_get: "superagent_lan_file_get",
+  superagent_device_file_finish: "superagent_lan_file_finish",
+  superagent_device_file_abort: "superagent_lan_file_abort",
+  superagent_device_session_close: "superagent_lan_session_close",
+  superagent_device_revoke: "superagent_lan_revoke_device",
+};
+
 export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
   superagent_lan_discover: "safe",
   superagent_lan_list_devices: "safe",
   superagent_lan_capabilities: "safe",
+  superagent_device_tunnel_list: "safe",
+  superagent_device_tunnel_pair_request: "dangerous",
+  superagent_device_tunnel_revoke: "dangerous",
   superagent_lan_pair_request: "dangerous",
   superagent_lan_pair_status: "safe",
   superagent_lan_pair_cancel: "dangerous",
@@ -54,8 +78,11 @@ export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> 
   superagent_lan_session_close: "dangerous",
   superagent_lan_revoke_device: "dangerous",
 };
+for (const [aliasName, legacyName] of Object.entries(DEVICE_MCP_ALIAS_TO_LEGACY)) {
+  LAN_MCP_TOOL_CLASSIFICATIONS[aliasName] = LAN_MCP_TOOL_CLASSIFICATIONS[legacyName];
+}
 
-export const LAN_MCP_TOOL_DEFS = [
+const LAN_MCP_BASE_TOOL_DEFS = [
   {
     name: "superagent_lan_discover",
     description: "Discover SuperAgent LAN Device clients (Windows laptops or Android phones). Broadcast discovery is used by default; targetIp performs one directed probe for routed private intranets such as campus VLANs. The network segment is a discovery filter, not authentication. Pairing still requires full TLS fingerprint verification, a fresh code, and target-owner approval.",
@@ -74,6 +101,27 @@ export const LAN_MCP_TOOL_DEFS = [
     name: "superagent_lan_capabilities",
     description: "Describe the first-class LAN Device MCP surface and Android diagnostic/action allowlists without contacting a remote device.",
     inputSchema: closed({ deviceId }),
+  },
+  {
+    name: "superagent_device_tunnel_list",
+    description: "List enrolled reverse-HTTPS SuperAgent Device Tunnel companions. Returns only sanitized device identity, transport health and certificate fingerprint; never enrollment codes, device tokens, pair tokens or session tokens.",
+    inputSchema: closed({}),
+  },
+  {
+    name: "superagent_device_tunnel_pair_request",
+    description: "Create a secretless pairing request for an enrolled Device Tunnel companion. The 8-digit device pairing code is entered locally in SuperAgent Tray and is never sent through MCP. The tunnel device must be online and its full fingerprint must match the enrolled identity.",
+    inputSchema: closed({
+      tunnelId: { type: "string", pattern: "^[a-fA-F0-9-]{36}$", description: "Opaque Device Tunnel ID from superagent_device_tunnel_list." },
+      fingerprint: { type: "string", pattern: "^[a-fA-F0-9]{64}$", description: "Complete TLS fingerprint displayed on the remote companion." },
+      controller: { type: "string", minLength: 1, maxLength: 60, description: "Controller label shown in the remote approval prompt." },
+    }, ["tunnelId", "fingerprint"]),
+  },
+  {
+    name: "superagent_device_tunnel_revoke",
+    description: "Revoke a Device Tunnel enrollment. This removes its persistent device credential at Core and decreases access; any future connection requires a new local tunnel invitation.",
+    inputSchema: closed({
+      tunnelId: { type: "string", pattern: "^[a-fA-F0-9-]{36}$" },
+    }, ["tunnelId"]),
   },
   {
     name: "superagent_lan_pair_request",
@@ -223,6 +271,21 @@ export const LAN_MCP_TOOL_DEFS = [
   },
 ];
 
+const baseByName = new Map(LAN_MCP_BASE_TOOL_DEFS.map((definition) => [definition.name, definition]));
+export const LAN_MCP_TOOL_DEFS = [
+  ...LAN_MCP_BASE_TOOL_DEFS,
+  ...Object.entries(DEVICE_MCP_ALIAS_TO_LEGACY).map(([aliasName, legacyName]) => {
+    const base = baseByName.get(legacyName);
+    if (!base) throw new Error("Missing legacy Device MCP definition: " + legacyName);
+    return {
+      ...base,
+      name: aliasName,
+      description: base.description.replace(/LAN Device/g, "Device").replace(/LAN session/g, "device session")
+        + " Works with both direct LAN and reverse HTTPS tunnel handles.",
+    };
+  }),
+];
+
 async function coreLan(body: Record<string, unknown>, timeoutMs = 120_000): Promise<McpToolResult> {
   const response = await callServerApi("/api/desktop/lan-support", "POST", body, timeoutMs);
   if (!response.success) {
@@ -248,20 +311,21 @@ export async function dispatchLanMcpTool(
   args: Record<string, unknown> = {},
 ): Promise<McpToolResult | null> {
   if (!(name in LAN_MCP_TOOL_CLASSIFICATIONS)) return null;
+  const routedName = DEVICE_MCP_ALIAS_TO_LEGACY[name] || name;
   const deescalating = [
     "superagent_lan_session_close", "superagent_lan_revoke_device", "superagent_lan_file_abort",
-    "superagent_lan_pair_cancel",
-  ].includes(name);
+    "superagent_lan_pair_cancel", "superagent_device_tunnel_revoke",
+  ].includes(routedName);
   if (LAN_MCP_TOOL_CLASSIFICATIONS[name] === "dangerous" && !isFullYoloMode() && !deescalating) {
     return result({
       ok: false,
-      error: "Full YOLO is required for cross-device LAN support, in addition to MCP permission and physical target approval.",
+      error: "Full YOLO is required for cross-device support, in addition to MCP permission and physical target approval.",
     }, true);
   }
 
   try {
     const id = str(args.deviceId);
-    switch (name) {
+    switch (routedName) {
       case "superagent_lan_discover":
         return await coreLan({
           action: "discover", segment: str(args.segment),
@@ -272,7 +336,8 @@ export async function dispatchLanMcpTool(
       case "superagent_lan_capabilities":
         return result({
           owner: "core",
-          workflow: ["discover", "pair_request", "local_pair_complete", "pair_status", "session_open", "inspect_or_interact", "session_close_or_revoke"],
+          transports: { lan: true, reverseHttpsTunnel: true },
+          workflow: ["discover_or_tunnel_list", "pair_request", "local_pair_complete", "pair_status", "session_open", "inspect_or_interact", "session_close_or_revoke"],
           windows: { exec: true, nonElevated: true },
           android: {
             diagnostics: ANDROID_READONLY_DIAGNOSTICS,
@@ -281,6 +346,13 @@ export async function dispatchLanMcpTool(
           },
           files: { upload: true, download: true, maxBytes: 4 * 1024 * 1024, chunkBytes: 4096 },
         });
+      case "superagent_device_tunnel_list":
+        return await coreLan({ action: "tunnel_list" }, 8_000);
+      case "superagent_device_tunnel_pair_request":
+        return await coreLan({ action: "tunnel_pair_request", tunnelId: str(args.tunnelId),
+          fingerprint: str(args.fingerprint), controller: str(args.controller) || "SuperAgent MCP" }, 10_000);
+      case "superagent_device_tunnel_revoke":
+        return await coreLan({ action: "tunnel_revoke", tunnelId: str(args.tunnelId) }, 10_000);
       case "superagent_lan_pair_request":
         return await coreLan({
           action: "pair_request", host: str(args.host),

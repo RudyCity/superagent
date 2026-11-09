@@ -8,8 +8,8 @@ android {
         applicationId 'click.superagent.lanclient'
         minSdk 29
         targetSdk 35
-        versionCode 11
-        versionName '0.7.4-ephemeral-tls-preview'
+        versionCode 14
+        versionName '0.9.1-qr-scan-fix'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17
@@ -30,4 +30,9 @@ android {
             debuggable true
         }
     }
+}
+
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'
 }

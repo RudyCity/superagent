@@ -185,9 +185,90 @@
         .join("");
   }
 
-  function unavailableControl(label, reason) {
-    return `<button type="button" class="button ghost sm terminal-unavailable-btn"
-      disabled aria-disabled="true" title="${escapeHtml(reason)}">${label}</button>`;
+  const actionMenu = window.SuperAgentActionMenu.createController(document, window);
+
+  /**
+   * Render the same guarded process actions into a compact reusable menu.
+   * Capability flags come from Core, not inferred from a PID or command label.
+   */
+  function renderTaskActions(task, label) {
+    const active = task.status === "running" || task.status === "paused";
+    const external = task.source === "external";
+    const unverified = task.status === "unverified";
+    const reason = task.controlReason || "Action unavailable: ownership or lifecycle state is not verified.";
+    const items = [];
+    const enabled = (text, className, data, title, danger = false) =>
+      items.push({ label: text, className, data, title, danger });
+    const unavailable = (text, why = reason) =>
+      items.push({ label: text, className: "terminal-unavailable-btn", disabled: true, title: why });
+
+    if (task.canViewLogs === false) {
+      unavailable("Logs unavailable", "Output of external processes is not captured by SuperAgent.");
+    } else {
+      enabled("View Logs", "terminal-logs-btn", { "task-id": task.id }, "Inspect terminal output");
+    }
+    items.push({ separator: true });
+
+    if (external) {
+      if (task.canConfigureStart === true) {
+        enabled("Configure Start", "terminal-external-btn",
+          { "task-id": task.id, action: "configure" }, "Save a command and working directory");
+      } else {
+        unavailable("Configure Start");
+      }
+      if (task.canStart === true && !active) {
+        enabled("Start", "terminal-external-btn",
+          { "task-id": task.id, action: "start" }, "Launch the configured command as a new process");
+      } else {
+        unavailable("Start", active ? "Stop this process before starting a replacement." : reason);
+      }
+      unavailable("Pause", "External pause requires a SuperAgent-owned process handle.");
+      if (task.status === "running" && task.canStop === true) {
+        enabled("Stop", "terminal-external-btn", { "task-id": task.id, action: "stop" },
+          "Verify process identity and confirm termination", true);
+      } else {
+        unavailable("Stop");
+      }
+      items.push({ separator: true });
+      enabled("Service Controls", "terminal-manage-btn", { "task-id": task.id },
+        "Open verified lifecycle management");
+    } else if (unverified) {
+      unavailable("Start");
+      unavailable("Pause");
+      unavailable("Stop");
+      items.push({ separator: true });
+      enabled("Service Controls", "terminal-manage-btn", { "task-id": task.id },
+        "Open verified lifecycle management");
+    } else {
+      if (task.canStart === true && !active) {
+        enabled("Start", "terminal-control-btn", { "task-id": task.id, action: "start" },
+          "Start a new process with the original command");
+      }
+      if (task.canPause === true && task.status === "running") {
+        enabled("Pause", "terminal-control-btn", { "task-id": task.id, action: "pause" },
+          "Suspend the owned process tree");
+      }
+      if (task.canResume === true && task.status === "paused") {
+        enabled("Resume", "terminal-control-btn", { "task-id": task.id, action: "resume" },
+          "Resume the owned process tree");
+      }
+      if (active && task.canStop !== false) {
+        enabled("Stop", "terminal-kill-btn",
+          { "task-id": task.id, pid: task.pid, cmd: task.command },
+          "Terminate running process tree", true);
+      }
+    }
+
+    return window.SuperAgentActionMenu.render({
+      id: task.id,
+      label,
+      items,
+      note: (external || unverified) ? (
+        external && task.canStop === true
+          ? "External · Stop requires confirmation"
+          : reason
+      ) : "",
+    });
   }
 
   function renderTerminalUI() {
@@ -209,6 +290,8 @@
     // 3. Tasks Table
     const tbody = $("terminal-tasks-tbody");
     if (!tbody) return;
+    // Refresh replaces row nodes: release focus, geometry, and ARIA state first.
+    actionMenu.close();
 
     if (!terminalState.tasks.length) {
       tbody.innerHTML = `<tr>
@@ -227,11 +310,6 @@
       .map((t) => {
         const isRunning = t.status === "running";
         const isPaused = t.status === "paused";
-        const isExternal = t.source === "external";
-        const isUnverified = t.status === "unverified";
-        const readonlyReason = t.controlReason || (isExternal
-          ? "This process was observed outside SuperAgent. PID discovery is not permission to control it. Use verified service controls or relaunch it from Tray."
-          : "The process ownership is not verified; lifecycle actions are unavailable.");
         const statusBadge = isRunning
           ? `<span class="pill pill-success"><span class="pill-dot"></span>Running</span>`
           : isPaused
@@ -251,7 +329,8 @@
           : t.source === "background"
           ? "Background"
           : t.source === "external"
-          ? "External (read-only)"
+          ? (t.canStop === true || t.canStart === true || t.canConfigureStart === true
+              ? "External (verified)" : "External (read-only)")
           : "Tray";
 
         return `<tr class="terminal-task-row" data-task-id="${escapeHtml(t.id)}">
@@ -274,50 +353,7 @@
           </td>
           <td>${statusBadge}</td>
           <td class="text-right">
-            <div class="table-actions">
-              ${t.canViewLogs === false
-                ? `<span class="text-muted" title="This process was started outside SuperAgent; its logs are not captured.">Logs unavailable</span>`
-                : `<button type="button" class="button ghost sm terminal-logs-btn" data-task-id="${escapeHtml(t.id)}" title="Inspect terminal stdout logs">View Logs</button>`}
-              ${t.canStart === true && !isRunning && !isPaused
-                ? `<button type="button" class="button ghost sm terminal-control-btn" data-action="start" data-task-id="${escapeHtml(t.id)}" title="Start a new process with the original command and working directory">Start</button>`
-                : ""}
-              ${t.canPause === true && isRunning
-                ? `<button type="button" class="button ghost sm terminal-control-btn" data-action="pause" data-task-id="${escapeHtml(t.id)}" title="Suspend the owned process tree without terminating it">Pause</button>`
-                : ""}
-              ${t.canResume === true && isPaused
-                ? `<button type="button" class="button ghost sm terminal-control-btn" data-action="resume" data-task-id="${escapeHtml(t.id)}" title="Resume the suspended process tree">Resume</button>`
-                : ""}
-              ${
-                (isRunning || isPaused) && t.canStop !== false
-                  ? `<button type="button" class="button ghost sm danger terminal-kill-btn" data-task-id="${escapeHtml(
-                      t.id
-                    )}" data-pid="${t.pid}" data-cmd="${escapeHtml(t.command)}" title="Terminate running process tree">
-                      Stop
-                    </button>`
-                  : ""
-              }
-              ${isExternal
-                ? `${t.canConfigureStart === true
-                    ? `<button type="button" class="button ghost sm terminal-external-btn" data-task-id="${escapeHtml(t.id)}" data-action="configure" title="Save the command and working directory for a replacement process">Configure Start</button>`
-                    : unavailableControl("Configure Start", readonlyReason)}
-                    ${t.canStart === true && !isRunning
-                      ? `<button type="button" class="button ghost sm terminal-external-btn" data-task-id="${escapeHtml(t.id)}" data-action="start">Start</button>`
-                      : unavailableControl("Start", isRunning ? "Stop this process before starting a replacement." : readonlyReason)}
-                    ${unavailableControl("Pause", "Pause requires a supervised process handle.")}
-                    ${isRunning && t.canStop === true
-                      ? `<button type="button" class="button ghost sm danger terminal-external-btn" data-task-id="${escapeHtml(t.id)}" data-action="stop" title="Verify identity and explicitly confirm external process termination">Stop</button>`
-                      : unavailableControl("Stop", readonlyReason)}
-                    <button type="button" class="button ghost sm terminal-manage-btn" data-task-id="${escapeHtml(t.id)}" title="Open verified service lifecycle controls">Service Controls</button>`
-                : isUnverified
-                ? `${unavailableControl("Start", readonlyReason)}
-                    ${unavailableControl("Pause", readonlyReason)}
-                    ${unavailableControl("Stop", readonlyReason)}
-                    <button type="button" class="button ghost sm terminal-manage-btn" data-task-id="${escapeHtml(t.id)}">Service Controls</button>`
-                : ""}
-            </div>
-            ${isExternal || isUnverified
-              ? `<small class="terminal-control-hint" title="${escapeHtml(readonlyReason)}">${isExternal && t.canStop === true ? "External · stop requires confirmation" : "Read-only · verify owner in Runtime Detection"}</small>`
-              : ""}
+            ${renderTaskActions(t, displayLabel)}
           </td>
         </tr>`;
       })
@@ -450,8 +486,10 @@
       }
     });
 
-    // Table actions delegation (View Logs, Start, Pause, Resume, Stop)
-    $("terminal-tasks-tbody")?.addEventListener("click", async (e) => {
+    // Delegation remains the single handler for both table and body-portaled menu items.
+    const tableBody = $("terminal-tasks-tbody");
+    const onProcessActionClick = async (e) => {
+      if (actionMenu.handleClick(e)) return;
       const manageBtn = e.target.closest(".terminal-manage-btn");
       if (manageBtn) {
         // Navigation only; never infer permission to signal an external PID.
@@ -532,6 +570,15 @@
           killBtn.disabled = false;
         }
       }
+    };
+    tableBody?.addEventListener("click", onProcessActionClick);
+    document.addEventListener("click", (event) => {
+      // Popovers are portaled out of overflow-hidden panels and the table.
+      if (actionMenu.isOpen() && event.target?.closest?.(".sa-action-menu-item") &&
+          event.target?.closest?.(".sa-action-menu-popover") &&
+          !tableBody?.contains?.(event.target)) {
+        void onProcessActionClick(event);
+      }
     });
 
     // Log modal controls
@@ -564,7 +611,7 @@
     if (terminalState.pollTimer) clearInterval(terminalState.pollTimer);
     terminalState.pollTimer = setInterval(() => {
       const pageTerminal = $("page-terminal");
-      if (pageTerminal && !pageTerminal.hidden) {
+      if (pageTerminal && !pageTerminal.hidden && !actionMenu.isOpen()) {
         fetchTerminalTasks();
       }
     }, 4000);

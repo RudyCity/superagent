@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { privateIntranetPeer } from "./transport.js";
-import { listLanDevices, pairLanDevice, type LanDevice } from "./controller.js";
+import { listLanDevices, pairLanDevice, pairTunnelDevice, type LanDevice } from "./controller.js";
+import { listDeviceTunnelDevices } from "../deviceTunnel/broker.js";
 
 export type LanPairRequestState =
   | "pending" | "completing" | "paired" | "failed" | "cancelled" | "expired";
@@ -9,6 +10,8 @@ export interface LanPairRequest {
   requestId: string;
   host: string;
   port: number;
+  transport?: "lan" | "tunnel";
+  tunnelId?: string;
   fingerprint: string;
   controller: string;
   segment?: string;
@@ -37,7 +40,9 @@ function cleanup(now = Date.now()) {
   for (const [id, request] of requests) {
     if (request.state === "pending" || request.state === "completing") {
       const matching = paired.find((device) =>
-        device.host === request.host && device.port === request.port &&
+        (request.transport === "tunnel"
+          ? device.transport === "tunnel" && device.tunnelId === request.tunnelId
+          : device.host === request.host && device.port === request.port) &&
         device.fingerprint.toLowerCase() === request.fingerprint.toLowerCase());
       if (matching) {
         request.state = "paired";
@@ -92,6 +97,29 @@ export function createLanPairRequest(input: {
   return { ...request };
 }
 
+export function createTunnelPairRequest(input: {
+  tunnelId: string; fingerprint: string; controller?: string;
+}): LanPairRequest {
+  cleanup();
+  const target = listDeviceTunnelDevices().find((device) => device.id === input.tunnelId);
+  if (!target) throw new Error("Unknown tunnel device.");
+  if (!target.online) throw new Error("Tunnel device is offline.");
+  if (!/^[a-f0-9]{64}$/i.test(input.fingerprint)
+      || input.fingerprint.toLowerCase() !== target.fingerprint.toLowerCase())
+    throw new Error("Tunnel device fingerprint mismatch.");
+  const controller = input.controller?.trim() || "SuperAgent MCP";
+  if (!/^[A-Za-z0-9_ .-]{1,60}$/.test(controller))
+    throw new Error("Invalid controller label.");
+  const now = Date.now();
+  const request: PairRequestRecord = {
+    requestId: crypto.randomUUID(), host: "tunnel", port: 0,
+    transport: "tunnel", tunnelId: target.id, fingerprint: target.fingerprint.toLowerCase(),
+    controller, state: "pending", createdAt: now, expiresAt: now + REQUEST_TTL_MS,
+  };
+  requests.set(request.requestId, request);
+  return { ...request };
+}
+
 export function listLanPairRequests(): LanPairRequest[] {
   cleanup();
   return [...requests.values()]
@@ -125,14 +153,15 @@ export async function completeLanPairRequest(
   request.state = "completing";
   request.error = undefined;
   try {
-    const device = await pairLanDevice({
-      host: request.host,
-      port: request.port,
-      code,
-      fingerprint: request.fingerprint,
-      controller: request.controller,
-      segmentName: request.segment,
-    });
+    const device = request.transport === "tunnel"
+      ? await pairTunnelDevice({
+          tunnelId: request.tunnelId || "", code, fingerprint: request.fingerprint,
+          controller: request.controller,
+        })
+      : await pairLanDevice({
+          host: request.host, port: request.port, code, fingerprint: request.fingerprint,
+          controller: request.controller, segmentName: request.segment,
+        });
     request.state = "paired";
     request.deviceId = device.id;
     return { request: { ...request }, device };

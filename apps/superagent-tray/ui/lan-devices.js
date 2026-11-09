@@ -3,8 +3,9 @@
 /** LAN Devices manager. Native Tauri -> selected authenticated Core only. */
 (() => {
   const $ = (id) => document.getElementById(id);
-  const state = { discovered: [], paired: [], pairingRequests: [], selected: null, pairRequestId: null,
-    busy: false, scanning: false, presetFor: null, presetPlatform: null, segmentRevision: 0 };
+  const state = { discovered: [], paired: [], pairingRequests: [], tunnelDevices: [], selected: null, pairRequestId: null,
+    busy: false, scanning: false, presetFor: null, presetPlatform: null, segmentRevision: 0,
+    connectQrLease: null, apkQrLease: null, qrHeartbeatBusy: false };
   const invoke = (action, payload = {}) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("SuperAgent Tray native runtime is unavailable.");
@@ -59,6 +60,111 @@
     return el;
   };
   const active = () => state.paired.find((device) => device.id === state.selected && device.connected);
+  function drawQrMatrix(canvas, matrix) {
+    if (!canvas || typeof canvas.getContext !== "function") throw Error("QR canvas is unavailable.");
+    if (!matrix || !Number.isInteger(matrix.size) || matrix.size < 21 || matrix.size > 177
+        || typeof matrix.cells !== "string" || matrix.cells.length !== matrix.size * matrix.size
+        || /[^01]/.test(matrix.cells)) throw Error("Invalid QR matrix response.");
+    const quiet = 4;
+    const modules = matrix.size + quiet * 2;
+    const modulePixels = matrix.size <= 65 ? 5 : matrix.size <= 85 ? 4 : 3;
+    const pixels = modules * modulePixels;
+    canvas.width = pixels;
+    canvas.height = pixels;
+    canvas.style.width = pixels + "px";
+    canvas.style.height = pixels + "px";
+    const ctx = canvas.getContext("2d", { alpha: false });
+    if (!ctx) throw Error("QR canvas context is unavailable.");
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, pixels, pixels);
+    ctx.fillStyle = "#000000";
+    for (let y = 0; y < matrix.size; y++) {
+      for (let x = 0; x < matrix.size; x++) {
+        if (matrix.cells[y * matrix.size + x] !== "1") continue;
+        ctx.fillRect((x + quiet) * modulePixels, (y + quiet) * modulePixels, modulePixels, modulePixels);
+      }
+    }
+  }
+
+  const QR_HEARTBEAT_MS = 5000;
+  const QR_REFRESH_AHEAD_MS = 30000;
+  const qrRemaining = (ms) => {
+    const seconds = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
+    return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
+  };
+  function clearQrCanvas(id, cardId) {
+    const qr = $(id);
+    const card = $(cardId);
+    if (card) card.hidden = true;
+    if (qr?.getContext) { const c = qr.getContext("2d"); c?.clearRect(0, 0, qr.width, qr.height); }
+  }
+  function requestQrRefresh(kind, reason) {
+    if (state.busy) return false;
+    const status = $(kind === "connect" ? "lan-tunnel-status" : "lan-apk-status");
+    if (status) status.textContent = "Refreshing QR automatically · " + reason;
+    $(kind === "connect" ? "lan-tunnel-invite" : "lan-apk-download-qr")?.click?.();
+    return true;
+  }
+  async function heartbeatOneQr(kind, lease) {
+    if (!lease?.id || !Number.isSafeInteger(lease.expiresAt)) return;
+    const statusEl = $(kind === "connect" ? "lan-tunnel-status" : "lan-apk-status");
+    let heartbeat;
+    try {
+      heartbeat = await invoke("qr_heartbeat", { kind, id: lease.id });
+    } catch {
+      const localRemaining = Math.max(0, lease.expiresAt - Date.now());
+      if (localRemaining <= QR_REFRESH_AHEAD_MS) {
+        requestQrRefresh(kind, "heartbeat unavailable near expiry");
+      } else if (statusEl) {
+        statusEl.textContent = "QR active · " + qrRemaining(localRemaining) + " remaining · heartbeat retrying";
+      }
+      return;
+    }
+    if (kind === "connect" && heartbeat?.state === "used") {
+      state.connectQrLease = null;
+      clearQrCanvas("lan-tunnel-qr", "lan-tunnel-qr-card");
+      if (statusEl) statusEl.textContent = "Connection QR used successfully. Device enrollment completed.";
+      void refresh();
+      return;
+    }
+    const remainingMs = Number.isFinite(heartbeat?.remainingMs)
+      ? Math.max(0, Number(heartbeat.remainingMs))
+      : Math.max(0, lease.expiresAt - Date.now());
+    if (Number.isSafeInteger(heartbeat?.expiresAt)) lease.expiresAt = heartbeat.expiresAt;
+    if (!heartbeat?.valid || heartbeat?.tunnelActive !== true || remainingMs <= QR_REFRESH_AHEAD_MS) {
+      requestQrRefresh(kind, heartbeat?.tunnelActive === false ? "Core HTTPS tunnel changed" : "expiry approaching");
+      return;
+    }
+    if (statusEl) statusEl.textContent = kind === "connect"
+      ? "Connection QR active · " + qrRemaining(remainingMs) + " remaining · heartbeat OK"
+      : "APK download QR active · " + qrRemaining(remainingMs) + " remaining · heartbeat OK";
+  }
+  async function runQrHeartbeat() {
+    if (state.qrHeartbeatBusy || state.busy) return;
+    if (!state.connectQrLease && !state.apkQrLease) return;
+    state.qrHeartbeatBusy = true;
+    try {
+      if (state.connectQrLease) await heartbeatOneQr("connect", state.connectQrLease);
+      if (!state.busy && state.apkQrLease) await heartbeatOneQr("apk", state.apkQrLease);
+    } finally {
+      state.qrHeartbeatBusy = false;
+    }
+  }
+
+  function loadPairRequest(request) {
+    state.pairRequestId = request.requestId;
+    if ($("lan-pair-ip")) $("lan-pair-ip").value = request.transport === "tunnel" ? "Device Tunnel" : request.host;
+    if ($("lan-pair-port")) $("lan-pair-port").value = request.transport === "tunnel" ? "17845" : String(request.port);
+    if ($("lan-pair-fingerprint")) $("lan-pair-fingerprint").value = request.fingerprint;
+    if ($("lan-pair-label")) $("lan-pair-label").value = request.controller || "SuperAgent MCP";
+    if (request.segment && $("lan-segment-name")) $("lan-segment-name").value = request.segment;
+    if ($("lan-pair-code")) $("lan-pair-code").value = "";
+    if ($("lan-verified")) $("lan-verified").checked = false;
+    pairStatus("Pairing request loaded. Compare the fingerprint on the target, enter its fresh 8-digit code locally, and confirm the fingerprint.");
+    $("lan-pair-form")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    $("lan-pair-code")?.focus?.();
+  }
   function paint() {
     const discovery = $("lan-discovered");
     if (discovery) {
@@ -92,6 +198,42 @@
         discovery.append(div);
       }
     }
+    const tunnelList = $("lan-tunnel-devices");
+    if (tunnelList) {
+      tunnelList.replaceChildren();
+      if (!state.tunnelDevices.length) tunnelList.append(empty("No enrolled tunnel devices."));
+      for (const device of state.tunnelDevices) {
+        const platform = device.platform === "android" ? "Android" : "Windows";
+        const status = device.online ? "Online" : "Offline";
+        const entry = item(device.name || platform + " Device", "Reverse HTTPS tunnel",
+          platform + " · fingerprint " + String(device.fingerprint || "").slice(0, 16) + "…", status);
+        entry.actions.append(button("Pair through tunnel", async () => {
+          if (state.busy || !device.online) return;
+          state.busy = true; paint();
+          try {
+            await invoke("tunnel_pair_request", {
+              tunnelId: device.id, fingerprint: device.fingerprint, controller: "SuperAgent Tray",
+            });
+            notice("Tunnel pairing request created. Enter the current 8-digit code locally below and confirm the fingerprint.");
+            state.busy = false;
+            await refresh();
+            const pending = state.pairingRequests.find((request) =>
+              request.transport === "tunnel" && request.tunnelId === device.id && request.state === "pending");
+            if (pending) loadPairRequest(pending);
+          } catch (error) { notice("Cannot create tunnel pairing request: " + String(error), true); }
+          finally { state.busy = false; paint(); }
+        }, false, state.busy || !device.online));
+        entry.actions.append(button("Revoke tunnel", async () => {
+          if (!window.confirm("Revoke this Device Tunnel enrollment? The remote companion will need a new local invite.")) return;
+          try {
+            await invoke("tunnel_revoke", { tunnelId: device.id });
+            await refresh();
+            notice("Device Tunnel enrollment revoked.");
+          } catch (error) { notice("Cannot revoke tunnel device: " + String(error), true); }
+        }, true, state.busy));
+        tunnelList.append(entry.div);
+      }
+    }
     const pairRequests = $("lan-pair-requests");
     if (pairRequests) {
       pairRequests.replaceChildren();
@@ -107,21 +249,11 @@
         const extra = (request.controller || "MCP controller") + " · fingerprint " +
           String(request.fingerprint || "").slice(0, 16) + "…" +
           (request.error ? " · " + request.error : "");
-        const entry = item("MCP pairing request", request.host + ":" + request.port, extra, status);
+        const entry = item("MCP pairing request", request.transport === "tunnel"
+          ? "Device Tunnel · " + String(request.tunnelId || "").slice(0, 8)
+          : request.host + ":" + request.port, extra, status);
         if (request.state === "pending") {
-          entry.actions.append(button("Complete locally", () => {
-            state.pairRequestId = request.requestId;
-            $("lan-pair-ip").value = request.host;
-            $("lan-pair-port").value = String(request.port);
-            $("lan-pair-fingerprint").value = request.fingerprint;
-            $("lan-pair-label").value = request.controller || "SuperAgent MCP";
-            if (request.segment && $("lan-segment-name")) $("lan-segment-name").value = request.segment;
-            $("lan-pair-code").value = "";
-            $("lan-verified").checked = false;
-            pairStatus("MCP request loaded. Compare the full fingerprint on the target, enter the fresh 8-digit code locally, then request pairing.");
-            $("lan-pair-form")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
-            $("lan-pair-code")?.focus?.();
-          }, false, state.busy));
+          entry.actions.append(button("Complete locally", () => loadPairRequest(request), false, state.busy));
           entry.actions.append(button("Cancel", async () => {
             try { await invoke("pair_cancel", { requestId: request.requestId }); }
             catch (error) { notice("Cannot cancel MCP pairing request: " + String(error), true); }
@@ -139,8 +271,10 @@
       for (const device of state.paired) {
         const connected = Boolean(device.connected);
         const { div, actions } = item(
-          device.label || "LAN Client", device.host + ":" + device.port,
-          (device.platform === "android" ? "Android" : "Windows") + " · TLS fingerprint pinned",
+          device.label || "Device Client",
+          device.transport === "tunnel" ? "Reverse HTTPS tunnel" : device.host + ":" + device.port,
+          (device.platform === "android" ? "Android" : "Windows") + " · "
+            + (device.transport === "tunnel" ? "Tunnel" : "LAN") + " · TLS fingerprint pinned",
           connected ? "Session active" : "Paired / approval required",
           device.id === state.selected
         );
@@ -212,6 +346,8 @@
     }
     if ($("lan-pair-submit")) $("lan-pair-submit").disabled = state.busy;
     if ($("lan-discovery-scan")) $("lan-discovery-scan").disabled = state.busy || state.scanning;
+    if ($("lan-tunnel-invite")) $("lan-tunnel-invite").disabled = state.busy;
+    if ($("lan-apk-download-qr")) $("lan-apk-download-qr").disabled = state.busy;
     window.__superagentLanFilesRefresh?.();
   }
   async function refresh() {
@@ -220,6 +356,7 @@
       const reply = await invoke("list");
       state.paired = Array.isArray(reply.devices) ? reply.devices : [];
       state.pairingRequests = Array.isArray(reply.pairingRequests) ? reply.pairingRequests : [];
+      state.tunnelDevices = Array.isArray(reply.tunnelDevices) ? reply.tunnelDevices : [];
       if (!state.paired.some((device) => device.id === state.selected)) state.selected = state.paired[0]?.id || null;
       paint();
     } catch (error) { notice("Cannot read paired devices: " + String(error), true); }
@@ -377,6 +514,80 @@
       if ($("lan-discovery-status")) $("lan-discovery-status").textContent = "Select segment and scan";
     });
     $("lan-paired-refresh")?.addEventListener("click", refresh);
+    $("lan-tunnel-invite")?.addEventListener("click", async () => {
+      if (state.busy) return;
+      state.busy = true;
+      paint();
+      try {
+        const reply = await invoke("tunnel_invite");
+        const setup = reply?.invite?.setup;
+        const qrMatrix = reply?.invite?.qrMatrix;
+        const inviteId = reply?.invite?.inviteId;
+        const expiresAt = reply?.invite?.expiresAt;
+        if (typeof setup !== "string" || setup.length < 40 || setup.length > 1024
+            || typeof inviteId !== "string" || !/^[a-f0-9-]{36}$/i.test(inviteId)
+            || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now())
+          throw Error("Invalid tunnel invite response.");
+        const qr = $("lan-tunnel-qr");
+        const card = $("lan-tunnel-qr-card");
+        if (!qr || !card) throw Error("QR display is unavailable in this Tray build.");
+        drawQrMatrix(qr, qrMatrix);
+        card.hidden = false;
+        state.connectQrLease = { id: inviteId, expiresAt };
+        const status = $("lan-tunnel-status");
+        if (status) status.textContent = "Connection QR active · " + qrRemaining(expiresAt - Date.now()) + " remaining · heartbeat active";
+        if (navigator?.clipboard?.writeText) {
+          try { await navigator.clipboard.writeText(setup); } catch {}
+        }
+        notice("One-time Device Tunnel QR created. Heartbeat will refresh it automatically before expiry.");
+      } catch (error) {
+        state.connectQrLease = null;
+        clearQrCanvas("lan-tunnel-qr", "lan-tunnel-qr-card");
+        const status = $("lan-tunnel-status");
+        if (status) status.textContent = "Cannot create tunnel invite: " + String(error).slice(0, 220);
+        notice("Cannot create Device Tunnel invite: " + String(error), true);
+      } finally {
+        state.busy = false;
+        paint();
+      }
+    });
+    $("lan-apk-download-qr")?.addEventListener("click", async () => {
+      if (state.busy) return;
+      state.busy = true;
+      paint();
+      try {
+        const reply = await invoke("apk_download_qr");
+        const apk = reply?.apk;
+        const qrMatrix = apk?.qrMatrix;
+        if (!apk || typeof apk.size !== "number" || !Number.isSafeInteger(apk.size) || apk.size < 1024
+            || typeof apk.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(apk.sha256)
+            || typeof apk.filename !== "string" || !/^[A-Za-z0-9._-]{1,100}\.apk$/.test(apk.filename)
+            || typeof apk.heartbeatId !== "string" || !/^[a-f0-9]{64}$/.test(apk.heartbeatId)
+            || !Number.isSafeInteger(apk.expiresAt) || apk.expiresAt <= Date.now())
+          throw Error("Invalid APK download QR response.");
+        const qr = $("lan-apk-qr");
+        const card = $("lan-apk-qr-card");
+        const meta = $("lan-apk-meta");
+        if (!qr || !card || !meta) throw Error("APK QR display is unavailable in this Tray build.");
+        drawQrMatrix(qr, qrMatrix);
+        card.hidden = false;
+        state.apkQrLease = { id: apk.heartbeatId, expiresAt: apk.expiresAt };
+        const mb = (apk.size / (1024 * 1024)).toFixed(1);
+        meta.textContent = apk.filename + " · " + mb + " MiB · SHA-256 " + apk.sha256;
+        const status = $("lan-apk-status");
+        if (status) status.textContent = "APK download QR active · " + qrRemaining(apk.expiresAt - Date.now()) + " remaining · heartbeat active";
+        notice("Temporary Android APK download QR created. Heartbeat will refresh it automatically before expiry.");
+      } catch (error) {
+        state.apkQrLease = null;
+        clearQrCanvas("lan-apk-qr", "lan-apk-qr-card");
+        const status = $("lan-apk-status");
+        if (status) status.textContent = "Cannot create APK download QR: " + String(error).slice(0, 220);
+        notice("Cannot create Android APK download QR: " + String(error), true);
+      } finally {
+        state.busy = false;
+        paint();
+      }
+    });
     $("lan-output-clear")?.addEventListener("click", () => { $("lan-output").textContent = "Output cleared."; });
     for (const [id, command] of [["lan-health-quick", "android.health"], ["lan-support-quick", "android.support_status"]]) {
       $(id)?.addEventListener("click", () => {
@@ -396,14 +607,23 @@
         pairStatus("A pairing request is already in progress. Check the target device for approval.");
         return;
       }
+      if (state.pairRequestId) {
+        const code = ($("lan-pair-code")?.value || "").trim();
+        const verified = Boolean($("lan-verified")?.checked);
+        $("lan-pair-code")?.setAttribute("aria-invalid", String(!/^\d{8}$/.test(code)));
+        $("lan-verified")?.setAttribute("aria-invalid", String(!verified));
+        if (!/^\d{8}$/.test(code) || !verified) {
+          pairStatus("Enter the current 8-digit code and confirm the full fingerprint before completing this pairing request.", true);
+          (!/^\d{8}$/.test(code) ? $("lan-pair-code") : $("lan-verified"))?.focus?.();
+          return;
+        }
+        void operation("pair_complete", { requestId: state.pairRequestId, code, verified: true },
+          "Completing pairing locally. Awaiting the target owner's approval.");
+        return;
+      }
       const payload = validatePairForm();
       if (!payload) return;
-      if (state.pairRequestId) {
-        void operation("pair_complete", { requestId: state.pairRequestId, code: payload.code, verified: true },
-          "Completing MCP pairing locally. Awaiting the target owner's approval.");
-      } else {
-        void operation("pair", payload, "Pairing request sent. Awaiting the target owner's approval.");
-      }
+      void operation("pair", payload, "Pairing request sent. Awaiting the target owner's approval.");
     });
     $("lan-command-form")?.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -418,6 +638,11 @@
         current.platform === "android" && command.startsWith("android.action.")
           ? "Waiting for explicit approval on the Android phone..." : "Remote command running...");
     });
+    const heartbeatTimer = window.setInterval(() => { void runQrHeartbeat(); }, QR_HEARTBEAT_MS);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") void runQrHeartbeat();
+    });
+    window.addEventListener("beforeunload", () => window.clearInterval(heartbeatTimer), { once: true });
     if ($("page-lan-devices")?.hidden === false) void refresh();
   }
   window.__superagentLanGetSelected = () => active();

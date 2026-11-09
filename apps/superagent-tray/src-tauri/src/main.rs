@@ -394,7 +394,7 @@ async fn create_connection(payload: Value) -> Result<Value, String> {
 /// authenticated loopback Core. It never receives Core bearer or pair/session tokens.
 #[tauri::command]
 async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"];
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
     let data = payload.unwrap_or_else(|| json!({}));
     let obj = data.as_object().ok_or("Invalid LAN payload")?;
@@ -404,6 +404,10 @@ async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Va
         "pair" => &["host", "port", "code", "fingerprint", "controller", "segment"],
         "pair_complete" => &["requestId", "code", "verified"],
         "pair_cancel" => &["requestId"],
+        "tunnel_invite" | "apk_download_qr" | "tunnel_list" => &[],
+        "qr_heartbeat" => &["kind", "id"],
+        "tunnel_pair_request" => &["tunnelId", "fingerprint", "controller"],
+        "tunnel_revoke" => &["tunnelId"],
         "exec" => &["deviceId", "command"],
         "input" => &["deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text"],
         "file_offer" => &["deviceId", "direction", "name", "size", "sha256"],
@@ -470,7 +474,34 @@ async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Va
         if request_id.len() != 36 || !request_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
             return Err("Invalid pair request ID".into());
         }
-    } else if !["discover", "list"].contains(&action.as_str()) {
+    } else if action == "qr_heartbeat" {
+        let kind = data["kind"].as_str().ok_or("QR heartbeat kind required")?;
+        let id = data["id"].as_str().ok_or("QR heartbeat ID required")?;
+        if kind != "connect" && kind != "apk" { return Err("Invalid QR heartbeat kind".into()); }
+        let valid_connect = kind == "connect" && id.len() == 36
+            && id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-');
+        let valid_apk = kind == "apk" && id.len() == 64
+            && id.bytes().all(|b| b.is_ascii_hexdigit());
+        if !valid_connect && !valid_apk { return Err("Invalid QR heartbeat ID".into()); }
+    } else if action == "tunnel_pair_request" {
+        let tunnel_id = data["tunnelId"].as_str().ok_or("Tunnel device ID required")?;
+        let fingerprint = data["fingerprint"].as_str().ok_or("Fingerprint required")?;
+        if tunnel_id.len() != 36 || !tunnel_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-')
+            || fingerprint.len() != 64 || !fingerprint.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err("Invalid tunnel pairing details".into());
+        }
+        if let Some(label) = data.get("controller") {
+            let label = label.as_str().ok_or("Invalid controller label")?;
+            if label.len() > 60 || !label.chars().all(|c| c.is_ascii_alphanumeric() || " _.-".contains(c)) {
+                return Err("Invalid controller label".into());
+            }
+        }
+    } else if action == "tunnel_revoke" {
+        let tunnel_id = data["tunnelId"].as_str().ok_or("Tunnel device ID required")?;
+        if tunnel_id.len() != 36 || !tunnel_id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+            return Err("Invalid tunnel device ID".into());
+        }
+    } else if !["discover", "list", "tunnel_invite", "apk_download_qr", "tunnel_list"].contains(&action.as_str()) {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
         if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
             return Err("Invalid device ID".into());

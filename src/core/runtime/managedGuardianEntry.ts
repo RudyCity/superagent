@@ -10,6 +10,9 @@ import path from "node:path";
 import {getPackageRootDir,getRootConfigDir} from "../config/paths.js";
 import {runCoreGuardian,readCoreGuardianLease} from "./coreGuardian.js";
 import {requestCoreSupervisor} from "./coreSupervisor.js";
+import {readCoreCheckpoint} from "./coreSupervisorCheckpoint.js";
+import {readListenerOwners} from "./coreMcpOwnershipAudit.js";
+import {callCoreWorkerDelegateBridge} from "./coreDelegateHandover.js";
 
 type Owner={version:1;port:number;pid:number;instanceId:string;token:string;controlPort:number};
 export function managedGuardianOwnerPath(port:number){
@@ -92,22 +95,49 @@ export async function runManagedGuardianEntry(port:number){
     }
     let request:any=null;
     try{request=JSON.parse(raw);}catch{}
-    if(request?.action!=="stop"||request.instanceId!==owner.instanceId){
+    if(!["stop","recycle_core_owner"].includes(String(request?.action))||
+       request.instanceId!==owner.instanceId){
       res.writeHead(400);res.end();return;
     }
+    let live:any;
+    let lease:any;
     try {
-      const live=await requestCoreSupervisor("status",port,1200);
-      const lease=readCoreGuardianLease(port);
-      if(!lease||lease.pid!==process.pid||live.supervisorPid!==lease.supervisorPid)
+      live=await requestCoreSupervisor("status",port,1200);
+      lease=readCoreGuardianLease(port);
+      if(!lease||lease.pid!==process.pid||live.supervisorPid!==lease.supervisorPid||
+         readListenerOwners()?.get(port)!==live.supervisorPid)
         throw new Error("Core supervisor or Guardian identity changed");
     }catch{
       res.writeHead(409,{"Content-Type":"application/json"});
       res.end(JSON.stringify({ok:false,code:"GUARDIAN_CORE_UNHEALTHY_OR_OWNER_CHANGED"}));
       return;
     }
-    res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"});
-    res.end(JSON.stringify({ok:true,stopping:true,coreUnaffected:true}));
-    controller.abort();
+    if(request.action==="stop"){
+      res.writeHead(200,{"Content-Type":"application/json","Cache-Control":"no-store"});
+      res.end(JSON.stringify({ok:true,stopping:true,coreUnaffected:true}));
+      controller.abort();
+      return;
+    }
+    try {
+      const checkpoint=readCoreCheckpoint(port);
+      if(checkpoint.activePid!==live.active.pid||live.affinitySessions!==0)
+        throw new Error("GUARDIAN_CORE_OWNER_RECYCLE_NOT_QUIESCENT");
+      const worker=checkpoint.workers.find((item:any)=>item.pid===live.active.pid);
+      if(!worker)throw new Error("GUARDIAN_CORE_OWNER_RECYCLE_CHECKPOINT_MISMATCH");
+      const delegateState=await callCoreWorkerDelegateBridge(
+        worker.port,"status",checkpoint.serverToken);
+      if((delegateState.pendingRequests??0)!==0)
+        throw new Error("GUARDIAN_CORE_OWNER_RECYCLE_DELEGATE_INFLIGHT");
+      const previousSupervisorPid=live.supervisorPid;
+      process.kill(previousSupervisorPid,"SIGTERM");
+      res.writeHead(202,{"Content-Type":"application/json","Cache-Control":"no-store"});
+      res.end(JSON.stringify({ok:true,recycling:true,previousSupervisorPid}));
+    }catch(error){
+      const code=error instanceof Error&&/^[A-Z0-9_]+$/.test(error.message)
+        ?error.message:"GUARDIAN_CORE_OWNER_RECYCLE_REFUSED";
+      res.writeHead(409,{"Content-Type":"application/json","Cache-Control":"no-store"});
+      res.end(JSON.stringify({ok:false,code}));
+    }
   });
   await new Promise<void>((resolve,reject)=>{
     server.once("error",reject);

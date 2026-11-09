@@ -219,3 +219,14 @@
   .lan-folder-picker .button { width: 100%; }
   .lan-segment-control, #lan-segment-name { min-width: 0; width: 100%; max-width: none; }
 }
+
+.lan-tunnel-qr-card { margin:0 22px 14px; padding:18px; display:flex; gap:18px; align-items:center; border:1px solid var(--border-medium); border-radius:var(--radius-md); background:var(--bg-base); }
+.lan-tunnel-qr-card[hidden] { display:none; }
+.lan-tunnel-qr { width:220px; height:220px; max-width:42vw; max-height:42vw; display:block; background:#fff; border-radius:12px; padding:10px; image-rendering:pixelated; }
+.lan-tunnel-qr-card strong { display:block; color:var(--text-primary); margin-bottom:6px; }
+.lan-tunnel-qr-card p { margin:0; color:var(--text-secondary); font-size:12px; line-height:1.6; }
+@media (max-width:720px) { .lan-tunnel-qr-card { flex-direction:column; text-align:center; } .lan-tunnel-qr { max-width:70vw; max-height:70vw; } }
+
+.lan-tunnel-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+.lan-apk-meta { font-family:var(--font-mono); overflow-wrap:anywhere; }
+@media (max-width:720px) { .lan-tunnel-actions { width:100%; justify-content:stretch; } .lan-tunnel-actions .button { flex:1 1 180px; justify-content:center; } }

@@ -989,6 +989,14 @@ export async function runServer(port: number, silent = false, defaultClientMode:
       return;
     }
 
+    // Device Tunnel is a deliberately tiny public companion ingress. It owns
+    // independent one-time enrollment and per-device authentication and must
+    // never inherit the long-lived Core bearer token or workspace routing.
+    if (pathname.startsWith("/api/device-tunnel/")) {
+      const { handleDeviceTunnelPublicRoute } = await import("./core/deviceTunnel/http.js");
+      if (await handleDeviceTunnelPublicRoute(req, res, pathname)) return;
+    }
+
     logToSuperAgentServerFile(`[Request] ${req.method} ${pathname} (workspaceHeader=${Boolean(req.headers["x-workspace-path"])})`);
 
     // Auth gate for the HTTP API (OPTIONS preflight passes through)

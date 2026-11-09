@@ -1,13 +1,14 @@
 #!/usr/bin/env bun
 /**
- * Standalone local-network support client. Always visible in its terminal;
- * no service, startup persistence, or hidden unattended authorization.
+ * Standalone support client for direct LAN or reverse HTTPS Device Tunnel.
+ * Always visible in its terminal; no service, startup persistence, or hidden unattended authorization.
  */
 import os from "node:os";
 import { spawnSync } from "node:child_process";
 import readline from "node:readline";
 import { lanInterfaces, startLanServer, LAN_PORT, type ApprovalRequest } from "./core/lanRemote/transport.js";
 import { normalizeNetworkSegment } from "./core/lanRemote/networkSegment.js";
+import { runDeviceTunnelRelay } from "./core/deviceTunnel/client.js";
 
 function ensureStandardUser(): void {
   if (process.platform !== "win32") return;
@@ -74,15 +75,61 @@ async function main() {
   console.log("Verify full SHA-256 certificate fingerprint on the controller:");
   console.log(client.fingerprint);
   console.log("Listening only on " + client.host + ":" + client.port);
+
+  let tunnelUrl = process.argv.find((a) => a.startsWith("--tunnel-url="))?.slice("--tunnel-url=".length);
+  let tunnelInvite = process.argv.find((a) => a.startsWith("--tunnel-invite="))?.slice("--tunnel-invite=".length);
+  let tunnelJoinCode = "";
+  const interactiveTunnel = process.argv.includes("--tunnel");
+  if (interactiveTunnel && (tunnelUrl || tunnelInvite))
+    throw new Error("Use either --tunnel for local setup JSON entry, or --tunnel-url/--tunnel-invite, not both.");
+  if (Boolean(tunnelUrl) !== Boolean(tunnelInvite))
+    throw new Error("Use --tunnel-url and --tunnel-invite together. The one-time join code is entered interactively.");
+  if (interactiveTunnel) {
+    if (!process.stdin.isTTY) throw new Error("--tunnel requires an interactive terminal.");
+    const setupText = await new Promise<string>((resolve) =>
+      rl.question("Paste Device Tunnel setup JSON from SuperAgent Tray: ", resolve));
+    let parsed: unknown;
+    try { parsed = JSON.parse(setupText.trim()); } catch { throw new Error("Invalid Device Tunnel setup JSON."); }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("Invalid Device Tunnel setup JSON.");
+    const value = parsed as Record<string, unknown>;
+    if (Object.keys(value).sort().join(",") !== "code,inviteId,url"
+        || typeof value.url !== "string" || typeof value.inviteId !== "string" || typeof value.code !== "string")
+      throw new Error("Paste the complete Device Tunnel setup JSON from SuperAgent Tray.");
+    tunnelUrl = value.url; tunnelInvite = value.inviteId; tunnelJoinCode = value.code;
+  }
+  const tunnelAbort = new AbortController();
+  let tunnelActive = false;
+  if (tunnelUrl && tunnelInvite) {
+    if (!process.stdin.isTTY) throw new Error("Tunnel enrollment requires an interactive terminal for the one-time join code.");
+    if (!tunnelJoinCode) tunnelJoinCode = await new Promise<string>((resolve) =>
+      rl.question("Device Tunnel join code (10 digits, not stored): ", resolve));
+    tunnelJoinCode = tunnelJoinCode.trim();
+    if (!/^\d{10}$/.test(tunnelJoinCode)) throw new Error("Invalid Device Tunnel join code.");
+    const enrollment = { url: tunnelUrl, inviteId: tunnelInvite, code: tunnelJoinCode };
+    tunnelJoinCode = "";
+    void runDeviceTunnelRelay({
+      enrollment,
+      platform: "windows", name: os.hostname().slice(0, 60),
+      fingerprint: client.fingerprint, localHost: client.host, localPort: client.port,
+      signal: tunnelAbort.signal,
+      onNotice: (message) => console.log("[TUNNEL] " + message),
+    }).then(() => { tunnelActive = false; }, (error: Error) => {
+      tunnelActive = false;
+      if (!tunnelAbort.signal.aborted) console.log("[TUNNEL] stopped: " + error.message);
+    });
+    tunnelActive = true;
+  }
   console.log("Commands: pair | share <local-file> | share-folder <local-folder> | approve | deny | status | revoke | stop");
   let stopped = false;
   async function stop() {
     if (stopped) return; stopped = true;
     if (pending) { clearTimeout(pending.timer); pending.resolve(false); pending = null; }
-    console.log("Stopping LAN sharing and terminating active commands...");
+    console.log("Stopping device sharing and terminating active commands...");
+    tunnelAbort.abort();
     await client.close();
     rl.close();
-    console.log("LAN sharing is OFF.");
+    console.log("Device sharing is OFF.");
   }
   rl.on("line", (line) => {
     const command = line.trim().toLowerCase();
@@ -106,7 +153,7 @@ async function main() {
         (error: Error) => console.log("File not shared: " + error.message),
       );
     } else if (command === "pair") console.log("New code: " + client.rotatePairCode() + " (valid for 2 minutes)");
-    else if (command === "status") console.log(JSON.stringify(client.state()));
+    else if (command === "status") console.log(JSON.stringify({ ...client.state(), tunnelActive }));
     else if (command === "revoke") { client.revoke(); console.log("Paired devices revoked."); }
     else if (command === "stop" || command === "quit" || command === "exit") void stop();
     else console.log("Commands: pair | share <local-file> | share-folder <local-folder> | approve | deny | status | revoke | stop");

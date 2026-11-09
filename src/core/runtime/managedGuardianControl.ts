@@ -197,3 +197,40 @@ export async function executeManagedGuardian(args:GuardianPlan&{confirm:boolean}
     ownerPid:pid,previousPid:current.pid,replayed:false,changed:true,
     coreSupervisorPid:after.status.supervisorPid};
 }
+
+
+export async function recycleCoreSupervisorThroughManagedGuardian(port:number){
+  if(!validPort(port))throw new Error("GUARDIAN_INVALID_PORT");
+  const owner=readManagedGuardianOwner(port);
+  const current=await inspectManagedGuardian(port);
+  if(!owner||!current.verified||current.ownerPid!==owner.pid)
+    throw new Error("GUARDIAN_UNOWNED_OR_UNVERIFIED");
+  const before=await activeCore(port);
+  if(before.status.affinitySessions!==0)
+    throw new Error("GUARDIAN_CORE_OWNER_RECYCLE_ACTIVE_SESSIONS");
+  const response=await fetch("http://127.0.0.1:"+owner.controlPort+"/guardian/control",{
+    method:"POST",
+    headers:{"Authorization":"Bearer "+owner.token,"Content-Type":"application/json"},
+    body:JSON.stringify({action:"recycle_core_owner",instanceId:owner.instanceId}),
+    signal:AbortSignal.timeout(5000),
+  });
+  const body=await response.json().catch(()=>null) as any;
+  if(response.status!==202||body?.ok!==true||body?.recycling!==true)
+    throw new Error(typeof body?.code==="string"?body.code:"GUARDIAN_CORE_OWNER_RECYCLE_NOT_CONFIRMED");
+  const previousSupervisorPid=Number(body.previousSupervisorPid);
+  const deadline=Date.now()+45_000;
+  while(Date.now()<deadline){
+    await new Promise(r=>setTimeout(r,250));
+    const lease=readCoreGuardianLease(port);
+    if(!lease||lease.pid!==owner.pid||!lease.supervisorPid||
+       lease.supervisorPid===previousSupervisorPid)continue;
+    try{
+      const live=await requestCoreSupervisor("status",port,1200);
+      if(live.supervisorPid===lease.supervisorPid&&live.recovered===true){
+        return {success:true,port,previousSupervisorPid,
+          supervisorPid:live.supervisorPid,activeWorkerPid:live.active.pid};
+      }
+    }catch{}
+  }
+  throw new Error("GUARDIAN_CORE_OWNER_RECYCLE_TIMEOUT");
+}

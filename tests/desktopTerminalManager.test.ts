@@ -9,6 +9,10 @@ const terminalJs = fs.readFileSync(
   path.resolve("apps/superagent-tray/ui/terminal.js"),
   "utf8"
 );
+const actionMenuJs = fs.readFileSync(
+  path.resolve("apps/superagent-tray/ui/action-menu.js"),
+  "utf8"
+);
 
 describe("DesktopTerminalManager backend service", () => {
   it("refuses to stop a historical PID without an owned live handle", () => {
@@ -62,6 +66,7 @@ describe("DesktopTerminalManager backend service", () => {
 function mountTerminalUi(mockResponse?: any) {
   const elements = new Map<string, any>();
   const listeners = new Map<string, (e: any) => any>();
+  const documentListeners = new Map<string, Array<(e: any) => any>>();
   const invokeCalls: Array<{ cmd: string; args: any }> = [];
 
   const defaultMock = {
@@ -139,7 +144,11 @@ function mountTerminalUi(mockResponse?: any) {
   const documentMock = {
     getElementById: (id: string) => getOrCreateElement(id),
     querySelectorAll: () => [],
-    addEventListener: vi.fn(),
+    addEventListener: vi.fn((event: string, handler: (e: any) => any) => {
+      const group = documentListeners.get(event) ?? [];
+      group.push(handler);
+      documentListeners.set(event, group);
+    }),
     readyState: "complete",
   };
 
@@ -234,10 +243,13 @@ function mountTerminalUi(mockResponse?: any) {
     JSON,
   });
 
+  vm.runInContext(actionMenuJs, context);
   vm.runInContext(terminalJs, context);
 
   return {
     windowMock,
+    documentMock,
+    documentListeners,
     elements,
     listeners,
     invokeCalls,
@@ -290,6 +302,79 @@ describe("Desktop Terminal UI Controller", () => {
     expect(statPresets.textContent).toBe("2");
     expect(tbody.innerHTML).toContain("term-bg-dev123");
     expect(tbody.innerHTML).toContain("npm run dev");
+  });
+
+  it("opens the compact Actions dropdown without dispatching a process mutation", async () => {
+    const mounted = mountTerminalUi();
+    await mounted.windowMock.__superagentTerminalRefresh();
+    const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
+    expect((html.match(/class="sa-action-menu-trigger"/g) || []).length).toBe(2);
+    expect(html).not.toContain('class="table-actions"');
+    const popover: any = {
+      hidden: true, style: { left: "", top: "" },
+      offsetWidth: 220, offsetHeight: 180, querySelector: () => null,
+    };
+    const owner = { querySelector: () => popover };
+    const trigger: any = {
+      ariaExpanded: "false",
+      closest: (selector: string) => selector === ".sa-action-menu-trigger" ? trigger : selector === ".sa-action-menu" ? owner : null,
+      setAttribute(name: string, value: string) { if (name === "aria-expanded") this.ariaExpanded = value; },
+      getBoundingClientRect: () => ({ top: 200, bottom: 234, left: 500, right: 534 }),
+      focus: vi.fn(),
+    };
+    const event = { target: trigger, preventDefault: vi.fn() };
+    await mounted.listeners.get("terminal-tasks-tbody:click")!(event);
+    expect(popover.hidden).toBe(false);
+    expect(trigger.ariaExpanded).toBe("true");
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(mounted.invokeCalls.some((x) => ["kill_terminal_task", "external_terminal_task_action", "control_terminal_task"].includes(x.cmd))).toBe(false);
+  });
+
+  it("routes a portaled external Stop through the guarded confirmation handler", async () => {
+    const mounted = mountTerminalUi({
+      tasks: [{
+        id: "external-win-31777", command: "python.exe", pid: 31777,
+        status: "running", cwd: "-", source: "external",
+        canStop: true, canConfigureStart: true, canViewLogs: false,
+      }],
+      runningCount: 1, totalCount: 1, presets: [],
+    });
+    mounted.documentMock.body = { appendChild: vi.fn() };
+    await mounted.windowMock.__superagentTerminalRefresh();
+    const menu: any = {
+      hidden: true, style: { left: "", top: "" },
+      offsetWidth: 200, offsetHeight: 180, querySelector: () => null,
+    };
+    const owner = { querySelector: () => menu, appendChild: vi.fn() };
+    const trigger: any = {
+      closest: (sel: string) =>
+        sel === ".sa-action-menu-trigger" ? trigger :
+        sel === ".sa-action-menu" ? owner : null,
+      setAttribute: vi.fn(),
+      getBoundingClientRect: () => ({ top: 110, bottom: 144, left: 270, right: 304 }),
+      focus: vi.fn(),
+    };
+    await mounted.listeners.get("terminal-tasks-tbody:click")!({ target: trigger });
+    expect(mounted.documentMock.body.appendChild).toHaveBeenCalledWith(menu);
+    expect(menu.hidden).toBe(false);
+
+    const stop: any = {
+      dataset: { taskId: "external-win-31777", action: "stop" },
+      disabled: false,
+      closest: (selector: string) =>
+        selector === ".sa-action-menu-item" || selector === ".terminal-external-btn" ? stop :
+        selector === ".sa-action-menu-popover" ? menu : null,
+    };
+    for (const handler of mounted.documentListeners.get("click") ?? []) {
+      await handler({ target: stop });
+    }
+    await vi.waitFor(() => {
+      expect(mounted.invokeCalls.filter((call) =>
+        call.cmd === "external_terminal_task_action").map((call) => call.args.action)
+      ).toEqual(["plan-stop", "stop"]);
+    });
+    expect(owner.appendChild).toHaveBeenCalledWith(menu);
+    expect(menu.hidden).toBe(true);
   });
 
   it("handles log inspection modal and clipboard copy", async () => {
@@ -363,7 +448,10 @@ describe("Desktop Terminal UI Controller", () => {
     expect(html).toContain("Pause");
     expect(html).toContain("Stop");
     expect(html).toContain("Service Controls");
-    expect(html).toContain("Read-only · verify owner");
+    expect(html).toContain("Action unavailable: ownership or lifecycle state is not verified.");
+    expect(html).toContain("sa-action-menu-trigger");
+    expect(html).toContain("sa-action-menu-popover");
+    expect(html).toContain("aria-haspopup=\"menu\"");
     expect(html).toContain("7100");
     expect(html).toContain("Logs unavailable");
     expect(html).not.toContain("terminal-kill-btn");
@@ -469,7 +557,7 @@ describe("Desktop Terminal UI Controller", () => {
     mounted.windowMock.__superagentTerminalState.runningOnly = false;
     await mounted.windowMock.__superagentTerminalRefresh();
     const html = mounted.getOrCreateElement("terminal-tasks-tbody").innerHTML;
-    expect(html).toContain('data-action="start" data-task-id="term-bg-abcdefg"');
+    expect(html).toContain('data-task-id="term-bg-abcdefg" data-action="start"');
     expect(html).not.toContain('data-action="pause" data-task-id="external-win-567"');
     expect(html).not.toContain('data-action="start" data-task-id="external-win-567"');
 

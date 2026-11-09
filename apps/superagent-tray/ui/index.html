@@ -18,6 +18,7 @@
   <script src="./logs.js" defer></script>
   <script src="./delegate.js" defer></script>
   <script src="./delegate-multitab.js" defer></script>
+  <script src="./action-menu.js" defer></script>
   <script src="./terminal.js" defer></script>
   <script src="./muse-files.js" defer></script>
   <script src="./lan-devices.js" defer></script>
@@ -146,14 +147,16 @@
           </svg>
           <span>LAN Devices</span>
         </a>
-        <a class="nav-link" href="#settings" data-page="settings" id="nav-settings">
+      </nav>
+
+      <!-- Pinned settings navigation -->
+        <a class="nav-link sidebar-settings-link" href="#settings" data-page="settings" id="nav-settings">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21h-4v-.04A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3 14H3v-4h.04A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88L4.2 7.06 7.06 4.2l.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.04V3h4v.04A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 21 10v4a1.7 1.7 0 0 0-1.6 1z"></path>
           </svg>
           <span>Tray Settings</span>
         </a>
-      </nav>
 
       <!-- Connection Status Card -->
       <div class="side-bottom">
@@ -751,6 +754,40 @@
           </div>
           <div id="lan-discovered" class="lan-device-list" aria-live="polite">
             <div class="lan-empty">No scan yet. Start the LAN Client on the other laptop, then select <strong>Scan LAN</strong>.</div>
+          </div>
+        </section>
+
+        <section class="panel lan-panel" aria-labelledby="lan-tunnel-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">OPTIONAL / DEVICE TUNNEL</div>
+              <h2 id="lan-tunnel-title">Connect a device by QR</h2>
+              <p>Create a one-time QR here, then on Android choose <strong>Scan QR &amp; Connect</strong>. If the Core HTTPS tunnel is not running, this QR action starts and verifies it automatically. Enrollment and pairing details are transferred by QR; the phone owner only confirms the pairing approval.</p>
+            </div>
+            <div class="lan-tunnel-actions">
+              <button id="lan-tunnel-invite" type="button" class="button primary">Create connect QR</button>
+              <button id="lan-apk-download-qr" type="button" class="button ghost">Create APK download QR</button>
+            </div>
+          </div>
+          <div id="lan-tunnel-qr-card" class="lan-tunnel-qr-card" hidden>
+            <canvas id="lan-tunnel-qr" class="lan-tunnel-qr" width="320" height="320" aria-label="One-time SuperAgent Device Tunnel QR code"></canvas>
+            <div>
+              <strong>Scan this QR on the target Android device</strong>
+              <p>One use · 10-minute TTL · heartbeat checks every 5 seconds and refreshes automatically before expiry · pairing still requires approval on the phone.</p>
+            </div>
+          </div>
+          <p id="lan-tunnel-status" class="lan-pair-status" role="status" aria-live="polite">No connection QR created. Creating a QR will automatically ensure the Core HTTPS tunnel is running.</p>
+          <div id="lan-apk-qr-card" class="lan-tunnel-qr-card" hidden>
+            <canvas id="lan-apk-qr" class="lan-tunnel-qr" width="320" height="320" aria-label="Temporary QR code to download the SuperAgent Android APK"></canvas>
+            <div>
+              <strong>Download the Android APK</strong>
+              <p>Scan with any Android camera. The download ticket remains valid for the full 10-minute TTL; heartbeat refreshes the QR automatically before expiry.</p>
+              <p id="lan-apk-meta" class="lan-apk-meta"></p>
+            </div>
+          </div>
+          <p id="lan-apk-status" class="lan-pair-status" role="status" aria-live="polite">No APK download QR created. Once created, heartbeat keeps it fresh automatically.</p>
+          <div id="lan-tunnel-devices" class="lan-device-list" aria-live="polite">
+            <div class="lan-empty">No enrolled tunnel devices.</div>
           </div>
         </section>
 

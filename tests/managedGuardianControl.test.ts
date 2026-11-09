@@ -8,6 +8,7 @@ import {requestCoreSupervisor} from "../src/core/runtime/coreSupervisor.js";
 import {manageServices} from "../src/core/runtime/serviceManager.js";
 import {readManagedGuardianOwner} from "../src/core/runtime/managedGuardianEntry.js";
 import {readCoreGuardianLease} from "../src/core/runtime/coreGuardian.js";
+import {recycleCoreSupervisorThroughManagedGuardian} from "../src/core/runtime/managedGuardianControl.js";
 
 const old=process.env.SUPERAGENT_CONFIG_DIR;
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),"managed-guardian-e2e-"));
@@ -15,6 +16,7 @@ process.env.SUPERAGENT_CONFIG_DIR=temp;
 let core:ChildProcess|undefined;
 let guardianPid:number|undefined;
 let workerPid:number|undefined;
+let recoveredSupervisorPid:number|undefined;
 const sleepers:Array<()=>Promise<void>>=[];
 function killOwned(pid:number|undefined) {
   if(!pid||!Number.isSafeInteger(pid)||pid===process.pid)return;
@@ -38,6 +40,7 @@ afterAll(async()=>{
   for(const close of sleepers.reverse())await close().catch(()=>{});
   killOwned(guardianPid);
   killOwned(workerPid);
+  killOwned(recoveredSupervisorPid);
   killOwned(core?.pid);
   await new Promise(resolve=>setTimeout(resolve,900));
   if(old===undefined)delete process.env.SUPERAGENT_CONFIG_DIR;
@@ -86,6 +89,16 @@ describe("Independent managed Guardian via unified MCP/agent service manager",()
     expect(restarted.previousPid).toBe(started.ownerPid);
     expect(restarted.ownerPid).not.toBe(started.ownerPid);
     expect((await requestCoreSupervisor("status",port)).supervisorPid).toBe(core.pid);
+
+    const recycled=await recycleCoreSupervisorThroughManagedGuardian(port);
+    expect(recycled.previousSupervisorPid).toBe(core.pid);
+    expect(recycled.supervisorPid).not.toBe(core.pid);
+    recoveredSupervisorPid=recycled.supervisorPid;
+    workerPid=recycled.activeWorkerPid;
+    const recovered=await requestCoreSupervisor("status",port);
+    expect(recovered.supervisorPid).toBe(recoveredSupervisorPid);
+    expect(recovered.recovered).toBe(true);
+
     await new Promise(resolve=>setTimeout(resolve,1150));
     const stop=await manageServices({action:"plan",service:"guardian",
       port,targetAction:"stop"}) as any;
@@ -95,7 +108,7 @@ describe("Independent managed Guardian via unified MCP/agent service manager",()
     expect(readCoreGuardianLease(port)).toBeNull();
     expect((await manageServices(args(stop)) as any).replayed).toBe(true);
     guardianPid=undefined;
-    expect((await requestCoreSupervisor("status",port)).active.pid).toBe(status.active.pid);
+    expect((await requestCoreSupervisor("status",port)).active.pid).toBe(workerPid);
   },120000);
   it("never attaches to an unsupervised or missing Core",async()=>{
     await expect(manageServices({action:"plan",service:"guardian",
