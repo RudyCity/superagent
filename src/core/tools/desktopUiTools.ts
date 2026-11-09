@@ -40,6 +40,8 @@ import {
   type NativeCapture,
 } from "../desktopUi/index.js";
 import type { Tool } from "./types.js";
+import { DesktopAppManager } from "../desktopApp/index.js";
+import { inspectSecurityPrompts } from "../desktopSecurity/index.js";
 
 export const MAX_DESKTOP_UI_SESSIONS = 10;
 export const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
@@ -58,11 +60,30 @@ export const DESKTOP_UI_DISCOVERY_COMMANDS = [
   "inspect_window",
 ] as const;
 
+export const DESKTOP_UI_APP_COMMANDS = [
+  "list_installed_apps",
+  "launch_app",
+  "focus_window",
+  "close_app",
+  "restart_app",
+  "plan_package_change",
+  "apply_package_change",
+  "inspect_security_prompts",
+] as const;
+
 const DISCOVERY_COMMAND_FIELDS: Record<string, ReadonlySet<string>> = {
   list_windows: new Set(["command", "action", "limit"]),
   get_active_window: new Set(["command", "action"]),
   find_window: new Set(["command", "action", "query", "pid", "limit"]),
   inspect_window: new Set(["command", "action", "pid", "nativeId", "includeScreenshotImage", "maxImageBytes"]),
+  list_installed_apps: new Set(["command", "action", "limit"]),
+  launch_app: new Set(["command", "action", "appId"]),
+  focus_window: new Set(["command", "action", "pid", "nativeId"]),
+  close_app: new Set(["command", "action", "pid", "nativeId"]),
+  restart_app: new Set(["command", "action", "pid", "nativeId", "appId"]),
+  plan_package_change: new Set(["command", "action", "packageAction", "packageId", "source", "version"]),
+  apply_package_change: new Set(["command", "action", "approvalRequestId", "operationDigest", "invocationId"]),
+  inspect_security_prompts: new Set(["command", "action"]),
 };
 
 export function assertDesktopUiDiscoveryCommandFields(args: Record<string, unknown>, command: string): void {
@@ -222,6 +243,9 @@ export class DesktopUiConsentManager {
 }
 
 export const desktopUiConsentManager = new DesktopUiConsentManager();
+export const desktopAppManager = new DesktopAppManager({
+  consentVerifier: (target) => desktopUiConsentManager.hasConsent(target),
+});
 
 export interface ActiveSessionRecord {
   token: string;
@@ -660,6 +684,8 @@ function sanitizeDesktopUiLogValue(value: unknown, key = ""): unknown {
     if (normalizedKey.includes("sessiontoken") || normalizedKey.includes("authorizationtoken")) {
       return "[REDACTED_TOKEN]";
     }
+    if (["approvalrequestid", "invocationid", "operationdigest"].includes(normalizedKey)) return "[REDACTED_APPROVAL_BINDING]";
+    if (["appid", "packageid", "version", "source"].includes(normalizedKey)) return "[REDACTED_APP_METADATA]";
     if (normalizedKey === "text") return "[REDACTED_TEXT]";
     if (["title", "application", "query"].includes(normalizedKey)) return "[REDACTED_WINDOW_METADATA]";
     if (
@@ -715,22 +741,22 @@ export function sanitizeDesktopUiLogText(text?: string): string | undefined {
 export const desktopUiTool: Tool = {
   name: "desktop_ui",
   description:
-    "Perceive and automate native desktop application windows across Windows, macOS, and Linux using accessibility trees and local UI-DETR vision models. " +
-    "Commands include bounded read-only window discovery ('list_windows', 'get_active_window', 'find_window', 'inspect_window') plus existing probe/open/snapshot/action/close. " +
-    "Discovery never enables input; actions still target semantic elementId with exact revision/hash and forbid raw coordinates. " +
-    "Native input requires explicit safe operator consent on the host.",
+    "Perceive and automate native desktop application windows using bounded discovery and accessibility semantics. " +
+    "Commands also expose installed-app inventory, verified Windows app lifecycle, guarded package planning/apply, and read-only security-prompt inspection. " +
+    "The existing open command only creates a scoped window session; launch_app is the separate installed-app launcher. " +
+    "Lifecycle mutation requires exact host consent; package mutation additionally requires separate host-operator approval bound to the exact operation.",
   parameters: {
     type: "object",
     additionalProperties: false,
     properties: {
       command: {
         type: "string",
-        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close"],
+        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close"],
         description: "Desktop UI command to execute.",
       },
       action: {
         type: "string",
-        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close", "click", "type", "key", "scroll"],
+        enum: ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close", "click", "type", "key", "scroll"],
         description: "Alternative command name or action kind. command='action' with action='click' is supported.",
       },
       subAction: {
@@ -804,6 +830,14 @@ export const desktopUiTool: Tool = {
       },
       deltaX: { type: "integer", minimum: -3, maximum: 3 },
       deltaY: { type: "integer", minimum: -3, maximum: 3 },
+      appId: { type: "string", minLength: 1, maxLength: 512, description: "Exact installed application ID returned by list_installed_apps." },
+      packageAction: { type: "string", enum: ["install", "uninstall", "reinstall", "update"] },
+      packageId: { type: "string", minLength: 1, maxLength: 128 },
+      source: { type: "string", minLength: 1, maxLength: 64 },
+      version: { type: "string", minLength: 1, maxLength: 128 },
+      approvalRequestId: { type: "string", minLength: 1, maxLength: 128 },
+      operationDigest: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
+      invocationId: { type: "string", minLength: 1, maxLength: 128 },
     },
   },
   execute: async (args: Record<string, unknown>, _cwd: string, _signal?: AbortSignal): Promise<string> => {
@@ -812,7 +846,7 @@ export const desktopUiTool: Tool = {
       let command = typeof args.command === "string" ? args.command.trim().toLowerCase() : "";
       const rawAction = typeof args.action === "string" ? args.action.trim().toLowerCase() : "";
       if (!command) {
-        command = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close"].includes(rawAction as any)
+        command = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close"].includes(rawAction as any)
           ? rawAction
           : ["click", "type", "key", "scroll"].includes(rawAction)
             ? "action"
@@ -834,6 +868,22 @@ export const desktopUiTool: Tool = {
           return JSON.stringify({ success: true, ...(await desktopUiSessionManager.findWindow({ query: args.query, pid: typeof args.pid === "number" ? args.pid : undefined, limit: typeof args.limit === "number" ? args.limit : undefined })) }, null, 2);
         case "inspect_window":
           return JSON.stringify({ success: true, ...(await desktopUiSessionManager.inspectWindow({ pid: Number(args.pid), nativeId: args.nativeId, ownerPrincipal: LOCAL_DESKTOP_UI_OWNER, includeScreenshotImage: args.includeScreenshotImage === true, maxImageBytes: typeof args.maxImageBytes === "number" ? args.maxImageBytes : undefined })) }, null, 2);
+        case "list_installed_apps":
+          return JSON.stringify({ success: true, ...(await desktopAppManager.listInstalledApps(typeof args.limit === "number" ? args.limit : 50)) }, null, 2);
+        case "launch_app":
+          return JSON.stringify({ success: true, ...(await desktopAppManager.launchApp(args.appId)) }, null, 2);
+        case "focus_window":
+          return JSON.stringify({ success: true, ...(await desktopAppManager.focusWindow({ pid: Number(args.pid), nativeId: String(args.nativeId ?? "") })) }, null, 2);
+        case "close_app":
+          return JSON.stringify({ success: true, ...(await desktopAppManager.closeApp({ pid: Number(args.pid), nativeId: String(args.nativeId ?? "") })) }, null, 2);
+        case "restart_app":
+          return JSON.stringify({ success: true, ...(await desktopAppManager.restartApp(args.appId, { pid: Number(args.pid), nativeId: String(args.nativeId ?? "") })) }, null, 2);
+        case "plan_package_change":
+          return JSON.stringify({ success: true, ...(await desktopAppManager.planPackageChange({ principalId: LOCAL_DESKTOP_UI_OWNER, packageAction: args.packageAction, packageId: args.packageId, source: args.source, version: args.version })) }, null, 2);
+        case "apply_package_change":
+          return JSON.stringify({ success: true, result: await desktopAppManager.applyPackageChange({ principalId: LOCAL_DESKTOP_UI_OWNER, approvalRequestId: args.approvalRequestId, operationDigest: args.operationDigest, invocationId: args.invocationId }) }, null, 2);
+        case "inspect_security_prompts":
+          return JSON.stringify({ success: true, report: await inspectSecurityPrompts() }, null, 2);
         case "open": {
           const session = await desktopUiSessionManager.openSession({
             pid: Number(args.pid),

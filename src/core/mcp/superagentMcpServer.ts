@@ -1115,9 +1115,13 @@ function extractMcpResultText(result: unknown): string {
     const desktopCall = toolName === "superagent_desktop_ui" ||
       (toolName === MCP_GATEWAY_TOOL_NAMES.execute && rawArgs.name === "superagent_desktop_ui");
     const desktopArgs = toolName === "superagent_desktop_ui" ? rawArgs : rawArgs.arguments || {};
-    const desktopAuditArgs = sanitizeDesktopUiLogPayload(desktopArgs as Record<string, unknown>);
-    if (typeof desktopAuditArgs.title === "string") desktopAuditArgs.title = "[REDACTED_WINDOW_TITLE]";
-    if (typeof desktopAuditArgs.query === "string") desktopAuditArgs.query = "[REDACTED_SEARCH_QUERY]";
+    const desktopAuditArgs = Object.fromEntries(Object.entries(
+      sanitizeDesktopUiLogPayload(desktopArgs as Record<string, unknown>),
+    ).map(([key, value]) => [
+      key,
+      (key === "command" || key === "action" || key === "sessionToken" || key === "text")
+        ? value : "[REDACTED_DESKTOP_INPUT]",
+    ]));
     const yoloState = getYoloModeState();
     const isDangerousUnlocked = canUnlockMcpDangerousTools({
       lockSafeTools, allowDangerous: Boolean(allowDangerous), yoloState,

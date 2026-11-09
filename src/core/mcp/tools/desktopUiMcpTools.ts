@@ -2,10 +2,12 @@ import type { McpToolResult } from "../types.js";
 import {
   DEFAULT_MAX_IMAGE_BYTES,
   DESKTOP_UI_DISCOVERY_COMMANDS,
+  DESKTOP_UI_APP_COMMANDS,
   MAX_SESSION_TTL_MS,
   MIN_SESSION_TTL_MS,
   assertDesktopUiDiscoveryCommandFields,
   assertNoDesktopUiRawCoordinates,
+  desktopAppManager,
   desktopUiSessionManager,
   sanitizeDesktopUiLogText,
   type ActionParams,
@@ -16,6 +18,7 @@ import {
   type DesktopKey,
   type DesktopModifier,
 } from "../../desktopUi/index.js";
+import { inspectSecurityPrompts } from "../../desktopSecurity/index.js";
 
 export const DESKTOP_UI_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
   superagent_desktop_ui: "dangerous",
@@ -27,7 +30,7 @@ export interface DesktopUiMcpContext {
 }
 
 const actionKinds = ["click", "type", "key", "scroll"] as const;
-const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, "open", "snapshot", "action", "close"] as const;
+const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close"] as const;
 
 const inputSchema = {
   type: "object",
@@ -118,6 +121,14 @@ const inputSchema = {
     },
     deltaX: { type: "integer", minimum: -3, maximum: 3 },
     deltaY: { type: "integer", minimum: -3, maximum: 3 },
+    appId: { type: "string", minLength: 1, maxLength: 512, description: "Exact installed application ID returned by list_installed_apps." },
+    packageAction: { type: "string", enum: ["install", "uninstall", "reinstall", "update"] },
+    packageId: { type: "string", minLength: 1, maxLength: 128 },
+    source: { type: "string", minLength: 1, maxLength: 64 },
+    version: { type: "string", minLength: 1, maxLength: 128 },
+    approvalRequestId: { type: "string", minLength: 1, maxLength: 128 },
+    operationDigest: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
+    invocationId: { type: "string", minLength: 1, maxLength: 128 },
   },
 } as const;
 
@@ -125,10 +136,10 @@ export const DESKTOP_UI_MCP_TOOL_DEFS = [
   {
     name: "superagent_desktop_ui",
     description:
-      "Dangerous host-local native desktop perception and semantic input for Windows, macOS, and Linux, including read-only window discovery and inspection. "
-      + "Discovery uses bounded exact native identities; sessions are scoped to an exact PID/nativeId and authenticated MCP principal. "
-      + "Input additionally requires exact host consent, raw coordinates are forbidden, and every action requires the exact prior revision/SHA-256. "
-      + "This tool is unavailable for SSH/chain workspaces. Chrome/Electron browser automation remains on the existing protected CDP tools.",
+      "Dangerous host-local desktop perception, exact app lifecycle, package planning/apply, and read-only security-prompt inspection. "
+      + "The open command still creates only a scoped window session; launch_app separately launches a freshly verified installed application. "
+      + "Lifecycle mutation requires exact host consent; package mutation requires one-shot host-operator approval bound to digest, principal, target, and invocation. "
+      + "This tool is principal-bound and unavailable for SSH/chain workspaces; no raw shell, implicit elevation, or model-controlled approval is accepted.",
     inputSchema,
   },
 ];
@@ -205,6 +216,30 @@ export async function dispatchDesktopUiMcpTool(
         break;
       case "inspect_window":
         result = { success: true, ...(await desktopUiSessionManager.inspectWindow({ pid: Number(rawArgs.pid), nativeId: rawArgs.nativeId, ownerPrincipal: context.principalId, includeScreenshotImage: rawArgs.includeScreenshotImage === true, maxImageBytes: typeof rawArgs.maxImageBytes === "number" ? rawArgs.maxImageBytes : undefined })) };
+        break;
+      case "list_installed_apps":
+        result = { success: true, ...(await desktopAppManager.listInstalledApps(typeof rawArgs.limit === "number" ? rawArgs.limit : 50)) };
+        break;
+      case "launch_app":
+        result = { success: true, ...(await desktopAppManager.launchApp(rawArgs.appId)) };
+        break;
+      case "focus_window":
+        result = { success: true, ...(await desktopAppManager.focusWindow({ pid: Number(rawArgs.pid), nativeId: String(rawArgs.nativeId ?? "") })) };
+        break;
+      case "close_app":
+        result = { success: true, ...(await desktopAppManager.closeApp({ pid: Number(rawArgs.pid), nativeId: String(rawArgs.nativeId ?? "") })) };
+        break;
+      case "restart_app":
+        result = { success: true, ...(await desktopAppManager.restartApp(rawArgs.appId, { pid: Number(rawArgs.pid), nativeId: String(rawArgs.nativeId ?? "") })) };
+        break;
+      case "plan_package_change":
+        result = { success: true, ...(await desktopAppManager.planPackageChange({ principalId: context.principalId, packageAction: rawArgs.packageAction, packageId: rawArgs.packageId, source: rawArgs.source, version: rawArgs.version })) };
+        break;
+      case "apply_package_change":
+        result = { success: true, result: await desktopAppManager.applyPackageChange({ principalId: context.principalId, approvalRequestId: rawArgs.approvalRequestId, operationDigest: rawArgs.operationDigest, invocationId: rawArgs.invocationId }) };
+        break;
+      case "inspect_security_prompts":
+        result = { success: true, report: await inspectSecurityPrompts() };
         break;
       case "open": {
         const session = await desktopUiSessionManager.openSession({
