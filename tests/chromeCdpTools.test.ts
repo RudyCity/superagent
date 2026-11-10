@@ -373,9 +373,10 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
       "get_cookies", "inspect_media_devices",
       "mock_display_media", "handle_screen_share",
-      "move_cursor", "show_cursor", "hide_cursor", "get_cursor",
+      "move_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
       "drag_and_drop", "drag",
-      "emulate_device",
+      "emulate_device", "highlight_target", "clear_highlight",
+      "record_start", "record_stop", "record_status", "record_export", "replay_preview", "replay_cursor",
       "page_audit", "accessibility_audit", "seo_audit", "responsive_audit", "performance_metrics",
       "start_debug_capture", "read_debug_capture", "stop_debug_capture", "clear_debug_capture",
     ]);
@@ -726,6 +727,67 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     } finally {
       const released = await controlChromeCdpTool.execute({ command: "release_target", targetId: "T1", agentId: owner, sessionToken });
       expect(released).toContain("released target");
+    }
+  });
+
+  test("recording is opt-in, private, generation-scoped and replay cursor cannot click", async () => {
+    const actor = "recorder-" + process.pid;
+    const claim = JSON.parse(String(await controlChromeCdpTool.execute({
+      command: "claim_target", targetId: "T1", agentId: actor,
+    })));
+    const base = { targetId: "T1", agentId: actor, sessionToken: claim.sessionToken };
+    try {
+      const started = JSON.parse(String(await controlChromeCdpTool.execute({
+        ...base, command: "record_start",
+      })));
+      expect(started.active).toBe(true);
+      const moved = String(await controlChromeCdpTool.execute({
+        ...base, command: "move_cursor", x: 170, y: 95, steps: 2, step_delay_ms: 0,
+      }));
+      expect(moved).toContain("cursor moved naturally");
+      const clicked = String(await controlChromeCdpTool.execute({
+        ...base, command: "click", selector: "button", visualCursor: false,
+      }));
+      expect(clicked).toContain("clicked");
+      const exported = String(await controlChromeCdpTool.execute({
+        ...base, command: "record_export", recordingId: started.recordingId,
+      }));
+      const trace = JSON.parse(exported);
+      expect(trace.events.map((item: any) => item.action)).toEqual(["move_cursor", "click"]);
+      expect(trace.events[0].position).toEqual({ x: 170, y: 95 });
+      expect(exported).not.toContain(claim.sessionToken);
+      expect(exported).not.toContain('"selector"');
+      expect(exported).not.toContain("button");
+      const unauthorized = String(await controlChromeCdpTool.execute({
+        command: "record_export", targetId: "T1", agentId: "intruder",
+        recordingId: started.recordingId,
+      }));
+      expect(unauthorized).toContain("sessionToken");
+      const preview = JSON.parse(String(await controlChromeCdpTool.execute({
+        ...base, command: "replay_preview", recordingId: started.recordingId, sequence: 1,
+      })));
+      expect(preview.status).toBe("dry-run");
+      const clickReplay = String(await controlChromeCdpTool.execute({
+        ...base, command: "replay_preview", recordingId: started.recordingId, sequence: 2,
+      }));
+      expect(clickReplay).toContain("only recorded pointer movement");
+      const unconfirmed = String(await controlChromeCdpTool.execute({
+        ...base, command: "replay_cursor", recordingId: started.recordingId, sequence: 1,
+      }));
+      expect(unconfirmed).toContain("confirmReplay");
+      const current = JSON.parse(String(await controlChromeCdpTool.execute({ command: "list_sessions" })));
+      const revision = current.sessions.find((s: any) => s.targetId === "T1").revision;
+      const replay = String(await controlChromeCdpTool.execute({
+        ...base, command: "replay_cursor", recordingId: started.recordingId, sequence: 1,
+        confirmReplay: true, expectedRevision: revision,
+      }));
+      expect(JSON.parse(replay).status).toBe("cursor_movement_dispatched");
+      const stopped = JSON.parse(String(await controlChromeCdpTool.execute({
+        ...base, command: "record_stop",
+      })));
+      expect(stopped.active).toBe(false);
+    } finally {
+      await controlChromeCdpTool.execute({ ...base, command: "release_target" });
     }
   });
 

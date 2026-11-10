@@ -13,6 +13,9 @@ import {
   REMOVE_CURSOR_OVERLAY_JS,
   buildCursorOverlayJs,
   buildRemoveCursorOverlayJs,
+  buildPersistentCursorJs,
+  cursorColorForAgent,
+  forgetPersistentCursorRegistrations,
   dispatchHumanDragAndDrop,
   executeDragAndDropCommand,
   buildHtml5DragDropJs,
@@ -100,6 +103,43 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
   });
 
   describe("independent named cursor twins", () => {
+    test("stable agent colors and safe cross-navigation bootstrap", () => {
+      const first = cursorColorForAgent("agent-alpha");
+      expect(first).toMatch(/^#[a-f0-9]{6}$/i);
+      expect(cursorColorForAgent("agent-alpha")).toBe(first);
+      const script = buildPersistentCursorJs("agent-alpha", "Alpha", { x: 317, y: 245 });
+      expect(script).toContain("DOMContentLoaded");
+      expect(script).toContain("317px");
+      expect(script).toContain("245px");
+      expect(script).toContain("__superagent_virtual_cursor__agent-alpha");
+      expect(script).toContain("pointer-events: none");
+    });
+
+    test("managed CDP registers, updates and removes a scoped navigation script", async () => {
+      const calls: Array<{ method: string; params: any }> = [];
+      let counter = 0;
+      const send = async (_target: any, method: string, params: any) => {
+        calls.push({ method, params });
+        if (method === "Page.addScriptToEvaluateOnNewDocument") return { identifier: "cursor-script-" + (++counter) };
+        return {};
+      };
+      const target = { id: "tab-persistent", webSocketDebuggerUrl: "ws://test-persistent/devtools/page/tab-persistent" };
+      const show = await executeCursorCommand(send, target, "show_cursor", {}, "agent-alpha", "Alpha");
+      expect(show).toContain("persistent across navigation");
+      await executeCursorCommand(send, target, "move_cursor",
+        { x: 300, y: 170, steps: 2, step_delay_ms: 0 }, "agent-alpha", "Alpha");
+      const scripts = calls.filter(call => call.method === "Page.addScriptToEvaluateOnNewDocument");
+      expect(scripts).toHaveLength(2);
+      expect(scripts[1].params.source).toContain("300px");
+      expect(scripts[1].params.source).toContain("170px");
+      const removedBeforeHide = calls.filter(call => call.method === "Page.removeScriptToEvaluateOnNewDocument");
+      expect(removedBeforeHide).toHaveLength(1);
+      expect(removedBeforeHide[0].params.identifier).toBe("cursor-script-1");
+      await executeCursorCommand(send, target, "hide_cursor", {}, "agent-alpha", "Alpha");
+      expect(calls.filter(call => call.method === "Page.removeScriptToEvaluateOnNewDocument")).toHaveLength(2);
+      expect(calls.at(-1)?.params.expression).toContain("__superagent_virtual_cursor__agent-alpha");
+      forgetPersistentCursorRegistrations(target.webSocketDebuggerUrl);
+    });
     test("isolates each agent by DOM id and labels via textContent", () => {
       const alpha = buildCursorOverlayJs("agent-alpha", "Alpha");
       const beta = buildCursorOverlayJs("agent-beta", "Beta");
@@ -215,6 +255,27 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
   });
 
   describe("executeCursorCommand", () => {
+    test("scroll_cursor emits genuine wheel input and rejects invalid deltas", async () => {
+      const events: Array<{ method: string; params: any }> = [];
+      const send = async (_t: any, method: string, params: any) => {
+        events.push({ method, params });
+        return {};
+      };
+      const target = { id: "scroll-1" };
+      setCursorPosition(target.id, { x: 125, y: 230 }, "agent-one");
+      const result = await executeCursorCommand(send, target, "scroll_cursor",
+        { deltaY: 180, deltaX: 0, visualCursor: false }, "agent-one");
+      expect(result).toContain("real CDP wheel dispatched");
+      expect(events).toEqual([{
+        method: "Input.dispatchMouseEvent", params: {
+          type: "mouseWheel", x: 125, y: 230, deltaX: 0, deltaY: 180,
+        },
+      }]);
+      const denied = await executeCursorCommand(send, target, "scroll_cursor",
+        { deltaY: Number.POSITIVE_INFINITY }, "agent-one");
+      expect(denied).toContain("requires bounded nonzero");
+      expect(events).toHaveLength(1);
+    });
     test("handles move_cursor command with target coordinates", async () => {
       const mockCdpSend = async () => ({});
       const target = { id: "T1" };

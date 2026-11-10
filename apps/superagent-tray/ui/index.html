@@ -1488,6 +1488,31 @@
             </div>
           </div>
         </section>
+
+        <section class="panel delegate-multitab-panel" aria-labelledby="cdp-presence-heading">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">READ-ONLY BROWSER PRESENCE</div>
+              <h2 id="cdp-presence-heading">Managed CDP Agent Activity</h2>
+              <p>Observe verified tab ownership, participant roles and contention. No credentials, page content or control commands are shown here.</p>
+            </div>
+            <button type="button" id="cdp-presence-refresh" class="button secondary">Refresh</button>
+          </div>
+          <div class="multitab-summary" aria-live="polite">
+            <span id="cdp-presence-state">Status unknown</span>
+            <span id="cdp-presence-agents">— agents</span>
+            <span id="cdp-presence-tabs">— tabs</span>
+            <span id="cdp-presence-queued">— queued</span>
+          </div>
+          <label for="cdp-presence-follow">Follow agent (read-only filter)</label>
+          <select id="cdp-presence-follow" class="cdp-presence-follow">
+            <option value="">All agents</option>
+          </select>
+          <div id="cdp-presence-sessions" class="multitab-items" role="status" aria-live="polite">
+            <p class="text-secondary">Live Core status has not been verified yet.</p>
+          </div>
+          <p class="delegate-hint">Managed CDP sessions appear here. Delegate-CDP sessions remain in the Multi-Tab Orchestrator above. Pausing and human takeover require separate verified ownership.</p>
+        </section>
       </div>
 
       <!-- ================= PAGE 6: TERMINAL PROCESSES ================= -->

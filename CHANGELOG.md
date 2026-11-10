@@ -5,6 +5,15 @@
 - Add owner-initiated, single-attempt USB ADB installer with 120-second default timeout, version verification and non-replay behavior after uncertain results.
 - Verify Lite/Debug Gradle builds, signing and Android Lint; physical-device E2E remains pending. Tray/controller LAN integration is still in progress in the shared checkout.
 
+## [1.14.67] - 2026-11-10
+### Headed CDP agent presence groundwork (partial release, not primary-runtime activated)
+- Keep agent-specific cursor colors consistent and persist their visual overlay across managed Chrome document navigation while the CDP session remains valid; add genuine CDP wheel scrolling.
+- Add safe per-agent element target highlighting that rejects invisible, disabled, offscreen or center-occluded targets.
+- Extend the existing authenticated local Tray Delegate page with read-only managed CDP presence, sanitized ownership/queue metadata and a Follow Agent filter; avoid new privileged control paths.
+- Add opt-in, bounded in-memory action recording containing no typed values, tokens, selectors or URLs, with dry-run preview and confirmed cursor-only replay. Click/type/navigation replay remains forbidden.
+- Verify headed Chrome cursor persistence, highlight/occlusion and real wheel events; retain multi-agent lease isolation and existing click compatibility.
+- **Not complete:** Delegate GPT-5.6 High bridge forwarding is unprovisioned, Core ownership is unverified, and full live event streaming, action replay approvals, and new watch/takeover controls remain pending. No primary-runtime cutover.
+
 ## [1.14.66] - 2026-11-10
 ### Named visual cursor twins for headed Chrome CDP
 - Render one labeled, pointer-events-disabled visual cursor per authenticated CDP agent in the same Chrome tab, with isolated coordinates and scoped show/hide commands.

@@ -1286,6 +1286,11 @@ export async function handleServerRoute(
         let cdpStatus: { sessionsStatus: "known" | "unknown"; sessions: unknown[];
           observedAt?: number; truncated?: boolean } =
           { sessionsStatus: "unknown", sessions: [] };
+        let managedCdp: { status: "known" | "unknown"; observedAt: number; sessions: unknown[];
+          truncated: boolean; summary: { agents: number; tabs: number; queued: number; busy: number } } = {
+          status: "unknown", observedAt: Date.now(), sessions: [], truncated: false,
+          summary: { agents: 0, tabs: 0, queued: 0, busy: 0 },
+        };
         const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
         const hasHeaderCredential = Boolean(req.headers.authorization || req.headers["x-auth-token"]);
         if (hasHeaderCredential && isRequestAuthorized(req, parsedUrl)) {
@@ -1296,9 +1301,16 @@ export async function handleServerRoute(
           } catch {
             // Preserve the orchestrator dashboard but mark CDP data unknown.
           }
+          try {
+            const { cdpCoordinatorStatus } = await import("./core/tools/chromeCdpSessionManager.js");
+            const { projectManagedCdpPresence } = await import("./core/tools/chromeCdpPresenceProjection.js");
+            managedCdp = projectManagedCdpPresence(await cdpCoordinatorStatus());
+          } catch {
+            // Managed sessions must remain UNKNOWN on errors, never interpreted as empty.
+          }
         }
         sendJSON(res, 200, { success: true, ...orchestrator.snapshot(),
-          profiles: await orchestrator.tabs(), ...cdpStatus });
+          profiles: await orchestrator.tabs(), ...cdpStatus, managedCdp });
         return true;
       }
       const raw = await readBody(req);

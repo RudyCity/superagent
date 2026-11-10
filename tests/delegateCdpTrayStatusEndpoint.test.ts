@@ -6,6 +6,7 @@ import { ensureServerAuthToken } from "../src/core/utils/serverSecurity.js";
 import { delegateBridge } from "../src/core/delegate/bridge.js";
 import * as coordinator from "../src/core/browserTransport/sessionCoordinator.js";
 import { projectDelegateTrayStatus } from "../src/core/delegate/delegateStatusProjection.js";
+import * as managedCoordinator from "../src/core/tools/chromeCdpSessionManager.js";
 
 const A = "chrome-profile-a-00001";
 const B = "chrome-profile-b-00002";
@@ -203,6 +204,33 @@ describe("GET /api/delegate/multitab/status permission boundary", () => {
       headers: { authorization: "" } });
     expect(unauth.body.sessionsStatus).toBe("unknown");
     expect(unauth.body.sessions).toEqual([]);
+  });
+
+  it("exposes only redacted managed CDP presence when operator is authenticated", async () => {
+    mockRead();
+    const time = Date.now();
+    vi.spyOn(managedCoordinator, "cdpCoordinatorStatus").mockResolvedValue({
+      sessions: [{ key: "a".repeat(64), port: 9222, targetId: "managed-tab",
+        agentId: "agent-one", mode: "shared", revision: 4, expiresAt: time + 50000,
+        sessionToken: "DO_NOT_EXPOSE", tokenHash: "ALSO_SECRET",
+        participants: [{ agentId: "agent-one", role: "owner" }] }],
+      queue: [{ key: "a".repeat(16), queued: 2, locked: true }],
+      summary: { activeAgents: 1, activeTabs: 1, queued: 2, busyTargets: 1, extensionBlocked: true },
+    } as any);
+    const { delegateMultiTabOrchestrator } = await import("../src/core/delegate/multiTabOrchestrator.js");
+    vi.spyOn(delegateMultiTabOrchestrator, "snapshot").mockReturnValue({
+      counts: {}, tasks: [], owners: [], maxConcurrent: 3,
+    } as any);
+    vi.spyOn(delegateMultiTabOrchestrator, "tabs").mockResolvedValue([] as any);
+    vi.spyOn(delegateMultiTabOrchestrator, "reconcilePendingReadOnly").mockResolvedValue(undefined as any);
+    const authorized = await request({ route: "/api/desktop/delegate/orchestrator" });
+    expect(authorized.body.managedCdp.status).toBe("known");
+    expect(authorized.body.managedCdp.summary).toMatchObject({ agents: 1, tabs: 1, queued: 2 });
+    expect(JSON.stringify(authorized.body.managedCdp)).not.toMatch(/DO_NOT_EXPOSE|ALSO_SECRET|tokenHash/);
+    const unverified = await request({ route: "/api/desktop/delegate/orchestrator",
+      headers: { authorization: "" } });
+    expect(unverified.body.managedCdp.status).toBe("unknown");
+    expect(unverified.body.managedCdp.sessions).toEqual([]);
   });
 });
 

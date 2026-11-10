@@ -4,7 +4,7 @@
   const state = { profiles: [], tasks: [], owners: [], counts: {},
     selected: null, fetching: false, submitting: false, blockedRequest: null,
     sessions: [], sessionsKnown: false, sessionsStale: false,
-    statusError: false, statusKnown: false };
+    statusError: false, statusKnown: false, managedCdp: null, followedAgent: "" };
   const statuses = new Set(["queued", "sending", "monitoring"]);
   function elem(tag, cls = "", value = "") {
     const node = document.createElement(tag);
@@ -227,6 +227,64 @@
       target.append(card);
     }
   }
+  function drawManagedPresence() {
+    const target = $("cdp-presence-sessions");
+    if (!target) return;
+    const current = state.managedCdp;
+    const knownState = current?.status === "known" && Array.isArray(current.sessions);
+    const summary = knownState ? current.summary : null;
+    const label = $("cdp-presence-state");
+    const agents = $("cdp-presence-agents");
+    const tabs = $("cdp-presence-tabs");
+    const queued = $("cdp-presence-queued");
+    if (label) label.textContent = knownState ? "Live snapshot" : "Status unknown";
+    if (agents) agents.textContent = knownState ? String(summary?.agents ?? 0) + " agents" : "— agents";
+    if (tabs) tabs.textContent = knownState ? String(summary?.tabs ?? 0) + " tabs" : "— tabs";
+    if (queued) queued.textContent = knownState ? String(summary?.queued ?? 0) + " queued" : "— queued";
+    const follow = $("cdp-presence-follow");
+    const sessions = knownState ? current.sessions : [];
+    if (follow) {
+      const ids = [...new Set(sessions.flatMap(s => [s.agentId,
+        ...(Array.isArray(s.participants) ? s.participants.map(p => p.agentId) : [])]))]
+        .filter(s => typeof s === "string" && s.length > 0).sort();
+      follow.replaceChildren();
+      const all = elem("option", "", "All agents"); all.value = "";
+      follow.append(all);
+      for (const id of ids) {
+        const option = elem("option", "", id); option.value = id;
+        follow.append(option);
+      }
+      if (state.followedAgent && !ids.includes(state.followedAgent)) state.followedAgent = "";
+      follow.value = state.followedAgent;
+    }
+    target.replaceChildren();
+    if (!knownState) {
+      target.append(elem("p", "text-secondary",
+        "Managed CDP status unavailable or stale. No ownership conclusions can be drawn."));
+      return;
+    }
+    const shown = sessions.filter(s => !state.followedAgent || s.agentId === state.followedAgent ||
+      s.participants?.some(p => p.agentId === state.followedAgent));
+    if (shown.length === 0) {
+      target.append(elem("p", "text-secondary",
+        state.followedAgent ? "No matching active session." : "No active managed CDP sessions in this verified snapshot."));
+      return;
+    }
+    for (const session of shown) {
+      const card = elem("article", "cdp-presence-row");
+      card.setAttribute?.("data-busy", session.busy === true ? "true" : "false");
+      card.append(elem("strong", "", "Agent " + visible(session.agentId, 96)));
+      line(card, "Target", "managed:" + visible(session.port, 5) + ":" + visible(session.targetId, 128));
+      line(card, "Mode", session.mode === "shared" ? "Shared" : "Isolated");
+      line(card, "Queue", String(session.queued ?? 0) + " queued · " +
+        (session.busy ? "busy" : "not locked"));
+      const members = Array.isArray(session.participants) ? session.participants : [];
+      line(card, "Participants", members.length
+        ? members.map(p => visible(p.agentId, 96) + " (" + visible(p.role, 16) + ")").join(", ")
+        : "Owner only");
+      target.append(card);
+    }
+  }
   function draw() {
     const tabCount = state.profiles.reduce((n,p) =>
       n + (Array.isArray(p.tabs) ? p.tabs.length : 0), 0);
@@ -247,6 +305,7 @@
     }
     drawTabs();
     drawTasks();
+    drawManagedPresence();
   }
   async function refresh() {
     if (state.fetching) return;
@@ -269,6 +328,11 @@
         snapshot.sessionsStatus !== "unknown" && !state.sessionsStale &&
         (hasTimestamp || legacyShape);
       state.sessions = state.sessionsKnown ? snapshot.sessions : [];
+      const managed = snapshot.managedCdp;
+      const managedAge = Date.now() - Number(managed?.observedAt);
+      state.managedCdp = managed?.status === "known" && Array.isArray(managed.sessions) &&
+        Number.isFinite(managedAge) && managedAge >= -10000 && managedAge <= 30000
+          ? managed : null;
       state.statusKnown = true;
       const wasError = state.statusError;
       state.statusError = false;
@@ -283,6 +347,7 @@
       // Fail closed: do not keep stale owner/lease state visible as current.
       state.profiles = []; state.owners = []; state.tasks = [];
       state.sessions = []; state.sessionsKnown = false; state.sessionsStale = false;
+      state.managedCdp = null;
       state.counts = {}; state.statusKnown = false;
       state.statusError = true;
       state.selected = null;
@@ -309,6 +374,11 @@
   }
   function wire() {
     $("multitab-refresh")?.addEventListener("click", () => void refresh());
+    $("cdp-presence-refresh")?.addEventListener("click", () => void refresh());
+    $("cdp-presence-follow")?.addEventListener("change", event => {
+      state.followedAgent = event.target.value;
+      drawManagedPresence();
+    });
     $("multitab-new-tab")?.addEventListener("click", async () => {
       const clientId = selectedProfile();
       if (!clientId) return say("No connected Chrome profile", true);

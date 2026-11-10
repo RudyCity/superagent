@@ -40,6 +40,10 @@ export interface CursorClickOptions extends CursorMoveOptions {
 
 /** In-memory store of the last known cursor position per target tab. */
 const cursorPositionStore = new Map<string, Point>();
+/** Script registrations are scoped to the live CDP connection, not an OS pointer. */
+const cursorDocumentScripts = new Map<string, Map<string, string>>();
+const cursorTargetKey = (target: { id: string; webSocketDebuggerUrl?: string }): string =>
+  target.webSocketDebuggerUrl || target.id;
 
 function cursorStoreKey(targetId: string, cursorId = "legacy"): string {
   return cursorId === "legacy" ? targetId : targetId + "::" + cursorId;
@@ -145,8 +149,18 @@ function cursorDisplayName(name: string): string {
   return String(name || "SuperAgent").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 40) || "SuperAgent";
 }
 
+/** Each authenticated actor gets a stable color; labels are always textContent. */
+const CURSOR_COLORS = ["#1d4ed8", "#7c3aed", "#047857", "#b45309", "#be185d", "#0f766e", "#b91c1c"];
+export function cursorColorForAgent(cursorId = "legacy"): string {
+  if (cursorId === "legacy") return CURSOR_COLORS[0];
+  let hash = 2166136261;
+  for (const character of cursorId) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+  return CURSOR_COLORS[(hash >>> 0) % CURSOR_COLORS.length];
+}
+
 /** One independent, named, non-interactive pointer for each CDP agent in a headed tab. */
 export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAgent"): string {
+  const color = cursorColorForAgent(cursorId);
   return `(() => {
     let el = document.getElementById(${JSON.stringify(cursorDomId(cursorId))});
     if (!el) {
@@ -155,7 +169,7 @@ export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAge
       el.setAttribute('data-superagent-cursor', 'true');
       el.setAttribute('aria-hidden', 'true');
       el.style.cssText = 'position:fixed;top:0;left:0;width:22px;height:22px;z-index:2147483647;pointer-events: none;transform:translate3d(-50px,-50px,0);transition:none;will-change:transform;';
-      el.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))"><path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="#2563eb" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg><div data-superagent-cursor-ripple style="position:absolute;top:0;left:0;width:24px;height:24px;border:2px solid #3b82f6;border-radius:50%;opacity:0;transform:scale(.4);pointer-events:none;"></div><span data-superagent-cursor-name style="position:absolute;top:19px;left:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#1d4ed8;color:#fff;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:7px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;"></span>';
+      el.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))"><path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="${color}" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg><div data-superagent-cursor-ripple style="position:absolute;top:0;left:0;width:24px;height:24px;border:2px solid ${color};border-radius:50%;opacity:0;transform:scale(.4);pointer-events:none;"></div><span data-superagent-cursor-name style="position:absolute;top:19px;left:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${color};color:#fff;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:7px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;"></span>';
       (document.body || document.documentElement).appendChild(el);
     }
     const label = el.querySelector('[data-superagent-cursor-name]');
@@ -196,6 +210,78 @@ export function buildRemoveCursorOverlayJs(cursorId = "legacy"): string {
   })()`;
 }
 export const REMOVE_CURSOR_OVERLAY_JS = buildRemoveCursorOverlayJs();
+
+/** Safe bootstrap: Page.addScriptToEvaluateOnNewDocument may run before <html> exists. */
+export function buildPersistentCursorJs(cursorId: string, cursorName: string, position: Point): string {
+  return `(() => {
+    // Browser page scripts run in all frames; the pointer belongs to the top viewport.
+    if (window !== window.top) return;
+    const mount = () => {
+      if (!document.body && !document.documentElement) return;
+      ${buildCursorOverlayJs(cursorId, cursorName)};
+      ${UPDATE_CURSOR_OVERLAY_JS(position.x, position.y, false, cursorId)};
+    };
+    if (document.documentElement) mount();
+    else document.addEventListener('DOMContentLoaded', mount, { once: true });
+  })()`;
+}
+
+/**
+ * Store just the CDP script identifier. On unsupported backends the visible cursor
+ * still works in the current document, but no persistence is claimed.
+ */
+export async function persistCursorAcrossNavigation(
+  cdpSend: (target: any, method: string, params?: any) => Promise<any>,
+  target: { id: string; webSocketDebuggerUrl?: string },
+  cursorId: string,
+  cursorName: string,
+  position: Point,
+): Promise<boolean> {
+  const key = cursorTargetKey(target);
+  const registrations = cursorDocumentScripts.get(key) ?? new Map<string, string>();
+  const previous = registrations.get(cursorId);
+  if (previous) {
+    try {
+      await cdpSend(target, "Page.removeScriptToEvaluateOnNewDocument", { identifier: previous });
+    } catch {
+      // A failed removal may leave an older script; fail closed instead of multiplying registrations.
+      return false;
+    }
+    registrations.delete(cursorId);
+  }
+  try {
+    const result = await cdpSend(target, "Page.addScriptToEvaluateOnNewDocument", {
+      source: buildPersistentCursorJs(cursorId, cursorName, position),
+    });
+    if (typeof result?.identifier !== "string" || !result.identifier) return false;
+    registrations.set(cursorId, result.identifier);
+    cursorDocumentScripts.set(key, registrations);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function removePersistentCursorOverlay(
+  cdpSend: (target: any, method: string, params?: any) => Promise<any>,
+  target: { id: string; webSocketDebuggerUrl?: string },
+  cursorId = "legacy",
+): Promise<void> {
+  const key = cursorTargetKey(target);
+  const registrations = cursorDocumentScripts.get(key);
+  const identifier = registrations?.get(cursorId);
+  if (identifier) {
+    await cdpSend(target, "Page.removeScriptToEvaluateOnNewDocument", { identifier });
+    registrations!.delete(cursorId);
+    if (registrations!.size === 0) cursorDocumentScripts.delete(key);
+  }
+  await cdpSend(target, "Runtime.evaluate", { expression: buildRemoveCursorOverlayJs(cursorId) });
+}
+
+/** CDP registration identifiers are session-scoped; discard on socket disconnect. */
+export function forgetPersistentCursorRegistrations(webSocketDebuggerUrl: string): void {
+  cursorDocumentScripts.delete(webSocketDebuggerUrl);
+}
 
 /**
  * Dispatches a human-like cursor trajectory to the CDP target via sequential mouseMoved events.
@@ -242,6 +328,9 @@ export async function dispatchHumanMouseMove(
   }
 
   setCursorPosition(target.id, targetPoint, cursorId);
+  if (showVisual) {
+    await persistCursorAcrossNavigation(cdpSend, target, cursorId, options?.cursorName ?? "SuperAgent", targetPoint);
+  }
   return { ok: true, stepsDispatched: trajectory.length, endPosition: targetPoint };
 }
 
@@ -356,11 +445,43 @@ export async function executeCursorCommand(
       await cdpSend(target, "Runtime.evaluate", {
         expression: UPDATE_CURSOR_OVERLAY_JS(position.x, position.y, false, cursorId),
       });
-      return "control_chrome_cdp: visual cursor overlay enabled on page.";
+      const persistent = await persistCursorAcrossNavigation(cdpSend, target, cursorId, cursorName, position);
+      return persistent
+        ? "control_chrome_cdp: visual cursor overlay enabled on page (persistent across navigation)."
+        : "control_chrome_cdp: visual cursor overlay enabled on page (navigation persistence unavailable).";
     }
     case "hide_cursor": {
-      await cdpSend(target, "Runtime.evaluate", { expression: buildRemoveCursorOverlayJs(cursorId) });
-      return "control_chrome_cdp: visual cursor overlay removed from page.";
+      await removePersistentCursorOverlay(cdpSend, target, cursorId);
+      return "control_chrome_cdp: visual cursor overlay removed from page and navigation registration removed.";
+    }
+    case "scroll_cursor": {
+      const deltaX = Number(payload.deltaX ?? 0);
+      const deltaY = Number(payload.deltaY ?? 0);
+      if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY) ||
+          (deltaX === 0 && deltaY === 0) ||
+          Math.abs(deltaX) > 10000 || Math.abs(deltaY) > 10000) {
+        return "control_chrome_cdp failed: scroll_cursor requires bounded nonzero deltaX/deltaY.";
+      }
+      const current = getCursorPosition(target.id, cursorId);
+      const x = typeof payload.x === "number" ? payload.x : current.x;
+      const y = typeof payload.y === "number" ? payload.y : current.y;
+      if (!Number.isFinite(x) || !Number.isFinite(y))
+        return "control_chrome_cdp failed: scroll_cursor coordinates must be finite.";
+      const visual = payload.visualCursor !== false && payload.visual !== false;
+      if (visual) {
+        await cdpSend(target, "Runtime.evaluate", {
+          expression: buildCursorOverlayJs(cursorId, cursorName),
+        });
+        await cdpSend(target, "Runtime.evaluate", {
+          expression: UPDATE_CURSOR_OVERLAY_JS(x, y, false, cursorId),
+        });
+      }
+      await cdpSend(target, "Input.dispatchMouseEvent", {
+        type: "mouseWheel", x, y, deltaX, deltaY,
+      });
+      setCursorPosition(target.id, { x, y }, cursorId);
+      if (visual) await persistCursorAcrossNavigation(cdpSend, target, cursorId, cursorName, { x, y });
+      return `control_chrome_cdp: real CDP wheel dispatched at (${x}, ${y}) delta (${deltaX}, ${deltaY}).`;
     }
     case "move_cursor":
     case "move_mouse": {
@@ -576,6 +697,10 @@ export async function dispatchHumanDragAndDrop(
     });
 
     setCursorPosition(target.id, targetPoint, options?.cursorId ?? "legacy");
+    if (visual) {
+      await persistCursorAcrossNavigation(cdpSend, target, options?.cursorId ?? "legacy",
+        options?.cursorName ?? "SuperAgent", targetPoint);
+    }
   }
 
   if (mode === "html5" || mode === "both") {
