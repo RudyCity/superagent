@@ -4,7 +4,7 @@
  * All entrypoints must be called inside the authenticated CDP coordinator's
  * per-target read/write gate; journal itself is not an authorization boundary.
  */
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 export type SafeBrowserAction = "move_cursor" | "click" | "type" | "drag_and_drop" | "navigate" | "scroll_cursor";
 export type SafeActionRecord = Readonly<{
   sequence: number;
@@ -13,6 +13,9 @@ export type SafeActionRecord = Readonly<{
   at: number;
   /** Only cursor movement may be replayed; all other actions are audit-only. */
   position?: Readonly<{ x: number; y: number }>;
+  /** SHA-256 only: prevents rebinding an approved click to a new target. */
+  locatorDigest?: string;
+  pageDigest?: string;
 }>;
 type Trace = {
   id: string;
@@ -75,7 +78,8 @@ export function hasActiveBrowserActionRecording(targetKey: string, actorId: stri
   return traces.get(key(targetKey,actorId))?.active === true;
 }
 export function appendBrowserActionRecord(targetKey: string, actorId: string, generation: string,
-  action: string, position?: {x:number;y:number}) {
+  action: string, position?: {x:number;y:number},
+  clickBinding?: {locator:string;url:string}) {
   const trace=inspect(targetKey,actorId,generation);
   if (!trace || !trace.active || !known.has(action as SafeBrowserAction)) return false;
   if (trace.events.length >= MAX_EVENTS) { trace.active=false; return false; }
@@ -83,9 +87,17 @@ export function appendBrowserActionRecord(targetKey: string, actorId: string, ge
     Number.isFinite(position.x) && Number.isFinite(position.y) &&
     Math.abs(position.x) <= 100000 && Math.abs(position.y) <= 100000
       ? { x:position.x, y:position.y } : undefined;
+  const boundedBinding=action==="click" && clickBinding &&
+    typeof clickBinding.locator==="string" && clickBinding.locator.length>0 &&
+    clickBinding.locator.length<=500 && typeof clickBinding.url==="string" &&
+    clickBinding.url.length>0 && clickBinding.url.length<=4096;
+  const hashes=boundedBinding ? {
+    locatorDigest:createHash("sha256").update(clickBinding!.locator).digest("hex"),
+    pageDigest:createHash("sha256").update(clickBinding!.url).digest("hex"),
+  } : {};
   trace.events.push({sequence:trace.events.length+1,
     action:action as SafeBrowserAction,status:"dispatched",at:Date.now(),
-    ...(pos ? {position:pos} : {})});
+    ...(pos ? {position:pos} : {}),...hashes});
   if (trace.events.length >= MAX_EVENTS) trace.active=false;
   return true;
 }

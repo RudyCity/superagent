@@ -1,4 +1,5 @@
 import {beforeEach,describe,expect,test} from "vitest";
+import {createHash} from "node:crypto";
 import {
   beginBrowserActionRecording,stopBrowserActionRecording,browserActionRecordingStatus,
   appendBrowserActionRecord,readBrowserActionRecording,previewSafeCursorReplay,
@@ -21,6 +22,20 @@ describe("opt-in privacy-safe browser recording",()=>{
     expect(JSON.stringify(exported)).not.toMatch(/password|cookie|token|typedText|payload|selector|url/);
     stopBrowserActionRecording("target","alpha","gen");
     expect(appendBrowserActionRecord("target","alpha","gen","click")).toBe(false);
+  });
+  test("binds replayable recorded clicks only to original selector and document URL digests",()=>{
+    const trace=beginBrowserActionRecording("tab","owner","generation");
+    const selector="#confirm";
+    const url="https://private.test/pay?token=VERY_SECRET";
+    appendBrowserActionRecord("tab","owner","generation","click",undefined,
+      {locator:selector,url});
+    const data=readBrowserActionRecording("tab","owner","generation",trace.recordingId);
+    expect(data.events[0].locatorDigest).toBe(createHash("sha256").update(selector).digest("hex"));
+    expect(data.events[0].pageDigest).toBe(createHash("sha256").update(url).digest("hex"));
+    expect(JSON.stringify(data)).not.toMatch(/VERY_SECRET|#confirm|private.test|token=/);
+    appendBrowserActionRecord("tab","owner","generation","click");
+    expect(data.events[0].locatorDigest).toBeDefined();
+    expect(readBrowserActionRecording("tab","owner","generation",trace.recordingId).events[1].locatorDigest).toBeUndefined();
   });
   test("never permits replay of clicks or foreign target/actor/generation",()=>{
     const trace=beginBrowserActionRecording("tab","owner","generation-1");

@@ -4,7 +4,8 @@
   const state = { profiles: [], tasks: [], owners: [], counts: {},
     selected: null, fetching: false, submitting: false, blockedRequest: null,
     sessions: [], sessionsKnown: false, sessionsStale: false,
-    statusError: false, statusKnown: false, managedCdp: null, followedAgent: "" };
+    statusError: false, statusKnown: false, managedCdp: null, followedAgent: "",
+    liveCursor: null, liveConnected: false, liveRunning: false };
   const statuses = new Set(["queued", "sending", "monitoring"]);
   function elem(tag, cls = "", value = "") {
     const node = document.createElement(tag);
@@ -21,10 +22,14 @@
   async function call(action, payload = {}) {
     const invoke = window.__TAURI__?.core?.invoke;
     if (typeof invoke === "function") {
+      const native = ["cdp-live","cdp-control","cdp-approval"].includes(action);
       return invoke("delegate_action", {
-        action: action === "status" ? "orchestrator-status" : "orchestrator",
-        payload: action === "status" ? null : { action, ...payload },
+        action: native ? action : action === "status" ? "orchestrator-status" : "orchestrator",
+        payload: native ? payload : action === "status" ? null : { action, ...payload },
       });
+    }
+    if (["cdp-live","cdp-control","cdp-approval"].includes(action)) {
+      throw new Error("Native authenticated Tray required for CDP live control.");
     }
     const response = await fetch("/api/desktop/delegate/orchestrator", {
       method: action === "status" ? "GET" : "POST",
@@ -227,17 +232,77 @@
       target.append(card);
     }
   }
+  function drawReplayApprovals(snapshot) {
+    const host = $("cdp-replay-approvals");
+    if (!host) return;
+    host.replaceChildren();
+    const entries = snapshot?.status === "known" && Array.isArray(snapshot.replayApprovals)
+      ? snapshot.replayApprovals.slice(0,24) : [];
+    if (!entries.length) {
+      host.append(elem("p","text-secondary",
+        snapshot?.status === "known" ? "No pending replay approvals." :
+        "Approval inventory unavailable; no approval can be inferred."));
+      return;
+    }
+    for (const approval of entries) {
+      if (!/^[0-9a-f-]{36}$/.test(String(approval?.approvalId || "")) ||
+          !Number.isSafeInteger(approval.port) ||
+          !/^[A-Za-z0-9_-]{1,128}$/.test(String(approval.targetId || ""))) continue;
+      const card = elem("article","cdp-presence-row");
+      card.append(elem("strong","",
+        "Recorded click #" + visible(approval.sequence,5) +
+        " · " + visible(approval.actorId,96)));
+      line(card,"Chrome target",visible(approval.port,5)+":"+visible(approval.targetId,128));
+      line(card,"Expires",stamp(approval.expiresAt));
+      line(card,"Approval","Operator must visually inspect the exact live tab first.");
+      const actions = elem("div","multitab-controls");
+      for (const decision of ["approve","deny"]) {
+        const button = elem("button",decision==="approve"?"button secondary sm":"button ghost sm",
+          decision==="approve" ? "Approve one click" : "Deny");
+        button.type="button";
+        button.disabled=state.submitting || typeof window.__TAURI__?.core?.invoke!=="function";
+        button.addEventListener("click",()=>void reviewReplay(approval,decision));
+        actions.append(button);
+      }
+      card.append(actions);
+      host.append(card);
+    }
+  }
+  async function reviewReplay(approval, decision) {
+    if (state.submitting || !["approve","deny"].includes(decision)) return;
+    const phrase = decision==="approve"
+      ? "Approve exactly ONE recorded click for this target? You must visually inspect the managed Chrome tab before authorizing. This click might submit an irreversible action."
+      : "Deny this replay request? This decision cannot be reversed.";
+    if (!window.confirm(phrase)) return;
+    state.submitting=true;
+    try {
+      const result=await call("cdp-approval",{
+        approvalId:approval.approvalId,decision,
+      });
+      if (!result || result.success===false) throw Error(result?.error || "Approval rejected");
+      say(decision==="approve" ? "One-time click approved. Execution still requires exact revision and target verification."
+        : "Replay denied.");
+      state.liveCursor=null;
+      await refresh();
+    } catch(error) {
+      say("Approval was not confirmed: "+(error.message || error)+
+        ". Inspect live state before any further action.",true);
+    } finally { state.submitting=false; }
+  }
   function drawManagedPresence() {
     const target = $("cdp-presence-sessions");
     if (!target) return;
     const current = state.managedCdp;
+    drawReplayApprovals(current);
     const knownState = current?.status === "known" && Array.isArray(current.sessions);
     const summary = knownState ? current.summary : null;
     const label = $("cdp-presence-state");
     const agents = $("cdp-presence-agents");
     const tabs = $("cdp-presence-tabs");
     const queued = $("cdp-presence-queued");
-    if (label) label.textContent = knownState ? "Live snapshot" : "Status unknown";
+    if (label) label.textContent = knownState
+      ? state.liveConnected ? "Live updates" : "Snapshot only"
+      : state.liveConnected ? "Live feed unavailable" : "Status unknown";
     if (agents) agents.textContent = knownState ? String(summary?.agents ?? 0) + " agents" : "— agents";
     if (tabs) tabs.textContent = knownState ? String(summary?.tabs ?? 0) + " tabs" : "— tabs";
     if (queued) queued.textContent = knownState ? String(summary?.queued ?? 0) + " queued" : "— queued";
@@ -278,6 +343,19 @@
         (session.paused ? " · PAUSED" : " · Active")));
       line(card, "Target", "managed:" + visible(session.port, 5) + ":" + visible(session.targetId, 128));
       line(card, "Mode", session.mode === "shared" ? "Shared" : "Isolated");
+      if (session.registered === true) {
+        line(card, "Human control", session.humanControl === "human" ? "Human holds target" :
+          session.humanControl === "agent" ? "Agent available" : "Unverified");
+        if (session.humanControl === "human" || session.humanControl === "agent") {
+          const mode = session.humanControl === "human" ? "agent" : "human";
+          const button = elem("button", "button secondary sm",
+            mode === "human" ? "Take over locally" : "Return control to agent");
+          button.type = "button";
+          button.disabled = state.submitting;
+          button.addEventListener("click", () => void controlHumanTakeover(session, mode));
+          card.append(button);
+        }
+      }
       line(card, "Queue", String(session.queued ?? 0) + " queued · " +
         (session.busy ? "busy" : "not locked"));
       const cursorStates = Array.isArray(session.cursors) ? session.cursors : [];
@@ -297,6 +375,63 @@
         ? members.map(p => visible(p.agentId, 96) + " (" + visible(p.role, 16) + ")").join(", ")
         : "Owner only");
       target.append(card);
+    }
+  }
+  async function controlHumanTakeover(session, mode) {
+    if (state.submitting || !session || session.registered !== true ||
+        !Number.isSafeInteger(session.port) || !Number.isSafeInteger(session.revision) ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(String(session.targetId || ""))) return;
+    const message = mode === "human"
+      ? "Take manual control of this exact managed Chrome tab? Agent writes will be blocked. No other tabs or VNC sessions are affected."
+      : "Return this tab to agent control? Owner-paused agents remain paused until their owner explicitly verifies and resumes.";
+    if (!window.confirm(message)) return;
+    state.submitting = true;
+    try {
+      const result = await call("cdp-control", {
+        port:session.port, targetId:session.targetId,
+        mode, expectedRevision:session.revision,
+      });
+      if (!result || result.success === false) throw Error(result?.error || "Takeover refused.");
+      state.liveCursor = null;
+      say(mode === "human" ? "Manual hold active. Agent writes are blocked."
+        : "Manual hold released. Agent pause state remains unchanged.");
+      await refresh();
+    } catch (error) {
+      say("Human control refused or outcome uncertain: " + (error.message || error) +
+        ". Inspect current state before another attempt.", true);
+    } finally { state.submitting = false; }
+  }
+  async function liveWatchLoop() {
+    if (state.liveRunning || typeof window.__TAURI__?.core?.invoke !== "function") return;
+    state.liveRunning = true;
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    while (document.documentElement?.isConnected) {
+      const page = $("page-delegate");
+      if (!page || page.hidden || document.hidden) {
+        await sleep(850);
+        continue;
+      }
+      try {
+        const result = await call("cdp-live", state.liveCursor ? {cursor:state.liveCursor} : {});
+        if (!result || result.success === false || !/^[a-f0-9]{64}$/.test(result.cursor))
+          throw Error("Unverified live status");
+        state.liveCursor = result.cursor;
+        const status = result.managedCdp;
+        const age = Date.now() - Number(status?.observedAt);
+        if (status?.status !== "known" || !Array.isArray(status.sessions) ||
+            !Number.isFinite(age) || age > 30000 || age < -10000)
+          throw Error("Stale managed CDP update");
+        state.managedCdp = status;
+        state.liveConnected = true;
+        drawManagedPresence();
+      } catch {
+        state.liveCursor = null;
+        state.liveConnected = false;
+        // Unknown stream is NOT evidence of no agent or no human hold.
+        state.managedCdp = null;
+        drawManagedPresence();
+        await sleep(2200);
+      }
     }
   }
   function draw() {
@@ -387,6 +522,7 @@
     }
   }
   function wire() {
+    void liveWatchLoop();
     $("multitab-refresh")?.addEventListener("click", () => void refresh());
     $("cdp-presence-refresh")?.addEventListener("click", () => void refresh());
     $("cdp-presence-follow")?.addEventListener("change", event => {

@@ -1260,6 +1260,108 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Native-only managed CDP live updates and manual human hold. These routes
+  // never accept browser content, owner capability, arbitrary CDP commands, or
+  // bearer tokens in the URL. The Tray authenticates using its native bridge.
+  if (pathname === "/api/desktop/cdp/live" || pathname === "/api/desktop/cdp/control" ||
+      pathname === "/api/desktop/cdp/approval") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    const local = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const host = /^(?:127\.0\.0\.1|localhost)(?::[0-9]{2,5})?$/i.test(String(req.headers.host || ""));
+    const forwarded = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+      "cf-connecting-ip", "cf-ray"].some(name => Boolean(req.headers[name]));
+    const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
+    const bearer = typeof req.headers.authorization === "string" &&
+      /^Bearer [^\s]+$/.test(req.headers.authorization);
+    if (!local || !host || forwarded || req.headers.origin || req.headers.referer ||
+        !bearer || !isRequestAuthorized(req, parsedUrl)) {
+      sendJSON(res, 403, { success:false, error:"CDP_LOCAL_OPERATOR_AUTH_REQUIRED" });
+      return true;
+    }
+    if (pathname === "/api/desktop/cdp/live") {
+      if (req.method !== "GET" || [...parsedUrl.searchParams.keys()].some(key => key !== "cursor")) {
+        sendJSON(res, 405, { success:false, error:"CDP_LIVE_INVALID_REQUEST" });
+        return true;
+      }
+      const cursor = parsedUrl.searchParams.get("cursor");
+      if (cursor !== null && !/^[a-f0-9]{64}$/.test(cursor)) {
+        sendJSON(res, 400, { success:false, error:"CDP_LIVE_INVALID_CURSOR" });
+        return true;
+      }
+      const disconnected = new AbortController();
+      const onClose = () => disconnected.abort();
+      res.once("close", onClose);
+      req.once("aborted", onClose);
+      try {
+        const { watchManagedCdpLive } = await import("./core/tools/chromeCdpLiveFeed.js");
+        const data = await watchManagedCdpLive(cursor, { signal:disconnected.signal });
+        if (!res.destroyed) sendJSON(res, 200, { success:true, ...data });
+      } catch {
+        if (!res.destroyed) sendJSON(res, 503, { success:false, error:"CDP_LIVE_UNAVAILABLE" });
+      } finally {
+        res.off("close", onClose);
+        req.off("aborted", onClose);
+      }
+      return true;
+    }
+    if (pathname === "/api/desktop/cdp/approval") {
+      if (req.method !== "POST" || parsedUrl.search) {
+        sendJSON(res, 405, { success:false, error:"CDP_APPROVAL_POST_ONLY" });
+        return true;
+      }
+      try {
+        const raw = await readBody(req);
+        if (Buffer.byteLength(raw,"utf8") > 300) throw Error("Oversized approval request.");
+        const body = JSON.parse(raw);
+        if (!body || typeof body !== "object" || Array.isArray(body) ||
+            Object.keys(body).some(k => !["approvalId","decision"].includes(k)) ||
+            typeof body.approvalId !== "string" || !/^[0-9a-f-]{36}$/.test(body.approvalId) ||
+            !["approve","deny"].includes(body.decision)) throw Error("Invalid approval.");
+        const { reviewReplayApproval } = await import("./core/tools/chromeCdpReplayApprovals.js");
+        const result = await reviewReplayApproval(body.approvalId,body.decision);
+        sendJSON(res, 200, { success:true, approval:result });
+      } catch {
+        sendJSON(res, 409, { success:false, error:"CDP_REPLAY_APPROVAL_STALE_OR_DENIED" });
+      }
+      return true;
+    }
+    if (req.method !== "POST" || parsedUrl.search) {
+      sendJSON(res, 405, { success:false, error:"CDP_CONTROL_POST_ONLY" });
+      return true;
+    }
+    try {
+      const raw = await readBody(req);
+      if (Buffer.byteLength(raw, "utf8") > 800) throw new Error("Request too large.");
+      const body = JSON.parse(raw);
+      if (!body || typeof body !== "object" || Array.isArray(body) ||
+          Object.keys(body).some(key => !["port","targetId","mode","expectedRevision"].includes(key)) ||
+          !Number.isSafeInteger(body.port) || body.port < 1024 || body.port > 65535 ||
+          typeof body.targetId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(body.targetId) ||
+          !["human","agent"].includes(body.mode) ||
+          !Number.isSafeInteger(body.expectedRevision) || body.expectedRevision < 0)
+        throw new Error("Invalid managed CDP control request.");
+      const { listManagedBrowserRegistrations } = await import("./core/tools/managedBrowserRegistry.js");
+      const registration = listManagedBrowserRegistrations().find(row =>
+        row.port === body.port && row.targetId === body.targetId);
+      if (!registration) throw new Error("Target not registered to managed Core.");
+      const { setManagedBrowserControl } = await import("./core/tools/managedBrowserControl.js");
+      const state = await setManagedBrowserControl({
+        mode:body.mode, port:registration.port, targetId:registration.targetId,
+        profileId:registration.profileId, generation:registration.generation,
+        browserFingerprint:registration.browserFingerprint,
+      }, undefined, body.expectedRevision);
+      sendJSON(res, 200, { success:true, ...state, port:body.port, targetId:body.targetId,
+        note: state.mode === "human"
+          ? "Human control granted; agent mutations blocked until explicit return."
+          : "Manual hold released; paused CDP agents remain paused until owner-authorized resume." });
+    } catch {
+      sendJSON(res, 409, { success:false, error:"CDP_CONTROL_DENIED_OR_TARGET_STALE" });
+    }
+    return true;
+  }
+
   // Native Tray multi-tab orchestration. Authenticated by Core's global bearer gate,
   // and further restricted to localhost. Never accept arbitrary delegate RPC names.
   if (pathname === "/api/desktop/delegate/orchestrator") {
@@ -1302,9 +1404,8 @@ export async function handleServerRoute(
             // Preserve the orchestrator dashboard but mark CDP data unknown.
           }
           try {
-            const { cdpCoordinatorStatus } = await import("./core/tools/chromeCdpSessionManager.js");
-            const { projectManagedCdpPresence } = await import("./core/tools/chromeCdpPresenceProjection.js");
-            managedCdp = projectManagedCdpPresence(await cdpCoordinatorStatus());
+            const { currentManagedCdpLiveSnapshot } = await import("./core/tools/chromeCdpLiveFeed.js");
+            managedCdp = await currentManagedCdpLiveSnapshot();
           } catch {
             // Managed sessions must remain UNKNOWN on errors, never interpreted as empty.
           }

@@ -380,7 +380,10 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "move_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
       "drag_and_drop", "drag",
       "emulate_device", "highlight_target", "clear_highlight",
+       "inspect_qualified_frames", "frame_read", "frame_highlight", "frame_click",
+       "frame_snapshot", "frame_type", "frame_scroll",
       "record_start", "record_stop", "record_status", "record_export", "replay_preview", "replay_cursor",
+       "replay_prepare_click", "replay_execute_click",
       "page_audit", "accessibility_audit", "seo_audit", "responsive_audit", "performance_metrics",
       "start_debug_capture", "read_debug_capture", "stop_debug_capture", "clear_debug_capture",
     ]);

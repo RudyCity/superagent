@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { randomUUID, createHash } from "node:crypto";
 import { join } from "node:path";
-import { cdpGatewayRoot, withCdpTargetCoordination } from "./chromeCdpSessionManager.js";
+import { cdpGatewayRoot, withCdpTargetCoordination, listCdpSessions } from "./chromeCdpSessionManager.js";
 import { browserFingerprintForPort, listManagedBrowserRegistrations, validateManagedBrowserRegistration } from "./managedBrowserRegistry.js";
 import { discoverCdpPages } from "./chromeCdpTools.js";
 import { readTakeoverTargetReservation } from "../browserTakeover/takeoverTargetLease.js";
@@ -24,7 +24,8 @@ export interface VerifiedTakeoverRelease {
 }
 
 export async function setManagedBrowserControl(
-  input: unknown, verifiedTakeoverRelease?: VerifiedTakeoverRelease
+  input: unknown, verifiedTakeoverRelease?: VerifiedTakeoverRelease,
+  expectedRevision?: number,
 ): Promise<{ mode: ManagedControlMode }> {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Invalid control request.");
   const body = input as Record<string, unknown>;
@@ -37,10 +38,22 @@ export async function setManagedBrowserControl(
       r.generation === verified.generation && r.profileId === verified.profileId &&
       r.browserFingerprint === verified.browserFingerprint);
     if (!registered) throw new Error("Managed target must be registered with Core before handoff.");
+    if (expectedRevision !== undefined) {
+      if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
+        throw new Error("Invalid expected CDP revision.");
+      const claimed = (await listCdpSessions()).find(s =>
+        s.port === verified.port && s.targetId === verified.targetId);
+      if (!claimed || claimed.revision !== expectedRevision)
+        throw new Error("Managed CDP revision changed; refresh before handoff.");
+    }
     if (await browserFingerprintForPort(verified.port) !== verified.browserFingerprint)
       throw new Error("Owned browser identity changed; refresh pairing.");
     if (!(await discoverCdpPages(verified.port)).some(page => page.targetId === verified.targetId))
       throw new Error("Managed browser tab closed or changed.");
+    // A human-control transition invalidates existing replay approvals even
+    // when CDP lease revision does not change. Failure leaves the hold intact.
+    const { revokeReplayApprovalsForTarget } = await import("./chromeCdpReplayApprovals.js");
+    await revokeReplayApprovalsForTarget(verified.port, verified.targetId);
     const file = fileFor(verified.port, verified.targetId);
     mkdirSync(folder(), { recursive: true, mode: 0o700 });
     if (mode === "agent") {
@@ -85,6 +98,17 @@ function loadHold(port: number, targetId: string): HumanHold | null {
     return v;
   } catch { throw new Error("Managed browser control state cannot be verified; refusing agent mutation."); }
 }
+/** Operator-facing status only; no control capabilities or browser data exposed. */
+export async function readManagedControlStatus(
+  port: number, targetId: string,
+): Promise<"human" | "agent"> {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(targetId)) throw new Error("Invalid target.");
+  if (loadHold(port, targetId)) return "human";
+  if (await readTakeoverTargetReservation(port, targetId)) return "human";
+  return "agent";
+}
+
 /** Called inside the per-target CDP write lock. Any live human hold blocks writes. */
 export async function assertManagedAgentMayWrite(port: number, targetId: string): Promise<void> {
   const hold = loadHold(port, targetId);

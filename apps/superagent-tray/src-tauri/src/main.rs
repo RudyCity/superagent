@@ -645,6 +645,49 @@ async fn delegate_action(action: String, payload: Option<Value>) -> Result<Value
         "orchestrator-status" => {
             core_request(Method::GET, "/api/desktop/delegate/orchestrator", None).await
         }
+        "cdp-live" => {
+            let data = payload.unwrap_or_else(|| json!({}));
+            let obj = data.as_object().ok_or("Invalid CDP live cursor")?;
+            if obj.keys().any(|key| key != "cursor") { return Err("Unexpected CDP live field".into()); }
+            let cursor = obj.get("cursor").and_then(Value::as_str);
+            if obj.get("cursor").is_some() && cursor.is_none() { return Err("Invalid CDP cursor".into()); }
+            let path = match cursor {
+                Some(value) if value.len() == 64 && value.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) =>
+                    format!("/api/desktop/cdp/live?cursor={value}"),
+                None => "/api/desktop/cdp/live".into(),
+                _ => return Err("Invalid CDP cursor".into()),
+            };
+            core_request(Method::GET, &path, None).await
+        }
+        "cdp-approval" => {
+            let data = payload.ok_or("Missing replay approval request")?;
+            let obj = data.as_object().ok_or("Invalid replay approval body")?;
+            if obj.len() != 2 || obj.keys().any(|k| !["approvalId","decision"].contains(&k.as_str())) {
+                return Err("Unexpected replay approval field".into());
+            }
+            let id = obj.get("approvalId").and_then(Value::as_str).ok_or("Approval ID required")?;
+            let decision = obj.get("decision").and_then(Value::as_str).ok_or("Approval decision required")?;
+            if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') ||
+                !matches!(decision, "approve" | "deny") {
+                return Err("Invalid replay approval request".into());
+            }
+            core_request(Method::POST, "/api/desktop/cdp/approval", Some(data)).await
+        }
+        "cdp-control" => {
+            let data = payload.ok_or("Missing CDP control target")?;
+            let obj = data.as_object().ok_or("Invalid CDP control body")?;
+            if obj.keys().any(|k| !["port","targetId","mode","expectedRevision"].contains(&k.as_str())) ||
+                obj.len() != 4 { return Err("Unexpected CDP control field".into()); }
+            let port = obj.get("port").and_then(Value::as_u64).ok_or("CDP port required")?;
+            let rev = obj.get("expectedRevision").and_then(Value::as_u64).ok_or("CDP revision required")?;
+            let target = obj.get("targetId").and_then(Value::as_str).ok_or("CDP target ID required")?;
+            let mode = obj.get("mode").and_then(Value::as_str).ok_or("CDP mode required")?;
+            if !(1024..=65535).contains(&port) || rev > 1_000_000_000 ||
+                target.is_empty() || target.len() > 128 ||
+                !target.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') ||
+                !matches!(mode, "human" | "agent") { return Err("Invalid CDP control target".into()); }
+            core_request(Method::POST, "/api/desktop/cdp/control", Some(data)).await
+        }
         "orchestrator" => {
             let data = payload.ok_or("Missing multi-tab command")?;
             let obj = data.as_object().ok_or("Invalid multi-tab payload")?;
@@ -976,7 +1019,9 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
     // path comes from the fixed match below, never from the webview.
     let info = server_info()?;
     let url = format!("http://127.0.0.1:{}{}", info.port, path);
-    let request_timeout = if path == "/api/desktop/regenerate-token" {
+    let request_timeout = if path.starts_with("/api/desktop/cdp/live") {
+        Duration::from_secs(14)
+    } else if path == "/api/desktop/regenerate-token" {
         // Local clipboard helper may require a short PowerShell invocation.
         Duration::from_secs(15)
     } else if path == "/api/desktop/create-connection" {

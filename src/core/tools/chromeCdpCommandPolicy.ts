@@ -14,7 +14,7 @@ const reads = new Set([
   "monitor_terminal_agents", "watch_terminal", "get_dialogs", "screenshot", "pdf",
   "get_cursor", "get_cookies", "page_audit", "accessibility_audit", "seo_audit",
    "responsive_audit", "performance_metrics", "read_debug_capture", "list_file_inputs", "verify_upload",
-   "record_status", "record_export", "replay_preview",
+   "record_status", "record_export", "replay_preview", "replay_prepare_click", "inspect_qualified_frames", "frame_read", "frame_snapshot",
 ]);
 export function classifyCdpCommand(command: string, payload: Record<string, unknown> = {}): CdpCommandClass {
   if (admin.has(command)) return "admin";

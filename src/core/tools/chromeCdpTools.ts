@@ -10,6 +10,7 @@
  * or a silent tab fails fast with an actionable message instead of hanging.
  */
 import { Tool } from "./types.js";
+import { createHash } from "node:crypto";
 import { get as httpGet, request as httpRequest } from "http";
 import { ensureCdpRunning } from "./chromeCommon.js";
 import {
@@ -37,6 +38,9 @@ import { executeCursorCommand, dispatchHumanMouseMove, dispatchHumanMouseClick, 
   forgetPersistentCursorRegistrations, removePersistentCursorOverlay } from "./chromeCdpCursor.js";
 import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 import { executeTargetHighlightCommand } from "./chromeCdpTargetHighlight.js";
+import {inspectCdpFrameTree,executeQualifiedFrameAction} from "./chromeCdpFrames.js";
+import {executeFrameUtility} from "./chromeCdpFrameExtras.js";
+import { prepareReplayClick, consumeApprovedReplayClick } from "./chromeCdpReplayApprovals.js";
 import { getCursorPosition } from "./chromeCdpCursor.js";
 import { publishCdpCursorPresence, removeCdpCursorPresence, type CdpCursorKind } from "./chromeCdpCursorPresence.js";
 import {
@@ -517,7 +521,7 @@ async function openCdpConnection(target: CdpTarget): Promise<CdpConnection> {
   return conn;
 }
 
-async function cdpSend(target: CdpTarget, method: string, params: Record<string, unknown> = {}): Promise<any> {
+async function cdpSend(target: CdpTarget, method: string, params: Record<string, unknown> = {}, sessionId?: string): Promise<any> {
   const conn = await getCdpConnection(target);
   const timeoutMs = cdpTimeoutMs();
   const id = conn.nextId++;
@@ -529,7 +533,7 @@ async function cdpSend(target: CdpTarget, method: string, params: Record<string,
     conn.pending.set(id, { resolve, reject, timer, method });
     conn.lastUsed = Date.now();
     try {
-      conn.ws.send(JSON.stringify({ id, method, params }));
+      conn.ws.send(JSON.stringify({ id, method, params, ...(sessionId ? {sessionId} : {}) }));
     } catch (e: any) {
       conn.pending.delete(id);
       clearTimeout(timer);
@@ -747,7 +751,10 @@ export const controlChromeCdpTool: Tool = {
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", "highlight_target", "clear_highlight",
+           "inspect_qualified_frames", "frame_read", "frame_highlight", "frame_click",
+           "frame_snapshot", "frame_type", "frame_scroll",
            "record_start", "record_stop", "record_status", "record_export", "replay_preview", "replay_cursor",
+            "replay_prepare_click", "replay_execute_click",
            ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
         ],
         description: "CDP command to execute on the real Chrome browser.",
@@ -826,7 +833,9 @@ export const controlChromeCdpTool: Tool = {
       cursorName: { type: "string", description: "Optional visible cursor label (up to 40 characters). Agent identity remains authenticated separately." },
       ttlMs: { type: "number", description: "highlight_target marker lifetime in milliseconds, clamped to 250-5000." },
       highlightBeforeClick: { type: "boolean", description: "Preflight and re-check visible, unobscured element before clicking; fail closed if layout changes." },
+      frameId: { type: "string", description: "Explicit qualified iframe CDP frameId from inspect_qualified_frames. Never falls back to parent DOM." },
       recordingId: { type: "string", description: "Opaque ID returned by record_start; required for export and replay." },
+      approvalId: { type: "string", description: "Opaque one-time request ID from replay_prepare_click after local operator approval." },
       sequence: { type: "number", description: "Recorded action sequence for replay_preview/replay_cursor." },
       confirmReplay: { type: "boolean", description: "Required true for replay_cursor; only harmless pointer movement is replayable." },
       targetId: { type: "string", description: "Optional CDP target id. Pass explicitly when multiple agents control tabs." },
@@ -1016,24 +1025,28 @@ export const controlChromeCdpTool: Tool = {
                    : command === "scroll_cursor" ? result.startsWith("control_chrome_cdp: real CDP wheel")
                    : false) : false;
                if (agent && successCategory) {
-                 // Telemetry is best-effort after a real side effect. Never turn
-                 // a successful click into a retryable failure if presence fails.
+                 // Successful physical effects must never be auto-retried because telemetry failed.
                  try {
                    const scope = await recorderScope(selected.id);
                    const action = command === "move_mouse" ? "move_cursor"
                      : command === "drag" ? "drag_and_drop" : command;
                    const position = action === "move_cursor"
                      ? getCursorPosition(selected.id, agent) : undefined;
-                   if (hasActiveBrowserActionRecording(key, agent))
-                     appendBrowserActionRecord(scope.targetKey, scope.actorId, scope.generation, action, position);
+                   if (hasActiveBrowserActionRecording(key, agent)) {
+                     const clickBinding = action === "click" && typeof payload.selector === "string" &&
+                       payload.selector.length > 0 && payload.selector.length <= 500
+                         ? { locator: payload.selector, url: selected.url } : undefined;
+                     appendBrowserActionRecord(scope.targetKey, scope.actorId, scope.generation,
+                       action, position, clickBinding);
+                   }
                    const kind: CdpCursorKind | undefined = action === "move_cursor" ? "move"
                      : action === "click" ? "click" : action === "drag_and_drop" ? "drag"
                      : action === "scroll_cursor" ? "scroll" : action === "type" ? "type" : undefined;
                    if (kind) {
                      const point = kind === "type" ? undefined : getCursorPosition(selected.id, agent);
                      await publishCdpCursorPresence({ port: cdpPort(), targetId: selected.id,
-                       actorId: scope.actorId, generation: scope.generation, kind, at:Date.now(),
-                       ...(point ? {x:point.x,y:point.y} : {}) });
+                       actorId: scope.actorId, generation: scope.generation, kind, at: Date.now(),
+                       ...(point ? { x: point.x, y: point.y } : {}) });
                    }
                  } catch {
                    console.warn("[CDP] best-effort cursor activity metadata unavailable; original action result preserved.");
@@ -1918,7 +1931,9 @@ export const controlChromeCdpTool: Tool = {
         case "record_status":
         case "record_export":
         case "replay_preview":
-        case "replay_cursor": {
+        case "replay_cursor":
+        case "replay_prepare_click":
+        case "replay_execute_click": {
           const target = await pickTarget(targetId, false, true);
           const scope = await recorderScope(target.id);
           if (command === "record_start")
@@ -1939,6 +1954,66 @@ export const controlChromeCdpTool: Tool = {
           const sequence = Number(payload.sequence);
           if (!Number.isSafeInteger(sequence) || sequence < 1)
             return "control_chrome_cdp failed: a positive recorded action sequence is required.";
+          if (command === "replay_prepare_click" || command === "replay_execute_click") {
+            if (expectedRevision === undefined || getCdpExecutionState()?.revision !== expectedRevision)
+              throw new Error("Replay click requires exact current target revision.");
+            const trace = readBrowserActionRecording(scope.targetKey, scope.actorId,
+              scope.generation, recordingId);
+            if (trace.active) throw new Error("Stop recording before requesting replay approval.");
+            const step = trace.events.find(item => item.sequence === sequence);
+            if (!step || step.action !== "click")
+              throw new Error("Replay click requires a recorded click action; type and navigation cannot be replayed.");
+            const selector = typeof payload.selector === "string" ? payload.selector : "";
+            if (!selector.trim() || selector.length > 500)
+              throw new Error("Replay click requires an explicit fresh CSS selector.");
+            const locatorDigest=createHash("sha256").update(selector).digest("hex");
+            const pageDigest=createHash("sha256").update(target.url).digest("hex");
+            if (!step.locatorDigest || !step.pageDigest ||
+                step.locatorDigest!==locatorDigest || step.pageDigest!==pageDigest)
+              throw new Error("Replay click refused: recorded selector or document URL no longer matches.");
+            const check = async () => {
+              const raw = await executeTargetHighlightCommand(cdpSend, target, "highlight_target",
+                {selector,ttlMs:1500}, scope.actorId);
+              if (!raw.startsWith("{")) throw new Error("Replay target unavailable: " + raw);
+              const result = JSON.parse(raw) as {rect?: {x:number;y:number;width:number;height:number}};
+              const rect = result.rect;
+              if (!rect || ![rect.x,rect.y,rect.width,rect.height].every(Number.isFinite) ||
+                  rect.width <= 0 || rect.height <= 0)
+                throw new Error("Replay target geometry cannot be verified.");
+              return rect;
+            };
+            if (command === "replay_prepare_click") {
+              await check();
+              const request = await prepareReplayClick({
+                port:cdpPort(),targetId:target.id,actorId:scope.actorId,
+                generation:scope.generation,recordingId,sequence,selector,
+                targetUrl:target.url,revision:expectedRevision,
+              });
+              return JSON.stringify({...request,approvalState:"awaiting_local_operator_approval",
+                note:"No browser click executed. Inspect the exact live target in SuperAgent Tray."});
+            }
+            if (payload.confirmReplay !== true)
+              throw new Error("replay_execute_click requires confirmReplay=true in addition to native operator approval.");
+            const approvalId = typeof payload.approvalId === "string" ? payload.approvalId : "";
+            const before = await check();
+            // Consumed BEFORE any physical click. Failure is not retryable.
+            await consumeApprovedReplayClick({approvalId,port:cdpPort(),targetId:target.id,
+              actorId:scope.actorId,generation:scope.generation,recordingId,sequence,
+              revision:expectedRevision,selector,targetUrl:target.url});
+            const center = {x:before.x+before.width/2,y:before.y+before.height/2};
+            const dispatched = await dispatchHumanMouseClick(cdpSend,target,center,{
+              visualCursor:true,cursorId:scope.actorId,cursorName:scope.actorId,
+              beforePress:async()=>{
+                const fresh = await check();
+                if ([fresh.x,fresh.y,fresh.width,fresh.height].some((value,i)=>
+                    Math.abs(value-[before.x,before.y,before.width,before.height][i]!)>4))
+                  throw new Error("Replay click target moved after approval; action blocked.");
+              },
+            });
+            return JSON.stringify({status:"approved_click_dispatched_once",approvalId,
+              recordingId,sequence,steps:dispatched.steps,
+              note:"One native click dispatched; no duplicate retry on uncertain outcome."});
+          }
           const preview = previewSafeCursorReplay(scope.targetKey, scope.actorId,
             scope.generation, recordingId, sequence);
           if (command === "replay_preview") return JSON.stringify({ status: "dry-run", ...preview });
@@ -1950,6 +2025,30 @@ export const controlChromeCdpTool: Tool = {
           return JSON.stringify({ status: "cursor_movement_dispatched",
             recordingId, sequence, steps: moved.stepsDispatched,
             note: "No click, type, navigation or form submission was replayed." });
+        }
+        case "frame_snapshot":
+        case "frame_type":
+        case "frame_scroll": {
+          const target=await pickTarget(targetId,false,true);
+          const actor=cdpAgentContext.getStore()?.agentId||"legacy";
+          return executeFrameUtility(cdpSend,target,command,{
+            frameId:payload.frameId,selector:payload.selector,text:payload.text,
+            deltaX:payload.deltaX,deltaY:payload.deltaY,
+          },actor);
+        }
+        case "inspect_qualified_frames": {
+          const target = await pickTarget(targetId,false,true);
+          return JSON.stringify({status:"qualified_frame_tree",
+            frames:await inspectCdpFrameTree(cdpSend,target)});
+        }
+        case "frame_read":
+        case "frame_highlight":
+        case "frame_click": {
+          const target = await pickTarget(targetId,false,true);
+          const actor = cdpAgentContext.getStore()?.agentId || "legacy";
+          return executeQualifiedFrameAction(cdpSend,target,command,{
+            frameId:payload.frameId,selector:payload.selector,
+          },actor);
         }
         case "highlight_target":
         case "clear_highlight": {

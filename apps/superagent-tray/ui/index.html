@@ -1492,9 +1492,9 @@
         <section class="panel delegate-multitab-panel" aria-labelledby="cdp-presence-heading">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">READ-ONLY BROWSER PRESENCE</div>
+              <div class="panel-eyebrow">LIVE AGENT PRESENCE · LOCAL HUMAN CONTROL</div>
               <h2 id="cdp-presence-heading">Managed CDP Agent Activity</h2>
-              <p>Observe verified tab ownership, participant roles and contention. No credentials, page content or control commands are shown here.</p>
+              <p>Observe verified tab activity in real time, follow individual agents, or explicitly take local control of a registered managed browser. No page content or credentials are streamed.</p>
             </div>
             <button type="button" id="cdp-presence-refresh" class="button secondary">Refresh</button>
           </div>
@@ -1511,7 +1511,12 @@
           <div id="cdp-presence-sessions" class="multitab-items" role="status" aria-live="polite">
             <p class="text-secondary">Live Core status has not been verified yet.</p>
           </div>
-          <p class="delegate-hint">Managed CDP sessions appear here. Delegate-CDP sessions remain in the Multi-Tab Orchestrator above. Pausing and human takeover require separate verified ownership.</p>
+          <p class="delegate-hint">Takeover is available only for a locally registered, identity-verified managed Chrome target. It blocks agent writes without closing Chrome. Return does not automatically resume paused agents. Delegate-CDP remains separate.</p>
+          <h3 id="cdp-replay-heading">Replay requests requiring human approval</h3>
+          <p class="delegate-hint">A prepared replay does not click. Inspect the exact Chrome tab and intended action before approving one recorded click. The approval expires and cannot be reused.</p>
+          <div id="cdp-replay-approvals" class="multitab-items" aria-labelledby="cdp-replay-heading" aria-live="polite">
+            <p class="text-secondary">No verified replay proposals.</p>
+          </div>
         </section>
       </div>
 

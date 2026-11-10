@@ -5,6 +5,14 @@
 - Add owner-initiated, single-attempt USB ADB installer with 120-second default timeout, version verification and non-replay behavior after uncertain results.
 - Verify Lite/Debug Gradle builds, signing and Android Lint; physical-device E2E remains pending. Tray/controller LAN integration is still in progress in the shared checkout.
 
+## [1.14.69] - 2026-11-11
+### Native CDP live feed, local human hold, qualified iframes, one-time approved replay
+- Stream sanitized managed Chrome agent activity changes through a bounded long-poll Core endpoint and authenticated native Tray bridge; provide live state and reconnect-unknown handling without exposing page text, raw URLs, or Core tokens to JavaScript.
+- Add explicit registered-target human takeover and return buttons in Tray, with native Core bearer, loopback, browser fingerprint and expected lease-revision enforcement. Manual hold blocks agent writes; return does not auto-resume paused agents.
+- Add explicit qualified same-process/OOPIF frame inventory, read, highlight, click, snapshot, typed field update and frame-local scroll. OOPIF attach requires exact parent-target identity, child frame validation and cleanup; never fall back to the parent DOM.
+- Add two-party local operator approval for one recorded click, tied to actor, generation, revision, original selector and original page URL digests, with 120-second expiry and consume-before-dispatch. Native takeover invalidates outstanding approvals. No automatic replay for typed input/navigation/payment workflows.
+- Verify cross-origin OOPIF headed Chrome read/highlight/click/type/scroll, one-shot replay and wrong-selector rejection, local native Tray UI at 320/390/768/1280 fixture widths, and authorized Core route tests. Core ownership/Delegate bridge must be verified before a production activation.
+
 ## [1.14.68] - 2026-11-10
 ### Multi-agent CDP ownership fences, presence and safer highlighting (partial)
 - Implement owner-only pause/resume using the existing cross-process target queue. Reject writes while paused; require exact live tab URL, expected revision and document verification under the same lock before resuming.
