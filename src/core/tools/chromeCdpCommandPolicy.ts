@@ -6,6 +6,7 @@ const admin = new Set([
   "recover_target", "release_target", "coordinator_status", "list_sessions",
   "new_tab", "share_target", "stop_sharing", "invite_agent", "join_target",
   "leave_target", "revoke_agent", "handover_target", "session_participants", "heartbeat_session",
+  "pause_target", "resume_target",
 ]);
 const reads = new Set([
   "snapshot", "shared_snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "extract_links", "wait_for",

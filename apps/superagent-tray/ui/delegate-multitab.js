@@ -273,11 +273,25 @@
     for (const session of shown) {
       const card = elem("article", "cdp-presence-row");
       card.setAttribute?.("data-busy", session.busy === true ? "true" : "false");
-      card.append(elem("strong", "", "Agent " + visible(session.agentId, 96)));
+      card.setAttribute?.("data-paused", session.paused === true ? "true" : "false");
+      card.append(elem("strong", "", "Agent " + visible(session.agentId, 96) +
+        (session.paused ? " · PAUSED" : " · Active")));
       line(card, "Target", "managed:" + visible(session.port, 5) + ":" + visible(session.targetId, 128));
       line(card, "Mode", session.mode === "shared" ? "Shared" : "Isolated");
       line(card, "Queue", String(session.queued ?? 0) + " queued · " +
         (session.busy ? "busy" : "not locked"));
+      const cursorStates = Array.isArray(session.cursors) ? session.cursors : [];
+      for (const cursor of cursorStates) {
+        if (state.followedAgent && state.followedAgent !== cursor.actorId) continue;
+        const xy = Number.isFinite(cursor.x) && Number.isFinite(cursor.y)
+          ? " (" + Math.round(cursor.x) + ", " + Math.round(cursor.y) + ")" : "";
+        line(card, "Cursor " + visible(cursor.actorId, 96), visible(cursor.kind, 15) + xy);
+      }
+      if (session.lastAction && Number.isSafeInteger(session.lastAction.at)) {
+        const age = Math.max(0, Math.round((Date.now() - session.lastAction.at) / 1000));
+        line(card, "Last action", visible(session.lastAction.event, 40) + " by " +
+          visible(session.lastAction.actor, 96) + " · " + age + "s ago");
+      }
       const members = Array.isArray(session.participants) ? session.participants : [];
       line(card, "Participants", members.length
         ? members.map(p => visible(p.agentId, 96) + " (" + visible(p.role, 16) + ")").join(", ")
@@ -460,7 +474,7 @@
     setInterval(() => {
       const page = $("page-delegate");
       if (page && !page.hidden) void refresh();
-    }, 10000);
+    }, 3000);
   }
   window.__superagentMultiTabRefresh = refresh;
   if (document.readyState === "loading")

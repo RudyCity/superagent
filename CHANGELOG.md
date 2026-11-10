@@ -5,6 +5,14 @@
 - Add owner-initiated, single-attempt USB ADB installer with 120-second default timeout, version verification and non-replay behavior after uncertain results.
 - Verify Lite/Debug Gradle builds, signing and Android Lint; physical-device E2E remains pending. Tray/controller LAN integration is still in progress in the shared checkout.
 
+## [1.14.68] - 2026-11-10
+### Multi-agent CDP ownership fences, presence and safer highlighting (partial)
+- Implement owner-only pause/resume using the existing cross-process target queue. Reject writes while paused; require exact live tab URL, expected revision and document verification under the same lock before resuming.
+- Add bounded, private cross-process agent cursor/action metadata for the read-only Tray monitor; show active/paused state, recent allowlisted audit events and per-agent viewport positions without exposing form content, credentials or raw URLs.
+- Add cosmetic avatar initials to named cursor overlays and optional safe before-click target highlighting with open Shadow DOM handling; block occluded/moved elements before native mouse press.
+- Verify five agents in one isolated headed Chrome tab: independent named overlays, serialized click exactly once, pause/resume and full-document navigation; scoped regressions 155/155 PASS.
+- **Still partial:** GPT-5.6 High CDP Delegate bridge forwarding unprovisioned, Core :7888 ownership unverified, live streaming/takeover UI/full safe replay not completed; primary runtime not upgraded.
+
 ## [1.14.67] - 2026-11-10
 ### Headed CDP agent presence groundwork (partial release, not primary-runtime activated)
 - Keep agent-specific cursor colors consistent and persist their visual overlay across managed Chrome document navigation while the CDP session remains valid; add genuine CDP wheel scrolling.

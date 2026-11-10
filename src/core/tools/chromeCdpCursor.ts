@@ -36,6 +36,8 @@ export interface CursorClickOptions extends CursorMoveOptions {
   pressDurationMs?: number;
   button?: "left" | "middle" | "right";
   clickCount?: number;
+  /** Optional final safety gate between movement and the real mouse press. */
+  beforePress?: () => Promise<void>;
 }
 
 /** In-memory store of the last known cursor position per target tab. */
@@ -148,6 +150,13 @@ const cursorDomId = (cursorId = "legacy"): string =>
 function cursorDisplayName(name: string): string {
   return String(name || "SuperAgent").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 40) || "SuperAgent";
 }
+/** Purely cosmetic initials: never used for agent authorization. */
+export function cursorAvatarInitials(name: string): string {
+  const clean = cursorDisplayName(name);
+  const segments = clean.match(/[A-Za-z0-9]+/g) ?? [];
+  return (segments.length > 1 ? (segments[0]?.[0] || "S") + (segments[1]?.[0] || "A")
+    : (segments[0] || "SA").slice(0, 2)).toUpperCase();
+}
 
 /** Each authenticated actor gets a stable color; labels are always textContent. */
 const CURSOR_COLORS = ["#1d4ed8", "#7c3aed", "#047857", "#b45309", "#be185d", "#0f766e", "#b91c1c"];
@@ -174,6 +183,15 @@ export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAge
     }
     const label = el.querySelector('[data-superagent-cursor-name]');
     if (label) label.textContent = ${JSON.stringify(cursorDisplayName(cursorName))};
+    let avatar = el.querySelector('[data-superagent-cursor-avatar]');
+    if (!avatar) {
+      avatar = document.createElement('span');
+      avatar.setAttribute('data-superagent-cursor-avatar', 'true');
+      avatar.style.cssText = 'position:absolute;top:-16px;left:14px;min-width:20px;height:20px;padding:0 3px;box-sizing:border-box;border-radius:50%;background:${color};border:1px solid #fff;color:#fff;text-align:center;font:600 9px/19px system-ui,sans-serif;pointer-events:none;';
+      el.appendChild(avatar);
+    }
+    avatar.textContent = ${JSON.stringify(cursorAvatarInitials(cursorName))};
+    el.setAttribute('data-superagent-cursor-state', 'idle');
     return true;
   })()`;
 }
@@ -361,6 +379,10 @@ export async function dispatchHumanMouseClick(
       });
     } catch {}
   }
+
+  // Re-resolve stale or occluded targets after movement and dwell, before any
+  // native button press can cause a side effect. No input if this gate rejects.
+  if (options?.beforePress) await options.beforePress();
 
   // Mouse Pressed
   await cdpSend(target, "Input.dispatchMouseEvent", {

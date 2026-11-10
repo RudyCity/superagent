@@ -7,7 +7,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { watch, type FSWatcher } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdir, readFile, readdir, rename, rm, stat, writeFile, appendFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, stat, writeFile, appendFile, open } from "node:fs/promises";
 
 const TTL_MS = 5 * 60_000;
 const MEMBER_TTL_MS = 2 * 60_000;
@@ -45,9 +45,10 @@ export type CdpSession = {
   key: string; port: number; targetId: string; agentId: string;
   claimedAt: number; expiresAt: number; tokenHash: string; generation: string;
   mode?: "shared"; members?: Record<string, CdpMember>; invitations?: Record<string, CdpInvitation>; revision?: number;
+  paused?: boolean; pausedAt?: number;
 };
 export type CdpPublicSession = Omit<CdpSession, "tokenHash" | "members" | "invitations" | "mode"> & {
-  mode: "isolated" | "shared"; revision: number;
+  mode: "isolated" | "shared"; revision: number; paused: boolean; pausedAt?: number;
   participants: Array<{ agentId: string; role: "owner" | CdpParticipantRole; joinedAt: number }>;
 };
 export type CdpClaim = CdpPublicSession & { sessionToken: string };
@@ -238,6 +239,8 @@ function publicSession(session: CdpSession): CdpPublicSession {
     agentId: session.agentId, claimedAt: session.claimedAt,
     expiresAt: session.expiresAt, generation: session.generation,
     mode: session.mode === "shared" ? "shared" : "isolated", revision: session.revision ?? 0,
+    paused: session.paused === true,
+    ...(session.paused && Number.isSafeInteger(session.pausedAt) ? { pausedAt: session.pausedAt } : {}),
     participants: [
       { agentId: session.agentId, role: "owner", joinedAt: session.claimedAt },
       ...(session.mode === "shared" ? Object.entries(session.members || {})
@@ -397,6 +400,56 @@ export async function heartbeatCdpSession(
     return { agentId, role, expiresAt: role === "owner" ? s.expiresAt : s.members![agentId].expiresAt! };
   });
 }
+/** Pause at the target's existing exclusive queue boundary. Already running gestures finish
+ * before the pause acquires the lock; queued actions are denied on recheck.
+ * Owner capability is required; observers/contributors cannot pause another actor. */
+export async function pauseCdpTarget(
+  port: number, targetId: string, agentId: string, sessionToken: string,
+): Promise<CdpPublicSession> {
+  validAgent(agentId);
+  return guarded(port, targetId, { priority: 0, waitMs: 12000 }, async key => {
+    const s = await load(key);
+    if (!s || s.expiresAt <= Date.now()) throw new Error("Pause requires an active CDP claim.");
+    auth(s, { agentId, sessionToken, ownerOnly: true });
+    if (s.paused === true) return publicSession(s);
+    const next: CdpSession = { ...s, paused: true, pausedAt: Date.now(),
+      revision: (s.revision ?? 0) + 1 };
+    await save(next);
+    await audit("paused_by_owner", key, agentId);
+    return publicSession(next);
+  });
+}
+
+/** Resuming is never implicit: ownership, expectedRevision and explicit fresh
+ * browser state attestation are required from the caller. The browser target
+ * itself is revalidated by the command layer before entering this lock. */
+export async function resumeCdpTarget(
+  port: number, targetId: string, agentId: string, sessionToken: string,
+  expectedRevision: number, verifyFreshTarget: () => Promise<boolean>,
+): Promise<CdpPublicSession> {
+  validAgent(agentId);
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0 ||
+      typeof verifyFreshTarget !== "function")
+    throw new Error("Resume requires a fresh target snapshot and expectedRevision.");
+  return guarded(port, targetId, { priority: 0, waitMs: 12000 }, async key => {
+    const s = await load(key);
+    if (!s || s.expiresAt <= Date.now()) throw new Error("Resume requires an active CDP claim.");
+    auth(s, { agentId, sessionToken, ownerOnly: true });
+    if (s.paused !== true) throw new Error("Target is not paused.");
+    if ((s.revision ?? 0) !== expectedRevision)
+      throw new Error("CDP stale revision: refresh snapshot before resuming.");
+    // The last verification runs INSIDE the same fenced target lock; another
+    // action cannot change the controlled tab between verification and resume.
+    if ((await verifyFreshTarget()) !== true)
+      throw new Error("Resume target document cannot be verified; leave agent paused.");
+    const next: CdpSession = { ...s, paused: false, pausedAt: undefined,
+      generation: randomUUID(), revision: (s.revision ?? 0) + 1 };
+    await save(next);
+    await audit("resumed_by_owner", key, agentId);
+    return publicSession(next);
+  });
+}
+
 export async function getCdpParticipation(
   port: number, targetId: string, agentId: string, sessionToken: string,
 ): Promise<CdpPublicSession> {
@@ -452,6 +505,10 @@ export async function withCdpTargetWrite<T>(
         await audit("write_denied_observer", key, agentId);
         throw new Error("CDP observer cannot modify tab.");
       }
+      if (current.paused === true) {
+        await audit("write_denied_paused", key, agentId);
+        throw new Error("CDP target is paused; owner must resume after fresh snapshot and revision verification.");
+      }
       if (options.expectedRevision !== undefined && (current.revision ?? 0) !== options.expectedRevision)
         throw new Error("CDP stale revision: refresh snapshot and retry.");
       if (role === "owner") await save({ ...current, expiresAt: Date.now() + TTL_MS });
@@ -475,9 +532,55 @@ export async function withCdpTargetWrite<T>(
     } catch (e) { await audit("write_failed", key, agentId); throw e; }
   });
 }
+/** Bounded action timeline based on existing cross-process CDP coordinator audit.
+ * Only current-session actors and allowlisted event types are disclosed. */
+export type CdpActivityEvent = { port: number; targetId: string;
+  actor: string; event: string; at: number };
+const ALLOWED_ACTIVITY = new Set([
+  "claim", "renew", "release", "rebind", "share_enabled", "share_disabled",
+  "join", "leave", "revoke", "handover", "write_success", "write_failed",
+  "write_denied_observer", "write_denied_paused", "paused_by_owner", "resumed_by_owner",
+]);
+export async function readRecentCdpActivity(sessions: CdpPublicSession[], maximum = 32): Promise<CdpActivityEvent[]> {
+  const current = new Map(sessions.map(s => [s.key.slice(0, 16), s]));
+  if (!current.size) return [];
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(auditPath(), "r");
+    const st = await handle.stat();
+    const bytesToRead = Math.min(st.size, 128 * 1024);
+    if (!bytesToRead) return [];
+    const buffer = Buffer.alloc(bytesToRead);
+    const offset = st.size - bytesToRead;
+    const { bytesRead } = await handle.read(buffer, 0, bytesToRead, offset);
+    const lines = buffer.subarray(0, bytesRead).toString("utf8").split("\n");
+    if (offset > 0) lines.shift();
+    const now = Date.now();
+    const recent: CdpActivityEvent[] = [];
+    for (let i = lines.length - 1; i >= 0 && recent.length < Math.max(1, Math.min(maximum, 64)); i--) {
+      let raw: any;
+      try { raw = JSON.parse(lines[i]); } catch { continue; }
+      if (!raw || typeof raw.key !== "string" ||
+          typeof raw.event !== "string" || !ALLOWED_ACTIVITY.has(raw.event)) continue;
+      const session = current.get(raw.key);
+      if (!session || typeof raw.actor !== "string" ||
+          !session.participants.some(p => p.agentId === raw.actor)) continue;
+      const at = Date.parse(raw.time);
+      if (!Number.isFinite(at) || at > now + 10000 || at < now - 3600000 ||
+          at < session.claimedAt - 1000) continue;
+      recent.push({port:session.port,targetId:session.targetId,actor:raw.actor,event:raw.event,at});
+    }
+    return recent;
+  } catch (error: any) {
+    if (error?.code === "ENOENT") return [];
+    throw new Error("CDP audit trail unavailable; action timeline cannot be verified.");
+  } finally { await handle?.close(); }
+}
 export async function cdpCoordinatorStatus(port?: number): Promise<{
   sessions: CdpPublicSession[];
   queue: Array<{ key: string; queued: number; locked: boolean; oldestWaitMs: number; port?: number; targetId?: string }>;
+  activity: CdpActivityEvent[];
+  cursors: import("./chromeCdpCursorPresence.js").CdpCursorPresence[];
   summary: { activeAgents: number; activeTabs: number; queued: number; busyTargets: number; extensionBlocked: boolean };
 }> {
   const sessions = (await listCdpSessions()).filter(s => port === undefined || s.port === port);
@@ -510,8 +613,10 @@ export async function cdpCoordinatorStatus(port?: number): Promise<{
       });
     }
   } catch (e: any) { if (e.code !== "ENOENT") throw e; }
+  const { readCdpCursorPresence } = await import("./chromeCdpCursorPresence.js");
   return {
-    sessions, queue,
+    sessions, queue, activity: await readRecentCdpActivity(sessions),
+    cursors: await readCdpCursorPresence(sessions),
     summary: {
       activeAgents: new Set(sessions.flatMap(s => s.participants.map(p => p.agentId))).size,
       activeTabs: sessions.length,

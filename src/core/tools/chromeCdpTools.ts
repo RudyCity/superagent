@@ -38,6 +38,7 @@ import { executeCursorCommand, dispatchHumanMouseMove, dispatchHumanMouseClick, 
 import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 import { executeTargetHighlightCommand } from "./chromeCdpTargetHighlight.js";
 import { getCursorPosition } from "./chromeCdpCursor.js";
+import { publishCdpCursorPresence, removeCdpCursorPresence, type CdpCursorKind } from "./chromeCdpCursorPresence.js";
 import {
   beginBrowserActionRecording, stopBrowserActionRecording, browserActionRecordingStatus,
   appendBrowserActionRecord, hasActiveBrowserActionRecording,
@@ -55,7 +56,8 @@ import { discoverDesktopTargets } from "./chromeCdpDesktop.js";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, withCdpTargetRead, cdpCoordinatorStatus, rebindCdpTarget,
   setCdpSharing, inviteCdpAgent, joinCdpTarget, leaveCdpTarget, revokeCdpAgent, handoverCdpTarget, getCdpParticipation,
-  type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState } from "./chromeCdpSessionManager.js";
+  type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState,
+  pauseCdpTarget, resumeCdpTarget } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
 import { executeDelegateChromeCommand } from "../delegate/cdpTransport.js";
 import {
@@ -741,7 +743,7 @@ export const controlChromeCdpTool: Tool = {
         type: "string",
         enum: [
           "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "transport_status",
-          "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
+          "heartbeat_session", "pause_target", "resume_target", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
           "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", "highlight_target", "clear_highlight",
@@ -823,6 +825,7 @@ export const controlChromeCdpTool: Tool = {
       visualCursor: { type: "boolean", description: "Named CDP pointer overlay is enabled by default for mouse actions; set false to disable." },
       cursorName: { type: "string", description: "Optional visible cursor label (up to 40 characters). Agent identity remains authenticated separately." },
       ttlMs: { type: "number", description: "highlight_target marker lifetime in milliseconds, clamped to 250-5000." },
+      highlightBeforeClick: { type: "boolean", description: "Preflight and re-check visible, unobscured element before clicking; fail closed if layout changes." },
       recordingId: { type: "string", description: "Opaque ID returned by record_start; required for export and replay." },
       sequence: { type: "number", description: "Recorded action sequence for replay_preview/replay_cursor." },
       confirmReplay: { type: "boolean", description: "Required true for replay_cursor; only harmless pointer movement is replayable." },
@@ -831,7 +834,7 @@ export const controlChromeCdpTool: Tool = {
       sessionToken: { type: "string", description: "Secret capability returned by claim_target. Required for actions on claimed tabs." },
       previousTargetId: { type: "string", description: "recover_target: previous owned tab ID; targetId is the explicitly selected replacement tab ID." },
       recoverByUrl: { type: "boolean", description: "Recover only when exactly one Chrome tab has expectedUrl; no ambiguous takeover." },
-      expectedUrl: { type: "string", description: "Recover target only when actual target URL matches exactly." },
+      expectedUrl: { type: "string", description: "Required for resume_target: exact current tab URL after fresh snapshot; also used for recover_target." },
       memberId: { type: "string", description: "invite_agent/revoke_agent/handover_target: named participant agentId." },
       role: { type: "string", enum: ["observer", "contributor"], description: "invite_agent participant permission." },
       inviteId: { type: "string", description: "join_target: invitation identifier issued by owner." },
@@ -867,7 +870,7 @@ export const controlChromeCdpTool: Tool = {
     const convenienceKeys = [
       "files", "filePaths", "filePath", "paths", "path", "inputIndex", "input_index", "allowOutsideWorkspace", "confirmExternalFile", "successSelector", "expectedNames", "fileNames", "nativeDialog", "confirmNativeDialog", "windowTitle", "arm", "triggerSelector", "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "cursorName", "nativeClick", "deltaX", "deltaY", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "ttlMs", "recordingId", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
+      "mode", "ttlMs", "highlightBeforeClick", "recordingId", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -1010,20 +1013,38 @@ export const controlChromeCdpTool: Tool = {
                    : command === "drag_and_drop" || command === "drag"
                      ? result.startsWith("control_chrome_cdp: dragged")
                    : command === "navigate" ? result.startsWith("control_chrome_cdp: navigated")
+                   : command === "scroll_cursor" ? result.startsWith("control_chrome_cdp: real CDP wheel")
                    : false) : false;
-               if (agent && successCategory && hasActiveBrowserActionRecording(key, agent)) {
-                 const scope = await recorderScope(selected.id);
-                 const action = command === "move_mouse" ? "move_cursor"
-                   : command === "drag" ? "drag_and_drop" : command;
-                 const position = action === "move_cursor"
-                   ? getCursorPosition(selected.id, agent) : undefined;
-                 appendBrowserActionRecord(scope.targetKey, scope.actorId, scope.generation, action, position);
+               if (agent && successCategory) {
+                 // Telemetry is best-effort after a real side effect. Never turn
+                 // a successful click into a retryable failure if presence fails.
+                 try {
+                   const scope = await recorderScope(selected.id);
+                   const action = command === "move_mouse" ? "move_cursor"
+                     : command === "drag" ? "drag_and_drop" : command;
+                   const position = action === "move_cursor"
+                     ? getCursorPosition(selected.id, agent) : undefined;
+                   if (hasActiveBrowserActionRecording(key, agent))
+                     appendBrowserActionRecord(scope.targetKey, scope.actorId, scope.generation, action, position);
+                   const kind: CdpCursorKind | undefined = action === "move_cursor" ? "move"
+                     : action === "click" ? "click" : action === "drag_and_drop" ? "drag"
+                     : action === "scroll_cursor" ? "scroll" : action === "type" ? "type" : undefined;
+                   if (kind) {
+                     const point = kind === "type" ? undefined : getCursorPosition(selected.id, agent);
+                     await publishCdpCursorPresence({ port: cdpPort(), targetId: selected.id,
+                       actorId: scope.actorId, generation: scope.generation, kind, at:Date.now(),
+                       ...(point ? {x:point.x,y:point.y} : {}) });
+                   }
+                 } catch {
+                   console.warn("[CDP] best-effort cursor activity metadata unavailable; original action result preserved.");
+                 }
                }
                return result;
              }), { ...opts, ownerOnly: command === "close_tab" || command === "activate" });
           if (command === "close_tab" && agent && typeof result === "string" &&
               result.startsWith("control_chrome_cdp: closed tab")) {
             await releaseCdpTarget(cdpPort(), selected.id, agent, opts.sessionToken);
+            await removeCdpCursorPresence(cdpPort(), selected.id, agent).catch(() => {});
           }
           return result;
         } catch (error: any) {
@@ -1038,6 +1059,7 @@ export const controlChromeCdpTool: Tool = {
         "list_sessions", "coordinator_status", "discover_desktop_targets", "new_tab",
         "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent",
         "handover_target", "session_participants", "heartbeat_session",
+        "pause_target", "resume_target",
       ]);
       if (!targetId && !agent && !openRead.has(command) &&
           (await listCdpSessions()).some(s => s.port === cdpPort())) {
@@ -1056,7 +1078,8 @@ export const controlChromeCdpTool: Tool = {
     }
     try {
       if (["share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
-           "revoke_agent", "handover_target", "session_participants", "heartbeat_session"].includes(command)) {
+            "revoke_agent", "handover_target", "session_participants", "heartbeat_session",
+            "pause_target", "resume_target"].includes(command)) {
         if (!targetId || !agentId) throw new Error("Shared tab command requires targetId and agentId.");
         const ownerId = String(agentId);
         const token = opts.sessionToken || "";
@@ -1072,6 +1095,26 @@ export const controlChromeCdpTool: Tool = {
           case "revoke_agent": return JSON.stringify({ status: "revoked", session: await revokeCdpAgent(cdpPort(), targetId, ownerId, token, memberId) });
           case "handover_target": return JSON.stringify({ status: "handed_over", session: await handoverCdpTarget(cdpPort(), targetId, ownerId, token, memberId) });
           case "session_participants": return JSON.stringify({ session: await getCdpParticipation(cdpPort(), targetId, ownerId, token) });
+          case "pause_target": return JSON.stringify({ status: "paused",
+            session: await pauseCdpTarget(cdpPort(), targetId, ownerId, token) });
+          case "resume_target": {
+            if (expectedRevision === undefined)
+              throw new Error("resume_target requires an explicit expectedRevision.");
+            const expectedUrl = String(args.expectedUrl || payload.expectedUrl || "");
+            if (!expectedUrl || expectedUrl.length > 4096)
+              throw new Error("resume_target requires exact expectedUrl from a fresh target snapshot.");
+            return JSON.stringify({ status: "resumed", session: await resumeCdpTarget(
+              cdpPort(), targetId, ownerId, token, expectedRevision, async () => {
+                const target = await pickTarget(targetId, false, true);
+                if (target.url !== expectedUrl)
+                  throw new Error("Resume target URL changed; refresh snapshot and expectedUrl.");
+                const state = await cdpSend(target, "Runtime.evaluate", {
+                  expression: "Boolean(document.documentElement && document.documentElement.isConnected)",
+                  returnByValue: true,
+                });
+                return state?.result?.value === true;
+              }) });
+          }
         }
       }
       if (command === "recover_target") {
@@ -1123,6 +1166,11 @@ export const controlChromeCdpTool: Tool = {
             }
           }
           await releaseCdpTarget(cdpPort(), selected.id, String(agentId), opts.sessionToken);
+          if (owned) {
+            for (const participant of owned.participants) {
+              await removeCdpCursorPresence(cdpPort(), selected.id, participant.agentId).catch(() => {});
+            }
+          }
           return `control_chrome_cdp: released target ${selected.id} for agent ${agentId}` +
             (cursorCleanupIncomplete ? " (visual cursor cleanup unavailable; browser may require reinjection cleanup)." : "");
         }
@@ -1649,6 +1697,32 @@ export const controlChromeCdpTool: Tool = {
               );
             }
           }
+          const guardedHighlight = payload.highlightBeforeClick === true;
+          let initialRect: { x: number; y: number; width: number; height: number } | null = null;
+          const verifyTargetBeforeClick = async (point?: { x: number; y: number }) => {
+            const actor = cdpAgentContext.getStore()?.agentId || "legacy";
+            const status = await executeTargetHighlightCommand(cdpSend, target, "highlight_target", {
+              selector: resolved.selector, ttlMs: 1200,
+            }, actor);
+            if (!status.startsWith("{")) throw new Error(status);
+            const value = JSON.parse(status);
+            const box = value.rect;
+            if (!box || ![box.x, box.y, box.width, box.height].every(Number.isFinite))
+              throw new Error("CDP target rectangle unavailable before click.");
+            if (initialRect && (Math.abs(box.x - initialRect.x) > 4 ||
+                Math.abs(box.y - initialRect.y) > 4 ||
+                Math.abs(box.width - initialRect.width) > 4 ||
+                Math.abs(box.height - initialRect.height) > 4))
+              throw new Error("CDP target geometry changed since highlight; action aborted.");
+            const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+            if (point && (Math.abs(point.x - center.x) > 5 || Math.abs(point.y - center.y) > 5))
+              throw new Error("CDP target moved away from cursor; action aborted.");
+            initialRect ??= box;
+          };
+          if (guardedHighlight) {
+            try { await verifyTargetBeforeClick(); }
+            catch (error: any) { return "control_chrome_cdp failed: " + error.message; }
+          }
           let beforeState: DomStateSnapshot | undefined;
           if (payload.verify || payload.observe) {
             beforeState = await captureDomState(cdpSend, target);
@@ -1666,7 +1740,8 @@ export const controlChromeCdpTool: Tool = {
                 ? payload.cursorName : actor === "legacy" ? "SuperAgent" : actor;
               const cursorOptions = { visualCursor: showPointer, cursorId: actor, cursorName: name };
               if (nativeClick) {
-                nativeClickInfo = await dispatchHumanMouseClick(cdpSend, target, centerPt, cursorOptions);
+                nativeClickInfo = await dispatchHumanMouseClick(cdpSend, target, centerPt,
+                  { ...cursorOptions, ...(guardedHighlight ? { beforePress: () => verifyTargetBeforeClick(centerPt) } : {}) });
               } else {
                 // Real CDP mouseMoved events drive a named visual twin; preserve one DOM click.
                 const move = await dispatchHumanMouseMove(cdpSend, target, centerPt, cursorOptions);
@@ -1684,6 +1759,10 @@ export const controlChromeCdpTool: Tool = {
             clickResult = "control_chrome_cdp: native click dispatched at (" + nativeClickInfo.x +
               ", " + nativeClickInfo.y + ") across " + nativeClickInfo.steps + " steps.";
           } else {
+            if (guardedHighlight) {
+              try { await verifyTargetBeforeClick(); }
+              catch (error: any) { return "control_chrome_cdp failed: " + error.message; }
+            }
             const res: any = await cdpSend(target, "Runtime.evaluate", {
               expression: buildClickJs(resolved.selector),
               returnByValue: true,

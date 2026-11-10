@@ -113,6 +113,7 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
       expect(script).toContain("245px");
       expect(script).toContain("__superagent_virtual_cursor__agent-alpha");
       expect(script).toContain("pointer-events: none");
+      expect(script).toContain("data-superagent-cursor-avatar");
     });
 
     test("managed CDP registers, updates and removes a scoped navigation script", async () => {
@@ -146,6 +147,8 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
       expect(alpha).toContain("__superagent_virtual_cursor__agent-alpha");
       expect(beta).toContain("__superagent_virtual_cursor__agent-beta");
       expect(alpha).toContain('label.textContent = "Alpha"');
+      expect(alpha).toContain('avatar.textContent = "AL"');
+      expect(alpha).toContain("data-superagent-cursor-state");
       expect(beta).toContain('label.textContent = "Beta"');
       expect(alpha).toContain("pointer-events: none");
       expect(buildRemoveCursorOverlayJs("agent-alpha")).toContain("__superagent_virtual_cursor__agent-alpha");
@@ -252,6 +255,21 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
       expect(pressedIdx).toBeGreaterThan(0);
       expect(releasedIdx).toBeGreaterThan(pressedIdx);
     });
+  });
+
+  test("native click pre-press revalidation failure cannot dispatch a mouse press", async () => {
+    const events: string[] = [];
+    const send = async (_target: any, method: string, params: any) => {
+      if (method === "Input.dispatchMouseEvent") events.push(params.type);
+      return {};
+    };
+    await expect(dispatchHumanMouseClick(send, { id:"prepress-tab" }, { x:210, y:140 }, {
+      visualCursor:false, steps:2, stepDelayMs:0, dwellMs:0,
+      beforePress: async () => { throw new Error("target changed after highlight"); },
+    })).rejects.toThrow(/target changed/);
+    expect(events).toContain("mouseMoved");
+    expect(events).not.toContain("mousePressed");
+    expect(events).not.toContain("mouseReleased");
   });
 
   describe("executeCursorCommand", () => {

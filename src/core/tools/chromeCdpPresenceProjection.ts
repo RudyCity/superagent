@@ -10,7 +10,10 @@ type SessionView = {
   agentId: string;
   mode: "isolated" | "shared";
   revision: number;
+  paused: boolean;
   expiresAt: number;
+  lastAction?: { actor: string; event: string; at: number };
+  cursors?: Array<{ actorId: string; kind: string; at: number; x?: number; y?: number }>;
   queued: number;
   busy: boolean;
   participants: Array<{ agentId: string; role: "owner" | "observer" | "contributor" }>;
@@ -23,6 +26,11 @@ const safeTarget = (x: unknown): x is string =>
   typeof x === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(x);
 const safeInt = (x: unknown): x is number =>
   typeof x === "number" && Number.isSafeInteger(x) && x >= 0;
+const allowedAction = new Set([
+  "claim", "renew", "release", "rebind", "share_enabled", "share_disabled",
+  "join", "leave", "revoke", "handover", "write_success", "write_failed",
+  "write_denied_observer", "write_denied_paused", "paused_by_owner", "resumed_by_owner",
+]);
 const statusUnknown = () => ({
   observedAt: Date.now(), status: "unknown" as const,
   sessions: [] as SessionView[], truncated: false,
@@ -51,6 +59,27 @@ export function projectManagedCdpPresence(source: unknown, now = Date.now()) {
       raw.key.slice(0, 16) === item.key);
     const queued = isObject(relatedQueue) && safeInt(relatedQueue.queued)
       ? Math.min(128, relatedQueue.queued) : 0;
+    const activity = Array.isArray(source.activity) ? source.activity : [];
+    const recent = activity.find((entry: unknown) => isObject(entry) &&
+      entry.port === raw.port && entry.targetId === raw.targetId &&
+      safeAgent(entry.actor) &&
+      (entry.actor === raw.agentId || participants.some(p => p.agentId === entry.actor)) &&
+      allowedAction.has(entry.event) && safeInt(entry.at) &&
+      entry.at >= now - 3600000 && entry.at <= now + 10000);
+    const rawCursors = Array.isArray(source.cursors) ? source.cursors : [];
+    const cursors = rawCursors.filter((entry: unknown) => isObject(entry) &&
+      entry.port === raw.port && entry.targetId === raw.targetId &&
+      safeAgent(entry.actorId) &&
+      (entry.actorId === raw.agentId || participants.some(p => p.agentId === entry.actorId)) &&
+      ["move", "click", "scroll", "drag", "type"].includes(entry.kind) &&
+      safeInt(entry.at) && entry.at >= now - 30000 && entry.at <= now + 10000 &&
+      (entry.x === undefined || (Number.isFinite(entry.x) && Math.abs(entry.x) <= 100000)) &&
+      (entry.y === undefined || (Number.isFinite(entry.y) && Math.abs(entry.y) <= 100000)))
+      .slice(0, 24).map((entry: any) => ({
+        actorId: entry.actorId as string, kind: entry.kind as string, at: entry.at as number,
+        ...(entry.x !== undefined && entry.y !== undefined
+          ? {x:entry.x as number, y:entry.y as number} : {}),
+      }));
     sessions.push({
       transport: "managed",
       port: raw.port as number,
@@ -58,10 +87,15 @@ export function projectManagedCdpPresence(source: unknown, now = Date.now()) {
       agentId: raw.agentId,
       mode: raw.mode === "shared" ? "shared" : "isolated",
       revision: raw.revision,
+      paused: raw.paused === true,
       expiresAt: raw.expiresAt,
       queued,
       busy: isObject(relatedQueue) && relatedQueue.locked === true,
       participants,
+      ...(cursors.length ? { cursors } : {}),
+      ...(isObject(recent) ? { lastAction: {
+        actor: recent.actor as string, event: recent.event as string, at: recent.at as number,
+      } } : {}),
     });
   }
   sessions.sort((a,b) => a.port - b.port || a.targetId.localeCompare(b.targetId));

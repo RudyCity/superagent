@@ -56,6 +56,10 @@ describe("control_chrome_cdp (mock CDP server)", () => {
         // marker-aware Runtime.evaluate for the snapshot/click/type page snippets
         if (msg.method === "Runtime.evaluate") {
           const expr = String((msg.params && msg.params.expression) || "");
+          if (expr.includes("Boolean(document.documentElement && document.documentElement.isConnected)")) {
+            ws.send(JSON.stringify({ id:msg.id, result:{result:{value:true}} }));
+            return;
+          }
           if (expr.includes("cdp-focus-terminal")) {
             ws.send(JSON.stringify({
               id: msg.id,
@@ -364,7 +368,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(controlChromeCdpTool.name).toBe("control_chrome_cdp");
     const cmds = (controlChromeCdpTool.parameters as any).properties.command.enum as string[];
     expect(cmds).toEqual([
-      "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "transport_status", "heartbeat_session", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
+      "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "transport_status", "heartbeat_session", "pause_target", "resume_target", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate",
       "snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key",
       "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets",
       "extract_links", "click", "type", "wait_for",
@@ -727,6 +731,43 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     } finally {
       const released = await controlChromeCdpTool.execute({ command: "release_target", targetId: "T1", agentId: owner, sessionToken });
       expect(released).toContain("released target");
+    }
+  });
+
+  test("pause_target and resume_target use owner capability and exact URL/revision", async () => {
+    const agent = "pause-owner-" + process.pid;
+    const claim = JSON.parse(String(await controlChromeCdpTool.execute({
+      command: "claim_target", targetId: "T1", agentId: agent,
+    })));
+    const base = { targetId: "T1", agentId: agent, sessionToken: claim.sessionToken };
+    try {
+      const paused = JSON.parse(String(await controlChromeCdpTool.execute({
+        ...base, command: "pause_target",
+      })));
+      expect(paused.status).toBe("paused");
+      expect(paused.session.paused).toBe(true);
+      const blocked = String(await controlChromeCdpTool.execute({
+        ...base, command: "evaluate", expression: "1+1",
+      }));
+      expect(blocked).toContain("paused");
+      const denied = String(await controlChromeCdpTool.execute({
+        ...base, command: "resume_target", expectedRevision:paused.session.revision,
+        expectedUrl:"https://wrong.example/",
+      }));
+      expect(denied).toContain("URL changed");
+      const resumed = JSON.parse(String(await controlChromeCdpTool.execute({
+        ...base, command: "resume_target", expectedRevision:paused.session.revision,
+        expectedUrl:"https://example.com/",
+      })));
+      expect(resumed.status).toBe("resumed");
+      expect(resumed.session.paused).toBe(false);
+      expect(resumed.session.generation).not.toBe(paused.session.generation);
+      const accepted = String(await controlChromeCdpTool.execute({
+        ...base, command: "evaluate", expression: "1+1",
+      }));
+      expect(accepted).toContain("evaluate result");
+    } finally {
+      await controlChromeCdpTool.execute({ ...base, command: "release_target" });
     }
   });
 
@@ -1184,6 +1225,18 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     });
     expect(clickRes).toContain("clicked <button>");
     expect(clickRes).toContain("[human-like cursor at (300, 150)");
+  });
+
+  test("click with highlightBeforeClick fails closed if target hit test is unavailable", async () => {
+    nativeMouseEvents.length = 0;
+    const oldClicks = domClickCalls;
+    const result = String(await controlChromeCdpTool.execute({
+      command:"click", selector:"button", nativeClick:true, highlightBeforeClick:true,
+      timeout_ms:0,
+    }));
+    expect(result).toContain("HIGHLIGHT_UNAVAILABLE");
+    expect(nativeMouseEvents).not.toContain("mousePressed");
+    expect(domClickCalls).toBe(oldClicks);
   });
 
   test("nativeClick uses one real CDP mouse press/release and no duplicate DOM click", async () => {

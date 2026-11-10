@@ -5,7 +5,7 @@
  * per-target read/write gate; journal itself is not an authorization boundary.
  */
 import { randomUUID } from "node:crypto";
-export type SafeBrowserAction = "move_cursor" | "click" | "type" | "drag_and_drop" | "navigate";
+export type SafeBrowserAction = "move_cursor" | "click" | "type" | "drag_and_drop" | "navigate" | "scroll_cursor";
 export type SafeActionRecord = Readonly<{
   sequence: number;
   action: SafeBrowserAction;
@@ -28,7 +28,7 @@ const traces = new Map<string, Trace>();
 const MAX_EVENTS = 128;
 const TTL_MS = 10 * 60_000;
 const MAX_TRACES = 32;
-const known = new Set<SafeBrowserAction>(["move_cursor","click","type","drag_and_drop","navigate"]);
+const known = new Set<SafeBrowserAction>(["move_cursor","click","type","drag_and_drop","navigate","scroll_cursor"]);
 
 function key(targetKey: string, actorId: string): string { return targetKey + "\0" + actorId; }
 function prune(now: number) {

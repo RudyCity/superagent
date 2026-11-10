@@ -13,8 +13,25 @@ export function buildHighlightTargetJs(selector: string, agentId = "legacy", ttl
   const ttl = Math.max(250, Math.min(5000, Math.floor(Number(ttlMs) || 1500)));
   return `(() => {
     let target;
-    try { target = document.querySelector(${JSON.stringify(selector)}); }
-    catch { return { ok: false, code: 'INVALID_SELECTOR' }; }
+    const selector = ${JSON.stringify(selector)};
+    try {
+      const locate = (root, depth) => {
+        const direct = root.querySelector(selector);
+        if (direct) return direct;
+        if (depth >= 3) return null;
+        // Open shadow roots only. Closed roots and cross-origin frames are
+        // deliberately unsupported rather than claiming a clickable target.
+        let visited = 0;
+        for (const element of root.querySelectorAll('*')) {
+          if (++visited > 3000) break;
+          if (!element.shadowRoot) continue;
+          const nested = locate(element.shadowRoot, depth + 1);
+          if (nested) return nested;
+        }
+        return null;
+      };
+      target = locate(document, 0);
+    } catch { return { ok: false, code: 'INVALID_SELECTOR' }; }
     if (!target) return { ok: false, code: 'TARGET_NOT_FOUND' };
     if (target.matches(':disabled') || target.getAttribute('aria-disabled') === 'true')
       return { ok: false, code: 'TARGET_DISABLED' };
@@ -31,8 +48,14 @@ export function buildHighlightTargetJs(selector: string, agentId = "legacy", ttl
     const cx = Math.floor((left + right) / 2);
     const cy = Math.floor((top + bottom) / 2);
     const hit = document.elementFromPoint(cx, cy);
-    if (!hit || (!target.contains(hit) && !hit.contains(target)))
-      return { ok: false, code: 'TARGET_OCCLUDED' };
+    let visibleHit = !!hit && (target.contains(hit) || hit.contains(target));
+    // elementFromPoint can retarget elements inside a ShadowRoot to its host.
+    let root = target.getRootNode();
+    while (!visibleHit && root && root.host) {
+      visibleHit = hit === root.host || Boolean(hit && hit.contains(root.host));
+      root = root.host.getRootNode();
+    }
+    if (!visibleHit) return { ok: false, code: 'TARGET_OCCLUDED' };
     const id = ${JSON.stringify(markerId(agentId))};
     let marker = document.getElementById(id);
     if (!marker) {

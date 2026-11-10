@@ -11,7 +11,8 @@ describe("headed CDP element target highlighting", () => {
     expect(script).toContain("TARGET_OCCLUDED");
     expect(script).toContain("TARGET_DISABLED");
     expect(script).toContain("pointerEvents = 'none'");
-    expect(script).toContain('querySelector("[data-test=\'pay\']")');
+    expect(script).toContain("root.querySelector(selector)");
+    expect(script).toContain("element.shadowRoot");
     expect(script).not.toContain("dispatchEvent");
     expect(buildClearHighlightJs("agent-alpha")).not.toContain("agent-beta");
   });
