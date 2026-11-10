@@ -314,6 +314,7 @@ export async function startManagedMcpTunnelOwner(
 
   return await new Promise<ManagedMcpTunnelStartResult>((resolve, reject) => {
     let settled = false;
+    let verifying = false;
     const done = (error?: Error, result?: ManagedMcpTunnelStartResult) => {
       if (settled) return;
       settled = true;
@@ -331,7 +332,17 @@ export async function startManagedMcpTunnelOwner(
     }, START_TIMEOUT_MS);
     child.once("error", (error) => done(error));
     child.once("exit", (code) => {
-      if (!settled) done(new Error(`MCP owner launcher exited before ready (code ${code ?? "unknown"})`));
+      if (settled) return;
+      if (useWindowsTrampoline && code === 0) {
+        if (verifying) return;
+        setTimeout(() => {
+          if (!settled && !verifying) {
+            done(new Error("MCP owner launcher exited before ready (code 0)"));
+          }
+        }, 500);
+        return;
+      }
+      done(new Error(`MCP owner launcher exited before ready (code ${code ?? "unknown"})`));
     });
     child.on("message", (message: unknown) => {
       if (!message || typeof message !== "object") return;
@@ -345,6 +356,8 @@ export async function startManagedMcpTunnelOwner(
         done(new Error("MCP owner ready PID did not match spawned process"));
         return;
       }
+      verifying = true;
+      try { child.send({ type: "mcp-tunnel-launcher-ack" }); } catch {}
       const ownerPid = m.pid;
       const lease = readManagedMcpTunnelLease(port);
       if (!lease || lease.pid !== ownerPid) {
@@ -418,9 +431,21 @@ export async function runManagedMcpTunnelLauncher(args: string[]): Promise<never
     owner.unref();
     const exit = () => process.exit(exitCode);
     if (typeof process.send === "function" && process.connected) {
-      process.send(message, () => exit());
-      const fallback = setTimeout(exit, 500);
-      fallback.unref();
+      if (exitCode === 0) {
+        const ackTimer = setTimeout(exit, 1500);
+        ackTimer.unref();
+        process.once("message", (msg: unknown) => {
+          if (msg && typeof msg === "object" && (msg as any).type === "mcp-tunnel-launcher-ack") {
+            clearTimeout(ackTimer);
+            exit();
+          }
+        });
+        process.send(message);
+      } else {
+        process.send(message, () => exit());
+        const fallback = setTimeout(exit, 500);
+        fallback.unref();
+      }
     } else {
       exit();
     }
