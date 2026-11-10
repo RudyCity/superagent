@@ -998,6 +998,9 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // Avoid replaying ambiguous requests when the owner is slow to approve.
         match body.as_ref().and_then(|b| b.get("action")).and_then(Value::as_str) {
             Some("pair" | "open" | "file_offer") => Duration::from_secs(125),
+            // HTTPS quick tunnel provisioning may take 30s, followed by public readiness checks.
+            // A slow QR operation must not be mistaken for an unreachable Core.
+            Some("tunnel_invite" | "apk_download_qr") => Duration::from_secs(75),
             Some("file_put" | "file_get" | "file_finish" | "file_abort") => Duration::from_secs(18),
             Some("exec") if body.as_ref().and_then(|b| b.get("command"))
                 .and_then(Value::as_str).is_some_and(|command|
@@ -1040,8 +1043,14 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
     if let Some(payload) = body {
         request = request.json(&payload);
     }
-    let response = request.send().await.map_err(|_| {
-        "SuperAgent Core is unreachable at the configured loopback port".to_string()
+    let response = request.send().await.map_err(|error| {
+        if error.is_timeout() {
+            "SuperAgent Core request timed out. The operation may have completed; check its status before retrying.".to_string()
+        } else if error.is_connect() {
+            "SuperAgent Core is unreachable at the configured loopback port".to_string()
+        } else {
+            "SuperAgent Core request failed before receiving a response".to_string()
+        }
     })?;
     let status = response.status();
     let value: Value = response

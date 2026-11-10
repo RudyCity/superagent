@@ -8,7 +8,7 @@ android {
         applicationId 'click.superagent.lanclient'
         minSdk 29
         targetSdk 35
-        versionCode 14
+        versionCode 15
         versionName '0.9.1-qr-scan-fix'
     }
     compileOptions {

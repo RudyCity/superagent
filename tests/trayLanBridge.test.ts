@@ -50,6 +50,13 @@ describe("LAN Client Tray request boundary", () => {
 });
 
 describe("QR tunnel auto-recovery contract", () => {
+  it("allows HTTPS tunnel startup and reports request timeouts distinctly from connection failures", () => {
+    expect(rust).toContain('Some("tunnel_invite" | "apk_download_qr") => Duration::from_secs(75)');
+    expect(rust).toContain("error.is_timeout()");
+    expect(rust).toContain("error.is_connect()");
+    expect(rust).toContain("The operation may have completed; check its status before retrying.");
+  });
+
   it("auto-ensures the owner-verified Core HTTPS tunnel for both QR actions", () => {
     const bridge = fs.readFileSync(path.resolve("src/core/runtime/trayLanBridge.ts"), "utf8");
     const helper = fs.readFileSync(path.resolve("src/core/runtime/ownedCoreHttpTunnel.ts"), "utf8");

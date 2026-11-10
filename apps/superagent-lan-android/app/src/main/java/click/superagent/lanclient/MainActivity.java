@@ -37,6 +37,7 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
 import com.google.mlkit.vision.barcode.common.Barcode;
+import org.json.JSONObject;
 
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -61,8 +62,10 @@ public final class MainActivity extends Activity {
     private TextView status, ip, code, fingerprint, paired, events, fileSelected;
     private Button start, stop, renew, revoke, copy, startScreen, stopScreen, touchToggle;
     private Button tunnelScan, tunnelConnect, tunnelDisconnect;
-    private TextView screenState, tunnelState;
+    private TextView screenState, tunnelState, qrScanStatus;
     private EditText segmentInput, tunnelSetupInput;
+    private boolean qrScanInProgress;
+    private String pendingQrPayload;
 
     private String appBuildLabel() {
         try {
@@ -139,7 +142,9 @@ public final class MainActivity extends Activity {
         section(layout, "DEVICE TUNNEL · QR CONNECT");
         add(layout, label("Scan the one-time QR shown in SuperAgent Tray. The phone enrolls and starts pairing automatically through outbound HTTPS; you only confirm the pairing approval on this phone.", 13, 0xffafbed2, false), 2);
         tunnelScan = action(layout, "Scan QR & Connect", this::scanTunnelQr);
-        add(layout, label("Manual setup JSON is kept only as a recovery fallback.", 11, 0xff8194aa, false), 4);
+        qrScanStatus = label("Ready to scan the Connection QR shown in SuperAgent Tray.", 13, 0xffafbed2, false);
+        add(layout, qrScanStatus, 2);
+        add(layout, label("Use this in-app scanner, not the phone's regular camera. Manual setup JSON is a fallback.", 11, 0xff8194aa, false), 4);
         tunnelSetupInput = new EditText(this);
         tunnelSetupInput.setSingleLine(false);
         tunnelSetupInput.setMinLines(2);
@@ -251,7 +256,7 @@ public final class MainActivity extends Activity {
         if (copy != null) copy.setEnabled(on);
         boolean tunnelOn = tunnelRelay != null && tunnelRelay.isRunning();
         if (tunnelSetupInput != null) tunnelSetupInput.setEnabled(on && !tunnelOn && !launching);
-        if (tunnelScan != null) tunnelScan.setEnabled(!tunnelOn && !launching && !preparingFolder);
+        if (tunnelScan != null) tunnelScan.setEnabled(!tunnelOn && !launching && !preparingFolder && !qrScanInProgress);
         if (tunnelConnect != null) tunnelConnect.setEnabled(on && !tunnelOn);
         if (tunnelDisconnect != null) tunnelDisconnect.setEnabled(tunnelOn);
         if (tunnelState != null) tunnelState.setText(tunnelOn ? "Tunnel ON · outbound HTTPS" : "Tunnel OFF");
@@ -327,32 +332,88 @@ public final class MainActivity extends Activity {
         }, "superagent-android-client-start").start();
     }
 
+    private void qrFeedback(String message) {
+        if (qrScanStatus != null) qrScanStatus.setText(message);
+        notifyEvent(message);
+    }
+
+    // The Google Play Services scanner opens a separate Activity. Its result may
+    // arrive while our Activity is stopped; no listener or tunnel may start then.
+    private void connectPendingQrWhenForeground() {
+        if (!visible || isFinishing() || launching || preparingFolder || pendingQrPayload == null) return;
+        String setup = pendingQrPayload;
+        pendingQrPayload = null;
+        qrFeedback("QR read. Starting secure connection...");
+        connectTunnelFromQr(setup);
+    }
+
+    private boolean isConnectQrPayload(String raw) {
+        try {
+            JSONObject qr = new JSONObject(raw);
+            return "sat".equals(qr.optString("k", ""))
+                    || "superagent-device-tunnel".equals(qr.optString("kind", ""));
+        } catch (org.json.JSONException invalidQr) {
+            return false;
+        }
+    }
+
     private void scanTunnelQr() {
-        if (tunnelRelay != null && tunnelRelay.isRunning()) return;
+        if (qrScanInProgress) return;
+        if (tunnelRelay != null && tunnelRelay.isRunning()) {
+            qrFeedback("Device Tunnel is already running. Disconnect before scanning another QR.");
+            return;
+        }
+        qrScanInProgress = true;
+        refresh();
         try {
             GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
                     .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
                     .build();
             GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(this, options);
-            notifyEvent("Opening QR scanner. Hold the phone steady about 20–35 cm from the QR.");
+            qrFeedback("Opening QR scanner. Scan the Connection QR in SuperAgent Tray. Hold the phone steady about 20–35 cm from the QR.");
             scanner.startScan()
                     .addOnSuccessListener(barcode -> {
+                        qrScanInProgress = false;
                         String raw = barcode.getRawValue();
                         if (raw == null || raw.isEmpty() || raw.length() > 2048) {
-                            notifyEvent("QR rejected: invalid or oversized payload.");
-                            return;
+                            qrFeedback("QR rejected. Scan a fresh Connect QR from SuperAgent Tray.");
+                        } else if (!isConnectQrPayload(raw)) {
+                            qrFeedback(raw.startsWith("https://")
+                                    ? "This is an APK download QR. In Tray choose Create connect QR instead."
+                                    : "Wrong QR format. In Tray choose Create connect QR and scan it here.");
+                        } else {
+                            pendingQrPayload = raw;
+                            qrFeedback("QR detected. Returning to SuperAgent to connect...");
+                            // Wait for scanner dismissal; onStart also drains if this callback
+                            // arrived before the Activity returned to foreground.
+                            main.postDelayed(this::connectPendingQrWhenForeground, 700);
                         }
-                        connectTunnelFromQr(raw);
+                        refresh();
                     })
-                    .addOnCanceledListener(() -> notifyEvent("QR scan cancelled."))
-                    .addOnFailureListener(error -> notifyEvent(
-                            "QR scanner unavailable: " + error.getClass().getSimpleName()));
+                    .addOnCanceledListener(() -> {
+                        qrScanInProgress = false;
+                        qrFeedback("QR scan cancelled. Tap Scan QR & Connect to retry.");
+                        refresh();
+                    })
+                    .addOnFailureListener(error -> {
+                        qrScanInProgress = false;
+                        qrFeedback("QR scanner failed (" + error.getClass().getSimpleName()
+                                + "). Update Google Play Services or use manual setup JSON.");
+                        refresh();
+                    });
         } catch (Exception error) {
-            notifyEvent("QR scanner unavailable: " + error.getClass().getSimpleName());
+            qrScanInProgress = false;
+            qrFeedback("QR scanner unavailable (" + error.getClass().getSimpleName()
+                    + "). Update Google Play Services or use manual setup JSON.");
+            refresh();
         }
     }
 
     private void connectTunnelFromQr(String setup) {
+        if (!visible || isFinishing()) {
+            pendingQrPayload = setup;
+            return;
+        }
         LanClientServer live = server;
         if (live != null && live.isRunning() && live.currentInfo() != null) {
             String freshPairingCode = live.rotateCode();
@@ -393,7 +454,7 @@ public final class MainActivity extends Activity {
                 main.post(() -> {
                     launching = false;
                     status.setText("OFF — QR connection failed");
-                    notifyEvent("Cannot start QR tunnel engine: " + error.getMessage());
+                    qrFeedback("Cannot start QR tunnel engine: " + error.getMessage());
                     refresh();
                 });
             }
@@ -419,7 +480,14 @@ public final class MainActivity extends Activity {
         TunnelRelayClient existing = tunnelRelay;
         if (existing != null && existing.isRunning()) return;
         try {
-            TunnelRelayClient relay = new TunnelRelayClient(this::notifyEvent);
+            TunnelRelayClient relay = new TunnelRelayClient(message -> {
+                notifyEvent(message);
+                if (message.startsWith("Device Tunnel") || message.startsWith("QR pairing")) {
+                    main.post(() -> {
+                        if (qrScanStatus != null) qrScanStatus.setText(message);
+                    });
+                }
+            });
             String pairingCode = pairingCodeOverride == null ? info.code : pairingCodeOverride;
             relay.start(setup, info.ip, info.port, info.fingerprint, pairingCode,
                     Build.MANUFACTURER + " " + Build.MODEL);
@@ -429,7 +497,7 @@ public final class MainActivity extends Activity {
             refresh();
         } catch (Exception error) {
             tunnelRelay = null;
-            notifyEvent("Cannot connect tunnel: " + error.getMessage());
+            qrFeedback("Cannot connect tunnel: " + error.getMessage());
             refresh();
         }
     }
@@ -696,6 +764,7 @@ public final class MainActivity extends Activity {
         currentActivity = new WeakReference<>(this);
         visible = true;
         refresh();
+        main.postDelayed(this::connectPendingQrWhenForeground, 100);
     }
     @Override protected void onStop() {
         visible = false;
