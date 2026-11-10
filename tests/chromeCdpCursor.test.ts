@@ -11,6 +11,8 @@ import {
   INJECT_CURSOR_OVERLAY_JS,
   UPDATE_CURSOR_OVERLAY_JS,
   REMOVE_CURSOR_OVERLAY_JS,
+  buildCursorOverlayJs,
+  buildRemoveCursorOverlayJs,
   dispatchHumanDragAndDrop,
   executeDragAndDropCommand,
   buildHtml5DragDropJs,
@@ -93,7 +95,49 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
       expect(INJECT_CURSOR_OVERLAY_JS).toContain("2147483647");
       expect(UPDATE_CURSOR_OVERLAY_JS(120, 240)).toContain("120px");
       expect(UPDATE_CURSOR_OVERLAY_JS(120, 240)).toContain("240px");
-      expect(REMOVE_CURSOR_OVERLAY_JS).toContain("data-superagent-cursor");
+      expect(REMOVE_CURSOR_OVERLAY_JS).toContain("__superagent_virtual_cursor__");
+    });
+  });
+
+  describe("independent named cursor twins", () => {
+    test("isolates each agent by DOM id and labels via textContent", () => {
+      const alpha = buildCursorOverlayJs("agent-alpha", "Alpha");
+      const beta = buildCursorOverlayJs("agent-beta", "Beta");
+      expect(alpha).toContain("__superagent_virtual_cursor__agent-alpha");
+      expect(beta).toContain("__superagent_virtual_cursor__agent-beta");
+      expect(alpha).toContain('label.textContent = "Alpha"');
+      expect(beta).toContain('label.textContent = "Beta"');
+      expect(alpha).toContain("pointer-events: none");
+      expect(buildRemoveCursorOverlayJs("agent-alpha")).toContain("__superagent_virtual_cursor__agent-alpha");
+      expect(buildRemoveCursorOverlayJs("agent-alpha")).not.toContain("agent-beta");
+      const potentiallyUnsafe = buildCursorOverlayJs("safe", "<img src=x onerror=alert(1)>");
+      expect(potentiallyUnsafe).toContain("label.textContent = ");
+      expect(potentiallyUnsafe).not.toContain("innerHTML = '<img");
+    });
+
+    test("named agent positions track real CDP mouse events independently", async () => {
+      const calls: Array<{ method: string; expression?: string; type?: string }> = [];
+      const send = async (_target: any, method: string, params: any) => {
+        calls.push({ method, expression: params?.expression, type: params?.type });
+        return {};
+      };
+      const target = { id: "shared-tab" };
+      const one = await executeCursorCommand(
+        send, target, "move_cursor", { x: 100, y: 120, steps: 2, step_delay_ms: 0 }, "agent-alpha", "Alpha",
+      );
+      const two = await executeCursorCommand(
+        send, target, "move_cursor", { x: 250, y: 270, steps: 2, step_delay_ms: 0 }, "agent-beta", "Beta",
+      );
+      expect(one).toContain("cursor moved naturally");
+      expect(two).toContain("cursor moved naturally");
+      expect(getCursorPosition(target.id, "agent-alpha")).toEqual({ x: 100, y: 120 });
+      expect(getCursorPosition(target.id, "agent-beta")).toEqual({ x: 250, y: 270 });
+      expect(calls.filter(c => c.method === "Input.dispatchMouseEvent" && c.type === "mouseMoved").length).toBeGreaterThan(2);
+      expect(calls.some(c => c.expression?.includes('label.textContent = "Alpha"'))).toBe(true);
+      expect(calls.some(c => c.expression?.includes('label.textContent = "Beta"'))).toBe(true);
+      await executeCursorCommand(send, target, "hide_cursor", {}, "agent-alpha", "Alpha");
+      expect(calls.at(-1)?.expression).toContain("__superagent_virtual_cursor__agent-alpha");
+      expect(calls.at(-1)?.expression).not.toContain("agent-beta");
     });
   });
 

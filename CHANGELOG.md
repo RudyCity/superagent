@@ -5,6 +5,13 @@
 - Add owner-initiated, single-attempt USB ADB installer with 120-second default timeout, version verification and non-replay behavior after uncertain results.
 - Verify Lite/Debug Gradle builds, signing and Android Lint; physical-device E2E remains pending. Tray/controller LAN integration is still in progress in the shared checkout.
 
+## [1.14.66] - 2026-11-10
+### Named visual cursor twins for headed Chrome CDP
+- Render one labeled, pointer-events-disabled visual cursor per authenticated CDP agent in the same Chrome tab, with isolated coordinates and scoped show/hide commands.
+- Drive each overlay from real CDP mouseMoved events on move, click and drag; preserve the established DOM click path to avoid duplicate submissions.
+- Support explicit nativeClick for one CDP mousePressed/mouseReleased sequence without a second DOM click, and configurable cursorName labels.
+- Verify isolated real headed Chrome with two named overlays, 11 mousemove events and exactly one native button click; expand cursor, shared-tab and click regression tests.
+
 ## [1.14.65] - 2026-11-06
 ### Delegate-CDP stateless MCP lease continuity
 - Keep the authenticated Delegate-CDP actor stable across stateless MCP tool calls by binding it to the verified credential instead of a per-request server UUID.

@@ -33,7 +33,7 @@ import {
   DomStateSnapshot,
 } from "./chromeCdpTransition.js";
 import { executeInspectMediaDevices, executeMockDisplayMedia, executeHandleScreenSharePrompt } from "./chromeCdpMedia.js";
-import { executeCursorCommand, dispatchHumanMouseClick, resolveElementCenterPoint, executeDragAndDropCommand } from "./chromeCdpCursor.js";
+import { executeCursorCommand, dispatchHumanMouseMove, dispatchHumanMouseClick, resolveElementCenterPoint, executeDragAndDropCommand } from "./chromeCdpCursor.js";
 import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdpForm.js";
 import { CDP_AUDIT_COMMANDS, executeCdpAuditCommand, type CdpAuditCommand } from "./chromeCdpAudits.js";
@@ -789,11 +789,13 @@ export const controlChromeCdpTool: Tool = {
       quality: { type: "number", description: "Optional compression quality for jpeg/webp screenshot (0-100)." },
       grantPermissions: { type: "boolean", description: "Optional flag to grant microphone, camera, and speakerSelection permissions via CDP." },
       resetPermissions: { type: "boolean", description: "Optional flag to reset permissions via CDP." },
-      smooth: { type: "boolean", description: "Optional flag to glide cursor along a human-like Bezier curve before clicking." },
+      smooth: { type: "boolean", description: "Glide named cursor along actual CDP mouseMoved events before clicking." },
+      nativeClick: { type: "boolean", description: "Opt in to native CDP mousePressed/mouseReleased instead of a DOM click (never both)." },
       x: { type: "number", description: "Optional x coordinate for cursor movement or positioning." },
       y: { type: "number", description: "Optional y coordinate for cursor movement or positioning." },
       steps: { type: "number", description: "Optional step count for cursor trajectory interpolation." },
-      visualCursor: { type: "boolean", description: "Optional flag to display an animated virtual pointer overlay in the DOM." },
+      visualCursor: { type: "boolean", description: "Named CDP pointer overlay is enabled by default for mouse actions; set false to disable." },
+      cursorName: { type: "string", description: "Optional visible cursor label (up to 40 characters). Agent identity remains authenticated separately." },
       targetId: { type: "string", description: "Optional CDP target id. Pass explicitly when multiple agents control tabs." },
       agentId: { type: "string", description: "Stable agent identity for CDP tab ownership." },
       sessionToken: { type: "string", description: "Secret capability returned by claim_target. Required for actions on claimed tabs." },
@@ -834,7 +836,7 @@ export const controlChromeCdpTool: Tool = {
     }
     const convenienceKeys = [
       "files", "filePaths", "filePath", "paths", "path", "inputIndex", "input_index", "allowOutsideWorkspace", "confirmExternalFile", "successSelector", "expectedNames", "fileNames", "nativeDialog", "confirmNativeDialog", "windowTitle", "arm", "triggerSelector", "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
-      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
+      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "cursorName", "nativeClick", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
       "mode", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
@@ -1580,24 +1582,46 @@ export const controlChromeCdpTool: Tool = {
             beforeState = await captureDomState(cdpSend, target);
           }
           let smoothInfo = "";
-          if (payload.smooth || payload.human || payload.realistic) {
+          const showPointer = payload.visualCursor !== false && payload.visual !== false;
+          const nativeClick = payload.nativeClick === true;
+          let nativeClickInfo: { x: number; y: number; steps: number } | null = null;
+          const clickStartTs = Date.now() - 2;
+          if (showPointer || payload.smooth || payload.human || payload.realistic || nativeClick) {
             const centerPt = await resolveElementCenterPoint(cdpSend, target, resolved.selector);
-            if (centerPt) {
-              const visual = Boolean(payload.visualCursor ?? payload.visual);
-              const clickHuman = await dispatchHumanMouseClick(cdpSend, target, centerPt, { visualCursor: visual });
-              smoothInfo = ` [human-like cursor at (${clickHuman.x}, ${clickHuman.y}) across ${clickHuman.steps} steps]`;
+            if (centerPt && Number.isFinite(centerPt.x) && Number.isFinite(centerPt.y)) {
+              const actor = cdpAgentContext.getStore()?.agentId || "legacy";
+              const name = typeof payload.cursorName === "string" && payload.cursorName.trim()
+                ? payload.cursorName : actor === "legacy" ? "SuperAgent" : actor;
+              const cursorOptions = { visualCursor: showPointer, cursorId: actor, cursorName: name };
+              if (nativeClick) {
+                nativeClickInfo = await dispatchHumanMouseClick(cdpSend, target, centerPt, cursorOptions);
+              } else {
+                // Real CDP mouseMoved events drive a named visual twin; preserve one DOM click.
+                const move = await dispatchHumanMouseMove(cdpSend, target, centerPt, cursorOptions);
+                if (payload.smooth || payload.human || payload.realistic) {
+                  smoothInfo = " [human-like cursor at (" + centerPt.x + ", " + centerPt.y +
+                    ") across " + move.stepsDispatched + " steps]";
+                }
+              }
+            } else if (nativeClick) {
+              return "control_chrome_cdp failed: nativeClick requires an element with valid viewport coordinates.";
             }
           }
-          const clickStartTs = Date.now() - 2;
-          const res: any = await cdpSend(target, "Runtime.evaluate", {
-            expression: buildClickJs(resolved.selector),
-            returnByValue: true,
-          });
-          const value = res && res.result ? res.result.value : undefined;
-          const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
-          if (!parsed.ok) return `control_chrome_cdp: click failed - ${parsed.reason || "unknown reason"}.`;
-          const textStr = parsed.text ? ` "${parsed.text}"` : "";
-          let clickResult = `control_chrome_cdp: clicked <${parsed.tag}>${textStr}${smoothInfo}.`;
+          let clickResult = "";
+          if (nativeClickInfo) {
+            clickResult = "control_chrome_cdp: native click dispatched at (" + nativeClickInfo.x +
+              ", " + nativeClickInfo.y + ") across " + nativeClickInfo.steps + " steps.";
+          } else {
+            const res: any = await cdpSend(target, "Runtime.evaluate", {
+              expression: buildClickJs(resolved.selector),
+              returnByValue: true,
+            });
+            const value = res && res.result ? res.result.value : undefined;
+            const parsed = parseActionResult(typeof value === "string" ? value : JSON.stringify(value));
+            if (!parsed.ok) return "control_chrome_cdp: click failed - " + (parsed.reason || "unknown reason") + ".";
+            const textStr = parsed.text ? ' "' + parsed.text + '"' : "";
+            clickResult = "control_chrome_cdp: clicked <" + parsed.tag + ">" + textStr + smoothInfo + ".";
+          }
           const recentDialogs = getRecentDialogs(target.id, clickStartTs);
           if (recentDialogs.length > 0) {
             clickResult += `\nIntercepted Native Dialog(s): ${recentDialogs.map(formatDialogEntry).join(" | ")}`;
@@ -1744,13 +1768,19 @@ export const controlChromeCdpTool: Tool = {
         case "hide_cursor":
         case "get_cursor": {
           const target = await pickTarget(targetId);
-          return await executeCursorCommand(cdpSend, target, command, payload);
+          const actor = cdpAgentContext.getStore()?.agentId || "legacy";
+          const name = typeof payload.cursorName === "string" && payload.cursorName.trim()
+            ? payload.cursorName : actor === "legacy" ? "SuperAgent" : actor;
+          return await executeCursorCommand(cdpSend, target, command, payload, actor, name);
         }
         case "drag_and_drop":
         case "drag":
         case "drag_drop": {
           const target = await pickTarget(targetId);
-          const dragResult = await executeDragAndDropCommand(cdpSend, target, payload);
+          const actor = cdpAgentContext.getStore()?.agentId || "legacy";
+          const name = typeof payload.cursorName === "string" && payload.cursorName.trim()
+            ? payload.cursorName : actor === "legacy" ? "SuperAgent" : actor;
+          const dragResult = await executeDragAndDropCommand(cdpSend, target, payload, actor, name);
           return await attachScreenshotIfRequested(cdpSend, target, payload, dragResult, false);
         }
         case "emulate_device":

@@ -29,6 +29,8 @@ describe("control_chrome_cdp (mock CDP server)", () => {
   let simulateNativeDialogOnNextClick = false;
   let lastHandledDialogParams: Record<string, unknown> | null = null;
   let nativeInsertCalls = 0;
+  let domClickCalls = 0;
+  const nativeMouseEvents: Array<string> = [];
   const nativeTerminalEvents: Array<{ method: string; params: Record<string, unknown> }> = [];
   let focusTerminalShouldFail = false;
   const mockElementsChanged = [{ index: 0, tag: "button", text: "Sign In", selector: "button" }, { index: 1, tag: "input", text: "", type: "text", placeholder: "Search...", selector: 'input[name="q"]' }, { index: 2, tag: "a", text: "Help", selector: "a.help" }];
@@ -90,6 +92,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
             return;
           }
           if (expr.includes("cdp-click")) {
+            domClickCalls++;
             if (simulateTransitionOnNextClick) {
               captureDomStateReturnsForm = true;
             }
@@ -250,6 +253,9 @@ describe("control_chrome_cdp (mock CDP server)", () => {
           lastHandledDialogParams = msg.params || {};
           ws.send(JSON.stringify({ id: msg.id, result: {} }));
           return;
+        }
+        if (msg.method === "Input.dispatchMouseEvent") {
+          nativeMouseEvents.push(String(msg.params?.type || ""));
         }
         if (msg.method === "Input.insertText") nativeInsertCalls++;
         if (msg.method === "Input.insertText" || msg.method === "Input.dispatchKeyEvent") {
@@ -1116,6 +1122,22 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     });
     expect(clickRes).toContain("clicked <button>");
     expect(clickRes).toContain("[human-like cursor at (300, 150)");
+  });
+
+  test("nativeClick uses one real CDP mouse press/release and no duplicate DOM click", async () => {
+    nativeMouseEvents.length = 0;
+    const previousDomClicks = domClickCalls;
+    const result = await controlChromeCdpTool.execute({
+      command: "click",
+      selector: "button",
+      nativeClick: true,
+      cursorName: "QA Cursor",
+    });
+    expect(result).toContain("native click dispatched at (300, 150)");
+    expect(nativeMouseEvents.filter(type => type === "mousePressed")).toHaveLength(1);
+    expect(nativeMouseEvents.filter(type => type === "mouseReleased")).toHaveLength(1);
+    expect(nativeMouseEvents).toContain("mouseMoved");
+    expect(domClickCalls).toBe(previousDomClicks);
   });
 
   test("controlChromeCdpTool drag_and_drop and drag commands smoothly move elements", async () => {

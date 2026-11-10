@@ -27,6 +27,8 @@ export interface CursorMoveOptions extends TrajectoryOptions {
   stepDelayMs?: number;
   visualCursor?: boolean;
   smooth?: boolean;
+  cursorId?: string;
+  cursorName?: string;
 }
 
 export interface CursorClickOptions extends CursorMoveOptions {
@@ -39,12 +41,16 @@ export interface CursorClickOptions extends CursorMoveOptions {
 /** In-memory store of the last known cursor position per target tab. */
 const cursorPositionStore = new Map<string, Point>();
 
-export function getCursorPosition(targetId: string): Point {
-  return cursorPositionStore.get(targetId) || { x: 400, y: 300 };
+function cursorStoreKey(targetId: string, cursorId = "legacy"): string {
+  return cursorId === "legacy" ? targetId : targetId + "::" + cursorId;
 }
 
-export function setCursorPosition(targetId: string, pt: Point): void {
-  cursorPositionStore.set(targetId, {
+export function getCursorPosition(targetId: string, cursorId = "legacy"): Point {
+  return cursorPositionStore.get(cursorStoreKey(targetId, cursorId)) || { x: 400, y: 300 };
+}
+
+export function setCursorPosition(targetId: string, pt: Point, cursorId = "legacy"): void {
+  cursorPositionStore.set(cursorStoreKey(targetId, cursorId), {
     x: Math.round(pt.x * 10) / 10,
     y: Math.round(pt.y * 10) / 10,
   });
@@ -131,34 +137,48 @@ export function generateBezierTrajectory(
   return points;
 }
 
-/** DOM JavaScript to inject a sleek virtual cursor pointer and ripple element. */
-export const INJECT_CURSOR_OVERLAY_JS = `(() => {
-  let el = document.getElementById('__superagent_virtual_cursor__');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = '__superagent_virtual_cursor__';
-    el.setAttribute('data-superagent-cursor', 'true');
-    el.style.cssText = 'position:fixed;top:0;left:0;width:20px;height:20px;z-index:2147483647;pointer-events: none;transform:translate3d(-50px,-50px,0);transition:none;will-change:transform;';
-    el.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 4px rgba(0,0,0,0.35));"><path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="#2563eb" stroke="#ffffff" stroke-width="1.8" stroke-linejoin="round"/></svg><div id="__superagent_cursor_ripple__" style="position:absolute;top:0;left:0;width:24px;height:24px;margin-top:-2px;margin-left:-2px;border:2px solid #3b82f6;border-radius:50%;opacity:0;pointer-events: none;transform:scale(0.4);"></div>';
-    document.body.appendChild(el);
-  }
-  return true;
-})()`;
+/** This extra pointer is visual. Real mouse events are sent separately via CDP. */
+const cursorDomId = (cursorId = "legacy"): string =>
+  cursorId === "legacy" ? "__superagent_virtual_cursor__" : "__superagent_virtual_cursor__" + encodeURIComponent(cursorId);
 
-/** DOM JavaScript to update virtual cursor position and optionally trigger click ripple. */
-export function UPDATE_CURSOR_OVERLAY_JS(x: number, y: number, ripple = false): string {
+function cursorDisplayName(name: string): string {
+  return String(name || "SuperAgent").replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, 40) || "SuperAgent";
+}
+
+/** One independent, named, non-interactive pointer for each CDP agent in a headed tab. */
+export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAgent"): string {
   return `(() => {
-    const el = document.getElementById('__superagent_virtual_cursor__');
+    let el = document.getElementById(${JSON.stringify(cursorDomId(cursorId))});
+    if (!el) {
+      el = document.createElement('div');
+      el.id = ${JSON.stringify(cursorDomId(cursorId))};
+      el.setAttribute('data-superagent-cursor', 'true');
+      el.setAttribute('aria-hidden', 'true');
+      el.style.cssText = 'position:fixed;top:0;left:0;width:22px;height:22px;z-index:2147483647;pointer-events: none;transform:translate3d(-50px,-50px,0);transition:none;will-change:transform;';
+      el.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))"><path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="#2563eb" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg><div data-superagent-cursor-ripple style="position:absolute;top:0;left:0;width:24px;height:24px;border:2px solid #3b82f6;border-radius:50%;opacity:0;transform:scale(.4);pointer-events:none;"></div><span data-superagent-cursor-name style="position:absolute;top:19px;left:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:#1d4ed8;color:#fff;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:7px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;"></span>';
+      (document.body || document.documentElement).appendChild(el);
+    }
+    const label = el.querySelector('[data-superagent-cursor-name]');
+    if (label) label.textContent = ${JSON.stringify(cursorDisplayName(cursorName))};
+    return true;
+  })()`;
+}
+export const INJECT_CURSOR_OVERLAY_JS = buildCursorOverlayJs();
+
+/** The overlay follows the same viewport coordinates dispatched by Input.dispatchMouseEvent. */
+export function UPDATE_CURSOR_OVERLAY_JS(x: number, y: number, ripple = false, cursorId = "legacy"): string {
+  return `(() => {
+    const el = document.getElementById(${JSON.stringify(cursorDomId(cursorId))});
     if (el) {
       el.style.transform = 'translate3d(${x}px, ${y}px, 0)';
       ${ripple ? `
-        const rip = document.getElementById('__superagent_cursor_ripple__');
+        const rip = el.querySelector('[data-superagent-cursor-ripple]');
         if (rip) {
           rip.style.transition = 'none';
           rip.style.transform = 'scale(0.4)';
           rip.style.opacity = '0.9';
           rip.offsetHeight;
-          rip.style.transition = 'transform 0.35s cubic-bezier(0,0,0.2,1), opacity 0.35s ease-out';
+          rip.style.transition = 'transform .35s cubic-bezier(0,0,0.2,1), opacity .35s ease-out';
           rip.style.transform = 'scale(2.2)';
           rip.style.opacity = '0';
         }
@@ -168,12 +188,14 @@ export function UPDATE_CURSOR_OVERLAY_JS(x: number, y: number, ripple = false): 
   })()`;
 }
 
-/** DOM JavaScript to remove the virtual cursor overlay. */
-export const REMOVE_CURSOR_OVERLAY_JS = `(() => {
-  const el = document.getElementById('__superagent_virtual_cursor__') || document.querySelector('[data-superagent-cursor]');
-  if (el) el.remove();
-  return true;
-})()`;
+export function buildRemoveCursorOverlayJs(cursorId = "legacy"): string {
+  return `(() => {
+    const el = document.getElementById(${JSON.stringify(cursorDomId(cursorId))});
+    if (el) el.remove();
+    return true;
+  })()`;
+}
+export const REMOVE_CURSOR_OVERLAY_JS = buildRemoveCursorOverlayJs();
 
 /**
  * Dispatches a human-like cursor trajectory to the CDP target via sequential mouseMoved events.
@@ -184,14 +206,17 @@ export async function dispatchHumanMouseMove(
   targetPoint: Point,
   options?: CursorMoveOptions
 ): Promise<{ ok: boolean; stepsDispatched: number; endPosition: Point }> {
-  const startPoint = getCursorPosition(target.id);
+  const cursorId = options?.cursorId ?? "legacy";
+  const startPoint = getCursorPosition(target.id, cursorId);
   const trajectory = generateBezierTrajectory(startPoint, targetPoint, options);
   const stepDelay = options?.stepDelayMs ?? 8;
   const showVisual = options?.visualCursor ?? false;
 
   if (showVisual) {
     try {
-      await cdpSend(target, "Runtime.evaluate", { expression: INJECT_CURSOR_OVERLAY_JS });
+      await cdpSend(target, "Runtime.evaluate", {
+        expression: buildCursorOverlayJs(cursorId, options?.cursorName ?? "SuperAgent"),
+      });
     } catch {}
   }
 
@@ -206,7 +231,7 @@ export async function dispatchHumanMouseMove(
     if (showVisual) {
       try {
         await cdpSend(target, "Runtime.evaluate", {
-          expression: UPDATE_CURSOR_OVERLAY_JS(pt.x, pt.y, false),
+          expression: UPDATE_CURSOR_OVERLAY_JS(pt.x, pt.y, false, cursorId),
         });
       } catch {}
     }
@@ -216,7 +241,7 @@ export async function dispatchHumanMouseMove(
     }
   }
 
-  setCursorPosition(target.id, targetPoint);
+  setCursorPosition(target.id, targetPoint, cursorId);
   return { ok: true, stepsDispatched: trajectory.length, endPosition: targetPoint };
 }
 
@@ -243,7 +268,7 @@ export async function dispatchHumanMouseClick(
   if (options?.visualCursor) {
     try {
       await cdpSend(target, "Runtime.evaluate", {
-        expression: UPDATE_CURSOR_OVERLAY_JS(targetPoint.x, targetPoint.y, true),
+        expression: UPDATE_CURSOR_OVERLAY_JS(targetPoint.x, targetPoint.y, true, options?.cursorId ?? "legacy"),
       });
     } catch {}
   }
@@ -316,25 +341,32 @@ export async function executeCursorCommand(
   cdpSend: (target: any, method: string, params?: any) => Promise<any>,
   target: any,
   command: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  cursorId = "legacy",
+  cursorName = "SuperAgent"
 ): Promise<string> {
   switch (command) {
     case "get_cursor": {
-      const pos = getCursorPosition(target.id);
+      const pos = getCursorPosition(target.id, cursorId);
       return `control_chrome_cdp: Current cursor position: (${pos.x}, ${pos.y}) for tab '${target.id}'.`;
     }
     case "show_cursor": {
-      await cdpSend(target, "Runtime.evaluate", { expression: INJECT_CURSOR_OVERLAY_JS });
+      await cdpSend(target, "Runtime.evaluate", { expression: buildCursorOverlayJs(cursorId, cursorName) });
+      const position = getCursorPosition(target.id, cursorId);
+      await cdpSend(target, "Runtime.evaluate", {
+        expression: UPDATE_CURSOR_OVERLAY_JS(position.x, position.y, false, cursorId),
+      });
       return "control_chrome_cdp: visual cursor overlay enabled on page.";
     }
     case "hide_cursor": {
-      await cdpSend(target, "Runtime.evaluate", { expression: REMOVE_CURSOR_OVERLAY_JS });
+      await cdpSend(target, "Runtime.evaluate", { expression: buildRemoveCursorOverlayJs(cursorId) });
       return "control_chrome_cdp: visual cursor overlay removed from page.";
     }
     case "move_cursor":
     case "move_mouse": {
       let targetPt: Point | null = null;
-      if (typeof payload.x === "number" && typeof payload.y === "number") {
+      if (typeof payload.x === "number" && Number.isFinite(payload.x) &&
+          typeof payload.y === "number" && Number.isFinite(payload.y)) {
         targetPt = { x: payload.x, y: payload.y };
       } else if (payload.selector && typeof payload.selector === "string") {
         targetPt = await resolveElementCenterPoint(cdpSend, target, payload.selector);
@@ -349,12 +381,17 @@ export async function executeCursorCommand(
 
       const steps = typeof payload.steps === "number" ? payload.steps : undefined;
       const stepDelayMs = typeof payload.step_delay_ms === "number" ? payload.step_delay_ms : undefined;
-      const visual = Boolean(payload.visualCursor ?? payload.visual);
+      if (!Number.isFinite(targetPt.x) || !Number.isFinite(targetPt.y)) {
+        return "control_chrome_cdp failed: cursor coordinates must be finite numbers.";
+      }
+      const visual = payload.visualCursor !== false && payload.visual !== false;
 
       const moveRes = await dispatchHumanMouseMove(cdpSend, target, targetPt, {
         steps,
         stepDelayMs,
         visualCursor: visual,
+        cursorId,
+        cursorName,
       });
 
       return `control_chrome_cdp: cursor moved naturally to (${moveRes.endPosition.x}, ${moveRes.endPosition.y}) in ${moveRes.stepsDispatched} trajectory steps.`;
@@ -444,6 +481,8 @@ export async function dispatchHumanDragAndDrop(
     const preMove = await dispatchHumanMouseMove(cdpSend, target, startPoint, {
       steps: 8,
       visualCursor: visual,
+      cursorId: options?.cursorId,
+      cursorName: options?.cursorName,
     });
     totalSteps += preMove.stepsDispatched;
 
@@ -466,7 +505,7 @@ export async function dispatchHumanDragAndDrop(
     if (visual) {
       try {
         await cdpSend(target, "Runtime.evaluate", {
-          expression: UPDATE_CURSOR_OVERLAY_JS(startPoint.x, startPoint.y, true),
+          expression: UPDATE_CURSOR_OVERLAY_JS(startPoint.x, startPoint.y, true, options?.cursorId ?? "legacy"),
         });
       } catch {}
     }
@@ -509,7 +548,7 @@ export async function dispatchHumanDragAndDrop(
       if (visual) {
         try {
           await cdpSend(target, "Runtime.evaluate", {
-            expression: UPDATE_CURSOR_OVERLAY_JS(pt.x, pt.y, false),
+            expression: UPDATE_CURSOR_OVERLAY_JS(pt.x, pt.y, false, options?.cursorId ?? "legacy"),
           });
         } catch {}
       }
@@ -536,7 +575,7 @@ export async function dispatchHumanDragAndDrop(
       clickCount: 1,
     });
 
-    setCursorPosition(target.id, targetPoint);
+    setCursorPosition(target.id, targetPoint, options?.cursorId ?? "legacy");
   }
 
   if (mode === "html5" || mode === "both") {
@@ -589,7 +628,8 @@ async function resolveDragLocation(
   target: any,
   role: "source" | "target",
   payload: Record<string, unknown>,
-  referencePoint?: Point
+  referencePoint?: Point,
+  cursorId = "legacy"
 ): Promise<{ point: Point | null; desc: string; selector?: string; error?: string }> {
   // 1. Direct coordinates
   let x: unknown = role === "source"
@@ -614,7 +654,7 @@ async function resolveDragLocation(
     const dx = payload.dx ?? payload.deltaX ?? payload.delta_x;
     const dy = payload.dy ?? payload.deltaY ?? payload.delta_y;
     if (typeof dx === "number" || typeof dy === "number") {
-      const base = referencePoint || getCursorPosition(target.id);
+      const base = referencePoint || getCursorPosition(target.id, cursorId);
       const targetPt = {
         x: base.x + Number(dx || 0),
         y: base.y + Number(dy || 0),
@@ -693,7 +733,7 @@ async function resolveDragLocation(
 
   // 5. Default fallback for source only: current cursor position
   if (role === "source") {
-    const current = getCursorPosition(target.id);
+    const current = getCursorPosition(target.id, cursorId);
     return { point: current, desc: `current cursor position (${current.x}, ${current.y})` };
   }
 
@@ -708,13 +748,15 @@ async function resolveDragLocation(
 export async function executeDragAndDropCommand(
   cdpSend: (target: any, method: string, params?: any) => Promise<any>,
   target: any,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  cursorId = "legacy",
+  cursorName = "SuperAgent"
 ): Promise<string> {
-  const sourceRes = await resolveDragLocation(cdpSend, target, "source", payload);
+  const sourceRes = await resolveDragLocation(cdpSend, target, "source", payload, undefined, cursorId);
   if (sourceRes.error) return sourceRes.error;
   if (!sourceRes.point) return "control_chrome_cdp failed: could not determine source position for drag_and_drop.";
 
-  const targetRes = await resolveDragLocation(cdpSend, target, "target", payload, sourceRes.point);
+  const targetRes = await resolveDragLocation(cdpSend, target, "target", payload, sourceRes.point, cursorId);
   if (targetRes.error) return targetRes.error;
   if (!targetRes.point) return "control_chrome_cdp failed: could not determine target position for drag_and_drop.";
 
@@ -730,7 +772,7 @@ export async function executeDragAndDropCommand(
   const dropDwellMs = typeof payload.drop_dwell_ms === "number"
     ? payload.drop_dwell_ms
     : (typeof payload.dropDwellMs === "number" ? payload.dropDwellMs : undefined);
-  const visualCursor = Boolean(payload.visualCursor ?? payload.visual);
+  const visualCursor = payload.visualCursor !== false && payload.visual !== false;
 
   const res = await dispatchHumanDragAndDrop(cdpSend, target, sourceRes.point, targetRes.point, {
     mode,
@@ -740,6 +782,8 @@ export async function executeDragAndDropCommand(
     holdDurationMs,
     dropDwellMs,
     visualCursor,
+    cursorId,
+    cursorName,
     sourceSelector: sourceRes.selector,
     targetSelector: targetRes.selector,
   });
