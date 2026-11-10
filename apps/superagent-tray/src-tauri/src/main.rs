@@ -659,6 +659,31 @@ async fn delegate_action(action: String, payload: Option<Value>) -> Result<Value
             };
             core_request(Method::GET, &path, None).await
         }
+        "cdp-preview" => {
+            let data = payload.ok_or("Missing preview consent")?;
+            let obj = data.as_object().ok_or("Invalid CDP preview request")?;
+            if obj.len() != 5 || obj.keys().any(|k| !["port","targetId","expectedRevision","consent","previewId"].contains(&k.as_str())) {
+                return Err("Unexpected preview request field".into());
+            }
+            let port = obj.get("port").and_then(Value::as_u64).ok_or("Preview port required")?;
+            let revision = obj.get("expectedRevision").and_then(Value::as_u64).ok_or("Preview revision required")?;
+            let target = obj.get("targetId").and_then(Value::as_str).ok_or("Preview target required")?;
+            let consent = obj.get("consent").and_then(Value::as_bool);
+            let preview_id = obj.get("previewId").and_then(Value::as_str).ok_or("Preview consent ID required")?;
+            let preview_bytes = preview_id.as_bytes();
+            if preview_bytes.len() != 36 || preview_bytes.iter().enumerate().any(|(index, byte)| {
+                if [8,13,18,23].contains(&index) { *byte != b'-' }
+                else if index == 14 { !(b'1'..=b'8').contains(byte) }
+                else if index == 19 { !matches!(*byte, b'8'|b'9'|b'a'|b'b') }
+                else { !byte.is_ascii_hexdigit() || byte.is_ascii_uppercase() }
+            }) { return Err("Invalid preview consent ID".into()); }
+            if !(1024..=65535).contains(&port) || revision > 1_000_000_000 ||
+                consent != Some(true) || target.is_empty() || target.len() > 128 ||
+                !target.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
+                return Err("Preview requires explicit consent for an exact registered target".into());
+            }
+            core_request(Method::POST, "/api/desktop/cdp/preview", Some(data)).await
+        }
         "cdp-approval" => {
             let data = payload.ok_or("Missing replay approval request")?;
             let obj = data.as_object().ok_or("Invalid replay approval body")?;

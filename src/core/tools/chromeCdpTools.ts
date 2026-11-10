@@ -41,6 +41,8 @@ import { executeTargetHighlightCommand } from "./chromeCdpTargetHighlight.js";
 import {inspectCdpFrameTree,executeQualifiedFrameAction} from "./chromeCdpFrames.js";
 import {executeFrameUtility} from "./chromeCdpFrameExtras.js";
 import { prepareReplayClick, consumeApprovedReplayClick } from "./chromeCdpReplayApprovals.js";
+import { startRecordedWorkflow, getRecordedWorkflow, activeRecordedWorkflowId,
+  assertNextWorkflowStep, consumeNextWorkflowStep, skipManualWorkflowStep } from "./chromeCdpWorkflowReplay.js";
 import { getCursorPosition } from "./chromeCdpCursor.js";
 import { publishCdpCursorPresence, removeCdpCursorPresence, type CdpCursorKind } from "./chromeCdpCursorPresence.js";
 import {
@@ -337,6 +339,41 @@ export async function discoverCdpPages(port: number): Promise<Array<{ targetId: 
   return terminalCdpConfig.run({ port }, async () => (await listPageTargets()).slice(0, 100)
     .map(t => ({ targetId: t.id, title: t.title.slice(0, 160), url: t.url.slice(0, 2048) })));
 }
+/** Hash only the current CDP document URL for an operator preview binding.
+ * Raw URL and query strings are never returned to the native WebView. */
+export async function getLocalCdpTargetUrlDigest(port: number, targetId: string): Promise<string> {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(targetId)) throw new Error("Invalid preview target.");
+  return terminalCdpConfig.run({port}, async () => {
+    const target = (await listPageTargets()).find(page => page.id === targetId);
+    if (!target || typeof target.url !== "string" || !target.url)
+      throw new Error("Preview document identity unavailable.");
+    return createHash("sha256").update(target.url).digest("hex");
+  });
+}
+
+/** Screenshot only for authenticated native operator preview after a verified
+ * managed registration and active lease have been checked by the caller.
+ * No output file or persistent image cache is created. */
+export async function captureLocalCdpJpeg(port: number, targetId: string): Promise<string> {
+  if (!Number.isInteger(port) || port < 1024 || port > 65535 ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(targetId)) {
+    throw new Error("Invalid native managed CDP preview target.");
+  }
+  return terminalCdpConfig.run({ port }, async () => {
+    // Never call pickTarget: it could create or activate a tab as a side effect.
+    const target = (await listPageTargets()).find(page => page.id === targetId);
+    if (!target) throw new Error("Preview target is no longer an active page.");
+    const response = await cdpSend(target, "Page.captureScreenshot", {
+      format: "jpeg", quality: 55, captureBeyondViewport: false,
+      fromSurface: true, optimizeForSpeed: true,
+    });
+    if (typeof response?.data !== "string")
+      throw new Error("CDP preview unavailable.");
+    return response.data;
+  });
+}
+
 async function listPageTargets(): Promise<CdpTarget[]> {
   const targets: any = await httpGetJson("/json/list");
   if (!Array.isArray(targets)) {
@@ -755,6 +792,7 @@ export const controlChromeCdpTool: Tool = {
            "frame_snapshot", "frame_type", "frame_scroll",
            "record_start", "record_stop", "record_status", "record_export", "replay_preview", "replay_cursor",
             "replay_prepare_click", "replay_execute_click",
+           "workflow_start", "workflow_status", "workflow_skip",
            ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
         ],
         description: "CDP command to execute on the real Chrome browser.",
@@ -835,6 +873,8 @@ export const controlChromeCdpTool: Tool = {
       highlightBeforeClick: { type: "boolean", description: "Preflight and re-check visible, unobscured element before clicking; fail closed if layout changes." },
       frameId: { type: "string", description: "Explicit qualified iframe CDP frameId from inspect_qualified_frames. Never falls back to parent DOM." },
       recordingId: { type: "string", description: "Opaque ID returned by record_start; required for export and replay." },
+      workflowId: { type: "string", description: "Opaque workflow ID returned by workflow_start; enforces recorded action order." },
+      confirmSkip: { type: "boolean", description: "Required true to skip a manual-only workflow step." },
       approvalId: { type: "string", description: "Opaque one-time request ID from replay_prepare_click after local operator approval." },
       sequence: { type: "number", description: "Recorded action sequence for replay_preview/replay_cursor." },
       confirmReplay: { type: "boolean", description: "Required true for replay_cursor; only harmless pointer movement is replayable." },
@@ -879,7 +919,7 @@ export const controlChromeCdpTool: Tool = {
     const convenienceKeys = [
       "files", "filePaths", "filePath", "paths", "path", "inputIndex", "input_index", "allowOutsideWorkspace", "confirmExternalFile", "successSelector", "expectedNames", "fileNames", "nativeDialog", "confirmNativeDialog", "windowTitle", "arm", "triggerSelector", "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "cursorName", "nativeClick", "deltaX", "deltaY", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "ttlMs", "highlightBeforeClick", "recordingId", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
+      "mode", "ttlMs", "highlightBeforeClick", "recordingId", "workflowId", "confirmSkip", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -1933,7 +1973,10 @@ export const controlChromeCdpTool: Tool = {
         case "replay_preview":
         case "replay_cursor":
         case "replay_prepare_click":
-        case "replay_execute_click": {
+        case "replay_execute_click":
+        case "workflow_start":
+        case "workflow_status":
+        case "workflow_skip": {
           const target = await pickTarget(targetId, false, true);
           const scope = await recorderScope(target.id);
           if (command === "record_start")
@@ -1951,10 +1994,36 @@ export const controlChromeCdpTool: Tool = {
           if (command === "record_export")
             return JSON.stringify(readBrowserActionRecording(scope.targetKey, scope.actorId,
               scope.generation, recordingId));
+          const workflowId = typeof payload.workflowId === "string" ? payload.workflowId : "";
+          if (command === "workflow_start") {
+            if (expectedRevision === undefined || getCdpExecutionState()?.revision !== expectedRevision)
+              throw new Error("Workflow start requires the current CDP revision.");
+            const trace = readBrowserActionRecording(scope.targetKey,scope.actorId,
+              scope.generation,recordingId);
+            if (trace.active) throw new Error("Stop recording before starting a replay workflow.");
+            return JSON.stringify(startRecordedWorkflow(scope.targetKey,scope.actorId,
+              scope.generation,recordingId,trace.events));
+          }
+          if (command === "workflow_status")
+            return JSON.stringify(getRecordedWorkflow(scope.targetKey,scope.actorId,
+              scope.generation,workflowId));
           const sequence = Number(payload.sequence);
           if (!Number.isSafeInteger(sequence) || sequence < 1)
             return "control_chrome_cdp failed: a positive recorded action sequence is required.";
+          if (command === "workflow_skip") {
+            if (expectedRevision === undefined || getCdpExecutionState()?.revision !== expectedRevision)
+              throw new Error("Workflow skip requires a fresh CDP revision.");
+            return JSON.stringify(skipManualWorkflowStep(scope.targetKey,scope.actorId,
+              scope.generation,workflowId,sequence,payload.confirmSkip === true));
+          }
+          const activeWorkflow = activeRecordedWorkflowId(scope.targetKey,scope.actorId,scope.generation);
+          if (activeWorkflow && workflowId !== activeWorkflow &&
+              ["replay_prepare_click","replay_execute_click","replay_cursor"].includes(command))
+            throw new Error("An active replay workflow requires its workflowId; action order cannot be bypassed.");
           if (command === "replay_prepare_click" || command === "replay_execute_click") {
+            if (workflowId)
+              assertNextWorkflowStep(scope.targetKey,scope.actorId,scope.generation,
+                workflowId,sequence,"approval");
             if (expectedRevision === undefined || getCdpExecutionState()?.revision !== expectedRevision)
               throw new Error("Replay click requires exact current target revision.");
             const trace = readBrowserActionRecording(scope.targetKey, scope.actorId,
@@ -2000,6 +2069,8 @@ export const controlChromeCdpTool: Tool = {
             await consumeApprovedReplayClick({approvalId,port:cdpPort(),targetId:target.id,
               actorId:scope.actorId,generation:scope.generation,recordingId,sequence,
               revision:expectedRevision,selector,targetUrl:target.url});
+            if (workflowId) consumeNextWorkflowStep(scope.targetKey,scope.actorId,
+              scope.generation,workflowId,sequence,"approval");
             const center = {x:before.x+before.width/2,y:before.y+before.height/2};
             const dispatched = await dispatchHumanMouseClick(cdpSend,target,center,{
               visualCursor:true,cursorId:scope.actorId,cursorName:scope.actorId,
@@ -2019,6 +2090,12 @@ export const controlChromeCdpTool: Tool = {
           if (command === "replay_preview") return JSON.stringify({ status: "dry-run", ...preview });
           if (payload.confirmReplay !== true || expectedRevision === undefined)
             return "control_chrome_cdp failed: replay_cursor requires confirmReplay=true and expectedRevision.";
+          if (workflowId) {
+            assertNextWorkflowStep(scope.targetKey,scope.actorId,scope.generation,
+              workflowId,sequence,"cursor");
+            consumeNextWorkflowStep(scope.targetKey,scope.actorId,scope.generation,
+              workflowId,sequence,"cursor");
+          }
           const moved = await dispatchHumanMouseMove(cdpSend, target, preview.position, {
             cursorId: scope.actorId, cursorName: scope.actorId, visualCursor: true,
           });

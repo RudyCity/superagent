@@ -7,6 +7,7 @@ import * as feed from "../src/core/tools/chromeCdpLiveFeed.js";
 import * as approvals from "../src/core/tools/chromeCdpReplayApprovals.js";
 import * as registry from "../src/core/tools/managedBrowserRegistry.js";
 import * as control from "../src/core/tools/managedBrowserControl.js";
+import * as preview from "../src/core/tools/chromeCdpVisualPreview.js";
 
 type Result={status:number;body:any;headers:Record<string,string>};
 async function invoke(path:string, options:{
@@ -88,6 +89,34 @@ describe("local native CDP activity and operator authorization boundary",()=>{
    expect((await invoke("/api/desktop/cdp/control",{method:"POST",body:{...body,targetId:"OTHER"}})).status).toBe(409);
    expect((await invoke("/api/desktop/cdp/control",{method:"POST",body,headers:{origin:"https://evil.example"}})).status).toBe(403);
    expect(controlFn).toHaveBeenCalledTimes(count);
+ });
+ test("private screenshot endpoint requires native authorization and POST",async()=>{
+   const sample=Buffer.from([255,216,255,224,...Array(100).fill(0),255,217]).toString("base64");
+   const capture=vi.spyOn(preview,"captureQualifiedManagedPreview").mockResolvedValue({
+     format:"jpeg",jpeg:sample,capturedAt:Date.now(),targetId:"TARGET_1",revision:4,
+   });
+   const body={port:9222,targetId:"TARGET_1",expectedRevision:4,consent:true,
+     previewId:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"};
+   const allowed=await invoke("/api/desktop/cdp/preview",{method:"POST",body});
+   expect(allowed.status).toBe(200);
+   expect(allowed.body.format).toBe("jpeg");
+   expect(allowed.headers["cache-control"]).toBe("no-store");
+   expect(capture).toHaveBeenCalledWith(body);
+   const count=capture.mock.calls.length;
+   for(const rejected of [
+     {method:"GET"},
+     {method:"POST",body,headers:{origin:"http://127.0.0.1:7888"}},
+     {method:"POST",body,headers:{"x-forwarded-for":"127.0.0.1"}},
+     {method:"POST",body,headers:{authorization:""}},
+     {method:"POST",body,remote:"10.1.2.3"},
+   ]) {
+     const result=await invoke("/api/desktop/cdp/preview",rejected as any);
+     expect([403,405]).toContain(result.status);
+   }
+   expect(capture).toHaveBeenCalledTimes(count);
+   expect((await invoke("/api/desktop/cdp/preview?targetId=TARGET_1",{
+      method:"POST",body,
+   })).status).toBe(405);
  });
  test("replay approval is local, exact, and POST-only",async()=>{
    const review=vi.spyOn(approvals,"reviewReplayApproval").mockResolvedValue({

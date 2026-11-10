@@ -5,6 +5,14 @@
 - Add owner-initiated, single-attempt USB ADB installer with 120-second default timeout, version verification and non-replay behavior after uncertain results.
 - Verify Lite/Debug Gradle builds, signing and Android Lint; physical-device E2E remains pending. Tray/controller LAN integration is still in progress in the shared checkout.
 
+## [1.14.70] - 2026-11-11
+### Consent-bound visual CDP preview and strictly ordered replay workflows
+- Add on-demand, bounded private Chrome JPEG tab preview to native Tray through authenticated Core. Screenshots never persist to disk and automatically stop on hidden Tray, connectivity loss or target change.
+- Bind preview consent IDs to the exact browser fingerprint, claim generation, revision and current document URL digest. Navigation requires new explicit consent; cap one preview frame per second with a strict byte limit.
+- Add bounded, generation-scoped, monotonic replay workflows: cursor movement replays explicitly, every recorded click still needs one native operator approval, and typing/navigation/drag require separate manual review rather than unsafe automatic replay.
+- Verify real headed Chrome preview and navigation consent revocation, real headed two-step cursor-plus-approved-click workflow, native route authorization and Rust Tray compilation.
+- **Runtime limits:** production Core start is unavailable without an authenticated supervisor, Delegate forwarding is unprovisioned, and remote noVNC input remains gated by the existing operator-token/TLS requirements. No unsupervised restart or unsafe public viewer is introduced.
+
 ## [1.14.69] - 2026-11-11
 ### Native CDP live feed, local human hold, qualified iframes, one-time approved replay
 - Stream sanitized managed Chrome agent activity changes through a bounded long-poll Core endpoint and authenticated native Tray bridge; provide live state and reconnect-unknown handling without exposing page text, raw URLs, or Core tokens to JavaScript.

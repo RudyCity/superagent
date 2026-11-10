@@ -5,7 +5,8 @@
     selected: null, fetching: false, submitting: false, blockedRequest: null,
     sessions: [], sessionsKnown: false, sessionsStale: false,
     statusError: false, statusKnown: false, managedCdp: null, followedAgent: "",
-    liveCursor: null, liveConnected: false, liveRunning: false };
+    liveCursor: null, liveConnected: false, liveRunning: false,
+    preview: null, previewRunning: false };
   const statuses = new Set(["queued", "sending", "monitoring"]);
   function elem(tag, cls = "", value = "") {
     const node = document.createElement(tag);
@@ -22,13 +23,13 @@
   async function call(action, payload = {}) {
     const invoke = window.__TAURI__?.core?.invoke;
     if (typeof invoke === "function") {
-      const native = ["cdp-live","cdp-control","cdp-approval"].includes(action);
+      const native = ["cdp-live","cdp-control","cdp-approval","cdp-preview"].includes(action);
       return invoke("delegate_action", {
         action: native ? action : action === "status" ? "orchestrator-status" : "orchestrator",
         payload: native ? payload : action === "status" ? null : { action, ...payload },
       });
     }
-    if (["cdp-live","cdp-control","cdp-approval"].includes(action)) {
+    if (["cdp-live","cdp-control","cdp-approval","cdp-preview"].includes(action)) {
       throw new Error("Native authenticated Tray required for CDP live control.");
     }
     const response = await fetch("/api/desktop/delegate/orchestrator", {
@@ -289,6 +290,79 @@
         ". Inspect live state before any further action.",true);
     } finally { state.submitting=false; }
   }
+  function stopPrivatePreview(reason = "Private tab preview stopped.") {
+    state.preview = null;
+    const panel = $("cdp-private-preview");
+    if (panel) panel.hidden = true;
+    const image = $("cdp-preview-image");
+    if (image) image.removeAttribute("src");
+    const label = $("cdp-preview-status");
+    if (label) label.textContent = reason;
+  }
+  function startPrivatePreview(session) {
+    if (typeof window.__TAURI__?.core?.invoke !== "function" ||
+        session?.registered !== true || !Number.isSafeInteger(session.port) ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(String(session.targetId || "")) ||
+        !Number.isSafeInteger(session.revision)) return;
+    if (!window.confirm(
+      "Display the live contents of this exact managed Chrome tab locally? " +
+      "The preview may contain sensitive page information. No screenshots are saved. " +
+      "It stops automatically when you leave this page.")) return;
+    stopPrivatePreview();
+    state.preview = {
+      port: session.port, targetId: session.targetId,
+      expectedRevision: session.revision,
+      previewId: crypto.randomUUID(),
+    };
+    const panel = $("cdp-private-preview");
+    if (panel) panel.hidden = false;
+    const label = $("cdp-preview-status");
+    if (label) label.textContent = "Connecting to the verified local Chrome tab...";
+    void previewLoop();
+  }
+  async function previewLoop() {
+    if (state.previewRunning) return;
+    state.previewRunning = true;
+    const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+    try {
+      while (state.preview) {
+        const selected = state.preview;
+        const page = $("page-delegate");
+        if (!page || page.hidden || document.hidden) {
+          stopPrivatePreview("Preview stopped when the page became hidden.");
+          break;
+        }
+        const session = state.managedCdp?.status === "known"
+          ? state.managedCdp.sessions?.find(s =>
+              s.port === selected.port && s.targetId === selected.targetId &&
+              s.revision === selected.expectedRevision && s.registered === true)
+          : null;
+        if (!session) {
+          stopPrivatePreview("Target ownership changed or live Core state is unavailable.");
+          break;
+        }
+        try {
+          const result = await call("cdp-preview", {...selected, consent: true});
+          if (state.preview !== selected) break;
+          if (!result || result.success !== true || result.format !== "jpeg" ||
+              result.targetId !== selected.targetId ||
+              result.revision !== selected.expectedRevision ||
+              typeof result.jpeg !== "string" || result.jpeg.length > 640000 ||
+              !/^[A-Za-z0-9+/]+={0,2}$/.test(result.jpeg))
+            throw new Error("Unverified screenshot response.");
+          const image = $("cdp-preview-image");
+          if (image) image.src = "data:image/jpeg;base64," + result.jpeg;
+          const label = $("cdp-preview-status");
+          if (label) label.textContent = "Private preview active · one frame per second maximum.";
+        } catch {
+          if (state.preview === selected)
+            stopPrivatePreview("Private preview unavailable or authorization expired.");
+          break;
+        }
+        await sleep(1100);
+      }
+    } finally { state.previewRunning = false; }
+  }
   function drawManagedPresence() {
     const target = $("cdp-presence-sessions");
     if (!target) return;
@@ -355,6 +429,12 @@
           button.addEventListener("click", () => void controlHumanTakeover(session, mode));
           card.append(button);
         }
+      }
+      if (session.registered === true && typeof window.__TAURI__?.core?.invoke === "function") {
+        const watch = elem("button", "button secondary sm", "Watch private preview");
+        watch.type = "button";
+        watch.addEventListener("click", () => startPrivatePreview(session));
+        card.append(watch);
       }
       line(card, "Queue", String(session.queued ?? 0) + " queued · " +
         (session.busy ? "busy" : "not locked"));
@@ -429,6 +509,7 @@
         state.liveConnected = false;
         // Unknown stream is NOT evidence of no agent or no human hold.
         state.managedCdp = null;
+        stopPrivatePreview("Live Core state unavailable. Preview automatically stopped.");
         drawManagedPresence();
         await sleep(2200);
       }
@@ -525,6 +606,7 @@
     void liveWatchLoop();
     $("multitab-refresh")?.addEventListener("click", () => void refresh());
     $("cdp-presence-refresh")?.addEventListener("click", () => void refresh());
+    $("cdp-preview-stop")?.addEventListener("click", () => stopPrivatePreview());
     $("cdp-presence-follow")?.addEventListener("change", event => {
       state.followedAgent = event.target.value;
       drawManagedPresence();

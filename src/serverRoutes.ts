@@ -1264,7 +1264,7 @@ export async function handleServerRoute(
   // never accept browser content, owner capability, arbitrary CDP commands, or
   // bearer tokens in the URL. The Tray authenticates using its native bridge.
   if (pathname === "/api/desktop/cdp/live" || pathname === "/api/desktop/cdp/control" ||
-      pathname === "/api/desktop/cdp/approval") {
+      pathname === "/api/desktop/cdp/approval" || pathname === "/api/desktop/cdp/preview") {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -1303,6 +1303,22 @@ export async function handleServerRoute(
       } finally {
         res.off("close", onClose);
         req.off("aborted", onClose);
+      }
+      return true;
+    }
+    if (pathname === "/api/desktop/cdp/preview") {
+      if (req.method !== "POST" || parsedUrl.search) {
+        sendJSON(res, 405, { success:false, error:"CDP_PREVIEW_POST_ONLY" });
+        return true;
+      }
+      try {
+        const raw = await readBody(req);
+        if (Buffer.byteLength(raw,"utf8") > 300) throw Error("Oversized preview request.");
+        const { captureQualifiedManagedPreview } = await import("./core/tools/chromeCdpVisualPreview.js");
+        const result = await captureQualifiedManagedPreview(JSON.parse(raw));
+        sendJSON(res, 200, { success:true, ...result });
+      } catch {
+        sendJSON(res, 409, { success:false, error:"CDP_PREVIEW_UNAVAILABLE_OR_UNAUTHORIZED" });
       }
       return true;
     }

@@ -384,6 +384,7 @@ describe("control_chrome_cdp (mock CDP server)", () => {
        "frame_snapshot", "frame_type", "frame_scroll",
       "record_start", "record_stop", "record_status", "record_export", "replay_preview", "replay_cursor",
        "replay_prepare_click", "replay_execute_click",
+      "workflow_start", "workflow_status", "workflow_skip",
       "page_audit", "accessibility_audit", "seo_audit", "responsive_audit", "performance_metrics",
       "start_debug_capture", "read_debug_capture", "stop_debug_capture", "clear_debug_capture",
     ]);

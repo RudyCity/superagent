@@ -1512,6 +1512,15 @@
             <p class="text-secondary">Live Core status has not been verified yet.</p>
           </div>
           <p class="delegate-hint">Takeover is available only for a locally registered, identity-verified managed Chrome target. It blocks agent writes without closing Chrome. Return does not automatically resume paused agents. Delegate-CDP remains separate.</p>
+          <section id="cdp-private-preview" class="cdp-private-preview" hidden aria-labelledby="cdp-preview-heading">
+            <div class="panel-head">
+              <div><h3 id="cdp-preview-heading">Private local tab preview</h3>
+                <p>Explicitly enabled for one registered tab. JPEG frames are never saved or forwarded to other devices.</p></div>
+              <button type="button" id="cdp-preview-stop" class="button secondary">Stop preview</button>
+            </div>
+            <img id="cdp-preview-image" alt="Live snapshot of the selected managed Chrome tab" referrerpolicy="no-referrer" />
+            <p id="cdp-preview-status" role="status" aria-live="polite">Preview is inactive.</p>
+          </section>
           <h3 id="cdp-replay-heading">Replay requests requiring human approval</h3>
           <p class="delegate-hint">A prepared replay does not click. Inspect the exact Chrome tab and intended action before approving one recorded click. The approval expires and cannot be reused.</p>
           <div id="cdp-replay-approvals" class="multitab-items" aria-labelledby="cdp-replay-heading" aria-live="polite">
