@@ -1,4 +1,11 @@
 ## [Unreleased] - 2026-11-06
+### Core legacy recycle reliability and safe diagnostics
+- Accept Windows kernel listener PID-0 only with matching recorded Core owner PID, process birth identity, legacy command, and authenticated Core response; conflicting or absent listeners remain blocked.
+- Apply the same attestation to the new supervised Core so transient Windows PID-0 observations cannot cause false recovery timeouts.
+- Add non-mutating Core recycle readiness to the service doctor with owner/build blockers and no operation capability or credentials.
+- Require a verified detached helper spawn before reporting a scheduled recycle, retaining uncertain operation receipts instead of replaying.
+- Add regression tests and document build freshness, explicit owner-bound plans, and MCP/tunnel isolation.
+
 ### Project-local CDP MP4 recording and diagnostic archive
 - Add managed CDP owner-only `record_session_start`, `record_session_status`, and `record_session_stop`. With explicit `confirmSensitiveVideo:true`, video defaults on and captures the verified tab via FFmpeg into a real H.264 MP4 (960×540 at up to 5 FPS, max 10 min, no audio).
 - Save every session under the **active project** `.superagent/recordings/cdp/<uuid>/`, never `~/.superagent-r` or the SuperAgent installation as a fallback. Add nested Git-ignore protection and fail closed without a verified active workspace/target.

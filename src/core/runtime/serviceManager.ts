@@ -37,7 +37,10 @@ import {readLifecycleSettings,configureLifecycleProfile,dependencyOrder} from ".
 import {readLifecycleEvents,recordLifecycleEvent,operationHashPrefix} from "./lifecycleTimeline.js";
 import {ManagedSidecarLedger} from "./managedSidecarLedger.js";
 import {trayReconcileLedgerPort} from "./trayReconcileLedgerSelection.js";
-import {planLegacyCoreRecycle,scheduleLegacyCoreRecycle} from "./coreLegacyRecycle.js";
+import {
+  planLegacyCoreRecycle, scheduleLegacyCoreRecycle,
+  inspectLegacyCoreRecycleReadiness,
+} from "./coreLegacyRecycle.js";
 import {planLegacyTrayRecycle,executeLegacyTrayRecycle} from "./trayLegacyRecycle.js";
 import {planLegacyVisionRecycle,executeLegacyVisionRecycle} from "./visionLegacyRecycle.js";
 import {planGlobalLifecycleRecycle,executeGlobalLifecycleRecycle,reconcileGlobalLifecycleRecycle} from "./globalLifecycleRecycle.js";
@@ -545,6 +548,10 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
         degraded:checks.filter(x=>x.alive&&!x.ready).length,
         unavailable:checks.filter(x=>!x.alive).length},
       note:"Monitoring is read-only; configuration does not grant permission to restart a process."};
+    if(action==="doctor"&&(service==="core"||service==="all"))
+      answer.coreRecycleReadiness = await inspectLegacyCoreRecycleReadiness(
+        service==="core"?port:defaultPorts.core,
+      );
     if(action==="dashboard"){
       answer.timeline=readLifecycleEvents({limit:args.limit??30});
       answer.dependencyOrder=dependencyOrder(profile.profiles);

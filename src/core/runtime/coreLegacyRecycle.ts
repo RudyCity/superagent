@@ -268,6 +268,57 @@ async function captureLegacyEvidence(port: number) {
   };
 }
 
+export type LegacyCoreRecycleReadiness = {
+  service: "core";
+  action: "recycle";
+  port: number;
+  ready: boolean;
+  owner: { verified: boolean; pid: number | null };
+  build: { fresh: boolean; digestPrefix: string | null };
+  blockers: string[];
+  nextStep: string;
+};
+
+/** Non-mutating diagnosis; does not issue an operation ID or authorize a stop. */
+export async function inspectLegacyCoreRecycleReadiness(
+  port = 7888,
+): Promise<LegacyCoreRecycleReadiness> {
+  const blockers: string[] = [];
+  let ownerPid: number | null = null;
+  let buildFresh = false;
+  let digestPrefix: string | null = null;
+  try {
+    const evidence = await captureLegacyEvidence(port);
+    ownerPid = evidence.ownerPid;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    blockers.push(message.match(/CORE_RECYCLE_[A-Z0-9_]+/)?.[0] ??
+      "CORE_RECYCLE_OWNER_UNVERIFIED");
+  }
+  try {
+    const build = inspectCoreBuild(targetEntry());
+    buildFresh = build.mode === "compiled" && build.fresh;
+    digestPrefix = build.digest.slice(0, 12);
+    if (!buildFresh) blockers.push("CORE_BUILD_STALE_OR_UNVERIFIED");
+  } catch {
+    blockers.push("CORE_RECYCLE_BUILD_UNAVAILABLE");
+  }
+  return {
+    service: "core",
+    action: "recycle",
+    port,
+    ready: blockers.length === 0,
+    owner: { verified: ownerPid !== null, pid: ownerPid },
+    build: { fresh: buildFresh, digestPrefix },
+    blockers,
+    nextStep: blockers.includes("CORE_BUILD_STALE_OR_UNVERIFIED")
+      ? "Build the installed SuperAgent package with bun run build, then recheck and request a fresh plan."
+      : blockers.length
+        ? "Review the owner and listener evidence; do not terminate a process by PID or adopt an unverified owner."
+        : "Request a fresh recycle plan; execution still requires explicit confirmation.",
+  };
+}
+
 export async function planLegacyCoreRecycle(port = 7888): Promise<LegacyCoreRecyclePlan> {
   const evidence = await captureLegacyEvidence(port);
   const build = inspectCoreBuild(targetEntry(), { requireFreshCompiled: true });
@@ -367,9 +418,30 @@ export async function scheduleLegacyCoreRecycle(
     stdio: "ignore",
     env: { ...process.env, SUPERAGENT_CORE_RECYCLE_HELPER: "1" },
   });
-  child.on("error", () => {});
+  // A PID allocation is not proof that the helper actually spawned.
+  // Keep the operation pending on a launch error; never replay a possibly
+  // dispatched shutdown under a new operation ID.
+  let didSpawn = false;
+  const helperPid = await new Promise<number>((resolve, reject) => {
+    child.once("spawn", () => {
+      didSpawn = true;
+      if (child.pid) resolve(child.pid);
+      else reject(new Error("CORE_RECYCLE_HELPER_SPAWN_FAILED"));
+    });
+    child.once("error", () => {
+      try {
+        recordLifecycleEvent({
+          at: Date.now(), service: "core", action: "recycle",
+          outcome: "uncertain", port: plan.port,
+          operationHashPrefix: operationHashPrefix(plan.operationId),
+          errorCode: didSpawn
+            ? "CORE_RECYCLE_HELPER_PROCESS_ERROR" : "CORE_RECYCLE_HELPER_SPAWN_FAILED",
+        });
+      } catch {}
+      reject(new Error("CORE_RECYCLE_HELPER_SPAWN_FAILED"));
+    });
+  });
   child.unref();
-  if (!child.pid) throw new Error("CORE_RECYCLE_HELPER_SPAWN_FAILED");
 
   recordLifecycleEvent({
     at: Date.now(), service: "core", action: "recycle",
@@ -384,7 +456,7 @@ export async function scheduleLegacyCoreRecycle(
     changed: false,
     replayed: false,
     scheduled: true,
-    helperPid: child.pid,
+    helperPid,
     previousPid: plan.expectedOwnerPid,
     operationId: plan.operationId,
     expectedBuildDigest: plan.expectedBuildDigest,

@@ -9,6 +9,7 @@ import {
   readLegacyCoreProcessDescriptor,
   legacyRecycleMayArchiveStaleSupervisorState,
   acceptsRecycleCoreOwnerEvidence,
+  inspectLegacyCoreRecycleReadiness,
   type LegacyCoreRecyclePlan,
 } from "../src/core/runtime/coreLegacyRecycle.js";
 import { ManagedSidecarLedger, sidecarOperationFingerprint } from "../src/core/runtime/managedSidecarLedger.js";
@@ -171,6 +172,18 @@ describe("Core Legacy Recycle", () => {
     expect(() => readLegacyCoreProcessDescriptor(0)).toThrow("CORE_RECYCLE_INVALID_OWNER_PID");
     expect(() => readLegacyCoreProcessDescriptor(-10)).toThrow("CORE_RECYCLE_INVALID_OWNER_PID");
     expect(() => readLegacyCoreProcessDescriptor(Number.NaN)).toThrow("CORE_RECYCLE_INVALID_OWNER_PID");
+  });
+
+  it("diagnoses missing legacy owners without issuing a recycle operation", async () => {
+    const report = await inspectLegacyCoreRecycleReadiness(19489);
+    expect(report.service).toBe("core");
+    expect(report.action).toBe("recycle");
+    expect(report.ready).toBe(false);
+    expect(report.owner.verified).toBe(false);
+    expect(report.owner.pid).toBeNull();
+    expect(report.blockers).toContain("CORE_RECYCLE_NO_LISTENER");
+    expect(report).not.toHaveProperty("operationId");
+    expect(JSON.stringify(report)).not.toContain("authToken");
   });
 
   it("planLegacyCoreRecycle fails closed on invalid port or missing server", async () => {

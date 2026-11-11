@@ -33,6 +33,18 @@ describe("unified SuperAgent service manager",()=>{
     expect(JSON.stringify(inventory)).not.toContain("authToken");
     expect(JSON.stringify(inventory)).not.toContain("ipcToken");
   },25000);
+  it("provides read-only Core recycle diagnostics without authorizing mutation",async()=>{
+    const out=await manageServices({
+      action:"doctor",service:"core",port:19489,
+    }) as any;
+    expect(out.readOnly).toBe(true);
+    expect(out.coreRecycleReadiness).toMatchObject({
+      service:"core",action:"recycle",port:19489,ready:false,
+    });
+    expect(out.coreRecycleReadiness.blockers).toContain("CORE_RECYCLE_NO_LISTENER");
+    expect(out.coreRecycleReadiness).not.toHaveProperty("operationId");
+    expect(JSON.stringify(out.coreRecycleReadiness)).not.toContain("authToken");
+  },25000);
   it("reports process registry counts without exposing foreign workspace entries",async()=>{
     const out=await manageServices({action:"doctor",service:"process_supervisor"}) as any;
     const item=out.services[0];
