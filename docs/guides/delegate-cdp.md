@@ -92,7 +92,7 @@ Implemented for Delegate transport:
 - click / type / wait
 - screenshot
 - dialog event inspection and dialog handling
-- native cursor movement, `hover_cursor` (trusted browser hover, optional dwell), `click_cursor` (one native press/release), `show_cursor`/`hide_cursor` (non-interactive visual overlay), wheel scroll, coordinate drag-and-drop, and device/viewport emulation. These run only within the authenticated exact-tab Delegate debugger lease; managed CDP still has broader tooling. The Delegate overlay is transient and is not registered across document navigations.
+- native cursor movement, `hover_cursor` (trusted browser hover, optional dwell), `click_cursor` (one native press/release), `show_cursor`/`hide_cursor` (non-interactive visual overlay), wheel scroll, coordinate drag-and-drop, and device/viewport emulation. These run only within the authenticated exact-tab Delegate debugger lease; managed CDP still has broader tooling. The Delegate overlay is transient and is not registered across document navigations. **MP4 session recording currently requires managed CDP**, with explicit owner video consent and output in the current project; see [CDP session recording](cdp-session-recording.md).
 - Vision/Set-of-Mark routing through the same qualified target identity; Vision caches include the transport identity to prevent cross-backend snapshot reuse
 
 Unsupported commands return an explicit `DELEGATE_CDP_CAPABILITY_UNSUPPORTED` response and never silently fall back to managed Chrome.

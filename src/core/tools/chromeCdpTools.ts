@@ -951,8 +951,8 @@ export const controlChromeCdpTool: Tool = {
     // Recording must never silently default to the SuperAgent installation.
     // _cwd is the active tool/project working directory, not process.cwd().
     const recordingWorkspace = typeof _cwd === "string" && _cwd.trim() ? _cwd
-      : typeof args.__uploadWorkspace === "string" && args.__uploadWorkspace.trim()
-        ? args.__uploadWorkspace : "";
+      : typeof args.__recordingWorkspace === "string" && args.__recordingWorkspace.trim()
+        ? args.__recordingWorkspace : "";
     const requestedTransport = String(args.transport ?? payload.transport ?? "") as "" | "managed" | "delegate" | "auto";
     const delegateClientId = String(args.delegateClientId ?? payload.delegateClientId ?? args.connectionId ?? payload.connectionId ?? "") || undefined;
     const delegateTabRaw = args.delegateTabId ?? payload.delegateTabId;
@@ -1051,7 +1051,7 @@ export const controlChromeCdpTool: Tool = {
       const withoutPort = { ...payload };
       delete withoutPort.debug_port;
       return terminalCdpConfig.run({ port }, () =>
-        controlChromeCdpTool.execute({ ...args, debug_port: undefined, payload: withoutPort }, {} as any));
+        controlChromeCdpTool.execute({ ...args, debug_port: undefined, payload: withoutPort, __recordingWorkspace: recordingWorkspace }, {} as any));
     }
     if (!cdpAgentContext.getStore()) {
       const agent = agentId === undefined ? undefined : String(agentId);
@@ -1060,12 +1060,14 @@ export const controlChromeCdpTool: Tool = {
       }
       const category = classifyCdpCommand(command, payload);
       if (category === "write") {
+        let selectedTargetId: string | undefined;
         try {
           const selected = await pickTarget(targetId, false, !!agent);
+          selectedTargetId = selected.id;
           const result = await withCdpTargetWrite(cdpPort(), selected.id, agent, () =>
              cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, async () => {
                const result = await controlChromeCdpTool.execute(
-                 { ...args, targetId: selected.id, payload, __uploadWorkspace: uploadWorkspace }, {} as any);
+                 { ...args, targetId: selected.id, payload, __uploadWorkspace: uploadWorkspace, __recordingWorkspace: recordingWorkspace }, {} as any);
                const key = "managed:" + cdpPort() + ":" + selected.id;
                const successCategory = typeof result === "string" ? (
                  command === "move_cursor" || command === "move_mouse"
@@ -1125,6 +1127,13 @@ export const controlChromeCdpTool: Tool = {
           }
           return result;
         } catch (error: any) {
+          if (agent) {
+            try {
+              if (!selectedTargetId) throw new Error("No verified recording target.");
+              const scope=await recorderScope(selectedTargetId);
+              recordCdpSessionCommand(scope,command,"control_chrome_cdp failed: "+String(error?.message??error));
+            } catch { /* Optional audit must not modify original failure result. */ }
+          }
           return "control_chrome_cdp failed: " + error.message;
         }
       }
@@ -1147,11 +1156,11 @@ export const controlChromeCdpTool: Tool = {
           const selected = await pickTarget(targetId, false, !!agent);
           return await withCdpTargetRead(cdpPort(), selected.id, { ...opts, agentId: agent, sharedOnly: command === "shared_snapshot" }, () =>
             cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
-               controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload, __uploadWorkspace: uploadWorkspace }, {} as any)));
+               controlChromeCdpTool.execute({ ...args, targetId: selected.id, payload, __uploadWorkspace: uploadWorkspace, __recordingWorkspace: recordingWorkspace }, {} as any)));
         } catch (error: any) { return "control_chrome_cdp failed: " + error.message; }
       }
       return cdpAgentContext.run({ agentId: agent, sessionToken: opts.sessionToken }, () =>
-         controlChromeCdpTool.execute({ ...args, payload, __uploadWorkspace: uploadWorkspace }, {} as any));
+         controlChromeCdpTool.execute({ ...args, payload, __uploadWorkspace: uploadWorkspace, __recordingWorkspace: recordingWorkspace }, {} as any));
     }
     try {
       if (["share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
@@ -2009,6 +2018,8 @@ export const controlChromeCdpTool: Tool = {
           if (command === "record_session_status")
             return JSON.stringify(getCdpSessionArchiveStatus(scope));
           if (command === "record_session_start") {
+            if (payload.confirmSensitiveVideo !== true || payload.video === false)
+              throw new Error("Recording requires explicit confirmSensitiveVideo:true (video enabled by default).");
             const lease = (await listCdpSessions()).find(session =>
               session.port === cdpPort() && session.targetId === target.id &&
               session.generation === scope.generation);

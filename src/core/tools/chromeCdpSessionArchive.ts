@@ -13,8 +13,8 @@ import { mkdir, writeFile, appendFile, stat, realpath, lstat, rm } from "node:fs
 import { join, resolve, parse, relative, isAbsolute } from "node:path";
 import { getRootConfigDir, getPackageRootDir } from "../config/paths.js";
 
-const FPS = 2;
-const FRAME_MS = 500;
+const FPS = 5;
+const FRAME_MS = 200;
 const MAX_MS = 10 * 60_000;
 const MAX_FRAMES = FPS * MAX_MS / 1000;
 const MAX_SESSIONS = 4;
@@ -70,13 +70,24 @@ const scopeKey = (scope: ArchiveScope) => scope.targetKey + "\0" + scope.actorId
 async function archiveRoot(projectDirectory: string): Promise<string> {
   if (!projectDirectory || !isAbsolute(projectDirectory))
     throw Error("Recording requires an explicit active project directory.");
-  const project = await realpath(resolve(projectDirectory));
+  const desired = resolve(projectDirectory);
+  const outside = (base: string, candidate: string) => {
+    const diff = relative(base, candidate);
+    return diff !== "" && (diff.startsWith("..") || isAbsolute(diff));
+  };
+  // Check lexical paths first: the config directory may not exist yet. Never
+  // report ENOENT or write to a known internal SuperAgent location.
+  const protectedRoots = [getRootConfigDir(),getPackageRootDir()];
+  for (const base of protectedRoots) {
+    if (!outside(resolve(base), desired))
+      throw Error("Recording may not be saved in the SuperAgent runtime/configuration/source directory; select an active external project.");
+  }
+  const project = await realpath(desired);
   if (project === parse(project).root)
     throw Error("Recording at a filesystem root is prohibited.");
-  for (const base of [getRootConfigDir(),getPackageRootDir()]) {
+  for (const base of protectedRoots) {
     const forbidden = await realpath(base).catch(() => resolve(base));
-    const beneathForbidden = relative(forbidden, project);
-    if (!beneathForbidden || (!beneathForbidden.startsWith("..") && !isAbsolute(beneathForbidden)))
+    if (!outside(forbidden, project))
       throw Error("Recording may not be saved in the SuperAgent runtime/configuration/source directory; select an active external project.");
   }
   const parent = join(project, ".superagent");
@@ -183,7 +194,10 @@ export async function startCdpSessionArchive(
     throw Error("A verified managed CDP target and agent are required.");
   if (opts.video === false || opts.confirmSensitiveVideo !== true)
     throw Error("MP4 recording is enabled by default and requires confirmSensitiveVideo:true.");
-  if (sessions.has(scopeKey(scope))) throw Error("A recording already exists for this actor/target. Stop it first.");
+  const previous = sessions.get(scopeKey(scope));
+  if (previous && previous.status !== "saved" && previous.status !== "failed")
+    throw Error("A recording already exists for this actor/target. Stop it first.");
+  if (previous) sessions.delete(scopeKey(scope));
   if ([...sessions.values()].filter(x => x.status === "recording").length >= MAX_SESSIONS)
     throw Error("Too many concurrent recordings.");
   if (!(await opts.checkLease())) throw Error("Target lease is no longer valid.");
@@ -227,7 +241,11 @@ export async function startCdpSessionArchive(
       item.inFlight = frameTick(item, opts.captureFrame, opts.checkLease)
         .catch(error => {
           item.dropped++;
-          item.problems.push(safeError(error));
+          const problem=safeError(error);
+          item.problems.push(problem);
+          queueSafe(item,join(item.directory,"errors.jsonl"),{
+            at:new Date().toISOString(),kind:"video_frame_capture_failed",error:problem,
+          });
           item.status="stopping";
           if (item.timer) clearInterval(item.timer);
         }).finally(() => { item.inFlight = undefined; });
@@ -305,6 +323,10 @@ export async function stopCdpSessionArchive(scope: ArchiveScope, actionTranscrip
   item.status = "stopping";
   if (item.timer) clearInterval(item.timer);
   if (item.inFlight) await item.inFlight;
+  queueSafe(item,join(item.directory,"transcript.jsonl"),{
+    at:new Date().toISOString(),category:"recording_stopped",frameCount:item.frames,
+    droppedFrames:item.dropped,
+  });
   await item.pendingWrites;
   if (item.stopDiagnostics) {
     await item.stopDiagnostics().catch(error => {
@@ -312,14 +334,23 @@ export async function stopCdpSessionArchive(scope: ArchiveScope, actionTranscrip
     });
   }
   item.encoder.stdin.end();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
   const exit = await Promise.race([
     item.encoderExit,
-    new Promise<{code:number|null;log:string}>(resolve =>
-      setTimeout(()=>resolve({code:-1,log:"FFmpeg did not finish within 15 seconds."}),15000)),
+    new Promise<{code:number|null;log:string}>(resolve => {
+      timeout = setTimeout(()=>resolve({code:-1,log:"FFmpeg did not finish within 15 seconds."}),15000);
+      timeout.unref?.();
+    }),
   ]);
+  if (timeout) clearTimeout(timeout);
   if (exit.code !== 0) {
     item.encoder.kill();
-    item.problems.push("Video encoding failed: " + safeError(exit.log));
+    const problem="Video encoding failed: "+safeError(exit.log);
+    item.problems.push(problem);
+    queueSafe(item,join(item.directory,"errors.jsonl"),{
+      at:new Date().toISOString(),kind:"video_encoder_failed",error:problem,
+    });
+    await item.pendingWrites;
   }
   let mp4Bytes=0;
   try { mp4Bytes=(await stat(join(item.directory,"video.mp4"))).size; }catch{}
@@ -329,10 +360,36 @@ export async function stopCdpSessionArchive(scope: ArchiveScope, actionTranscrip
   const outcome = exit.code===0 && mp4Bytes>=256 && mp4Bytes<=MAX_VIDEO_BYTES
     ? "saved" : "failed";
   item.status = outcome;
-  if (actionTranscript) {
-    await writeFile(join(item.directory,"actions.json"),
-      JSON.stringify(actionTranscript,null,2),{flag:"wx",mode:0o600});
-  }
+  const source = actionTranscript && typeof actionTranscript==="object" && !Array.isArray(actionTranscript)
+    ? actionTranscript as { events?:unknown; recordingId?:unknown; recordedCount?:unknown }
+    : {};
+  // Persist an allowlisted and always-present redacted action journal, even if
+  // recording ended automatically on lease expiry or the action TTL elapsed.
+  const actions = Array.isArray(source.events) ? source.events.slice(0,128).flatMap((value:unknown) => {
+    if (!value || typeof value!=="object" || Array.isArray(value)) return [];
+    const event=value as Record<string,unknown>;
+    if (!Number.isSafeInteger(event.sequence) || typeof event.action!=="string" ||
+        !allowedActions.has(event.action)) return [];
+    const row: Record<string,unknown> = {
+      sequence:event.sequence,action:event.action,status:"dispatched",
+      ...(typeof event.at==="number" && Number.isFinite(event.at) ? {at:event.at} : {}),
+    };
+    if (event.position && typeof event.position==="object") {
+      const p=event.position as {x?:unknown;y?:unknown};
+      if (typeof p.x==="number" && typeof p.y==="number" &&
+          Number.isFinite(p.x) && Number.isFinite(p.y) &&
+          Math.abs(p.x)<=100000 && Math.abs(p.y)<=100000)
+        row.position={x:p.x,y:p.y};
+    }
+    for (const digest of ["locatorDigest","pageDigest"]) {
+      if (typeof event[digest]==="string" && /^[a-f0-9]{64}$/.test(event[digest]))
+        row[digest]=event[digest];
+    }
+    return [row];
+  }) : [];
+  await writeFile(join(item.directory,"actions.json"),
+    JSON.stringify({source:"redacted_action_journal",recordedCount:actions.length,events:actions},null,2),
+    {flag:"wx",mode:0o600});
   const publicManifest = {...publicStatus(item), finishedAt:new Date().toISOString(),
     videoBytes:mp4Bytes, sensitiveVisualContent:true,
     includesAudio:false, includesNetworkBodies:false, includesTypedText:false,
@@ -347,7 +404,7 @@ export async function stopCdpSessionArchive(scope: ArchiveScope, actionTranscrip
     "Dropped frames: " + item.dropped,
     "Recorded commands: " + item.commands,
     "Captured diagnostics: " + item.diagnostics,
-    "Video: video.mp4 (960×540, 2 FPS, no audio)",
+    "Video: video.mp4 (960×540, 5 FPS, no audio)",
     "Action transcript: transcript.jsonl, actions.json",
     "Console: console.jsonl | Errors: errors.jsonl | Network metadata: network.jsonl",
     "Combined diagnostics: diagnostics.jsonl",

@@ -1,4 +1,11 @@
 ## [Unreleased] - 2026-11-06
+### Project-local CDP MP4 recording and diagnostic archive
+- Add managed CDP owner-only `record_session_start`, `record_session_status`, and `record_session_stop`. With explicit `confirmSensitiveVideo:true`, video defaults on and captures the verified tab via FFmpeg into a real H.264 MP4 (960×540 at up to 5 FPS, max 10 min, no audio).
+- Save every session under the **active project** `.superagent/recordings/cdp/<uuid>/`, never `~/.superagent-r` or the SuperAgent installation as a fallback. Add nested Git-ignore protection and fail closed without a verified active workspace/target.
+- Save separated, bounded, redacted `transcript.jsonl`, `errors.jsonl`, `console.jsonl`, `network.jsonl`, `diagnostics.jsonl`, `actions.json`, `manifest.json` and `README.txt`. Preserve action outcomes while excluding typed secrets, raw URLs, cookies and network bodies; video itself remains sensitive.
+- Validate MP4 codec/size, exact-project output, consent denial, actor isolation, event/redaction safety, and headed-Chrome live capture with real native click plus console error. See `docs/guides/cdp-session-recording.md`.
+
+
 ### Native Chrome pointer hover and click parity
 - Make `show_cursor` synchronize the browser's actual CDP mouse position instead of drawing an overlay alone. Add `hover_cursor` (genuine pointer/mouse enter/move plus bounded dwell and hit-target verification) and `click_cursor` (one native press/release, without duplicate DOM `.click()`).
 - Mirror the page's CSS pointer/text/crosshair shape in non-intercepting named cursor overlays, preserving the existing 4-second idle auto-hide. Coordinate one CDP pointer across agents while keeping each agent's visual presence.

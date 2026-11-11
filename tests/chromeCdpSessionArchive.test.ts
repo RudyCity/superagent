@@ -7,11 +7,14 @@ import { startCdpSessionArchive, stopCdpSessionArchive,
   getCdpSessionArchiveStatus, recordCdpSessionCommand,
   recordCdpSessionDiagnostic, resetCdpSessionArchivesForTests,
 } from "../src/core/tools/chromeCdpSessionArchive.js";
+import { getPackageRootDir, getRootConfigDir } from "../src/core/config/paths.js";
 
 const scope = {targetKey:"managed:9222:FIXTURE_PAGE",actorId:"owner",generation:"gen-a"};
 let projectRoot: string;
 let encodedJpeg: string;
 const sleep = (ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+const mediaToolsInstalled = spawnSync("ffmpeg",["-version"],{stdio:"ignore",timeout:3000}).status===0 &&
+  spawnSync("ffprobe",["-version"],{stdio:"ignore",timeout:3000}).status===0;
 
 beforeEach(async()=>{
   projectRoot=await mkdtemp(join(tmpdir(),"cdp-project-archive-"));
@@ -28,7 +31,7 @@ afterEach(async()=>{
   await rm(projectRoot,{recursive:true,force:true});
 });
 
-describe("project-scoped MP4 session archives",()=>{
+describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>{
   test("rejects recording without explicit sensitive-video consent and a verified lease",async()=>{
     const deps={projectDirectory:projectRoot,captureFrame:async()=>encodedJpeg,
       checkLease:async()=>true};
@@ -37,8 +40,8 @@ describe("project-scoped MP4 session archives",()=>{
     await expect(startCdpSessionArchive(scope,{...deps,confirmSensitiveVideo:true,
       checkLease:async()=>false})).rejects.toThrow(/lease/);
     await expect(startCdpSessionArchive(scope,{...deps,confirmSensitiveVideo:true,
-      projectDirectory:"relative/project"})).rejects.toThrow(/absolute/);
-    await expect(getCdpSessionArchiveStatus(scope)).toThrow(/not available/);
+      projectDirectory:"relative/project"})).rejects.toThrow(/explicit active project directory/);
+    expect(()=>getCdpSessionArchiveStatus(scope)).toThrow(/not available/);
   });
 
   test("defaults to MP4 in CURRENT PROJECT and saves separated, redacted transcripts",async()=>{
@@ -87,6 +90,24 @@ describe("project-scoped MP4 session archives",()=>{
     const streams=JSON.parse(probe.stdout).streams;
     expect(streams[0]).toMatchObject({codec_name:"h264",width:960,height:540});
     expect(getCdpSessionArchiveStatus(scope).status).toBe("saved");
+  },25000);
+
+  test("refuses SuperAgent source/runtime paths and supports multiple saved recordings",async()=>{
+    const deps={confirmSensitiveVideo:true,captureFrame:async()=>encodedJpeg,
+      checkLease:async()=>true};
+    await expect(startCdpSessionArchive(scope,{...deps,projectDirectory:getPackageRootDir()}))
+      .rejects.toThrow(/SuperAgent runtime\/configuration\/source/);
+    await expect(startCdpSessionArchive(scope,{...deps,projectDirectory:getRootConfigDir()}))
+      .rejects.toThrow(/SuperAgent runtime\/configuration\/source/);
+    const first=await startCdpSessionArchive(scope,{...deps,projectDirectory:projectRoot});
+    const one=await stopCdpSessionArchive(scope);
+    expect(one.status).toBe("saved");
+    const second=await startCdpSessionArchive(scope,{...deps,projectDirectory:projectRoot});
+    expect(second.recordingId).not.toBe(first.recordingId);
+    const two=await stopCdpSessionArchive(scope);
+    expect(two.status).toBe("saved");
+    expect((await stat(one.videoFile)).size).toBeGreaterThan(1000);
+    expect((await stat(two.videoFile)).size).toBeGreaterThan(1000);
   },25000);
 
   test("cannot read another actor's or generation's archive",async()=>{
