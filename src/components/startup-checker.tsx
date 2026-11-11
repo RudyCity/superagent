@@ -31,11 +31,12 @@ import { preloadLocalEmbeddingModel, checkLocalModelDownloadStatus, DEFAULT_LOCA
 import { runRmemorySetup } from "../core/rmemorySetup.js";
 import { getSettings } from "../core/config/jsonConfig.js";
 import { registerProgressCallback } from "../core/tools/state.js";
+import { checkNativeDependencies } from "../core/runtime/nativeDependencies.js";
 
 interface TaskState {
   id: string;
   name: string;
-  status: "pending" | "checking" | "downloading" | "extracting" | "ready" | "failed" | "skipped";
+  status: "pending" | "checking" | "downloading" | "extracting" | "ready" | "failed" | "skipped" | "missing";
   progress?: number; // 0 to 100
   downloadedBytes?: number;
   totalBytes?: number;
@@ -67,6 +68,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
     // Build the initial task list based on settings and platform
     const initialTasks: Record<string, TaskState> = {
       ripgrep: { id: "ripgrep", name: "ripgrep (rg)", status: "pending" },
+      ffmpeg: { id: "ffmpeg", name: "FFmpeg (CDP video)", status: "pending" },
     };
 
     if (isWin) {
@@ -132,6 +134,14 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
           }
         }
       });
+
+      // Optional media tooling is checked only; package manager installs must
+      // have an explicit confirmation before startup, never from this renderer.
+      const checkFfmpeg = async () => {
+        updateTask("ffmpeg", { status: "checking" });
+        const ready = checkNativeDependencies()[0].installed;
+        updateTask("ffmpeg", { status: ready ? "ready" : "missing" });
+      };
 
       // 2. Ripgrep (rg)
       const checkRg = async () => {
@@ -366,6 +376,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
 
       // Execute all checks in parallel!
       await Promise.all([
+        checkFfmpeg(),
         checkRg(),
         ...(isWin ? [checkCurl()] : []),
         checkAndroid(),
@@ -404,7 +415,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
 
   const taskList = Object.values(tasks);
   const totalTasks = taskList.length;
-  const completedTasks = taskList.filter((t) => t.status === "ready" || t.status === "skipped").length;
+  const completedTasks = taskList.filter((t) => t.status === "ready" || t.status === "skipped" || t.status === "missing").length;
 
   return (
     <Box flexDirection="column" paddingX={2} marginY={1}>
@@ -440,6 +451,8 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
             rightInfo = "Extracting...";
           } else if (task.status === "skipped") {
             rightInfo = "Skipped";
+          } else if (task.status === "missing") {
+            rightInfo = "Needs install";
           } else if (task.status === "failed") {
             rightInfo = "Failed";
           } else {
@@ -450,6 +463,7 @@ export function StartupChecker({ onComplete }: StartupCheckerProps) {
         const getStatusColor = (status: string) => {
           if (status === "ready" || status === "skipped") return "green";
           if (status === "failed") return "red";
+          if (status === "missing") return "yellow";
           if (status === "checking" || status === "extracting") return "cyan";
           if (status === "downloading") return "yellow";
           return "gray";

@@ -514,6 +514,23 @@ export async function runCli() {
       await ensureDirectoryTrusted(currentDir);
     }
 
+    // Native media dependencies are optional and checked before the regular
+    // startup wizard. System installation requires explicit operator consent.
+    // Quick/headless/MCP/server modes never perform package-manager mutations.
+    const interactiveStartup =
+      !process.argv.includes("--quick") && !process.argv.includes("-q") &&
+      !process.argv.includes("--skip-startup-check") &&
+      process.env.SUPERAGENT_QUICK !== "1";
+    if (interactiveStartup && process.stdout.isTTY) {
+      try {
+        const { promptNativeDependencyInstall } =
+          await import("./core/runtime/nativeDependencies.js");
+        await promptNativeDependencyInstall();
+      } catch (error) {
+        console.warn("[Dependencies] Native media setup unavailable: "+String(error));
+      }
+    }
+
     // Run startup checks with progress bar UI
     const runStartupChecks = async (): Promise<void> => {
       const React = (await import("react")).default;

@@ -1,4 +1,10 @@
 ## [Unreleased] - 2026-11-06
+### Native prerequisite installation during initial SuperAgent setup
+- Add read-only FFmpeg/ffprobe discovery to the interactive StartupChecker, with an explicit "Needs install" state for optional video dependencies.
+- Prompt for operator approval before installing missing FFmpeg on ordinary interactive startup or `superagent setup`; use package-manager manifests (winget on Windows, Homebrew on macOS, root-only apt/dnf on Linux). Never silently elevate, download a binary, or install from server/MCP/headless/quick startup.
+- Add `superagent deps check` and consent-bound `superagent deps install [--yes]` commands with post-install executable verification and clear manual fallback/restart guidance.
+
+
 ### Core legacy recycle reliability and safe diagnostics
 - Accept Windows kernel listener PID-0 only with matching recorded Core owner PID, process birth identity, legacy command, and authenticated Core response; conflicting or absent listeners remain blocked.
 - Apply the same attestation to the new supervised Core so transient Windows PID-0 observations cannot cause false recovery timeouts.

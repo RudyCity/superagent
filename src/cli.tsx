@@ -136,6 +136,11 @@ if (process.argv[2] === "lifecycle") {
     process.exit(1);
   }
 }
+if (process.argv[2] === "deps" || process.argv[2] === "dependencies") {
+  const { handleDependenciesCli } = await import("./core/runtime/nativeDependencies.js");
+  process.exit(await handleDependenciesCli(process.argv.slice(3)));
+}
+
 if (process.argv[2] === "login") {
   const { handleLoginCliCommand } = await import("./core/commands/loginCliHandler.js");
   await handleLoginCliCommand(process.argv.slice(3));
@@ -161,6 +166,10 @@ if (process.argv[2] === "create" || process.argv[2] === "init-project" || proces
 }
 
 if (process.argv[2] === "setup") {
+  // Initial setup also checks native media prerequisites. Only an interactive
+  // operator can approve a package-manager installation here.
+  const { promptNativeDependencyInstall } = await import("./core/runtime/nativeDependencies.js");
+  await promptNativeDependencyInstall();
   const { handleLoginCliCommand } = await import("./core/commands/loginCliHandler.js");
   // Launch login wizard in guided add mode
   const args = process.argv.slice(3);
@@ -358,6 +367,8 @@ Usage: superagent [command/options] [prompt]
 
 Commands:
   setup             Run interactive provider and initial setup wizard
+  deps check        Check native dependencies (FFmpeg/ffprobe)
+  deps install      Install missing native dependencies with explicit approval
   login             Manage provider authentication (add, list, use, remove)
   preset            Manage model presets (list, use, show)
   session           Manage conversation sessions (list, export, clear --empty, import)
@@ -394,6 +405,9 @@ Options:
   -h, --help              Show this help message and exit
 
 Examples:
+  superagent deps check
+  superagent deps install            # asks for confirmation
+  superagent deps install --yes      # explicit non-interactive approval
   superagent login list
   superagent login add openrouter sk-or-v1-...
   superagent preset list

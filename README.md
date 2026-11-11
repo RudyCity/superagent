@@ -83,6 +83,16 @@ superagent -q "Summarize the security risks of this design"
 
 Source development uses Bun; Docker is **not required** for this CLI workflow. Optional integrations may have additional prerequisites. If a legacy launcher invokes Node unexpectedly, check `bun run doctor:launcher` before repairing it.
 
+**Native dependency setup on first interactive startup:** SuperAgent's existing startup checker prepares ripgrep, Python, uv, Android/Office tools and optional services. It now also checks **FFmpeg + ffprobe**, needed for managed Chrome CDP video archives. If missing, interactive startup (including `superagent setup`) offers to install via the available OS package manager **only after your explicit confirmation**; normal server/MCP startup, headless workflows and `--quick` never silently install system packages. On Windows the installer uses `winget` with the reviewed FFmpeg package, on macOS `brew`, and on Linux an already-root apt/dnf session. If unsupported, SuperAgent shows manual steps and continues without video capture. It does not auto-download unverified binaries or elevate privileges.
+
+```bash
+superagent deps check             # Read-only FFmpeg/ffprobe verification
+superagent deps install           # Ask before installing missing native tools
+superagent deps install --yes     # Explicit approval for scripts/non-interactive use
+```
+
+When a system package manager changes `PATH`, open a fresh terminal and rerun `superagent deps check`.
+
 ## Capabilities
 
 | Area | What SuperAgent does | Important boundary |
