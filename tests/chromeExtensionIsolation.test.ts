@@ -3,7 +3,7 @@ import { CHROME_EXTENSION_SYSTEM_PROMPT, SUBAGENT_SYSTEM_PROMPTS } from "../src/
 import { chromeExtensionStatusTool } from "../src/core/tools/chromeBrowserTools.js";
 import { setBrowserControlHandler, browserControlHandler } from "../src/core/tools/browserMacroTools.js";
 
-describe("Chrome Extension vs Remote Extension Isolation", () => {
+describe("Sidepanel Chrome Extension vs Delegate-CDP Isolation", () => {
   test("CHROME_EXTENSION_SYSTEM_PROMPT (Sidepanel UI) does not contain port 9223 or remote bridge references", () => {
     expect(CHROME_EXTENSION_SYSTEM_PROMPT).not.toContain("9223");
     expect(CHROME_EXTENSION_SYSTEM_PROMPT).not.toContain("PORT_9223_BRIDGE");
@@ -12,10 +12,13 @@ describe("Chrome Extension vs Remote Extension Isolation", () => {
     expect(CHROME_EXTENSION_SYSTEM_PROMPT).toContain("EXTENSION_ISOLATION_GUARD");
   });
 
-  test("SUBAGENT_SYSTEM_PROMPTS['chrome-agent'] explicitly references remote Chrome extension (chrome-extension-remote)", () => {
+  test("chrome-agent uses authenticated opt-in Delegate rather than the retired remote extension", () => {
     const chromeAgentPrompt = SUBAGENT_SYSTEM_PROMPTS["chrome-agent"];
-    expect(chromeAgentPrompt).toContain("chrome-extension-remote");
-    expect(chromeAgentPrompt).toContain("9223");
+    expect(chromeAgentPrompt).toContain("chrome-extension-delegate/");
+    expect(chromeAgentPrompt).toContain("17341");
+    expect(chromeAgentPrompt).toContain("transport:delegate");
+    expect(chromeAgentPrompt).not.toContain("chrome-extension-remote");
+    expect(chromeAgentPrompt).not.toContain("port 9223");
     expect(chromeAgentPrompt).toContain("EXTENSION_ISOLATION_GUARD");
   });
 

@@ -14,16 +14,19 @@
   <img src="assets/Video_SuperAgent.gif" alt="SuperAgent terminal interface demonstration">
 </p>
 
-SuperAgent combines a local CLI/Core runtime with authorized tools, multi-project MCP integration, Chrome CDP/Delegate coordination, optional desktop companions, and consent-based local-network support. Some features are still experimental and may not be present in published installers.
+SuperAgent combines a local CLI/Core runtime with authorized tools, multi-project MCP integration, Chrome CDP/Delegate coordination, optional desktop companions, and consent-based local-network support. Some features are experimental, available only in source, and not yet included in published installers.
 
-**Navigate:** [Downloads](#downloads-and-release-status) · [Quick start](#quick-start-from-source) · [Capabilities](#capabilities) · [Security](#security-model) · [Development](#development-and-verification) · [Documentation](#documentation)
+**Development snapshot (11 November 2026):** Core/Tray source version **1.14.70**, followed by an unreleased managed-CDP cursor auto-hide change on `main`. The source includes multi-agent cursor presence, local Tray supervision, consented visual previews, qualified iframe commands, and approval-gated replay. **This is not an announcement of a 1.14.70 public installer or active Core/Delegate deployment.**
+
+**Navigate:** [Downloads](#downloads-and-release-status) · [Quick start](#quick-start-from-source) · [Capabilities](#capabilities) · [Managed Chrome CDP](#managed-chrome-cdp-and-human-supervision) · [Security](#security-model) · [Development](#development-and-verification) · [Documentation](#documentation)
 
 ## Downloads and release status
 
-GitHub's **Latest**, prereleases, tags, and development drafts are separate states. A newer tag does **not** automatically mean a newer working installer.
+GitHub's **Latest**, prereleases, tags, and development drafts are separate states. A newer source version or tag does **not** automatically mean a newer working installer. The release-channel table below was checked against GitHub Releases on **11 November 2026**.
 
 | Release channel | Status | What is available |
 | --- | --- | --- |
+| **Source on `main` (Core/Tray 1.14.70 + unreleased cursor update)** | **Development only** | Source, tests, Windows debug Tray build evidence; not a published or installed production update. |
 | **Windows 1.14.64 RC1** | **[Published prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.64-rc.1)** | Windows x64 standalone installer and SHA-256 checksums. Test as a release candidate, not production-certified. |
 | **v1.2.615** | [Historical GitHub “Latest” release](https://github.com/RudyCity/superagent/releases/tag/v1.2.615) | No attached downloadable installer assets. |
 | **Windows/macOS/Linux 1.14.64 RC2** | **Not released** | Tag exists, but macOS regression and Linux packaging CI gates failed. No verified multi-OS release. |
@@ -87,7 +90,9 @@ Source development uses Bun; Docker is **not required** for this CLI workflow. O
 | **General AI assistant** | Research, writing, planning, coding and authorized tool execution | Provider setup and tool approvals are required. |
 | **CLI / automation** | Interactive prompts, background daemon and cron jobs | A running owner process and permissions are required. |
 | **MCP / projects** | Authenticated tools, registered local or SSH projects, independent workspace scopes | Grants and admin/write operations are permission-gated. |
-| **Chrome automation** | CDP browser interaction and paired Delegate multi-tab/session coordination | Session ownership and per-profile authorization are enforced. |
+| **Chrome automation** | Managed CDP multi-agent browser control, agent cursor presence, explicit iframe operations, and separate paired Delegate transport | Per-tab ownership is enforced; managed-only features are not automatically available through Delegate. |
+| **Browser supervision (source)** | Native Tray activity feed, Follow Agent filter, owner pause/resume, local human hold, and consented tab preview | Requires authenticated Core, registered target, and matching session identity; not remote VNC by default. |
+| **Replay (source)** | Opt-in redacted action recording; ordered cursor steps and one-time recorded clicks with local operator approval | No unattended replay of typing, navigation, drag, payment, or uncertain side effects. |
 | **Desktop** | [T-Line](https://github.com/RudyCity/t-line) integration and SuperAgent Tray | Some native controls depend on platform and installed build. |
 | **Muse / channels** | Remote AI task coordination via supported transports and tunnels | Remote exposure and side effects require explicit configuration. |
 | **Media / documents** | Conversion, image/media processing and document operations | Some formats need local binaries, models or optional packages. |
@@ -95,10 +100,26 @@ Source development uses Bun; Docker is **not required** for this CLI workflow. O
 
 These describe the evolving source project, **not a promise that every capability appears in a specific published installer**. Check release notes and runtime tool availability.
 
+**Chrome extension cleanup (11 November 2026):** `chrome-extension-delegate/` is the maintained paired ChatGPT/opt-in CDP extension. The old standalone Remote Bridge and ChatGPT Optimizer extension packages have been retired from the source tree. The separate full sidepanel extension (`chrome-extension/`) is preserved. Legacy port 9223 bridge backend code remains for compatibility, but is not the Delegate transport and no retired extension should be installed from this repository.
+
+## Managed Chrome CDP and human supervision
+
+The following capabilities are implemented in the **development source**. They require an authorized, running Core and the relevant managed Chrome and native Tray setup; they do not establish feature parity for a separately connected Delegate Chrome profile.
+
+- **Multi-agent cursor presence:** independently labeled and colored overlays with avatar initials, cursor position tracking, and navigation continuity. Each agent cursor **fades out after 4 seconds of inactivity**, reappears on new agent input, and remains hidden after document navigation until activity resumes. These overlays do not intercept real mouse input.
+- **Live activity:** authenticated native Tray display of claimed tabs, participants, queue/paused state, latest sanitized actions and per-agent cursor positions. Updates use bounded **long-polling**, not a video/WebSocket stream. The **Follow Agent** filter is read-only.
+- **Owner coordination and local takeover:** owner-token pause/resume uses the existing serialized target queue and requires fresh revision/document verification. For a registered managed tab, the operator can explicitly **Take over locally** or **Return control to agent** in Tray. Human hold blocks agent writes; returning control does **not** automatically resume an owner-paused agent.
+- **Private tab preview:** clicking **Watch private preview** requests operator consent for the exact registered tab. Core returns bounded JPEG frames at **at most one frame per second**, without writing screenshots to disk. Preview stops on disconnect/hidden Tray, and navigation requires a fresh consent ID. This is local viewing, **not** open remote screen sharing.
+- **Qualified frames and target checks:** explicit frame IDs support read, highlight, click, snapshot, field update and frame-local scroll, including supported out-of-process cross-origin iframes. Optional pre-click highlighting rejects covered, disabled, or moved targets. Open Shadow DOM is supported where accessible; inaccessible frames/closed roots fail closed rather than falling back to the parent page.
+- **Consent-gated replay:** short-lived, opt-in action metadata supports **ordered workflows**. Cursor movement can be replayed explicitly; a recorded click additionally needs a one-time local operator approval tied to the original selector/URL hashes, target, generation and revision. Approval is consumed before dispatch; ambiguous actions are never retried. Typing, navigation, drag and transactions remain manual-only.
+
+**Current deployment limits:** source and focused Windows/Chrome tests have passed, but the installed native Tray and primary Core have not been verified running this build. The previously checked Core lifecycle lacked an authenticated supervisor, and the GPT-5.6 High Delegate forwarding bridge reported `DELEGATE_FORWARD_BRIDGE_NOT_PROVISIONED`. Do not assume live Delegate forwarding, cross-device takeover, signed installers, or full streaming is available. See the [1.14.70 implementation evidence](docs/reports/2026-11-11-cdp-visual-preview-workflow-release-evidence.md) and [1.14.69 CDP security/e2e evidence](docs/reports/2026-11-11-cdp-live-iframe-human-approved-replay-evidence.md).
+
 ## Security model
 
 - **Consent and authorization:** privileged tools and device sessions require appropriate identity, workspace permission and owner approval. Dangerous-tool mode is not an operating-system sandbox.
-- **Browser control:** CDP/Delegate operations must respect claimed tab ownership, session tokens, and other active agent sessions.
+- **Browser control:** CDP/Delegate operations must respect claimed tab ownership, session tokens, and other active agent sessions. Native operator control is limited to registered, verified targets; returning control does not bypass a paused agent's owner lease.
+- **Browser privacy and replay:** private JPEG preview requires per-tab consent and never persists image frames; document changes revoke existing preview consent. Recorder metadata omits typed values and raw URLs/selectors, while a recorded click requires fresh verification and a one-time operator approval. These controls do not authorize irreversible transactions.
 - **Network boundaries:** API/MCP tunnels are opt-in. LAN segment names do not replace TLS verification or pairing.
 - **Secrets:** keep tokens out of commits, screenshots, logs and public issues. GitHub Secret Scanning and Push Protection are enabled for this repository.
 - **Distribution:** generated APKs, EXEs and ZIPs belong in verified GitHub Releases, not the Git tree. Release promotion requires matching source, checksums, tests and platform acceptance.
@@ -114,10 +135,14 @@ bun install --frozen-lockfile
 bun run build                # Build/type-check Core
 bun run verify:extension-js  # Validate Chrome extension scripts
 bun run test                 # Full Vitest test suite
+bun run verify:delegate      # Delegate source/extension and forwarding checks
+bun run tray:check           # Rust/Tauri type-check (requires Rust toolchain)
 bun run tray:test            # Rust/Tauri tests (requires Rust toolchain)
 ```
 
-On Windows with the native build toolchain, `bun run installer:build` stages, verifies and packages the standalone installer. Release workflows must pass their platform-specific gates before publishing; local success does not replace CI approval.
+For focused managed-CDP changes, run the cursor, control, frame, replay and operator-endpoint suites as appropriate—for example: `bun --bun x vitest run tests/chromeCdpCursor.test.ts tests/chromeCdpTools.test.ts tests/chromeCdpVisualPreview.test.ts tests/chromeCdpWorkflowReplay.test.ts`. A headed Chrome smoke test validates overlays and cross-navigation behavior more directly than unit tests alone.
+
+On Windows with the native build toolchain, `bun run installer:build` stages, verifies and packages the standalone installer. A **debug Tray executable** can also be built from `apps/superagent-tray` using `cargo tauri build --no-bundle --debug --ci`; that does not install or activate it. Release workflows must pass their platform-specific gates before publishing; local success does not replace CI approval.
 
 ## Documentation
 
@@ -128,6 +153,8 @@ On Windows with the native build toolchain, `bun run installer:build` stages, ve
 | [SuperAgent Tray](apps/superagent-tray/README.md) | Tray UX, scheduler, service lifecycle and LAN Devices |
 | [Chrome CDP Delegate](docs/guides/delegate-cdp.md) | Paired Chrome/browser tooling |
 | [Multi-orchestrator Delegate](docs/guides/superagent-delegate-multitab-orchestrator.md) | Shared session ownership and coordination |
+| [Managed CDP 1.14.70 evidence](docs/reports/2026-11-11-cdp-visual-preview-workflow-release-evidence.md) | Private preview, navigation consent, replay workflow, Windows build and release gates |
+| [Managed CDP 1.14.69 evidence](docs/reports/2026-11-11-cdp-live-iframe-human-approved-replay-evidence.md) | Live state, local hold, iframe/OOPIF, operator approval and E2E boundaries |
 | [Independent MCP projects](docs/mcp/independent-projects.md) | Project registry, scopes and owner grants |
 | [LAN client development preview](docs/guides/superagent-lan-client.md) | Windows/Android pairing, transfers and limitations |
 | [Android LAN companion](apps/superagent-lan-android/README.md) | Android permissions and physical-device release gates |

@@ -1,4 +1,9 @@
 ## [Unreleased] - 2026-11-06
+### Retire obsolete standalone Chrome extensions
+- Remove `chrome-extension-remote/` and `chrome-extension-chatgpt-optimizer/` from the active source tree, along with five obsolete Optimizer-only test files.
+- Keep `chrome-extension-delegate/` as the maintained opt-in paired ChatGPT/Delegate-CDP extension and `chrome-extension/` as the separate sidepanel package. Update syntax checks, browser prompts, shortcut migration, scaffolder, regression tests and current architecture docs.
+- Retain `remoteChromeBridge.ts` port 9223 backend temporarily for legacy compatibility; it is not the Delegate bridge and no removed extension is bundled or recommended.
+
 ### CDP named cursor auto-hide
 - Fade each agent's visual cursor after 4 seconds of inactivity; show it again on the next agent movement, click, or scroll. Keep timers independent per agent and cancel them on manual removal.
 - On document navigation, restore the named cursor overlay at its last position but keep it hidden until the agent moves again; native CDP input and target ownership remain unchanged.

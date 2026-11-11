@@ -45,7 +45,7 @@ const INCLUDED_DIRS = [
   "internal-hooks",
   ".agents",
   "chrome-extension",
-  "chrome-extension-remote",
+  "chrome-extension-delegate",
   "docs",
 ];
 

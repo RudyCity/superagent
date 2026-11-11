@@ -66,9 +66,11 @@ Completely eliminate `process.env` for all AI providers, API keys, presets, tier
 
 ## ADR-004: Serverless WebSocket Bridge for Remote Chrome Control
 
-- **Status**: Accepted & Implemented
+- **Status**: Superseded for new installations; original backend retained for compatibility
 - **Date**: 2026-06-20
 - **Deciders**: Integrations Team
+
+**Historical decision superseded for new installations (11 November 2026):** the standalone Remote Chrome extension package referenced below was removed. Current supported paired browser automation uses `chrome-extension-delegate/` with an authenticated bridge on port 17341 and explicit CDP opt-in. The port 9223 backend is temporarily retained for legacy compatibility; this ADR records the original design, not current installation guidance.
 
 ### Context & Problem Statement
 Automating browser tasks typically requires heavy Puppeteer or Playwright instances that consume gigabytes of RAM, cannot access existing user sessions/logins, and frequently encounter anti-bot bot-detection challenges.

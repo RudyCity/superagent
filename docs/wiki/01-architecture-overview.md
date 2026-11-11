@@ -57,7 +57,7 @@ graph TD
 
     subgraph Providers["External AI Models & Bridges"]
         AIProviders["☁️ AI Providers (Anthropic / OpenAI / Gemini / Ollama / DeepSeek)"]:::external
-        RemoteBridge["🔌 WebSocket Chrome Bridge (Port 9223)"]:::external
+        DelegateBridge["🔌 Authenticated Chrome Delegate (Port 17341)"]:::external
     end
 
     Developer -->|Interactive CLI Commands| CLI
@@ -68,8 +68,8 @@ graph TD
     Master --> JSONConfig
     Master --> GitWorktrees
     Master --> AIProviders
-    Master --> RemoteBridge
-    RemoteBridge --> Browser
+    Master --> DelegateBridge
+    DelegateBridge --> Browser
 ```
 
 ### C4 Level 2: Container & Subsystem Architecture
@@ -91,7 +91,7 @@ graph TB
         SuperTools["superagentTools.ts<br/>(invoke/await/merge)"]:::tool
         SubTools["subagentTools.ts<br/>(ephemeral spawners)"]:::tool
         FileTools["fileReadTools.ts & fileEditTools.ts<br/>(read, write, patch)"]:::tool
-        ChromeBridge["remoteChromeBridge.ts<br/>(WS Port 9223 Server)"]:::tool
+        ChromeBridge["browserTransport/router.ts<br/>(Managed + Delegate CDP)"]:::tool
         Toolsets["toolsets.ts<br/>(Tier Permissions Map)"]:::tool
     end
 
@@ -150,9 +150,10 @@ Superagent supports multiple external integration modes:
 1. **Desktop Client Bridge (`t-line`)**:
    - Superagent runs in server mode: `superagent --server 3000 --client-mode tline`.
    - Desktop frontend connects via HTTP/WebSocket protocol, rendering UI with terminal-grade performance.
-2. **Remote Chrome Extension Bridge (`chrome-extension-remote`)**:
-   - Serverless WebSocket server auto-binds on `ws://127.0.0.1:9223`.
-   - Lightweight Chrome extension connects from any browser profile, enabling automated tab management, DOM inspection, screenshot capture, and navigation without launching bulky Puppeteer/Playwright instances.
+2. **SuperAgent Delegate extension (`chrome-extension-delegate/`)**:
+   - Authenticated and explicitly paired ChatGPT Delegate connection on `ws://127.0.0.1:17341`.
+   - Opt-in Delegate-CDP provides scoped existing-profile browser control. The user selects an exact tab and enables the Chrome debugger capability; unsupported actions fail closed.
+   - The older standalone remote extension was retired. Its port 9223 backend remains as legacy compatibility code and is not a fallback or substitute for Delegate-CDP.
 
 ---
 

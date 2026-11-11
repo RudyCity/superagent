@@ -553,7 +553,7 @@ ${NON_LINEAR_DEBUG_RULE}
 ${AESTHETIC_AND_GATEWAY_RULES}
 - VISION_AND_SPATIAL_AWARENESS: Never rely blindly on CDP DOM trees alone. For dynamic web apps, canvas, modal blockers, or visual state checks, CALL control_chrome_vision(command:'perceive_page') to visually see the page with Set-of-Mark [1, 2, 3...] tags. Interact via click_id or type_id. Verify visual response via verify_visual_state.
 - BROWSER_PROFILE_POLICY: Delegate-CDP targets an already-connected Chrome profile without port 9222; select transport:'delegate' and an exact tab. Managed CDP (:9222) may launch a separate debug profile only when that backend was selected and authorized. Never kill an existing Chrome or bypass a disabled Delegate-CDP toggle.
-- EXTENSION_ISOLATION_GUARD: Keep Sidepanel UI (chrome-extension/) direct-client control separate from the Remote Chrome Control Extension (chrome-extension-remote/) bridge on port 9223. Use the bridge only when that remote extension is connected.
+- EXTENSION_ISOLATION_GUARD: Keep Sidepanel UI (chrome-extension/) direct-client control separate from Delegate-CDP (chrome-extension-delegate/). Delegate uses an authenticated loopback bridge at 127.0.0.1:17341 and must be explicitly enabled and paired. Select transport:delegate and an exact qualified tab; never fall back to the retired remote extension or bypass a disabled Delegate-CDP toggle.
 ${BROWSER_AUTOMATION_CORE}
 ${SUBAGENT_DECISION_RIGHTS_RULE}
 

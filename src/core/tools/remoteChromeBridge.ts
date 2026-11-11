@@ -565,8 +565,8 @@ async function sendRemoteCommandUnsafe(
   if (!client) {
     return Promise.reject(
       new Error(
-        "Remote Chrome Control Extension (chrome-extension-remote) is not connected. " +
-          "Ensure Remote Chrome Extension (chrome-extension-remote) is installed in Chrome and active on port 9223."
+        "Legacy Remote Chrome Bridge has no connected client. " +
+          "The old standalone extension was retired; use the paired SuperAgent Delegate extension with control_chrome_cdp transport:delegate. This legacy bridge is not the Delegate transport."
       )
     );
   }

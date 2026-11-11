@@ -87,9 +87,9 @@ Master Agent  (orchestrator)
 - `src/core/context/strategies/PruningStrategy.ts` — Emergency pruning with summary preservation (never silent context loss)
 - `src/core/context/strategies/PinningStrategy.ts` — Preserve critical pinned messages during compaction
 - `src/core/context/SemanticAnalyzer.ts` — Topic boundary detection, importance scoring, key point extraction
-- `chrome-extension-remote/` — Standalone lightweight Chrome Extension (Manifest V3) for remote-controlling any Chrome profile/browser from Superagent CLI via serverless WebSocket bridge (port 9223). No sidepanel GUI; minimal footprint, multi-profile capable.
-- `chrome-extension/` — Full Superagent AI assistant Chrome Extension (Manifest V3) with sidepanel GUI for browser control, tab/DOM management, text/markdown extraction, console/network logs, storage/cookies management, device emulation, and more. Installed directly in target browser it controls (`clientMode = "chrome-extension"`). Must NOT be confused with `chrome-extension-remote/` or port 9223.
-- `src/core/tools/remoteChromeBridge.ts` — Serverless WebSocket server (port 9223) auto-initialized on-demand by Superagent CLI; communication backbone for `chrome-extension-remote/`.
+- `chrome-extension-delegate/` — Current ChatGPT Delegate Chrome Extension (Manifest V3) with opt-in CDP and authenticated loopback pairing at port 17341. This is separate from the direct sidepanel client.
+- `chrome-extension/` — Full SuperAgent AI assistant Chrome Extension (Manifest V3) with sidepanel GUI, directly connected to its browser control client (`clientMode = "chrome-extension"`).
+- `src/core/tools/remoteChromeBridge.ts` — Legacy serverless WebSocket backend (port 9223), retained temporarily for compatibility. Its standalone client extension has been retired and is no longer bundled. Delegate uses a separate transport; do not mix them.
 - `src/core/gateway/` — Omnichannel Messaging Gateway supporting Telegram, Discord, Slack, and Webhooks with session routing and outbound chunking.
 - `src/core/daemon/` — Autonomous Headless Daemon & Cron Scheduler (`daemonScheduler.ts`, `cronParser.ts`, `daemonCli.ts`) with 5-field cron parsing.
 - `src/core/skills/` — Autonomous Skill Synthesizer (`synthesizer.ts`, `skillValidator.ts`, `trajectoryExtractor.ts`) and `synthesizeSkillTool.ts`.

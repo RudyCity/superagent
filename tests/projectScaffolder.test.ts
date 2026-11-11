@@ -41,7 +41,7 @@ describe("projectScaffolder", () => {
 
     // Verify superagent internals are NOT copied
     expect(fs.existsSync(path.join(targetProjectDir, "chrome-extension"))).toBe(false);
-    expect(fs.existsSync(path.join(targetProjectDir, "chrome-extension-remote"))).toBe(false);
+    expect(fs.existsSync(path.join(targetProjectDir, "chrome-extension-delegate"))).toBe(false);
     expect(fs.existsSync(path.join(targetProjectDir, "internal-hooks"))).toBe(false);
     expect(fs.existsSync(path.join(targetProjectDir, "src", "core"))).toBe(false);
     expect(fs.existsSync(path.join(targetProjectDir, "src", "components"))).toBe(false);

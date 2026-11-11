@@ -329,7 +329,13 @@ function loadPersistentMemory(): Record<string, string> {
   try {
     if (fs.existsSync(MEMORY_FILE_PATH)) {
       const data = fs.readFileSync(MEMORY_FILE_PATH, "utf-8");
-      return JSON.parse(data);
+      const stored = JSON.parse(data);
+      if (!stored || typeof stored !== "object" || Array.isArray(stored)) throw new Error("Invalid shortcut memory.");
+      // Remap only exact retired-extension defaults; preserve user-defined shortcuts.
+      for (const phrase of ["extensi remote", "remote extension", "chrome extension remote"]) {
+        if (stored[phrase] === "chrome-extension-remote/") stored[phrase] = "chrome-extension-delegate/";
+      }
+      return stored;
     }
   } catch {}
   return {
@@ -338,9 +344,9 @@ function loadPersistentMemory(): Record<string, string> {
     "perbaiki prompt": "src/core/prompts.ts",
     "extensi chrome": "chrome-extension/",
     "chrome extension": "chrome-extension/",
-    "extensi remote": "chrome-extension-remote/",
-    "remote extension": "chrome-extension-remote/",
-    "chrome extension remote": "chrome-extension-remote/",
+    "extensi remote": "chrome-extension-delegate/",
+    "remote extension": "chrome-extension-delegate/",
+    "chrome extension remote": "chrome-extension-delegate/",
   };
 }
 

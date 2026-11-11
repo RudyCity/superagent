@@ -57,12 +57,14 @@ describe("Chrome extension/backend security regressions", () => {
     expect(routes).toContain("browserInstances.get(instanceKey)?.res === res");
   });
 
-  it("preserves bridge credentials only in session storage and rejects unsupported actions", () => {
-    const worker = file("chrome-extension-remote/background.js");
-    expect(worker).toContain('chrome.storage.session.get("bridgeToken")');
-    expect(worker).toContain("Unknown Remote Bridge action");
-    expect(worker).toContain("getBridgeClientId");
-    expect(worker).toContain('remoteMonitoringEnabled !== true');
+  it("enforces the Delegate-CDP opt-in policy and retains legacy backend authorization guards", () => {
+    const worker = file("chrome-extension-delegate/background.js");
+    const policy = file("chrome-extension-delegate/cdpPolicy.js");
+    expect(worker).toContain('const ENDPOINT = "ws://127.0.0.1:17341"');
+    expect(worker).toContain("delegateCdpEnabled = false");
+    expect(worker).toContain("delegate.cdp.command");
+    expect(policy).toContain("DELEGATE_CDP_EVALUATE_APPROVAL_REQUIRED");
+    expect(policy).toContain("DELEGATE_CDP_PRIVILEGED_URL_DENIED");
     const bridge = file("src/core/tools/remoteChromeBridge.ts");
     expect(bridge).toContain("pairedExtensionOrigin");
     expect(bridge).toContain("Ambiguous Remote Chrome clients");
@@ -80,9 +82,10 @@ describe("Chrome extension/backend security regressions", () => {
     expect(flags).toContain("--use-fake-ui-for-media-stream");
   });
 
-  it("syntax gate enumerates both unpacked extensions", () => {
+  it("syntax gate targets the current sidepanel and Delegate packages only", () => {
     const gate = file("scripts/verify-extension-js.mjs");
-    expect(gate).toContain('["chrome-extension", "chrome-extension-remote"]');
-    expect(gate).toContain('readdir(directory)');
+    expect(gate).toContain('["chrome-extension", "chrome-extension-delegate"]');
+    expect(gate).not.toContain("chrome-extension-remote");
+    expect(gate).toContain("readdir(directory)");
   });
 });
