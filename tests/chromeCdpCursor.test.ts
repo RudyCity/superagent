@@ -11,6 +11,7 @@ import {
   INJECT_CURSOR_OVERLAY_JS,
   UPDATE_CURSOR_OVERLAY_JS,
   REMOVE_CURSOR_OVERLAY_JS,
+  CURSOR_AUTO_HIDE_MS,
   buildCursorOverlayJs,
   buildRemoveCursorOverlayJs,
   buildPersistentCursorJs,
@@ -99,6 +100,18 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
       expect(UPDATE_CURSOR_OVERLAY_JS(120, 240)).toContain("120px");
       expect(UPDATE_CURSOR_OVERLAY_JS(120, 240)).toContain("240px");
       expect(REMOVE_CURSOR_OVERLAY_JS).toContain("__superagent_virtual_cursor__");
+      expect(CURSOR_AUTO_HIDE_MS).toBe(4000);
+      const idleScript = UPDATE_CURSOR_OVERLAY_JS(120, 240, false, "agent-one");
+      expect(idleScript).toContain("setTimeout(() =>");
+      expect(idleScript).toContain("}, 4000);");
+      expect(idleScript).toContain("clearTimeout(el.__superagentCursorHideTimer)");
+      expect(idleScript).toContain("'data-superagent-cursor-state', 'hidden'");
+      expect(buildRemoveCursorOverlayJs("agent-one")).toContain("clearTimeout");
+      const restored = UPDATE_CURSOR_OVERLAY_JS(120, 240, false, "agent-one", false);
+      expect(restored).not.toContain("setTimeout(() =>");
+      expect(restored).not.toContain("el.style.opacity = '1'");
+      expect(buildPersistentCursorJs("agent-one", "Agent", { x: 120, y: 240 }))
+        .not.toContain("setTimeout(() =>");
     });
   });
 

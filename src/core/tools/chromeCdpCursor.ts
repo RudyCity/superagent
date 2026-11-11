@@ -167,6 +167,9 @@ export function cursorColorForAgent(cursorId = "legacy"): string {
   return CURSOR_COLORS[(hash >>> 0) % CURSOR_COLORS.length];
 }
 
+/** Auto-hide only the visual pointer after inactivity; never alter native CDP input. */
+export const CURSOR_AUTO_HIDE_MS = 4000;
+
 /** One independent, named, non-interactive pointer for each CDP agent in a headed tab. */
 export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAgent"): string {
   const color = cursorColorForAgent(cursorId);
@@ -177,7 +180,7 @@ export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAge
       el.id = ${JSON.stringify(cursorDomId(cursorId))};
       el.setAttribute('data-superagent-cursor', 'true');
       el.setAttribute('aria-hidden', 'true');
-      el.style.cssText = 'position:fixed;top:0;left:0;width:22px;height:22px;z-index:2147483647;pointer-events: none;transform:translate3d(-50px,-50px,0);transition:none;will-change:transform;';
+      el.style.cssText = 'position:fixed;top:0;left:0;width:22px;height:22px;z-index:2147483647;pointer-events: none;transform:translate3d(-50px,-50px,0);opacity:0;transition:opacity .18s ease;will-change:transform;';
       el.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))"><path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="${color}" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg><div data-superagent-cursor-ripple style="position:absolute;top:0;left:0;width:24px;height:24px;border:2px solid ${color};border-radius:50%;opacity:0;transform:scale(.4);pointer-events:none;"></div><span data-superagent-cursor-name style="position:absolute;top:19px;left:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${color};color:#fff;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:7px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;"></span>';
       (document.body || document.documentElement).appendChild(el);
     }
@@ -191,18 +194,34 @@ export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAge
       el.appendChild(avatar);
     }
     avatar.textContent = ${JSON.stringify(cursorAvatarInitials(cursorName))};
-    el.setAttribute('data-superagent-cursor-state', 'idle');
+    if (!el.hasAttribute('data-superagent-cursor-state')) {
+      el.setAttribute('data-superagent-cursor-state', 'hidden');
+    }
     return true;
   })()`;
 }
 export const INJECT_CURSOR_OVERLAY_JS = buildCursorOverlayJs();
 
 /** The overlay follows the same viewport coordinates dispatched by Input.dispatchMouseEvent. */
-export function UPDATE_CURSOR_OVERLAY_JS(x: number, y: number, ripple = false, cursorId = "legacy"): string {
+export function UPDATE_CURSOR_OVERLAY_JS(x: number, y: number, ripple = false, cursorId = "legacy", reveal = true): string {
   return `(() => {
     const el = document.getElementById(${JSON.stringify(cursorDomId(cursorId))});
     if (el) {
       el.style.transform = 'translate3d(${x}px, ${y}px, 0)';
+      ${reveal ? `
+        el.style.opacity = '1';
+        el.setAttribute('data-superagent-cursor-state', 'active');
+        if (el.__superagentCursorHideTimer !== undefined) {
+          clearTimeout(el.__superagentCursorHideTimer);
+        }
+        el.__superagentCursorHideTimer = setTimeout(() => {
+          if (el.isConnected) {
+            el.style.opacity = '0';
+            el.setAttribute('data-superagent-cursor-state', 'hidden');
+          }
+          el.__superagentCursorHideTimer = undefined;
+        }, ${CURSOR_AUTO_HIDE_MS});
+      ` : ''}
       ${ripple ? `
         const rip = el.querySelector('[data-superagent-cursor-ripple]');
         if (rip) {
@@ -223,7 +242,12 @@ export function UPDATE_CURSOR_OVERLAY_JS(x: number, y: number, ripple = false, c
 export function buildRemoveCursorOverlayJs(cursorId = "legacy"): string {
   return `(() => {
     const el = document.getElementById(${JSON.stringify(cursorDomId(cursorId))});
-    if (el) el.remove();
+    if (el) {
+      if (el.__superagentCursorHideTimer !== undefined) {
+        clearTimeout(el.__superagentCursorHideTimer);
+      }
+      el.remove();
+    }
     return true;
   })()`;
 }
@@ -237,7 +261,7 @@ export function buildPersistentCursorJs(cursorId: string, cursorName: string, po
     const mount = () => {
       if (!document.body && !document.documentElement) return;
       ${buildCursorOverlayJs(cursorId, cursorName)};
-      ${UPDATE_CURSOR_OVERLAY_JS(position.x, position.y, false, cursorId)};
+      ${UPDATE_CURSOR_OVERLAY_JS(position.x, position.y, false, cursorId, false)};
     };
     if (document.documentElement) mount();
     else document.addEventListener('DOMContentLoaded', mount, { once: true });

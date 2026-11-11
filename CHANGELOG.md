@@ -1,4 +1,8 @@
 ## [Unreleased] - 2026-11-06
+### CDP named cursor auto-hide
+- Fade each agent's visual cursor after 4 seconds of inactivity; show it again on the next agent movement, click, or scroll. Keep timers independent per agent and cancel them on manual removal.
+- On document navigation, restore the named cursor overlay at its last position but keep it hidden until the agent moves again; native CDP input and target ownership remain unchanged.
+
 ### Android LAN companion and developer installer
 - Add consent-based Android LAN client source, including pairing, read-only diagnostics, explicitly approved screen sharing and file/folder exchange, and independent Lite/Debug builds.
 - Add Android 0.7.0 Health Snapshot and Support Status diagnostics with bounded JSON reporting, actionable advisory signals and no new privileged permissions.
