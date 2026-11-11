@@ -297,15 +297,18 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
       const result = await executeCursorCommand(send, target, "scroll_cursor",
         { deltaY: 180, deltaX: 0, visualCursor: false }, "agent-one");
       expect(result).toContain("real CDP wheel dispatched");
-      expect(events).toEqual([{
-        method: "Input.dispatchMouseEvent", params: {
+      expect(events).toEqual([
+        { method: "Input.dispatchMouseEvent", params: {
+          type: "mouseMoved", x: 125, y: 230, buttons: 0,
+        } },
+        { method: "Input.dispatchMouseEvent", params: {
           type: "mouseWheel", x: 125, y: 230, deltaX: 0, deltaY: 180,
-        },
-      }]);
+        } },
+      ]);
       const denied = await executeCursorCommand(send, target, "scroll_cursor",
         { deltaY: Number.POSITIVE_INFINITY }, "agent-one");
       expect(denied).toContain("requires bounded nonzero");
-      expect(events).toHaveLength(1);
+      expect(events).toHaveLength(2);
     });
     test("handles move_cursor command with target coordinates", async () => {
       const mockCdpSend = async () => ({});
@@ -333,8 +336,10 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
 
     test("handles show_cursor and hide_cursor commands", async () => {
       const evals: string[] = [];
+      const mouseEvents: any[] = [];
       const mockCdpSend = async (_target: any, method: string, params: any) => {
         if (method === "Runtime.evaluate") evals.push(params.expression);
+        if (method === "Input.dispatchMouseEvent") mouseEvents.push(params);
         return {};
       };
       const target = { id: "T1" };
@@ -342,6 +347,9 @@ describe("chromeCdpCursor - Human-Like Cursor Movement", () => {
       const showOut = await executeCursorCommand(mockCdpSend, target, "show_cursor", {});
       expect(showOut).toContain("visual cursor overlay enabled");
       expect(evals.some((e) => e.includes("data-superagent-cursor"))).toBe(true);
+      expect(mouseEvents).toEqual([{
+        type: "mouseMoved", x: 400, y: 300, buttons: 0,
+      }]);
 
       const hideOut = await executeCursorCommand(mockCdpSend, target, "hide_cursor", {});
       expect(hideOut).toContain("visual cursor overlay removed");

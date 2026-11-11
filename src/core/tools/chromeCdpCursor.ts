@@ -42,6 +42,8 @@ export interface CursorClickOptions extends CursorMoveOptions {
 
 /** In-memory store of the last known cursor position per target tab. */
 const cursorPositionStore = new Map<string, Point>();
+/** Chrome has one event-driven CDP pointer per tab, even with many agent overlays. */
+const nativePointerPositionStore = new Map<string, Point>();
 /** Script registrations are scoped to the live CDP connection, not an OS pointer. */
 const cursorDocumentScripts = new Map<string, Map<string, string>>();
 const cursorTargetKey = (target: { id: string; webSocketDebuggerUrl?: string }): string =>
@@ -64,6 +66,7 @@ export function setCursorPosition(targetId: string, pt: Point, cursorId = "legac
 
 export function resetCursorPositions(): void {
   cursorPositionStore.clear();
+  nativePointerPositionStore.clear();
 }
 
 /** Cubic ease-in-out easing function. */
@@ -181,7 +184,7 @@ export function buildCursorOverlayJs(cursorId = "legacy", cursorName = "SuperAge
       el.setAttribute('data-superagent-cursor', 'true');
       el.setAttribute('aria-hidden', 'true');
       el.style.cssText = 'position:fixed;top:0;left:0;width:22px;height:22px;z-index:2147483647;pointer-events: none;transform:translate3d(-50px,-50px,0);opacity:0;transition:opacity .18s ease;will-change:transform;';
-      el.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))"><path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="${color}" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg><div data-superagent-cursor-ripple style="position:absolute;top:0;left:0;width:24px;height:24px;border:2px solid ${color};border-radius:50%;opacity:0;transform:scale(.4);pointer-events:none;"></div><span data-superagent-cursor-name style="position:absolute;top:19px;left:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${color};color:#fff;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:7px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;"></span>';
+      el.innerHTML = '<span data-superagent-cursor-glyph style="display:block;width:22px;height:22px;pointer-events:none"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))"><path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="${color}" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg></span><div data-superagent-cursor-ripple style="position:absolute;top:0;left:0;width:24px;height:24px;border:2px solid ${color};border-radius:50%;opacity:0;transform:scale(.4);pointer-events:none;"></div><span data-superagent-cursor-name style="position:absolute;top:19px;left:14px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;background:${color};color:#fff;padding:4px 8px;border:1px solid rgba(255,255,255,.75);border-radius:7px;font:600 12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none;"></span>';
       (document.body || document.documentElement).appendChild(el);
     }
     const label = el.querySelector('[data-superagent-cursor-name]');
@@ -208,6 +211,35 @@ export function UPDATE_CURSOR_OVERLAY_JS(x: number, y: number, ripple = false, c
     const el = document.getElementById(${JSON.stringify(cursorDomId(cursorId))});
     if (el) {
       el.style.transform = 'translate3d(${x}px, ${y}px, 0)';
+      // Mirror the native CSS cursor of the hit-tested element. The visual twin
+      // is pointer-events:none; only Input.dispatchMouseEvent drives page hover.
+      try {
+        let hit = document.elementFromPoint(${x}, ${y});
+        for (let depth = 0; hit && hit.shadowRoot && depth < 4; depth++) {
+          const inner = hit.shadowRoot.elementFromPoint(${x}, ${y});
+          if (!inner || inner === hit) break;
+          hit = inner;
+        }
+        const cssCursor = hit ? getComputedStyle(hit).cursor : 'default';
+        const semanticText = hit && (hit.matches('input:not([type=button]):not([type=submit]):not([type=checkbox]):not([type=radio]),textarea,[contenteditable="true"]'));
+        const kind = cssCursor === 'pointer' || cssCursor === 'grab' || cssCursor === 'grabbing' ? 'pointer'
+          : cssCursor === 'text' || semanticText ? 'text'
+          : cssCursor === 'crosshair' ? 'crosshair' : 'arrow';
+        if (el.getAttribute('data-superagent-cursor-kind') !== kind) {
+          const glyph = el.querySelector('[data-superagent-cursor-glyph]');
+          if (glyph) {
+            const shape = kind === 'pointer'
+              ? '<path d="M9 21l-3-6a2 2 0 0 1 3-2l1 1V5a2 2 0 0 1 4 0v6a2 2 0 0 1 3 0 2 2 0 0 1 3 2v4c0 2-2 4-4 4H9Z" fill="white" stroke="black" stroke-width="1.4"/>'
+              : kind === 'text'
+              ? '<path d="M9 3h6M12 3v18M9 21h6M9 8L7 10M15 8l2 2M9 16l-2-2M15 16l2-2" fill="none" stroke="white" stroke-width="2.8" stroke-linecap="round"/><path d="M9 3h6M12 3v18M9 21h6" stroke="black" stroke-width="1.3"/>'
+              : kind === 'crosshair'
+              ? '<circle cx="12" cy="12" r="5" fill="none" stroke="white" stroke-width="2.4"/><path d="M12 1v7m0 8v7M1 12h7m8 0h7" stroke="white" stroke-width="2.4"/>'
+              : '<path d="M4 3L18 12L11.5 13.5L9 20L4 3Z" fill="${cursorColorForAgent(cursorId)}" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/>';
+            glyph.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" style="filter:drop-shadow(0 2px 3px rgba(0,0,0,.4))">' + shape + '</svg>';
+          }
+          el.setAttribute('data-superagent-cursor-kind', kind);
+        }
+      } catch { /* Cosmetic glyph lookup must never block native mouse input. */ }
       ${reveal ? `
         el.style.opacity = '1';
         el.setAttribute('data-superagent-cursor-state', 'active');
@@ -323,6 +355,7 @@ export async function removePersistentCursorOverlay(
 /** CDP registration identifiers are session-scoped; discard on socket disconnect. */
 export function forgetPersistentCursorRegistrations(webSocketDebuggerUrl: string): void {
   cursorDocumentScripts.delete(webSocketDebuggerUrl);
+  nativePointerPositionStore.delete(webSocketDebuggerUrl);
 }
 
 /**
@@ -335,7 +368,7 @@ export async function dispatchHumanMouseMove(
   options?: CursorMoveOptions
 ): Promise<{ ok: boolean; stepsDispatched: number; endPosition: Point }> {
   const cursorId = options?.cursorId ?? "legacy";
-  const startPoint = getCursorPosition(target.id, cursorId);
+  const startPoint = nativePointerPositionStore.get(cursorTargetKey(target)) ?? getCursorPosition(target.id, cursorId);
   const trajectory = generateBezierTrajectory(startPoint, targetPoint, options);
   const stepDelay = options?.stepDelayMs ?? 8;
   const showVisual = options?.visualCursor ?? false;
@@ -354,7 +387,9 @@ export async function dispatchHumanMouseMove(
       type: "mouseMoved",
       x: pt.x,
       y: pt.y,
+      buttons: 0,
     });
+    nativePointerPositionStore.set(cursorTargetKey(target), pt);
 
     if (showVisual) {
       try {
@@ -488,6 +523,12 @@ export async function executeCursorCommand(
     case "show_cursor": {
       await cdpSend(target, "Runtime.evaluate", { expression: buildCursorOverlayJs(cursorId, cursorName) });
       const position = getCursorPosition(target.id, cursorId);
+      // Showing the pointer must also move Chrome's hit-test pointer. Rendering
+      // the overlay alone does not trigger :hover, pointerenter or mouseenter.
+      await cdpSend(target, "Input.dispatchMouseEvent", {
+        type: "mouseMoved", x: position.x, y: position.y, buttons: 0,
+      });
+      nativePointerPositionStore.set(cursorTargetKey(target), position);
       await cdpSend(target, "Runtime.evaluate", {
         expression: UPDATE_CURSOR_OVERLAY_JS(position.x, position.y, false, cursorId),
       });
@@ -523,6 +564,10 @@ export async function executeCursorCommand(
         });
       }
       await cdpSend(target, "Input.dispatchMouseEvent", {
+        type: "mouseMoved", x, y, buttons: 0,
+      });
+      nativePointerPositionStore.set(cursorTargetKey(target), { x, y });
+      await cdpSend(target, "Input.dispatchMouseEvent", {
         type: "mouseWheel", x, y, deltaX, deltaY,
       });
       setCursorPosition(target.id, { x, y }, cursorId);
@@ -530,7 +575,9 @@ export async function executeCursorCommand(
       return `control_chrome_cdp: real CDP wheel dispatched at (${x}, ${y}) delta (${deltaX}, ${deltaY}).`;
     }
     case "move_cursor":
-    case "move_mouse": {
+    case "move_mouse":
+    case "hover_cursor":
+    case "click_cursor": {
       let targetPt: Point | null = null;
       if (typeof payload.x === "number" && Number.isFinite(payload.x) &&
           typeof payload.y === "number" && Number.isFinite(payload.y)) {
@@ -543,7 +590,7 @@ export async function executeCursorCommand(
       }
 
       if (!targetPt) {
-        return "control_chrome_cdp failed: move_cursor requires either { x, y } coordinates or { selector }.";
+        return "control_chrome_cdp failed: cursor interaction requires either { x, y } coordinates or { selector }.";
       }
 
       const steps = typeof payload.steps === "number" ? payload.steps : undefined;
@@ -553,14 +600,50 @@ export async function executeCursorCommand(
       }
       const visual = payload.visualCursor !== false && payload.visual !== false;
 
+      const originalSelector = typeof payload.selector === "string" ? payload.selector : undefined;
+      const ensureHit = async () => {
+        if (!originalSelector) return;
+        // This validates the element hit by *native* CDP input, not JS .click().
+        const report = await cdpSend(target, "Runtime.evaluate", {
+          expression: `(() => {
+            const selected = document.querySelector(${JSON.stringify(originalSelector)});
+            const hit = document.elementFromPoint(${targetPt.x}, ${targetPt.y});
+            return !!selected && !!hit &&
+              (selected === hit || selected.contains(hit) || !!hit.closest?.(${JSON.stringify(originalSelector)}));
+          })()`,
+          returnByValue: true,
+        });
+        if (report?.result?.value !== true)
+          throw new Error("Native cursor target is covered or moved; action aborted.");
+      };
+      const dwellMs = payload.dwell_ms === undefined ? 450 : Number(payload.dwell_ms);
+      if (!Number.isFinite(dwellMs) || dwellMs < 0 || dwellMs > 5000)
+        return "control_chrome_cdp failed: dwell_ms must be 0–5000 milliseconds.";
+      if (command === "click_cursor") {
+        const pressMs = payload.press_ms === undefined ? 65 : Number(payload.press_ms);
+        if (!Number.isFinite(pressMs) || pressMs < 0 || pressMs > 1000)
+          return "control_chrome_cdp failed: press_ms must be 0–1000 milliseconds.";
+        try {
+          const result = await dispatchHumanMouseClick(cdpSend, target, targetPt, {
+            steps, stepDelayMs, visualCursor: visual, cursorId, cursorName,
+            dwellMs, pressDurationMs: pressMs, beforePress: ensureHit,
+          });
+          return `control_chrome_cdp: native mouse click dispatched once at (${result.x}, ${result.y}) in ${result.steps} trajectory steps.`;
+        } catch (error) {
+          return "control_chrome_cdp failed: " + (error instanceof Error ? error.message : String(error));
+        }
+      }
       const moveRes = await dispatchHumanMouseMove(cdpSend, target, targetPt, {
-        steps,
-        stepDelayMs,
-        visualCursor: visual,
-        cursorId,
-        cursorName,
+        steps, stepDelayMs, visualCursor: visual, cursorId, cursorName,
       });
-
+      if (command === "hover_cursor") {
+        if (dwellMs > 0) await new Promise((resolve) => setTimeout(resolve, dwellMs));
+        try { await ensureHit(); }
+        catch (error) {
+          return "control_chrome_cdp failed: " + (error instanceof Error ? error.message : String(error));
+        }
+        return `control_chrome_cdp: native mouse hover dispatched at (${targetPt.x}, ${targetPt.y}) with ${dwellMs}ms dwell, across ${moveRes.stepsDispatched} steps.`;
+      }
       return `control_chrome_cdp: cursor moved naturally to (${moveRes.endPosition.x}, ${moveRes.endPosition.y}) in ${moveRes.stepsDispatched} trajectory steps.`;
     }
     default:
@@ -742,6 +825,7 @@ export async function dispatchHumanDragAndDrop(
       clickCount: 1,
     });
 
+    nativePointerPositionStore.set(cursorTargetKey(target), targetPoint);
     setCursorPosition(target.id, targetPoint, options?.cursorId ?? "legacy");
     if (visual) {
       await persistCursorAcrossNavigation(cdpSend, target, options?.cursorId ?? "legacy",

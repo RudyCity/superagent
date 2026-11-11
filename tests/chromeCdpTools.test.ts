@@ -377,12 +377,14 @@ describe("control_chrome_cdp (mock CDP server)", () => {
       "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
       "get_cookies", "inspect_media_devices",
       "mock_display_media", "handle_screen_share",
-      "move_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
+      "move_cursor", "hover_cursor", "click_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
       "drag_and_drop", "drag",
       "emulate_device", "highlight_target", "clear_highlight",
        "inspect_qualified_frames", "frame_read", "frame_highlight", "frame_click",
        "frame_snapshot", "frame_type", "frame_scroll",
-      "record_start", "record_stop", "record_status", "record_export", "replay_preview", "replay_cursor",
+      "record_start", "record_stop", "record_status", "record_export",
+      "record_session_start", "record_session_stop", "record_session_status",
+      "replay_preview", "replay_cursor",
        "replay_prepare_click", "replay_execute_click",
       "workflow_start", "workflow_status", "workflow_skip",
       "page_audit", "accessibility_audit", "seo_audit", "responsive_audit", "performance_metrics",
@@ -1257,6 +1259,26 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     expect(nativeMouseEvents.filter(type => type === "mouseReleased")).toHaveLength(1);
     expect(nativeMouseEvents).toContain("mouseMoved");
     expect(domClickCalls).toBe(previousDomClicks);
+  });
+
+  test("hover_cursor and click_cursor use real CDP input rather than synthetic DOM click", async () => {
+    nativeMouseEvents.length = 0;
+    const before = domClickCalls;
+    const hover = await controlChromeCdpTool.execute({
+      command: "hover_cursor", x: 300, y: 150, dwell_ms: 0, steps: 2,
+      step_delay_ms: 0, visualCursor: false,
+    });
+    expect(hover).toContain("native mouse hover dispatched");
+    expect(nativeMouseEvents).toContain("mouseMoved");
+    expect(nativeMouseEvents).not.toContain("mousePressed");
+    const click = await controlChromeCdpTool.execute({
+      command: "click_cursor", x: 300, y: 150, dwell_ms: 0, press_ms: 0,
+      steps: 2, step_delay_ms: 0, visualCursor: false,
+    });
+    expect(click).toContain("native mouse click dispatched once");
+    expect(nativeMouseEvents.filter(type => type === "mousePressed")).toHaveLength(1);
+    expect(nativeMouseEvents.filter(type => type === "mouseReleased")).toHaveLength(1);
+    expect(domClickCalls).toBe(before);
   });
 
   test("controlChromeCdpTool drag_and_drop and drag commands smoothly move elements", async () => {

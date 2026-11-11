@@ -357,7 +357,7 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.requested).toContainEqual({ action: "select_runtime_core", args: { port: 8888 } });
     expect(ui.events).toContain("superagent-core-selected");
   });
-  it("shows Muse start controls but blocks an unverified Core",async()=>{
+  it("omits the quick panel and blocks Muse actions for an unverified Core",async()=>{
     const ui=mountRuntime({
       scannedAt:Date.now(),healthyCoreCount:0,activeProcessCount:0,
       selectedCorePort:7888,
@@ -367,10 +367,9 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     });
     await new Promise(resolve=>setImmediate(resolve));
     const html=ui.byId("runtime-servers").innerHTML;
-    expect(html).toContain("Service Quick Controls");
-    expect(html).toContain("Start Muse · Telegram");
-    expect(html).toContain('data-runtime-action="start-telegram" disabled');
-    expect(html).toContain("Start or select a verified local Core");
+    expect(html).not.toContain("Service Quick Controls");
+    expect(html).not.toContain("Start Muse · Telegram");
+    expect(html).toContain("Core · :7888");
     await (vm.runInContext('window.__superagentMuseQuickAction("start-telegram")',
       ui.context) as Promise<void>);
     expect(ui.requested.filter(x=>x.action==="service_action")).toHaveLength(0);
@@ -386,15 +385,15 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     });
     await new Promise(resolve=>setImmediate(resolve));
     const html=ui.byId("runtime-servers").innerHTML;
-    expect(html).toContain("Selected Core did not report Muse state");
-    expect(html).toContain('data-runtime-action="start-telegram" disabled');
-    expect(html).toContain('data-runtime-open="mcp" >Host MCP Tunnel');
+    expect(html).not.toContain("Service Quick Controls");
+    expect(html).not.toContain("Start Muse · Telegram");
+    expect(html).toContain("Core · :7888");
     await (vm.runInContext('window.__superagentMuseQuickAction("start-telegram")',
       ui.context) as Promise<void>);
     expect(ui.requested.filter(x=>x.action==="service_action")).toHaveLength(0);
   });
 
-  it("opens MCP tunnel setup without launching any service",async()=>{
+  it("keeps MCP setup accessible through Create Connection without the quick panel",async()=>{
     const ui=mountRuntime({
       scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,
       selectedCorePort:7888,
@@ -403,10 +402,16 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
       processes:[],independentHosts:[],remoteServices:[],
     });
     await new Promise(resolve=>setImmediate(resolve));
-    await vm.runInContext(`runtimeQuickNavigation({target:{closest:()=>({
-      disabled:false,dataset:{runtimeOpen:"mcp"}})}})`,ui.context);
+    expect(ui.byId("runtime-servers").innerHTML).not.toContain("Service Quick Controls");
+    const panel=ui.byId("runtime-create-panel");
+    panel.hidden=true;
+    const toggle=ui.listeners.get("runtime-create-toggle:click");
+    expect(toggle).toBeTypeOf("function");
+    toggle?.({target:ui.byId("runtime-create-toggle")});
+    expect(panel.hidden).toBe(false);
+    ui.byId("runtime-create-kind").value="mcp-tunnel";
+    vm.runInContext("runtimeCreateKindChanged()",ui.context);
     expect(ui.byId("runtime-create-kind").value).toBe("mcp-tunnel");
-    expect(ui.byId("runtime-create-panel").hidden).toBe(false);
     expect(ui.requested.filter(x=>x.action==="create_connection")).toHaveLength(0);
   });
 });

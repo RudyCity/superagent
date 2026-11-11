@@ -6,7 +6,7 @@ const DELEGATE_V18 = new Set([
   "revoke_agent", "handover_target", "session_participants", "shared_snapshot",
   "activate", "new_tab", "close_tab", "navigate", "evaluate", "snapshot", "read_page", "extract_links",
   "click", "type", "wait_for", "screenshot", "get_dialogs", "handle_dialog", "transport_status",
-  "get_cursor", "move_cursor", "drag_and_drop", "emulate_device",
+  "get_cursor", "move_cursor", "hover_cursor", "click_cursor", "show_cursor", "hide_cursor", "scroll_cursor", "drag_and_drop", "emulate_device",
   "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload",
 ]);
 

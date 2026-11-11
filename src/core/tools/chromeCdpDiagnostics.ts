@@ -7,6 +7,9 @@ type DebugEvent = { at: string; kind: string; details: Record<string, unknown> }
 type CaptureState = { active: boolean; events: DebugEvent[]; requests: Map<string, { url: string; startedAt: number; method: string; type?: string }> };
 const captures = new Map<string, CaptureState>();
 const MAX_EVENTS = 300;
+export function isCdpDebugCaptureActive(targetId: string): boolean {
+  return captures.get(targetId)?.active === true;
+}
 
 function stateFor(targetId: string): CaptureState {
   let state = captures.get(targetId);
@@ -32,9 +35,9 @@ function redact(input: unknown): string {
     .slice(0, 1200);
 }
 
-export function recordCdpDebugEvent(targetId: string, method: string, params: any): void {
+export function recordCdpDebugEvent(targetId: string, method: string, params: any): DebugEvent | undefined {
   const state = stateFor(targetId);
-  if (!state.active) return;
+  if (!state.active) return undefined;
   const now = Date.now();
   let event: DebugEvent | undefined;
 
@@ -68,6 +71,7 @@ export function recordCdpDebugEvent(targetId: string, method: string, params: an
     state.events.push(event);
     if (state.events.length > MAX_EVENTS) state.events.splice(0, state.events.length - MAX_EVENTS);
   }
+  return event;
 }
 
 export async function executeCdpDiagnosticsCommand(

@@ -8,12 +8,36 @@ import {
   runLegacyCoreRecycleWorker,
   readLegacyCoreProcessDescriptor,
   legacyRecycleMayArchiveStaleSupervisorState,
+  acceptsRecycleCoreOwnerEvidence,
   type LegacyCoreRecyclePlan,
 } from "../src/core/runtime/coreLegacyRecycle.js";
 import { ManagedSidecarLedger, sidecarOperationFingerprint } from "../src/core/runtime/managedSidecarLedger.js";
 import { getRootConfigDir } from "../src/core/config/paths.js";
 
 describe("Core Legacy Recycle", () => {
+  it("attests Windows PID-0 listeners without accepting missing or conflicting owners", () => {
+    const safe = {
+      platform: "win32",
+      kernelOwner: 0,
+      candidatePid: 27392,
+      serverInfoPid: 27392,
+      birth: "matched" as const,
+      authenticated: true,
+    };
+    expect(acceptsRecycleCoreOwnerEvidence(safe)).toBe(true);
+    expect(acceptsRecycleCoreOwnerEvidence({
+      ...safe, kernelOwner: 27392, birth: "unverified",
+    })).toBe(true);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, kernelOwner: null})).toBe(false);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, kernelOwner: 0, platform: "linux"})).toBe(false);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, kernelOwner: 45678})).toBe(false);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, serverInfoPid: 45678})).toBe(false);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, candidatePid: 0})).toBe(false);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, birth: "mismatch"})).toBe(false);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, birth: "unverified"})).toBe(false);
+    expect(acceptsRecycleCoreOwnerEvidence({...safe, authenticated: false})).toBe(false);
+  });
+
   it("rejects invalid plan arguments in scheduleLegacyCoreRecycle", async () => {
     const validPlan: LegacyCoreRecyclePlan = {
       service: "core",

@@ -52,8 +52,10 @@ import {
 } from "./chromeCdpActionRecorder.js";
 import { executeSelectOptionCommand, executeCheckFormCommand } from "./chromeCdpForm.js";
 import { CDP_AUDIT_COMMANDS, executeCdpAuditCommand, type CdpAuditCommand } from "./chromeCdpAudits.js";
-import { CDP_DIAGNOSTIC_COMMANDS, executeCdpDiagnosticsCommand, recordCdpDebugEvent, type CdpDiagnosticCommand } from "./chromeCdpDiagnostics.js";
+import { CDP_DIAGNOSTIC_COMMANDS, executeCdpDiagnosticsCommand, recordCdpDebugEvent, isCdpDebugCaptureActive, type CdpDiagnosticCommand } from "./chromeCdpDiagnostics.js";
 import { saveCdpPdfArtifact } from "./chromeCdpArtifacts.js";
+import { startCdpSessionArchive, stopCdpSessionArchive, getCdpSessionArchiveStatus,
+  recordCdpSessionCommand, recordCdpSessionDiagnostic } from "./chromeCdpSessionArchive.js";
 
 import { executeCdpTerminalCommand } from "./chromeCdpTerminalCommands.js";
 import { captureFileChooserEvent, executeFileUploadCommand, type FileUploadCommand } from "./chromeCdpFileUpload.js";
@@ -499,6 +501,7 @@ async function openCdpConnection(target: CdpTarget): Promise<CdpConnection> {
   }
   const { WebSocket } = await getWsModule();
   const timeoutMs = cdpTimeoutMs();
+  const connectionPort = cdpPort();
   const conn: CdpConnection = { ws: null as any, url, nextId: 1, pending: new Map(), lastUsed: Date.now() };
   const ws = new WebSocket(url, { handshakeTimeout: timeoutMs });
   conn.ws = ws;
@@ -521,7 +524,8 @@ async function openCdpConnection(target: CdpTarget): Promise<CdpConnection> {
         p.resolve(msg.result !== undefined ? msg.result : {});
       }
     } else if (msg && msg.id === undefined && typeof msg.method === "string") {
-      recordCdpDebugEvent(target.id, msg.method, msg.params);
+      const safeDebugEvent = recordCdpDebugEvent(target.id, msg.method, msg.params);
+      if (safeDebugEvent) recordCdpSessionDiagnostic("managed:" + connectionPort + ":" + target.id, safeDebugEvent);
       captureFileChooserEvent(target.id, msg.method, msg.params);
       handleIncomingCdpEvent(target.id, msg.method, msg.params, (m, p) => {
         try {
@@ -786,11 +790,13 @@ export const controlChromeCdpTool: Tool = {
           "list_targets", "claim_target", "release_target", "recover_session", "recover_target", "list_sessions", "coordinator_status", "transport_status",
           "heartbeat_session", "pause_target", "resume_target", "share_target", "stop_sharing", "invite_agent", "join_target", "leave_target", "revoke_agent", "handover_target", "session_participants", "shared_snapshot", "new_tab", "close_tab", "activate", "navigate", "evaluate", "snapshot", "read_page", "read_workspace", "read_accessibility_tree", "inspect_frames", "capture_dom_snapshot", "read_terminal", "read_terminal_delta", "write_terminal", "send_terminal_key", "list_terminal_sessions", "clear_terminal_sessions", "monitor_terminal_agents", "watch_terminal", "execute_terminal", "recover_terminal", "discover_desktop_targets", "extract_links", "click", "type", "wait_for",
           "select_option", "check_form", "verify_action", "get_dialogs", "handle_dialog", "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload", "screenshot", "pdf",
-          "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
+          "get_cookies", "inspect_media_devices", "mock_display_media", "handle_screen_share", "move_cursor", "hover_cursor", "click_cursor", "scroll_cursor", "show_cursor", "hide_cursor", "get_cursor",
           "drag_and_drop", "drag", "emulate_device", "highlight_target", "clear_highlight",
            "inspect_qualified_frames", "frame_read", "frame_highlight", "frame_click",
            "frame_snapshot", "frame_type", "frame_scroll",
-           "record_start", "record_stop", "record_status", "record_export", "replay_preview", "replay_cursor",
+           "record_start", "record_stop", "record_status", "record_export",
+           "record_session_start", "record_session_stop", "record_session_status",
+           "replay_preview", "replay_cursor",
             "replay_prepare_click", "replay_execute_click",
            "workflow_start", "workflow_status", "workflow_skip",
            ...CDP_AUDIT_COMMANDS, ...CDP_DIAGNOSTIC_COMMANDS,
@@ -804,7 +810,7 @@ export const controlChromeCdpTool: Tool = {
       payload: {
         type: "string",
         description:
-          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (generic visible text/headings/alerts/frames). read_workspace: {} (structured Google Docs/Sheets/Slides/Drive/Forms reader with verification). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. select_option: {"index": 5, "option": "Paket Basic"} or {"selector": "[role=combobox]", "option": "Yes"}. check_form: {"selector": "form"} (pre-flight check for missing required fields & submit readiness). drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
+          'JSON string or object payload. new_tab: {"url": "https://..."}. navigate: {"url": "https://...", "screenshot": true}. evaluate: {"expression": "document.title"}. snapshot: {} (numbered interactive-element list). read_page: {} (generic visible text/headings/alerts/frames). read_workspace: {} (structured Google Docs/Sheets/Slides/Drive/Forms reader with verification). extract_links: {"pattern": "verify"}. click: {"index": 3, "observe": true, "smooth": true} or {"selector": "#login"}. select_option: {"index": 5, "option": "Paket Basic"} or {"selector": "[role=combobox]", "option": "Yes"}. check_form: {"selector": "form"} (pre-flight check for missing required fields & submit readiness). drag_and_drop: {"source": "#card", "target": "#column", "mode": "mouse"|"html5", "screenshot": true}. emulate_device: {"preset": "mobile"|"tablet"|"desktop"|"reset", "orientation": "portrait"|"landscape", "screenshot": true}. verify_action: {"index": 3}. get_dialogs: {"clear": false}. handle_dialog: {"accept": true, "promptText": "..."}. inspect_media_devices: {"grantPermissions": true}. move_cursor: {"x": 400, "y": 300, "visualCursor": true}. hover_cursor: {"selector":"#menu","dwell_ms":500} sends native pointer events, awaits tooltip hover state. click_cursor: {"selector":"#button"} sends one native press/release (unlike DOM click). type: {"index": 2, "text": "hello"}. screenshot: {"fullPage": true, "outputPath": "shot.png"}.',
       },
        files: { type: "array", items: { type: "string" }, description: "1-10 absolute local file paths for upload_file." },
        filePath: { type: "string", description: "One absolute local path to upload." },
@@ -861,7 +867,9 @@ export const controlChromeCdpTool: Tool = {
       grantPermissions: { type: "boolean", description: "Optional flag to grant microphone, camera, and speakerSelection permissions via CDP." },
       resetPermissions: { type: "boolean", description: "Optional flag to reset permissions via CDP." },
       smooth: { type: "boolean", description: "Glide named cursor along actual CDP mouseMoved events before clicking." },
-      nativeClick: { type: "boolean", description: "Opt in to native CDP mousePressed/mouseReleased instead of a DOM click (never both)." },
+      nativeClick: { type: "boolean", description: "Opt in to native CDP mousePressed/mouseReleased instead of a DOM click (never both). Prefer click_cursor for explicit real mouse interactions." },
+      dwell_ms: { type: "number", description: "hover_cursor native hover dwell 0-5000 ms (default 450); click_cursor dwell before press." },
+      press_ms: { type: "number", description: "click_cursor button hold duration 0-1000 ms (default 65)." },
       x: { type: "number", description: "Optional x coordinate for cursor movement or positioning." },
       y: { type: "number", description: "Optional y coordinate for cursor movement or positioning." },
       deltaX: { type: "number", description: "scroll_cursor horizontal native CDP wheel delta." },
@@ -873,6 +881,8 @@ export const controlChromeCdpTool: Tool = {
       highlightBeforeClick: { type: "boolean", description: "Preflight and re-check visible, unobscured element before clicking; fail closed if layout changes." },
       frameId: { type: "string", description: "Explicit qualified iframe CDP frameId from inspect_qualified_frames. Never falls back to parent DOM." },
       recordingId: { type: "string", description: "Opaque ID returned by record_start; required for export and replay." },
+      video: { type: "boolean", description: "record_session_start: enabled by default; capture exact managed Chrome tab as MP4 under the CURRENT PROJECT .superagent/recordings/cdp directory." },
+      confirmSensitiveVideo: { type: "boolean", description: "record_session_start: required explicit true. Video may contain passwords, messages, and other visible sensitive page data. 10-minute maximum, no audio." },
       workflowId: { type: "string", description: "Opaque workflow ID returned by workflow_start; enforces recorded action order." },
       confirmSkip: { type: "boolean", description: "Required true to skip a manual-only workflow step." },
       approvalId: { type: "string", description: "Opaque one-time request ID from replay_prepare_click after local operator approval." },
@@ -918,8 +928,8 @@ export const controlChromeCdpTool: Tool = {
     }
     const convenienceKeys = [
       "files", "filePaths", "filePath", "paths", "path", "inputIndex", "input_index", "allowOutsideWorkspace", "confirmExternalFile", "successSelector", "expectedNames", "fileNames", "nativeDialog", "confirmNativeDialog", "windowTitle", "arm", "triggerSelector", "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
-      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "visualCursor", "visual", "cursorName", "nativeClick", "deltaX", "deltaY", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "ttlMs", "highlightBeforeClick", "recordingId", "workflowId", "confirmSkip", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
+      "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "dwell_ms", "press_ms", "visualCursor", "visual", "cursorName", "nativeClick", "deltaX", "deltaY", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
+      "mode", "ttlMs", "highlightBeforeClick", "recordingId", "video", "confirmSensitiveVideo", "workflowId", "confirmSkip", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -938,6 +948,11 @@ export const controlChromeCdpTool: Tool = {
 
     const uploadWorkspace = typeof _cwd === "string" && _cwd ? _cwd
       : typeof args.__uploadWorkspace === "string" ? args.__uploadWorkspace : process.cwd();
+    // Recording must never silently default to the SuperAgent installation.
+    // _cwd is the active tool/project working directory, not process.cwd().
+    const recordingWorkspace = typeof _cwd === "string" && _cwd.trim() ? _cwd
+      : typeof args.__uploadWorkspace === "string" && args.__uploadWorkspace.trim()
+        ? args.__uploadWorkspace : "";
     const requestedTransport = String(args.transport ?? payload.transport ?? "") as "" | "managed" | "delegate" | "auto";
     const delegateClientId = String(args.delegateClientId ?? payload.delegateClientId ?? args.connectionId ?? payload.connectionId ?? "") || undefined;
     const delegateTabRaw = args.delegateTabId ?? payload.delegateTabId;
@@ -1055,6 +1070,8 @@ export const controlChromeCdpTool: Tool = {
                const successCategory = typeof result === "string" ? (
                  command === "move_cursor" || command === "move_mouse"
                    ? result.startsWith("control_chrome_cdp: cursor moved")
+                   : command === "hover_cursor" ? result.startsWith("control_chrome_cdp: native mouse hover")
+                   : command === "click_cursor" ? result.startsWith("control_chrome_cdp: native mouse click dispatched once")
                    : command === "click" ? (
                      result.startsWith("control_chrome_cdp: clicked") ||
                      result.startsWith("control_chrome_cdp: native click dispatched"))
@@ -1064,11 +1081,18 @@ export const controlChromeCdpTool: Tool = {
                    : command === "navigate" ? result.startsWith("control_chrome_cdp: navigated")
                    : command === "scroll_cursor" ? result.startsWith("control_chrome_cdp: real CDP wheel")
                    : false) : false;
+               if (agent) {
+                 try {
+                   const scope = await recorderScope(selected.id);
+                   recordCdpSessionCommand(scope,command,String(result));
+                 } catch { /* Recording is strictly opt-in; never change browser action result. */ }
+               }
                if (agent && successCategory) {
                  // Successful physical effects must never be auto-retried because telemetry failed.
                  try {
                    const scope = await recorderScope(selected.id);
-                   const action = command === "move_mouse" ? "move_cursor"
+                   const action = command === "move_mouse" || command === "hover_cursor" ? "move_cursor"
+                     : command === "click_cursor" ? "click"
                      : command === "drag" ? "drag_and_drop" : command;
                    const position = action === "move_cursor"
                      ? getCursorPosition(selected.id, agent) : undefined;
@@ -1966,6 +1990,9 @@ export const controlChromeCdpTool: Tool = {
           const tabIndex = payload.tabIndex !== undefined ? payload.tabIndex : payload.tab_index;
           return await executeHandleScreenSharePrompt({ action, tabIndex: tabIndex as any });
         }
+        case "record_session_start":
+        case "record_session_stop":
+        case "record_session_status":
         case "record_start":
         case "record_stop":
         case "record_status":
@@ -1979,6 +2006,61 @@ export const controlChromeCdpTool: Tool = {
         case "workflow_skip": {
           const target = await pickTarget(targetId, false, true);
           const scope = await recorderScope(target.id);
+          if (command === "record_session_status")
+            return JSON.stringify(getCdpSessionArchiveStatus(scope));
+          if (command === "record_session_start") {
+            const lease = (await listCdpSessions()).find(session =>
+              session.port === cdpPort() && session.targetId === target.id &&
+              session.generation === scope.generation);
+            if (!lease || lease.agentId !== scope.actorId)
+              throw new Error("Only the verified managed CDP tab owner can start sensitive video recording.");
+            if (browserActionRecordingStatus(scope.targetKey,scope.actorId,scope.generation).active)
+              throw new Error("Stop the previous action journal before starting a session archive.");
+            const wasDebugActive = isCdpDebugCaptureActive(target.id);
+            if (!wasDebugActive)
+              await executeCdpDiagnosticsCommand(cdpSend,target,"start_debug_capture");
+            try {
+              const recorded = await startCdpSessionArchive(scope,{
+                projectDirectory:recordingWorkspace,
+                video: payload.video !== false,
+                confirmSensitiveVideo:payload.confirmSensitiveVideo === true,
+                captureFrame:async() => {
+                  const screenshot = await cdpSend(target,"Page.captureScreenshot",{
+                    format:"jpeg",quality:42,captureBeyondViewport:false,
+                    fromSurface:true,optimizeForSpeed:true,
+                  });
+                  if (typeof screenshot?.data !== "string")
+                    throw Error("CDP screenshot unavailable for the active project recording.");
+                  return screenshot.data;
+                },
+                checkLease:async() => (await listCdpSessions()).some(session =>
+                  session.port === cdpPort() && session.targetId === target.id &&
+                  session.generation === scope.generation && session.agentId === scope.actorId &&
+                  session.expiresAt > Date.now()),
+                ...(!wasDebugActive ? { stopDiagnostics:async() => {
+                  await executeCdpDiagnosticsCommand(cdpSend,target,"stop_debug_capture");
+                }} : {}),
+              });
+              const journal = beginBrowserActionRecording(scope.targetKey,scope.actorId,scope.generation);
+              return JSON.stringify({...recorded,actionRecordingId:journal.recordingId});
+            } catch (error) {
+              if (!wasDebugActive)
+                await executeCdpDiagnosticsCommand(cdpSend,target,"stop_debug_capture").catch(()=>{});
+              throw error;
+            }
+          }
+          if (command === "record_session_stop") {
+            const journal = browserActionRecordingStatus(scope.targetKey,scope.actorId,scope.generation);
+            if (journal.active) stopBrowserActionRecording(scope.targetKey,scope.actorId,scope.generation);
+            let actions: object | undefined;
+            if ("recordingId" in journal && typeof journal.recordingId === "string") {
+              try {
+                actions = readBrowserActionRecording(scope.targetKey,scope.actorId,
+                  scope.generation,journal.recordingId);
+              } catch { /* Prior action journal may already have expired. */ }
+            }
+            return JSON.stringify(await stopCdpSessionArchive(scope,actions));
+          }
           if (command === "record_start")
             return JSON.stringify({ status: "recording",
               ...beginBrowserActionRecording(scope.targetKey, scope.actorId, scope.generation) });
@@ -2136,6 +2218,8 @@ export const controlChromeCdpTool: Tool = {
         case "scroll_cursor":
         case "move_cursor":
         case "move_mouse":
+        case "hover_cursor":
+        case "click_cursor":
         case "show_cursor":
         case "hide_cursor":
         case "get_cursor": {

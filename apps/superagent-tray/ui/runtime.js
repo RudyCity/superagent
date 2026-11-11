@@ -259,56 +259,6 @@ function runtimeMuseControlState(snapshot = runtimeLastResult) {
   };
 }
 
-function runtimeQuickControls(snapshot) {
-  const state = runtimeMuseControlState(snapshot);
-  const target = state.available
-    ? `data-runtime-kind="muse-core" data-runtime-port="${state.port}" data-runtime-pid="${state.pid}"`
-    : "";
-  const button = (action, label, enabled) =>
-    `<button type="button" class="button ghost runtime-lifecycle" ${target}
-      data-runtime-action="${action}" ${enabled ? "" : "disabled"}>${label}</button>`;
-  const muse = state.running
-    ? button("stop", "Stop Muse Watch", state.ownerPresent) +
-      button("restart", "Restart Muse Watch", state.ownerPresent) +
-      (state.configStale ? button("apply-restart", "Apply &amp; Restart", state.ownerPresent) : "")
-    : button("start-telegram", "Start Muse · Telegram", state.available) +
-      button("start-websocket", "Start Muse · WebSocket", state.available) +
-      button("start-tunnel", "Start Muse · Tunnel", state.available);
-  const reason = !state.coreAvailable
-    ? "Start or select a verified local Core to enable Muse controls."
-    : !state.available ? "Selected Core did not report Muse state. Update Core before using Muse controls."
-      : state.running ? "Muse Watch is running on the selected Core." :
-        "Choose a transport. Save Muse settings before startup.";
-  return `<section class="runtime-instance" aria-label="Service quick controls">
-    <div class="runtime-instance-head"><strong>Service Quick Controls</strong>
-      ${runtimeStatusPill(state.running ? "active" : state.available ? "idle" : "unverified")}</div>
-    <div class="runtime-evidence">${runtimeEscape(reason)}</div>
-    <div class="runtime-instance-footer">
-      <div class="runtime-lifecycle-group">${muse}</div>
-      <button type="button" class="button ghost runtime-quick-open"
-        data-runtime-open="mcp" ${state.coreAvailable ? "" : "disabled"}>Host MCP Tunnel</button>
-      <button type="button" class="button ghost runtime-quick-open"
-        data-runtime-open="lifecycle">Other Service Controls</button>
-    </div>
-  </section>`;
-}
-
-function runtimeQuickNavigation(event) {
-  const button = event.target?.closest?.("button.runtime-quick-open");
-  if (!button || button.disabled) return;
-  if (button.dataset.runtimeOpen === "mcp") {
-    if (!runtimeSelectedMuseCore()) return;
-    const panel = rt("runtime-create-panel");
-    const select = rt("runtime-create-kind");
-    if (panel) panel.hidden = false;
-    if (select) select.value = "mcp-tunnel";
-    runtimeCreateKindChanged();
-    panel?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-  } else if (button.dataset.runtimeOpen === "lifecycle") {
-    rt("lifecycle-console")?.scrollIntoView?.({ behavior: "smooth", block: "start" });
-  }
-}
-
 window.__superagentMuseControlState = runtimeMuseControlState;
 window.__superagentMuseQuickAction = async (action) => {
   const state = runtimeMuseControlState();
@@ -335,9 +285,9 @@ function runtimeRender(snapshot) {
   rt("runtime-scanned").textContent = `Scanned ${scanned.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
 
   const servers = Array.isArray(snapshot.cores) ? snapshot.cores : [];
-  rt("runtime-servers").innerHTML = runtimeQuickControls(snapshot) + (servers.length
+  rt("runtime-servers").innerHTML = servers.length
     ? servers.map(runtimeServerCard).join("")
-    : '<p class="empty-state">No registered SuperAgent server-info records found. Start Core, then click Scan Now.</p>');
+    : '<p class="empty-state">No registered SuperAgent server-info records found. Start Core, then click Scan Now.</p>';
 
   const processes = Array.isArray(snapshot.processes) ? snapshot.processes : [];
   rt("runtime-processes").innerHTML = processes.length
@@ -742,7 +692,6 @@ function runtimeInstall() {
   runtimeCreateKindChanged();
   rt("runtime-refresh")?.addEventListener("click", runtimeRefresh);
   rt("runtime-servers")?.addEventListener("click", runtimeSelect);
-  rt("runtime-servers")?.addEventListener("click", runtimeQuickNavigation);
   rt("runtime-remote")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-remote")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeServiceAction);

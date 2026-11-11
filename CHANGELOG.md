@@ -1,4 +1,11 @@
 ## [Unreleased] - 2026-11-06
+### Native Chrome pointer hover and click parity
+- Make `show_cursor` synchronize the browser's actual CDP mouse position instead of drawing an overlay alone. Add `hover_cursor` (genuine pointer/mouse enter/move plus bounded dwell and hit-target verification) and `click_cursor` (one native press/release, without duplicate DOM `.click()`).
+- Mirror the page's CSS pointer/text/crosshair shape in non-intercepting named cursor overlays, preserving the existing 4-second idle auto-hide. Coordinate one CDP pointer across agents while keeping each agent's visual presence.
+- Expose the same native pointer commands on authenticated, opt-in Delegate-CDP through the existing tab/actor/write lease and debugger allowlist. Delegate overlay persistence across navigation remains unsupported.
+- Verify real headed Chrome CSS hover, tooltip, trusted pointer/mouse events, native click exactly once and idle fade; preserve the legacy `click` command's DOM-click behavior for compatibility.
+
+
 ### Retire obsolete standalone Chrome extensions
 - Remove `chrome-extension-remote/` and `chrome-extension-chatgpt-optimizer/` from the active source tree, along with five obsolete Optimizer-only test files.
 - Keep `chrome-extension-delegate/` as the maintained opt-in paired ChatGPT/Delegate-CDP extension and `chrome-extension/` as the separate sidepanel package. Update syntax checks, browser prompts, shortcut migration, scaffolder, regression tests and current architecture docs.

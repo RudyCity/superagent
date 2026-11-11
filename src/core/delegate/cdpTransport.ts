@@ -1,6 +1,7 @@
 import { delegateBridge } from "./bridge.js";
 import { delegateMultiTabOrchestrator } from "./multiTabOrchestrator.js";
 import { executeFileUploadCommand, validateUploadPaths, type FileUploadCommand } from "../tools/chromeCdpFileUpload.js";
+import { executeCursorCommand, getCursorPosition, setCursorPosition } from "../tools/chromeCdpCursor.js";
 import { noteDelegateAttachment, forgetDelegateAttachment, touchDelegateAttachment, listDelegateAttachments } from "./cdpAttachmentRegistry.js";
 import { assertDelegateCdpMethodAllowed, assertDelegateUrlAllowed } from "../browserTransport/delegateCdpPolicy.js";
 import { delegateTargetId, parseBrowserTargetId } from "../browserTransport/targetIdentity.js";
@@ -36,7 +37,7 @@ type DelegateTarget = {
 
 const WRITE_COMMANDS = new Set([
   "new_tab", "close_tab", "activate", "navigate", "evaluate", "click", "type", "handle_dialog",
-  "move_cursor", "drag_and_drop", "emulate_device",
+  "move_cursor", "hover_cursor", "click_cursor", "show_cursor", "hide_cursor", "scroll_cursor", "drag_and_drop", "emulate_device",
   "upload_file", "handle_file_chooser",
 ]);
 const delegateCursorPositions = new Map<string, { x: number; y: number }>();
@@ -522,6 +523,27 @@ export async function executeDelegateChromeCommand(
     if (command === "get_cursor") {
       const key = `${target.connectionId}:${target.tabId}`;
       return JSON.stringify({ transport: "delegate", ...(delegateCursorPositions.get(key) || { x: 400, y: 300 }) });
+    }
+    if (["hover_cursor", "click_cursor", "show_cursor", "hide_cursor", "scroll_cursor"].includes(command)) {
+      // A Delegate tab has the same native Chrome mouse pipeline but a different,
+      // explicitly authenticated debugger/lease/transport. Never fall back to
+      // managed CDP or try to take over another Chrome debugging session.
+      const actor = agentId || "delegate";
+      const cursorTargetId = delegateTargetId(target.connectionId, target.tabId!);
+      const cursorTarget = { id: cursorTargetId };
+      const key = target.connectionId + ":" + target.tabId;
+      const prior = delegateCursorPositions.get(key);
+      if (prior) setCursorPosition(cursorTargetId, prior, actor);
+      const send = (_target: unknown, method: string, params: Record<string, unknown> = {}) =>
+        delegateCdpTransport.command(target, method, params, signal,
+          method === "Runtime.evaluate" ? { dangerousApproved: true } : {});
+      const name = typeof payload.cursorName === "string" && payload.cursorName.trim()
+        ? payload.cursorName : actor;
+      const result = await executeCursorCommand(send, cursorTarget, command, payload, actor, name);
+      if (result.startsWith("control_chrome_cdp:") && command !== "hide_cursor") {
+        delegateCursorPositions.set(key, getCursorPosition(cursorTargetId, actor));
+      }
+      return result;
     }
     if (command === "move_cursor") {
       const x = Number(payload.x ?? args.x);

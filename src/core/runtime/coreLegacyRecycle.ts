@@ -12,6 +12,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { getPackageRootDir, getRootConfigDir } from "../config/paths.js";
 import { readProcessStartIdentity } from "../tools/cliBridgeProcessIdentity.js";
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
+import { verifyWindowsProcessBirth, type ProcessBirthVerdict } from "./mcpProcessBirth.js";
 import { inspectCoreBuild } from "./coreBuildIdentity.js";
 import { coreCheckpointPath } from "./coreSupervisorCheckpoint.js";
 import { auditCoreColdStart } from "./coreColdStartAudit.js";
@@ -58,6 +59,26 @@ const validIdentity = (value: string) =>
 const hashText = (value: string) =>
   crypto.createHash("sha256").update(value).digest("hex");
 
+/**
+ * PID 0 can represent a real Windows TCP listener, but cannot identify its
+ * owner. A conflicting PID or an absent socket must never use this fallback.
+ * The recorded owner must still pass OS birth and authenticated API checks.
+ */
+export function acceptsRecycleCoreOwnerEvidence(input: {
+  platform: string;
+  kernelOwner: number | null;
+  candidatePid: number;
+  serverInfoPid: number;
+  birth: ProcessBirthVerdict;
+  authenticated: boolean;
+}): boolean {
+  if (!Number.isSafeInteger(input.candidatePid) || input.candidatePid <= 0 ||
+      input.serverInfoPid !== input.candidatePid || !input.authenticated) return false;
+  if (input.kernelOwner === input.candidatePid) return true;
+  return input.platform === "win32" && input.kernelOwner === 0 &&
+    input.birth === "matched";
+}
+
 function canonical(value: string): string {
   try { return fs.realpathSync.native(value); }
   catch { return path.resolve(value); }
@@ -67,7 +88,8 @@ function readServerInfo(port: number): ServerInfo {
   if (!validPort(port)) throw new Error("CORE_RECYCLE_INVALID_PORT");
   const file = path.join(getRootConfigDir(), `server-info-${port}.json`);
   const stat = fs.lstatSync(file);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 20 || stat.size > 4096)
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 ||
+      stat.size < 20 || stat.size > 4096)
     throw new Error("CORE_RECYCLE_SERVER_INFO_UNSAFE");
   const value = JSON.parse(fs.readFileSync(file, "utf8")) as Partial<ServerInfo>;
   if (
@@ -211,12 +233,14 @@ async function captureLegacyEvidence(port: number) {
 
   const listeners = readListenerOwners();
   if (!listeners) throw new Error("CORE_RECYCLE_LISTENER_OWNERSHIP_UNAVAILABLE");
-  const ownerPid = listeners.get(port);
-  if (!ownerPid) throw new Error("CORE_RECYCLE_NO_LISTENER");
+  const kernelOwner = listeners.get(port);
+  if (kernelOwner === undefined) throw new Error("CORE_RECYCLE_NO_LISTENER");
 
   const serverInfo = readServerInfo(port);
-  if (serverInfo.pid !== ownerPid)
+  if (kernelOwner > 0 && serverInfo.pid !== kernelOwner)
     throw new Error("CORE_RECYCLE_SERVER_INFO_PID_MISMATCH");
+  // Only the OS-observed PID-0 sentinel may use server-info as a candidate.
+  const ownerPid = kernelOwner > 0 ? kernelOwner : serverInfo.pid;
 
   const descriptor = readLegacyCoreProcessDescriptor(ownerPid);
   verifyLegacyDescriptor(descriptor, port);
@@ -224,6 +248,15 @@ async function captureLegacyEvidence(port: number) {
   if (!identity || !validIdentity(identity))
     throw new Error("CORE_RECYCLE_PROCESS_IDENTITY_UNAVAILABLE");
   await authenticatedCoreProbe(port, serverInfo.authToken);
+  if (!acceptsRecycleCoreOwnerEvidence({
+    platform: process.platform,
+    kernelOwner,
+    candidatePid: ownerPid,
+    serverInfoPid: serverInfo.pid,
+    birth: kernelOwner === 0
+      ? verifyWindowsProcessBirth(ownerPid, serverInfo.startedAt) : "unverified",
+    authenticated: true,
+  })) throw new Error("CORE_RECYCLE_PID_ZERO_ATTESTATION_FAILED");
 
   return {
     ownerPid,
@@ -391,11 +424,24 @@ async function waitForSupervisedCore(port: number, expectedBuild: string, timeou
     try {
       const status = await requestCoreSupervisor("status", port, 1400);
       const listener = readListenerOwners()?.get(port);
+      let ownerAttested = status.supervisorPid === listener;
+      if (!ownerAttested && listener === 0 && process.platform === "win32") {
+        const info = readServerInfo(port);
+        await authenticatedCoreProbe(port, info.authToken);
+        ownerAttested = acceptsRecycleCoreOwnerEvidence({
+          platform: process.platform,
+          kernelOwner: listener,
+          candidatePid: status.supervisorPid,
+          serverInfoPid: info.pid,
+          birth: verifyWindowsProcessBirth(status.supervisorPid, info.startedAt),
+          authenticated: true,
+        });
+      }
       if (
         status.publicPort === port &&
         status.ownerContract?.role === "core-supervisor" &&
         status.ownerContract?.mcpLifecycle === "not-owned" &&
-        status.supervisorPid === listener &&
+        ownerAttested &&
         status.currentBuild?.fresh === true &&
         status.currentBuild?.digest === expectedBuild
       ) return status;
