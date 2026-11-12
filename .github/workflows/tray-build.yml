@@ -106,8 +106,8 @@ jobs:
           if [[ "${#deploy[@]}" -gt 0 && "${#appdirs[@]}" -gt 0 ]]; then
             echo '=== Reproducing linuxdeploy with full output on disposable CI runner ==='
             export NO_STRIP=true APPIMAGE_EXTRACT_AND_RUN=1
-            timeout 120s "${deploy[0]}" --appdir "${appdirs[0]}" --plugin gtk --output appimage > "$RUNNER_TEMP/linuxdeploy-diagnostic.log" 2>&1
-            code=$?
+            code=0
+            timeout 120s "${deploy[0]}" --appdir "${appdirs[0]}" --plugin gtk --output appimage > "$RUNNER_TEMP/linuxdeploy-diagnostic.log" 2>&1 || code=$?
             echo "linuxdeploy reproduction exit=$code"
             tail -n 180 "$RUNNER_TEMP/linuxdeploy-diagnostic.log" || true
           else

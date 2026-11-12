@@ -22,6 +22,9 @@ describe("Linux AppImage packaging regression", () => {
     const script = read("scripts/build-standalone-unix.ts");
     expect(script).toContain('"deb,appimage"');
     expect(read("scripts/verify-packaged-standalone-unix.sh")).toContain("REQUIRE_APPIMAGE:-1");
-    expect(read(".github/workflows/tray-build.yml")).toContain("bundle/appimage/*.AppImage");
+    const ci = read(".github/workflows/tray-build.yml");
+    expect(ci).toContain("bundle/appimage/*.AppImage");
+    expect(ci).toContain("--output appimage > \"$RUNNER_TEMP/linuxdeploy-diagnostic.log\" 2>&1 || code=$?");
+    expect(ci).toContain("tail -n 180 \"$RUNNER_TEMP/linuxdeploy-diagnostic.log\"");
   });
 });
