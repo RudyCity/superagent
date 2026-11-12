@@ -8,7 +8,7 @@ const main = fs.readFileSync(path.resolve(
 
 describe("Android guided permission setup", () => {
   it("shows four permission states and a user-invoked next action", () => {
-    expect(main).toContain('section(layout, "REMOTE CONTROL SETUP · OWNER APPROVAL")');
+    expect(main).toContain('section(controlPage, "PERMISSIONS · YOUR CHOICE")');
     expect(main).toContain('permissionNext = action(layout, "Continue permission setup", this::continuePermissionSetup)');
     expect(main).toContain('action(layout, "Refresh permission status", this::refresh)');
     for (const title of ["Notifications:", "Accessibility:", "Screen sharing:", "Remote touch:"]) {

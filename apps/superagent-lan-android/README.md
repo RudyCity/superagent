@@ -7,6 +7,32 @@ Android device connected to the same physical LAN. A visible Android MediaProjec
 used only after the owner approves screen capture; there is no unattended
 background support, root, ADB, hidden capture, or silent system configuration.
 
+## Native Android dashboard (0.10.0)
+
+The companion now uses a native, accessible, four-tab mobile dashboard:
+
+- **Home:** actual sharing/tunnel state, shortcuts, quick Stop all sharing,
+  privacy explanation, and event history.
+- **Connect:** primary in-app Connect QR scanner, tunnel status/disconnect,
+  direct LAN sharing and segment, pairing code, pinned certificate fingerprint,
+  local approvals and explicit revocation. Manual tunnel JSON is hidden behind
+  an opt-in Advanced disclosure.
+- **Control:** the four-step permission status/guide, Accessibility settings,
+  system-authorized screen sharing, separately consented remote touch, and a
+  visible STOP action.
+- **Files:** Android system file and folder pickers for explicit file exchange.
+
+The bottom tab bar remains visible while pages scroll independently. Only
+the current page is shown; UI navigation never grants authorization. Connection
+status is derived from real LAN server and tunnel state, not an inferred or
+fabricated pairing result. Permissions and pairing remain separate.
+
+The visual system uses device-native controls, a dark navy canvas, mint
+primary actions, distinct destructive actions, larger touch targets, and
+accessible tab announcements. The layout uses no new Android dependencies.
+Existing pairing, QR scanning, TLS fingerprint checks, support approvals,
+screen-control safeguards and file-transfer limits are unchanged.
+
 ## Requirements and build
 
 - Android 10+ (API 29), Wi-Fi or Ethernet on the same physical private IPv4

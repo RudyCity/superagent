@@ -85,7 +85,7 @@ describe("Android health snapshot and owner consent contract", () => {
     expect(health).not.toContain("getRootInActiveWindow");
   });
   it("bumps APK version so old 0.6.0 install does not mask this build", () => {
-    expect(build).toContain("versionCode 16");
-    expect(build).toContain("versionName '0.9.2-permission-setup'");
+    expect(build).toContain("versionCode 17");
+    expect(build).toContain("versionName '0.10.0-native-dashboard'");
   });
 });
