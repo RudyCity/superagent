@@ -40,6 +40,8 @@ function setup(platform: "windows" | "android" = "windows") {
     return nodes.get(key)!;
   };
   let devices: any[] = [];
+  let pairingRequests: any[] = [];
+  let tunnelDevices: any[] = [];
   let apkVersion = "test";
   let apkHeartbeatOverride: any = null;
   let apkQrFailure: boolean | "timeout" = false;
@@ -51,7 +53,11 @@ function setup(platform: "windows" | "android" = "windows") {
       success: true,
       devices: [{ name: "<img src=x onerror=alert(1)>", address: "192.168.50.10", port: 17845, fingerprint, platform }],
     };
-    if (action === "list") return { success: true, devices: devices.map((d) => ({ ...d })), tunnelDevices: [] };
+    if (action === "list") return {
+      success: true, devices: devices.map((d) => ({ ...d })),
+      pairingRequests: pairingRequests.map((d) => ({ ...d })),
+      tunnelDevices: tunnelDevices.map((d) => ({ ...d })),
+    };
     if (action === "tunnel_invite") return { success: true, invite: {
       inviteId: "11111111-2222-4333-8444-555555555555",
       expiresAt: Date.now() + 10 * 60_000,
@@ -103,6 +109,9 @@ function setup(platform: "windows" | "android" = "windows") {
     document, window, navigator: {}, String, Number, Boolean, Error, Array, Object, Date, Math,
   });
   return { get, requests, window, heartbeat: () => heartbeatTick?.(),
+    setDevices: (value: any[]) => { devices = value; },
+    setPairingRequests: (value: any[]) => { pairingRequests = value; },
+    setTunnelDevices: (value: any[]) => { tunnelDevices = value; },
     setApkVersion: (value: string) => { apkVersion = value; },
     setApkHeartbeat: (value: any) => { apkHeartbeatOverride = value; },
     setApkQrFailure: (value: boolean | "timeout") => { apkQrFailure = value; },
@@ -445,5 +454,99 @@ describe("Expanded Android support actions in Tray", () => {
     release({ success: true, result: { ok: false, exitCode: -1, error: "Session revoked" } });
     await flush();
     expect(ui.get("lan-paired-count").textContent).toBe("0 paired");
+  });
+});
+
+describe("Direct LAN / Device Tunnel transport separation", () => {
+  const tunnelId = "cace9876-abc1-4c12-8a34-213ed5126777";
+  const localDevice = {
+    id, label: "Office laptop", host: "192.168.50.10", port: 17845,
+    transport: "lan", platform: "windows", connected: true, fingerprint,
+  };
+  const tunnelDevice = {
+    id: tunnelId, label: "OPPO Android", host: "tunnel", port: 0,
+    transport: "tunnel", platform: "android", connected: true, fingerprint,
+  };
+
+  it("isolates transport panels, paired devices and active-session tools without disconnecting", async () => {
+    const ui = setup();
+    await flush();
+    ui.setDevices([localDevice, tunnelDevice]);
+    ui.setTunnelDevices([{ id: tunnelId, name: "OPPO Android", platform: "android", online: true, fingerprint }]);
+    await ui.window.__superagentLanRefresh();
+    expect(ui.get("lan-route-lan").hidden).toBe(false);
+    expect(ui.get("lan-route-tunnel").hidden).toBe(true);
+    expect(ui.get("lan-direct-toolbar").hidden).toBe(false);
+    expect(ui.get("lan-paired").children).toHaveLength(1);
+    expect(ui.get("lan-paired").children[0].children[0].children[0].textContent).toBe("Office laptop");
+    expect(ui.get("lan-route-lan-count").textContent).toBe("1 paired");
+    expect(ui.get("lan-route-tunnel-count").textContent).toContain("1 paired");
+
+    await click(ui.get("lan-route-tunnel-tab"));
+    expect(ui.get("lan-route-lan").hidden).toBe(true);
+    expect(ui.get("lan-route-tunnel").hidden).toBe(false);
+    expect(ui.get("lan-direct-toolbar").hidden).toBe(true);
+    expect(ui.get("lan-paired").children).toHaveLength(1);
+    expect(ui.get("lan-paired").children[0].children[0].children[0].textContent).toBe("OPPO Android");
+    expect(ui.get("lan-session-status").textContent).toContain("Device Tunnel");
+    expect(ui.get("lan-command-mode").textContent).toContain("Android");
+    expect(ui.requests.filter((request) => ["close", "revoke"].includes(request.action))).toHaveLength(0);
+
+    await click(ui.get("lan-route-lan-tab"));
+    expect(ui.get("lan-paired").children[0].children[0].children[0].textContent).toBe("Office laptop");
+    expect(ui.get("lan-command-mode").textContent).toContain("Windows");
+    expect(ui.get("lan-command").disabled).toBe(false);
+  });
+
+  it("scopes pending pairing requests and invalidates stale code on transport switch", async () => {
+    const ui = setup();
+    await flush();
+    ui.setPairingRequests([
+      { requestId: "local-request", transport: "lan", host: "192.168.50.10", port: 17845,
+        state: "pending", controller: "Tray", fingerprint },
+      { requestId: "tunnel-request", transport: "tunnel", tunnelId,
+        state: "pending", controller: "Tray", fingerprint },
+    ]);
+    await ui.window.__superagentLanRefresh();
+    expect(ui.get("lan-pair-requests").children).toHaveLength(1);
+    expect(ui.get("lan-pair-requests").children[0].children[0].children[1].textContent).toContain("192.168");
+
+    await click(ui.get("lan-route-tunnel-tab"));
+    expect(ui.get("lan-pair-requests").children).toHaveLength(1);
+    expect(ui.get("lan-pair-requests").children[0].children[0].children[1].textContent).toContain("Device Tunnel");
+    expect(ui.get("lan-pair-form").hidden).toBe(true);
+    expect(ui.get("lan-tunnel-pair-waiting").hidden).toBe(false);
+    const pending = ui.get("lan-pair-requests").children[0];
+    await click(pending.children[1].children[0]); // Complete locally
+    expect(ui.get("lan-pair-form").hidden).toBe(false);
+    expect(ui.get("lan-pair-host-field").hidden).toBe(true);
+    expect(ui.get("lan-pair-port-field").hidden).toBe(true);
+    ui.get("lan-pair-code").value = "87654321";
+    ui.get("lan-verified").checked = true;
+
+    await click(ui.get("lan-route-lan-tab"));
+    expect(ui.get("lan-pair-code").value).toBe("");
+    expect(ui.get("lan-verified").checked).toBe(false);
+    await click(ui.get("lan-route-tunnel-tab"));
+    expect(ui.get("lan-pair-form").hidden).toBe(true);
+    await submit(ui.get("lan-pair-form")); // Programmatic submit must not pair via manual IPv4.
+    expect(ui.requests.filter((request) => ["pair", "pair_complete"].includes(request.action))).toHaveLength(0);
+    expect(ui.get("lan-pair-status").textContent).toContain("Manual IPv4 pairing is unavailable");
+  });
+
+  it("supports keyboard transport navigation while keeping LAN toolbar scoped", async () => {
+    const ui = setup();
+    await flush();
+    const tab = ui.get("lan-route-lan-tab");
+    let prevented = false;
+    tab.listeners.get("keydown")?.({ key: "End", preventDefault() { prevented = true; } });
+    expect(prevented).toBe(true);
+    expect(ui.get("lan-route-tunnel").hidden).toBe(false);
+    expect(ui.get("lan-direct-toolbar").hidden).toBe(true);
+    ui.get("lan-route-tunnel-tab").listeners.get("keydown")?.({
+      key: "Home", preventDefault() {},
+    });
+    expect(ui.get("lan-route-lan").hidden).toBe(false);
+    expect(ui.get("lan-direct-toolbar").hidden).toBe(false);
   });
 });

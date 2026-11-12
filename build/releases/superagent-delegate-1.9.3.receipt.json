@@ -1,0 +1,19 @@
+{
+  "component": "SuperAgent Delegate (ChatGPT)",
+  "version": "1.9.3",
+  "archive": "superagent-delegate-1.9.3.zip",
+  "sha256": "76d5129e21a3c9b9a1ce1070309e359dfbff2280767b0b0bdb2ad4fc685f1d7f",
+  "packagedFiles": {
+    "background.js": "cbb28eb354f15be4307141c51a46bf5db2d3c79c22638342f9edb5bd637df9bc",
+    "cdpBridge.js": "4a814f804620c1d1b54988287a0989c78e43f3c5f326e26e414678e353ec2ffa",
+    "cdpPolicy.js": "faf5a057cc303f238bdfef032f6d39eaf93d81d4d32def490f62ef5d3b685dfc",
+    "content.js": "f835556704346cdbd79d04c1e23e3541b77c4a800de8faed5838313141b8bfdc",
+    "manifest.json": "5a9d974c21b76c7819a8668c398d290dc0382e90c342a5025823cbe7b082e93d",
+    "popup.css": "b043a649822a52bac72f229fd8cb190eb30dddc40999588f8312924c12993e9a",
+    "popup.html": "d602d605649b4b90f0018e651c890ca4babc6045f4baec69c7e1bac8665e1e06",
+    "popup.js": "e8a5cb4dfd2a51e06922b2536ff5a22d5a66dbd1a2daa172be320cbc9169e90c",
+    "tabSingleton.js": "2595ea98d1fbebe893de9d6964c81e2462d3e19cd916d5f9b15d5057a69737aa"
+  },
+  "scope": "chrome-extension-delegate only; no secrets or user data",
+  "note": "Package integrity does not itself certify a production deployment."
+}

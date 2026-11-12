@@ -34,6 +34,130 @@
     const attachments = new Map();
     const events = new Map();
     const MAX_EVENTS_PER_TAB = 64;
+    const CDP_TAB_PREFIX = "🔴 CDP · ";
+    const tabScriptIds = new Map();
+    const indicatorRefreshing = new Set();
+    const INDICATOR_REFRESH_MS = 60_000;
+    const now = typeof options.now === "function" ? options.now : () => Date.now();
+
+    // Native Chrome tabs do not expose an arbitrary per-tab decoration API.
+    // An unobtrusive title prefix identifies the exact tab being debugged,
+    // while chrome.action adds a per-tab extension badge in the toolbar.
+    function indicatorSource(active, ttlMs = 120000) {
+      const prefix = JSON.stringify(CDP_TAB_PREFIX);
+      const expiry = Date.now() + Math.max(1000, Math.min(120000, ttlMs));
+      return [
+        "(() => {",
+        "if (window !== window.top) return false;",
+        "const key = '__superagent_delegate_cdp_title_v1__';",
+        "const prefix = " + prefix + ";",
+        "const prior = window[key];",
+        "if (prior && typeof prior.stop === 'function') prior.stop();",
+        "if (!" + JSON.stringify(active) + ") {",
+        " if (document.title.startsWith(prefix)) document.title = document.title.slice(prefix.length);",
+        " return true;",
+        "}",
+        "const expiresAt = " + expiry + ";",
+        "let closed = false, queued = false, timer = null;",
+        "const observer = new MutationObserver(() => {",
+        " if (queued || closed) return;",
+        " queued = true;",
+        " queueMicrotask(() => { queued = false; update(); });",
+        "});",
+        "const stop = () => {",
+        " if (closed) return;",
+        " closed = true; observer.disconnect(); clearTimeout(timer);",
+        " if (document.title.startsWith(prefix)) document.title = document.title.slice(prefix.length);",
+        " if (window[key] === state) delete window[key];",
+        "};",
+        "const state = { stop };",
+        "const update = () => {",
+        " if (closed) return;",
+        " if (Date.now() >= expiresAt) return stop();",
+        " if (!document.title.startsWith(prefix)) document.title = prefix + document.title;",
+        "};",
+        "window[key] = state;",
+        "if (document.head) {",
+        " observer.observe(document.head, { subtree: true, childList: true, characterData: true });",
+        " update();",
+        "} else document.addEventListener('DOMContentLoaded', () => {",
+        " if (!closed && document.head) {",
+        "  observer.observe(document.head, { subtree: true, childList: true, characterData: true });",
+        "  update();",
+        " }",
+        "}, { once: true });",
+        "timer = setTimeout(stop, Math.max(1, expiresAt - Date.now()));",
+        "return true;",
+        "})()",
+      ].join("\n");
+    }
+
+    async function setTabBadge(tabId, marked) {
+      try {
+        if (typeof chrome.action?.setBadgeText === "function") {
+          await chrome.action.setBadgeText({ tabId, text: marked ? "CDP" : "" });
+          if (marked) {
+            await chrome.action.setBadgeBackgroundColor?.({ tabId, color: "#c2410c" });
+            await chrome.action.setTitle?.({ tabId, title: "🔴 SuperAgent CDP sedang memakai tab ini" });
+          } else {
+            await chrome.action.setTitle?.({ tabId, title: "SuperAgent Delegate — koneksi Chrome" });
+          }
+        }
+      } catch { /* Cosmetic only; never change debugger ownership. */ }
+    }
+
+    async function displayTabIndicator(tabId) {
+      try {
+        // A repeated navigation must not accumulate stale document-init scripts.
+        const prior = tabScriptIds.get(tabId);
+        if (prior) {
+          await chromeCall(chrome.debugger.sendCommand.bind(chrome.debugger),
+            { tabId }, "Page.removeScriptToEvaluateOnNewDocument", { identifier: prior });
+          tabScriptIds.delete(tabId);
+        }
+        const entry = await chromeCall(chrome.debugger.sendCommand.bind(chrome.debugger),
+          { tabId }, "Page.addScriptToEvaluateOnNewDocument", { source: indicatorSource(true) });
+        if (typeof entry?.identifier === "string" && entry.identifier) tabScriptIds.set(tabId, entry.identifier);
+        await chromeCall(chrome.debugger.sendCommand.bind(chrome.debugger),
+          { tabId }, "Runtime.evaluate", { expression: indicatorSource(true) });
+      } catch { /* Cosmetic failure: keep the authorized debugger session. */ }
+      await setTabBadge(tabId, true);
+      const owned = attachments.get(tabId);
+      if (owned) owned.lastIndicatorAt = now();
+    }
+
+    async function refreshIndicators() {
+      if (!isEnabled()) return;
+      for (const [tabId, owned] of attachments) {
+        if (indicatorRefreshing.has(tabId)
+            || now() - (owned.lastIndicatorAt || 0) < INDICATOR_REFRESH_MS) continue;
+        indicatorRefreshing.add(tabId);
+        try {
+          // A live, already-owned debugger session can refresh its own cosmetic
+          // label. No new tabs/debugger ownership or page interactions.
+          await displayTabIndicator(tabId);
+        } finally {
+          indicatorRefreshing.delete(tabId);
+        }
+      }
+    }
+
+    async function clearTabIndicator(tabId) {
+      const identifier = tabScriptIds.get(tabId);
+      tabScriptIds.delete(tabId);
+      if (identifier) {
+        try {
+          await chromeCall(chrome.debugger.sendCommand.bind(chrome.debugger),
+            { tabId }, "Page.removeScriptToEvaluateOnNewDocument", { identifier });
+        } catch { /* Expiry in page handles disconnected debugger cleanup. */ }
+      }
+      try {
+        await chromeCall(chrome.debugger.sendCommand.bind(chrome.debugger),
+          { tabId }, "Runtime.evaluate", { expression: indicatorSource(false) });
+      } catch { /* Tab may have closed or navigated to a restricted page. */ }
+      await setTabBadge(tabId, false);
+    }
+
     const isEnabled = typeof options.enabled === "function" ? options.enabled : () => false;
     const clientId = typeof options.clientId === "function" ? options.clientId : () => "";
     const policy = globalThis.DelegateCdpPolicy;
@@ -91,6 +215,7 @@
         throw normalizeChromeError(error, "Could not attach chrome.debugger.");
       }
       attachments.set(tabId, { tabId, attachedAt: Date.now(), lastUsedAt: Date.now(), url: tab.url || "" });
+      await displayTabIndicator(tabId);
       return { attached: true, tabId };
     }
 
@@ -98,6 +223,7 @@
       const owned = attachments.get(tabId);
       if (!owned) return { detached: false, owned: false, tabId };
       try {
+        await clearTabIndicator(tabId);
         await chromeCall(chrome.debugger.detach.bind(chrome.debugger), { tabId });
       } catch (error) {
         const message = String(error?.message || error);
@@ -125,7 +251,12 @@
           { tabId }, method, params.params && typeof params.params === "object" ? params.params : {}
         );
         const owned = attachments.get(tabId);
-        if (owned) owned.lastUsedAt = Date.now();
+        if (owned) {
+          owned.lastUsedAt = Date.now();
+          // Reapply after site navigation or aggressive title rewrites.
+          // One-time read errors must not change the result of the original command.
+          if (method === "Page.navigate") await displayTabIndicator(tabId);
+        }
         return result ?? {};
       } catch (error) {
         throw normalizeChromeError(error, "CDP command failed.");
@@ -216,7 +347,11 @@
 
     if (chrome.debugger?.onDetach?.addListener) {
       chrome.debugger.onDetach.addListener((source) => {
-        if (Number.isSafeInteger(source?.tabId)) attachments.delete(source.tabId);
+        if (Number.isSafeInteger(source?.tabId)) {
+          attachments.delete(source.tabId);
+          tabScriptIds.delete(source.tabId);
+          void setTabBadge(source.tabId, false);
+        }
       });
     }
 
@@ -237,6 +372,7 @@
       listTargets,
       listAttachments,
       listEvents,
+      refreshIndicators,
     });
   };
 })();

@@ -230,3 +230,39 @@
 .lan-tunnel-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
 .lan-apk-meta { font-family:var(--font-mono); overflow-wrap:anywhere; }
 @media (max-width:720px) { .lan-tunnel-actions { width:100%; justify-content:stretch; } .lan-tunnel-actions .button { flex:1 1 180px; justify-content:center; } }
+
+/* Connection-method chooser: Direct LAN and Device Tunnel never share discovery controls. */
+.lan-route-tabs { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin:0 0 10px; }
+.lan-route-tab {
+  appearance:none; display:grid; align-content:start; justify-items:start; gap:8px; min-width:0;
+  padding:19px 22px; text-align:left; cursor:pointer; font-family:var(--font-sans);
+  border:1px solid var(--border-medium); border-radius:var(--radius-lg);
+  color:var(--text-secondary); background:var(--bg-surface);
+  transition:border-color .16s ease,background-color .16s ease;
+}
+.lan-route-tab strong { color:var(--text-primary); font-size:19px; font-weight:650; line-height:1.2; }
+.lan-route-tab > span:not(.lan-route-eyebrow) { font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+.lan-route-eyebrow { color:var(--text-muted); font:700 10px var(--font-mono); letter-spacing:.1em; }
+.lan-route-tab small { margin-top:3px; padding:5px 9px; color:var(--text-secondary); background:var(--bg-base); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); font:11px var(--font-mono); }
+.lan-route-tab:hover { border-color:var(--border-focus); }
+.lan-route-tab[aria-selected="true"] { border-color:var(--accent); background:var(--accent-muted); }
+.lan-route-tab[aria-selected="true"] .lan-route-eyebrow { color:var(--cyan); }
+.lan-route-tab:focus-visible { outline:2px solid var(--border-focus); outline-offset:3px; }
+.lan-route-pane[hidden], .lan-direct-toolbar[hidden],
+#lan-pair-form[hidden], .lan-route-pair-waiting[hidden], .lan-pair-network-field[hidden] { display:none !important; }
+.lan-route-description { font-size:12px; line-height:1.6; color:var(--text-secondary); margin:0 2px 20px; }
+.lan-active-route {
+  display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:7px 16px;
+  margin:4px 0 14px; padding:13px 16px; border:1px solid var(--border-medium);
+  border-left:3px solid var(--accent); border-radius:var(--radius-sm); background:var(--bg-surface);
+}
+.lan-active-route span:first-child { font-size:13px; font-weight:650; color:var(--text-primary); }
+.lan-active-route span:last-child { font-size:12px; color:var(--text-secondary); line-height:1.5; }
+.lan-route-pair-waiting { margin:0 22px 22px; padding:18px; border:1px dashed var(--border-medium); border-radius:var(--radius-sm); background:var(--bg-base); color:var(--text-secondary); font-size:13px; line-height:1.6; }
+.lan-direct-toolbar { display:flex; align-items:flex-end; flex-wrap:wrap; gap:10px; min-width:0; }
+@media (max-width:700px) {
+  .lan-route-tabs { grid-template-columns:minmax(0,1fr); }
+  .lan-route-tab { padding:17px 18px; }
+  .lan-direct-toolbar { width:100%; }
+}
+@media (prefers-reduced-motion:reduce) { .lan-route-tab { transition:none; } }

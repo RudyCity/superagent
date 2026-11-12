@@ -716,9 +716,14 @@ describe("control_chrome_cdp (mock CDP server)", () => {
     const rival = "gumroad-qa-" + process.pid;
     const claim = await controlChromeCdpTool.execute({ command: "claim_target", targetId: "T1", agentId: owner });
     expect(claim).toContain('"status":"claimed"');
-    const sessionToken = JSON.parse(String(claim)).sessionToken as string;
+    const claimed = JSON.parse(String(claim));
+    const sessionToken = claimed.sessionToken as string;
+    expect(claimed.revision).toBe(0); // Cosmetic tab indicator must not consume the initial revision.
     try {
       const sessions = await controlChromeCdpTool.execute({ command: "list_sessions" });
+      const currentSession = JSON.parse(String(sessions)).sessions.find((item: any) =>
+        item.targetId === "T1" && item.agentId === owner);
+      expect(currentSession?.revision).toBe(claimed.revision);
       expect(sessions).toContain(owner);
       const denied = await controlChromeCdpTool.execute({
         command: "evaluate", targetId: "T1", agentId: rival, payload: { expression: "1+1" },

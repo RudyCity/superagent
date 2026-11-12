@@ -5,6 +5,7 @@
   const $ = (id) => document.getElementById(id);
   const state = { discovered: [], paired: [], pairingRequests: [], tunnelDevices: [], selected: null, pairRequestId: null,
     busy: false, scanning: false, presetFor: null, presetPlatform: null, segmentRevision: 0,
+    route: "lan", routeInitialized: false, selectedByRoute: { lan: null, tunnel: null },
     connectQrLease: null, apkQrLease: null, qrHeartbeatBusy: false,
     apkQrSyncPending: false, apkQrRetryAt: 0,
     qrOutcomeUnknown: { connect: false, apk: false } };
@@ -68,7 +69,34 @@
     el.textContent = message;
     return el;
   };
-  const active = () => state.paired.find((device) => device.id === state.selected && device.connected);
+  const transportOf = (device) => device?.transport === "tunnel" ? "tunnel" : "lan";
+  const routeLabel = () => state.route === "tunnel" ? "Device Tunnel" : "Direct LAN";
+  const routeDevices = () => state.paired.filter((device) => transportOf(device) === state.route);
+  const active = () => state.paired.find((device) =>
+    device.id === state.selected && device.connected && transportOf(device) === state.route);
+  function setRoute(route) {
+    if (route !== "lan" && route !== "tunnel") return;
+    if (state.route !== route) {
+      const previous = state.paired.find((device) => device.id === state.selected);
+      if (previous) state.selectedByRoute[transportOf(previous)] = previous.id;
+      state.route = route;
+      const next = state.paired.find((device) => device.id === state.selectedByRoute[route] &&
+        transportOf(device) === route) || state.paired.find((device) =>
+        transportOf(device) === route && device.connected) ||
+        state.paired.find((device) => transportOf(device) === route);
+      state.selected = next?.id || null;
+      // A pending code is transport-scoped. Never submit it after switching routes.
+      state.pairRequestId = null;
+      for (const id of ["lan-pair-code", "lan-pair-ip", "lan-pair-fingerprint"]) {
+        if ($(id)) $(id).value = "";
+      }
+      if ($("lan-verified")) $("lan-verified").checked = false;
+      pairStatus("Switched to " + routeLabel() +
+        ". Pairing requests and active sessions below now show this connection method only.");
+    }
+    state.routeInitialized = true;
+    paint();
+  }
   function drawQrMatrix(canvas, matrix) {
     if (!canvas || typeof canvas.getContext !== "function") throw Error("QR canvas is unavailable.");
     if (!matrix || !Number.isInteger(matrix.size) || matrix.size < 21 || matrix.size > 177
@@ -189,6 +217,8 @@
   }
 
   function loadPairRequest(request) {
+    const route = transportOf(request);
+    if (route !== state.route) setRoute(route);
     state.pairRequestId = request.requestId;
     if ($("lan-pair-ip")) $("lan-pair-ip").value = request.transport === "tunnel" ? "Device Tunnel" : request.host;
     if ($("lan-pair-port")) $("lan-pair-port").value = request.transport === "tunnel" ? "17845" : String(request.port);
@@ -197,11 +227,45 @@
     if (request.segment && $("lan-segment-name")) $("lan-segment-name").value = request.segment;
     if ($("lan-pair-code")) $("lan-pair-code").value = "";
     if ($("lan-verified")) $("lan-verified").checked = false;
-    pairStatus("Pairing request loaded. Compare the fingerprint on the target, enter its fresh 8-digit code locally, and confirm the fingerprint.");
+    pairStatus(routeLabel() + " pairing request loaded. Compare the fingerprint on the target, enter its fresh 8-digit code, and confirm the fingerprint.");
+    paint();
     $("lan-pair-form")?.scrollIntoView?.({ behavior: "smooth", block: "center" });
     $("lan-pair-code")?.focus?.();
   }
   function paint() {
+    const tunnel = state.route === "tunnel";
+    for (const route of ["lan", "tunnel"]) {
+      const selected = route === state.route;
+      const tab = $("lan-route-" + route + "-tab");
+      if (tab) {
+        tab.setAttribute("aria-selected", String(selected));
+        tab.tabIndex = selected ? 0 : -1;
+      }
+      if ($("lan-route-" + route)) $("lan-route-" + route).hidden = !selected;
+      const count = state.paired.filter((device) => transportOf(device) === route).length;
+      if ($("lan-route-" + route + "-count")) $("lan-route-" + route + "-count").textContent =
+        count + " paired" + (route === "tunnel" ? " · " + state.tunnelDevices.length + " enrolled" : "");
+    }
+    if ($("lan-direct-toolbar")) $("lan-direct-toolbar").hidden = tunnel;
+    if ($("lan-route-description")) $("lan-route-description").textContent = tunnel
+      ? "Device Tunnel selected · create or scan a QR, pair the enrolled device, then request owner approval."
+      : "Direct LAN selected · scan a private network segment, pair, then request owner approval.";
+    if ($("lan-active-route-label")) $("lan-active-route-label").textContent = routeLabel() + " workspace";
+    if ($("lan-active-route-subtitle")) $("lan-active-route-subtitle").textContent =
+      "Only " + routeLabel() + " devices, pairing requests and sessions are shown below.";
+    if ($("lan-pair-title")) $("lan-pair-title").textContent = tunnel
+      ? "Complete Device Tunnel pairing" : "Pair a Direct LAN device";
+    if ($("lan-pair-guidance")) $("lan-pair-guidance").textContent = tunnel
+      ? "Choose Pair through tunnel on an online enrolled device, then verify the fingerprint and enter the phone's 8-digit code."
+      : "Select a discovered device or enter its private IPv4. Verify its full certificate fingerprint and current 8-digit code.";
+    if ($("lan-paired-title")) $("lan-paired-title").textContent = routeLabel() + " sessions";
+    for (const id of ["lan-pair-host-field", "lan-pair-port-field"]) {
+      if ($(id)) $(id).hidden = tunnel;
+    }
+    if ($("lan-pair-form")) $("lan-pair-form").hidden = tunnel && !state.pairRequestId;
+    if ($("lan-tunnel-pair-waiting")) $("lan-tunnel-pair-waiting").hidden = !tunnel || Boolean(state.pairRequestId);
+    if ($("lan-pair-submit")) $("lan-pair-submit").textContent =
+      state.pairRequestId ? "Complete " + routeLabel() + " pairing" : "Request pairing";
     const discovery = $("lan-discovered");
     if (discovery) {
       discovery.replaceChildren();
@@ -273,10 +337,11 @@
     const pairRequests = $("lan-pair-requests");
     if (pairRequests) {
       pairRequests.replaceChildren();
-      if (!state.pairingRequests.length) {
-        pairRequests.append(empty("No MCP pairing requests waiting for local completion."));
+      const visibleRequests = state.pairingRequests.filter((request) => transportOf(request) === state.route);
+      if (!visibleRequests.length) {
+        pairRequests.append(empty("No " + routeLabel() + " pairing requests waiting for local completion."));
       }
-      for (const request of state.pairingRequests) {
+      for (const request of visibleRequests) {
         const status = request.state === "pending" ? "Waiting for local code"
           : request.state === "completing" ? "Waiting for target approval"
           : request.state === "paired" ? "Paired"
@@ -303,8 +368,10 @@
     const paired = $("lan-paired");
     if (paired) {
       paired.replaceChildren();
-      if (!state.paired.length) paired.append(empty("No paired devices. Pair a Windows laptop or Android phone above while its LAN Client is open."));
-      for (const device of state.paired) {
+      const visibleDevices = routeDevices();
+      if (!visibleDevices.length) paired.append(empty("No paired " + routeLabel() +
+        " devices. Use the connection method above to pair a device."));
+      for (const device of visibleDevices) {
         const connected = Boolean(device.connected);
         const { div, actions } = item(
           device.label || "Device Client",
@@ -315,7 +382,8 @@
           device.id === state.selected
         );
         actions.append(button(device.id === state.selected ? "Selected" : "Select",
-          () => { state.selected = device.id; paint(); }, false, state.busy || device.id === state.selected));
+          () => { state.selected = device.id; state.selectedByRoute[state.route] = device.id; paint(); },
+          false, state.busy || device.id === state.selected));
         actions.append(button("Request session", () => operation("open", { deviceId: device.id },
           "Approve the session request on the target device."), false, state.busy || connected));
         actions.append(button("Disconnect", () => void emergencyAccessStop("close", device.id),
@@ -371,16 +439,17 @@
       platform === "android" ? "Android diagnostic or explicitly approved local action" : "PowerShell command on the selected Windows laptop";
     if ($("lan-command")) $("lan-command").placeholder =
       platform === "android" ? "android.info" : "Get-ComputerInfo | Select-Object WindowsProductName";
-    if ($("lan-paired-count")) $("lan-paired-count").textContent = state.paired.length + " paired";
+    if ($("lan-paired-count")) $("lan-paired-count").textContent = routeDevices().length + " paired";
     if ($("lan-session-status")) $("lan-session-status").textContent =
-      current ? "Connected · " + current.host : "No active session";
+      current ? "Connected · " + routeLabel() + " · " + (current.label || current.platform || "device")
+        : "No active " + routeLabel() + " session";
     if ($("lan-command")) $("lan-command").disabled = state.busy || !current;
     if ($("lan-command-run")) $("lan-command-run").disabled = state.busy || !current;
     if ($("lan-android-quick-actions")) $("lan-android-quick-actions").hidden = platform !== "android";
     for (const quickId of ["lan-health-quick", "lan-support-quick"]) {
       if ($(quickId)) $(quickId).disabled = !current || platform !== "android" || state.busy;
     }
-    if ($("lan-pair-submit")) $("lan-pair-submit").disabled = state.busy;
+    if ($("lan-pair-submit")) $("lan-pair-submit").disabled = state.busy || (tunnel && !state.pairRequestId);
     if ($("lan-discovery-scan")) $("lan-discovery-scan").disabled = state.busy || state.scanning;
     if ($("lan-tunnel-invite")) $("lan-tunnel-invite").disabled = state.busy;
     if ($("lan-apk-download-qr")) $("lan-apk-download-qr").disabled = state.busy;
@@ -396,7 +465,26 @@
       state.paired = Array.isArray(reply.devices) ? reply.devices : [];
       state.pairingRequests = Array.isArray(reply.pairingRequests) ? reply.pairingRequests : [];
       state.tunnelDevices = Array.isArray(reply.tunnelDevices) ? reply.tunnelDevices : [];
-      if (!state.paired.some((device) => device.id === state.selected)) state.selected = state.paired[0]?.id || null;
+      if (!state.routeInitialized) {
+        const preferred = state.paired.find((device) => device.connected) || state.paired[0];
+        state.route = preferred ? transportOf(preferred)
+          : state.tunnelDevices.length ? "tunnel" : "lan";
+        state.routeInitialized = true;
+      }
+      if (state.pairRequestId && !state.pairingRequests.some((request) =>
+        request.requestId === state.pairRequestId &&
+        transportOf(request) === state.route && request.state === "pending")) {
+        state.pairRequestId = null;
+      }
+      const chosen = state.paired.find((device) => device.id === state.selected);
+      if (chosen) state.selectedByRoute[transportOf(chosen)] = chosen.id;
+      const routePaired = routeDevices();
+      if (!routePaired.some((device) => device.id === state.selected)) {
+        const next = routePaired.find((device) => device.id === state.selectedByRoute[state.route])
+          || routePaired.find((device) => device.connected) || routePaired[0];
+        state.selected = next?.id || null;
+      }
+      state.selectedByRoute[state.route] = state.selected;
       paint();
       if (manual === true) qrToast("success", "Device list refreshed.");
     } catch (error) {
@@ -460,6 +548,10 @@
     }
   }
   function validatePairForm() {
+    if (state.route === "tunnel") {
+      pairStatus("Manual IPv4 pairing is unavailable for Device Tunnel. Select an enrolled tunnel device and complete its pending request.", true);
+      return null;
+    }
     const host = ($("lan-pair-ip")?.value || "").trim();
     const port = Number($("lan-pair-port")?.value);
     const code = ($("lan-pair-code")?.value || "").trim();
@@ -513,6 +605,7 @@
       if (reply?.success === false) throw Error("Device did not confirm the operation.");
       if (action === "pair" || action === "pair_complete") {
         state.selected = reply.device?.id || null;
+        state.selectedByRoute[state.route] = state.selected;
         state.pairRequestId = null;
         $("lan-pair-code").value = "";
         $("lan-verified").checked = false;
@@ -530,7 +623,7 @@
             ? "Phone owner approved opening Settings. Sharing will end and a new pairing will be required."
             : "Phone owner approved a one-step media volume adjustment.")
           : result.ok ? "Remote command completed." : "Remote command returned an error.", !result.ok);
-      } else notice(action === "open" ? "Session approved by the target laptop." :
+      } else notice(action === "open" ? "Session approved by the target device." :
         (action === "pair" || action === "pair_complete") ? "Pairing approved. Request a separate terminal session." :
         action === "revoke" ? "Pairing revoked on the target laptop." : "Session disconnected.");
       if (action === "pair" || action === "pair_complete") qrToast("success", "Pairing approved. Request session access separately.");
@@ -538,10 +631,10 @@
       else if (action === "exec") qrToast(reply?.result?.ok === true ? "success" : "warning",
         reply?.result?.ok === true ? "Remote command completed." : "Remote command result requires inspection.");
     } catch (error) {
-      notice("LAN action failed: " + String(error), true);
+      notice("Device action failed: " + String(error), true);
       qrToast(isTimeout(error) ? "warning" : "error",
-        isTimeout(error) ? "LAN request outcome unverified. Inspect the device before retrying."
-          : "LAN action rejected. Check inline pairing or device status.");
+        isTimeout(error) ? "Device request outcome unverified. Inspect the device before retrying."
+          : "Device action rejected. Check pairing or device status.");
       if (action === "pair" || action === "pair_complete") {
         const detail = String(error);
         const help = /Full YOLO/i.test(detail)
@@ -562,6 +655,18 @@
     }
   }
   function install() {
+    for (const route of ["lan", "tunnel"]) {
+      const tab = $("lan-route-" + route + "-tab");
+      tab?.addEventListener("click", () => setRoute(route));
+      tab?.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? "lan" : event.key === "End" ? "tunnel"
+          : event.key === "ArrowRight" ? "tunnel" : "lan";
+        setRoute(next);
+        $("lan-route-" + next + "-tab")?.focus?.();
+      });
+    }
     $("lan-discovery-scan")?.addEventListener("click", scan);
     $("lan-direct-ip")?.addEventListener("input", () => {
       state.discovered = [];
@@ -718,6 +823,15 @@
         return;
       }
       if (state.pairRequestId) {
+        const pending = state.pairingRequests.find((request) =>
+          request.requestId === state.pairRequestId && transportOf(request) === state.route &&
+          request.state === "pending");
+        if (!pending) {
+          state.pairRequestId = null;
+          pairStatus("The selected pairing request is no longer pending for " + routeLabel() + ". Refresh and choose a current request.", true);
+          paint();
+          return;
+        }
         const code = ($("lan-pair-code")?.value || "").trim();
         const verified = Boolean($("lan-verified")?.checked);
         $("lan-pair-code")?.setAttribute("aria-invalid", String(!/^\d{8}$/.test(code)));
@@ -748,11 +862,14 @@
         current.platform === "android" && command.startsWith("android.action.")
           ? "Waiting for explicit approval on the Android phone..." : "Remote command running...");
     });
-    const heartbeatTimer = window.setInterval(() => { void runQrHeartbeat(); }, QR_HEARTBEAT_MS);
-    document.addEventListener("visibilitychange", () => {
+    const heartbeatTimer = typeof window.setInterval === "function"
+      ? window.setInterval(() => { void runQrHeartbeat(); }, QR_HEARTBEAT_MS) : null;
+    document.addEventListener?.("visibilitychange", () => {
       if (document.visibilityState === "visible") void runQrHeartbeat();
     });
-    window.addEventListener("beforeunload", () => window.clearInterval(heartbeatTimer), { once: true });
+    window.addEventListener?.("beforeunload", () => {
+      if (heartbeatTimer !== null) window.clearInterval?.(heartbeatTimer);
+    }, { once: true });
     if ($("page-lan-devices")?.hidden === false) void refresh();
   }
   window.__superagentLanGetSelected = () => active();

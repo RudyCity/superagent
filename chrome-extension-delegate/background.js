@@ -822,6 +822,11 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     // A tab might finish rendering its composer AFTER navigation completed.
     // Periodically retry safe cleanup, even if no new tab event fires.
     singleton.schedule();
+    if (enabled && delegateCdpEnabled) {
+      // Re-arm title markers for genuinely attached tabs. The existing alarm
+      // is the sole heartbeat; do not create another polling service.
+      void cdpBridge.refreshIndicators?.();
+    }
   }
 });
 chrome.runtime.onStartup.addListener(() => { ensureWakeAlarm(); connect(); });

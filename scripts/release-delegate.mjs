@@ -29,7 +29,7 @@ if (!Array.isArray(manifest.content_scripts) ||
 
 const files = [
   "manifest.json", "background.js", "tabSingleton.js", "content.js",
-  "popup.html", "popup.css", "popup.js",
+  "cdpPolicy.js", "cdpBridge.js", "popup.html", "popup.css", "popup.js",
 ].sort();
 const checksum = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const zip = new JSZip();

@@ -493,6 +493,22 @@ export async function withCdpTargetRead<T>(port: number, targetId: string, opts:
     return cdpExecutionScope.run({ revision: current?.revision ?? 0, mode: current?.mode === "shared" ? "shared" : "isolated" }, fn);
   });
 }
+/** Cosmetic tab-title indicator, gated by exact owner capability but never
+ * counted as a browser user action or a revision-changing page mutation.
+ * In particular claim_target must return its original usable revision. */
+export async function withCdpOwnedTabIndicator<T>(
+  port: number, targetId: string, agentId: string, sessionToken: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  validAgent(agentId);
+  return guarded(port, targetId, {}, async key => {
+    const owned = await load(key);
+    if (!owned) throw new Error("CDP tab indicator requires an active owner.");
+    auth(owned, { agentId, sessionToken, ownerOnly: true });
+    return fn();
+  });
+}
+
 export async function withCdpTargetWrite<T>(
   port: number, targetId: string, agentId: string | undefined, fn: () => Promise<T>, options: Omit<CdpAccess, "agentId"> = {}
 ): Promise<T> {

@@ -278,18 +278,21 @@
 
           <!-- LAN Client management actions -->
           <div id="actions-lan-devices" class="action-group" hidden>
+            <div id="lan-direct-toolbar" class="lan-direct-toolbar">
             <label class="lan-segment-control" for="lan-segment-name">Network segment
               <input id="lan-segment-name" type="text" minlength="3" maxlength="32"
                 pattern="[A-Za-z0-9][A-Za-z0-9 _.-]{2,31}" autocomplete="off"
                 spellcheck="false" placeholder="office-lan" required
                 title="3–32 characters: letters, numbers, space, underscore, period or hyphen; start with a letter or number" />
             </label>
-            <button type="button" id="lan-paired-refresh" class="button ghost">Refresh devices</button>
+
             <label class="lan-segment-control" for="lan-direct-ip">Target IPv4 (optional)
               <input id="lan-direct-ip" type="text" inputmode="decimal" autocomplete="off"
                 spellcheck="false" placeholder="10.200.4.187" title="Enter a specific private IPv4 if the devices are on routed campus subnets" />
             </label>
             <button type="button" id="lan-discovery-scan" class="button primary">Scan LAN</button>
+            </div>
+            <button type="button" id="lan-paired-refresh" class="button ghost">Refresh devices</button>
           </div>
 
           <!-- Chrome Delegate Page Actions -->
@@ -710,26 +713,42 @@
 <!-- Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 -->
         <section class="lan-overview" aria-label="Local support workflow">
           <div class="lan-overview-title">
-            <span class="lan-kicker">REMOTE SUPPORT / PRIVATE NETWORK</span>
-            <h2>Connect only when the other laptop agrees.</h2>
-            <p>SuperAgent LAN Client must be open on the target laptop. Pairing and every new terminal session require a separate approval typed on that laptop.</p>
+            <span class="lan-kicker">REMOTE SUPPORT / OWNER APPROVED</span>
+            <h2>One workspace. Two secure connection methods.</h2>
+            <p>Choose how to reach a trusted Windows or Android device. Direct LAN stays on your private network; Device Tunnel connects over outbound HTTPS. Both require owner-approved pairing and support sessions.</p>
           </div>
           <div class="lan-overview-steps" aria-label="Connection steps">
-            <span><b>01</b> Discover</span>
-            <span><b>02</b> Pair</span>
-            <span><b>03</b> Approve</span>
-            <span><b>04</b> Support</span>
+            <span><b>01</b> Select transport</span>
+            <span><b>02</b> Pair securely</span>
+            <span><b>03</b> Request access</span>
           </div>
         </section>
 
         <div id="lan-banner" class="banner" role="status" aria-live="polite" hidden></div>
 
+        <div class="lan-route-tabs" role="tablist" aria-label="Connection method">
+          <button id="lan-route-lan-tab" type="button" class="lan-route-tab" role="tab" aria-selected="true" tabindex="0" aria-controls="lan-route-lan">
+            <span class="lan-route-eyebrow">PRIVATE NETWORK</span>
+            <strong>Direct LAN</strong>
+            <span>Discover devices on a local segment or a private IPv4.</span>
+            <small id="lan-route-lan-count">No paired devices</small>
+          </button>
+          <button id="lan-route-tunnel-tab" type="button" class="lan-route-tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="lan-route-tunnel">
+            <span class="lan-route-eyebrow">OUTBOUND HTTPS</span>
+            <strong>Device Tunnel</strong>
+            <span>Connect Android through a secure QR enrollment.</span>
+            <small id="lan-route-tunnel-count">No paired devices</small>
+          </button>
+        </div>
+        <p id="lan-route-description" class="lan-route-description" aria-live="polite">Direct LAN selected · scan a local segment, pair, then request owner approval.</p>
+
+        <div id="lan-route-lan" class="lan-route-pane" role="tabpanel" aria-labelledby="lan-route-lan-tab">
         <section class="panel lan-panel" aria-labelledby="lan-discovery-title">
           <div class="panel-head">
             <div>
               <div class="panel-eyebrow">STEP 01 / DISCOVERY</div>
               <h2 id="lan-discovery-title">Available LAN devices</h2>
-              <p>Scan your local subnet, or supply a specific private IPv4 above for routed intranet discovery. The network segment must match. UDP may be blocked between subnets; manual pairing still requires the displayed fingerprint, code and on-device approval.</p>
+              <p>Direct LAN only. Enter a matching network segment and select <strong>Scan LAN</strong> above; an optional private IPv4 enables a targeted scan. Verify the fingerprint, code, and approval on the device.</p>
             </div>
             <span id="lan-discovery-status" class="subtle-badge">Not scanned</span>
           </div>
@@ -737,11 +756,12 @@
             <div class="lan-empty">No scan yet. Start the LAN Client on the other laptop, then select <strong>Scan LAN</strong>.</div>
           </div>
         </section>
-
+        </div>
+        <div id="lan-route-tunnel" class="lan-route-pane" role="tabpanel" aria-labelledby="lan-route-tunnel-tab" hidden>
         <section class="panel lan-panel" aria-labelledby="lan-tunnel-title">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">OPTIONAL / DEVICE TUNNEL</div>
+              <div class="panel-eyebrow">TUNNEL CONNECTION / QR ENROLLMENT</div>
               <h2 id="lan-tunnel-title">Connect a device by QR</h2>
               <p>Create a one-time QR here, then on Android choose <strong>Scan QR &amp; Connect</strong>. If the Core HTTPS tunnel is not running, this QR action starts and verifies it automatically. Enrollment and pairing details are transferred by QR; the phone owner only confirms the pairing approval.</p>
             </div>
@@ -771,25 +791,31 @@
             <div class="lan-empty">No enrolled tunnel devices.</div>
           </div>
         </section>
+        </div>
 
+        <div id="lan-active-route" class="lan-active-route" role="status" aria-live="polite">
+          <span id="lan-active-route-label">Direct LAN workspace</span>
+          <span id="lan-active-route-subtitle">Pairing and sessions below are scoped to this connection method.</span>
+        </div>
         <section class="panel lan-panel" aria-labelledby="lan-pair-title">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">STEP 02 / PAIRING</div>
-              <h2 id="lan-pair-title">Pair a device</h2>
-              <p>Select <strong>Use for pairing</strong> after scanning, then enter the current 8-digit code from the Android phone or Windows client and compare the full certificate fingerprint on that device. Pairing always requires owner approval.</p>
+              <div class="panel-eyebrow">OWNER APPROVAL / PAIRING</div>
+              <h2 id="lan-pair-title">Pair a Direct LAN device</h2>
+              <p id="lan-pair-guidance">Select a discovered device or enter its private IPv4. Compare its full TLS fingerprint and current 8-digit code on the target before requesting pairing.</p>
             </div>
             <span class="subtle-badge">2-minute code</span>
           </div>
           <div id="lan-pair-requests" class="lan-device-list" aria-live="polite">
             <div class="lan-empty">No MCP pairing requests waiting for local completion.</div>
           </div>
+          <p id="lan-tunnel-pair-waiting" class="lan-route-pair-waiting" hidden>Choose <strong>Pair through tunnel</strong> above, or select a pending tunnel request. Manual IPv4 pairing is only available under Direct LAN.</p>
           <form id="lan-pair-form" autocomplete="off" novalidate>
             <div class="lan-pair-grid">
-              <label>Target IPv4
+              <label id="lan-pair-host-field" class="lan-pair-network-field">Target IPv4
                 <input id="lan-pair-ip" type="text" inputmode="decimal" placeholder="192.168.1.105" spellcheck="false" required />
               </label>
-              <label>Port
+              <label id="lan-pair-port-field" class="lan-pair-network-field">Port
                 <input id="lan-pair-port" type="number" value="17845" min="1024" max="65534" required />
               </label>
               <label>Pairing code
@@ -817,9 +843,9 @@
         <section class="panel lan-panel" aria-labelledby="lan-paired-title">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">STEP 03 / APPROVAL</div>
-              <h2 id="lan-paired-title">Paired devices &amp; sessions</h2>
-              <p>Only one approved terminal session is allowed per target. Close or revoke access as soon as support is finished.</p>
+              <div class="panel-eyebrow">OWNER APPROVAL / SESSIONS</div>
+              <h2 id="lan-paired-title">Direct LAN sessions</h2>
+              <p id="lan-paired-guidance">Only devices paired through the selected connection method appear here. Close or revoke support access when finished.</p>
             </div>
             <span id="lan-paired-count" class="subtle-badge">0 paired</span>
           </div>
@@ -831,7 +857,7 @@
         <section class="panel lan-panel" aria-labelledby="lan-terminal-title">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">STEP 04 / TERMINAL</div>
+              <div class="panel-eyebrow">SELECTED SESSION / DIAGNOSTICS</div>
               <h2 id="lan-terminal-title">Remote terminal &amp; diagnostics</h2>
               <p>Windows: non-elevated PowerShell. Android: expanded diagnostics and per-action-approved Settings/volume assistance. No unattended access.</p>
             </div>
@@ -853,15 +879,15 @@
           </form>
           <div class="lan-output-head"><span>Command output</span><button id="lan-output-clear" type="button" class="button ghost">Clear</button></div>
           <pre id="lan-output" class="lan-output" aria-live="polite">Select a paired device and request an approved session.</pre>
-          <p class="lan-security-note">LAN-only preview. Android diagnostics are read-only; actions require separate approval on the phone. Settings open locally and disconnect sharing. Volume changes one step per approval. Android remote touch requires explicit on-device Accessibility and input consent; no arbitrary Android shell, root or ADB. Full TLS fingerprint comparison and target approval are required. PAKE, signed releases and cross-device security review remain pending.</p>
+          <p class="lan-security-note">Selected transport only. Android diagnostics are read-only; actions require separate approval on the phone. Settings open locally and disconnect sharing. Volume changes one step per approval. Android remote touch requires explicit on-device Accessibility and input consent; no arbitrary Android shell, root or ADB. Full TLS fingerprint comparison and target approval are required. PAKE, signed releases and cross-device security review remain pending.</p>
         </section>
 
         <section id="lan-file-panel" class="panel lan-panel" aria-labelledby="lan-files-title">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">STEP 05 / FILE EXCHANGE</div>
+              <div class="panel-eyebrow">SELECTED SESSION / FILE EXCHANGE</div>
               <h2 id="lan-files-title">Send &amp; receive files · Windows / Android</h2>
-              <p>Private, owner-approved LAN file transfers. 4 MiB per file. Chunked TLS 1.3 and SHA-256 verification. No remote filesystem browsing or automatic overwrite.</p>
+              <p>Private, owner-approved transfers over the selected Direct LAN or Device Tunnel session. 4 MiB per file, chunked TLS and SHA-256 verification. No filesystem browsing or automatic overwrite.</p>
             </div>
             <span id="lan-file-state" class="subtle-badge">No active transfer</span>
           </div>
@@ -888,7 +914,7 @@
         <section id="lan-screen-panel" class="panel lan-panel" aria-labelledby="lan-screen-title">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">STEP 05 / ANDROID · LIVE SCREEN</div>
+              <div class="panel-eyebrow">SELECTED ANDROID SESSION / LIVE SCREEN</div>
               <h2 id="lan-screen-title">Android schema-first control</h2>
               <p>Use a private, bounded Accessibility UI schema by default. Request a screenshot only when visual fallback is needed. Owner capture and remote touch consent remain mandatory.</p>
             </div>

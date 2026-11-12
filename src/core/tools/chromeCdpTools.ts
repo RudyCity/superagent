@@ -38,6 +38,8 @@ import { executeCursorCommand, dispatchHumanMouseMove, dispatchHumanMouseClick, 
   forgetPersistentCursorRegistrations, removePersistentCursorOverlay } from "./chromeCdpCursor.js";
 import { executeDeviceEmulationCommand } from "./chromeCdpEmulation.js";
 import { executeTargetHighlightCommand } from "./chromeCdpTargetHighlight.js";
+import { showManagedCdpTabIndicator, hideManagedCdpTabIndicator,
+  forgetManagedCdpTabIndicatorRegistration } from "./chromeCdpTabIndicator.js";
 import {inspectCdpFrameTree,executeQualifiedFrameAction} from "./chromeCdpFrames.js";
 import {executeFrameUtility} from "./chromeCdpFrameExtras.js";
 import { prepareReplayClick, consumeApprovedReplayClick } from "./chromeCdpReplayApprovals.js";
@@ -65,7 +67,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { claimCdpTarget, listCdpSessions, releaseCdpTarget, withCdpTargetWrite, withCdpTargetRead, cdpCoordinatorStatus, rebindCdpTarget,
   setCdpSharing, inviteCdpAgent, joinCdpTarget, leaveCdpTarget, revokeCdpAgent, handoverCdpTarget, getCdpParticipation,
   type CdpParticipantRole, heartbeatCdpSession, getCdpExecutionState,
-  pauseCdpTarget, resumeCdpTarget } from "./chromeCdpSessionManager.js";
+  pauseCdpTarget, resumeCdpTarget, withCdpOwnedTabIndicator } from "./chromeCdpSessionManager.js";
 import { classifyCdpCommand } from "./chromeCdpCommandPolicy.js";
 import { executeDelegateChromeCommand } from "../delegate/cdpTransport.js";
 import {
@@ -540,6 +542,7 @@ async function openCdpConnection(target: CdpTarget): Promise<CdpConnection> {
       else {
         cdpConnections.delete(url);
         forgetPersistentCursorRegistrations(url);
+        forgetManagedCdpTabIndicatorRegistration(url);
       }
     }
   };
@@ -1171,7 +1174,15 @@ export const controlChromeCdpTool: Tool = {
         const token = opts.sessionToken || "";
         const memberId = String(args.memberId || payload.memberId || "");
         switch (command) {
-          case "heartbeat_session": return JSON.stringify(await heartbeatCdpSession(cdpPort(), targetId, ownerId, token));
+          case "heartbeat_session": {
+            const session = await heartbeatCdpSession(cdpPort(), targetId, ownerId, token);
+            try {
+              const page = await pickTarget(targetId, false, true);
+              await withCdpOwnedTabIndicator(cdpPort(), targetId, ownerId, token,
+                () => showManagedCdpTabIndicator(cdpSend, page, session.expiresAt));
+            } catch { /* Cosmetic heartbeat must never affect lease renewal. */ }
+            return JSON.stringify(session);
+          }
           case "share_target": return JSON.stringify({ status: "shared", session: await setCdpSharing(cdpPort(), targetId, ownerId, token, true) });
           case "stop_sharing": return JSON.stringify({ status: "isolated", session: await setCdpSharing(cdpPort(), targetId, ownerId, token, false) });
           case "invite_agent": return JSON.stringify(await inviteCdpAgent(cdpPort(), targetId, ownerId, token, memberId, String(args.role || payload.role || "") as CdpParticipantRole));
@@ -1236,6 +1247,7 @@ export const controlChromeCdpTool: Tool = {
           // invalidating the owner capability; never bypass the existing write gate.
           // If Chrome is unavailable, still release the lease but surface the warning.
           let cursorCleanupIncomplete = false;
+          let tabIndicatorCleanupIncomplete = false;
           const owned = (await listCdpSessions()).find(session =>
             session.port === cdpPort() && session.targetId === selected.id &&
             session.agentId === String(agentId));
@@ -1251,6 +1263,13 @@ export const controlChromeCdpTool: Tool = {
               cursorCleanupIncomplete = true;
             }
           }
+          // Only a cosmetic marker: ownership continues to be enforced by the CDP lease.
+          if (owned) {
+            try {
+              await withCdpOwnedTabIndicator(cdpPort(), selected.id, String(agentId),
+                opts.sessionToken || "", () => hideManagedCdpTabIndicator(cdpSend, selected));
+            } catch { tabIndicatorCleanupIncomplete = true; }
+          }
           await releaseCdpTarget(cdpPort(), selected.id, String(agentId), opts.sessionToken);
           if (owned) {
             for (const participant of owned.participants) {
@@ -1258,9 +1277,17 @@ export const controlChromeCdpTool: Tool = {
             }
           }
           return `control_chrome_cdp: released target ${selected.id} for agent ${agentId}` +
-            (cursorCleanupIncomplete ? " (visual cursor cleanup unavailable; browser may require reinjection cleanup)." : "");
+            (cursorCleanupIncomplete ? " (visual cursor cleanup unavailable; browser may require reinjection cleanup)." : "") +
+            (tabIndicatorCleanupIncomplete ? " (CDP tab marker cleanup unavailable; marker will expire automatically)." : "");
         }
         const session = await claimCdpTarget(cdpPort(), selected.id, String(agentId), opts.sessionToken);
+        // The tab label survives navigation and SPA title changes; cosmetic failure
+        // must never change a successful lease claim.
+        try {
+          await withCdpOwnedTabIndicator(cdpPort(), selected.id, String(agentId),
+            session.sessionToken,
+            () => showManagedCdpTabIndicator(cdpSend, selected, session.expiresAt));
+        } catch { /* Cosmetic indicator is non-authoritative. */ }
         return JSON.stringify({ status: command === "recover_session" ? "recovered" : "claimed", ...session });
       }
       if (command === "list_sessions") return JSON.stringify({ sessions: await listCdpSessions() });

@@ -2,6 +2,13 @@
 
 const PROTOCOL = "superagent-delegate-v1";
 const $ = (id) => document.getElementById(id);
+// The installed extension manifest is the single source of truth. A reload
+// must never display an old version hardcoded into the popup markup.
+function renderExtensionVersion() {
+  const version = chrome.runtime.getManifest().version;
+  $("extension-version").textContent = "v" + version;
+}
+
 const labels = {
   connected: ["Terhubung", "CONNECTED", "Handshake SuperAgent berhasil. Profil ini siap menerima perintah."],
   connecting: ["Menghubungkan...", "CONNECTING", "Sedang menunggu handshake SuperAgent."],
@@ -331,6 +338,7 @@ $("reconnect").addEventListener("click", async () => {
   await refreshStatus();
 });
 
+renderExtensionVersion();
 void refreshStatus();
 const interval = setInterval(() => { void refreshStatus(); }, 1500);
 window.addEventListener("pagehide", () => clearInterval(interval));

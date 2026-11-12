@@ -210,6 +210,25 @@ explicitly in every Delegate action. A second session with an already-live
 `clientId` is denied instead of evicting the existing client.
 The fixed WebSocket port `127.0.0.1:17341` must never be exposed publicly.
 
+### Visual CDP tab indicators (v1.9.3)
+
+When SuperAgent attaches its own debugger to a normal Chrome tab, the tab
+title gains a visible **🔴 CDP ·** prefix and the Delegate extension icon
+shows a per-tab CDP badge. Only the exact attached tab is marked.
+Original tab titles are restored on detach, and the marker has a two-minute
+safety expiry if the debugger is lost unexpectedly. The existing Delegate
+heartbeat refreshes the indicator while the debugger is still attached.
+Page navigation and single-page-app title updates retain the marker.
+
+A marker is informational, **not** permission to control a tab. Chrome
+debugger ownership and agent-session authorization remain unchanged; protected
+Chrome pages are never marked. The extension does not request broader host
+permissions or change favicons, focus, user inputs or page data.
+
+For managed CDP (without Delegate extension), the marker is installed when
+an agent explicitly claims a target and removed on release. The marker
+expires with that owner's lease unless renewed via session heartbeat.
+
 ### Verification and packaging
 
 ```powershell
@@ -218,7 +237,7 @@ bun run release:delegate
 ```
 
 The deterministic allowlisted ZIP and SHA-256 receipt are placed in
-`build/releases/` (only seven extension runtime files, no secrets).
+`build/releases/` (nine extension runtime files, no secrets).
 Chrome Web Store publication and full real-browser send/stop production
 acceptance are **separate steps**, not claimed by these checks.
 
