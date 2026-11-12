@@ -58,6 +58,7 @@ demo-studio-output/
 # Build outputs, debug APKs, LAN preview ZIPs and generated audit packages.
 # Publish chosen binaries as GitHub Release assets, not committed Git blobs.
 /artifacts/
+/build/release-extension-upload/
 
 # Nested generated Rust target from external-terminal release builds (local cache only).
 /apps/superagent-tray/src-tauri/src-tauri/target/

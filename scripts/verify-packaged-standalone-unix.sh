@@ -36,6 +36,20 @@ elif [[ "${RUNNER_OS:-}" == "Linux" ]]; then
   [[ "${#debs[@]}" -eq 1 ]] || { echo "Expected exactly one Linux DEB"; exit 1; }
   if [[ "${REQUIRE_APPIMAGE:-1}" == "1" ]]; then
     [[ "${#appimages[@]}" -eq 1 ]] || { echo "Expected AppImage for full multi-OS gate"; exit 1; }
+    [[ -x "${appimages[0]}" ]] || { echo "AppImage is not executable"; exit 1; }
+    [[ "$(stat -c%s "${appimages[0]}")" -gt 20000000 ]] || { echo "AppImage is unexpectedly small"; exit 1; }
+    image_path="$(realpath "${appimages[0]}")"
+    mkdir -p "$tmp/image"
+    (cd "$tmp/image" && "$image_path" --appimage-extract >/dev/null)
+    image_root="$tmp/image/squashfs-root"
+    test -x "$image_root/usr/bin/superagent"
+    test -x "$image_root/usr/bin/bun"
+    image_cli="$(find "$image_root/usr/lib" -type f -path '*/standalone/dist/cli.js' -print -quit)"
+    test -n "$image_cli"
+    echo "Validating AppImage-extracted standalone CLI without global Bun/Node"
+    image_output="$(PATH=/usr/bin:/bin "$image_root/usr/bin/superagent" --version)"
+    [[ "$image_output" == *"$version"* ]] || { echo "AppImage CLI version mismatch: $image_output"; exit 1; }
+    echo "Linux standalone AppImage CLI PASS ($version)"
   fi
   dpkg-deb --extract "${debs[0]}" "$tmp/extracted"
   test -x "$tmp/extracted/usr/bin/superagent"

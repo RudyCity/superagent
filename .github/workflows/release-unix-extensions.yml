@@ -34,7 +34,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file musl
           sudo apt-get install -y -qq libayatana-appindicator3-dev || sudo apt-get install -y -qq libappindicator3-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -64,15 +64,14 @@ jobs:
         run: bun run installer:prepare:unix
       - name: Verify portable runtime without global Bun
         run: bun run installer:verify:unix
-      - name: Build macOS DMG or Linux DEB
+      # Do not set SUPERAGENT_UNIX_BUNDLE_OVERRIDE here: full releases require both Linux packages.
+      - name: Build macOS DMG or Linux DEB and AppImage
         run: bun run installer:package:unix
-        env:
-          SUPERAGENT_UNIX_BUNDLE_OVERRIDE: ${{ runner.os == 'Linux' && 'deb' || '' }}
       - name: Inspect and smoke-test bundled macOS app or Linux DEB
         shell: bash
         run: bash scripts/verify-packaged-standalone-unix.sh
         env:
-          REQUIRE_APPIMAGE: "0"
+          REQUIRE_APPIMAGE: "1"
       - name: Upload macOS DMG
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
@@ -80,12 +79,14 @@ jobs:
           name: unix-release-macos-arm64
           path: apps/superagent-tray/src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
-      - name: Upload Linux DEB
+      - name: Upload Linux DEB and AppImage
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: unix-release-linux-x64
-          path: apps/superagent-tray/src-tauri/target/release/bundle/deb/*.deb
+          path: |
+            apps/superagent-tray/src-tauri/target/release/bundle/deb/*.deb
+            apps/superagent-tray/src-tauri/target/release/bundle/appimage/*.AppImage
           if-no-files-found: error
 
   build-extensions:
@@ -107,15 +108,13 @@ jobs:
         run: bun scripts/release-sidepanel.mjs
       - name: Verify ZIP contents and checksums
         run: bun scripts/verify-release-extensions.mjs
+      - name: Stage manifest-pinned extension archives only
+        run: bun scripts/stage-release-extensions.mjs
       - name: Upload both extensions and receipts
         uses: actions/upload-artifact@v4
         with:
           name: unix-release-chrome-extensions
-          path: |
-            build/releases/superagent-delegate-*.zip
-            build/releases/superagent-delegate-*.receipt.json
-            build/releases/superagent-sidepanel-*.zip
-            build/releases/superagent-sidepanel-*.receipt.json
+          path: build/release-extension-upload/*
           if-no-files-found: error
 
   publish:
@@ -125,6 +124,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           pattern: unix-release-*
@@ -136,16 +136,20 @@ jobs:
           set -euo pipefail
           find downloaded-assets -type f -printf '%P %s bytes\\n' | sort
           mkdir -p release-assets
-          for pattern in "*.dmg" "*.deb" "superagent-delegate-*.zip" "superagent-delegate-*.receipt.json" "superagent-sidepanel-*.zip" "superagent-sidepanel-*.receipt.json"; do
+          for pattern in "*.dmg" "*.deb" "*.AppImage" "superagent-delegate-*.zip" "superagent-delegate-*.receipt.json" "superagent-sidepanel-*.zip" "superagent-sidepanel-*.receipt.json"; do
             mapfile -d '' found < <(find downloaded-assets -type f -name "$pattern" -print0)
             [[ "${#found[@]}" -eq 1 ]] || { echo "Expected one $pattern, found ${#found[@]}"; exit 1; }
             cp -- "${found[0]}" "release-assets/$(basename "${found[0]}")"
           done
-          [[ "$(find downloaded-assets -type f | wc -l)" -eq 6 ]] || { echo "Unexpected additional release artifacts"; exit 1; }
+          [[ "$(find downloaded-assets -type f | wc -l)" -eq 7 ]] || { echo "Unexpected additional release artifacts"; exit 1; }
           dmgs=(release-assets/*.dmg)
           debs=(release-assets/*.deb)
-          [[ "$(stat -c%s "${dmgs[0]}")" -gt 20000000 ]] || { echo "DMG too small"; exit 1; }
-          [[ "$(stat -c%s "${debs[0]}")" -gt 20000000 ]] || { echo "DEB too small"; exit 1; }
+          appimages=(release-assets/*.AppImage)
+          version="$(node -p "require('./package.json').version")"
+          for file in "${dmgs[0]}" "${debs[0]}" "${appimages[0]}"; do
+            [[ "$(basename "$file")" == *"${version}"* ]] || { echo "Installer version mismatch: $file"; exit 1; }
+            [[ "$(stat -c%s "$file")" -gt 20000000 ]] || { echo "Installer too small: $file"; exit 1; }
+          done
           (cd release-assets && sha256sum * > ../SHA256SUMS.txt)
           cat SHA256SUMS.txt
       - name: Publish GitHub prerelease
@@ -163,16 +167,16 @@ jobs:
 
           - macOS: Apple Silicon (arm64) DMG; unsigned/unnotarized prerelease,
             so macOS Gatekeeper may prevent opening without explicit approval.
-          - Linux: x64 DEB for compatible Debian/Ubuntu releases. GUI runtime
+          - Linux: x64 DEB for compatible Debian/Ubuntu releases and portable
+            AppImage for desktop Linux distributions. The DEB GUI runtime
             depends on system WebKitGTK/appindicator libraries.
           - Chrome: SuperAgent Delegate and SuperAgent SidePanel are **separate**
             unpacked extensions shipped as source ZIPs. Extract each ZIP to its
             own folder and use Chrome -> Extensions -> Developer mode -> Load unpacked.
             These are not Chrome Web Store publications.
 
-          Linux AppImage packaging remains unsupported in this release because
-          the upstream linuxdeploy step has not passed CI. The DEB and DMG have
-          dedicated packaging and packaged-payload verification gates.
+          Linux AppImage, DEB and macOS DMG pass dedicated packaging and
+          packaged-payload verification gates before publication.
 
           Verify all downloaded files against SHA256SUMS.txt. This prerelease is
           not a production runtime cutover or signed distribution.
