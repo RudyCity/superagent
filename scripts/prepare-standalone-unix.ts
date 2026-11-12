@@ -6,6 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { pruneMuslSharpFromLinuxStandalone } from "./prune-linux-musl-sharp.js";
 
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps/superagent-tray/src-tauri");
@@ -49,6 +50,14 @@ const install = spawnSync(runtime, ["install", "--production", "--frozen-lockfil
   cwd: stage, env: { ...process.env, CI: "true" }, stdio: "inherit", timeout: 600000,
 });
 check(install.status === 0, "Frozen production dependency installation failed: " + (install.error ?? install.status));
+const pruned = pruneMuslSharpFromLinuxStandalone(stage, process.platform, process.arch);
+if (pruned.length) console.log("[standalone-unix] Excluded incompatible musl-only optional sharp packages:", pruned.join(", "));
+if (process.platform === "linux") {
+  const smoke = spawnSync(runtime, ["-e", "import sharp from 'sharp'; if (!sharp.versions?.sharp) throw new Error('GNU sharp native addon unavailable'); console.log('GNU_SHARP_NATIVE_OK', sharp.versions.sharp);"], {
+    cwd: stage, env: { ...process.env, CI: "true" }, stdio: "inherit", timeout: 30000,
+  });
+  check(smoke.status === 0, "GNU sharp addon smoke check failed after excluding musl optionals: " + (smoke.error ?? smoke.status));
+}
 for (const dep of ["ink", "sharp", "r-memory"]) {
   check(fs.existsSync(path.join(stage, "node_modules", dep)), "Missing production dependency: " + dep);
 }
