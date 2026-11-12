@@ -29,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.release_tag }}
           fetch-depth: 0
       - name: Verify source run, tag, and all three original build gates
         shell: bash
@@ -73,23 +74,27 @@ jobs:
           find downloaded-assets -type f -printf '%P %s bytes\n' | sort
           mapfile -d '' dmgs < <(find downloaded-assets -type f -name '*.dmg' -print0)
           mapfile -d '' debs < <(find downloaded-assets -type f -name '*.deb' -print0)
-          mapfile -d '' delegates < <(find downloaded-assets -type f -name 'superagent-delegate-*.zip' -print0)
-          mapfile -d '' sidepanels < <(find downloaded-assets -type f -name 'superagent-sidepanel-*.zip' -print0)
-          mapfile -d '' receipts < <(find downloaded-assets -type f -name '*.receipt.json' -print0)
-          for kind in dmgs debs delegates sidepanels; do
+          delegate_version="$(node -p "require('./chrome-extension-delegate/manifest.json').version")"
+          sidepanel_version="$(node -p "require('./chrome-extension/manifest.json').version")"
+          mapfile -d '' delegates < <(find downloaded-assets -type f -name "superagent-delegate-${delegate_version}.zip" -print0)
+          mapfile -d '' sidepanels < <(find downloaded-assets -type f -name "superagent-sidepanel-${sidepanel_version}.zip" -print0)
+          mapfile -d '' delegate_receipts < <(find downloaded-assets -type f -name "superagent-delegate-${delegate_version}.receipt.json" -print0)
+          mapfile -d '' sidepanel_receipts < <(find downloaded-assets -type f -name "superagent-sidepanel-${sidepanel_version}.receipt.json" -print0)
+          for kind in dmgs debs delegates sidepanels delegate_receipts sidepanel_receipts; do
             declare -n files="$kind"
             [[ "${#files[@]}" -eq 1 ]] || { echo "Expected one $kind, got ${#files[@]}"; exit 1; }
           done
-          [[ "${#receipts[@]}" -eq 2 ]] || { echo 'Expected two extension receipts'; exit 1; }
-          [[ "$(find downloaded-assets -type f | wc -l)" -eq 6 ]] || { echo 'Unexpected files in workflow artifacts'; exit 1; }
+          # Historical Delegate ZIPs are retained by the source artifact; only the
+          # two versions explicitly recorded in this tagged source are eligible.
           [[ "$(stat -c%s "${dmgs[0]}")" -gt 20000000 ]] || { echo 'DMG is unexpectedly small'; exit 1; }
           [[ "$(stat -c%s "${debs[0]}")" -gt 20000000 ]] || { echo 'DEB is unexpectedly small'; exit 1; }
           [[ "$(basename "${dmgs[0]}")" == *"${RELEASE_VERSION}"* ]] || { echo 'DMG version mismatch'; exit 1; }
           [[ "$(basename "${debs[0]}")" == *"${RELEASE_VERSION}"* ]] || { echo 'DEB version mismatch'; exit 1; }
           mkdir -p release-assets
-          for file in "${dmgs[0]}" "${debs[0]}" "${delegates[0]}" "${sidepanels[0]}" "${receipts[@]}"; do
+          for file in "${dmgs[0]}" "${debs[0]}" "${delegates[0]}" "${sidepanels[0]}" "${delegate_receipts[0]}" "${sidepanel_receipts[0]}"; do
             cp -- "$file" "release-assets/$(basename "$file")"
           done
+          [[ "$(find release-assets -type f | wc -l)" -eq 6 ]] || { echo "Unexpected selection"; exit 1; }
           python3 - <<'PY'
           import glob, json, hashlib, os, zipfile
           for kind in ('delegate', 'sidepanel'):
