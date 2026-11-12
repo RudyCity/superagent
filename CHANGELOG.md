@@ -1,3 +1,8 @@
+## [1.14.78] - 2026-11-12
+### Windows standalone release packaging
+- Resolve the primary SuperAgent Tray project directory explicitly when packaging Windows NSIS and Unix bundles, preventing sibling LAN Windows GUI discovery from hijacking builds.
+- Introduce an independently gated Windows-only prerelease workflow. Windows release candidates require successful core regression, native tests, portable CLI smoke tests, installer install/uninstall verification and SHA-256 checksums.
+
 ## [1.14.77] - 2026-11-12
 ### Release preparation: registry parity
 - Register LAN support and native desktop UI tools in the canonical tool registry so every tier-exposed tool resolves correctly; restore cross-platform packaging regression gate.

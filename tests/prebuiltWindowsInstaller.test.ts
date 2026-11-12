@@ -42,4 +42,19 @@ describe("Windows prebuilt Tray installer contract", () => {
     expect(() => checksumForFilename(sha + "  other.exe", name)).toThrow();
     expect(() => checksumForFilename(sha + "  " + name + "\n" + sha + "  " + name, name)).toThrow();
   });
+  it("recognizes independently gated Windows-only tags without mixing versions", () => {
+    const tag = "v1.14.78-windows.1";
+    const windowsName = "SuperAgent_1.14.78_x64-setup.exe";
+    const windowsRelease: ReleaseInfo = {
+      tag_name: tag, draft: false,
+      assets: [
+        { name: windowsName, size: 250_000_000, browser_download_url: `https://github.com/RudyCity/superagent/releases/download/${tag}/${windowsName}` },
+        { name: "SHA256SUMS.txt", size: 100, browser_download_url: `https://github.com/RudyCity/superagent/releases/download/${tag}/SHA256SUMS.txt` },
+      ],
+    };
+    const candidate = selectInstaller([windowsRelease, release]);
+    expect(candidate.version).toBe("1.14.78");
+    expect(selectInstaller([windowsRelease, release], tag).release.tag_name).toBe(tag);
+    expect(validateAssetUrl(candidate, candidate.installer)).toContain(windowsName);
+  });
 });

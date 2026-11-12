@@ -38,13 +38,13 @@ export interface InstallerCandidate {
 
 export function selectInstaller(releases: ReleaseInfo[], requestedTag?: string): InstallerCandidate {
   if (!Array.isArray(releases)) throw new Error("GitHub Releases response was not a list");
-  if (requestedTag && !/^v\d+\.\d+\.\d+-rc\.\d+$/.test(requestedTag)) {
-    throw new Error("Invalid release tag. Expected vX.Y.Z-rc.N");
+  if (requestedTag && !/^v\d+\.\d+\.\d+-(?:rc|windows)\.\d+$/.test(requestedTag)) {
+    throw new Error("Invalid release tag. Expected vX.Y.Z-rc.N or vX.Y.Z-windows.N");
   }
   for (const release of releases) {
     if (release.draft || typeof release.tag_name !== "string") continue;
     if (requestedTag && release.tag_name !== requestedTag) continue;
-    const match = /^v(\d+\.\d+\.\d+)-rc\.\d+$/.exec(release.tag_name);
+    const match = /^v(\d+\.\d+\.\d+)-(?:rc|windows)\.\d+$/.exec(release.tag_name);
     if (!match || !Array.isArray(release.assets)) continue;
     const name = `SuperAgent_${match[1]}_x64-setup.exe`;
     const installer = release.assets.find(asset => asset.name === name);
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const allowed = new Set(["--check", "--download", "--install", "--allow-version-mismatch"]);
   if (args.some(arg => !allowed.has(arg) && !arg.startsWith("--tag="))) {
-    throw new Error("Usage: --check | --download | --install [--tag=vX.Y.Z-rc.N] [--allow-version-mismatch]");
+    throw new Error("Usage: --check | --download | --install [--tag=vX.Y.Z-rc.N|vX.Y.Z-windows.N] [--allow-version-mismatch]");
   }
   const actions = ["--check", "--download", "--install"].filter(arg => args.includes(arg));
   if (actions.length !== 1) throw new Error("Specify exactly one: --check, --download, or --install");

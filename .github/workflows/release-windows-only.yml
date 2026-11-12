@@ -1,0 +1,128 @@
+name: SuperAgent Windows x64 Verified Prerelease
+on:
+  push:
+    tags:
+      - 'v*-windows.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: superagent-windows-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build, install, and verify Windows x64
+    runs-on: windows-2025
+    timeout-minutes: 110
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/superagent-tray/src-tauri -> target"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Verify Windows-only tag and version metadata
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json)
+          $ref = $env:GITHUB_REF_NAME
+          if ($ref -notmatch ('^v' + [regex]::Escape($pkg.version) + '-windows\.[0-9]+$')) {
+            throw "Windows-only release tag/version mismatch"
+          }
+          $tray = Get-Content apps/superagent-tray/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+          if ($tray.version -ne $pkg.version) { throw "Tray version mismatch" }
+          Write-Output "Verified source version $($pkg.version)"
+      - name: Locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Core
+        run: bun run build
+      - name: Verify extension syntax
+        run: bun run verify:extension-js
+      - name: Run Core, Tray and packaging regression gates
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/bunGlobalInstallContract.test.ts
+      - name: Test native Tray
+        run: bun run tray:test
+      - name: Build native CLI launcher
+        run: cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
+      - name: Stage locked standalone runtime
+        run: bun run installer:prepare
+      - name: Verify portable Core without globally installed Bun or Node
+        run: bun run installer:verify
+      - name: Package standalone NSIS installer
+        run: bun run installer:package
+      - name: Verify clean install, smoke, and uninstall
+        shell: pwsh
+        run: ./scripts/verify-installed-standalone-windows.ps1
+      - name: Verify installer filename and file size
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $installer = "apps/superagent-tray/src-tauri/target/release/bundle/nsis/SuperAgent_${version}_x64-setup.exe"
+          if (-not (Test-Path $installer) -or (Get-Item $installer).Length -lt 20000000) {
+            throw "Installer missing, wrong version, or truncated"
+          }
+          Write-Output "Installer verified: $installer"
+      - name: Upload verified Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows-x64
+          path: apps/superagent-tray/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+
+  publish-windows:
+    name: Publish checksummed Windows-only prerelease
+    needs: [build-windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows-x64
+          path: release-assets
+      - name: Validate and checksum the Windows installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(release-assets/*-setup.exe)
+          test "${#files[@]}" -eq 1
+          test "$(stat -c%s "${files[0]}")" -gt 20000000
+          (cd release-assets && sha256sum *-setup.exe > ../SHA256SUMS.txt)
+          cat SHA256SUMS.txt
+      - name: Publish Windows-only release candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > RELEASE_NOTES.md <<'EOF'
+          # Windows x64 standalone release candidate
+
+          This is a **Windows-only prerelease** containing SuperAgent Tray,
+          the native CLI launcher, Bun runtime, Core distribution and locked
+          production dependencies. Target Windows 10/11 x64 PCs do not need
+          separate Rust, MSVC, Node.js, or Bun installations.
+
+          Verify the downloaded setup EXE against SHA256SUMS.txt before running.
+          The setup may be unsigned; Windows SmartScreen can show a warning.
+          SHA-256 verifies artifact integrity, not publisher code-signing identity.
+
+          The binary was built and install/smoke/uninstall verified in GitHub
+          Actions on a disposable Windows runner. This prerelease is **not** a
+          macOS/Linux release and is not production runtime cutover certification.
+          EOF
+          gh release create "$GITHUB_REF_NAME" release-assets/* SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+            --notes-file RELEASE_NOTES.md \
+            --title "SuperAgent $GITHUB_REF_NAME — verified Windows x64 standalone"

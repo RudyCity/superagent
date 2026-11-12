@@ -49,4 +49,19 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(ignore).toContain("/apps/superagent-tray/src-tauri/binaries/");
     expect(ignore).toContain("/apps/superagent-tray/src-tauri/resources/standalone/");
   });
+  it("anchors both standalone packagers to the Tray directory, not sibling LAN GUI", () => {
+    for (const filename of ["scripts/build-standalone-windows.ts", "scripts/build-standalone-unix.ts"]) {
+      const script = read(filename);
+      expect(script).toContain('path.join(root, "apps", "superagent-tray")');
+      expect(script).toContain("cwd: trayRoot");
+      expect(script).toContain("src-tauri/tauri.conf.json");
+      expect(script).not.toContain("cwd: root");
+    }
+    const release = read(".github/workflows/release-windows-only.yml");
+    expect(release).toContain("v*-windows.*");
+    expect(release).toContain("needs: [build-windows]");
+    expect(release).toContain("verify-installed-standalone-windows.ps1");
+    expect(release).toContain("--verify-tag --prerelease");
+    expect(release).toContain("SHA256SUMS.txt");
+  });
 });
