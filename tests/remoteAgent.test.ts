@@ -867,21 +867,60 @@ describe("remoteAgent - MuseClient", () => {
       return Promise.resolve(new Response(JSON.stringify({ ok: true })));
     });
 
+    let pollPromise: Promise<void> | undefined;
     try {
-      const pollPromise = client.pollEnvelopes(() => {}, abortCtrl.signal);
+      pollPromise = client.pollEnvelopes(() => {}, abortCtrl.signal);
       expect(client.isPollerActive()).toBe(true);
 
       // Attempting to poll again concurrently must reject
       await expect(client.pollEnvelopes(() => {}, abortCtrl.signal)).rejects.toThrow(
         "already running"
       );
-
-      abortCtrl.abort();
-      await pollPromise.catch(() => {});
     } finally {
+      // Never leak a poller into later tests, even when an assertion throws.
+      abortCtrl.abort();
+      await pollPromise?.catch(() => {});
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("backs off on malformed successful getUpdates and aborts cleanly", async () => {
+    const client = new MuseClient({
+      botToken: "fake_token_invalid_poll",
+      groupId: "-1001",
+      museBotId: "muse_1",
+    });
+    const originalFetch = globalThis.fetch;
+    const abortCtrl = new AbortController();
+    let firstInvalidReceived!: () => void;
+    const firstInvalid = new Promise<void>(resolve => {
+      firstInvalidReceived = resolve;
+    });
+    let invalidPollCalls = 0;
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes("getUpdates")) {
+        invalidPollCalls++;
+        firstInvalidReceived();
+        // HTTP 200 but missing result: previously caused a zero-delay spin loop.
+        return Promise.resolve(new Response(JSON.stringify({ ok: true })));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ ok: true })));
+    });
+
+    let pollPromise: Promise<void> | undefined;
+    try {
+      pollPromise = client.pollEnvelopes(() => {}, abortCtrl.signal);
+      await firstInvalid;
+      await new Promise(resolve => setTimeout(resolve, 100));
+      expect(invalidPollCalls).toBe(1);
+      expect(client.getPollHealth().lastError).toContain("invalid response");
+    } finally {
+      abortCtrl.abort();
+      await pollPromise?.catch(() => {});
+      globalThis.fetch = originalFetch;
+    }
+    expect(client.isPollerActive()).toBe(false);
+  }, 20_000);
 
   it("should retry on HTTP 429 using parameters.retry_after", async () => {
     const client = new MuseClient({

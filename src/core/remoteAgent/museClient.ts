@@ -12,6 +12,44 @@ import {
 } from "./protocol.js";
 import { logE2E } from "../utils/unifiedLogger.js";
 
+/** An abortable delay that always removes its event listener. */
+function pollingDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.resolve();
+  return new Promise(resolve => {
+    let done = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (timeout) clearTimeout(timeout);
+      signal?.removeEventListener("abort", finish);
+      resolve();
+    };
+    signal?.addEventListener("abort", finish, { once: true });
+    timeout = setTimeout(finish, Math.max(1, ms));
+    if (signal?.aborted) finish();
+  });
+}
+
+/** Clean per-request timeout and abort listener on every poll cycle. */
+async function fetchTelegramPoll(url: string, signal?: AbortSignal): Promise<Response> {
+  const controller = new AbortController();
+  const abort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) abort();
+  else signal?.addEventListener("abort", abort, { once: true });
+  const timeout = setTimeout(
+    () => controller.abort(new DOMException("Telegram poll timeout", "TimeoutError")),
+    30_000,
+  );
+  timeout.unref?.();
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
+  }
+}
+
 /** Telegram attachment receipt confirms Telegram acceptance, not Muse ingestion. */
 export interface TelegramDocumentReceipt {
   ok: true;
@@ -378,19 +416,22 @@ export class MuseClient {
       throw new Error("Bot token is not configured.");
     }
 
-    // Cross-process singleton lease: two local SuperAgent processes must never
-    // compete on Telegram getUpdates for the same bot token.
-    const pollingLease = await acquireTelegramPollingLease(token);
+    // Mark the instance active before awaiting a cross-process lease. A
+    // second concurrent caller must not slip through during lease acquisition.
+    if (signal?.aborted) return;
     this.isPolling = true;
     this.lastSuccessfulPollAt = undefined;
     this.lastPollError = undefined;
+    let pollingLease: Awaited<ReturnType<typeof acquireTelegramPollingLease>> | undefined;
     let offset = 0;
     let consecutiveErrors = 0;
     const pollerStartTime = Math.floor(Date.now() / 1000);
 
-    logE2E("REMOTE-AGENT", `Starting envelope polling loop for group ${this.config.groupId}, museBotId: ${this.config.museBotId}`);
-
     try {
+      // Cross-process singleton lease; also cover acquisition with finally.
+      pollingLease = await acquireTelegramPollingLease(token);
+      if (signal?.aborted) return;
+      logE2E("REMOTE-AGENT", `Starting envelope polling loop for group ${this.config.groupId}, museBotId: ${this.config.museBotId}`);
       // Step 1: Ensure webhooks are deleted before polling
       await this.deleteWebhook();
 
@@ -401,26 +442,22 @@ export class MuseClient {
             JSON.stringify(["message", "edited_message"])
           )}`;
 
-          // 30s timeout per poll: keeps connection fresh and avoids NAT drops
-          const fetchSignal = signal
-            ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
-            : AbortSignal.timeout(30000);
-
-          const res = await fetch(url, { signal: fetchSignal });
+          // Bound each request and clean abort listeners after completion.
+          const res = await fetchTelegramPoll(url, signal);
 
           if (res.status === 429) {
             const body = (await res.json().catch(() => ({}))) as any;
             const retryAfterSec = body?.parameters?.retry_after ?? 3;
             this.lastPollError = `Telegram getUpdates 429 rate limited (retry after ${retryAfterSec}s)`;
             logE2E("REMOTE-AGENT", `pollEnvelopes 429 rate limit. Waiting ${retryAfterSec}s`);
-            await new Promise((resolve) => setTimeout(resolve, retryAfterSec * 1000 + 500));
+            await pollingDelay(retryAfterSec * 1000 + 500, signal);
             continue;
           }
 
           if (res.status === 409) {
             this.lastPollError = "Telegram getUpdates 409 Conflict: another poller or webhook owns this bot token.";
             logE2E("REMOTE-AGENT", `pollEnvelopes 409 Conflict (competing poller detected). Waiting 2000ms.`);
-            await new Promise((resolve) => setTimeout(resolve, 2000));
+            await pollingDelay(2000, signal);
             continue;
           }
 
@@ -429,13 +466,17 @@ export class MuseClient {
             this.lastPollError = `Telegram getUpdates HTTP ${res.status}`;
             const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors), 15000);
             logE2E("REMOTE-AGENT", `pollEnvelopes HTTP error ${res.status}. Backoff ${backoffMs}ms`);
-            await new Promise((resolve) => setTimeout(resolve, backoffMs));
+            await pollingDelay(backoffMs, signal);
             continue;
           }
 
           const data = (await res.json()) as any;
           if (!data || !data.ok || !Array.isArray(data.result)) {
+            consecutiveErrors++;
+            const backoffMs = Math.min(1000 * Math.pow(2, consecutiveErrors), 15000);
             this.lastPollError = "Telegram getUpdates returned an invalid response.";
+            logE2E("REMOTE-AGENT", `pollEnvelopes invalid response. Backoff ${backoffMs}ms`);
+            await pollingDelay(backoffMs, signal);
             continue;
           }
 
@@ -445,7 +486,7 @@ export class MuseClient {
 
           if (data.result.length === 0) {
             // Idle polling: small yield so fast responses or mocks don't spin the event loop
-            await new Promise((resolve) => setTimeout(resolve, 50));
+            await pollingDelay(50, signal);
             continue;
           }
 
@@ -590,6 +631,8 @@ export class MuseClient {
           // Per-request timeout is expected for long-polling when no updates arrive
           if (err.name === "TimeoutError" || (err.name === "AbortError" && !signal?.aborted)) {
             consecutiveErrors = 0;
+            // A mock or broken transport may fail immediately; never spin.
+            await pollingDelay(100, signal);
             continue;
           }
           consecutiveErrors++;
@@ -597,12 +640,12 @@ export class MuseClient {
           const sanitized = this.sanitizeError(err.message || String(err));
           this.lastPollError = `Telegram getUpdates network error: ${sanitized}`;
           logE2E("REMOTE-AGENT", `Polling loop network error: ${sanitized}. Backoff ${backoffMs}ms`);
-          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+          await pollingDelay(backoffMs, signal);
         }
       }
     } finally {
       this.isPolling = false;
-      await pollingLease.release().catch(() => {});
+      await pollingLease?.release().catch(() => {});
       logE2E("REMOTE-AGENT", "Polling loop terminated");
     }
   }
