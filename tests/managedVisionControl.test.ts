@@ -95,6 +95,9 @@ describe("Vision independent owner lifecycle",()=>{
       body:JSON.stringify({action:"stop",instanceId:owner!.instanceId}),
     });
     expect(denied.status).toBe(401);
+    // The durable sidecar ledger requires a 1-second pause between distinct
+    // mutations; replaying the same operation above remains immediately safe.
+    await new Promise(resolve=>setTimeout(resolve,1100));
     const stopPlan=await manageServices({action:"plan",service:"vision",port,targetAction:"stop"}) as any;
     const stopped=await operation(stopPlan);
     expect(stopped.changed).toBe(true);
