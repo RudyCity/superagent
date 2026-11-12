@@ -83,6 +83,8 @@ superagent -q "Summarize the security risks of this design"
 
 Source development uses Bun; Docker is **not required** for this CLI workflow. Optional integrations may have additional prerequisites. If a legacy launcher invokes Node unexpectedly, check `bun run doctor:launcher` before repairing it.
 
+**Windows global install:** The pinned `r-memory` dependency uses `bun:sqlite` when running on Bun. `better-sqlite3` is an optional Node.js-only peer and must not be installed or compiled by `bun install -g .`; Visual Studio C++ Build Tools are not needed for this SQLite path. If an older install still tries to build `better-sqlite3`, update the checkout and run `bun install --frozen-lockfile` before registering the CLI globally.
+
 **Native dependency setup on first interactive startup:** SuperAgent's existing startup checker prepares ripgrep, Python, uv, Android/Office tools and optional services. It now also checks **FFmpeg + ffprobe**, needed for managed Chrome CDP video archives. If missing, interactive startup (including `superagent setup`) offers to install via the available OS package manager **only after your explicit confirmation**; normal server/MCP startup, headless workflows and `--quick` never silently install system packages. On Windows the installer uses `winget` with the reviewed FFmpeg package, on macOS `brew`, and on Linux an already-root apt/dnf session. If unsupported, SuperAgent shows manual steps and continues without video capture. It does not auto-download unverified binaries or elevate privileges.
 
 ```bash

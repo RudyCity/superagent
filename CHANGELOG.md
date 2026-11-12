@@ -1,3 +1,8 @@
+## [1.14.75] - 2026-11-12
+### Fix Bun global installation requiring Visual Studio Build Tools
+- Upgrade pinned `r-memory` to 1.3.3: use Bun-native `bun:sqlite` with `better-sqlite3` declared only as an optional Node.js peer.
+- Remove the unnecessary native SQLite addon from the Bun dependency lockfile; preserve Node.js users via explicit addon installation and add regression coverage.
+
 ## [1.14.74] - 2026-11-12
 ### Unified Tray loading, notifications, and QR feedback
 - Add a shared accessible notification and per-action loading controller with deduplication, explicit unknown outcomes, and safe text-only content.

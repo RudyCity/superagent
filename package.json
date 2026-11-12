@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.74",
+  "version": "1.14.75",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
@@ -80,7 +80,7 @@
     "pdf-parse": "^2.4.5",
     "playwright-core": "1.56.1",
     "qrcode": "1.5.4",
-    "r-memory": "git+https://github.com/RudyCity/r-memory.git#2b5de65a1aa8ece0998e3411c07a22c2b41b2713",
+    "r-memory": "git+https://github.com/RudyCity/r-memory.git#64c718ce05c103a2d4e6218505279d990b55488f",
     "react": "^18.3.1",
     "ssh2": "^1.17.0",
     "ssh2-sftp-client": "^12.1.1",
