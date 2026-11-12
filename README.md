@@ -84,19 +84,22 @@ bun run tray:prebuilt:install
 
 The commands select an official published Windows release, read its SHA256SUMS.txt and check the installer hash/size. They do **not** compile native code. The check command never downloads or installs anything; download alone does not execute the installer. If the published release is older than the checked-out source, download/install **refuses** instead of silently downgrading. You can intentionally use that older release with `bun scripts/install-prebuilt-windows.ts --install --allow-version-mismatch` after reviewing the version shown by the check. A clean clone cannot produce an unpublished latest Tray build without a builder: fresh standalone binaries are produced on GitHub Actions runners and published only after the relevant release gates pass.
 
-For development or global CLI registration:
+For development or running the CLI from a source checkout:
 
-```bash
+```powershell
+# In the SuperAgent repository root:
+git pull --ff-only origin main
+bun install --frozen-lockfile
+bun run build
+bun dist/cli.js --version
+bun run start
+# Or, during active development:
 bun run dev
-# Or install from this checkout and use the command globally:
-bun install -g .
-superagent
-superagent -q "Summarize the security risks of this design"
 ```
 
-Source development uses Bun; Docker is **not required** for this CLI workflow. Optional integrations may have additional prerequisites. If a legacy launcher invokes Node unexpectedly, check `bun run doctor:launcher` before repairing it.
+These commands run from the source directory without installing a global package or compiling SQLite through MSVC. If you need `superagent` available **from any directory on Windows**, use the **verified standalone installer** above; it includes the Tray, Core, Bun runtime and launcher. Avoid `bun install -g .` for this local checkout: Bun versions can treat `.` as an invalid global package name or resolve dependencies independently of the checked-in lockfile. Use `bun run start` for source development rather than relying on a global package registration. Docker is **not required**. If a legacy launcher invokes Node unexpectedly, check `bun run doctor:launcher`.
 
-**Windows global install:** The pinned `r-memory` dependency uses `bun:sqlite` when running on Bun. `better-sqlite3` is an optional Node.js-only peer and must not be installed or compiled by `bun install -g .`; Visual Studio C++ Build Tools are not needed for this SQLite path. If an older install still tries to build `better-sqlite3`, update the checkout and run `bun install --frozen-lockfile` before registering the CLI globally.
+**Windows / `better-sqlite3` troubleshooting:** On older checkouts, the `r-memory` dependency could pull native `better-sqlite3` and run `node-gyp rebuild`, which fails if a matching prebuilt binary or MSVC is absent (especially on newer Node versions). Current SuperAgent pins the Bun-native `r-memory` SQLite adapter; `better-sqlite3` is an **optional Node-only peer** and is absent from the root `bun.lock`. First update the checkout safely with `git pull --ff-only origin main` (do not overwrite local changes), then run `bun install --frozen-lockfile` and the source commands above. You should not need to install Visual Studio C++ Build Tools or delete the global Bun directory. For ordinary Windows usage, install the published `.exe` instead.
 
 **Native dependency setup on first interactive startup:** SuperAgent's existing startup checker prepares ripgrep, Python, uv, Android/Office tools and optional services. It now also checks **FFmpeg + ffprobe**, needed for managed Chrome CDP video archives. If missing, interactive startup (including `superagent setup`) offers to install via the available OS package manager **only after your explicit confirmation**; normal server/MCP startup, headless workflows and `--quick` never silently install system packages. On Windows the installer uses `winget` with the reviewed FFmpeg package, on macOS `brew`, and on Linux an already-root apt/dnf session. If unsupported, SuperAgent shows manual steps and continues without video capture. It does not auto-download unverified binaries or elevate privileges.
 

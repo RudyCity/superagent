@@ -15,4 +15,14 @@ describe("SuperAgent Bun global-install SQLite dependency contract", () => {
     expect(manifest.dependencies).not.toHaveProperty("better-sqlite3");
     expect(lockText).not.toContain('"better-sqlite3": ["better-sqlite3@');
   });
+  it("documents compiler-free source startup instead of unreliable global-dot installation", () => {
+    const readme = readFileSync(new URL("README.md", source), "utf8");
+    expect(readme).toContain("bun install --frozen-lockfile");
+    expect(readme).toContain("bun dist/cli.js --version");
+    expect(readme).toContain("bun run start");
+    expect(readme).toContain("bun run dev");
+    expect(readme).toContain("verified standalone installer");
+    expect(readme).toContain("Avoid `bun install -g .`");
+    expect(readme).not.toContain("bun install -g .\nsuperagent");
+  });
 });
