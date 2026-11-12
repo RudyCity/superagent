@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import {
   GNU_SHARP_PACKAGES, MUSL_SHARP_PACKAGES, GNU_CANVAS_PACKAGES,
-  MUSL_CANVAS_PACKAGES, pruneMuslSharpFromLinuxStandalone,
+  MUSL_CANVAS_PACKAGES, GNU_TOKENIZERS_BINARY, pruneMuslSharpFromLinuxStandalone,
 } from "../scripts/prune-linux-musl-sharp.js";
 
 function withStaging(fn: (root: string, img: string, napi: string) => void) {
@@ -78,5 +78,32 @@ describe("GNU Linux standalone excludes only incompatible musl native addons", (
     expect(removed.filter(x => x === "@napi-rs/canvas-linux-x64-musl")).toHaveLength(2);
     expect(fs.existsSync(path.join(nested, GNU_CANVAS_PACKAGES[0], "sentinel"))).toBe(true);
     expect(fs.existsSync(path.join(nested, MUSL_CANVAS_PACKAGES[0]))).toBe(false);
+  }));
+
+  it("removes non-GNU tokenizers N-API binaries but preserves Linux x64 glibc", () => withStaging((root, img, napi) => {
+    allNative(img, napi);
+    const tok = path.join(root, "node_modules", "tokenizers");
+    fs.mkdirSync(tok, { recursive: true });
+    for (const name of [GNU_TOKENIZERS_BINARY, "tokenizers.linux-x64-musl.node",
+      "tokenizers.linux-arm64-musl.node", "tokenizers.darwin-x64.node",
+      "tokenizers.win32-x64-msvc.node"]) {
+      fs.writeFileSync(path.join(tok, name), name);
+    }
+    const removed = pruneMuslSharpFromLinuxStandalone(root, "linux", "x64");
+    expect(removed).toContain("tokenizers/tokenizers.linux-x64-musl.node");
+    expect(removed).toContain("tokenizers/tokenizers.linux-arm64-musl.node");
+    expect(removed).toContain("tokenizers/tokenizers.darwin-x64.node");
+    expect(fs.existsSync(path.join(tok, GNU_TOKENIZERS_BINARY))).toBe(true);
+    expect(fs.readdirSync(tok)).toEqual([GNU_TOKENIZERS_BINARY]);
+  }));
+
+  it("fails closed when GNU tokenizers binary is missing", () => withStaging((root, img, napi) => {
+    allNative(img, napi);
+    const tok = path.join(root, "node_modules", "tokenizers");
+    fs.mkdirSync(tok, { recursive: true });
+    fs.writeFileSync(path.join(tok, "tokenizers.linux-x64-musl.node"), "unsafe");
+    expect(() => pruneMuslSharpFromLinuxStandalone(root, "linux", "x64")).toThrow("GNU tokenizers native binary missing");
+    expect(fs.existsSync(path.join(img, MUSL_SHARP_PACKAGES[0]))).toBe(true);
+    expect(fs.existsSync(path.join(tok, "tokenizers.linux-x64-musl.node"))).toBe(true);
   }));
 });

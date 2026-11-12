@@ -51,12 +51,12 @@ const install = spawnSync(runtime, ["install", "--production", "--frozen-lockfil
 });
 check(install.status === 0, "Frozen production dependency installation failed: " + (install.error ?? install.status));
 const pruned = pruneMuslSharpFromLinuxStandalone(stage, process.platform, process.arch);
-if (pruned.length) console.log("[standalone-unix] Excluded incompatible musl-only optional sharp packages:", pruned.join(", "));
+if (pruned.length) console.log("[standalone-unix] Excluded incompatible native platform binaries:", pruned.join(", "));
 if (process.platform === "linux") {
-  const smoke = spawnSync(runtime, ["-e", "import sharp from 'sharp'; import { createCanvas } from '@napi-rs/canvas'; if (!sharp.versions?.sharp) throw new Error('GNU sharp native addon unavailable'); const canvas = createCanvas(2, 2); if (canvas.width !== 2) throw new Error('GNU canvas native addon unavailable'); console.log('GNU_NATIVE_ADDONS_OK', sharp.versions.sharp, canvas.width);"], {
+  const smoke = spawnSync(runtime, ["-e", "import sharp from 'sharp'; import { createCanvas } from '@napi-rs/canvas'; import { Tokenizer } from 'tokenizers'; if (!sharp.versions?.sharp) throw new Error('GNU sharp native addon unavailable'); const canvas = createCanvas(2, 2); if (canvas.width !== 2 || typeof Tokenizer !== 'function') throw new Error('GNU canvas/tokenizers native addon unavailable'); console.log('GNU_NATIVE_ADDONS_OK', sharp.versions.sharp, canvas.width, typeof Tokenizer);"], {
     cwd: stage, env: { ...process.env, CI: "true" }, stdio: "inherit", timeout: 30000,
   });
-  check(smoke.status === 0, "GNU sharp/canvas addon smoke check failed after excluding musl optionals: " + (smoke.error ?? smoke.status));
+  check(smoke.status === 0, "GNU sharp/canvas/tokenizers addon smoke check failed after excluding incompatible platform binaries: " + (smoke.error ?? smoke.status));
 }
 for (const dep of ["ink", "sharp", "r-memory"]) {
   check(fs.existsSync(path.join(stage, "node_modules", dep)), "Missing production dependency: " + dep);

@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 
 /**
- * A frozen Bun install may retain musl native optional packages alongside GNU
- * packages. linuxdeploy inspects every bundled ELF and fails when it encounters
- * libc.musl-x86_64.so.1 or tries to run ldd on musl-only N-API modules.
+ * Bun's frozen production install may retain optional native libraries for
+ * other architectures/libcs. linuxdeploy scans EVERY ELF under the AppDir,
+ * including unused musl addons, and aborts when ldd cannot load them.
  *
- * Keep GNU sharp/libvips and N-API canvas untouched; remove only the explicitly
- * known musl siblings from generated standalone dependencies on Linux x64.
+ * Keep GNU Linux x64 variants of sharp, libvips, canvas and tokenizers.
+ * Prune only explicit incompatible variants inside generated standalone
+ * node_modules. Never mutate source dependencies or other target platforms.
  */
 export const GNU_SHARP_PACKAGES = [
   "sharp-linux-x64",
@@ -19,6 +20,7 @@ export const MUSL_SHARP_PACKAGES = [
 ] as const;
 export const GNU_CANVAS_PACKAGES = ["canvas-linux-x64-gnu"] as const;
 export const MUSL_CANVAS_PACKAGES = ["canvas-linux-x64-musl"] as const;
+export const GNU_TOKENIZERS_BINARY = "tokenizers.linux-x64-gnu.node";
 
 const combinations = [
   { scope: "@img", gnu: GNU_SHARP_PACKAGES, musl: MUSL_SHARP_PACKAGES },
@@ -53,6 +55,12 @@ function packageDirectories(standaloneRoot: string): string[] {
   return result;
 }
 
+interface Removal {
+  name: string;
+  absolute: string;
+  directory: boolean;
+}
+
 export function pruneMuslSharpFromLinuxStandalone(
   standaloneRoot: string,
   platform: NodeJS.Platform,
@@ -60,14 +68,14 @@ export function pruneMuslSharpFromLinuxStandalone(
 ): string[] {
   if (platform !== "linux" || arch !== "x64") return [];
   const modulesRoots = packageDirectories(standaloneRoot);
-  const removals: { name: string; absolute: string; directory: boolean }[] = [];
+  const removals: Removal[] = [];
   for (const modules of modulesRoots) {
     for (const group of combinations) {
       const scope = path.join(modules, group.scope);
       if (!fs.existsSync(scope)) continue;
       const muslPresent = group.musl.filter(name => fs.existsSync(path.join(scope, name)));
       if (!muslPresent.length) continue;
-      // Resolve all required GNU siblings before performing *any* removal.
+      // Validate every required GNU sibling before scheduling any removal.
       for (const gnu of group.gnu) {
         const required = path.join(scope, gnu);
         if (!fs.existsSync(required) || !fs.statSync(required).isDirectory()) {
@@ -83,7 +91,35 @@ export function pruneMuslSharpFromLinuxStandalone(
         removals.push({ name: `${group.scope}/${name}`, absolute, directory: stat.isDirectory() });
       }
     }
+
+    // tokenizers ships native N-API binaries for *13* platforms in one package.
+    // All incompatible variants are unused on GNU x64, but linuxdeploy runs
+    // ldd on them anyway, including tokenizers.linux-x64-musl.node.
+    const tokenizers = path.join(modules, "tokenizers");
+    if (fs.existsSync(tokenizers)) {
+      if (!fs.statSync(tokenizers).isDirectory()) {
+        throw new Error("Unexpected tokenizers package path: " + tokenizers);
+      }
+      const natives = fs.readdirSync(tokenizers, { withFileTypes: true })
+        .filter(entry => /^tokenizers\.[a-z0-9-]+\.node$/.test(entry.name));
+      const required = path.join(tokenizers, GNU_TOKENIZERS_BINARY);
+      if (!fs.existsSync(required) || !fs.statSync(required).isFile()) {
+        throw new Error("GNU tokenizers native binary missing in Linux standalone: " + required);
+      }
+      for (const entry of natives) {
+        if (entry.name === GNU_TOKENIZERS_BINARY) continue;
+        if (!entry.isFile()) {
+          throw new Error("Unexpected native tokenizers file type: " + entry.name);
+        }
+        removals.push({
+          name: "tokenizers/" + entry.name,
+          absolute: path.join(tokenizers, entry.name),
+          directory: false,
+        });
+      }
+    }
   }
+  // This two-phase plan ensures a bad dependency cannot partially prune the bundle.
   for (const item of removals) fs.rmSync(item.absolute, { recursive: item.directory });
   return removals.map(item => item.name);
 }
