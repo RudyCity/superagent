@@ -34,18 +34,50 @@ jobs:
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Install FFmpeg and Chromium for media and browser integration tests
+      # Ubuntu 24.04's chromium-browser apt package is only a Snap bootstrapper.
+      # GitHub runners cannot rely on access to the Snap Store.
+      - name: Install FFmpeg and media runtime libraries (no Snap)
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg ripgrep chromium-browser || sudo apt-get install -y -qq ffmpeg ripgrep chromium || true
-          ffmpeg -version
+          sudo apt-get install -y -qq ffmpeg libblas3 ripgrep
+          test -x /usr/bin/ffmpeg
+          test -x /usr/bin/ffprobe
+          if ldd /usr/bin/ffmpeg | grep -F 'not found'; then
+            echo 'FFmpeg has unresolved shared libraries' >&2
+            exit 1
+          fi
+          /usr/bin/ffmpeg -hide_banner -version
+          /usr/bin/ffprobe -hide_banner -version
+          /usr/bin/ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=black:s=64x64:d=0.2' -c:v libx264 -pix_fmt yuv420p -y "$RUNNER_TEMP/ffmpeg-ci-smoke.mp4"
+          /usr/bin/ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1 "$RUNNER_TEMP/ffmpeg-ci-smoke.mp4" | grep -Fx codec_name=h264
+          # Prefer the apt-installed FFmpeg over incompatible preinstalled wrappers.
+          echo '/usr/bin' >> "$GITHUB_PATH"
+      - name: Install Chrome for Testing without Snap
+        id: chrome
+        uses: browser-actions/setup-chrome@v2
+        with:
+          chrome-version: stable
+          install-dependencies: true
+      - name: Verify Chrome browser runtime
+        shell: bash
+        env:
+          CHROME_BINARY: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          set -euo pipefail
+          test -x "$CHROME_BINARY"
+          "$CHROME_BINARY" --version
+          timeout 30s "$CHROME_BINARY" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --dump-dom about:blank > "$RUNNER_TEMP/chrome-ci-smoke.html"
+          grep -qi '<html' "$RUNNER_TEMP/chrome-ci-smoke.html"
+          echo "STUDIO_CHROMIUM_PATH=$CHROME_BINARY" >> "$GITHUB_ENV"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Run vitest regression
-        run: bun --bun x vitest run --maxWorkers=2 --poolOptions.threads.maxThreads=2 --reporter=dot
+        run: bun --bun x vitest run --maxWorkers=2 --reporter=dot
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
   security:

@@ -31,6 +31,14 @@ Updated: 2026-11-13. This is an **agent-operational runbook**, not an approval t
 | Artifact publication fails despite successful builds | `actions/download-artifact` may return nested layouts, or an extension artifact contains **historical Delegate versions** (observed 1.3.0–1.10.1). Glob selection or a hard-coded “six files” check can reject valid outputs or publish stale versions. | Use `scripts/stage-release-extensions.mjs` to stage only the tagged `chrome-extension-delegate/manifest.json` and `chrome-extension/manifest.json` versions, then `scripts/verify-release-extensions.mjs` to validate each ZIP/receipt. Normalize artifact download layouts; require exactly 3 native packages + 2 ZIPs + 2 receipts, then publish `SHA256SUMS.txt` (8 public assets). |
 | A completed source run is green but the publish step fails | Publication is independent of compilation and may fail at file selection/provenance. | Prefer fixing the publish job and rerunning it with verified immutable artifacts rather than rebuilding unnecessarily. `.github/workflows/publish-verified-unix.yml` is a **legacy DEB+DMG recovery workflow**: its current validation does **not** require AppImage. **Do not use it to certify a full AppImage release until its gate is upgraded and tested.** Never select arbitrary download files or substitute another run's artifacts. |
 
+## Ubuntu CI media and browser bootstrap (2026-11-13)
+
+Observed in `.github/workflows/bun-runtime.yml` on an Ubuntu 24.04 regression runner: installing `chromium-browser` via apt invoked its Snap Store post-installation step, which repeatedly failed to contact the store. The command masked apt failures with `|| true`; FFmpeg then exited with `libblas.so.3: cannot open shared object file`. Another pending regression step used a retired Vitest flag `--poolOptions.threads.maxThreads`.
+
+Agent fix: install `ffmpeg libblas3 ripgrep` via apt **without** either `chromium-browser` or error-masking fallback; verify the apt `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`, unresolved `ldd` dependencies and an actual H.264 encode/decode probe. Use `browser-actions/setup-chrome@v2` for Chrome for Testing (no Snap), check the actual executable's version plus headless DOM output, and propagate its `chrome-path` as `STUDIO_CHROMIUM_PATH`. Run the regression with supported `--maxWorkers=2 --reporter=dot` only. Regression guard: `tests/bunRuntimeCiDependencies.test.ts`.
+
+**Verification boundary:** Static workflow/tests on Windows do not prove apt, Chrome download, or media playback on Ubuntu CI. Mark the Ubuntu fix verified only after a new real `Bun Runtime Validation` GitHub Actions run passes the media/browser bootstrap and full regression. A failed later application test is a separate finding, not evidence that Snap was installed.
+
 ## Native and extension release gates
 
 ### Linux and macOS
