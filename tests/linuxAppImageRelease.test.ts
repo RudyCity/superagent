@@ -10,8 +10,9 @@ describe("Linux AppImage packaging regression", () => {
       ".github/workflows/release-windows-standalone.yml",
     ]) {
       const workflow = read(file);
-      expect(workflow).toContain("NO_STRIP: ${{ runner.os == 'Linux' && 'true' || '' }}");
-      expect(workflow).toContain("APPIMAGE_EXTRACT_AND_RUN: ${{ runner.os == 'Linux' && '1' || '' }}");
+      expect(workflow).toContain("if: runner.os == 'Linux'");
+      expect(workflow).toContain("echo 'NO_STRIP=true' >> \"$GITHUB_ENV\"");
+      expect(workflow).toContain("echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> \"$GITHUB_ENV\"");
       expect(workflow).toContain("installer:package:unix");
     }
   });
