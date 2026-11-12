@@ -91,6 +91,28 @@ jobs:
       - name: Package macOS DMG or Linux DEB/AppImage
         if: runner.os != 'Windows'
         run: bun run installer:package:unix
+      - name: Diagnose linuxdeploy AppImage packaging failure
+        if: failure() && runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -uo pipefail
+          bundle="apps/superagent-tray/src-tauri/target/release/bundle/appimage"
+          echo '=== AppImage staging files ==='
+          find "$bundle" -maxdepth 2 -mindepth 1 -printf '%p %s bytes\\n' 2>/dev/null | head -80 || true
+          echo '=== Cached linuxdeploy executables ==='
+          find "$HOME/.cache/tauri" -maxdepth 3 -name '*linuxdeploy*' -print 2>/dev/null || true
+          mapfile -t deploy < <(find "$HOME/.cache/tauri" -maxdepth 3 -name 'linuxdeploy-x86_64.AppImage' -type f 2>/dev/null)
+          mapfile -t appdirs < <(find "$bundle" -maxdepth 1 -name '*.AppDir' -type d 2>/dev/null)
+          if [[ "${#deploy[@]}" -gt 0 && "${#appdirs[@]}" -gt 0 ]]; then
+            echo '=== Reproducing linuxdeploy with full output on disposable CI runner ==='
+            export NO_STRIP=true APPIMAGE_EXTRACT_AND_RUN=1
+            timeout 120s "${deploy[0]}" --appimage-extract-and-run --appdir "${appdirs[0]}" --plugin gtk --output appimage > "$RUNNER_TEMP/linuxdeploy-diagnostic.log" 2>&1
+            code=$?
+            echo "linuxdeploy reproduction exit=$code"
+            tail -n 180 "$RUNNER_TEMP/linuxdeploy-diagnostic.log" || true
+          else
+            echo 'No reusable linuxdeploy executable or AppDir staging directory found.'
+          fi
       - name: Verify installed Windows setup on disposable runner
         if: runner.os == 'Windows'
         shell: pwsh
