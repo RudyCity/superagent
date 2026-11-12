@@ -5,7 +5,11 @@ const yml = fs.readFileSync(".github/workflows/bun-runtime.yml", "utf8");
 
 describe("Bun full-regression prerequisites on disposable Ubuntu runner", () => {
   it("builds a real Gradle APK instead of creating or skipping a fake APK", () => {
-    expect(yml).toContain("uses: android-actions/setup-android@v3");
+    expect(yml).not.toContain("uses: android-actions/setup-android@v3");
+    expect(yml).toContain('sdk_root="${ANDROID_HOME:-/usr/local/lib/android/sdk}"');
+    expect(yml).toContain('find "$sdk_root/cmdline-tools"');
+    expect(yml).toContain('license_status=${PIPESTATUS[1]}');
+    expect(yml).toContain('"$sdkmanager_bin" --install');
     expect(yml).toContain("uses: actions/setup-java@v4");
     expect(yml).toContain("bash ./gradlew --no-daemon :app:assembleDebug");
     expect(yml).toContain("app/build/outputs/apk/debug/app-debug.apk");

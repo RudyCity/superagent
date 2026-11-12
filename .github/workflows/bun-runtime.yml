@@ -91,12 +91,29 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - name: Build real Android debug APK for download-ticket integration
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          # ubuntu-24.04 already ships Android SDK command-line tools.
+          # setup-android@v3 tries to install obsolete SDK package "tools" and
+          # aborts before Gradle; use the runner SDK without that action.
+          sdk_root="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          test -d "$sdk_root/cmdline-tools"
+          sdkmanager_bin="$(find "$sdk_root/cmdline-tools" -maxdepth 3 -type f -name sdkmanager -print -quit)"
+          test -n "$sdkmanager_bin" && test -x "$sdkmanager_bin"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          # yes exits with SIGPIPE after sdkmanager accepts the final license;
+          # inspect sdkmanager's exit code, never mask a license failure.
+          set +o pipefail
+          yes | "$sdkmanager_bin" --licenses > "$RUNNER_TEMP/android-sdk-licenses.log" 2>&1
+          license_status=${PIPESTATUS[1]}
+          set -o pipefail
+          if [[ "$license_status" -ne 0 ]]; then
+            tail -n 40 "$RUNNER_TEMP/android-sdk-licenses.log"
+            exit "$license_status"
+          fi
+          "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
           (cd apps/superagent-lan-android && bash ./gradlew --no-daemon :app:assembleDebug)
           apk=apps/superagent-lan-android/app/build/outputs/apk/debug/app-debug.apk
           metadata=apps/superagent-lan-android/app/build/outputs/apk/debug/output-metadata.json
