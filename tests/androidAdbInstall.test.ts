@@ -134,6 +134,31 @@ describe("safe, owner-initiated Android LAN APK installer", () => {
     expect(f.installCount).toBe(1);
     expect(f.commands.some((cmd) => cmd.includes("settings") || cmd.includes("disable"))).toBe(false);
   });
+  it("reports signing, version, storage, and APK errors without unsafe recovery", async () => {
+    const cases = [
+      ["INSTALL_FAILED_UPDATE_INCOMPATIBLE", /different signing certificate/i],
+      ["INSTALL_FAILED_VERSION_DOWNGRADE", /newer version/i],
+      ["INSTALL_FAILED_INSUFFICIENT_STORAGE", /insufficient storage/i],
+      ["INSTALL_FAILED_INVALID_APK", /SHA-256/i],
+      ["INSTALL_FAILED_NO_MATCHING_ABIS", /CPU architecture/i],
+    ] as const;
+    for (const [code, message] of cases) {
+      const f = adbFixture({ install: { ...result("", 1), stderr: "Failure [" + code + ": denied]" } });
+      const outcome = await installAndroidApk(target, f.runner);
+      expect(outcome.status).toBe("failed");
+      expect(outcome.installErrorCode).toBe(code);
+      expect(outcome.message).toMatch(message);
+      expect(f.installCount).toBe(1);
+      expect(f.commands.some((cmd) => cmd.includes("uninstall") || cmd.includes("disable"))).toBe(false);
+    }
+  });
+  it("includes verification error codes without bypassing owner consent", async () => {
+    const f = adbFixture({ install: { ...result("", 1), stderr: "Failure [INSTALL_FAILED_USER_RESTRICTED]" } });
+    const outcome = await installAndroidApk(target, f.runner);
+    expect(outcome.status).toBe("verification-blocked");
+    expect(outcome.installErrorCode).toBe("INSTALL_FAILED_USER_RESTRICTED");
+    expect(outcome.message).toContain("ColorOS");
+  });
   it("does not call missing or wrong-version packages installed, even after ADB Success", async () => {
     const missing = adbFixture({ final: "missing" });
     const old = adbFixture({ final: "old" });

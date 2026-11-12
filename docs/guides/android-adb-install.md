@@ -35,6 +35,20 @@ The installer performs **one** install attempt, never retries after an ambiguous
 
 The app uses two distinct package names, `click.superagent.lanclient` and `click.superagent.lanclient.lite`, so both can appear on the phone. Lite omits the Accessibility service and remote touch capability.
 
+## Troubleshooting downloads and failed installations
+
+The Tray APK download QR opens a browser download link. It does not install the app. Open the completed APK from the phone's Downloads app, then review the Android install prompt. The Connect QR pairs an already-installed app and is not an installer.
+
+For "App not installed", connect the phone by USB with owner authorization and use the installer above to read the structured installErrorCode.
+
+- INSTALL_FAILED_UPDATE_INCOMPATIBLE: previous app uses another signing key; preserve app data and identify the previous source before considering an owner-approved uninstall.
+- INSTALL_FAILED_VERSION_DOWNGRADE: use a newer APK.
+- INSTALL_FAILED_INSUFFICIENT_STORAGE: free storage before retrying.
+- INSTALL_FAILED_INVALID_APK: re-download and compare SHA-256 with Tray.
+- INSTALL_FAILED_USER_RESTRICTED / INSTALL_FAILED_VERIFICATION_FAILURE: review the phone's Play Protect or OEM approval prompts, without bypassing security.
+
+Debug-signed APKs from different computers may use different keys, preventing an in-place update. No automatic uninstall or protection bypass is performed.
+
 ## Validation
 
 ```sh

@@ -34,6 +34,8 @@ export interface AndroidInstallOutcome {
   installExitCode?: number | null;
   installTimedOut?: boolean;
   playProtectDialog?: boolean;
+  /** Sanitized Android package manager failure code. */
+  installErrorCode?: string;
 }
 export interface AndroidPackageState {
   present: boolean;
@@ -45,6 +47,27 @@ const PROBE_MS = 12_000;
 const DEFAULT_INSTALL_MS = 120_000;
 const PACKAGE_PATTERN = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z][A-Za-z0-9_]*)+$/;
 const SERIAL_PATTERN = /^[A-Za-z0-9._-]{3,128}$/;
+function androidInstallErrorCode(output: string): string | undefined {
+  return /\b(INSTALL_FAILED_[A-Z0-9_]+)\b/.exec(output)?.[1];
+}
+function androidInstallFailureMessage(code?: string): string {
+  switch (code) {
+    case "INSTALL_FAILED_UPDATE_INCOMPATIBLE":
+      return "Existing app has a different signing certificate. Preserve app data and verify its source before considering removal.";
+    case "INSTALL_FAILED_VERSION_DOWNGRADE":
+      return "A newer version is installed. Obtain a newer APK instead of forcing a downgrade.";
+    case "INSTALL_FAILED_INSUFFICIENT_STORAGE":
+      return "Android reports insufficient storage. Free space before an owner-approved retry.";
+    case "INSTALL_FAILED_NO_MATCHING_ABIS":
+      return "This APK does not support the device CPU architecture.";
+    case "INSTALL_FAILED_INVALID_APK":
+      return "Android rejected the APK format. Download again and compare SHA-256 with the download metadata.";
+    default:
+      return code
+        ? "Android rejected installation (" + code + "). Inspect the device before manually retrying."
+        : "Installation did not produce a confirmed matching package. Review the phone prompt and ADB output.";
+  }
+}
 function isLocalUsbSerial(serial: string): boolean {
   return SERIAL_PATTERN.test(serial) && !/^emulator-/i.test(serial) &&
     !/^adb-.*_adb-tls/i.test(serial) && !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(serial);
@@ -143,6 +166,8 @@ export async function installAndroidApk(
   }
   const details = { installExitCode: attempt.code, installTimedOut: attempt.timedOut };
   const output = attempt.stdout + "\n" + attempt.stderr;
+  const installErrorCode = androidInstallErrorCode(output);
+  const failureDetails = { ...details, ...(installErrorCode ? { installErrorCode } : {}) };
   const verificationBlocked = /INSTALL_FAILED_VERIFICATION_FAILURE|INSTALL_FAILED_USER_RESTRICTED|INSTALL_FAILED_ABORTED|Install not allowed/i.test(output);
   if (verificationBlocked) {
     let playProtectDialog = false;
@@ -151,8 +176,9 @@ export async function installAndroidApk(
       playProtectDialog = /PlayProtectDialogsActivity/.test(focus.stdout);
     } catch { /* ADB UI diagnostics are best-effort and read-only. */ }
     return installedOutcome("verification-blocked", serial, options,
-      "Android refused this install. Review the Play Protect or ColorOS prompt on the unlocked phone; do not disable device security.",
-      before, after, { ...details, playProtectDialog });
+      "Android refused this install. Review the Play Protect or ColorOS prompt on the unlocked phone; do not disable device security." +
+      (installErrorCode ? " (" + installErrorCode + ")" : ""),
+      before, after, { ...failureDetails, playProtectDialog });
   }
   if (attempt.timedOut) {
     if (matchesTarget(after, options) && changedSince(before, after)) {
@@ -178,6 +204,6 @@ export async function installAndroidApk(
       before, after, details);
   }
   return installedOutcome("failed", serial, options,
-    "Install did not produce a confirmed matching package. Read the ADB error and inspect the device.",
-    before, after, details);
+    androidInstallFailureMessage(installErrorCode),
+    before, after, failureDetails);
 }

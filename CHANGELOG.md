@@ -1,3 +1,8 @@
+## [1.14.73] - 2026-11-12
+### Diagnose Android APK installation failures
+- Report sanitized Android package-manager failure codes and guidance for signing conflicts, downgrades, storage, invalid APKs and unsupported architectures.
+- Document APK download vs Connect QR and owner-consented USB troubleshooting. Keep device security and existing app data intact.
+
 ## [Unreleased] - 2026-11-06
 ### Remove redundant sidebar branding in Tray
 - Remove the duplicate SuperAgent / TRAY CONTROL logo block from the Tray sidebar and its unused CSS. The native title bar retains the application identity; sidebar navigation now starts at the top without an empty branding area.
