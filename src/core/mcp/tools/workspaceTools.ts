@@ -197,14 +197,10 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
 
     const proc = traceChildProcess(execa(formattedCommand, mcpExecOpts), { caller: "workspaceTools.handleExecCommand", executable: String(shellPath), args: [formattedCommand], cwd: String(targetCwd), intent: "headless", options: mcpExecOpts });
     childPid = proc.pid;
-    if (procRecordId && childPid) {
-      try {
-        await getProcessSupervisor().recordProcessSpawn(procRecordId, childPid);
-      } catch (trackingError) {
-        console.warn("[MCP exec] Failed to persist child spawn:", trackingError);
-      }
-    }
-
+    // Attach output consumers before ANY asynchronous process bookkeeping.
+    // Commands such as "seq 1 25000" can finish before recordProcessSpawn()
+    // returns on a fast Linux runner; with buffer:false, late listeners lose
+    // the entire stdout stream and produce a misleading zero-byte log.
     const record = (data: Buffer | string) => {
       const chunk = decoder.write(Buffer.isBuffer(data) ? data : Buffer.from(data));
       cmdLogger?.write(chunk);
@@ -218,6 +214,13 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       proc.stdout?.on("data", record);
       proc.stderr?.on("data", record);
     } else proc.all?.on("data", record);
+    if (procRecordId && childPid) {
+      try {
+        await getProcessSupervisor().recordProcessSpawn(procRecordId, childPid);
+      } catch (trackingError) {
+        console.warn("[MCP exec] Failed to persist child spawn:", trackingError);
+      }
+    }
     const result = await proc;
     let trackingWarning: string | undefined;
     if (procRecordId) {

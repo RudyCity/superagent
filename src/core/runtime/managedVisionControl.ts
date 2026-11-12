@@ -94,27 +94,32 @@ function pythonBin(){
   });
   const binary=probe.status===0?probe.stdout.trim():"";
   if(!path.isAbsolute(binary))throw new Error("VISION_PYTHON_BINARY_UNRESOLVED");
-  // Linux/hosted Python often exposes sys.executable through a symlink.
-  // Resolve to the real executable before launching so process ownership
-  // attestation still observes the exact binary, not a shim or symlink PID.
+  // Validate the real executable, but preserve sys.executable as the launch
+  // path: a Python virtual environment can use a symlink to the system ELF.
+  // Invoking the realpath rather than the venv path loses sys.prefix and all
+  // site-packages installed by setup-python/venv, causing a silent startup
+  // failure despite a successful dependency probe.
   const real=fs.realpathSync(binary);
   const stat=fs.lstatSync(real);
   if(!stat.isFile()||stat.isSymbolicLink())
     throw new Error("VISION_PYTHON_BINARY_UNSAFE");
-  resolvedPython=real;
-  return real;
+  resolvedPython=binary;
+  return binary;
 }
 function preflightPython(){
   const script=path.join(getPackageRootDir(),"scripts","vision_server.py");
   const stat=fs.lstatSync(script);
   if(!stat.isFile()||stat.isSymbolicLink())
     throw new Error("VISION_TRUSTED_SCRIPT_MISSING");
-  const check=spawnSync(pythonBin(),["-c","import torch; import transformers; import rfdetr"],{
+  // Probe the exact interpreter and every eager import used by vision_server.py.
+  // The heavyweight model weights remain lazy and are not downloaded here.
+  const check=spawnSync(pythonBin(),["-c",
+    "import torch; import transformers; import rfdetr; import numpy; from PIL import Image; from huggingface_hub import hf_hub_download"],{
     cwd:getPackageRootDir(),windowsHide:true,timeout:18000,
     stdio:"ignore",
   });
   if(check.error||check.status!==0)
-    throw new Error("VISION_PYTHON_DEPENDENCIES_UNAVAILABLE: configure supported Python with torch, transformers and rfdetr before starting");
+    throw new Error("VISION_PYTHON_DEPENDENCIES_UNAVAILABLE: configure supported Python with torch, transformers, rfdetr, numpy, Pillow and huggingface_hub before starting");
 }
 export async function planManagedVision(action:VisionAction,port:number):Promise<VisionPlan>{
   if(!Number.isSafeInteger(port)||port<1024||port>65535||[7888,8857,9225,9227].includes(port))
