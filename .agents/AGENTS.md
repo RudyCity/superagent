@@ -55,6 +55,17 @@ T-Line implements the other side in `backend/src/superAgentRuntimeTarget.ts`,
 `backend/src/superAgentCoreOwnership.ts` and
 `docs/guides/single-superagent-runtime-target.md` in its own repository.
 
+## Mandatory Release Incident Knowledge (2026-11-13)
+
+**All release, installer, packaging, CI, and Chrome extension agents MUST read `docs/guides/release-incident-playbook.md` before diagnosing, changing, or publishing build artifacts.** This is the canonical incident ledger for the verified `v1.14.83-unix.1` release (Linux x64 AppImage + DEB, macOS ARM64 DMG, Delegate and SidePanel); verify current repository state before using historical versions or commands.
+
+- **Diagnose from real failed job logs:** distinguish test, OS packaging, artifact collection, release publication, and actual production cutover. A green build or pushed tag is not a published release; a published prerelease is not an installed or production-certified Core/Tray/Delegate.
+- **Linux x64 glibc AppImage:** frozen Bun dependencies can include incompatible musl native binaries. Do not delete source dependencies or disable tests. In *generated standalone staging only*, preserve GNU `sharp`/`libvips`, `@napi-rs/canvas-linux-x64-gnu`, and `tokenizers.linux-x64-gnu.node`; prune identified musl/non-target variants using `scripts/prune-linux-musl-sharp.ts`; run native smoke tests and inspect the actual AppImage/DEB.
+- **CI/macOS discipline:** configure `NO_STRIP=true` and `APPIMAGE_EXTRACT_AND_RUN=1` in Linux-only steps, not `runner.os` expressions in job-level `env`; never pass `--bundles ""`; use the macOS `/private/var` canonical fixture path and serialized PDF regression tests without relaxing permissions.
+- **Windows installation:** normal users use a verified prerelease NSIS installer without MSVC; source developers use `bun install --frozen-lockfile` and `bun run start`, not `bun install -g .`. A legacy Node `better-sqlite3`/node-gyp compile failure is not justification to install build tools on end-user PCs.
+- **Extension and release integrity:** ship Delegate and SidePanel as separate manifest-pinned MV3 ZIPs with verified receipts. Never include historical cached ZIPs. Require Linux DEB **and** AppImage, macOS DMG, ZIPs, receipts, SHA256SUMS and successful tagged-source CI before marking a full Unix release published. The legacy `publish-verified-unix.yml` recovery workflow lacks the newer AppImage gate; do not use it for full AppImage certification unless independently updated and tested.
+- **Preserve concurrent ownership:** never reset or stage unrelated dirty files, create unnecessary branches/worktrees, restart active Core/MCP services, silently promote prereleases or change OAuth ownership while preparing a release. R0–R7 authorization still applies. Report real run IDs, tag/commit parity, released asset inventory, checksum evidence and remaining signing/production blockers.
+
 ## 3-Tier Multi-Agent Architecture
 
 Superagent supports a full 3-tier agent hierarchy activated via `superagent --multi`:
