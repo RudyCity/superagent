@@ -67,7 +67,8 @@ describe("QR tunnel auto-recovery contract", () => {
     expect(helper).toContain("if (current) return await current;");
     expect(helper).toContain('/api/device-tunnel/ping');
     expect(helper).toContain("waitForPublicTunnelReady");
-    expect(html).toContain("this QR action starts and verifies it automatically");
+    expect(html).toContain("The Core HTTPS tunnel starts automatically when needed");
+    expect(html).toContain("Creating a QR will automatically ensure the Core HTTPS tunnel is running");
     expect(html).not.toContain("Start the Core HTTPS tunnel first, then create a QR");
   });
 });
