@@ -589,51 +589,6 @@ button:disabled {
   overflow: hidden;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 8px 18px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.brand-badge {
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(59, 130, 246, 0.25));
-  border: 1px solid rgba(59, 130, 246, 0.4);
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 0 16px rgba(59, 130, 246, 0.2);
-}
-
-.brand-icon {
-  width: 20px;
-  height: 20px;
-  color: #38bdf8;
-}
-
-.brand-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.brand-title {
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.3px;
-  color: #ffffff;
-}
-
-.brand-tag {
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 1.4px;
-  color: var(--accent);
-}
-
 .navigation {
   display: flex;
   flex: 1 1 auto;
