@@ -110,6 +110,71 @@ describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>
     expect((await stat(two.videoFile)).size).toBeGreaterThan(1000);
   },25000);
 
+  test("concurrent stop requests share one finalizer and repeated stop is idempotent",async()=>{
+    const started=await startCdpSessionArchive(scope,{
+      projectDirectory:projectRoot,confirmSensitiveVideo:true,
+      captureFrame:async()=>encodedJpeg,checkLease:async()=>true,
+    });
+    await sleep(420);
+    const [first,second,third]=await Promise.all([
+      stopCdpSessionArchive(scope,{events:[{sequence:1,action:"click_cursor"}]}),
+      stopCdpSessionArchive(scope,{events:[{sequence:2,action:"move_cursor"}]}),
+      stopCdpSessionArchive(scope),
+    ]);
+    expect(first).toMatchObject({recordingId:started.recordingId,status:"saved"});
+    expect(second.recordingId).toBe(first.recordingId);
+    expect(third.recordingId).toBe(first.recordingId);
+    const actions=JSON.parse(await readFile(join(first.directory,"actions.json"),"utf8"));
+    expect(actions.recordedCount).toBe(1);
+    expect(actions.events[0].action).toBe("click_cursor");
+    expect((await stat(first.videoFile)).size).toBeGreaterThan(1000);
+    const again=await stopCdpSessionArchive(scope);
+    expect(again.status).toBe("saved");
+    expect(again.recordingId).toBe(first.recordingId);
+  },25000);
+
+  test("brief navigation-detached screenshots recover without ending video",async()=>{
+    let reads=0;
+    const saved=await startCdpSessionArchive(scope,{
+      projectDirectory:projectRoot,confirmSensitiveVideo:true,checkLease:async()=>true,
+      captureFrame:async()=>{
+        reads++;
+        if(reads===2||reads===3)
+          throw Error("CDP 'Page.captureScreenshot' error: Not attached to an active page");
+        return encodedJpeg;
+      },
+    });
+    await sleep(1350);
+    const result=await stopCdpSessionArchive(scope);
+    expect(saved.status).toBe("recording");
+    expect(result.status).toBe("saved");
+    expect(result.droppedFrames).toBe(2);
+    expect(result.frameCount).toBeGreaterThanOrEqual(4);
+    const errors=await readFile(result.errorsFile,"utf8");
+    expect(errors.match(/video_frame_capture_failed/g)?.length).toBe(2);
+    const probe=spawnSync("ffprobe",["-v","error","-show_entries","stream=codec_name",
+      "-of","json",result.videoFile],{encoding:"utf8",timeout:8000});
+    expect(probe.status).toBe(0);
+    expect(JSON.parse(probe.stdout).streams[0].codec_name).toBe("h264");
+  },25000);
+
+  test("persistent screenshot failure stops bounded capture",async()=>{
+    let calls=0;
+    await startCdpSessionArchive(scope,{
+      projectDirectory:projectRoot,confirmSensitiveVideo:true,checkLease:async()=>true,
+      captureFrame:async()=>{
+        calls++;
+        if(calls>1)throw Error("CDP 'Page.captureScreenshot' error: Not attached to an active page");
+        return encodedJpeg;
+      },
+    });
+    await sleep(2450);
+    const record=await stopCdpSessionArchive(scope);
+    expect(record.status).toBe("saved");
+    expect(record.droppedFrames).toBeGreaterThanOrEqual(9);
+    expect(calls).toBeLessThanOrEqual(11);
+  },25000);
+
   test("cannot read another actor's or generation's archive",async()=>{
     await startCdpSessionArchive(scope,{projectDirectory:projectRoot,
       confirmSensitiveVideo:true,captureFrame:async()=>encodedJpeg,

@@ -56,6 +56,8 @@ type Session = {
   encoderExit: Promise<{code: number | null; log: string}>;
   frames: number;
   dropped: number;
+  /** Bounded retry window for navigation-only CDP screenshot detachments. */
+  consecutiveCaptureFailures: number;
   commands: number;
   diagnostics: number;
   problems: string[];
@@ -64,6 +66,8 @@ type Session = {
   recordId?: string;
   pendingWrites: Promise<void>;
   stopDiagnostics?: () => Promise<void>;
+  /** Exactly one finalizer per session; repeated stop calls share the result. */
+  finalizePromise?: Promise<ReturnType<typeof publicStatus>>;
 };
 const sessions = new Map<string, Session>();
 const scopeKey = (scope: ArchiveScope) => scope.targetKey + "\0" + scope.actorId;
@@ -157,6 +161,10 @@ export function assertSessionVideoEncoder(): void {
   const result = spawnSync("ffmpeg", ["-version"], { timeout: 3000, windowsHide: true, stdio: "ignore" });
   if (result.status !== 0) throw Error("Video recording requires an installed ffmpeg executable on PATH.");
 }
+function isTransientCdpCaptureFailure(error: unknown): boolean {
+  const message=String((error as Error)?.message??error);
+  return /(?:Page\.captureScreenshot|CDP WebSocket|target tab).*?(?:not attached|closed unexpectedly|detached|target closed|cannot find context|navigat)/i.test(message);
+}
 async function frameTick(item: Session, capture: () => Promise<string>, valid: () => Promise<boolean>) {
   if (item.status !== "recording") return;
   if (Date.now() - item.start >= MAX_MS || item.frames >= MAX_FRAMES) {
@@ -183,6 +191,7 @@ async function frameTick(item: Session, capture: () => Promise<string>, valid: (
   if (!item.encoder.stdin.writable || !item.encoder.stdin.write(frame))
     throw Error("Video encoder backpressure; capture halted to avoid unbounded buffering.");
   item.frames++;
+  item.consecutiveCaptureFailures=0;
   item.totalFrameBytes += frame.length;
   item.lastCaptureAt = Date.now();
 }
@@ -227,7 +236,7 @@ export async function startCdpSessionArchive(
   encoder.stdin.on("error", () => { /* reported by frameTick on next write */ });
   const item: Session = {
     id, scope, directory, start:Date.now(), status:"recording",
-    encoder, encoderExit, frames:0,dropped:0,commands:0,diagnostics:0,
+    encoder, encoderExit, frames:0,dropped:0,consecutiveCaptureFailures:0,commands:0,diagnostics:0,
     totalFrameBytes:0,lastCaptureAt:0,problems:[],pendingWrites:Promise.resolve(),
     stopDiagnostics:opts.stopDiagnostics,
   };
@@ -246,6 +255,11 @@ export async function startCdpSessionArchive(
           queueSafe(item,join(item.directory,"errors.jsonl"),{
             at:new Date().toISOString(),kind:"video_frame_capture_failed",error:problem,
           });
+          // Chrome briefly detaches its screenshot surface during navigation.
+          // Keep recording on the same verified tab for at most 8 consecutive
+          // transient failures (~1.6s at 5 FPS); all other failures stop safely.
+          if (isTransientCdpCaptureFailure(error) &&
+              ++item.consecutiveCaptureFailures <= 8) return;
           item.status="stopping";
           if (item.timer) clearInterval(item.timer);
         }).finally(() => { item.inFlight = undefined; });
@@ -317,6 +331,13 @@ export function getCdpSessionArchiveStatus(scope: ArchiveScope) {
 }
 export async function stopCdpSessionArchive(scope: ArchiveScope, actionTranscript?: object) {
   const item = findActive(scope);
+  // A tab may close while an operator simultaneously requests stop.
+  // Never run two FFmpeg finalizers or create actions.json twice.
+  if (!item.finalizePromise)
+    item.finalizePromise = finalizeCdpSessionArchive(item, actionTranscript);
+  return item.finalizePromise;
+}
+async function finalizeCdpSessionArchive(item: Session, actionTranscript?: object) {
   if (item.status === "saved") return publicStatus(item);
   if (item.status !== "recording" && item.status !== "stopping")
     throw Error("Session archive cannot be stopped again.");
