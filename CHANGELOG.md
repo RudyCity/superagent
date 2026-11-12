@@ -1,3 +1,10 @@
+## [1.14.74] - 2026-11-12
+### Unified Tray loading, notifications, and QR feedback
+- Add a shared accessible notification and per-action loading controller with deduplication, explicit unknown outcomes, and safe text-only content.
+- Show real button busy states and verified success/error/warning toasts for Connect QR, APK download QR, LAN discovery/pairing, Runtime creation and lifecycle operations; silence automatic QR heartbeat refreshes.
+- Extend consistent action feedback across desktop Settings, Muse, Terminal, Chrome Delegate, CDP multi-tab, file transfers, Android screen control, schedules and connection logs, preserving native owner authentication, transfer progress and explicit approvals.
+- Add focused feedback and QR regression tests; keep the detailed staged native desktop acceptance gates in the Tray feedback master plan.
+
 ## [1.14.73] - 2026-11-12
 ### Diagnose Android APK installation failures
 - Report sanitized Android package-manager failure codes and guidance for signing conflicts, downgrades, storage, invalid APKs and unsupported architectures.

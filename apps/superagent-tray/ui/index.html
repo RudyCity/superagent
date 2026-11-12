@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./lan-devices.css" />
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <script src="./titlebar.js" defer></script>
+  <script src="./feedback.js" defer></script>
   <script src="./app.js" defer></script>
   <script src="./runtime.js" defer></script>
   <script src="./lifecycle.js" defer></script>
@@ -2154,7 +2155,7 @@
     </div>
   </div>
 
-  <!-- Toast Notification Alert -->
-  <div id="toast" class="toast" role="alert" hidden></div>
+  <!-- Shared, accessible, bounded notifications; created with textContent only. -->
+  <div id="toast" class="toast" role="region" aria-label="Tray notifications" hidden></div>
 </body>
 </html>

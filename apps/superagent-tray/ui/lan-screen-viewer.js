@@ -9,6 +9,9 @@
  */
 (() => {
   const $ = (id) => document.getElementById(id);
+  const notifyScreen = (kind, message) => window.TrayFeedback?.notify({
+    kind, message, scope: "lan-devices",
+  });
   const viewer = {
     running: false, generation: 0, id: null, hasFrame: false, hasSchema: false,
     schemaRevision: 0, nodes: [], origin: null,
@@ -187,6 +190,7 @@
     status("Requesting privacy-reduced UI schema");
     schemaStatus("Waiting for approved Android Accessibility...");
     controls();
+    notifyScreen("info", "Waiting for approved Android UI schema. Sharing is not active yet.");
     void pollSchema(viewer.generation);
   }
 
@@ -194,6 +198,10 @@
     const target = getTarget();
     if (!viewer.running || !target || target.id !== viewer.id) return;
     const generation = viewer.generation;
+    const ticket = window.TrayFeedback?.begin({
+      key:"lan:screen:capture",button:$("lan-screen-capture"),label:"Capturing screenshot…",
+    });
+    if (window.TrayFeedback && !ticket) return;
     status("Requesting one fallback screenshot...");
     try {
       const response = await invoke("screen", { deviceId: target.id });
@@ -211,9 +219,14 @@
       if ($("lan-screen-placeholder")) $("lan-screen-placeholder").hidden = true;
       viewer.hasFrame = true;
       status("Single screenshot captured · not auto-refreshing");
+      notifyScreen("success", "One approved screenshot captured.");
       controls();
     } catch {
       status("Screenshot unavailable · check phone capture permission");
+      notifyScreen("error", "Screenshot unavailable. Check phone capture permission.");
+    } finally {
+      ticket?.end();
+      controls();
     }
   }
 
@@ -221,16 +234,29 @@
     const target = getTarget();
     if (!viewer.running || !target || target.id !== viewer.id
       || (!viewer.hasSchema && !viewer.hasFrame)) return;
+    const button = $("lan-screen-" + (command.kind === "text" ? "send-text" : command.kind));
+    const ticket = window.TrayFeedback?.begin({
+      key:"lan:screen:input:" + command.kind,button,
+      label:"Sending input…",
+    });
+    if (window.TrayFeedback && !ticket) return;
     try {
       const response = await invoke("input", { deviceId: target.id, ...command });
       status(response?.success && response?.result?.ok
         ? "Input accepted · " + command.kind : "Phone rejected " + command.kind);
+      notifyScreen(response?.success && response?.result?.ok ? "info" : "warning",
+        response?.success && response?.result?.ok
+          ? "Remote input accepted. Refresh schema before another action."
+          : "Remote input not accepted. Check phone permission.");
       // Avoid retaining stale visual references across state-changing input.
       viewer.schemaRevision = 0;
       viewer.hasSchema = false;
       clearScreenshot();
       controls();
-    } catch { status("Remote touch denied · check on-phone input consent"); }
+    } catch {
+      status("Remote touch denied · check on-phone input consent");
+      notifyScreen("error", "Remote input denied. Check on-phone consent.");
+    } finally { ticket?.end(); }
   }
 
   function point(event) {
@@ -285,11 +311,23 @@
     $("lan-screen-disconnect")?.addEventListener("click", async () => {
       const target = getTarget();
       if (!target || !window.confirm("End the entire Android support session? Capture and remote touch will stop.")) return;
+      const ticket = window.TrayFeedback?.begin({
+        key:"lan:screen:disconnect",button:$("lan-screen-disconnect"),
+        label:"Ending remote session…",
+      });
+      if (window.TrayFeedback && !ticket) return;
       stop("Ending remote session...");
       try {
-        await invoke("close", { deviceId: target.id });
+        const response = await invoke("close", { deviceId: target.id });
+        if (response?.success === false) throw Error("Remote close not accepted");
         window.__superagentLanRefresh?.();
-      } catch { status("Remote stop unconfirmed; ask phone owner to tap STOP SHARING"); }
+        notifyScreen("info", "Session close accepted. Verify device disconnected.");
+      } catch {
+        status("Remote stop unconfirmed; ask phone owner to tap STOP SHARING");
+        notifyScreen("warning", "Remote stop unconfirmed. Ask phone owner to stop sharing.");
+      } finally {
+        ticket?.end(); controls();
+      }
     });
     window.__superagentLanViewerStop = stop;
     controls();

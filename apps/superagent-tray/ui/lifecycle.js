@@ -191,6 +191,9 @@ async function lifecycleRefresh(force=false){
   const epoch=lifecycleOwnerEpoch;
   lifeFeedback("Verifying service owners, dependencies and lifecycle history...");
   const trigger=life("lifecycle-refresh");
+  const ticket=window.TrayFeedback?.begin({
+    key:"lifecycle:refresh",button:trigger,label:"Refreshing lifecycle…",
+  });
   if(trigger)trigger.disabled=true;
   try{
     const calls=await Promise.allSettled([
@@ -238,6 +241,7 @@ async function lifecycleRefresh(force=false){
     lifeFeedback("Lifecycle status could not be verified: "+String(e),true);
   }finally{
     if(trigger)trigger.disabled=false;
+    ticket?.end();
   }
 }
 async function lifecyclePrepare(){
@@ -248,6 +252,9 @@ async function lifecyclePrepare(){
   lifeResetPlan("Checking verified owner and preparing a non-mutating plan...");
   const epoch=lifecycleOwnerEpoch;
   lifecycleBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"lifecycle:prepare",button:life("lifecycle-plan"),label:"Preparing plan…",
+  });
   try{
     const request={action:"plan",service,targetAction:action};
     if(service!=="tray"){
@@ -287,10 +294,14 @@ async function lifecyclePrepare(){
     life("lifecycle-plan-details").textContent=lines.join("\n");
     life("lifecycle-execute").disabled=false;
     lifeFeedback("Plan prepared. Review the owner identity and consequences before executing.");
+    window.TrayFeedback?.notify({kind:"info",scope:"lifecycle",
+      message:"Owner-bound lifecycle plan prepared. Review before executing."});
   }catch(e){
     lifeResetPlan("Plan rejected: "+String(e));
     lifeFeedback("Planning failed: "+String(e),true);
-  }finally{lifecycleBusy=false;}
+    window.TrayFeedback?.notify({kind:"error",scope:"lifecycle",
+      message:"Lifecycle plan rejected. Review owner evidence."});
+  }finally{lifecycleBusy=false;ticket?.end();}
 }
 async function lifecycleExecute(){
   if(lifecycleBusy||!lifecyclePlan)return;
@@ -313,6 +324,9 @@ async function lifecycleExecute(){
   if(!window.confirm(consequence+"\n\nOperation ID: "+plan.operationId+
       "\nDo not retry with a new ID if the result times out."))return;
   lifecycleBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"lifecycle:execute",button:life("lifecycle-execute"),label:"Executing safely…",
+  });
   let verifiedResult=false;
   let mutationDispatched=false;
   life("lifecycle-execute").disabled=true;
@@ -338,6 +352,13 @@ async function lifecycleExecute(){
     else if(result?.changed===true||result?.verified===true)
       lifeFeedback("Operation completed and verified by the selected Core.");
     else lifeFeedback("Result returned. Review owner status before another operation.");
+    window.TrayFeedback?.notify({kind:result?.changed===true||result?.verified===true?"success":"info",
+      scope:"lifecycle",message:result?.scheduled===true
+        ?"Recycle scheduled. Verify the new Core owner before considering it complete."
+        :result?.replayed===true?"Previous lifecycle outcome verified; nothing repeated."
+        :result?.changed===true||result?.verified===true
+          ?"Lifecycle operation completed and verified."
+          :"Lifecycle response received. Inspect owner status."});
     lifeResetPlan("Operation completed. Prepare a new plan for another action.");
     verifiedResult=true;
   }catch(e){
@@ -351,8 +372,14 @@ async function lifecycleExecute(){
         "\nDo not retry automatically. Inspect logs and use operator reconciliation.\n"+String(e);
       lifeFeedback("Operation result uncertain or rejected. Original operation ID retained.",true);
     }
+    window.TrayFeedback?.notify({kind:mutationDispatched?"warning":"error",scope:"lifecycle",
+      sticky:mutationDispatched, message:mutationDispatched
+        ?"Lifecycle outcome unverified. Reconcile the original operation; never auto-retry."
+        :"Lifecycle preflight blocked. No service operation dispatched."});
   }finally{
     lifecycleBusy=false;
+    ticket?.end();
+    if(verifiedResult||!lifecyclePlan||mutationDispatched)life("lifecycle-execute").disabled=true;
     if(verifiedResult)await lifecycleRefresh(true);
   }
 }
@@ -488,6 +515,9 @@ async function recycleAnalyze(){
   recycleInvalidate("Inspecting owners and generating a non-executing recycle plan...");
   recycleBusy=true;
   lifecycleBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"lifecycle:recycle-analyze",button:life("recycle-analyze-btn"),label:"Analyzing recycle…",
+  });
   recycleButtons();
   try{
     const inventory=await lifecycleInvoke({action:"inventory",service:"all"});
@@ -511,6 +541,7 @@ async function recycleAnalyze(){
   }finally{
     lifecycleBusy=false;
     recycleBusy=false;
+    ticket?.end();
     recycleButtons();
   }
 }
@@ -552,6 +583,9 @@ async function recycleExecute(){
     "Do not repeat this operation after a timeout."))return;
   recycleBusy=true;
   lifecycleBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"lifecycle:global-recycle",button:life("recycle-confirm-btn"),label:"Executing recycle…",
+  });
   recycleButtons();
   recyclePhase("migrating");
   recycleFeedback("Executing the reviewed plan. Do not retry if the connection drops...");
@@ -572,6 +606,8 @@ async function recycleExecute(){
     recycleFeedback(result.replayed===true?
       "Previously completed operation verified; nothing ran twice.":
       "Recycle completed with owner re-verification. Refresh health to inspect service state.");
+    window.TrayFeedback?.notify({kind:"success",scope:"lifecycle",
+      message:"Global recycle completed with owner verification."});
     recyclePlan=null;
     recyclePrepared=false;
   }catch(error){
@@ -582,9 +618,12 @@ async function recycleExecute(){
     recycleFeedback("OUTCOME UNKNOWN for "+operationId+
       ". Inspect the operation journal before manual reconciliation. "+
       String(error),true);
+    window.TrayFeedback?.notify({kind:"warning",scope:"lifecycle",sticky:true,
+      message:"Global recycle outcome unknown. Review original operation journal; do not retry."});
   }finally{
     lifecycleBusy=false;
     recycleBusy=false;
+    ticket?.end();
     recycleButtons();
   }
 }

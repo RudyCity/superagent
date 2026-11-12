@@ -18,7 +18,7 @@ let runtimeRefreshTimer = null;
 function runtimeConfigureRefreshInterval(seconds) {
   const valid = [10, 20, 30, 60, 120].includes(seconds) ? seconds : 20;
   if (runtimeRefreshTimer !== null) clearInterval(runtimeRefreshTimer);
-  runtimeRefreshTimer = setInterval(runtimeRefresh, valid * 1000);
+  runtimeRefreshTimer = setInterval(() => runtimeRefresh(true), valid * 1000);
 }
 
 let runtimeScanBusy = false;
@@ -365,6 +365,10 @@ async function runtimeServiceAction(event) {
   const verb=startAction ? "Start" : applyAction ? "Apply & Restart" : action === "stop" ? "Stop" : "Restart";
   if (!window.confirm(`${verb} ${label} :${port} (PID ${pid})?\n\n${warning}\n\nThis action cannot be undone from this dialog.`)) return;
   runtimeActionBusy = true;
+  const ticket = window.TrayFeedback?.begin({
+    key: "runtime:service:" + kind + ":" + port + ":" + action,
+    button, label: verb + "…",
+  });
   button.disabled = true;
   const message = rt("runtime-action-feedback");
   message.hidden = false;
@@ -373,12 +377,21 @@ async function runtimeServiceAction(event) {
     const result = await runtimeInvoke("service_action", { kind, action, port, pid });
     if (result?.success !== true) throw new Error("The service owner did not confirm the operation");
     message.textContent = result.message || `${label} ${startAction ? "start" : action} confirmed.`;
-    await runtimeRefresh();
+    window.TrayFeedback?.notify({ kind: "success", scope: "runtime",
+      message: verb + " accepted by verified service owner." });
+    await runtimeRefresh(true);
   } catch (error) {
-    message.textContent = `Lifecycle action not performed or not verified: ${String(error)}`;
+    const unknown = /timed out|timeout|connection lost/i.test(String(error));
+    message.textContent = unknown
+      ? "Outcome uncertain. Recheck the exact owner and operation journal before further action."
+      : "Lifecycle action not performed or not verified. Inspect the service status.";
+    window.TrayFeedback?.notify({ kind: unknown ? "warning" : "error", scope: "runtime",
+      message: unknown ? "Service result uncertain; inspect owner before retry."
+        : "Service action was not verified." });
     button.disabled = false;
   } finally {
     runtimeActionBusy = false;
+    ticket?.end();
   }
 }
 
@@ -513,6 +526,9 @@ async function runtimeCreateConnection(event) {
   if (!window.confirm(description)) return;
   runtimeActionBusy = true;
   const submit = rt("runtime-create-submit");
+  const ticket = window.TrayFeedback?.begin({
+    key: "runtime:create-connection", button: submit, label: "Creating connection…",
+  });
   if (submit) submit.disabled = true;
   if (resultView) resultView.hidden = true;
   if (feedback) feedback.textContent = "Creating connection through authenticated Core...";
@@ -521,6 +537,9 @@ async function runtimeCreateConnection(event) {
     if (result?.success !== true) throw new Error("Core did not confirm connection creation");
     if (feedback) feedback.textContent = result.state === "configured"
       ? "MCP configuration saved" : "Connection owner started successfully";
+    window.TrayFeedback?.notify({ kind: "success", scope: "runtime",
+      message: result.state === "configured" ? "MCP connection configuration saved."
+        : "Connection owner created and confirmed." });
     if (resultView) {
       resultView.hidden = false;
       let text = (result.endpoint ? `Endpoint: ${result.endpoint}\n` : "") +
@@ -627,17 +646,28 @@ async function runtimeCreateConnection(event) {
     }
     await runtimeRefresh();
   } catch (error) {
-    if (feedback) feedback.textContent = "Connection was not created or not verified: " + String(error);
+    const unknown = /timed out|timeout|connection lost/i.test(String(error));
+    if (feedback) feedback.textContent = unknown
+      ? "Connection creation result is uncertain. Inspect registered owners before another attempt; do not retry automatically."
+      : "Connection was not created or not verified. Check Core and the connection details.";
+    window.TrayFeedback?.notify({ kind: unknown ? "warning" : "error", scope: "runtime",
+      message: unknown ? "Create Connection result unknown. Inspect owners before retrying."
+        : "Connection was not created. Check the inline details." });
     if (resultView) resultView.hidden = true;
   } finally {
     runtimeActionBusy = false;
     if (submit) submit.disabled = false;
+    ticket?.end();
   }
 }
 
-async function runtimeRefresh() {
+async function runtimeRefresh(background = false) {
   if (runtimeScanBusy) return;
   runtimeScanBusy = true;
+  const ticket = window.TrayFeedback?.begin({
+    key: "runtime:refresh", button: rt("runtime-refresh"),
+    label: "Scanning runtime…", background: background === true,
+  });
   rt("runtime-refresh").disabled = true;
 
   try {
@@ -648,11 +678,14 @@ async function runtimeRefresh() {
     rt("runtime-servers").replaceChildren();
     const detail = document.createElement("p");
     detail.className = "empty-state";
-    detail.textContent = String(error);
+    detail.textContent = "Runtime scan unavailable. Check the local Core connection.";
     rt("runtime-servers").append(detail);
+    if (!background) window.TrayFeedback?.notify({kind:"error",scope:"runtime",
+      message:"Runtime scan unavailable. Check Core connectivity."});
   } finally {
     runtimeScanBusy = false;
     rt("runtime-refresh").disabled = false;
+    ticket?.end();
   }
 }
 

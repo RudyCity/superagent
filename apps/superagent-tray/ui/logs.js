@@ -9,6 +9,9 @@
 
 (function () {
   const $ = (id) => document.getElementById(id);
+  const notifyLogs = (kind, message) => window.TrayFeedback?.notify({
+    kind, message, scope: "logs",
+  });
 
   const logsState = {
     items: [],
@@ -63,11 +66,14 @@
     return `${(ms / 1000).toFixed(2)}s`;
   }
 
-  async function fetchLogs() {
+  async function fetchLogs(manual = false) {
     if (logsState.loading) return;
     logsState.loading = true;
 
     const refreshBtn = $("logs-refresh-btn");
+    const ticket = manual === true ? window.TrayFeedback?.begin({
+      key:"logs:refresh",button:refreshBtn,label:"Refreshing logs…",
+    }) : null;
     if (refreshBtn) refreshBtn.disabled = true;
 
     const query = {
@@ -110,15 +116,18 @@
         renderTable();
         renderPagination();
       }
+      if (manual === true) notifyLogs("info", "Connection logs refreshed.");
     } catch (err) {
       console.warn("[Logs] Failed to fetch connection logs:", err);
       const tbody = $("logs-tbody");
       if (tbody) {
-        tbody.innerHTML = `<tr><td colspan="8" class="empty-state error">Failed to load connection logs: ${escapeHtml(err.message || String(err))}</td></tr>`;
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state error">Cannot load connection logs. Check Core connectivity.</td></tr>';
       }
+      if (manual === true) notifyLogs("error", "Connection logs unavailable.");
     } finally {
       logsState.loading = false;
       if (refreshBtn) refreshBtn.disabled = false;
+      ticket?.end();
     }
   }
 
@@ -293,7 +302,7 @@
 
   function exportCurrentLogs() {
     if (!logsState.items.length) {
-      alert("No logs to export in current view.");
+      notifyLogs("warning", "No connection logs in the current view to export.");
       return;
     }
     const jsonStr = JSON.stringify(logsState.items, null, 2);
@@ -304,6 +313,7 @@
     a.download = `superagent-connection-logs-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
+    notifyLogs("info", "Log JSON export prepared. Check the destination.");
   }
 
   function setupEventListeners() {
@@ -474,14 +484,15 @@
           setTimeout(() => {
             copyBtn.textContent = origText;
           }, 2000);
+          notifyLogs("success", "Connection log JSON copied.");
         } catch {
-          alert("Failed to copy JSON to clipboard.");
+          notifyLogs("error", "Could not copy connection log JSON.");
         }
       }
     });
 
     // Top action bar buttons
-    $("logs-refresh-btn")?.addEventListener("click", fetchLogs);
+    $("logs-refresh-btn")?.addEventListener("click", () => void fetchLogs(true));
 
     $("logs-autorefresh-btn")?.addEventListener("click", () => {
       logsState.autoRefresh = !logsState.autoRefresh;

@@ -8,6 +8,9 @@
 
 (function () {
   const $ = (id) => document.getElementById(id);
+  const notifyTerminal = (kind, message) => window.TrayFeedback?.notify({
+    kind, message, scope: "terminal",
+  });
 
   const terminalState = {
     tasks: [],
@@ -411,19 +414,32 @@
 
   function setupEventListeners() {
     // Refresh button
-    $("terminal-refresh-btn")?.addEventListener("click", fetchTerminalTasks);
+    $("terminal-refresh-btn")?.addEventListener("click", async () => {
+      if (terminalState.loading) return;
+      const ticket = window.TrayFeedback?.begin({
+        key: "terminal:refresh", button: $("terminal-refresh-btn"), label: "Refreshing…",
+      });
+      try { await fetchTerminalTasks(); }
+      finally { ticket?.end(); }
+    });
 
     // Prune completed/stale tasks button
     $("terminal-prune-btn")?.addEventListener("click", async () => {
       const btn = $("terminal-prune-btn");
+      const ticket = window.TrayFeedback?.begin({
+        key: "terminal:prune", button: btn, label: "Pruning…",
+      });
       if (btn) btn.disabled = true;
       try {
         await invokeTerminal("prune");
         await fetchTerminalTasks();
+        notifyTerminal("success", "Completed terminal entries pruned.");
       } catch (err) {
         console.warn("[Terminal] Failed to prune tasks:", err);
+        notifyTerminal("error", "Could not prune terminal entries.");
       } finally {
         if (btn) btn.disabled = false;
+        ticket?.end();
       }
     });
 
@@ -469,20 +485,30 @@
       const presetName = presetSelect?.value?.trim();
 
       if (!command && !presetName) {
-        alert("Please enter a command to run or select a configured preset.");
+        notifyTerminal("warning", "Enter a command or select a configured preset.");
         return;
       }
 
+      const ticket = window.TrayFeedback?.begin({
+        key: "terminal:launch", button: launchBtn, label: "Launching terminal…",
+      });
+      if (window.TrayFeedback && !ticket) return;
       if (launchBtn) launchBtn.disabled = true;
       try {
-        await invokeTerminal("launch", { command: command || undefined, presetName: presetName || undefined });
+        const launched = await invokeTerminal("launch", { command: command || undefined, presetName: presetName || undefined });
+        if (launched?.success === false) throw Error("Launch not accepted");
         if (cmdInput) cmdInput.value = "";
         if (presetSelect) presetSelect.value = "";
         await fetchTerminalTasks();
+        notifyTerminal("success", "Terminal launch accepted. Check process state.");
       } catch (err) {
-        alert(`Failed to launch terminal process: ${err.message || err}`);
+        notifyTerminal(/timeout|timed out/i.test(String(err)) ? "warning" : "error",
+          /timeout|timed out/i.test(String(err))
+            ? "Terminal launch outcome unknown. Inspect processes before retrying."
+            : "Terminal launch failed or was not verified.");
       } finally {
         if (launchBtn) launchBtn.disabled = false;
+        ticket?.end();
       }
     });
 
@@ -538,15 +564,22 @@
         const taskId = controlBtn.dataset.taskId;
         const action = controlBtn.dataset.action;
         if (!taskId || !["start", "pause", "resume"].includes(action)) return;
+        const ticket = window.TrayFeedback?.begin({
+          key: "terminal:control:" + taskId, button: controlBtn,
+          label: action === "pause" ? "Pausing…" : action === "resume" ? "Resuming…" : "Starting…",
+        });
+        if (window.TrayFeedback && !ticket) return;
         controlBtn.disabled = true;
         try {
           const result = await invokeTerminal(action, { taskId });
           if (result?.success === false) throw new Error(result.error || "Control action failed");
           await fetchTerminalTasks();
+          notifyTerminal("success", "Terminal " + action + " accepted. Inspect the updated state.");
         } catch (err) {
-          alert(`Failed to ${action} terminal task: ${err.message || err}`);
+          notifyTerminal(/timeout|timed out/i.test(String(err)) ? "warning" : "error",
+            "Terminal " + action + " not verified. Check process status.");
           controlBtn.disabled = false;
-        }
+        } finally { ticket?.end(); }
         return;
       }
 
@@ -561,14 +594,20 @@
           return;
         }
 
+        const ticket = window.TrayFeedback?.begin({
+          key: "terminal:kill:" + taskId, button: killBtn, label: "Stopping process…",
+        });
+        if (window.TrayFeedback && !ticket) return;
         killBtn.disabled = true;
         try {
           await invokeTerminal("kill", { taskId });
           await fetchTerminalTasks();
+          notifyTerminal("success", "Terminal stop request accepted.");
         } catch (err) {
-          alert(`Failed to terminate process: ${err.message || err}`);
+          notifyTerminal(/timeout|timed out/i.test(String(err)) ? "warning" : "error",
+            "Terminal stop was not verified. Check process state.");
           killBtn.disabled = false;
-        }
+        } finally { ticket?.end(); }
       }
     };
     tableBody?.addEventListener("click", onProcessActionClick);
@@ -594,8 +633,9 @@
         setTimeout(() => {
           copyBtn.textContent = orig;
         }, 1500);
+        notifyTerminal("success", "Terminal output copied.");
       } catch {
-        alert("Failed to copy logs to clipboard.");
+        notifyTerminal("error", "Could not copy terminal output.");
       }
     });
 

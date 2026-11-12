@@ -5,6 +5,9 @@
  * No file contents, absolute paths, bearer tokens or arbitrary URLs reach JS.
  */
 const museFileById = (id) => document.getElementById(id);
+const museFileToast = (kind, message) => window.TrayFeedback?.notify({
+  kind, message, scope: "muse-files",
+});
 const museFileEscape = (value) => String(value ?? "").replace(/[&<>"']/g, (character) => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[character]));
@@ -223,8 +226,12 @@ function museFileScheduleRefresh(seconds) {
   }, interval * 1000);
 }
 
-async function museFileBrowse() {
+async function museFileBrowse(event) {
   if (museFileState.busy) return;
+  const ticket = window.TrayFeedback?.begin({
+    key:"muse-files:browse",button:event?.currentTarget,
+    label:"Choosing file…",
+  });
   museFileState.busy = true;
   try {
     const selected = await museFileInvoke("muse_file_pick");
@@ -237,10 +244,13 @@ async function museFileBrowse() {
     const meta = museFileById("muse-files-selected-meta");
     if (name) name.textContent = selected.name;
     if (meta) meta.textContent = museFileBytes(selected.size) + " · Selected locally";
+    museFileToast("info", "File selected. Choose transport and select Send.");
   } catch (error) {
     museFileNotice("Cannot select file: " + String(error), true);
+    museFileToast("error", "Could not select a file.");
   } finally {
     museFileState.busy = false;
+    ticket?.end();
     const snapshot = museFileState.snapshot;
     if (snapshot) museFileRenderStatus(snapshot);
   }
@@ -248,6 +258,9 @@ async function museFileBrowse() {
 
 async function museFileSend() {
   if (!museFileState.selected || museFileState.busy) return;
+  const ticket=window.TrayFeedback?.begin({
+    key:"muse-files:send",button:museFileById("muse-files-send"),label:"Starting transfer…",
+  });
   museFileState.busy = true;
   const picked = museFileState.selected;
   const kind = museFileById("muse-files-transport")?.value;
@@ -260,6 +273,7 @@ async function museFileSend() {
     if (museFileById("muse-files-selected-meta"))
       museFileById("muse-files-selected-meta").textContent = "Choose another file to send";
     await museFileRefresh();
+    museFileToast("info", "Muse transfer accepted. Follow progress for delivery.");
   } catch (error) {
     // Ticket is consumed natively even if Core rejects a request.
     museFileState.selected = null;
@@ -268,8 +282,11 @@ async function museFileSend() {
     if (name) name.textContent = "No file selected";
     if (meta) meta.textContent = "Select a new file and try again";
     museFileNotice("Upload not started: " + String(error), true);
+    museFileToast(/timed out|timeout/i.test(String(error)) ? "warning" : "error",
+      "Muse transfer start not verified. Inspect history before retrying.");
   } finally {
     museFileState.busy = false;
+    ticket?.end();
     await museFileRefresh();
   }
 }
@@ -279,14 +296,23 @@ async function museFileChange(action, id) {
   if (action === "cancel" && !window.confirm("Cancel this transfer? A WebSocket checkpoint is retained for manual resume.")) {
     return;
   }
+  const ticket=window.TrayFeedback?.begin({
+    key:"muse-files:control:"+id,
+    button:museFileById("muse-files-"+action),label:"Updating transfer…",
+  });
   museFileState.busy = true;
   try {
-    await museFileInvoke("muse_file_control", { action, id, settings: null });
+    const reply=await museFileInvoke("muse_file_control", { action, id, settings: null });
+    if(reply?.success===false)throw Error("Transfer action not verified");
     await museFileRefresh();
+    museFileToast("info", "Transfer "+action+" accepted. Check current state.");
   } catch (error) {
     museFileNotice("Transfer " + action + " failed: " + String(error), true);
+    museFileToast(/timed out|timeout/i.test(String(error))?"warning":"error",
+      "Transfer "+action+" result not verified. Inspect progress before retrying.");
   } finally {
     museFileState.busy = false;
+    ticket?.end();
     await museFileRefresh();
   }
 }
@@ -296,6 +322,9 @@ async function museFileSaveSettings(event) {
   if (museFileState.busy) return;
   museFileState.busy = true;
   const btn = museFileById("muse-files-save-settings");
+  const ticket=window.TrayFeedback?.begin({
+    key:"muse-files:save-settings",button:btn,label:"Saving transfer settings…",
+  });
   if (btn) btn.disabled = true;
   try {
     const settings = {
@@ -311,11 +340,14 @@ async function museFileSaveSettings(event) {
     if (!result?.success) throw new Error("Core did not save transfer preferences");
     museFileShowSettings(result.settings);
     museFileById("muse-files-settings-feedback").textContent = "Saved";
+    museFileToast("success", "Muse transfer settings saved.");
   } catch (error) {
     museFileById("muse-files-settings-feedback").textContent = "Save failed: " + String(error);
+    museFileToast("error", "Muse transfer settings were not saved.");
   } finally {
     museFileState.busy = false;
     if (btn) btn.disabled = false;
+    ticket?.end();
     await museFileRefresh();
   }
 }

@@ -1,6 +1,9 @@
 "use strict";
 (() => {
   const $ = id => document.getElementById(id);
+  const notifyMultiTab = (kind, message) => window.TrayFeedback?.notify({
+    kind, message, scope: "delegate",
+  });
   const state = { profiles: [], tasks: [], owners: [], counts: {},
     selected: null, fetching: false, submitting: false, blockedRequest: null,
     sessions: [], sessionsKnown: false, sessionsStale: false,
@@ -588,24 +591,47 @@
   }
   async function perform(action, payload, success) {
     if (state.submitting) return;
+    const id = {
+      "new-tab":"multitab-new-tab", "claim":"multitab-claim",
+      "release":"multitab-release", "enqueue":"multitab-enqueue",
+      "parallel":"multitab-parallel", "aggregate":"multitab-aggregate",
+    }[action];
+    const ticket = window.TrayFeedback?.begin({
+      key:"delegate:multitab:"+action, button:id ? $(id) : null,
+      label:action==="enqueue" || action==="parallel" ? "Queueing tasks…" : "Working…",
+    });
     state.submitting = true;
     try {
       const result = await command(action, payload);
       say(success || (action + " accepted"));
+      notifyMultiTab("info",action==="enqueue" || action==="parallel"
+        ? "Task queued. Delivery must be verified in the task history."
+        : "Multi-tab action accepted. Inspect current tab state.");
       await refresh();
       return result;
     } catch (error) {
       say(action + ": " + (error.message || error) +
         ". Do not automatically retry an uncertain mutation.", true);
+      notifyMultiTab(/timed out|timeout|connection lost/i.test(String(error))?"warning":"error",
+        "Multi-tab result unverified. Inspect task history before retrying.");
       return null;
     } finally {
       state.submitting = false;
+      ticket?.end();
     }
   }
   function wire() {
     void liveWatchLoop();
-    $("multitab-refresh")?.addEventListener("click", () => void refresh());
-    $("cdp-presence-refresh")?.addEventListener("click", () => void refresh());
+    for (const id of ["multitab-refresh","cdp-presence-refresh"]) {
+      $(id)?.addEventListener("click", async () => {
+        if (state.fetching) return;
+        const ticket=window.TrayFeedback?.begin({
+          key:"delegate:multitab:refresh",button:$(id),label:"Refreshing tabs…",
+        });
+        try { await refresh(); }
+        finally { ticket?.end(); }
+      });
+    }
     $("cdp-preview-stop")?.addEventListener("click", () => stopPrivatePreview());
     $("cdp-presence-follow")?.addEventListener("change", event => {
       state.followedAgent = event.target.value;

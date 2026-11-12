@@ -28,6 +28,9 @@ const traySettingFields = {
 let traySettingsBusy = false;
 let traySettingsInitialized = false;
 const traySettingsElement = (id) => document.getElementById(id);
+const notifySettings = (kind, message) => window.TrayFeedback?.notify({
+  kind, message, scope: "settings",
+});
 const traySettingsInvoke = (name, data) => {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) throw new Error("SuperAgent Tray requires the native desktop runtime");
@@ -115,6 +118,9 @@ async function traySettingsSave(event) {
   const button = traySettingsElement("settings-save");
   const feedback = traySettingsElement("settings-feedback");
   traySettingsBusy = true;
+  const ticket = window.TrayFeedback?.begin({
+    key: "settings:save", button, label: "Saving settings…",
+  });
   if (button) button.disabled = true;
   try {
     const payload = traySettingsReadForm();
@@ -126,11 +132,14 @@ async function traySettingsSave(event) {
     if (feedback) feedback.textContent =
       "Settings saved. Runtime and schedules refresh intervals updated. " +
       "Auto-launch applies to the next SuperAgent startup; startup page applies to the next window.";
+    notifySettings("success", "Tray settings saved.");
   } catch (error) {
     if (feedback) feedback.textContent = "Settings NOT saved: " + String(error);
+    notifySettings("error", "Tray settings could not be saved. Review the form.");
   } finally {
     traySettingsBusy = false;
     if (button) button.disabled = false;
+    ticket?.end();
   }
 }
 
@@ -139,6 +148,7 @@ function traySettingsRestoreDefaults() {
   traySettingsDisplay(traySettingsDefault);
   const feedback = traySettingsElement("settings-feedback");
   if (feedback) feedback.textContent = "Defaults loaded into the form. Press Save Settings to apply them.";
+  notifySettings("info", "Defaults loaded in the form. Press Save to apply.");
 }
 
 let museTelegramBusy = false;
@@ -311,6 +321,9 @@ async function museTelegramSave(event) {
   const button=traySettingsElement("muse-telegram-save");
   const feedback=traySettingsElement("muse-telegram-feedback");
   museTelegramBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"settings:muse-save",button,label:"Saving Muse settings…",
+  });
   if (button) button.disabled=true;
   try {
     const settings=museTelegramReadForm();
@@ -320,11 +333,16 @@ async function museTelegramSave(event) {
     if (feedback) feedback.textContent=result.settings.configStale
       ? "Muse settings saved. Running watcher is stale; use Apply & Restart Muse when no batch is active."
       : "Muse settings saved.";
+    notifySettings("success", result.settings.configStale
+      ? "Muse settings saved; watcher still needs a reviewed restart."
+      : "Muse settings saved.");
   } catch (error) {
     if (feedback) feedback.textContent="Muse settings NOT saved: "+String(error);
+    notifySettings("error", "Muse settings were not saved.");
   } finally {
     museTelegramBusy=false;
     if (button) button.disabled=false;
+    ticket?.end();
   }
 }
 
@@ -334,6 +352,9 @@ async function museTelegramTest() {
   const feedback=traySettingsElement("muse-telegram-feedback");
   const results=traySettingsElement("muse-telegram-doctor");
   museTelegramBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"settings:muse-doctor",button,label:"Running Telegram Doctor…",
+  });
   if (button) button.disabled=true;
   if (feedback) feedback.textContent="Running Telegram Doctor…";
   try {
@@ -347,11 +368,16 @@ async function museTelegramTest() {
     }
     const identity=test.username ? "@"+test.username : test.firstName || "configured bot";
     if (feedback) feedback.textContent=(test.botOnline ? "Telegram Bot API online ("+identity+"). " : "")+test.message;
+    notifySettings(test.botOnline ? "success" : "warning",
+      test.botOnline ? "Telegram Doctor confirmed the bot is online."
+        : "Telegram Doctor completed; review connectivity checks.");
   } catch (error) {
     if (feedback) feedback.textContent="Telegram Doctor failed: "+String(error);
+    notifySettings("error", "Telegram Doctor unavailable. Check the inline results.");
   } finally {
     museTelegramBusy=false;
     if (button) button.disabled=false;
+    ticket?.end();
   }
 }
 
@@ -360,17 +386,23 @@ async function museWsRegenerateToken() {
   const button=traySettingsElement("muse-ws-token-regenerate");
   const feedback=traySettingsElement("muse-telegram-feedback");
   museTelegramBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"settings:muse-token",button,label:"Regenerating token…",
+  });
   if(button) button.disabled=true;
   try {
     const result=await traySettingsInvoke("regenerate_muse_ws_token");
     if(result?.success!==true) throw new Error("Core did not confirm WebSocket token generation");
     if(result.settings) museTelegramDisplay(result.settings);
     if(feedback) feedback.textContent=String(result.message||"Muse WebSocket token generated.");
+    notifySettings("success", "Muse WebSocket token regenerated.");
   } catch(error) {
     if(feedback) feedback.textContent="WebSocket token was not changed: "+String(error);
+    notifySettings("error", "Muse token regeneration was not confirmed.");
   } finally {
     museTelegramBusy=false;
     if(button) button.disabled=false;
+    ticket?.end();
   }
 }
 
@@ -381,17 +413,28 @@ async function museApplyRestart() {
   const button=traySettingsElement("muse-apply-restart");
   const feedback=traySettingsElement("muse-telegram-feedback");
   museTelegramBusy=true;
+  const ticket=window.TrayFeedback?.begin({
+    key:"settings:muse-apply",button,label:"Applying Muse settings…",
+  });
   if(button) button.disabled=true;
   try {
     const result=await traySettingsInvoke("apply_muse_settings");
     if(result?.success!==true) throw new Error("Core did not confirm Muse restart");
     if(feedback) feedback.textContent=String(result.message||"Muse settings applied and watcher restarted.");
-    await museTelegramLoad();
+    notifySettings("success", "Muse settings applied; watcher restart confirmed.");
   } catch(error) {
-    if(feedback) feedback.textContent="Apply & Restart rejected or not verified: "+String(error);
+    const unknown=/timed out|timeout|connection lost/i.test(String(error));
+    if(feedback) feedback.textContent=unknown
+      ? "Muse restart outcome unknown. Inspect watcher status; do not automatically retry."
+      : "Apply & Restart rejected or not verified: "+String(error);
+    notifySettings(unknown?"warning":"error",unknown
+      ? "Muse restart outcome uncertain. Verify owner status before retrying."
+      : "Muse settings restart was not confirmed.");
   } finally {
     museTelegramBusy=false;
+    ticket?.end();
   }
+  await museTelegramLoad();
 }
 
 function traySettingsInstall() {

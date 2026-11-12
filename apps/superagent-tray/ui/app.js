@@ -28,18 +28,20 @@ const fmtLocalInput = (date) => {
   return `${date.getFullYear()}-${z(date.getMonth() + 1)}-${z(date.getDate())}T${z(date.getHours())}:${z(date.getMinutes())}`;
 };
 
-let toastTimer;
 function toast(message, error = false) {
-  clearTimeout(toastTimer);
-  const el = $("toast");
-  el.textContent = message;
-  el.classList.toggle("error", error);
-  el.hidden = false;
-  toastTimer = setTimeout(() => { el.hidden = true; }, 4200);
+  window.TrayFeedback?.notify({
+    kind: error ? "error" : "success",
+    message: String(message).slice(0, 240),
+    scope: "jobs",
+  });
 }
 
 function errors(error) {
-  toast(error instanceof Error ? error.message : String(error), true);
+  const message = error instanceof Error ? error.message : String(error);
+  // Only trusted local validation messages belong in toasts; never reveal
+  // arbitrary daemon errors that might include credentials or private paths.
+  const safe = /^(Both name|Autonomous Agent|Cron expression|One-time reminder|Please select|Invalid hour)/.test(message);
+  toast(safe ? message : "Schedule action not verified. Check Core and form details.", true);
 }
 
 function jobType(job) {
@@ -277,6 +279,7 @@ function buildCron() {
 
 async function saveForm(event) {
   event.preventDefault();
+  if (window.TrayFeedback?.isPending("jobs:save")) return;
   const name = $("name").value.trim();
   const prompt = $("prompt").value.trim();
   if (!name || !prompt) return errors("Both name and message/instructions are required.");
@@ -308,9 +311,13 @@ async function saveForm(event) {
     if (schedule.maxRuns !== null) payload.maxRuns = schedule.maxRuns;
   }
 
+  const ticket = window.TrayFeedback?.begin({
+    key: "jobs:save", button: $("save-form"), label: "Saving schedule…",
+  });
   $("save-form").disabled = true;
   try {
-    await api(state.editingId ? "update" : "create", payload);
+    const reply = await api(state.editingId ? "update" : "create", payload);
+    if (reply?.success === false) throw Error("Schedule mutation not verified");
     toast(state.editingId ? "Schedule updated successfully." : "Schedule created successfully.");
     closeEditor();
     await refresh();
@@ -318,6 +325,7 @@ async function saveForm(event) {
     errors(error);
   } finally {
     $("save-form").disabled = false;
+    ticket?.end();
   }
 }
 
@@ -342,6 +350,11 @@ async function onRowClick(event) {
     return;
   }
 
+  const ticket = window.TrayFeedback?.begin({
+    key: "jobs:action:" + job.id, button, label: action === "run"
+      ? "Starting run…" : action === "delete" ? "Deleting…" : "Updating…",
+  });
+  if (window.TrayFeedback && !ticket) return;
   button.disabled = true;
   try {
     if (action === "toggle") await api("update", { id: job.id, enabled: !job.enabled });
@@ -353,6 +366,7 @@ async function onRowClick(event) {
     errors(error);
   } finally {
     button.disabled = false;
+    ticket?.end();
   }
 }
 

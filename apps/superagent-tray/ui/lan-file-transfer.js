@@ -12,6 +12,9 @@
   const MAGIC = "SAFOLDER1";
   const HEADER = 13; // 9 ASCII bytes + uint32 big-endian JSON length
   const $ = (id) => document.getElementById(id);
+  const notifyTransfer = (kind, message) => window.TrayFeedback?.notify({
+    kind, message, scope: "lan-devices",
+  });
   let busy = false;
   let cancelled = false;
   let activeTransfer = null;
@@ -232,6 +235,10 @@
     }
     if (!window.confirm("Send " + file.name + " (" + file.size + " bytes) to " +
       device.label + "? The target owner must approve this file individually.")) return;
+    const ticket = window.TrayFeedback?.begin({
+      key: "lan:file:send", button: $("lan-file-send"), label: "Sending file…",
+    });
+    if (window.TrayFeedback && !ticket) return;
     busy = true; cancelled = false; targetId = device.id; activeTransfer = null;
     controls();
     try {
@@ -240,11 +247,15 @@
       const message = await sendBuffer(device, file.name, bytes);
       if ($("lan-file-source")) $("lan-file-source").value = "";
       state(message, 100);
+      notifyTransfer("success", "File transfer verified on target.");
     } catch (error) {
       await abortIfNeeded();
       state("Send failed: " + String(error).slice(0, 200));
+      notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
+        "File transfer was not confirmed. Inspect device status before retrying.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; targetId = null; controls();
+      activeTransfer = null; busy = false; cancelled = false; targetId = null;
+      ticket?.end(); controls();
     }
   }
   async function sendFolder() {
@@ -259,6 +270,10 @@
     }
     if (!window.confirm("Package " + files.length + " owner-selected files into one .safolder and send to " +
       device.label + "? The target owner must approve this folder transfer.")) return;
+    const ticket = window.TrayFeedback?.begin({
+      key: "lan:file:folder", button: $("lan-folder-send"), label: "Sending folder…",
+    });
+    if (window.TrayFeedback && !ticket) return;
     busy = true; cancelled = false; targetId = device.id; activeTransfer = null;
     controls();
     try {
@@ -269,11 +284,15 @@
         "The receiving client must explicitly extract using its safe folder destination flow.");
       input.value = "";
       state(message, 100);
+      notifyTransfer("success", "Folder archive verified on target; extraction requires approval.");
     } catch (error) {
       await abortIfNeeded();
       state("Folder send failed: " + String(error).slice(0, 200));
+      notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
+        "Folder transfer was not confirmed. Inspect device status before retrying.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; targetId = null; controls();
+      activeTransfer = null; busy = false; cancelled = false; targetId = null;
+      ticket?.end(); controls();
     }
   }
   async function receive() {
@@ -282,6 +301,10 @@
     if (!device) return;
     if (!window.confirm("Request the file or folder that the " + device.platform +
       " owner explicitly selected for sharing? The owner must approve this transfer.")) return;
+    const ticket = window.TrayFeedback?.begin({
+      key: "lan:file:receive", button: $("lan-file-receive"), label: "Receiving file…",
+    });
+    if (window.TrayFeedback && !ticket) return;
     busy = true; cancelled = false; targetId = device.id; activeTransfer = null;
     controls();
     try {
@@ -333,11 +356,15 @@
           "File received and saved after SHA-256 verification.")
         : (isFolder ? "Folder received, but destination selection was cancelled; nothing was written." :
           "File received, but Save As was cancelled; nothing was written."), 100);
+      if (saved?.saved) notifyTransfer("success", "Received file saved with SHA-256 verification.");
     } catch (error) {
       await abortIfNeeded();
       state("Receive failed: " + String(error).slice(0, 200));
+      notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
+        "File receive outcome was not verified. Inspect device status.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; targetId = null; controls();
+      activeTransfer = null; busy = false; cancelled = false; targetId = null;
+      ticket?.end(); controls();
     }
   }
   function install() {

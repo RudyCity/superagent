@@ -8,6 +8,9 @@
 
 (function () {
   const $ = (id) => document.getElementById(id);
+  const notifyDelegate = (kind, message) => window.TrayFeedback?.notify({
+    kind, message, scope: "delegate",
+  });
 
   const delegateState = {
     running: false,
@@ -134,6 +137,9 @@
     const run = (async () => {
       delegateState.loading = true;
       const refreshBtn = $("delegate-refresh-btn");
+      const ticket = options.manual === true ? window.TrayFeedback?.begin({
+        key: "delegate:refresh", button: refreshBtn, label: "Refreshing Delegate…",
+      }) : null;
       if (refreshBtn) refreshBtn.disabled = true;
 
       try {
@@ -171,6 +177,7 @@
       } finally {
         delegateState.loading = false;
         if (refreshBtn) refreshBtn.disabled = false;
+        ticket?.end();
       }
     })();
     statusRequest = run;
@@ -322,7 +329,8 @@
 
   function setupEventListeners() {
     // Refresh button
-    $("delegate-refresh-btn")?.addEventListener("click", fetchDelegateStatus);
+    $("delegate-refresh-btn")?.addEventListener("click",
+      () => void fetchDelegateStatus({ force: true, manual: true }));
 
     // Toggle Listener Start / Stop
     $("delegate-listener-toggle")?.addEventListener("click", async () => {
@@ -330,12 +338,17 @@
       if (!btn || btn.disabled) return;
       const action = delegateState.running ? "stop" : "start";
       const shouldRun = action === "start";
-      btn.disabled = true;
       if (delegateState.unreachable) {
         showListenerFeedback("Core tidak terjangkau. Periksa koneksi Core lalu tekan Refresh terlebih dahulu.", true);
-        btn.disabled = false;
+        notifyDelegate("error", "Core unavailable. Refresh before changing Delegate listener.");
         return;
       }
+      const ticket = window.TrayFeedback?.begin({
+        key: "delegate:listener", button: btn,
+        label: shouldRun ? "Starting Listener…" : "Stopping Listener…",
+      });
+      if (window.TrayFeedback && !ticket) return;
+      btn.disabled = true;
       showListenerFeedback(shouldRun ? "Mengaktifkan listener..." : "Menghentikan listener...");
       try {
         const result = await invokeDelegate(action);
@@ -349,11 +362,18 @@
         showListenerFeedback(shouldRun
           ? "Listener aktif pada port 17341. Jika Chrome belum CONNECTED, buka popup Delegate dan klik Reconnect."
           : "Listener dihentikan. Proses Core, MCP, dan tunnel tetap berjalan.");
+        notifyDelegate("success", shouldRun
+          ? "Chrome Delegate listener started and verified."
+          : "Chrome Delegate listener stopped and verified.");
       } catch (err) {
         showListenerFeedback(explainListenerFailure(err), true);
+        notifyDelegate(/timeout|timed out/i.test(String(err)) ? "warning" : "error",
+          "Delegate listener outcome not verified. Inspect listener status.");
         try { await fetchDelegateStatus({ force: true }); } catch {}
       } finally {
         btn.disabled = false;
+        ticket?.end();
+        renderDelegateUI();
       }
     });
 
@@ -364,6 +384,10 @@
         showListenerFeedback("Start Listener dahulu sebelum membuat kode pairing.", true);
         return;
       }
+      const ticket = window.TrayFeedback?.begin({
+        key: "delegate:renew", button: btn, label: "Renewing pairing code…",
+      });
+      if (window.TrayFeedback && !ticket) return;
       if (btn) btn.disabled = true;
       try {
         const res = await invokeDelegate("renew-code");
@@ -376,9 +400,13 @@
         } else {
           await fetchDelegateStatus();
         }
+        if (!delegateState.pairingCode) throw Error("Pairing code not confirmed");
+        notifyDelegate("success", "New Chrome Delegate pairing code is ready.");
       } catch (err) {
-        alert(`Failed to renew pairing code: ${err.message || err}`);
+        notifyDelegate("error", "Pairing code renewal was not verified.");
       } finally {
+        if (btn) btn.disabled = !delegateState.running || delegateState.unreachable;
+        ticket?.end();
         if (btn) btn.disabled = !delegateState.running || delegateState.unreachable;
       }
     });
@@ -394,8 +422,9 @@
         setTimeout(() => {
           copyBtn.textContent = origText;
         }, 2000);
+        notifyDelegate("success", "Pairing code copied.");
       } catch {
-        alert("Failed to copy pairing code to clipboard.");
+        notifyDelegate("error", "Could not copy the pairing code.");
       }
     });
 
@@ -406,14 +435,22 @@
         const clientId = btn.dataset.clientId;
         if (!clientId) return;
         if (!confirm(`Disconnect Chrome extension client ${clientId}?`)) return;
+        const ticket = window.TrayFeedback?.begin({
+          key: "delegate:disconnect:" + clientId, button: btn, label: "Disconnecting…",
+        });
+        if (window.TrayFeedback && !ticket) return;
         btn.disabled = true;
         try {
           await invokeDelegate("disconnect", { clientId });
-          await fetchDelegateStatus();
+          await fetchDelegateStatus({ force: true });
+          notifyDelegate(delegateState.activeProfiles.some((client) => client.clientId === clientId)
+            ? "warning" : "success", delegateState.activeProfiles.some((client) => client.clientId === clientId)
+              ? "Disconnect requested. Verify remaining client connection."
+              : "Chrome Delegate client disconnected.");
         } catch (err) {
-          alert(`Failed to disconnect client: ${err.message || err}`);
+          notifyDelegate("error", "Client disconnect was not verified.");
           btn.disabled = false;
-        }
+        } finally { ticket?.end(); }
       }
     });
 

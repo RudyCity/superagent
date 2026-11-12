@@ -5,7 +5,15 @@
   const $ = (id) => document.getElementById(id);
   const state = { discovered: [], paired: [], pairingRequests: [], tunnelDevices: [], selected: null, pairRequestId: null,
     busy: false, scanning: false, presetFor: null, presetPlatform: null, segmentRevision: 0,
-    connectQrLease: null, apkQrLease: null, qrHeartbeatBusy: false };
+    connectQrLease: null, apkQrLease: null, qrHeartbeatBusy: false,
+    qrOutcomeUnknown: { connect: false, apk: false } };
+  let qrRefreshHandler = null;
+  const isTimeout = (error) => /timed out|timeout|aborted|connection lost/i.test(String(error));
+  const qrToast = (kind, message, background = false) => {
+    if (!background) window.TrayFeedback?.notify({
+      kind, message, scope: "lan-devices",
+    });
+  };
   const invoke = (action, payload = {}) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("SuperAgent Tray native runtime is unavailable.");
@@ -100,10 +108,10 @@
     if (qr?.getContext) { const c = qr.getContext("2d"); c?.clearRect(0, 0, qr.width, qr.height); }
   }
   function requestQrRefresh(kind, reason) {
-    if (state.busy) return false;
+    if (state.busy || state.qrOutcomeUnknown[kind] || !qrRefreshHandler) return false;
     const status = $(kind === "connect" ? "lan-tunnel-status" : "lan-apk-status");
     if (status) status.textContent = "Refreshing QR automatically · " + reason;
-    $(kind === "connect" ? "lan-tunnel-invite" : "lan-apk-download-qr")?.click?.();
+    qrRefreshHandler(kind); // Internal background action; never simulate a manual click/toast.
     return true;
   }
   async function heartbeatOneQr(kind, lease) {
@@ -112,7 +120,9 @@
     let heartbeat;
     try {
       heartbeat = await invoke("qr_heartbeat", { kind, id: lease.id });
+      if (lease !== (kind === "connect" ? state.connectQrLease : state.apkQrLease)) return;
     } catch {
+      if (lease !== (kind === "connect" ? state.connectQrLease : state.apkQrLease)) return;
       const localRemaining = Math.max(0, lease.expiresAt - Date.now());
       if (localRemaining <= QR_REFRESH_AHEAD_MS) {
         requestQrRefresh(kind, "heartbeat unavailable near expiry");
@@ -122,6 +132,7 @@
       return;
     }
     if (kind === "connect" && heartbeat?.state === "used") {
+      state.qrOutcomeUnknown.connect = false;
       state.connectQrLease = null;
       clearQrCanvas("lan-tunnel-qr", "lan-tunnel-qr-card");
       if (statusEl) statusEl.textContent = "Connection QR used successfully. Device enrollment completed.";
@@ -350,8 +361,11 @@
     if ($("lan-apk-download-qr")) $("lan-apk-download-qr").disabled = state.busy;
     window.__superagentLanFilesRefresh?.();
   }
-  async function refresh() {
+  async function refresh(manual = false) {
     if (state.busy) return;
+    const ticket = manual === true ? window.TrayFeedback?.begin({
+      key: "lan:refresh", button: $("lan-paired-refresh"), label: "Refreshing devices…",
+    }) : null;
     try {
       const reply = await invoke("list");
       state.paired = Array.isArray(reply.devices) ? reply.devices : [];
@@ -359,7 +373,11 @@
       state.tunnelDevices = Array.isArray(reply.tunnelDevices) ? reply.tunnelDevices : [];
       if (!state.paired.some((device) => device.id === state.selected)) state.selected = state.paired[0]?.id || null;
       paint();
-    } catch (error) { notice("Cannot read paired devices: " + String(error), true); }
+      if (manual === true) qrToast("success", "Device list refreshed.");
+    } catch (error) {
+      notice("Cannot read paired devices. Check Core connectivity.", true);
+      if (manual === true) qrToast("error", "Device refresh unavailable.");
+    } finally { ticket?.end(); }
   }
   async function scan() {
     if (state.busy || state.scanning) return;
@@ -382,6 +400,9 @@
       return;
     }
     state.discovered = [];
+    const ticket = window.TrayFeedback?.begin({
+      key: "lan:scan", button: $("lan-discovery-scan"), label: "Scanning LAN…",
+    });
     state.scanning = true;
     const scanRevision = state.segmentRevision;
     if ($("lan-discovery-status")) $("lan-discovery-status").textContent = "Scanning...";
@@ -395,10 +416,12 @@
       state.discovered = Array.isArray(reply.devices) ? reply.devices : [];
       if ($("lan-discovery-status")) $("lan-discovery-status").textContent = state.discovered.length + " found";
       paint();
+      qrToast("success", "LAN scan finished · " + state.discovered.length + " device(s) found.");
     } catch (error) {
       if ($("lan-discovery-status")) $("lan-discovery-status").textContent = "Unavailable";
-      notice("LAN scan failed: " + String(error), true);
-    } finally { state.scanning = false; paint(); }
+      notice("LAN scan failed. Check network segment and Core.", true);
+      qrToast("error", "LAN scan unavailable.");
+    } finally { state.scanning = false; paint(); ticket?.end(); }
   }
   async function emergencyAccessStop(action, deviceId) {
     // Emergency reduction of access is never blocked by a pending command.
@@ -447,6 +470,12 @@
   }
   async function operation(action, payload, progress) {
     if (state.busy) return;
+    const actionButton = (action === "pair" || action === "pair_complete")
+      ? $("lan-pair-submit") : action === "exec" ? $("lan-command-run") : null;
+    const ticket = window.TrayFeedback?.begin({
+      key: "lan:action:" + action, button: actionButton,
+      label: action === "exec" ? "Running command…" : "Awaiting device approval…",
+    });
     state.busy = true;
     paint();
     notice(progress);
@@ -456,6 +485,7 @@
     }
     try {
       const reply = await invoke(action, payload);
+      if (reply?.success === false) throw Error("Device did not confirm the operation.");
       if (action === "pair" || action === "pair_complete") {
         state.selected = reply.device?.id || null;
         state.pairRequestId = null;
@@ -478,8 +508,15 @@
       } else notice(action === "open" ? "Session approved by the target laptop." :
         (action === "pair" || action === "pair_complete") ? "Pairing approved. Request a separate terminal session." :
         action === "revoke" ? "Pairing revoked on the target laptop." : "Session disconnected.");
+      if (action === "pair" || action === "pair_complete") qrToast("success", "Pairing approved. Request session access separately.");
+      else if (action === "open") qrToast("success", "Device session approved.");
+      else if (action === "exec") qrToast(reply?.result?.ok === true ? "success" : "warning",
+        reply?.result?.ok === true ? "Remote command completed." : "Remote command result requires inspection.");
     } catch (error) {
       notice("LAN action failed: " + String(error), true);
+      qrToast(isTimeout(error) ? "warning" : "error",
+        isTimeout(error) ? "LAN request outcome unverified. Inspect the device before retrying."
+          : "LAN action rejected. Check inline pairing or device status.");
       if (action === "pair" || action === "pair_complete") {
         const detail = String(error);
         const help = /Full YOLO/i.test(detail)
@@ -496,6 +533,7 @@
       }
       state.busy = false;
       await refresh();
+      ticket?.end();
     }
   }
   function install() {
@@ -513,13 +551,23 @@
       paint();
       if ($("lan-discovery-status")) $("lan-discovery-status").textContent = "Select segment and scan";
     });
-    $("lan-paired-refresh")?.addEventListener("click", refresh);
-    $("lan-tunnel-invite")?.addEventListener("click", async () => {
-      if (state.busy) return;
+    $("lan-paired-refresh")?.addEventListener("click", () => void refresh(true));
+    const createConnectQr = async (background = false) => {
+      if (state.busy || (background && state.qrOutcomeUnknown.connect)) return;
+      const ticket = window.TrayFeedback?.begin({
+        key: "lan:connect-qr", button: $("lan-tunnel-invite"),
+        label: "Creating connect QR…", background,
+      });
+      if (window.TrayFeedback && !ticket) return;
       state.busy = true;
       paint();
+      const status = $("lan-tunnel-status");
+      if (status) status.textContent = background
+        ? "Refreshing connection QR in background…"
+        : "Preparing connection QR and HTTPS tunnel (up to 75 seconds)…";
       try {
         const reply = await invoke("tunnel_invite");
+        if (reply?.success === false) throw Error("Core rejected QR creation.");
         const setup = reply?.invite?.setup;
         const qrMatrix = reply?.invite?.qrMatrix;
         const inviteId = reply?.invite?.inviteId;
@@ -534,29 +582,48 @@
         drawQrMatrix(qr, qrMatrix);
         card.hidden = false;
         state.connectQrLease = { id: inviteId, expiresAt };
-        const status = $("lan-tunnel-status");
+        state.qrOutcomeUnknown.connect = false;
         if (status) status.textContent = "Connection QR active · " + qrRemaining(expiresAt - Date.now()) + " remaining · heartbeat active";
         if (navigator?.clipboard?.writeText) {
           try { await navigator.clipboard.writeText(setup); } catch {}
         }
         notice("One-time Device Tunnel QR created. Heartbeat will refresh it automatically before expiry.");
+        qrToast("success", "Connection QR ready. Scan before it expires.", background);
       } catch (error) {
-        state.connectQrLease = null;
-        clearQrCanvas("lan-tunnel-qr", "lan-tunnel-qr-card");
-        const status = $("lan-tunnel-status");
-        if (status) status.textContent = "Cannot create tunnel invite: " + String(error).slice(0, 220);
-        notice("Cannot create Device Tunnel invite: " + String(error), true);
+        const unknown = isTimeout(error);
+        state.qrOutcomeUnknown.connect = unknown;
+        if (!state.connectQrLease || state.connectQrLease.expiresAt <= Date.now()) {
+          state.connectQrLease = null;
+          clearQrCanvas("lan-tunnel-qr", "lan-tunnel-qr-card");
+        }
+        const message = unknown
+          ? "Connection QR request timed out. Outcome unverified; inspect existing QR before retrying."
+          : "Cannot create Device Tunnel QR. Check Core, HTTPS tunnel, and try again.";
+        if (status) status.textContent = message;
+        notice(message, !unknown);
+        qrToast(unknown ? "warning" : "error", message, background);
       } finally {
         state.busy = false;
         paint();
+        ticket?.end();
       }
-    });
-    $("lan-apk-download-qr")?.addEventListener("click", async () => {
-      if (state.busy) return;
+    };
+    const createApkQr = async (background = false) => {
+      if (state.busy || (background && state.qrOutcomeUnknown.apk)) return;
+      const ticket = window.TrayFeedback?.begin({
+        key: "lan:apk-qr", button: $("lan-apk-download-qr"),
+        label: "Preparing APK QR…", background,
+      });
+      if (window.TrayFeedback && !ticket) return;
       state.busy = true;
       paint();
+      const status = $("lan-apk-status");
+      if (status) status.textContent = background
+        ? "Refreshing APK download QR in background…"
+        : "Preparing Android APK download QR (up to 75 seconds)…";
       try {
         const reply = await invoke("apk_download_qr");
+        if (reply?.success === false) throw Error("Core rejected APK QR creation.");
         const apk = reply?.apk;
         const qrMatrix = apk?.qrMatrix;
         if (!apk || typeof apk.size !== "number" || !Number.isSafeInteger(apk.size) || apk.size < 1024
@@ -572,22 +639,37 @@
         drawQrMatrix(qr, qrMatrix);
         card.hidden = false;
         state.apkQrLease = { id: apk.heartbeatId, expiresAt: apk.expiresAt };
+        state.qrOutcomeUnknown.apk = false;
         const mb = (apk.size / (1024 * 1024)).toFixed(1);
         meta.textContent = apk.filename + " · " + mb + " MiB · SHA-256 " + apk.sha256;
-        const status = $("lan-apk-status");
         if (status) status.textContent = "APK download QR active · " + qrRemaining(apk.expiresAt - Date.now()) + " remaining · heartbeat active";
         notice("Temporary Android APK download QR created. Heartbeat will refresh it automatically before expiry.");
+        qrToast("success", "APK download QR ready. Scan to download.", background);
       } catch (error) {
-        state.apkQrLease = null;
-        clearQrCanvas("lan-apk-qr", "lan-apk-qr-card");
-        const status = $("lan-apk-status");
-        if (status) status.textContent = "Cannot create APK download QR: " + String(error).slice(0, 220);
-        notice("Cannot create Android APK download QR: " + String(error), true);
+        const unknown = isTimeout(error);
+        state.qrOutcomeUnknown.apk = unknown;
+        if (!state.apkQrLease || state.apkQrLease.expiresAt <= Date.now()) {
+          state.apkQrLease = null;
+          clearQrCanvas("lan-apk-qr", "lan-apk-qr-card");
+        }
+        const message = unknown
+          ? "APK download QR request timed out. Outcome unverified; inspect existing ticket before retrying."
+          : "Cannot create Android APK download QR. Check that the APK, Core, and tunnel are available.";
+        if (status) status.textContent = message;
+        notice(message, !unknown);
+        qrToast(unknown ? "warning" : "error", message, background);
       } finally {
         state.busy = false;
         paint();
+        ticket?.end();
       }
-    });
+    };
+    qrRefreshHandler = (kind) => {
+      if (kind === "connect") void createConnectQr(true);
+      else if (kind === "apk") void createApkQr(true);
+    };
+    $("lan-tunnel-invite")?.addEventListener("click", () => void createConnectQr());
+    $("lan-apk-download-qr")?.addEventListener("click", () => void createApkQr());
     $("lan-output-clear")?.addEventListener("click", () => { $("lan-output").textContent = "Output cleared."; });
     for (const [id, command] of [["lan-health-quick", "android.health"], ["lan-support-quick", "android.support_status"]]) {
       $(id)?.addEventListener("click", () => {
