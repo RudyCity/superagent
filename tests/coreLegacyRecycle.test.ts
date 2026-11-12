@@ -10,6 +10,7 @@ import {
   legacyRecycleMayArchiveStaleSupervisorState,
   acceptsRecycleCoreOwnerEvidence,
   inspectLegacyCoreRecycleReadiness,
+  recognizesOwnedPackagedCore,
   type LegacyCoreRecyclePlan,
 } from "../src/core/runtime/coreLegacyRecycle.js";
 import { ManagedSidecarLedger, sidecarOperationFingerprint } from "../src/core/runtime/managedSidecarLedger.js";
@@ -228,5 +229,21 @@ describe("Core Legacy Recycle", () => {
     const check = ledger.lookup(testOpId, fingerprint);
     expect(check?.replayed).toBe(true);
     expect(check?.afterPid).toBe(5678);
+  });
+});
+
+describe("Windows packaged legacy Core owner attestation", () => {
+  it("accepts only the exact bundled Bun and entry pair", () => {
+    if (process.platform !== "win32") return;
+    const root = path.win32.resolve("D:/development/superagent");
+    const dir = path.win32.join(root, "apps", "superagent-tray", "src-tauri", "target", "release");
+    const exe = path.win32.join(dir, "bun.exe");
+    const script = path.win32.join(dir, "standalone", "dist", "cli.js");
+    const makeCmd = (p: string) => String.fromCharCode(34) + exe + String.fromCharCode(34) + " " + String.fromCharCode(34) + p + String.fromCharCode(34) + " --server 7888";
+    const valid = { executablePath: exe, commandLine: makeCmd(script) };
+    expect(recognizesOwnedPackagedCore(valid, root)).toBe(true);
+    expect(recognizesOwnedPackagedCore({ ...valid, executablePath: "C:\temp\bun.exe" }, root)).toBe(false);
+    expect(recognizesOwnedPackagedCore({ ...valid, commandLine: makeCmd("C:\temp\standalone\dist\cli.js") }, root)).toBe(false);
+    expect(recognizesOwnedPackagedCore({ ...valid, commandLine: "garbage " + makeCmd(script) }, root)).toBe(false);
   });
 });

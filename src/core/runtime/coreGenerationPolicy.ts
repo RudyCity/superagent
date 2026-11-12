@@ -37,3 +37,22 @@ export function applyCoreRollback<T extends CoreGenerationIdentity>(
   }
   return { active: candidate, retained: nextRetained };
 }
+
+/**
+ * A dead worker cannot hand over Delegate ownership. Only a verified process
+ * exit permits a fresh, attested listener start on its replacement.
+ * A live-but-unresponsive worker must continue to fail closed.
+ */
+export type CoreRestartBridgeMode = "handover" | "start-after-verified-exit" | "disabled";
+export function decideCoreRestartBridge(options: {
+  bridgeEnabled: boolean;
+  staging: boolean;
+  previousWorkerExists: boolean;
+  previousWorkerExited: boolean;
+  desiredListenerEnabled: boolean;
+}): CoreRestartBridgeMode {
+  if (!options.bridgeEnabled || options.staging || !options.previousWorkerExists)
+    return "disabled";
+  if (!options.previousWorkerExited) return "handover";
+  return options.desiredListenerEnabled ? "start-after-verified-exit" : "disabled";
+}

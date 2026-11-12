@@ -1,3 +1,9 @@
+## [1.14.83] - 2026-11-12
+### Recover verified-dead Core workers without unsafe Delegate handover
+- Restart Core with verified-dead previous workers without attempting an impossible Delegate handover; retain the live-worker authenticated handover and fail closed for unresponsive live workers.
+- Recognize only the exact packaged Windows Tray Bun and standalone Core entrypoint during guarded legacy-to-supervised migration, with existing authenticated owner, birth, listener and checkpoint evidence requirements unchanged.
+- Add negative tests for packaged owner identity and dead-worker restart policy; restart still requires a fresh compiled build and owner-bound operator plan.
+
 ## [1.14.82] - 2026-11-12
 ### Complete native Windows LAN receiver 0.2.0 and secure tunnel shutdown
 - Add physical network adapter selection, accurate enrollment/pairing/session state, native Windows approval notification, transfer progress and user cancellation.

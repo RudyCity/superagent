@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MAX_RETAINED_CORE_WORKERS, applyCoreRollback,
-  mayCreateCoreGeneration, rollbackCandidates,
+  mayCreateCoreGeneration, rollbackCandidates, decideCoreRestartBridge,
 } from "../src/core/runtime/coreGenerationPolicy.js";
 
 const a = { pid: 1, port: 10001, since: 1 };
@@ -29,5 +29,27 @@ describe("conservative core generation policy", () => {
     });
     expect(applyCoreRollback(c, [a, b], 404, true)).toBeUndefined();
     expect(applyCoreRollback(c, [a, b], c.pid, true)).toBeUndefined();
+  });
+});
+
+describe("verified dead-worker Delegate recovery policy", () => {
+  const baseline = { bridgeEnabled: true, staging: false, previousWorkerExists: true,
+    previousWorkerExited: false, desiredListenerEnabled: true };
+  it("keeps live-worker restart on authenticated handover", () => {
+    expect(decideCoreRestartBridge(baseline)).toBe("handover");
+  });
+  it("starts a new listener only after verified previous exit", () => {
+    expect(decideCoreRestartBridge({ ...baseline, previousWorkerExited: true }))
+      .toBe("start-after-verified-exit");
+  });
+  it("respects OFF preference, staging and isolated bridge mode", () => {
+    expect(decideCoreRestartBridge({ ...baseline, previousWorkerExited: true,
+      desiredListenerEnabled: false })).toBe("disabled");
+    expect(decideCoreRestartBridge({ ...baseline, previousWorkerExited: true,
+      staging: true })).toBe("disabled");
+    expect(decideCoreRestartBridge({ ...baseline, previousWorkerExited: true,
+      bridgeEnabled: false })).toBe("disabled");
+    expect(decideCoreRestartBridge({ ...baseline, previousWorkerExists: false }))
+      .toBe("disabled");
   });
 });

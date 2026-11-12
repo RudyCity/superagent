@@ -150,6 +150,25 @@ function commandLooksLikeSuperAgent(commandLine: string): boolean {
     /superagent[\\/]src[\\/]cli\.tsx/i.test(commandLine);
 }
 
+/**
+ * Identify the exact packaged Windows Tray legacy Core invocation, rather
+ * than matching arbitrary binaries or a renamed standalone/dist/cli.js.
+ * Port, authenticated API, OS birth and kernel listener are verified separately.
+ */
+export function recognizesOwnedPackagedCore(descriptor: {
+  executablePath: string; commandLine: string;
+}, projectRoot: string): boolean {
+  if (process.platform !== "win32") return false;
+  const releaseDir = path.win32.resolve(projectRoot,
+    "apps", "superagent-tray", "src-tauri", "target", "release");
+  const exe = path.win32.join(releaseDir, "bun.exe");
+  const script = path.win32.join(releaseDir, "standalone", "dist", "cli.js");
+  if (path.win32.resolve(descriptor.executablePath).toLowerCase() !== exe.toLowerCase())
+    return false;
+  const expected = String.fromCharCode(34) + exe + String.fromCharCode(34) + " " +
+    String.fromCharCode(34) + script + String.fromCharCode(34) + " ";
+  return descriptor.commandLine.toLowerCase().startsWith(expected.toLowerCase());
+}
 function inferClientMode(commandLine: string): CoreClientMode {
   const match = /--client-mode(?:=|\s+)"?([a-z-]+)"?/i.exec(commandLine);
   return match?.[1] === "chrome-extension" ? "chrome-extension" : "tline";
@@ -159,7 +178,8 @@ function verifyLegacyDescriptor(descriptor: LegacyProcessDescriptor, port: numbe
   const exe = path.basename(descriptor.executablePath).toLowerCase();
   if (!["bun.exe", "bun", "node.exe", "node"].includes(exe))
     throw new Error("CORE_RECYCLE_UNEXPECTED_RUNTIME_EXECUTABLE");
-  if (!commandLooksLikeSuperAgent(descriptor.commandLine) ||
+  if (!(commandLooksLikeSuperAgent(descriptor.commandLine) ||
+        recognizesOwnedPackagedCore(descriptor, getPackageRootDir())) ||
       !commandHasServerPort(descriptor.commandLine, port))
     throw new Error("CORE_RECYCLE_PROCESS_IS_NOT_LEGACY_SUPERAGENT_CORE");
 }

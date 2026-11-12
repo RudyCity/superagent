@@ -27,6 +27,7 @@ import {
 import { mayRouteExplicitCoreResume } from "./coreAgentSessionCheckpoint.js";
 import {
   MAX_RETAINED_CORE_WORKERS, applyCoreRollback, mayCreateCoreGeneration,
+  decideCoreRestartBridge,
   rollbackCandidates,
 } from "./coreGenerationPolicy.js";
 
@@ -518,16 +519,30 @@ export async function runCoreSupervisor(
     try {
       const candidate = await spawnWorker();
       const previous = active;
-      const handoverEnabled = previous && process.env.SUPERAGENT_DELEGATE_BRIDGE !== "0" &&
-        process.env.SUPERAGENT_CORE_STAGING !== "1";
-      if (handoverEnabled) {
-        try { await handoverCoreDelegateBridge(previous.port, candidate.port, serverToken,
-            undefined, { inspectToken }); }
-        catch (error) {
-          // The candidate was never published; stop only our fresh child.
-          try { candidate.child?.kill(); } catch {}
-          throw error;
+      // A confirmed-dead worker cannot serve the authenticated handover API.
+      // Do not infer death from a failed HTTP probe alone: a live worker may
+      // still own the fixed Delegate listener and have active sessions.
+      const bridgeMode = decideCoreRestartBridge({
+        bridgeEnabled: process.env.SUPERAGENT_DELEGATE_BRIDGE !== "0",
+        staging: process.env.SUPERAGENT_CORE_STAGING === "1",
+        previousWorkerExists: Boolean(previous),
+        previousWorkerExited: Boolean(previous && workerExited(previous)),
+        desiredListenerEnabled: readDelegateListenerPreference(),
+      });
+      try {
+        if (bridgeMode === "handover" && previous) {
+          await handoverCoreDelegateBridge(previous.port, candidate.port, serverToken,
+            undefined, { inspectToken });
+        } else if (bridgeMode === "start-after-verified-exit") {
+          const started = await callCoreWorkerDelegateBridge(candidate.port, "start",
+            serverToken, { transient: true, inspectToken });
+          if (!started.running) throw new Error("CORE_DEAD_WORKER_DELEGATE_NOT_READY");
         }
+      } catch (error) {
+        // The previous generation stays authoritative. Kill only this
+        // freshly owned, unpublished candidate and never a foreign process.
+        try { candidate.child?.kill(); } catch {}
+        throw error;
       }
       if (active) retained.push(active); // never kill existing generation
       active = candidate;
@@ -536,13 +551,18 @@ export async function runCoreSupervisor(
       } catch (error) {
         active = previous;
         if (previous) retained.pop();
-        if (handoverEnabled) {
-          // Core ownership checkpoint failed. Restore the earlier Delegate
-          // owner before removing the uncommitted candidate generation.
+        if (bridgeMode === "handover" && previous) {
+          // Restore the verified old listener on a failed checkpoint.
           try { await handoverCoreDelegateBridge(candidate.port, previous.port, serverToken,
               undefined, { inspectToken }); }
           finally { try { candidate.child?.kill(); } catch {} }
         } else {
+          // Dead-worker recovery has no live previous listener to restore.
+          // Explicitly stop the candidate listener before discarding it.
+          if (bridgeMode === "start-after-verified-exit") {
+            try { await callCoreWorkerDelegateBridge(candidate.port, "stop",
+              serverToken, { transient: true, inspectToken }); } catch {}
+          }
           try { candidate.child?.kill(); } catch {}
         }
         throw error;
