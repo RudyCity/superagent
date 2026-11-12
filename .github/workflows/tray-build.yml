@@ -103,6 +103,18 @@ jobs:
           find "$HOME/.cache/tauri" -maxdepth 3 -name '*linuxdeploy*' -print 2>/dev/null || true
           mapfile -t deploy < <(find "$HOME/.cache/tauri" -maxdepth 3 -name 'linuxdeploy-*-x86_64.AppImage' -type f 2>/dev/null)
           mapfile -t appdirs < <(find "$bundle" -maxdepth 1 -name '*.AppDir' -type d 2>/dev/null)
+          if [[ "${#appdirs[@]}" -gt 0 ]]; then
+            echo '=== Bun executable and system musl loader ==='
+            command -v readelf || true
+            find /lib /usr/lib -maxdepth 4 -name '*musl*x86_64*' -print 2>/dev/null | head -30 || true
+            echo '=== AppDir ELF objects that need libc.musl-x86_64.so.1 ==='
+            while IFS= read -r -d '' candidate; do
+              if readelf -d "$candidate" 2>/dev/null | grep -q 'libc.musl-x86_64.so.1'; then
+                echo "MUSL_ELF_DEPENDENCY: $candidate"
+                readelf -d "$candidate" 2>/dev/null | grep NEEDED | head -20 || true
+              fi
+            done < <(find "${appdirs[0]}" -type f \( -name 'bun' -o -name 'AppRun' -o -name '*.node' -o -name '*.so*' -o -name '*sqlite*' -o -name 'superagent*' \) -print0)
+          fi
           if [[ "${#deploy[@]}" -gt 0 && "${#appdirs[@]}" -gt 0 ]]; then
             echo '=== Reproducing linuxdeploy with full output on disposable CI runner ==='
             export NO_STRIP=true APPIMAGE_EXTRACT_AND_RUN=1
