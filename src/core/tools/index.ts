@@ -176,6 +176,8 @@ import {
 } from "./advancedAutomationTools.js";
 import { controlChromeCdpTool } from "./chromeCdpTools.js";
 import { controlChromeVisionTool } from "./chromeVisionTools.js";
+import { lanSupportTool } from "./lanSupportTool.js";
+import { desktopUiTool } from "./desktopUiTools.js";
 import { transferSshFileTool } from "./sshTransferTools.js";
 import { cliBridgeTool } from "./cliBridgeTool.js";
 import { inspectSessionTool } from "./sessionTools.js";
@@ -256,6 +258,8 @@ export const allTools: Tool[] = [
   controlIsolatedCdpTool,
   controlChromeCdpTool,
   controlChromeVisionTool,
+  lanSupportTool,
+  desktopUiTool,
   listRunningChromeTool,
   closeChromeProfileTool,
   closeChromeWindowTool,

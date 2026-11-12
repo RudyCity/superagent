@@ -3614,7 +3614,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "superagent-tray"
-version = "1.14.76"
+version = "1.14.77"
 dependencies = [
  "base64 0.22.1",
  "dirs 6.0.0",

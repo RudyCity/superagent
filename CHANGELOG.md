@@ -1,3 +1,8 @@
+## [1.14.77] - 2026-11-12
+### Release preparation: registry parity
+- Register LAN support and native desktop UI tools in the canonical tool registry so every tier-exposed tool resolves correctly; restore cross-platform packaging regression gate.
+- Align package, Tauri, and Cargo version metadata for the standalone release candidate.
+
 ## [1.14.76] - 2026-11-12
 ### Windows Tray install without developer toolchain
 - Add checksum-verified acquisition of published Windows standalone installers (`tray:prebuilt:check`, `tray:prebuilt:download`, `tray:prebuilt:install`), with release/source version guard and no implicit execution.
