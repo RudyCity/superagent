@@ -30,8 +30,14 @@ function requireUnprivileged() {
     throw Error("Run SuperAgent LAN Client as a standard non-elevated Windows user.");
 }
 async function main() {
-  if (!process.argv.includes("--tauri-receiver")) throw Error("Use the SuperAgent LAN Client GUI.");
+  if (!process.argv.includes("--tauri-receiver") && !process.argv.includes("--list-adapters"))
+    throw Error("Use the SuperAgent LAN Client GUI.");
   requireUnprivileged();
+  if (process.argv.includes("--list-adapters")) {
+    const adapters = lanInterfaces().map(({ name, address }) => ({ name, address }));
+    process.stdout.write(JSON.stringify({ adapters }) + String.fromCharCode(10));
+    return;
+  }
   const segmentArg = process.argv.find(x => x.startsWith("--segment="));
   if (!segmentArg) throw Error("Network segment is required.");
   const segmentName = normalizeNetworkSegment(segmentArg.slice(10));
@@ -44,7 +50,34 @@ async function main() {
   let pending: { id: string; resolve: (allowed: boolean) => void; timer: ReturnType<typeof setTimeout> } | null = null;
   let relay: AbortController | null = null;
   let relayInProgress = false;
+  let relayTask: Promise<void> | null = null;
+  let tunnelPhase: "disconnected" | "enrolling" | "awaiting_approval" | "paired" | "active_session" | "revoking" = "disconnected";
   let stopped = false;
+  function announceState() {
+    const state = clientHandle?.state();
+    emit("state", { state, tunnelPhase, tunnelActive: Boolean(relay), waitingApproval: Boolean(pending) });
+  }
+  let clientHandle: Awaited<ReturnType<typeof startLanServer>> | null = null;
+  function cancelPending() {
+    if (!pending) return;
+    const request = pending; pending = null;
+    clearTimeout(request.timer);
+    request.resolve(false);
+    emit("approval_resolved", { id: request.id, allowed: false });
+  }
+  async function disconnectRelay() {
+    const current = relay;
+    if (!current && !relayTask) return;
+    tunnelPhase = "revoking";
+    announceState();
+    current?.abort();
+    if (relayTask) await relayTask;
+    relay = null;
+    relayTask = null;
+    relayInProgress = false;
+    tunnelPhase = "disconnected";
+    announceState();
+  }
   const approve = (request: ApprovalRequest) => {
     if (pending || stopped) return Promise.resolve(false);
     return new Promise<boolean>(resolve => {
@@ -65,8 +98,18 @@ async function main() {
   };
   const client = await startLanServer({
     host: selected.address, segmentName, port: LAN_PORT, onApproval: approve,
-    onNotice: message => emit("notice", { message }),
+    onTransfer: transfer => { emit("transfer", { ...transfer }); announceState(); },
+    onNotice: message => {
+      emit("notice", { message });
+      const current = clientHandle?.state();
+      if (current) {
+        if (current.sessionActive && tunnelPhase === "paired") tunnelPhase = "active_session";
+        else if (!current.sessionActive && tunnelPhase === "active_session") tunnelPhase = "paired";
+      }
+      announceState();
+    },
   });
+  clientHandle = client;
   emit("ready", {
     host: client.host, port: client.port, segment: segmentName,
     adapter: selected.name, fingerprint: client.fingerprint,
@@ -77,11 +120,9 @@ async function main() {
   async function stop() {
     if (stopped) return;
     stopped = true;
-    if (pending) {
-      const request = pending; pending = null;
-      clearTimeout(request.timer); request.resolve(false);
-    }
-    relay?.abort(); relay = null;
+    cancelPending();
+    client.revoke();
+    await disconnectRelay();
     await client.close();
     rl.close();
     emit("stopped");
@@ -113,36 +154,68 @@ async function main() {
       relay = new AbortController();
       const active = relay;
       const pairCode = client.rotatePairCode();
+      emit("pairing_code", { code: pairCode });
+      tunnelPhase = "enrolling";
       emit("connecting", { origin: invite.url });
       const autoPair = { code: pairCode, controller: "SuperAgent Tray QR" };
-      void runDeviceTunnelRelay({
+      relayTask = runDeviceTunnelRelay({
         enrollment: invite, platform: "windows", name: os.hostname().slice(0, 60),
         fingerprint: client.fingerprint, localHost: client.host, localPort: client.port,
         autoPair, signal: active.signal,
-        onNotice: message => {
-          emit("notice", { message });
-          if (message.includes("enrolled")) emit("connected", { origin: invite.url });
+        onNotice: message => emit("notice", { message }),
+        onEnrollment: () => {
+          if (active.signal.aborted) return;
+          tunnelPhase = "awaiting_approval";
+          emit("enrolled", { origin: invite.url });
+          announceState();
         },
-      }).then(() => emit("disconnected"), error => {
+        onPairingApproved: () => {
+          if (active.signal.aborted) return;
+          tunnelPhase = "paired";
+          emit("paired", { origin: invite.url });
+          announceState();
+        },
+        onPairingFailed: reason => {
+          if (active.signal.aborted) return;
+          fail(new Error("Pairing was not approved: " + reason));
+          active.abort();
+        },
+        onRevocation: confirmed => emit("remote_revoked", { confirmed }),
+      }).then(() => {
+        if (relay === active) { tunnelPhase = "disconnected"; emit("disconnected"); }
+      }, error => {
         if (!active.signal.aborted) fail(error);
-        emit("disconnected");
+        if (relay === active) { tunnelPhase = "disconnected"; emit("disconnected"); }
       }).finally(() => {
         if (relay === active) relay = null;
         relayInProgress = false;
+        announceState();
       });
       return;
     }
     if (type === "disconnect") {
       if (Object.keys(action).length !== 1) throw Error("Invalid disconnect request.");
-      relay?.abort(); relay = null;
+      cancelPending();
       client.revoke();
+      await disconnectRelay();
+      emit("pairing_code", { code: "Expired" });
       emit("disconnected");
       return;
     }
     if (type === "revoke") {
       if (Object.keys(action).length !== 1) throw Error("Invalid revoke request.");
+      cancelPending();
       client.revoke();
-      emit("revoked");
+      await disconnectRelay();
+      emit("pairing_code", { code: "Expired" });
+      emit("revoked", { localAccessStopped: true });
+      announceState();
+      return;
+    }
+    if (type === "cancel_transfer") {
+      if (Object.keys(action).length !== 1) throw Error("Invalid transfer cancellation request.");
+      if (!client.cancelTransfer()) throw Error("No active transfer to cancel.");
+      announceState();
       return;
     }
     if (type === "rotate") {
@@ -165,7 +238,7 @@ async function main() {
     }
     if (type === "status") {
       if (Object.keys(action).length !== 1) throw Error("Invalid status request.");
-      emit("state", { state: client.state(), tunnelActive: Boolean(relay), waitingApproval: Boolean(pending) });
+      announceState();
       return;
     }
     if (type === "stop") {

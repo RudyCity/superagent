@@ -74,3 +74,9 @@ footer{font-size:10px;color:#657892;letter-spacing:.16em;margin-top:30px;text-al
 #toast{position:fixed;bottom:24px;right:24px;background:#244461;color:#f0f7ff;box-shadow:0 13px 36px #0008;border:1px solid #4d7fa8;padding:14px 18px;border-radius:10px;font-weight:650;max-width:420px;z-index:110}
 @media(max-width:1180px){.rail{width:212px;padding-inline:12px}.app{grid-template-columns:212px minmax(0,1fr)}.main-grid{grid-template-columns:minmax(0,1fr)}.side-stack{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:900px){.rail{width:74px;padding-inline:10px}.app{grid-template-columns:74px minmax(0,1fr)}.brand{font-size:0;padding:0 8px}.brand small,.rail-overline,.rail-link:not(.active),.rail-link.active{font-size:0}.rail-link{justify-content:center}.rail-link .rail-glyph{font-size:22px}.rail-bottom{display:none}.side-stack{grid-template-columns:minmax(0,1fr)}.topbar-right{display:none}.content{padding-top:28px}}
+.setup-controls select{height:43px;width:100%;border-radius:8px;border:1px solid #374a61;background:#0c1521;color:var(--text);padding:0 13px;outline:none}
+.setup-controls select:focus-visible{border-color:var(--blue);box-shadow:0 0 0 3px #83b3ff23}
+.setup-controls select:disabled{opacity:.55}
+.transfer-status{display:grid;gap:8px;margin-top:24px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:#c7d5e9}
+.transfer-status progress{width:100%;height:7px;accent-color:var(--blue)}
+.transfer-status button{justify-self:start}

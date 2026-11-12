@@ -5,7 +5,7 @@
   const native = window.__TAURI__;
   const invoke = native?.core?.invoke;
   const listen = native?.event?.listen;
-  const model = { running: false, tunnel: false, starting: false, waiting: null, selected: null, camera: null, scanning: false, busy: false, events: 0 };
+  const model = { running: false, tunnel: false, phase: "disconnected", paired: false, session: false, adaptersLoaded: false, transfer: null, starting: false, waiting: null, selected: null, camera: null, scanning: false, busy: false, events: 0 };
   const set = (id, value) => { const target = $(id); if (target) target.textContent = String(value ?? "—"); };
   const btn = (id, enabled) => { if ($(id)) $(id).disabled = !enabled; };
   const label = (value) => typeof value === "string" ? value.slice(0, 230) : "Unknown";
@@ -30,21 +30,32 @@
     toast.timeout = setTimeout(() => { node.hidden = true; }, 4500);
   }
   function present() {
-    btn("start", !model.running && !model.starting);
+    btn("start", !model.running && !model.starting && model.adaptersLoaded && Boolean($("adapter").value));
     btn("stop", model.running);
     btn("camera-btn", model.running && !model.scanning);
     btn("inspect", model.running);
-    btn("disconnect", model.tunnel && model.running);
+    btn("disconnect", model.running && !["disconnected","revoking"].includes(model.phase));
     btn("revoke", model.running);
     btn("rotate-code", model.running);
     btn("share-file", model.running);
     btn("share-folder", model.running);
+    btn("cancel-transfer", model.running && model.transfer?.status === "active");
     $("segment").disabled = model.running || model.starting;
+    $("adapter").disabled = model.running || model.starting || !model.adaptersLoaded;
     $("local-detail").hidden = !model.running;
     $("connection-chip").classList.toggle("online", model.running);
     set("connection-label", model.running ? "Receiver ready" : model.starting ? "Starting receiver" : "Receiver offline");
     set("receiver-state", model.running ? "Ready to approve" : model.starting ? "Starting…" : "Offline");
-    set("tunnel-state", model.tunnel ? "Connected" : "Disconnected");
+    const phases = { disconnected:"Disconnected", enrolling:"Connecting…", awaiting_approval:"Enrolled · awaiting pairing", paired:"Paired · tunnel online", active_session:"Authorized remote session", revoking:"Disconnecting…" };
+    set("tunnel-state", phases[model.phase] || "Disconnected");
+    set("pairing-state", model.paired ? "Approved" : model.phase === "awaiting_approval" ? "Awaiting approval" : "Not paired");
+    set("session-state", model.session ? "Active · authorized" : "Inactive");
+    set("approval-state", model.waiting ? "Pending your decision" : "Required each time");
+    if (model.transfer) {
+      const item = model.transfer;
+      set("transfer-label", (item.direction === "upload" ? "Receiving " : "Sending ") + (item.name || "file") + " · " + item.status);
+      $("transfer-progress").value = item.size > 0 ? Math.round(item.transferred / item.size * 100) : 0;
+    } else { set("transfer-label", "No file transfer"); $("transfer-progress").value = 0; }
   }
   async function invokeAction(type, extra = {}) {
     if (!invoke) throw Error("Open this page in the installed SuperAgent LAN Client application.");
@@ -105,11 +116,28 @@
       set("pairing-code", data.pairingCode || "—");
       note("Receiver ready on " + String(data.host) + ". Pairing requires your consent.");
     } else if (event === "connecting") {
-      note("Connecting to " + label(data.origin)); set("tunnel-state", "Connecting…");
-    } else if (event === "connected") {
-      model.tunnel = true; note("HTTPS Device Tunnel enrolled.");
+      model.phase = "enrolling"; note("Connecting to " + label(data.origin));
+    } else if (event === "enrolled") {
+      model.phase = "awaiting_approval"; note("Tunnel enrolled. Waiting for pairing approval.");
+    } else if (event === "paired") {
+      model.phase = "paired"; model.tunnel = true; model.paired = true;
+      note("Pairing explicitly approved. HTTPS tunnel is ready.");
+    } else if (event === "remote_revoked") {
+      if (!data.confirmed) {
+        toast("Remote token revocation failed. Revoke the device in the controller SuperAgent Tray.");
+        note("Warning: Core did not confirm remote token revocation.");
+      } else note("Core confirmed permanent revocation of the remote tunnel token.");
     } else if (event === "disconnected") {
-      model.tunnel = false; note("Device Tunnel disconnected.");
+      model.phase = "disconnected"; model.tunnel = false; model.paired = false; model.session = false;
+      note("HTTPS Device Tunnel disconnected.");
+    } else if (event === "state") {
+      if (typeof data.tunnelPhase === "string") model.phase = data.tunnelPhase;
+      model.session = Boolean(data.state?.sessionActive);
+      model.paired = (Number(data.state?.paired) > 0) || ["paired", "active_session"].includes(model.phase);
+      if (data.state?.transfer) model.transfer = data.state.transfer;
+    } else if (event === "transfer") {
+      model.transfer = data;
+      if (data.status !== "active") note("File transfer " + label(data.status) + ": " + label(data.name));
     } else if (event === "approval_required") {
       model.waiting = data;
       set("consent-controller", data.controller || "Unknown controller");
@@ -124,13 +152,16 @@
       note(event === "approval_expired" ? "Access request expired and was denied." :
         data.allowed ? "You approved a request." : "You denied a request.");
     } else if (event === "pairing_code") {
-      set("pairing-code", data.code); note("One-time pairing code rotated.");
-    } else if (event === "revoked") note("All paired-device access revoked.");
-    else if (event === "shared") note("Owner selected a " + label(data.kind) + " to share: " + label(data.name));
+      set("pairing-code", data.code); note("Pairing code: " + (data.code === "Expired" ? "expired" : "rotated"));
+    } else if (event === "revoked") {
+      model.phase = "disconnected"; model.paired = false; model.session = false; model.tunnel = false;
+      note("Local paired-device access and sessions revoked.");
+    } else if (event === "shared") note("Owner selected " + label(data.kind) + " for sharing: " + label(data.name));
     else if (event === "notice") note(label(data.message));
     else if (event === "error") { toast(label(data.message)); note("Receiver error: " + label(data.message)); }
     else if (event === "stopped" || event === "process_closed") {
       model.running = false; model.starting = false; model.tunnel = false;
+      model.phase = "disconnected"; model.paired = false; model.session = false; model.transfer = null;
       hideApproval(); stopCamera(); clearSelection();
       note(event === "process_closed" ? "Receiver process closed." : "Sharing stopped.");
     }
@@ -186,7 +217,11 @@
       model.scanning = true;
       present();
       note("Camera started. Point at a Connect QR in SuperAgent Tray.");
-      while (model.scanning && model.camera && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      while (model.scanning && model.camera) {
+        if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
+          await new Promise(resolve => setTimeout(resolve, 120));
+          continue;
+        }
         const result = await scanImage(video, video.videoWidth, video.videoHeight);
         if (!model.scanning) break;
         if (result) { selectQr(result); break; }
@@ -221,7 +256,9 @@
       const segment = $("segment").value.trim();
       if (!/^[A-Za-z0-9_-]{3,32}$/.test(segment)) throw Error("Segment must have 3–32 letters, digits, - or _.");
       model.starting = true; present();
-      await invoke("start_client", { segment });
+      const bind = $("adapter").value;
+      if (!bind) throw Error("Select a physical network adapter.");
+      await invoke("start_client", { segment, bind });
       note("Starting the native Windows receiver.");
     });
   });
@@ -230,10 +267,12 @@
       stopCamera();
       await invoke("stop_client");
       model.running = false; model.tunnel = false; model.starting = false;
+      model.phase = "disconnected"; model.paired = false; model.session = false;
       hideApproval(); clearSelection();
       note("Receiver stopped and access ended.");
     });
   });
+  $("adapter").addEventListener("change", present);
   $("camera-btn").addEventListener("click", () => { void scanCamera(); });
   $("camera-stop").addEventListener("click", stopCamera);
   $("qr-file").addEventListener("change", event => {
@@ -249,16 +288,21 @@
       await invokeAction("connect", { payload });
       clearSelection();
       $("raw-code").value = "";
-      set("tunnel-state", "Connecting…");
+      model.phase = "enrolling";
       note("Connection request submitted. Any incoming access still requires your approval.");
     });
   });
   $("disconnect").addEventListener("click", () => void protectedAction(async () => {
-    await invokeAction("disconnect"); model.tunnel = false; note("Tunnel disconnected and pairing revoked.");
+    model.phase = "revoking"; await invokeAction("disconnect");
+    note("Disconnect requested; waiting for token revocation confirmation.");
   }));
   $("revoke").addEventListener("click", () => void protectedAction(async () => {
-    await invokeAction("revoke"); note("All local pairings revoked.");
+    model.phase = "revoking"; await invokeAction("revoke");
+    note("Revoking local access and remote device token.");
   }));
+  $("cancel-transfer").addEventListener("click", () => void protectedAction(
+    () => invokeAction("cancel_transfer"), "Owner requested transfer cancellation."
+  ));
   $("rotate-code").addEventListener("click", () => void protectedAction(
     () => invokeAction("rotate"), "Requested a fresh pairing code."
   ));
@@ -282,6 +326,19 @@
     return;
   }
   void listen("receiver-event", event => emitStatus(event.payload)).then(async () => {
+    try {
+      const adapters = await invoke("list_adapters");
+      const select = $("adapter");
+      select.replaceChildren();
+      for (const adapter of adapters) {
+        const option = document.createElement("option");
+        option.value = adapter.address;
+        option.textContent = adapter.name + " · " + adapter.address;
+        select.append(option);
+      }
+      model.adaptersLoaded = adapters.length > 0;
+      if (!adapters.length) toast("No verified physical private IPv4 adapter was found.");
+    } catch (error) { toast(error.message || "Cannot list network adapters."); }
     try {
       const alreadyRunning = await invoke("receiver_running");
       if (alreadyRunning) { model.running = true; await invokeAction("status"); }

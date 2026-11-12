@@ -215,3 +215,41 @@ describe("Device Tunnel public HTTP ingress", () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe("Device Tunnel authenticated self-revocation", () => {
+  it("invalidates only the requesting device token and clears queued requests", async () => {
+    const broker = await import("../src/core/deviceTunnel/broker.js");
+    const first = broker.createDeviceTunnelInvite();
+    const second = broker.createDeviceTunnelInvite();
+    const enroll = async (invite: typeof first, name: string) => {
+      const res = await post("/api/device-tunnel/enroll", {
+        inviteId: invite.inviteId, code: invite.code, name,
+        platform: "windows", fingerprint: "d".repeat(64),
+      });
+      expect(res.status).toBe(200);
+      return await res.json() as any;
+    };
+    const one = await enroll(first, "Receiver A");
+    const two = await enroll(second, "Receiver B");
+    const headers = (client: any) => ({
+      Authorization: "Device " + client.token,
+      "X-SuperAgent-Device-Id": client.device.id,
+    });
+    const queued = broker.requestDeviceTunnel(one.device.id, { op: "status" }, 5_000).then(
+      () => { throw Error("Revoked request unexpectedly completed."); },
+      error => error as Error,
+    );
+    const unauthenticated = await post("/api/device-tunnel/leave", {});
+    expect(unauthenticated.status).toBe(401);
+    const malformed = await post("/api/device-tunnel/leave", { deleteAll: true }, headers(one));
+    expect(malformed.status).toBe(400);
+    const leave = await post("/api/device-tunnel/leave", {}, headers(one));
+    expect(leave.status).toBe(200);
+    expect((await queued).message).toMatch(/revoked/i);
+    expect(() => broker.authenticateDeviceTunnel(one.device.id, one.token)).toThrow();
+    const replay = await post("/api/device-tunnel/leave", {}, headers(one));
+    expect([401, 403]).toContain(replay.status);
+    expect(broker.authenticateDeviceTunnel(two.device.id, two.token).id).toBe(two.device.id);
+    expect(broker.listDeviceTunnelDevices().some(d => d.id === one.device.id)).toBe(false);
+  });
+});

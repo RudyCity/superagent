@@ -128,6 +128,7 @@ function certificate(): { cert: string; key: string; fingerprint: string } {
   };
 }
 export interface ApprovalRequest { kind: "pair" | "session" | "file-upload" | "file-download"; controller: string; ip: string; expiresInSeconds: number; detail?: string }
+export interface LanTransferStatus { transferId: string; direction: "upload" | "download"; name: string; size: number; transferred: number; status: "active" | "completed" | "cancelled" | "failed"; }
 export interface ServerOptions {
   host: string;
   /** Mandatory; missing/invalid segment rejects before any network listener starts. */
@@ -136,6 +137,7 @@ export interface ServerOptions {
   code?: string;
   onApproval: (request: ApprovalRequest) => Promise<boolean>;
   onNotice?: (message: string) => void;
+  onTransfer?: (status: LanTransferStatus) => void;
   // Optional isolated receive destination for regression fixtures, not a remote client path.
   transferDirectory?: string;
   now?: () => number;
@@ -145,9 +147,10 @@ interface ActiveSession { id: string; secret: string; pairId: string; ip: string
 export interface LanServerHandle {
   port: number; host: string; code: string; fingerprint: string;
   close(): Promise<void>; revoke(): void; rotatePairCode(): string;
+  cancelTransfer(): boolean;
   shareSelectedFile(filePath: string): Promise<{ name: string; size: number }>;
   shareSelectedFolder(folderPath: string): Promise<{ name: string; size: number; files: number }>;
-  state(): { paired: number; sessionActive: boolean; sharing?: { name: string; size: number } | null };
+  state(): { paired: number; sessionActive: boolean; sharing?: { name: string; size: number } | null; transfer?: LanTransferStatus | null };
 }
 export async function startLanServer(options: ServerOptions): Promise<LanServerHandle> {
   const segmentTag = networkSegmentTag(options.segmentName);
@@ -160,10 +163,28 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
   const now = options.now || Date.now;
   let codeExpires = now() + PAIR_WINDOW_MS;
   let attempts = 0;
+  let accessEpoch = 0;
   const devices = new Map<string, PairedDevice>();
   let session: ActiveSession | null = null;
   let busy = false;
   const files = new LanTargetFiles(options.transferDirectory);
+  let transfer: LanTransferStatus | null = null;
+  let lastProgress = -1;
+  function notifyTransfer(force = false) {
+    if (!transfer) return;
+    const step = Math.floor(transfer.transferred / transfer.size * 20);
+    if (force || step !== lastProgress) {
+      lastProgress = step;
+      options.onTransfer?.({ ...transfer });
+    }
+  }
+  function cancelTransfer() {
+    if (!transfer || transfer.status !== "active") return false;
+    files.abort(transfer.transferId);
+    transfer = { ...transfer, status: "cancelled" };
+    notifyTransfer(true);
+    return true;
+  }
   let activeChild: ChildProcess | null = null;
   const sockets = new Set<TLSSocket>();
   const notice = options.onNotice || (() => {});
@@ -177,6 +198,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     }
   }
   function revoke() {
+    accessEpoch++;
+    codeExpires = 0; // Revoked pairing codes never remain reusable.
+    cancelTransfer();
     devices.clear(); session = null; files.clear(); abortChild();
     notice("All paired devices and sessions revoked.");
   }
@@ -223,8 +247,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
         fail(socket, "Pairing rejected."); socket.end(); return;
       }
       const label = req.label.replace(/[^\w .-]/g, "").slice(0, 60);
+      const issuedEpoch = accessEpoch;
       const allowed = await options.onApproval({ kind: "pair", controller: label, ip, expiresInSeconds: 90 });
-      if (!allowed || socket.destroyed || now() >= codeExpires) { fail(socket, "Pairing not approved."); socket.end(); return; }
+      if (!allowed || issuedEpoch !== accessEpoch || socket.destroyed || now() >= codeExpires) { fail(socket, "Pairing not approved."); socket.end(); return; }
       const d: PairedDevice = { id: crypto.randomUUID(), secret: token(), ip, label };
       devices.set(d.id, d);
       notice("Paired controller " + label + " from " + ip);
@@ -238,8 +263,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     }
     if (op === "open") {
       if (session) { fail(socket, "A support session is already active."); socket.end(); return; }
+      const issuedEpoch = accessEpoch;
       const allowed = await options.onApproval({ kind: "session", controller: device.label, ip, expiresInSeconds: 90 });
-      if (!allowed || socket.destroyed || session) { fail(socket, "Session not approved."); socket.end(); return; }
+      if (!allowed || issuedEpoch !== accessEpoch || !devices.has(device.id) || socket.destroyed || session) { fail(socket, "Session not approved."); socket.end(); return; }
       session = { id: crypto.randomUUID(), secret: token(), pairId: device.id, ip, created: now(), lastUsed: now() };
       notice("Support session approved for " + device.label);
       send(socket, { ok: true, sessionId: session.id, sessionToken: session.secret });
@@ -256,6 +282,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     }
     session.lastUsed = now();
     if (op === "close") {
+      cancelTransfer();
       session = null; files.clear(); abortChild(); send(socket, { ok: true });
       socket.end(); notice("Support session closed."); return;
     }
@@ -276,13 +303,14 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
         const size = direction === "upload" ? req.size : selectedAtPrompt?.size;
         if (!name || typeof size !== "number" || !Number.isInteger(size) ||
             size < 1 || size > LAN_FILE_MAX_BYTES) throw Error("Invalid transfer.");
+        const issuedEpoch = accessEpoch;
         const allowed = await options.onApproval({
           kind: direction === "upload" ? "file-upload" : "file-download",
           controller: device.label, ip, expiresInSeconds: 90,
           detail: (direction === "upload" ? "Receive " : "Send ") + name + " (" + size + " bytes)",
         });
         const selectedNow = direction === "download" ? files.getShared() : null;
-        if (!allowed || !session || session !== sessionAtPrompt ||
+        if (!allowed || issuedEpoch !== accessEpoch || !session || session !== sessionAtPrompt ||
             session.pairId !== device.id || socket.destroyed ||
             (direction === "download" && (selectedNow?.name !== selectedAtPrompt?.name ||
               selectedNow?.size !== selectedAtPrompt?.size ||
@@ -292,6 +320,10 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
         const metadata = files.offer(direction, direction === "upload" ? {
           name, size, sha256: req.sha256 as string,
         } : undefined);
+        transfer = { transferId: metadata.transferId, direction, name: metadata.name,
+          size: metadata.size, transferred: 0, status: "active" };
+        lastProgress = -1;
+        notifyTransfer(true);
         send(socket, { ok: true, ...metadata });
       } catch { fail(socket, "File offer denied, invalid, or another transfer active."); }
       socket.end(); return;
@@ -303,6 +335,18 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
         else if (op === "file_get") reply = files.get(req.transferId, req.seq);
         else if (op === "file_finish") reply = await files.finish(req.transferId);
         else { files.abort(req.transferId); reply = { ok: true }; }
+        if (transfer && req.transferId === transfer.transferId) {
+          if (op === "file_put" || op === "file_get") {
+            const received = (reply as { received?: unknown }).received;
+            if (typeof received === "number" && received >= transfer.transferred)
+              transfer.transferred = Math.min(transfer.size, received);
+            notifyTransfer();
+          } else {
+            transfer.transferred = op === "file_finish" ? transfer.size : transfer.transferred;
+            transfer.status = op === "file_finish" ? "completed" : "cancelled";
+            notifyTransfer(true);
+          }
+        }
         send(socket, reply as object);
       } catch { fail(socket, "File transfer rejected; check session, sequence and SHA-256."); }
       socket.end(); return;
@@ -369,9 +413,10 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
       return code;
     },
     revoke,
+    cancelTransfer,
     shareSelectedFile: (filePath) => files.shareSelectedFile(filePath),
     shareSelectedFolder: (folderPath) => files.shareSelectedFolder(folderPath),
-    state: () => ({ paired: devices.size, sessionActive: Boolean(session), sharing: files.getShared() }),
+    state: () => ({ paired: devices.size, sessionActive: Boolean(session), sharing: files.getShared(), transfer }),
     close: async () => {
       revoke();
       const discovery = udp;

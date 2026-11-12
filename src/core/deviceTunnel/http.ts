@@ -7,6 +7,7 @@ import {
   authenticateDeviceTunnel,
   enrollDeviceTunnel,
   pollDeviceTunnel,
+  revokeDeviceTunnel,
   submitDeviceTunnelReply,
   type DeviceTunnelPlatform,
 } from "./broker.js";
@@ -133,6 +134,18 @@ export async function handleDeviceTunnelPublicRoute(
       return true;
     }
     const authenticated = authenticateDeviceTunnel(auth.id, auth.token);
+
+    if (pathname === "/api/device-tunnel/leave") {
+      const raw = await readBounded(req, 64);
+      if (raw !== "{}") {
+        json(res, 400, { success: false, error: "DEVICE_TUNNEL_INVALID_LEAVE" });
+        return true;
+      }
+      // Authentication above binds the token to exactly its own device id.
+      revokeDeviceTunnel(auth.id);
+      json(res, 200, { success: true });
+      return true;
+    }
 
     if (pathname === "/api/device-tunnel/qr-pair") {
       if (!isFullYoloMode()) {

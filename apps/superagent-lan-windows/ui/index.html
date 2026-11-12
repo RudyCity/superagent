@@ -21,7 +21,7 @@
       <div class="privacy-note"><span class="privacy-icon">◈</span><strong>Owner-controlled</strong>
         <p>Each pairing, session, and file transfer requires your approval. This app never runs as administrator.</p>
       </div>
-      <span class="release">WINDOWS CLIENT · 0.1.0</span>
+      <span class="release">WINDOWS CLIENT · 0.2.0</span>
     </div>
   </aside>
   <main class="main">
@@ -40,6 +40,7 @@
       <section class="setup-block" id="setup-block">
         <div class="setup-heading"><div><span class="step-index">01 / START RECEIVER</span><h2>Prepare this device</h2><p>Choose the same network segment as your controller. No remote access starts automatically.</p></div></div>
         <div class="setup-controls"><label>Network segment <input id="segment" value="home-network" autocomplete="off" maxlength="32" spellcheck="false"></label>
+          <label>Physical network adapter <select id="adapter" aria-label="Physical network adapter" disabled><option value="">Loading adapters…</option></select></label>
           <button id="start" class="button primary"><span class="button-symbol">⏵</span> Start receiver</button>
           <button id="stop" class="button secondary" disabled>Stop sharing</button>
         </div>
@@ -77,7 +78,9 @@
             <div class="panel-heading"><div><span class="step-index">LIVE STATUS</span><h2>Device overview</h2></div><span class="overview-icon">◉</span></div>
             <div class="status-line"><span>Receiver</span><strong id="receiver-state">Offline</strong></div>
             <div class="status-line"><span>HTTPS tunnel</span><strong id="tunnel-state">Disconnected</strong></div>
+            <div class="status-line"><span>Pairing</span><strong id="pairing-state">Not paired</strong></div>
             <div class="status-line"><span>Access approval</span><strong id="approval-state">Required each time</strong></div>
+            <div class="status-line"><span>Remote session</span><strong id="session-state">Inactive</strong></div>
             <div class="status-line last"><span>Session type</span><strong>Foreground only</strong></div>
             <div class="status-actions"><button class="button secondary" id="disconnect" disabled>Disconnect tunnel</button>
               <button class="button danger" id="revoke" disabled>Revoke all access</button></div>
@@ -87,6 +90,7 @@
             <div class="permission-row"><span class="permission-icon">✓</span><span>Approval for each remote session</span></div>
             <div class="permission-row"><span class="permission-icon">✓</span><span>Files stay private until shared</span></div>
             <div class="share-row"><button id="share-file" class="button secondary" disabled>Share file</button><button id="share-folder" class="button secondary" disabled>Share folder</button></div>
+            <div class="transfer-status" aria-live="polite"><strong id="transfer-label">No file transfer</strong><progress id="transfer-progress" max="100" value="0"></progress><button id="cancel-transfer" class="button secondary" disabled>Cancel transfer</button></div>
           </section>
         </div>
       </div>

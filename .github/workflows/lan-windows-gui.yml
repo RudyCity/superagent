@@ -1,0 +1,75 @@
+name: LAN Windows GUI verification
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "apps/superagent-lan-windows/**"
+      - "src/lanClientGui.ts"
+      - "src/core/lanRemote/**"
+      - "src/core/deviceTunnel/**"
+      - "scripts/build-lan-windows-gui.ts"
+      - "scripts/verify-lan-gui-receiver.ts"
+      - "tests/desktopLanWindowsGui.test.ts"
+      - "tests/deviceTunnelHttp.test.ts"
+      - "tests/windowsQrConnect.test.ts"
+      - ".github/workflows/lan-windows-gui.yml"
+  pull_request:
+    paths:
+      - "apps/superagent-lan-windows/**"
+      - "src/lanClientGui.ts"
+      - "src/core/lanRemote/**"
+      - "src/core/deviceTunnel/**"
+      - "scripts/build-lan-windows-gui.ts"
+      - "scripts/verify-lan-gui-receiver.ts"
+      - "tests/desktopLanWindowsGui.test.ts"
+      - "tests/deviceTunnelHttp.test.ts"
+      - "tests/windowsQrConnect.test.ts"
+      - ".github/workflows/lan-windows-gui.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-windows:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/superagent-lan-windows/src-tauri -> target"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Check TypeScript
+        run: bun --bun x tsc --noEmit --pretty false
+      - name: Check Windows GUI and remote access regressions
+        run: bun x vitest run tests/desktopLanWindowsGui.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts
+      - name: Build standalone Tauri receiver and bundled executable
+        run: bun scripts/build-lan-windows-gui.ts
+      - name: Smoke test compiled receiver, approval safety and shutdown
+        run: bun scripts/verify-lan-gui-receiver.ts
+      - name: Verify produced installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $file = "artifacts/lan-client/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe"
+          if (!(Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -lt 20000000) {
+            throw "Windows LAN GUI installer missing or incomplete"
+          }
+          Get-FileHash -Algorithm SHA256 -LiteralPath $file | Format-List
+          $signature = (Get-AuthenticodeSignature -LiteralPath $file).Status
+          if ($signature -ne [System.Management.Automation.SignatureStatus]::Valid) {
+            Write-Warning "Unsigned development installer. Publishing to a trusted production channel is blocked until code-signing is configured."
+          }
+      - name: Upload CI-only Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: superagent-lan-windows-gui-ci-only
+          path: artifacts/lan-client/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe
+          if-no-files-found: error
+          retention-days: 14

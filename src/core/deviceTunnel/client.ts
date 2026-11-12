@@ -21,6 +21,10 @@ export interface DeviceTunnelRelayOptions {
   signal?: AbortSignal;
   onNotice?: (message: string) => void;
   autoPair?: { code: string; controller: string };
+  onEnrollment?: () => void;
+  onPairingApproved?: () => void;
+  onPairingFailed?: (reason: string) => void;
+  onRevocation?: (confirmed: boolean) => void;
 }
 
 function normalizeBaseUrl(value: string): string {
@@ -162,6 +166,7 @@ export async function runDeviceTunnelRelay(
   }, options.signal);
   setup.code = "";
   options.onNotice?.("Device Tunnel enrolled. Reverse HTTPS relay is active.");
+  options.onEnrollment?.();
 
   const authHeaders = {
     "Authorization": "Device " + credentials.token,
@@ -176,9 +181,18 @@ export async function runDeviceTunnelRelay(
       method: "POST", headers: authHeaders,
       body: JSON.stringify({ code: options.autoPair.code,
         controller: options.autoPair.controller, fingerprint: options.fingerprint.toLowerCase() }),
-    }, options.signal).then(() => options.onNotice?.("QR pairing approved."),
-      (error: Error) => { if (!options.signal?.aborted)
-        options.onNotice?.("QR pairing failed: " + error.message.slice(0, 130)); });
+    }, options.signal).then(() => {
+      if (!options.signal?.aborted) {
+        options.onNotice?.("QR pairing approved.");
+        options.onPairingApproved?.();
+      }
+    }, (error: Error) => {
+      if (!options.signal?.aborted) {
+        const reason = error.message.slice(0, 130);
+        options.onNotice?.("QR pairing failed: " + reason);
+        options.onPairingFailed?.(reason);
+      }
+    });
     options.autoPair.code = "";
   }
   let failures = 0;
@@ -217,6 +231,19 @@ export async function runDeviceTunnelRelay(
       const delay = Math.min(10_000, 500 * Math.pow(2, Math.min(5, failures)));
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
+  }
+  // A clean receiver disconnect must also remove the Core-side long-lived
+  // device token. Never retain a still-enrolled remote device after Stop/Revoke.
+  // Use a fresh bounded request, since the polling signal was cancelled.
+  try {
+    await api(setup.url, "/api/device-tunnel/leave", {
+      method: "POST", headers: authHeaders, body: "{}",
+    });
+    options.onRevocation?.(true);
+  } catch (error) {
+    options.onRevocation?.(false);
+    options.onNotice?.("Remote tunnel token could not be revoked; disconnect the device from the controller: " +
+      (error instanceof Error ? error.message.slice(0, 90) : "unknown error"));
   }
   return credentials;
 }

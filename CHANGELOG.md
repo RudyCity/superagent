@@ -1,3 +1,10 @@
+## [1.14.82] - 2026-11-12
+### Complete native Windows LAN receiver 0.2.0 and secure tunnel shutdown
+- Add physical network adapter selection, accurate enrollment/pairing/session state, native Windows approval notification, transfer progress and user cancellation.
+- Revoke authenticated tunnel enrollment on receiver disconnect, stop and owner Revoke. Harden pending approval race cancellation after local access is revoked.
+- Bind the packaged receiver to its Tauri build with SHA-256 attestation and Windows Job Object kill-on-parent-exit containment. Add isolated Windows GUI CI, regression and smoke checks.
+- Build unsigned Windows x64 NSIS installer 0.2.0 for device validation only; production signing, trusted updates and dual-device physical QA remain release gates.
+
 ## [1.14.81] - 2026-11-12
 ### Fix empty macOS bundle override
 - Interpret an empty SUPERAGENT_UNIX_BUNDLE_OVERRIDE as absent; GitHub macOS runners must build dmg instead of passing an empty --bundles argument to Tauri.
