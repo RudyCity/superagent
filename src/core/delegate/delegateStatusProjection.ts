@@ -3,6 +3,8 @@
  * A bearer-authenticated loopback route is the only HTTP consumer. This module
  * never renews a lease, inspects capabilities, opens a browser tab or writes a journal.
  */
+import { createHash } from "node:crypto";
+import { readDelegateActionDiagnostics, type DelegateActionDiagnostic } from "../browserTransport/delegateActionDiagnostics.js";
 import { delegateBridge } from "./bridge.js";
 import { delegateTargetBusy, listDelegateSessions } from "../browserTransport/sessionCoordinator.js";
 import { getDelegateMcpPrincipalId, isDelegateMcpBoundary, visibleDelegateSessions } from "../browserTransport/delegatePrincipalPolicy.js";
@@ -100,20 +102,54 @@ export function projectDelegateTrayStatus(
   return { observedAt: now, sessionsStatus: "known", sessions, truncated };
 }
 
+/**
+ * Private Tray projection: only connected profiles are eligible. A requested
+ * profile narrows the result further. Never expose these traces across an MCP
+ * principal boundary: a fingerprint is NOT an authorization capability.
+ */
+export function projectDelegateActionTelemetry(
+  source: readonly DelegateActionDiagnostic[],
+  connectedClientIds: readonly string[],
+  requestedClientId?: string,
+): { actionDiagnosticsStatus: "known"; actionDiagnostics: DelegateActionDiagnostic[] } {
+  const fingerprints = new Set(connectedClientIds
+    .filter(clientId => CLIENT_ID.test(clientId))
+    .map(clientId => createHash("sha256").update(clientId).digest("hex").slice(0, 12)));
+  const requested = requestedClientId
+    ? createHash("sha256").update(requestedClientId).digest("hex").slice(0, 12) : undefined;
+  const actionDiagnostics = source.filter(entry =>
+    typeof entry.clientFingerprint === "string" &&
+    fingerprints.has(entry.clientFingerprint) &&
+    (requested === undefined || entry.clientFingerprint === requested))
+    .slice(-40)
+    .map(entry => ({ ...entry }));
+  return { actionDiagnosticsStatus: "known", actionDiagnostics };
+}
+
 /** Reads in-memory snapshots only, with the same MCP principal visibility fence. */
 export function readDelegateTrayStatus(requestedClientId?: string) {
   const boundary = isDelegateMcpBoundary();
   const principalId = getDelegateMcpPrincipalId();
   if (boundary && !principalId) {
     return { observedAt: Date.now(), sessionsStatus: "unknown" as const,
-      sessions: [] as DelegateTraySession[], truncated: false };
+      sessions: [] as DelegateTraySession[], truncated: false,
+      actionDiagnosticsStatus: "unknown" as const, actionDiagnostics: [] as DelegateActionDiagnostic[] };
   }
   const connections = delegateBridge.listConnections();
   const sessions = visibleDelegateSessions(listDelegateSessions());
-  return projectDelegateTrayStatus(sessions, {
+  const status = projectDelegateTrayStatus(sessions, {
     connectedClientIds: connections.map(connection => connection.clientId),
     requestedClientId,
     ...(boundary ? { principalId } : {}),
     busy: delegateTargetBusy,
   });
+  return {
+    ...status,
+    // Keep telemetry operator-only. Authenticated MCP principals still receive
+    // their scoped lease inventory but never the Core-wide action timeline.
+    ...(boundary
+      ? { actionDiagnosticsStatus: "unknown" as const, actionDiagnostics: [] as DelegateActionDiagnostic[] }
+      : projectDelegateActionTelemetry(readDelegateActionDiagnostics(40),
+        connections.map(connection => connection.clientId), requestedClientId)),
+  };
 }

@@ -9,7 +9,8 @@
     sessions: [], sessionsKnown: false, sessionsStale: false,
     statusError: false, statusKnown: false, managedCdp: null, followedAgent: "",
     liveCursor: null, liveConnected: false, liveRunning: false,
-    preview: null, previewRunning: false };
+    preview: null, previewRunning: false,
+    actions: [], actionsKnown: false, actionsVisible: false };
   const statuses = new Set(["queued", "sending", "monitoring"]);
   function elem(tag, cls = "", value = "") {
     const node = document.createElement(tag);
@@ -366,6 +367,60 @@
       }
     } finally { state.previewRunning = false; }
   }
+  function drawActionDiagnostics() {
+    const host = $("delegate-action-history");
+    const status = $("delegate-action-status");
+    const summary = $("delegate-action-summary");
+    if (!host || !status || !summary) return;
+    host.replaceChildren();
+    summary.replaceChildren();
+    if (!state.actionsVisible) {
+      status.textContent = state.actionsKnown ? "Available · hidden" : "Status unknown";
+      summary.append(elem("span", "", "Activity view is off"));
+      host.append(elem("p", "text-secondary",
+        "Select Show activity to inspect the private Core diagnostic timeline."));
+      return;
+    }
+    if (!state.actionsKnown) {
+      status.textContent = "Status unknown";
+      summary.append(elem("span", "", "No verified Core telemetry"));
+      host.append(elem("p", "text-secondary",
+        "Action history is unavailable or stale. Do not assume there were no browser actions."));
+      return;
+    }
+    const records = state.actions.slice(-30).reverse();
+    status.textContent = records.length ? records.length + " recent" : "No recent actions";
+    if (!records.length) {
+      summary.append(elem("span", "", "0 actions in this Core snapshot"));
+      host.append(elem("p", "text-secondary",
+        "No retained actions for connected Delegate profiles. This does not include OpenAI-side tool rejections."));
+      return;
+    }
+    const counts = { verified: 0, executed: 0, failed: 0, unknown: 0 };
+    for (const entry of records) counts[entry.outcome] += 1;
+    for (const key of ["verified", "executed", "failed", "unknown"]) {
+      summary.append(elem("span", "", String(counts[key]) + " " + key));
+    }
+    for (const entry of records) {
+      const card = elem("article", "delegate-action-record");
+      card.dataset.outcome = entry.outcome;
+      card.append(elem("strong", "", entry.command.replace(/_/g, " ") + " · " + entry.outcome));
+      line(card, "Observed", stamp(entry.at));
+      line(card, "Duration", Math.round(entry.elapsedMs) + " ms");
+      if (entry.category) line(card, "Error category", entry.category);
+      if (entry.clientFingerprint) line(card, "Profile fingerprint", entry.clientFingerprint);
+      if (entry.tabId) line(card, "Tab", "#" + entry.tabId);
+      line(card, "Operation", entry.operationId.slice(0, 8));
+      if (entry.outcome === "executed" || entry.outcome === "unknown") {
+        line(card, "Evidence", "Website outcome not verified; inspect before retry",
+          "multitab-detail multitab-warning");
+      } else if (entry.outcome === "failed" && entry.retryPolicy !== "safe_read_only") {
+        line(card, "Retry", "No automatic replay; inspect current state",
+          "multitab-detail multitab-warning");
+      }
+      host.append(card);
+    }
+  }
   function drawManagedPresence() {
     const target = $("cdp-presence-sessions");
     if (!target) return;
@@ -538,6 +593,7 @@
     }
     drawTabs();
     drawTasks();
+    drawActionDiagnostics();
     drawManagedPresence();
   }
   async function refresh() {
@@ -561,6 +617,21 @@
         snapshot.sessionsStatus !== "unknown" && !state.sessionsStale &&
         (hasTimestamp || legacyShape);
       state.sessions = state.sessionsKnown ? snapshot.sessions : [];
+      state.actionsKnown = snapshot.actionDiagnosticsStatus === "known" &&
+        Array.isArray(snapshot.actionDiagnostics) && hasTimestamp &&
+        !state.sessionsStale;
+      state.actions = state.actionsKnown ? snapshot.actionDiagnostics.filter(item =>
+        item && item.transport === "delegate" &&
+        /^[0-9a-f-]{36}$/.test(String(item.operationId || "")) &&
+        /^[a-z][a-z0-9_]{0,60}$/.test(String(item.command || "")) &&
+        ["verified", "executed", "failed", "unknown"].includes(item.outcome) &&
+        ["safe_read_only", "manual_reconcile", "never"].includes(item.retryPolicy) &&
+        Number.isSafeInteger(item.at) && Number.isFinite(item.elapsedMs) &&
+        item.elapsedMs >= 0 && item.elapsedMs <= 3600000 &&
+        (!item.category || /^[A-Z_]{3,40}$/.test(item.category)) &&
+        (!item.clientFingerprint || /^[a-f0-9]{12}$/.test(item.clientFingerprint)) &&
+        (item.tabId === undefined || Number.isSafeInteger(item.tabId) && item.tabId > 0)
+      ).slice(-40) : [];
       const managed = snapshot.managedCdp;
       const managedAge = Date.now() - Number(managed?.observedAt);
       state.managedCdp = managed?.status === "known" && Array.isArray(managed.sessions) &&
@@ -580,6 +651,7 @@
       // Fail closed: do not keep stale owner/lease state visible as current.
       state.profiles = []; state.owners = []; state.tasks = [];
       state.sessions = []; state.sessionsKnown = false; state.sessionsStale = false;
+      state.actions = []; state.actionsKnown = false;
       state.managedCdp = null;
       state.counts = {}; state.statusKnown = false;
       state.statusError = true;
@@ -632,6 +704,12 @@
         finally { ticket?.end(); }
       });
     }
+    $("delegate-action-toggle")?.addEventListener("click", event => {
+      state.actionsVisible = !state.actionsVisible;
+      event.currentTarget.setAttribute("aria-pressed", String(state.actionsVisible));
+      event.currentTarget.textContent = state.actionsVisible ? "Hide activity" : "Show activity";
+      drawActionDiagnostics();
+    });
     $("cdp-preview-stop")?.addEventListener("click", () => stopPrivatePreview());
     $("cdp-presence-follow")?.addEventListener("change", event => {
       state.followedAgent = event.target.value;

@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="./muse-files.css" />
   <link rel="stylesheet" href="./lan-devices.css" />
   <link rel="stylesheet" href="./delegate-multitab.css" />
+  <link rel="stylesheet" href="./delegate-action-diagnostics.css" />
   <script src="./titlebar.js" defer></script>
   <script src="./feedback.js" defer></script>
   <script src="./app.js" defer></script>
@@ -1494,6 +1495,30 @@
               <textarea id="multitab-aggregate-output" rows="5" readonly placeholder="Results will be listed here after aggregation."></textarea>
             </div>
           </div>
+        </section>
+
+        <!-- Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4.
+             Local-only diagnostic timeline: no URL, DOM, token or typed text. -->
+        <section class="panel delegate-multitab-panel" aria-labelledby="delegate-action-heading">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">DELEGATE-CDP / ACTION DIAGNOSTICS</div>
+              <h2 id="delegate-action-heading">Browser Action Outcomes</h2>
+              <p>Recent actions reported by the authenticated Core. Executed does not mean that a website-side submit or post was verified.</p>
+            </div>
+            <div class="delegate-action-tools">
+              <span id="delegate-action-status" class="subtle-badge" role="status">Awaiting Core</span>
+              <button id="delegate-action-toggle" type="button" class="button secondary sm"
+                aria-pressed="false" aria-controls="delegate-action-history">Show activity</button>
+            </div>
+          </div>
+          <div id="delegate-action-summary" class="multitab-summary" aria-live="polite">
+            <span>Telemetry unavailable</span>
+          </div>
+          <div id="delegate-action-history" class="multitab-items delegate-action-history" aria-live="polite">
+            <p class="text-secondary">Refresh Chrome Delegate to inspect recent action outcomes.</p>
+          </div>
+          <p class="delegate-hint">Read-only, in-memory diagnostics. Unknown actions require checking the real browser before any retry. OpenAI-side tool rejection occurs before SuperAgent and is not visible here.</p>
         </section>
 
         <section class="panel delegate-multitab-panel" aria-labelledby="cdp-presence-heading">

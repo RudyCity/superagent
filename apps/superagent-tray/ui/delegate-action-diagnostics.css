@@ -1,0 +1,64 @@
+/* Hallmark · component: action timeline · genre: utility · theme: inherited Tray
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: uses existing Tray tokens; no additional palette or typography.
+ * pre-emit critique: P5 H5 E5 S5 R5 V4
+ */
+.delegate-action-history {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 265px), 1fr));
+  gap: 10px;
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: clip;
+  align-items: start;
+}
+.delegate-action-record {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  border: 1px solid var(--border, currentColor);
+  border-inline-start: 3px solid var(--border, currentColor);
+  background: var(--bg-secondary, transparent);
+  border-radius: 9px;
+  padding: 11px 12px;
+}
+.delegate-action-record strong {
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 650;
+  line-height: 1.4;
+  text-transform: capitalize;
+}
+.delegate-action-record[data-outcome="unknown"],
+.delegate-action-record[data-outcome="failed"] {
+  border-inline-start-color: var(--warning, currentColor);
+}
+.delegate-action-record[data-outcome="verified"] {
+  border-inline-start-color: var(--accent, currentColor);
+}
+.delegate-action-record .multitab-detail {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+@media (max-width: 480px) {
+  .delegate-action-history { grid-template-columns: minmax(0, 1fr); }
+}
+.delegate-action-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+.delegate-action-tools .button { white-space: nowrap; }
+.delegate-action-tools .button:focus-visible {
+  outline: 2px solid var(--accent, currentColor);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .delegate-action-tools { justify-content: flex-start; width: 100%; }
+}
+

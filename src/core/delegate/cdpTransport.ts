@@ -1,4 +1,5 @@
 import { delegateBridge } from "./bridge.js";
+import { recordDelegateAction } from "../browserTransport/delegateActionDiagnostics.js";
 import { delegateMultiTabOrchestrator } from "./multiTabOrchestrator.js";
 import { executeFileUploadCommand, validateUploadPaths, type FileUploadCommand } from "../tools/chromeCdpFileUpload.js";
 import { executeCursorCommand, getCursorPosition, setCursorPosition } from "../tools/chromeCdpCursor.js";
@@ -240,7 +241,7 @@ function generatedWriteEval(target: BrowserTargetRef, expression: string, signal
   }, signal, { dangerousApproved: true });
 }
 
-export async function executeDelegateChromeCommand(
+async function executeDelegateChromeCommandInternal(
   command: string,
   args: Record<string, unknown>,
   payload: Record<string, unknown>,
@@ -629,4 +630,32 @@ export async function executeDelegateChromeCommand(
     }
   });
   return operationResult;
+}
+
+/** Observe action dispatch without changing the legacy MCP result/exception contract. */
+export async function executeDelegateChromeCommand(
+  command: string,
+  args: Record<string, unknown>,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<string> {
+  const startedAt = Date.now();
+  const clientHint = args.delegateClientId ?? payload.delegateClientId ?? args.connectionId ?? payload.connectionId;
+  const rawTab = args.delegateTabId ?? payload.delegateTabId;
+  const tabId = typeof rawTab === "number" && Number.isSafeInteger(rawTab) ? rawTab : undefined;
+  const metadata = {
+    command,
+    clientId: typeof clientHint === "string" ? clientHint : undefined,
+    tabId,
+    startedAt,
+  };
+  try {
+    const result = await executeDelegateChromeCommandInternal(command, args, payload, signal);
+    // Telemetry is best effort and must not change the browser action result.
+    try { recordDelegateAction({ ...metadata, result }); } catch { /* diagnostics must never mask a successful action */ }
+    return result;
+  } catch (error) {
+    try { recordDelegateAction({ ...metadata, error }); } catch { /* preserve the authoritative transport error */ }
+    throw error;
+  }
 }
