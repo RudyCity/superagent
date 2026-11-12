@@ -178,6 +178,10 @@ export async function executeManagedVision(args:VisionPlan&{confirm:boolean}){
     ],{cwd:getPackageRootDir(),windowsHide:true,detached:true,stdio:"ignore",
       env:{...process.env,SUPERAGENT_VISION_OWNER_TOKEN:token,
         SUPERAGENT_VISION_OWNER_INSTANCE:instanceId,SUPERAGENT_TRAY_AUTOSTART:"0"}});
+    let childExitReason:string|undefined;
+    child.once("exit",(code,signal)=>{
+      childExitReason="child exited code="+String(code)+" signal="+String(signal);
+    });
     child.on("error",()=>{});child.unref();
     if(!child.pid)throw new Error("VISION_CHILD_PID_MISSING");
     const record:VisionOwner={version:1,port:args.port,pid:child.pid,instanceId,token};
@@ -189,9 +193,15 @@ export async function executeManagedVision(args:VisionPlan&{confirm:boolean}){
       const status=await inspectManagedVision(args.port);
       if(status.verified&&status.ownerPid===child.pid)
         return {pid:child.pid,instanceId};
+      if(childExitReason)break; // A dead candidate will never become a verified owner.
       await new Promise(r=>setTimeout(r,250));
     }
-    throw new Error("VISION_START_OUTCOME_UNCERTAIN: review service-manager-owned PID "+child.pid);
+    const final=await inspectManagedVision(args.port);
+    // Diagnostic data contains only local PID, exit code and an owner-check
+    // category. Never expose the owner token or bypass kernel attestation.
+    throw new Error("VISION_START_OUTCOME_UNCERTAIN: review service-manager-owned PID "+child.pid+
+      "; reason="+String(final.reason)+
+      (childExitReason?"; "+childExitReason:""));
   }
   if(args.action==="start"){
     if(args.expectedOwnerPid!==0||args.expectedInstanceId!=="absent")

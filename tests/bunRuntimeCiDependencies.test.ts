@@ -21,6 +21,8 @@ describe("Ubuntu media/browser CI dependency bootstrap", () => {
     expect(workflow).toContain("test -x /usr/bin/ffprobe");
     expect(workflow).toContain("ldd /usr/bin/ffmpeg");
     expect(workflow).toContain("FFmpeg has unresolved shared libraries");
+    expect(workflow).toContain("ffmpeg libblas3 ripgrep iproute2");
+    expect(workflow).toContain("ss -tlnp");
     expect(workflow).toContain("ffmpeg-ci-smoke.mp4");
     expect(workflow).toContain("codec_name=h264");
     expect(workflow).toContain('echo \'/usr/bin\' >> "$GITHUB_PATH"');
