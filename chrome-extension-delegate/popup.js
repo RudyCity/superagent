@@ -22,6 +22,36 @@ let updating = false;
 let renderedClientsKey = "";
 let renderedTabsKey = "";
 
+const VIEWS = ["overview", "tabs", "settings"];
+function activateView(name, focus = false) {
+  if (!VIEWS.includes(name)) return;
+  for (const view of VIEWS) {
+    const active = view === name;
+    const button = $("tab-" + view);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+    $("panel-" + view).hidden = !active;
+    if (active && focus) button.focus();
+  }
+  // No reload, navigation or state-changing RPC when switching views.
+  const scroller = document.querySelector(".page-content");
+  if (scroller) scroller.scrollTop = 0;
+}
+
+for (const view of VIEWS) {
+  const button = $("tab-" + view);
+  button.addEventListener("click", () => activateView(view));
+  button.addEventListener("keydown", (event) => {
+    const index = VIEWS.indexOf(view);
+    const next = event.key === "ArrowRight" ? (index + 1) % VIEWS.length
+      : event.key === "ArrowLeft" ? (index + VIEWS.length - 1) % VIEWS.length
+        : event.key === "Home" ? 0 : event.key === "End" ? VIEWS.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    activateView(VIEWS[next], true);
+  });
+}
+
 function displayTime(value) {
   if (typeof value !== "number" || !Number.isFinite(value)) return "Belum pernah";
   return new Date(value).toLocaleString("id-ID", {
@@ -89,13 +119,25 @@ function renderTabs(tabs) {
   renderedTabsKey = key;
   const container = $("tab-list");
   container.replaceChildren();
+  if (!tabs.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state";
+    empty.textContent = "Belum ada tab ChatGPT pada profil ini.";
+    container.append(empty);
+    return;
+  }
   for (const tab of tabs.slice(0, 100)) {
     const item = document.createElement("div");
     item.className = "tab-row";
-    const label = document.createElement("span");
-    label.textContent = "Tab #" + tab.id + (tab.active ? " • aktif" : "") +
-      (tab.ready ? " • siap" : " • belum siap") +
-      (tab.title ? " — " + String(tab.title).slice(0, 75) : "");
+    const info = document.createElement("div");
+    info.className = "tab-description";
+    const label = document.createElement("strong");
+    label.textContent = String(tab.title || "ChatGPT").slice(0, 80);
+    const meta = document.createElement("span");
+    meta.className = "tab-meta";
+    meta.textContent = "Tab #" + tab.id + (tab.active ? " · aktif" : "") +
+      (tab.ready ? " · siap" : " · perlu diaktifkan");
+    info.append(label, meta);
     const copy = document.createElement("button");
     copy.type = "button";
     copy.className = "copy-button";
@@ -108,7 +150,7 @@ function renderTabs(tabs) {
         $("action-note").textContent = "Gagal menyalin Tab ID.";
       }
     });
-    item.append(label, copy);
+    item.append(info, copy);
     if (!tab.ready) {
       const repair = document.createElement("button");
       repair.className = "copy-button";
@@ -156,6 +198,8 @@ function renderStatus(status) {
   $("enabled").checked = status?.enabled !== false;
   $("cdp-enabled").checked = status?.cdp?.enabled === true;
   const attachmentCount = Number(status?.cdp?.attachmentCount || 0);
+  $("cdp-count").textContent = String(Number.isSafeInteger(attachmentCount) ? attachmentCount : 0);
+  $("profile-summary").textContent = String(status?.profileLabel || "Profil lokal").slice(0, 48);
   const attachedTabIds = Array.isArray(status?.cdp?.attachments)
     ? status.cdp.attachments.map((entry) => Number(entry?.tabId)).filter(Number.isSafeInteger)
     : [];
@@ -205,11 +249,13 @@ async function refreshStatus() {
       }));
       const readyCount = checked.filter(t => t.ready).length;
 
+      $("tab-count").textContent = String(checked.length);
       $("tab-status").textContent = checked.length
-        ? readyCount + "/" + checked.length + " siap • mode multi-tab"
+        ? readyCount + "/" + checked.length + " siap"
         : "Tidak ada tab";
       renderTabs(checked);
     } else {
+      $("tab-count").textContent = "—";
       $("tab-status").textContent = "Tidak dapat diperiksa";
       renderTabs([]);
     }

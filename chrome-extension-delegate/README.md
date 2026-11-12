@@ -210,6 +210,43 @@ explicitly in every Delegate action. A second session with an already-live
 `clientId` is denied instead of evicting the existing client.
 The fixed WebSocket port `127.0.0.1:17341` must never be exposed publicly.
 
+### Popup sizing hotfix (v1.10.1)
+
+Chrome action popups negotiate their intrinsic width before displaying. The
+old max-width 375px media query using 100vw on the body caused a feedback
+loop on Chrome startup, collapsing the popup to approximately 56px and
+stacking words vertically. The fixed popup uses intrinsic 392px width on
+html and body, including min/max width, with independent vertical scrolling
+for the contents. Do not reintroduce viewport-derived body widths.
+
+Verified in isolated Chromium with startup viewports 56, 100, 320, 375 and
+392 pixels, all yielding a 392px popup with normal title layout and no
+JavaScript errors. Reload the extension once after updating the unpacked
+source, then reopen the popup.
+
+### Compact native popup redesign (v1.10.0)
+
+The popup uses a 392px-wide dark navy / mint layout with three keyboard-
+navigable views. Its connection status and manual reconnect control remain
+visible above the tabs, while the content below scrolls independently.
+
+- **Ringkasan:** Delegate and CDP enable switches, actual ready-tab count,
+  attached-CDP count, and privacy explanation.
+- **Tab:** ChatGPT tab titles, readiness, exact tab IDs, original per-tab
+  repair actions, explicit new-tab action, and connected Chrome profiles.
+- **Pengaturan:** Profile name, client ID, manual pairing, and diagnostics.
+
+All actions retain their original permissions and backend message contracts.
+The popup version is read from the installed Chrome manifest rather than
+hardcoded. Tab changes have no browser/CDP side effects, keyboard left/right/
+Home/End navigation is supported, and no external CSS/font dependency is added.
+Layout tested in isolated Chromium at 320px, 375px and 392px widths.
+
+To activate an unpacked extension update, reload SuperAgent Delegate from
+chrome://extensions in each Chrome profile and reopen the popup. This can
+briefly reconnect Delegate; it never needs uninstalling or deleting pairing.
+Do not interrupt an in-flight CDP operation solely to refresh appearance.
+
 ### Visual CDP tab indicators (v1.9.3)
 
 When SuperAgent attaches its own debugger to a normal Chrome tab, the tab
