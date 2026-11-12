@@ -1,0 +1,136 @@
+name: Publish Previously Verified Unix Release Assets
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing, immutable Unix release tag (vX.Y.Z-unix.N)
+        required: true
+        type: string
+      source_run_id:
+        description: GitHub Actions run ID containing successful macOS/Linux/extension build jobs
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  publish-verified:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify source run, tag, and all three original build gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)-unix\.[0-9]+$ ]] || { echo 'Invalid Unix release tag'; exit 1; }
+          version="${BASH_REMATCH[1]}"
+          [[ "$SOURCE_RUN_ID" =~ ^[0-9]+$ ]] || { echo 'Invalid GitHub Actions source run ID'; exit 1; }
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          expected_sha="$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")"
+          run_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          actual_sha="$(jq -r '.head_sha' <<<"$run_json")"
+          event="$(jq -r '.event' <<<"$run_json")"
+          workflow_name="$(jq -r '.name' <<<"$run_json")"
+          if [[ "$actual_sha" != "$expected_sha" || "$event" != "push" ||
+                "$workflow_name" != "SuperAgent macOS Linux and Chrome Extension Prerelease" ]]; then
+            echo "Source run is not the exact published-tag build: source=$actual_sha tag=$expected_sha event=$event workflow=$workflow_name"
+            exit 1
+          fi
+          jobs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100")"
+          for name in "Build and verify linux-x64" "Build and verify macos-arm64" "Build and verify Chrome Delegate and SidePanel"; do
+            count="$(jq --arg name "$name" '[.jobs[] | select(.name == $name and .conclusion == "success")] | length' <<<"$jobs")"
+            [[ "$count" == "1" ]] || { echo "Required source job did not pass exactly once: $name"; exit 1; }
+          done
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Refusing to replace an existing GitHub release"
+            exit 1
+          fi
+          echo "PROVENANCE_VERIFIED tag=$RELEASE_TAG sha=$actual_sha run=$SOURCE_RUN_ID"
+      - name: Retrieve immutable artifacts from verified run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          pattern: unix-release-*
+          merge-multiple: true
+          path: downloaded-assets
+      - name: Validate archive contents and normalize release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          find downloaded-assets -type f -printf '%P %s bytes\n' | sort
+          mapfile -d '' dmgs < <(find downloaded-assets -type f -name '*.dmg' -print0)
+          mapfile -d '' debs < <(find downloaded-assets -type f -name '*.deb' -print0)
+          mapfile -d '' delegates < <(find downloaded-assets -type f -name 'superagent-delegate-*.zip' -print0)
+          mapfile -d '' sidepanels < <(find downloaded-assets -type f -name 'superagent-sidepanel-*.zip' -print0)
+          mapfile -d '' receipts < <(find downloaded-assets -type f -name '*.receipt.json' -print0)
+          for kind in dmgs debs delegates sidepanels; do
+            declare -n files="$kind"
+            [[ "${#files[@]}" -eq 1 ]] || { echo "Expected one $kind, got ${#files[@]}"; exit 1; }
+          done
+          [[ "${#receipts[@]}" -eq 2 ]] || { echo 'Expected two extension receipts'; exit 1; }
+          [[ "$(find downloaded-assets -type f | wc -l)" -eq 6 ]] || { echo 'Unexpected files in workflow artifacts'; exit 1; }
+          [[ "$(stat -c%s "${dmgs[0]}")" -gt 20000000 ]] || { echo 'DMG is unexpectedly small'; exit 1; }
+          [[ "$(stat -c%s "${debs[0]}")" -gt 20000000 ]] || { echo 'DEB is unexpectedly small'; exit 1; }
+          [[ "$(basename "${dmgs[0]}")" == *"${RELEASE_VERSION}"* ]] || { echo 'DMG version mismatch'; exit 1; }
+          [[ "$(basename "${debs[0]}")" == *"${RELEASE_VERSION}"* ]] || { echo 'DEB version mismatch'; exit 1; }
+          mkdir -p release-assets
+          for file in "${dmgs[0]}" "${debs[0]}" "${delegates[0]}" "${sidepanels[0]}" "${receipts[@]}"; do
+            cp -- "$file" "release-assets/$(basename "$file")"
+          done
+          python3 - <<'PY'
+          import glob, json, hashlib, os, zipfile
+          for kind in ('delegate', 'sidepanel'):
+              z = glob.glob(f'release-assets/superagent-{kind}-*.zip')
+              r = glob.glob(f'release-assets/superagent-{kind}-*.receipt.json')
+              assert len(z) == len(r) == 1, f'invalid extension count: {kind}'
+              receipt = json.load(open(r[0], encoding='utf-8'))
+              data = open(z[0], 'rb').read()
+              assert receipt['sha256'] == hashlib.sha256(data).hexdigest(), f'wrong archive SHA: {kind}'
+              with zipfile.ZipFile(z[0]) as archive:
+                  assert sorted(archive.namelist()) == sorted(receipt['packagedFiles']), f'unexpected ZIP members: {kind}'
+                  for name, expected in receipt['packagedFiles'].items():
+                      assert hashlib.sha256(archive.read(name)).hexdigest() == expected, f'ZIP member hash mismatch {name}'
+                  manifest = json.loads(archive.read('manifest.json'))
+                  assert manifest['manifest_version'] == 3 and manifest['version'] == receipt['version'], f'MV3 mismatch: {kind}'
+              print('EXTENSION_CHECKSUM_VERIFIED', kind, os.path.basename(z[0]))
+          PY
+          (cd release-assets && sha256sum * > ../SHA256SUMS.txt)
+          cat SHA256SUMS.txt
+      - name: Publish macOS, Linux and Chrome prerelease after provenance checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > RELEASE_NOTES.md <<'EOF'
+          # SuperAgent macOS ARM64 / Linux x64 and Chrome extensions
+
+          Standalone macOS Apple Silicon DMG and Linux x64 DEB contain SuperAgent
+          Tray, Core, native CLI and bundled Bun runtime. Linux requires
+          compatible WebKitGTK/appindicator packages. No compiler is required
+          on the target PC. Linux AppImage is not part of this prerelease.
+
+          Two separate Chrome MV3 source packages are included: Delegate and
+          SidePanel. Unzip to separate folders, then use Chrome Extensions >
+          Developer mode > Load unpacked. These are not Chrome Web Store installs.
+
+          The binaries were built and verified on disposable GitHub Actions
+          runners, with checked source commit, release tag, and extension receipts.
+          macOS packages are unsigned/unnotarized; Gatekeeper may warn.
+          Verify SHA256SUMS.txt. No production runtime cutover is authorized.
+          EOF
+          gh release create "$RELEASE_TAG" release-assets/* SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+            --notes-file RELEASE_NOTES.md \
+            --title "SuperAgent $RELEASE_TAG — macOS, Linux, Chrome extensions"

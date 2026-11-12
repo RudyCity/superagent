@@ -9,6 +9,7 @@
 ### Fix empty macOS bundle override
 - Interpret an empty SUPERAGENT_UNIX_BUNDLE_OVERRIDE as absent; GitHub macOS runners must build dmg instead of passing an empty --bundles argument to Tauri.
 - Add a packaging regression assertion and preserve Linux DEB-only override behavior.
+- Harden Unix asset publication to diagnose and normalize GitHub artifact directory layouts; add an explicit, provenance-checked recovery path to publish assets only from a tagged source run where all three build jobs succeeded, without recompiling binaries.
 
 ## [1.14.80] - 2026-11-12
 ### Stabilize macOS release regression fixture

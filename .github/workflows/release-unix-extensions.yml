@@ -129,22 +129,23 @@ jobs:
         with:
           pattern: unix-release-*
           merge-multiple: true
-          path: release-assets
+          path: downloaded-assets
       - name: Require exact macOS DMG, Linux DEB and both extensions
         shell: bash
         run: |
           set -euo pipefail
-          shopt -s nullglob
+          find downloaded-assets -type f -printf '%P %s bytes\\n' | sort
+          mkdir -p release-assets
+          for pattern in "*.dmg" "*.deb" "superagent-delegate-*.zip" "superagent-delegate-*.receipt.json" "superagent-sidepanel-*.zip" "superagent-sidepanel-*.receipt.json"; do
+            mapfile -d '' found < <(find downloaded-assets -type f -name "$pattern" -print0)
+            [[ "${#found[@]}" -eq 1 ]] || { echo "Expected one $pattern, found ${#found[@]}"; exit 1; }
+            cp -- "${found[0]}" "release-assets/$(basename "${found[0]}")"
+          done
+          [[ "$(find downloaded-assets -type f | wc -l)" -eq 6 ]] || { echo "Unexpected additional release artifacts"; exit 1; }
           dmgs=(release-assets/*.dmg)
           debs=(release-assets/*.deb)
-          delegates=(release-assets/superagent-delegate-*.zip)
-          sidepanels=(release-assets/superagent-sidepanel-*.zip)
-          test "${#dmgs[@]}" -eq 1
-          test "${#debs[@]}" -eq 1
-          test "${#delegates[@]}" -eq 1
-          test "${#sidepanels[@]}" -eq 1
-          test "$(stat -c%s "${dmgs[0]}")" -gt 20000000
-          test "$(stat -c%s "${debs[0]}")" -gt 20000000
+          [[ "$(stat -c%s "${dmgs[0]}")" -gt 20000000 ]] || { echo "DMG too small"; exit 1; }
+          [[ "$(stat -c%s "${debs[0]}")" -gt 20000000 ]] || { echo "DEB too small"; exit 1; }
           (cd release-assets && sha256sum * > ../SHA256SUMS.txt)
           cat SHA256SUMS.txt
       - name: Publish GitHub prerelease

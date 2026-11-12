@@ -42,5 +42,12 @@ describe("Unix standalone and browser extensions release contract", () => {
       "release-delegate.mjs", "release-sidepanel.mjs", "verify-release-extensions.mjs",
       "needs: [build-unix, build-extensions]", "SHA256SUMS.txt", "--verify-tag --prerelease",
     ]) expect(workflow).toContain(expected);
+    expect(workflow).toContain("find downloaded-assets -type f");
+    const recovery = read(".github/workflows/publish-verified-unix.yml");
+    expect(recovery).toContain("workflow_dispatch:");
+    expect(recovery).toContain("PROVENANCE_VERIFIED");
+    expect(recovery).toContain("source_run_id");
+    expect(recovery).toContain("EXTENSION_CHECKSUM_VERIFIED");
+    expect(recovery).toContain("--verify-tag --prerelease");
   });
 });
