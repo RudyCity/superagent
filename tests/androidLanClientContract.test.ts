@@ -36,8 +36,13 @@ describe("Android LAN Client source and wire-protocol contract", () => {
     expect(activity).toContain('setNegativeButton("DENY"');
   });
 
-  it("uses per-device AndroidKeystore TLS 1.3 key and an out-of-band certificate fingerprint", () => {
-    expect(identity).toContain('KeyStore.getInstance("AndroidKeyStore")');
+  it("uses an ephemeral per-sharing P-256 TLS 1.3 identity and independently pinned fingerprint", () => {
+    // OEM Keymaster rejected handshake signing. The current implementation
+    // uses a fresh process-local key/certificate and never persists a private key.
+    expect(identity).toContain('KeyPairGenerator.getInstance("EC")');
+    expect(identity).toContain('new ECGenParameterSpec("secp256r1")');
+    expect(identity).toContain('KeyStore.getInstance("PKCS12")');
+    expect(identity).toContain('store.load(null, password)');
     expect(identity).toContain('SSLContext.getInstance("TLSv1.3")');
     expect(identity).toContain('MessageDigest.getInstance("SHA-256")');
     expect(protocol).toContain('setEnabledProtocols(new String[] {"TLSv1.3"})');

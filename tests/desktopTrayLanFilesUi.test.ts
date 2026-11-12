@@ -88,10 +88,11 @@ function setup(sourceBytes = Buffer.from("Example transfer ".repeat(490))) {
     changeApproval: (value: boolean) => { accepted = value; },
     changeHash: (value: boolean) => { badHash = value; } };
 }
-async function until(predicate: () => boolean, iterations = 140) {
-  for (let i = 0; i < iterations; i++) {
+async function until(predicate: () => boolean, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
     if (predicate()) return;
-    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setTimeout(r, 10));
   }
   throw Error("Timed out waiting for UI transfer to finish");
 }

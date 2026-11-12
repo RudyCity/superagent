@@ -31,7 +31,7 @@ jobs:
   regression:
     name: Full regression (bounded concurrency)
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@v4
       # Ubuntu 24.04's chromium-browser apt package is only a Snap bootstrapper.
@@ -71,13 +71,46 @@ jobs:
           timeout 30s "$CHROME_BINARY" --headless --no-sandbox --disable-gpu --disable-dev-shm-usage --dump-dom about:blank > "$RUNNER_TEMP/chrome-ci-smoke.html"
           grep -qi '<html' "$RUNNER_TEMP/chrome-ci-smoke.html"
           echo "STUDIO_CHROMIUM_PATH=$CHROME_BINARY" >> "$GITHUB_ENV"
+      - name: Install Office document converters
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y -qq --no-install-recommends libreoffice-writer libreoffice-calc libreoffice-impress
+          libreoffice --headless --version
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PDF and media integration backends
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check -r scripts/pdf-vector-requirements.txt 'pymupdf==1.26.5' 'Pillow==11.3.0' 'numpy==2.3.4' 'python-docx==1.2.0' 'python-pptx==1.0.2' 'openpyxl==3.1.5'
+          python -c 'import fitz, pikepdf, PIL, numpy, docx, pptx, openpyxl; print("PDF_MEDIA_BACKENDS_OK", fitz.VersionBind, pikepdf.__version__)'
+          echo "SUPERAGENT_PDF_PYTHON_BIN=$(python -c 'import sys; print(sys.executable)')" >> "$GITHUB_ENV"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Build real Android debug APK for download-ticket integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+          (cd apps/superagent-lan-android && bash ./gradlew --no-daemon :app:assembleDebug)
+          apk=apps/superagent-lan-android/app/build/outputs/apk/debug/app-debug.apk
+          metadata=apps/superagent-lan-android/app/build/outputs/apk/debug/output-metadata.json
+          test -s "$apk" && test -s "$metadata"
+          python -c 'import json,sys,zipfile; p,m=sys.argv[1:]; z=zipfile.ZipFile(p); assert "AndroidManifest.xml" in z.namelist() and any(x.startswith("classes") and x.endswith(".dex") for x in z.namelist()); d=json.load(open(m)); assert d["applicationId"] == "click.superagent.lanclient" and d["variantName"] == "debug"; print("ANDROID_APK_REAL_GRADLE_BUILD_OK",d["elements"][0]["versionName"])' "$apk" "$metadata"
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - run: bun run build
+      - name: Run Bun-native principal security tests
+        run: bun test tests/delegateMcpPrincipalBinding.test.ts
       - name: Run vitest regression
-        run: bun --bun x vitest run --maxWorkers=2 --reporter=dot
+        run: bun --bun x vitest run --maxWorkers=2 --reporter=dot --exclude tests/delegateMcpPrincipalBinding.test.ts
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
   security:

@@ -52,7 +52,7 @@ async function perform(p:any){
     expectedOwnerPid,expectedInstanceId,expectedBuildDigest,
     ...(port?{port}:{}),noCoreShutdown,confirm:true}) as any;
 }
-describe("native Tauri Tray: authentic owner-scoped lifecycle",()=>{
+describe.skipIf(process.platform !== "win32" || !fs.existsSync(binary))("native Tauri Tray: authentic owner-scoped lifecycle",()=>{
   it("fails closed without a plan, and refuses a stale or forged owner",async()=>{
     await expect(manageServices({action:"stop",service:"tray",confirm:true}))
       .rejects.toThrow("SERVICE_TRAY_PLAN_REQUIRED");

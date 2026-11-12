@@ -90,6 +90,8 @@ describe("SuperAgent opt-in owned sidecar lifecycle integration",()=>{
     const status=(await manageServices({action:"status",service:"channel_host",port}) as any).services[0];
     expect(status.ownershipVerified).toBe(true);
     expect(status.details.mode).toBe("idle");
+    // Production ledger deliberately enforces a 1-second cooldown between mutations.
+    await new Promise(resolve => setTimeout(resolve, 1100));
     const stop=await prepare("channel_host",port,"stop");
     expect((await execute(stop)).ownerPid).toBeNull();
     expect((await execute(stop)).replayed).toBe(true);

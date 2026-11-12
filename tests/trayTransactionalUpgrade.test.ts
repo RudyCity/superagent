@@ -58,7 +58,7 @@ afterAll(async()=>{
   else process.env.SUPERAGENT_TRAY_LIFECYCLE_TEST=previous.smoke;
   fs.rmSync(profile,{recursive:true,force:true,maxRetries:12,retryDelay:250});
 });
-describe("Transactional authenticated Tray upgrade and rollback",()=>{
+describe.skipIf(process.platform !== "win32")("Transactional authenticated Tray upgrade and rollback",()=>{
   it("upgrades from isolated legacy-style executable, attests new process, then rolls back",async()=>{
     const oldHash=fileSha256(installed);
     const newHash=trustedTrayBuild().digest;

@@ -102,6 +102,6 @@ describe("Real on-link TLS, owner-consented bidirectional file exchange", () => 
     await expect(offerLanFile(device.id, "download")).rejects.toThrow();
     await closeLanSession(device.id);
     await revokeLanDevice(device.id);
-    expect(await fs.readdir(temp)).toEqual(["original.txt", "replacement.txt"]);
+    expect((await fs.readdir(temp)).sort()).toEqual(["original.txt", "replacement.txt"]);
   }, 30_000);
 });

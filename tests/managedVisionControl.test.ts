@@ -61,6 +61,14 @@ describe("Vision independent owner lifecycle",()=>{
     fs.mkdirSync(pkg,{recursive:true});
     fs.writeFileSync(path.join(pkg,"__init__.py"),"");
     fs.writeFileSync(path.join(pkg,"detr.py"),"class RFDETRMedium:\n    pass\n");
+    // This test verifies private HTTP ownership, not ML inference.
+    // Stub only heavy ML imports; Pillow/numpy and the actual Vision server
+    // remain real and are provided by the CI Python media dependencies.
+    fs.writeFileSync(path.join(fixture,"torch.py"),
+      "def set_num_threads(n): pass\ndef set_num_interop_threads(n): pass\ndef set_grad_enabled(v): pass\n");
+    fs.writeFileSync(path.join(fixture,"transformers.py"),"BackboneConfigMixin = object\n");
+    fs.writeFileSync(path.join(fixture,"huggingface_hub.py"),
+      "def hf_hub_download(*args, **kwargs): raise RuntimeError('model inference not exercised in lifecycle test')\n");
     process.env.PYTHONPATH=fixture;
     const port=await freePort();
     const plan=await manageServices({action:"plan",service:"vision",port,targetAction:"start"}) as any;

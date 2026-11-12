@@ -56,13 +56,17 @@ describe("Advanced PDF tools through primary authenticated MCP server",()=>{
       getIdentity:()=>({mode:"oauth",subject:"pdf-advanced-mcp-qa",scopes:["mcp:tools","mcp:tools:write"]}),
     });
     try{
-      const catalog=parsed(await call(server,"superagent_tool_search",{query:"pdf",limit:20}));
-      const names=(catalog.tools as Array<{name:string}>).map(t=>t.name);
-      expect(names).toContain("superagent_pdf_edit_vector_exact");
-      expect(names).toContain("superagent_pdf_sign");
-      expect(names).toContain("superagent_pdf_verify_signature");
-      expect(names).toContain("superagent_pdf_ocr");
-      expect(names).toContain("superagent_pdf_ocr_searchable");
+      // The gateway intentionally caps a fuzzy search at 20 matches. A
+      // broad "pdf" query can rank non-PDF tools ahead of a specialized PDF
+      // tool, so verify each exact capability remains individually discoverable.
+      for (const name of [
+        "superagent_pdf_edit_vector_exact", "superagent_pdf_sign",
+        "superagent_pdf_verify_signature", "superagent_pdf_ocr",
+        "superagent_pdf_ocr_searchable",
+      ]) {
+        const catalog=parsed(await call(server,"superagent_tool_search",{query:name,limit:20}));
+        expect((catalog.tools as Array<{name:string}>).map(t=>t.name)).toContain(name);
+      }
       const described=parsed(await call(server,"superagent_tool_describe",{name:"superagent_pdf_sign"}));
       expect(JSON.stringify(described)).toContain("certificatePath");
     }finally{await server.close();}

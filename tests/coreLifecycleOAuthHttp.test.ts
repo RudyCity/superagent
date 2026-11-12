@@ -78,7 +78,10 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
     owner=spawn(process.execPath,[path.join(process.cwd(),"src","cli.tsx"),
       "core","start","--port",String(ownerPort)],{
       cwd:process.cwd(),stdio:"ignore",windowsHide:true,
-      env:{...process.env,SUPERAGENT_CONFIG_DIR:temp,SUPERAGENT_CORE_STAGING:"1"},
+      // Retain a verified rollback candidate for the explicit OAuth test.
+      // Production preserves conservative auto-drain by default.
+      env:{...process.env,SUPERAGENT_CONFIG_DIR:temp,SUPERAGENT_CORE_STAGING:"1",
+        SUPERAGENT_CORE_AUTO_DRAIN_RETAINED:"0"},
     });
     owner.once("error",()=>{});
     let before:Awaited<ReturnType<typeof requestCoreSupervisor>>|undefined;
@@ -149,15 +152,18 @@ describe("OAuth HTTP authenticated live Core restart and idempotent replay",()=>
     expect(unifiedPlan.isError).not.toBe(true);
     const rollbackPlan=JSON.parse((unifiedPlan.content as any[])[0].text);
     const rollbackArgs={action:"rollback",service:"core",port:ownerPort,confirm:true,
-      operationId:rollbackPlan.operationId,expectedBuildDigest:rollbackPlan.expectedBuildDigest};
+      operationId:rollbackPlan.operationId,expectedBuildDigest:rollbackPlan.expectedBuildDigest,
+      expectedSupervisorPid:rollbackPlan.expectedSupervisorPid,expectedWorkerPid:rollbackPlan.expectedWorkerPid};
     const rolled=await writer.callTool({name:"superagent_manage_services",arguments:rollbackArgs});
-    expect(rolled.isError).not.toBe(true);
+    expect(rolled.isError, JSON.stringify(rolled.content)).not.toBe(true);
     const receipt=JSON.parse((rolled.content as any[])[0].text);
     expect(receipt.verified).toBe(true);
     expect(receipt.activeWorkerPid).toBe(before.active.pid);
+    // Owner-bound plans cannot be replayed against a different active worker:
+    // their operationId alone is not authority for a second lifecycle change.
     const reissued=await writer.callTool({name:"superagent_manage_services",arguments:rollbackArgs});
-    expect(reissued.isError).not.toBe(true);
-    expect(JSON.parse((reissued.content as any[])[0].text).replayed).toBe(true);
+    expect(reissued.isError).toBe(true);
+    expect(String((reissued.content as any[])[0]?.text)).toContain("CORE_CONTROL_OWNER_CHANGED_SINCE_PLAN");
     expect((await requestCoreSupervisor("status",ownerPort)).active.pid).toBe(before.active.pid);
   },90000);
 });

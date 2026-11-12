@@ -94,11 +94,15 @@ function pythonBin(){
   });
   const binary=probe.status===0?probe.stdout.trim():"";
   if(!path.isAbsolute(binary))throw new Error("VISION_PYTHON_BINARY_UNRESOLVED");
-  const stat=fs.lstatSync(binary);
+  // Linux/hosted Python often exposes sys.executable through a symlink.
+  // Resolve to the real executable before launching so process ownership
+  // attestation still observes the exact binary, not a shim or symlink PID.
+  const real=fs.realpathSync(binary);
+  const stat=fs.lstatSync(real);
   if(!stat.isFile()||stat.isSymbolicLink())
     throw new Error("VISION_PYTHON_BINARY_UNSAFE");
-  resolvedPython=binary;
-  return binary;
+  resolvedPython=real;
+  return real;
 }
 function preflightPython(){
   const script=path.join(getPackageRootDir(),"scripts","vision_server.py");

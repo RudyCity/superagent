@@ -210,11 +210,14 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       cmdLogger?.write(chunk);
       capture.append(chunk);
     };
-    if (proc.all) proc.all.on("data", record);
-    else {
+    // Capture the actual child stdout/stderr streams. Some CI/Bun versions
+    // expose execa.all without forwarding any data when buffer:false; relying
+    // on that stream alone silently lost command logs and pagination output.
+    // Do not subscribe to both all AND stdout/stderr (would duplicate bytes).
+    if (proc.stdout || proc.stderr) {
       proc.stdout?.on("data", record);
       proc.stderr?.on("data", record);
-    }
+    } else proc.all?.on("data", record);
     const result = await proc;
     let trackingWarning: string | undefined;
     if (procRecordId) {

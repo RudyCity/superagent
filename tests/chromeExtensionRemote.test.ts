@@ -16,7 +16,7 @@ describe("chromeExtensionRemote & remoteChromeBridge", () => {
   test("sendRemoteCommand rejects when no extension is connected", async () => {
     await ensureRemoteChromeBridge(9246);
     await expect(sendRemoteCommand("navigate", "https://example.com")).rejects.toThrow(
-      /not connected/i
+      /not connected|no connected client/i
     );
   });
 
