@@ -171,6 +171,24 @@ export async function startReloadableMcpTunnelOwner(
   function requestCount(): number {
     return [...generations].reduce((total, gen) => total + gen.inFlight, 0);
   }
+  function forgetSession(sessionId: string, expected?: BackendGeneration): void {
+    const generation = sessions.get(sessionId);
+    if (!generation || (expected && generation !== expected)) return;
+    generation.sessions.delete(sessionId);
+    sessions.delete(sessionId);
+  }
+  function rememberSession(sessionId: string, generation: BackendGeneration): void {
+    const previous = sessions.get(sessionId);
+    if (previous && previous !== generation) previous.sessions.delete(sessionId);
+    sessions.set(sessionId, generation);
+    generation.sessions.add(sessionId);
+  }
+  function onBackendSessionClosed(gen: BackendGeneration, message: unknown): void {
+    const event = message as Partial<BackendWorkerReply> | null;
+    if (event?.type !== "mcp-reload-worker-session-closed" ||
+        typeof event.sessionId !== "string" || !event.sessionId) return;
+    forgetSession(event.sessionId, gen);
+  }
   /** Update a single trusted child over IPC and wait for an explicit ACK.
    * No bootstrap plaintext ever enters child messages or log files.
    */
@@ -239,8 +257,7 @@ export async function startReloadableMcpTunnelOwner(
       if (gen === current || gen.retireAt === null) continue;
       if (gen.sessions.size === 0 && gen.inFlight === 0 ||
           Date.now() >= gen.retireAt && gen.inFlight === 0) {
-        for (const id of gen.sessions) sessions.delete(id);
-        gen.sessions.clear();
+        for (const id of [...gen.sessions]) forgetSession(id, gen);
         generations.delete(gen);
         try { gen.child.kill("SIGTERM"); } catch {}
       }
@@ -314,7 +331,10 @@ export async function startReloadableMcpTunnelOwner(
       bootstrapCodeHash: bootCodeHash,
       auditLogPath: opts.auditLogPath,
     });
-    gen.child.on("message", message => onBootstrapConsumed(gen, message));
+    gen.child.on("message", message => {
+      onBootstrapConsumed(gen, message);
+      onBackendSessionClosed(gen, message);
+    });
     gen.child.once("exit", () => {
       // Fail closed if this worker dies before delivering a successful
       // one-time-code consumption event. A later backend reload must not
@@ -361,8 +381,7 @@ export async function startReloadableMcpTunnelOwner(
       const previous = current;
       if (!previous.alive) {
         // A crashed generation cannot serve its old sessions.
-        for (const id of previous.sessions) sessions.delete(id);
-        previous.sessions.clear();
+        for (const id of [...previous.sessions]) forgetSession(id, previous);
       }
       previous.retireAt = Date.now() + OLD_GENERATION_TTL;
       current = next;
@@ -512,12 +531,15 @@ export async function startReloadableMcpTunnelOwner(
     }, (reply) => {
       const newSid = reply.headers["mcp-session-id"];
       if (typeof newSid === "string" && newSid) {
-        sessions.set(newSid, target);
-        target.sessions.add(newSid);
+        rememberSession(newSid, target);
       }
       if (req.method === "DELETE" && sessionId) {
-        target.sessions.delete(sessionId);
-        sessions.delete(sessionId);
+        forgetSession(sessionId, target);
+      } else if (reply.statusCode === 404 && sessionId) {
+        // The backend is authoritative for session lifetime. If its idle/max
+        // lifetime cleanup already evicted the session, heal any missed owner
+        // bookkeeping event instead of pinning stale affinity indefinitely.
+        forgetSession(sessionId, target);
       }
       // Never forward backend-supplied transfer framing headers explicitly.
       const headers = { ...reply.headers };

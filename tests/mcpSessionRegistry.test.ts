@@ -66,6 +66,20 @@ describe("McpSessionRegistry", () => {
     expect(await reg.remove("s1")).toBe(false);
   });
 
+  it("notifies an outer owner exactly once when a session is removed", async () => {
+    const removed: string[] = [];
+    const r = new McpSessionRegistry({
+      maxSessions: 4,
+      idleTimeoutMs: 60000,
+      maxLifetimeMs: 60000,
+      onSessionRemoved: (sessionId) => removed.push(sessionId),
+    });
+    r.add(entry("s1"));
+    expect(await r.remove("s1")).toBe(true);
+    expect(await r.remove("s1")).toBe(false);
+    expect(removed).toEqual(["s1"]);
+  });
+
   it("touch updates lastActivityAt", async () => {
     reg.add(entry("s1"));
     const before = reg.get("s1")!.lastActivityAt;
@@ -76,11 +90,17 @@ describe("McpSessionRegistry", () => {
   });
 
   it("removes idle sessions after the idle timeout", async () => {
-    const r = new McpSessionRegistry({ idleTimeoutMs: 30, maxLifetimeMs: 60000 });
+    const removed: string[] = [];
+    const r = new McpSessionRegistry({
+      idleTimeoutMs: 30,
+      maxLifetimeMs: 60000,
+      onSessionRemoved: (sessionId) => removed.push(sessionId),
+    });
     r.add(entry("idle1"));
     expect(r.get("idle1")).toBeDefined();
     await sleep(80);
     expect(r.get("idle1")).toBeUndefined();
+    expect(removed).toEqual(["idle1"]);
   });
 
   it("keeps sessions alive while they are touched", async () => {

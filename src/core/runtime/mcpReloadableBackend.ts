@@ -29,7 +29,8 @@ export type BackendWorkerReply =
   | { type: "mcp-reload-worker-ready"; port: number; oauthStatePersistent: boolean }
   | { type: "mcp-reload-worker-error"; message: string }
   | { type: "mcp-reload-worker-bootstrap-rotated"; requestId: string }
-  | { type: "mcp-reload-worker-bootstrap-consumed"; hash: string };
+  | { type: "mcp-reload-worker-bootstrap-consumed"; hash: string }
+  | { type: "mcp-reload-worker-session-closed"; sessionId: string };
 
 export const DISABLED_BOOTSTRAP_HASH = "0".repeat(64);
 export type BootstrapRotateRequest = {
@@ -61,6 +62,7 @@ export function validateReloadableBackendOptions(
 export async function startReloadableMcpBackend(
   opts: ReloadableBackendOptions,
   onConsumed?: (hash: string) => void,
+  onSessionClosed?: (sessionId: string) => void,
 ): Promise<{
   handle: McpHttpServerHandle;
   oauthStatePersistent: boolean;
@@ -89,6 +91,7 @@ export async function startReloadableMcpBackend(
     } : undefined,
     auditLogPath: opts.auditLogPath,
     hostOriginPolicy: { allowNoOrigin: true },
+    onSessionClosed,
   });
   return {
     handle, oauthStatePersistent: oauth?.persistent ?? true,
@@ -151,6 +154,9 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
           m.options as ReloadableBackendOptions,
           hash => process.send?.({
             type: "mcp-reload-worker-bootstrap-consumed", hash,
+          } satisfies BackendWorkerReply),
+          sessionId => process.send?.({
+            type: "mcp-reload-worker-session-closed", sessionId,
           } satisfies BackendWorkerReply),
         );
         handle = result.handle;

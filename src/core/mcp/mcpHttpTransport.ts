@@ -338,6 +338,8 @@ export interface McpHttpServerOptions {
   sessionIdleTimeoutMs?: number;
   /** Hard cap on session age (default 4 hours). */
   sessionMaxLifetimeMs?: number;
+  /** Internal lifecycle observer used by durable ingress owners. */
+  onSessionClosed?: (sessionId: string) => void;
   /** Host/Origin validation policy (defense in depth). */
   hostOriginPolicy?: McpHostOriginPolicy;
   /**
@@ -431,6 +433,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     maxSessions: opts.maxSessions,
     idleTimeoutMs: opts.sessionIdleTimeoutMs,
     maxLifetimeMs: opts.sessionMaxLifetimeMs,
+    onSessionRemoved: opts.onSessionClosed,
   });
   if (opts.lockSafeTools && opts.allowDangerous !== false) {
     throw new Error("Safe-only MCP cannot enable dangerous tools");

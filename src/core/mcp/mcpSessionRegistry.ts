@@ -33,6 +33,8 @@ export interface McpSessionRegistryOptions {
   idleTimeoutMs?: number;
   /** Hard cap on session age (default 4 hours). */
   maxLifetimeMs?: number;
+  /** Notify an outer transport owner after a session leaves this registry. */
+  onSessionRemoved?: (sessionId: string) => void;
 }
 
 export const DEFAULT_MAX_SESSIONS = 32;
@@ -46,11 +48,13 @@ export class McpSessionRegistry {
   private readonly maxSessions: number;
   private readonly idleTimeoutMs: number;
   private readonly maxLifetimeMs: number;
+  private readonly onSessionRemoved?: (sessionId: string) => void;
 
   constructor(opts: McpSessionRegistryOptions = {}) {
     this.maxSessions = opts.maxSessions ?? DEFAULT_MAX_SESSIONS;
     this.idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.maxLifetimeMs = opts.maxLifetimeMs ?? DEFAULT_MAX_LIFETIME_MS;
+    this.onSessionRemoved = opts.onSessionRemoved;
   }
 
   get size(): number {
@@ -99,6 +103,11 @@ export class McpSessionRegistry {
     if (!s) return false;
     this.clearTimers(sessionId);
     this.sessions.delete(sessionId);
+    try {
+      this.onSessionRemoved?.(sessionId);
+    } catch {
+      /* registry cleanup must not depend on an observer */
+    }
     try {
       await s.transport.close();
     } catch {
