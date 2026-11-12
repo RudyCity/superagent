@@ -8,6 +8,16 @@ On the SuperAgent Windows laptop, run:
 
 Copy `artifacts/lan-client/superagent-lan-client.exe` to a second Windows 10/11 laptop. This is a *portable console application*, not yet a native Tray UI, signed installer, or Windows service. No Bun installation is required on that target laptop.
 
+## Connect another Windows laptop by QR
+
+1. Copy the latest portable Windows LAN Client executable to the target laptop and run it as a standard user (never elevated).
+2. Start the client with --tunnel-qr in a visible Windows console. Enter its network segment, or also pass --segment=office-lan.
+3. On the controlling laptop, open SuperAgent Tray → LAN Devices → Device Tunnel → Create connect QR. On the target, a local-only browser page opens. Select Scan using camera, select a QR image, or paste the setup JSON copied by Tray when the browser cannot decode QR.
+4. Verify the HTTPS host displayed in the target browser; click Connect only when it is the expected SuperAgent controller. The target user must still type APPROVE to permit pairing and approve again for a session.
+5. The QR is single-use and expires within 10 minutes. Keep the visible Windows LAN Client open to maintain access; type revoke or stop when finished. No permanent background service, public inbound listener or UAC bypass is installed.
+
+The Windows camera scanner uses the browser BarcodeDetector capability (current Chromium recommended); frames and QR images are processed on the target laptop. The client accepts only explicit confirmed invitations over a temporary local loopback HTTP page. Two-physical-laptop end-to-end testing remains pending.
+
 ## Use
 
 1. Ensure **both Windows machines share the same physical home/office LAN**, not public Internet, guest Wi-Fi isolation, VPN, or a virtual adapter.

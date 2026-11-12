@@ -9,6 +9,7 @@ import readline from "node:readline";
 import { lanInterfaces, startLanServer, LAN_PORT, type ApprovalRequest } from "./core/lanRemote/transport.js";
 import { normalizeNetworkSegment } from "./core/lanRemote/networkSegment.js";
 import { runDeviceTunnelRelay } from "./core/deviceTunnel/client.js";
+import { startWindowsQrConnectCapture } from "./core/deviceTunnel/windowsQrConnect.js";
 
 function ensureStandardUser(): void {
   if (process.platform !== "win32") return;
@@ -80,6 +81,9 @@ async function main() {
   let tunnelInvite = process.argv.find((a) => a.startsWith("--tunnel-invite="))?.slice("--tunnel-invite=".length);
   let tunnelJoinCode = "";
   const interactiveTunnel = process.argv.includes("--tunnel");
+  const qrTunnel = process.argv.includes("--tunnel-qr");
+  if (qrTunnel && (interactiveTunnel || tunnelUrl || tunnelInvite))
+    throw Error("Use --tunnel-qr alone, not with other tunnel enrollment flags.");
   if (interactiveTunnel && (tunnelUrl || tunnelInvite))
     throw new Error("Use either --tunnel for local setup JSON entry, or --tunnel-url/--tunnel-invite, not both.");
   if (Boolean(tunnelUrl) !== Boolean(tunnelInvite))
@@ -98,6 +102,21 @@ async function main() {
       throw new Error("Paste the complete Device Tunnel setup JSON from SuperAgent Tray.");
     tunnelUrl = value.url; tunnelInvite = value.inviteId; tunnelJoinCode = value.code;
   }
+  if (qrTunnel) {
+    if (process.platform !== "win32" || !process.stdin.isTTY)
+      throw Error("--tunnel-qr requires a visible interactive Windows LAN Client console.");
+    const capture = await startWindowsQrConnectCapture();
+    console.log("Scan the Connect QR with this laptop camera at: " + capture.url);
+    console.log("Check the HTTPS destination in the browser and confirm it before connecting.");
+    try {
+      const setup = await capture.setup;
+      tunnelUrl = setup.url; tunnelInvite = setup.inviteId; tunnelJoinCode = setup.code;
+    } catch (error) {
+      await client.close();
+      rl.close();
+      throw error;
+    } finally { capture.close(); }
+  }
   const tunnelAbort = new AbortController();
   let tunnelActive = false;
   if (tunnelUrl && tunnelInvite) {
@@ -112,6 +131,7 @@ async function main() {
       enrollment,
       platform: "windows", name: os.hostname().slice(0, 60),
       fingerprint: client.fingerprint, localHost: client.host, localPort: client.port,
+      autoPair: qrTunnel ? { code: client.rotatePairCode(), controller: "SuperAgent Tray QR" } : undefined,
       signal: tunnelAbort.signal,
       onNotice: (message) => console.log("[TUNNEL] " + message),
     }).then(() => { tunnelActive = false; }, (error: Error) => {

@@ -1,0 +1,1 @@
+{"receiver":{"identifier":"receiver","description":"Native, foreground Windows LAN receiver. Only explicit Rust commands and event listening; no shell, filesystem, or broad network grants.","local":true,"windows":["main"],"permissions":["core:default","core:event:allow-listen"]}}

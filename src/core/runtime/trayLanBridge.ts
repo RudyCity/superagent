@@ -165,6 +165,23 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
   return { action, args: data };
 }
 
+export function toAndroidScreenInput(args: LanArgs): AndroidScreenInput {
+  // The controller rejects properties outside the operation's exact shape,
+  // including properties whose values are undefined.
+  switch (args.kind) {
+    case "tap": return { kind: "tap", x: args.x as number, y: args.y as number };
+    case "swipe": return {
+      kind: "swipe", x: args.x as number, y: args.y as number,
+      endX: args.endX as number, endY: args.endY as number, durationMs: args.durationMs as number,
+    };
+    case "back": return { kind: "back" };
+    case "home": return { kind: "home" };
+    case "recents": return { kind: "recents" };
+    case "text": return { kind: "text", text: args.text as string };
+    default: throw Error("Unsupported Android input.");
+  }
+}
+
 let latestConnectQrInviteId: string | null = null;
 let latestApkQrToken: string | null = null;
 
@@ -262,8 +279,7 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       result: await clickAndroidUiElement(id, args.revision as number, args.elementId as string) };
     case "screen": return { success: true, frame: await getAndroidScreenFrame(id) };
     case "input": {
-      const { kind, x, y, endX, endY, durationMs, text: inputText } = args;
-      const command = { kind, x, y, endX, endY, durationMs, text: inputText } as AndroidScreenInput;
+      const command = toAndroidScreenInput(args);
       // No arbitrary shell/URI/browser/native command path is exposed here.
       return { success: true, result: await sendAndroidScreenInput(id, command) };
     }

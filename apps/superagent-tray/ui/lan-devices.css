@@ -266,3 +266,90 @@
   .lan-direct-toolbar { width:100%; }
 }
 @media (prefers-reduced-motion:reduce) { .lan-route-tab { transition:none; } }
+
+/* LAN discovery toolbar: balanced controls and responsive actions. */
+/* Hallmark: restrained, modern-minimal; reuses existing Tray design tokens. */
+#actions-lan-devices {
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+}
+#actions-lan-devices .lan-direct-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(185px, 1fr)) auto;
+  align-items: end;
+  flex: 1 1 590px;
+  gap: 12px;
+  min-width: 0;
+}
+#actions-lan-devices .lan-segment-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+  font-size: 12px;
+  line-height: 1.25;
+}
+#actions-lan-devices #lan-segment-name,
+#actions-lan-devices #lan-direct-ip {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 46px;
+  padding: 0 13px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: 13px var(--font-mono);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+#actions-lan-devices input::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+#actions-lan-devices input:hover:not(:disabled) { border-color: var(--border-strong); }
+#actions-lan-devices input:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+#actions-lan-devices input:disabled { opacity: .55; cursor: not-allowed; }
+#actions-lan-devices #lan-segment-name:invalid:not(:placeholder-shown),
+#actions-lan-devices #lan-direct-ip[aria-invalid="true"] { border-color: var(--danger); }
+#actions-lan-devices .button {
+  box-sizing: border-box;
+  min-height: 46px;
+  padding: 0 18px;
+  justify-content: center;
+  font-size: 13px;
+}
+#actions-lan-devices .button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+#actions-lan-devices #lan-paired-refresh { min-width: 156px; }
+@media (max-width: 880px) {
+  .header-actions:has(#actions-lan-devices:not([hidden])) {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+  #actions-lan-devices { width: 100%; }
+  #actions-lan-devices .lan-direct-toolbar { flex-basis: 100%; }
+  #actions-lan-devices #lan-paired-refresh { margin-left: auto; }
+}
+@media (max-width: 700px) {
+  #actions-lan-devices .lan-direct-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #actions-lan-devices #lan-discovery-scan { grid-column: 1 / -1; }
+  #actions-lan-devices #lan-paired-refresh { width: 100%; margin-left: 0; }
+}
+@media (max-width: 430px) {
+  #actions-lan-devices .lan-direct-toolbar { grid-template-columns: minmax(0, 1fr); }
+  #actions-lan-devices #lan-discovery-scan { grid-column: auto; }
+}

@@ -1124,3 +1124,27 @@ All changes were strictly limited to dedicated browser runtime modules (`src/cor
 - **Real Linux E2E**: Marked **NOT VERIFIED** (as required by prompt and instruction fidelity rules; true Linux kernel process spawning must be verified on a genuine Linux host).
 - **Production Certification**: Not claimed. Passing staging and unit test suites does not constitute production cutover certification.
 - **Milestone M2 Handoff**: Clean handoff prepared for M2 (Virtual desktop worker: Xvfb, minimal WM, noVNC access transport).
+
+---
+
+## Core Build Verification & Manifest Refresh (2026-11-12)
+
+### 1. Execution Summary
+- **Objective**: Execute `bun run build` to resolve `CORE_BUILD_UNVERIFIED` / `SOURCE_DIST_DRIFT` for Core supervised restart lifecycle plan.
+- **Directory**: `D:\backup from pc asus\Documents Development\superagent`
+- **Command**: `bun run build`
+- **Exit Code**: `0`
+
+### 2. Output
+```
+$ bun -e "const p=require('./package.json');console.log('Building '+p.name+'@'+p.version+' with Bun '+Bun.version)"
+Building superagent@1.14.74 with Bun 1.4.2
+$ bun --bun x tsc
+$ bun scripts/syncMcpSchemas.ts && bun scripts/write-core-build-manifest.ts
+MCP Chrome schemas synchronized: dist=0, existing Antigravity folder=0.
+[Core build] SHA-256 f31645ed8c9cbbb8829c534b1b99fa36c6293105220a90133023a4a8245718d8; source 31d254bce669e12db8e8799f462329735ef0f1c1852745da3e2b0b33e963a337; files 895
+```
+
+### 3. Status & Marker
+- **Marker**: `CORE_BUILD_READY`
+- **Result**: Core dist and build manifest successfully refreshed and verified with zero source mutations.

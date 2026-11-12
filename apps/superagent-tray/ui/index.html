@@ -737,7 +737,7 @@
           <button id="lan-route-tunnel-tab" type="button" class="lan-route-tab" role="tab" aria-selected="false" tabindex="-1" aria-controls="lan-route-tunnel">
             <span class="lan-route-eyebrow">OUTBOUND HTTPS</span>
             <strong>Device Tunnel</strong>
-            <span>Connect Android through a secure QR enrollment.</span>
+            <span>Connect Android or another Windows laptop through one-time QR enrollment.</span>
             <small id="lan-route-tunnel-count">No paired devices</small>
           </button>
         </div>
@@ -764,7 +764,7 @@
             <div>
               <div class="panel-eyebrow">TUNNEL CONNECTION / QR ENROLLMENT</div>
               <h2 id="lan-tunnel-title">Connect a device by QR</h2>
-              <p>Create a one-time QR here, then on Android choose <strong>Scan QR &amp; Connect</strong>. If the Core HTTPS tunnel is not running, this QR action starts and verifies it automatically. Enrollment and pairing details are transferred by QR; the phone owner only confirms the pairing approval.</p>
+              <p>Create a one-time QR here. On Android choose <strong>Scan QR &amp; Connect</strong>. On another Windows laptop, launch <strong>SuperAgent LAN Client</strong> with the <code>--tunnel-qr</code> flag, then use its webcam or paste the copied setup JSON. The Core HTTPS tunnel starts automatically when needed; pairing still requires target-device approval.</p>
             </div>
             <div class="lan-tunnel-actions">
               <button id="lan-tunnel-invite" type="button" class="button primary">Create connect QR</button>
@@ -774,8 +774,8 @@
           <div id="lan-tunnel-qr-card" class="lan-tunnel-qr-card" hidden>
             <canvas id="lan-tunnel-qr" class="lan-tunnel-qr" width="320" height="320" aria-label="One-time SuperAgent Device Tunnel QR code"></canvas>
             <div>
-              <strong>Scan this QR on the target Android device</strong>
-              <p>One use · 10-minute TTL · heartbeat checks every 5 seconds and refreshes automatically before expiry · pairing still requires approval on the phone.</p>
+              <strong>Scan this QR on Android or another Windows laptop</strong>
+              <p>One use · 10-minute TTL · heartbeat checks every 5 seconds and refreshes automatically before expiry · pairing still requires approval on the target device.</p>
             </div>
           </div>
           <p id="lan-tunnel-status" class="lan-pair-status" role="status" aria-live="polite">No connection QR created. Creating a QR will automatically ensure the Core HTTPS tunnel is running.</p>

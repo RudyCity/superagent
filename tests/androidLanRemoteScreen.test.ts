@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
-import { parseTrayLanAction } from "../src/core/runtime/trayLanBridge.js";
+import { parseTrayLanAction, toAndroidScreenInput } from "../src/core/runtime/trayLanBridge.js";
 
 const id = "a0b1c2d3-1234-4abc-9f00-aabbccddeeff";
 const android = (name: string) => fs.readFileSync(
@@ -47,6 +47,23 @@ describe("Android interactive LAN control: strict, consent-gated protocol", () =
     for (const input of denied) {
       expect(() => parseTrayLanAction({ action: "input", deviceId: id, ...input }))
         .toThrow();
+    }
+  });
+
+  it("forwards each Android input with exactly the fields permitted by its kind", () => {
+    const inputs = [
+      { kind: "tap", x: .2, y: .3 },
+      { kind: "swipe", x: .2, y: .8, endX: .2, endY: .2, durationMs: 320 },
+      { kind: "back" },
+      { kind: "home" },
+      { kind: "recents" },
+      { kind: "text", text: "hello" },
+    ];
+    for (const input of inputs) {
+      const parsed = parseTrayLanAction({ action: "input", deviceId: id, ...input });
+      const command = toAndroidScreenInput(parsed.args);
+      expect(command).toEqual(input);
+      expect(Object.keys(command).sort()).toEqual(Object.keys(input).sort());
     }
   });
 

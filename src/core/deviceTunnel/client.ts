@@ -20,6 +20,7 @@ export interface DeviceTunnelRelayOptions {
   localPort: number;
   signal?: AbortSignal;
   onNotice?: (message: string) => void;
+  autoPair?: { code: string; controller: string };
 }
 
 function normalizeBaseUrl(value: string): string {
@@ -45,7 +46,7 @@ async function api(
   signal?: AbortSignal,
 ): Promise<any> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), path.endsWith("/poll") ? 35_000 : 15_000);
+  const timeout = setTimeout(() => controller.abort(), path.endsWith("/poll") ? 35_000 : path.endsWith("/qr-pair") ? 130_000 : 15_000);
   const abort = () => controller.abort();
   signal?.addEventListener("abort", abort, { once: true });
   try {
@@ -167,6 +168,19 @@ export async function runDeviceTunnelRelay(
     "X-SuperAgent-Device-Id": credentials.deviceId,
     "Content-Type": "application/json",
   };
+  if (options.autoPair) {
+    if (!/^\d{8}$/.test(options.autoPair.code) || !/^[A-Za-z0-9_ .-]{1,60}$/.test(options.autoPair.controller))
+      throw Error("Invalid QR pairing request.");
+    // Pairing awaits target approval, but relay polling must start concurrently.
+    void api(setup.url, "/api/device-tunnel/qr-pair", {
+      method: "POST", headers: authHeaders,
+      body: JSON.stringify({ code: options.autoPair.code,
+        controller: options.autoPair.controller, fingerprint: options.fingerprint.toLowerCase() }),
+    }, options.signal).then(() => options.onNotice?.("QR pairing approved."),
+      (error: Error) => { if (!options.signal?.aborted)
+        options.onNotice?.("QR pairing failed: " + error.message.slice(0, 130)); });
+    options.autoPair.code = "";
+  }
   let failures = 0;
   while (!options.signal?.aborted) {
     try {

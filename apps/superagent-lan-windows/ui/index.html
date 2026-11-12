@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src ipc: http://ipc.localhost https://ipc.localhost">
+  <title>SuperAgent LAN Client</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="brand"><span class="brand-mark">S</span><span>SUPERAGENT<small>LAN CLIENT</small></span></div>
+    <div class="rail-group"><span class="rail-overline">WORKSPACE</span>
+      <a class="rail-link active" href="#connect"><span class="rail-glyph">◇</span> Connect a device</a>
+      <a class="rail-link" href="#access"><span class="rail-glyph">▦</span> Access & permissions</a>
+      <a class="rail-link" href="#activity"><span class="rail-glyph">☷</span> Activity</a>
+    </div>
+    <div class="rail-bottom">
+      <div class="privacy-note"><span class="privacy-icon">◈</span><strong>Owner-controlled</strong>
+        <p>Each pairing, session, and file transfer requires your approval. This app never runs as administrator.</p>
+      </div>
+      <span class="release">WINDOWS CLIENT · 0.1.0</span>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="breadcrumb">DEVICES <span>/</span> RECEIVER</div>
+      <div class="topbar-right"><span class="secure-dot"></span> LOCAL SECURE ENGINE <span class="topbar-separator"></span><span id="top-time">--:--</span></div>
+    </header>
+    <div class="content">
+      <section class="intro" id="connect">
+        <div><div class="eyebrow"><span class="eyebrow-line"></span> DEVICE CONNECTIVITY</div>
+          <h1>Connect your laptop<span class="title-dot">.</span></h1>
+          <p>Securely pair this Windows device with your SuperAgent workspace. You control every permission.</p>
+        </div>
+        <div class="connection-chip" id="connection-chip"><span class="chip-dot"></span><span id="connection-label">Receiver offline</span></div>
+      </section>
+      <section class="setup-block" id="setup-block">
+        <div class="setup-heading"><div><span class="step-index">01 / START RECEIVER</span><h2>Prepare this device</h2><p>Choose the same network segment as your controller. No remote access starts automatically.</p></div></div>
+        <div class="setup-controls"><label>Network segment <input id="segment" value="home-network" autocomplete="off" maxlength="32" spellcheck="false"></label>
+          <button id="start" class="button primary"><span class="button-symbol">⏵</span> Start receiver</button>
+          <button id="stop" class="button secondary" disabled>Stop sharing</button>
+        </div>
+        <div class="local-detail" id="local-detail" hidden>
+          <span><small>LAN ADDRESS</small><strong id="local-ip">—</strong></span>
+          <span><small>PHYSICAL ADAPTER</small><strong id="local-adapter">—</strong></span>
+          <span><small>PAIRING CODE</small><strong id="pairing-code" class="mono">—</strong></span>
+          <button class="button tiny" id="rotate-code" type="button">Rotate code</button>
+        </div>
+      </section>
+      <div class="main-grid">
+        <section class="panel qr-panel">
+          <div class="panel-heading"><div><span class="step-index">02 / CONNECT</span><h2>Scan connection QR</h2></div><span class="method-tag">ONE-TIME QR</span></div>
+          <p class="panel-lead">On the other computer, open <strong>SuperAgent Tray → LAN Devices → Device Tunnel</strong> and create a Connect QR.</p>
+          <div class="scanner-viewport" id="scanner-viewport">
+            <div class="scan-frame"><span class="corner a"></span><span class="corner b"></span><span class="corner c"></span><span class="corner d"></span>
+              <div class="scan-placeholder" id="scan-placeholder"><span class="scan-symbol">▦</span><strong>Ready to scan</strong><span>Use your camera or select a QR image</span></div>
+              <video id="camera-preview" muted playsinline hidden></video>
+              <canvas id="scan-canvas" hidden></canvas>
+            </div>
+          </div>
+          <div class="scan-actions"><button id="camera-btn" class="button primary" disabled>Use camera</button>
+            <label class="button secondary upload-action">Select QR image<input id="qr-file" type="file" accept="image/png,image/jpeg,image/webp" hidden></label>
+            <button class="button text-action" id="camera-stop" hidden>Stop camera</button></div>
+          <div class="divider-label"><span>OR ENTER MANUALLY</span></div>
+          <label class="input-label" for="raw-code">Connect QR payload or copied setup JSON</label>
+          <textarea id="raw-code" placeholder="Paste your one-time connection code…" spellcheck="false" autocomplete="off"></textarea>
+          <button id="inspect" class="button outline" disabled>Verify connection code</button>
+          <div class="verify-panel" id="verify-panel" hidden><div class="verify-overline">VERIFY DESTINATION</div>
+            <strong id="dest-host">—</strong><p>Only proceed if this HTTPS endpoint belongs to your trusted SuperAgent controller.</p>
+            <button id="connect-btn" class="button primary">Connect to this device</button></div>
+        </section>
+        <div class="side-stack">
+          <section class="panel status-panel">
+            <div class="panel-heading"><div><span class="step-index">LIVE STATUS</span><h2>Device overview</h2></div><span class="overview-icon">◉</span></div>
+            <div class="status-line"><span>Receiver</span><strong id="receiver-state">Offline</strong></div>
+            <div class="status-line"><span>HTTPS tunnel</span><strong id="tunnel-state">Disconnected</strong></div>
+            <div class="status-line"><span>Access approval</span><strong id="approval-state">Required each time</strong></div>
+            <div class="status-line last"><span>Session type</span><strong>Foreground only</strong></div>
+            <div class="status-actions"><button class="button secondary" id="disconnect" disabled>Disconnect tunnel</button>
+              <button class="button danger" id="revoke" disabled>Revoke all access</button></div>
+          </section>
+          <section class="panel consent-panel" id="access"><span class="step-index">03 / YOUR PERMISSIONS</span>
+            <h2>You're in control</h2><div class="permission-row"><span class="permission-icon">✓</span><span>Approval for every pairing</span></div>
+            <div class="permission-row"><span class="permission-icon">✓</span><span>Approval for each remote session</span></div>
+            <div class="permission-row"><span class="permission-icon">✓</span><span>Files stay private until shared</span></div>
+            <div class="share-row"><button id="share-file" class="button secondary" disabled>Share file</button><button id="share-folder" class="button secondary" disabled>Share folder</button></div>
+          </section>
+        </div>
+      </div>
+      <section class="activity panel" id="activity"><div class="activity-header"><div><span class="step-index">ACTIVITY LOG</span><h2>Recent activity</h2></div><span class="activity-note">Local to this session</span></div>
+        <ol id="activity-list"><li><span class="activity-pip"></span><span>Launch the receiver to begin. No activity yet.</span><time>NOW</time></li></ol></section>
+      <footer>SUPERAGENT LAN CLIENT <span>·</span> YOUR DEVICE, YOUR DECISION</footer>
+    </div>
+  </main>
+</div>
+<div id="consent-overlay" class="consent-overlay" hidden role="presentation">
+  <section class="consent-dialog" role="alertdialog" aria-modal="true" aria-labelledby="consent-title" aria-describedby="consent-description">
+    <span class="step-index">PERMISSION REQUEST</span><div class="consent-symbol">◎</div><h2 id="consent-title">Allow remote access?</h2>
+    <p id="consent-description">Another device is requesting access to this laptop.</p>
+        <dl><div><dt>Controller</dt><dd id="consent-controller">—</dd></div><div><dt>Request</dt><dd id="consent-kind">—</dd></div>
+      <div><dt>Source IP</dt><dd id="consent-ip">—</dd></div><div><dt>Details</dt><dd id="consent-detail">—</dd></div></dl>
+    <p class="consent-expiry">The request expires after 90 seconds. If you do nothing, access is denied.</p>
+    <div class="consent-buttons"><button class="button danger" id="deny">Deny access</button><button class="button primary" id="approve">Approve request</button></div>
+  </section>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+</body></html>
