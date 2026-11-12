@@ -1,3 +1,9 @@
+## [1.14.76] - 2026-11-12
+### Windows Tray install without developer toolchain
+- Add checksum-verified acquisition of published Windows standalone installers (`tray:prebuilt:check`, `tray:prebuilt:download`, `tray:prebuilt:install`), with release/source version guard and no implicit execution.
+- Clarify fresh clone versus binary release distribution and point missing local-Tray diagnostics to the prebuilt path instead of requiring Rust/MSVC on end-user machines.
+- Cover release selection, URL authenticity and checksum manifest parsing with focused tests.
+
 ## [1.14.75] - 2026-11-12
 ### Fix Bun global installation requiring Visual Studio Build Tools
 - Upgrade pinned `r-memory` to 1.3.3: use Bun-native `bun:sqlite` with `better-sqlite3` declared only as an optional Node.js peer.

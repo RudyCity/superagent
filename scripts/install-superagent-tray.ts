@@ -38,7 +38,9 @@ const source = (explicitSource ? [explicitSource] : sourcePaths).find(candidate 
   } catch { return false; }
 });
 if (!source) {
-  console.error("Build SuperAgent Tray first: cd apps/superagent-tray && cargo tauri build --no-bundle --debug --ci");
+  console.error("No locally built Tray executable found. For ordinary Windows PCs without Rust/MSVC, run: bun run tray:prebuilt:check");
+  console.error("Then use the verified prebuilt installer via: bun run tray:prebuilt:install (see README for version compatibility).");
+  console.error("Developers who need a custom build can use: bun run tray:build");
   process.exit(1);
 }
 

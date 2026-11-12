@@ -61,7 +61,7 @@ jobs:
       - name: Verify Chrome extension syntax
         run: bun run verify:extension-js
       - name: Core & packaging regression
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/unixStandaloneInstaller.test.ts
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts
       - name: Native Rust regression
         run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
       - name: Build CLI launcher

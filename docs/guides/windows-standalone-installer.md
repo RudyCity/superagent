@@ -4,6 +4,12 @@ The Windows NSIS setup bundles **SuperAgent Tray**, the native **superagent.exe*
 a pinned **Bun 1.4.2** executable, the compiled Core distribution, and its locked **production
 node_modules**. The CLI can launch without the user installing Bun, Node.js, or Git.
 
+## Install prebuilt on ordinary Windows PCs (no Rust or MSVC)
+
+A fresh `git clone` contains the native Tray **source**, not compiled `.exe` build products. End users should download the precompiled, integrity-checked NSIS installer from [official GitHub Releases](https://github.com/RudyCity/superagent/releases), which includes Tray, Core, Bun, and the CLI. **MSVC and Rust are required on CI/build machines only, not on the target PC.**
+
+If Bun is already installed for source development, use `bun run tray:prebuilt:check`, `bun run tray:prebuilt:download`, or `bun run tray:prebuilt:install` to select an official Windows release and validate it against that release’s SHA256SUMS.txt before launch. A release version mismatch with the checkout is rejected by default; review the version and use `bun scripts/install-prebuilt-windows.ts --install --allow-version-mismatch` only if you explicitly accept the older prebuilt release. `--check` is read-only, `--download` does not run the setup, and no build tools are downloaded or silently installed. The published installer may be unsigned; the manifest hash verifies download integrity, not the publisher’s code-signing identity.
+
 ## Build and verify
 
 On an authorized Windows x64 machine with Rust/MSVC, Bun 1.4.2, and the repository installed:

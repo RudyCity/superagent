@@ -16,7 +16,7 @@
 
 SuperAgent combines a local CLI/Core runtime with authorized tools, multi-project MCP integration, Chrome CDP/Delegate coordination, optional desktop companions, and consent-based local-network support. Some features are experimental, available only in source, and not yet included in published installers.
 
-**Development snapshot (11 November 2026):** Core/Tray source version **1.14.70**, followed by an unreleased managed-CDP cursor auto-hide change on `main`. The source includes multi-agent cursor presence, local Tray supervision, consented visual previews, qualified iframe commands, and approval-gated replay. **This is not an announcement of a 1.14.70 public installer or active Core/Delegate deployment.**
+**Development snapshot (12 November 2026):** The local source is at package version **1.14.76**, including a verified prebuilt-installer acquisition workflow; this is not a published standalone installer. The source includes multi-agent cursor presence, local Tray supervision, consented visual previews, qualified iframe commands, and approval-gated replay. **This is not an announcement of a 1.14.70 public installer or active Core/Delegate deployment.**
 
 **Navigate:** [Downloads](#downloads-and-release-status) · [Quick start](#quick-start-from-source) · [Capabilities](#capabilities) · [Managed Chrome CDP](#managed-chrome-cdp-and-human-supervision) · [Security](#security-model) · [Development](#development-and-verification) · [Documentation](#documentation)
 
@@ -26,7 +26,7 @@ GitHub's **Latest**, prereleases, tags, and development drafts are separate stat
 
 | Release channel | Status | What is available |
 | --- | --- | --- |
-| **Source on `main` (Core/Tray 1.14.70 + unreleased cursor update)** | **Development only** | Source, tests, Windows debug Tray build evidence; not a published or installed production update. |
+| **Source on `main` (newer development builds)** | **Development only** | Source, tests, Windows debug Tray build evidence; not a published or installed production update. |
 | **Windows 1.14.64 RC1** | **[Published prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.64-rc.1)** | Windows x64 standalone installer and SHA-256 checksums. Test as a release candidate, not production-certified. |
 | **v1.2.615** | [Historical GitHub “Latest” release](https://github.com/RudyCity/superagent/releases/tag/v1.2.615) | No attached downloadable installer assets. |
 | **Windows/macOS/Linux 1.14.64 RC2** | **Not released** | Tag exists, but macOS regression and Linux packaging CI gates failed. No verified multi-OS release. |
@@ -70,6 +70,19 @@ bun run build
 bun run runtime:smoke
 bun run start
 ```
+
+**Tray source is included in a fresh clone**, but the compiled Windows Tray executable is not tracked in Git. Installing Bun dependencies or building the TypeScript Core does **not** compile the Tauri desktop app. Normal Windows users need **neither Rust nor MSVC**: install a prebuilt standalone release from [GitHub Releases](https://github.com/RudyCity/superagent/releases), which includes Tray, Core, Bun and the CLI.
+
+On a Windows PC that has already cloned the source and installed Bun, the verified prebuilt-install workflow is:
+
+```powershell
+bun run tray:prebuilt:check
+bun run tray:prebuilt:download
+# Or, to explicitly launch the verified installer:
+bun run tray:prebuilt:install
+```
+
+The commands select an official published Windows release, read its SHA256SUMS.txt and check the installer hash/size. They do **not** compile native code. The check command never downloads or installs anything; download alone does not execute the installer. If the published release is older than the checked-out source, download/install **refuses** instead of silently downgrading. You can intentionally use that older release with `bun scripts/install-prebuilt-windows.ts --install --allow-version-mismatch` after reviewing the version shown by the check. A clean clone cannot produce an unpublished latest Tray build without a builder: fresh standalone binaries are produced on GitHub Actions runners and published only after the relevant release gates pass.
 
 For development or global CLI registration:
 

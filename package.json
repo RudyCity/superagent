@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.75",
+  "version": "1.14.76",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
@@ -35,6 +35,9 @@
     "tray:check": "cargo check --manifest-path apps/superagent-tray/src-tauri/Cargo.toml",
     "tray:test": "cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml",
     "tray:build": "bun x @tauri-apps/cli build --config apps/superagent-tray/src-tauri/tauri.conf.json",
+    "tray:prebuilt:check": "bun scripts/install-prebuilt-windows.ts --check",
+    "tray:prebuilt:download": "bun scripts/install-prebuilt-windows.ts --download",
+    "tray:prebuilt:install": "bun scripts/install-prebuilt-windows.ts --install",
     "installer:prepare": "bun scripts/prepare-standalone-windows.ts",
     "installer:verify": "bun scripts/verify-standalone-windows.ts",
     "installer:package": "bun scripts/build-standalone-windows.ts",
