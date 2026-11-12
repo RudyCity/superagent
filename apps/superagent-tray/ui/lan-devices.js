@@ -6,6 +6,7 @@
   const state = { discovered: [], paired: [], pairingRequests: [], tunnelDevices: [], selected: null, pairRequestId: null,
     busy: false, scanning: false, presetFor: null, presetPlatform: null, segmentRevision: 0,
     connectQrLease: null, apkQrLease: null, qrHeartbeatBusy: false,
+    apkQrSyncPending: false, apkQrRetryAt: 0,
     qrOutcomeUnknown: { connect: false, apk: false } };
   let qrRefreshHandler = null;
   const isTimeout = (error) => /timed out|timeout|aborted|connection lost/i.test(String(error));
@@ -97,6 +98,7 @@
 
   const QR_HEARTBEAT_MS = 5000;
   const QR_REFRESH_AHEAD_MS = 30000;
+  const APK_SYNC_RETRY_MS = 15000;
   const qrRemaining = (ms) => {
     const seconds = Math.max(0, Math.ceil(Number(ms || 0) / 1000));
     return Math.floor(seconds / 60) + ":" + String(seconds % 60).padStart(2, "0");
@@ -144,7 +146,23 @@
       : Math.max(0, lease.expiresAt - Date.now());
     if (Number.isSafeInteger(heartbeat?.expiresAt)) lease.expiresAt = heartbeat.expiresAt;
     if (!heartbeat?.valid || heartbeat?.tunnelActive !== true || remainingMs <= QR_REFRESH_AHEAD_MS) {
-      requestQrRefresh(kind, heartbeat?.tunnelActive === false ? "Core HTTPS tunnel changed" : "expiry approaching");
+      const artifactChanged = kind === "apk"
+        && (heartbeat?.reason === "artifact_changed" || heartbeat?.reason === "artifact_unavailable");
+      const reason = artifactChanged
+        ? (heartbeat.reason === "artifact_changed" ? "Android APK build updated" : "Android APK build unavailable")
+        : heartbeat?.tunnelActive === false ? "Core HTTPS tunnel changed" : "expiry approaching";
+      if (kind === "apk" && (!heartbeat?.valid || heartbeat?.tunnelActive !== true)) {
+        // Never leave an obsolete APK QR or version label visible during sync,
+        // including when the replacement QR request fails.
+        state.apkQrSyncPending = true;
+        state.apkQrRetryAt = Date.now() + APK_SYNC_RETRY_MS;
+        state.apkQrLease = null;
+        clearQrCanvas("lan-apk-qr", "lan-apk-qr-card");
+        const meta = $("lan-apk-meta");
+        if (meta) meta.textContent = "";
+      }
+      if (!requestQrRefresh(kind, reason) && statusEl && kind === "apk")
+        statusEl.textContent = "APK QR no longer valid · create a fresh download QR.";
       return;
     }
     if (statusEl) statusEl.textContent = kind === "connect"
@@ -153,11 +171,18 @@
   }
   async function runQrHeartbeat() {
     if (state.qrHeartbeatBusy || state.busy) return;
-    if (!state.connectQrLease && !state.apkQrLease) return;
+    if (!state.connectQrLease && !state.apkQrLease && !state.apkQrSyncPending) return;
     state.qrHeartbeatBusy = true;
     try {
       if (state.connectQrLease) await heartbeatOneQr("connect", state.connectQrLease);
       if (!state.busy && state.apkQrLease) await heartbeatOneQr("apk", state.apkQrLease);
+      else if (!state.busy && state.apkQrSyncPending && !state.qrOutcomeUnknown.apk
+          && Date.now() >= state.apkQrRetryAt) {
+        // A build may still be in progress when its old QR is revoked. Retry
+        // at a bounded cadence; never retry a request with an unknown outcome.
+        state.apkQrRetryAt = Date.now() + APK_SYNC_RETRY_MS;
+        requestQrRefresh("apk", "waiting for the Android build to finish");
+      }
     } finally {
       state.qrHeartbeatBusy = false;
     }
@@ -639,6 +664,8 @@
         drawQrMatrix(qr, qrMatrix);
         card.hidden = false;
         state.apkQrLease = { id: apk.heartbeatId, expiresAt: apk.expiresAt };
+        state.apkQrSyncPending = false;
+        state.apkQrRetryAt = 0;
         state.qrOutcomeUnknown.apk = false;
         const mb = (apk.size / (1024 * 1024)).toFixed(1);
         meta.textContent = apk.filename + " · " + mb + " MiB · SHA-256 " + apk.sha256;
@@ -648,6 +675,7 @@
       } catch (error) {
         const unknown = isTimeout(error);
         state.qrOutcomeUnknown.apk = unknown;
+        if (state.apkQrSyncPending) state.apkQrRetryAt = Date.now() + APK_SYNC_RETRY_MS;
         if (!state.apkQrLease || state.apkQrLease.expiresAt <= Date.now()) {
           state.apkQrLease = null;
           clearQrCanvas("lan-apk-qr", "lan-apk-qr-card");

@@ -78,6 +78,15 @@ describe("Device Tunnel public HTTP ingress", () => {
     expect(response.headers.get("content-length")).toBe(String(ticket.size));
     expect(response.headers.get("x-superagent-apk-sha256")).toBe(ticket.sha256);
     expect(response.headers.get("cache-control")).toContain("no-store");
+    // The filename and SHA header must describe the exact bytes delivered.
+    const download = await fetch(origin + "/api/device-tunnel/android-apk/" + ticket.token, {
+      method: "GET", redirect: "error",
+    });
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-disposition")).toContain(ticket.filename);
+    const bytes = Buffer.from(await download.arrayBuffer());
+    expect(bytes.length).toBe(ticket.size);
+    expect((await import("node:crypto")).createHash("sha256").update(bytes).digest("hex")).toBe(ticket.sha256);
   });
 
   it("enrolls without the Core bearer and then requires device-scoped auth", async () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
@@ -40,6 +40,9 @@ function setup(platform: "windows" | "android" = "windows") {
     return nodes.get(key)!;
   };
   let devices: any[] = [];
+  let apkVersion = "test";
+  let apkHeartbeatOverride: any = null;
+  let apkQrFailure: boolean | "timeout" = false;
   const requests: Array<{ action: string; payload: any }> = [];
   const invoke = async (_method: string, { action, payload }: any) => {
     expect(_method).toBe("lan_support_action");
@@ -55,15 +58,21 @@ function setup(platform: "windows" | "android" = "windows") {
       setup: JSON.stringify({ url: "https://example.test", inviteId: "11111111-2222-4333-8444-555555555555", code: "0123456789" }),
       qrMatrix: { size: 21, cells: "1".repeat(21 * 21) },
     } };
-    if (action === "apk_download_qr") return { success: true, apk: {
-      heartbeatId: "a".repeat(64), expiresAt: Date.now() + 10 * 60_000,
-      size: 6_000_000, sha256: "b".repeat(64), filename: "SuperAgent-Android-test.apk",
-      qrMatrix: { size: 21, cells: "1".repeat(21 * 21) },
-    } };
-    if (action === "qr_heartbeat") return {
-      success: true, kind: payload.kind, id: payload.id, valid: true, state: "active",
-      tunnelActive: true, expiresAt: Date.now() + 20_000, remainingMs: 20_000,
-    };
+    if (action === "apk_download_qr") {
+      if (apkQrFailure) throw Error(apkQrFailure === "timeout"
+        ? "request timed out after 75s" : "APK build temporarily unavailable");
+      return { success: true, apk: {
+        heartbeatId: "a".repeat(64), expiresAt: Date.now() + 10 * 60_000,
+        size: 6_000_000, sha256: "b".repeat(64), filename: "SuperAgent-Android-" + apkVersion + ".apk",
+        qrMatrix: { size: 21, cells: "1".repeat(21 * 21) },
+      } };
+    }
+    if (action === "qr_heartbeat") return apkHeartbeatOverride && payload.kind === "apk"
+      ? { success: true, kind: "apk", id: payload.id, tunnelActive: true, ...apkHeartbeatOverride }
+      : {
+        success: true, kind: payload.kind, id: payload.id, valid: true, state: "active",
+        tunnelActive: true, expiresAt: Date.now() + 20_000, remainingMs: 20_000,
+      };
     if (action === "pair") {
       devices = [{ id, host: payload.host, port: payload.port, fingerprint, label: "LAN Client", platform, connected: false }];
       return { success: true, device: { ...devices[0] } };
@@ -93,7 +102,11 @@ function setup(platform: "windows" | "android" = "windows") {
   vm.runInNewContext(script, {
     document, window, navigator: {}, String, Number, Boolean, Error, Array, Object, Date, Math,
   });
-  return { get, requests, window, heartbeat: () => heartbeatTick?.() };
+  return { get, requests, window, heartbeat: () => heartbeatTick?.(),
+    setApkVersion: (value: string) => { apkVersion = value; },
+    setApkHeartbeat: (value: any) => { apkHeartbeatOverride = value; },
+    setApkQrFailure: (value: boolean | "timeout") => { apkQrFailure = value; },
+  };
 }
 const flush = async () => {
   for (let i = 0; i < 4; i++) await new Promise((resolve) => setImmediate(resolve));
@@ -147,6 +160,86 @@ describe("QR heartbeat behavior", () => {
     await flush();
     expect(ui.requests.some((r) => r.action === "qr_heartbeat" && r.payload.kind === "apk")).toBe(true);
     expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(2);
+  });
+});
+
+describe("APK build auto-sync through QR heartbeat", () => {
+  it("automatically replaces the QR and metadata when an APK rebuild is detected", async () => {
+    const ui = setup();
+    await flush();
+    await click(ui.get("lan-apk-download-qr"));
+    expect(ui.get("lan-apk-meta").textContent).toContain("SuperAgent-Android-test.apk");
+    ui.setApkVersion("0.10.1-updated");
+    ui.setApkHeartbeat({ valid: false, reason: "artifact_changed", remainingMs: 300_000 });
+    ui.heartbeat();
+    await flush();
+    expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(2);
+    expect(ui.get("lan-apk-meta").textContent).toContain("SuperAgent-Android-0.10.1-updated.apk");
+    expect(ui.get("lan-apk-meta").textContent).not.toContain("SuperAgent-Android-test.apk");
+    expect(ui.get("lan-apk-qr-card").hidden).toBe(false);
+  });
+
+  it("hides an invalid QR and old build identity if its replacement cannot be created", async () => {
+    const ui = setup();
+    await flush();
+    await click(ui.get("lan-apk-download-qr"));
+    ui.setApkQrFailure(true);
+    ui.setApkHeartbeat({ valid: false, reason: "artifact_unavailable", remainingMs: 300_000 });
+    ui.heartbeat();
+    await flush();
+    expect(ui.get("lan-apk-qr-card").hidden).toBe(true);
+    expect(ui.get("lan-apk-meta").textContent).toBe("");
+    expect(ui.get("lan-apk-status").textContent).toContain("Cannot create Android APK download QR");
+  });
+  it("retries an unavailable APK build after a bounded interval and recovers without manual clicks", async () => {
+    const ui = setup();
+    await flush();
+    await click(ui.get("lan-apk-download-qr"));
+    ui.setApkQrFailure(true);
+    ui.setApkHeartbeat({ valid: false, reason: "artifact_unavailable", remainingMs: 300_000 });
+    ui.heartbeat();
+    await flush();
+    expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(2);
+    expect(ui.get("lan-apk-qr-card").hidden).toBe(true);
+
+    ui.heartbeat();
+    await flush();
+    expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(2);
+
+    ui.setApkQrFailure(false);
+    ui.setApkVersion("0.10.2-rebuilt");
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 16_000);
+    try {
+      ui.heartbeat();
+      await flush();
+      expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(3);
+      expect(ui.get("lan-apk-meta").textContent).toContain("0.10.2-rebuilt.apk");
+      expect(ui.get("lan-apk-qr-card").hidden).toBe(false);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("never retries an ambiguous timed-out QR request automatically", async () => {
+    const ui = setup();
+    await flush();
+    await click(ui.get("lan-apk-download-qr"));
+    ui.setApkQrFailure("timeout");
+    ui.setApkHeartbeat({ valid: false, reason: "artifact_changed", remainingMs: 300_000 });
+    ui.heartbeat();
+    await flush();
+    expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(2);
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now + 60_000);
+    try {
+      ui.heartbeat();
+      await flush();
+      expect(ui.requests.filter((r) => r.action === "apk_download_qr")).toHaveLength(2);
+      expect(ui.get("lan-apk-qr-card").hidden).toBe(true);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });
 

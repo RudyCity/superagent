@@ -7,6 +7,23 @@ Android device connected to the same physical LAN. A visible Android MediaProjec
 used only after the owner approves screen capture; there is no unattended
 background support, root, ADB, hidden capture, or silent system configuration.
 
+## Automatic APK download QR synchronization
+
+Core reads the actual version from Gradle's generated
+app/build/outputs/apk/debug/output-metadata.json and hashes the built APK
+before creating each QR download ticket. Tray polls every five seconds while
+an APK QR is displayed. A rebuild (APK bytes or build version metadata)
+invalidates the old ticket immediately; Tray hides the old QR and requests
+one with the current filename and SHA-256. The 10-minute expiry is an upper
+bound, not permission to serve an outdated APK after a rebuild.
+
+This synchronizes an **already built** APK with the existing QR without
+restarting Tray/Core for each Android build. It does not build APKs
+automatically, silently install on phones, or bypass installation consent.
+If Core/tunnel or the new build is unavailable, the stale QR stays hidden.
+During a confirmed build sync, Tray retries at a bounded 15-second cadence
+until the APK is available. Ambiguous timeouts are never retried automatically.
+
 ## Native Android dashboard (0.10.0)
 
 The companion now uses a native, accessible, four-tab mobile dashboard:
