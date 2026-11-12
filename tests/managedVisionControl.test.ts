@@ -65,11 +65,20 @@ describe("Vision independent owner lifecycle",()=>{
     // Stub only heavy ML imports; Pillow/numpy and the actual Vision server
     // remain real and are provided by the CI Python media dependencies.
     fs.writeFileSync(path.join(fixture,"torch.py"),
-      "def set_num_threads(n): pass\ndef set_num_interop_threads(n): pass\ndef set_grad_enabled(v): pass\n");
+      "def set_num_threads(n): pass\ndef set_num_interop_threads(n): pass\ndef set_grad_enabled(v): pass\ndef inference_mode(): return lambda fn: fn\n");
     fs.writeFileSync(path.join(fixture,"transformers.py"),"BackboneConfigMixin = object\n");
     fs.writeFileSync(path.join(fixture,"huggingface_hub.py"),
       "def hf_hub_download(*args, **kwargs): raise RuntimeError('model inference not exercised in lifecycle test')\n");
     process.env.PYTHONPATH=fixture;
+    // Preflight the ACTUAL script (not only torch/transformers imports). Any
+    // Python traceback must surface in CI instead of a 35s opaque PID timeout.
+    const python=process.env.SUPERAGENT_VISION_PYTHON||"python";
+    const importProbe=spawnSync(python,["-c",
+      "import runpy; runpy.run_path('scripts/vision_server.py', run_name='managed_vision_import_probe')"],{
+      cwd:process.cwd(),env:process.env,windowsHide:true,
+      encoding:"utf8",timeout:20000,stdio:["ignore","pipe","pipe"],
+    });
+    expect(importProbe.status, String(importProbe.stderr||importProbe.error||"Python Vision module import failed").slice(-3000)).toBe(0);
     const port=await freePort();
     const plan=await manageServices({action:"plan",service:"vision",port,targetAction:"start"}) as any;
     expect(plan.expectedOwnerPid).toBe(0);
