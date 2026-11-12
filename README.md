@@ -16,7 +16,7 @@
 
 SuperAgent combines a local CLI/Core runtime with authorized tools, multi-project MCP integration, Chrome CDP/Delegate coordination, optional desktop companions, and consent-based local-network support. Some features are experimental, available only in source, and not yet included in published installers.
 
-**Development snapshot (12 November 2026):** The local source is at package version **1.14.80**, including a verified prebuilt-installer acquisition workflow; this is not a published standalone installer. The source includes multi-agent cursor presence, local Tray supervision, consented visual previews, qualified iframe commands, and approval-gated replay. **This is not an announcement of a 1.14.70 public installer or active Core/Delegate deployment.**
+**Development snapshot (12 November 2026):** The local source is at package version **1.14.81**, including a verified prebuilt-installer acquisition workflow; this is not a published standalone installer. The source includes multi-agent cursor presence, local Tray supervision, consented visual previews, qualified iframe commands, and approval-gated replay. **This is not an announcement of a 1.14.70 public installer or active Core/Delegate deployment.**
 
 **Navigate:** [Downloads](#downloads-and-release-status) · [Quick start](#quick-start-from-source) · [Capabilities](#capabilities) · [Managed Chrome CDP](#managed-chrome-cdp-and-human-supervision) · [Security](#security-model) · [Development](#development-and-verification) · [Documentation](#documentation)
 
@@ -29,7 +29,7 @@ GitHub's **Latest**, prereleases, tags, and development drafts are separate stat
 | **Source on `main` (newer development builds)** | **Development only** | Source, tests, Windows debug Tray build evidence; not a published or installed production update. |
 | **Windows 1.14.78** | **[Published prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.78-windows.1)** | Verified Windows x64 standalone installer, SHA-256 checksum, self-contained Core/Bun/Tray/CLI; no MSVC needed on target PC. |
 | **v1.2.615** | [Historical GitHub “Latest” release](https://github.com/RudyCity/superagent/releases/tag/v1.2.615) | No attached downloadable installer assets. |
-| **macOS ARM64 / Linux x64 1.14.80** | **Release candidate** | Dedicated CI gate builds macOS DMG and Linux DEB; publication requires successful verification. Linux AppImage remains blocked by linuxdeploy. Both Chrome extensions are included as verified source ZIPs after publication. |
+| **macOS ARM64 / Linux x64 1.14.81** | **Release candidate** | Dedicated CI gate builds macOS DMG and Linux DEB; publication requires successful verification. Linux AppImage remains blocked by linuxdeploy. Both Chrome extensions are included as verified source ZIPs after publication. |
 | **LAN v0.6.0 — Windows + Android** | **Draft prerelease (not public)** | Four preview binaries and three verification documents are staged. Physical Android testing and release-source reproducibility are pending. |
 
 **[Browse published GitHub Releases](https://github.com/RudyCity/superagent/releases)**. Generated files under `artifacts/` are intentionally Git-ignored; build output alone is not a published release.

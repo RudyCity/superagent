@@ -18,7 +18,7 @@ const p = spawnSync(process.execPath, [
   "x", "@tauri-apps/cli@2.12.4", "build",
   "--config", "src-tauri/tauri.conf.json",
   "--config", "src-tauri/tauri.standalone.unix.conf.json",
-  "--ci", "--bundles", override ?? bundles,
+  "--ci", "--bundles", override || bundles,
 ], {
   cwd: trayRoot,
   env: { ...process.env, CI: "true" },

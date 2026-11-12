@@ -25,6 +25,7 @@ describe("Unix standalone and browser extensions release contract", () => {
     expect(build).toContain('process.platform === "darwin" ? "dmg" : "deb,appimage"');
     expect(build).toContain("SUPERAGENT_UNIX_BUNDLE_OVERRIDE");
     expect(build).toContain('override === "deb"');
+    expect(build).toContain("override || bundles"); // GitHub macOS matrix supplies an empty override
     const verify = read("scripts/verify-packaged-standalone-unix.sh");
     expect(verify).toContain('hdiutil attach');
     expect(verify).toContain('hdiutil detach');

@@ -1,3 +1,8 @@
+## [1.14.81] - 2026-11-12
+### Fix empty macOS bundle override
+- Interpret an empty SUPERAGENT_UNIX_BUNDLE_OVERRIDE as absent; GitHub macOS runners must build dmg instead of passing an empty --bundles argument to Tauri.
+- Add a packaging regression assertion and preserve Linux DEB-only override behavior.
+
 ## [1.14.80] - 2026-11-12
 ### Stabilize macOS release regression fixture
 - Canonicalize temporary PDF workspace roots on macOS where /var resolves through /private/var; show actual MCP error payloads on assertion failures.
