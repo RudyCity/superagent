@@ -41,6 +41,28 @@ The support status reports transient screen/input authorization booleans only.
 See [Android Health and Support Status](../../docs/guides/android-health-and-support-status.md)
 and [safe USB APK installation](../../docs/guides/android-adb-install.md).
 
+## Guided remote-control permission setup (0.9.2)
+
+The **Remote control setup** panel near the top of the Android app shows
+notifications, Accessibility, screen sharing and remote-touch permission
+states. Tap **Continue permission setup** to request the next missing
+step. Tap **Refresh permission status** when returning from Android settings.
+
+- Notifications: use Android's runtime notification permission on Android
+  13+, or open this app's notification settings if blocked. Visible
+  notifications with STOP SHARING are mandatory for screen capture.
+- Accessibility: show a security explanation, then open the Android
+  Accessibility screen; only the phone owner can enable the service.
+- Screen sharing: wait for a separately approved support session and
+  request Android's MediaProjection consent from the foreground.
+- Remote touch: prompt for separate in-app confirmation after screen sharing
+  and the owner-enabled Accessibility service are both active.
+
+Opening Android Settings ends the current LAN/Device Tunnel sharing session;
+reconnect the previously paired device and approve a new support session.
+There is no silent permission grant, persistent remote input, or unattended
+screen capture.
+
 ## Pairing and remote support
 
 1. On Android, open the client and tap **Start LAN sharing**.

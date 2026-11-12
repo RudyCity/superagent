@@ -46,7 +46,7 @@ import java.util.function.BooleanSupplier;
 
 /** Foreground-only, on-screen and user-approved Android LAN diagnostics. */
 public final class MainActivity extends Activity {
-    private static final int SCREEN_REQUEST = 9001, NOTIFICATION_REQUEST = 9002, FILE_SELECT_REQUEST = 9003, FOLDER_SELECT_REQUEST = 9004;
+    private static final int SCREEN_REQUEST = 9001, NOTIFICATION_REQUEST = 9002, FILE_SELECT_REQUEST = 9003, FOLDER_SELECT_REQUEST = 9004, NOTIFICATION_SETUP_REQUEST = 9005;
     private static volatile WeakReference<MainActivity> currentActivity = new WeakReference<>(null);
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean requestingCapture;
@@ -62,7 +62,8 @@ public final class MainActivity extends Activity {
     private TextView status, ip, code, fingerprint, paired, events, fileSelected;
     private Button start, stop, renew, revoke, copy, startScreen, stopScreen, touchToggle;
     private Button tunnelScan, tunnelConnect, tunnelDisconnect;
-    private TextView screenState, tunnelState, qrScanStatus;
+    private TextView screenState, tunnelState, qrScanStatus, permissionSummary;
+    private Button permissionNext;
     private EditText segmentInput, tunnelSetupInput;
     private boolean qrScanInProgress;
     private String pendingQrPayload;
@@ -121,6 +122,14 @@ public final class MainActivity extends Activity {
         add(layout, label("Android Device Client", 27, Color.WHITE, true), 6);
         add(layout, label(appBuildLabel(), 12, 0xff7daeff, false), 2);
         add(layout, label("Consent-based support while this app stays open. Direct LAN and optional reverse HTTPS tunnel are supported; no ADB, root, or hidden background access.", 13, 0xffafbed2, false), 6);
+
+        section(layout, "REMOTE CONTROL SETUP · OWNER APPROVAL");
+        add(layout, label("Optional screen assistance requires four separate Android permissions. Continue requests each step on this phone. Opening Android Settings ends the current sharing session; reconnect and approve a new support session afterward.", 13, 0xffafbed2, false), 3);
+        permissionSummary = label("Checking permissions...", 14, Color.WHITE, false);
+        permissionSummary.setLineSpacing(dp(4), 1f);
+        add(layout, permissionSummary, 4);
+        permissionNext = action(layout, "Continue permission setup", this::continuePermissionSetup);
+        action(layout, "Refresh permission status", this::refresh);
 
         section(layout, "NETWORK SEGMENT · REQUIRED");
         add(layout, label("Enter the same network segment on Windows and Android. It filters discovery, but cannot replace pairing or on-device approval.", 13, 0xffafbed2, false), 2);
@@ -208,7 +217,7 @@ public final class MainActivity extends Activity {
         add(layout, label("Remote UI schema avoids repeating screenshots; Android still requires screen capture approval and a visible STOP SHARING notification for the active support session. Remote taps need separately enabled Accessibility and explicit approval below.", 13, 0xffafbed2, false), 5);
         screenState = label("Screen OFF · Remote touch OFF", 15, Color.WHITE, true);
         add(layout, screenState, 4);
-        action(layout, "Open Android Accessibility Settings", () -> { stopSharing(); startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); });
+        action(layout, "Request Accessibility setup", this::requestAccessibilitySetup);
         startScreen = action(layout, "Share phone screen (Android consent)", this::beginScreenConsent);
         stopScreen = action(layout, "STOP SCREEN / REVOKE ALL ACCESS", this::stopSharing);
         touchToggle = action(layout, "Allow remote taps and swipes", this::toggleRemoteInput);
@@ -273,6 +282,102 @@ public final class MainActivity extends Activity {
                 "Screen: " + (ScreenProjectionService.isActive() ? "SHARING" : "OFF")
                 + "  · Touch: " + (RemoteControlPermit.canControl() ? "ENABLED" : "OFF")
                 + "  · Accessibility: " + (ControlledAccessibilityService.enabled() ? "enabled" : "not enabled"));
+        if (permissionSummary != null) {
+            permissionSummary.setText(
+                    "1. Notifications: " + (notificationsReady() ? "READY" : "ENABLE REQUIRED")
+                    + "\n2. Accessibility: " + (ControlledAccessibilityService.enabled() ? "READY" : "ENABLE REQUIRED")
+                    + "\n3. Screen sharing: " + (ScreenProjectionService.isActive() ? "ACTIVE"
+                            : RemoteControlPermit.hasApprovedSession() ? "ANDROID CONSENT REQUIRED" : "APPROVED SESSION REQUIRED")
+                    + "\n4. Remote touch: " + (RemoteControlPermit.canControl() ? "ACTIVE"
+                            : RemoteControlPermit.canView() && ControlledAccessibilityService.enabled()
+                            ? "PHONE APPROVAL REQUIRED" : "WAITING FOR SCREEN ACCESS"));
+        }
+        if (permissionNext != null) {
+            permissionNext.setEnabled(!requestingCapture);
+            permissionNext.setText(!notificationsReady() ? "Step 1 · Enable notifications"
+                    : !ControlledAccessibilityService.enabled() ? "Step 2 · Enable Accessibility"
+                    : !RemoteControlPermit.hasApprovedSession() ? "Step 3 · Approve a support session"
+                    : !ScreenProjectionService.isActive() ? "Step 3 · Request screen sharing"
+                    : !RemoteControlPermit.canControl() ? "Step 4 · Approve remote touch"
+                    : "Remote control ready · Review status");
+        }
+    }
+
+    private boolean notificationsReady() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED)
+            return false;
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        return manager != null && manager.areNotificationsEnabled();
+    }
+
+    private void continuePermissionSetup() {
+        if (!notificationsReady()) {
+            requestNotificationSetup();
+        } else if (!ControlledAccessibilityService.enabled()) {
+            requestAccessibilitySetup();
+        } else if (!RemoteControlPermit.hasApprovedSession()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Approve a support session first")
+                    .setMessage("Connect using the Connect QR if sharing is off, then request a support session in Windows Tray > LAN Devices. Approve on this phone. Pairing alone does not authorize screen control.")
+                    .setPositiveButton("OK", null).show();
+        } else if (!ScreenProjectionService.isActive()) {
+            beginScreenConsent();
+        } else if (!RemoteControlPermit.canControl()) {
+            toggleRemoteInput();
+        } else {
+            new AlertDialog.Builder(this)
+                    .setTitle("Remote control is ready")
+                    .setMessage("Screen sharing and remote-touch approval are active for this support session. You can stop sharing or revoke access on this phone.")
+                    .setPositiveButton("OK", null).show();
+        }
+        refresh();
+    }
+
+    private void requestNotificationSetup() {
+        if (notificationsReady()) { notifyEvent("App notifications are already enabled."); return; }
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_SETUP_REQUEST);
+            return;
+        }
+        promptNotificationSettings();
+    }
+
+    private void promptNotificationSettings() {
+        new AlertDialog.Builder(this)
+                .setTitle("Enable SuperAgent notifications")
+                .setMessage("Visible notifications are required for screen sharing and a STOP SHARING control. Open this app's notification settings and enable notifications manually. This will disconnect current sharing; reconnect afterward.")
+                .setNegativeButton("CANCEL", null)
+                .setPositiveButton("OPEN SETTINGS", (dialog, which) -> {
+                    stopSharing();
+                    try {
+                        startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                .putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
+                    } catch (android.content.ActivityNotFoundException unavailable) {
+                        startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                                .setData(android.net.Uri.parse("package:" + getPackageName())));
+                    }
+                }).show();
+    }
+
+    private void requestAccessibilitySetup() {
+        if (ControlledAccessibilityService.enabled()) {
+            notifyEvent("SuperAgent remote touch Accessibility is already enabled.");
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Enable remote-touch Accessibility")
+                .setMessage("Android requires you to enable SuperAgent remote touch manually in Accessibility settings. SuperAgent cannot turn it on for you. This is sensitive: only enable it for trusted screen support. Opening Settings ends current sharing; reconnect and approve a new session after returning.")
+                .setNegativeButton("CANCEL", null)
+                .setPositiveButton("OPEN ACCESSIBILITY", (dialog, which) -> {
+                    stopSharing();
+                    try {
+                        startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+                    } catch (android.content.ActivityNotFoundException unavailable) {
+                        notifyEvent("Accessibility settings are unavailable on this device.");
+                    }
+                }).show();
     }
 
     private void notifyEvent(String text) {
@@ -617,8 +722,9 @@ public final class MainActivity extends Activity {
             return;
         }
         NotificationManager notices = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (notices != null && !notices.areNotificationsEnabled()) {
-            notifyEvent("Enable visible notifications in Android Settings before screen sharing.");
+        if (notices == null || !notices.areNotificationsEnabled()) {
+            notifyEvent("Visible notifications are required for screen sharing.");
+            promptNotificationSettings();
             return;
         }
         MediaProjectionManager projection = (MediaProjectionManager)
@@ -647,7 +753,18 @@ public final class MainActivity extends Activity {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code == NOTIFICATION_REQUEST) {
             if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) beginScreenConsent();
-            else notifyEvent("Screen sharing denied: visible notification is required.");
+            else {
+                notifyEvent("Screen sharing blocked: notification permission denied.");
+                promptNotificationSettings();
+            }
+        } else if (code == NOTIFICATION_SETUP_REQUEST) {
+            if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED && notificationsReady())
+                notifyEvent("Notifications enabled. Continue remote control setup.");
+            else {
+                notifyEvent("Notifications remain disabled. Enable them in Android app settings.");
+                promptNotificationSettings();
+            }
+            refresh();
         }
     }
 
