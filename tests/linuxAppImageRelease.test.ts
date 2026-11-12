@@ -11,6 +11,7 @@ describe("Linux AppImage packaging regression", () => {
     ]) {
       const workflow = read(file);
       expect(workflow).toContain("if: runner.os == 'Linux'");
+      expect(workflow).toContain("curl wget file musl"); // linuxdeploy failed resolving libc.musl-x86_64.so.1
       expect(workflow).toContain("echo 'NO_STRIP=true' >> \"$GITHUB_ENV\"");
       expect(workflow).toContain("echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> \"$GITHUB_ENV\"");
       expect(workflow).not.toContain("NO_STRIP: ${{ runner.os");
