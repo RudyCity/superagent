@@ -36,6 +36,12 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file musl
           sudo apt-get install -y -qq libayatana-appindicator3-dev || sudo apt-get install -y -qq libappindicator3-dev
+      - name: Configure linuxdeploy compatibility
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          echo 'NO_STRIP=true' >> "$GITHUB_ENV"
+          echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -55,7 +61,7 @@ jobs:
       - name: Validate extension JS
         run: bun run verify:extension-js
       - name: Run portable/Tray regression suite
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/bunGlobalInstallContract.test.ts tests/releaseExtensions.test.ts --maxWorkers=1
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/bunGlobalInstallContract.test.ts tests/releaseExtensions.test.ts tests/releaseUnixAppImage.test.ts tests/pruneLinuxMuslSharp.test.ts --maxWorkers=1
       - name: Test native Tray
         run: bun run tray:test
       - name: Compile native CLI

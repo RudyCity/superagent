@@ -7,6 +7,8 @@ describe("Unix AppImage and extension publication", () => {
   it("requires AppImage and DEB together before publication", () => {
     const ci = source(".github/workflows/release-unix-extensions.yml");
     expect(ci).toContain("file musl");
+    expect(ci).toContain("echo 'NO_STRIP=true' >> \"$GITHUB_ENV\"");
+    expect(ci).toContain("echo 'APPIMAGE_EXTRACT_AND_RUN=1' >> \"$GITHUB_ENV\"");
     expect(ci).toContain("Build macOS DMG or Linux DEB and AppImage");
     expect(ci).not.toContain("SUPERAGENT_UNIX_BUNDLE_OVERRIDE:");
     expect(ci).toContain('REQUIRE_APPIMAGE: "1"');
