@@ -55,7 +55,7 @@ jobs:
       - name: Validate extension JS
         run: bun run verify:extension-js
       - name: Run portable/Tray regression suite
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/bunGlobalInstallContract.test.ts tests/releaseExtensions.test.ts
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/bunGlobalInstallContract.test.ts tests/releaseExtensions.test.ts --maxWorkers=1
       - name: Test native Tray
         run: bun run tray:test
       - name: Compile native CLI

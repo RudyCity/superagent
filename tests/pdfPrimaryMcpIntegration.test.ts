@@ -38,7 +38,9 @@ const identity = (scopes: string[]) => ({ mode: "oauth" as const, subject: "pdf-
 const editArgs = { inputPath: "input.pdf", outputPath: "result.pdf", operations: [{op: "rotate_pages", pages: [1], degrees: 90}] };
 
 beforeEach(async () => {
-  dir = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-primary-pdf-"));
+  // On macOS /var is a symlink to /private/var. Use the canonical fixture root
+  // so workspace authorization and file targets share the same filesystem path.
+  dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "superagent-primary-pdf-")));
   const doc = await PDFDocument.create();
   doc.addPage([240, 320]);
   original = await doc.save();
@@ -91,7 +93,7 @@ describe("Primary SuperAgent MCP PDF integration", () => {
       expect(names).not.toContain("superagent_pdf_edit_vector_exact");
       expect(names).not.toContain("superagent_pdf_ocr_searchable");
       const inspected = await call(server, "superagent_pdf_inspect", {inputPath:"input.pdf"});
-      expect(inspected.isError).toBeFalsy();
+      expect(inspected.isError, JSON.stringify(inspected.content)).toBeFalsy();
       expect(parse(inspected).pageCount).toBe(1);
       await expect(call(server, "superagent_pdf_edit", editArgs)).rejects.toThrow(/OAuth|scope/);
     } finally {
@@ -125,7 +127,7 @@ describe("Primary SuperAgent MCP PDF integration", () => {
       const names = (await listed(server)).tools.map(t => t.name);
       expect(names).toContain("superagent_pdf_edit");
       const result = await call(server, "superagent_pdf_edit", editArgs);
-      expect(result.isError).toBeFalsy();
+      expect(result.isError, JSON.stringify(result.content)).toBeFalsy();
       expect(parse(result).status).toBe("verified");
       expect(parse(result).outputPath).toContain("result.pdf");
       const inspected = await call(server, "superagent_pdf_inspect", {inputPath:"result.pdf"});
@@ -156,7 +158,7 @@ describe("Primary SuperAgent MCP PDF integration", () => {
       const executed = await call(server, "superagent_tool_execute", {
         name:"superagent_pdf_edit",arguments:editArgs,
       });
-      expect(executed.isError).toBeFalsy();
+      expect(executed.isError, JSON.stringify(executed.content)).toBeFalsy();
       expect(parse(executed).status).toBe("verified");
       scopes = ["mcp:tools"];
       const revoked = await call(server, "superagent_tool_search", {query:"pdf",limit:20});
@@ -166,7 +168,7 @@ describe("Primary SuperAgent MCP PDF integration", () => {
 
   it("enforces separate project read and write grants for PDF operations", async () => {
     setYoloMode(true);
-    const other = await fs.mkdtemp(path.join(os.tmpdir(), "pdf-other-project-"));
+    const other = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "pdf-other-project-")));
     const projectId = "pdf-access-" + path.basename(other).replace(/[^a-z0-9]/gi, "").toLowerCase().slice(-25);
     const user = identity(["mcp:tools", "mcp:tools:write"]);
     // Scoped YOLO intentionally allows one parent above the workspace. Nest

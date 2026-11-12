@@ -1,3 +1,9 @@
+## [1.14.80] - 2026-11-12
+### Stabilize macOS release regression fixture
+- Canonicalize temporary PDF workspace roots on macOS where /var resolves through /private/var; show actual MCP error payloads on assertion failures.
+- Serialize Unix release regression workers because YOLO permission state is persisted across worker processes; preserve every test without bypassing authorization checks.
+- Linux x64 DEB and both Chrome extension release gates passed in 1.14.79 candidate; rerun macOS gate with stable fixtures before publication.
+
 ## [1.14.79] - 2026-11-12
 ### macOS/Linux desktop releases and bundled Chrome extensions
 - Add independently verified macOS arm64 DMG and Linux x64 DEB prerelease workflow with native Tray, standalone CLI smoke checks and SHA-256 checksums.
