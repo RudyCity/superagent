@@ -8,6 +8,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { getRootConfigDir } from "../config/paths.js";
 import { requestCoreSupervisor } from "./coreSupervisor.js";
 import { controlCoreLifecycle, prepareCoreLifecycle } from "./coreLifecycleControl.js";
@@ -219,6 +220,17 @@ async function probe(port:number,resource:string):Promise<{status:number;body:an
     return {status:response.status,body:response.ok?await response.json().catch(()=>null):null};
   }catch{return null;}
 }
+function sourcePackageVersion():string|null {
+  try {
+    const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../../..");
+    const raw=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8")) as {version?:unknown};
+    return typeof raw.version==="string"&&/^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/.test(raw.version)
+      ? raw.version:null;
+  } catch { return null; }
+}
+export function hasRuntimeVersionDrift(runtimeVersion:string|null,sourceVersion:string|null):boolean {
+  return Boolean(runtimeVersion&&sourceVersion&&runtimeVersion!==sourceVersion);
+}
 
 type CoreServerInfoEvidence = {
   port:number;pid:number;authToken:string;startedAt:number;
@@ -236,17 +248,23 @@ function readCoreServerInfoEvidence(port:number):CoreServerInfoEvidence|null {
     return value as CoreServerInfoEvidence;
   }catch{return null;}
 }
-async function authenticatedCorePublicProbe(
+type CorePublicRuntimeEvidence={ok:boolean;version:string|null;pid:number|null};
+async function authenticatedCorePublicStatus(
   port:number,token:string,
-):Promise<boolean>{
+):Promise<CorePublicRuntimeEvidence>{
   try{
     const response=await fetch("http://127.0.0.1:"+port+"/api/status",{
       method:"GET",headers:{Authorization:"Bearer "+token},
       signal:AbortSignal.timeout(1600),redirect:"error",
     });
-    await response.arrayBuffer();
-    return response.status===200;
-  }catch{return false;}
+    if(response.status!==200){await response.arrayBuffer();return {ok:false,version:null,pid:null};}
+    const body=await response.json().catch(()=>null) as Record<string,unknown>|null;
+    return {
+      ok:true,
+      version:typeof body?.version==="string"&&body.version.length<=64?body.version:null,
+      pid:Number.isSafeInteger(body?.pid)?Number(body?.pid):null,
+    };
+  }catch{return {ok:false,version:null,pid:null};}
 }
 export function acceptsAuthenticatedCoreOwnerFallback(input:{
   platform:string;kernelOwner:number|null;supervisorPid:number;
@@ -265,46 +283,63 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
   if(service==="core") {
     try {
       const s=await requestCoreSupervisor("status",port!,2500);
+      const info=readCoreServerInfoEvidence(port!);
+      const publicRuntime=info&&info.pid===s.supervisorPid
+        ? await authenticatedCorePublicStatus(port!,info.authToken)
+        : {ok:false,version:null,pid:null};
       let ownerVerified=s.supervisorPid===owner;
       if(!ownerVerified&&(owner===0||owner===null)&&process.platform==="win32"){
-        const info=readCoreServerInfoEvidence(port!);
         const birth=info&&info.pid===s.supervisorPid
           ? verifyWindowsProcessBirth(s.supervisorPid,info.startedAt):"unverified";
-        const publicProbe=info&&info.pid===s.supervisorPid
-          ? await authenticatedCorePublicProbe(port!,info.authToken):false;
         ownerVerified=acceptsAuthenticatedCoreOwnerFallback({
           platform:process.platform,kernelOwner:owner,supervisorPid:s.supervisorPid,
-          serverInfoPid:info?.pid??null,birth,publicProbe,
+          serverInfoPid:info?.pid??null,birth,publicProbe:publicRuntime.ok,
         });
       }
       const verified=s.publicPort===port&&s.ownerContract?.role==="core-supervisor"&&
         s.ownerContract?.mcpLifecycle==="not-owned"&&ownerVerified;
       const buildFresh=s.currentBuild?.fresh??null;
-      const state=verified?(buildFresh===false?"degraded":"active"):"unverified";
+      const sourceVersion=sourcePackageVersion();
+      const runtimeVersion=publicRuntime.version;
+      const versionDrift=hasRuntimeVersionDrift(runtimeVersion,sourceVersion);
+      const staleRuntime=buildFresh===false||versionDrift;
+      const state=verified?(staleRuntime?"degraded":"active"):"unverified";
       return snap(service,port,state,s.supervisorPid,verified,
         verified?["status","plan","restart","rollback","drain"]:["status"],
         verified
           ? buildFresh===false
             ? "Authenticated Core supervisor is serving a stale compiled generation; rebuild/restart recommended"
-            : "Authenticated Core supervisor + kernel listener"
+            : versionDrift
+              ? `Authenticated Core runtime version ${runtimeVersion} differs from source ${sourceVersion}; rebuild/restart recommended`
+              : "Authenticated Core supervisor + kernel listener"
           : "Core supervisor identity/kernel listener mismatch",
         {workerPid:s.active.pid,retainedWorkers:s.retained.length,
           sessionCount:s.affinitySessions,buildFresh,
+          runtimeVersion,sourceVersion,versionDrift,
           ownerManagedRecovery:verified?"verified_rollback_monitor":null,
-          runtimeWarning:buildFresh===false?"SOURCE_DIST_DRIFT":null,
+          runtimeWarning:buildFresh===false?"SOURCE_DIST_DRIFT":versionDrift?"VERSION_DRIFT":null,
           kernelListenerPid:owner,
           ownershipEvidence:s.supervisorPid===owner
             ?"kernel_listener_pid"
             : verified?"authenticated_server_info_fallback":null});
     }catch {
       const response=await probe(port!,"/api/status");
+      const sourceVersion=sourcePackageVersion();
+      const runtimeVersion=typeof response?.body?.version==="string"
+        ? String(response.body.version).slice(0,64):null;
+      const versionDrift=hasRuntimeVersionDrift(runtimeVersion,sourceVersion);
       // A failed supervisor probe never proves that an existing listener
       // is inactive or legacy. Require a fresh owner-bound plan to mutate.
       return snap(service,port,owner!==null||response?"unverified":"inactive",owner,false,
         response?["status","plan","recycle"]:["status"],
-        response?"Core HTTP responds but supervisor ownership is not currently attested; recycle requires independent preflight":
-          owner!==null?"Core listener exists but supervisor attestation is unavailable; mutation blocked":
-          "No Core supervisor, listener, or responsive API");
+        response
+          ? versionDrift
+            ? `Core HTTP responds with runtime ${runtimeVersion} while source is ${sourceVersion}; ownership is unattested and guarded recycle is required`
+            : "Core HTTP responds but supervisor ownership is not currently attested; recycle requires independent preflight"
+          : owner!==null?"Core listener exists but supervisor attestation is unavailable; mutation blocked":
+            "No Core supervisor, listener, or responsive API",
+        response?{runtimeVersion,sourceVersion,versionDrift,
+          runtimeWarning:versionDrift?"VERSION_DRIFT":"OWNER_UNVERIFIED"}:undefined);
     }
   }
   if(service==="mcp") {
@@ -322,11 +357,22 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
       }catch{}
     }
     const matched=owner===registered.pid;
-    return snap(service,port,!matched?"unverified":verified?"active":"degraded",
+    const memorySuspicious=live?.memoryTelemetry?.trend?.suspicious===true;
+    const affinityDrift=Number.isFinite(live?.sessionTelemetry?.affinityDrift)
+      ? Number(live.sessionTelemetry.affinityDrift):0;
+    const backendDegraded=verified&&(
+      live?.backendHealthy===false||memorySuspicious||affinityDrift>0
+    );
+    return snap(service,port,!matched?"unverified":verified?(backendDegraded?"degraded":"active"):"degraded",
       registered.pid,verified,reloadable?["status","plan","reload"]:["status"],
-      reloadable?"Authenticated Reloadable MCP owner; URL-stable reload available":
-        registered.reloadable?"Reloadable identity unverified; mutation blocked":
-        "Legacy MCP owner: cannot guarantee same public URL on restart",
+      reloadable
+        ? memorySuspicious
+          ? "Authenticated Reloadable MCP owner detected sustained backend memory growth; safe idle recovery is armed"
+          : affinityDrift>0
+            ? "Authenticated Reloadable MCP owner detected stale session affinity drift"
+            : "Authenticated Reloadable MCP owner; URL-stable reload available"
+        : registered.reloadable?"Reloadable identity unverified; mutation blocked":
+          "Legacy MCP owner: cannot guarantee same public URL on restart",
       {authMode:registered.authMode,tunnelProvider:registered.tunnelProvider,
         publicUrl:registered.publicUrl,registeredPid:registered.pid,
         listenerPid:owner,reloadable,
@@ -335,6 +381,12 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
         backendHealthy:live?.backendHealthy??null,
         backendGenerationDetails:Array.isArray(live?.backendGenerationDetails)
           ? live.backendGenerationDetails.slice(0,8):[],
+        activeSessions:live?.activeSessions??null,
+        inFlightRequests:live?.inFlightRequests??null,
+        sessionTelemetry:live?.sessionTelemetry??null,
+        memoryTelemetry:live?.memoryTelemetry??null,
+        runtimeWarning:memorySuspicious?"MCP_MEMORY_GROWTH_DETECTED":
+          affinityDrift>0?"MCP_AFFINITY_DRIFT":null,
         ownerManagedRecovery:live?.autoRecovery??null});
   }
   if(service==="transport") {

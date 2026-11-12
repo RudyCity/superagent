@@ -1,17 +1,18 @@
 /**
  * runtimeMemoryDiagnostics.ts — Process memory and lifecycle telemetry.
  *
- * Provides:
- * - Runtime memory snapshots (RSS, heapUsed, heapTotal, external, arrayBuffers).
- * - Component lifecycle counters (MCP sessions, journal footprint, CLI Bridge sessions, delegate jobs).
- * - Memory pressure classification ("normal" | "elevated" | "critical") with soft guardrails.
- * - Operator-safe diagnostic summaries without secret or credential leakage.
+ * Provides bounded process/session telemetry plus an early sustained-growth
+ * detector so leaks are visible well before absolute GiB thresholds.
  */
 
-import os from "node:os";
 import { getActivityJournal } from "../mcp/mcpActivityJournal.js";
+import { getMcpProcessSessionTelemetry } from "../mcp/mcpSessionTelemetry.js";
 import { getActiveSessionCount, getDetachedSessionCount } from "../tools/cliBridgeSession.js";
 import { getActiveJobCount, getRetainedJobCount } from "../tools/cliBridgeDelegateJobs.js";
+import {
+  assessMemoryTrend, trimMemoryTrendSamples,
+  type MemoryTrendAssessment, type MemoryTrendSample,
+} from "./memoryTrend.js";
 
 export type MemoryPressureLevel = "normal" | "elevated" | "critical";
 
@@ -31,10 +32,17 @@ export interface RuntimeMemorySnapshot {
     arrayBuffersBytes?: number;
     arrayBuffersMb?: number;
   };
+  trend: MemoryTrendAssessment;
   mcp: {
     activityJournalSizeBytes: number;
     activityJournalArchiveCount: number;
     activityJournalTotalSizeBytes: number;
+    activeSessions: number;
+    activePrincipals: number;
+    largestPrincipalSessionCount: number;
+    oldestSessionAgeMs: number;
+    oldestIdleMs: number;
+    rejectedTotal: number;
   };
   cliBridge: {
     activeSessions: number;
@@ -48,18 +56,42 @@ export interface RuntimeMemorySnapshot {
   };
 }
 
-/** Thresholds in bytes for memory pressure evaluation */
+/** Absolute guardrails remain a last line of defense. */
 export const MEMORY_PRESSURE_THRESHOLDS = {
-  ELEVATED_RSS_BYTES: 1024 * 1024 * 1024,      // 1 GB
+  ELEVATED_RSS_BYTES: 1024 * 1024 * 1024,       // 1 GB
   CRITICAL_RSS_BYTES: 3 * 1024 * 1024 * 1024,  // 3 GB
-  ELEVATED_HEAP_BYTES: 512 * 1024 * 1024,     // 512 MB
+  ELEVATED_HEAP_BYTES: 512 * 1024 * 1024,       // 512 MB
   CRITICAL_HEAP_BYTES: 1.5 * 1024 * 1024 * 1024, // 1.5 GB
-  ELEVATED_JOURNAL_BYTES: 128 * 1024 * 1024,  // 128 MB
+  ELEVATED_JOURNAL_BYTES: 128 * 1024 * 1024,    // 128 MB
 };
 
+const MEMORY_TREND_SAMPLE_INTERVAL_MS = 60_000;
+const MEMORY_TREND_MIN_GAP_MS = 10_000;
+const MEMORY_TREND_MAX_SAMPLES = 30;
+const memoryTrendSamples: MemoryTrendSample[] = [];
 let mockPressureLevel: MemoryPressureLevel | null = null;
 let lastPressureWarningAt = 0;
-const PRESSURE_WARNING_COOLDOWN_MS = 60_000; // Rate limit warnings to once per 60s
+const PRESSURE_WARNING_COOLDOWN_MS = 60_000;
+
+function recordMemoryTrendSample(
+  memory: NodeJS.MemoryUsage = process.memoryUsage(),
+  at = Date.now(),
+): void {
+  const previous = memoryTrendSamples[memoryTrendSamples.length - 1];
+  if (previous && at - previous.at < MEMORY_TREND_MIN_GAP_MS) return;
+  const next = trimMemoryTrendSamples([
+    ...memoryTrendSamples,
+    { at, rssBytes: memory.rss, heapUsedBytes: memory.heapUsed },
+  ], MEMORY_TREND_MAX_SAMPLES);
+  memoryTrendSamples.splice(0, memoryTrendSamples.length, ...next);
+}
+
+const memoryTrendTimer = setInterval(
+  () => recordMemoryTrendSample(),
+  MEMORY_TREND_SAMPLE_INTERVAL_MS,
+);
+memoryTrendTimer.unref?.();
+recordMemoryTrendSample();
 
 export function __setMockMemoryPressureLevel(level: MemoryPressureLevel | null): void {
   mockPressureLevel = level;
@@ -67,22 +99,24 @@ export function __setMockMemoryPressureLevel(level: MemoryPressureLevel | null):
 
 export function warnMemoryPressureThrottling(reasons: string[]): boolean {
   const now = Date.now();
-  if (now - lastPressureWarningAt < PRESSURE_WARNING_COOLDOWN_MS) {
-    return false;
-  }
+  if (now - lastPressureWarningAt < PRESSURE_WARNING_COOLDOWN_MS) return false;
   lastPressureWarningAt = now;
   const reasonText = reasons.length > 0 ? reasons.join("; ") : "threshold exceeded";
-  console.warn(`[MEM_PRESSURE] Critical memory pressure detected: throttling optional observability enrichment. Reasons: ${reasonText}`);
+  console.warn(
+    `[MEM_PRESSURE] Critical memory pressure detected: throttling optional observability enrichment. Reasons: ${reasonText}`,
+  );
   return true;
 }
 
-/**
- * Capture an in-process memory and lifecycle diagnostic snapshot.
- */
+/** Capture an in-process memory and lifecycle diagnostic snapshot. */
 export function getRuntimeMemorySnapshot(): RuntimeMemorySnapshot {
+  const now = Date.now();
   const mem = process.memoryUsage();
+  recordMemoryTrendSample(mem, now);
+  const trend = assessMemoryTrend(memoryTrendSamples);
   const uptime = process.uptime();
   const journalStats = getActivityJournal().getJournalStats();
+  const mcpSessions = getMcpProcessSessionTelemetry();
 
   let activeSessions = 0;
   let detachedSessions = 0;
@@ -119,7 +153,16 @@ export function getRuntimeMemorySnapshot(): RuntimeMemorySnapshot {
 
   if (journalStats.activeSizeBytes >= MEMORY_PRESSURE_THRESHOLDS.ELEVATED_JOURNAL_BYTES) {
     if (level === "normal") level = "elevated";
-    reasons.push(`Active activity journal size (${Math.round(journalStats.activeSizeBytes / 1024 / 1024)} MB) exceeds 128 MB`);
+    reasons.push(
+      `Active activity journal size (${Math.round(journalStats.activeSizeBytes / 1024 / 1024)} MB) exceeds 128 MB`,
+    );
+  }
+
+  if (trend.suspicious) {
+    if (level === "normal") level = "elevated";
+    reasons.push(
+      `Sustained memory growth detected before absolute threshold (${trend.reasons.join(", ")})`,
+    );
   }
 
   if (mockPressureLevel !== null) {
@@ -130,7 +173,7 @@ export function getRuntimeMemorySnapshot(): RuntimeMemorySnapshot {
   const toMb = (bytes: number) => Math.round((bytes / (1024 * 1024)) * 100) / 100;
 
   return {
-    timestamp: Date.now(),
+    timestamp: now,
     uptimeSeconds: Math.round(uptime),
     pid: process.pid,
     memory: {
@@ -145,10 +188,17 @@ export function getRuntimeMemorySnapshot(): RuntimeMemorySnapshot {
       arrayBuffersBytes: mem.arrayBuffers,
       arrayBuffersMb: mem.arrayBuffers ? toMb(mem.arrayBuffers) : undefined,
     },
+    trend,
     mcp: {
       activityJournalSizeBytes: journalStats.activeSizeBytes,
       activityJournalArchiveCount: journalStats.archiveCount,
       activityJournalTotalSizeBytes: journalStats.totalSizeBytes,
+      activeSessions: mcpSessions.activeSessions,
+      activePrincipals: mcpSessions.activePrincipals,
+      largestPrincipalSessionCount: mcpSessions.largestPrincipalSessionCount,
+      oldestSessionAgeMs: mcpSessions.oldestSessionAgeMs,
+      oldestIdleMs: mcpSessions.oldestIdleMs,
+      rejectedTotal: mcpSessions.rejectedTotal,
     },
     cliBridge: {
       activeSessions,
@@ -156,17 +206,13 @@ export function getRuntimeMemorySnapshot(): RuntimeMemorySnapshot {
       activeJobs,
       retainedJobs,
     },
-    pressure: {
-      level,
-      reasons,
-    },
+    pressure: { level, reasons },
   };
 }
 
 /**
- * Pressure guardrail: whether optional verbose observability enrichment
- * should be deferred or curtailed to preserve memory under high load.
- * Rate-limits warning logs to at most once per 60s.
+ * Pressure guardrail: optional verbose observability is curtailed only under
+ * critical pressure. Sustained-growth telemetry remains visible at elevated.
  */
 export function shouldThrottleLargeObservability(): boolean {
   if (mockPressureLevel === "critical") {

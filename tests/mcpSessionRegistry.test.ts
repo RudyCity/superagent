@@ -8,19 +8,19 @@ import {
 } from "../src/core/mcp/mcpSessionRegistry.js";
 import type { McpIdentity } from "../src/core/mcp/mcpAuth.js";
 
-function identity(): McpIdentity {
-  return { mode: "static-bearer", subject: "bearer", scopes: [], credentialHash: "abc" };
+function identity(subject = "bearer"): McpIdentity {
+  return { mode: "static-bearer", subject, scopes: [], credentialHash: "abc" };
 }
 
 function fakeTransport() {
   return { close: async () => {} } as unknown as import("@modelcontextprotocol/sdk/server/streamableHttp.js").StreamableHTTPServerTransport;
 }
 
-function entry(id: string): McpSessionEntry {
+function entry(id: string, subject = "bearer"): McpSessionEntry {
   return {
     sessionId: id,
     transport: fakeTransport(),
-    identity: identity(),
+    identity: identity(subject),
     createdAt: Date.now(),
     lastActivityAt: Date.now(),
   };
@@ -53,6 +53,27 @@ describe("McpSessionRegistry", () => {
     reg.add(entry("s4"));
     expect(reg.isFull()).toBe(true);
     expect(() => reg.add(entry("s5"))).toThrow("too many");
+    expect(reg.snapshot().rejectedGlobal).toBe(1);
+  });
+
+  it("caps one authenticated principal without starving another", () => {
+    const r = new McpSessionRegistry({
+      maxSessions: 6,
+      maxSessionsPerPrincipal: 2,
+      idleTimeoutMs: 60000,
+      maxLifetimeMs: 60000,
+    });
+    r.add(entry("a1", "principal-a"));
+    r.add(entry("a2", "principal-a"));
+    expect(r.isFullFor(identity("principal-a"))).toBe(true);
+    expect(() => r.add(entry("a3", "principal-a")))
+      .toThrow("too many concurrent MCP sessions for principal");
+    r.add(entry("b1", "principal-b"));
+    const stats = r.snapshot();
+    expect(stats.activeSessions).toBe(3);
+    expect(stats.activePrincipals).toBe(2);
+    expect(stats.largestPrincipalSessionCount).toBe(2);
+    expect(stats.rejectedPrincipal).toBe(1);
   });
 
   it("removes sessions and closes their transport", async () => {
@@ -66,18 +87,19 @@ describe("McpSessionRegistry", () => {
     expect(await reg.remove("s1")).toBe(false);
   });
 
-  it("notifies an outer owner exactly once when a session is removed", async () => {
-    const removed: string[] = [];
+  it("notifies an outer owner exactly once with the removal reason", async () => {
+    const removed: Array<{id:string;reason:string}> = [];
     const r = new McpSessionRegistry({
       maxSessions: 4,
       idleTimeoutMs: 60000,
       maxLifetimeMs: 60000,
-      onSessionRemoved: (sessionId) => removed.push(sessionId),
+      onSessionRemoved: (sessionId, reason) => removed.push({id:sessionId,reason}),
     });
     r.add(entry("s1"));
-    expect(await r.remove("s1")).toBe(true);
-    expect(await r.remove("s1")).toBe(false);
-    expect(removed).toEqual(["s1"]);
+    expect(await r.remove("s1", "client_delete")).toBe(true);
+    expect(await r.remove("s1", "client_delete")).toBe(false);
+    expect(removed).toEqual([{id:"s1",reason:"client_delete"}]);
+    expect(r.snapshot().removals.client_delete).toBe(1);
   });
 
   it("touch updates lastActivityAt", async () => {

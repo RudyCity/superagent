@@ -46,7 +46,10 @@ import { R1_OWNER_TOOLS } from "./mcpSafeOwnerPolicy.js";
 import {
   McpSessionRegistry,
   type McpSessionEntry,
+  type McpSessionRegistryStats,
+  type McpSessionRemovalReason,
 } from "./mcpSessionRegistry.js";
+import { registerMcpSessionTelemetry } from "./mcpSessionTelemetry.js";
 import { summarizeArgs, argShape } from "./mcpLogSanitizer.js";
 import { recordMcpOAuthAudit } from "./mcpOAuthAudit.js";
 import { recordMcpIdentityPresence } from "./mcpIdentityPresence.js";
@@ -334,12 +337,14 @@ export interface McpHttpServerOptions {
   publicBaseUrl?: string;
   /** Max concurrent MCP sessions (default 32). */
   maxSessions?: number;
+  /** Max concurrent sessions for one authenticated principal (default 8). */
+  maxSessionsPerPrincipal?: number;
   /** Close sessions idle longer than this (default 30 min). */
   sessionIdleTimeoutMs?: number;
   /** Hard cap on session age (default 4 hours). */
   sessionMaxLifetimeMs?: number;
   /** Internal lifecycle observer used by durable ingress owners. */
-  onSessionClosed?: (sessionId: string) => void;
+  onSessionClosed?: (sessionId: string, reason: McpSessionRemovalReason) => void;
   /** Host/Origin validation policy (defense in depth). */
   hostOriginPolicy?: McpHostOriginPolicy;
   /**
@@ -366,6 +371,10 @@ export interface McpHttpServerHandle {
   /** Actual bound port (useful when port 0 was requested). */
   port: number;
   close: () => Promise<void>;
+  /** Aggregate-only session telemetry; never exposes ids or principals. */
+  getSessionStats: () => McpSessionRegistryStats;
+  /** Count of currently executing tools/call requests. */
+  getInFlightToolCalls: () => number;
   /** OAuth store (only set in oauth mode); used for status/diagnostics. */
   oauthStore?: McpOAuthStore;
 }
@@ -431,10 +440,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
   // and a session is only usable with the identity it was created under.
   const registry = new McpSessionRegistry({
     maxSessions: opts.maxSessions,
+    maxSessionsPerPrincipal: opts.maxSessionsPerPrincipal,
     idleTimeoutMs: opts.sessionIdleTimeoutMs,
     maxLifetimeMs: opts.sessionMaxLifetimeMs,
     onSessionRemoved: opts.onSessionClosed,
   });
+  let inFlightToolCalls = 0;
   if (opts.lockSafeTools && opts.allowDangerous !== false) {
     throw new Error("Safe-only MCP cannot enable dangerous tools");
   }
@@ -689,7 +700,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           res.end(JSON.stringify({ error: "session credential mismatch" }));
           return;
         }
-        const removed = await registry.remove(requestSessionId);
+        const removed = await registry.remove(requestSessionId, "client_delete");
         res.writeHead(removed ? 200 : 404, { "Content-Type": "application/json" });
         res.end(JSON.stringify(removed ? { ok: true } : { error: "unknown session" }));
         return;
@@ -716,9 +727,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         registry.touch(requestSessionId);
         const diagnosticStage = getMcpDiagnosticStage(body);
         const diagnosticStart = performance.now();
+        const isToolCall = diagnosticStage === "mcp.tools_call";
+        if (isToolCall) inFlightToolCalls++;
         try {
           await session.transport.handleRequest(req, res, body);
         } finally {
+          if (isToolCall) inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
           if (diagnosticStage) {
             recordMcpOAuthAudit({
               stage: diagnosticStage,
@@ -748,8 +762,13 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           return;
         }
         if (registry.isFull()) {
-          res.writeHead(503, { "Content-Type": "application/json" });
+          res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
           res.end(JSON.stringify({ error: "too many concurrent MCP sessions" }));
+          return;
+        }
+        if (registry.isFullFor(identity as McpIdentity)) {
+          res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "5" });
+          res.end(JSON.stringify({ error: "too many concurrent MCP sessions for principal" }));
           return;
         }
         const newTransport = new StreamableHTTPServerTransport({
@@ -801,7 +820,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
               return;
             }
             newTransport.onclose = () => {
-              void registry.remove(assignedId);
+              void registry.remove(assignedId, "transport_close");
             };
           } else {
             try { await newTransport.close(); } catch { /* ignore */ }
@@ -835,9 +854,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
       try {
         const diagnosticStage = getMcpDiagnosticStage(rb.body);
         const diagnosticStart = performance.now();
+        const isToolCall = diagnosticStage === "mcp.tools_call";
+        if (isToolCall) inFlightToolCalls++;
         try {
           await statelessTransport.handleRequest(req, res, rb.body);
         } finally {
+          if (isToolCall) inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
           if (diagnosticStage) {
             recordMcpOAuthAudit({
               stage: diagnosticStage,
@@ -868,13 +890,17 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
   });
 
   const boundPort = (httpServer.address() as any)?.port ?? opts.port;
+  const unregisterSessionTelemetry = registerMcpSessionTelemetry(() => registry.snapshot());
   return {
     url: `http://127.0.0.1:${boundPort}${MCP_HTTP_PATH}`,
     port: boundPort,
     oauthStore,
+    getSessionStats: () => registry.snapshot(),
+    getInFlightToolCalls: () => inFlightToolCalls,
     close: () =>
       new Promise<void>((resolve) => {
         void (async () => {
+          unregisterSessionTelemetry();
           try { await registry.closeAll(); } catch {}
           try {
             const { standaloneSshProjectProvider } = await import("./tools/standaloneSshProjectTools.js");

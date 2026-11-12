@@ -6,9 +6,12 @@
  * Startup credentials travel only over the trusted child IPC channel.
  */
 import { startMcpHttpServer, type McpHttpServerHandle } from "../mcp/mcpHttpTransport.js";
+import type { McpSessionRegistryStats, McpSessionRemovalReason } from "../mcp/mcpSessionRegistry.js";
 import { createPersistentMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
 import { startMcpDelegateForwardingSubscription } from "./delegateForwardingLifecycle.js";
 import { resolveDelegateCorePort } from "./delegateCoreEndpoint.js";
+
+const BACKEND_HEALTH_INTERVAL_MS = 60_000;
 
 export interface ReloadableBackendOptions {
   port: number;
@@ -30,7 +33,17 @@ export type BackendWorkerReply =
   | { type: "mcp-reload-worker-error"; message: string }
   | { type: "mcp-reload-worker-bootstrap-rotated"; requestId: string }
   | { type: "mcp-reload-worker-bootstrap-consumed"; hash: string }
-  | { type: "mcp-reload-worker-session-closed"; sessionId: string };
+  | { type: "mcp-reload-worker-session-closed"; sessionId: string; reason: McpSessionRemovalReason }
+  | {
+      type: "mcp-reload-worker-health";
+      timestamp: number;
+      rssBytes: number;
+      heapUsedBytes: number;
+      externalBytes: number;
+      arrayBuffersBytes: number;
+      inFlightToolCalls: number;
+      sessionStats: McpSessionRegistryStats;
+    };
 
 export const DISABLED_BOOTSTRAP_HASH = "0".repeat(64);
 export type BootstrapRotateRequest = {
@@ -62,7 +75,7 @@ export function validateReloadableBackendOptions(
 export async function startReloadableMcpBackend(
   opts: ReloadableBackendOptions,
   onConsumed?: (hash: string) => void,
-  onSessionClosed?: (sessionId: string) => void,
+  onSessionClosed?: (sessionId: string, reason: McpSessionRemovalReason) => void,
 ): Promise<{
   handle: McpHttpServerHandle;
   oauthStatePersistent: boolean;
@@ -111,11 +124,27 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
   let started = false;
   let closing = false;
   let handle: McpHttpServerHandle | undefined;
+  let healthTimer: ReturnType<typeof setInterval> | undefined;
   let rotateBootstrapHash: ((hash:string) => void) | undefined;
   let delegateForwarding: ReturnType<typeof startMcpDelegateForwardingSubscription> | undefined;
+  const sendHealth = () => {
+    if (!handle || !process.send || closing) return;
+    const memory = process.memoryUsage();
+    process.send({
+      type:"mcp-reload-worker-health",
+      timestamp:Date.now(),
+      rssBytes:memory.rss,
+      heapUsedBytes:memory.heapUsed,
+      externalBytes:memory.external,
+      arrayBuffersBytes:memory.arrayBuffers ?? 0,
+      inFlightToolCalls:handle.getInFlightToolCalls(),
+      sessionStats:handle.getSessionStats(),
+    } satisfies BackendWorkerReply);
+  };
   const shutdown = async () => {
     if (closing) return;
     closing = true;
+    if (healthTimer) clearInterval(healthTimer);
     delegateForwarding?.close();
     try { await handle?.close(); } catch {}
     process.exit(0);
@@ -155,8 +184,8 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
           hash => process.send?.({
             type: "mcp-reload-worker-bootstrap-consumed", hash,
           } satisfies BackendWorkerReply),
-          sessionId => process.send?.({
-            type: "mcp-reload-worker-session-closed", sessionId,
+          (sessionId, reason) => process.send?.({
+            type: "mcp-reload-worker-session-closed", sessionId, reason,
           } satisfies BackendWorkerReply),
         );
         handle = result.handle;
@@ -166,6 +195,12 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
           port: handle.port,
           oauthStatePersistent: result.oauthStatePersistent,
         } satisfies BackendWorkerReply);
+        // Give the owner time to attach its steady-state IPC listener after the
+        // ready handshake before the first telemetry frame is emitted.
+        const firstHealth = setTimeout(sendHealth, 250);
+        firstHealth.unref?.();
+        healthTimer = setInterval(sendHealth, BACKEND_HEALTH_INTERVAL_MS);
+        healthTimer.unref?.();
       } catch (error) {
         process.send?.({
           type: "mcp-reload-worker-error",

@@ -25,6 +25,11 @@ import {
 } from "./mcpReloadableBackend.js";
 import { MCP_TOOL_DEFINITIONS, DISABLED_MCP_TOOLS } from "../mcp/superagentMcpServer.js";
 import { appendMcpOwnerLog } from "./mcpOwnerLog.js";
+import {
+  assessMemoryTrend, trimMemoryTrendSamples,
+  type MemoryTrendAssessment, type MemoryTrendSample,
+} from "./memoryTrend.js";
+import { decideMcpMemoryRecovery } from "./mcpMemoryRecoveryPolicy.js";
 
 const WORKER_START_MS = 30_000;
 const OLD_GENERATION_TTL = 4 * 60 * 60_000 + 5 * 60_000;
@@ -40,6 +45,8 @@ export interface ReloadableOwnerOptions {
   auditLogPath?: string;
 }
 
+type BackendHealthReply = Extract<BackendWorkerReply, {type:"mcp-reload-worker-health"}>;
+
 interface BackendGeneration {
   child: ChildProcess;
   pid: number;
@@ -49,6 +56,9 @@ interface BackendGeneration {
   retireAt: number | null;
   alive: boolean;
   oauthStatePersistent: boolean;
+  lastHealth: BackendHealthReply | null;
+  memorySamples: MemoryTrendSample[];
+  memoryTrend: MemoryTrendAssessment;
 }
 
 function bearerMatches(provided: string, secret: string): boolean {
@@ -96,6 +106,7 @@ function createReloadWorker(
           child, pid: child.pid!, port: m.port,
           sessions: new Set(), inFlight: 0, retireAt: null, alive: true,
           oauthStatePersistent: m.oauthStatePersistent === true,
+          lastHealth: null, memorySamples: [], memoryTrend: assessMemoryTrend([]),
         };
         child.once("exit", () => { ready.alive = false; });
         finish(undefined, ready);
@@ -147,6 +158,8 @@ export async function startReloadableMcpTunnelOwner(
   let reloadCount = 0;
   let lastReloadAt: number | undefined;
   let lastAutoRecoveryAt: number | undefined;
+  let lastMemoryRecoveryAt: number | undefined;
+  let staleAffinityReclaimed = 0;
   let autoRecoveryAttempts: number[] = [];
   function record(event: Parameters<typeof appendMcpOwnerLog>[1], fields: {
     backendPid?: number; previousBackendPid?: number;
@@ -188,6 +201,32 @@ export async function startReloadableMcpTunnelOwner(
     if (event?.type !== "mcp-reload-worker-session-closed" ||
         typeof event.sessionId !== "string" || !event.sessionId) return;
     forgetSession(event.sessionId, gen);
+  }
+  function onBackendHealth(gen: BackendGeneration, message: unknown): void {
+    const event = message as BackendHealthReply | null;
+    if (event?.type !== "mcp-reload-worker-health" ||
+        !Number.isSafeInteger(event.timestamp) || event.timestamp <= 0 ||
+        !Number.isFinite(event.rssBytes) || event.rssBytes < 0 ||
+        !Number.isFinite(event.heapUsedBytes) || event.heapUsedBytes < 0 ||
+        !event.sessionStats ||
+        !Number.isSafeInteger(event.sessionStats.activeSessions) ||
+        event.sessionStats.activeSessions < 0) return;
+    gen.lastHealth = event;
+    gen.memorySamples = trimMemoryTrendSamples([
+      ...gen.memorySamples,
+      {at:event.timestamp, rssBytes:event.rssBytes, heapUsedBytes:event.heapUsedBytes},
+    ], 12);
+    gen.memoryTrend = assessMemoryTrend(gen.memorySamples);
+
+    // Backend registry lifetime is authoritative. When it reports zero active
+    // sessions, every owner affinity still pointing at this generation is stale.
+    if (event.sessionStats.activeSessions === 0 && gen.inFlight === 0 &&
+        gen.sessions.size > 0) {
+      const reclaimed = gen.sessions.size;
+      for (const id of [...gen.sessions]) forgetSession(id, gen);
+      staleAffinityReclaimed += reclaimed;
+    }
+    if (gen === current) void recoverBackendFromMemoryTrend(gen);
   }
   /** Update a single trusted child over IPC and wait for an explicit ACK.
    * No bootstrap plaintext ever enters child messages or log files.
@@ -264,6 +303,10 @@ export async function startReloadableMcpTunnelOwner(
     }
   }
 
+  function pruneAutoRecoveryAttempts(now = Date.now()): void {
+    autoRecoveryAttempts = autoRecoveryAttempts.filter(at => at > now - 60 * 60_000);
+  }
+
   function scheduleBackendAutoRecovery(failed: BackendGeneration): void {
     if (closing || draining || failed !== current || failed.alive || recoveryTimer) return;
     recoveryTimer = setTimeout(() => {
@@ -277,7 +320,7 @@ export async function startReloadableMcpTunnelOwner(
     if (closing || draining || reloading || rotatingBootstrap ||
         failed !== current || failed.alive) return;
     const now = Date.now();
-    autoRecoveryAttempts = autoRecoveryAttempts.filter(at => at > now - 60 * 60_000);
+    pruneAutoRecoveryAttempts(now);
     if (autoRecoveryAttempts.length >= AUTO_RECOVERY_LIMIT_PER_HOUR) {
       record("backend_auto_recovery_blocked", {
         backendPid: failed.pid, code: "MCP_AUTO_RECOVERY_RATE_LIMIT",
@@ -322,6 +365,47 @@ export async function startReloadableMcpTunnelOwner(
       reloading = false;
     }
   }
+
+  async function recoverBackendFromMemoryTrend(gen: BackendGeneration): Promise<void> {
+    pruneAutoRecoveryAttempts();
+    const decision = decideMcpMemoryRecovery({
+      trend: gen.memoryTrend,
+      backendCurrent: gen === current,
+      backendAlive: gen.alive,
+      ownerBusy: closing || draining || reloading || rotatingBootstrap,
+      ownerSessions: gen.sessions.size,
+      backendSessions: gen.lastHealth?.sessionStats.activeSessions ?? null,
+      inFlight: gen.inFlight,
+      inFlightToolCalls: gen.lastHealth?.inFlightToolCalls ?? 0,
+      oauthPersistent: opts.authMode !== "oauth" || oauthPersistent,
+      attemptsLastHour: autoRecoveryAttempts.length,
+      maxAttemptsPerHour: AUTO_RECOVERY_LIMIT_PER_HOUR,
+    });
+    if (!decision.recover) return;
+
+    const started = Date.now();
+    const previousPid = gen.pid;
+    try {
+      const result = await reload();
+      const recoveredAt = Date.now();
+      autoRecoveryAttempts.push(recoveredAt);
+      lastAutoRecoveryAt = recoveredAt;
+      lastMemoryRecoveryAt = recoveredAt;
+      record("backend_auto_recovered", {
+        backendPid: result.pid,
+        previousBackendPid: previousPid,
+        durationMs: recoveredAt - started,
+        code: "MCP_MEMORY_GROWTH",
+      });
+    } catch {
+      record("backend_auto_recovery_blocked", {
+        backendPid: previousPid,
+        durationMs: Date.now() - started,
+        code: "MCP_MEMORY_RECOVERY_FAILED",
+      });
+    }
+  }
+
   async function launch(): Promise<BackendGeneration> {
     const gen = await createReloadWorker(opts.cliEntry, {
       port: opts.port, publicBaseUrl: baseUrl,
@@ -334,6 +418,7 @@ export async function startReloadableMcpTunnelOwner(
     gen.child.on("message", message => {
       onBootstrapConsumed(gen, message);
       onBackendSessionClosed(gen, message);
+      onBackendHealth(gen, message);
     });
     gen.child.once("exit", () => {
       // Fail closed if this worker dies before delivering a successful
@@ -411,11 +496,18 @@ export async function startReloadableMcpTunnelOwner(
   }
   function status() {
     const now = Date.now();
-    autoRecoveryAttempts = autoRecoveryAttempts.filter(at => at > now - 60 * 60_000);
+    pruneAutoRecoveryAttempts(now);
+    const currentHealth = current?.lastHealth ?? null;
+    const currentStats = currentHealth?.sessionStats ?? null;
+    const backendActiveSessions = [...generations].reduce(
+      (sum, gen) => sum + (gen.lastHealth?.sessionStats.activeSessions ?? 0), 0,
+    );
+    const trend = current?.memoryTrend ?? assessMemoryTrend([]);
     return {
       version: 1, kind: "private_mcp_owner", pid: process.pid,
       port: opts.port, startedAt: opts.createdAt, mode: "managed-tunnel",
       activeSessions: activeSessionCount(), inFlightRequests: requestCount(),
+      inFlightToolCalls: currentHealth?.inFlightToolCalls ?? 0,
       draining, inflightToolEffects: "unknown",
       safeToolsOnly: !opts.allowDangerous, oauthEnabled: opts.authMode === "oauth",
       publicTunnelStarted: publicTunnelOwned,
@@ -426,14 +518,50 @@ export async function startReloadableMcpTunnelOwner(
         current: gen === current,
         alive: gen.alive,
         sessions: gen.sessions.size,
+        backendSessions: gen.lastHealth?.sessionStats.activeSessions ?? null,
         inFlight: gen.inFlight,
+        inFlightToolCalls: gen.lastHealth?.inFlightToolCalls ?? null,
         retireAt: gen.retireAt,
+        rssBytes: gen.lastHealth?.rssBytes ?? null,
+        heapUsedBytes: gen.lastHealth?.heapUsedBytes ?? null,
+        healthAgeMs: gen.lastHealth ? Math.max(0, now - gen.lastHealth.timestamp) : null,
+        memoryTrendSuspicious: gen.memoryTrend.suspicious,
       })),
+      sessionTelemetry: {
+        backendActiveSessions: currentStats?.activeSessions ?? null,
+        activePrincipals: currentStats?.activePrincipals ?? null,
+        largestPrincipalSessionCount: currentStats?.largestPrincipalSessionCount ?? null,
+        oldestSessionAgeMs: currentStats?.oldestSessionAgeMs ?? null,
+        oldestIdleMs: currentStats?.oldestIdleMs ?? null,
+        rejectedTotal: currentStats
+          ? currentStats.rejectedGlobal + currentStats.rejectedPrincipal : null,
+        affinityDrift: currentStats
+          ? Math.max(0, activeSessionCount() - backendActiveSessions) : null,
+        staleAffinityReclaimed,
+      },
+      memoryTelemetry: {
+        rssBytes: currentHealth?.rssBytes ?? null,
+        heapUsedBytes: currentHealth?.heapUsedBytes ?? null,
+        externalBytes: currentHealth?.externalBytes ?? null,
+        arrayBuffersBytes: currentHealth?.arrayBuffersBytes ?? null,
+        healthAgeMs: currentHealth ? Math.max(0, now - currentHealth.timestamp) : null,
+        trend: {
+          suspicious: trend.suspicious,
+          sampleCount: trend.sampleCount,
+          windowMs: trend.windowMs,
+          rssGrowthBytes: trend.rssGrowthBytes,
+          heapGrowthBytes: trend.heapGrowthBytes,
+          rssSlopeBytesPerMinute: trend.rssSlopeBytesPerMinute,
+          heapSlopeBytesPerMinute: trend.heapSlopeBytesPerMinute,
+          reasons: trend.reasons,
+        },
+      },
       autoRecovery: {
         enabled: true,
         maxPerHour: AUTO_RECOVERY_LIMIT_PER_HOUR,
         attemptsLastHour: autoRecoveryAttempts.length,
         lastRecoveredAt: lastAutoRecoveryAt ?? null,
+        lastMemoryRecoveredAt: lastMemoryRecoveryAt ?? null,
       },
       reloadable: true, publicUrl: baseUrl ? baseUrl + "/mcp" : "",
       backendGeneration:reloadCount + 1, lastReloadAt:lastReloadAt ?? null,

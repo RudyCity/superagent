@@ -478,6 +478,12 @@ export async function handleServerHealth(): Promise<McpToolResult> {
     lines.push(`  Activity Journal: ${Math.round(memSnap.mcp.activityJournalSizeBytes / 1024)} KB (${memSnap.mcp.activityJournalArchiveCount} archives)`);
     lines.push(`  CLI Sessions: ${memSnap.cliBridge.activeSessions} active, ${memSnap.cliBridge.detachedSessions} detached`);
     lines.push(`  Delegate Jobs: ${memSnap.cliBridge.activeJobs} active, ${memSnap.cliBridge.retainedJobs} retained in memory`);
+    const { getMcpProcessSessionTelemetry } = await import("../mcpSessionTelemetry.js");
+    const sessions = getMcpProcessSessionTelemetry();
+    lines.push(`  MCP HTTP Sessions: ${sessions.activeSessions} active in ${sessions.registries} local registry(s)`);
+    lines.push(`  MCP Principals: ${sessions.activePrincipals} active, ${sessions.largestPrincipalSessionCount} max sessions/principal`);
+    lines.push(`  MCP Session Lifecycle: ${sessions.createdTotal} created, ${sessions.removedTotal} removed, ${sessions.rejectedTotal} rejected`);
+    lines.push(`  Oldest MCP Session / Idle: ${Math.round(sessions.oldestSessionAgeMs / 1000)}s / ${Math.round(sessions.oldestIdleMs / 1000)}s`);
   } catch {}
 
   return { content: [{ type: "text", text: lines.join("\n") }] };

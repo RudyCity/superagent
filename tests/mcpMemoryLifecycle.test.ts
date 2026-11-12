@@ -67,7 +67,11 @@ describe("SuperAgent MCP Memory Lifecycle & Churn Verification (M0 / S1 / S3 / S
     expect(snap.memory.rssBytes).toBeGreaterThan(0);
     expect(snap.memory.heapUsedBytes).toBeGreaterThan(0);
     expect(["normal", "elevated", "critical"]).toContain(snap.pressure.level);
+    expect(typeof snap.trend.suspicious).toBe("boolean");
     expect(typeof snap.mcp.activityJournalSizeBytes).toBe("number");
+    expect(typeof snap.mcp.activeSessions).toBe("number");
+    expect(typeof snap.mcp.activePrincipals).toBe("number");
+    expect(typeof snap.mcp.rejectedTotal).toBe("number");
     expect(typeof snap.cliBridge.activeSessions).toBe("number");
     expect(typeof shouldThrottleLargeObservability()).toBe("boolean");
   });

@@ -45,11 +45,20 @@ export interface ManagedMcpTunnelOwnerStatus {
   mode: typeof OWNER_MODE;
   activeSessions: number;
   inFlightRequests: number;
+  inFlightToolCalls?: number;
   draining: boolean;
   inflightToolEffects: "unknown";
   safeToolsOnly: boolean;
   oauthEnabled: boolean;
   publicTunnelStarted: true;
+  reloadable?: boolean;
+  backendPid?: number | null;
+  backendGenerations?: number;
+  backendHealthy?: boolean;
+  backendGenerationDetails?: Array<Record<string, unknown>>;
+  sessionTelemetry?: Record<string, unknown>;
+  memoryTelemetry?: Record<string, unknown>;
+  autoRecovery?: Record<string, unknown>;
 }
 
 export interface ManagedMcpTunnelStartResult {
@@ -189,7 +198,9 @@ function requestOwner(
       res.setEncoding("utf8");
       res.on("data", (chunk) => {
         text += chunk;
-        if (text.length > 4096) req.destroy();
+        // Status now carries bounded aggregate memory/session telemetry. Keep
+        // the private response capped while leaving room for several generations.
+        if (text.length > 16 * 1024) req.destroy();
       });
       res.once("end", () => {
         let body: Record<string, unknown> | null = null;
@@ -216,6 +227,8 @@ function parseOwnerStatus(
     typeof body.draining !== "boolean" ||
     !Number.isSafeInteger(body.activeSessions) || Number(body.activeSessions) < 0 ||
     !Number.isSafeInteger(body.inFlightRequests) || Number(body.inFlightRequests) < 0 ||
+    (body.inFlightToolCalls !== undefined &&
+      (!Number.isSafeInteger(body.inFlightToolCalls) || Number(body.inFlightToolCalls) < 0)) ||
     body.inflightToolEffects !== "unknown" ||
     typeof body.safeToolsOnly !== "boolean" || typeof body.oauthEnabled !== "boolean"
   ) return null;

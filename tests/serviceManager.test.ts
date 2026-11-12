@@ -1,10 +1,15 @@
 import {describe,it,expect} from "vitest";
 import {validateManageServicesArgs,manageServices,inspectServices,
-  MANAGED_SERVICE_NAMES} from "../src/core/runtime/serviceManager.js";
+  MANAGED_SERVICE_NAMES,hasRuntimeVersionDrift} from "../src/core/runtime/serviceManager.js";
 import {manageServicesTool} from "../src/core/tools/serviceManagerTools.js";
 import {masterToolset,superagentToolset,chromeExtensionToolset} from "../src/core/tools/toolsets.js";
 
 describe("unified SuperAgent service manager",()=>{
+  it("detects explicit runtime/source version drift without guessing missing versions",()=>{
+    expect(hasRuntimeVersionDrift("1.14.64","1.14.82")).toBe(true);
+    expect(hasRuntimeVersionDrift("1.14.82","1.14.82")).toBe(false);
+    expect(hasRuntimeVersionDrift(null,"1.14.82")).toBe(false);
+  });
   it("validates all operations and blocks arbitrary process commands",()=>{
     expect(()=>validateManageServicesArgs({action:"terminate",service:"all"})).toThrow("UNKNOWN_ACTION");
     expect(()=>validateManageServicesArgs({action:"status",service:"foreign_service"})).toThrow("UNKNOWN_TARGET");
