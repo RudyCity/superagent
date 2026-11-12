@@ -1,3 +1,9 @@
+## [1.14.79] - 2026-11-12
+### macOS/Linux desktop releases and bundled Chrome extensions
+- Add independently verified macOS arm64 DMG and Linux x64 DEB prerelease workflow with native Tray, standalone CLI smoke checks and SHA-256 checksums.
+- Verify macOS DMG payload by mounting its actual filesystem instead of requiring a retained intermediate .app build directory; keep Linux AppImage mandatory for the original three-OS gate while supporting an explicit DEB-only channel until linuxdeploy is repaired.
+- Build deterministic, source-only SidePanel extension ZIP alongside existing Delegate ZIP, verify SHA-256 receipts and ship both artifacts with Unix prereleases.
+
 ## [1.14.78] - 2026-11-12
 ### Windows standalone release packaging
 - Resolve the primary SuperAgent Tray project directory explicitly when packaging Windows NSIS and Unix bundles, preventing sibling LAN Windows GUI discovery from hijacking builds.

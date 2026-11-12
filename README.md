@@ -16,36 +16,36 @@
 
 SuperAgent combines a local CLI/Core runtime with authorized tools, multi-project MCP integration, Chrome CDP/Delegate coordination, optional desktop companions, and consent-based local-network support. Some features are experimental, available only in source, and not yet included in published installers.
 
-**Development snapshot (12 November 2026):** The local source is at package version **1.14.78**, including a verified prebuilt-installer acquisition workflow; this is not a published standalone installer. The source includes multi-agent cursor presence, local Tray supervision, consented visual previews, qualified iframe commands, and approval-gated replay. **This is not an announcement of a 1.14.70 public installer or active Core/Delegate deployment.**
+**Development snapshot (12 November 2026):** The local source is at package version **1.14.79**, including a verified prebuilt-installer acquisition workflow; this is not a published standalone installer. The source includes multi-agent cursor presence, local Tray supervision, consented visual previews, qualified iframe commands, and approval-gated replay. **This is not an announcement of a 1.14.70 public installer or active Core/Delegate deployment.**
 
 **Navigate:** [Downloads](#downloads-and-release-status) · [Quick start](#quick-start-from-source) · [Capabilities](#capabilities) · [Managed Chrome CDP](#managed-chrome-cdp-and-human-supervision) · [Security](#security-model) · [Development](#development-and-verification) · [Documentation](#documentation)
 
 ## Downloads and release status
 
-GitHub's **Latest**, prereleases, tags, and development drafts are separate states. A newer source version or tag does **not** automatically mean a newer working installer. The release-channel table below was checked against GitHub Releases on **11 November 2026**.
+GitHub's **Latest**, prereleases, tags, and development drafts are separate states. A newer source version or tag does **not** automatically mean a newer working installer. The following channels distinguish published installers from source-only candidates as of **12 November 2026**.
 
 | Release channel | Status | What is available |
 | --- | --- | --- |
 | **Source on `main` (newer development builds)** | **Development only** | Source, tests, Windows debug Tray build evidence; not a published or installed production update. |
-| **Windows 1.14.64 RC1** | **[Published prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.64-rc.1)** | Windows x64 standalone installer and SHA-256 checksums. Test as a release candidate, not production-certified. |
+| **Windows 1.14.78** | **[Published prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.78-windows.1)** | Verified Windows x64 standalone installer, SHA-256 checksum, self-contained Core/Bun/Tray/CLI; no MSVC needed on target PC. |
 | **v1.2.615** | [Historical GitHub “Latest” release](https://github.com/RudyCity/superagent/releases/tag/v1.2.615) | No attached downloadable installer assets. |
-| **Windows/macOS/Linux 1.14.64 RC2** | **Not released** | Tag exists, but macOS regression and Linux packaging CI gates failed. No verified multi-OS release. |
+| **macOS ARM64 / Linux x64 1.14.79** | **Release candidate** | Dedicated CI gate builds macOS DMG and Linux DEB; publication requires successful verification. Linux AppImage remains blocked by linuxdeploy. Both Chrome extensions are included as verified source ZIPs after publication. |
 | **LAN v0.6.0 — Windows + Android** | **Draft prerelease (not public)** | Four preview binaries and three verification documents are staged. Physical Android testing and release-source reproducibility are pending. |
 
 **[Browse published GitHub Releases](https://github.com/RudyCity/superagent/releases)**. Generated files under `artifacts/` are intentionally Git-ignored; build output alone is not a published release.
 
 ### Windows installer: verify before running
 
-Download `SuperAgent_1.14.64_x64-setup.exe` and `SHA256SUMS.txt` from [Windows RC1](https://github.com/RudyCity/superagent/releases/tag/v1.14.64-rc.1). Verify the downloaded installer:
+Download `SuperAgent_1.14.78_x64-setup.exe` and `SHA256SUMS.txt` from [Windows v1.14.78 prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.78-windows.1). Verify the downloaded installer:
 
 ```powershell
-Get-FileHash .\SuperAgent_1.14.64_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\SuperAgent_1.14.78_x64-setup.exe -Algorithm SHA256
 ```
 
-Expected SHA-256 for the published RC1 installer:
+Expected SHA-256 for the published 1.14.78 Windows installer:
 
 ```text
-72321f6c3e66541e2b50e73cf60e96d91f00b9cde9dd62fda6e6788e6c2f2c33
+b488d9a7d31a5b1427b421a45abc45c33781da6ddfe14edf23587a96d8fcd08b
 ```
 
 Run the installer on **Windows 10/11 x64**, then launch SuperAgent from the Start menu or a new terminal. The standalone installer bundles Core, the CLI, Bun, and its production packages; users do not need global Bun or Node.js for this package. Optional tools/models may require separate dependencies.

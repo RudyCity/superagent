@@ -1,0 +1,182 @@
+name: SuperAgent macOS Linux and Chrome Extension Prerelease
+on:
+  push:
+    tags:
+      - 'v*-unix.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: superagent-unix-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-unix:
+    name: Build and verify ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 110
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            os: macos-15
+          - platform: linux-x64
+            os: ubuntu-24.04
+    env:
+      CI: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install Linux native packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev patchelf libssl-dev build-essential curl wget file
+          sudo apt-get install -y -qq libayatana-appindicator3-dev || sudo apt-get install -y -qq libappindicator3-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/superagent-tray/src-tauri -> target"
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Verify Unix prerelease tag and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun -e 'const v=require("./package.json").version; const r=process.env.GITHUB_REF_NAME; if (!new RegExp("^v"+v.replace(/\./g,"\\.")+"-unix\\.[0-9]+$").test(r)) throw Error("Unix tag/version mismatch"); const t=require("./apps/superagent-tray/src-tauri/tauri.conf.json"); if(t.version!==v) throw Error("Tauri version mismatch"); console.log(r)'
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Core
+        run: bun run build
+      - name: Validate extension JS
+        run: bun run verify:extension-js
+      - name: Run portable/Tray regression suite
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/bunGlobalInstallContract.test.ts tests/releaseExtensions.test.ts
+      - name: Test native Tray
+        run: bun run tray:test
+      - name: Compile native CLI
+        run: cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
+      - name: Stage macOS or Linux runtime
+        run: bun run installer:prepare:unix
+      - name: Verify portable runtime without global Bun
+        run: bun run installer:verify:unix
+      - name: Build macOS DMG or Linux DEB
+        run: bun run installer:package:unix
+        env:
+          SUPERAGENT_UNIX_BUNDLE_OVERRIDE: ${{ runner.os == 'Linux' && 'deb' || '' }}
+      - name: Inspect and smoke-test bundled macOS app or Linux DEB
+        shell: bash
+        run: bash scripts/verify-packaged-standalone-unix.sh
+        env:
+          REQUIRE_APPIMAGE: "0"
+      - name: Upload macOS DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unix-release-macos-arm64
+          path: apps/superagent-tray/src-tauri/target/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+      - name: Upload Linux DEB
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: unix-release-linux-x64
+          path: apps/superagent-tray/src-tauri/target/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+  build-extensions:
+    name: Build and verify Chrome Delegate and SidePanel
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify extension syntax
+        run: bun run verify:extension-js
+      - name: Package Delegate extension
+        run: bun scripts/release-delegate.mjs
+      - name: Package SidePanel extension
+        run: bun scripts/release-sidepanel.mjs
+      - name: Verify ZIP contents and checksums
+        run: bun scripts/verify-release-extensions.mjs
+      - name: Upload both extensions and receipts
+        uses: actions/upload-artifact@v4
+        with:
+          name: unix-release-chrome-extensions
+          path: |
+            build/releases/superagent-delegate-*.zip
+            build/releases/superagent-delegate-*.receipt.json
+            build/releases/superagent-sidepanel-*.zip
+            build/releases/superagent-sidepanel-*.receipt.json
+          if-no-files-found: error
+
+  publish:
+    name: Publish verified macOS, Linux and extension prerelease
+    needs: [build-unix, build-extensions]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: unix-release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Require exact macOS DMG, Linux DEB and both extensions
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          dmgs=(release-assets/*.dmg)
+          debs=(release-assets/*.deb)
+          delegates=(release-assets/superagent-delegate-*.zip)
+          sidepanels=(release-assets/superagent-sidepanel-*.zip)
+          test "${#dmgs[@]}" -eq 1
+          test "${#debs[@]}" -eq 1
+          test "${#delegates[@]}" -eq 1
+          test "${#sidepanels[@]}" -eq 1
+          test "$(stat -c%s "${dmgs[0]}")" -gt 20000000
+          test "$(stat -c%s "${debs[0]}")" -gt 20000000
+          (cd release-assets && sha256sum * > ../SHA256SUMS.txt)
+          cat SHA256SUMS.txt
+      - name: Publish GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > RELEASE_NOTES.md <<'EOF'
+          # SuperAgent macOS arm64 and Linux x64 standalone prerelease
+
+          These builds include SuperAgent Tray, Core, the native CLI launcher,
+          bundled Bun runtime and production dependencies. No local Rust build
+          toolchain or separately installed Bun/Node.js is required for users.
+
+          - macOS: Apple Silicon (arm64) DMG; unsigned/unnotarized prerelease,
+            so macOS Gatekeeper may prevent opening without explicit approval.
+          - Linux: x64 DEB for compatible Debian/Ubuntu releases. GUI runtime
+            depends on system WebKitGTK/appindicator libraries.
+          - Chrome: SuperAgent Delegate and SuperAgent SidePanel are **separate**
+            unpacked extensions shipped as source ZIPs. Extract each ZIP to its
+            own folder and use Chrome -> Extensions -> Developer mode -> Load unpacked.
+            These are not Chrome Web Store publications.
+
+          Linux AppImage packaging remains unsupported in this release because
+          the upstream linuxdeploy step has not passed CI. The DEB and DMG have
+          dedicated packaging and packaged-payload verification gates.
+
+          Verify all downloaded files against SHA256SUMS.txt. This prerelease is
+          not a production runtime cutover or signed distribution.
+          EOF
+          gh release create "$GITHUB_REF_NAME" release-assets/* SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+            --notes-file RELEASE_NOTES.md \
+            --title "SuperAgent $GITHUB_REF_NAME — macOS, Linux and Chrome extensions"
