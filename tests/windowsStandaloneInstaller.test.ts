@@ -40,7 +40,7 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(workflow).toContain("bun run installer:package");
     expect(workflow).toContain("macos-arm64");
     expect(workflow).toContain("linux-x64");
-    expect(workflow).toContain("needs: [build]");
+    expect(workflow).toContain("needs: [build, build-extensions, build-android, build-lan-windows]");
     expect(workflow).toContain("bun run installer:package:unix");
     expect(read(".github/workflows/tray-build.yml")).toContain("superagent-standalone-windows-x64");
   });
