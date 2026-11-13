@@ -77,22 +77,41 @@ export function inspectCoreBuild(entry:string,options:{requireFreshCompiled?:boo
   if(!root)throw new Error("CORE_BUILD_ENTRY_OUTSIDE_PROJECT");
   const mode:"source"|"compiled"=inside(path.join(root,"src"),full)?"source":"compiled";
   const selected=treeDigest(root,mode);
-  const source=mode==="source"?selected:treeDigest(root,"source");
-  if(mode==="source")return {...selected,sourceDigest:source.digest,mode,fresh:true};
+  if(mode==="source") {
+    const source=selected;
+    return {...selected,sourceDigest:source.digest,mode,fresh:true};
+  }
+  const srcDir=path.join(root,"src");
+  const hasSource=fs.existsSync(srcDir);
   const file=path.join(root,"dist","core-build-identity.json");
   let builtAt: number|undefined;
   let fresh=false;
-  try {
-    const stat=fs.lstatSync(file);
-    if(!stat.isFile() || stat.isSymbolicLink() || stat.size>2048)throw new Error();
-    const manifest=JSON.parse(fs.readFileSync(file,"utf8"));
-    builtAt=manifest.builtAt;
-    fresh=manifest.version===1 && manifest.mode==="compiled" &&
-      manifest.sourceDigest===source.digest && manifest.digest===selected.digest;
-  }catch{}
+  let sourceDigest="";
+  if(hasSource) {
+    const source=treeDigest(root,"source");
+    sourceDigest=source.digest;
+    try {
+      const stat=fs.lstatSync(file);
+      if(!stat.isFile() || stat.isSymbolicLink() || stat.size>2048)throw new Error();
+      const manifest=JSON.parse(fs.readFileSync(file,"utf8"));
+      builtAt=manifest.builtAt;
+      fresh=manifest.version===1 && manifest.mode==="compiled" &&
+        manifest.sourceDigest===sourceDigest && manifest.digest===selected.digest;
+    }catch{}
+  } else {
+    try {
+      const stat=fs.lstatSync(file);
+      if(!stat.isFile() || stat.isSymbolicLink() || stat.size>2048)throw new Error();
+      const manifest=JSON.parse(fs.readFileSync(file,"utf8"));
+      builtAt=manifest.builtAt;
+      sourceDigest=typeof manifest.sourceDigest==="string"?manifest.sourceDigest:"";
+      fresh=manifest.version===1 && manifest.mode==="compiled" &&
+        manifest.digest===selected.digest;
+    }catch{}
+  }
   if(options.requireFreshCompiled && !fresh)
     throw new Error("CORE_BUILD_STALE_OR_UNVERIFIED: run bun run build first");
-  return {...selected,sourceDigest:source.digest,mode,fresh,builtAt};
+  return {...selected,sourceDigest,mode,fresh,builtAt};
 }
 export function writeCoreBuildManifest(root:string):CoreBuildIdentity {
   const entry=path.resolve(root,"dist","cli.js");

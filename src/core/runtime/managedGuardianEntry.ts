@@ -39,7 +39,9 @@ export async function runManagedGuardianEntry(port:number){
     throw new Error("MANAGED_GUARDIAN_INVALID_CORE_PORT");
   if(readManagedGuardianOwner(port))
     throw new Error("MANAGED_GUARDIAN_ALREADY_REGISTERED");
-  const root=getPackageRootDir(),entry=path.join(root,"src","cli.tsx");
+  const root=getPackageRootDir();
+  const source=path.join(root,"src","cli.tsx"),compiled=path.join(root,"dist","cli.js");
+  const entry=fs.existsSync(source)?source:compiled;
   if(!fs.existsSync(entry)||fs.lstatSync(entry).isSymbolicLink())
     throw new Error("MANAGED_GUARDIAN_TRUSTED_CLI_UNAVAILABLE");
   // The existing Guardian verifies checkpoint, discovery and listener itself.

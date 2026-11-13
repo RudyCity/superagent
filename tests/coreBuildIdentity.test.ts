@@ -35,4 +35,23 @@ describe("Core source/dist build attestation", () => {
   it("never fingerprints an arbitrary entry outside a recognized SuperAgent project",()=>{
     expect(()=>inspectCoreBuild(path.join(os.tmpdir(),"invalid-entry","cli.js"))).toThrow("ENTRY_OUTSIDE_PROJECT");
   });
+  it("attests fresh compiled standalone build when src directory is omitted",()=>{
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),"core-build-standalone-"));
+    try {
+      fs.mkdirSync(path.join(root,"src"));fs.mkdirSync(path.join(root,"dist"));
+      fs.writeFileSync(path.join(root,"package.json"),'{"name":"core-standalone"}');
+      fs.writeFileSync(path.join(root,"tsconfig.json"),'{"compilerOptions":{}}');
+      const source=path.join(root,"src","cli.tsx"),compiled=path.join(root,"dist","cli.js");
+      fs.writeFileSync(source,"const version = 1;");
+      fs.writeFileSync(compiled,"var version=1;");
+      const manifest=writeCoreBuildManifest(root);
+      // Simulate standalone packaging where src/ is deleted
+      fs.rmSync(path.join(root,"src"),{recursive:true,force:true});
+      const standalone=inspectCoreBuild(compiled,{requireFreshCompiled:true});
+      expect(standalone.mode).toBe("compiled");
+      expect(standalone.fresh).toBe(true);
+      expect(standalone.digest).toBe(manifest.digest);
+      expect(standalone.sourceDigest).toBe(manifest.sourceDigest);
+    } finally {fs.rmSync(root,{recursive:true,force:true});}
+  });
 });
