@@ -118,4 +118,70 @@ describe("managed CDP visible tab indicator", () => {
     expect(calls.filter(method => method === "Page.addScriptToEvaluateOnNewDocument")).toHaveLength(1);
     forgetManagedCdpTabIndicators();
   });
+
+  it("mounts and removes the floating status pill in a DOM environment", () => {
+    let title = "My Facebook Page";
+    const elements = new Map<string, any>();
+    const bodyChildren: any[] = [];
+    const body = {
+      appendChild: (child: any) => {
+        bodyChildren.push(child);
+        if (child.id) elements.set(child.id, child);
+      },
+    };
+    const doc = {
+      head: {},
+      body,
+      title,
+      getElementById: (id: string) => elements.get(id) || null,
+      createElement: (tag: string) => {
+        let shadowContent = "";
+        const el: any = {
+          tagName: tag.toUpperCase(),
+          id: "",
+          style: {},
+          parentNode: body,
+          attachShadow: () => ({
+            set innerHTML(val: string) { shadowContent = val; },
+            get innerHTML() { return shadowContent; },
+            querySelector: (sel: string) => {
+              if (sel === ".sa-close-btn") return { addEventListener: vi.fn() };
+              return null;
+            },
+          }),
+        };
+        return el;
+      },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    };
+    Object.defineProperty(doc, "title", {
+      get: () => title,
+      set: (val: string) => { title = val; },
+    });
+    const win: any = {};
+    win.top = win;
+    const context = {
+      window: win, document: doc, Date, Number, Math, JSON,
+      MutationObserver: class {
+        observe() {}
+        disconnect() {}
+      },
+      queueMicrotask,
+      setTimeout: () => 1,
+      clearTimeout: () => {},
+    };
+
+    const expiry = Date.now() + 60_000;
+    const showCode = buildCdpTabIndicatorJs("show", expiry);
+    const result = vm.runInNewContext(showCode, context);
+    expect(result).toBe(true);
+    expect(doc.title).toContain(CDP_TAB_PREFIX);
+    expect(doc.getElementById("__superagent_cdp_floating_pill_host__")).toBeDefined();
+
+    // Hiding should remove the pill host from DOM
+    const hideCode = buildCdpTabIndicatorJs("hide");
+    vm.runInNewContext(hideCode, context);
+    expect(doc.title).toBe("My Facebook Page");
+  });
 });

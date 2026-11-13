@@ -5,6 +5,15 @@
 ${StrStr}
 ${UnStrRep}
 
+!macro NSIS_HOOK_PREINSTALL
+  ; Gracefully stop running SuperAgent processes and background Core services before updating files
+  DetailPrint "Stopping existing SuperAgent processes..."
+  nsExec::Exec 'taskkill.exe /F /IM superagent-tray.exe /T'
+  nsExec::Exec 'taskkill.exe /F /IM superagent.exe /T'
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { ($$_.Name -like ''*bun*'' -or $$_.Name -like ''*superagent*'' -or $$_.Name -like ''*node*'') -and ($$_.CommandLine -like ''*$INSTDIR*'' -or $$_.ExecutablePath -like ''*$INSTDIR*'') } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
+  Sleep 1200
+!macroend
+
 !macro NSIS_HOOK_POSTINSTALL
   ; Do not append duplicates, including when repairing/reinstalling.
   ReadRegStr $0 HKCU "Environment" "Path"
@@ -18,6 +27,14 @@ ${UnStrRep}
     WriteRegStr HKCU "Software\RudyCity\SuperAgent" "AddedPath" "$INSTDIR"
   ${EndIf}
   SendMessage 0xFFFF 0x001A 0 "STR:Environment" /TIMEOUT=5000
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  DetailPrint "Stopping active SuperAgent processes before uninstall..."
+  nsExec::Exec 'taskkill.exe /F /IM superagent-tray.exe /T'
+  nsExec::Exec 'taskkill.exe /F /IM superagent.exe /T'
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { ($$_.Name -like ''*bun*'' -or $$_.Name -like ''*superagent*'' -or $$_.Name -like ''*node*'') -and ($$_.CommandLine -like ''*$INSTDIR*'' -or $$_.ExecutablePath -like ''*$INSTDIR*'') } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
+  Sleep 1200
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

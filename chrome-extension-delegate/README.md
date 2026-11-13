@@ -247,14 +247,17 @@ chrome://extensions in each Chrome profile and reopen the popup. This can
 briefly reconnect Delegate; it never needs uninstalling or deleting pairing.
 Do not interrupt an in-flight CDP operation solely to refresh appearance.
 
-### Visual CDP tab indicators (v1.9.3)
+### Visual CDP tab indicators and floating status widget (v1.10.2)
 
 When SuperAgent attaches its own debugger to a normal Chrome tab, the tab
-title gains a visible **🔴 CDP ·** prefix and the Delegate extension icon
-shows a per-tab CDP badge. Only the exact attached tab is marked.
-Original tab titles are restored on detach, and the marker has a two-minute
-safety expiry if the debugger is lost unexpectedly. The existing Delegate
-heartbeat refreshes the indicator while the debugger is still attached.
+title gains a visible **🔴 CDP ·** prefix, the Delegate extension icon
+shows a per-tab CDP badge, and an in-page floating status widget
+(**SuperAgent Working...** with live avatar, pulse dot, and cancel button)
+is mounted via isolated Shadow DOM at the top center of the page.
+Only the exact attached tab is marked.
+Original tab titles are restored on detach, the floating pill is removed,
+and the marker has a two-minute safety expiry if the debugger is lost unexpectedly.
+The existing Delegate heartbeat refreshes the indicator while the debugger is still attached.
 Page navigation and single-page-app title updates retain the marker.
 
 A marker is informational, **not** permission to control a tab. Chrome
@@ -262,9 +265,9 @@ debugger ownership and agent-session authorization remain unchanged; protected
 Chrome pages are never marked. The extension does not request broader host
 permissions or change favicons, focus, user inputs or page data.
 
-For managed CDP (without Delegate extension), the marker is installed when
-an agent explicitly claims a target and removed on release. The marker
-expires with that owner's lease unless renewed via session heartbeat.
+For managed CDP (without Delegate extension), the marker and floating pill
+are installed when an agent explicitly claims a target and removed on release.
+The marker expires with that owner's lease unless renewed via session heartbeat.
 
 ### Verification and packaging
 

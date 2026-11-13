@@ -30,9 +30,11 @@ describe("Windows standalone installer and safe release contracts", () => {
   });
   it("does not discard a user PATH entry during uninstall or duplicate it on install", () => {
     const hooks = read("apps/superagent-tray/src-tauri/nsis_hooks.nsh");
+    expect(hooks).toContain("NSIS_HOOK_PREINSTALL");
     expect(hooks).toContain("NSIS_HOOK_POSTINSTALL");
+    expect(hooks).toContain("NSIS_HOOK_PREUNINSTALL");
     expect(hooks).toContain("NSIS_HOOK_POSTUNINSTALL");
-    expect(hooks).toContain("AddedPath");
+    expect(hooks).toContain("taskkill.exe");
     expect(hooks).toContain("AddedPath");
   });
   it("uses prerelease-only tag gates and requires all three platform assets before GitHub prerelease publishing", () => {
