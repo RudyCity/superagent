@@ -1,3 +1,9 @@
+## [1.14.84] - 2026-11-13
+### Unified update manager, independent runtime tabs, and Android Internet tunnel
+- Add independently verified, operator-confirmed release package downloads for Tray, Chrome Delegate, SidePanel, Android LAN, Windows LAN, and Windows/macOS/Linux standalone packages, without automatic installation or interruption of active sessions.
+- Separate Core, MCP, Cloudflare, Muse, Processes and Hosts in the Tray, and add the Android foreground Internet tunnel service with device-side consent and recovery safeguards.
+- Synchronize Cargo, Tauri and root package versions so all three native CI packaging jobs validate the exact tagged release; preserve R0-R7 production gates.
+
 ## [1.14.83] - 2026-11-12
 ### Recover verified-dead Core workers without unsafe Delegate handover
 - Restart Core with verified-dead previous workers without attempting an impossible Delegate handover; retain the live-worker authenticated handover and fail closed for unresponsive live workers.
