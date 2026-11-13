@@ -269,7 +269,8 @@ async function startBinary(executable:string){
   const child=spawn(executable,smoke?["--lifecycle-smoke"]:["--background"],{
     cwd:path.dirname(executable),detached:true,windowsHide:true,stdio:"ignore",
     env:{...process.env,SUPERAGENT_TRAY_CHILD:"1",
-      SUPERAGENT_TRAY_AUTOSTART:"0"},
+      SUPERAGENT_TRAY_AUTOSTART:"0",
+      ...(smoke?{SUPERAGENT_TRAY_SMOKE_PARENT_PID:String(process.pid)}:{})},
   });
   child.on("error",()=>{});
   child.unref();

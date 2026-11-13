@@ -282,6 +282,7 @@ async function startManagedTrayBinary(executable: string) {
         ...process.env,
         SUPERAGENT_TRAY_CHILD: "1",
         SUPERAGENT_TRAY_AUTOSTART: "0",
+        ...(smoke ? { SUPERAGENT_TRAY_SMOKE_PARENT_PID: String(process.pid) } : {}),
       },
     }
   );

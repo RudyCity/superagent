@@ -179,8 +179,29 @@ pub fn run_headless_smoke(dir:&Path)->Result<(),String>{
     if std::env::var("SUPERAGENT_TRAY_LIFECYCLE_TEST").as_deref()!=Ok("1"){
         return Err("Private Tray smoke mode requires explicit test-only environment".into());
     }
+    // An explicit runner PID is mandatory so a crashed Vitest worker cannot
+    // leave a detached test Tray blocking the real native owner's upgrades.
+    let runner_pid = std::env::var("SUPERAGENT_TRAY_SMOKE_PARENT_PID")
+        .ok().and_then(|value| value.parse::<u32>().ok())
+        .filter(|pid| *pid > 0 && *pid != std::process::id())
+        .ok_or("Private Tray smoke mode requires a test runner PID")?;
+    let runner = Pid::from_u32(runner_pid);
+    let mut system = System::new();
+    system.refresh_processes();
+    if system.process(runner).is_none() {
+        return Err("Private Tray smoke runner is not alive".into());
+    }
     install_with(dir,||std::process::exit(0))?;
-    loop {thread::park();}
+    // The native owner still accepts its authenticated graceful-stop request.
+    // Parent death exits within two seconds; the 5-minute cap also covers
+    // exceptional cases such as PID reuse or a hung test runner.
+    for _ in 0..150 {
+        thread::sleep(Duration::from_secs(2));
+        system.refresh_processes();
+        if system.process(runner).is_none() { break; }
+    }
+    cleanup_if_owned();
+    Ok(())
 }
 
 #[cfg(test)]

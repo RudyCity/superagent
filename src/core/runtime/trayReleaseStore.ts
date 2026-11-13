@@ -63,7 +63,10 @@ export function readTrayReleaseState(root=getRootConfigDir()):TrayReleaseState {
 export function trustedTrayBuild(root=getPackageRootDir()):{path:string;digest:string;kind:"release"|"debug"} {
   const smoke=process.env.SUPERAGENT_TRAY_LIFECYCLE_TEST==="1"&&
     process.env.VITEST!==undefined;
-  const kinds:("release"|"debug")[]=smoke?["release","debug"]:["release"];
+  // The headless lifecycle smoke handler is compiled only in debug builds.
+  // Never fall back to a release executable inside Vitest: --lifecycle-smoke
+  // would be ignored and could spawn an unintended interactive Tray.
+  const kinds:("release"|"debug")[]=smoke?["debug"]:["release"];
   for(const kind of kinds){
     const candidate=path.join(root,"apps","superagent-tray","src-tauri","target",kind,"superagent-tray.exe");
     if(!fs.existsSync(candidate))continue;
