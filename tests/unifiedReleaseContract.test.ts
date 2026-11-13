@@ -20,6 +20,8 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
     expect(workflow.jobs.publish.permissions.contents).toBe("write");
     expect(workflow.jobs.publish.steps.find((s: any)=>s.name?.includes("Require exact"))?.run)
       .toContain("verify-unified-release-assets.mjs");
+    expect(workflow.jobs.publish.steps.find((s: any)=>s.name?.includes("Require exact"))?.run)
+      .toContain("normalize-unified-release-assets.mjs");
     expect(workflowText).toContain("--verify-tag --prerelease");
   });
 

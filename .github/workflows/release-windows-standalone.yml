@@ -250,6 +250,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Multi-path Linux artifact uploads retain appimage/ and deb/ folders.
+          # Flatten only those version-pinned, regular files before strict inventory verification.
+          node scripts/normalize-unified-release-assets.mjs downloaded-assets
           node scripts/verify-unified-release-assets.mjs downloaded-assets
           mkdir -p release-assets
           cp -- downloaded-assets/* release-assets/
