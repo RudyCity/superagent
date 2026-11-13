@@ -84,7 +84,7 @@ const inputSchema = {
     },
     includeScreenshotImage: {
       type: "boolean",
-      description: "Include bounded base64 target-window screenshot bytes. Default false.",
+      description: "Include bounded target-window screenshot as a standard MCP image block plus legacy Base64 JSON. Default false.",
     },
     maxImageBytes: {
       type: "integer",
@@ -156,6 +156,26 @@ function errorResult(code: string, error: string): McpToolResult {
     }],
     isError: true,
   };
+}
+
+/** Add standard MCP image content without breaking existing JSON/text consumers. */
+function desktopUiScreenshotContent(result: unknown): McpToolResult["content"] {
+  const content: McpToolResult["content"] = [{ type: "text", text: JSON.stringify(result, null, 2) }];
+  const encoded = (result as { screenshotImage?: unknown })?.screenshotImage;
+  if (typeof encoded !== "string" || !encoded || !/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) return content;
+
+  const data = Buffer.from(encoded, "base64");
+  if (data.length === 0 || data.length > DEFAULT_MAX_IMAGE_BYTES || data.toString("base64") !== encoded) return content;
+
+  const mimeType = data.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+    ? "image/png"
+    : data.subarray(0, 3).equals(Buffer.from([255, 216, 255]))
+      ? "image/jpeg"
+      : data.subarray(0, 4).toString("ascii") === "RIFF" && data.subarray(8, 12).toString("ascii") === "WEBP"
+        ? "image/webp"
+        : null;
+  if (mimeType) content.push({ type: "image", data: encoded, mimeType });
+  return content;
 }
 
 function resolveCommand(rawArgs: Record<string, unknown>): { command: string; rawAction: string } {
@@ -301,7 +321,9 @@ export async function dispatchDesktopUiMcpTool(
     }
 
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: (command === "snapshot" || command === "inspect_window") && rawArgs.includeScreenshotImage === true
+        ? desktopUiScreenshotContent(result)
+        : [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
   } catch (error: any) {
     const code = error?.code || "DESKTOP_UI_ERROR";

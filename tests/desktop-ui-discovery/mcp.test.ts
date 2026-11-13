@@ -64,6 +64,42 @@ describe("desktop discovery MCP surface", () => {
     }));
   });
 
+  it("returns an image/png MCP block for an explicitly requested screenshot", async () => {
+    const png = Buffer.from("89504e470d0a1a0a0000000049454e44", "hex").toString("base64");
+    const snapshot = vi.spyOn(desktopUiSessionManager, "snapshot").mockResolvedValue({
+      schema: { version: 1 } as any,
+      screenshotImage: png,
+    });
+    const context = { principalId: "principal-a", workspace: "D:/workspace" };
+    const args = { command: "snapshot", sessionToken: "a".repeat(64), includeScreenshotImage: true };
+
+    const result = await dispatchDesktopUiMcpTool("superagent_desktop_ui", args, context);
+    expect(result?.isError).not.toBe(true);
+    expect(snapshot).toHaveBeenCalledWith(expect.objectContaining({
+      sessionToken: "a".repeat(64),
+      ownerPrincipal: "principal-a",
+      includeScreenshotImage: true,
+    }));
+    expect(result?.content[0]).toMatchObject({ type: "text" });
+    expect(parse(result).screenshotImage).toBe(png); // Legacy JSON readers still work.
+    expect(result?.content[1]).toEqual({ type: "image", data: png, mimeType: "image/png" });
+  });
+
+  it("does not emit image blocks when screenshot bytes were omitted or invalid", async () => {
+    const snapshot = vi.spyOn(desktopUiSessionManager, "snapshot");
+    const context = { principalId: "principal-a", workspace: "D:/workspace" };
+    snapshot.mockResolvedValueOnce({ schema: { version: 1 } as any, screenshotImageOmitted: "image exceeds limit" });
+    const omitted = await dispatchDesktopUiMcpTool("superagent_desktop_ui",
+      { command: "snapshot", sessionToken: "a".repeat(64), includeScreenshotImage: true, maxImageBytes: 10 }, context);
+    expect(omitted?.content).toHaveLength(1);
+    expect(parse(omitted).screenshotImageOmitted).toContain("limit");
+
+    snapshot.mockResolvedValueOnce({ schema: { version: 1 } as any, screenshotImage: "not valid image!" });
+    const invalid = await dispatchDesktopUiMcpTool("superagent_desktop_ui",
+      { command: "snapshot", sessionToken: "a".repeat(64), includeScreenshotImage: true }, context);
+    expect(invalid?.content).toHaveLength(1);
+  });
+
   it("fails closed for remote workspaces before any discovery or inspection", async () => {
     const list = vi.spyOn(desktopUiSessionManager, "listWindows");
     const inspect = vi.spyOn(desktopUiSessionManager, "inspectWindow");

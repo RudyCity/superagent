@@ -3,7 +3,10 @@
  */
 
 export interface McpToolResult {
-  content: Array<{ type: "text"; text: string }>;
+  content: Array<
+    | { type: "text"; text: string }
+    | { type: "image"; data: string; mimeType: string }
+  >;
   isError?: boolean;
   [key: string]: unknown;
 }

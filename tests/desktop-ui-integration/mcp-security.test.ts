@@ -141,6 +141,38 @@ describe("desktop UI MCP security integration", () => {
     expect(text).not.toContain("iVBORw0KGgoSECRET");
   });
 
+  it("forwards screenshot image blocks through the MCP gateway without audit leakage", async () => {
+    setYoloMode(true);
+    const png = Buffer.from("89504e470d0a1a0a0000000049454e44", "hex").toString("base64");
+    vi.spyOn(desktopUiSessionManager, "snapshot").mockResolvedValue({
+      schema: { version: 1 } as any,
+      screenshotImage: png,
+    });
+    const observed: any[] = [];
+    const server = createSuperagentMcpServer({
+      toolExposure: "gateway",
+      allowDangerous: true,
+      authMode: "static-bearer",
+      getIdentity: () => ({ mode: "static-bearer", subject: "tester", credentialHash: "credential-hash" }),
+      onToolCall: (info) => observed.push(info),
+    });
+    const call = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const result = await call({
+      method: "tools/call",
+      params: {
+        name: "superagent_tool_execute",
+        arguments: {
+          name: "superagent_desktop_ui",
+          arguments: { command: "snapshot", sessionToken: "a".repeat(64), includeScreenshotImage: true },
+        },
+      },
+    });
+    expect(result.isError).not.toBe(true);
+    expect(result.content).toContainEqual({ type: "image", data: png, mimeType: "image/png" });
+    expect(JSON.stringify(observed)).not.toContain(png);
+    expect(JSON.stringify(observed)).not.toContain("a".repeat(64));
+  });
+
   it("sanitizes desktop args before the server audit hook sees them", async () => {
     setYoloMode(true);
     const observed: any[] = [];

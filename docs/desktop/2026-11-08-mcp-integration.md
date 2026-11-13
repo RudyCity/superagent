@@ -56,7 +56,11 @@ TTL is absolute, not sliding. Accepted values are 60 seconds through 30 minutes.
 
 Snapshot responses return semantic schema by default. Raw screenshot bytes are returned only when `includeScreenshotImage:true` is explicitly requested.
 
-The screenshot response cap is a hard maximum of 2 MiB. `maxImageBytes` may lower that limit but cannot raise it.
+When `snapshot` or `inspect_window` is called with `includeScreenshotImage:true`, the MCP response includes a standard `image` content block (`data` as Base64 and a detected `mimeType` of `image/png`, `image/jpeg`, or `image/webp`) when the capture is a valid supported image. The first `text` content block still contains the original JSON and `screenshotImage` field for existing clients. Callers that render MCP images can show the image directly rather than displaying raw JSON. Clients that do not render MCP image blocks must handle the JSON Base64 field themselves; this server-side change does not force any chat UI to show an inline image.
+
+The screenshot response cap is a hard maximum of 2 MiB. `maxImageBytes` may lower that limit but cannot raise it. Oversized, absent, or unrecognized image bytes do not produce an MCP image block. No screenshot is returned unless the caller explicitly opted in, and the same native host permissions and principal-scoped session checks apply. No image is persisted, uploaded, or served at a public URL.
+
+The standard image blocks are forwarded unmodified through `superagent_tool_execute` in gateway mode. Desktop audit hooks and activity streams continue to redact screenshot bytes and tokens for both direct and gateway invocations. Focused regression tests cover image content, the legacy JSON fallback, bounded omissions, gateway forwarding, and audit redaction.
 
 Vision upload is **off by default**. `enableVision:true` succeeds only when the trusted host has either:
 
