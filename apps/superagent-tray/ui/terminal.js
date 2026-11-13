@@ -226,11 +226,16 @@
         unavailable("Start", active ? "Stop this process before starting a replacement." : reason);
       }
       unavailable("Pause", "External pause requires a SuperAgent-owned process handle.");
-      if (task.status === "running" && task.canStop === true) {
-        enabled("Stop", "terminal-external-btn", { "task-id": task.id, action: "stop" },
-          "Verify process identity and confirm termination", true);
-      } else {
-        unavailable("Stop");
+      if (task.status === "running") {
+        if (task.canStop === true) {
+          enabled("Stop", "terminal-external-btn", { "task-id": task.id, action: "stop" },
+            "Verify process identity and confirm termination", true);
+        } else if (task.command?.includes(":7888") || task.windowLabel?.includes(":7888") || task.command?.includes("7888")) {
+          enabled("Stop Core", "terminal-core-stop-btn", { "task-id": task.id, pid: task.pid },
+            "Stop SuperAgent Core server (requires confirmation)", true);
+        } else {
+          unavailable("Stop");
+        }
       }
       items.push({ separator: true });
       enabled("Service Controls", "terminal-manage-btn", { "task-id": task.id },
@@ -549,6 +554,28 @@
           window.alert(`External process ${action} failed: ${err?.message || err}`);
         } finally {
           externalBtn.disabled = false;
+        }
+        return;
+      }
+      const coreStopBtn = e.target.closest(".terminal-core-stop-btn");
+      if (coreStopBtn) {
+        const pid = coreStopBtn.dataset.pid;
+        const confirmed = window.confirm(
+          `Stop SuperAgent Core server (PID ${pid || "-"}, port :7888)?\n\nWarning: This will shut down the local SuperAgent backend service and disconnect active clients.`
+        );
+        if (!confirmed) return;
+        coreStopBtn.disabled = true;
+        try {
+          if (window.__TAURI__?.core?.invoke) {
+            await window.__TAURI__.core.invoke("stop_core_server", { port: 7888 });
+          } else {
+            await fetch("/api/daemon/stop", { method: "POST" });
+          }
+          await fetchTerminalTasks();
+        } catch (err) {
+          window.alert(`Failed to stop Core server: ${err?.message || err}`);
+        } finally {
+          coreStopBtn.disabled = false;
         }
         return;
       }

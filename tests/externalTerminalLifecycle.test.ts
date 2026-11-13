@@ -26,7 +26,7 @@ describe("External desktop terminal lifecycle guard", () => {
 
   it("denies all protected service ports and missing creation identities", () => {
     expect(PROTECTED_EXTERNAL_PORTS.has(7888)).toBe(true);
-    expect(PROTECTED_EXTERNAL_PORTS.has(9229)).toBe(true);
+    expect(PROTECTED_EXTERNAL_PORTS.has(17341)).toBe(true);
     expect(externalControlEligibility({
       pid: 31777, name: "python.exe", ports: [8095],
     }).allowed).toBe(false);

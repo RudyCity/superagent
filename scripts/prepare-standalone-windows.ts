@@ -43,6 +43,10 @@ copy(path.join(root, "patches"), path.join(stage, "patches"));
 copy(path.join(root, "dist"), path.join(stage, "dist"));
 copy(path.join(root, "scripts", "media_backend.py"), path.join(stage, "scripts", "media_backend.py"));
 copy(path.join(root, "scripts", "setup_media_backends.py"), path.join(stage, "scripts", "setup_media_backends.py"));
+const androidApkDir = path.join(root, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug");
+if (fs.existsSync(path.join(androidApkDir, "app-debug.apk")) && fs.existsSync(path.join(androidApkDir, "output-metadata.json"))) {
+  copy(androidApkDir, path.join(stage, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug"));
+}
 fs.mkdirSync(sidecars, { recursive: true });
 const runtimeExe = path.join(sidecars, `bun-${triple}.exe`);
 const coreExe = path.join(sidecars, `superagent-${triple}.exe`);

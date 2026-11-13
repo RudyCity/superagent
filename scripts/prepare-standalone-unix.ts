@@ -42,6 +42,10 @@ for (const folder of ["dist", "patches"]) copy(path.join(root, folder), path.joi
 for (const file of ["media_backend.py", "setup_media_backends.py"]) {
   copy(path.join(root, "scripts", file), path.join(stage, "scripts", file));
 }
+const androidApkDir = path.join(root, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug");
+if (fs.existsSync(path.join(androidApkDir, "app-debug.apk")) && fs.existsSync(path.join(androidApkDir, "output-metadata.json"))) {
+  copy(androidApkDir, path.join(stage, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug"));
+}
 fs.mkdirSync(binDir, { recursive: true });
 const runtime = path.join(binDir, "bun-" + target);
 copy(fs.realpathSync(process.execPath), runtime);

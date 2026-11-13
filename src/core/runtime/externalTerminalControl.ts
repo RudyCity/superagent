@@ -19,7 +19,7 @@ const MAX_SNAPSHOTS = 64;
 const STOP_TTL_MS = 45_000;
 // SuperAgent and its bridges must be managed by their authenticated owners.
 export const PROTECTED_EXTERNAL_PORTS = new Set([
-  7888, 7891, 7892, 9223, 9224, 9225, 9227, 9229, 17341,
+  7888, 7891, 7892, 9223, 9224, 9225, 9227, 17341,
 ]);
 
 interface ExternalRecord {
