@@ -678,6 +678,9 @@ async function runtimeCreateConnection(event) {
           resultView.appendChild(endpointP);
         }
 
+        let snippetVal = null;
+        let msgDiv = null;
+
         if (result.name) {
           const nameP = document.createElement("div");
           nameP.className = "runtime-result-line";
@@ -685,7 +688,8 @@ async function runtimeCreateConnection(event) {
           resultView.appendChild(nameP);
         }
 
-        if (result.bootstrapCode) {
+        const tokenValue = result.bootstrapCode || (result.token && (result.kind === "core-tunnel" || result.kind === "muse-tunnel") ? result.token : null);
+        if (tokenValue) {
           const tokenBox = document.createElement("div");
           tokenBox.className = "runtime-token-box";
 
@@ -693,66 +697,170 @@ async function runtimeCreateConnection(event) {
           tokenHead.className = "runtime-token-box-head";
           const tokenLabel = document.createElement("span");
           tokenLabel.className = "runtime-token-badge";
-          tokenLabel.textContent = "ONE-TIME OAUTH CODE";
+          tokenLabel.textContent = result.bootstrapCode
+            ? "ONE-TIME OAUTH CODE"
+            : (result.kind === "core-tunnel" ? "CORE BEARER TOKEN" : "MUSE WS TOKEN");
+
+          const tokenActions = document.createElement("div");
+          tokenActions.className = "runtime-token-box-actions";
+
           const copyCodeBtn = document.createElement("button");
           copyCodeBtn.type = "button";
           copyCodeBtn.className = "button ghost runtime-copy-inline";
-          copyCodeBtn.textContent = "Copy Code";
+          copyCodeBtn.textContent = result.bootstrapCode ? "Copy Code" : "Copy Token";
           copyCodeBtn.addEventListener("click", async () => {
             try {
+              const currentToken = result.bootstrapCode || result.token || tokenValue;
               if (navigator?.clipboard?.writeText) {
-                await navigator.clipboard.writeText(result.bootstrapCode);
+                await navigator.clipboard.writeText(currentToken);
               }
               copyCodeBtn.textContent = "Copied!";
-              setTimeout(() => { copyCodeBtn.textContent = "Copy Code"; }, 2000);
+              setTimeout(() => { copyCodeBtn.textContent = result.bootstrapCode ? "Copy Code" : "Copy Token"; }, 2000);
             } catch {
               copyCodeBtn.textContent = "Copy failed";
             }
           });
-          tokenHead.append(tokenLabel, copyCodeBtn);
 
-          const tokenVal = document.createElement("pre");
-          tokenVal.className = "runtime-token-val";
-          tokenVal.textContent = result.bootstrapCode;
+          if (result.bootstrapCode) {
+            const regenCodeBtn = document.createElement("button");
+            regenCodeBtn.type = "button";
+            regenCodeBtn.className = "button ghost runtime-copy-inline runtime-regen-inline";
+            regenCodeBtn.textContent = "Regenerate Token";
+            regenCodeBtn.title = "Generate a new one-time OAuth approval code. The previous code will be invalidated.";
 
-          tokenBox.append(tokenHead, tokenVal);
-          resultView.appendChild(tokenBox);
-        }
-
-        if (result.setupSnippet) {
-          const snippetBox = document.createElement("div");
-          snippetBox.className = "runtime-snippet-box";
-          const snippetHead = document.createElement("div");
-          snippetHead.className = "runtime-token-box-head";
-          const snippetLabel = document.createElement("span");
-          snippetLabel.className = "runtime-token-badge secondary";
-          snippetLabel.textContent = "EXTENSION SETUP";
-          const copySnippetBtn = document.createElement("button");
-          copySnippetBtn.type = "button";
-          copySnippetBtn.className = "button ghost runtime-copy-inline";
-          copySnippetBtn.textContent = "Copy Setup";
-          copySnippetBtn.addEventListener("click", async () => {
-            try {
-              if (navigator?.clipboard?.writeText) {
-                await navigator.clipboard.writeText(result.setupSnippet);
+          regenCodeBtn.addEventListener("click", async () => {
+            let targetPort = result.port;
+            let targetPid = result.pid;
+            if (!targetPort || !targetPid) {
+              const match = runtimeLastResult?.remoteServices?.find(s =>
+                (result.endpoint && s.url === result.endpoint) || (result.port && s.port === result.port)
+              );
+              if (match) {
+                targetPort = targetPort || match.port;
+                targetPid = targetPid || match.pid;
               }
-              copySnippetBtn.textContent = "Copied!";
-              setTimeout(() => { copySnippetBtn.textContent = "Copy Setup"; }, 2000);
-            } catch {
-              copySnippetBtn.textContent = "Copy failed";
+            }
+
+            if (!targetPort || !targetPid) {
+              window.TrayFeedback?.notify?.({
+                kind: "error", scope: "runtime",
+                message: "Owner port or PID is unknown; cannot regenerate token."
+              });
+              return;
+            }
+
+            if (!window.confirm("Regenerate the ONE-TIME MCP OAuth bootstrap approval code?\n\nThe previous code will be invalidated immediately. Existing active OAuth sessions and the public tunnel URL will remain unchanged.")) {
+              return;
+            }
+
+            regenCodeBtn.disabled = true;
+            regenCodeBtn.textContent = "Regenerating…";
+            try {
+              const targetKind = (result.kind === "mcp-tunnel" || result.kind === "mcp") ? "mcp"
+                : (result.kind === "muse-tunnel" || result.kind === "muse-watch") ? "muse-watch"
+                : result.kind || "mcp";
+              const rotation = await runtimeInvoke("regenerate_token", {
+                kind: targetKind,
+                port: Number(targetPort),
+                pid: Number(targetPid),
+              });
+              if (rotation?.success !== true) throw new Error("Token regeneration was not confirmed");
+
+              const newCode = rotation.code || rotation.bootstrapCode;
+              if (newCode) {
+                result.bootstrapCode = newCode;
+                tokenVal.textContent = newCode;
+              }
+
+              if (result.endpoint) {
+                result.setupSnippet = [
+                  `MCP URL   : ${result.endpoint}`,
+                  "Auth      : OAuth",
+                  `Bootstrap : ${result.bootstrapCode}`,
+                ].join("\n");
+              } else if (rotation.setupSnippet) {
+                result.setupSnippet = rotation.setupSnippet;
+              }
+              if (snippetVal && result.setupSnippet) {
+                snippetVal.textContent = result.setupSnippet;
+              }
+
+              if (msgDiv) {
+                msgDiv.textContent = rotation.message || "New MCP OAuth bootstrap approval code generated and copied to clipboard.";
+              }
+
+              regenCodeBtn.textContent = "Regenerated!";
+              window.TrayFeedback?.notify?.({
+                kind: "success", scope: "runtime",
+                message: "New MCP OAuth bootstrap code generated and copied to OS clipboard."
+              });
+              setTimeout(() => {
+                regenCodeBtn.textContent = "Regenerate Token";
+                regenCodeBtn.disabled = false;
+              }, 2000);
+              await runtimeRefresh(true);
+            } catch (err) {
+              regenCodeBtn.textContent = "Failed";
+              window.TrayFeedback?.notify?.({
+                kind: "error", scope: "runtime",
+                message: "Token regeneration failed: " + (err?.message || err)
+              });
+              setTimeout(() => {
+                regenCodeBtn.textContent = "Regenerate Token";
+                regenCodeBtn.disabled = false;
+              }, 3000);
             }
           });
-          snippetHead.append(snippetLabel, copySnippetBtn);
-
-          const snippetVal = document.createElement("pre");
-          snippetVal.className = "runtime-snippet-val";
-          snippetVal.textContent = result.setupSnippet;
-
-          snippetBox.append(snippetHead, snippetVal);
-          resultView.appendChild(snippetBox);
+          tokenActions.append(regenCodeBtn);
         }
 
-        const msgDiv = document.createElement("div");
+        tokenActions.append(copyCodeBtn);
+        tokenHead.append(tokenLabel, tokenActions);
+
+        const tokenVal = document.createElement("pre");
+        tokenVal.className = "runtime-token-val";
+        tokenVal.textContent = tokenValue;
+
+        tokenBox.append(tokenHead, tokenVal);
+        resultView.appendChild(tokenBox);
+      }
+
+      if (result.setupSnippet) {
+        const snippetBox = document.createElement("div");
+        snippetBox.className = "runtime-snippet-box";
+        const snippetHead = document.createElement("div");
+        snippetHead.className = "runtime-token-box-head";
+        const snippetLabel = document.createElement("span");
+        snippetLabel.className = "runtime-token-badge secondary";
+        snippetLabel.textContent = result.kind === "core-tunnel"
+          ? "CORE API / CURL SETUP"
+          : (result.kind === "muse-tunnel" ? "MUSE CONNECTION SETUP" : "EXTENSION SETUP");
+        const copySnippetBtn = document.createElement("button");
+        copySnippetBtn.type = "button";
+        copySnippetBtn.className = "button ghost runtime-copy-inline";
+        copySnippetBtn.textContent = "Copy Setup";
+        copySnippetBtn.addEventListener("click", async () => {
+          try {
+            if (navigator?.clipboard?.writeText) {
+              await navigator.clipboard.writeText(result.setupSnippet);
+            }
+            copySnippetBtn.textContent = "Copied!";
+            setTimeout(() => { copySnippetBtn.textContent = "Copy Setup"; }, 2000);
+          } catch {
+            copySnippetBtn.textContent = "Copy failed";
+          }
+        });
+        snippetHead.append(snippetLabel, copySnippetBtn);
+
+        snippetVal = document.createElement("pre");
+        snippetVal.className = "runtime-snippet-val";
+        snippetVal.textContent = result.setupSnippet;
+
+        snippetBox.append(snippetHead, snippetVal);
+        resultView.appendChild(snippetBox);
+      }
+
+        msgDiv = document.createElement("div");
         msgDiv.className = "runtime-result-note";
         msgDiv.textContent = result.message || "Connection created";
         resultView.appendChild(msgDiv);

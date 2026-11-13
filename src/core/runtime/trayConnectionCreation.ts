@@ -101,7 +101,13 @@ export interface TrayCreationAdapter {
     bootstrapCode?: string;
     setupSnippet?: string;
   }>;
-  createCoreTunnel(request: Extract<NewTrayConnection,{kind:"core-tunnel"}>): Promise<{pid:number; endpoint:string}>;
+  createCoreTunnel(request: Extract<NewTrayConnection,{kind:"core-tunnel"}>): Promise<{
+    pid: number;
+    endpoint: string;
+    setupCopied?: boolean;
+    token?: string;
+    setupSnippet?: string;
+  }>;
   createMuseTunnel(request: Extract<NewTrayConnection,{kind:"muse-tunnel"}>): Promise<{
     pid: number;
     endpoint: string;
@@ -146,20 +152,45 @@ const liveAdapter: TrayCreationAdapter = {
     };
   },
   async createCoreTunnel({port}) {
-    const {getTunnelStatus,startQuickTunnel,claimTunnelServiceKind,stopQuickTunnel} =
+    const {getTunnelStatus,startQuickTunnel,claimTunnelServiceKind,stopQuickTunnel,buildHttpsConnectionPrompt,copyTextToClipboard} =
       await import("../remoteAgent/cloudflareTunnel.js");
-    if (getTunnelStatus(port).isRunning) {
-      throw new Error("Tunnel already exists on this Core port; nothing was replaced");
+    let endpoint = "";
+    let pid = 0;
+    const existing = getTunnelStatus(port);
+    if (existing.isRunning && existing.serviceKind === "superagent-http" && existing.publicUrl && existing.pid) {
+      endpoint = existing.publicUrl;
+      pid = existing.pid;
+    } else {
+      if (existing.isRunning) {
+        throw new Error("Tunnel already exists on this Core port; nothing was replaced");
+      }
+      const created = await startQuickTunnel({
+        port,host:"127.0.0.1",path:"",serviceKind:"superagent-http",
+      });
+      const claimed = claimTunnelServiceKind(port,"superagent-http");
+      if (!claimed || claimed.pid !== created.pid || !claimed.publicUrl) {
+        await stopQuickTunnel(port,"superagent-http").catch(()=>{});
+        throw new Error("New Core HTTP tunnel failed ownership verification");
+      }
+      endpoint = claimed.publicUrl;
+      pid = created.pid;
     }
-    const created = await startQuickTunnel({
-      port,host:"127.0.0.1",path:"",serviceKind:"superagent-http",
+    const { getServerAuthToken } = await import("../utils/serverSecurity.js");
+    const token = getServerAuthToken(port);
+    const setupSnippet = buildHttpsConnectionPrompt({
+      publicUrl: endpoint,
+      localUrl: `http://127.0.0.1:${port}`,
+      port,
+      token,
     });
-    const claimed = claimTunnelServiceKind(port,"superagent-http");
-    if (!claimed || claimed.pid !== created.pid || !claimed.publicUrl) {
-      await stopQuickTunnel(port,"superagent-http").catch(()=>{});
-      throw new Error("New Core HTTP tunnel failed ownership verification");
-    }
-    return {pid:created.pid,endpoint:created.publicUrl};
+    const setupCopied = await copyTextToClipboard(setupSnippet);
+    return {
+      pid,
+      endpoint,
+      setupCopied,
+      token,
+      setupSnippet,
+    };
   },
   async createMuseTunnel({port}) {
     const {getTunnelStatus} = await import("../remoteAgent/cloudflareTunnel.js");
@@ -268,9 +299,20 @@ export async function createTrayConnection(
     }
     if (request.kind === "core-tunnel") {
       const data=await adapter.createCoreTunnel(request);
-      return {success:true,kind:request.kind,state:"running",port:request.port,
-        pid:data.pid,endpoint:data.endpoint,
-        message:"Cloudflare HTTPS tunnel started for this Core. API Bearer authentication remains required."};
+      return {
+        success: true,
+        kind: request.kind,
+        state: "running",
+        port: request.port,
+        pid: data.pid,
+        endpoint: data.endpoint,
+        token: (data as any).token,
+        setupSnippet: data.setupSnippet,
+        setupCopied: data.setupCopied === true,
+        message: data.setupCopied
+          ? "Cloudflare HTTPS tunnel started for this Core. API Bearer token and setup snippet copied to OS clipboard."
+          : "Cloudflare HTTPS tunnel started for this Core. API Bearer authentication remains required.",
+      };
     }
     const data=await adapter.createMuseTunnel(request);
     return {

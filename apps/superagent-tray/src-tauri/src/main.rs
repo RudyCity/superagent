@@ -267,7 +267,12 @@ async fn regenerate_token(kind: String, port: u16, pid: u32) -> Result<Value, St
     if port < 1024 || pid == 0 {
         return Err("Invalid token rotation target".into());
     }
-    match kind.as_str() {
+    let target_kind = match kind.as_str() {
+        "mcp-tunnel" => "mcp",
+        "muse-tunnel" => "muse-watch",
+        other => other,
+    };
+    match target_kind {
         "mcp" => {
             if !runtime_control::can_regenerate_token(&config_dir()?, "mcp", port, pid).await {
                 return Err("MCP owner is not a verified, reloadable OAuth owner; bootstrap regeneration disabled".into());

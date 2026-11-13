@@ -259,6 +259,19 @@
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
+.runtime-token-box-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.runtime-regen-inline {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+.runtime-regen-inline:hover {
+  background: rgba(56, 189, 248, 0.12);
+  border-color: rgba(56, 189, 248, 0.6);
+}
 .runtime-token-val {
   margin: 0;
   font-family: var(--font-mono);

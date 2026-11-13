@@ -76,8 +76,11 @@ export async function regenerateTrayToken(
         !/^[a-zA-Z0-9_-]{24,128}$/.test(result.code)) {
       throw new Error("Owner returned an invalid OAuth approval-code response");
     }
-    const setupSnippet = "SuperAgent MCP OAuth approval\nEndpoint: " + result.publicUrl +
-      "\nOne-time bootstrap code: " + result.code;
+    const setupSnippet = [
+      `MCP URL   : ${result.publicUrl}`,
+      "Auth      : OAuth",
+      `Bootstrap : ${result.code}`,
+    ].join("\n");
     const copied=await adapter.copySecretToClipboard(setupSnippet);
     return {success:true,kind:input.kind,port:input.port,pid:input.pid,
       code:result.code,
