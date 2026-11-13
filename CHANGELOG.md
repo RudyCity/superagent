@@ -1,3 +1,8 @@
+## [1.14.85] - 2026-11-13
+### Guarded manual recovery for orphaned Guardian owner records
+- Add an explicit plan/apply command that verifies the supervised Core, OS absence of both old Guardian PIDs, and private listener absence before archiving stale records without killing or adopting any process.
+- Require matching record digest, supervisor PID and explicit operator review; preserve source records in a private archive and test fail-closed safety decisions.
+
 ## [1.14.84] - 2026-11-13
 ### Unified update manager, independent runtime tabs, and Android Internet tunnel
 - Add independently verified, operator-confirmed release package downloads for Tray, Chrome Delegate, SidePanel, Android LAN, Windows LAN, and Windows/macOS/Linux standalone packages, without automatic installation or interruption of active sessions.
