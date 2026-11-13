@@ -1,0 +1,119 @@
+name: Recover verified unified SuperAgent release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: "Completed tagged multi-OS workflow run with all six build jobs successful"
+        type: string
+        required: true
+      tag:
+        description: "Exact existing vX.Y.Z-rc.N tag from that run"
+        type: string
+        required: true
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: recover-unified-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    name: Validate tagged provenance and publish verified archived builds
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Validate original run, immutable tag and six successful build jobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]+$ ]] || { echo "Invalid run ID"; exit 1; }
+          [[ "$TARGET_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]] || { echo "Invalid release tag"; exit 1; }
+          version="$(node -p "require('./package.json').version")"
+          [[ "$TARGET_TAG" == "v${version}-rc."* ]] || { echo "Recovery version mismatch"; exit 1; }
+          sha="$(git rev-parse "refs/tags/$TARGET_TAG^{}")"
+          tagged_version="$(git show "$TARGET_TAG:package.json" | node -e 'let s="";process.stdin.on("data",x=>s+=x);process.stdin.on("end",()=>console.log(JSON.parse(s).version))')"
+          [[ "$tagged_version" == "$version" ]] || { echo "Tagged source package version mismatch"; exit 1; }
+          if gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Target release already exists: refusing duplicate or overwrite"
+            exit 1
+          fi
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          jq -e --arg sha "$sha" --arg tag "$TARGET_TAG" '
+            .event=="push" and .head_branch==$tag and .head_sha==$sha and
+            .status=="completed" and .conclusion=="failure" and
+            .path==".github/workflows/release-windows-standalone.yml"
+          ' <<< "$run" || { echo "Original run provenance mismatch"; exit 1; }
+          jobs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100")"
+          for required in             "Build & test windows-x64"             "Build & test macos-arm64"             "Build & test linux-x64"             "Build verified Chrome Delegate and SidePanel"             "Build verified Android LAN preview APK (debug-signed)"             "Build and verify Windows LAN receiver GUI preview"; do
+            jq -e --arg name "$required"               '[.jobs[] | select(.name==$name and .conclusion=="success")] | length==1'               <<< "$jobs" >/dev/null || { echo "A required tagged build was not successful: $required"; exit 1; }
+          done
+          jq -e '[.jobs[] | select(.name=="Publish unified verified standalone and preview components" and .conclusion=="failure")] | length==1'             <<< "$jobs" >/dev/null || { echo "No matching failed publication gate to recover"; exit 1; }
+          echo "TAGGED_BUILD_PROVENANCE_VERIFIED tag=$TARGET_TAG sha=$sha run=$SOURCE_RUN_ID"
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          pattern: release-*
+          merge-multiple: true
+          path: downloaded-assets
+      - name: Verify original artifacts and generate complete SHA-256 inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/normalize-unified-release-assets.mjs downloaded-assets
+          node scripts/verify-unified-release-assets.mjs downloaded-assets
+          mkdir -p release-assets
+          cp -- downloaded-assets/* release-assets/
+          (cd release-assets && sha256sum ./* > ../SHA256SUMS.txt)
+          [[ "$(wc -l < SHA256SUMS.txt)" -eq 11 ]] || { echo "Bad checksum inventory"; exit 1; }
+          (cd release-assets && sha256sum --check ../SHA256SUMS.txt)
+          echo "RECOVERED_RELEASE_ASSET_INTEGRITY_VERIFIED"
+      - name: Publish complete unified prerelease without rebuilding
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          cat > RELEASE_NOTES.md <<'EOF'
+          # SuperAgent unified verified prerelease
+
+          All binaries were built on dedicated native CI runners from the exact
+          tagged commit, with six independent, successful build/test jobs.
+          This publication recovered their immutable CI artifacts following a
+          GitHub download-artifact folder-layout mismatch.
+
+          - Windows x64: standalone Tray, Core, CLI and Bun NSIS installer.
+            No Microsoft C++ Build Tools or Rust toolchain needed on target PC.
+            Do not use `bun install -g` to install the native desktop app.
+          - macOS Apple Silicon: unsigned/unnotarized DMG prerelease.
+          - Linux x64: standalone DEB and AppImage prereleases.
+          - Chrome Delegate and SidePanel: distinct MV3 source ZIPs and receipts.
+            Install in developer mode; not Chrome Web Store distribution.
+          - Windows LAN GUI: unsigned preview installer.
+          - Android LAN: debug-signed preview APK and Gradle metadata.
+            Not Google Play or production physical-device certification.
+
+          Use SHA256SUMS.txt to verify each download. R0–R7 production acceptance,
+          signing/notarization and operator-approved deployment remain separate.
+          This release does not restart active Core/MCP/Delegate services.
+          EOF
+          gh release create "$TARGET_TAG" release-assets/* SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
+            --title "SuperAgent $TARGET_TAG — All platforms, Chrome extensions and LAN previews" \
+            --notes-file RELEASE_NOTES.md
+          asset_count="$(gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
+          [[ "$asset_count" == "12" ]] || { echo "Published release is missing assets: $asset_count/12"; exit 1; }
+          gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,assets --jq             '{url,isDraft,isPrerelease,assets:[.assets[]|{name,size}]}'
+          echo "UNIFIED_RECOVERED_RELEASE_PUBLISHED $TARGET_TAG"
