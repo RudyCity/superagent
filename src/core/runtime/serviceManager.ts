@@ -11,6 +11,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getRootConfigDir } from "../config/paths.js";
 import { requestCoreSupervisor } from "./coreSupervisor.js";
+import { planMcpCoreStart,executeMcpCoreStart } from "./coreMcpBootstrap.js";
 import { controlCoreLifecycle, prepareCoreLifecycle } from "./coreLifecycleControl.js";
 import { validateCoreOperationId } from "./coreLifecycleLedger.js";
 import { readCoreGuardianLease } from "./coreGuardian.js";
@@ -331,7 +332,7 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
       // A failed supervisor probe never proves that an existing listener
       // is inactive or legacy. Require a fresh owner-bound plan to mutate.
       return snap(service,port,owner!==null||response?"unverified":"inactive",owner,false,
-        response?["status","plan","recycle"]:["status"],
+        response?["status","plan","recycle"]:["status","plan","start"],
         response
           ? versionDrift
             ? `Core HTTP responds with runtime ${runtimeVersion} while source is ${sourceVersion}; ownership is unattested and guarded recycle is required`
@@ -691,6 +692,8 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
   if(action==="plan") {
     if((service==="all"||service===undefined)&&args.targetAction==="recycle")
       return planGlobalLifecycleRecycle();
+    if(service==="core"&&args.targetAction==="start")
+      return planMcpCoreStart(port!);
     if(service==="core"&&args.targetAction==="recycle")
       return planLegacyCoreRecycle(port!);
     if(service==="tray"&&args.targetAction==="recycle")
@@ -823,6 +826,7 @@ async function manageServicesInternal(raw:unknown):Promise<unknown> {
       note:"Guarded legacy Core recycle plan",
     },true);
   }
+  if(service==="core"&&action==="start")return executeMcpCoreStart(args);
   if(service==="core"&&(action==="restart"||action==="rollback"||action==="drain")) {
     if(!args.operationId||!args.expectedBuildDigest||
        !args.expectedSupervisorPid||!args.expectedWorkerPid)

@@ -7,7 +7,7 @@ import { MANAGED_SERVICE_NAMES } from "../../runtime/serviceManagerTypes.js";
 
 export const SERVICE_MANAGER_MCP_TOOL_DEFS=[{
   name:"superagent_manage_services",
-  description:"Unified SuperAgent runtime manager. Inventory Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, process registry and tunnels. Includes ready/health dashboard, bounded event timeline, declarative profiles, guarded watchdog, manual operation reconciliation, and transactional Tray upgrade/rollback. Safe mutations: supervised Core restart/rollback/drain, verified sidecar and native Tray start/stop/restart, URL-preserving Reloadable MCP backend reload; destructive Quick Tunnel stop requires public disruption acknowledgment. Explicit read-only plan required before a mutation. Never arbitrary PID kill, auto-start, or Legacy Cloudflare URL rotation. Requires write OAuth scope and local YOLO.",
+  description:"Unified SuperAgent runtime manager. Inventory Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, process registry and tunnels. Includes ready/health dashboard, bounded event timeline, declarative profiles, guarded watchdog, manual operation reconciliation, and transactional Tray upgrade/rollback. Safe mutations: independently verified Core cold start (plan then confirm), supervised Core restart/rollback/drain, verified sidecar and native Tray start/stop/restart, URL-preserving Reloadable MCP backend reload; destructive Quick Tunnel stop requires public disruption acknowledgment. Explicit read-only plan required before a mutation. Never arbitrary PID kill, implicit auto-start, or Legacy Cloudflare URL rotation. Requires write OAuth scope and local YOLO.",
   inputSchema:{
     type:"object",
     properties:{
