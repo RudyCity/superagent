@@ -1611,6 +1611,7 @@ fn main() {
             get_tray_build_number,
             release_updates::check_release_updates,
             release_updates::download_release_update,
+            release_updates::download_release_component,
             set_tray_settings,
             get_muse_telegram_settings,
             set_muse_telegram_settings,

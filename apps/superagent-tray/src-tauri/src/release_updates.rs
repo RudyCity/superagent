@@ -44,6 +44,7 @@ pub struct ReleaseUpdateStatus {
     sha256: Option<String>,
     components: Vec<String>,
     download_supported: bool,
+    component_items: Vec<UpdateComponent>,
     note: String,
 }
 #[derive(Debug, Serialize)]
@@ -56,6 +57,22 @@ pub struct VerifiedDownload {
     bytes: u64,
     installed: bool,
     note: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateComponent {
+    id: String,
+    label: String,
+    version: String,
+    installed_version: Option<String>,
+    state: String,
+    platform: String,
+    file_name: Option<String>,
+    size: Option<u64>,
+    sha256: Option<String>,
+    available: bool,
+    instructions: String,
 }
 
 fn release_order(tag: &str) -> Option<(u64, u64, u64, u64)> {
@@ -141,11 +158,14 @@ fn sha256_for_file(manifest: &str, file: &str) -> Result<String, String> {
         let mut parts = line.splitn(2, char::is_whitespace);
         let Some(hash) = parts.next() else { continue };
         let Some(rest) = parts.next() else { continue };
-        let entry = rest.trim().trim_start_matches('*');
-        if (entry == file || entry == format!("./{file}"))
-            && hash.len() == 64
-            && hash.bytes().all(|c| c.is_ascii_hexdigit())
-        {
+        let raw = rest.trim();
+        let entry = raw.strip_prefix('*').unwrap_or(raw);
+        if entry == file || entry == format!("./{file}") {
+            // Even a malformed second matching row counts as an ambiguous/
+            // unsafe manifest. Never quietly ignore it.
+            if hash.len() != 64 || !hash.bytes().all(|c| c.is_ascii_hexdigit()) {
+                return Err("UPDATE_CHECKSUM_MALFORMED".into());
+            }
             matches.push(hash.to_ascii_lowercase());
         }
     }
@@ -247,56 +267,213 @@ fn catalog(release: &ReleaseRecord) -> Vec<String> {
     }
     names
 }
+// A release may contain different component versions. Never infer the
+// installed extension / phone / LAN receiver version from the Tray version.
+fn versioned_asset(
+    release: &ReleaseRecord,
+    prefix: &str,
+    suffix: &str,
+) -> Result<Option<(String, String)>, String> {
+    let mut found = Vec::new();
+    for asset in &release.assets {
+        let Some(version) = asset
+            .name
+            .strip_prefix(prefix)
+            .and_then(|name| name.strip_suffix(suffix))
+        else {
+            continue;
+        };
+        if version.is_empty()
+            || version.len() > 64
+            || !version
+                .bytes()
+                .all(|ch| ch.is_ascii_alphanumeric() || ch == b'.' || ch == b'-')
+            || !version.starts_with(|ch: char| ch.is_ascii_digit())
+        {
+            return Err("UPDATE_COMPONENT_VERSION_INVALID".into());
+        }
+        found.push((asset.name.clone(), version.to_string()));
+    }
+    if found.len() > 1 {
+        return Err("UPDATE_COMPONENT_AMBIGUOUS".into());
+    }
+    Ok(found.pop())
+}
+
+fn component_catalog(
+    release: &ReleaseRecord,
+    manifest: &str,
+    current_version: &str,
+    release_version: &str,
+) -> Result<Vec<UpdateComponent>, String> {
+    // Deliberately finite allowlist: no arbitrary file naming, custom URL,
+    // remote instructions, or file execution is ever accepted.
+    let platform = package_for_platform(release_version);
+    let core = platform
+        .as_ref()
+        .map(|(_, name)| (name.clone(), release_version.to_string()));
+    let core_filename = core.as_ref().map(|x| x.0.clone());
+    // Native installers for OTHER computers are downloadable for transfer,
+    // not installable on this host. The current host installer is listed once.
+    let windows = Some((
+        format!("SuperAgent_{release_version}_x64-setup.exe"),
+        release_version.to_string(),
+    ));
+    let macos = Some((
+        format!("SuperAgent_{release_version}_aarch64.dmg"),
+        release_version.to_string(),
+    ));
+    let appimage = Some((
+        format!("SuperAgent_{release_version}_amd64.AppImage"),
+        release_version.to_string(),
+    ));
+    let deb = Some((
+        format!("SuperAgent_{release_version}_amd64.deb"),
+        release_version.to_string(),
+    ));
+    let delegate = versioned_asset(release, "superagent-delegate-", ".zip")?;
+    let sidepanel = versioned_asset(release, "superagent-sidepanel-", ".zip")?;
+    let android = versioned_asset(release, "SuperAgent-LAN-Android-", "-debug.apk")?;
+    let lan = versioned_asset(release, "SuperAgent-LAN-Client-", "-Windows-x64-setup.exe")?;
+    let core_relation = version_order(current_version)
+        .zip(version_order(release_version))
+        .map(|(installed, published)| installed.cmp(&published));
+    let core_state = match core_relation {
+        Some(std::cmp::Ordering::Less) => "update_available",
+        Some(std::cmp::Ordering::Equal) => "same_version",
+        Some(std::cmp::Ordering::Greater) => "installed_newer",
+        None => "unknown_installed_version",
+    };
+    let candidates = vec![
+        ("superagent", "SuperAgent Tray + Core + CLI", core,
+            platform.as_ref().map(|p|p.0.as_str()).unwrap_or("Unsupported architecture"),
+            "Close the Tray only when ready. Open the verified installer manually; running Core and MCP ownership are not migrated automatically.",
+            Some(current_version), core_state),
+        ("windows-installer", "Windows standalone installer", windows,
+            "Windows x64 (transferable)", "Run manually on the target Windows PC. The standalone installer already bundles Bun, Core and CLI; do not use bun install -g.",
+            None, "installed_unknown"),
+        ("macos-dmg", "macOS Apple Silicon DMG", macos,
+            "macOS ARM64 (transferable)", "Open the verified DMG manually on an Apple Silicon Mac; prerelease is not notarized and may need explicit Gatekeeper approval.",
+            None, "installed_unknown"),
+        ("linux-appimage", "Linux AppImage", appimage,
+            "Linux x64 (transferable)", "On the Linux machine, make the verified AppImage executable and launch it manually after checking running services.",
+            None, "installed_unknown"),
+        ("linux-deb", "Linux Debian/Ubuntu DEB", deb,
+            "Linux x64 (transferable)", "Install the verified DEB manually with your OS package manager after checking active workloads; no remote root command is executed.",
+            None, "installed_unknown"),
+        ("chrome-delegate", "Chrome Delegate Extension", delegate,
+            "Chrome (all desktop OS)", "Unzip the archive. In chrome://extensions enable Developer mode, then Load unpacked (or update/reload the existing unpacked extension) after active delegated sessions are finished.",
+            None, "installed_unknown"),
+        ("chrome-sidepanel", "Chrome SidePanel Extension", sidepanel,
+            "Chrome (all desktop OS)", "Unzip the archive and load/reload it from chrome://extensions using Developer mode. Chrome Web Store installations have a separate store-managed update path.",
+            None, "installed_unknown"),
+        ("android-lan", "Android LAN Client", android,
+            "Android (APK transferable from desktop)", "Transfer the verified APK to the phone and approve installation on the Android device. This is a debug-signed preview: different signing keys may require reinstall and risk local data.",
+            None, "installed_unknown"),
+        ("windows-lan", "Windows LAN Receiver GUI", lan,
+            "Windows x64 (transferable from other OS)", "Run the verified Windows LAN installer manually on a standard, non-elevated Windows session after active transfers finish. Pairing requires fresh device-owner approval.",
+            None, "installed_unknown"),
+    ];
+    let mut result = Vec::with_capacity(candidates.len());
+    for (id, label, candidate, os, instructions, installed, state) in candidates {
+        if id != "superagent"
+            && candidate.as_ref().map(|x| x.0.as_str()) == core_filename.as_deref()
+        {
+            continue;
+        }
+        let mut size = None;
+        let mut sha = None;
+        let mut name = None;
+        let mut version = String::new();
+        if let Some((filename, published_version)) = candidate {
+            // Exact release filenames only; multiple names would fail above.
+            let matching: Vec<&ReleaseAsset> = release
+                .assets
+                .iter()
+                .filter(|asset| asset.name == filename)
+                .collect();
+            if matching.len() > 1 {
+                return Err("UPDATE_ASSET_DUPLICATE".into());
+            }
+            if let Some(asset) = matching.first() {
+                let minimum = if filename.ends_with(".zip") {
+                    1000
+                } else if filename.ends_with(".apk") {
+                    1_000_000
+                } else {
+                    20_000_000
+                };
+                if asset.size < minimum || asset.size > MAX_BINARY {
+                    return Err("UPDATE_ASSET_SIZE_INVALID".into());
+                }
+                validate_asset_url(&release.tag_name, asset)?;
+                sha = Some(sha256_for_file(manifest, &filename)?);
+                size = Some(asset.size);
+                name = Some(filename);
+                version = published_version;
+            }
+        }
+        result.push(UpdateComponent {
+            id: id.to_string(),
+            label: label.to_string(),
+            version,
+            installed_version: installed.map(str::to_string),
+            state: if name.is_none() {
+                "unavailable".into()
+            } else {
+                state.into()
+            },
+            platform: os.to_string(),
+            file_name: name.clone(),
+            size,
+            sha256: sha,
+            available: name.is_some(),
+            instructions: instructions.to_string(),
+        });
+    }
+    Ok(result)
+}
+
 async fn resolve(
     client: &Client,
     current_version: String,
-) -> Result<(ReleaseUpdateStatus, Option<ReleaseAsset>), String> {
+) -> Result<(ReleaseUpdateStatus, Vec<ReleaseAsset>), String> {
     let bytes = bounded_get(client, API, MAX_RESPONSE).await?;
     let releases: Vec<ReleaseRecord> =
         serde_json::from_slice(&bytes).map_err(|_| "UPDATE_RELEASE_METADATA_INVALID")?;
     let release = latest(&releases).ok_or("UPDATE_NO_VERIFIED_RELEASE")?;
     let order = release_order(&release.tag_name).ok_or("UPDATE_TAG_INVALID")?;
     let version = format!("{}.{}.{}", order.0, order.1, order.2);
-    let platform = package_for_platform(&version);
-    let asset = platform
-        .as_ref()
-        .and_then(|(_, name)| release.assets.iter().find(|a| a.name == *name));
-    let mut hash = None;
-    if let Some(a) = asset {
-        if a.size < 20_000_000 || a.size > MAX_BINARY {
-            return Err("UPDATE_ASSET_SIZE_INVALID".into());
-        }
-        validate_asset_url(&release.tag_name, a)?;
-        let checksum = release
-            .assets
-            .iter()
-            .find(|a| a.name == "SHA256SUMS.txt")
-            .ok_or("UPDATE_CHECKSUM_ASSET_MISSING")?;
-        validate_asset_url(&release.tag_name, checksum)?;
-        if checksum.size < 100 || checksum.size > MAX_MANIFEST as u64 {
-            return Err("UPDATE_CHECKSUM_SIZE_INVALID".into());
-        }
-        let manifest = bounded_get(client, &checksum.browser_download_url, MAX_MANIFEST).await?;
-        let manifest = std::str::from_utf8(&manifest).map_err(|_| "UPDATE_CHECKSUM_ENCODING")?;
-        hash = Some(sha256_for_file(manifest, &a.name)?);
+    let checksum = release
+        .assets
+        .iter()
+        .find(|a| a.name == "SHA256SUMS.txt")
+        .ok_or("UPDATE_CHECKSUM_ASSET_MISSING")?;
+    validate_asset_url(&release.tag_name, checksum)?;
+    if checksum.size < 100 || checksum.size > MAX_MANIFEST as u64 {
+        return Err("UPDATE_CHECKSUM_SIZE_INVALID".into());
     }
-    let relation = version_order(&current_version).map(|x| x.cmp(&(order.0, order.1, order.2)));
-    let state = match relation {
-        Some(std::cmp::Ordering::Less) => "update_available",
-        Some(std::cmp::Ordering::Equal) => "same_version",
-        Some(std::cmp::Ordering::Greater) => "installed_newer",
-        None => "unknown_installed_version",
-    };
-    let supported = asset.is_some() && hash.is_some();
+    let manifest = bounded_get(client, &checksum.browser_download_url, MAX_MANIFEST).await?;
+    let manifest = std::str::from_utf8(&manifest).map_err(|_| "UPDATE_CHECKSUM_ENCODING")?;
+    let component_items = component_catalog(&release, manifest, &current_version, &version)?;
+    let primary = component_items
+        .iter()
+        .find(|item| item.id == "superagent")
+        .ok_or("UPDATE_CORE_COMPONENT_MISSING")?;
+    let platform = package_for_platform(&version);
+    let state = primary.state.clone();
+    let asset_name = primary.file_name.clone();
+    let asset_size = primary.size;
+    let sha256 = primary.sha256.clone();
+    let download_supported = primary.available;
     Ok((ReleaseUpdateStatus {
         current_version,release_version:version,
         tag:release.tag_name.clone(),release_url:format!("{RELEASE_URL}{}",release.tag_name),
         platform:platform.map(|x|x.0).unwrap_or("Unsupported OS/architecture".into()),
-        state:state.into(),
-        asset_name:asset.map(|a|a.name.clone()),asset_size:asset.map(|a|a.size),
-        sha256:hash,components:catalog(release),download_supported:supported,
-        note:"Verified official prerelease metadata and SHA-256. Download is manual; installation, restart, rollback and Core/MCP ownership are unchanged.".into(),
-    },asset.cloned()))
+        state,asset_name,asset_size,sha256,components:catalog(release),
+        download_supported,component_items,
+        note:"Verified official prerelease metadata and per-component SHA-256. Downloads are manual; installation, restart, rollback and Core/MCP ownership are unchanged.".into(),
+    },release.assets.clone()))
 }
 impl Clone for ReleaseAsset {
     fn clone(&self) -> Self {
@@ -355,26 +532,12 @@ pub async fn check_release_updates(app: tauri::AppHandle) -> Result<ReleaseUpdat
         .await
         .map(|x| x.0)
 }
-#[tauri::command]
-pub async fn download_release_update(
-    app: tauri::AppHandle,
+async fn download_verified_asset(
+    c: &Client,
+    asset: ReleaseAsset,
     expected_tag: String,
     expected_sha256: String,
 ) -> Result<VerifiedDownload, String> {
-    if release_order(&expected_tag).is_none()
-        || expected_sha256.len() != 64
-        || !expected_sha256.bytes().all(|c| c.is_ascii_hexdigit())
-    {
-        return Err("UPDATE_CONFIRMATION_INVALID".into());
-    }
-    let c = client()?;
-    let (status, asset) = resolve(&c, app.package_info().version.to_string()).await?;
-    if status.tag != expected_tag
-        || status.sha256.as_deref() != Some(&expected_sha256.to_lowercase())
-    {
-        return Err("UPDATE_RELEASE_CHANGED_SINCE_REVIEW".into());
-    }
-    let asset = asset.ok_or("UPDATE_PLATFORM_NOT_SUPPORTED")?;
     let dest = local_download_directory()?.join(&asset.name);
     if dest.exists() {
         verify_existing(&dest, &expected_sha256.to_lowercase(), asset.size)?;
@@ -438,10 +601,13 @@ pub async fn download_release_update(
         let _ = fs::remove_file(&tmp);
         return Err("UPDATE_DOWNLOAD_DESTINATION_CHANGED".into());
     }
-    if let Err(_) = fs::rename(&tmp, &dest) {
+    // hard_link is atomic create-new on the same filesystem: never replace a
+    // destination that another updater/actor created after the initial check.
+    if let Err(_) = fs::hard_link(&tmp, &dest) {
         let _ = fs::remove_file(&tmp);
         return Err("UPDATE_DOWNLOAD_FINALIZE_FAILED".into());
     }
+    fs::remove_file(&tmp).map_err(|_| "UPDATE_TEMP_CLEANUP_FAILED")?;
     Ok(VerifiedDownload {
         file_path: dest.to_string_lossy().into_owned(),
         file_name: asset.name,
@@ -452,9 +618,188 @@ pub async fn download_release_update(
         note: "SHA-256 verified. No installer was executed and no service was restarted.".into(),
     })
 }
+fn valid_confirmation(expected_tag: &str, expected_sha256: &str) -> Result<(), String> {
+    if release_order(expected_tag).is_none()
+        || expected_sha256.len() != 64
+        || !expected_sha256.bytes().all(|ch| ch.is_ascii_hexdigit())
+    {
+        return Err("UPDATE_CONFIRMATION_INVALID".into());
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn download_release_update(
+    app: tauri::AppHandle,
+    expected_tag: String,
+    expected_sha256: String,
+) -> Result<VerifiedDownload, String> {
+    download_release_component(app, "superagent".into(), expected_tag, expected_sha256).await
+}
+
+#[tauri::command]
+pub async fn download_release_component(
+    app: tauri::AppHandle,
+    component_id: String,
+    expected_tag: String,
+    expected_sha256: String,
+) -> Result<VerifiedDownload, String> {
+    valid_confirmation(&expected_tag, &expected_sha256)?;
+    // Client input is a finite component ID; never a path, URL, or filename.
+    if !matches!(
+        component_id.as_str(),
+        "superagent"
+            | "linux-deb"
+            | "chrome-delegate"
+            | "chrome-sidepanel"
+            | "android-lan"
+            | "windows-lan"
+    ) {
+        return Err("UPDATE_COMPONENT_NOT_ALLOWED".into());
+    }
+    let c = client()?;
+    // Refetch authoritative release metadata and checksum at click time,
+    // preventing stale/tampered UI fields from influencing selection.
+    let (status, assets) = resolve(&c, app.package_info().version.to_string()).await?;
+    let component = status
+        .component_items
+        .iter()
+        .find(|item| item.id == component_id)
+        .ok_or("UPDATE_COMPONENT_NOT_ALLOWED")?;
+    if status.tag != expected_tag
+        || !component.available
+        || component.sha256.as_deref() != Some(&expected_sha256.to_ascii_lowercase())
+    {
+        return Err("UPDATE_RELEASE_CHANGED_SINCE_REVIEW".into());
+    }
+    let file = component
+        .file_name
+        .as_ref()
+        .ok_or("UPDATE_PLATFORM_NOT_SUPPORTED")?;
+    let asset = assets
+        .into_iter()
+        .find(|a| a.name == *file)
+        .ok_or("UPDATE_COMPONENT_ASSET_MISSING")?;
+    validate_asset_url(&expected_tag, &asset)?;
+    download_verified_asset(&c, asset, expected_tag, expected_sha256).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn all_release_components_have_separate_verified_versions() {
+        let tag = "v1.14.83-rc.2";
+        let names = [
+            "SuperAgent_1.14.83_x64-setup.exe",
+            "SuperAgent_1.14.83_aarch64.dmg",
+            "SuperAgent_1.14.83_amd64.deb",
+            "SuperAgent_1.14.83_amd64.AppImage",
+            "superagent-delegate-1.10.1.zip",
+            "superagent-sidepanel-1.0.0.zip",
+            "SuperAgent-LAN-Android-0.10.0-native-dashboard-debug.apk",
+            "SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe",
+        ];
+        let mut manifest = String::new();
+        let assets: Vec<ReleaseAsset> = names
+            .iter()
+            .map(|filename| {
+                manifest.push_str(&format!("{}  ./{}\n", "a".repeat(64), filename));
+                ReleaseAsset {
+                    name: (*filename).into(),
+                    size: if filename.ends_with(".zip") {
+                        2000
+                    } else if filename.ends_with(".apk") {
+                        6_000_000
+                    } else {
+                        30_000_000
+                    },
+                    browser_download_url: format!(
+                        "https://github.com/RudyCity/superagent/releases/download/{tag}/{filename}"
+                    ),
+                }
+            })
+            .collect();
+        let release = ReleaseRecord {
+            tag_name: tag.into(),
+            draft: false,
+            prerelease: true,
+            assets,
+        };
+        let items = component_catalog(&release, &manifest, "1.14.82", "1.14.83").unwrap();
+        let ids: Vec<&str> = items.iter().map(|i| i.id.as_str()).collect();
+        for id in [
+            "superagent",
+            "chrome-delegate",
+            "chrome-sidepanel",
+            "android-lan",
+            "windows-lan",
+        ] {
+            assert!(ids.contains(&id), "missing {id}");
+        }
+        for item in items.iter().filter(|item| item.available) {
+            assert_eq!(item.sha256.as_deref(), Some("a".repeat(64).as_str()));
+            assert!(item.file_name.is_some());
+            assert!(!item.instructions.is_empty());
+        }
+        let extension = items
+            .iter()
+            .find(|item| item.id == "chrome-delegate")
+            .unwrap();
+        assert_eq!(extension.version, "1.10.1");
+        assert_eq!(extension.installed_version, None);
+        assert_eq!(extension.state, "installed_unknown");
+        let android = items.iter().find(|item| item.id == "android-lan").unwrap();
+        assert_eq!(android.version, "0.10.0-native-dashboard");
+        let lan = items.iter().find(|item| item.id == "windows-lan").unwrap();
+        assert_eq!(lan.version, "0.2.0");
+        let core = items.iter().find(|item| item.id == "superagent").unwrap();
+        assert_eq!(core.state, "update_available");
+        assert_eq!(core.installed_version.as_deref(), Some("1.14.82"));
+        assert_eq!(
+            items
+                .iter()
+                .filter(|i| i.file_name == core.file_name)
+                .count(),
+            1
+        );
+    }
+    #[test]
+    fn rejects_multiple_versions_or_missing_component_checksum() {
+        let tag = "v1.14.83-rc.2";
+        let prefix = "superagent-delegate-";
+        let make = |version: &str| {
+            let name = format!("{prefix}{version}.zip");
+            ReleaseAsset {
+                name: name.clone(),
+                size: 2000,
+                browser_download_url: format!(
+                    "https://github.com/RudyCity/superagent/releases/download/{tag}/{name}"
+                ),
+            }
+        };
+        let release = ReleaseRecord {
+            tag_name: tag.into(),
+            draft: false,
+            prerelease: true,
+            assets: vec![make("1.10.1"), make("1.9.0")],
+        };
+        assert_eq!(
+            versioned_asset(&release, prefix, ".zip").unwrap_err(),
+            "UPDATE_COMPONENT_AMBIGUOUS"
+        );
+        let release = ReleaseRecord {
+            assets: vec![make("1.10.1")],
+            ..release
+        };
+        assert!(component_catalog(&release, "", "1.14.82", "1.14.83").is_err());
+    }
+    #[test]
+    fn download_component_requires_exact_known_id_and_hash() {
+        assert!(valid_confirmation("v1.14.83-rc.2", &"b".repeat(64)).is_ok());
+        assert!(valid_confirmation("v1.14.83-rc.2/../../", &"b".repeat(64)).is_err());
+        assert!(valid_confirmation("v1.14.83-rc.2", "malformed").is_err());
+    }
     #[test]
     fn target_packages_are_pinned_for_each_supported_architecture() {
         assert_eq!(
@@ -514,6 +859,7 @@ mod tests {
         );
         assert!(sha256_for_file(&format!("{good}  ../{name}\n"), name).is_err());
         assert!(sha256_for_file(&format!("{good}  ./{name}\n{good}  {name}\n"), name).is_err());
+        assert!(sha256_for_file(&format!("{good}  ./{name}\nmalformed  {name}\n"), name).is_err());
     }
     #[test]
     fn latest_ignores_non_rc_draft_or_unpublished() {

@@ -31,13 +31,23 @@ The [GitHub Releases page](https://github.com/RudyCity/superagent/releases) now 
 
 **[Browse published GitHub Releases](https://github.com/RudyCity/superagent/releases)**. Generated files under `artifacts/` are intentionally Git-ignored; build output alone is not a published release.
 
-### Verified desktop update checks (new in source; not yet shipped in v1.14.83-rc.2)
+### Unified Update Manager — all release components (source on `main`)
 
-The Tray desktop app now has **Updates & Releases** in the sidebar and **Check for Updates** in the native tray menu. It checks the official GitHub release inventory, compares the running Tray version, identifies the installer for Windows x64, macOS Apple Silicon or Linux x64, validates the published SHA-256 manifest, and displays which Chrome/LAN/Android packages are present.
+Open **Updates & Releases** in the desktop Tray (or **Check for Updates** in its native menu). This now supports **independent, per-component verified downloads**, not just the SuperAgent main installer.
 
-Choose **Download verified installer** only after reviewing the package. The native updater downloads into `~/Downloads/SuperAgent/updates/` (Windows: `%USERPROFILE%\\Downloads\\SuperAgent\\updates\\`), validates its exact published byte size and SHA-256 while streaming, re-checks the release tag and checksum immediately before download, and refuses substituted, duplicated, incomplete or corrupted files. It never installs a package, runs shell commands, changes OAuth credentials, restarts Core/MCP/Delegate/Tray, or performs an automatic rollback. On Linux the managed download is the AppImage; DEB and other components remain accessible through the official Releases page.
+| Component | Version checked | Action |
+| --- | --- | --- |
+| SuperAgent Tray + Core + CLI | Compares the **running Tray** with the official release | Verified installer for current Windows x64, macOS ARM64 or Linux x64 |
+| Windows installer, macOS DMG, Linux DEB and AppImage | Release version for each OS | Download for a different computer, without attempting local installation |
+| Chrome Delegate and Chrome SidePanel | Each ZIP has its **own extension version** | Download separately; unpack and load/reload through `chrome://extensions` after sessions finish |
+| Android LAN Client | Independently versioned APK | Download, transfer to Android and approve in the phone's package installer |
+| Windows LAN Receiver GUI | Independently versioned Windows installer | Download; install manually on a standard Windows user session after transfers finish |
 
-**Important:** this feature currently exists on `main`, so the already-published `v1.14.83-rc.2` installer does not contain it. It must pass the normal multi-OS release gates and be included in a subsequent approved installer before users can access it from an installed Tray. Unsigned/unnotarized prereleases, Chrome MV3 Developer Mode, LAN/Android preview installation, and physical-device validation remain separate release/security gates. See the [update system guide](docs/guides/verified-update-system.md).
+The manager selects **only approved filenames** from `RudyCity/superagent`, checks the official release's `SHA256SUMS.txt`, and **revalidates the tag, exact filename and hash on every download**. Files go to `~/Downloads/SuperAgent/updates/` (Windows: `%USERPROFILE%\\Downloads\\SuperAgent\\updates\\`), using a verified partial file and an atomic, no-overwrite finish. Unrecognized components, corrupted existing downloads, duplicate versions and mismatched checksums are rejected.
+
+**Installation is an independent, user-approved step.** Unpacked Chrome extensions cannot be silently replaced from the Tray; Android APK installation requires approval on the phone; native installers are not launched automatically. Core, MCP, OAuth, Delegate, Tray and active LAN transfers are never stopped as a side effect of checking or downloading. Where a companion app's installed version cannot be reliably queried, the UI says **Installed version unknown**, rather than inventing an update status.
+
+**Shipping status:** the new manager is in source on `main`, **not** in the already-published `v1.14.83-rc.2` binary. A new tagged build and native CI verification are required before it becomes available in an installed Tray. See [Unified Update Manager](docs/guides/verified-update-system.md) for security limits and guided installation steps.
 
 ### Windows installer: verify before running
 

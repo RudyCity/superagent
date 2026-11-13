@@ -18,4 +18,20 @@
 .update-downloaded p { margin:6px 0; }
 .update-path { color:var(--text-primary); overflow-wrap:anywhere; user-select:text; font-family:var(--font-mono,monospace); }
 .update-release-link { display:inline-flex; margin:4px 20px 22px; }
+/* Independent updates; remote metadata is not an installed-version detector. */
+.update-component-list:has(.update-component-card) { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.update-component-card { display:flex; flex-direction:column; gap:8px; min-width:0; border:1px solid var(--border-medium); border-radius:var(--radius-lg); background:var(--bg-surface-raised); padding:16px; }
+.update-component-title { display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.update-component-title strong { color:var(--text-primary); font-weight:650; font-size:14px; }
+.update-component-state { color:var(--text-secondary); font-size:11px; border:1px solid var(--border-medium); padding:3px 7px; border-radius:5px; }
+.update-component-version, .update-component-file, .update-component-help { margin:0; overflow-wrap:anywhere; }
+.update-component-version { color:var(--text-primary); font-size:12px; }
+.update-component-file { font-size:11px; color:var(--text-secondary); font-family:var(--font-mono,monospace); }
+.update-component-help { font-size:12px; color:var(--text-secondary); line-height:1.55; flex:1; }
+.update-component-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin-top:4px; }
+.update-component-download { font-size:12px; }
+.update-component-download:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.update-component-download:disabled { opacity:.55; cursor:not-allowed; }
+@media (max-width:900px) { .update-component-list:has(.update-component-card) { grid-template-columns:1fr; } }
+
 @media (max-width:760px) { .update-version-grid { grid-template-columns:1fr; } .update-action-row button { width:100%; } }
