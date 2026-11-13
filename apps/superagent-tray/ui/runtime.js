@@ -196,19 +196,32 @@ function runtimeRemoteCard(service) {
     ? service.kind === "muse-watch" ? ` · control :${service.port}` : ` · :${service.port}`
     : "";
   const supported = service.canStop === true || service.canRestart === true;
+  const isMcpTunnel = service.kind === "cloudflare" && service.transport === "mcp-http";
+  const mcpService = isMcpTunnel
+    ? runtimeLastResult?.remoteServices?.find(s => s.kind === "mcp" && s.port === service.port)
+    : null;
+  const rotateKind = isMcpTunnel && mcpService ? "mcp" : service.kind;
+  const rotatePort = service.port;
+  const rotatePid = isMcpTunnel && mcpService ? mcpService.pid : service.pid;
+  const canRotate = (service.kind === "mcp" || service.kind === "muse-watch")
+    ? service.canRegenerateToken === true
+    : (isMcpTunnel && mcpService?.canRegenerateToken === true);
+
   const controlHint = service.kind === "cloudflare"
-    ? "Tunnel lifecycle belongs to its service owner; control MCP from the MCP card."
+    ? (isMcpTunnel
+        ? `Tunnel ingress is managed by its MCP owner (port ${service.port}); use Regenerate Token to rotate OAuth credentials.`
+        : "Tunnel lifecycle belongs to its service owner; control MCP from the MCP card.")
     : service.kind === "muse-watch"
       ? "Watcher belum punya endpoint privat terverifikasi atau tugas masih aktif. Versi lama perlu restart terkontrol."
       : service.kind === "core-supervisor"
         ? "Supervisor can restart safely; stopping the full Core owner requires a separate drain policy."
         : "Managed owner required; stop is unavailable when sessions or tool requests are in flight.";
-  const rotateButton = service.kind === "mcp" || service.kind === "muse-watch"
+  const rotateButton = service.kind === "mcp" || service.kind === "muse-watch" || (isMcpTunnel && mcpService)
     ? `<button type="button" class="button ghost runtime-regenerate-token"
-       data-runtime-kind="${runtimeEscape(service.kind)}"
-       data-runtime-port="${runtimeEscape(service.port)}"
-       data-runtime-pid="${runtimeEscape(service.pid)}"
-       ${service.canRegenerateToken === true ? "" : "disabled"}
+       data-runtime-kind="${runtimeEscape(rotateKind)}"
+       data-runtime-port="${runtimeEscape(rotatePort)}"
+       data-runtime-pid="${runtimeEscape(rotatePid)}"
+       ${canRotate ? "" : "disabled"}
        title="Regenerate supported owner credential; new token is copied to OS clipboard">Regenerate Token</button>`
     : "";
   const controls = `<div class="runtime-instance-footer">
@@ -234,11 +247,11 @@ function runtimeRemoteCard(service) {
     ${service.controlReason
       ? `<div class="runtime-evidence">${runtimeEscape(service.controlReason)}</div>`
       : !supported ? `<div class="runtime-evidence">${runtimeEscape(controlHint)}</div>` : ""}
-    ${(service.kind === "mcp" || service.kind === "muse-watch") &&
-       service.canRegenerateToken !== true
-        ? `<div class="runtime-evidence">${runtimeEscape(service.kind === "mcp"
-            ? "Regenerate Token memerlukan MCP OAuth owner versi reloadable; static Bearer/OpenAI/legacy belum didukung."
-            : "Regenerate Token memerlukan Muse WebSocket owner aktif tanpa tugas berjalan.")}</div>`
+    ${(service.kind === "mcp" || service.kind === "muse-watch" || (isMcpTunnel && mcpService)) &&
+       !canRotate
+        ? `<div class="runtime-evidence">${runtimeEscape(service.kind === "muse-watch"
+            ? "Regenerate Token memerlukan Muse WebSocket owner aktif tanpa tugas berjalan."
+            : "Regenerate Token memerlukan MCP OAuth owner versi reloadable; static Bearer/OpenAI/legacy belum didukung.")}</div>`
         : ""}
   </article>`;
 }
@@ -673,8 +686,50 @@ async function runtimeCreateConnection(event) {
 
         if (result.endpoint) {
           const endpointP = document.createElement("div");
-          endpointP.className = "runtime-result-line";
-          endpointP.innerHTML = `<strong>Endpoint:</strong> <span class="runtime-result-endpoint">${runtimeEscape(result.endpoint)}</span>`;
+          endpointP.className = "runtime-result-line runtime-result-endpoint-row";
+
+          const endpointValWrap = document.createElement("div");
+          endpointValWrap.className = "runtime-result-endpoint-val-wrap";
+          endpointValWrap.innerHTML = `<strong>Endpoint:</strong> <span class="runtime-result-endpoint">${runtimeEscape(result.endpoint)}</span>`;
+
+          const copyEndpointBtn = document.createElement("button");
+          copyEndpointBtn.type = "button";
+          copyEndpointBtn.className = "button ghost runtime-copy-inline runtime-copy-endpoint-btn";
+          copyEndpointBtn.textContent = "Copy Endpoint";
+          copyEndpointBtn.title = "Copy endpoint URL to clipboard";
+          copyEndpointBtn.setAttribute("aria-label", "Copy endpoint URL to clipboard");
+          copyEndpointBtn.addEventListener("click", async () => {
+            try {
+              if (navigator?.clipboard?.writeText) {
+                await navigator.clipboard.writeText(result.endpoint);
+              } else if (typeof document.execCommand === "function" && document.body) {
+                const ta = document.createElement("textarea");
+                ta.value = result.endpoint;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+              }
+              copyEndpointBtn.textContent = "Copied!";
+              copyEndpointBtn.classList?.add?.("copied");
+              window.TrayFeedback?.notify?.({
+                kind: "success", scope: "runtime",
+                message: "Endpoint URL copied to clipboard."
+              });
+              setTimeout(() => {
+                copyEndpointBtn.textContent = "Copy Endpoint";
+                copyEndpointBtn.classList?.remove?.("copied");
+              }, 2000);
+            } catch {
+              copyEndpointBtn.textContent = "Copy failed";
+              setTimeout(() => { copyEndpointBtn.textContent = "Copy Endpoint"; }, 2000);
+            }
+          });
+
+          endpointP.appendChild(endpointValWrap);
+          endpointP.appendChild(copyEndpointBtn);
           resultView.appendChild(endpointP);
         }
 
@@ -715,7 +770,11 @@ async function runtimeCreateConnection(event) {
                 await navigator.clipboard.writeText(currentToken);
               }
               copyCodeBtn.textContent = "Copied!";
-              setTimeout(() => { copyCodeBtn.textContent = result.bootstrapCode ? "Copy Code" : "Copy Token"; }, 2000);
+              copyCodeBtn.classList?.add?.("copied");
+              setTimeout(() => {
+                copyCodeBtn.textContent = result.bootstrapCode ? "Copy Code" : "Copy Token";
+                copyCodeBtn.classList?.remove?.("copied");
+              }, 2000);
             } catch {
               copyCodeBtn.textContent = "Copy failed";
             }
@@ -845,7 +904,11 @@ async function runtimeCreateConnection(event) {
               await navigator.clipboard.writeText(result.setupSnippet);
             }
             copySnippetBtn.textContent = "Copied!";
-            setTimeout(() => { copySnippetBtn.textContent = "Copy Setup"; }, 2000);
+            copySnippetBtn.classList?.add?.("copied");
+            setTimeout(() => {
+              copySnippetBtn.textContent = "Copy Setup";
+              copySnippetBtn.classList?.remove?.("copied");
+            }, 2000);
           } catch {
             copySnippetBtn.textContent = "Copy failed";
           }

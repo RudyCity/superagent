@@ -126,6 +126,10 @@ function connection(isOnline, message) {
   if (startBtn) {
     startBtn.hidden = isOnline;
   }
+  const stopBtn = $("btn-stop-core");
+  if (stopBtn) {
+    stopBtn.hidden = !isOnline;
+  }
 }
 
 function setBanner(message, buttonText, action) {
@@ -536,13 +540,47 @@ function install() {
     });
   }
 
+  const stopBtn = $("btn-stop-core");
+  if (stopBtn) {
+    stopBtn.addEventListener("click", async () => {
+      stopBtn.disabled = true;
+      const originalHtml = stopBtn.innerHTML;
+      stopBtn.innerHTML = `<span>Stopping Core...</span>`;
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error("Tauri IPC is not available");
+        const res = await invoke("stop_core_server", { port: 7888 });
+        toast(res?.message || "Core server stopped");
+        await refresh();
+        if (typeof runtimeRefresh === "function") await runtimeRefresh();
+      } catch (err) {
+        errors(err);
+      } finally {
+        stopBtn.disabled = false;
+        stopBtn.innerHTML = originalHtml;
+      }
+    });
+  }
+
   window.__TAURI__?.event?.listen?.("desktop-server-started", async () => {
+    await refresh();
+    if (typeof runtimeRefresh === "function") await runtimeRefresh();
+  });
+
+  window.__TAURI__?.event?.listen?.("desktop-server-stopped", async () => {
+    toast("Core server stopped");
     await refresh();
     if (typeof runtimeRefresh === "function") await runtimeRefresh();
   });
 
   window.__TAURI__?.event?.listen?.("desktop-server-start-failed", async (evt) => {
     toast("Failed to start Core: " + (evt?.payload || "Process timed out"), true);
+    await refresh();
+    if (typeof runtimeRefresh === "function") await runtimeRefresh();
+  });
+
+  window.__TAURI__?.event?.listen?.("desktop-server-stop-failed", async (evt) => {
+    toast("Failed to stop Core: " + (evt?.payload || "Process timed out"), true);
     await refresh();
     if (typeof runtimeRefresh === "function") await runtimeRefresh();
   });

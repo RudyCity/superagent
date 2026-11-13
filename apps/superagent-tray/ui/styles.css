@@ -209,6 +209,26 @@
   color: #38bdf8;
   word-break: break-all;
 }
+.runtime-result-endpoint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.runtime-result-endpoint-val-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-all;
+}
+.runtime-copy-endpoint-btn {
+  flex-shrink: 0;
+  margin-left: auto;
+}
 .runtime-token-box, .runtime-snippet-box {
   margin-top: 12px;
   background: var(--bg-surface-raised);
@@ -258,6 +278,14 @@
 .runtime-copy-inline:focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
+}
+.runtime-copy-inline:active {
+  transform: translateY(1px);
+}
+.runtime-copy-inline.copied {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(56, 189, 248, 0.12);
 }
 .runtime-token-box-actions {
   display: flex;

@@ -938,15 +938,22 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
     for arg in extra_args {
         cmd.arg(arg);
     }
-    cmd.arg("--server")
+    cmd.arg("core")
+       .arg("start")
+       .arg("--port")
        .arg(port.to_string())
        .arg("--client-mode")
        .arg("tline");
 
-    if let Ok(current_exe) = std::env::current_exe() {
-        if let Some(exe_dir) = current_exe.parent() {
-            cmd.current_dir(exe_dir);
+    if let Ok(cwd) = std::env::current_dir() {
+        let is_tray_bin = cwd.to_string_lossy().contains("tray-releases");
+        if !is_tray_bin {
+            cmd.current_dir(cwd);
+        } else if let Some(home) = dirs::home_dir() {
+            cmd.current_dir(home);
         }
+    } else if let Some(home) = dirs::home_dir() {
+        cmd.current_dir(home);
     }
 
     let log_file = config_dir().ok().map(|d| d.join("superagent-server.log"));
@@ -1019,13 +1026,28 @@ async fn start_core_server(port: Option<u16>) -> Result<Value, String> {
 async fn stop_core_server(port: Option<u16>) -> Result<Value, String> {
     let target = port.unwrap_or(7888);
     let dir = config_dir()?;
-    let info_path = dir.join("server-info.json");
-    if !info_path.exists() {
-        return Err("No active server-info.json found to stop".into());
+    let candidate_paths = [
+        dir.join(format!("server-info-{}.json", target)),
+        dir.join("server-info.json"),
+        dir.join(format!("core-supervisor-{}.json", target)),
+    ];
+    let mut pid: Option<u32> = None;
+    for path in &candidate_paths {
+        if path.exists() {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                if let Ok(val) = serde_json::from_str::<Value>(&content) {
+                    if let Some(p) = val["pid"].as_u64() {
+                        pid = Some(p as u32);
+                        break;
+                    } else if let Some(sp) = val["supervisorPid"].as_u64() {
+                        pid = Some(sp as u32);
+                        break;
+                    }
+                }
+            }
+        }
     }
-    let content = std::fs::read_to_string(&info_path).map_err(|e| e.to_string())?;
-    let val: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-    let pid = val["pid"].as_u64().ok_or_else(|| "Missing PID in server-info.json".to_string())? as u32;
+    let pid = pid.ok_or_else(|| "No active Core server PID found to stop".to_string())?;
 
     #[cfg(windows)]
     {
@@ -1045,6 +1067,9 @@ async fn stop_core_server(port: Option<u16>) -> Result<Value, String> {
     #[cfg(not(windows))]
     {
         let _ = Command::new("kill").arg(pid.to_string()).status();
+    }
+    for path in &candidate_paths {
+        let _ = std::fs::remove_file(path);
     }
     Ok(json!({ "success": true, "port": target, "pid": pid, "message": "Core server stopped" }))
 }
@@ -1506,6 +1531,7 @@ fn main() {
             let sep0 = PredefinedMenuItem::separator(app)?;
             let open = MenuItem::with_id(app, "open", "📊 Open Dashboard", true, None::<&str>)?;
             let start_server = MenuItem::with_id(app, "start_server", "🟢 Start Core Server (:7888)", true, None::<&str>)?;
+            let stop_server = MenuItem::with_id(app, "stop_server", "🛑 Stop Core Server (:7888)", true, None::<&str>)?;
             let runtime =
                 MenuItem::with_id(app, "runtime", "🔍 Runtime Detection", true, None::<&str>)?;
             let conn_logs =
@@ -1530,6 +1556,7 @@ fn main() {
                 &sep0,
                 &open,
                 &start_server,
+                &stop_server,
                 &runtime,
                 &conn_logs,
                 &delegate,
@@ -1566,6 +1593,22 @@ fn main() {
                                     eprintln!("[tray] Failed to start Core server: {}", e);
                                     show_main(&handle, false);
                                     let _ = handle.emit("desktop-server-start-failed", e);
+                                }
+                            }
+                        });
+                    }
+                    "stop_server" => {
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            match stop_core_server(Some(7888)).await {
+                                Ok(_) => {
+                                    show_main(&handle, false);
+                                    let _ = handle.emit("desktop-server-stopped", 7888);
+                                }
+                                Err(e) => {
+                                    eprintln!("[tray] Failed to stop Core server: {}", e);
+                                    show_main(&handle, false);
+                                    let _ = handle.emit("desktop-server-stop-failed", e);
                                 }
                             }
                         });

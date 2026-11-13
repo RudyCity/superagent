@@ -60,15 +60,17 @@ describe("SuperAgent Tray auto-launch guard", () => {
 
   it("resolves explicit executable then per-user installed path, release and debug", () => {
     const root = path.resolve("G:/project/superagent");
-    const config = path.resolve("C:/Users/User/.superagent-r");
+    const config = isolatedConfig();
     const explicit = path.resolve("C:/Tools/superagent-tray.exe");
     const candidates = trayExecutableCandidates(root, config, explicit);
-    expect(candidates).toEqual([
-      explicit,
-      path.join(config, "bin", "superagent-tray.exe"),
-      path.join(root, "apps", "superagent-tray", "src-tauri", "target", "release", "superagent-tray.exe"),
-      path.join(root, "apps", "superagent-tray", "src-tauri", "target", "debug", "superagent-tray.exe"),
-    ]);
+    expect(candidates[0]).toBe(explicit);
+    expect(candidates).toContain(path.join(config, "bin", "superagent-tray.exe"));
+    expect(candidates).toContain(path.join(root, "apps", "superagent-tray", "src-tauri", "target", "release", "superagent-tray.exe"));
+    expect(candidates).toContain(path.join(root, "apps", "superagent-tray", "src-tauri", "target", "debug", "superagent-tray.exe"));
+    expect(candidates.indexOf(explicit)).toBeLessThan(candidates.indexOf(path.join(config, "bin", "superagent-tray.exe")));
+    expect(candidates.indexOf(path.join(config, "bin", "superagent-tray.exe"))).toBeLessThan(
+      candidates.indexOf(path.join(root, "apps", "superagent-tray", "src-tauri", "target", "release", "superagent-tray.exe"))
+    );
     expect(trayExecutableCandidates(root, config, "relative.exe")).not.toContain("relative.exe");
   });
 });

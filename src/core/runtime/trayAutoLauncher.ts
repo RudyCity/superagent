@@ -81,10 +81,21 @@ export function trayExecutableCandidates(
   let activeRelease:string|null=null;
   try{activeRelease=getActiveReleaseBinary(configDir);}
   catch{return [];} // A corrupted manifest must never launch a fallback.
+  const localAppData = process.env.LOCALAPPDATA;
+  const programFiles = process.env.PROGRAMFILES || "C:\\Program Files";
+  const standardWindowsPaths = process.platform === "win32" ? [
+    localAppData ? path.join(localAppData, "SuperAgent", "superagent-tray.exe") : null,
+    localAppData ? path.join(localAppData, "Programs", "SuperAgent", "superagent-tray.exe") : null,
+    localAppData ? path.join(localAppData, "Programs", "superagent", "superagent-tray.exe") : null,
+    path.join(programFiles, "SuperAgent", "superagent-tray.exe"),
+    path.join(programFiles, "superagent", "superagent-tray.exe"),
+    path.join(path.dirname(projectRoot), "superagent-tray.exe"),
+  ].filter((p): p is string => typeof p === "string" && fs.existsSync(p)) : [];
   const candidates = [
     activeRelease,
     explicitPath,
     path.join(configDir, "bin", "superagent-tray.exe"),
+    ...standardWindowsPaths,
     path.join(projectRoot, "apps", "superagent-tray", "src-tauri", "target", "release", "superagent-tray.exe"),
     path.join(projectRoot, "apps", "superagent-tray", "src-tauri", "target", "debug", "superagent-tray.exe"),
   ];

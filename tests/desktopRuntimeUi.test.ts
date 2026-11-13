@@ -44,6 +44,8 @@ function mountRuntime(snapshot: unknown) {
       confirm,
     },
     setInterval: vi.fn(),
+    setTimeout: (fn: Function, ms: number) => setTimeout(fn, ms),
+    clearTimeout: (id: any) => clearTimeout(id),
     Event: class { constructor(public type: string) {} },
     alert: vi.fn(),
     Date, Number, String, Array, Math,
@@ -327,6 +329,27 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-servers").innerHTML).toContain("Regenerate Muse Token");
   });
 
+  it("shows Regenerate Token button on Cloudflare tunnel card when associated with an active MCP service", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 0,
+      selectedCorePort: 7888,
+      cores: [{ port: 7888, pid: 1234, pidVerified: true, state: "online", selected: true }],
+      processes: [], independentHosts: [],
+      remoteServices: [
+        { kind: "mcp", port: 9227, pid: 25384, state: "observed", canRegenerateToken: true },
+        { kind: "cloudflare", port: 9227, pid: 20968, state: "online", transport: "mcp-http", canRegenerateToken: false },
+      ],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("cloudflare")', ui.context);
+    const html = ui.byId("runtime-remote").innerHTML;
+    expect(html).toContain('data-runtime-service-kind="cloudflare"');
+    expect(html).toContain('data-runtime-kind="mcp"');
+    expect(html).toContain('data-runtime-port="9227"');
+    expect(html).toContain('data-runtime-pid="25384"');
+    expect(html).toContain("Regenerate Token");
+  });
+
   it("creates only explicit connections after user confirmation and authenticated Core selection", async () => {
     const ui=mountRuntime({
       scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,selectedCorePort:7888,
@@ -402,6 +425,95 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-create-result").hidden).toBe(false);
     expect(ui.byId("runtime-create-result").textContent).toContain("test-oauth-bootstrap-code-999");
     expect(ui.byId("runtime-create-result").textContent).toContain("One-Time OAuth Approval Code");
+  });
+
+  it("renders endpoint with a working Copy Endpoint button and clipboard interaction", async () => {
+    let clipboardText = "";
+    const createdElements: any[] = [];
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 0, selectedCorePort: 7888,
+      cores: [{ port: 7888, pid: 100, state: "online", selected: true, pidVerified: true }],
+      processes: [], independentHosts: [], remoteServices: [],
+    });
+    const resultView = ui.byId("runtime-create-result");
+    resultView.children = [];
+    resultView.replaceChildren = function (...nodes: any[]) {
+      this.children = [...nodes];
+    };
+    resultView.appendChild = function (child: any) {
+      this.children.push(child);
+    };
+
+    ui.context.document.createElement = (tag: string) => {
+      const el: any = {
+        tagName: tag.toUpperCase(),
+        children: [] as any[],
+        className: "",
+        textContent: "",
+        innerHTML: "",
+        attributes: {} as Record<string, string>,
+        setAttribute(k: string, v: string) { this.attributes[k] = v; },
+        appendChild(child: any) { this.children.push(child); },
+        append(...items: any[]) { this.children.push(...items); },
+        listeners: {} as Record<string, Function>,
+        addEventListener(event: string, fn: Function) { this.listeners[event] = fn; },
+        classList: {
+          add(c: string) { el.className = (el.className + " " + c).trim(); },
+          remove(c: string) { el.className = el.className.replace(new RegExp(`\\b${c}\\b`, "g"), "").trim(); },
+          contains(c: string) { return el.className.split(" ").includes(c); },
+        },
+      };
+      createdElements.push(el);
+      return el;
+    };
+
+    ui.context.navigator = {
+      clipboard: {
+        writeText: vi.fn(async (text: string) => {
+          clipboardText = text;
+        }),
+      },
+    };
+
+    const origInvoke = ui.context.window.__TAURI__.core.invoke;
+    ui.context.window.__TAURI__.core.invoke = async (action: string, args: any) => {
+      if (action === "create_connection") {
+        return {
+          success: true,
+          endpoint: "https://sodium-test.trycloudflare.com/mcp",
+          message: "MCP tunnel started.",
+        };
+      }
+      return origInvoke(action, args);
+    };
+
+    await new Promise(resolve => setImmediate(resolve));
+    ui.byId("runtime-create-kind").value = "mcp-tunnel";
+    ui.byId("runtime-create-port").value = "9267";
+    ui.byId("runtime-create-provider").value = "cloudflare";
+    await (vm.runInContext("runtimeCreateConnection({preventDefault(){}})", ui.context) as Promise<void>);
+
+    expect(resultView.hidden).toBe(false);
+
+    const copyBtn = createdElements.find(
+      (el) => el.tagName === "BUTTON" && el.className.includes("runtime-copy-endpoint-btn")
+    );
+    expect(copyBtn).toBeDefined();
+    expect(copyBtn.textContent).toBe("Copy Endpoint");
+    expect(copyBtn.attributes["aria-label"]).toContain("Copy endpoint URL");
+
+    await copyBtn.listeners["click"]();
+    expect(ui.context.navigator.clipboard.writeText).toHaveBeenCalledWith(
+      "https://sodium-test.trycloudflare.com/mcp"
+    );
+    expect(clipboardText).toBe("https://sodium-test.trycloudflare.com/mcp");
+    expect(copyBtn.textContent).toBe("Copied!");
+    expect(copyBtn.classList.contains("copied")).toBe(true);
+
+    const css = fs.readFileSync(path.resolve("apps/superagent-tray/ui/styles.css"), "utf8");
+    expect(css).toContain(".runtime-result-endpoint-row");
+    expect(css).toContain(".runtime-copy-endpoint-btn");
+    expect(css).toContain(".runtime-copy-inline.copied");
   });
 
   it("does not attempt new connection when the selected Core is offline", async () => {

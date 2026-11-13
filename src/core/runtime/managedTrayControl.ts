@@ -26,8 +26,13 @@ type Plan={service:"tray";action:Action;operationId:string;
   expectedBuildDigest:string;port?:number;noCoreShutdown:true;
   note:string};
 const recordFile=()=>path.join(getRootConfigDir(),"tray-lifecycle-owner.json");
+function cleanWinPrefix(p: string): string {
+  return process.platform === "win32"
+    ? p.replace(/^[\\\/]\?[\\\/]/, "").replace(/^\\\\\?\\/, "")
+    : p;
+}
 function canonical(file:string) {
-  return fs.realpathSync.native(file);
+  return fs.realpathSync.native(cleanWinPrefix(file));
 }
 function candidates() {
   const release=readTrayReleaseState();
@@ -41,9 +46,12 @@ function candidates() {
     }).map(canonical);
 }
 function permitted(file:string){
-  const canon=canonical(file);
-  if(!candidates().some(c=>process.platform==="win32"?
-    c.toLowerCase()===canon.toLowerCase():c===canon))
+  const canon=cleanWinPrefix(canonical(file));
+  if(!candidates().some(c=>{
+    const cNorm = cleanWinPrefix(c);
+    return process.platform==="win32"?
+      cNorm.toLowerCase()===canon.toLowerCase():cNorm===canon;
+  }))
     throw new Error("TRAY_EXECUTABLE_OUTSIDE_TRUSTED_INSTALL");
   return canon;
 }
