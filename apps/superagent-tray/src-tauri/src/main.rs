@@ -872,6 +872,12 @@ fn find_superagent_executable() -> Result<(PathBuf, Vec<String>), String> {
     // Check adjacent binary (bundled installer placing superagent alongside superagent-tray)
     if let Ok(current_exe) = std::env::current_exe() {
         if let Some(exe_dir) = current_exe.parent() {
+            // Prefer running bundled bun directly with standalone cli.js to avoid extra wrapper processes
+            let adjacent_bun = exe_dir.join(if cfg!(windows) { "bun.exe" } else { "bun" });
+            let standalone_cli = exe_dir.join("standalone").join("dist").join("cli.js");
+            if adjacent_bun.exists() && standalone_cli.exists() {
+                return Ok((adjacent_bun, vec![standalone_cli.to_string_lossy().to_string()]));
+            }
             let sibling_name = if cfg!(windows) { "superagent.exe" } else { "superagent" };
             let sibling_sa = exe_dir.join(sibling_name);
             if sibling_sa.exists() {
@@ -907,8 +913,17 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
         .build()
         .map_err(|e| e.to_string())?;
 
-    if let Ok(resp) = client.get(&probe_url).send().await {
-        if resp.status().is_success() {
+    let check_alive = |status: reqwest::StatusCode| {
+        status.is_success() || status == reqwest::StatusCode::UNAUTHORIZED
+    };
+
+    let initial_token = server_info().ok().map(|s| s.auth_token);
+    let mut initial_req = client.get(&probe_url);
+    if let Some(ref t) = initial_token {
+        initial_req = initial_req.bearer_auth(t);
+    }
+    if let Ok(resp) = initial_req.send().await {
+        if check_alive(resp.status()) {
             return Ok(0);
         }
     }
@@ -921,10 +936,33 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
     cmd.arg("--server")
        .arg(port.to_string())
        .arg("--client-mode")
-       .arg("tline")
-       .stdin(std::process::Stdio::null())
-       .stdout(std::process::Stdio::null())
-       .stderr(std::process::Stdio::null());
+       .arg("tline");
+
+    if let Ok(current_exe) = std::env::current_exe() {
+        if let Some(exe_dir) = current_exe.parent() {
+            cmd.current_dir(exe_dir);
+        }
+    }
+
+    let log_file = config_dir().ok().map(|d| d.join("superagent-server.log"));
+    if let Some(ref path) = log_file {
+        if let Ok(out_f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            if let Ok(err_f) = out_f.try_clone() {
+                cmd.stdout(std::process::Stdio::from(out_f));
+                cmd.stderr(std::process::Stdio::from(err_f));
+            } else {
+                cmd.stdout(std::process::Stdio::from(out_f));
+                cmd.stderr(std::process::Stdio::null());
+            }
+        } else {
+            cmd.stdout(std::process::Stdio::null());
+            cmd.stderr(std::process::Stdio::null());
+        }
+    } else {
+        cmd.stdout(std::process::Stdio::null());
+        cmd.stderr(std::process::Stdio::null());
+    }
+    cmd.stdin(std::process::Stdio::null());
 
     #[cfg(windows)]
     {
@@ -937,13 +975,21 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
 
     for _ in 0..14 {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        if let Ok(resp) = client.get(&probe_url).send().await {
-            if resp.status().is_success() {
+        let token = server_info().ok().map(|s| s.auth_token);
+        let mut req = client.get(&probe_url);
+        if let Some(ref t) = token {
+            req = req.bearer_auth(t);
+        }
+        if let Ok(resp) = req.send().await {
+            if check_alive(resp.status()) {
                 return Ok(pid);
             }
         }
     }
-    Ok(pid)
+    Err(format!(
+        "SuperAgent Core server (PID {}) failed to respond on port {} within 7s. Check logs in ~/.superagent-r/superagent-server.log",
+        pid, port
+    ))
 }
 
 #[tauri::command]
@@ -1506,9 +1552,17 @@ fn main() {
                     "start_server" => {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            let _ = launch_server_process(7888).await;
-                            show_main(&handle, false);
-                            let _ = handle.emit("desktop-server-started", 7888);
+                            match launch_server_process(7888).await {
+                                Ok(_) => {
+                                    show_main(&handle, false);
+                                    let _ = handle.emit("desktop-server-started", 7888);
+                                }
+                                Err(e) => {
+                                    eprintln!("[tray] Failed to start Core server: {}", e);
+                                    show_main(&handle, false);
+                                    let _ = handle.emit("desktop-server-start-failed", e);
+                                }
+                            }
                         });
                     }
                     "add" => show_main(app, true),

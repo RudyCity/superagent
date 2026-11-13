@@ -40,6 +40,7 @@
         "ssh2-sftp-client": "^12.1.1",
         "tiktoken": "^1.0.22",
         "tokenizers": "0.23.2",
+        "typescript": "^5.8.3",
         "ws": "^8.18.1",
       },
       "devDependencies": {
@@ -53,7 +54,6 @@
         "@types/ws": "^8.18.1",
         "jszip": "3.10.1",
         "tsx": "^4.19.4",
-        "typescript": "^5.8.3",
         "vitest": "^4.1.8",
       },
     },

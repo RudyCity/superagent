@@ -15,6 +15,7 @@ function check(ok: unknown, text: string): asserts ok { if (!ok) throw new Error
 check(process.platform === "win32", "Requires Windows.");
 for (const item of [portableBun, portableCli, path.join(stage, "node_modules", "ink"),
   path.join(stage, "node_modules", "sharp"), path.join(stage, "node_modules", "r-memory"),
+  path.join(stage, "node_modules", "typescript"),
   path.join(stage, "dist", "cli.js"), path.join(stage, "standalone-manifest.json")]) {
   check(fs.existsSync(item), "Missing bundle input: " + item);
 }
@@ -42,6 +43,9 @@ try {
   const output = command(path.join(smoke, "superagent.exe"), ["--version"], smoke);
   check(output.includes(pkg.version), "Portable CLI did not report release version " + pkg.version + ": " + output.slice(0, 300));
   console.log("[standalone-verify] Isolated CLI --version PASS: " + pkg.version);
+  const helpOutput = command(path.join(smoke, "superagent.exe"), ["--help"], smoke);
+  check(helpOutput.includes("--server"), "Portable CLI --help failed: " + helpOutput.slice(0, 300));
+  console.log("[standalone-verify] Isolated CLI --help PASS");
 } finally {
   fs.rmSync(smoke, { recursive: true, force: true });
 }

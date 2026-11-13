@@ -924,6 +924,29 @@ button:disabled {
   box-shadow: 0 4px 14px var(--accent-glow);
 }
 
+.button.secondary {
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.button.secondary:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-strong);
+  color: #ffffff;
+}
+
+.button.secondary:active {
+  background: var(--bg-surface-hover);
+  transform: translateY(1px);
+}
+
+.button.secondary:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
 .button.ghost {
   background: var(--bg-surface);
   color: var(--text-primary);
@@ -935,9 +958,46 @@ button:disabled {
   border-color: var(--border-strong);
 }
 
+.button.sm,
 .button.small {
-  padding: 7px 11px;
+  padding: 6px 11px;
   font-size: 11.5px;
+  gap: 6px;
+  border-radius: var(--radius-xs);
+}
+
+.button.danger {
+  background: var(--danger-muted);
+  color: var(--danger-hover);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.button.danger:hover {
+  background: var(--danger);
+  color: #ffffff;
+  border-color: var(--danger);
+  box-shadow: 0 2px 10px var(--danger-glow);
+}
+
+.button.ghost.danger {
+  background: transparent;
+  color: var(--danger-hover);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+.button.ghost.danger:hover {
+  background: var(--danger-muted);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+.button:disabled,
+.button[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Metrics Grid */

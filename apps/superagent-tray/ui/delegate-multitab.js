@@ -176,6 +176,7 @@
     if (!tasks.length) target.append(elem("p", "text-secondary", "No tasks yet."));
     for (const task of tasks) {
       const card = elem("article", "multitab-task");
+      if (card.dataset) card.dataset.state = task.state;
       card.append(elem("strong", "", String(task.title || task.workerId).slice(0, 100)));
       card.append(elem("small", "multitab-status",
         task.workerId + " · tab #" + task.tabId + " · " + task.state +
@@ -262,7 +263,7 @@
       line(card,"Approval","Operator must visually inspect the exact live tab first.");
       const actions = elem("div","multitab-controls");
       for (const decision of ["approve","deny"]) {
-        const button = elem("button",decision==="approve"?"button secondary sm":"button ghost sm",
+        const button = elem("button",decision==="approve"?"button primary sm":"button ghost sm danger",
           decision==="approve" ? "Approve one click" : "Deny");
         button.type="button";
         button.disabled=state.submitting || typeof window.__TAURI__?.core?.invoke!=="function";

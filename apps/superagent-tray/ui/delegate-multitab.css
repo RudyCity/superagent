@@ -1,4 +1,796 @@
-.delegate-multitab-panel{margin-top:18px}.multitab-summary{display:flex;flex-wrap:wrap;gap:10px;margin:12px 0}.multitab-summary span{border:1px solid var(--border,#465064);border-radius:8px;padding:7px 10px;font-size:12px}.multitab-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:16px;margin-top:16px}.multitab-card{min-width:0;border:1px solid var(--border,#465064);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}.multitab-card h3{margin:4px 0;font-size:16px}.multitab-card label{font-size:12px;opacity:.85}.multitab-card input,.multitab-card textarea,.multitab-card select{width:100%;min-width:0;background:var(--bg-secondary,#151d2e);color:inherit;border:1px solid var(--border,#465064);border-radius:8px;padding:8px;font:inherit;box-sizing:border-box}.multitab-card textarea{resize:vertical}.multitab-controls{display:flex;flex-direction:column;gap:8px}.multitab-items{display:flex;flex-direction:column;gap:8px;max-height:385px;overflow-y:auto}.multitab-profile-title{font-weight:600;font-size:12px;opacity:.75;margin-top:8px;overflow-wrap:anywhere}.multitab-tab,.multitab-task{display:flex;flex-direction:column;text-align:left;gap:4px;border:1px solid var(--border,#465064);background:var(--bg-secondary,#151d2e);color:inherit;border-radius:8px;padding:9px;min-width:0}.multitab-tab{cursor:pointer;width:100%}.multitab-tab.selected{outline:2px solid var(--accent,#53a1ff)}.multitab-name{overflow-wrap:anywhere}.multitab-status{font-size:11px;opacity:.75;overflow-wrap:anywhere}.multitab-task strong{overflow-wrap:anywhere}.multitab-actions{display:flex;flex-wrap:wrap;gap:6px}.multitab-result{font-size:12px;max-height:100px;overflow:auto;overflow-wrap:anywhere;white-space:pre-wrap}.multitab-feedback.error{color:#ed8585;font-size:12px;overflow-wrap:anywhere}@media(max-width:900px){.multitab-columns{grid-template-columns:1fr}}
-.multitab-detail{font-size:11px;line-height:1.4;color:var(--text-secondary,#b5bed0);overflow-wrap:anywhere;white-space:normal}.multitab-warning{color:var(--warning,#f3be76)}.multitab-tab:focus-visible{outline:2px solid var(--accent,#53a1ff);outline-offset:2px}.multitab-task .multitab-detail{display:block}.multitab-feedback.error{white-space:pre-wrap}
-.cdp-presence-follow{display:block;width:100%;max-width:280px;min-height:36px;padding:7px;margin:10px 0;border-radius:8px;border:1px solid var(--border,#465064);background:var(--bg-secondary,#151d2e);color:inherit}.cdp-presence-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--border,#465064);border-radius:9px;padding:12px;background:var(--bg-secondary,#151d2e);overflow-wrap:anywhere}.cdp-presence-row strong{font-size:13px}.cdp-presence-row small{font-size:11px;color:var(--text-secondary,#b5bed0)}.cdp-presence-row[data-busy="true"]{border-color:var(--warning,#f3be76)}.cdp-presence-row[data-paused="true"]{border-style:dashed;border-color:var(--warning,#f3be76)}
-.cdp-private-preview{margin:16px 0;padding:14px;border:1px solid var(--border,#465064);border-radius:12px;min-width:0}.cdp-private-preview[hidden]{display:none}.cdp-private-preview img{display:block;width:100%;max-width:900px;max-height:540px;object-fit:contain;border-radius:8px;background:#080c12}.cdp-private-preview p{margin:8px 0;font-size:12px;color:var(--text-secondary,#b5bed0)}.cdp-private-preview .panel-head{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+/* SuperAgent Tray · Multi-Tab Orchestrator & Managed CDP Agent Activity Stylesheet
+ * High-craft modern dark UI for multi-tab browser automation, CDP supervision, and live diagnostics.
+ */
+
+.delegate-multitab-panel {
+  margin-top: 24px;
+}
+
+/* ==========================================================================
+   Summary Metrics Strip
+   ========================================================================== */
+
+.multitab-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(11, 16, 28, 0.65);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin: 14px 0 16px;
+  min-height: 44px;
+}
+
+.multitab-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+  transition: all var(--transition-fast);
+}
+
+.multitab-summary span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* Specific Pill Color Coding */
+#multitab-count-tabs::before {
+  background: var(--cyan);
+}
+
+#multitab-count-active::before {
+  background: var(--success);
+  box-shadow: 0 0 6px var(--success-glow);
+}
+
+#multitab-count-queued::before {
+  background: var(--accent);
+}
+
+#multitab-count-unknown::before {
+  background: var(--warning);
+}
+
+#cdp-presence-state::before {
+  background: var(--cyan);
+}
+
+#cdp-presence-agents::before {
+  background: var(--accent);
+}
+
+#cdp-presence-tabs::before {
+  background: var(--cyan);
+}
+
+#cdp-presence-queued::before {
+  background: var(--warning);
+}
+
+/* ==========================================================================
+   Header Buttons with Resilient CSS Icons
+   ========================================================================== */
+
+#multitab-refresh,
+#cdp-presence-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#multitab-refresh::before,
+#cdp-presence-refresh::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2394a3b8' stroke-width='1.5'%3E%3Cpath d='M13.5 8a5.5 5.5 0 1 1-1.6-3.9l1.6 1.4'/%3E%3Cpath d='M13.5 2.5v3h-3'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#multitab-new-tab::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2338bdf8' stroke-width='1.5'%3E%3Cpath d='M8 3v10M3 8h10'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#multitab-claim::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2338bdf8' stroke-width='1.5'%3E%3Ccircle cx='6' cy='6' r='3.5'/%3E%3Cpath d='M8.5 8.5L14 14M11.5 11.5l1.5-1.5'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#multitab-release::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2394a3b8' stroke-width='1.5'%3E%3Cpath d='M4.5 7V4.5a3.5 3.5 0 0 1 7 0v1'/%3E%3Crect x='2.5' y='7' width='11' height='7.5' rx='1.5'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#multitab-enqueue::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23ffffff' stroke-width='1.5'%3E%3Cpath d='M2.5 8h11M9.5 3.5L14 8l-4.5 4.5'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#multitab-parallel::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2394a3b8' stroke-width='1.5'%3E%3Cpath d='M3 3h3v10H3zM10 3h3v5h-3zM10 10h3v3h-3z'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#multitab-aggregate::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2394a3b8' stroke-width='1.5'%3E%3Cpath d='M3 2.5h10M3 6.5h10M3 10.5h6M3 13.5h8'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#cdp-preview-stop::before {
+  content: "";
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23ef4444'%3E%3Crect x='3' y='3' width='10' height='10' rx='1.5'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Feedback Callout Banner
+   ========================================================================== */
+
+.multitab-feedback-banner,
+p#multitab-feedback {
+  margin: 10px 0 18px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+
+.multitab-feedback-banner::before,
+p#multitab-feedback::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2360a5fa' stroke-width='1.5'%3E%3Ccircle cx='8' cy='8' r='6.5'/%3E%3Cpath d='M8 5v3.5M8 11.5v.5'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+.multitab-feedback.error,
+p#multitab-feedback.error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+  white-space: pre-wrap;
+}
+
+.multitab-feedback.error::before,
+p#multitab-feedback.error::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23f87171' stroke-width='1.5'%3E%3Ccircle cx='8' cy='8' r='6.5'/%3E%3Cpath d='M8 4.5v4.5M8 11.5v.5'/%3E%3C/svg%3E");
+}
+
+/* ==========================================================================
+   Multi-Tab Two-Column Grid Layout
+   ========================================================================== */
+
+.multitab-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 20px;
+  margin-top: 16px;
+}
+
+.multitab-card {
+  min-width: 0;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+}
+
+.multitab-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.multitab-card h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  color: var(--text-primary);
+}
+
+.multitab-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 6px 0;
+}
+
+.multitab-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.multitab-card label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.multitab-card input,
+.multitab-card textarea,
+.multitab-card select {
+  width: 100%;
+  min-width: 0;
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.multitab-card input:focus,
+.multitab-card textarea:focus,
+.multitab-card select:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.multitab-card textarea {
+  resize: vertical;
+  line-height: 1.5;
+  font-family: var(--font-mono);
+}
+
+.multitab-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.multitab-actions-row,
+.multitab-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ==========================================================================
+   Scrollable Items Container (Tabs, Tasks, CDP Sessions)
+   ========================================================================== */
+
+.multitab-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: clip;
+  padding: 2px 2px 4px;
+}
+
+/* Empty State Placeholders */
+.multitab-items > p.text-secondary {
+  margin: 4px 0;
+  padding: 28px 18px;
+  background: rgba(15, 21, 35, 0.45);
+  border: 1px dashed var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+#multitab-tabs > p.text-secondary::before {
+  content: "";
+  display: block;
+  width: 32px;
+  height: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='3' width='20' height='14' rx='2' ry='2'/%3E%3Cline x1='8' y1='21' x2='16' y2='21'/%3E%3Cline x1='12' y1='17' x2='12' y2='21'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.85;
+}
+
+#multitab-tasks > p.text-secondary::before {
+  content: "";
+  display: block;
+  width: 32px;
+  height: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2360a5fa' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 11l3 3L22 4'/%3E%3Cpath d='M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.85;
+}
+
+#cdp-presence-sessions > p.text-secondary::before {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2306b6d4' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Ccircle cx='12' cy='12' r='4'/%3E%3Cline x1='4.93' y1='4.93' x2='9.17' y2='9.17'/%3E%3Cline x1='14.83' y1='14.83' x2='19.07' y2='19.07'/%3E%3Cline x1='14.83' y1='9.17' x2='19.07' y2='4.93'/%3E%3Cline x1='4.93' y1='19.07' x2='9.17' y2='14.83'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.85;
+}
+
+#cdp-replay-approvals > p.text-secondary::before {
+  content: "";
+  display: block;
+  width: 32px;
+  height: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'/%3E%3Cpath d='M9 12l2 2 4-4'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.85;
+}
+
+.multitab-profile-title {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 8px;
+  margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+
+/* ==========================================================================
+   Tab Item Card (.multitab-tab)
+   ========================================================================== */
+
+.multitab-tab {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  gap: 6px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  min-width: 0;
+  cursor: pointer;
+  width: 100%;
+  transition: all var(--transition-fast);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.multitab-tab:hover {
+  background: var(--bg-surface-elevated);
+  border-color: var(--border-medium);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.multitab-tab.selected {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.08);
+  box-shadow: 0 0 0 1px var(--accent), 0 4px 14px rgba(59, 130, 246, 0.2);
+}
+
+.multitab-tab:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--border-focus);
+}
+
+.multitab-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.multitab-name::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2338bdf8' stroke-width='1.5'%3E%3Crect x='2' y='3' width='12' height='10' rx='1.5'/%3E%3Cline x1='2' y1='6.5' x2='14' y2='6.5'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+.multitab-status {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cyan);
+  overflow-wrap: anywhere;
+}
+
+.multitab-detail {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.multitab-warning {
+  color: #fbbf24;
+  font-weight: 550;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-xs);
+  padding: 4px 8px;
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   Task Item Card (.multitab-task)
+   ========================================================================== */
+
+.multitab-task {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  gap: 8px;
+  border: 1px solid var(--border-subtle);
+  border-inline-start: 4px solid var(--border-strong);
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  min-width: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  transition: all var(--transition-fast);
+}
+
+.multitab-task:hover {
+  border-color: var(--border-medium);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.multitab-task[data-state="completed"] {
+  border-inline-start-color: var(--success);
+}
+
+.multitab-task[data-state="monitoring"],
+.multitab-task[data-state="sending"] {
+  border-inline-start-color: var(--accent);
+}
+
+.multitab-task[data-state="queued"] {
+  border-inline-start-color: var(--cyan);
+}
+
+.multitab-task[data-state="uncertain"],
+.multitab-task[data-state="interrupted"],
+.multitab-task[data-state="needs_review"] {
+  border-inline-start-color: var(--warning);
+}
+
+.multitab-task[data-state="failed"] {
+  border-inline-start-color: var(--danger);
+}
+
+.multitab-task strong {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.multitab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.multitab-result {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+  background: #060911;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  padding: 8px 12px;
+  max-height: 120px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: #cbd5e1;
+}
+
+/* ==========================================================================
+   Managed CDP Presence & Supervision Styles
+   ========================================================================== */
+
+.cdp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 14px;
+  flex-wrap: wrap;
+}
+
+.cdp-toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.cdp-select-wrapper {
+  max-width: 280px;
+  flex: 1;
+}
+
+.cdp-presence-follow {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-medium);
+  background: var(--bg-surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.cdp-presence-follow:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.cdp-presence-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--border-subtle);
+  border-inline-start: 4px solid var(--success);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  background: var(--bg-surface-raised);
+  overflow-wrap: anywhere;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all var(--transition-fast);
+}
+
+.cdp-presence-row:hover {
+  border-color: var(--border-medium);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.cdp-presence-row strong {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 8px;
+}
+
+.cdp-presence-row small {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.cdp-presence-row[data-busy="true"] {
+  border-inline-start-color: var(--warning);
+}
+
+.cdp-presence-row[data-paused="true"] {
+  border-style: dashed;
+  border-color: rgba(245, 158, 11, 0.35);
+  border-inline-start: 4px solid var(--warning);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.05) 0%, var(--bg-surface-raised) 90%);
+}
+
+.cdp-presence-row .multitab-controls {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+/* ==========================================================================
+   Private Tab Preview
+   ========================================================================== */
+
+.cdp-private-preview {
+  margin: 18px 0;
+  padding: 18px 20px;
+  border: 1px solid var(--border-medium);
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-lg);
+  min-width: 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.cdp-private-preview[hidden] {
+  display: none !important;
+}
+
+.cdp-preview-viewport {
+  margin: 14px 0;
+  padding: 10px;
+  background: #050811;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cdp-private-preview img {
+  display: block;
+  width: 100%;
+  max-width: 900px;
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: #080c12;
+}
+
+.cdp-private-preview p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.cdp-private-preview .panel-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 0 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* ==========================================================================
+   Replay Requests Sub-Section
+   ========================================================================== */
+
+.cdp-sub-section {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cdp-sub-header {
+  margin-bottom: 14px;
+}
+
+.cdp-sub-header h3 {
+  margin: 4px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+/* Hint Box with Icon */
+.delegate-hint-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  background: rgba(59, 130, 246, 0.05);
+  border: 1px solid rgba(59, 130, 246, 0.18);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 12px 0;
+}
+
+.delegate-hint-box svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--accent-hover);
+}
+
+/* ==========================================================================
+   Responsive Adaptations
+   ========================================================================== */
+
+@media (max-width: 900px) {
+  .multitab-columns {
+    grid-template-columns: 1fr;
+  }
+  .multitab-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -58,7 +58,7 @@ if (process.platform === "linux") {
   });
   check(smoke.status === 0, "GNU sharp/canvas/tokenizers addon smoke check failed after excluding incompatible platform binaries: " + (smoke.error ?? smoke.status));
 }
-for (const dep of ["ink", "sharp", "r-memory"]) {
+for (const dep of ["ink", "sharp", "r-memory", "typescript"]) {
   check(fs.existsSync(path.join(stage, "node_modules", dep)), "Missing production dependency: " + dep);
 }
 const pkg = JSON.parse(fs.readFileSync(path.join(stage, "package.json"), "utf8"));

@@ -1543,41 +1543,85 @@
             <span id="multitab-count-queued">0 queued</span>
             <span id="multitab-count-unknown">0 uncertain</span>
           </div>
-          <p id="multitab-feedback" class="delegate-hint text-secondary" role="status" aria-live="polite">Select a connected profile and tab.</p>
+          <p id="multitab-feedback" class="multitab-feedback-banner delegate-hint text-secondary" role="status" aria-live="polite">Select a connected profile and tab.</p>
           <div class="multitab-columns">
             <div class="multitab-card">
-              <h3>Browser Tabs</h3>
+              <div class="multitab-card-header">
+                <h3>Browser Tabs</h3>
+                <span class="subtle-badge">Live Sessions</span>
+              </div>
               <div id="multitab-tabs" class="multitab-items"><p class="text-secondary">No live tab data.</p></div>
               <button type="button" id="multitab-new-tab" class="button secondary">+ Open new ChatGPT tab</button>
-              <h3>Tab Ownership</h3>
+              <div class="multitab-divider"></div>
+              <div class="multitab-card-header">
+                <h3>Tab Ownership</h3>
+                <span class="subtle-badge">Worker Assignment</span>
+              </div>
               <div class="multitab-controls">
-                <label for="multitab-worker">Worker ID</label>
-                <input id="multitab-worker" maxlength="64" value="worker-a" autocomplete="off" spellcheck="false">
-                <button id="multitab-claim" type="button" class="button secondary">Claim selected tab</button>
-                <button id="multitab-release" type="button" class="button ghost">Release selected tab</button>
+                <div class="form-group">
+                  <label for="multitab-worker">Worker ID</label>
+                  <input id="multitab-worker" class="font-mono input-control" maxlength="64" value="worker-a" autocomplete="off" spellcheck="false">
+                </div>
+                <div class="multitab-actions-row">
+                  <button id="multitab-claim" type="button" class="button secondary">Claim selected tab</button>
+                  <button id="multitab-release" type="button" class="button ghost">Release selected tab</button>
+                </div>
               </div>
             </div>
             <div class="multitab-card">
-              <h3>Task Queue</h3>
-              <label for="multitab-concurrency">Max concurrent tabs</label>
-              <select id="multitab-concurrency">
-                <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
-                <option value="4">4</option><option value="5">5</option><option value="6">6</option>
-                <option value="7">7</option><option value="8">8</option>
-              </select>
-              <label for="multitab-priority">Priority</label>
-              <select id="multitab-priority"><option value="5">Normal (5)</option><option value="9">High (9)</option><option value="1">Low (1)</option></select>
-              <label for="multitab-message">Task for selected tab</label>
-              <textarea id="multitab-message" rows="6" maxlength="20000" placeholder="Describe the worker task..." spellcheck="false"></textarea>
-              <button type="button" id="multitab-enqueue" class="button primary">Queue task</button>
-              <button type="button" id="multitab-parallel" class="button secondary">Launch parallel across profile tabs (2–8)</button>
-              <button type="button" id="multitab-ack-send" class="button ghost sm">Acknowledge uncertain send after inspection</button>
-              <p class="delegate-hint">Sending is exactly once per request ID. After an unknown outcome, use Reconcile; never blind Retry.</p>
-              <h3>Task History</h3>
+              <div class="multitab-card-header">
+                <h3>Task Queue</h3>
+                <span class="subtle-badge">Isolated Dispatch</span>
+              </div>
+              <div class="multitab-form-grid">
+                <div class="form-group">
+                  <label for="multitab-concurrency">Max concurrent tabs</label>
+                  <div class="select-wrapper">
+                    <select id="multitab-concurrency">
+                      <option value="1">1</option><option value="2">2</option><option value="3" selected>3</option>
+                      <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                      <option value="7">7</option><option value="8">8</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label for="multitab-priority">Priority</label>
+                  <div class="select-wrapper">
+                    <select id="multitab-priority">
+                      <option value="5">Normal (5)</option>
+                      <option value="9">High (9)</option>
+                      <option value="1">Low (1)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="multitab-message">Task for selected tab</label>
+                <textarea id="multitab-message" class="font-mono" rows="5" maxlength="20000" placeholder="Describe the worker task..." spellcheck="false"></textarea>
+              </div>
+              <div class="multitab-button-group">
+                <button type="button" id="multitab-enqueue" class="button primary">Queue task</button>
+                <button type="button" id="multitab-parallel" class="button secondary">Launch parallel across profile tabs (2–8)</button>
+                <button type="button" id="multitab-ack-send" class="button ghost sm">Acknowledge uncertain send after inspection</button>
+              </div>
+              <p class="delegate-hint delegate-hint-box">
+                <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M8 5v3.5M8 11.5v.5" />
+                </svg>
+                <span>Sending is exactly once per request ID. After an unknown outcome, use Reconcile; never blind Retry.</span>
+              </p>
+              <div class="multitab-divider"></div>
+              <div class="multitab-card-header">
+                <h3>Task History</h3>
+                <span class="subtle-badge">Recent Runs</span>
+              </div>
               <div id="multitab-tasks" class="multitab-items"><p class="text-secondary">No tasks yet.</p></div>
               <button type="button" id="multitab-aggregate" class="button secondary">Aggregate completed results</button>
-              <label for="multitab-aggregate-output">Combined worker results</label>
-              <textarea id="multitab-aggregate-output" rows="5" readonly placeholder="Results will be listed here after aggregation."></textarea>
+              <div class="form-group">
+                <label for="multitab-aggregate-output">Combined worker results</label>
+                <textarea id="multitab-aggregate-output" class="font-mono" rows="4" readonly placeholder="Results will be listed here after aggregation."></textarea>
+              </div>
             </div>
           </div>
         </section>
@@ -1603,7 +1647,12 @@
           <div id="delegate-action-history" class="multitab-items delegate-action-history" aria-live="polite">
             <p class="text-secondary">Refresh Chrome Delegate to inspect recent action outcomes.</p>
           </div>
-          <p class="delegate-hint">Read-only, in-memory diagnostics. Unknown actions require checking the real browser before any retry. OpenAI-side tool rejection occurs before SuperAgent and is not visible here.</p>
+          <p class="delegate-hint delegate-hint-box">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M8 1.5L2 4v4.5c0 3.8 2.5 6.4 6 7.5 3.5-1.1 6-3.7 6-7.5V4L8 1.5z" stroke-linejoin="round" />
+            </svg>
+            <span>Read-only, in-memory diagnostics. Unknown actions require checking the real browser before any retry. OpenAI-side tool rejection occurs before SuperAgent and is not visible here.</span>
+          </p>
         </section>
 
         <section class="panel delegate-multitab-panel" aria-labelledby="cdp-presence-heading">
@@ -1621,27 +1670,51 @@
             <span id="cdp-presence-tabs">— tabs</span>
             <span id="cdp-presence-queued">— queued</span>
           </div>
-          <label for="cdp-presence-follow">Follow agent (read-only filter)</label>
-          <select id="cdp-presence-follow" class="cdp-presence-follow">
-            <option value="">All agents</option>
-          </select>
+          <div class="cdp-toolbar">
+            <label for="cdp-presence-follow" class="cdp-toolbar-label">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M1.5 2.5h13l-5.2 6.1v4.7l-2.6 1.3V8.6L1.5 2.5z" stroke-linejoin="round" />
+              </svg>
+              <span>Follow agent (read-only filter)</span>
+            </label>
+            <div class="select-wrapper cdp-select-wrapper">
+              <select id="cdp-presence-follow" class="cdp-presence-follow">
+                <option value="">All agents</option>
+              </select>
+            </div>
+          </div>
           <div id="cdp-presence-sessions" class="multitab-items" role="status" aria-live="polite">
             <p class="text-secondary">Live Core status has not been verified yet.</p>
           </div>
-          <p class="delegate-hint">Takeover is available only for a locally registered, identity-verified managed Chrome target. It blocks agent writes without closing Chrome. Return does not automatically resume paused agents. Delegate-CDP remains separate.</p>
+          <p class="delegate-hint delegate-hint-box">
+            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <circle cx="8" cy="8" r="6.5" />
+              <path d="M8 5v3.5M8 11.5v.5" />
+            </svg>
+            <span>Takeover is available only for a locally registered, identity-verified managed Chrome target. It blocks agent writes without closing Chrome. Return does not automatically resume paused agents. Delegate-CDP remains separate.</span>
+          </p>
           <section id="cdp-private-preview" class="cdp-private-preview" hidden aria-labelledby="cdp-preview-heading">
             <div class="panel-head">
-              <div><h3 id="cdp-preview-heading">Private local tab preview</h3>
-                <p>Explicitly enabled for one registered tab. JPEG frames are never saved or forwarded to other devices.</p></div>
+              <div>
+                <h3 id="cdp-preview-heading">Private local tab preview</h3>
+                <p>Explicitly enabled for one registered tab. JPEG frames are never saved or forwarded to other devices.</p>
+              </div>
               <button type="button" id="cdp-preview-stop" class="button secondary">Stop preview</button>
             </div>
-            <img id="cdp-preview-image" alt="Live snapshot of the selected managed Chrome tab" referrerpolicy="no-referrer" />
+            <div class="cdp-preview-viewport">
+              <img id="cdp-preview-image" alt="Live snapshot of the selected managed Chrome tab" referrerpolicy="no-referrer" />
+            </div>
             <p id="cdp-preview-status" role="status" aria-live="polite">Preview is inactive.</p>
           </section>
-          <h3 id="cdp-replay-heading">Replay requests requiring human approval</h3>
-          <p class="delegate-hint">A prepared replay does not click. Inspect the exact Chrome tab and intended action before approving one recorded click. The approval expires and cannot be reused.</p>
-          <div id="cdp-replay-approvals" class="multitab-items" aria-labelledby="cdp-replay-heading" aria-live="polite">
-            <p class="text-secondary">No verified replay proposals.</p>
+          <div class="cdp-sub-section">
+            <div class="cdp-sub-header">
+              <div class="panel-eyebrow">HUMAN-IN-THE-LOOP CONTROL</div>
+              <h3 id="cdp-replay-heading">Replay requests requiring human approval</h3>
+              <p class="delegate-hint">A prepared replay does not click. Inspect the exact Chrome tab and intended action before approving one recorded click. The approval expires and cannot be reused.</p>
+            </div>
+            <div id="cdp-replay-approvals" class="multitab-items" aria-labelledby="cdp-replay-heading" aria-live="polite">
+              <p class="text-secondary">No verified replay proposals.</p>
+            </div>
           </div>
         </section>
       </div>

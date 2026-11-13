@@ -1,64 +1,260 @@
-/* Hallmark · component: action timeline · genre: utility · theme: inherited Tray
- * states: default · hover · focus · active · disabled · loading · error · success
- * contrast: uses existing Tray tokens; no additional palette or typography.
- * pre-emit critique: P5 H5 E5 S5 R5 V4
+/* SuperAgent Tray · Browser Action Outcomes Diagnostics
+ * Crafted for high-contrast observability, tactile feedback, and precise outcome state.
  */
+
+.delegate-action-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+#delegate-action-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+#delegate-action-status::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+#delegate-action-status:not(:empty):not([textContent="Status unknown"]):not([textContent="Awaiting Core"])::before {
+  background: var(--cyan);
+  box-shadow: 0 0 6px var(--cyan);
+}
+
+#delegate-action-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-weight: 600;
+  transition: all var(--transition-fast);
+}
+
+#delegate-action-toggle::before {
+  content: "";
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2394a3b8' stroke-width='1.5'%3E%3Cpath d='M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z'/%3E%3Ccircle cx='8' cy='8' r='2'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+#delegate-action-toggle[aria-pressed="true"] {
+  background: var(--accent-muted);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #ffffff;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+
+#delegate-action-toggle[aria-pressed="true"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2360a5fa' stroke-width='1.5'%3E%3Cpath d='M2 2l12 12M6.5 6.6a2 2 0 0 0 2.9 2.9M4 4.5C2.6 5.6 1.5 8 1.5 8s2.5 4.5 6.5 4.5c1.5 0 2.9-.6 4-1.5M7 3.5c.3 0 .7 0 1 .1 4 0 6.5 4.4 6.5 4.4s-.8 1.5-2.2 2.7'/%3E%3C/svg%3E");
+}
+
+/* Action Summary Metric Strip */
+#delegate-action-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(11, 16, 28, 0.65);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  margin: 12px 0 16px;
+  min-height: 44px;
+}
+
+#delegate-action-summary span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  border-radius: var(--radius-pill);
+  background: var(--bg-surface-raised);
+  border: 1px solid var(--border-medium);
+  color: var(--text-secondary);
+  letter-spacing: 0.01em;
+}
+
+#delegate-action-summary span::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+/* Summary Pill State Variations */
+#delegate-action-summary span:has(+ span, :contains("verified")) {
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #34d399;
+}
+
+/* Grid of Action Outcome Cards */
 .delegate-action-history {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 265px), 1fr));
-  gap: 10px;
-  max-height: 420px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: 12px;
+  max-height: 480px;
   overflow-y: auto;
   overflow-x: clip;
   align-items: start;
+  padding: 2px 2px 8px;
 }
+
+/* Empty / Standby Card state */
+.delegate-action-history > p.text-secondary {
+  grid-column: 1 / -1;
+  margin: 4px 0;
+  padding: 36px 24px;
+  background: rgba(15, 21, 35, 0.5);
+  border: 1px dashed var(--border-medium);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.delegate-action-history > p.text-secondary::before {
+  content: "";
+  display: block;
+  width: 36px;
+  height: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  opacity: 0.85;
+}
+
+/* Action Record Card */
 .delegate-action-record {
   min-width: 0;
   overflow-wrap: anywhere;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  border: 1px solid var(--border, currentColor);
-  border-inline-start: 3px solid var(--border, currentColor);
-  background: var(--bg-secondary, transparent);
-  border-radius: 9px;
-  padding: 11px 12px;
+  gap: 8px;
+  border: 1px solid var(--border-subtle);
+  border-inline-start: 4px solid var(--border-strong);
+  background: var(--bg-surface-raised);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: transform var(--transition-fast), border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
+
+.delegate-action-record:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-medium);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
 .delegate-action-record strong {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13.5px;
   font-style: normal;
-  font-weight: 650;
-  line-height: 1.4;
-  text-transform: capitalize;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 8px;
+  margin-bottom: 2px;
 }
-.delegate-action-record[data-outcome="unknown"],
-.delegate-action-record[data-outcome="failed"] {
-  border-inline-start-color: var(--warning, currentColor);
-}
+
+/* Outcome-specific Border & Background Tint */
 .delegate-action-record[data-outcome="verified"] {
-  border-inline-start-color: var(--accent, currentColor);
+  border-inline-start-color: var(--success);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.05) 0%, var(--bg-surface-raised) 85%);
 }
+
+.delegate-action-record[data-outcome="verified"] strong {
+  color: #6ee7b7;
+}
+
+.delegate-action-record[data-outcome="executed"] {
+  border-inline-start-color: var(--accent);
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, var(--bg-surface-raised) 85%);
+}
+
+.delegate-action-record[data-outcome="executed"] strong {
+  color: #93c5fd;
+}
+
+.delegate-action-record[data-outcome="unknown"] {
+  border-inline-start-color: var(--warning);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.06) 0%, var(--bg-surface-raised) 85%);
+}
+
+.delegate-action-record[data-outcome="unknown"] strong {
+  color: #fcd34d;
+}
+
+.delegate-action-record[data-outcome="failed"] {
+  border-inline-start-color: var(--danger);
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.06) 0%, var(--bg-surface-raised) 85%);
+}
+
+.delegate-action-record[data-outcome="failed"] strong {
+  color: #fca5a5;
+}
+
 .delegate-action-record .multitab-detail {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
   overflow-wrap: anywhere;
   word-break: break-word;
 }
-@media (max-width: 480px) {
-  .delegate-action-history { grid-template-columns: minmax(0, 1fr); }
-}
-.delegate-action-tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  justify-content: flex-end;
-  min-width: 0;
-}
-.delegate-action-tools .button { white-space: nowrap; }
-.delegate-action-tools .button:focus-visible {
-  outline: 2px solid var(--accent, currentColor);
-  outline-offset: 2px;
-}
-@media (max-width: 480px) {
-  .delegate-action-tools { justify-content: flex-start; width: 100%; }
+
+.delegate-action-record .multitab-warning {
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1.4;
 }
 
+@media (max-width: 640px) {
+  .delegate-action-history {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .delegate-action-tools {
+    justify-content: flex-start;
+    width: 100%;
+  }
+}

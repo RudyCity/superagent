@@ -23,6 +23,11 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(cli).toContain('exe_dir.join("standalone").join("dist").join("cli.js")');
     expect(cli).toContain('exe_dir.join(if cfg!(windows) { "bun.exe" }');
   });
+  it("includes typescript as a production dependency for standalone syntax verification", () => {
+    const pkg = JSON.parse(read("package.json"));
+    expect(pkg.dependencies.typescript).toBeDefined();
+    expect(pkg.devDependencies?.typescript).toBeUndefined();
+  });
   it("does not discard a user PATH entry during uninstall or duplicate it on install", () => {
     const hooks = read("apps/superagent-tray/src-tauri/nsis_hooks.nsh");
     expect(hooks).toContain("NSIS_HOOK_POSTINSTALL");

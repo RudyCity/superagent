@@ -60,6 +60,7 @@ assert(install.status === 0, `Production dependency install failed (code ${insta
 assert(fs.existsSync(path.join(stage, "node_modules", "ink")), "Production dependency ink missing.");
 assert(fs.existsSync(path.join(stage, "node_modules", "sharp")), "Production dependency sharp missing.");
 assert(fs.existsSync(path.join(stage, "node_modules", "r-memory")), "Production dependency r-memory missing.");
+assert(fs.existsSync(path.join(stage, "node_modules", "typescript")), "Production dependency typescript missing.");
 const stat = fs.statSync(runtimeExe);
 assert(stat.size > 10_000_000, "Bundled Bun binary is unexpectedly small.");
 const metadata = {

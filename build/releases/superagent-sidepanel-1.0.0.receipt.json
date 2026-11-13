@@ -1,0 +1,30 @@
+{
+  "component": "SuperAgent Chrome SidePanel",
+  "version": "1.0.0",
+  "archive": "superagent-sidepanel-1.0.0.zip",
+  "sha256": "ea3aca0d2d088f2cff8f75b2fd28d8132deaf046422818473e0b75059602ecae",
+  "packagedFiles": {
+    "background.js": "f786a2013e09ebda169983315cbd81f4e2396105a4bc0a0399a24ad7fd1c72b2",
+    "content.js": "fee9ceadf904e506ed57932f363af80ba26c7052643247e7ce7dbeaa0b0e4051",
+    "icons/icon128.png": "abcc75587f2f25c8a1e513b6322eaa9751264345a36b13bfd70021e8dbc04992",
+    "icons/icon16.png": "7fd3020598104565bd8ed6279157e880f97901fff3722b88df7fe77c39b8a340",
+    "icons/icon48.png": "b67f37b34c5a65999149151a9fa55faf6d499d3cc6d1af782320ab91c7c6146c",
+    "main-world.js": "256c4ab6fd2aee2c79e174357fae8fa9f315dadef72769ecff190e8cf3c0dad3",
+    "manifest.json": "423e31becbb5cee5942fa94b2c7cd4c9c8f4caab90b26eb57bec24ef90536499",
+    "sidepanel-browser.js": "a374a19876cff73dd6f2bf7a63a77435b5063ee0535937b9289aaec59450973f",
+    "sidepanel-explorer.js": "186cf9600eb65e48d3a1ca0fc7bc6f8dd3867d5edecfd54e1b5a4da7302d4f5e",
+    "sidepanel-history.js": "4ef2e7d83dda8373f8335b9494837581bc48c9ca18d100976ca931e3a98c7f14",
+    "sidepanel-input.js": "cf5eeba5c36a2cdd37d4de95aa88e26584192c639044530a24aac1f8ae0d2d9f",
+    "sidepanel-markdown.js": "5a7a4fd5a82e8e793d0cec8e528508cf9622048f3aa970c4930338edeeec215a",
+    "sidepanel-monitor.js": "f11fb4468bbaa0ddd4ce7928ad9ced39d24ba3467bf9fcbfee74b315aa0f7e75",
+    "sidepanel-sse.js": "5a4cb2346feb091a0db3eaf91c8c8dd87fd2ef4fc2236f9f74f238ed70e46f0b",
+    "sidepanel-ui.js": "0bd94928a3ea054e4955cfcefb1f81464e8a7d88928bdb4ba959edc0ec07b671",
+    "sidepanel-vision.js": "1f1e622f26ea5a0e592e7763b9cc325eb9e81dd3ffa7725f818a047e41db48d2",
+    "sidepanel-workspaces.js": "35428c13dc66e9dca2087b4d1d24d8e4861cca81f260f353d3f09dadd00ecf5e",
+    "sidepanel.css": "7f9ee4d38a1889f81a7318e608d146ede785a5e72f1776f62723b4bb3d47da60",
+    "sidepanel.html": "a18e6aad3df46402a76b8a31fc4262a9ec9a81db9f887219048849bda6963211",
+    "sidepanel.js": "9362a00bcc548345ad2662bf82bb4d520f6ff11d33c333ee2f11d101daee7a1c"
+  },
+  "scope": "Chrome SidePanel extension; no personal data or secrets",
+  "note": "Source ZIP for developer-mode installation; not a Chrome Web Store publication."
+}

@@ -3,7 +3,17 @@ import fsSync from "fs";
 import path from "path";
 import { execSync } from "child_process";
 import { applyProcessIntent, execHiddenTaskkillSync } from "../process/processSpawnPolicy.js";
-import ts from "typescript";
+let tsModule: typeof import("typescript") | null = null;
+async function getTsCompiler(): Promise<typeof import("typescript") | null> {
+  if (tsModule) return tsModule;
+  try {
+    const mod = await import("typescript");
+    tsModule = (mod as any).default ?? mod;
+    return tsModule;
+  } catch {
+    return null;
+  }
+}
 
 interface WindowsShellResult {
   shellPath: string;
@@ -233,6 +243,8 @@ export async function verifySyntax(filePath: string): Promise<string | null> {
   }
 
   try {
+    const ts = await getTsCompiler();
+    if (!ts) return null;
     const code = await fs.readFile(filePath, "utf-8");
     const sourceKind = ext === ".tsx" || ext === ".jsx" ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
     const sourceFile = ts.createSourceFile(filePath, code, ts.ScriptTarget.Latest, true, sourceKind);

@@ -541,6 +541,12 @@ function install() {
     if (typeof runtimeRefresh === "function") await runtimeRefresh();
   });
 
+  window.__TAURI__?.event?.listen?.("desktop-server-start-failed", async (evt) => {
+    toast("Failed to start Core: " + (evt?.payload || "Process timed out"), true);
+    await refresh();
+    if (typeof runtimeRefresh === "function") await runtimeRefresh();
+  });
+
   window.addEventListener("superagent-core-selected", refresh);
 
   // Sidebar navigation links
