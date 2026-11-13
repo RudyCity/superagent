@@ -9,7 +9,33 @@ const adapter = lanInterfaces()[0];
 if (!adapter) throw Error("No physical private adapter available.");
 const exe = path.resolve("apps/superagent-lan-windows/src-tauri/resources/superagent-lan-client.exe");
 const inspected = spawnSync(exe, ["--list-adapters"], { encoding: "utf8", windowsHide: true, timeout: 10000 });
-if (inspected.error || inspected.status !== 0) throw Error("GUI adapter discovery failed.");
+if (inspected.error || inspected.status !== 0) {
+  const elevation = spawnSync("powershell.exe", [
+    "-NoProfile", "-NonInteractive", "-Command",
+    "([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)",
+  ], { encoding: "utf8", timeout: 5000, windowsHide: true });
+  const expectedDenial = "Run SuperAgent LAN Client as a standard non-elevated Windows user.";
+  if (!elevation.error && elevation.status === 0 &&
+      elevation.stdout.trim().toLowerCase() === "true" &&
+      inspected.status === 1 && inspected.stdout.includes(expectedDenial)) {
+    // GitHub Windows runner is elevated; deliberately do not bypass the
+    // production standard-user gate. Verify the *active* receiver entrypoint
+    // fails closed too. Full positive owner-controlled smoke must run on a
+    // standard non-elevated Windows host (separately observed by maintainer).
+    const denied = spawnSync(exe, [
+      "--tauri-receiver", "--segment=gui-smoke", "--bind=" + adapter.address,
+    ], { encoding: "utf8", windowsHide: true, timeout: 7000 });
+    if (denied.error || denied.status !== 1 || !denied.stdout.includes(expectedDenial)) {
+      throw Error("Elevated Windows runner was not denied by receiver entrypoint.");
+    }
+    console.log("CI_PREVIEW_ELEVATED_DENIAL_PASS: both native entrypoints fail closed on elevated runner.");
+    console.log("NON_ELEVATED_RECEIVER_E2E_NOT_RUN_IN_CI: required on a standard-user Windows host.");
+    process.exit(0);
+  }
+  throw Error("GUI adapter discovery failed: exit=" + inspected.status +
+    " stderr=" + String(inspected.stderr || inspected.error?.message || "").slice(0, 400) +
+    " stdout=" + String(inspected.stdout || "").slice(0, 400));
+}
 const adapters = JSON.parse(inspected.stdout) as { adapters: Array<{ name: string; address: string }> };
 if (!adapters.adapters?.some(item => item.address === adapter.address && item.name === adapter.name))
   throw Error("GUI adapter list excluded the verified physical adapter.");

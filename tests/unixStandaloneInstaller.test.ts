@@ -39,11 +39,17 @@ describe("macOS ARM64 and Linux x64 portable installer contracts", () => {
 
   it("publishes only when all Windows/macOS/Linux jobs and artifacts pass", () => {
     const workflow = read(".github/workflows/release-windows-standalone.yml");
-    for (const item of ["windows-x64", "macos-arm64", "linux-x64", "release-assets/*.dmg",
-      "release-assets/*.AppImage", "release-assets/*.deb", "release-assets/*-setup.exe",
-      "needs: [build]", "contents: write", "--prerelease", "SHA256SUMS.txt"]) {
+    for (const item of ["windows-x64", "macos-arm64", "linux-x64",
+      "needs: [build, build-extensions, build-android, build-lan-windows]",
+      "scripts/verify-unified-release-assets.mjs", "release-assets/*",
+      "contents: write", "--prerelease", "SHA256SUMS.txt"]) {
       expect(workflow).toContain(item);
     }
+    const inventory = read("scripts/verify-unified-release-assets.mjs");
+    for (const suffix of [".dmg", ".AppImage", ".deb", "_x64-setup.exe"]) {
+      expect(inventory).toContain(suffix);
+    }
+    expect(inventory).toContain("JSON.stringify(actual)===JSON.stringify(expected)");
     expect(workflow).toContain("scripts/verify-packaged-standalone-unix.sh");
     const ci = read(".github/workflows/tray-build.yml");
     expect(ci).toContain("bun run installer:prepare:unix");
