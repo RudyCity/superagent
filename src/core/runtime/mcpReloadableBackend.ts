@@ -11,7 +11,8 @@ import { createPersistentMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js
 import { startMcpDelegateForwardingSubscription } from "./delegateForwardingLifecycle.js";
 import { resolveDelegateCorePort } from "./delegateCoreEndpoint.js";
 
-const BACKEND_HEALTH_INTERVAL_MS = 60_000;
+// Short private IPC health cadence bounds stale affinity detection without HTTP polling.
+const BACKEND_HEALTH_INTERVAL_MS = 5_000;
 
 export interface ReloadableBackendOptions {
   port: number;
@@ -42,6 +43,8 @@ export type BackendWorkerReply =
       externalBytes: number;
       arrayBuffersBytes: number;
       inFlightToolCalls: number;
+      /** Private owner-worker IPC only; never exposed by public status endpoints. */
+      activeSessionIds: string[];
       sessionStats: McpSessionRegistryStats;
     };
 
@@ -138,6 +141,7 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
       externalBytes:memory.external,
       arrayBuffersBytes:memory.arrayBuffers ?? 0,
       inFlightToolCalls:handle.getInFlightToolCalls(),
+      activeSessionIds:handle.getActiveSessionIds(),
       sessionStats:handle.getSessionStats(),
     } satisfies BackendWorkerReply);
   };

@@ -30,6 +30,7 @@ import {
   type MemoryTrendAssessment, type MemoryTrendSample,
 } from "./memoryTrend.js";
 import { decideMcpMemoryRecovery } from "./mcpMemoryRecoveryPolicy.js";
+import { findOrphanedMcpAffinities } from "./mcpSessionReconcile.js";
 
 const WORKER_START_MS = 30_000;
 const OLD_GENERATION_TTL = 4 * 60 * 60_000 + 5 * 60_000;
@@ -142,6 +143,9 @@ export async function startReloadableMcpTunnelOwner(
   let current: BackendGeneration | undefined;
   const generations = new Set<BackendGeneration>();
   const sessions = new Map<string, BackendGeneration>();
+  const sessionRegisteredAt = new Map<string, number>();
+  const sessionInFlight = new Map<string, number>();
+  let activeSseStreams = 0;
   let draining = false;
   let closing = false;
   let reloading = false;
@@ -184,17 +188,20 @@ export async function startReloadableMcpTunnelOwner(
   function requestCount(): number {
     return [...generations].reduce((total, gen) => total + gen.inFlight, 0);
   }
-  function forgetSession(sessionId: string, expected?: BackendGeneration): void {
+  function forgetSession(sessionId: string, expected?: BackendGeneration): boolean {
     const generation = sessions.get(sessionId);
-    if (!generation || (expected && generation !== expected)) return;
+    if (!generation || (expected && generation !== expected)) return false;
     generation.sessions.delete(sessionId);
     sessions.delete(sessionId);
+    sessionRegisteredAt.delete(sessionId);
+    return true;
   }
   function rememberSession(sessionId: string, generation: BackendGeneration): void {
     const previous = sessions.get(sessionId);
     if (previous && previous !== generation) previous.sessions.delete(sessionId);
     sessions.set(sessionId, generation);
     generation.sessions.add(sessionId);
+    if (previous !== generation) sessionRegisteredAt.set(sessionId, Date.now());
   }
   function onBackendSessionClosed(gen: BackendGeneration, message: unknown): void {
     const event = message as Partial<BackendWorkerReply> | null;
@@ -211,20 +218,31 @@ export async function startReloadableMcpTunnelOwner(
         !event.sessionStats ||
         !Number.isSafeInteger(event.sessionStats.activeSessions) ||
         event.sessionStats.activeSessions < 0) return;
+    if (gen.lastHealth && event.timestamp < gen.lastHealth.timestamp) return;
     gen.lastHealth = event;
-    gen.memorySamples = trimMemoryTrendSamples([
-      ...gen.memorySamples,
-      {at:event.timestamp, rssBytes:event.rssBytes, heapUsedBytes:event.heapUsedBytes},
-    ], 12);
-    gen.memoryTrend = assessMemoryTrend(gen.memorySamples);
+    // Health/affinity is sampled every 5s, but preserve the existing 60s
+    // memory-trend window. Faster memory samples would change auto-recovery
+    // thresholds and could cause unnecessary live backend reloads.
+    if (!gen.memorySamples.length ||
+        event.timestamp - gen.memorySamples[gen.memorySamples.length - 1].at >= 60_000) {
+      gen.memorySamples = trimMemoryTrendSamples([
+        ...gen.memorySamples,
+        {at:event.timestamp, rssBytes:event.rssBytes, heapUsedBytes:event.heapUsedBytes},
+      ], 12);
+      gen.memoryTrend = assessMemoryTrend(gen.memorySamples);
+    }
 
-    // Backend registry lifetime is authoritative. When it reports zero active
-    // sessions, every owner affinity still pointing at this generation is stale.
-    if (event.sessionStats.activeSessions === 0 && gen.inFlight === 0 &&
-        gen.sessions.size > 0) {
-      const reclaimed = gen.sessions.size;
-      for (const id of [...gen.sessions]) forgetSession(id, gen);
-      staleAffinityReclaimed += reclaimed;
+    // The worker registry is authoritative. Reconcile exact private IPC IDs
+    // per generation, never from counts alone. Do not discard sessions created
+    // after the snapshot or sessions with live requests (including SSE).
+    const orphaned = findOrphanedMcpAffinities({
+      ownerIds: [...gen.sessions], workerIds: event.activeSessionIds,
+      workerCount: event.sessionStats.activeSessions,
+      registeredAt: sessionRegisteredAt, inFlight: sessionInFlight,
+      snapshotAt: event.timestamp,
+    });
+    for (const id of orphaned) {
+      if (forgetSession(id, gen)) staleAffinityReclaimed++;
     }
     if (gen === current) void recoverBackendFromMemoryTrend(gen);
   }
@@ -507,6 +525,7 @@ export async function startReloadableMcpTunnelOwner(
       version: 1, kind: "private_mcp_owner", pid: process.pid,
       port: opts.port, startedAt: opts.createdAt, mode: "managed-tunnel",
       activeSessions: activeSessionCount(), inFlightRequests: requestCount(),
+      activeSseStreams, nonStreamInFlightRequests: Math.max(0, requestCount() - activeSseStreams),
       inFlightToolCalls: currentHealth?.inFlightToolCalls ?? 0,
       draining, inflightToolEffects: "unknown",
       safeToolsOnly: !opts.allowDangerous, oauthEnabled: opts.authMode === "oauth",
@@ -646,10 +665,21 @@ export async function startReloadableMcpTunnelOwner(
       res.end(JSON.stringify({error:"MCP backend unavailable"})); return;
     }
     target.inFlight++;
+    const trackedSession = sessionId && sessions.get(sessionId) === target ? sessionId : "";
+    if (trackedSession) sessionInFlight.set(trackedSession, (sessionInFlight.get(trackedSession) ?? 0) + 1);
     let counted = true;
+    let sseStream = false;
     const finish = () => {
       if (!counted) return;
-      counted = false; target.inFlight--; retireOld();
+      counted = false;
+      target.inFlight--;
+      if (sseStream) activeSseStreams = Math.max(0, activeSseStreams - 1);
+      if (trackedSession) {
+        const remaining = (sessionInFlight.get(trackedSession) ?? 1) - 1;
+        if (remaining > 0) sessionInFlight.set(trackedSession, remaining);
+        else sessionInFlight.delete(trackedSession);
+      }
+      retireOld();
     };
     res.once("close", finish);
     res.once("finish", finish);
@@ -657,17 +687,21 @@ export async function startReloadableMcpTunnelOwner(
       hostname: "127.0.0.1", port: target.port, path: url,
       method: req.method, headers: sanitizedMcpIngressHeaders(req.headers, target.port),
     }, (reply) => {
+      const contentType = String(reply.headers["content-type"] ?? "");
+      if (/^text\/event-stream(?:;|$)/i.test(contentType)) {
+        sseStream = true;
+        activeSseStreams++;
+      }
       const newSid = reply.headers["mcp-session-id"];
       if (typeof newSid === "string" && newSid) {
         rememberSession(newSid, target);
       }
-      if (req.method === "DELETE" && sessionId) {
+      if (pathname === "/mcp" && req.method === "DELETE" && sessionId &&
+          (reply.statusCode === 200 || reply.statusCode === 404)) {
         forgetSession(sessionId, target);
-      } else if (reply.statusCode === 404 && sessionId) {
-        // The backend is authoritative for session lifetime. If its idle/max
-        // lifetime cleanup already evicted the session, heal any missed owner
-        // bookkeeping event instead of pinning stale affinity indefinitely.
-        forgetSession(sessionId, target);
+      } else if (pathname === "/mcp" && reply.statusCode === 404 && sessionId) {
+        // Preserve backend 404 for explicit client initialization, never replay calls.
+        if (forgetSession(sessionId, target)) staleAffinityReclaimed++;
       }
       // Never forward backend-supplied transfer framing headers explicitly.
       const headers = { ...reply.headers };
@@ -677,10 +711,16 @@ export async function startReloadableMcpTunnelOwner(
       reply.pipe(res);
     });
     upstream.on("error", () => {
-      if (!res.headersSent) res.writeHead(502, {"Cache-Control":"no-store"});
-      res.end(); finish();
+      if (!res.destroyed) {
+        if (!res.headersSent) res.writeHead(502, {"Cache-Control":"no-store"});
+        res.end();
+      }
+      finish();
     });
     req.once("aborted", () => upstream.destroy());
+    // SSE can outlive the request body. Release the upstream socket when the
+    // downstream client disappears, without replaying any tool side effect.
+    res.once("close", () => { if (!res.writableEnded) upstream.destroy(); });
     req.pipe(upstream);
   });
 

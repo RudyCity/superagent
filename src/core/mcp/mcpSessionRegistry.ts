@@ -118,6 +118,11 @@ export class McpSessionRegistry {
     return this.sessions.get(sessionId);
   }
 
+  /** Private worker-to-owner reconciliation only; never expose IDs via status. */
+  activeSessionIds(): string[] {
+    return [...this.sessions.keys()];
+  }
+
   isFull(): boolean {
     return this.sessions.size >= this.maxSessions;
   }

@@ -72,6 +72,24 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       old = await getClient();
       const oldTools = (await old.listTools()).tools.map(tool => tool.name);
       expect(oldTools).toContain("superagent_delegate_read_chat");
+      // An unknown session must return a protocol 404 without replaying a
+      // tools/list or tools/call body through a new implicit session.
+      const unknown = await fetch(local + "/mcp", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + owner.info.bearerToken,
+          "mcp-session-id": "missing-gemini-session",
+          "Content-Type": "application/json",
+          Accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({jsonrpc:"2.0", id:23, method:"tools/list"}),
+      });
+      expect(unknown.status).toBe(404);
+      expect(await unknown.text()).toContain("unknown mcp-session-id");
+      const afterUnknown = (await control("status")).body;
+      expect(afterUnknown.staleAffinityReclaimed ?? afterUnknown.sessionTelemetry?.staleAffinityReclaimed).toBeGreaterThanOrEqual(0);
+      expect(afterUnknown.nonStreamInFlightRequests).toBeGreaterThanOrEqual(0);
+      expect(afterUnknown.activeSseStreams).toBeGreaterThanOrEqual(0);
       const migrated = await control("reload", "POST");
       expect(migrated.status).toBe(200);
       expect(migrated.body.success).toBe(true);

@@ -373,6 +373,8 @@ export interface McpHttpServerHandle {
   close: () => Promise<void>;
   /** Aggregate-only session telemetry; never exposes ids or principals. */
   getSessionStats: () => McpSessionRegistryStats;
+  /** Private worker IPC only; never publish session identifiers in telemetry. */
+  getActiveSessionIds: () => string[];
   /** Count of currently executing tools/call requests. */
   getInFlightToolCalls: () => number;
   /** OAuth store (only set in oauth mode); used for status/diagnostics. */
@@ -896,6 +898,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     port: boundPort,
     oauthStore,
     getSessionStats: () => registry.snapshot(),
+    getActiveSessionIds: () => registry.activeSessionIds(),
     getInFlightToolCalls: () => inFlightToolCalls,
     close: () =>
       new Promise<void>((resolve) => {

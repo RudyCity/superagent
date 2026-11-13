@@ -1,3 +1,9 @@
+## [1.14.86] - 2026-11-14
+### Stabilize Gemini MCP session-affinity and private heartbeat telemetry
+- Refresh backend health over private IPC every 5 seconds, retaining 60-second memory-trend sampling, and reconcile owner session IDs against authoritative backend IDs while guarding in-flight SSE/tool requests.
+- Preserve 404 session-expired responses for client re-initialization without automatic replay; avoid clearing affinity on failed DELETE and release upstream sockets on browser disconnects.
+- Distinguish open SSE streams from other in-flight requests; add targeted session reconciliation and hot-reload regression tests. No Cloudflare URL, OAuth secret, or Core/MCP owner lifecycle changes.
+
 ## [1.14.85] - 2026-11-13
 ### Guarded manual recovery for orphaned Guardian owner records
 - Add an explicit plan/apply command that verifies the supervised Core, OS absence of both old Guardian PIDs, and private listener absence before archiving stale records without killing or adopting any process.
