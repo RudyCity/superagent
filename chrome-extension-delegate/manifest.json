@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "SuperAgent Delegate (ChatGPT)",
+  "name": "SuperAgent Delegate",
   "version": "1.10.1",
   "description": "Multi-tab ChatGPT delegation with per-tab routing, indexed history, diagnostics and CDP, without automatic tab closures.",
   "permissions": [
