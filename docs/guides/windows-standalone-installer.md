@@ -6,7 +6,7 @@ node_modules**. The CLI can launch without the user installing Bun, Node.js, or 
 
 ## Install prebuilt on ordinary Windows PCs (no Rust or MSVC)
 
-A fresh `git clone` contains the native Tray **source**, not compiled `.exe` build products. End users should download the precompiled, integrity-checked NSIS installer from [official GitHub Releases](https://github.com/RudyCity/superagent/releases), which includes Tray, Core, Bun, and the CLI. **MSVC and Rust are required on CI/build machines only, not on the target PC.**
+A fresh `git clone` contains the native Tray **source**, not compiled `.exe` build products. End users should download `SuperAgent_1.14.83_x64-setup.exe` from the verified [v1.14.83-rc.2 unified prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.83-rc.2) and check its SHA-256 with `SHA256SUMS.txt` before running it. The installer includes Tray, Core, Bun, and the CLI. **MSVC and Rust are required on CI/build machines only, not on the target PC.**
 
 If Bun is already installed for source development, use `bun run tray:prebuilt:check`, `bun run tray:prebuilt:download`, or `bun run tray:prebuilt:install` to select an official Windows release and validate it against that release’s SHA256SUMS.txt before launch. A release version mismatch with the checkout is rejected by default; review the version and use `bun scripts/install-prebuilt-windows.ts --install --allow-version-mismatch` only if you explicitly accept the older prebuilt release. `--check` is read-only, `--download` does not run the setup, and no build tools are downloaded or silently installed. The published installer may be unsigned; the manifest hash verifies download integrity, not the publisher’s code-signing identity.
 
@@ -51,11 +51,15 @@ Such capabilities should report unavailable until provisioned.
 
 - `.github/workflows/tray-build.yml` verifies Core/extension, Rust tests and Windows
   standalone payloads on main/PR and preserves normal Linux/macOS tray packaging.
-- `.github/workflows/release-windows-standalone.yml` is triggered by a signed-off
-  release-candidate tag of the form `v<package-version>-rc.<number>`. The workflow
-  compares the tag with package metadata, runs bounded regression and native Rust tests,
-  builds a fresh standalone NSIS installer, installs it onto a disposable GitHub runner, verifies the installed CLI without global Bun/Node, and uninstalls it before publishing
-  the EXE and `SHA256SUMS.txt` as a **GitHub prerelease**.
+- `.github/workflows/release-windows-standalone.yml` is triggered by an
+  approved release-candidate tag `v<package-version>-rc.<number>`. It
+  validates the tag against source metadata, builds and verifies standalone
+  Windows NSIS, macOS ARM64 DMG, Linux x64 DEB/AppImage, Chrome extensions,
+  Windows LAN GUI and Android LAN APK in independent jobs. Publication requires
+  an exact inventory of 11 build assets plus `SHA256SUMS.txt`. A verified recovery
+  may publish the immutable successful build artifacts using
+  `.github/workflows/recover-unified-release.yml` if **only** the original
+  publication step fails; source-run SHA and every build gate must match.
 - A successful local build is not a public release. Only a completed GitHub release
   workflow with downloadable, matching SHA-256 assets counts as published.
 - MSI standalone packaging is not part of this candidate. WiX linking of the full

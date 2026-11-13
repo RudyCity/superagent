@@ -38,9 +38,31 @@ describe("Windows prebuilt Tray installer contract", () => {
     expect(checksumForFilename(sha + " *" + name + "\r\n", name)).toBe(sha);
     expect(checksumForFilename(sha.toUpperCase() + "  " + name + "\n", name)).toBe(sha);
   });
-  it("fails closed on missing or duplicate checksum entries", () => {
+  it("accepts GNU sha256sum relative ./ entries from the unified release", () => {
+    expect(checksumForFilename(sha + "  ./" + name + "\n", name)).toBe(sha);
+    expect(checksumForFilename(sha + " *./" + name + "\r\n", name)).toBe(sha);
+  });
+  it("fails closed on missing, nested, traversal or duplicate checksum entries", () => {
     expect(() => checksumForFilename(sha + "  other.exe", name)).toThrow();
+    expect(() => checksumForFilename(sha + "  ../" + name, name)).toThrow();
+    expect(() => checksumForFilename(sha + "  nested/" + name, name)).toThrow();
+    expect(() => checksumForFilename(sha + "  ././" + name, name)).toThrow();
     expect(() => checksumForFilename(sha + "  " + name + "\n" + sha + "  " + name, name)).toThrow();
+    expect(() => checksumForFilename(sha + "  " + name + "\n" + sha + "  ./" + name, name)).toThrow();
+  });
+  it("selects unified Windows v1.14.83 from the new cross-platform prerelease", () => {
+    const tag = "v1.14.83-rc.2";
+    const installerName = "SuperAgent_1.14.83_x64-setup.exe";
+    const candidate: ReleaseInfo = { tag_name: tag, draft: false, assets: [
+      { name: installerName, size: 251_075_687, browser_download_url:
+        `https://github.com/RudyCity/superagent/releases/download/${tag}/${installerName}` },
+      { name: "SHA256SUMS.txt", size: 1185, browser_download_url:
+        `https://github.com/RudyCity/superagent/releases/download/${tag}/SHA256SUMS.txt` },
+    ] };
+    const chosen = selectInstaller([candidate]);
+    expect(chosen.version).toBe("1.14.83");
+    expect(chosen.release.tag_name).toBe(tag);
+    expect(validateAssetUrl(chosen, chosen.installer)).toContain(installerName);
   });
   it("recognizes independently gated Windows-only tags without mixing versions", () => {
     const tag = "v1.14.78-windows.1";

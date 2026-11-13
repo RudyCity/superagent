@@ -72,7 +72,11 @@ export function checksumForFilename(manifest: string, filename: string): string 
   const matches: string[] = [];
   for (const line of manifest.split(/\r?\n/)) {
     const match = /^([0-9a-fA-F]{64})\s+\*?(.+)$/.exec(line.trim());
-    if (match && match[2].trim() === filename) matches.push(match[1].toLowerCase());
+    // GNU sha256sum can emit either `name` or `./name` when run with a glob.
+    // Accept only these exact basenames: never permit arbitrary relative paths,
+    // and count both spellings toward the duplicate-entry refusal below.
+    const entry = match?.[2].trim();
+    if (entry === filename || entry === `./${filename}`) matches.push(match![1].toLowerCase());
   }
   if (matches.length !== 1) {
     throw new Error(`Expected exactly one SHA-256 checksum for ${filename}; got ${matches.length}`);
