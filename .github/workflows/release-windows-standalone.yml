@@ -275,22 +275,22 @@ jobs:
           Built from release tag \`$GITHUB_REF_NAME\` with independent, mandatory CI verification gates.
 
           ### Component Versions & Downloads
-          - **Windows x64 (v\${core_version})**: \`SuperAgent_\${core_version}_x64-setup.exe\` — Standalone NSIS installer (Tray + Core + Bun + native CLI).
-          - **Ubuntu / Debian Linux x64 (v\${core_version})**: \`SuperAgent_\${core_version}_amd64.deb\` — Debian/Ubuntu native package.
-          - **Linux x64 Portable (v\${core_version})**: \`SuperAgent_\${core_version}_amd64.AppImage\` — Standalone AppImage with verified glibc native addons.
-          - **macOS ARM64 Apple Silicon (v\${core_version})**: \`SuperAgent_\${core_version}_aarch64.dmg\` — Unsigned DMG bundle.
-          - **Chrome Delegate Extension (v\${delegate_version})**: \`superagent-delegate-\${delegate_version}.zip\` (with verified receipt) — MV3 developer extension for ChatGPT automation.
-          - **Chrome SidePanel Extension (v\${sidepanel_version})**: \`superagent-sidepanel-\${sidepanel_version}.zip\` (with verified receipt) — MV3 AI assistant sidepanel.
-          - **Windows LAN Receiver GUI (v\${lan_version})**: \`SuperAgent-LAN-Client-\${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client preview installer.
-          - **Android LAN Preview (v\${android_version})**: \`SuperAgent-LAN-Android-\${android_version}-debug.apk\` + metadata — Debug-signed APK.
+          - **Windows x64 (v${core_version})**: \`SuperAgent_${core_version}_x64-setup.exe\` — Standalone NSIS installer (Tray + Core + Bun + native CLI).
+          - **Ubuntu / Debian Linux x64 (v${core_version})**: \`SuperAgent_${core_version}_amd64.deb\` — Debian/Ubuntu native package.
+          - **Linux x64 Portable (v${core_version})**: \`SuperAgent_${core_version}_amd64.AppImage\` — Standalone AppImage with verified glibc native addons.
+          - **macOS ARM64 Apple Silicon (v${core_version})**: \`SuperAgent_${core_version}_aarch64.dmg\` — Unsigned DMG bundle.
+          - **Chrome Delegate Extension (v${delegate_version})**: \`superagent-delegate-${delegate_version}.zip\` (with verified receipt) — MV3 developer extension for ChatGPT automation.
+          - **Chrome SidePanel Extension (v${sidepanel_version})**: \`superagent-sidepanel-${sidepanel_version}.zip\` (with verified receipt) — MV3 AI assistant sidepanel.
+          - **Windows LAN Receiver GUI (v${lan_version})**: \`SuperAgent-LAN-Client-${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client preview installer.
+          - **Android LAN Preview (v${android_version})**: \`SuperAgent-LAN-Android-${android_version}-debug.apk\` + metadata — Debug-signed APK.
           - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 11 binary, archive and metadata assets.
 
           The release does not migrate users, modify Core/MCP ownership, restart a
           running instance or certify production deployment (R0–R7 remain separate).
           Verify checksum and provenance before installing.
           EOF
-          release_title="SuperAgent \$GITHUB_REF_NAME — Windows v\${core_version}, Ubuntu v\${core_version}, macOS v\${core_version}, Delegate v\${delegate_version}, SidePanel v\${sidepanel_version}, LAN v\${lan_version}, Android v\${android_version}"
-          gh release create "\$GITHUB_REF_NAME" release-assets/* SHA256SUMS.txt \
-            --repo "\$GITHUB_REPOSITORY" --verify-tag --prerelease \
+          release_title="SuperAgent $GITHUB_REF_NAME — Windows v${core_version}, Ubuntu v${core_version}, macOS v${core_version}, Delegate v${delegate_version}, SidePanel v${sidepanel_version}, LAN v${lan_version}, Android v${android_version}"
+          gh release create "$GITHUB_REF_NAME" release-assets/* SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
             --notes-file RELEASE_NOTES.md \
-            --title "\$release_title"
+            --title "$release_title"
