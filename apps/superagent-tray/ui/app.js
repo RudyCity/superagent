@@ -371,7 +371,7 @@ async function onRowClick(event) {
 }
 
 function navigateToPage(pageId) {
-  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "terminal", "muse-files", "lan-devices", "settings"];
+  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "terminal", "muse-files", "lan-devices", "updates", "settings"];
   const target = validPages.includes(pageId) ? pageId : "jobs";
 
   if (window.location.hash !== `#${target}`) {
@@ -403,6 +403,7 @@ function navigateToPage(pageId) {
   const actionsTerminal = $("actions-terminal");
   const actionsMuseFiles = $("actions-muse-files");
   const actionsLanDevices = $("actions-lan-devices");
+  const actionsUpdates = $("actions-updates");
 
   // Every page first hides all other page-specific actions.
   if (actionsJobs) actionsJobs.hidden = true;
@@ -413,6 +414,7 @@ function navigateToPage(pageId) {
   if (actionsTerminal) actionsTerminal.hidden = true;
   if (actionsMuseFiles) actionsMuseFiles.hidden = true;
   if (actionsLanDevices) actionsLanDevices.hidden = true;
+  if (actionsUpdates) actionsUpdates.hidden = true;
 
   if (target === "jobs") {
     if (topEyebrow) topEyebrow.textContent = "AUTOMATION CONSOLE";
@@ -473,6 +475,12 @@ function navigateToPage(pageId) {
     if (topDesc) topDesc.textContent = "Discover, pair and support Windows laptops on the same physical local network.";
     if (actionsLanDevices) actionsLanDevices.hidden = false;
     window.__superagentLanRefresh?.();
+  } else if (target === "updates") {
+    if (topEyebrow) topEyebrow.textContent = "VERIFIED DISTRIBUTION";
+    if (topTitle) topTitle.textContent = "Updates & Releases";
+    if (topDesc) topDesc.textContent = "Compare versions, verify checksum, and download the official package on your own terms.";
+    if (actionsUpdates) actionsUpdates.hidden = false;
+    window.__superagentUpdatesRefresh?.();
   } else if (target === "settings") {
     if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
     if (topTitle) topTitle.textContent = "Tray Settings";
@@ -570,6 +578,9 @@ function install() {
   });
   window.__TAURI__?.event?.listen?.("desktop-open-lan-devices", () => {
     navigateToPage("lan-devices");
+  });
+  window.__TAURI__?.event?.listen?.("desktop-open-updates", () => {
+    navigateToPage("updates");
   });
   window.__TAURI__?.event?.listen?.("desktop-open-settings", () => {
     navigateToPage("settings");

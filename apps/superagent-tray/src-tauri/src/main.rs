@@ -28,6 +28,7 @@ mod runtime_detection;
 mod tray_settings;
 mod tray_lifecycle;
 mod lifecycle_console;
+mod release_updates;
 
 /// Reads the installed binary version from the Tauri package metadata.
 #[tauri::command]
@@ -1468,6 +1469,7 @@ fn main() {
                 MenuItem::with_id(app, "lan_devices", "🖧 LAN Devices", true, None::<&str>)?;
             let add = MenuItem::with_id(app, "add", "➕ New Reminder", true, None::<&str>)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
+            let updates = MenuItem::with_id(app, "updates", "⬇ Check for Updates", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "⚙️ Tray Settings", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
             let quit = MenuItem::with_id(app, "quit", "Quit SuperAgent Tray", true, None::<&str>)?;
@@ -1485,6 +1487,7 @@ fn main() {
                 &lan_devices,
                 &add,
                 &sep1,
+                &updates,
                 &settings,
                 &sep2,
                 &quit,
@@ -1532,6 +1535,10 @@ fn main() {
                     "lan_devices" => {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-lan-devices", ());
+                    }
+                    "updates" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-updates", ());
                     }
                     "settings" => {
                         show_main(app, false);
@@ -1602,6 +1609,8 @@ fn main() {
             get_tray_settings,
             get_tray_version,
             get_tray_build_number,
+            release_updates::check_release_updates,
+            release_updates::download_release_update,
             set_tray_settings,
             get_muse_telegram_settings,
             set_muse_telegram_settings,

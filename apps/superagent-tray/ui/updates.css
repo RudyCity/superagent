@@ -1,0 +1,21 @@
+/* Hallmark · pre-emit critique: P4 H4 E5 S5 R5 V4 */
+/* Updates panel inherits existing SuperAgent Tray tokens; no new global theme. */
+.update-intro, .update-components { margin-bottom: 16px; }
+.update-version-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 0 20px 20px; }
+.update-version-item { display:flex; flex-direction:column; gap:8px; min-width:0; padding:16px; border:1px solid var(--border-medium); background:var(--bg-surface-raised); border-radius:var(--radius-lg); }
+.update-version-item strong { color:var(--text-primary); font-size:20px; line-height:1.2; overflow-wrap:anywhere; font-variant-numeric:tabular-nums; }
+.update-version-item small, .update-muted, .update-security-note, .update-downloaded small { color:var(--text-secondary); line-height:1.55; }
+.update-action-row { display:flex; align-items:center; gap:14px; flex-wrap:wrap; padding:0 20px 16px; }
+.update-action-row button { min-width:190px; }
+.update-action-row button:focus-visible, #updates-check:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.update-action-row button:disabled { cursor:not-allowed; opacity:.65; }
+.update-feedback { min-height:22px; padding:0 20px 18px; color:var(--text-secondary); }
+.update-feedback[data-state="error"] { color:var(--danger); }
+.update-component-list { display:flex; flex-wrap:wrap; gap:9px; padding:4px 20px 18px; }
+.update-component { padding:8px 12px; border-radius:6px; border:1px solid var(--border-medium); background:var(--bg-surface-raised); color:var(--text-primary); font-size:12px; font-weight:550; }
+.update-security-note { padding:0 20px; font-size:12px; }
+.update-downloaded { margin:0 20px 20px; padding:15px; border:1px solid var(--border-medium); border-radius:var(--radius-lg); background:var(--bg-surface-raised); }
+.update-downloaded p { margin:6px 0; }
+.update-path { color:var(--text-primary); overflow-wrap:anywhere; user-select:text; font-family:var(--font-mono,monospace); }
+.update-release-link { display:inline-flex; margin:4px 20px 22px; }
+@media (max-width:760px) { .update-version-grid { grid-template-columns:1fr; } .update-action-row button { width:100%; } }

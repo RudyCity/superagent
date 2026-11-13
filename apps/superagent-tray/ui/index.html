@@ -17,6 +17,8 @@
   <script src="./lifecycle.js" defer></script>
   <link rel="stylesheet" href="./lifecycle.css" />
   <script src="./settings.js" defer></script>
+  <script src="./updates.js" defer></script>
+  <link rel="stylesheet" href="./updates.css" />
   <script src="./logs.js" defer></script>
   <script src="./delegate.js" defer></script>
   <script src="./delegate-multitab.js" defer></script>
@@ -129,6 +131,13 @@
           </svg>
           <span>LAN Devices</span>
         </a>
+        <a class="nav-link" href="#updates" data-page="updates" id="nav-updates">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 3v12m-4-4 4 4 4-4"></path>
+            <path d="M4 17v3h16v-3"></path>
+          </svg>
+          <span>Updates &amp; Releases</span>
+        </a>
       </nav>
 
       <!-- Pinned settings navigation -->
@@ -199,6 +208,11 @@
               </svg>
               <span>New Schedule</span>
             </button>
+          </div>
+
+          <!-- Release update checks are initiated only by the operator -->
+          <div id="actions-updates" class="action-group" hidden>
+            <button type="button" id="updates-check" class="button primary">Check Releases</button>
           </div>
 
           <!-- Runtime Page Actions -->
@@ -954,6 +968,59 @@
       </div>
 
       <!-- ================= PAGE 4: TRAY SETTINGS ================= -->
+      <!-- Verified release discovery and manual update download, never unattended installation -->
+      <div id="page-updates" class="page-view" hidden>
+        <section class="panel update-intro" aria-labelledby="updates-heading">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">SIGNED-OFF RELEASE CHANNEL</div>
+              <h2 id="updates-heading">Updates &amp; Releases</h2>
+              <p>Compare this installed Tray with the latest official release. Downloads are checksum-verified and never installed or applied automatically.</p>
+            </div>
+            <span id="updates-state" class="stat-chip" aria-live="polite">Not checked</span>
+          </div>
+          <div class="update-version-grid">
+            <article class="update-version-item">
+              <span class="stat-label">INSTALLED TRAY</span>
+              <strong id="updates-current-version">—</strong>
+              <small>Version reported by this native executable</small>
+            </article>
+            <article class="update-version-item">
+              <span class="stat-label">PUBLISHED RELEASE</span>
+              <strong id="updates-release-version">—</strong>
+              <small id="updates-release-tag">Verified official GitHub prerelease only</small>
+            </article>
+            <article class="update-version-item">
+              <span class="stat-label">TARGET PLATFORM</span>
+              <strong id="updates-platform">—</strong>
+              <small id="updates-asset">No installer selected</small>
+            </article>
+          </div>
+          <div class="update-action-row">
+            <button type="button" id="updates-download" class="button primary" disabled>Download verified installer</button>
+            <span id="updates-download-size" class="update-muted">Manual download · No automatic restart</span>
+          </div>
+          <p id="updates-feedback" class="update-feedback" role="status" aria-live="polite">Select Check Releases to verify the latest published package.</p>
+          <div id="updates-downloaded" class="update-downloaded" hidden>
+            <div class="panel-eyebrow">DOWNLOAD VERIFIED</div>
+            <p id="updates-downloaded-path" class="update-path"></p>
+            <small>SHA-256 verified. Open this file manually when ready; no active Core, MCP, Delegate, tunnel or Tray process was interrupted.</small>
+          </div>
+        </section>
+        <section class="panel update-components">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">RELEASE INVENTORY</div>
+              <h2>Published components</h2>
+              <p>Availability comes from verified release metadata. Chrome extensions, LAN and Android packages use separate installation and pairing workflows.</p>
+            </div>
+          </div>
+          <div id="updates-components" class="update-component-list" aria-live="polite">Check releases to see the current inventory.</div>
+          <p class="update-security-note">Security: downloads use the official RudyCity/superagent release, a fixed OS-specific filename, exact asset size, and SHA-256. Installing or promoting a new binary requires a separate operator action; recovery and rollback ownership gates remain unchanged.</p>
+          <a class="support-link update-release-link" href="https://github.com/RudyCity/superagent/releases" target="_blank" rel="noopener noreferrer">View official GitHub Releases ↗</a>
+        </section>
+      </div>
+
       <div id="page-settings" class="page-view" hidden>
         <section class="panel tray-settings-panel" aria-labelledby="settings-title">
           <div class="panel-head">

@@ -31,6 +31,14 @@ The [GitHub Releases page](https://github.com/RudyCity/superagent/releases) now 
 
 **[Browse published GitHub Releases](https://github.com/RudyCity/superagent/releases)**. Generated files under `artifacts/` are intentionally Git-ignored; build output alone is not a published release.
 
+### Verified desktop update checks (new in source; not yet shipped in v1.14.83-rc.2)
+
+The Tray desktop app now has **Updates & Releases** in the sidebar and **Check for Updates** in the native tray menu. It checks the official GitHub release inventory, compares the running Tray version, identifies the installer for Windows x64, macOS Apple Silicon or Linux x64, validates the published SHA-256 manifest, and displays which Chrome/LAN/Android packages are present.
+
+Choose **Download verified installer** only after reviewing the package. The native updater downloads into `~/Downloads/SuperAgent/updates/` (Windows: `%USERPROFILE%\\Downloads\\SuperAgent\\updates\\`), validates its exact published byte size and SHA-256 while streaming, re-checks the release tag and checksum immediately before download, and refuses substituted, duplicated, incomplete or corrupted files. It never installs a package, runs shell commands, changes OAuth credentials, restarts Core/MCP/Delegate/Tray, or performs an automatic rollback. On Linux the managed download is the AppImage; DEB and other components remain accessible through the official Releases page.
+
+**Important:** this feature currently exists on `main`, so the already-published `v1.14.83-rc.2` installer does not contain it. It must pass the normal multi-OS release gates and be included in a subsequent approved installer before users can access it from an installed Tray. Unsigned/unnotarized prereleases, Chrome MV3 Developer Mode, LAN/Android preview installation, and physical-device validation remain separate release/security gates. See the [update system guide](docs/guides/verified-update-system.md).
+
 ### Windows installer: verify before running
 
 Download `SuperAgent_1.14.83_x64-setup.exe` and `SHA256SUMS.txt` from the [unified v1.14.83-rc.2 prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.83-rc.2). Verify the installer:
