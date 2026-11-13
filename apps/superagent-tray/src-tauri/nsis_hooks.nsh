@@ -8,10 +8,50 @@ ${UnStrRep}
 !macro NSIS_HOOK_PREINSTALL
   ; Gracefully stop running SuperAgent processes and background Core services before updating files
   DetailPrint "Stopping existing SuperAgent processes..."
-  nsExec::Exec 'taskkill.exe /F /IM superagent-tray.exe /T'
-  nsExec::Exec 'taskkill.exe /F /IM superagent.exe /T'
-  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { ($$_.Name -like ''*bun*'' -or $$_.Name -like ''*superagent*'' -or $$_.Name -like ''*node*'') -and ($$_.CommandLine -like ''*$INSTDIR*'' -or $$_.ExecutablePath -like ''*$INSTDIR*'') } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
-  Sleep 1200
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM superagent-tray.exe /T'
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM superagent.exe /T'
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM bun.exe /T'
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process -Name superagent-tray, superagent, bun -ErrorAction SilentlyContinue | Stop-Process -Force"'
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process | Where-Object { try { $$_.Path -like ''*$INSTDIR*'' } catch { $$false } } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+
+  ; Verify that superagent-tray.exe has released file locks before proceeding
+  ${If} ${FileExists} "$INSTDIR\superagent-tray.exe"
+    StrCpy $R9 0
+    loop_wait_tray:
+      ClearErrors
+      FileOpen $R8 "$INSTDIR\superagent-tray.exe" a
+      ${IfNot} ${Errors}
+        FileClose $R8
+        Goto tray_unlocked
+      ${EndIf}
+      nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM superagent-tray.exe /T'
+      Sleep 500
+      IntOp $R9 $R9 + 1
+      ${If} $R9 < 10
+        Goto loop_wait_tray
+      ${EndIf}
+    tray_unlocked:
+  ${EndIf}
+
+  ${If} ${FileExists} "$INSTDIR\bun.exe"
+    StrCpy $R9 0
+    loop_wait_bun:
+      ClearErrors
+      FileOpen $R8 "$INSTDIR\bun.exe" a
+      ${IfNot} ${Errors}
+        FileClose $R8
+        Goto bun_unlocked
+      ${EndIf}
+      nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM bun.exe /T'
+      Sleep 500
+      IntOp $R9 $R9 + 1
+      ${If} $R9 < 6
+        Goto loop_wait_bun
+      ${EndIf}
+    bun_unlocked:
+  ${EndIf}
+
+  Sleep 500
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -31,10 +71,12 @@ ${UnStrRep}
 
 !macro NSIS_HOOK_PREUNINSTALL
   DetailPrint "Stopping active SuperAgent processes before uninstall..."
-  nsExec::Exec 'taskkill.exe /F /IM superagent-tray.exe /T'
-  nsExec::Exec 'taskkill.exe /F /IM superagent.exe /T'
-  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-CimInstance Win32_Process | Where-Object { ($$_.Name -like ''*bun*'' -or $$_.Name -like ''*superagent*'' -or $$_.Name -like ''*node*'') -and ($$_.CommandLine -like ''*$INSTDIR*'' -or $$_.ExecutablePath -like ''*$INSTDIR*'') } | ForEach-Object { Stop-Process -Id $$_.ProcessId -Force -ErrorAction SilentlyContinue }"'
-  Sleep 1200
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM superagent-tray.exe /T'
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM superagent.exe /T'
+  nsExec::Exec '"$SYSDIR\taskkill.exe" /F /IM bun.exe /T'
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process -Name superagent-tray, superagent, bun -ErrorAction SilentlyContinue | Stop-Process -Force"'
+  nsExec::Exec 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Get-Process | Where-Object { try { $$_.Path -like ''*$INSTDIR*'' } catch { $$false } } | Stop-Process -Force -ErrorAction SilentlyContinue"'
+  Sleep 1000
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
