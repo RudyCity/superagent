@@ -22,7 +22,7 @@ The updater is intentionally **not** an unattended install engine. Native instal
 | `android-lan` | `SuperAgent-LAN-Android-<version>-debug.apk` | Debug-signed APK transferable from desktop | Copy to phone, approve installation in Android. An incompatible signature may prevent an in-place update; preserve local data |
 | `windows-lan` | `SuperAgent-LAN-Client-<version>-Windows-x64-setup.exe` | Separate Windows receiver installer | Install on target standard-user Windows session when no file transfer is active; owner pairing remains required |
 
-The current-host package is shown once (the host-specific entry is not duplicated among transferable installer rows). The UI does **not** infer the installed version of Chrome extensions, Android apps, or LAN Client from the running Tray version. Until a separately authenticated on-device version source is available, these rows display **Installed version unknown**. Unknown does **not** mean a newer version is definitely available.
+The current-host package is shown once (the host-specific entry is not duplicated among transferable installer rows). When built from a release tag, `build.rs` embeds the matching `SUPERAGENT_RELEASE_TAG` into the native binary, allowing exact RC ordering. An untagged/development binary sharing the same base version is **build provenance unverified**, never silently assumed up to date. The UI does **not** infer the installed version of Chrome extensions, Android apps, or LAN Client from the running Tray version. Until a separately authenticated on-device version source is available, these rows display **Installed version unknown**. Unknown does **not** mean a newer version is definitely available.
 
 ## Secure check and independent download flow
 

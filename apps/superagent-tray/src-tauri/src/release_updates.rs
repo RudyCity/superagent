@@ -34,6 +34,7 @@ struct ReleaseRecord {
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseUpdateStatus {
     current_version: String,
+    installed_release_tag: Option<String>,
     release_version: String,
     tag: String,
     release_url: String,
@@ -111,6 +112,31 @@ fn latest<'a>(all: &'a [ReleaseRecord]) -> Option<&'a ReleaseRecord> {
         .filter(|r| !r.draft && r.prerelease && release_order(&r.tag_name).is_some())
         .max_by_key(|r| release_order(&r.tag_name).unwrap())
 }
+fn release_state(
+    installed_version: &str,
+    release_version: &str,
+    published_tag: &str,
+    installed_tag: Option<&str>,
+) -> &'static str {
+    match version_order(installed_version)
+        .zip(version_order(release_version))
+        .map(|(installed, published)| installed.cmp(&published))
+    {
+        Some(std::cmp::Ordering::Less) => "update_available",
+        Some(std::cmp::Ordering::Greater) => "installed_newer",
+        Some(std::cmp::Ordering::Equal) => match installed_tag.and_then(release_order) {
+            Some(installed) => match release_order(published_tag) {
+                Some(published) if installed < published => "update_available",
+                Some(published) if installed == published => "same_version",
+                Some(published) if installed > published => "installed_newer",
+                _ => "build_unverified",
+            },
+            None => "build_unverified",
+        },
+        None => "unknown_installed_version",
+    }
+}
+
 fn target_package(os: &str, arch: &str, version: &str) -> Option<(String, String)> {
     match (os, arch) {
         ("windows", "x86_64") => Some((
@@ -335,15 +361,12 @@ fn component_catalog(
     let sidepanel = versioned_asset(release, "superagent-sidepanel-", ".zip")?;
     let android = versioned_asset(release, "SuperAgent-LAN-Android-", "-debug.apk")?;
     let lan = versioned_asset(release, "SuperAgent-LAN-Client-", "-Windows-x64-setup.exe")?;
-    let core_relation = version_order(current_version)
-        .zip(version_order(release_version))
-        .map(|(installed, published)| installed.cmp(&published));
-    let core_state = match core_relation {
-        Some(std::cmp::Ordering::Less) => "update_available",
-        Some(std::cmp::Ordering::Equal) => "same_version",
-        Some(std::cmp::Ordering::Greater) => "installed_newer",
-        None => "unknown_installed_version",
-    };
+    let core_state = release_state(
+        current_version,
+        release_version,
+        &release.tag_name,
+        option_env!("SUPERAGENT_RELEASE_TAG"),
+    );
     let candidates = vec![
         ("superagent", "SuperAgent Tray + Core + CLI", core,
             platform.as_ref().map(|p|p.0.as_str()).unwrap_or("Unsupported architecture"),
@@ -467,7 +490,7 @@ async fn resolve(
     let sha256 = primary.sha256.clone();
     let download_supported = primary.available;
     Ok((ReleaseUpdateStatus {
-        current_version,release_version:version,
+        current_version,installed_release_tag:option_env!("SUPERAGENT_RELEASE_TAG").map(str::to_string),release_version:version,
         tag:release.tag_name.clone(),release_url:format!("{RELEASE_URL}{}",release.tag_name),
         platform:platform.map(|x|x.0).unwrap_or("Unsupported OS/architecture".into()),
         state,asset_name,asset_size,sha256,components:catalog(release),
@@ -799,6 +822,29 @@ mod tests {
         assert!(valid_confirmation("v1.14.83-rc.2", &"b".repeat(64)).is_ok());
         assert!(valid_confirmation("v1.14.83-rc.2/../../", &"b".repeat(64)).is_err());
         assert!(valid_confirmation("v1.14.83-rc.2", "malformed").is_err());
+    }
+    #[test]
+    fn release_candidate_provenance_prevents_false_same_version() {
+        assert_eq!(
+            release_state("1.14.83", "1.14.83", "v1.14.83-rc.3", None),
+            "build_unverified"
+        );
+        assert_eq!(
+            release_state("1.14.83", "1.14.83", "v1.14.83-rc.3", Some("v1.14.83-rc.2")),
+            "update_available"
+        );
+        assert_eq!(
+            release_state("1.14.83", "1.14.83", "v1.14.83-rc.3", Some("v1.14.83-rc.3")),
+            "same_version"
+        );
+        assert_eq!(
+            release_state("1.14.83", "1.14.83", "v1.14.83-rc.3", Some("v1.14.83-rc.4")),
+            "installed_newer"
+        );
+        assert_eq!(
+            release_state("1.14.84", "1.14.83", "v1.14.83-rc.3", None),
+            "installed_newer"
+        );
     }
     #[test]
     fn target_packages_are_pinned_for_each_supported_architecture() {

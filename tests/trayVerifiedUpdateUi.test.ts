@@ -87,6 +87,8 @@ describe("Unified verified component updates",()=>{
     expect(native).toContain("UPDATE_RELEASE_CHANGED_SINCE_REVIEW");
     expect(native).toContain("UPDATE_DOWNLOAD_HASH_OR_SIZE_MISMATCH");
     expect(native).toContain("UPDATE_COMPONENT_NOT_ALLOWED");
+    expect(native).toContain("SUPERAGENT_RELEASE_TAG");
+    expect(fs.readFileSync("apps/superagent-tray/src-tauri/build.rs", "utf8")).toContain("SUPERAGENT_RELEASE_TAG");
     expect(native).toContain("fs::hard_link");
     expect(native).not.toContain("Command::new");
     expect(script).not.toContain(".innerHTML");

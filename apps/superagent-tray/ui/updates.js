@@ -64,6 +64,7 @@
       const flag = element("span", "update-component-state", !item.available ? "Not in release" :
         item.state === "update_available" ? "Update available" :
         item.state === "same_version" ? "Version matches" :
+        item.state === "build_unverified" ? "Build provenance unknown" :
         item.state === "installed_newer" ? "Installed version newer" :
         "Installed version not detected");
       title.append(heading, flag);
@@ -90,7 +91,9 @@
   }
   function draw(info) {
     snapshot = info;
-    byId("updates-current-version").textContent = info.currentVersion || "Unknown";
+    byId("updates-current-version").textContent = info.installedReleaseTag
+      ? `${info.currentVersion || "Unknown"} · ${info.installedReleaseTag}`
+      : info.currentVersion || "Unknown";
     byId("updates-release-version").textContent = info.releaseVersion || "Unknown";
     byId("updates-release-tag").textContent = info.tag || "No release tag";
     byId("updates-platform").textContent = info.platform || "Unsupported platform";
@@ -99,7 +102,8 @@
       update_available: "Update available",
       same_version: "Version matches",
       installed_newer: "Development build",
-      unknown_installed_version: "Version unknown"
+      unknown_installed_version: "Version unknown",
+      build_unverified: "Build provenance unverified"
     }[info.state] || "Release checked";
     const size = byId("updates-download-size");
     if (size) {
@@ -123,6 +127,7 @@
     if (!info.downloadSupported) message("No main installer for this OS/architecture; individual companion packages may still be available below.");
     else if (info.state === "same_version") message("Main Tray version matches; each companion component can be downloaded independently.");
     else if (info.state === "installed_newer") message("This Tray is newer than the published release. Companion versions remain independently managed.");
+    else if (info.state === "build_unverified") message("The base version matches, but this running binary has no verified release tag. You can download the official package manually.");
     else message("Published release and individual checksums verified. Review each component before downloading.");
     if (download) download.disabled = !info.downloadSupported;
   }
