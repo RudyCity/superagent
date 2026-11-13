@@ -337,4 +337,83 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       fs.rmSync(mcpOwnerLogPath(port), {force:true});
     }
   }, 70_000);
+  it("activates a manifest-verified side-by-side backend without touching URL, old sessions or tunnel", async () => {
+    // The disposable bundle stays beneath this checkout so its package imports
+    // can resolve the checkout's development dependencies; no live profile is used.
+    const profile = fs.mkdtempSync(path.join(process.cwd(), ".mcp-release-integration-"));
+    const previousConfig = process.env.SUPERAGENT_CONFIG_DIR;
+    process.env.SUPERAGENT_CONFIG_DIR = profile;
+    const incoming = path.join(profile, "incoming");
+    let owner: Awaited<ReturnType<typeof startReloadableMcpTunnelOwner>> | undefined;
+    let old: Client | undefined;
+    let fresh: Client | undefined;
+    const port = await nextPort();
+    const nonce = "d".repeat(64);
+    try {
+      fs.mkdirSync(incoming,{recursive:true});
+      fs.cpSync(path.resolve("dist"),path.join(incoming,"dist"),{recursive:true});
+      fs.copyFileSync("package.json",path.join(incoming,"package.json"));
+      const {inspectCoreBuild} = await import("../src/core/runtime/coreBuildIdentity.js");
+      const {backendReleaseDirectory} = await import("../src/core/runtime/mcpBackendReleasePolicy.js");
+      const digest=inspectCoreBuild(path.join(incoming,"dist","cli.js"),{requireFreshCompiled:true}).digest;
+      const releaseRoot=backendReleaseDirectory(digest,profile);
+      fs.mkdirSync(path.dirname(releaseRoot),{recursive:true});
+      fs.renameSync(incoming,releaseRoot);
+      owner=await startReloadableMcpTunnelOwner({
+        port,nonce,createdAt:Date.now(),cliEntry:path.resolve("dist/cli.js"),
+        authMode:"static-bearer",allowDangerous:false,
+      });
+      const root="http://127.0.0.1:"+port;
+      const ctl=(url:string,method:"GET"|"POST"="GET",token=nonce)=>
+        fetch(root+"/_internal/owner/"+url,{
+          method,headers:{Authorization:"Bearer "+token},
+        });
+      const client=async()=>{
+        const c=new Client({name:"release-upgrade-test",version:"1.0.0"},{capabilities:{}});
+        await c.connect(new StreamableHTTPClientTransport(new URL(root+"/mcp"),{
+          requestInit:{headers:{Authorization:"Bearer "+owner!.info.bearerToken}},
+        }));
+        return c;
+      };
+      old=await client();
+      const before=await (await ctl("status")).json();
+      expect((await ctl("backend/plan?digest="+digest,"GET","wrong")).status).toBe(401);
+      expect((await ctl("backend/plan?digest="+"0".repeat(64))).status).toBe(409);
+      const plan=await (await ctl("backend/plan?digest="+digest)).json();
+      expect(plan).toMatchObject({ready:true,ownerPid:before.pid,
+        expectedBackendPid:before.backendPid,publicUrl:owner.info.publicUrl,
+        noTunnelRestart:true,noImplicitReplay:true,digest});
+      const params=(pid:number,reviewed="1")=>"backend/activate?"+new URLSearchParams({
+        digest,expectedBackendPid:String(pid),expectedPublicUrl:owner!.info.publicUrl,reviewed,
+      });
+      expect((await ctl(params(before.backendPid,"0"),"POST")).status).toBe(409);
+      expect((await ctl(params(before.backendPid+1),"POST")).status).toBe(409);
+      const still=await (await ctl("status")).json();
+      expect(still.backendPid).toBe(before.backendPid);
+      const response=await ctl(params(before.backendPid),"POST");
+      expect(response.status).toBe(200);
+      const rolled=await response.json();
+      expect(rolled).toMatchObject({success:true,previousPid:before.backendPid,
+        releaseDigest:digest,url:owner.info.publicUrl});
+      expect(rolled.pid).not.toBe(before.backendPid);
+      const after=await (await ctl("status")).json();
+      expect(after).toMatchObject({pid:before.pid,startedAt:before.startedAt,
+        publicUrl:before.publicUrl,backendPid:rolled.pid,backendReleaseDigest:digest,
+        backendGenerations:2});
+      expect((await old.listTools()).tools.map(t=>t.name)).toContain("superagent_delegate_read_chat");
+      fresh=await client();
+      expect((await fresh.listTools()).tools.map(t=>t.name)).toContain("superagent_delegate_read_chat");
+      expect(mock.startQuickTunnel).toHaveBeenCalledTimes(1);
+      expect(mock.stopQuickTunnel).not.toHaveBeenCalled();
+    }finally{
+      await fresh?.close().catch(()=>undefined);
+      await old?.close().catch(()=>undefined);
+      await owner?.close();
+      fs.rmSync(getMcpStateFile(port),{force:true});
+      fs.rmSync(mcpOwnerLogPath(port),{force:true});
+      if(previousConfig===undefined)delete process.env.SUPERAGENT_CONFIG_DIR;
+      else process.env.SUPERAGENT_CONFIG_DIR=previousConfig;
+      fs.rmSync(profile,{recursive:true,force:true});
+    }
+  }, 90_000);
 });

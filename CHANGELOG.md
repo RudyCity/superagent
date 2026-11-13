@@ -1,3 +1,9 @@
+## [1.14.87] - 2026-11-14
+### Version-addressed backend release handoff without MCP URL rotation
+- Allow explicitly reviewed plan/activate of a complete, compiled-manifest-verified side-by-side MCP backend bundle through the existing localhost nonce-authenticated owner, with expected owner/backend PID and exact public URL checks.
+- Require backend IPC protocol compatibility; keep old sessions and Cloudflare Quick Tunnel/owner untouched on successful or rejected candidate handoff; never auto-replay MCP calls.
+- Add strict candidate-path/digest policy, operator CLI, isolated tunnel integration, and an operational guide documenting that owner/tunnel process upgrades remain blocked until a separately proven anchor migration.
+
 ## [1.14.86] - 2026-11-14
 ### Stabilize Gemini MCP session-affinity and private heartbeat telemetry
 - Refresh backend health over private IPC every 5 seconds, retaining 60-second memory-trend sampling, and reconcile owner session IDs against authoritative backend IDs while guarding in-flight SSE/tool requests.

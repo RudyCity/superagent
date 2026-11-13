@@ -30,6 +30,7 @@ import {
   type MemoryTrendAssessment, type MemoryTrendSample,
 } from "./memoryTrend.js";
 import { decideMcpMemoryRecovery } from "./mcpMemoryRecoveryPolicy.js";
+import { verifyMcpBackendRelease, type VerifiedMcpBackendRelease } from "./mcpBackendReleasePolicy.js";
 import { findOrphanedMcpAffinities } from "./mcpSessionReconcile.js";
 
 const WORKER_START_MS = 30_000;
@@ -101,8 +102,8 @@ function createReloadWorker(
       if (m?.type === "mcp-reload-worker-error") {
         finish(new Error("MCP backend refused startup: " + m.message));
       }
-      if (m?.type === "mcp-reload-worker-ready" && Number.isSafeInteger(m.port) &&
-          m.port > 0 && m.port <= 65535) {
+      if (m?.type === "mcp-reload-worker-ready" && m.protocolVersion === 1 &&
+          Number.isSafeInteger(m.port) && m.port > 0 && m.port <= 65535) {
         const ready: BackendGeneration = {
           child, pid: child.pid!, port: m.port,
           sessions: new Set(), inFlight: 0, retireAt: null, alive: true,
@@ -141,6 +142,8 @@ export async function startReloadableMcpTunnelOwner(
   }
 
   let current: BackendGeneration | undefined;
+  let activeBackendEntry = path.resolve(opts.cliEntry);
+  let activeReleaseDigest: string | null = null;
   const generations = new Set<BackendGeneration>();
   const sessions = new Map<string, BackendGeneration>();
   const sessionRegisteredAt = new Map<string, number>();
@@ -424,8 +427,8 @@ export async function startReloadableMcpTunnelOwner(
     }
   }
 
-  async function launch(): Promise<BackendGeneration> {
-    const gen = await createReloadWorker(opts.cliEntry, {
+  async function launch(entry = activeBackendEntry): Promise<BackendGeneration> {
+    const gen = await createReloadWorker(entry, {
       port: opts.port, publicBaseUrl: baseUrl,
       authMode: opts.authMode,
       allowDangerous: opts.allowDangerous,
@@ -452,7 +455,7 @@ export async function startReloadableMcpTunnelOwner(
     generations.add(gen);
     return gen;
   }
-  async function reload(): Promise<{success: boolean; pid: number; previousPid: number | null; url: string}> {
+  async function reload(candidate?: VerifiedMcpBackendRelease, expectedBackendPid?: number): Promise<{success: boolean; pid: number; previousPid: number | null; url: string; releaseDigest: string | null}> {
     if (reloading || closing || draining || rotatingBootstrap) {
       record("backend_reload_failed", {backendPid:current?.pid, code:"MCP_RELOAD_BUSY_OR_DRAINING"});
       throw new Error("MCP_RELOAD_BUSY_OR_DRAINING");
@@ -465,13 +468,18 @@ export async function startReloadableMcpTunnelOwner(
       record("backend_reload_failed", {code:"MCP_RELOAD_NO_BACKEND"});
       throw new Error("MCP_RELOAD_NO_BACKEND");
     }
+    if (candidate && (!Number.isSafeInteger(expectedBackendPid) ||
+        current.pid !== expectedBackendPid)) throw new Error("MCP_RELEASE_BACKEND_PID_CHANGED");
     reloading = true;
     const started = Date.now();
     record("backend_reload_started", {backendPid:current.pid});
     try {
       // Stage the next generation before modifying the serving generation.
       const expectedBootstrapHash = bootCodeHash;
-      const next = await launch();
+      // The release candidate is re-hashed at activation, after the owner
+      // serializes mutations, so an old plan cannot select changed bytes.
+      const selected = candidate ? verifyMcpBackendRelease(candidate.digest) : null;
+      const next = await launch(selected?.entry ?? activeBackendEntry);
       // A successful approval might consume the code while next was starting.
       if (opts.authMode === "oauth" && expectedBootstrapHash !== bootCodeHash) {
         await setBootstrapHash(next, bootCodeHash);
@@ -488,6 +496,10 @@ export async function startReloadableMcpTunnelOwner(
       }
       previous.retireAt = Date.now() + OLD_GENERATION_TTL;
       current = next;
+      if (selected) {
+        activeBackendEntry = selected.entry;
+        activeReleaseDigest = selected.digest;
+      }
       reloadCount++;
       lastReloadAt = Date.now();
       retireOld();
@@ -497,7 +509,7 @@ export async function startReloadableMcpTunnelOwner(
         durationMs:Date.now()-started,
       });
       return { success: true, pid: next.pid, previousPid: previous.pid,
-        url: baseUrl + "/mcp" };
+        url: baseUrl + "/mcp", releaseDigest: activeReleaseDigest };
     } catch (error) {
       const match = error instanceof Error ? error.message.match(/^MCP_[A-Z0-9_]+/) : null;
       record("backend_reload_failed", {
@@ -584,6 +596,7 @@ export async function startReloadableMcpTunnelOwner(
       },
       reloadable: true, publicUrl: baseUrl ? baseUrl + "/mcp" : "",
       backendGeneration:reloadCount + 1, lastReloadAt:lastReloadAt ?? null,
+      backendReleaseDigest:activeReleaseDigest,
     };
   }
 
@@ -632,6 +645,49 @@ export async function startReloadableMcpTunnelOwner(
           res.writeHead(409, {"Content-Type":"application/json", "Cache-Control":"no-store"});
           res.end(JSON.stringify({error: error instanceof Error ? error.message : "MCP_RELOAD_FAILED"}));
         }); return;
+      }
+      // Strict private control plane: never expose release file paths or
+      // operator-controlled upgrade switches on /mcp or public OAuth routes.
+      if (pathname === "/_internal/owner/backend/plan" && req.method === "GET") {
+        try {
+          const digest = new URL(url, "http://127.0.0.1").searchParams.get("digest") || "";
+          const candidate = verifyMcpBackendRelease(digest);
+          if (!current?.alive || reloading || draining || closing || rotatingBootstrap)
+            throw new Error("MCP_RELEASE_OWNER_NOT_READY");
+          res.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+          res.end(JSON.stringify({ready:true, digest:candidate.digest, fileCount:candidate.fileCount,
+            ownerPid:process.pid, expectedBackendPid:current.pid, publicUrl:baseUrl + "/mcp",
+            noTunnelRestart:true, noImplicitReplay:true}));
+        } catch (error) {
+          res.writeHead(409, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+          res.end(JSON.stringify({error:error instanceof Error ? error.message : "MCP_RELEASE_PLAN_FAILED"}));
+        }
+        return;
+      }
+      if (pathname === "/_internal/owner/backend/activate" && req.method === "POST") {
+        const p = new URL(url, "http://127.0.0.1").searchParams;
+        const digest = p.get("digest") || "";
+        const expectedBackendPid = Number(p.get("expectedBackendPid"));
+        const expectedPublicUrl = p.get("expectedPublicUrl");
+        if (!Number.isSafeInteger(expectedBackendPid) || expectedBackendPid <= 0 ||
+            expectedPublicUrl !== baseUrl + "/mcp" || p.get("reviewed") !== "1") {
+          res.writeHead(409, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+          res.end(JSON.stringify({error:"MCP_RELEASE_REVIEW_OR_IDENTITY_REQUIRED"})); return;
+        }
+        try {
+          const candidate = verifyMcpBackendRelease(digest);
+          void reload(candidate, expectedBackendPid).then(out => {
+            res.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+            res.end(JSON.stringify(out));
+          }).catch(error => {
+            res.writeHead(409, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+            res.end(JSON.stringify({error:error instanceof Error ? error.message : "MCP_RELEASE_ACTIVATE_FAILED"}));
+          });
+        } catch (error) {
+          res.writeHead(409, {"Content-Type":"application/json", "Cache-Control":"no-store"});
+          res.end(JSON.stringify({error:error instanceof Error ? error.message : "MCP_RELEASE_UNVERIFIED"}));
+        }
+        return;
       }
       if (pathname === "/_internal/owner/stop" && req.method === "POST") {
         const force = new URL(url,"http://127.0.0.1").searchParams.get("force") === "1";

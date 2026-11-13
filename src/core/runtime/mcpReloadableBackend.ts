@@ -30,7 +30,7 @@ export type BackendWorkerRequest = {
 };
 
 export type BackendWorkerReply =
-  | { type: "mcp-reload-worker-ready"; port: number; oauthStatePersistent: boolean }
+  | { type: "mcp-reload-worker-ready"; protocolVersion: 1; port: number; oauthStatePersistent: boolean }
   | { type: "mcp-reload-worker-error"; message: string }
   | { type: "mcp-reload-worker-bootstrap-rotated"; requestId: string }
   | { type: "mcp-reload-worker-bootstrap-consumed"; hash: string }
@@ -196,6 +196,7 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
         rotateBootstrapHash = result.rotateBootstrapHash;
         process.send?.({
           type: "mcp-reload-worker-ready",
+          protocolVersion: 1,
           port: handle.port,
           oauthStatePersistent: result.oauthStatePersistent,
         } satisfies BackendWorkerReply);
