@@ -933,6 +933,21 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
         }
     }
 
+    // Core is not responding on port. Clean up any stale state files before starting fresh.
+    if let Ok(dir) = config_dir() {
+        let stale_files = [
+            dir.join(format!("core-checkpoint-{}.json", port)),
+            dir.join(format!("core-supervisor-{}.json", port)),
+            dir.join(format!("server-info-{}.json", port)),
+            dir.join("server-info.json"),
+        ];
+        for f in &stale_files {
+            if f.exists() {
+                let _ = std::fs::remove_file(f);
+            }
+        }
+    }
+
     let (exe, extra_args) = find_superagent_executable()?;
     let mut cmd = Command::new(&exe);
     for arg in extra_args {
@@ -998,38 +1013,31 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
             }
         }
     }
+    let mut log_tail = String::new();
+    if let Some(ref path) = log_file {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            let lines: Vec<&str> = content.lines().rev().take(6).collect();
+            if !lines.is_empty() {
+                let mut rev = lines;
+                rev.reverse();
+                log_tail = format!(": {}", rev.join(" | "));
+            }
+        }
+    }
+
     Err(format!(
-        "SuperAgent Core server (PID {}) failed to respond on port {} within 7s. Check logs in ~/.superagent-r/superagent-server.log",
-        pid, port
+        "SuperAgent Core server (PID {}) failed to respond on port {} within 7s{}",
+        pid, port, log_tail
     ))
 }
 
-#[tauri::command]
-async fn start_core_server(port: Option<u16>) -> Result<Value, String> {
-    let target = port.unwrap_or(7888);
-    let pid = launch_server_process(target).await?;
-    let already_running = pid == 0;
-    Ok(json!({
-        "success": true,
-        "port": target,
-        "pid": pid,
-        "alreadyRunning": already_running,
-        "message": if already_running {
-            "SuperAgent Core server is already running".to_string()
-        } else {
-            format!("SuperAgent Core server started on port {}", target)
-        }
-    }))
-}
-
-#[tauri::command]
-async fn stop_core_server(port: Option<u16>) -> Result<Value, String> {
-    let target = port.unwrap_or(7888);
+async fn stop_core_server_inner(target: u16) -> Result<Value, String> {
     let dir = config_dir()?;
     let candidate_paths = [
         dir.join(format!("server-info-{}.json", target)),
         dir.join("server-info.json"),
         dir.join(format!("core-supervisor-{}.json", target)),
+        dir.join(format!("core-checkpoint-{}.json", target)),
     ];
     let mut pid: Option<u32> = None;
     for path in &candidate_paths {
@@ -1042,36 +1050,106 @@ async fn stop_core_server(port: Option<u16>) -> Result<Value, String> {
                     } else if let Some(sp) = val["supervisorPid"].as_u64() {
                         pid = Some(sp as u32);
                         break;
+                    } else if let Some(ap) = val["activePid"].as_u64() {
+                        pid = Some(ap as u32);
+                        break;
                     }
                 }
             }
         }
     }
-    let pid = pid.ok_or_else(|| "No active Core server PID found to stop".to_string())?;
 
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let status = Command::new("taskkill")
-            .args(&["/PID", &pid.to_string(), "/T", "/F"])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW)
-            .status()
-            .map_err(|e| e.to_string())?;
-        if !status.success() {
-            return Err("Failed to terminate Core process".into());
+    if let Some(p) = pid {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let _ = Command::new("taskkill")
+                .args(&["/PID", &p.to_string(), "/T", "/F"])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .creation_flags(CREATE_NO_WINDOW)
+                .status();
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = Command::new("kill").arg(p.to_string()).status();
         }
     }
-    #[cfg(not(windows))]
-    {
-        let _ = Command::new("kill").arg(pid.to_string()).status();
-    }
+
     for path in &candidate_paths {
         let _ = std::fs::remove_file(path);
     }
-    Ok(json!({ "success": true, "port": target, "pid": pid, "message": "Core server stopped" }))
+
+    Ok(json!({
+        "success": true,
+        "port": target,
+        "pid": pid.unwrap_or(0),
+        "message": if pid.is_some() {
+            "SuperAgent Core server stopped".to_string()
+        } else {
+            "SuperAgent Core is not running (cleaned state)".to_string()
+        }
+    }))
+}
+
+#[tauri::command]
+async fn start_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Value, String> {
+    let target = port.unwrap_or(7888);
+    match launch_server_process(target).await {
+        Ok(pid) => {
+            let already_running = pid == 0;
+            let message = if already_running {
+                "SuperAgent Core server is already running".to_string()
+            } else {
+                format!("SuperAgent Core server started on port {}", target)
+            };
+            let _ = app.notification()
+                .builder()
+                .title("SuperAgent Core")
+                .body(&message)
+                .show();
+            Ok(json!({
+                "success": true,
+                "port": target,
+                "pid": pid,
+                "alreadyRunning": already_running,
+                "message": message
+            }))
+        }
+        Err(e) => {
+            let _ = app.notification()
+                .builder()
+                .title("SuperAgent Core Error")
+                .body(format!("Failed to start Core: {}", e))
+                .show();
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+async fn stop_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Value, String> {
+    let target = port.unwrap_or(7888);
+    match stop_core_server_inner(target).await {
+        Ok(val) => {
+            let msg = val.get("message").and_then(Value::as_str).unwrap_or("Core server stopped");
+            let _ = app.notification()
+                .builder()
+                .title("SuperAgent Core")
+                .body(msg)
+                .show();
+            Ok(val)
+        }
+        Err(e) => {
+            let _ = app.notification()
+                .builder()
+                .title("SuperAgent Core Error")
+                .body(format!("Failed to stop Core: {}", e))
+                .show();
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
@@ -1585,13 +1663,28 @@ fn main() {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             match launch_server_process(7888).await {
-                                Ok(_) => {
+                                Ok(pid) => {
                                     show_main(&handle, false);
+                                    let msg = if pid == 0 {
+                                        "SuperAgent Core is already running (:7888)".to_string()
+                                    } else {
+                                        "SuperAgent Core server active on port 7888".to_string()
+                                    };
+                                    let _ = handle.notification()
+                                        .builder()
+                                        .title("SuperAgent Core")
+                                        .body(&msg)
+                                        .show();
                                     let _ = handle.emit("desktop-server-started", 7888);
                                 }
                                 Err(e) => {
                                     eprintln!("[tray] Failed to start Core server: {}", e);
                                     show_main(&handle, false);
+                                    let _ = handle.notification()
+                                        .builder()
+                                        .title("SuperAgent Core Error")
+                                        .body(format!("Failed to start Core: {}", e))
+                                        .show();
                                     let _ = handle.emit("desktop-server-start-failed", e);
                                 }
                             }
@@ -1600,14 +1693,24 @@ fn main() {
                     "stop_server" => {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
-                            match stop_core_server(Some(7888)).await {
+                            match stop_core_server_inner(7888).await {
                                 Ok(_) => {
                                     show_main(&handle, false);
+                                    let _ = handle.notification()
+                                        .builder()
+                                        .title("SuperAgent Core")
+                                        .body("SuperAgent Core server stopped")
+                                        .show();
                                     let _ = handle.emit("desktop-server-stopped", 7888);
                                 }
                                 Err(e) => {
                                     eprintln!("[tray] Failed to stop Core server: {}", e);
                                     show_main(&handle, false);
+                                    let _ = handle.notification()
+                                        .builder()
+                                        .title("SuperAgent Core Error")
+                                        .body(format!("Failed to stop Core: {}", e))
+                                        .show();
                                     let _ = handle.emit("desktop-server-stop-failed", e);
                                 }
                             }

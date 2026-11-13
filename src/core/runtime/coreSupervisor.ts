@@ -205,8 +205,29 @@ export async function runCoreSupervisor(
   // exist would lose affinity and misroute active sessions.
   const checkpoint = recover ? readCoreCheckpoint(port) : undefined;
   if (!recover && fs.existsSync(coreCheckpointPath(port))) {
-    throw new Error("Supervisor checkpoint exists for port " + port +
-      ". Use core recover --port " + port + " to verify/adopt old workers; refusing fresh overwrite.");
+    let hasLiveWorker = false;
+    try {
+      const saved = readCoreCheckpoint(port);
+      for (const w of saved.workers || []) {
+        if (typeof w.pid === "number" && w.pid > 0) {
+          try {
+            process.kill(w.pid, 0);
+            hasLiveWorker = true;
+            break;
+          } catch {
+            // PID is offline/dead
+          }
+        }
+      }
+    } catch {
+      // Corrupt or unreadable checkpoint
+    }
+    if (hasLiveWorker) {
+      throw new Error("Supervisor checkpoint exists for port " + port +
+        ". Use core recover --port " + port + " to verify/adopt old workers; refusing fresh overwrite.");
+    } else {
+      try { fs.rmSync(coreCheckpointPath(port), { force: true }); } catch {}
+    }
   }
   if (checkpoint && checkpoint.clientMode !== clientMode) {
     throw new Error("Recovery client mode differs from saved supervisor");

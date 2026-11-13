@@ -180,7 +180,9 @@ async function refresh() {
     }
   } catch (error) {
     connection(false, error);
-    setBanner("SuperAgent Core is unreachable. Ensure Core is running via: bun dist/cli.js --server 7888");
+    setBanner("SuperAgent Core is unreachable. Click below to start Core server (:7888).", "Start Core (:7888)", () => {
+      $("btn-start-core")?.click();
+    });
     $("job-table").innerHTML = '<tr><td colspan="5" class="empty-state">Cannot load schedules while Core is offline.</td></tr>';
     $("stat-total").textContent = $("stat-active").textContent = $("stat-next").textContent = "-";
     state.jobs = [];
@@ -528,11 +530,14 @@ function install() {
         const invoke = window.__TAURI__?.core?.invoke;
         if (!invoke) throw new Error("Tauri IPC is not available");
         const res = await invoke("start_core_server", { port: 7888 });
-        toast(res?.message || "Core server started");
+        toast(res?.message || "SuperAgent Core server started");
+        setBanner("");
         await refresh();
         if (typeof runtimeRefresh === "function") await runtimeRefresh();
       } catch (err) {
-        errors(err);
+        const msg = err instanceof Error ? err.message : String(err || "Failed to start Core");
+        toast("Failed to start Core: " + msg, true);
+        setBanner("Core startup failed: " + msg, "Retry Start", () => startBtn.click());
       } finally {
         startBtn.disabled = false;
         startBtn.innerHTML = originalHtml;
@@ -550,11 +555,14 @@ function install() {
         const invoke = window.__TAURI__?.core?.invoke;
         if (!invoke) throw new Error("Tauri IPC is not available");
         const res = await invoke("stop_core_server", { port: 7888 });
-        toast(res?.message || "Core server stopped");
+        toast(res?.message || "SuperAgent Core server stopped");
+        setBanner("SuperAgent Core server is stopped", "Start Core (:7888)", () => $("btn-start-core")?.click());
         await refresh();
         if (typeof runtimeRefresh === "function") await runtimeRefresh();
       } catch (err) {
-        errors(err);
+        const msg = err instanceof Error ? err.message : String(err || "Failed to stop Core");
+        toast("Failed to stop Core: " + msg, true);
+        setBanner("Core shutdown failed: " + msg);
       } finally {
         stopBtn.disabled = false;
         stopBtn.innerHTML = originalHtml;
@@ -563,24 +571,31 @@ function install() {
   }
 
   window.__TAURI__?.event?.listen?.("desktop-server-started", async () => {
+    toast("SuperAgent Core server active on port 7888");
+    setBanner("");
     await refresh();
     if (typeof runtimeRefresh === "function") await runtimeRefresh();
   });
 
   window.__TAURI__?.event?.listen?.("desktop-server-stopped", async () => {
-    toast("Core server stopped");
+    toast("SuperAgent Core server stopped");
+    setBanner("SuperAgent Core server is stopped", "Start Core (:7888)", () => $("btn-start-core")?.click());
     await refresh();
     if (typeof runtimeRefresh === "function") await runtimeRefresh();
   });
 
   window.__TAURI__?.event?.listen?.("desktop-server-start-failed", async (evt) => {
-    toast("Failed to start Core: " + (evt?.payload || "Process timed out"), true);
+    const detail = evt?.payload ? String(evt.payload) : "Process timed out";
+    toast("Failed to start Core: " + detail, true);
+    setBanner("Core startup failed: " + detail, "Retry Start", () => $("btn-start-core")?.click());
     await refresh();
     if (typeof runtimeRefresh === "function") await runtimeRefresh();
   });
 
   window.__TAURI__?.event?.listen?.("desktop-server-stop-failed", async (evt) => {
-    toast("Failed to stop Core: " + (evt?.payload || "Process timed out"), true);
+    const detail = evt?.payload ? String(evt.payload) : "Failed to stop Core";
+    toast("Failed to stop Core: " + detail, true);
+    setBanner("Core shutdown failed: " + detail);
     await refresh();
     if (typeof runtimeRefresh === "function") await runtimeRefresh();
   });
