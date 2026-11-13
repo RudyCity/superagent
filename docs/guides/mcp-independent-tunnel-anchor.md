@@ -38,6 +38,19 @@ bun scripts/mcp-tunnel-anchor.ts activate 19320 19321 <PLAN_ID> none --reviewed
 
 After the first owner is attached, a later owner replacement requires the *old owner to be explicitly drained*, with zero sessions and in-flight requests. Run a new plan and activate with the **actual previous owner PID** in place of `none`. A different OAuth mode, tool-safety mode, URL, PID or port is rejected. When the new owner is serving, the old owner may be stopped without closing the independent Anchor.
 
+## Stage 4 — independent read-only health observer
+
+The standalone observer checks the Anchor lease, authenticated localhost status, Windows kernel listener/process-birth identity, persisted Cloudflare target and **cloudflared command-line ownership**, and the managed MCP owner lease/backend health. It never starts, stops, adopts or restarts a service, changes the OAuth issuer, or replays a tool call. It emits `verified_local`, `unattached`, `degraded`, or `unavailable` with a machine-readable reason and no secrets. **Local verification does not certify external Cloudflare edge reachability.**
+
+```powershell
+bun scripts/mcp-tunnel-anchor-watch.ts once 19320
+bun scripts/mcp-tunnel-anchor-watch.ts watch 19320 15
+```
+
+`once` exits 0 only when locally verified and 2 otherwise. `watch` runs as a separate optional observer, reports transitions and periodic evidence, and stops on SIGINT/SIGTERM. The Anchor `status` command also shows this health observation, distinguishing an attached owner from a verified healthy one.
+
+There is **no automatic restart** and no installed startup task. Losing the original Quick Tunnel means its random hostname cannot be restored; a persistent service and guaranteed hostname require an explicitly approved named Cloudflare tunnel and OS-native restart/recovery gates. An unavailable process is an alert, not permission to create or take over a replacement.
+
 ## Recovery and limits
 
 - If the old owner exits or crashes **without verified drain**, Anchor returns 503 rather than silently routing to a different process. Do not replay non-idempotent tool calls. Automatic crash recovery and takeover of orphaned OAuth writer state are not implemented or certified.
@@ -48,4 +61,4 @@ After the first owner is attached, a later owner replacement requires the *old o
 
 ## Verification
 
-Run `bun run build`, `bun --bun x vitest run tests/mcpTunnelAnchor.test.ts tests/mcpTunnelAnchorManagedOwner.test.ts tests/mcpReloadableOwner.test.ts tests/mcpManagedTunnelOwnerLifecycle.test.ts --maxWorkers=2`. Tests use disposable private ports/fixtures and mock the external Cloudflare tunnel; the real Gemini URL and production owner are **not** touched.
+Run `bun run build`, `bun --bun x vitest run tests/mcpTunnelAnchor.test.ts tests/mcpTunnelAnchorManagedOwner.test.ts tests/mcpReloadableOwner.test.ts tests/mcpManagedTunnelOwnerLifecycle.test.ts tests/mcpTunnelAnchorObserver.test.ts --maxWorkers=2`. Tests use disposable private ports/fixtures and mock the external Cloudflare tunnel; the real Gemini URL and production owner are **not** touched.

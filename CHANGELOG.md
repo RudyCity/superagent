@@ -1,3 +1,9 @@
+## [1.14.90] - 2026-11-14
+### Read-only independent Tunnel Anchor health observer (isolated Stage 4)
+- Add an optional standalone observer with authenticated Anchor/owner, kernel listener and process-birth attestation plus exact cloudflared command-line and routing target verification. Report local health, reason codes and safe nonzero CI exit on unavailability without restarting or replacing a Quick Tunnel.
+- Add `once` and `watch` CLI modes, include real health observation in Anchor `status`, and add 8 fail-closed unit tests to the release regression gate. Preserve existing OAuth identity, running Gemini URL, Core/MCP ownership and concurrent Desktop UI work.
+- Clarify that a verified local Anchor does not prove Cloudflare edge reachability; automatic reboot restoration requires an approved named tunnel and separate OS-level recovery gates. No live migration or release publication.
+
 ## [1.14.89] - 2026-11-14
 ### Independently owned MCP Quick Tunnel Anchor (isolated Stage 3)
 - Add independent, private, manually operated Tunnel Anchor with authenticated local lease/status/plan/activate controls and OS PID/birth attestation. A reviewed, drained-owner switch keeps the *new anchor's* URL, while owner restart does not stop its tunnel.

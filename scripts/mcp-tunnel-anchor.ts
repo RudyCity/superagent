@@ -11,6 +11,7 @@
  */
 import crypto from "node:crypto";
 import {startMcpTunnelAnchor} from "../src/core/runtime/mcpTunnelAnchor.js";
+import {observeMcpTunnelAnchor} from "../src/core/runtime/mcpTunnelAnchorObserver.js";
 import {readManagedMcpTunnelLease,verifyManagedOwnerIdentity}
   from "../src/core/runtime/mcpManagedTunnelOwner.js";
 import {readMcpTunnelAnchorLease,writeMcpTunnelAnchorLease,
@@ -61,7 +62,10 @@ if(command==="start"){
   if(!lease)throw Error("MCP_ANCHOR_LEASE_MISSING");
   const status=await probeMcpTunnelAnchor(lease);
   if(command==="status"){
-    console.log(JSON.stringify(status,null,2));
+    // Owner attached is not the same as a healthy Cloudflare process.
+    // Report the read-only attestation alongside the private control state.
+    const observation=await observeMcpTunnelAnchor(port);
+    console.log(JSON.stringify({...status,observation},null,2));
   }else{
     const ownerPort=Number(ownerPortRaw);
     if(!Number.isSafeInteger(ownerPort)||ownerPort===port)
