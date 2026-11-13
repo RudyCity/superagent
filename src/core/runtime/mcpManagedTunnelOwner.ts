@@ -20,6 +20,7 @@ import { startReloadableMcpTunnelOwner, type ReloadableMcpOwnerHandle } from "./
 import { readListenerOwners } from "./coreMcpOwnershipAudit.js";
 import { verifyWindowsProcessBirth } from "./mcpProcessBirth.js";
 import { copyTextToClipboard, isProcessRunning } from "../remoteAgent/cloudflareTunnel.js";
+import { readMcpTunnelAnchorLease, probeMcpTunnelAnchor } from "./mcpTunnelAnchorLease.js";
 
 const OWNER_KIND = "managed_mcp_tunnel_owner" as const;
 const OWNER_MODE = "managed-tunnel" as const;
@@ -68,7 +69,11 @@ export interface ManagedMcpTunnelStartResult {
 }
 
 function ownerLeasePath(port: number): string {
-  return path.join(os.homedir(), ".superagent-r", `mcp-owner-${port}.json`);
+  // An explicit private staging profile must isolate its owner lease too.
+  // Without an override this preserves the historic ~/.superagent-r path.
+  const root=process.env.SUPERAGENT_CONFIG_DIR?.trim();
+  return path.join(root?path.resolve(root):path.join(os.homedir(),".superagent-r"),
+    `mcp-owner-${port}.json`);
 }
 
 function assertPort(port: number): number {
@@ -91,6 +96,36 @@ function option(args: string[], ...names: string[]): string | undefined {
   return value && !value.startsWith("--") ? value.trim() : undefined;
 }
 
+async function resolveExternalMcpAnchor(args:string[],ownerPort:number):Promise<string|undefined>{
+  if(!args.includes("--anchor-port"))return undefined;
+  const raw=option(args,"--anchor-port");
+  const port=Number(raw);
+  if(!raw||!Number.isSafeInteger(port)||port<1024||port>65535||
+     port===ownerPort||port===7888)throw Error("MCP_EXTERNAL_ANCHOR_PORT_INVALID");
+  const lease=readMcpTunnelAnchorLease(port);
+  if(!lease)throw Error("MCP_EXTERNAL_ANCHOR_LEASE_MISSING");
+  const proof=await probeMcpTunnelAnchor(lease);
+  if(proof.currentOwnerPort===ownerPort)
+    throw Error("MCP_EXTERNAL_ANCHOR_ALREADY_TARGETS_OWNER");
+  if(proof.currentOwnerPort!==null){
+    // OAuth issuer state is single-writer. Before the new owner can even
+    // initialize its OAuth store, require a drained, session-free old owner.
+    // A second writer would otherwise invalidate the durable MAC snapshot.
+    const oldLease=readManagedMcpTunnelLease(proof.currentOwnerPort);
+    if(!oldLease||oldLease.pid!==proof.currentOwnerPid)
+      throw Error("MCP_EXTERNAL_ANCHOR_OLD_OWNER_UNVERIFIED");
+    await verifyManagedOwnerIdentity(oldLease);
+    const old=await probeManagedMcpTunnelOwner(oldLease) as
+      (ManagedMcpTunnelOwnerStatus & {publicUrl?:string;ingressMode?:string;
+        backendHealthy?:boolean;oauthStatePersistent?:boolean})|null;
+    if(!old||!old.draining||old.activeSessions!==0||old.inFlightRequests!==0||
+       old.backendHealthy!==true||old.publicUrl!==proof.publicUrl||
+       old.ingressMode!=="external-anchor"||
+       (old.oauthEnabled&&!old.oauthStatePersistent))
+      throw Error("MCP_EXTERNAL_ANCHOR_OLD_OWNER_NOT_QUIESCENT");
+  }
+  return new URL(proof.publicUrl).origin;
+}
 function parseStartOptions(args: string[]): StartMcpTunnelOptions {
   const port = parsePort(args);
   const providerValue = option(args, "--provider")?.toLowerCase();
@@ -286,6 +321,11 @@ export async function startManagedMcpTunnelOwner(
 ): Promise<ManagedMcpTunnelStartResult> {
   const parsedOptions = parseStartOptions(args);
   const port = assertPort(parsedOptions.port ?? DEFAULT_MCP_PORT);
+  if(args.includes("--anchor-port")){
+    if(parsedOptions.tunnelProvider==="openai"||parsedOptions.tunnelId)
+      throw Error("MCP_EXTERNAL_ANCHOR_CLOUDFLARE_ONLY");
+    await resolveExternalMcpAnchor(args,port);
+  }
   if (listActiveMcpServers().some((server) => server.port === port) || readListenerOwners()?.has(port)) {
     throw new Error(`MCP port ${port} is already active; refusing duplicate owner`);
   }
@@ -539,7 +579,10 @@ export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
     const openAiConfigured = Boolean(
       process.env.OPENAI_MCP_TUNNEL_ID || getOpenAiMcpTunnelConfig().tunnelId,
     );
-    const useReloadable = options.tunnelProvider === "cloudflare" ||
+    const externalPublicBaseUrl=await resolveExternalMcpAnchor(args,port);
+    if(externalPublicBaseUrl&&(options.tunnelProvider==="openai"||options.tunnelId))
+      throw Error("MCP_EXTERNAL_ANCHOR_CLOUDFLARE_ONLY");
+    const useReloadable = Boolean(externalPublicBaseUrl) || options.tunnelProvider === "cloudflare" ||
       (!options.tunnelProvider && !options.tunnelId && !openAiConfigured);
     let info: McpTunnelInfo;
     if (useReloadable) {
@@ -548,6 +591,8 @@ export async function runManagedMcpTunnelOwner(args: string[]): Promise<never> {
         authMode: options.authMode || "static-bearer",
         allowDangerous: Boolean(options.allowDangerous),
         auditLogPath: options.auditLogPath,
+        externalPublicBaseUrl,
+        onStop: shutdown,
       });
       info = reloadable.info;
     } else {

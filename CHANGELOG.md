@@ -1,3 +1,9 @@
+## [1.14.89] - 2026-11-14
+### Independently owned MCP Quick Tunnel Anchor (isolated Stage 3)
+- Add independent, private, manually operated Tunnel Anchor with authenticated local lease/status/plan/activate controls and OS PID/birth attestation. A reviewed, drained-owner switch keeps the *new anchor's* URL, while owner restart does not stop its tunnel.
+- Add owner `--anchor-port` mode that never creates or stops Cloudflare; reject stale target identities, active sessions/in-flight requests, mismatched OAuth/tool-safety modes, concurrent OAuth writers, and unauthorized private control requests. Ensure managed owner `/stop` performs lease cleanup.
+- Cover isolated mock-tunnel handoff plus real OS child-owner start/stop and document the hard limit: an already-running Quick Tunnel's random hostname cannot be adopted or guaranteed through the initial migration. No live migration, production cutover or owner restart.
+
 ## [1.14.88] - 2026-11-14
 ### Official GitHub Release acquisition and safe MCP backend staging
 - Publish an additional versioned Windows x64 MCP backend bundle built from the verified standalone distribution, with immutable tag/commit provenance and inclusion in the strict SHA256SUMS and 13-asset release inventory.

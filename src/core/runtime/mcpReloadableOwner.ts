@@ -45,6 +45,10 @@ export interface ReloadableOwnerOptions {
   authMode: "oauth" | "static-bearer";
   allowDangerous: boolean;
   auditLogPath?: string;
+  /** Stage-3: verified, independently owned tunnel; this owner never launches/stops cloudflared. */
+  externalPublicBaseUrl?: string;
+  /** Managed owner shutdown hook cleans its lease before process exit. */
+  onStop?: ()=>Promise<void>;
 }
 
 type BackendHealthReply = Extract<BackendWorkerReply, {type:"mcp-reload-worker-health"}>;
@@ -541,7 +545,9 @@ export async function startReloadableMcpTunnelOwner(
       inFlightToolCalls: currentHealth?.inFlightToolCalls ?? 0,
       draining, inflightToolEffects: "unknown",
       safeToolsOnly: !opts.allowDangerous, oauthEnabled: opts.authMode === "oauth",
-      publicTunnelStarted: publicTunnelOwned,
+      publicTunnelStarted: publicTunnelOwned || Boolean(opts.externalPublicBaseUrl),
+      ingressMode: opts.externalPublicBaseUrl ? "external-anchor" : "owner-quick-tunnel",
+      oauthStatePersistent: oauthPersistent,
       backendPid: current?.pid ?? null, backendGenerations: generations.size,
       backendHealthy: current?.alive === true,
       backendGenerationDetails: [...generations].map(gen => ({
@@ -697,7 +703,12 @@ export async function startReloadableMcpTunnelOwner(
         }
         res.writeHead(200, {"Content-Type":"application/json", "Cache-Control":"no-store"});
         res.end(JSON.stringify(status()));
-        setImmediate(() => { void close().then(() => process.exit(0)); });
+        // Managed owners must run their enclosing shutdown path to remove
+        // the authenticated lease. A direct exit leaves a stale OS identity.
+        setImmediate(() => {
+          void (opts.onStop ? opts.onStop() : close().then(() => process.exit(0)))
+            .catch(() => { process.exitCode = 1; });
+        });
         return;
       }
       res.writeHead(404); res.end(); return;
@@ -786,6 +797,8 @@ export async function startReloadableMcpTunnelOwner(
     record("owner_stopping", {backendPid:current?.pid});
     if (cleanupTimer) clearInterval(cleanupTimer);
     if (recoveryTimer) clearTimeout(recoveryTimer);
+    // Only the process that launched cloudflared may stop it. In anchor mode,
+    // even a full owner shutdown leaves the independent Quick Tunnel alive.
     if (publicTunnelOwned) await stopQuickTunnel(opts.port, "mcp-http").catch(() => {});
     for (const gen of generations) {
       try { gen.child.kill("SIGTERM"); } catch {}
@@ -801,7 +814,7 @@ export async function startReloadableMcpTunnelOwner(
     } catch {}
     await new Promise<void>(resolve => {
       proxy.close(() => resolve());
-      // Only during explicit shutdown: do not disturb connections on reload.
+      // Explicit operator shutdown only: do not disturb connections on reload.
       proxy.closeAllConnections?.();
     });
   };
@@ -811,14 +824,25 @@ export async function startReloadableMcpTunnelOwner(
     proxy.listen(opts.port, "127.0.0.1", resolve);
   });
   try {
-    const tunnel = await startQuickTunnel({
-      port: opts.port, host: "127.0.0.1", path: "", serviceKind: "mcp-http",
-    });
-    publicTunnelOwned = true;
-    if (!tunnel.publicUrl || !/^https:\/\/[^/]+$/.test(tunnel.publicUrl.replace(/\/$/, ""))) {
-      throw new Error("MCP Quick Tunnel returned an invalid public HTTPS URL");
+    if (opts.externalPublicBaseUrl) {
+      // This mode is only for a separately verified anchor/owner pair. It is
+      // never an implicit fallback or a migration of the live Quick Tunnel.
+      const external=new URL(opts.externalPublicBaseUrl);
+      if(external.protocol!=="https:"||!external.hostname||external.port||
+         external.username||external.password||external.pathname!=="/"||
+         external.search||external.hash)
+        throw Error("MCP_EXTERNAL_ANCHOR_PUBLIC_URL_INVALID");
+      baseUrl=external.origin;
+    } else {
+      const tunnel = await startQuickTunnel({
+        port: opts.port, host: "127.0.0.1", path: "", serviceKind: "mcp-http",
+      });
+      publicTunnelOwned = true;
+      if (!tunnel.publicUrl || !/^https:\/\/[^/]+$/.test(tunnel.publicUrl.replace(/\/$/, ""))) {
+        throw new Error("MCP Quick Tunnel returned an invalid public HTTPS URL");
+      }
+      baseUrl = tunnel.publicUrl.replace(/\/$/, "");
     }
-    baseUrl = tunnel.publicUrl.replace(/\/$/, "");
     current = await launch();
     oauthPersistent = current.oauthStatePersistent;
     cleanupTimer = setInterval(retireOld, 60_000);

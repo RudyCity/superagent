@@ -102,6 +102,10 @@ R0-R7 signing/OS-keystore/native-installer gates and release provenance
 remain mandatory. A tagged GitHub release must actually publish the new
 asset before staging against that tag can succeed.
 
+## Stage 3: independently owned tunnel anchor (v1.14.89)
+
+A separately run Tunnel Anchor may own the Quick Tunnel and proxy traffic to a reviewed private MCP owner. Explicit `--anchor-port` owner mode does not create or stop cloudflared. Only reviewed handoffs from fully drained owners are permitted. **This does not adopt or preserve an already running Quick Tunnel during the first migration**; do not change the current Gemini URL. See [Independent MCP Tunnel Anchor](mcp-independent-tunnel-anchor.md) for the isolated procedure, controls, and operational limits.
+
 ## Proof and remaining gates
 
 - `bun run build`, focused unit tests and a real localhost **isolated mock tunnel**

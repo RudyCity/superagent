@@ -47,6 +47,9 @@ describe("Managed MCP Tunnel Owner Lifecycle and Stale Lease Recovery", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // This legacy fixture asserts the default home-directory lease location.
+    // Stage-3 test profiles may otherwise override it via this process env.
+    vi.stubEnv("SUPERAGENT_CONFIG_DIR", "");
     tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "managed-mcp-owner-test-"));
     homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(tempHome);
     mocks.readListenerOwners.mockReturnValue(new Map());
@@ -58,6 +61,7 @@ describe("Managed MCP Tunnel Owner Lifecycle and Stale Lease Recovery", () => {
 
   afterEach(() => {
     homedirSpy?.mockRestore();
+    vi.unstubAllEnvs();
     try {
       fs.rmSync(tempHome, { recursive: true, force: true });
     } catch {}
