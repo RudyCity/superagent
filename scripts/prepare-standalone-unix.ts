@@ -38,6 +38,7 @@ function copy(src: string, dest: string) {
   fs.cpSync(src, dest, { recursive: true, force: true });
 }
 for (const file of ["package.json", "bun.lock"]) copy(path.join(root, file), path.join(stage, file));
+if (fs.existsSync(path.join(root, "tsconfig.json"))) copy(path.join(root, "tsconfig.json"), path.join(stage, "tsconfig.json"));
 for (const folder of ["dist", "patches"]) copy(path.join(root, folder), path.join(stage, folder));
 for (const file of ["media_backend.py", "setup_media_backends.py"]) {
   copy(path.join(root, "scripts", file), path.join(stage, "scripts", file));

@@ -50,7 +50,8 @@ function treeDigest(root:string,mode:"source"|"compiled") {
     hasher.update(path.relative(root,file).split(path.sep).join("/")+"\0");
     hasher.update(crypto.createHash("sha256").update(fs.readFileSync(file)).digest());
   }
-  for(const extra of ["package.json","tsconfig.json"]) {
+  const extras = mode === "source" ? ["package.json", "tsconfig.json"] : ["package.json"];
+  for(const extra of extras) {
     const f=path.join(root,extra);
     if(fs.existsSync(f)) {
       if(fs.lstatSync(f).isSymbolicLink())throw new Error("CORE_BUILD_UNSAFE_CONFIG");
