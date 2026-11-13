@@ -90,6 +90,12 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       expect(afterUnknown.staleAffinityReclaimed ?? afterUnknown.sessionTelemetry?.staleAffinityReclaimed).toBeGreaterThanOrEqual(0);
       expect(afterUnknown.nonStreamInFlightRequests).toBeGreaterThanOrEqual(0);
       expect(afterUnknown.activeSseStreams).toBeGreaterThanOrEqual(0);
+      // The private worker must refresh health every five seconds, even
+      // though memory trend samples keep their original 60-second cadence.
+      await new Promise(resolve => setTimeout(resolve, 12_000));
+      const freshHealth = (await control("status")).body;
+      expect(freshHealth.memoryTelemetry.healthAgeMs).toBeLessThan(8_000);
+      expect(freshHealth.memoryTelemetry.trend.sampleCount).toBe(1);
       const migrated = await control("reload", "POST");
       expect(migrated.status).toBe(200);
       expect(migrated.body.success).toBe(true);
