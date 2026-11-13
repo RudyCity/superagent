@@ -125,34 +125,54 @@
   padding: 2px 2px 8px;
 }
 
-/* Empty / Standby Card state */
+/* Empty / Standby Card state - Crafted Anti-Slop Component */
 .delegate-action-history > p.text-secondary {
   grid-column: 1 / -1;
-  margin: 4px 0;
-  padding: 36px 24px;
-  background: rgba(15, 21, 35, 0.5);
-  border: 1px dashed var(--border-medium);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: 13px;
-  line-height: 1.6;
+  margin: 6px 0;
+  padding: 32px 20px;
+  background: radial-gradient(ellipse at 50% 0%, rgba(26, 38, 64, 0.4) 0%, rgba(12, 17, 29, 0.8) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+  color: #f1f5f9;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.5;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 4px 16px rgba(0, 0, 0, 0.25);
+  transition: all var(--transition-fast);
 }
 
 .delegate-action-history > p.text-secondary::before {
   content: "";
-  display: block;
-  width: 36px;
-  height: 36px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E");
-  background-size: contain;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  margin-bottom: 2px;
+  background-color: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.12);
+  background-position: center;
   background-repeat: no-repeat;
-  opacity: 0.85;
+  background-size: 22px 22px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M22 12h-4l-3 9L9 3l-3 9H2'/%3E%3C/svg%3E");
+}
+
+.delegate-action-history > p.text-secondary::after {
+  content: "Telemetry and diagnostic events will record prompt dispatches, click executions, and tab mutations.";
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+  max-width: 440px;
+  line-height: 1.45;
 }
 
 /* Action Record Card */

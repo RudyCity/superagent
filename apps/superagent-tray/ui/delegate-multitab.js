@@ -699,7 +699,8 @@
       $(id)?.addEventListener("click", async () => {
         if (state.fetching) return;
         const ticket=window.TrayFeedback?.begin({
-          key:"delegate:multitab:refresh",button:$(id),label:"Refreshing tabs…",
+          key:"delegate:multitab:refresh",button:$(id),
+          label: id === "cdp-presence-refresh" ? "Refreshing activity…" : "Refreshing tabs…",
         });
         try { await refresh(); }
         finally { ticket?.end(); }
