@@ -38,7 +38,7 @@ describe("Recover unified release from immutable verified CI assets",()=>{
     expect(verify).toContain("wc -l < SHA256SUMS.txt");
     expect(publish).toContain('gh release create "$TARGET_TAG"');
     expect(publish).toContain("--verify-tag --prerelease");
-    expect(publish).toContain('"$asset_count" == "12"');
+    expect(publish).toContain('"$asset_count" == "13"');
     expect(text).not.toContain("--force");
     expect(text).not.toContain("gh release delete");
   });

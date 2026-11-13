@@ -3,7 +3,7 @@
  * Normalize only GitHub Actions upload-artifact's known Linux path layout.
  * The Linux multi-path upload preserves deb/ and appimage/ subdirectories,
  * unlike the Windows/macOS single-file artifacts. Fail on duplicates, symlinks,
- * unexpected members, or missing files; the next gate validates all 11 assets.
+ * unexpected members, or missing files; the next gate validates all 12 assets.
  */
 import fs from "node:fs";
 import path from "node:path";

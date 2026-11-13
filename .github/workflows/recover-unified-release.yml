@@ -76,7 +76,7 @@ jobs:
           mkdir -p release-assets
           cp -- downloaded-assets/* release-assets/
           (cd release-assets && sha256sum ./* > ../SHA256SUMS.txt)
-          [[ "$(wc -l < SHA256SUMS.txt)" -eq 11 ]] || { echo "Bad checksum inventory"; exit 1; }
+          [[ "$(wc -l < SHA256SUMS.txt)" -eq 12 ]] || { echo "Bad checksum inventory"; exit 1; }
           (cd release-assets && sha256sum --check ../SHA256SUMS.txt)
           echo "RECOVERED_RELEASE_ASSET_INTEGRITY_VERIFIED"
       - name: Publish complete unified prerelease without rebuilding
@@ -104,9 +104,10 @@ jobs:
           - **macOS ARM64 Apple Silicon (v${core_version})**: \`SuperAgent_${core_version}_aarch64.dmg\` — Unsigned DMG bundle.
           - **Chrome Delegate Extension (v${delegate_version})**: \`superagent-delegate-${delegate_version}.zip\` (with verified receipt) — MV3 developer extension for ChatGPT automation.
           - **Chrome SidePanel Extension (v${sidepanel_version})**: \`superagent-sidepanel-${sidepanel_version}.zip\` (with verified receipt) — MV3 AI assistant sidepanel.
-          - **Windows LAN Receiver GUI (v${lan_version})**: \`SuperAgent-LAN-Client-${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client preview installer.
+          - **Windows LAN Receiver GUI (v${lan_version})**: \`SuperAgent-LAN-Client-${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client unsigned preview installer.
           - **Android LAN Preview (v${android_version})**: \`SuperAgent-LAN-Android-${android_version}-debug.apk\` + metadata — Debug-signed APK.
-          - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 11 binary, archive and metadata assets.
+          - **Windows x64 MCP backend bundle (v${core_version})**: \`SuperAgent-MCP-Backend-${core_version}-windows-x64.tgz\` — versioned backend-only archive for reviewed side-by-side staging.
+          - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 12 binary, archive and metadata assets.
 
           The release does not migrate users, modify Core/MCP ownership, restart a
           running instance or certify production deployment (R0–R7 remain separate).
@@ -118,6 +119,6 @@ jobs:
             --title "$release_title" \
             --notes-file RELEASE_NOTES.md
           asset_count="$(gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
-          [[ "$asset_count" == "12" ]] || { echo "Published release is missing assets: $asset_count/12"; exit 1; }
+          [[ "$asset_count" == "13" ]] || { echo "Published release is missing assets: $asset_count/13"; exit 1; }
           gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --json url,isDraft,isPrerelease,assets --jq             '{url,isDraft,isPrerelease,assets:[.assets[]|{name,size}]}'
           echo "UNIFIED_RECOVERED_RELEASE_PUBLISHED $TARGET_TAG"

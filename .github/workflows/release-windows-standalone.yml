@@ -65,7 +65,7 @@ jobs:
       - name: Verify extension syntax
         run: bun run verify:extension-js
       - name: Core & package regression gate
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/mcpBackendBundleProducer.test.ts tests/mcpBackendGithubRelease.test.ts tests/mcpBackendReleaseStager.test.ts tests/mcpBackendReleasePolicy.test.ts tests/unifiedReleaseContract.test.ts tests/recoverUnifiedReleaseContract.test.ts
       - name: Test native Tray
         run: bun run tray:test
       - name: Compile native CLI
@@ -76,6 +76,12 @@ jobs:
       - name: Verify Windows portable Core
         if: runner.os == 'Windows'
         run: bun run installer:verify
+      - name: Package checksummed, versioned MCP backend candidate
+        if: runner.os == 'Windows'
+        run: bun scripts/package-mcp-backend-release.ts
+      - name: Verify isolated MCP backend candidate without installation
+        if: runner.os == 'Windows'
+        run: bun scripts/verify-mcp-backend-bundle.ts
       - name: Build standalone Windows NSIS
         if: runner.os == 'Windows'
         run: bun run installer:package
@@ -110,6 +116,14 @@ jobs:
           name: release-windows-x64
           path: apps/superagent-tray/src-tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
+      - name: Upload independently verified Windows MCP backend bundle
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-mcp-backend-windows-x64
+          path: build/release-mcp-backend/SuperAgent-MCP-Backend-*-windows-x64.tgz
+          if-no-files-found: error
+          compression-level: 0
       - name: Upload macOS installer
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
@@ -257,7 +271,7 @@ jobs:
           mkdir -p release-assets
           cp -- downloaded-assets/* release-assets/
           (cd release-assets && sha256sum ./* > ../SHA256SUMS.txt)
-          test "$(wc -l < SHA256SUMS.txt)" -eq 11
+          test "$(wc -l < SHA256SUMS.txt)" -eq 12
           cat SHA256SUMS.txt
       - name: Publish single complete GitHub prerelease
         shell: bash
@@ -281,9 +295,10 @@ jobs:
           - **macOS ARM64 Apple Silicon (v${core_version})**: \`SuperAgent_${core_version}_aarch64.dmg\` — Unsigned DMG bundle.
           - **Chrome Delegate Extension (v${delegate_version})**: \`superagent-delegate-${delegate_version}.zip\` (with verified receipt) — MV3 developer extension for ChatGPT automation.
           - **Chrome SidePanel Extension (v${sidepanel_version})**: \`superagent-sidepanel-${sidepanel_version}.zip\` (with verified receipt) — MV3 AI assistant sidepanel.
-          - **Windows LAN Receiver GUI (v${lan_version})**: \`SuperAgent-LAN-Client-${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client preview installer.
+          - **Windows LAN Receiver GUI (v${lan_version})**: \`SuperAgent-LAN-Client-${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client unsigned preview installer.
           - **Android LAN Preview (v${android_version})**: \`SuperAgent-LAN-Android-${android_version}-debug.apk\` + metadata — Debug-signed APK.
-          - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 11 binary, archive and metadata assets.
+          - **Windows x64 MCP backend bundle (v${core_version})**: \`SuperAgent-MCP-Backend-${core_version}-windows-x64.tgz\` — immutable side-by-side backend only; no automatic owner/tunnel restart.
+          - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 12 binary, archive and metadata assets.
 
           The release does not migrate users, modify Core/MCP ownership, restart a
           running instance or certify production deployment (R0–R7 remain separate).

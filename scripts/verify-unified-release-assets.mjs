@@ -36,7 +36,8 @@ const extNames=exts.flatMap(([kind,manifest])=>[
   `superagent-${kind}-${manifest.version}.zip`,
   `superagent-${kind}-${manifest.version}.receipt.json`,
 ]);
-const expected=[...coreNames,...otherNames,...extNames].sort();
+const mcpBackendName=`SuperAgent-MCP-Backend-${version}-windows-x64.tgz`;
+const expected=[...coreNames,...otherNames,...extNames,mcpBackendName].sort();
 assert(fs.existsSync(base)&&fs.lstatSync(base).isDirectory(),"artifact directory missing");
 const actual=fs.readdirSync(base).sort();
 assert(JSON.stringify(actual)===JSON.stringify(expected),
@@ -45,7 +46,7 @@ const digest=p=>crypto.createHash("sha256").update(fs.readFileSync(p)).digest("h
 for(const name of expected){
   const p=path.join(base,name),stat=fs.lstatSync(p);
   assert(stat.isFile()&&!stat.isSymbolicLink(),"not a regular file: "+name);
-  const minimum=/\.(exe|dmg|deb|AppImage)$/.test(name)?20_000_000:/\.apk$/.test(name)?1_000_000:/\.zip$/.test(name)?1000:100;
+  const minimum=/\.(exe|dmg|deb|AppImage|tgz)$/.test(name)?20_000_000:/\.apk$/.test(name)?1_000_000:/\.zip$/.test(name)?1000:100;
   assert(stat.size>=minimum,"file too small: "+name+" ("+stat.size+")");
 }
 const metadata=JSON.parse(fs.readFileSync(path.join(base,otherNames[2]),"utf8"));

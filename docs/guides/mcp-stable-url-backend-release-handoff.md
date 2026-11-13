@@ -65,6 +65,43 @@ The CLI fails closed when the owner lease, OS owner identity, previous backend P
 public URL, staged digest or explicit review does not match. Do **not** retry a timed-out
 activation blindly: inspect owner status and release digest first.
 
+## Stage 2: official GitHub Release acquisition (v1.14.88)
+
+The tagged Windows CI job builds `SuperAgent-MCP-Backend-<version>-windows-x64.tgz` from the verified
+standalone package. It independently extracts and checks the candidate before uploading
+it. The unified release gate now requires **12 binary/archive/metadata assets plus
+`SHA256SUMS.txt` (13 public assets)**, including this backend-only artifact.
+
+On the operator's Windows machine, use these separate commands:
+
+```powershell
+# Read-only: enumerate a published and checksummed prerelease candidate.
+bun scripts/stage-mcp-backend-release.ts --check
+bun scripts/stage-mcp-backend-release.ts --check --tag=v1.14.88-rc.1
+
+# Download/verify and atomically stage a specific published tag, no activation.
+bun scripts/stage-mcp-backend-release.ts --stage --tag=v1.14.88-rc.1
+
+# Separate review: only when the **installed owner** supports private plan/activate.
+bun scripts/mcp-backend-release.ts plan 9227 <compiled-build-digest>
+```
+
+The updater verifies the official GitHub release and tag commit, pinned asset URL,
+`SHA256SUMS.txt`, asset byte length/digest, embedded source-commit identity,
+manifest-build consistency and archive path/link safety. Private repository access
+uses `GH_TOKEN` or `GITHUB_TOKEN` in the operator's environment; no token is logged
+or written to the staged receipt.
+
+**The downloader never activates an update.** Activation remains a separate,
+operator-reviewed operation using exact owner PID, backend PID and public URL.
+An old installed owner will not acquire new control endpoints merely because
+the source repository has been rebuilt. Do not restart Quick Tunnel to install
+an owner update; the Quick Tunnel hostname is not guaranteed to survive.
+
+R0-R7 signing/OS-keystore/native-installer gates and release provenance
+remain mandatory. A tagged GitHub release must actually publish the new
+asset before staging against that tag can succeed.
+
 ## Proof and remaining gates
 
 - `bun run build`, focused unit tests and a real localhost **isolated mock tunnel**

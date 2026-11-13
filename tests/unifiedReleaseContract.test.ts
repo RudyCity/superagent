@@ -23,6 +23,10 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
     expect(workflow.jobs.publish.steps.find((s: any)=>s.name?.includes("Require exact"))?.run)
       .toContain("normalize-unified-release-assets.mjs");
     expect(workflowText).toContain("--verify-tag --prerelease");
+    const steps=workflow.jobs.build.steps.map((s:any)=>s.run??"").join("\n");
+    expect(steps).toContain("package-mcp-backend-release.ts");
+    expect(steps).toContain("verify-mcp-backend-bundle.ts");
+    expect(workflowText).toContain("release-mcp-backend-windows-x64");
   });
 
   it("packages both Chrome extensions from tagged manifests and verifies receipts", () => {
@@ -51,7 +55,7 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
     expect(workflowText).toContain("unsigned preview installer");
   });
 
-  it("accepts exactly eleven version-pinned assets and rejects corrupt receipts", () => {
+  it("accepts exactly twelve version-pinned assets including MCP backend and rejects corrupt receipts", () => {
     const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"unified-release-positive-"));
     try {
       const version=JSON.parse(fs.readFileSync("package.json","utf8")).version;
@@ -62,6 +66,7 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
         `SuperAgent_${version}_x64-setup.exe`,`SuperAgent_${version}_aarch64.dmg`,
         `SuperAgent_${version}_amd64.deb`,`SuperAgent_${version}_amd64.AppImage`,
         `SuperAgent-LAN-Client-${lan}-Windows-x64-setup.exe`,
+        `SuperAgent-MCP-Backend-${version}-windows-x64.tgz`,
       ];
       for(const name of large){
         const fd=fs.openSync(path.join(tmp,name),"w");
@@ -93,7 +98,7 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
       const ok=spawnSync("node",["scripts/verify-unified-release-assets.mjs",tmp],
         {cwd:process.cwd(),encoding:"utf8",timeout:30000});
       expect(ok.status,ok.stderr).toBe(0);
-      expect(ok.stdout).toContain("UNIFIED_RELEASE_INVENTORY_VERIFIED 11 assets");
+      expect(ok.stdout).toContain("UNIFIED_RELEASE_INVENTORY_VERIFIED 12 assets");
       const delegate=JSON.parse(fs.readFileSync("chrome-extension-delegate/manifest.json","utf8"));
       const receipt=path.join(tmp,`superagent-delegate-${delegate.version}.receipt.json`);
       const record=JSON.parse(fs.readFileSync(receipt,"utf8"));
@@ -119,7 +124,7 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
       expect(verifier).toContain("receipt.sha256===digest");
       expect(verifier).toContain("Android version mismatch");
       expect(workflow.jobs.publish.steps.find((s:any)=>s.name?.includes("Require exact"))?.run)
-        .toContain('test "$(wc -l < SHA256SUMS.txt)" -eq 11');
+        .toContain('test "$(wc -l < SHA256SUMS.txt)" -eq 12');
     } finally { fs.rmSync(temp,{recursive:true,force:true}); }
   });
 });

@@ -1,3 +1,9 @@
+## [1.14.88] - 2026-11-14
+### Official GitHub Release acquisition and safe MCP backend staging
+- Publish an additional versioned Windows x64 MCP backend bundle built from the verified standalone distribution, with immutable tag/commit provenance and inclusion in the strict SHA256SUMS and 13-asset release inventory.
+- Add GitHub Release discovery, pinned HTTPS asset URL validation, checksummed bounded download, tar path/link guards, manifest/digest verification and atomic side-by-side staging. Explicit activation stays separated behind the authenticated owner plan/activate workflow; never restart Quick Tunnel, Core or MCP during staging.
+- Add release/CI and staged archive tests, including malicious paths, checksum rejection, altered commit and idempotent staging. No automatic installer or production cutover.
+
 ## [1.14.87] - 2026-11-14
 ### Version-addressed backend release handoff without MCP URL rotation
 - Allow explicitly reviewed plan/activate of a complete, compiled-manifest-verified side-by-side MCP backend bundle through the existing localhost nonce-authenticated owner, with expected owner/backend PID and exact public URL checks.
