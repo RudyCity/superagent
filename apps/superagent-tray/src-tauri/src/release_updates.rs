@@ -651,6 +651,23 @@ fn valid_confirmation(expected_tag: &str, expected_sha256: &str) -> Result<(), S
     Ok(())
 }
 
+// Transferable native packages use the same verified download path.
+// Keep every visible component ID aligned with the native allowlist.
+fn downloadable_component_id(id: &str) -> bool {
+    matches!(
+        id,
+        "superagent"
+            | "windows-installer"
+            | "macos-dmg"
+            | "linux-appimage"
+            | "linux-deb"
+            | "chrome-delegate"
+            | "chrome-sidepanel"
+            | "android-lan"
+            | "windows-lan"
+    )
+}
+
 #[tauri::command]
 pub async fn download_release_update(
     app: tauri::AppHandle,
@@ -669,15 +686,7 @@ pub async fn download_release_component(
 ) -> Result<VerifiedDownload, String> {
     valid_confirmation(&expected_tag, &expected_sha256)?;
     // Client input is a finite component ID; never a path, URL, or filename.
-    if !matches!(
-        component_id.as_str(),
-        "superagent"
-            | "linux-deb"
-            | "chrome-delegate"
-            | "chrome-sidepanel"
-            | "android-lan"
-            | "windows-lan"
-    ) {
+    if !downloadable_component_id(&component_id) {
         return Err("UPDATE_COMPONENT_NOT_ALLOWED".into());
     }
     let c = client()?;
@@ -710,6 +719,28 @@ pub async fn download_release_component(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn download_allowlist_covers_every_visible_os_and_companion_package() {
+        for id in [
+            "superagent",
+            "windows-installer",
+            "macos-dmg",
+            "linux-appimage",
+            "linux-deb",
+            "chrome-delegate",
+            "chrome-sidepanel",
+            "android-lan",
+            "windows-lan",
+        ] {
+            assert!(
+                downloadable_component_id(id),
+                "blocked visible component: {id}"
+            );
+        }
+        for id in ["", "../installer", "windows-installer.exe", "manual-url"] {
+            assert!(!downloadable_component_id(id), "unexpected component: {id}");
+        }
+    }
     #[test]
     fn all_release_components_have_separate_verified_versions() {
         let tag = "v1.14.83-rc.2";
@@ -761,6 +792,11 @@ mod tests {
             assert!(ids.contains(&id), "missing {id}");
         }
         for item in items.iter().filter(|item| item.available) {
+            assert!(
+                downloadable_component_id(&item.id),
+                "catalog ID not downloadable: {}",
+                item.id
+            );
             assert_eq!(item.sha256.as_deref(), Some("a".repeat(64).as_str()));
             assert!(item.file_name.is_some());
             assert!(!item.instructions.is_empty());
