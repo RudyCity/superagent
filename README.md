@@ -16,22 +16,39 @@
 
 SuperAgent combines a local CLI/Core runtime with authorized tools, multi-project MCP integration, Chrome CDP/Delegate coordination, optional desktop companions, and consent-based local-network support. Some features are experimental, available only in source, and not yet included in published installers.
 
-**Release status (13 November 2026):** The single published GitHub Release is **[v1.14.83-rc.2](https://github.com/RudyCity/superagent/releases/tag/v1.14.83-rc.2)**, a unified prerelease with verified Windows, macOS and Linux standalone packages, Chrome extensions, and LAN preview installers. Source on `main` can be newer than this immutable tag. **Installing the release does not deploy, restart or take ownership of an existing Core/Delegate session.**
+**Release status (13 November 2026):** The latest published GitHub Release is **[v1.14.84-rc.1](https://github.com/RudyCity/superagent/releases/tag/v1.14.84-rc.1)**, a unified prerelease built from commit [`aad55a6a`](https://github.com/RudyCity/superagent/commit/aad55a6a7b5d981631172fe7c2ea05a782faa23b). All six independent build jobs and the publication job passed; 12 assets include Windows, macOS, Linux, Chrome, Android, Windows LAN and `SHA256SUMS.txt`. Older prereleases remain available. **Downloading or installing this release does not automatically deploy, restart, or assume ownership of an existing Core, MCP, or Delegate session.**
 
 **Navigate:** [Downloads](#downloads-and-release-status) · [Quick start](#quick-start-from-source) · [Capabilities](#capabilities) · [Managed Chrome CDP](#managed-chrome-cdp-and-human-supervision) · [Security](#security-model) · [Development](#development-and-verification) · [Documentation](#documentation)
 
 ## Downloads and release status
 
-The [GitHub Releases page](https://github.com/RudyCity/superagent/releases) now contains **one prerelease**. Five obsolete release entries were deleted after the unified release was verified; historical Git tags and commits were retained. GitHub's `/releases/latest` endpoint targets stable releases, so use the explicit prerelease link below. A source commit or Git tag alone is never proof of a published installer.
+The [GitHub Releases page](https://github.com/RudyCity/superagent/releases) contains this latest unified prerelease and earlier versions. GitHub's `/releases/latest` endpoint only selects stable releases, so use the explicit versioned link below. A Git commit or tag by itself is not a published installer.
 
 | Release channel | Status | What is available |
 | --- | --- | --- |
-| **[SuperAgent v1.14.83-rc.2](https://github.com/RudyCity/superagent/releases/tag/v1.14.83-rc.2)** | **Published unified prerelease** | Windows x64 standalone NSIS, macOS Apple Silicon DMG, Linux x64 DEB + AppImage, Chrome Delegate + SidePanel ZIPs and receipts, Windows LAN receiver GUI preview, Android LAN debug APK and metadata, and SHA-256 checksums (12 assets). |
+| **[SuperAgent v1.14.84-rc.1](https://github.com/RudyCity/superagent/releases/tag/v1.14.84-rc.1)** | **Latest published unified prerelease** | Windows x64 NSIS, macOS ARM64 DMG, Linux x64 DEB + AppImage, Chrome Delegate 1.10.1 + SidePanel 1.0.0 ZIPs and receipts, Windows LAN receiver GUI 0.2.0, Android LAN 0.10.1 Internet Tunnel APK/metadata, and SHA-256 checksums (12 assets). |
 | **Source on `main`** | **Development only** | Subsequent source work and tests may not be in the published tag. Builds are not auto-installed, deployed, or promoted into production. |
 
 **[Browse published GitHub Releases](https://github.com/RudyCity/superagent/releases)**. Generated files under `artifacts/` are intentionally Git-ignored; build output alone is not a published release.
 
-### Unified Update Manager — all release components (source on `main`)
+### Direct downloads — v1.14.84-rc.1
+
+| Platform / component | Published file |
+| --- | --- |
+| Windows 10/11 x64 · standalone Tray/Core/CLI/Bun | [SuperAgent_1.14.84_x64-setup.exe](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/SuperAgent_1.14.84_x64-setup.exe) |
+| macOS Apple Silicon | [SuperAgent_1.14.84_aarch64.dmg](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/SuperAgent_1.14.84_aarch64.dmg) |
+| Linux x64 · Debian/Ubuntu | [SuperAgent_1.14.84_amd64.deb](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/SuperAgent_1.14.84_amd64.deb) |
+| Linux x64 · portable | [SuperAgent_1.14.84_amd64.AppImage](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/SuperAgent_1.14.84_amd64.AppImage) |
+| Chrome Delegate 1.10.1 | [superagent-delegate-1.10.1.zip](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/superagent-delegate-1.10.1.zip) |
+| Chrome SidePanel 1.0.0 | [superagent-sidepanel-1.0.0.zip](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/superagent-sidepanel-1.0.0.zip) |
+| Android LAN Internet Tunnel · debug preview | [SuperAgent-LAN-Android-0.10.1-internet-tunnel-debug.apk](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/SuperAgent-LAN-Android-0.10.1-internet-tunnel-debug.apk) |
+| Windows LAN receiver GUI · unsigned preview | [SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe) |
+| Checksum manifest | [SHA256SUMS.txt](https://github.com/RudyCity/superagent/releases/download/v1.14.84-rc.1/SHA256SUMS.txt) |
+
+The release also contains Chrome ZIP receipts and Android Gradle metadata. Verify each downloaded file against `SHA256SUMS.txt` **before installation**. These are prerelease packages, not production R0–R7 certification. [See the successful unified release CI](https://github.com/RudyCity/superagent/actions/runs/43365460885).
+
+
+### Unified Update Manager — all release components (shipped in v1.14.84-rc.1)
 
 Open **Updates & Releases** in the desktop Tray (or **Check for Updates** in its native menu). This now supports **independent, per-component verified downloads**, not just the SuperAgent main installer.
 
@@ -47,20 +64,20 @@ The manager selects **only approved filenames** from `RudyCity/superagent`, chec
 
 **Installation is an independent, user-approved step.** Unpacked Chrome extensions cannot be silently replaced from the Tray; Android APK installation requires approval on the phone; native installers are not launched automatically. Core, MCP, OAuth, Delegate, Tray and active LAN transfers are never stopped as a side effect of checking or downloading. Where a companion app's installed version cannot be reliably queried, the UI says **Installed version unknown**, rather than inventing an update status. Tagged native builds embed their release-candidate tag, so a newer `rc` correctly appears as an update even when the base version number has not changed; development builds without tag provenance are explicitly marked **unverified build**.
 
-**Shipping status:** the new manager is in source on `main`, **not** in the already-published `v1.14.83-rc.2` binary. A new tagged build and native CI verification are required before it becomes available in an installed Tray. See [Unified Update Manager](docs/guides/verified-update-system.md) for security limits and guided installation steps.
+**Shipping status:** The verified per-component download manager ships in the native **v1.14.84-rc.1** Tray. Existing older installations do **not** acquire it until manually updated. Checking or downloading does not start an installer, replace Chrome extension source, install the APK, or restart active Core/MCP/Delegate sessions. See [Unified Update Manager](docs/guides/verified-update-system.md) for integrity controls and guidance.
 
 ### Windows installer: verify before running
 
-Download `SuperAgent_1.14.83_x64-setup.exe` and `SHA256SUMS.txt` from the [unified v1.14.83-rc.2 prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.83-rc.2). Verify the installer:
+Download `SuperAgent_1.14.84_x64-setup.exe` and `SHA256SUMS.txt` from the [unified v1.14.84-rc.1 prerelease](https://github.com/RudyCity/superagent/releases/tag/v1.14.84-rc.1). Verify the installer:
 
 ```powershell
-Get-FileHash .\SuperAgent_1.14.83_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\SuperAgent_1.14.84_x64-setup.exe -Algorithm SHA256
 ```
 
 Expected SHA-256 of the published Windows x64 installer:
 
 ```text
-f302e0b39553460a175533c96dc97ce0e0dc07dc729bff18ded7f9c57214e114
+5d8c44f40fd70ccc76a9330aa68b8ad3b3f3ec2621b69df576d338246690c416
 ```
 
 Run the installer on **Windows 10/11 x64**, then launch SuperAgent from the Start menu or a new terminal. The standalone installer bundles Core, the CLI, Bun, and its production packages; users do not need global Bun or Node.js for this package. Optional tools/models may require separate dependencies.
@@ -69,13 +86,13 @@ This is an unsigned release candidate: Windows SmartScreen may warn. **Verify th
 
 ### macOS ARM64 and Linux x64: verified standalone prerelease
 
-Download the DMG, DEB or AppImage and `SHA256SUMS.txt` from [v1.14.83-rc.2](https://github.com/RudyCity/superagent/releases/tag/v1.14.83-rc.2). Match the checksum entry for your file. On macOS use `shasum -a 256 SuperAgent_1.14.83_aarch64.dmg`; on Linux use `sha256sum SuperAgent_1.14.83_amd64.AppImage` or `sha256sum SuperAgent_1.14.83_amd64.deb`. Do not install files with mismatched checksums.
+Download the DMG, DEB or AppImage and `SHA256SUMS.txt` from [v1.14.84-rc.1](https://github.com/RudyCity/superagent/releases/tag/v1.14.84-rc.1). Match the checksum entry for your file. On macOS use `shasum -a 256 SuperAgent_1.14.84_aarch64.dmg`; on Linux use `sha256sum SuperAgent_1.14.84_amd64.AppImage` or `sha256sum SuperAgent_1.14.84_amd64.deb`. Do not install files with mismatched checksums.
 
 The Linux DEB is for Debian/Ubuntu-compatible x64 distributions; the AppImage is a portable x64 alternative (make it executable before running). The macOS DMG is for Apple Silicon only. macOS is not notarized, so Gatekeeper may warn. Both Chrome extension ZIPs are separate Developer-mode packages, not Chrome Web Store publications. These are **prereleases**, not a production runtime cutover.
 
 ### LAN previews: separate downloads, not production-certified
 
-The [unified v1.14.83-rc.2 release](https://github.com/RudyCity/superagent/releases/tag/v1.14.83-rc.2) includes a **Windows LAN receiver GUI 0.2.0** installer and an **Android LAN 0.10.0-native-dashboard debug APK** with matching Gradle metadata. These are standalone preview packages, not included in the main Windows NSIS installer and not yet Google Play / production deployment artifacts. The APK is debug-signed; physical-device interoperability, release signing, and operator acceptance are separate gates.
+The [unified v1.14.84-rc.1 release](https://github.com/RudyCity/superagent/releases/tag/v1.14.84-rc.1) includes a **Windows LAN receiver GUI 0.2.0** installer and an **Android LAN 0.10.1-internet-tunnel debug APK** with matching Gradle metadata. The Android Internet tunnel uses a visible foreground service; pairing, screen sharing and remote input still require device-side consent and permissions. These are standalone preview packages, not included in the main Windows NSIS installer and not yet Google Play / production deployment artifacts. The APK is debug-signed; physical-device interoperability, release signing, and operator acceptance are separate gates.
 
 Pairing requires a network-segment name for discovery, TLS fingerprint verification, short-lived pairing, and explicit device-owner approval. The segment is only a discovery filter, **not authentication**. Follow the [LAN client guide](docs/guides/superagent-lan-client.md).
 
@@ -145,7 +162,7 @@ When a system package manager changes `PATH`, open a fresh terminal and rerun `s
 | **Desktop** | [T-Line](https://github.com/RudyCity/t-line) integration and SuperAgent Tray | Some native controls depend on platform and installed build. |
 | **Muse / channels** | Remote AI task coordination via supported transports and tunnels | Remote exposure and side effects require explicit configuration. |
 | **Media / documents** | Conversion, image/media processing and document operations | Some formats need local binaries, models or optional packages. |
-| **LAN preview** | Consented diagnostics, device pairing and file/folder exchange | v0.6.0 is a development draft, not a shipped feature. |
+| **LAN preview** | Consented diagnostics, device pairing, file/folder exchange and Android Internet tunnel | Android 0.10.1 and Windows LAN 0.2.0 ship as separate debug/unsigned previews; physical-device certification is pending. |
 
 These describe the evolving source project, **not a promise that every capability appears in a specific published installer**. Check release notes and runtime tool availability.
 
@@ -201,6 +218,8 @@ On Windows with the native build toolchain, `bun run installer:build` stages, ve
 | --- | --- |
 | [Detailed technical README (preserved)](README_FULL.md) | Full pre-cleanup README: commands, architecture, experimental features, and historical evidence. This is a reference snapshot, **not** a release guarantee. |
 | [Windows standalone installer](docs/guides/windows-standalone-installer.md) | Windows build, install, verification and caveats |
+| [Verified Update Manager](docs/guides/verified-update-system.md) | Per-component checksums, safe downloads and manual installation |
+| [Unified v1.14.84 release CI](https://github.com/RudyCity/superagent/actions/runs/43365460885) | Six successful package builds and publication gate |
 | [SuperAgent Tray](apps/superagent-tray/README.md) | Tray UX, scheduler, service lifecycle and LAN Devices |
 | [Chrome CDP Delegate](docs/guides/delegate-cdp.md) | Paired Chrome/browser tooling |
 | [Multi-orchestrator Delegate](docs/guides/superagent-delegate-multitab-orchestrator.md) | Shared session ownership and coordination |
