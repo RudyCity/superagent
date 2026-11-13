@@ -17,7 +17,8 @@ describe("Android QR scanner foreground return contract", () => {
     expect(mainActivity).toContain("if (!visible || isFinishing() || launching || preparingFolder || pendingQrPayload == null) return;");
     expect(mainActivity).toContain("if (!visible || isFinishing()) {");
     expect(mainActivity).toContain("pendingQrPayload = setup;");
-    expect(mainActivity).toContain("if (!requestingCapture && !ScreenProjectionService.isActive()) stopSharing();");
+    expect(mainActivity).toContain("if (!requestingCapture && !ScreenProjectionService.isActive()) stopDirectSharing();");
+    expect(mainActivity).toContain("TunnelForegroundService.requestStart(this, setup, sharedFileName, sharedFileBytes)");
   });
 
   it("shows QR scan progress and recovery errors beside the scanner control", () => {
@@ -33,6 +34,6 @@ describe("Android QR scanner foreground return contract", () => {
   });
 
   it("identifies the rebuilt Android APK with the next build number", () => {
-    expect(gradle).toContain("versionCode 17");
+    expect(gradle).toContain("versionCode 18");
   });
 });

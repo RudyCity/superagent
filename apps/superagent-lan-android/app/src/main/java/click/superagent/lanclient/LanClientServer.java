@@ -34,6 +34,7 @@ import javax.net.ssl.SSLSocket;
 
 /**
  * Android implementation of the existing SuperAgent LAN Client v1 wire protocol.
+ * Internet tunnel mode must use a pinned loopback-only TLS listener.
  *
  * Intentional scope:
  * - Only a physically selected Android Wi-Fi/Ethernet private IPv4 LAN.
@@ -107,6 +108,8 @@ public final class LanClientServer implements AutoCloseable {
     private volatile Thread acceptThread, udpThread;
     private volatile ThreadPoolExecutor pool;
     private volatile LanNetwork.Link link;
+    // Tunnel traffic is accepted exclusively from the local HTTPS relay.
+    private volatile boolean loopbackOnly;
     private volatile Info info;
     private volatile String segmentTag;
     private Session session;
@@ -195,6 +198,42 @@ public final class LanClientServer implements AutoCloseable {
         }
     }
 
+    /** Dedicated tunnel listener: no Wi-Fi requirement, UDP discovery, or external bind. */
+    public Info startTunnelLoopback() throws Exception {
+        if (!running.compareAndSet(false, true)) throw new IllegalStateException("Client already running.");
+        loopbackOnly = true;
+        link = null;
+        segmentTag = null;
+        try {
+            LanIdentity.ServerIdentity identity = LanIdentity.getOrCreate();
+            SSLServerSocket listener = (SSLServerSocket) identity.tls.getServerSocketFactory()
+                    .createServerSocket();
+            listener.setEnabledProtocols(new String[] {"TLSv1.3"});
+            listener.setNeedClientAuth(false);
+            listener.setReuseAddress(false);
+            listener.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), PORT), 8);
+            tlsListener = listener;
+            synchronized (guard) { nextCode(); }
+            info = new Info("127.0.0.1", PORT, code, identity.fingerprint, "HTTPS tunnel");
+            pool = new ThreadPoolExecutor(2, 4, 30, TimeUnit.SECONDS,
+                    new ArrayBlockingQueue<>(8), new ThreadPoolExecutor.AbortPolicy());
+            acceptThread = new Thread(this::acceptLoop, "superagent-android-tunnel-tls");
+            acceptThread.setDaemon(true);
+            acceptThread.start();
+            notice.show("Secure tunnel listener ready (loopback only).");
+            return info;
+        } catch (Exception error) {
+            close();
+            throw error;
+        }
+    }
+
+    private boolean permitsPeer(String remoteIp, String localIp) {
+        if (loopbackOnly) return "127.0.0.1".equals(remoteIp) && "127.0.0.1".equals(localIp);
+        return link != null && LanNetwork.permitsPeer(context, link, remoteIp)
+                && LanPolicy.sameIpv4(link.ip, localIp);
+    }
+
     public void selectLocalFile(String name, byte[] bytes) {
         fileExchange.select(name, bytes);
     }
@@ -262,9 +301,7 @@ public final class LanClientServer implements AutoCloseable {
                 if (!running.get()) { closeQuietly(socket); return; }
                 String remoteIp = LanPolicy.canonicalIpv4(socket.getInetAddress().getHostAddress());
                 String localIp = LanPolicy.canonicalIpv4(socket.getLocalAddress().getHostAddress());
-                if (remoteIp == null || localIp == null
-                        || !LanNetwork.permitsPeer(context, link, remoteIp)
-                        || !LanPolicy.sameIpv4(link.ip, localIp)) {
+                if (remoteIp == null || localIp == null || !permitsPeer(remoteIp, localIp)) {
                     closeQuietly(socket);
                     continue;
                 }
@@ -332,7 +369,8 @@ public final class LanClientServer implements AutoCloseable {
             peer.setSoTimeout(150_000);
             peer.startHandshake();
             String ip = LanPolicy.canonicalIpv4(peer.getInetAddress().getHostAddress());
-            if (ip == null || !running.get() || !LanNetwork.permitsPeer(context, link, ip)) return;
+            if (ip == null || !running.get()
+                    || !permitsPeer(ip, LanPolicy.canonicalIpv4(peer.getLocalAddress().getHostAddress()))) return;
             String raw = readBoundedLine(peer.getInputStream());
             JSONObject request = new JSONObject(raw);
             handle(peer, request, ip);
@@ -637,7 +675,7 @@ public final class LanClientServer implements AutoCloseable {
     }
 
     private boolean isStillAuthorized(Session expected, Paired owner, String ip) {
-        if (!LanNetwork.permitsPeer(context, link, ip)) return false;
+        if (!permitsPeer(ip, loopbackOnly ? "127.0.0.1" : link == null ? null : link.ip)) return false;
         synchronized (guard) {
             long now = SystemClock.elapsedRealtime();
             return running.get() && session == expected
@@ -667,7 +705,7 @@ public final class LanClientServer implements AutoCloseable {
             fail(socket, "Pairing rejected."); return;
         }
         if (!approval.ask("pair", label, ip, 90) || !running.get() || socket.isClosed()
-                || !LanNetwork.permitsPeer(context, link, ip)) {
+                || !permitsPeer(ip, LanPolicy.canonicalIpv4(socket.getLocalAddress().getHostAddress()))) {
             fail(socket, "Pairing not approved."); return;
         }
         Paired owner;
@@ -696,7 +734,7 @@ public final class LanClientServer implements AutoCloseable {
             if (session != null) { fail(socket, "A support session is already active."); return; }
         }
         if (!approval.ask("session", owner.label, ip, 90) || !running.get() || socket.isClosed()
-                || !LanNetwork.permitsPeer(context, link, ip)) {
+                || !permitsPeer(ip, LanPolicy.canonicalIpv4(socket.getLocalAddress().getHostAddress()))) {
             fail(socket, "Session not approved."); return;
         }
         Session created;
@@ -763,6 +801,7 @@ public final class LanClientServer implements AutoCloseable {
         WifiManager.MulticastLock lock = multicastLock;
         multicastLock = null;
         if (lock != null && lock.isHeld()) lock.release();
-        notice.show("LAN sharing OFF. All pairing and sessions erased.");
+        loopbackOnly = false;
+        notice.show("Device sharing OFF. All pairing and sessions erased.");
     }
 }

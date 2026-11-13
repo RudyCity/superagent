@@ -47,6 +47,9 @@ describe("Unix standalone and browser extensions release contract", () => {
     expect(recovery).toContain("workflow_dispatch:");
     expect(recovery).toContain("PROVENANCE_VERIFIED");
     expect(recovery).toContain("source_run_id");
+    expect(recovery).toContain("delegate_version=");
+    expect(recovery).toContain("sidepanel_version=");
+    expect(recovery).toContain("find release-assets -type f");
     expect(recovery).toContain("EXTENSION_CHECKSUM_VERIFIED");
     expect(recovery).toContain("--verify-tag --prerelease");
   });

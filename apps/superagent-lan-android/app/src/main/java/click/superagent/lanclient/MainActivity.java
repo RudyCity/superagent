@@ -56,7 +56,7 @@ public final class MainActivity extends Activity {
     private String sharedFileName;
     private volatile boolean preparingFolder;
     private volatile LanClientServer server;
-    private volatile TunnelRelayClient tunnelRelay;
+    // Direct LAN is Activity-owned; internet tunnel is ForegroundService-owned.
     private volatile boolean visible;
     private volatile boolean launching;
     private AlertDialog approvalDialog;
@@ -84,6 +84,38 @@ public final class MainActivity extends Activity {
         } catch (PackageManager.NameNotFoundException ignored) {
             return "Version unavailable";
         }
+    }
+
+    static boolean hasVisibleOwner() {
+        MainActivity owner = currentActivity.get();
+        return owner != null && owner.visible && !owner.isFinishing();
+    }
+
+    static boolean requestTunnelApproval(String kind, String controller, String address, int seconds) {
+        MainActivity owner = currentActivity.get();
+        if (owner == null || !owner.visible || owner.isFinishing()) return false;
+        return owner.requestApproval(kind, controller, address, seconds);
+    }
+
+    static void executeTunnelApprovedAction(String command, BooleanSupplier authorized) {
+        MainActivity owner = currentActivity.get();
+        if (owner != null && owner.visible && !owner.isFinishing())
+            owner.executeApprovedAction(command, authorized);
+    }
+
+    static void tunnelNotice(String message) {
+        MainActivity owner = currentActivity.get();
+        if (owner == null) return;
+        owner.main.post(() -> {
+            if (!owner.visible || owner.isFinishing()) return;
+            if (owner.qrScanStatus != null) owner.qrScanStatus.setText(message);
+            owner.notifyEvent(message);
+        });
+    }
+
+    private LanClientServer activeServer() {
+        LanClientServer direct = server;
+        return direct != null && direct.isRunning() ? direct : TunnelForegroundService.currentServer();
     }
 
     private int dp(int n) { return AndroidUiKit.dp(this, n); }
@@ -258,7 +290,7 @@ public final class MainActivity extends Activity {
         code.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         add(layout, code, 0);
         renew = action(layout, "Generate new code", () -> {
-            LanClientServer live = server;
+            LanClientServer live = activeServer();
             if (live != null) code.setText(live.rotateCode());
         });
         add(layout, label("SHA-256 TLS certificate fingerprint", 12, AndroidUiKit.MUTED, false), 6);
@@ -268,7 +300,7 @@ public final class MainActivity extends Activity {
         fingerprint.setTextSize(11);
         add(layout, fingerprint, 0);
         copy = action(layout, "Copy fingerprint", () -> {
-            LanClientServer live = server;
+            LanClientServer live = activeServer();
             if (live == null || live.currentInfo() == null) return;
             ClipboardManager mgr = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
             if (mgr != null) mgr.setPrimaryClip(ClipData.newPlainText("Target certificate SHA-256", live.currentInfo().fingerprint));
@@ -280,7 +312,7 @@ public final class MainActivity extends Activity {
         add(layout, paired, 0);
         add(layout, label("Approve pairing and every support session. Every additional Android action requires its own on-screen approval. Only you can change system settings.", 13, AndroidUiKit.MUTED, false), 4);
         revoke = action(layout, "Revoke all paired access", () -> {
-            LanClientServer live = server;
+            LanClientServer live = activeServer();
             if (live != null) {
                 live.revoke();
                 code.setText(live.rotateCode());
@@ -338,8 +370,9 @@ public final class MainActivity extends Activity {
     }
 
     private void refresh() {
-        LanClientServer live = server;
+        LanClientServer live = activeServer();
         boolean on = live != null && live.isRunning();
+        boolean tunnelOn = TunnelForegroundService.isActive();
         if (start != null) start.setEnabled(!on && !launching && !preparingFolder);
         if (segmentInput != null) segmentInput.setEnabled(!on && !launching);
         if (stop != null) stop.setEnabled(on);
@@ -347,12 +380,20 @@ public final class MainActivity extends Activity {
         if (renew != null) renew.setEnabled(on);
         if (revoke != null) revoke.setEnabled(on);
         if (copy != null) copy.setEnabled(on);
-        boolean tunnelOn = tunnelRelay != null && tunnelRelay.isRunning();
-        if (tunnelSetupInput != null) tunnelSetupInput.setEnabled(on && !tunnelOn && !launching);
+        if (tunnelSetupInput != null) tunnelSetupInput.setEnabled(!tunnelOn && !launching);
         if (tunnelScan != null) tunnelScan.setEnabled(!tunnelOn && !launching && !preparingFolder && !qrScanInProgress);
-        if (tunnelConnect != null) tunnelConnect.setEnabled(on && !tunnelOn);
+        if (tunnelConnect != null) tunnelConnect.setEnabled(!tunnelOn && !launching);
         if (tunnelDisconnect != null) tunnelDisconnect.setEnabled(tunnelOn);
-        if (tunnelState != null) tunnelState.setText(tunnelOn ? "Tunnel ON · outbound HTTPS" : "Tunnel OFF");
+        if (tunnelState != null) tunnelState.setText(tunnelOn
+                ? TunnelForegroundService.currentStatus() : "Tunnel OFF · " + TunnelForegroundService.currentStatus());
+        if (status != null && server == null)
+            status.setText(tunnelOn ? "ON — secure HTTPS tunnel" : "OFF — no access");
+        if (tunnelOn && live != null && live.currentInfo() != null) {
+            LanClientServer.Info tunnelInfo = live.currentInfo();
+            if (ip != null) ip.setText("Local TLS " + tunnelInfo.ip + ":" + tunnelInfo.port);
+            if (code != null) code.setText("AUTO · QR pairing");
+            if (fingerprint != null) fingerprint.setText(tunnelInfo.fingerprint);
+        }
         if (paired != null) paired.setText(on ? live.state() : "No paired controllers");
         if (dashboardStatus != null) {
             dashboardStatus.setText(tunnelOn ? "Secure tunnel running"
@@ -362,7 +403,7 @@ public final class MainActivity extends Activity {
         if (dashboardConnection != null) {
             dashboardConnection.setText(tunnelOn
                     ? (RemoteControlPermit.hasApprovedSession() ? "Support session approved · Owner controls remain active"
-                        : "Tunnel running · Waiting for session approval")
+                        : TunnelForegroundService.currentStatus())
                     : on ? "Ready for local pairing · " + live.state()
                     : "Tap Connect to pair securely using QR or your local network.");
         }
@@ -499,7 +540,7 @@ public final class MainActivity extends Activity {
     }
 
     private void startSharing() {
-        if (server != null || launching || preparingFolder) return;
+        if (server != null || TunnelForegroundService.isActive() || launching || preparingFolder) return;
         final String segmentName;
         try {
             segmentName = LanClientServer.normalizeSegmentName(segmentInput.getText().toString());
@@ -568,7 +609,7 @@ public final class MainActivity extends Activity {
 
     private void scanTunnelQr() {
         if (qrScanInProgress) return;
-        if (tunnelRelay != null && tunnelRelay.isRunning()) {
+        if (TunnelForegroundService.isActive()) {
             qrFeedback("Device Tunnel is already running. Disconnect before scanning another QR.");
             return;
         }
@@ -623,51 +664,12 @@ public final class MainActivity extends Activity {
             pendingQrPayload = setup;
             return;
         }
-        LanClientServer live = server;
-        if (live != null && live.isRunning() && live.currentInfo() != null) {
-            String freshPairingCode = live.rotateCode();
-            if (code != null) code.setText("AUTO · QR pairing");
-            connectTunnelSetup(setup, freshPairingCode);
-            return;
-        }
         if (launching || preparingFolder) {
-            notifyEvent("Device sharing is still starting; scan again after it is ready.");
+            qrFeedback("Device sharing is still starting; scan again after it is ready.");
             return;
         }
-        launching = true;
-        status.setText("Starting secure QR tunnel engine...");
-        refresh();
-        new Thread(() -> {
-            LanClientServer pending = new LanClientServer(
-                    this, this::requestApproval, this::notifyEvent, this::executeApprovedAction);
-            try {
-                if (sharedFileBytes != null && sharedFileName != null)
-                    pending.selectLocalFile(sharedFileName, sharedFileBytes);
-                LanClientServer.Info info = pending.start("qr-tunnel");
-                main.post(() -> {
-                    launching = false;
-                    if (!visible) { pending.close(); refresh(); return; }
-                    server = pending;
-                    getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                    status.setText("ON — QR tunnel · " + info.transport);
-                    ip.setText(info.ip + ":" + info.port);
-                    code.setText("AUTO · QR pairing");
-                    fingerprint.setText(info.fingerprint);
-                    if (segmentInput != null && segmentInput.getText().toString().trim().isEmpty())
-                        segmentInput.setText("qr-tunnel");
-                    refresh();
-                    connectTunnelSetup(setup, info.code);
-                });
-            } catch (Exception error) {
-                pending.close();
-                main.post(() -> {
-                    launching = false;
-                    status.setText("OFF — QR connection failed");
-                    qrFeedback("Cannot start QR tunnel engine: " + error.getMessage());
-                    refresh();
-                });
-            }
-        }, "superagent-android-qr-start").start();
+        // QR uses a foreground-owned loopback TLS engine, not the Wi-Fi LAN listener.
+        connectTunnelSetup(setup, null);
     }
 
     private void connectTunnel() {
@@ -680,56 +682,46 @@ public final class MainActivity extends Activity {
     }
 
     private void connectTunnelSetup(String setup, String pairingCodeOverride) {
-        LanClientServer live = server;
-        LanClientServer.Info info = live == null ? null : live.currentInfo();
-        if (live == null || !live.isRunning() || info == null) {
-            notifyEvent("Start device sharing before connecting Device Tunnel.");
+        if (TunnelForegroundService.isActive()) {
+            qrFeedback("Disconnect the existing tunnel before scanning a new QR.");
             return;
         }
-        TunnelRelayClient existing = tunnelRelay;
-        if (existing != null && existing.isRunning()) return;
+        if (!notificationsReady()) {
+            qrFeedback("Enable SuperAgent notifications to show the persistent STOP SHARING control.");
+            requestNotificationSetup();
+            return;
+        }
         try {
-            TunnelRelayClient relay = new TunnelRelayClient(message -> {
-                notifyEvent(message);
-                if (message.startsWith("Device Tunnel") || message.startsWith("QR pairing")) {
-                    main.post(() -> {
-                        if (qrScanStatus != null) qrScanStatus.setText(message);
-                    });
-                }
-            });
-            String pairingCode = pairingCodeOverride == null ? info.code : pairingCodeOverride;
-            relay.start(setup, info.ip, info.port, info.fingerprint, pairingCode,
-                    Build.MANUFACTURER + " " + Build.MODEL);
-            tunnelRelay = relay;
+            stopDirectSharing();
+            TunnelForegroundService.requestStart(this, setup, sharedFileName, sharedFileBytes);
             if (tunnelSetupInput != null) tunnelSetupInput.setText("");
-            notifyEvent("Connecting reverse HTTPS Device Tunnel...");
+            qrFeedback("Starting secure outbound HTTPS tunnel (works over mobile data)...");
             refresh();
-        } catch (Exception error) {
-            tunnelRelay = null;
+        } catch (RuntimeException error) {
             qrFeedback("Cannot connect tunnel: " + error.getMessage());
             refresh();
         }
     }
 
     private void disconnectTunnel() {
-        TunnelRelayClient relay = tunnelRelay;
-        tunnelRelay = null;
-        if (relay != null) relay.stop();
-        notifyEvent("Device Tunnel disconnected.");
+        TunnelForegroundService.requestStop(this);
+        notifyEvent("Device Tunnel disconnected by phone owner.");
         refresh();
     }
 
-    private void stopSharing() {
-        TunnelRelayClient relay = tunnelRelay;
-        tunnelRelay = null;
-        if (relay != null) relay.stop();
-        RemoteControlPermit.revoke();
-        ScreenProjectionService.stop(this);
+    private void stopDirectSharing() {
         LanClientServer old = server;
         server = null;
         if (old != null) old.close();
         if (approvalDialog != null) approvalDialog.dismiss();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    private void stopSharing() {
+        TunnelForegroundService.requestStop(this);
+        stopDirectSharing();
+        RemoteControlPermit.revoke();
+        ScreenProjectionService.stop(this);
         if (status != null) status.setText("OFF — no access");
         if (ip != null) ip.setText("Not connected");
         if (code != null) code.setText("—");
@@ -740,7 +732,8 @@ public final class MainActivity extends Activity {
     private void executeApprovedAction(String command, BooleanSupplier stillAuthorized) {
         // Give TLS acknowledgement time to flush before leaving the foreground.
         main.postDelayed(() -> {
-            if (!visible || server == null || !server.isRunning()
+            LanClientServer live = activeServer();
+            if (!visible || live == null || !live.isRunning()
                     || !stillAuthorized.getAsBoolean()) {
                 notifyEvent("Action cancelled: support stopped, expired or revoked.");
                 return;
@@ -808,13 +801,14 @@ public final class MainActivity extends Activity {
     public static void onScreenCaptureEnded() {
         MainActivity owner = currentActivity.get();
         if (owner != null) owner.main.post(() -> {
-            if (owner.server != null) owner.stopSharing();
+            if (owner.activeServer() != null) owner.stopSharing();
             owner.refresh();
         });
     }
 
     private void beginScreenConsent() {
-        if (!visible || server == null || !server.isRunning()
+        LanClientServer live = activeServer();
+        if (!visible || live == null || !live.isRunning()
                 || !RemoteControlPermit.hasApprovedSession()) {
             notifyEvent("Pair and approve a LAN session first.");
             return;
@@ -944,7 +938,7 @@ public final class MainActivity extends Activity {
         }
         if (requestCode != SCREEN_REQUEST) return;
         requestingCapture = false;
-        if (resultCode != RESULT_OK || result == null || server == null
+        if (resultCode != RESULT_OK || result == null || activeServer() == null
                 || !RemoteControlPermit.hasApprovedSession()) {
             notifyEvent("Android screen capture declined or session ended.");
             refresh();
@@ -989,13 +983,15 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStop() {
         visible = false;
-        if (!requestingCapture && !ScreenProjectionService.isActive()) stopSharing();
+        // Direct LAN is screen-bound; the foreground HTTPS service owns its
+        // own loopback listener and survives normal Activity backgrounding.
+        if (!requestingCapture && !ScreenProjectionService.isActive()) stopDirectSharing();
         super.onStop();
     }
 
     @Override protected void onDestroy() {
         if (currentActivity.get() == this) currentActivity.clear();
-        stopSharing();
+        stopDirectSharing();
         super.onDestroy();
     }
 }

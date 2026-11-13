@@ -10,6 +10,7 @@ const diagnostics = java("AndroidDiagnostics");
 const health = java("AndroidHealthSnapshot");
 const permit = java("RemoteControlPermit");
 const tunnel = java("TunnelRelayClient");
+const tunnelService = java("TunnelForegroundService");
 const activity = java("MainActivity");
 const androidBuild = fs.readFileSync(path.join(root, "app/build.gradle"), "utf8");
 const manifest = fs.readFileSync(path.join(root, "app/src/main/AndroidManifest.xml"), "utf8");
@@ -56,7 +57,8 @@ describe("Android 0.7 standalone health and consent contract", () => {
     expect(manifest).toContain("barcode_ui");
     expect(activity).toContain("connectTunnelFromQr");
     expect(activity).toContain("AUTO · QR pairing");
-    expect(activity).toContain("TunnelRelayClient");
+    expect(activity).toContain("TunnelForegroundService.requestStart");
+    expect(tunnelService).toContain("TunnelRelayClient client = new TunnelRelayClient");
     expect(tunnel).toContain('"https".equalsIgnoreCase(url.getProtocol())');
     expect(tunnel).toContain('setRequestProperty("Authorization", "Device " + authToken)');
     expect(tunnel).toContain("relayLocal(");
@@ -72,8 +74,8 @@ describe("Android 0.7 standalone health and consent contract", () => {
       "QUERY_ALL_PACKAGES", "WRITE_SECURE_SETTINGS", "DEVICE_ADMIN"]) {
       expect(manifest).not.toContain(forbidden);
     }
-    expect(androidBuild).toContain("versionCode 17");
-    expect(androidBuild).toContain("versionName '0.10.0-native-dashboard'");
+    expect(androidBuild).toContain("versionCode 18");
+    expect(androidBuild).toContain("versionName '0.10.1-internet-tunnel'");
     expect(fs.existsSync(path.join(root, "gradle/wrapper/gradle-wrapper.jar"))).toBe(true);
   });
 });

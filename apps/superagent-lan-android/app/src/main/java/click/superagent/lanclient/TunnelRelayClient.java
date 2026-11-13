@@ -90,7 +90,9 @@ public final class TunnelRelayClient {
             deviceId = newId;
             token = newToken;
             setup.code = "";
-            notice.show("Device Tunnel connected through HTTPS.");
+            notice.show(setup.autoPair
+                    ? "Device Tunnel enrolled; waiting for on-phone QR pairing approval."
+                    : "Device Tunnel enrolled; pair a controller from SuperAgent Tray.");
 
             if (setup.autoPair) {
                 if (pairingCode == null || !pairingCode.matches("[0-9]{8}"))
@@ -107,7 +109,11 @@ public final class TunnelRelayClient {
                         String label = deviceResult == null ? "SuperAgent" : deviceResult.optString("label", "SuperAgent");
                         notice.show("QR pairing approved with " + safeName(label) + ".");
                     } catch (Exception error) {
-                        if (running.get()) notice.show("QR pairing failed: " + safeError(error));
+                        if (running.get()) {
+                            notice.show("QR pairing failed: " + safeError(error)
+                                    + ". Check Full YOLO permission and scan a fresh Connect QR.");
+                            stop();
+                        }
                     }
                 }, "superagent-device-tunnel-qr-pair");
                 autoPair.setDaemon(true);
@@ -118,6 +124,8 @@ public final class TunnelRelayClient {
                 try {
                     JSONObject polled = post(setup.baseUrl + "/api/device-tunnel/poll",
                             deviceId, token, new JSONObject().put("waitMs", 25_000), 35_000);
+                    if (failures > 0)
+                        notice.show("Device Tunnel HTTPS connection restored.");
                     failures = 0;
                     if (polled.isNull("request")) continue;
                     JSONObject request = polled.optJSONObject("request");
@@ -143,7 +151,7 @@ public final class TunnelRelayClient {
                 } catch (Exception error) {
                     if (!running.get()) break;
                     failures++;
-                    notice.show("Device Tunnel reconnecting.");
+                    notice.show("Device Tunnel reconnecting (" + failures + "): " + safeError(error));
                     try {
                         Thread.sleep(Math.min(10_000L, 500L << Math.min(5, failures)));
                     } catch (InterruptedException interrupted) {

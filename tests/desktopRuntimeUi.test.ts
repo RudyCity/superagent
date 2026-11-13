@@ -18,6 +18,9 @@ function mountRuntime(snapshot: unknown) {
     if (!item) {
       item = {
         textContent: "", innerHTML: "", hidden: false, disabled: false,
+        dataset: {}, attributes: {} as Record<string, string>,
+        setAttribute(key: string, value: string) { this.attributes[key] = value; },
+        focus: vi.fn(),
         addEventListener: (event: string, callback: (e: unknown) => unknown) =>
           listeners.set(id + ":" + event, callback),
         replaceChildren: () => {},
@@ -50,6 +53,18 @@ function mountRuntime(snapshot: unknown) {
 }
 
 describe("SuperAgent desktop Runtime Detection UI", () => {
+  it("hides agent-owned maintenance and Android screen controls without removing their backend hooks", () => {
+    const html = fs.readFileSync(path.resolve("apps/superagent-tray/ui/index.html"), "utf8");
+    const css = fs.readFileSync(path.resolve("apps/superagent-tray/ui/styles.css"), "utf8");
+    for (const id of ["lifecycle-console", "lan-screen-panel"]) {
+      const section = html.match(new RegExp('<section id="' + id + '"[^>]*>'))?.[0] || "";
+      expect(section).toContain(" hidden ");
+      expect(section).toContain(" inert ");
+      expect(section).toMatch(/aria-hidden="true"/);
+      expect(css).toContain("#" + id + "[hidden]");
+    }
+    expect(html).toContain('class="runtime-service-tabs"');
+  });
   it("renders authenticated Core, stale CLI process and degraded T-Line separately", async () => {
     const ui = mountRuntime({
       scannedAt: Date.now(),
@@ -100,7 +115,71 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(remotes).toContain("Muse Watch");
     expect(remotes).toContain("8857");
     expect(remotes).not.toContain("sensitive.invalid");
-    expect(ui.byId("runtime-remote-count").textContent).toContain("3 active/detected");
+    expect(ui.byId("runtime-remote-count").textContent).toContain("0 active/detected");
+    expect(ui.byId("runtime-tab-core-count").textContent).toBe("1");
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("1");
+    expect(ui.byId("runtime-tab-cloudflare-count").textContent).toBe("1");
+    expect(ui.byId("runtime-tab-muse-count").textContent).toBe("2");
+    expect(ui.byId("runtime-tab-processes-count").textContent).toBe("2");
+    expect(ui.byId("runtime-tab-hosts-count").textContent).toBe("1");
+    expect(ui.byId("runtime-servers-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-processes-panel").hidden).toBe(true);
+  });
+
+  it("separates Core, MCP, Cloudflare, Muse, Processes and Hosts into accessible tabs", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 1,
+      selectedCorePort: 7888,
+      cores: [{port: 7888, pid: 1234, state: "online", selected: true, pidVerified: true,
+        services: {muse: {watcherActive: true, ownerPresent: true, transport: "websocket"}}}],
+      processes: [{pid: 1111, role: "CLI", state: "active", heartbeatAgeSeconds: 2}],
+      independentHosts: [{kind: "tline-transport", port: 7891, pid: 2222, state: "active"}],
+      remoteServices: [
+        {kind: "core-supervisor", port: 7888, pid: 1234, state: "observed"},
+        {kind: "mcp", port: 9555, pid: 3333, state: "online"},
+        {kind: "cloudflare", port: 9555, pid: 4444, state: "online"},
+        {kind: "muse-watch", port: 9225, pid: 5555, state: "online"},
+      ],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(ui.byId("runtime-remote").innerHTML).toContain('data-runtime-service-kind="mcp"');
+    expect(ui.byId("runtime-remote").innerHTML).toContain('data-runtime-service-kind="cloudflare"');
+    expect(ui.byId("runtime-remote").innerHTML).toContain('data-runtime-service-kind="muse-watch"');
+    expect(ui.byId("runtime-remote").dataset.runtimeView).toBe("core");
+    expect(ui.byId("runtime-remote-panel").hidden).toBe(false);
+
+    vm.runInContext('runtimeSelectTab("mcp")', ui.context);
+    expect(ui.byId("runtime-servers-panel").hidden).toBe(true);
+    expect(ui.byId("runtime-remote-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-remote").dataset.runtimeView).toBe("mcp");
+    expect(ui.byId("runtime-remote-heading").textContent).toBe("Independent MCP Owners");
+    expect(ui.byId("runtime-remote-count").textContent).toContain("1 active/detected");
+    expect(ui.byId("runtime-tab-mcp").attributes["aria-selected"]).toBe("true");
+
+    const preventDefault = vi.fn();
+    const keydown = ui.listeners.get("runtime-tab-mcp:keydown");
+    expect(keydown).toBeDefined();
+    keydown?.({currentTarget: {dataset: {runtimeTab: "mcp"}}, key: "ArrowRight", preventDefault});
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(ui.byId("runtime-remote").dataset.runtimeView).toBe("cloudflare");
+    expect(ui.byId("runtime-tab-cloudflare").focus).toHaveBeenCalledOnce();
+
+    vm.runInContext('runtimeSelectTab("muse")', ui.context);
+    expect(ui.byId("runtime-muse-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-muse-local").innerHTML).toContain("Stop Muse");
+    expect(ui.byId("runtime-remote").dataset.runtimeView).toBe("muse");
+    expect(ui.byId("runtime-muse-local").innerHTML).toContain("Regenerate Muse Token");
+
+    vm.runInContext('runtimeSelectTab("processes")', ui.context);
+    expect(ui.byId("runtime-processes-panel").hidden).toBe(false);
+    expect(ui.byId("runtime-remote-panel").hidden).toBe(true);
+    vm.runInContext('runtimeSelectTab("hosts")', ui.context);
+    expect(ui.byId("runtime-hosts-panel").hidden).toBe(false);
+
+    // A periodic native snapshot refresh preserves the selected tab.
+    vm.runInContext('runtimeRender(runtimeLastResult)', ui.context);
+    expect(ui.byId("runtime-hosts-panel").hidden).toBe(false);
+    expect(ui.requested.every(item => item.action !== "service_action")).toBe(true);
   });
 
   it("requires human confirmation and fresh owner capability before any stop/restart RPC", async () => {

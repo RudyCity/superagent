@@ -118,6 +118,12 @@
   .tray-window-button { width: 42px; }
 }
 /* SuperAgent Tray · Automation & Runtime Console Stylesheet */
+/* Agent-owned service maintenance and Android remote-control internals are
+   deliberately absent from the operator-facing UI; preserve native/MCP APIs. */
+#lifecycle-console[hidden],
+#lan-screen-panel[hidden] {
+  display: none !important;
+}
 .runtime-create-panel {
   padding: 18px;
   margin: 12px 0 20px;
@@ -1343,6 +1349,82 @@ tbody tr:hover {
   color: var(--text-secondary);
 }
 
+/* Hallmark · component: runtime service tabs · genre: modern-minimal · theme: existing tray tokens
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: inherited from the existing tray palette
+ */
+.runtime-service-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 24px 0;
+  border-bottom: 1px solid var(--border-medium);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.runtime-service-tab {
+  appearance: none;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+.runtime-service-tab:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-surface-raised);
+}
+.runtime-service-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+.runtime-service-tab:active:not(:disabled) {
+  background: var(--accent-muted);
+}
+.runtime-service-tab[aria-selected="true"] {
+  color: var(--accent-hover);
+  border-bottom-color: var(--accent);
+  background: var(--bg-surface-raised);
+}
+.runtime-service-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.runtime-tab-count {
+  display: inline-flex;
+  min-width: 19px;
+  justify-content: center;
+  padding: 2px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.runtime-service-tab[aria-selected="true"] .runtime-tab-count {
+  color: var(--text-primary);
+  background: var(--accent-muted);
+}
+.runtime-content > [hidden],
+#runtime-remote-empty[hidden] { display: none !important; }
+#runtime-remote[data-runtime-view="core"] > [data-runtime-service-kind]:not([data-runtime-service-kind="core-supervisor"]),
+#runtime-remote[data-runtime-view="mcp"] > [data-runtime-service-kind]:not([data-runtime-service-kind="mcp"]),
+#runtime-remote[data-runtime-view="cloudflare"] > [data-runtime-service-kind]:not([data-runtime-service-kind="cloudflare"]),
+#runtime-remote[data-runtime-view="muse"] > [data-runtime-service-kind]:not([data-runtime-service-kind="muse-watch"]) {
+  display: none !important;
+}
 .runtime-content {
   display: grid;
   grid-template-columns: 1fr 1fr;

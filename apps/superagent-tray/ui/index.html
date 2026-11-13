@@ -495,8 +495,16 @@
             </form>
           </section>
           <p id="runtime-action-feedback" class="runtime-notes" role="status" aria-live="polite" hidden></p>
+          <div class="runtime-service-tabs" role="tablist" aria-label="Runtime service categories">
+            <button id="runtime-tab-core" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="core" aria-controls="runtime-servers-panel" aria-selected="true" tabindex="0">Core <span id="runtime-tab-core-count" class="runtime-tab-count">0</span></button>
+            <button id="runtime-tab-mcp" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="mcp" aria-controls="runtime-remote-panel" aria-selected="false" tabindex="-1">MCP <span id="runtime-tab-mcp-count" class="runtime-tab-count">0</span></button>
+            <button id="runtime-tab-cloudflare" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="cloudflare" aria-controls="runtime-remote-panel" aria-selected="false" tabindex="-1">Cloudflare <span id="runtime-tab-cloudflare-count" class="runtime-tab-count">0</span></button>
+            <button id="runtime-tab-muse" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="muse" aria-controls="runtime-muse-panel" aria-selected="false" tabindex="-1">Muse <span id="runtime-tab-muse-count" class="runtime-tab-count">0</span></button>
+            <button id="runtime-tab-processes" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="processes" aria-controls="runtime-processes-panel" aria-selected="false" tabindex="-1">Processes <span id="runtime-tab-processes-count" class="runtime-tab-count">0</span></button>
+            <button id="runtime-tab-hosts" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="hosts" aria-controls="runtime-hosts-panel" aria-selected="false" tabindex="-1">Hosts <span id="runtime-tab-hosts-count" class="runtime-tab-count">0</span></button>
+          </div>
           <div class="runtime-content">
-            <div class="runtime-column">
+            <div id="runtime-servers-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-core">
               <div class="column-header">
                 <h3>Registered Core Servers</h3>
                 <span class="column-tag">Authenticated</span>
@@ -506,7 +514,7 @@
               </div>
             </div>
 
-            <div class="runtime-column">
+            <div id="runtime-processes-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-processes" hidden>
               <div class="column-header">
                 <h3>CLI &amp; Process Journal</h3>
                 <span class="column-tag">Heartbeats</span>
@@ -516,18 +524,28 @@
               </div>
             </div>
 
-            <div class="runtime-column runtime-full">
+            <div id="runtime-muse-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-muse" hidden>
               <div class="column-header">
-                <h3>Independent MCP, Cloudflare &amp; Muse Watch <span id="runtime-remote-count" class="subtle-badge"></span></h3>
-                <span class="column-tag">Cross-process</span>
+                <h3>Core-local Muse Watch</h3>
+                <span class="column-tag">Selected Core</span>
               </div>
-              <div id="runtime-remote" class="runtime-items runtime-host-grid">
+              <div id="runtime-muse-local" class="runtime-items">
+                <p class="empty-state">Checking selected Core Muse Watch...</p>
+              </div>
+            </div>
+            <div id="runtime-remote-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-mcp" hidden>
+              <div class="column-header">
+                <h3><span id="runtime-remote-heading">Independent MCP Owners</span> <span id="runtime-remote-count" class="subtle-badge"></span></h3>
+                <span id="runtime-remote-tag" class="column-tag">Cross-process</span>
+              </div>
+              <div id="runtime-remote" class="runtime-items runtime-host-grid" data-runtime-view="mcp">
                 <p class="empty-state">Checking registered MCP tunnels and Muse watchers...</p>
               </div>
+              <p id="runtime-remote-empty" class="empty-state" hidden></p>
 
             </div>
 
-            <div class="runtime-column runtime-full">
+            <div id="runtime-hosts-panel" class="runtime-column runtime-full" role="tabpanel" aria-labelledby="runtime-tab-hosts" hidden>
               <div class="column-header">
                 <h3>Independent Transports &amp; Channel Hosts <span id="runtime-independent-count" class="subtle-badge"></span></h3>
                 <span class="column-tag">T-Line &amp; Muse</span>
@@ -538,7 +556,7 @@
             </div>
           </div>
 
-          <section id="lifecycle-console" class="lifecycle-console" aria-labelledby="lifecycle-heading">
+          <section id="lifecycle-console" class="lifecycle-console" aria-labelledby="lifecycle-heading" hidden inert aria-hidden="true">
             <div class="lifecycle-heading">
               <div>
                 <div class="panel-eyebrow">OWNER-VERIFIED SERVICE CONTROL</div>
@@ -926,7 +944,7 @@
         </section>
 
         <!-- Android full-screen support is explicitly opted into on the target phone. -->
-        <section id="lan-screen-panel" class="panel lan-panel" aria-labelledby="lan-screen-title">
+        <section id="lan-screen-panel" class="panel lan-panel" aria-labelledby="lan-screen-title" hidden inert aria-hidden="true">
           <div class="panel-head">
             <div>
               <div class="panel-eyebrow">SELECTED ANDROID SESSION / LIVE SCREEN</div>

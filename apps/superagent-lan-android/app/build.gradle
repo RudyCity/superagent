@@ -8,8 +8,8 @@ android {
         applicationId 'click.superagent.lanclient'
         minSdk 29
         targetSdk 35
-        versionCode 17
-        versionName '0.10.0-native-dashboard'
+        versionCode 18
+        versionName '0.10.1-internet-tunnel'
     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

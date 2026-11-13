@@ -222,7 +222,7 @@ function runtimeRemoteCard(service) {
           ${service.canRestart ? "" : "disabled"} title="Owner-managed restart/reload with safety checks">Restart</button>
          ${rotateButton}
        </div>`;
-  return `<article class="runtime-instance compact">
+  return `<article class="runtime-instance compact" data-runtime-service-kind="${runtimeEscape(service.kind)}">
     <div class="runtime-instance-head">
       <div><strong>${runtimeEscape(name)}${runtimeEscape(port)}</strong>
         <small>PID ${runtimeEscape(service.pid ?? "-")} · ${runtimeEscape(service.transport || "unknown")}</small></div>
@@ -274,6 +274,122 @@ window.__superagentMuseQuickAction = async (action) => {
   }) } });
 };
 
+const runtimeTabNames = ["core", "mcp", "cloudflare", "muse", "processes", "hosts"];
+const runtimeRemoteTabs = {
+  core: { kind: "core-supervisor", title: "Independent Core Supervisors", tag: "Owner-verified",
+    empty: "No independent Core supervisor registered outside the Core list." },
+  mcp: { kind: "mcp", title: "Independent MCP Owners", tag: "MCP HTTP / OAuth",
+    empty: "No independent MCP owner detected. Create a tunnel using New Connection." },
+  cloudflare: { kind: "cloudflare", title: "Cloudflare Tunnels", tag: "Public ingress",
+    empty: "No Cloudflare tunnel registered. Tunnel status depends on the verified service owner." },
+  muse: { kind: "muse-watch", title: "Independent Muse Watch", tag: "Cross-process",
+    empty: "No independent Muse watcher detected. Core-local Muse is shown separately above." },
+};
+let runtimeActiveTab = "core";
+
+function runtimeMuseLocalCard(snapshot) {
+  const core = runtimeSelectedMuseCore(snapshot);
+  const muse = core?.services?.muse;
+  if (!core || typeof muse?.watcherActive !== "boolean") {
+    return '<p class="empty-state">No selected, verified Core with Muse Watch status. Select an authenticated Core first.</p>';
+  }
+  const data = `data-runtime-kind="muse-core" data-runtime-port="${core.port}" data-runtime-pid="${core.pid}"`;
+  const controls = muse.watcherActive
+    ? `<button type="button" class="button ghost runtime-lifecycle" data-runtime-action="stop" ${data}>Stop Muse</button>
+       <button type="button" class="button ghost runtime-lifecycle" data-runtime-action="restart" ${data} ${muse.ownerPresent ? "" : "disabled"}>Restart Muse</button>
+       ${muse.configStale ? `<button type="button" class="button ghost runtime-lifecycle" data-runtime-action="apply-restart" ${data} ${muse.ownerPresent ? "" : "disabled"}>Apply &amp; Restart</button>` : ""}
+       ${muse.transport === "websocket" ? `<button type="button" class="button ghost runtime-regenerate-token" ${data} ${muse.ownerPresent ? "" : "disabled"}>Regenerate Muse Token</button>` : ""}`
+    : `<button type="button" class="button ghost runtime-lifecycle" data-runtime-action="start-telegram" ${data}>Start Muse · Telegram</button>
+       <button type="button" class="button ghost runtime-lifecycle" data-runtime-action="start-websocket" ${data}>Start Muse · WebSocket</button>
+       <button type="button" class="button ghost runtime-lifecycle" data-runtime-action="start-tunnel" ${data}>Start Muse · Tunnel</button>`;
+  const details = [
+    muse.transport ? `Transport: ${String(muse.transport)}` : null,
+    Number.isFinite(muse.queuedBatches) && muse.queuedBatches > 0 ? `${muse.queuedBatches} queued` : null,
+    muse.configStale ? "Saved configuration changed" : null,
+    muse.watcherActive && !muse.connected ? "Connection not ready" : null,
+  ].filter(Boolean).join(" · ");
+  return `<article class="runtime-instance compact">
+    <div class="runtime-instance-head">
+      <div><strong>Core-local Muse Watch · :${core.port}</strong>
+        <small>Verified Core PID ${core.pid} · ${runtimeEscape(details || "Uses selected authenticated Core")}</small></div>
+      ${runtimeStatusPill(muse.watcherActive ? "active" : "idle")}
+    </div>
+    <div class="runtime-instance-footer">${controls}</div>
+  </article>`;
+}
+
+function runtimeApplyTab() {
+  const tab = runtimeTabNames.includes(runtimeActiveTab) ? runtimeActiveTab : "core";
+  const config = runtimeRemoteTabs[tab];
+  const snapshot = runtimeLastResult || {};
+  const remote = Array.isArray(snapshot.remoteServices) ? snapshot.remoteServices : [];
+  const matched = config ? remote.filter(service => service.kind === config.kind) : [];
+  const counts = {
+    core: (snapshot.cores?.length || 0) + remote.filter(s => s.kind === "core-supervisor").length,
+    mcp: remote.filter(s => s.kind === "mcp").length,
+    cloudflare: remote.filter(s => s.kind === "cloudflare").length,
+    muse: remote.filter(s => s.kind === "muse-watch").length +
+      (typeof runtimeSelectedMuseCore(snapshot)?.services?.muse?.watcherActive === "boolean" ? 1 : 0),
+    processes: snapshot.processes?.length || 0,
+    hosts: snapshot.independentHosts?.length || 0,
+  };
+  for (const name of runtimeTabNames) {
+    const button = rt("runtime-tab-" + name);
+    if (button) {
+      button.setAttribute?.("aria-selected", String(name === tab));
+      button.tabIndex = name === tab ? 0 : -1;
+    }
+    const count = rt("runtime-tab-" + name + "-count");
+    if (count) count.textContent = String(counts[name]);
+  }
+  const visible = {
+    "runtime-servers-panel": tab === "core",
+    "runtime-processes-panel": tab === "processes",
+    "runtime-muse-panel": tab === "muse",
+    "runtime-remote-panel": Boolean(config) && (tab !== "core" || matched.length > 0),
+    "runtime-hosts-panel": tab === "hosts",
+  };
+  for (const [id, show] of Object.entries(visible)) {
+    const panel = rt(id);
+    if (panel) panel.hidden = !show;
+  }
+  const remoteNode = rt("runtime-remote");
+  if (remoteNode?.dataset) remoteNode.dataset.runtimeView = tab;
+  const remotePanel = rt("runtime-remote-panel");
+  remotePanel?.setAttribute?.("aria-labelledby", "runtime-tab-" + tab);
+  if (config) {
+    rt("runtime-remote-heading").textContent = config.title;
+    rt("runtime-remote-tag").textContent = config.tag;
+    const active = matched.filter(s => s.state === "online" || s.state === "observed").length;
+    rt("runtime-remote-count").textContent = `(${active} active/detected · ${matched.length} registered)`;
+    const empty = rt("runtime-remote-empty");
+    if (empty) {
+      empty.hidden = matched.length > 0;
+      empty.textContent = config.empty;
+    }
+  }
+}
+
+function runtimeSelectTab(tab, focus = false) {
+  if (!runtimeTabNames.includes(tab)) return;
+  runtimeActiveTab = tab;
+  runtimeApplyTab();
+  if (focus) rt("runtime-tab-" + tab)?.focus?.();
+}
+
+function runtimeTabKeydown(event) {
+  const current = runtimeTabNames.indexOf(event.currentTarget?.dataset?.runtimeTab);
+  if (current < 0) return;
+  let next = current;
+  if (event.key === "ArrowRight") next = (current + 1) % runtimeTabNames.length;
+  else if (event.key === "ArrowLeft") next = (current + runtimeTabNames.length - 1) % runtimeTabNames.length;
+  else if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = runtimeTabNames.length - 1;
+  else return;
+  event.preventDefault();
+  runtimeSelectTab(runtimeTabNames[next], true);
+}
+
 function runtimeRender(snapshot) {
   runtimeLastResult = snapshot;
   rt("runtime-core-count").textContent = String(snapshot.healthyCoreCount || 0);
@@ -297,9 +413,8 @@ function runtimeRender(snapshot) {
   const remote = Array.isArray(snapshot.remoteServices) ? snapshot.remoteServices : [];
   rt("runtime-remote-count").textContent =
     `(${remote.filter(s => s.state === "online" || s.state === "observed").length} active/detected · ${remote.length} registered)`;
-  rt("runtime-remote").innerHTML = remote.length
-    ? remote.map(runtimeRemoteCard).join("")
-    : '<p class="empty-state">No MCP/tunnel registry or Muse Watch heartbeat found. An already running old Muse Watch process may need a controlled restart to publish its new heartbeat.</p>';
+  rt("runtime-remote").innerHTML = remote.map(runtimeRemoteCard).join("");
+  rt("runtime-muse-local").innerHTML = runtimeMuseLocalCard(snapshot);
 
   const hosts = Array.isArray(snapshot.independentHosts) ? snapshot.independentHosts : [];
   rt("runtime-independent-count").textContent = `(${hosts.length} detected)`;
@@ -311,6 +426,7 @@ function runtimeRender(snapshot) {
     "Online status requires an authentic loopback HTTP response with bearer authentication. Process discovery validates OS PID, creation time, and fresh heartbeats. " +
     "Local Core summaries do not establish global MCP/Muse status. The independent MCP, Cloudflare and Muse Watch cards use owner records, live PID and endpoint/heartbeat evidence. No credentials or tunnel URLs are displayed.";
   rt("runtime-notes").hidden = false;
+  runtimeApplyTab();
   window.__superagentLifecycleUpdateMuseControls?.();
 }
 
@@ -719,6 +835,11 @@ function runtimeInstall() {
   rt("runtime-create-close")?.addEventListener("click", () => {
     if (rt("runtime-create-panel")) rt("runtime-create-panel").hidden = true;
   });
+  for (const name of runtimeTabNames) {
+    const tab = rt("runtime-tab-" + name);
+    tab?.addEventListener("click", () => runtimeSelectTab(name));
+    tab?.addEventListener("keydown", runtimeTabKeydown);
+  }
   rt("runtime-create-kind")?.addEventListener("change", runtimeCreateKindChanged);
   rt("runtime-create-provider")?.addEventListener("change", runtimeCreateKindChanged);
   rt("runtime-create-form")?.addEventListener("submit", runtimeCreateConnection);
@@ -727,6 +848,8 @@ function runtimeInstall() {
   rt("runtime-servers")?.addEventListener("click", runtimeSelect);
   rt("runtime-remote")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-remote")?.addEventListener("click", runtimeRegenerateToken);
+  rt("runtime-muse-local")?.addEventListener("click", runtimeServiceAction);
+  rt("runtime-muse-local")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-servers")?.addEventListener("click", runtimeRegenerateToken);
 

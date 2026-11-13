@@ -69,6 +69,13 @@ public final class AndroidDiagnostics {
                         .put("supportedAbis", new JSONArray(Arrays.asList(Build.SUPPORTED_ABIS)))
                         .toString(2) + "\n";
             case "android.network":
+                if (link == null) return new JSONObject()
+                        .put("transport", "outbound HTTPS tunnel")
+                        .put("localIPv4", JSONObject.NULL)
+                        .put("prefix", JSONObject.NULL)
+                        .put("vpn", JSONObject.NULL)
+                        .put("privacy", "Local/public IP not exposed by tunnel diagnostics")
+                        .toString(2) + "\n";
                 return new JSONObject()
                         .put("transport", link.transport)
                         .put("localIPv4", link.ip)
@@ -77,11 +84,15 @@ public final class AndroidDiagnostics {
                         .toString(2) + "\n";
             case "android.network_details": {
                 ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-                NetworkCapabilities caps = manager == null ? null : manager.getNetworkCapabilities(link.network);
+                android.net.Network selected = link == null
+                        ? manager == null ? null : manager.getActiveNetwork()
+                        : link.network;
+                NetworkCapabilities caps = manager == null || selected == null
+                        ? null : manager.getNetworkCapabilities(selected);
                 return new JSONObject()
-                        .put("transport", link.transport)
-                        .put("localIPv4", link.ip)
-                        .put("prefix", link.prefix)
+                        .put("transport", link == null ? "outbound HTTPS tunnel" : link.transport)
+                        .put("localIPv4", link == null ? JSONObject.NULL : link.ip)
+                        .put("prefix", link == null ? JSONObject.NULL : link.prefix)
                         .put("internetCapability", caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET))
                         .put("validatedInternet", caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
                         .put("notMetered", caps != null && caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
@@ -151,8 +162,8 @@ public final class AndroidDiagnostics {
                         .getSystemService(Context.WIFI_SERVICE);
                 return new JSONObject()
                         .put("wifiEnabled", manager != null && manager.isWifiEnabled())
-                        .put("activeLanTransport", link.transport)
-                        .put("privateIPv4", link.ip)
+                        .put("activeLanTransport", link == null ? "HTTPS tunnel" : link.transport)
+                        .put("privateIPv4", link == null ? JSONObject.NULL : link.ip)
                         .toString(2) + "\n";
             }
             case "android.audio": {
