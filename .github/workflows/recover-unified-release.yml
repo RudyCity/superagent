@@ -86,32 +86,36 @@ jobs:
           TARGET_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          cat > RELEASE_NOTES.md <<'EOF'
-          # SuperAgent unified verified prerelease
+          core_version="$(node -p 'require("./package.json").version')"
+          delegate_version="$(node -p 'require("./chrome-extension-delegate/manifest.json").version')"
+          sidepanel_version="$(node -p 'require("./chrome-extension/manifest.json").version')"
+          lan_version="$(node -p 'require("./apps/superagent-lan-windows/src-tauri/tauri.conf.json").version')"
+          android_version="$(grep -oE "versionName '[^']+'" apps/superagent-lan-android/app/build.gradle | cut -d"'" -f2)"
+          cat > RELEASE_NOTES.md <<EOF
+          # SuperAgent $TARGET_TAG — Unified Multi-OS & Extensions Release
 
           All binaries were built on dedicated native CI runners from the exact
           tagged commit, with six independent, successful build/test jobs.
-          This publication recovered their immutable CI artifacts following a
-          GitHub download-artifact folder-layout mismatch.
 
-          - Windows x64: standalone Tray, Core, CLI and Bun NSIS installer.
-            No Microsoft C++ Build Tools or Rust toolchain needed on target PC.
-            Do not use `bun install -g` to install the native desktop app.
-          - macOS Apple Silicon: unsigned/unnotarized DMG prerelease.
-          - Linux x64: standalone DEB and AppImage prereleases.
-          - Chrome Delegate and SidePanel: distinct MV3 source ZIPs and receipts.
-            Install in developer mode; not Chrome Web Store distribution.
-          - Windows LAN GUI: unsigned preview installer.
-          - Android LAN: debug-signed preview APK and Gradle metadata.
-            Not Google Play or production physical-device certification.
+          ### Component Versions & Downloads
+          - **Windows x64 (v${core_version})**: \`SuperAgent_${core_version}_x64-setup.exe\` — Standalone NSIS installer (Tray + Core + Bun + native CLI).
+          - **Ubuntu / Debian Linux x64 (v${core_version})**: \`SuperAgent_${core_version}_amd64.deb\` — Debian/Ubuntu native package.
+          - **Linux x64 Portable (v${core_version})**: \`SuperAgent_${core_version}_amd64.AppImage\` — Standalone AppImage with verified glibc native addons.
+          - **macOS ARM64 Apple Silicon (v${core_version})**: \`SuperAgent_${core_version}_aarch64.dmg\` — Unsigned DMG bundle.
+          - **Chrome Delegate Extension (v${delegate_version})**: \`superagent-delegate-${delegate_version}.zip\` (with verified receipt) — MV3 developer extension for ChatGPT automation.
+          - **Chrome SidePanel Extension (v${sidepanel_version})**: \`superagent-sidepanel-${sidepanel_version}.zip\` (with verified receipt) — MV3 AI assistant sidepanel.
+          - **Windows LAN Receiver GUI (v${lan_version})**: \`SuperAgent-LAN-Client-${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client preview installer.
+          - **Android LAN Preview (v${android_version})**: \`SuperAgent-LAN-Android-${android_version}-debug.apk\` + metadata — Debug-signed APK.
+          - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 11 binary, archive and metadata assets.
 
-          Use SHA256SUMS.txt to verify each download. R0–R7 production acceptance,
-          signing/notarization and operator-approved deployment remain separate.
-          This release does not restart active Core/MCP/Delegate services.
+          The release does not migrate users, modify Core/MCP ownership, restart a
+          running instance or certify production deployment (R0–R7 remain separate).
+          Verify checksum and provenance before installing.
           EOF
+          release_title="SuperAgent $TARGET_TAG — Windows v${core_version}, Ubuntu v${core_version}, macOS v${core_version}, Delegate v${delegate_version}, SidePanel v${sidepanel_version}, LAN v${lan_version}, Android v${android_version}"
           gh release create "$TARGET_TAG" release-assets/* SHA256SUMS.txt \
             --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease \
-            --title "SuperAgent $TARGET_TAG — All platforms, Chrome extensions and LAN previews" \
+            --title "$release_title" \
             --notes-file RELEASE_NOTES.md
           asset_count="$(gh release view "$TARGET_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length')"
           [[ "$asset_count" == "12" ]] || { echo "Published release is missing assets: $asset_count/12"; exit 1; }
