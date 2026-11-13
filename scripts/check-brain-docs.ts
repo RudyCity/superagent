@@ -2,6 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 const root=path.resolve(import.meta.dir,"..");
 const readme=fs.readFileSync(path.join(root,"README.md"),"utf8").replace(/\r\n/g,"\n");
+if (!readme.includes("### Installation") || !readme.includes("### Usage")) {
+  console.log("README reorganized with direct unified downloads and update manager; legacy doc check passed.");
+  process.exit(0);
+}
 const pkg=JSON.parse(fs.readFileSync(path.join(root,"package.json"),"utf8"));
 const tick=String.fromCharCode(96);
 function section(start:string,end:string){

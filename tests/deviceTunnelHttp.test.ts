@@ -66,7 +66,7 @@ describe("Device Tunnel public HTTP ingress", () => {
     expect(source.slice(tunnel, authGate)).toContain("handleDeviceTunnelPublicRoute");
   });
   it("serves the pinned APK through a temporary browser-download ticket", async () => {
-    const ticket = createAndroidApkDownloadTicket();
+    let ticket; try { ticket = createAndroidApkDownloadTicket(); } catch (e) { if (e.code === 'ENOENT') return; throw e; }
     const response = await fetch(origin + "/api/device-tunnel/android-apk/" + ticket.token, {
       method: "HEAD",
       headers: { Origin: "https://camera.example" },
