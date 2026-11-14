@@ -51,6 +51,10 @@ bun scripts/mcp-tunnel-anchor-watch.ts watch 19320 15
 
 There is **no automatic restart** and no installed startup task. Losing the original Quick Tunnel means its random hostname cannot be restored; a persistent service and guaranteed hostname require an explicitly approved named Cloudflare tunnel and OS-native restart/recovery gates. An unavailable process is an alert, not permission to create or take over a replacement.
 
+## Stage 5 — prepared stable Cloudflare hostname
+
+A separately managed **Named Tunnel** can serve the Anchor on a fixed operator-owned hostname. The `start-named` mode **does not run or stop cloudflared**, change DNS, or transfer a live Quick Tunnel. Preflight checks UUID, credentials and strict localhost ingress with a `404` catch-all before staging. The observer reports `NAMED_CONNECTOR_UNVERIFIED` until independently verified external connector and DNS health are available. See [Named Tunnel readiness](mcp-named-tunnel-readiness.md). Initial Gemini client reauthorization and DNS cutover remain operator-approved, not automatic.
+
 ## Recovery and limits
 
 - If the old owner exits or crashes **without verified drain**, Anchor returns 503 rather than silently routing to a different process. Do not replay non-idempotent tool calls. Automatic crash recovery and takeover of orphaned OAuth writer state are not implemented or certified.

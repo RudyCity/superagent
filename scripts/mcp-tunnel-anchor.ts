@@ -2,6 +2,7 @@
  * Standalone, explicitly operated Tunnel Anchor process and local control.
  *
  * start PORT             : create new independent Quick Tunnel (never adopt)
+ * start-named PORT ABSOLUTE_SPEC_JSON --reviewed : bind named external ingress only; no cloudflared/DNS mutation
  * status PORT            : authenticate private anchor and verify OS listener
  * plan PORT OWNER_PORT   : inspect owner handoff without rerouting traffic
  * activate PORT OWNER_PORT PLAN_ID EXPECTED_PREVIOUS_PID --reviewed
@@ -12,6 +13,7 @@
 import crypto from "node:crypto";
 import {startMcpTunnelAnchor} from "../src/core/runtime/mcpTunnelAnchor.js";
 import {observeMcpTunnelAnchor} from "../src/core/runtime/mcpTunnelAnchorObserver.js";
+import {readMcpNamedTunnelSpec,verifyStagedMcpNamedTunnel} from "../src/core/runtime/mcpNamedTunnelConfig.js";
 import {readManagedMcpTunnelLease,verifyManagedOwnerIdentity}
   from "../src/core/runtime/mcpManagedTunnelOwner.js";
 import {readMcpTunnelAnchorLease,writeMcpTunnelAnchorLease,
@@ -20,14 +22,19 @@ import {readMcpTunnelAnchorLease,writeMcpTunnelAnchorLease,
 
 const [command,portRaw,ownerPortRaw,planId,prevRaw,review]=process.argv.slice(2);
 const port=Number(portRaw);
-if(!["start","status","plan","activate"].includes(command??"")||
+if(!["start","start-named","status","plan","activate"].includes(command??"")||
    !Number.isSafeInteger(port)||port<1024||port>65535||port===7888)
-  throw Error("MCP_ANCHOR_USAGE: start PORT | status PORT | plan PORT OWNER_PORT | activate PORT OWNER_PORT PLAN_ID EXPECTED_PREVIOUS_PID --reviewed");
-if(command==="start"){
-  if(process.argv.length!==4||readMcpTunnelAnchorLease(port))
+  throw Error("MCP_ANCHOR_USAGE: start PORT | start-named PORT ABSOLUTE_SPEC_JSON --reviewed | status PORT | plan PORT OWNER_PORT | activate PORT OWNER_PORT PLAN_ID EXPECTED_PREVIOUS_PID --reviewed");
+if(command==="start"||command==="start-named"){
+  if(command==="start"&&process.argv.length!==4||
+     command==="start-named"&&(process.argv.length!==6||planId!=="--reviewed")||
+     readMcpTunnelAnchorLease(port))
     throw Error("MCP_ANCHOR_REFUSE_DUPLICATE_OR_EXISTING_LEASE");
+  const namedSpec=command==="start-named"?readMcpNamedTunnelSpec(ownerPortRaw):null;
+  if(namedSpec)verifyStagedMcpNamedTunnel(namedSpec,port);
   const createdAt=Date.now(),nonce=crypto.randomBytes(32).toString("hex");
-  const handle=await startMcpTunnelAnchor({port,nonce,createdAt});
+  const handle=await startMcpTunnelAnchor({port,nonce,createdAt,
+    ...(namedSpec?{externalNamedHostname:namedSpec.hostname}:{})});
   let lease:McpTunnelAnchorLease|undefined;
   try{
     const response=await fetch("http://127.0.0.1:"+port+"/_internal/anchor/status",{
@@ -37,14 +44,17 @@ if(command==="start"){
     if(response.status!==200)throw Error("MCP_ANCHOR_NOT_READY");
     const s=await response.json();
     lease={version:1,kind:"mcp_tunnel_anchor",pid:process.pid,port,nonce,
-      createdAt,publicUrl:handle.publicUrl,tunnelPid:s.tunnelPid};
+      createdAt,publicUrl:handle.publicUrl,tunnelPid:s.tunnelPid,
+      ...(namedSpec?{tunnelMode:"named-external" as const}:{})};
     writeMcpTunnelAnchorLease(lease);
   }catch(error){
     await handle.close();
     throw error;
   }
   console.log(JSON.stringify({state:"active",anchorPid:process.pid,port,
-    publicUrl:handle.publicUrl,autoOwnerRestart:false},null,2));
+    publicUrl:handle.publicUrl,autoOwnerRestart:false,
+    tunnelMode:namedSpec?"named-external":"quick",
+    externalConnectorVerified:false,dnsChanged:false},null,2));
   let closing=false;
   const shutdown=async()=>{
     if(closing)return;closing=true;

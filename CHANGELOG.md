@@ -1,3 +1,9 @@
+## [1.14.91] - 2026-11-14
+### Named Cloudflare Tunnel readiness without existing MCP URL disruption (Stage 5)
+- Add strict private spec validation for locally managed Cloudflare tunnel UUID, owned hostname, verified credential file identity and executable path. Generate exact single-hostname localhost ingress with mandatory 404 catch-all, stage only explicitly reviewed immutable private configuration, reject altered/risky paths and never disclose credentials.
+- Enable independent Anchor `start-named` with an externally supervised connector: no cloudflared spawn/stop, DNS mutation, OAuth import or Quick Tunnel takeover; declare connector verification blocked rather than reporting false health. Include read-only named-connector warning in Anchor observer, tests and CI.
+- Document manual Cloudflare validation, separate OS service/hostname and R0-R7 client reauthorization gates. No production cutover, DNS edit, release publication or live owner restart.
+
 ## [1.14.90] - 2026-11-14
 ### Read-only independent Tunnel Anchor health observer (isolated Stage 4)
 - Add an optional standalone observer with authenticated Anchor/owner, kernel listener and process-birth attestation plus exact cloudflared command-line and routing target verification. Report local health, reason codes and safe nonzero CI exit on unavailability without restarting or replacing a Quick Tunnel.

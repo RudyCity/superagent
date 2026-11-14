@@ -144,6 +144,14 @@ describe("read-only independent MCP Anchor observation",()=>{
     });
     expect(memoryOAuth.code).toBe("OWNER_NOT_SERVING");
   });
+  it("never reports external named Cloudflare connector as verified from a local lease",async()=>{
+    const result=await observeMcpTunnelAnchor(port,{
+      ...harness(),readAnchorLease:()=>({...anchor,tunnelMode:"named-external",tunnelPid:null}),
+      probeAnchor:async()=>({...proof,tunnelPid:null}),
+    });
+    expect(result).toMatchObject({level:"degraded",code:"NAMED_CONNECTOR_UNVERIFIED",
+      operatorReviewRequired:true,remoteEdgeCertified:false});
+  });
   it("rejects invalid or protected observer ports",async()=>{
     await expect(observeMcpTunnelAnchor(7888,harness()))
       .rejects.toThrow("MCP_ANCHOR_OBSERVER_INVALID_PORT");

@@ -30,7 +30,8 @@ export type AnchorObservationCode =
   "ANCHOR_LEASE_UNAVAILABLE" | "ANCHOR_IDENTITY_UNVERIFIED" |
   "TUNNEL_STATE_MISMATCH" | "TUNNEL_PROCESS_UNVERIFIED" |
   "OWNER_LEASE_UNVERIFIED" | "OWNER_PROCESS_UNVERIFIED" |
-  "OWNER_STATUS_UNVERIFIED" | "OWNER_NOT_SERVING";
+  "OWNER_STATUS_UNVERIFIED" | "OWNER_NOT_SERVING" |
+  "NAMED_CONNECTOR_UNVERIFIED";
 export interface McpTunnelAnchorObservation {
   version:1;
   observedAt:number;
@@ -104,6 +105,11 @@ export async function observeMcpTunnelAnchor(
   base.publicUrl=lease.publicUrl;
   base.anchorPid=lease.pid;
   base.tunnelPid=lease.tunnelPid;
+  if(lease.tunnelMode==="named-external"){
+    // Configuration and local listener attestation do not prove that an
+    // independently managed cloudflared process or DNS route is online.
+    return mark("degraded","NAMED_CONNECTOR_UNVERIFIED");
+  }
 
   let tunnel:TunnelMetadata|null;
   try{tunnel=d.readTunnel(port);}

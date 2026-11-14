@@ -14,6 +14,7 @@ import http, {type IncomingMessage,type ServerResponse} from "node:http";
 import {startQuickTunnel,stopQuickTunnel,getTunnelStatus} from "../remoteAgent/cloudflareTunnel.js";
 import {readListenerOwners} from "./coreMcpOwnershipAudit.js";
 import {isPermittedMcpIngressPath,sanitizedMcpIngressHeaders} from "./mcpIngressStage.js";
+import {validateMcpNamedHostname} from "./mcpNamedTunnelConfig.js";
 
 export interface AnchorMcpOwnerTarget {
   port:number;
@@ -25,6 +26,8 @@ export interface McpTunnelAnchorOptions {
   port:number;
   nonce:string;
   createdAt:number;
+  /** Externally operated named connector: NEVER start/stop Quick Tunnel. */
+  externalNamedHostname?:string;
 }
 export interface TunnelAnchorDeps {
   startTunnel?:(port:number)=>Promise<{publicUrl:string,pid?:number}>;
@@ -87,6 +90,10 @@ export async function startMcpTunnelAnchor(
     throw Error("MCP_ANCHOR_INVALID_IDENTITY");
   if(getTunnelStatus(opts.port).isRunning)
     throw Error("MCP_ANCHOR_PORT_HAS_EXISTING_TUNNEL");
+  const namedHost=opts.externalNamedHostname
+    ? validateMcpNamedHostname(opts.externalNamedHostname) : null;
+  if(namedHost&&(deps.startTunnel||deps.stopTunnel))
+    throw Error("MCP_NAMED_ANCHOR_EXTERNAL_CONNECTOR_ONLY");
   const verifyListener=deps.verifyListener??((port,pid)=>readListenerOwners()?.get(port)===pid);
   const launch=deps.startTunnel??(async port=>{
     const tunnel=await startQuickTunnel({port,host:"127.0.0.1",path:"",serviceKind:"mcp-http"});
@@ -132,9 +139,11 @@ export async function startMcpTunnelAnchor(
   const redactStatus=()=>({
     version:1,kind:"mcp_tunnel_anchor",pid:process.pid,port:opts.port,
     startedAt:opts.createdAt,publicUrl:baseUrl+"/mcp",tunnelPid,
+    tunnelMode:namedHost?"named-external":"quick",
+    externalConnectorVerified:false,
     currentOwnerPid:current?.pid??null,currentOwnerPort:current?.port??null,
     inFlightRequests:inFlight,switching,ready:current!==null,
-    noImplicitReplay:true,quickTunnelUrlNotRecoverable:true,
+    noImplicitReplay:true,quickTunnelUrlNotRecoverable:!namedHost,
   });
   const reply=(res:ServerResponse,status:number,obj:unknown)=>{
     res.writeHead(status,{"Content-Type":"application/json","Cache-Control":"no-store"});
@@ -264,10 +273,17 @@ export async function startMcpTunnelAnchor(
     handler.listen(opts.port,"127.0.0.1",resolve);
   });
   try{
-    const tunnel=await launch(opts.port);
-    ownedTunnel=true;
-    baseUrl=publicOrigin(tunnel.publicUrl);
-    tunnelPid=tunnel.pid??null;
+    if(namedHost){
+      // The named connector is independently administered. The Anchor only
+      // binds its local ingress and never claims DNS/edge availability.
+      baseUrl=publicOrigin("https://"+namedHost);
+      tunnelPid=null;
+    }else{
+      const tunnel=await launch(opts.port);
+      ownedTunnel=true;
+      baseUrl=publicOrigin(tunnel.publicUrl);
+      tunnelPid=tunnel.pid??null;
+    }
   }catch(error){
     handler.closeAllConnections?.();
     await new Promise<void>(resolve=>handler.close(()=>resolve()));

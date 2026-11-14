@@ -12,6 +12,7 @@ import {verifyWindowsProcessBirth} from "./mcpProcessBirth.js";
 export interface McpTunnelAnchorLease {
   version:1;kind:"mcp_tunnel_anchor";pid:number;port:number;createdAt:number;
   publicUrl:string;nonce:string;tunnelPid:number|null;
+  tunnelMode?:"quick"|"named-external";
 }
 function assertPort(port:number):number{
   if(!Number.isSafeInteger(port)||port<1024||port>65535||port===7888)
@@ -28,6 +29,8 @@ function validLease(value:unknown):value is McpTunnelAnchorLease{
     Number.isSafeInteger(v.pid)&&v.pid!>0&&
     Number.isSafeInteger(v.port)&&v.port!>=1024&&v.port!<=65535&&v.port!==7888&&
     Number.isSafeInteger(v.createdAt)&&v.createdAt!>0&&
+    (v.tunnelMode===undefined||v.tunnelMode==="quick"||v.tunnelMode==="named-external")&&
+    (v.tunnelMode!=="named-external"||v.tunnelPid===null)&&
     (v.tunnelPid===null||(Number.isSafeInteger(v.tunnelPid)&&v.tunnelPid!>0))&&
     typeof v.nonce==="string"&&/^[a-f0-9]{64}$/.test(v.nonce)&&
     typeof v.publicUrl==="string"&&/^https:\/\/[^/\s?#]+\/mcp$/.test(v.publicUrl);
@@ -89,6 +92,7 @@ export async function probeMcpTunnelAnchor(
      status.startedAt!==lease.createdAt||
      status.publicUrl!==lease.publicUrl||
      status.tunnelPid!==lease.tunnelPid||
+     (status.tunnelMode??"quick")!==(lease.tunnelMode??"quick")||
      typeof status.ready!=="boolean"||
      !Number.isSafeInteger(status.inFlightRequests)||
      status.inFlightRequests<0||
