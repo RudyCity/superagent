@@ -325,6 +325,64 @@ clean-install tests on a disposable CI runner, code signing,
 macOS ScreenCaptureKit, Linux PipeWire/portal, and remote attended
 control remain separate acceptance gates.
 
+## Milestone B9 — macOS ScreenCaptureKit + Linux X11 native sources and Wayland portal policy
+
+**macOS ARM64 (source implemented, physical macOS acceptance pending):**
+`native/desktop-live-sck/macosCapture.swift` uses macOS 14+
+`SCScreenshotManager.captureImage` with
+`SCContentFilter(desktopIndependentWindow:)` for one approved CGWindowID.
+The native helper verifies Screen Recording TCC permission and one
+matching CG window ID, PID, application, title, onscreen visibility,
+sharing state and bounds before and after each frame. It encodes PNG
+in memory and never falls back to a display screenshot or requests
+permission silently. The local worker protocol is bounded to one
+five-minute view-only session with expiry and strict target checks.
+Enable at local Core startup only using `SUPERAGENT_DESKTOP_LIVE_SCK=1`.
+`scripts/build-desktop-live-sck.sh` builds the ARM64 Mach-O with Xcode
+Swift on the macOS CI host, stages a SHA-256 receipt under
+`dist/native/desktop-live-sck`, and portable macOS packaging rejects
+missing/mutated files. Legacy CoreGraphics window-ID capture remains
+unless the opt-in is selected; a missing or denied SCK helper never
+silently falls back in the same native preview session.
+
+**Linux X11 x64 (source implemented, physical Linux X11 acceptance
+pending):** `native/desktop-live-x11/linuxCapture.py` provides a
+persistent, fixed-command Python worker: `wmctrl` resolves exactly
+one PID/title/geometry to XID, `xprop` verifies it is currently the
+active X11 window, and ImageMagick `import -window XID png:-` returns
+one bounded PNG frame through memory. The worker pins `/proc/<pid>/stat`
+process start time, rechecks active XID and owner/geometry before and
+after every frame, and never executes a shell, changes focus, injects
+input, or captures the root screen. Enable explicitly at Core startup
+with `SUPERAGENT_DESKTOP_LIVE_X11=1`; install the platform tools
+Python 3, wmctrl, xprop and ImageMagick import on the Linux host.
+`scripts/build-desktop-live-x11.sh` verifies Python syntax and stages
+a SHA-256 receipt; Linux DEB/AppImage staging rejects missing or
+tampered worker files. Without opt-in the existing verified X11
+active-window adapter remains.
+
+**Wayland/PipeWire:** `linuxPortalPolicy.ts` probes XDG ScreenCast
+and GStreamer PipeWire availability read-only, defines WINDOW-only,
+single-source, hidden-cursor, no-persistence selection options, and
+rejects opaque portal stream metadata that cannot prove the user's
+approved AT-SPI PID/native window identity. Standard portal streams
+do not carry this identity attestation, so Wayland native capture is
+currently **disabled/fail-closed**, including removal of any implicit
+`gnome-screenshot -w` fallback. This is *not* yet an operational
+PipeWire streaming backend. A safe future version requires an
+OS-attested window binding or a separate portal-selected viewer
+identity/consent model, then real Wayland host acceptance tests.
+
+New contract/unit tests cover the bundle mappings, local worker
+protocol, rejected window swaps, malformed/tampered receipts, and
+Wayland capture refusal. Core TypeScript build and host-independent
+tests passed on Windows. **macOS native Swift compilation, macOS
+Screen Recording approval, Linux X11 actual capture and Linux
+Wayland PipeWire portal sessions have not been run on their own OS
+hosts yet.** macOS/Linux CI build steps are committed in source but
+not validated by new Actions runs. No active Core, Tray, MCP, named
+tunnel, OS permissions, or production release was modified.
+
 ## Next bounded milestones
 **B — capture backend**: Windows WGC/DXGI with protected-window and black-frame
 detection; macOS ScreenCaptureKit per-window filtered session, hardened TCC checks;

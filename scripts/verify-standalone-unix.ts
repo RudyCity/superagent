@@ -4,6 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { verifyMacSckArtifactPair } from "../src/core/desktopUi/adapters/macSckArtifact.js";
+import { verifyLinuxX11ArtifactPair } from "../src/core/desktopUi/adapters/linuxX11Artifact.js";
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps/superagent-tray/src-tauri");
 const triple = process.platform === "darwin" && process.arch === "arm64" ? "aarch64-apple-darwin" :
@@ -18,6 +20,16 @@ const cli = path.join(tauri, "target", "release", "superagent");
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, "standalone-manifest.json"), "utf8"));
 check(fs.existsSync(runtime) && fs.existsSync(cli) && fs.existsSync(path.join(stage, "node_modules", "ink")), "Stage incomplete");
 check(manifest.target === triple && manifest.bunVersion === "1.4.2", "Staged manifest mismatch");
+if (process.platform === "linux") {
+  const x11Dir = path.join(stage, "dist", "native", "desktop-live-x11");
+  check(verifyLinuxX11ArtifactPair(path.join(x11Dir, "linuxCapture.py"), path.join(x11Dir, "linuxCapture.sha256")) !== null,
+    "Linux exact-active-window worker missing from standalone bundle");
+}
+if (process.platform === "darwin") {
+  const sckDir = path.join(stage, "dist", "native", "desktop-live-sck");
+  check(verifyMacSckArtifactPair(path.join(sckDir, "sck"), path.join(sckDir, "sck.sha256")) !== null,
+    "macOS ScreenCaptureKit helper must be included in the standalone bundle");
+}
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sa-unix-smoke-"));
 try {
   const execDir = process.platform === "darwin" ? path.join(dir, "SuperAgent.app/Contents/MacOS") : path.join(dir, "usr/bin");

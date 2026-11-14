@@ -60,7 +60,7 @@ describe("native adapter capability policy", () => {
     expect(capabilities.errors.join(" ")).toContain("Screen Recording");
   });
 
-  it("default-denies Linux input on Wayland at both capability and dispatch boundaries", async () => {
+  it("default-denies Linux capture and input on Wayland without exact portal window attestation", async () => {
     process.env.XDG_SESSION_TYPE = "wayland";
     const runner: DesktopProcessRunner = {
       run: async (request: SafeProcessRequest) => {
@@ -74,7 +74,7 @@ describe("native adapter capability policy", () => {
     const capabilities = await adapter.probe();
     expect(capabilities).toMatchObject({
       platform: "linux",
-      screenshot: true,
+      screenshot: false,
       accessibility: true,
       input: false,
       scroll: false,
@@ -84,7 +84,7 @@ describe("native adapter capability policy", () => {
     await expect(adapter.dispatch(keyAction)).rejects.toMatchObject({ code: "WAYLAND_INPUT_UNAVAILABLE" });
   });
 
-  it("default-denies Linux input when the session type is empty or unknown", async () => {
+  it("default-denies Linux capture and input when the session type is empty or unknown", async () => {
     const runner: DesktopProcessRunner = {
       run: async (request: SafeProcessRequest) => {
         if (request.executable.endsWith("gnome-screenshot")) {
@@ -96,7 +96,7 @@ describe("native adapter capability policy", () => {
     const adapter = createLinuxDesktopUiAdapter(runner);
     const capabilities = await adapter.probe();
     expect(capabilities).toMatchObject({
-      screenshot: true,
+      screenshot: false,
       input: false,
       scroll: false,
       sessionType: "unknown",

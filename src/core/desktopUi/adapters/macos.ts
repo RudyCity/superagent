@@ -533,6 +533,24 @@ export function createMacOsDesktopUiAdapter(
       return active.length === 1 ? active[0] : null;
     },
 
+    openVerifiedCapture: process.env.SUPERAGENT_DESKTOP_LIVE_SCK === "1"
+      ? async (window: DesktopDiscoveredWindow) => {
+          if (process.platform !== "darwin" || process.arch !== "arm64" ||
+              !/^cg:[1-9][0-9]*$/.test(window.nativeId) ||
+              !Number.isSafeInteger(window.pid) || window.pid <= 0 ||
+              !window.title || !window.application) {
+            throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "ScreenCaptureKit requires a macOS ARM64 exact window.");
+          }
+          const { locateVerifiedMacSckHelper, SCK_HELPER_BACKEND } = await import("./macSckArtifact.js");
+          const binary = locateVerifiedMacSckHelper();
+          if (!binary) {
+            throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "ScreenCaptureKit was selected but the verified helper is not installed.");
+          }
+          const { openFixedWindowPreviewWorker } = await import("./scopedNativePreviewWorker.js");
+          return openFixedWindowPreviewWorker(binary, window, SCK_HELPER_BACKEND);
+        }
+      : undefined,
+
     async capture(target): Promise<NativeCapture> {
       const targetWindow = await getWindow(target);
       const id = windowId(targetWindow.nativeId);

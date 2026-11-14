@@ -12,6 +12,10 @@ on:
       - "scripts/verify-wgc-windows-nsis.ps1"
       - "scripts/build-desktop-live-wgc.ps1"
       - "native/desktop-live-wgc/**"
+      - "native/desktop-live-sck/**"
+      - "native/desktop-live-x11/**"
+      - "scripts/build-desktop-live-sck.sh"
+      - "scripts/build-desktop-live-x11.sh"
       - "tests/desktop-live/**"
       - "src/**"
       - "package.json"
@@ -84,6 +88,18 @@ jobs:
         run: |
           ./scripts/build-desktop-live-wgc.ps1
           bun --bun x vitest run tests/desktop-live/windowsWgcArtifact.test.ts tests/desktop-live/windowsInstalledBundleSmoke.test.ts --maxWorkers=1
+      - name: Build and verify macOS ScreenCaptureKit helper
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          bash scripts/build-desktop-live-sck.sh
+          bun --bun x vitest run tests/desktop-live/macSckArtifact.test.ts tests/desktop-live/scopedNativeWorker.test.ts --maxWorkers=1
+      - name: Build and verify Linux X11 native window worker
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          bash scripts/build-desktop-live-x11.sh
+          bun --bun x vitest run tests/desktop-live/linuxX11Artifact.test.ts tests/desktop-live/linuxPortalPolicy.test.ts tests/desktop-live/scopedNativeWorker.test.ts --maxWorkers=1
       - name: Verify Chrome extension syntax
         run: bun run verify:extension-js
       - name: Core & packaging regression

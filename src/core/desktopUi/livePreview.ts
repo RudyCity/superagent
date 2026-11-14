@@ -54,6 +54,12 @@ function assertWindowPixelBounds(
 ): void {
   const physicalWidth = target.bounds.width;
   const physicalHeight = target.bounds.height;
+  if (source?.backend === "linux-x11-verified-active-window") {
+    if (width !== physicalWidth || height !== physicalHeight) {
+      throw new DesktopUiError("STALE_SCREENSHOT", "X11 native frame differs from the pinned active window.");
+    }
+    return;
+  }
   if (source?.backend === "win32-persistent-exact-hwnd") {
     // The native worker constructs the bitmap from GetWindowRect; no
     // retina/scale ambiguity is possible on this path.

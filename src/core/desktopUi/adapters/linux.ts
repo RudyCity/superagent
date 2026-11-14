@@ -2,6 +2,9 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DesktopUiError, asDesktopUiError } from "../errors.js";
+import {
+  PYTHON_PORTAL_READINESS_SCRIPT, parseLinuxPortalReadiness,
+} from "./linuxPortalPolicy.js";
 import { createRestrictedProcessRunner, type DesktopProcessRunner } from "../processRunner.js";
 import type {
   AccessibilitySnapshot,
@@ -19,6 +22,9 @@ import type {
 const PYTHON3 = "/usr/bin/python3";
 const GNOME_SCREENSHOT = "/usr/bin/gnome-screenshot";
 const SCROT = "/usr/bin/scrot";
+const WMCTRL = "/usr/bin/wmctrl";
+const XPROP = "/usr/bin/xprop";
+const IMAGE_MAGICK_IMPORT = "/usr/bin/import";
 
 const PYTHON_DISCOVERY_SCRIPT = String.raw`
 import json, os
@@ -383,6 +389,9 @@ export function createLinuxDesktopUiAdapter(
     PYTHON3,
     GNOME_SCREENSHOT,
     SCROT,
+    WMCTRL,
+    XPROP,
+    IMAGE_MAGICK_IMPORT,
   ]),
 ): DesktopUiAdapter {
   const sessionType = (process.env.XDG_SESSION_TYPE || "").trim().toLowerCase();
@@ -400,7 +409,14 @@ export function createLinuxDesktopUiAdapter(
     return windowFrom(parseJson(result.stdout, "Linux AT-SPI window lookup"));
   };
 
+  const useVerifiedX11 = sessionType === "x11" &&
+    process.env.SUPERAGENT_DESKTOP_LIVE_X11 === "1";
+
   const findScreenshotCommand = async (): Promise<typeof GNOME_SCREENSHOT | typeof SCROT | null> => {
+    // On Wayland, gnome-screenshot -w does not provide a verifiable XID/AT-SPI
+    // binding. A compositor permission prompt alone cannot pin the selected
+    // window. Deny until a one-window portal stream has an identity receipt.
+    if (sessionType !== "x11") return null;
     try {
       await runner.run({ executable: GNOME_SCREENSHOT, args: ["--version"], timeoutMs: 3_000 });
       return GNOME_SCREENSHOT;
@@ -429,8 +445,38 @@ export function createLinuxDesktopUiAdapter(
         errors.push(error instanceof Error ? error.message : String(error));
       }
 
-      const screenshotCommand = await findScreenshotCommand();
-      const screenshot = accessibility && screenshotCommand !== null;
+      let portalDescription = "";
+      if (sessionType === "wayland") {
+        try {
+          const response = await runner.run({
+            executable: PYTHON3,
+            args: ["-c", PYTHON_PORTAL_READINESS_SCRIPT],
+            timeoutMs: 6_000,
+          });
+          const portal = parseLinuxPortalReadiness(
+            parseJson(response.stdout, "Wayland ScreenCast/PipeWire availability"));
+          portalDescription = portal.available
+            ? `Portal v${portal.version}: WINDOW=${portal.supportsWindow}, hidden-cursor=${portal.hiddenCursor}, PipeWire reader=${portal.pipewireReader}.`
+            : "ScreenCast/PipeWire portal is unavailable.";
+        } catch {
+          portalDescription = "ScreenCast/PipeWire portal capability cannot be verified.";
+        }
+      }
+      const screenshotCommand = useVerifiedX11 ? null : await findScreenshotCommand();
+      let verifiedX11 = false;
+      if (useVerifiedX11) {
+        try {
+          const { locateVerifiedLinuxX11Helper } = await import("./linuxX11Artifact.js");
+          if (!locateVerifiedLinuxX11Helper()) throw new Error("Missing X11 bundle");
+          await runner.run({ executable: WMCTRL, args: ["-lpG"], timeoutMs: 3_000 });
+          await runner.run({ executable: XPROP, args: ["-root", "_NET_ACTIVE_WINDOW"], timeoutMs: 3_000 });
+          await runner.run({ executable: IMAGE_MAGICK_IMPORT, args: ["-version"], timeoutMs: 3_000 });
+          verifiedX11 = true;
+        } catch {
+          errors.push("Verified Linux X11 worker requires its checksum-pinned script and wmctrl/xprop/ImageMagick tools on the active X11 desktop.");
+        }
+      }
+      const screenshot = accessibility && (useVerifiedX11 ? verifiedX11 : screenshotCommand !== null);
       const input = accessibility && sessionType === "x11";
       if (sessionType !== "x11") {
         errors.push(
@@ -439,7 +485,9 @@ export function createLinuxDesktopUiAdapter(
             : "Native input is disabled unless XDG_SESSION_TYPE is explicitly and positively identified as x11.",
         );
       }
-      if (!screenshotCommand) {
+      if (sessionType === "wayland") {
+        errors.push("Wayland Desktop Live denied: portal window streams do not carry a standard, verifiable AT-SPI PID/native-ID binding. " + portalDescription);
+      } else if (!useVerifiedX11 && !screenshotCommand) {
         errors.push("No scoped screenshot backend is available (gnome-screenshot, or scrot on verified X11).");
       }
 
@@ -451,7 +499,7 @@ export function createLinuxDesktopUiAdapter(
         input,
         scroll: input,
         sessionType: sessionType || "unknown",
-        prerequisites: ["Python 3", "PyGObject AT-SPI bindings", "AT-SPI accessibility bus", "gnome-screenshot or verified-X11 scrot"],
+        prerequisites: ["Python 3", "PyGObject AT-SPI bindings", "AT-SPI accessibility bus", "X11 gnome-screenshot/scrot or compositor-verified PipeWire window binding"],
         limitations: [
           "Native capture is limited to the already-active target window and is revalidated immediately after capture.",
           "Input injection is enabled only for a positively identified X11 session.",
@@ -479,7 +527,26 @@ export function createLinuxDesktopUiAdapter(
       return active.length === 1 ? active[0] : null;
     },
 
+    openVerifiedCapture: useVerifiedX11
+      ? async (window: DesktopDiscoveredWindow) => {
+          if (process.platform !== "linux" || process.arch !== "x64" ||
+              !window.active || !window.title || !window.application ||
+              window.nativeId !== `atspi:${window.pid}:${window.title}`) {
+            throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "X11 verified preview requires the exact active application window.");
+          }
+          const { locateVerifiedLinuxX11Helper, X11_HELPER_BACKEND } = await import("./linuxX11Artifact.js");
+          const script = locateVerifiedLinuxX11Helper();
+          if (!script) throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Linux X11 worker binary checksum is unavailable.");
+          const { openFixedWindowPreviewWorker } = await import("./scopedNativePreviewWorker.js");
+          return openFixedWindowPreviewWorker("/usr/bin/python3", window, X11_HELPER_BACKEND, [script]);
+        }
+      : undefined,
+
     async capture(target): Promise<NativeCapture> {
+      if (sessionType !== "x11") {
+        throw new DesktopUiError("OS_PERMISSION_REQUIRED",
+          "Window-only Linux capture is unavailable without verified X11 or a compositor-attested PipeWire window.");
+      }
       const targetWindow = await getWindow(target);
       if (!targetWindow.active) {
         throw new DesktopUiError(

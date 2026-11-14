@@ -7,6 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { pruneMuslSharpFromLinuxStandalone } from "./prune-linux-musl-sharp.js";
+import { verifyMacSckArtifactPair } from "../src/core/desktopUi/adapters/macSckArtifact.js";
+import { verifyLinuxX11ArtifactPair } from "../src/core/desktopUi/adapters/linuxX11Artifact.js";
 
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps/superagent-tray/src-tauri");
@@ -23,6 +25,16 @@ function check(ok: unknown, message: string): asserts ok {
 check(target !== null, "Only macOS arm64 and Linux x64 supported by this packaging script");
 check(Bun.version === "1.4.2", "Bun 1.4.2 is required for reproducible builds");
 check(fs.existsSync(path.join(root, "dist/cli.js")), "Run bun run build first");
+if (process.platform === "linux") {
+  const dir = path.join(root, "dist", "native", "desktop-live-x11");
+  check(verifyLinuxX11ArtifactPair(path.join(dir, "linuxCapture.py"), path.join(dir, "linuxCapture.sha256")) !== null,
+    "Linux bundle requires checksum-pinned exact-active-window X11 helper");
+}
+if (process.platform === "darwin") {
+  const dir = path.join(root, "dist", "native", "desktop-live-sck");
+  check(verifyMacSckArtifactPair(path.join(dir, "sck"), path.join(dir, "sck.sha256")) !== null,
+    "macOS package requires checksum-pinned ScreenCaptureKit helper; run scripts/build-desktop-live-sck.sh");
+}
 check(fs.existsSync(path.join(tauri, "target/release/superagent")), "Build the native CLI before staging");
 const stat = fs.statSync(process.execPath);
 check(stat.isFile() && stat.size > 10000000, "Invalid Bun executable source");
@@ -40,6 +52,16 @@ function copy(src: string, dest: string) {
 for (const file of ["package.json", "bun.lock"]) copy(path.join(root, file), path.join(stage, file));
 if (fs.existsSync(path.join(root, "tsconfig.json"))) copy(path.join(root, "tsconfig.json"), path.join(stage, "tsconfig.json"));
 for (const folder of ["dist", "patches"]) copy(path.join(root, folder), path.join(stage, folder));
+if (process.platform === "linux") {
+  const dir = path.join(stage, "dist", "native", "desktop-live-x11");
+  check(verifyLinuxX11ArtifactPair(path.join(dir, "linuxCapture.py"), path.join(dir, "linuxCapture.sha256")) !== null,
+    "Staged Linux X11 verified window worker was altered or dropped");
+}
+if (process.platform === "darwin") {
+  const dir = path.join(stage, "dist", "native", "desktop-live-sck");
+  check(verifyMacSckArtifactPair(path.join(dir, "sck"), path.join(dir, "sck.sha256")) !== null,
+    "Staged macOS ScreenCaptureKit helper was altered or dropped");
+}
 for (const file of ["media_backend.py", "setup_media_backends.py"]) {
   copy(path.join(root, "scripts", file), path.join(stage, "scripts", file));
 }
