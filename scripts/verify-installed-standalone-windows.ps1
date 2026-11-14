@@ -17,6 +17,9 @@ $deps = Join-Path $destination "standalone/node_modules/ink"
 foreach ($required in @($cli, $runtime, $entry, $deps)) {
   if (!(Test-Path $required)) { throw "Missing installed payload: $required" }
 }
+# Verify the installed module/binary/receipt using the installed Bun, not
+# source checkout paths. This also runs independently on temporary fixtures.
+& (Join-Path $PSScriptRoot "verify-installed-wgc.ps1") -InstallRoot $destination
 $psi = [System.Diagnostics.ProcessStartInfo]::new()
 $psi.FileName = $cli
 $psi.Arguments = "--version"

@@ -179,6 +179,8 @@ Desktop Live source now includes three bounded JPEG presets in the local Tray: S
 
 **Windows standalone packaging (source, not yet published):** The WGC binary is built using the installed MSVC toolchain during Windows CI packaging, then checksum-verified before and after staging into `standalone/dist/native/desktop-live-wgc/`. Runtime helper discovery uses the actual source, built, or installed Core layout; it no longer assumes all three share the same parent directory. This is still an **opt-in local backend**, and these pipeline changes need a genuine Windows installer/clean-install CI run before distribution can be certified. No automatic changes to the running Core, Tray, MCP or tunnel occur.
 
+**Windows installed WGC integrity gate (development source):** The disposable Windows clean-install verifier now runs the **installed Bun runtime and installed compiled Core verifier** against the WGC helper actually installed in `standalone/dist/native/desktop-live-wgc/`; a missing or tampered binary/receipt fails the gate. A Windows-host fixture has tested this with a separate temporary installed layout, including the real PowerShell checker and corruption cases. The GitHub Windows workflows also run this test before creating NSIS packages. This is **not yet proof of an actual new NSIS clean-install**; release and production approval gates remain unchanged.
+
 ## Managed Chrome CDP and human supervision
 
 The following capabilities are implemented in the **development source**. They require an authorized, running Core and the relevant managed Chrome and native Tray setup; they do not establish feature parity for a separately connected Delegate Chrome profile.

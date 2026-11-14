@@ -51,6 +51,47 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(workflow).toContain("bun run installer:package:unix");
     expect(read(".github/workflows/tray-build.yml")).toContain("superagent-standalone-windows-x64");
   });
+  it("requires installed WGC integrity to be rechecked on the disposable Windows runner", () => {
+    const installed = read("scripts/verify-installed-standalone-windows.ps1");
+    const psVerifier = read("scripts/verify-installed-wgc.ps1");
+    const jsVerifier = read("scripts/verify-installed-wgc.mjs");
+    expect(installed).toContain('verify-installed-wgc.ps1');
+    expect(psVerifier).toContain('verify-installed-wgc.mjs');
+    expect(psVerifier).not.toContain('-e $verify');
+    expect(jsVerifier).toContain('windowsWgcArtifact.js');
+    expect(jsVerifier).toContain('locateVerifiedWindowsWgcHelper');
+    expect(jsVerifier).toContain('INSTALLED_WGC_INTEGRITY_PASS');
+    for (const file of [
+      ".github/workflows/release-windows-standalone.yml",
+      ".github/workflows/release-windows-only.yml",
+      ".github/workflows/tray-build.yml",
+    ]) {
+      const workflow = read(file);
+      expect(workflow).toContain('tests/desktop-live/windowsInstalledBundleSmoke.test.ts');
+      expect(workflow).toContain('verify-installed-standalone-windows.ps1');
+    }
+  });
+  it("verifies installed WGC through the packaged Core, not the checkout or inline JS eval", () => {
+    const installed = read("scripts/verify-installed-standalone-windows.ps1");
+    const script = read("scripts/verify-installed-wgc.ps1");
+    const verifier = read("scripts/verify-installed-wgc.mjs");
+    expect(installed).toContain('verify-installed-wgc.ps1');
+    expect(script).toContain('verify-installed-wgc.mjs');
+    expect(script).not.toContain('-e $verify');
+    expect(verifier).toContain('windowsWgcArtifact.js');
+    expect(verifier).toContain('locateVerifiedWindowsWgcHelper');
+    expect(verifier).toContain('INSTALLED_WGC_INTEGRITY_PASS');
+    for (const workflow of [
+      ".github/workflows/release-windows-only.yml",
+      ".github/workflows/release-windows-standalone.yml",
+      ".github/workflows/tray-build.yml",
+    ]) {
+      const content = read(workflow);
+      expect(content).toContain('tests/desktop-live/windowsInstalledBundleSmoke.test.ts');
+      expect(content).toContain('verify-installed-standalone-windows.ps1');
+    }
+  });
+
   it("builds and verifies the exact-window WGC helper before every Windows installer", () => {
     const prepare = read("scripts/prepare-standalone-windows.ts");
     const verify = read("scripts/verify-standalone-windows.ts");

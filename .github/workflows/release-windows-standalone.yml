@@ -67,7 +67,7 @@ jobs:
         shell: pwsh
         run: |
           ./scripts/build-desktop-live-wgc.ps1
-          bun --bun x vitest run tests/desktop-live/windowsWgcArtifact.test.ts --maxWorkers=1
+          bun --bun x vitest run tests/desktop-live/windowsWgcArtifact.test.ts tests/desktop-live/windowsInstalledBundleSmoke.test.ts --maxWorkers=1
       - name: Verify extension syntax
         run: bun run verify:extension-js
       - name: Core & package regression gate

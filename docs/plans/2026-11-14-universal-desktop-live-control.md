@@ -262,6 +262,35 @@ on GitHub Actions.** Physical clean-install, signed release,
 macOS and Linux capture backends, and remote attended control remain
 separate open gates.
 
+## Milestone B7 — installed Windows WGC integrity gate (disposable CI only)
+
+The Windows clean-install verification now checks the WGC helper **after
+NSIS installation**, not only in staging. The script
+`scripts/verify-installed-standalone-windows.ps1` calls
+`scripts/verify-installed-wgc.ps1`, which runs the checked-in
+`scripts/verify-installed-wgc.mjs` through the **installed Bun runtime**.
+The verifier imports the **installed** compiled Core module from
+`standalone/dist/core/desktopUi/adapters`, calls its
+`locateVerifiedWindowsWgcHelper()` contract, and requires the resolved
+x64 helper/checksum location to match the actual installer destination.
+It does not start Core, Tray, a capture session, or any service.
+
+The native Windows regression
+`tests/desktop-live/windowsInstalledBundleSmoke.test.ts` creates a
+fresh disposable `standalone/dist` layout, copies the built Core module,
+WGC helper/receipt and Bun, and runs both the compiled Core check and
+the **actual PowerShell verifier**. It confirms normal acceptance,
+tampered binary rejection and checksum mismatch rejection. The script
+uses checked-in `.mjs` instead of nested Bun `-e` after a real Windows
+PowerShell 5 test revealed that nested argument quotes were removed.
+
+The Windows CI and release workflows now include this fixture test
+between native WGC build and installer staging. Tray CI path filters
+cover WGC source, build/verifier scripts and related tests.
+**A new NSIS binary has not yet been packaged or clean-installed on a
+disposable runner**; the current checkout was not deployed or installed,
+and no active session was interrupted.
+
 ## Next bounded milestones
 **B — capture backend**: Windows WGC/DXGI with protected-window and black-frame
 detection; macOS ScreenCaptureKit per-window filtered session, hardened TCC checks;
