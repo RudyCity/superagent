@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { inspectCoreBuild, writeCoreBuildManifest } from "../src/core/runtime/coreBuildIdentity.js";
+import { inspectCoreBuild, writeCoreBuildManifest, attestWindowsStandaloneCoreBuild } from "../src/core/runtime/coreBuildIdentity.js";
 
 describe("Core source/dist build attestation", () => {
   it("detects stale compiled output, changed sources and code changes during deployment",()=>{
@@ -79,6 +79,56 @@ describe("Core source/dist build attestation", () => {
       expect(regression).toBeGreaterThan(verify);
       expect(content.slice(finalize,refresh)).toContain("if: runner.os == 'Windows'");
     }
+  });
+  it("re-attests only the exact verified Windows native relocation and rejects drift",()=>{
+    const base=fs.mkdtempSync(path.join(os.tmpdir(),"core-build-relocation-"));
+    const original=path.join(base,"original"),stage=path.join(base,"standalone");
+    try{
+      fs.mkdirSync(path.join(original,"src"),{recursive:true});
+      fs.mkdirSync(path.join(original,"dist"),{recursive:true});
+      fs.writeFileSync(path.join(original,"src","cli.ts"),"export default 1;");
+      fs.writeFileSync(path.join(original,"dist","cli.js"),"export default 1;");
+      fs.writeFileSync(path.join(original,"package.json"),'{"name":"superagent","version":"1.0.0"}');
+      fs.writeFileSync(path.join(original,"tsconfig.json"),'{"compilerOptions":{}}');
+      const native=path.join(original,"dist","native","desktop-live-windows-input");
+      fs.mkdirSync(native,{recursive:true});
+      fs.writeFileSync(path.join(native,"winremote.dll"),"fixture-dll");
+      fs.writeFileSync(path.join(native,"winremote.sha256"),"fixture-sha");
+      fs.writeFileSync(path.join(native,"winremote.provenance.json"),'{"runnerOS":"Windows"}\n');
+      const originalIdentity=writeCoreBuildManifest(original);
+      const sourceFresh=inspectCoreBuild(path.join(original,"dist","cli.js"),{requireFreshCompiled:true});
+      expect(sourceFresh.digest).toBe(originalIdentity.digest);
+      const stageCopied=()=>{
+        fs.mkdirSync(stage,{recursive:true});
+        fs.cpSync(path.join(original,"dist"),path.join(stage,"dist"),{recursive:true,force:true});
+        fs.copyFileSync(path.join(original,"package.json"),path.join(stage,"package.json"));
+        fs.cpSync(native,path.join(stage,"native","desktop-live-windows-input"),{recursive:true,force:true});
+        fs.rmSync(path.join(stage,"dist","native","desktop-live-windows-input"),{recursive:true,force:true});
+      };
+      stageCopied();
+      expect(inspectCoreBuild(path.join(stage,"dist","cli.js")).fresh).toBe(false);
+      const stagedIdentity=attestWindowsStandaloneCoreBuild(original,stage);
+      expect(stagedIdentity.digest).not.toBe(originalIdentity.digest);
+      expect(stagedIdentity.sourceDigest).toBe(originalIdentity.sourceDigest);
+      expect(inspectCoreBuild(path.join(stage,"dist","cli.js"),{requireFreshCompiled:true}).digest)
+        .toBe(stagedIdentity.digest);
+      fs.appendFileSync(path.join(stage,"dist","cli.js"),"// tampered");
+      expect(inspectCoreBuild(path.join(stage,"dist","cli.js")).fresh).toBe(false);
+      expect(()=>attestWindowsStandaloneCoreBuild(original,stage))
+        .toThrow("CORE_STANDALONE_COMPILED_BYTES_MISMATCH");
+      stageCopied();
+      fs.appendFileSync(path.join(stage,"native","desktop-live-windows-input","winremote.provenance.json")," ");
+      expect(()=>attestWindowsStandaloneCoreBuild(original,stage))
+        .toThrow("CORE_STANDALONE_NATIVE_RELOCATION_MISMATCH");
+      stageCopied();
+      fs.writeFileSync(path.join(stage,"package.json"),'{"name":"superagent","version":"1.0.1"}');
+      expect(()=>attestWindowsStandaloneCoreBuild(original,stage))
+        .toThrow("CORE_STANDALONE_COMPILED_BYTES_MISMATCH");
+      stageCopied();
+      fs.appendFileSync(path.join(original,"src","cli.ts"),"// tampered source");
+      expect(()=>attestWindowsStandaloneCoreBuild(original,stage))
+        .toThrow("CORE_BUILD_STALE");
+    }finally{fs.rmSync(base,{recursive:true,force:true});}
   });
   it("never fingerprints an arbitrary entry outside a recognized SuperAgent project",()=>{
     expect(()=>inspectCoreBuild(path.join(os.tmpdir(),"invalid-entry","cli.js"))).toThrow("ENTRY_OUTSIDE_PROJECT");

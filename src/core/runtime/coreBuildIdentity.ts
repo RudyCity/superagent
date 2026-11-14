@@ -20,26 +20,27 @@ function inside(root: string, test: string): boolean {
   const rel = path.relative(root,test);
   return rel !== "" && !rel.startsWith(".."+path.sep) && !path.isAbsolute(rel);
 }
-function collect(dir:string,base:string,extensions:ReadonlySet<string>,items:string[]) {
+function collect(dir:string,base:string,extensions:ReadonlySet<string>,items:string[],omittedDirectory?:string) {
   const entries=fs.readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name,"en"));
   for (const entry of entries) {
     const file=path.join(dir,entry.name);
     if (entry.isSymbolicLink()) throw new Error("CORE_BUILD_SYMLINK_NOT_ALLOWED");
     if (entry.isDirectory()) {
-      if (!["node_modules",".git","__tests__"].includes(entry.name))collect(file,base,extensions,items);
+      if (file!==omittedDirectory && !["node_modules",".git","__tests__"].includes(entry.name))
+        collect(file,base,extensions,items,omittedDirectory);
     } else if (entry.isFile() && extensions.has(path.extname(entry.name))) {
       if (entry.name.endsWith(".map")) continue;
       items.push(file);
     }
   }
 }
-function treeDigest(root:string,mode:"source"|"compiled") {
+function treeDigest(root:string,mode:"source"|"compiled",omittedDirectory?:string) {
   const dir=path.join(root,mode==="source"?"src":"dist");
   if (!fs.statSync(dir).isDirectory() || fs.lstatSync(dir).isSymbolicLink())
     throw new Error("CORE_BUILD_UNSAFE_TREE");
   const files:string[]=[];
   collect(dir,root,mode==="source"
-    ? new Set([".ts",".tsx",".js",".json"]) : new Set([".js",".json"]),files);
+    ? new Set([".ts",".tsx",".js",".json"]) : new Set([".js",".json"]),files,omittedDirectory);
   files.sort((a,b)=>path.relative(root,a).localeCompare(path.relative(root,b),"en"));
   const hasher=crypto.createHash("sha256");
   for(const file of files) {
@@ -113,6 +114,52 @@ export function inspectCoreBuild(entry:string,options:{requireFreshCompiled?:boo
   if(options.requireFreshCompiled && !fresh)
     throw new Error("CORE_BUILD_STALE_OR_UNVERIFIED: run bun run build first");
   return {...selected,sourceDigest,mode,fresh,builtAt};
+}
+/**
+ * Attest the exact Windows standalone redistribution, not an arbitrary stale
+ * compiled tree. The verified native UIA files move from dist/native to
+ * standalone/native so their Windows DLL is not part of the MCP backend.
+ * Recompute only after validating that this is the *sole* difference between
+ * source and standalone compiled bytes and the relocated files are identical.
+ * The original source digest remains bound to a previously fresh build.
+ */
+export function attestWindowsStandaloneCoreBuild(sourceRoot:string,stageRoot:string):CoreBuildIdentity {
+  const original=path.resolve(sourceRoot),staged=path.resolve(stageRoot);
+  if(original===staged || fs.existsSync(path.join(staged,"src")))
+    throw new Error("CORE_STANDALONE_UNSAFE_STAGING_ROOT");
+  const source=inspectCoreBuild(path.join(original,"dist","cli.js"),{requireFreshCompiled:true});
+  if(source.mode!=="compiled" || !/^[a-f0-9]{64}$/.test(source.sourceDigest))
+    throw new Error("CORE_STANDALONE_SOURCE_NOT_VERIFIED");
+  const relative=path.join("native","desktop-live-windows-input");
+  const movedFrom=path.join(original,"dist",relative);
+  const movedTo=path.join(staged,relative);
+  if(!fs.existsSync(movedFrom) || fs.existsSync(path.join(staged,"dist",relative)))
+    throw new Error("CORE_STANDALONE_RELOCATION_NOT_EXACT");
+  const names=["winremote.dll","winremote.provenance.json","winremote.sha256"];
+  if(fs.readdirSync(movedFrom).sort().join("|")!==names.join("|") ||
+     fs.readdirSync(movedTo).sort().join("|")!==names.join("|"))
+    throw new Error("CORE_STANDALONE_NATIVE_FILES_UNEXPECTED");
+  for(const name of names){
+    const src=path.join(movedFrom,name),dst=path.join(movedTo,name);
+    const a=fs.lstatSync(src),b=fs.lstatSync(dst);
+    if(!a.isFile() || !b.isFile() || a.isSymbolicLink() || b.isSymbolicLink() ||
+       a.size!==b.size || !fs.readFileSync(src).equals(fs.readFileSync(dst)))
+      throw new Error("CORE_STANDALONE_NATIVE_RELOCATION_MISMATCH");
+  }
+  const expected=treeDigest(original,"compiled",movedFrom);
+  const actual=treeDigest(staged,"compiled");
+  if(expected.digest!==actual.digest || expected.fileCount!==actual.fileCount)
+    throw new Error("CORE_STANDALONE_COMPILED_BYTES_MISMATCH");
+  const identity:CoreBuildIdentity={
+    mode:"compiled",...actual,sourceDigest:source.sourceDigest,fresh:true,builtAt:Date.now(),
+  };
+  const target=path.join(staged,"dist","core-build-identity.json");
+  const stat=fs.lstatSync(target);
+  if(!stat.isFile() || stat.isSymbolicLink())
+    throw new Error("CORE_STANDALONE_MANIFEST_UNSAFE");
+  fs.writeFileSync(target,JSON.stringify({version:1,...identity},null,2)+"\n");
+  inspectCoreBuild(path.join(staged,"dist","cli.js"),{requireFreshCompiled:true});
+  return identity;
 }
 export function writeCoreBuildManifest(root:string):CoreBuildIdentity {
   const entry=path.resolve(root,"dist","cli.js");

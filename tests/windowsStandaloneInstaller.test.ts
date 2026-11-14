@@ -51,6 +51,23 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(workflow).toContain("bun run installer:package:unix");
     expect(read(".github/workflows/tray-build.yml")).toContain("superagent-standalone-windows-x64");
   });
+  it("re-attests only the verified relocated Core after Windows UIA staging, before backend packaging", () => {
+    const prepare=read("scripts/prepare-standalone-windows.ts");
+    expect(prepare).toContain('import { attestWindowsStandaloneCoreBuild }');
+    const copied=prepare.indexOf('copy(path.join(root, "dist"), path.join(stage, "dist"));');
+    const relocated=prepare.indexOf('verifyWindowsRemoteNativePackaging(uiaStage, uiaSource, nativeContext)');
+    const attested=prepare.indexOf('attestWindowsStandaloneCoreBuild(root, stage)');
+    const dependencies=prepare.indexOf('"install", "--production"');
+    expect(copied).toBeGreaterThanOrEqual(0);
+    expect(relocated).toBeGreaterThan(copied);
+    expect(attested).toBeGreaterThan(relocated);
+    expect(dependencies).toBeGreaterThan(attested);
+    const release=read(".github/workflows/release-windows-standalone.yml");
+    expect(release.indexOf("bun run installer:prepare"))
+      .toBeLessThan(release.indexOf("bun scripts/package-mcp-backend-release.ts"));
+    const bundle=read("scripts/package-mcp-backend-release.ts");
+    expect(bundle).toContain("requireFreshCompiled:true");
+  });
   it("requires installed WGC integrity to be rechecked on the disposable Windows runner", () => {
     const installed = read("scripts/verify-installed-standalone-windows.ps1");
     const psVerifier = read("scripts/verify-installed-wgc.ps1");

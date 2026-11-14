@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { verifyWindowsWgcArtifactPair } from "../src/core/desktopUi/adapters/windowsWgcArtifact.js";
+import { attestWindowsStandaloneCoreBuild } from "../src/core/runtime/coreBuildIdentity.js";
 import {
   WINDOWS_UIA_RELATIVE_DIR, WINDOWS_UIA_SOURCE_RELATIVE,
   verifyWindowsRemoteNativePackaging, windowsNativeCiContext,
@@ -76,6 +77,11 @@ assert(verifyWindowsRemoteNativePackaging(uiaStage, uiaSource, nativeContext) ==
 const stagedWgc = path.join(stage, "dist", wgcRelative);
 assert(verifyWindowsWgcArtifactPair(path.join(stagedWgc, "wgc.exe"),
   path.join(stagedWgc, "wgc.sha256")) !== null, "Verified WGC helper missing from standalone stage.");
+// Re-attest the exact trusted relocation, not a general rebuild or bypass.
+// The source tree must have a valid pre-staging manifest; no other JS/JSON
+// bytes (including package.json) may change during installer preparation.
+const stageBuild = attestWindowsStandaloneCoreBuild(root, stage);
+console.log("[standalone] Verified relocated Core digest: " + stageBuild.digest);
 copy(path.join(root, "scripts", "media_backend.py"), path.join(stage, "scripts", "media_backend.py"));
 copy(path.join(root, "scripts", "setup_media_backends.py"), path.join(stage, "scripts", "setup_media_backends.py"));
 const androidApkDir = path.join(root, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug");
