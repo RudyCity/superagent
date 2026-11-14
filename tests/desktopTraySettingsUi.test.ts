@@ -239,4 +239,33 @@ describe("SuperAgent Tray Settings UI",()=>{
     expect(ui.node("settings-feedback").textContent).toContain("NOT saved");
     expect(ui.node("settings-save").disabled).toBe(false);
   });
+
+  it("switches sub-menu tabs on the settings page without creating root menu items",async()=>{
+    const html=fs.readFileSync(path.resolve("apps/superagent-tray/ui/index.html"),"utf8");
+    for(const tab of ["general","security","tunnel","muse"]){
+      expect(html).toContain(`id="settings-tab-btn-${tab}"`);
+      expect(html).toContain(`id="settings-subpage-${tab}"`);
+    }
+
+    const ui=setup();await flush();
+    // Initially general tab is active and not hidden
+    expect(ui.node("settings-subpage-general").hidden).toBe(false);
+
+    // Switch to security tab
+    ui.listeners.get("settings-tab-btn-security:click")!();
+    expect(ui.node("settings-subpage-general").hidden).toBe(true);
+    expect(ui.node("settings-subpage-security").hidden).toBe(false);
+    expect(ui.node("settings-subpage-tunnel").hidden).toBe(true);
+    expect(ui.node("settings-subpage-muse").hidden).toBe(true);
+
+    // Switch to tunnel tab
+    ui.listeners.get("settings-tab-btn-tunnel:click")!();
+    expect(ui.node("settings-subpage-security").hidden).toBe(true);
+    expect(ui.node("settings-subpage-tunnel").hidden).toBe(false);
+
+    // Switch to muse tab
+    ui.listeners.get("settings-tab-btn-muse:click")!();
+    expect(ui.node("settings-subpage-tunnel").hidden).toBe(true);
+    expect(ui.node("settings-subpage-muse").hidden).toBe(false);
+  });
 });

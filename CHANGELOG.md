@@ -1,4 +1,9 @@
 ## [1.14.98] - 2026-11-14
+### Tray in-page settings subnav and Security Approval Manager UI refinement
+- Add modular in-page sub-navigation tabs to the Tray Settings page (General Preferences, Security Approval, Cloudflare Tunnel, and Muse Control), keeping the root sidebar menu focused while isolating domain configuration panels.
+- Refactor the Security Approval Manager (Trusted Desktop Input) interface with structured cards, responsive 2-column window authorization grids, live policy indicator pills, WCAG AA-compliant styling, and emergency revocation cards.
+- Add comprehensive Vitest unit coverage for settings sub-menu tab switching and container visibility in `tests/desktopTraySettingsUi.test.ts`.
+
 ### Windows standalone upgrade clean-dist and Core identity fix (rc.2)
 - Fix Windows standalone upgrade failure `CORE_BUILD_STALE_OR_UNVERIFIED`: NSIS preinstall hook now cleanly purges previous `$INSTDIR\standalone\dist` and `$INSTDIR\standalone\native` before extracting the new distribution, preventing stale leftover modules or deleted schemas from older versions from poisoning the compiled tree fingerprint.
 - Add automated orphan dist pruning (`scripts/prune-orphan-dist.ts`) and obsolete schema cleanup in `scripts/syncMcpSchemas.ts` during postbuild to prevent obsolete compiler output from persisting across builds.

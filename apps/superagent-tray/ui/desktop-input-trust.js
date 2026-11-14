@@ -49,7 +49,7 @@
       const identity = document.createElement("div");
       identity.className = "desktop-trust-target-detail";
       const title = document.createElement("strong");
-      title.textContent = entry.application + " — " + entry.title;
+      title.textContent = entry.application + " : " + entry.title;
       const meta = document.createElement("small");
       const minutes = Math.max(0, Math.ceil((entry.expiresAt - Date.now()) / 60000));
       meta.textContent = "PID " + entry.pid + " · Window " + entry.nativeId +
@@ -72,6 +72,8 @@
       !["trusted", "off"].includes(policy.mode) || !Array.isArray(policy.targets) ||
       policy.targets.length > 16) throw Error("Invalid trusted input policy response");
     state.policy = policy;
+    const panel = $("desktop-trust-panel");
+    if (panel?.setAttribute) panel.setAttribute("data-mode", policy.mode);
     if ($("desktop-trust-mode")) $("desktop-trust-mode").value = policy.mode;
     const label = $("desktop-trust-status");
     if (label) label.textContent = policy.mode === "trusted" ? "Trusted · host approval required" : "Off · input denied";
@@ -84,6 +86,8 @@
       note("Trusted preferences loaded. Every input session still requires host consent.");
     } catch {
       state.policy = null;
+      const panel = $("desktop-trust-panel");
+      if (panel?.setAttribute) panel.setAttribute("data-mode", "unknown");
       note("Cannot inspect native trusted-input policy. All trust actions are disabled.");
       buttons();
     }
@@ -92,7 +96,9 @@
     if (state.busy || state.refreshing) return;
     state.refreshing = true;
     const select = $("desktop-trust-window");
+    const refreshBtn = $("desktop-trust-refresh");
     if (select) select.disabled = true;
+    if (refreshBtn?.setAttribute) refreshBtn.setAttribute("data-loading", "true");
     try {
       const result = await invoke("list_desktop_input_windows");
       if (!result || result.success !== true || !Array.isArray(result.windows) || result.windows.length > 100)
@@ -107,7 +113,7 @@
         state.windows.forEach((item, idx) => {
           const option = document.createElement("option");
           option.value = String(idx);
-          option.textContent = item.application.slice(0, 80) + " — " + item.title.slice(0, 100) +
+          option.textContent = item.application.slice(0, 80) + " : " + item.title.slice(0, 100) +
             " (PID " + item.pid + ")";
           select.append(option);
         });
@@ -121,6 +127,7 @@
       note("Native window discovery unavailable. Check Core status and foreground Tray window.");
     } finally {
       state.refreshing = false;
+      if (refreshBtn?.setAttribute) refreshBtn.setAttribute("data-loading", "false");
       if (select) select.disabled = false;
       buttons();
     }
@@ -167,10 +174,11 @@
     $("desktop-trust-revoke-all")?.addEventListener("click", () =>
       void run("revoke_all_desktop_input_windows", {}, "All trusted windows revoked."));
     window.addEventListener("hashchange", () => {
-      if (location.hash === "#settings") {
+      if (location.hash === "#settings" || location.hash?.startsWith("#settings:")) {
         void loadPolicy();
       }
     });
+    window.__superagentLoadTrustPolicy = loadPolicy;
     void loadPolicy();
   }
   install();

@@ -437,6 +437,55 @@ async function museApplyRestart() {
   await museTelegramLoad();
 }
 
+function settingsSwitchTab(tabName) {
+  const tabs = ["general", "security", "tunnel", "muse"];
+  const activeTab = tabs.includes(tabName) ? tabName : "general";
+
+  for (const name of tabs) {
+    const btn = traySettingsElement(`settings-tab-btn-${name}`);
+    if (btn) {
+      const isTarget = name === activeTab;
+      btn.classList?.toggle?.("active", isTarget);
+      btn.setAttribute?.("aria-selected", isTarget ? "true" : "false");
+    }
+    const subpage = traySettingsElement(`settings-subpage-${name}`);
+    if (subpage) {
+      subpage.hidden = name !== activeTab;
+    }
+  }
+
+  const topEyebrow = traySettingsElement("top-eyebrow");
+  const topTitle = traySettingsElement("top-title");
+  const topDesc = traySettingsElement("top-desc");
+  const pageSettings = traySettingsElement("page-settings");
+  if (pageSettings && pageSettings.hidden !== true) {
+    if (activeTab === "general") {
+      if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
+      if (topTitle) topTitle.textContent = "Tray Settings";
+      if (topDesc) topDesc.textContent = "Configure local startup, notifications, window behavior and polling intervals.";
+    } else if (activeTab === "security") {
+      if (topEyebrow) topEyebrow.textContent = "SECURITY APPROVAL MANAGER";
+      if (topTitle) topTitle.textContent = "Trusted Desktop Input";
+      if (topDesc) topDesc.textContent = "Approve only a specific application window for attended input sessions.";
+    } else if (activeTab === "tunnel") {
+      if (topEyebrow) topEyebrow.textContent = "PUBLIC MCP INGRESS";
+      if (topTitle) topTitle.textContent = "Cloudflare Named Tunnel";
+      if (topDesc) topDesc.textContent = "Configure fixed operator-owned hostname, private MCP owners and edge status.";
+    } else if (activeTab === "muse") {
+      if (topEyebrow) topEyebrow.textContent = "MUSE CONTROL";
+      if (topTitle) topTitle.textContent = "Muse Settings";
+      if (topDesc) topDesc.textContent = "Configure Telegram bot, watched workspaces, WebSocket transport and daemon lifecycle.";
+    }
+  }
+
+  if (activeTab === "security") {
+    if (typeof window.__superagentLoadTrustPolicy === "function") {
+      void window.__superagentLoadTrustPolicy();
+    }
+  }
+}
+window.settingsSwitchTab = settingsSwitchTab;
+
 function traySettingsInstall() {
   traySettingsElement("tray-settings-form")?.addEventListener("submit", traySettingsSave);
   traySettingsElement("settings-defaults")?.addEventListener("click", traySettingsRestoreDefaults);
@@ -446,6 +495,26 @@ function traySettingsInstall() {
   traySettingsElement("muse-workspace-remove")?.addEventListener("click", museWorkspaceRemove);
   traySettingsElement("muse-ws-token-regenerate")?.addEventListener("click", museWsRegenerateToken);
   traySettingsElement("muse-apply-restart")?.addEventListener("click", museApplyRestart);
+
+  for (const name of ["general", "security", "tunnel", "muse"]) {
+    const btn = traySettingsElement(`settings-tab-btn-${name}`);
+    btn?.addEventListener?.("click", () => settingsSwitchTab(name));
+  }
+
+  window.addEventListener?.("hashchange", () => {
+    const hash = window.location?.hash?.replace(/^#/, "") || "";
+    if (hash.startsWith("settings:")) {
+      const sub = hash.split(":")[1];
+      if (sub) settingsSwitchTab(sub);
+    }
+  });
+
+  const initialHash = window.location?.hash?.replace(/^#/, "") || "";
+  if (initialHash.startsWith("settings:")) {
+    const sub = initialHash.split(":")[1];
+    if (sub) settingsSwitchTab(sub);
+  }
+
   window.__TAURI__?.event?.listen?.("desktop-open-settings", () => {
     if (typeof window.navigateToPage === "function") window.navigateToPage("settings");
     void traySettingsLoad();

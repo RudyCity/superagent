@@ -494,10 +494,16 @@ function navigateToPage(pageId) {
     if (actionsUpdates) actionsUpdates.hidden = false;
     window.__superagentUpdatesRefresh?.();
   } else if (target === "settings") {
-    if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
-    if (topTitle) topTitle.textContent = "Tray Settings";
-    if (topDesc) topDesc.textContent =
-      "Configure local startup, notifications, window behavior and polling intervals.";
+    if (typeof window.settingsSwitchTab === "function") {
+      const activeBtn = document.querySelector?.(".settings-subnav-btn.active");
+      const currentTab = activeBtn?.dataset?.settingsTab || "general";
+      window.settingsSwitchTab(currentTab);
+    } else {
+      if (topEyebrow) topEyebrow.textContent = "TRAY PREFERENCES";
+      if (topTitle) topTitle.textContent = "Tray Settings";
+      if (topDesc) topDesc.textContent =
+        "Configure local startup, notifications, window behavior and polling intervals.";
+    }
   }
 }
 window.navigateToPage = navigateToPage;

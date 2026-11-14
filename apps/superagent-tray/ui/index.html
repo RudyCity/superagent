@@ -1067,6 +1067,42 @@
       </div>
 
       <div id="page-settings" class="page-view" hidden>
+        <!-- In-page Sub-navigation for Settings sections -->
+        <nav class="settings-subnav" aria-label="Tray Settings Sub-Navigation">
+          <button type="button" class="settings-subnav-btn active" data-settings-tab="general" id="settings-tab-btn-general" aria-selected="true">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 1.56V21h-4v-.04A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.6 15 1.7 1.7 0 0 0 3 14H3v-4h.04A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88L4.2 7.06 7.06 4.2l.06.06A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3.04V3h4v.04A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 9 1.7 1.7 0 0 0 21 10v4a1.7 1.7 0 0 0-1.6 1z"></path>
+            </svg>
+            <span>General Preferences</span>
+          </button>
+
+          <button type="button" class="settings-subnav-btn" data-settings-tab="security" id="settings-tab-btn-security" aria-selected="false">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+              <polyline points="9 12 11 14 15 10"></polyline>
+            </svg>
+            <span>Security Approval</span>
+          </button>
+
+          <button type="button" class="settings-subnav-btn" data-settings-tab="tunnel" id="settings-tab-btn-tunnel" aria-selected="false">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+            <span>Cloudflare Tunnel</span>
+          </button>
+
+          <button type="button" class="settings-subnav-btn" data-settings-tab="muse" id="settings-tab-btn-muse" aria-selected="false">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>Muse Control</span>
+          </button>
+        </nav>
+
+        <div id="settings-subpage-general" class="settings-subpage">
         <section class="panel tray-settings-panel" aria-labelledby="settings-title">
           <div class="panel-head">
             <div>
@@ -1154,59 +1190,158 @@
             </div>
           </form>
         </section>
+        </div>
 
+        <div id="settings-subpage-security" class="settings-subpage" hidden>
         <section class="panel tray-settings-panel desktop-trust-panel" id="desktop-trust-panel" aria-labelledby="desktop-trust-title">
           <div class="panel-head desktop-trust-header">
             <div>
-              <div class="panel-eyebrow">SECURITY APPROVAL MANAGER</div>
+              <div class="panel-eyebrow">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M8 1.5 2.5 3.8v4.4c0 3.6 2.3 6.9 5.5 7.8 3.2-.9 5.5-4.2 5.5-7.8V3.8L8 1.5Z" />
+                </svg>
+                <span>SECURITY APPROVAL MANAGER</span>
+              </div>
               <h2 id="desktop-trust-title">Trusted Desktop Input</h2>
               <p>Approve only a specific application window. Trusted does not grant automatic mouse or keyboard access: Core requests a separate native host confirmation for every input session.</p>
             </div>
             <span class="subtle-badge" id="desktop-trust-status">Reading policy...</span>
           </div>
-          <div class="desktop-trust-controls">
-            <div class="desktop-trust-row">
-              <label class="desktop-trust-field" for="desktop-trust-mode">
-                <span>Default request mode</span>
-                <select id="desktop-trust-mode">
-                  <option value="trusted">Trusted - exact windows, host approval required</option>
-                  <option value="off">Off - refuse Trusted requests</option>
-                </select>
-              </label>
-              <button type="button" class="button ghost" id="desktop-trust-mode-save">Save mode</button>
+
+          <div class="desktop-trust-section">
+            <div class="desktop-trust-section-head">
+              <div class="desktop-trust-section-info">
+                <h3>Request Policy &amp; Security Gate</h3>
+                <p>Configure default input authorization behavior. An empty trusted list blocks all input attempts.</p>
+              </div>
             </div>
-            <p class="desktop-trust-explainer">The mode is stored locally, not in a browser or MCP prompt. An empty Trusted list grants nothing. Every window needs its own attended approval and expires automatically in at most 30 minutes. Revocation is checked on every Core input action.</p>
-            <div class="desktop-trust-row">
+            <div class="desktop-trust-mode-box">
+              <div class="desktop-trust-mode-input-wrap">
+                <label class="desktop-trust-field" for="desktop-trust-mode">
+                  <span class="field-label">Default request mode</span>
+                  <div class="select-container">
+                    <select id="desktop-trust-mode">
+                      <option value="trusted">Trusted: exact windows, host approval required</option>
+                      <option value="off">Off: refuse Trusted requests</option>
+                    </select>
+                    <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M3.5 6l4.5 4.5 4.5-4.5" />
+                    </svg>
+                  </div>
+                </label>
+                <button type="button" class="button secondary" id="desktop-trust-mode-save">
+                  <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M2.5 13.5h11M8 2.5v8m-3.5-3.5L8 10.5l3.5-3.5" />
+                  </svg>
+                  <span>Save mode</span>
+                </button>
+              </div>
+              <div class="desktop-trust-callout">
+                <svg class="callout-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6.5" />
+                  <path d="M8 5.5v.5M8 8v3" />
+                </svg>
+                <p class="desktop-trust-explainer">The mode is stored locally, not in a browser or MCP prompt. An empty Trusted list grants nothing. Every window needs its own attended approval and expires automatically in at most 30 minutes. Revocation is checked on every Core input action.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="desktop-trust-section">
+            <div class="desktop-trust-section-head">
+              <div class="desktop-trust-section-info">
+                <h3>Authorize Native Application Window</h3>
+                <p>Select a verified running application window and specify maximum approval lifetime.</p>
+              </div>
+              <button type="button" class="button ghost" id="desktop-trust-refresh">
+                <svg class="btn-icon refresh-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M2.5 8a5.5 5.5 0 0 1 9.3-3.9l1.7-1.6V7H9M13.5 8a5.5 5.5 0 0 1-9.3 3.9L2.5 13.5V9H7" />
+                </svg>
+                <span>Refresh windows</span>
+              </button>
+            </div>
+            <div class="desktop-trust-grid">
               <label class="desktop-trust-field" for="desktop-trust-window">
-                <span>Verified native application window</span>
-                <select id="desktop-trust-window"><option value="">Refresh to discover windows...</option></select>
+                <span class="field-label">Verified native application window</span>
+                <div class="select-container">
+                  <select id="desktop-trust-window">
+                    <option value="">Refresh to discover windows...</option>
+                  </select>
+                  <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M3.5 6l4.5 4.5 4.5-4.5" />
+                  </svg>
+                </div>
               </label>
-              <button type="button" class="button ghost" id="desktop-trust-refresh">Refresh windows</button>
-            </div>
-            <div class="desktop-trust-row">
+
               <label class="desktop-trust-field" for="desktop-trust-duration">
-                <span>Approval request lifetime</span>
-                <select id="desktop-trust-duration">
-                  <option value="5">5 minutes</option>
-                  <option value="10" selected>10 minutes</option>
-                  <option value="15">15 minutes</option>
-                  <option value="30">30 minutes (maximum)</option>
-                </select>
+                <span class="field-label">Approval request lifetime</span>
+                <div class="select-container">
+                  <select id="desktop-trust-duration">
+                    <option value="5">5 minutes</option>
+                    <option value="10" selected>10 minutes</option>
+                    <option value="15">15 minutes</option>
+                    <option value="30">30 minutes (maximum)</option>
+                  </select>
+                  <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M3.5 6l4.5 4.5 4.5-4.5" />
+                  </svg>
+                </div>
               </label>
-              <button type="button" class="button primary" id="desktop-trust-add">Review &amp; Trust window</button>
             </div>
-            <div>
-              <h3>Active trusted windows</h3>
-              <ul class="desktop-trust-targets" id="desktop-trust-targets" aria-label="Active trusted desktop input targets"></ul>
+
+            <div class="desktop-trust-action-bar">
+              <button type="button" class="button primary desktop-trust-submit-btn" id="desktop-trust-add">
+                <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M8 1.5 2.5 3.8v4.4c0 3.6 2.3 6.9 5.5 7.8 3.2-.9 5.5-4.2 5.5-7.8V3.8L8 1.5Z" />
+                  <path d="m6 8 1.5 1.5 3-3" />
+                </svg>
+                <span>Review &amp; Trust window</span>
+              </button>
+              <span class="desktop-trust-action-note">Requires explicit confirmation via native OS prompt.</span>
             </div>
-            <div class="desktop-trust-danger">
-              <button type="button" class="button ghost danger" id="desktop-trust-revoke-all">Revoke all windows</button>
-              <span>Host consent expires, can be revoked at any time, and does not persist as an active input session after Core restart.</span>
+          </div>
+
+          <div class="desktop-trust-section">
+            <div class="desktop-trust-section-head">
+              <div class="desktop-trust-section-info">
+                <h3>Active Trusted Windows</h3>
+                <p>Applications currently granted temporary attended input permissions.</p>
+              </div>
             </div>
-            <p id="desktop-trust-feedback" role="status" aria-live="polite"></p>
+            <ul class="desktop-trust-targets" id="desktop-trust-targets" aria-label="Active trusted desktop input targets"></ul>
+          </div>
+
+          <div class="desktop-trust-danger-section">
+            <div class="desktop-trust-danger-card">
+              <div class="desktop-trust-danger-info">
+                <svg class="danger-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <path d="M8 1.5 14.5 13H1.5L8 1.5Z" />
+                  <path d="M8 6v3.5M8 11.5v.5" />
+                </svg>
+                <div>
+                  <strong>Emergency Revocation &amp; Session Safety</strong>
+                  <p>Host consent expires, can be revoked at any time, and does not persist as an active input session after Core restart.</p>
+                </div>
+              </div>
+              <button type="button" class="button ghost danger" id="desktop-trust-revoke-all">
+                <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" />
+                  <line x1="4" y1="4" x2="12" y2="12" />
+                </svg>
+                <span>Revoke all windows</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="desktop-trust-footer">
+            <div class="desktop-trust-feedback-wrap">
+              <span class="desktop-trust-feedback-dot" aria-hidden="true"></span>
+              <p id="desktop-trust-feedback" role="status" aria-live="polite">Trusted preferences loaded. Every input session still requires host consent.</p>
+            </div>
           </div>
         </section>
+        </div>
 
+        <div id="settings-subpage-tunnel" class="settings-subpage" hidden>
         <section class="panel tray-settings-panel named-tunnel-settings" aria-labelledby="named-tunnel-settings-title">
           <div class="panel-head">
             <div>
@@ -1362,7 +1497,9 @@
 
           </form>
         </section>
+        </div>
 
+        <div id="settings-subpage-muse" class="settings-subpage" hidden>
         <section class="panel tray-settings-panel muse-telegram-settings-panel" aria-labelledby="muse-telegram-settings-title">
           <div class="panel-head">
             <div>
@@ -1469,6 +1606,7 @@
             </div>
           </form>
         </section>
+        </div>
       </div>
 
       <!-- ================= PAGE 5: CONNECTION LOGS ================= -->
