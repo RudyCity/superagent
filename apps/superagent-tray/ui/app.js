@@ -379,7 +379,6 @@ async function onRowClick(event) {
 function navigateToPage(pageId) {
   const validPages = ["jobs", "runtime", "history", "logs", "delegate", "desktop-live", "terminal", "muse-files", "lan-devices", "updates", "settings"];
   const target = validPages.includes(pageId) ? pageId : "jobs";
-  if (target !== "desktop-live") window.__superagentDesktopLiveStop?.();
 
   if (window.location.hash !== `#${target}`) {
     if (typeof history.replaceState === "function") {
@@ -461,9 +460,9 @@ function navigateToPage(pageId) {
       window.__superagentDelegateRefresh();
     }
   } else if (target === "desktop-live") {
-    if (topEyebrow) topEyebrow.textContent = "PRIVATE NATIVE WINDOW VIEWER";
+    if (topEyebrow) topEyebrow.textContent = "SESSION CONTROL CENTER";
     if (topTitle) topTitle.textContent = "Desktop Live";
-    if (topDesc) topDesc.textContent = "Choose one Windows, macOS, or Linux application window for a private local preview.";
+    if (topDesc) topDesc.textContent = "Manage per-window native, Chrome CDP and Delegate session handles.";
     window.__superagentDesktopLiveRefresh?.();
   } else if (target === "terminal") {
     if (topEyebrow) topEyebrow.textContent = "PROCESS SUPERVISOR";

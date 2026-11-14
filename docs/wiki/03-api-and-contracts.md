@@ -4,6 +4,15 @@ This document catalogs all user interfaces, CLI commands, tool interfaces, WebSo
 
 ---
 
+## Desktop Live Tray management (1.14.99)
+
+Desktop Live is a session-management console in SuperAgent Tray for native OS windows, managed Chrome CDP tabs, and CDP Delegate tabs. Each entry has a verified exact handle and a scoped stop/takeover action that never closes the host application or browser tab. Authenticated agents use the owner-token-bound `superagent_desktop_ui` `live_inventory` and `live_stop` commands.
+
+Native Tray uses allowlisted IPC to a Core local Bearer endpoint that rejects forwarded connections. The **separately enabled remote Tray management-only gateway** binds loopback on a dedicated origin and requires a separate hashed scrypt password, short-lived Secure/HttpOnly cookie and CSRF for mutations. It provides only inventory/stop/logout; **no** screenshot, frame, live video, VNC, input, Chrome debugger, native Tauri IPC, or Core bearer travels through the gateway. Password rotation closes the gateway and revokes existing sessions. DNS/Named Tunnel availability is separate and must be verified by a human before enabling public routing.
+
+See [Desktop Live security contract](../guides/desktop-live-private-viewer-ui.md).
+
+
 ## Python MCP Client (external integration)
 
 An installable Python 3.11+ client and local stdio bridge lives at [`integrations/python-mcp-client/`](../../integrations/python-mcp-client/README.md). It consumes an existing SuperAgent Streamable HTTP `/mcp` endpoint and exposes dynamically authorized tools, resources, and prompts through stdio for compatible host applications. OAuth PKCE and static Bearer credentials are supported; the bridge does not own or restart Core/MCP services. The endpoint URL, authorization scope and optional Bearer token are supplied by the client environment, separate from SuperAgent model configuration.

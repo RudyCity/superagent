@@ -381,6 +381,28 @@ export class DesktopUiSessionManager {
     }
   }
 
+  /** Operator projection has no bearer, session capability, or screenshot. */
+  listOperatorSessions(): Array<{ pid: number; nativeId: string; owner: string; expiresAt: number }> {
+    this.pruneExpiredSessions();
+    return [...this.sessions.values()].map(s => ({
+      pid: s.target.pid, nativeId: s.target.nativeId,
+      owner: s.ownerPrincipal, expiresAt: s.expiresAt,
+    }));
+  }
+  /** Revoke only exact window session capabilities, not the application. */
+  revokeOperatorWindowSessions(pid: number, nativeId: string): number {
+    this.pruneExpiredSessions();
+    let closed = 0;
+    for (const [token, s] of this.sessions) {
+      if (s.target.pid !== pid || s.target.nativeId !== nativeId) continue;
+      if (s.trustedGrantId) this.consentManager.revokeConsent(s.trustedGrantId);
+      if ("registeredGrantId" in s && typeof s.registeredGrantId === "string") {
+        this.consentManager.revokeConsent(s.registeredGrantId);
+      }
+      if (this.sessions.delete(token)) closed++;
+    }
+    return closed;
+  }
   getActiveSessionsCount(): number {
     this.pruneExpiredSessions();
     return this.sessions.size;
@@ -757,7 +779,7 @@ export const desktopUiSessionManager = new DesktopUiSessionManager();
 function sanitizeDesktopUiLogValue(value: unknown, key = ""): unknown {
   const normalizedKey = key.toLowerCase();
   if (typeof value === "string") {
-    if (normalizedKey.includes("sessiontoken") || normalizedKey.includes("authorizationtoken")) {
+    if (normalizedKey.includes("sessiontoken") || normalizedKey.includes("leasetoken") || normalizedKey.includes("authorizationtoken")) {
       return "[REDACTED_TOKEN]";
     }
     if (["approvalrequestid", "invocationid", "operationdigest"].includes(normalizedKey)) return "[REDACTED_APPROVAL_BINDING]";
@@ -803,11 +825,13 @@ export function sanitizeDesktopUiLogText(text?: string): string | undefined {
   }
   return text
     .replace(/("sessionToken"\s*:\s*")[^"]*"/gi, '$1[REDACTED_TOKEN]"')
+    .replace(/("leaseToken"\s*:\s*")[^"]*"/gi, '$1[REDACTED_TOKEN]"')
     .replace(/("authorizationToken"\s*:\s*")[^"]*"/gi, '$1[REDACTED_TOKEN]"')
     .replace(/("screenshotImage"\s*:\s*")[^"]*"/gi, '$1[IMAGE_BYTES]"')
     .replace(/("(?:image_base64|imageBase64|image)"\s*:\s*")[^"]*"/gi, '$1[IMAGE_BYTES]"')
     .replace(/("text"\s*:\s*")[^"]*"/gi, '$1[REDACTED_TEXT]"')
     .replace(/(sessionToken\s*[=:]\s*)\S+/gi, "$1[REDACTED_TOKEN]")
+    .replace(/(leaseToken\s*[=:]\s*)\S+/gi, "$1[REDACTED_TOKEN]")
     .replace(/(authorizationToken\s*[=:]\s*)\S+/gi, "$1[REDACTED_TOKEN]");
 }
 

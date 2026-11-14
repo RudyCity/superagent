@@ -1264,7 +1264,7 @@ export async function handleServerRoute(
   // operator consent; never expose this endpoint through a public tunnel.
   if (["/api/desktop/live/windows", "/api/desktop/live/challenge", "/api/desktop/live/start",
        "/api/desktop/live/frame", "/api/desktop/live/stop",
-       "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop"].includes(pathname)) {
+       "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop", "/api/desktop/live/manage", "/api/desktop/live/manage/stop", "/api/desktop/tray-password/status", "/api/desktop/tray-password/set", "/api/desktop/tray-remote/status", "/api/desktop/tray-remote/start", "/api/desktop/tray-remote/stop"].includes(pathname)) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -1288,13 +1288,50 @@ export async function handleServerRoute(
       return true;
     }
     if (((pathname === "/api/desktop/live/windows" ||
-          pathname === "/api/desktop/live/remote/status") ?
+          pathname === "/api/desktop/live/manage" || pathname === "/api/desktop/tray-password/status" || pathname === "/api/desktop/tray-remote/status" || pathname === "/api/desktop/live/remote/status") ?
           req.method !== "GET" : req.method !== "POST")) {
       sendJSON(res, 405, { success: false, error: "DESKTOP_LIVE_INVALID_METHOD" });
       return true;
     }
     try {
-      if (pathname === "/api/desktop/live/remote/status") {
+      if (pathname === "/api/desktop/live/manage") {
+        const { listDesktopLiveInventory } = await import("./core/desktopUi/desktopLiveInventory.js");
+        sendJSON(res, 200, { success:true, ...await listDesktopLiveInventory() });
+      } else if (pathname === "/api/desktop/live/manage/stop") {
+        const raw = await readBody(req);
+        if (Buffer.byteLength(raw,"utf8") > 500) throw Error("Oversized stop request.");
+        const { stopDesktopLiveHandle } = await import("./core/desktopUi/desktopLiveInventory.js");
+        sendJSON(res, 200, { success:true, ...await stopDesktopLiveHandle(JSON.parse(raw),"human") });
+      } else if (pathname === "/api/desktop/tray-password/status") {
+        const { trayManagementPassword } = await import("./core/desktopUi/trayManagementPassword.js");
+        sendJSON(res, 200, { success:true, ...trayManagementPassword.status() });
+      } else if (pathname === "/api/desktop/tray-password/set") {
+        const raw = await readBody(req);
+        if (Buffer.byteLength(raw,"utf8") > 500) throw Error("Oversized password update.");
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) ||
+            Object.keys(parsed).some(k => !["currentPassword","newPassword"].includes(k))) {
+          throw Error("Invalid password update.");
+        }
+        const { trayManagementPassword } = await import("./core/desktopUi/trayManagementPassword.js");
+        const result=trayManagementPassword.set(parsed);
+        // A password rotation must revoke existing remote cookies and exposure.
+        const { stopTrayRemoteManagement }=await import("./core/desktopUi/trayRemoteRuntime.js");
+        await stopTrayRemoteManagement();
+        sendJSON(res, 200, { success:true, ...result });
+      } else if (pathname === "/api/desktop/tray-remote/status") {
+        const { trayRemoteStatus }=await import("./core/desktopUi/trayRemoteRuntime.js");
+        sendJSON(res,200,{success:true,...trayRemoteStatus()});
+      } else if (pathname === "/api/desktop/tray-remote/start") {
+        const raw=await readBody(req);
+        if(Buffer.byteLength(raw,"utf8")>384)throw Error("Oversized remote origin request.");
+        const { startTrayRemoteManagement }=await import("./core/desktopUi/trayRemoteRuntime.js");
+        sendJSON(res,200,{success:true,...await startTrayRemoteManagement(JSON.parse(raw))});
+      } else if (pathname === "/api/desktop/tray-remote/stop") {
+        if(await readBody(req)!=="{}")throw Error("Invalid remote stop request.");
+        const { stopTrayRemoteManagement }=await import("./core/desktopUi/trayRemoteRuntime.js");
+        sendJSON(res,200,{success:true,...await stopTrayRemoteManagement()});
+      } else if (pathname === "/api/desktop/live/remote/status") {
         const { remotePrivateHostOperator } = await import("./core/desktopUi/remotePrivateOperator.js");
         sendJSON(res, 200, { success: true, ...remotePrivateHostOperator.status() });
       } else if (pathname === "/api/desktop/live/remote/stop") {

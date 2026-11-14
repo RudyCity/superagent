@@ -1000,6 +1000,81 @@ async fn desktop_live_action(
     match action.as_str() {
         // These requests carry no viewer credentials, private key material,
         // socket configuration, or local preview bearer into WebView JavaScript.
+        "inventory" => {
+            if payload.is_some() { return Err("Unexpected inventory payload".into()); }
+            core_request(Method::GET, "/api/desktop/live/manage", None).await
+        }
+        "stop-handle" => {
+            let data = payload.ok_or("Missing exact session handle")?;
+            let body = data.as_object().ok_or("Invalid stop request")?;
+            if body.len() < 1 || body.len() > 3 ||
+               body.keys().any(|key| !["id","expectedRevision","confirmProfile"].contains(&key.as_str())) {
+                return Err("Unexpected stop field".into());
+            }
+            let id = body.get("id").and_then(Value::as_str).ok_or("Exact session handle required")?;
+            if id.len() > 210 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_:.".contains(&b)) ||
+               !["native:", "managed:", "delegate:", "profile:"].iter().any(|prefix| id.starts_with(prefix)) {
+                return Err("Invalid exact session handle".into());
+            }
+            if let Some(revision) = body.get("expectedRevision") {
+                if revision.as_u64().is_none() { return Err("Invalid CDP revision".into()); }
+            }
+            if let Some(confirm) = body.get("confirmProfile") {
+                if !confirm.is_boolean() { return Err("Invalid profile confirmation".into()); }
+            }
+            core_request(Method::POST, "/api/desktop/live/manage/stop", Some(data)).await
+        }
+        "password-status" => {
+            if payload.is_some() { return Err("Unexpected password status payload".into()); }
+            core_request(Method::GET, "/api/desktop/tray-password/status", None).await
+        }
+        "password-set" => {
+            let data = payload.ok_or("Missing password update")?;
+            let body = data.as_object().ok_or("Invalid password payload")?;
+            if body.is_empty() || body.len() > 2 ||
+               body.keys().any(|key| !["newPassword","currentPassword"].contains(&key.as_str())) {
+                return Err("Unexpected password field".into());
+            }
+            let password = body.get("newPassword").and_then(Value::as_str).ok_or("New password required")?;
+            if !(12..=128).contains(&password.len()) || password.bytes().any(|b| b.is_ascii_control()) {
+                return Err("New password must have 12-128 printable characters".into());
+            }
+            if let Some(prior) = body.get("currentPassword") {
+                if !prior.is_string() { return Err("Invalid current password".into()); }
+            }
+            core_request(Method::POST, "/api/desktop/tray-password/set", Some(data)).await
+        }
+        "gateway-status" => {
+            if payload.is_some() { return Err("Unexpected remote gateway status payload".into()); }
+            core_request(Method::GET, "/api/desktop/tray-remote/status", None).await
+        }
+        "gateway-start" => {
+            let data = payload.ok_or("Missing remote Tray origin settings")?;
+            let body = data.as_object().ok_or("Invalid remote Tray origin request")?;
+            if body.len()!=2 || body.keys().any(|k| !["publicOrigin","originPort"].contains(&k.as_str())) {
+                return Err("Unexpected remote Tray origin fields".into());
+            }
+            let origin = body.get("publicOrigin").and_then(Value::as_str)
+                .ok_or("Public HTTPS origin required")?;
+            let url = reqwest::Url::parse(origin).map_err(|_| "Invalid remote origin")?;
+            if url.scheme()!="https" || url.origin().ascii_serialization()!=origin ||
+               url.username()!="" || url.password().is_some() ||
+               url.path()!="/" || url.query().is_some() || url.fragment().is_some() ||
+               url.port().is_some() || url.host_str().map(|h| h.contains('.'))!=Some(true) ||
+               origin.len()>254 {
+                return Err("Dedicated HTTPS hostname required".into());
+            }
+            let port=body.get("originPort").and_then(Value::as_u64).ok_or("Origin port required")?;
+            if !(1024..=65535).contains(&port) ||
+                [7888,9227,6759,6789,9877,17341,19320,19321].contains(&port) {
+                return Err("Use a dedicated unprotected remote Tray origin port".into());
+            }
+            core_request(Method::POST, "/api/desktop/tray-remote/start", Some(data)).await
+        }
+        "gateway-stop" => {
+            if payload.is_some() { return Err("Unexpected remote gateway stop payload".into()); }
+            core_request(Method::POST, "/api/desktop/tray-remote/stop", Some(json!({}))).await
+        }
         "remote-status" => {
             if payload.is_some() { return Err("Unexpected remote readiness payload".into()); }
             core_request(Method::GET, "/api/desktop/live/remote/status", None).await

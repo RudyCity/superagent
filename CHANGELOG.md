@@ -1,3 +1,12 @@
+## [1.14.99] - 2026-11-15
+### Desktop Live session manager in Tray, password-protected management-only gateway
+- Restore Desktop Live as a per-handle operator console for native windows, managed Chrome CDP targets and individual Chrome CDP Delegate tabs, with exact-session stop/revoke and authenticated agent-owned stop.
+- Restrict remote exposure to a separate password-authenticated, loopback-origin Tray management gateway (no frame/screenshot API, VNC, input control or forwarded Core bearer), disabled until explicitly activated by the human operator.
+- Add salted scrypt password storage, short-lived Secure HttpOnly session cookies, CSRF validation, bounded payloads, and default-deny URL/host checks. Password changes close the gateway and revoke existing access.
+- Retire the superseded Desktop Live tunnel viewer and local in-Tray frame preview UI in favor of a unified management list; preserve independent native window authorization and existing private transport safety gates.
+- Add native Tray command allowlists, agent capability redaction, per-tab Delegate revocation, status tests and gateway security regression tests.
+- Verification: Rust `cargo check`/`cargo test` offline, Core TypeScript build, Desktop Live and Tray UI Vitest. Online routing, installed binary and live remote access are **not** claimed or activated.
+
 ## [1.14.98] - 2026-11-14
 ### Tray in-page settings subnav and Security Approval Manager UI refinement
 - Add modular in-page sub-navigation tabs to the Tray Settings page (General Preferences, Security Approval, Cloudflare Tunnel, and Muse Control), keeping the root sidebar menu focused while isolating domain configuration panels.

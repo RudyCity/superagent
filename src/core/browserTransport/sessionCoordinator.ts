@@ -537,6 +537,34 @@ export function listDelegateSessions() {
   clean();
   return [...sessions.values()].map(publicSession);
 }
+/**
+ * Host-operator takeover of one exact Delegate tab. The native Tray is the
+ * only caller through the localhost+Bearer Core operator route. Revocation is
+ * fenced by the same per-tab coordinator and committed to the durable lease
+ * journal before success is returned. It never closes a Chrome tab/profile.
+ */
+export async function revokeDelegateTargetByHuman(
+  clientId: string, tabId: number, expectedRevision: number,
+): Promise<boolean> {
+  if (typeof clientId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/.test(clientId) ||
+      !Number.isSafeInteger(tabId) || tabId < 0 ||
+      !Number.isSafeInteger(expectedRevision) || expectedRevision < 0) {
+    fail("DELEGATE_CDP_TARGET_INVALID", "Exact Delegate tab and revision required.");
+  }
+  return withDelegateTargetLock(clientId, tabId, async () => {
+    assertDurableCurrent();
+    clean();
+    const key = keyOf(clientId, tabId);
+    const current = sessions.get(key);
+    if (!current || current.revision !== expectedRevision) {
+      fail("DELEGATE_CDP_STALE_REVISION", "Delegate claim changed before human revocation.");
+    }
+    sessions.delete(key);
+    checkpoint();
+    return true;
+  });
+}
+
 export function hasDelegateClaim(clientId: string, tabId: number): boolean {
   if (durableBlocked) return true; // Fail closed: never expose an anonymous bypass.
   if (durableJournal) {

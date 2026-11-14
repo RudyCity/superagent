@@ -1,116 +1,111 @@
-# Desktop Live — Private viewer-machine browser UI
+# Desktop Live — Tray Session Manager and Password-Protected Remote Console
 
-This is a **manual, view-only** developer/operator tool. Run it on the **remote
-viewer's machine**, not the remotely viewed host. It serves **only**
-`http://127.0.0.1:<ephemeral-port>`. It does not auto-launch a browser, manage
-a Windows service, install a tunnel, grant remote permission, or expose HTTP
-on the approved host.
+## Product contract (owner decision, 15 November 2026)
 
-## Prerequisites and provisioning
+Desktop Live **is not a local preview/VNC host**. Its primary home is
+**SuperAgent Tray → Desktop Live**, with a central operator inventory of:
 
-1. On the host, an **attended native human** must approve the **exact window /
-   HWND** through the existing remote policy. A viewer browser cannot grant or
-   expand that scope. Monitor fallback, clipboard, keyboard, mouse, file transfer
-   and recording are not part of this UI.
-2. Out of band on the viewer machine, securely provision a single-use
-   `RemotePrivateViewerCredential`, the expected server TLS DER SHA-256 pin,
-   the mTLS client cert/key, and CA. They must correspond to the host's existing
-   private TLS listener, not to a Cloudflare/Public HTTP tunnel or MCP bearer.
-3. The destination must be a numeric RFC1918, loopback or supported private ULA
-   IP. The existing Node SDK independently enforces peer address, pinned server
-   and client certificates, TLS 1.3, ALPN, server hostname, handshake challenge,
-   signed grant and frame sequence. Grants expire within 120 seconds.
-4. Protect the viewer-side configuration with a user-only OS ACL/permissions.
-   Never put the key, credential, or access secret in command-line arguments,
-   an environment variable, HTTP request, chat, URL, browser storage or logs.
-   Do not provision these files on a shared drive.
+1. Native application windows (exact PID + OS-native handle).
+2. Managed Chrome CDP targets (exact registered browser generation, port, tab/target).
+3. Paired Chrome CDP Delegate tabs (client profile ID + tab ID, including owner lease).
 
-### Viewer-side input pipe
+Each entry has its own status, owner where known, and scoped stop/takeover
+action. Empty/unknown sources are labelled; failures never invent screens.
+**Stop session never kills a process, closes a native application, or closes a
+Chrome tab.** Managed CDP human takeover blocks agent mutations using existing
+control fencing. A claimed Delegate tab can be revoked individually with an
+expected revision and the existing durable lease journal. Disconnecting an entire
+Delegate *profile* is a separate, clearly labelled action requiring confirmation.
 
-Prepare a **private** JSON document on the viewer machine using separately
-issued values. The following is a **shape**, not valid credentials:
+Authorized agents use the existing dangerous, principal-bound
+`superagent_desktop_ui` tool:
 
-```json
-{
-  "privateAddress": "192.168.1.50",
-  "port": 39421,
-  "pinnedServerCertSha256": "<64 lowercase hex characters>",
-  "credential": {
-    "sessionId": "<64 lowercase hex characters>",
-    "viewerChallenge": "<64 lowercase hex characters>",
-    "viewerKey": "<64 lowercase hex characters>",
-    "hostId": "<issued host ID>",
-    "viewerId": "<issued viewer ID>",
-    "expectedOrigin": "https://approved-private-host.example",
-    "pinnedViewerCertSha256": "<64 lowercase hex characters>",
-    "expiresAt": 1794646000000
-  },
-  "clientCertPem": "-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----",
-  "clientKeyPem": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----",
-  "trustedCaPem": "-----BEGIN CERTIFICATE-----\\n...\\n-----END CERTIFICATE-----"
-}
-```
+- `command="live_inventory"` lists handles and metadata only.
+- `command="live_stop"`, `liveId`, and the **owner's exact session**
+  `leaseToken` revoke only that agent-owned session; never another agent's.
+  No token is echoed in the inventory. No profile-wide disconnect by agents.
 
-`expiresAt` must be the **currently issued** Unix epoch in milliseconds
-within the next two minutes, not the illustrative value above. Supply the
-complete PEM strings with JSON-escaped newlines.
+## Remote access: expose Tray **management only**, never a screen view
 
-From the checkout on the viewer machine, use PowerShell:
+The prior tunnel-based Desktop Live viewer was removed.
+**Do not expose raw Desktop Live frame/start/challenge endpoints, Chrome CDP
+debug ports, unmodified Core/MCP ports, or Tauri IPC through Cloudflare.**
+No VNC/RFB server or screenshot feed may traverse the remote Tray gateway.
 
-```powershell
-Get-Content -Raw -Encoding UTF8 -LiteralPath "$env:USERPROFILE\private-viewer-config.json" |
-  bun scripts/desktop-live-private-viewer.ts --config-stdin
-```
+A separate, password-protected remote **management-only** HTML console is
+implemented in `src/core/desktopUi/remoteTrayGateway.ts` and its frontend.
+It can list verified handles, revoke exact sessions, sign out, and nothing more.
+It executes in the **owning Core process**, not an independently spawned
+viewer that would have stale or incorrect session state.
 
-Or any equivalent **local private pipe** on Linux/macOS:
+Security invariants:
 
-```sh
-bun scripts/desktop-live-private-viewer.ts --config-stdin < "$HOME/.config/superagent/private-viewer.json"
-```
+- The gateway binds **127.0.0.1 only** on a dedicated, explicitly selected
+  internal port (for example 19330, if available). This port is connector
+  plumbing, **not** a supported user-facing local viewer URL.
+- Browser users open only a dedicated **HTTPS** hostname protected by a
+  Cloudflare Named Tunnel. Never reuse the active MCP hostname/route.
+- Exposed requests require the exact HTTPS Host, Cloudflare proxy metadata,
+  a strict same-origin policy, and a *separately configured Tray password*.
+  The gateway checks the password itself; Cloudflare headers are not passwords.
+- Passwords are kept outside `tray-settings.json` in a local-only salted
+  `scrypt` credential store. The stored value is a hash, never plaintext.
+  Changes require the old password, except first enrollment. An update closes
+  the management gateway and revokes all previously authenticated sessions.
+- A successful login receives a five-minute `Secure; HttpOnly; SameSite=Strict`
+  session cookie. POST actions require same-origin, an explicit CSRF proof,
+  bounded JSON input, and strict action allowlists. Failed logins are throttled.
+- Neither password knowledge nor remote website access grants screen capture,
+  OS input, elevation, browser write authority, or native approval.
+- Gateway activation is an **attended Tray action** in Settings → Security.
+  It does not install services, change DNS, start cloudflared, restart Core,
+  or modify the active named MCP tunnel.
+- Gateway status distinguishes a **local internal listener** from a publicly
+  *verified* HTTPS/Named Tunnel route. A listening origin does not mean the
+  remote URL is reachable. Network routing and end-to-end external access
+  require independent verification before claiming completion.
 
-There are **no secret CLI flags** and no startup connection to the host.
-The CLI displays a loopback URL and a fresh random **local browser access
-secret in the operator terminal only**. Manually open that URL on the same
-viewer machine, enter the access secret, then explicitly select **Start view**
-after native approval has been verified. Do not paste either the grant or
-secret into a browser URL. The access secret is not the native viewer grant.
+## Controls and source
 
-## Browser behavior
+- `apps/superagent-tray/ui/index.html` includes a restored Desktop Live
+  navigation page with four filters, and the password and gateway controls
+  on its Security settings subpage.
+- `apps/superagent-tray/ui/desktop-live-manager.js` renders native/CDP/
+  Delegate rows with DOM-only text (no arbitrary HTML, no frame rendering).
+- `apps/superagent-tray/ui/tray-access-password.js` sets/rotates password and
+  explicitly starts/stops the internal remote management gateway.
+- `apps/superagent-tray/src-tauri/src/main.rs` has allowlisted native actions
+  bound to the visible main Tray and authenticated loopback Core requests.
+- `src/core/desktopUi/desktopLiveInventory.ts` uses the actual owner-managed
+  OS window discovery, managed CDP registry, and Delegate coordinator;
+  native and agent stop remain distinct operations.
+- `src/core/browserTransport/sessionCoordinator.ts` now supports host-operator
+  per-tab lease revocation under the existing target lock and durable checkpoint.
+- `src/core/desktopUi/trayManagementPassword.ts` handles credential storage.
+- `src/core/desktopUi/trayRemoteRuntime.ts` starts/stops only the dedicated
+  remote management gateway inside the existing Core.
+- `src/serverRoutes.ts` rejects forwarded/remote HTTP for local native
+  administration. Remote browser requests use the separate gateway, never
+  the Core admin API routes.
 
-- Local session cookie: derived from a process-random 256-bit browser secret;
-  `HttpOnly; SameSite=Strict; Path=/`; short lease and no persistent storage.
-  The secret is entered with POST only and is never embedded in page source,
-  JavaScript, query strings or other URLs.
-- HTTP: exact Host `127.0.0.1:<port>`, same-origin POST Origin, strict Referer
-  and Fetch Metadata, no-store, CSP without inline script or unsafe-eval,
-  `frame-ancestors 'none'`, anti-MIME sniffing, and no external asset loads.
-  `Referrer-Policy: same-origin` deliberately allows Chrome's same-origin
-  unlock form to send a valid Origin; no credentials are ever in paths.
-- Viewing: one outstanding long-poll frame request, monotonic sequence, MIME
-  signature, pixel/dimension bounds, SHA-256 header checked in browser before
-  decoding, current image only, and fresh/stale overlays. The source SDK emits
-  JPEG; the local rendering sink additionally supports verified PNG. It holds
-  at most one queued frame plus one in-flight transfer, never a recording.
-- Session closure: **Stop session** revokes the local viewer immediately.
-  Browser navigation aborts its frame request and attempts an explicit stop.
-  Disconnect, invalid frame, expired grant, missing mTLS approval or peer
-  rejection all fail closed without automatic reconnection. The native SDK
-  owns the authoritative host approval and disconnection behavior.
-- Terminal **Ctrl+C** closes the loopback listener and zeroizes PEM Buffer
-  copies. Secrets in immutable JavaScript strings cannot be guaranteed to be
-  scrubbed from process memory; the entire viewer process should be terminated
-  after use.
+## Deployment and verification status
 
-## Verification boundaries
+The feature code can be built and tested **without** changing active tunnel
+ingress or running the installed Tray. The operator must still set a password,
+select an approved dedicated HTTPS hostname/port, activate the gateway from
+the installed Tray, configure the named tunnel to forward **only** that hostname
+to the dedicated origin, and verify both access and revocation from another
+device. There is **no claim** that this has been deployed or is reachable online.
+
+Checks:
 
 ```sh
-bun --bun x vitest run tests/desktop-live/remotePrivateViewerLocalUi.test.ts tests/desktop-live/remotePrivateViewerLocalUiBrowser.test.ts --maxWorkers=1
-bun --bun x vitest run tests/desktop-live/remotePrivateViewerClient.test.ts tests/desktop-live/remotePrivateTransport.test.ts --maxWorkers=1
+bun --bun x vitest run tests/desktop-live --maxWorkers=2
 bun --bun x tsc --noEmit
+bun run build
+git diff --check
 ```
 
-The browser test uses a **fresh headless Chrome** instance only if the standard
-Windows Chrome binary already exists; it does not touch the user's active
-Chrome profile. All HTTP tests use an actual ephemeral `127.0.0.1` listener
-and injected synthetic approved-frame data. These tests do **not** claim a
-real remote host was connected, or that a deployed native host is approved.
+The gateway tests use a disposable loopback listener and simulated operator
+inventory; they prove password, cookie, CSRF, and deny behavior, not real
+Cloudflare DNS/ingress or a signed installed Tray binary.

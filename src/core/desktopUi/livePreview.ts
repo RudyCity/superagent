@@ -380,6 +380,22 @@ export class NativeWindowPreviewManager {
     }
   }
 
+  /** Non-secret exact native preview identity for operator inventory. */
+  operatorStatus(): { pid: number; nativeId: string; expiresAt: number } | null {
+    const active = this.active;
+    return active && active.expiresAt > this.now()
+      ? { pid: active.window.pid, nativeId: active.window.nativeId, expiresAt: active.expiresAt }
+      : null;
+  }
+  /** Stop only exact capture, never close its OS application. */
+  operatorStop(pid: number, nativeId: string): boolean {
+    const active = this.active;
+    if (!active || active.window.pid !== pid || active.window.nativeId !== nativeId) return false;
+    active.source?.close();
+    this.active = null;
+    this.remoteLease = null;
+    return true;
+  }
   stop(raw: unknown): { stopped: true } {
     assertKeys(raw, ["token"]);
     const session = this.requireSession(raw.token);

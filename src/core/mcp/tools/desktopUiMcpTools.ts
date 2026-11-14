@@ -30,7 +30,7 @@ export interface DesktopUiMcpContext {
 }
 
 const actionKinds = ["click", "type", "key", "scroll"] as const;
-const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "open", "snapshot", "action", "close"] as const;
+const commands = ["probe", ...DESKTOP_UI_DISCOVERY_COMMANDS, ...DESKTOP_UI_APP_COMMANDS, "live_inventory", "live_stop", "open", "snapshot", "action", "close"] as const;
 
 const inputSchema = {
   type: "object",
@@ -75,6 +75,8 @@ const inputSchema = {
       maximum: MAX_SESSION_TTL_MS,
       description: "Absolute session TTL; activity never extends it.",
     },
+    liveId: { type: "string", minLength: 1, maxLength: 210, description: "Exact Desktop Live inventory ID for releasing one owned session." },
+    leaseToken: { type: "string", minLength: 32, maxLength: 128, pattern: "^[a-zA-Z0-9_-]{32,128}$", description: "Opaque owner capability issued for this exact desktop or CDP session." },
     sessionToken: {
       type: "string",
       minLength: 64,
@@ -219,9 +221,34 @@ export async function dispatchDesktopUiMcpTool(
       throw new DesktopUiError("INVALID_ACTION", "Missing desktop UI command.");
     }
     assertDesktopUiDiscoveryCommandFields(rawArgs, command);
+    if (command === "live_inventory" || command === "live_stop") {
+      const allowed = command === "live_inventory"
+        ? new Set(["command", "action"]) : new Set(["command", "action", "liveId", "leaseToken"]);
+      if (Object.keys(rawArgs).some(key => !allowed.has(key))) {
+        throw new DesktopUiError("INVALID_ACTION", "Unexpected Desktop Live field.");
+      }
+    }
 
     let result: unknown;
     switch (command) {
+      case "live_inventory": {
+        const { listDesktopLiveInventory } = await import("../../desktopUi/desktopLiveInventory.js");
+        result = { success: true, ...await listDesktopLiveInventory() };
+        break;
+      }
+      case "live_stop": {
+        if (typeof rawArgs.liveId !== "string" || typeof rawArgs.leaseToken !== "string") {
+          throw new DesktopUiError("INVALID_ACTION", "Exact handle and owner capability required.");
+        }
+        const { stopDesktopLiveHandle } = await import("../../desktopUi/desktopLiveInventory.js");
+        result = {
+          success: true,
+          ...await stopDesktopLiveHandle({
+            id: rawArgs.liveId, sessionToken: rawArgs.leaseToken,
+          }, "agent", context.principalId),
+        };
+        break;
+      }
       case "probe":
         result = { success: true, capabilities: await desktopUiSessionManager.probe() };
         break;

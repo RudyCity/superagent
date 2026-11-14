@@ -10,7 +10,9 @@
   <link rel="stylesheet" href="./lan-devices.css" />
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <link rel="stylesheet" href="./delegate-action-diagnostics.css" />
-  <link rel="stylesheet" href="./desktop-live.css" />
+  <link rel="stylesheet" href="./desktop-live-manager.css" />
+  <script src="./desktop-live-manager.js" defer></script>
+  <script src="./tray-access-password.js" defer></script>
   <script src="./titlebar.js" defer></script>
   <script src="./feedback.js" defer></script>
   <script src="./app.js" defer></script>
@@ -30,7 +32,6 @@
   <script src="./logs.js" defer></script>
   <script src="./delegate.js" defer></script>
   <script src="./delegate-multitab.js" defer></script>
-  <script src="./desktop-live.js" defer></script>
   <script src="./action-menu.js" defer></script>
   <script src="./terminal.js" defer></script>
   <script src="./muse-files.js" defer></script>
@@ -120,7 +121,7 @@
           </svg>
           <span>Chrome Delegate</span>
         </a>
-                <a class="nav-link" href="#desktop-live" data-page="desktop-live" id="nav-desktop-live">
+        <a class="nav-link" href="#desktop-live" data-page="desktop-live" id="nav-desktop-live">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <rect x="2" y="4" width="20" height="14" rx="2" />
             <path d="M8 22h8M12 18v4" />
@@ -1134,6 +1135,7 @@
                   <option value="history">Execution History</option>
                   <option value="logs">Connection Logs</option>
                   <option value="delegate">Chrome Delegate</option>
+                  <option value="desktop-live">Desktop Live</option>
                   <option value="terminal">Terminal Processes</option>
                   <option value="muse-files">Muse File Transfer</option>
                   <option value="lan-devices">LAN Devices</option>
@@ -1193,6 +1195,46 @@
         </div>
 
         <div id="settings-subpage-security" class="settings-subpage" hidden>
+        <section class="panel tray-settings-panel" aria-labelledby="tray-access-password-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">REMOTE TRAY MANAGEMENT</div>
+              <h2 id="tray-access-password-title">Tray access password</h2>
+              <p>Configure a separate password for future remote management of the Tray. This password never grants screen capture or input control.</p>
+            </div>
+          </div>
+          <p id="tray-access-password-status" role="status">Checking password configuration…</p>
+          <form id="tray-access-password-form" class="tray-access-password-form" autocomplete="off">
+            <label for="tray-access-password-current">Current password (required when changing)
+              <input id="tray-access-password-current" type="password" autocomplete="current-password" minlength="12" maxlength="128">
+            </label>
+            <label for="tray-access-password-new">New management password
+              <input id="tray-access-password-new" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+            </label>
+            <label for="tray-access-password-confirm">Confirm new password
+              <input id="tray-access-password-confirm" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+            </label>
+            <button id="tray-access-password-save" class="button primary" type="submit">Save password</button>
+            <span id="tray-access-password-feedback" role="status" aria-live="polite"></span>
+          </form>
+          <p class="tray-settings-note">Remote management is disabled by default; only a separately authenticated Tray gateway may be exposed. Never forward native Tauri IPC or Desktop Live image/frame APIs.</p>
+          <div class="tray-access-password-form">
+            <h3>Remote Tray management origin</h3>
+            <p>Runs a password-protected, management-only gateway in Core. Configure a dedicated Cloudflare Named Tunnel hostname to reach this origin separately; starting does not configure DNS or the connector.</p>
+            <label for="tray-remote-origin">Dedicated HTTPS hostname
+              <input id="tray-remote-origin" type="url" placeholder="https://tray.yourdomain.example" autocomplete="url" maxlength="254">
+            </label>
+            <label for="tray-remote-port">Internal origin port (dedicated, loopback only)
+              <input id="tray-remote-port" type="number" min="1024" max="65535" value="19330">
+            </label>
+            <div class="tray-settings-actions">
+              <button id="tray-remote-start" class="button secondary" type="button" disabled>Enable management gateway</button>
+              <button id="tray-remote-stop" class="button ghost" type="button" disabled>Stop gateway</button>
+            </div>
+            <span id="tray-remote-status" role="status" aria-live="polite">Remote gateway inactive.</span>
+          </div>
+        </section>
+
         <section class="panel tray-settings-panel desktop-trust-panel" id="desktop-trust-panel" aria-labelledby="desktop-trust-title">
           <div class="panel-head desktop-trust-header">
             <div>
@@ -2092,57 +2134,31 @@
         </section>
       </div>
 
-      <!-- PRIVATE NATIVE DESKTOP WINDOW PREVIEW · ALL SUPPORTED HOST OS -->
+
+      <!-- Desktop Live is an operator management console, never a frame viewer. -->
       <div id="page-desktop-live" class="page-view" hidden>
-        <section class="panel desktop-live-panel" aria-labelledby="desktop-live-heading">
+        <section class="panel desktop-live-console" aria-labelledby="desktop-live-manager-title">
           <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">LOCAL WINDOW PREVIEW · EXPLICIT CONSENT</div>
-              <h2 id="desktop-live-heading">Desktop Live</h2>
-              <p>Watch one selected application window, not the entire desktop. Private local preview only; remote control is never enabled by this viewer.</p>
+              <div class="panel-eyebrow">SESSION CONTROL CENTER</div>
+              <h2 id="desktop-live-manager-title">Desktop Live</h2>
+              <p>All verified application windows, Chrome CDP targets and Chrome Delegate tabs. Stop revokes access, not the application. No screen is streamed via tunnel.</p>
             </div>
-            <button type="button" id="desktop-live-refresh" class="button secondary">Find windows</button>
+            <button class="button secondary" type="button" id="desktop-live-manager-refresh">Refresh handles</button>
           </div>
-          <div class="desktop-live-picker">
-            <label for="desktop-live-target">Verified application window</label>
-            <div class="desktop-live-picker-row">
-              <select id="desktop-live-target" aria-describedby="desktop-live-permission">
-                <option value="">Select Find windows</option>
-              </select>
-              <button type="button" id="desktop-live-start" class="button primary" disabled>Start private preview</button>
-              <button type="button" id="desktop-live-stop" class="button secondary" disabled>Stop</button>
+          <div class="desktop-live-toolbar">
+            <div class="desktop-live-filters" role="group" aria-label="Handle type">
+              <button type="button" id="desktop-live-filter-all" aria-pressed="true">All screens</button>
+              <button type="button" id="desktop-live-filter-native" aria-pressed="false">Applications</button>
+              <button type="button" id="desktop-live-filter-managed-cdp" aria-pressed="false">Chrome CDP</button>
+              <button type="button" id="desktop-live-filter-cdp-delegate" aria-pressed="false">CDP Delegate</button>
             </div>
           </div>
-          <div class="desktop-live-quality">
-             <label for="desktop-live-quality">Preview quality</label>
-             <select id="desktop-live-quality" aria-describedby="desktop-live-quality-help">
-               <option value="balanced" selected>Balanced · 1280 px · up to 2 fps</option>
-               <option value="save">Save data · 768 px · up to 1 fps</option>
-               <option value="detail">Detail · 1920 px · up to 4 fps</option>
-             </select>
-             <span id="desktop-live-quality-help">Approximate target speed; capture may be slower. Changes do not grant new permissions.</span>
-           </div>
-           <div class="desktop-live-screen" id="desktop-live-screen">
-            <img id="desktop-live-image" alt="Private preview of the explicitly selected application window" referrerpolicy="no-referrer" hidden />
-            <p id="desktop-live-placeholder">No application is being shared.</p>
+          <div id="desktop-live-list" class="desktop-live-list" aria-live="polite">
+            <p class="desktop-live-empty">Refresh to discover application and browser handles.</p>
           </div>
-          <p id="desktop-live-status" role="status" aria-live="polite">Preview is off.</p>
-          <section class="desktop-live-remote" aria-labelledby="desktop-live-remote-heading">
-            <div class="desktop-live-remote-head">
-              <div>
-                <h3 id="desktop-live-remote-heading">Private remote viewer</h3>
-                <p>A remote viewer is separate from the local preview. It requires pinned mTLS identity and its own native host approval.</p>
-              </div>
-              <strong id="desktop-live-remote-state" class="desktop-live-remote-state" data-state="unknown">Checking</strong>
-            </div>
-            <p id="desktop-live-remote-detail" role="status" aria-live="polite">Checking trusted remote-viewer readiness.</p>
-            <div class="desktop-live-remote-actions">
-              <button type="button" class="button secondary" id="desktop-live-remote-review">Native security review</button>
-              <button type="button" class="button secondary" id="desktop-live-takeover">Stop sharing / take over</button>
-            </div>
-            <p class="delegate-hint">Remote input is disabled. Viewing consent never authorizes mouse or keyboard control. Public tunnels, browser tokens, forwarded headers, and arbitrary bind addresses cannot activate this feature.</p>
-          </section>
-          <p id="desktop-live-permission" class="delegate-hint">A native confirmation dialog must approve this exact window. Screen Recording permissions may also be required by the operating system. JPEG frames are size-limited, unchanged frames are skipped, and capture speed depends on the host. Every session expires after five minutes and stops on navigation, hidden Tray, changed window identity, or failed capture. No recording, remote input or public streaming.</p>
+          <p id="desktop-live-manager-status" role="status">No session discovery has run.</p>
+          <p class="delegate-hint">Human takeover blocks agent mutations. Delegate profile disconnect affects every tab in that profile; Chrome and native applications remain open. All operations are validated by the local Core.</p>
         </section>
       </div>
 
