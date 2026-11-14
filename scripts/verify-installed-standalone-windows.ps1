@@ -47,6 +47,35 @@ try {
 } finally {
   $process.Dispose()
 }
+
+# Verify that the installed Core passes strict compiled build identity verification
+$corePsi = [System.Diagnostics.ProcessStartInfo]::new()
+$corePsi.FileName = $runtime
+$corePsi.Arguments = "-e ""import { inspectCoreBuild } from './dist/core/runtime/coreBuildIdentity.js'; const r = inspectCoreBuild('./dist/cli.js', { requireFreshCompiled: true }); console.log('INSTALLED_CORE_VERIFIED', r.digest);"""
+$corePsi.WorkingDirectory = Join-Path $destination "standalone"
+$corePsi.UseShellExecute = $false
+$corePsi.RedirectStandardOutput = $true
+$corePsi.RedirectStandardError = $true
+$corePsi.CreateNoWindow = $true
+$corePsi.Environment["PATH"] = "$env:SystemRoot\System32"
+foreach ($key in @("BUN_EXECUTABLE","SUPERAGENT_CLI_PATH","SUPERAGENT_EXECUTABLE","NODE_PATH")) {
+  $corePsi.Environment.Remove($key) | Out-Null
+}
+$coreProcess = [System.Diagnostics.Process]::Start($corePsi)
+try {
+  if (!$coreProcess.WaitForExit(30000)) {
+    $coreProcess.Kill()
+    throw "Installed Core build verification timed out"
+  }
+  $coreOut = $coreProcess.StandardOutput.ReadToEnd()
+  $coreErr = $coreProcess.StandardError.ReadToEnd()
+  if ($coreProcess.ExitCode -ne 0 -or !$coreOut.Contains("INSTALLED_CORE_VERIFIED")) {
+    throw "Installed Core build verification failed: code=$($coreProcess.ExitCode); stdout=$coreOut; stderr=$coreErr"
+  }
+  Write-Output "Installed Core build identity verification PASS."
+} finally {
+  $coreProcess.Dispose()
+}
 $uninstaller = Join-Path $destination "uninstall.exe"
 if (Test-Path $uninstaller) {
   $removed = Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait -PassThru

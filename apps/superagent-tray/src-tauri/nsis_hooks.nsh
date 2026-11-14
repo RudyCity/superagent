@@ -51,6 +51,16 @@ ${UnStrRep}
     bun_unlocked:
   ${EndIf}
 
+  ; Clean up previous standalone dist and native payloads before install/upgrade to guarantee clean Core build identity
+  ${If} ${FileExists} "$INSTDIR\standalone\dist"
+    DetailPrint "Cleaning previous standalone dist..."
+    RMDir /r "$INSTDIR\standalone\dist"
+  ${EndIf}
+  ${If} ${FileExists} "$INSTDIR\standalone\native"
+    DetailPrint "Cleaning previous standalone native..."
+    RMDir /r "$INSTDIR\standalone\native"
+  ${EndIf}
+
   Sleep 500
 !macroend
 

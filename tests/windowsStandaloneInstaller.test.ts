@@ -36,6 +36,8 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(hooks).toContain("NSIS_HOOK_POSTUNINSTALL");
     expect(hooks).toContain("taskkill.exe");
     expect(hooks).toContain("AddedPath");
+    expect(hooks).toContain('RMDir /r "$INSTDIR\\standalone\\dist"');
+    expect(hooks).toContain('RMDir /r "$INSTDIR\\standalone\\native"');
   });
   it("uses prerelease-only tag gates and requires all three platform assets before GitHub prerelease publishing", () => {
     const workflow = read(".github/workflows/release-windows-standalone.yml");
@@ -107,6 +109,13 @@ describe("Windows standalone installer and safe release contracts", () => {
       expect(content).toContain('tests/desktop-live/windowsInstalledBundleSmoke.test.ts');
       expect(content).toContain('verify-installed-standalone-windows.ps1');
     }
+  });
+
+  it("verifies installed Core build identity in the disposable Windows runner", () => {
+    const installed = read("scripts/verify-installed-standalone-windows.ps1");
+    expect(installed).toContain("INSTALLED_CORE_VERIFIED");
+    expect(installed).toContain("requireFreshCompiled: true");
+    expect(installed).toContain("coreBuildIdentity.js");
   });
 
   it("builds and verifies the exact-window WGC helper before every Windows installer", () => {

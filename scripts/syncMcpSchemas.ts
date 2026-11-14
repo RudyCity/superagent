@@ -17,9 +17,11 @@ function syncInto(dir: string, create: boolean): number {
   if (!create && !fs.existsSync(dir)) return 0;
   if (create) fs.mkdirSync(dir, { recursive: true });
   let count = 0;
+  const valid = new Set<string>();
   for (const tool of CHROME_MCP_TOOL_DEFS) {
     // Keep the exact MCP registration schema (not a handwritten command enum).
     const target = path.join(dir, tool.name + ".json");
+    valid.add(tool.name + ".json");
     const json = JSON.stringify({ name: tool.name, description: tool.description, inputSchema: tool.inputSchema }, null, 2) + "\n";
     if (fs.existsSync(target) && fs.readFileSync(target, "utf8") === json) continue;
     const temporary = target + "." + process.pid + ".tmp";
@@ -29,6 +31,13 @@ function syncInto(dir: string, create: boolean): number {
       count++;
     } finally {
       if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    }
+  }
+  if (fs.existsSync(dir)) {
+    for (const file of fs.readdirSync(dir)) {
+      if (file.endsWith(".json") && !valid.has(file)) {
+        try { fs.unlinkSync(path.join(dir, file)); } catch {}
+      }
     }
   }
   return count;

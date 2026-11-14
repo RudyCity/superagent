@@ -1,4 +1,10 @@
 ## [1.14.98] - 2026-11-14
+### Windows standalone upgrade clean-dist and Core identity fix (rc.2)
+- Fix Windows standalone upgrade failure `CORE_BUILD_STALE_OR_UNVERIFIED`: NSIS preinstall hook now cleanly purges previous `$INSTDIR\standalone\dist` and `$INSTDIR\standalone\native` before extracting the new distribution, preventing stale leftover modules or deleted schemas from older versions from poisoning the compiled tree fingerprint.
+- Add automated orphan dist pruning (`scripts/prune-orphan-dist.ts`) and obsolete schema cleanup in `scripts/syncMcpSchemas.ts` during postbuild to prevent obsolete compiler output from persisting across builds.
+- Add installed Core build identity verification probe in `scripts/verify-installed-standalone-windows.ps1` to assert that the packaged standalone Core passes strict `inspectCoreBuild` on the disposable CI runner.
+- Update installer regression tests in `tests/windowsStandaloneInstaller.test.ts`.
+
 ### Windows standalone MCP backend release attestation
 - Fix Windows prerelease failure during MCP backend candidate packaging: installer preparation intentionally relocates the verified UIA DLL and provenance out of dist, so the original compiled-tree manifest no longer matches standalone bytes. Re-attest only that exact audited relocation, preserving original source digest, requiring identical native files and exact remaining compiled-tree content before issuing a stage-specific identity.
 - Keep strict fail-closed checks against altered compiled modules, package metadata, native provenance or stale source builds. Add Windows staging-order and source-bound relocation regression tests. Do not alter current Core/MCP services, tokens, tunnels or production permissions.
