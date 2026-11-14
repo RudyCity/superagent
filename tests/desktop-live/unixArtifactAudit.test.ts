@@ -122,6 +122,11 @@ describe("Unix Desktop Live extracted artifact audit (structural fixtures only)"
     expect(script).toContain("--appimage-extract");
     expect(script).toContain("hdiutil attach");
     expect(script).toContain("audit_tree");
+    expect(script).toContain("while IFS= read -r -d '' entry");
+    expect(script).not.toContain("mapfile -d");
+    // Detach the read-only image before attempting to remove temporary files.
+    expect(script.indexOf('hdiutil detach "$tmp/mount"')).toBeLessThan(
+      script.indexOf('rm -rf -- "$tmp"'));
     expect(script).not.toContain("REQUIRE_APPIMAGE");
   });
 

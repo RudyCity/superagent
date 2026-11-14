@@ -7,15 +7,28 @@ repo="apps/superagent-tray/src-tauri/target/release/bundle"
 tmp="$(mktemp -d)"
 mounted=0
 cleanup() {
-  if [[ "$mounted" -eq 1 ]]; then hdiutil detach "$tmp/mount" -quiet || true; fi
-  rm -rf -- "$tmp"
+  local status=$?
+  trap - EXIT
+  if [[ "$mounted" -eq 1 ]]; then
+    # Never recursively delete an attached, read-only DMG volume.
+    if ! hdiutil detach "$tmp/mount" -quiet; then
+      echo "Could not detach temporary DMG; leaving mount intact for safe runner cleanup" >&2
+      exit 1
+    fi
+  fi
+  rm -rf -- "$tmp" || exit 1
+  exit "$status"
 }
 trap cleanup EXIT
 
 audit_tree() {
   local package_root="$1" platform="$2"
   local -a entries=()
-  mapfile -d '' entries < <(find "$package_root" -type f -path '*/standalone/dist/cli.js' -print0)
+  local entry
+  # Bash 3.2 ships on macOS and lacks mapfile; preserve whitespace/NUL safety.
+  while IFS= read -r -d '' entry; do
+    entries+=("$entry")
+  done < <(find "$package_root" -type f -path '*/standalone/dist/cli.js' -print0)
   if [[ "${#entries[@]}" -ne 1 ]]; then
     echo "Expected exactly one standalone Core entrypoint in $package_root" >&2
     exit 1
