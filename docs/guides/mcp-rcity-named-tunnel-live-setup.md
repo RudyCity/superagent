@@ -15,6 +15,14 @@ Tanggal pemeriksaan: 2026-11-14. Catatan konfigurasi nyata, **tanpa menyimpan kr
 - Verifikasi DNS dari 1.1.1.1: hostname mengembalikan IP proxy Cloudflare.
 - Probe `curl.exe -sS --head https://mcp.rcity.web.id/mcp` saat belum tersambung: **HTTP 530**.
 
+## Pengaturan bawaan Tray (source v1.14.92)
+
+Halaman **Settings → Cloudflare Named Tunnel** dan pintasan **Runtime → Cloudflare → Configure Named Tunnel** sekarang menyediakan konfigurasi native terpisah. Mode yang benar untuk tunnel Cloudflare ini adalah **Remote-managed · token file**, dengan hostname `mcp.rcity.web.id`, Tunnel UUID `b2e8c6d9-9317-4d9e-b381-826af22e1778`, Anchor port `19320`, private owner port `19321`, dan `cloudflared.exe` yang sudah dipasang.
+
+Metadata tanpa kredensial disimpan di `~/.superagent-r/mcp-named-tunnel-settings.json`. **Token file path masih kosong** sampai operator menyimpan file token yang aman dengan izin OS terbatas. Form tidak menerima token mentah dan tidak pernah menjalankan `cloudflared`, menerbitkan DNS, restart owner atau memindahkan Gemini. Tombol **Check Local Readiness** hanya memeriksa keberadaan path/file secara lokal; status DNS, konektor dan OAuth masih harus dibuktikan sendiri.
+
+**Catatan:** source v1.14.92 memerlukan build/update Tray yang benar-benar dipasang agar UI terlihat; menyimpan metadata di disk atau menjalankan unit test tidak berarti Tray terinstal sudah diperbarui. Skrip `start-named` sebelumnya masih ditujukan bagi konfigurasi local-managed; jangan berikan token remote-managed ke berkas JSON lokal. Aktivasi connector dan pengaturan Windows service memerlukan prosedur yang terpisah dan disetujui.
+
 ## Status sesungguhnya
 
 **Belum online.** Tunnel berstatus Inactive, 0 active replicas. Endpoint di atas belum siap untuk Gemini atau ChatGPT. Jangan menganggap keberhasilan DNS sebagai keberhasilan layanan MCP.

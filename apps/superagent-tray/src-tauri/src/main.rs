@@ -26,6 +26,7 @@ mod remote_service_detection;
 mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
+mod named_tunnel_settings;
 mod tray_lifecycle;
 mod lifecycle_console;
 mod release_updates;
@@ -104,6 +105,20 @@ fn set_tray_settings(
 ) -> Result<tray_settings::TraySettings, String> {
     tray_settings::save(&config_dir()?, &settings)?;
     Ok(settings)
+}
+
+#[tauri::command]
+fn get_named_tunnel_settings() -> Result<named_tunnel_settings::NamedTunnelView, String> {
+    Ok(named_tunnel_settings::load(&config_dir()?)?.inspect())
+}
+
+#[tauri::command]
+fn set_named_tunnel_settings(
+    settings: named_tunnel_settings::NamedTunnelSettings,
+) -> Result<named_tunnel_settings::NamedTunnelView, String> {
+    let dir = config_dir()?;
+    named_tunnel_settings::save(&dir, &settings)?;
+    Ok(named_tunnel_settings::load(&dir)?.inspect())
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -1971,6 +1986,8 @@ fn main() {
             create_connection,
             regenerate_token,
             get_tray_settings,
+            get_named_tunnel_settings,
+            set_named_tunnel_settings,
             get_tray_version,
             get_tray_build_number,
             release_updates::check_release_updates,

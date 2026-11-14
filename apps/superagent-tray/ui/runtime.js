@@ -368,6 +368,8 @@ function runtimeApplyTab() {
   }
   const remoteNode = rt("runtime-remote");
   if (remoteNode?.dataset) remoteNode.dataset.runtimeView = tab;
+  const namedEntry=rt("runtime-named-tunnel-entry");
+  if (namedEntry) namedEntry.hidden = tab !== "cloudflare";
   const remotePanel = rt("runtime-remote-panel");
   remotePanel?.setAttribute?.("aria-labelledby", "runtime-tab-" + tab);
   if (config) {
@@ -1011,6 +1013,10 @@ function runtimeInstall() {
     tab?.addEventListener("click", () => runtimeSelectTab(name));
     tab?.addEventListener("keydown", runtimeTabKeydown);
   }
+  rt("runtime-named-tunnel-settings")?.addEventListener("click", () => {
+    if (typeof window.navigateToPage === "function") window.navigateToPage("settings");
+    rt("named-tunnel-settings-title")?.scrollIntoView?.({behavior:"smooth",block:"start"});
+  });
   rt("runtime-create-kind")?.addEventListener("change", runtimeCreateKindChanged);
   rt("runtime-create-provider")?.addEventListener("change", runtimeCreateKindChanged);
   rt("runtime-create-form")?.addEventListener("submit", runtimeCreateConnection);

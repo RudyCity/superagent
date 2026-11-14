@@ -1,0 +1,81 @@
+
+/* Hallmark · component: Named Tunnel settings · existing Tray theme and spacing.
+ * P5 H4 E5 S5 R5 V4 · no standalone visual palette.
+ */
+.runtime-named-tunnel-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 15px 18px;
+  margin: 4px 0 16px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+}
+.runtime-named-tunnel-entry[hidden] { display: none !important; }
+.runtime-named-tunnel-entry > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 5px;
+}
+.runtime-named-tunnel-entry strong { font-size: 13px; color: var(--text-primary); }
+.runtime-named-tunnel-entry small {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.named-tunnel-settings .panel-head p {
+  max-width: 68ch;
+}
+.named-tunnel-settings .tray-field-row input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+.named-tunnel-settings .tray-field-row input {
+  min-width: 0;
+}
+.named-tunnel-settings [hidden] {
+  display: none !important;
+}
+.named-tunnel-settings .named-tunnel-safety-note {
+  margin: 18px 0 0;
+}
+.named-tunnel-readiness {
+  margin: 0 26px 24px;
+  padding: 13px 15px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-elevated);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-size: 12px;
+}
+.named-tunnel-readiness[data-state="success"] {
+  border-color: var(--border-medium);
+}
+.named-tunnel-readiness[data-state="warning"] {
+  color: var(--text-secondary);
+}
+#named-tunnel-feedback {
+  overflow-wrap: anywhere;
+  max-width: 500px;
+}
+#named-tunnel-save:disabled,
+#named-tunnel-check:disabled {
+  cursor: wait;
+  opacity: .7;
+}
+#named-tunnel-save[data-loading="true"] {
+  opacity: .75;
+}
+@media (max-width: 750px) {
+  .named-tunnel-settings .tray-field-row {
+    align-items: stretch;
+  }
+  .named-tunnel-settings .tray-field-row input,
+  .named-tunnel-settings .tray-field-row select {
+    width: 100%;
+    max-width: 100%;
+  }
+}

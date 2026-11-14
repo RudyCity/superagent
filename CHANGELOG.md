@@ -1,3 +1,9 @@
+## [1.14.92] - 2026-11-14
+### Named Cloudflare Tunnel settings in native SuperAgent Tray
+- Add Settings → Cloudflare Named Tunnel with remote-managed token-file and local-managed credentials-file modes; configure an operator-owned hostname, Cloudflare UUID, separate Anchor/owner ports and installed cloudflared path without ever entering token bytes.
+- Persist only non-secret metadata in a bounded native settings file, validate protected ports/paths/hostnames, expose conservative readiness (not connected until independently verified) and provide a Runtime → Cloudflare settings shortcut. Save/Check cannot start cloudflared, change DNS or touch the running Quick Tunnel.
+- Cover Windows-native validation/persistence and Tray UI form/Runtime regression. The verified rcity settings can be stored locally without connector tokens; activating a real remote-managed connector remains an explicit, separately reviewed operator action.
+
 ## [1.14.91] - 2026-11-14
 ### Named Cloudflare Tunnel readiness without existing MCP URL disruption (Stage 5)
 - Add strict private spec validation for locally managed Cloudflare tunnel UUID, owned hostname, verified credential file identity and executable path. Generate exact single-hostname localhost ingress with mandatory 404 catch-all, stage only explicitly reviewed immutable private configuration, reject altered/risky paths and never disclose credentials.

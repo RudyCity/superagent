@@ -18,6 +18,8 @@
   <script src="./lifecycle.js" defer></script>
   <link rel="stylesheet" href="./lifecycle.css" />
   <script src="./settings.js" defer></script>
+  <script src="./named-tunnel-settings.js" defer></script>
+  <link rel="stylesheet" href="./named-tunnel-settings.css" />
   <script src="./updates.js" defer></script>
   <link rel="stylesheet" href="./updates.css" />
   <script src="./logs.js" defer></script>
@@ -552,6 +554,11 @@
               <div class="column-header">
                 <h3><span id="runtime-remote-heading">Independent MCP Owners</span> <span id="runtime-remote-count" class="subtle-badge"></span></h3>
                 <span id="runtime-remote-tag" class="column-tag">Cross-process</span>
+              </div>
+              <div id="runtime-named-tunnel-entry" class="runtime-named-tunnel-entry" hidden>
+                <div><strong>Cloudflare Named Tunnel</strong>
+                  <small>Manage a fixed hostname and a separate connector. Existing Quick Tunnel sessions stay online.</small></div>
+                <button id="runtime-named-tunnel-settings" class="button ghost" type="button">Configure Named Tunnel</button>
               </div>
               <div id="runtime-remote" class="runtime-items runtime-host-grid" data-runtime-view="mcp">
                 <p class="empty-state">Checking registered MCP tunnels and Muse watchers...</p>
@@ -1140,6 +1147,67 @@
               <button type="button" class="button ghost" id="settings-defaults">Restore Defaults</button>
               <span id="settings-feedback" role="status" aria-live="polite"></span>
             </div>
+          </form>
+        </section>
+
+        <section class="panel tray-settings-panel named-tunnel-settings" aria-labelledby="named-tunnel-settings-title">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">PUBLIC MCP INGRESS</div>
+              <h2 id="named-tunnel-settings-title">Cloudflare Named Tunnel</h2>
+              <p>Configure a fixed, operator-owned hostname independently of the current Quick Tunnel. Saving does not start a connector, update DNS, migrate OAuth, or interrupt Gemini.</p>
+            </div>
+            <span class="subtle-badge" id="named-tunnel-status">Checking…</span>
+          </div>
+          <form id="named-tunnel-settings-form" autocomplete="off">
+            <div class="tray-settings-section">
+              <h3>Cloudflare identity</h3>
+              <label class="tray-field-row">
+                <span><strong>Connector mode</strong><small>Use Remote-managed for tunnels created in the Cloudflare dashboard. Local-managed is for an existing UUID credentials JSON file.</small></span>
+                <select id="named-tunnel-mode">
+                  <option value="remote-managed">Remote-managed · token file</option>
+                  <option value="local-managed">Local-managed · credentials JSON</option>
+                </select>
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Hostname</strong><small>Your Cloudflare-owned subdomain. Gemini can use https://hostname/mcp after a separately verified cutover.</small></span>
+                <input type="text" id="named-tunnel-hostname" maxlength="253" placeholder="mcp.rcity.web.id" spellcheck="false" />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Cloudflare Tunnel UUID</strong><small>Matches the immutable tunnel ID shown in Cloudflare Networking → Tunnels. Never paste a token here.</small></span>
+                <input type="text" id="named-tunnel-id" maxlength="36" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" spellcheck="false" />
+              </label>
+            </div>
+            <div class="tray-settings-section">
+              <h3>Independent local connection</h3>
+              <label class="tray-field-row">
+                <span><strong>Anchor port</strong><small>Cloudflare routes to 127.0.0.1 on this port. Do not reuse the live MCP port 9227.</small></span>
+                <input type="number" id="named-tunnel-anchor-port" min="1024" max="65535" step="1" value="19320" />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>Private MCP owner port</strong><small>A different loopback port for a new MCP owner. Active owner sessions remain untouched.</small></span>
+                <input type="number" id="named-tunnel-owner-port" min="1024" max="65535" step="1" value="19321" />
+              </label>
+              <label class="tray-field-row" id="named-tunnel-token-row">
+                <span><strong>Token file path</strong><small>Absolute path to a private Cloudflare tunnel token file. Token contents are never copied into this form, persisted here, or returned by the Tray.</small></span>
+                <input type="text" id="named-tunnel-token-file" maxlength="512" placeholder="C:\Users\USER\.cloudflared\superagent-mcp.token" spellcheck="false" />
+              </label>
+              <label class="tray-field-row" id="named-tunnel-credentials-row" hidden>
+                <span><strong>Credentials JSON path</strong><small>Used only for locally managed tunnels, not the remote-managed tunnel created in the Cloudflare dashboard.</small></span>
+                <input type="text" id="named-tunnel-credentials-file" maxlength="512" placeholder="C:\Users\USER\.cloudflared\&lt;UUID&gt;.json" spellcheck="false" />
+              </label>
+              <label class="tray-field-row">
+                <span><strong>cloudflared executable</strong><small>Absolute path to an installed, trusted cloudflared binary. This page never executes it.</small></span>
+                <input type="text" id="named-tunnel-binary" maxlength="512" placeholder="C:\ProgramData\chocolatey\bin\cloudflared.exe" spellcheck="false" />
+              </label>
+              <p class="tray-settings-note named-tunnel-safety-note">The configured route may already exist on Cloudflare. “Saved” means local metadata only—not connected, healthy, or ready for an automatic switch. The original Quick Tunnel will remain unchanged.</p>
+            </div>
+            <div class="tray-settings-actions">
+              <button type="submit" class="button primary" id="named-tunnel-save">Save Named Tunnel Settings</button>
+              <button type="button" class="button ghost" id="named-tunnel-check">Check Local Readiness</button>
+              <span id="named-tunnel-feedback" role="status" aria-live="polite"></span>
+            </div>
+            <div class="named-tunnel-readiness" id="named-tunnel-readiness" role="status" aria-live="polite">Local readiness not checked. No tunnel activation is performed here.</div>
           </form>
         </section>
 
