@@ -3,6 +3,7 @@ import {
   loadVerifiedWaylandConsentScript,
   parseWaylandPortalCapabilities,
   parseClosedWaylandConsentReceipt,
+  parseWaylandPortalHelperResponse,
   verifyUserSelectedWaylandWindow,
 } from "../../src/core/desktopUi/adapters/linuxWaylandConsent.js";
 
@@ -78,6 +79,37 @@ describe("Wayland ScreenCast one-shot user-consent boundary", () => {
       expect(() => parseClosedWaylandConsentReceipt({ ...approved, ...changed }))
         .toThrow();
     }
+  });
+
+  it("preserves bounded deny reasons but never reflects arbitrary helper content", () => {
+    for (const reason of [
+      "not-wayland", "portal-cancelled-or-denied", "consent-timeout",
+      "portal-owner-changed", "session-close-unconfirmed",
+      "unsupported-window-portal",
+    ]) {
+      expect(() => parseWaylandPortalHelperResponse(JSON.stringify({ ok: false, reason })))
+        .toThrow(reason);
+    }
+    expect(() => parseWaylandPortalHelperResponse(JSON.stringify({
+      ok: false, reason: "private window title / user home",
+    }))).toThrow("portal-runtime-unavailable");
+    expect(() => parseWaylandPortalHelperResponse(JSON.stringify({
+      ok: false, reason: "missing-pygobject",
+    }))).toThrowError(expect.objectContaining({ code: "DEPENDENCY_REQUIRED" }));
+    for (const value of [
+      "not-json", "[]", "null", '{"ok":true}', '{"status":"verified-and-closed","reason":"fake"}',
+    ]) {
+      expect(() => parseWaylandPortalHelperResponse(value)).toThrow();
+    }
+    expect(parseWaylandPortalHelperResponse(JSON.stringify({
+      status: "verified-and-closed", session_closed: true,
+    }))).toMatchObject({ session_closed: true });
+  });
+
+  it("requires a confirmed close before accepting a one-shot receipt", () => {
+    expect(() => parseClosedWaylandConsentReceipt({
+      ...approved, session_closed: false,
+    })).toThrow("close");
   });
 
   it("never invokes a permission dialog without a positive attended action", async () => {

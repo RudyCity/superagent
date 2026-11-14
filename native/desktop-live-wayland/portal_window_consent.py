@@ -26,6 +26,10 @@ class Denied(Exception):
     pass
 
 
+def safe_response(reason):
+    return {"ok": False, "reason": reason}
+
+
 def ensure_wayland():
     if os.environ.get("XDG_SESSION_TYPE", "").lower() != "wayland":
         raise Denied("not-wayland")
@@ -55,7 +59,9 @@ def get_portal_capabilities(bus, Gio, GLib):
     version = read("version")
     sources = read("AvailableSourceTypes")
     cursors = read("AvailableCursorModes")
-    if type(version) is not int or type(sources) is not int or type(cursors) is not int:
+    if (type(version) is not int or not 0 <= version <= 100 or
+            type(sources) is not int or sources < 0 or
+            type(cursors) is not int or cursors < 0):
         raise Denied("invalid-portal-properties")
     return {
         "available": True,
@@ -73,6 +79,8 @@ def verify_streams(streams):
     if not isinstance(entry, (list, tuple)) or len(entry) != 2:
         raise Denied("invalid-stream")
     _discarded_node_id, properties = entry
+    if type(_discarded_node_id) is not int or not 0 <= _discarded_node_id <= 0xFFFFFFFF:
+        raise Denied("invalid-stream-node")
     if not isinstance(properties, dict):
         raise Denied("invalid-stream-properties")
 
@@ -101,8 +109,28 @@ class PortalRequests:
             GLib.VariantType.new("(s)"), Gio.DBusCallFlags.NONE, 3000, None
         )
         self.owner = owner_result.unpack()[0]
+        if not isinstance(self.owner, str) or not self.owner.startswith(":"):
+            raise Denied("unknown-portal-owner")
+
+    def check_owner(self):
+        # A replacement portal process must never inherit old session consent.
+        try:
+            result = self.bus.call_sync(
+                "org.freedesktop.DBus", "/org/freedesktop/DBus",
+                "org.freedesktop.DBus", "GetNameOwner",
+                self.GLib.Variant("(s)", (PORTAL,)),
+                self.GLib.VariantType.new("(s)"),
+                self.Gio.DBusCallFlags.NONE, 3000, None
+            )
+            if result.unpack()[0] != self.owner:
+                raise Denied("portal-owner-changed")
+        except Denied:
+            raise
+        except Exception:
+            raise Denied("portal-owner-unavailable") from None
 
     def call_request(self, method, signature, args, max_wait_ms):
+        self.check_owner()
         token = "sa_" + secrets.token_hex(16)
         expected = "/org/freedesktop/portal/desktop/request/" + self.sender + "/" + token
         result = {}
@@ -111,7 +139,16 @@ class PortalRequests:
         def on_response(_bus, _sender, _path, _iface, _signal, params, _data):
             if "response" in result:
                 return
-            code, values = params.unpack()
+            unpacked = params.unpack()
+            if not isinstance(unpacked, (list, tuple)) or len(unpacked) != 2:
+                result["malformed"] = True
+                loop.quit()
+                return
+            code, values = unpacked
+            if type(code) is not int:
+                result["malformed"] = True
+                loop.quit()
+                return
             result["response"] = code
             result["values"] = values
             loop.quit()
@@ -132,7 +169,7 @@ class PortalRequests:
             options = args[-1]
             options["handle_token"] = self.GLib.Variant("s", token)
             response = self.bus.call_sync(
-                PORTAL, OBJECT, SCREENCAST, method,
+                self.owner, OBJECT, SCREENCAST, method,
                 self.GLib.Variant(signature, args),
                 self.GLib.VariantType.new("(o)"),
                 self.Gio.DBusCallFlags.NONE, 5000, None,
@@ -146,10 +183,13 @@ class PortalRequests:
                 loop.run()
             if result.get("timeout"):
                 raise Denied("consent-timeout")
+            if result.get("malformed"):
+                raise Denied("malformed-portal-response")
             if result.get("response") != 0:
                 raise Denied("portal-cancelled-or-denied")
             if not isinstance(result.get("values"), dict):
                 raise Denied("malformed-portal-response")
+            self.check_owner()
             return result["values"]
         finally:
             if timer is not None and not result.get("timeout"):
@@ -158,18 +198,18 @@ class PortalRequests:
             if request_created and ("response" not in result):
                 try:
                     self.bus.call_sync(
-                        PORTAL, expected, REQUEST, "Close", None, None,
+                        self.owner, expected, REQUEST, "Close", None, None,
                         self.Gio.DBusCallFlags.NONE, 2000, None,
                     )
                 except Exception:
                     pass
 
 
-def open_remote_and_close_fd(bus, Gio, GLib, handle):
+def open_remote_and_close_fd(bus, Gio, GLib, handle, owner):
     # The PipeWire remote grants access ONLY to portal-approved sources.
     # The fd is closed without creating any pw_core or reading a frame.
     response, fd_list = bus.call_with_unix_fd_list_sync(
-        PORTAL, OBJECT, SCREENCAST, "OpenPipeWireRemote",
+        owner, OBJECT, SCREENCAST, "OpenPipeWireRemote",
         GLib.Variant("(oa{sv})", (handle, {})),
         GLib.VariantType.new("(h)"),
         Gio.DBusCallFlags.NONE, 5000, None, None,
@@ -177,10 +217,15 @@ def open_remote_and_close_fd(bus, Gio, GLib, handle):
     index = response.unpack()[0]
     if type(index) is not int or index < 0 or fd_list is None:
         raise Denied("pipewire-remote-unavailable")
-    fd = fd_list.get(index)
-    if type(fd) is not int or fd < 0:
-        raise Denied("invalid-pipewire-fd")
-    os.close(fd)
+    try:
+        fd = fd_list.get(index)
+        if type(fd) is not int or fd < 0:
+            raise Denied("invalid-pipewire-fd")
+        os.close(fd)
+    finally:
+        # UnixFDList retains the originals independently of get()'s duplicate.
+        for original in fd_list.steal_fds():
+            os.close(original)
     return True
 
 
@@ -212,7 +257,9 @@ def one_shot_consent(bus, Gio, GLib, capabilities):
         if hasattr(streams, "unpack"):
             streams = streams.unpack()
         serial = verify_streams(streams)
-        open_remote_and_close_fd(bus, Gio, GLib, session_path)
+        requests.check_owner()
+        open_remote_and_close_fd(bus, Gio, GLib, session_path, requests.owner)
+        requests.check_owner()
         receipt = {
             "status": "verified-and-closed",
             "identity_kind": "portal-user-selected-window",
@@ -220,18 +267,20 @@ def one_shot_consent(bus, Gio, GLib, capabilities):
             "stream_count": 1,
             "pipewire_serial": serial,
             "remote_opened": True,
-            "session_closed": True,
+            "session_closed": False,
             "atspi_bound": False,
         }
     finally:
         if session_path is not None:
             try:
                 bus.call_sync(
-                    PORTAL, session_path, SESSION, "Close", None, None,
+                    requests.owner, session_path, SESSION, "Close", None, None,
                     Gio.DBusCallFlags.NONE, 3000, None,
                 )
             except Exception:
                 raise Denied("session-close-unconfirmed") from None
+    # Never advertise a closed/revoked session before the Close RPC succeeds.
+    receipt["session_closed"] = True
     return receipt
 
 
@@ -242,6 +291,8 @@ def main():
         len(sys.argv) != 3 or sys.argv[2] != "--user-initiated"
     ):
         raise Denied("explicit-user-action-required")
+    if sys.argv[1] == "--capabilities" and len(sys.argv) != 2:
+        raise Denied("invalid-mode")
     ensure_wayland()
     Gio, GLib = dbus_setup()
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
@@ -256,9 +307,9 @@ if __name__ == "__main__":
     try:
         main()
     except Denied as error:
-        print(json.dumps({"ok": False, "reason": str(error)}, separators=(",", ":")))
-        sys.exit(2)
+        # A normal denial is a structured result, not a failed transport.
+        print(json.dumps(safe_response(str(error)), separators=(",", ":")))
     except Exception:
         # Do not leak DBus paths, window labels or environment in diagnostics.
-        print(json.dumps({"ok": False, "reason": "portal-runtime-unavailable"}, separators=(",", ":")))
+        print(json.dumps(safe_response("portal-runtime-unavailable"), separators=(",", ":")))
         sys.exit(3)

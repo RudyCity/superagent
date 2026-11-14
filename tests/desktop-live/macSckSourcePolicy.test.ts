@@ -39,7 +39,8 @@ describe("macOS ScreenCaptureKit native source security policy (static, host-ind
     const script = read("scripts/build-desktop-live-sck.sh");
     expect(script).toContain('$(uname -s)');
     expect(script).toContain('$(uname -m)');
-    expect(script).toContain("-parse-as-library -target arm64-apple-macos14.0");
+    expect(script).toContain("-parse-as-library -target arm64-apple-macosx14.0");
+    expect(script).toContain('-sdk "$(xcrun --sdk macosx --show-sdk-path)"');
     expect(script).toContain('-framework UniformTypeIdentifiers');
     expect(script).toContain('test "$(lipo -archs "$SCRATCH/sck")" = "arm64"');
     expect(script).toContain("shasum -a 256");

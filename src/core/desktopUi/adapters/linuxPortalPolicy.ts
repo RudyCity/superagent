@@ -22,6 +22,22 @@ export interface LinuxPortalReadiness {
   version: number;
 }
 
+/** Protocol readiness never authorizes a compositor-unbound target capture. */
+export type LinuxPortalProtocolAssessment =
+  | { readonly status: "window-only-protocol"; readonly captureAllowed: false; readonly reason: "unbound-target-identity" }
+  | { readonly status: "denied"; readonly captureAllowed: false; readonly reason:
+      "portal-unavailable" | "window-source-unsupported" | "hidden-cursor-unsupported" |
+      "pipewire-reader-unavailable" | "portal-version-unsupported" };
+
+export function assessLinuxPortalWindowProtocol(state: LinuxPortalReadiness): LinuxPortalProtocolAssessment {
+  if (!state.available) return Object.freeze({ status: "denied", captureAllowed: false, reason: "portal-unavailable" });
+  if (state.version < 6) return Object.freeze({ status: "denied", captureAllowed: false, reason: "portal-version-unsupported" });
+  if (!state.supportsWindow) return Object.freeze({ status: "denied", captureAllowed: false, reason: "window-source-unsupported" });
+  if (!state.hiddenCursor) return Object.freeze({ status: "denied", captureAllowed: false, reason: "hidden-cursor-unsupported" });
+  if (!state.pipewireReader) return Object.freeze({ status: "denied", captureAllowed: false, reason: "pipewire-reader-unavailable" });
+  return Object.freeze({ status: "window-only-protocol", captureAllowed: false, reason: "unbound-target-identity" });
+}
+
 export const WINDOW_ONLY_PORTAL_SELECTION = Object.freeze({
   types: XDG_PORTAL_WINDOW_TYPE,
   multiple: false,
@@ -129,7 +145,10 @@ export function parseLinuxPortalReadiness(raw: unknown): LinuxPortalReadiness {
       typeof state.supportsWindow !== "boolean" ||
       typeof state.hiddenCursor !== "boolean" ||
       typeof state.pipewireReader !== "boolean" ||
-      !Number.isInteger(state.version) || Number(state.version) < 0 || Number(state.version) > 100) {
+      !Number.isInteger(state.version) || Number(state.version) < 0 || Number(state.version) > 100 ||
+      (state.available === false &&
+        (state.supportsWindow === true || state.hiddenCursor === true ||
+         state.pipewireReader === true || state.version !== 0))) {
     throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Invalid Linux portal capability fields.");
   }
   return {

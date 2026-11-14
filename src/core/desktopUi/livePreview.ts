@@ -12,6 +12,9 @@ import {
 } from "./livePreviewEncoding.js";
 import { DesktopUiError } from "./errors.js";
 import { WGC_HELPER_BACKEND } from "./adapters/windowsWgcArtifact.js";
+import { SCK_HELPER_BACKEND } from "./adapters/macSckArtifact.js";
+import { X11_HELPER_BACKEND } from "./adapters/linuxX11Artifact.js";
+import { exactRemoteWindow, type RemoteWindowPin } from "./remoteSessionPolicy.js";
 import type {
   DesktopDiscoveredWindow, DesktopUiAdapter, DesktopWindowCaptureSource, NativeCapture,
 } from "./types.js";
@@ -19,6 +22,17 @@ import type {
 export const PRIVATE_PREVIEW_TTL_MS = 5 * 60_000;
 export const PRIVATE_PREVIEW_INTERVAL_MS = 250;
 export const PRIVATE_PREVIEW_MAX_PNG_BYTES = 2 * 1024 * 1024;
+
+/** Host-only lease. The preview bearer never leaves the host process. */
+export interface NativeRemotePreviewLease {
+  readonly window: RemoteWindowPin;
+  captureJpeg(): Promise<{ jpeg: string; width: number; height: number; capturedAt: string }>;
+  close(): void;
+}
+
+const REMOTE_NATIVE_BACKENDS = new Set([
+  "win32-persistent-exact-hwnd", WGC_HELPER_BACKEND, SCK_HELPER_BACKEND, X11_HELPER_BACKEND,
+]);
 
 interface PreviewSession {
   readonly token: string;
@@ -137,6 +151,7 @@ function requireFrameRequest(raw: unknown): PreviewFrameRequest {
 export class NativeWindowPreviewManager {
   private active: PreviewSession | null = null;
   private starting = false;
+  private remoteLease: NativeRemotePreviewLease | null = null;
   constructor(
     private readonly createAdapter: () => DesktopUiAdapter = createNativeDesktopUiAdapter,
     private readonly now: () => number = Date.now,
@@ -170,6 +185,7 @@ export class NativeWindowPreviewManager {
     if (this.active && this.active.expiresAt <= this.now()) {
       this.active.source?.close();
       this.active = null;
+      this.remoteLease = null;
     }
     if (this.starting || this.active) {
       throw new DesktopUiError("INVALID_ACTION", "A private preview is already active. Stop it before switching windows.");
@@ -227,9 +243,53 @@ export class NativeWindowPreviewManager {
     if (this.now() >= this.active.expiresAt) {
       this.active.source?.close();
       this.active = null;
+      this.remoteLease = null;
       throw new DesktopUiError("INPUT_DISABLED", "Private preview expired; renewed consent is required.");
     }
     return this.active;
+  }
+
+  /**
+   * A trusted host may claim only a pre-existing Tray-approved preview.
+   * Never start capture, accept an unverified backend, or fall back to
+   * desktop/monitor screenshots for remote viewers.
+   */
+  claimRemoteHostCapture(localPreviewToken: string, approvedWindow: RemoteWindowPin): NativeRemotePreviewLease {
+    const session = this.requireSession(localPreviewToken);
+    if (this.remoteLease || !exactRemoteWindow(session.window, approvedWindow) ||
+        session.source?.verifiedInsideCapture !== true ||
+        !REMOTE_NATIVE_BACKENDS.has(session.source.backend)) {
+      throw new DesktopUiError("INPUT_DISABLED", "Remote capture requires one exact verified native window source.");
+    }
+    const window: RemoteWindowPin = {
+      pid: session.window.pid, nativeId: session.window.nativeId,
+      title: session.window.title, application: session.window.application,
+      bounds: { ...session.window.bounds },
+    };
+    let closed = false;
+    const lease: NativeRemotePreviewLease = {
+      window,
+      captureJpeg: async () => {
+        if (closed || this.active !== session || this.remoteLease !== lease) {
+          throw new DesktopUiError("INPUT_DISABLED", "Remote native preview lease is revoked.");
+        }
+        const result = await this.frame({
+          token: localPreviewToken, codec: "jpeg", maxWidth: 1280, quality: 65,
+        });
+        if (closed || this.active !== session || this.remoteLease !== lease ||
+            result.unchanged || result.format !== "jpeg") {
+          throw new DesktopUiError("INPUT_DISABLED", "Remote native preview lease changed during capture.");
+        }
+        return { jpeg: result.jpeg, width: result.width, height: result.height,
+          capturedAt: result.capturedAt };
+      },
+      close: () => {
+        closed = true;
+        if (this.remoteLease === lease) this.remoteLease = null;
+      },
+    };
+    this.remoteLease = lease;
+    return lease;
   }
 
   async frame(raw: unknown) {
@@ -310,7 +370,10 @@ export class NativeWindowPreviewManager {
     } catch {
       // Any uncertain native capture immediately terminates the stream.
       session.source?.close();
-      if (this.active === session) this.active = null;
+      if (this.active === session) {
+        this.active = null;
+        this.remoteLease = null;
+      }
       throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Private preview stopped: target or capture verification failed.");
     } finally {
       session.capturing = false;
@@ -322,6 +385,7 @@ export class NativeWindowPreviewManager {
     const session = this.requireSession(raw.token);
     session.source?.close();
     this.active = null;
+    this.remoteLease = null;
     return { stopped: true };
   }
 }

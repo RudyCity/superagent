@@ -3,6 +3,7 @@ import {
   WINDOW_ONLY_PORTAL_SELECTION,
   PYTHON_PORTAL_READINESS_SCRIPT,
   parseLinuxPortalReadiness,
+  assessLinuxPortalWindowProtocol,
   parsePortalSelectedWindowStream,
   requireExactPortalWindowBinding,
 } from "../../src/core/desktopUi/adapters/linuxPortalPolicy.js";
@@ -77,6 +78,31 @@ describe("Linux XDG Portal ScreenCast / PipeWire privacy policy", () => {
     expect(() => parseLinuxPortalReadiness({ ...ready, version: "6" })).toThrow();
     expect(() => parseLinuxPortalReadiness({ available: true })).toThrow();
     expect(() => parseLinuxPortalReadiness(null)).toThrow();
+  });
+
+  it("recognizes positive WINDOW-only protocol without granting exact-target capture", () => {
+    const ready = {
+      available: true, version: 6, supportsWindow: true,
+      hiddenCursor: true, pipewireReader: true,
+    };
+    expect(assessLinuxPortalWindowProtocol(parseLinuxPortalReadiness(ready))).toEqual({
+      status: "window-only-protocol", captureAllowed: false, reason: "unbound-target-identity",
+    });
+    for (const [patch, expected] of [
+      [{ available: false, version: 0, supportsWindow: false, hiddenCursor: false, pipewireReader: false }, "portal-unavailable"],
+      [{ version: 5 }, "portal-version-unsupported"],
+      [{ supportsWindow: false }, "window-source-unsupported"],
+      [{ hiddenCursor: false }, "hidden-cursor-unsupported"],
+      [{ pipewireReader: false }, "pipewire-reader-unavailable"],
+    ] as const) {
+      const state = parseLinuxPortalReadiness({ ...ready, ...patch });
+      expect(assessLinuxPortalWindowProtocol(state)).toEqual({
+        status: "denied", captureAllowed: false, reason: expected,
+      });
+    }
+    expect(() => parseLinuxPortalReadiness({
+      ...ready, available: false,
+    })).toThrow("Invalid");
   });
 
   it("an explicitly requested X11 worker cannot silently revert to legacy screenshot tools", async () => {

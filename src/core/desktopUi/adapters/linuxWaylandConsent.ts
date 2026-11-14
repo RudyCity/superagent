@@ -17,7 +17,7 @@ import {
 
 const PYTHON3 = "/usr/bin/python3";
 const SCRIPT = new URL("../../../../native/desktop-live-wayland/portal_window_consent.py", import.meta.url);
-const SCRIPT_SHA256 = "367a6e8dda97b776647aaaa36970d1266b6fed8ead8cd3ebfa4cc5ba118f73d8";
+const SCRIPT_SHA256 = "2d08348fe4b7fc943050fe79dd5e950602082222a0c09e7f903b686ee9e32d4f";
 
 export interface WaylandPortalConsentReceipt {
   readonly status: "verified-and-closed";
@@ -61,7 +61,21 @@ export async function loadVerifiedWaylandConsentScript(): Promise<string> {
   }
 }
 
-function parseResponse(stdout: string): Record<string, unknown> {
+/** Native helper only emits fixed deny reasons; never propagate arbitrary DBus data. */
+const SAFE_DENIALS = new Set([
+  "not-wayland", "missing-session-bus", "missing-pygobject",
+  "invalid-mode", "explicit-user-action-required", "invalid-portal-properties",
+  "invalid-stream-node", "not-exactly-one-stream", "invalid-stream",
+  "invalid-stream-properties", "not-a-window", "missing-unique-serial",
+  "unknown-dbus-sender", "unknown-portal-owner", "portal-owner-changed",
+  "portal-owner-unavailable", "request-handle-mismatch", "consent-timeout",
+  "portal-cancelled-or-denied", "malformed-portal-response",
+  "session-handle-mismatch", "unsupported-window-portal",
+  "pipewire-remote-unavailable", "invalid-pipewire-fd",
+  "session-close-unconfirmed", "portal-runtime-unavailable",
+]);
+
+export function parseWaylandPortalHelperResponse(stdout: string): Record<string, unknown> {
   let value: unknown;
   try {
     value = JSON.parse(stdout);
@@ -73,7 +87,15 @@ function parseResponse(stdout: string): Record<string, unknown> {
   }
   const record = value as Record<string, unknown>;
   if (record.ok === false) {
-    throw new DesktopUiError("OS_PERMISSION_REQUIRED", "Wayland portal consent was denied or unavailable.");
+    const reason = typeof record.reason === "string" && SAFE_DENIALS.has(record.reason)
+      ? record.reason : "portal-runtime-unavailable";
+    throw new DesktopUiError(
+      reason === "missing-pygobject" ? "DEPENDENCY_REQUIRED" : "OS_PERMISSION_REQUIRED",
+      `Wayland portal refused: ${reason}.`,
+    );
+  }
+  if (record.ok === true || "reason" in record) {
+    throw new DesktopUiError("PROCESS_FAILED", "Unexpected Wayland portal helper response.");
   }
   return record;
 }
@@ -130,7 +152,10 @@ export async function probeWaylandWindowPortal(
   const result = await runner.run({
     executable: PYTHON3, args: ["-I", "-c", script, "--capabilities"], timeoutMs: 8_000,
   });
-  return parseWaylandPortalCapabilities(parseResponse(result.stdout));
+  if (result.exitCode !== 0) {
+    throw new DesktopUiError("PROCESS_FAILED", "Wayland portal capability helper exited unsuccessfully.");
+  }
+  return parseWaylandPortalCapabilities(parseWaylandPortalHelperResponse(result.stdout));
 }
 
 /**
@@ -153,5 +178,8 @@ export async function verifyUserSelectedWaylandWindow(
     args: ["-I", "-c", script, "--consent-once", "--user-initiated"],
     timeoutMs: 90_000,
   });
-  return parseClosedWaylandConsentReceipt(parseResponse(result.stdout));
+  if (result.exitCode !== 0) {
+    throw new DesktopUiError("PROCESS_FAILED", "Wayland portal consent helper exited unsuccessfully.");
+  }
+  return parseClosedWaylandConsentReceipt(parseWaylandPortalHelperResponse(result.stdout));
 }
