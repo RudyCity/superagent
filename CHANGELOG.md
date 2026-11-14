@@ -1,3 +1,8 @@
+## [1.14.97] - 2026-11-14
+### Windows release CI native staging build-attestation fix
+- Finalize the compiled Core digest after trusted Windows Graphics Capture and UI Automation native staging and verification in both standalone-release and Tray CI. The Windows UIA provenance JSON is part of the compiled tree fingerprint, so a manifest generated before native staging was rejected by the real MCP owner-release integration gate.
+- Preserve fail-closed freshness checks: only the final verified staged bytes are fingerprinted, and later modification to native provenance still invalidates the build. Add workflow-order and native-staging regression tests rather than skipping MCP integration or weakening attestation.
+
 ## [1.14.96] - 2026-11-14
 ### Host-approved desktop input, private viewer and release hardening
 - Deliver the scoped Desktop Live private viewer and host listener integrations with explicit host consent, strict window identity, fail-closed remote input policy and no public bearer forwarding or automatic production cutover.

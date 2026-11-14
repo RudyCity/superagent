@@ -32,6 +32,54 @@ describe("Core source/dist build attestation", () => {
       expect(inspectCoreBuild(compiled).fresh).toBe(false);
     } finally {fs.rmSync(root,{recursive:true,force:true});}
   });
+  it("requires final manifest after verified Windows native provenance is staged, and rejects tampering",()=>{
+    const root=fs.mkdtempSync(path.join(os.tmpdir(),"core-build-windows-stage-"));
+    try {
+      fs.mkdirSync(path.join(root,"src"));
+      fs.mkdirSync(path.join(root,"dist"));
+      fs.writeFileSync(path.join(root,"package.json"),'{"name":"core-native-stage"}');
+      fs.writeFileSync(path.join(root,"tsconfig.json"),'{"compilerOptions":{}}');
+      fs.writeFileSync(path.join(root,"src","cli.tsx"),"export const ready = true;");
+      const compiled=path.join(root,"dist","cli.js");
+      fs.writeFileSync(compiled,"export const ready = true;");
+      const initial=writeCoreBuildManifest(root);
+      expect(inspectCoreBuild(compiled,{requireFreshCompiled:true}).digest).toBe(initial.digest);
+      // The trusted CI compiler stages its verified provenance after bun run build.
+      const native=path.join(root,"dist","native","desktop-live-windows-input");
+      fs.mkdirSync(native,{recursive:true});
+      const provenance=path.join(native,"winremote.provenance.json");
+      fs.writeFileSync(provenance,'{"schemaVersion":1,"runnerOS":"Windows"}\n');
+      expect(inspectCoreBuild(compiled).fresh).toBe(false);
+      expect(()=>inspectCoreBuild(compiled,{requireFreshCompiled:true})).toThrow("CORE_BUILD_STALE");
+      const finalized=writeCoreBuildManifest(root);
+      expect(finalized.digest).not.toBe(initial.digest);
+      expect(inspectCoreBuild(compiled,{requireFreshCompiled:true}).digest).toBe(finalized.digest);
+      fs.appendFileSync(provenance,"\n");
+      expect(inspectCoreBuild(compiled).fresh).toBe(false);
+      expect(()=>inspectCoreBuild(compiled,{requireFreshCompiled:true})).toThrow("CORE_BUILD_STALE");
+    } finally {fs.rmSync(root,{recursive:true,force:true});}
+  });
+  it("finalizes Core identity after Windows helper verification in both CI workflows",()=>{
+    const root=process.cwd();
+    for(const workflow of [".github/workflows/tray-build.yml",".github/workflows/release-windows-standalone.yml"]){
+      const content=fs.readFileSync(path.join(root,workflow),"utf8");
+      const build=content.indexOf("- name: Build Core");
+      const native=content.indexOf("./scripts/build-desktop-live-windows-semantic.ps1");
+      const nativeTests=content.indexOf("tests/desktop-live/windowsRemoteNativePackaging.test.ts --maxWorkers=1");
+      const finalize=content.indexOf("- name: Finalize compiled Core identity after verified Windows native staging");
+      const refresh=content.indexOf("bun scripts/write-core-build-manifest.ts",finalize);
+      const verify=content.indexOf("requireFreshCompiled:true",refresh);
+      const regression=content.indexOf("- name: Core &",verify);
+      expect(build).toBeGreaterThanOrEqual(0);
+      expect(native).toBeGreaterThan(build);
+      expect(nativeTests).toBeGreaterThan(native);
+      expect(finalize).toBeGreaterThan(nativeTests);
+      expect(refresh).toBeGreaterThan(finalize);
+      expect(verify).toBeGreaterThan(refresh);
+      expect(regression).toBeGreaterThan(verify);
+      expect(content.slice(finalize,refresh)).toContain("if: runner.os == 'Windows'");
+    }
+  });
   it("never fingerprints an arbitrary entry outside a recognized SuperAgent project",()=>{
     expect(()=>inspectCoreBuild(path.join(os.tmpdir(),"invalid-entry","cli.js"))).toThrow("ENTRY_OUTSIDE_PROJECT");
   });

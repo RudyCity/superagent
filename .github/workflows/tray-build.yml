@@ -108,6 +108,11 @@ jobs:
         run: |
           ./scripts/build-desktop-live-windows-semantic.ps1
           bun --bun x vitest run tests/desktop-live/windowsRemoteNativePackaging.test.ts --maxWorkers=1
+      - name: Finalize compiled Core identity after verified Windows native staging
+        if: runner.os == 'Windows'
+        run: |
+          bun scripts/write-core-build-manifest.ts
+          bun -e 'import { inspectCoreBuild } from "./src/core/runtime/coreBuildIdentity.ts"; const result = inspectCoreBuild("dist/cli.js", {requireFreshCompiled:true}); console.log("WINDOWS_NATIVE_CORE_BUILD_FRESH", result.digest);'
       - name: Build and verify macOS ScreenCaptureKit helper
         if: runner.os == 'macOS'
         shell: bash
