@@ -20,7 +20,9 @@
   <script src="./settings.js" defer></script>
   <script src="./named-tunnel-settings.js" defer></script>
   <script src="./named-tunnel-runtime.js" defer></script>
+  <script src="./named-tunnel-manager.js" defer></script>
   <link rel="stylesheet" href="./named-tunnel-settings.css" />
+  <link rel="stylesheet" href="./named-tunnel-manager.css" />
   <script src="./updates.js" defer></script>
   <link rel="stylesheet" href="./updates.css" />
   <script src="./logs.js" defer></script>
@@ -1160,6 +1162,82 @@
             </div>
             <span class="subtle-badge" id="named-tunnel-status">Checking…</span>
           </div>
+          <section class="named-tunnel-manager" id="named-tunnel-manager" aria-labelledby="named-manager-title">
+            <div class="named-manager-heading">
+              <div><div class="named-manager-eyebrow">FIVE-STEP SETUP · ISOLATED OWNERS</div>
+                <h3 id="named-manager-title">Tunnel Manager</h3>
+                <p>Fixed hostname with independent Anchor and private MCP owner. Every lifecycle action requires a fresh plan, human confirmation and native OS approval. Legacy Gemini Quick Tunnel stays active.</p>
+              </div>
+              <button class="button ghost" id="named-manager-refresh" type="button">Refresh stack status</button>
+            </div>
+            <div class="named-manager-profile" id="named-manager-profile">Waiting for saved identity…</div>
+            <ol class="named-manager-steps">
+              <li class="named-manager-step"><span class="named-manager-step-number" aria-hidden="true">01</span>
+                <div class="named-manager-step-body">
+                  <div class="named-manager-step-title"><h4>Configure validated profile</h4><span class="named-manager-stage" id="named-manager-step1" data-state="blocked">Readiness pending</span></div>
+                  <p>Save the Cloudflare hostname, tunnel UUID, distinct private ports and trusted cloudflared binary in the existing form. This changes local metadata only.</p>
+                  <div class="named-manager-actions"><button class="button ghost" id="named-manager-configure" type="button">Edit configuration</button></div>
+                </div>
+              </li>
+              <li class="named-manager-step"><span class="named-manager-step-number" aria-hidden="true">02</span>
+                <div class="named-manager-step-body">
+                  <div class="named-manager-step-title"><h4>Import connector credentials</h4><span class="named-manager-stage" id="named-manager-step2" data-state="blocked">Credential not verified</span></div>
+                  <p>Use the existing native clipboard importer or file picker. Credential bytes are never exposed in the WebView or shown in diagnostics.</p>
+                  <div class="named-manager-actions">
+                    <button class="button ghost" id="named-manager-import-clipboard" type="button">Import from clipboard</button>
+                    <button class="button ghost" id="named-manager-import-file" type="button">Choose token file</button>
+                  </div>
+                </div>
+              </li>
+              <li class="named-manager-step"><span class="named-manager-step-number" aria-hidden="true">03</span>
+                <div class="named-manager-step-body">
+                  <div class="named-manager-step-title"><h4>Isolated Anchor and private owner</h4><span class="named-manager-stage" id="named-manager-step3" data-state="blocked">Owners not verified</span></div>
+                  <p>Review a read-only stack plan. Only explicitly authorized operations become clickable; no PID-only adoption or Quick Tunnel mutation.</p>
+                  <dl class="named-manager-facts">
+                    <div><dt>Anchor</dt><dd id="named-manager-anchor">Unverified</dd></div>
+                    <div><dt>Private owner</dt><dd id="named-manager-owner">Unverified</dd></div>
+                  </dl>
+                  <div class="named-manager-actions">
+                    <button class="button ghost" id="named-manager-plan" type="button" disabled>Review stack plan</button>
+                    <button class="button primary" id="named-manager-start-anchor" type="button" disabled>Start Anchor</button>
+                    <button class="button primary" id="named-manager-start-owner" type="button" disabled>Start MCP owner</button>
+                    <button class="button ghost" id="named-manager-stop-owner" type="button" disabled>Stop owned MCP</button>
+                    <button class="button ghost" id="named-manager-stop-anchor" type="button" disabled>Stop owned Anchor</button>
+                  </div>
+                </div>
+              </li>
+              <li class="named-manager-step"><span class="named-manager-step-number" aria-hidden="true">04</span>
+                <div class="named-manager-step-body">
+                  <div class="named-manager-step-title"><h4>Connector and real health</h4><span class="named-manager-stage" id="named-manager-step4" data-state="blocked">Live edge not verified</span></div>
+                  <p>Only the existing native connector may start the route. Check real HTTPS response and the MCP OAuth challenge in the health panel below.</p>
+                  <dl class="named-manager-facts">
+                    <div><dt>Connector</dt><dd id="named-manager-connector">Unverified</dd></div>
+                    <div><dt>Cloudflare edge</dt><dd id="named-manager-edge">Unverified</dd></div>
+                  </dl>
+                  <div class="named-manager-actions">
+                    <button class="button ghost" id="named-manager-check-connector" type="button">Check real health</button>
+                    <button class="button ghost" id="named-manager-start-connector" type="button">Start connector (native)</button>
+                  </div>
+                </div>
+              </li>
+              <li class="named-manager-step"><span class="named-manager-step-number" aria-hidden="true">05</span>
+                <div class="named-manager-step-body">
+                  <div class="named-manager-step-title"><h4>OAuth / Gemini cutover review</h4><span class="named-manager-stage" id="named-manager-step5" data-state="blocked">Manual review required</span></div>
+                  <p>Review native evidence for HTTPS, OAuth PKCE authorization and Gemini client verification. This UI never changes DNS, client credentials or OAuth routing.</p>
+                  <dl class="named-manager-facts">
+                    <div><dt>OAuth evidence</dt><dd id="named-manager-oauth">Not verified</dd></div>
+                    <div><dt>Gemini evidence</dt><dd id="named-manager-gemini">Not verified</dd></div>
+                  </dl>
+                  <label class="named-manager-ack-label" for="named-manager-ack">
+                    <input class="named-manager-ack" type="checkbox" id="named-manager-ack" />
+                    <span>I understand cutover and rollback require separate operator authorization; this review is read-only.</span>
+                  </label>
+                  <div class="named-manager-actions"><button class="button ghost" id="named-manager-review" type="button" disabled>Review cutover evidence</button></div>
+                </div>
+              </li>
+            </ol>
+            <div class="named-manager-message" id="named-manager-message" role="status" aria-live="polite" aria-atomic="true">Reading native status. Nothing starts automatically.</div>
+          </section>
           <form id="named-tunnel-settings-form" autocomplete="off">
             <div class="tray-settings-section">
               <h3>Cloudflare identity</h3>
