@@ -115,6 +115,29 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(builder).toContain("Get-FileHash");
     expect(builder).toContain('"dist\\native\\desktop-live-wgc"');
   });
+  it("validates real compressed NSIS WGC contents before disposable clean-install", () => {
+    const verifier = read("scripts/verify-wgc-windows-nsis.ps1");
+    expect(verifier).toContain('NSIS_WGC_ARCHIVE_VERIFIED');
+    expect(verifier).toContain('standalone\\dist\\native\\desktop-live-wgc');
+    expect(verifier).toContain('Get-FileHash');
+    expect(verifier).toContain('$sevenZip t');
+    expect(verifier).toContain('$sevenZip x');
+    expect(verifier).not.toContain('Start-Process -FilePath $installer');
+    for (const workflow of [
+      ".github/workflows/release-windows-standalone.yml",
+      ".github/workflows/release-windows-only.yml",
+      ".github/workflows/tray-build.yml",
+    ]) {
+      const source = read(workflow);
+      const packageStep = source.indexOf('run: bun run installer:package');
+      const verifiedStep = source.indexOf('run: ./scripts/verify-wgc-windows-nsis.ps1');
+      const installedStep = source.indexOf('run: ./scripts/verify-installed-standalone-windows.ps1');
+      expect(packageStep).toBeGreaterThan(0);
+      expect(verifiedStep).toBeGreaterThan(packageStep);
+      expect(installedStep).toBeGreaterThan(verifiedStep);
+    }
+  });
+
   it("never commits runtime executables or bundled third-party dependencies", () => {
     const ignore = read(".gitignore");
     expect(ignore).toContain("/apps/superagent-tray/src-tauri/binaries/");

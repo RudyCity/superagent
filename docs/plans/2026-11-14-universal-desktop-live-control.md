@@ -291,6 +291,40 @@ cover WGC source, build/verifier scripts and related tests.
 disposable runner**; the current checkout was not deployed or installed,
 and no active session was interrupted.
 
+## Milestone B8 — real Windows NSIS archive build and WGC verification
+
+On the Windows development host, `bun run installer:prepare` and
+`bun run installer:verify` passed for standalone version 1.14.91.
+After adding the installed Cargo directory to that command's PATH,
+`bun run installer:package` produced the actual local NSIS installer:
+`apps/superagent-tray/src-tauri/target/release/bundle/nsis/SuperAgent_1.14.91_x64-setup.exe`
+(257,957,818 bytes, SHA-256
+`87928049128902f8cc46252a63b8bf44e479a31b6c0501f735ee4585bd5bb94c`).
+7-Zip tested all 21,115 NSIS archive files successfully. We extracted
+`standalone/dist/native/desktop-live-wgc/wgc.exe` and `wgc.sha256`
+directly from that actual installer and verified the 322,048-byte
+helper checksum against its receipt **and** the independently staged
+WGC artifact (SHA-256
+`e0254c02b14b452020fd18ad38e1d5f2e5a0517558cb15a6ae821479248b30b1`).
+
+The reproducible read-only `scripts/verify-wgc-windows-nsis.ps1`
+now performs full 7-Zip archive integrity checking plus exact-member
+extraction and checksum/staging comparison. It creates and removes
+only a fresh random scratch directory. Three Windows CI workflows
+call it between NSIS packaging and the separate installed-desktop
+smoke test. Release/CI calls use the exact current package version;
+its explicit `-InstallerPath` option is for auditing earlier local
+artifacts in the fixed NSIS output directory.
+
+**Important scope:** the local checkout's version was advanced by
+another worker to 1.14.92 while this diagnostic 1.14.91 build was
+being verified. Thus the resulting installer is an **unpublished
+local diagnostic artifact, not a release from an immutable clean
+commit**. It was deliberately not installed or published. Windows
+clean-install tests on a disposable CI runner, code signing,
+macOS ScreenCaptureKit, Linux PipeWire/portal, and remote attended
+control remain separate acceptance gates.
+
 ## Next bounded milestones
 **B — capture backend**: Windows WGC/DXGI with protected-window and black-frame
 detection; macOS ScreenCaptureKit per-window filtered session, hardened TCC checks;

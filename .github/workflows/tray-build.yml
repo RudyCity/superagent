@@ -9,6 +9,7 @@ on:
       - "scripts/verify-installed-standalone-windows.ps1"
       - "scripts/verify-installed-wgc.ps1"
       - "scripts/verify-installed-wgc.mjs"
+      - "scripts/verify-wgc-windows-nsis.ps1"
       - "scripts/build-desktop-live-wgc.ps1"
       - "native/desktop-live-wgc/**"
       - "tests/desktop-live/**"
@@ -23,6 +24,7 @@ on:
       - "scripts/verify-installed-standalone-windows.ps1"
       - "scripts/verify-installed-wgc.ps1"
       - "scripts/verify-installed-wgc.mjs"
+      - "scripts/verify-wgc-windows-nsis.ps1"
       - "scripts/build-desktop-live-wgc.ps1"
       - "native/desktop-live-wgc/**"
       - "tests/desktop-live/**"
@@ -99,6 +101,10 @@ jobs:
       - name: Package Windows setup
         if: runner.os == 'Windows'
         run: bun run installer:package
+      - name: Verify compressed NSIS includes checksum-pinned WGC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-wgc-windows-nsis.ps1
       - name: Prepare Unix standalone distribution
         if: runner.os != 'Windows'
         run: bun run installer:prepare:unix

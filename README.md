@@ -181,6 +181,8 @@ Desktop Live source now includes three bounded JPEG presets in the local Tray: S
 
 **Windows installed WGC integrity gate (development source):** The disposable Windows clean-install verifier now runs the **installed Bun runtime and installed compiled Core verifier** against the WGC helper actually installed in `standalone/dist/native/desktop-live-wgc/`; a missing or tampered binary/receipt fails the gate. A Windows-host fixture has tested this with a separate temporary installed layout, including the real PowerShell checker and corruption cases. The GitHub Windows workflows also run this test before creating NSIS packages. This is **not yet proof of an actual new NSIS clean-install**; release and production approval gates remain unchanged.
 
+**NSIS archive verification (local development evidence):** A standalone Windows 1.14.91 NSIS setup was built, its 21,115 archive members passed 7-Zip integrity verification, and the embedded exact-window WGC executable plus SHA-256 receipt were extracted and verified against standalone staging. `scripts/verify-wgc-windows-nsis.ps1` reproduces this check and is now a Windows CI gate between packaging and disposable clean-install. The installer is an **unpublished local diagnostic artifact**: other ongoing work advanced the checkout to 1.14.92, and a clean-source CI build plus real installed-desktop consent tests remain required. No installer was run on the active Windows host.
+
 ## Managed Chrome CDP and human supervision
 
 The following capabilities are implemented in the **development source**. They require an authorized, running Core and the relevant managed Chrome and native Tray setup; they do not establish feature parity for a separately connected Delegate Chrome profile.

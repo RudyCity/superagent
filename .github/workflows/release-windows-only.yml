@@ -64,6 +64,9 @@ jobs:
         run: bun run installer:verify
       - name: Package standalone NSIS installer
         run: bun run installer:package
+      - name: Verify compressed NSIS includes checksum-pinned WGC
+        shell: pwsh
+        run: ./scripts/verify-wgc-windows-nsis.ps1
       - name: Verify clean install, smoke, and uninstall
         shell: pwsh
         run: ./scripts/verify-installed-standalone-windows.ps1

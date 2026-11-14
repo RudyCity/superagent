@@ -94,6 +94,10 @@ jobs:
       - name: Build standalone Windows NSIS
         if: runner.os == 'Windows'
         run: bun run installer:package
+      - name: Verify compressed NSIS includes checksum-pinned WGC
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/verify-wgc-windows-nsis.ps1
       - name: Stage macOS or Linux portable resources
         if: runner.os != 'Windows'
         run: bun run installer:prepare:unix
