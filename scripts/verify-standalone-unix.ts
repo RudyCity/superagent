@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import { verifyMacSckArtifactPair } from "../src/core/desktopUi/adapters/macSckArtifact.js";
 import { verifyLinuxX11ArtifactPair } from "../src/core/desktopUi/adapters/linuxX11Artifact.js";
 import { verifyUnixDesktopLiveTree } from "./verify-desktop-live-unix-artifacts.js";
+import { verifyVisionStandaloneAsset } from "./vision-standalone-asset.js";
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps/superagent-tray/src-tauri");
 const triple = process.platform === "darwin" && process.arch === "arm64" ? "aarch64-apple-darwin" :
@@ -21,6 +22,9 @@ const cli = path.join(tauri, "target", "release", "superagent");
 const manifest = JSON.parse(fs.readFileSync(path.join(stage, "standalone-manifest.json"), "utf8"));
 check(fs.existsSync(runtime) && fs.existsSync(cli) && fs.existsSync(path.join(stage, "node_modules", "ink")), "Stage incomplete");
 check(manifest.target === triple && manifest.bunVersion === "1.4.2", "Staged manifest mismatch");
+check(manifest.optionalVisionScript?.path === "standalone/scripts/vision_server.py" &&
+  manifest.optionalVisionScript?.sha256 === verifyVisionStandaloneAsset(root, stage),
+  "Staged Vision helper must match source and manifest SHA-256");
 verifyUnixDesktopLiveTree(root, stage, process.platform as "darwin" | "linux");
 if (process.platform === "linux") {
   const x11Dir = path.join(stage, "dist", "native", "desktop-live-x11");

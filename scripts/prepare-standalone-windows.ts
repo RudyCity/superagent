@@ -8,6 +8,7 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { verifyWindowsWgcArtifactPair } from "../src/core/desktopUi/adapters/windowsWgcArtifact.js";
 import { attestWindowsStandaloneCoreBuild } from "../src/core/runtime/coreBuildIdentity.js";
+import { stageVisionStandaloneAsset } from "./vision-standalone-asset.js";
 import {
   WINDOWS_UIA_RELATIVE_DIR, WINDOWS_UIA_SOURCE_RELATIVE,
   verifyWindowsRemoteNativePackaging, windowsNativeCiContext,
@@ -84,6 +85,7 @@ const stageBuild = attestWindowsStandaloneCoreBuild(root, stage);
 console.log("[standalone] Verified relocated Core digest: " + stageBuild.digest);
 copy(path.join(root, "scripts", "media_backend.py"), path.join(stage, "scripts", "media_backend.py"));
 copy(path.join(root, "scripts", "setup_media_backends.py"), path.join(stage, "scripts", "setup_media_backends.py"));
+const visionScriptSha256 = stageVisionStandaloneAsset(root, stage);
 const androidApkDir = path.join(root, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug");
 if (fs.existsSync(path.join(androidApkDir, "app-debug.apk")) && fs.existsSync(path.join(androidApkDir, "output-metadata.json"))) {
   copy(androidApkDir, path.join(stage, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug"));
@@ -113,6 +115,7 @@ const metadata = {
   platform: "win32", arch: "x64", bunVersion: pinnedBun, binary: "bun.exe",
   cli: "superagent.exe", entrypoint: "standalone/dist/cli.js",
   requiresGlobalBun: false, requiresGlobalNode: false,
+  optionalVisionScript: { path: "standalone/scripts/vision_server.py", sha256: visionScriptSha256 },
   optionalWindowsRemoteSemanticInput: {
     installedRelativeDirectory: "standalone/native/desktop-live-windows-input",
     sha256: uiaHash, activated: false,

@@ -117,7 +117,16 @@ launched with a private owner record. Legacy/Core-owned port 8095 is
 intentionally **not** adopted or terminated. A busy inference call blocks
 shutdown. The Vision start preflight requires an installed Python environment
 with compatible Torch, Transformers and RFDETR packages; tests stub the heavy
-detector without altering the owner-control protocol.
+detector without altering the owner-control protocol. A standalone installer
+must include the checksum-matched `standalone/scripts/vision_server.py`
+asset; Windows and Unix package verification now fails if it is absent,
+symlinked, or differs from the checked-out source. The Python interpreter and
+model weights are **not** silently bundled or installed. Operators should use
+a dedicated Python virtual environment and configure
+`SUPERAGENT_VISION_PYTHON` to its absolute Python binary path in the
+SuperAgent service environment. After provisioning, re-run the guarded Vision
+`plan` and `start` lifecycle. A missing dependency, unloaded model,
+or installed-package script mismatch is not a healthy Vision service.
 
 ### Core Guardian watchdog (Core supervisor stays up)
 

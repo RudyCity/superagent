@@ -19,21 +19,26 @@ import {validateCoreOperationId} from "./coreLifecycleLedger.js";
 export async function inspectManagedGuardian(port:number){
   const owner=readManagedGuardianOwner(port);
   if(!owner)return {verified:false,ownerPid:null,reason:"No managed Guardian owner"};
-  try {
-    const response=await fetch("http://127.0.0.1:"+owner.controlPort+"/guardian/health",{
-      signal:AbortSignal.timeout(1600),redirect:"error",
-    });
-    const live=await response.json() as {service?:string;pid?:number;
-      corePort?:number;instanceId?:string;guardianRegistered?:boolean;supervisorPid?:number};
-    const verified=response.ok&&live.service==="superagent-managed-guardian"&&
-      live.pid===owner.pid&&live.corePort===port&&
-      live.instanceId===owner.instanceId&&live.guardianRegistered===true&&
-      readListenerOwners()?.get(owner.controlPort)===owner.pid;
-    return {verified,ownerPid:owner.pid,controlPort:owner.controlPort,
-      reason:verified?"Authenticated private Guardian owner":"Guardian PID or instance identity mismatch"};
-  }catch{
-    return {verified:false,ownerPid:owner.pid,reason:"Guardian private control endpoint unreachable"};
+  // A busy MCP host can briefly time out on loopback. Retry only transport
+  // failures, never an authentication/identity mismatch (fail closed).
+  for(let attempt=0;attempt<2;attempt++){
+    try {
+      const response=await fetch("http://127.0.0.1:"+owner.controlPort+"/guardian/health",{
+        signal:AbortSignal.timeout(1800),redirect:"error",
+      });
+      const live=await response.json() as {service?:string;pid?:number;
+        corePort?:number;instanceId?:string;guardianRegistered?:boolean;supervisorPid?:number};
+      const verified=response.ok&&live.service==="superagent-managed-guardian"&&
+        live.pid===owner.pid&&live.corePort===port&&
+        live.instanceId===owner.instanceId&&live.guardianRegistered===true&&
+        readListenerOwners()?.get(owner.controlPort)===owner.pid;
+      return {verified,ownerPid:owner.pid,controlPort:owner.controlPort,
+        reason:verified?"Authenticated private Guardian owner":"Guardian PID or instance identity mismatch"};
+    }catch{
+      if(attempt===0)await new Promise(resolve=>setTimeout(resolve,100));
+    }
   }
+  return {verified:false,ownerPid:owner.pid,reason:"Guardian private control endpoint unreachable"};
 }
 async function requestManagedGuardianStop(port:number,pid:number,instanceId:string){
   const owner=readManagedGuardianOwner(port),current=await inspectManagedGuardian(port);

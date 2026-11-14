@@ -9,6 +9,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { verifyWindowsWgcArtifactPair } from "../src/core/desktopUi/adapters/windowsWgcArtifact.js";
+import { verifyVisionStandaloneAsset } from "./vision-standalone-asset.js";
 
 export const WINDOWS_UIA_RELATIVE_DIR = path.join("native", "desktop-live-windows-input");
 export const WINDOWS_UIA_SOURCE_RELATIVE = path.join(WINDOWS_UIA_RELATIVE_DIR, "windowsRemoteSemantic.cpp");
@@ -133,6 +134,9 @@ if (import.meta.main) {
   const app = JSON.parse(fs.readFileSync(path.join(stage, "standalone-manifest.json"), "utf8"));
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   check(app.version === pkg.version && app.bunVersion === "1.4.2", "Runtime version manifest mismatch");
+  check(app.optionalVisionScript?.path === "standalone/scripts/vision_server.py" &&
+    app.optionalVisionScript?.sha256 === verifyVisionStandaloneAsset(root, stage),
+    "Staged Vision helper must match source and manifest SHA-256");
   check(app.optionalWindowsRemoteSemanticInput?.installedRelativeDirectory ===
     "standalone/native/desktop-live-windows-input" &&
     app.optionalWindowsRemoteSemanticInput?.sha256 === stagedHash &&

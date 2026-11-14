@@ -10,6 +10,7 @@ import { pruneMuslSharpFromLinuxStandalone } from "./prune-linux-musl-sharp.js";
 import { verifyMacSckArtifactPair } from "../src/core/desktopUi/adapters/macSckArtifact.js";
 import { verifyLinuxX11ArtifactPair } from "../src/core/desktopUi/adapters/linuxX11Artifact.js";
 import { verifyUnixDesktopLiveTree } from "./verify-desktop-live-unix-artifacts.js";
+import { stageVisionStandaloneAsset } from "./vision-standalone-asset.js";
 
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps/superagent-tray/src-tauri");
@@ -66,6 +67,7 @@ if (process.platform === "darwin") {
 for (const file of ["media_backend.py", "setup_media_backends.py"]) {
   copy(path.join(root, "scripts", file), path.join(stage, "scripts", file));
 }
+const visionScriptSha256 = stageVisionStandaloneAsset(root, stage);
 const androidApkDir = path.join(root, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug");
 if (fs.existsSync(path.join(androidApkDir, "app-debug.apk")) && fs.existsSync(path.join(androidApkDir, "output-metadata.json"))) {
   copy(androidApkDir, path.join(stage, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug"));
@@ -94,6 +96,7 @@ fs.writeFileSync(path.join(stage, "standalone-manifest.json"), JSON.stringify({
   package: pkg.name, version: pkg.version, platform: process.platform, arch: process.arch,
   target, bunVersion: "1.4.2", cli: "superagent",
   entrypoint: "standalone/dist/cli.js", requiresGlobalBun: false, requiresGlobalNode: false,
+  optionalVisionScript: { path: "standalone/scripts/vision_server.py", sha256: visionScriptSha256 },
 }, null, 2) + "\n");
 verifyUnixDesktopLiveTree(root, stage, process.platform as "darwin" | "linux");
 console.log("[standalone-unix] Prepared", target, "package version", pkg.version);

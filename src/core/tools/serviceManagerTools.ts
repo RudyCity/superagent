@@ -35,7 +35,7 @@ export const manageServicesTool:Tool={
       clientMode:{type:"string",enum:["tline","chrome-extension"]},
       expectedExecutablePath:{type:"string",description:"Exact executable path for Tray legacy recycle."},
       expectedPublicUrl:{type:"string"},
-      expectedInstanceId:{type:"string",description:"From sidecar start/stop/restart plan: instance id or absent."},
+      expectedInstanceId:{type:"string",description:"Required for Guardian, Vision and sidecar lifecycle mutations. Copy the exact plan field, including 'absent' when starting."},
       expectedSupervisorPid:{type:"integer",minimum:1,
         description:"Supervisor PID from Guardian plan; must match existing authenticated Core."},
       expectedWorkerPid:{type:"integer",minimum:1,description:"Exact Core daemon worker PID from plan."},
