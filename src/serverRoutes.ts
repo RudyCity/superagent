@@ -1262,7 +1262,7 @@ export async function handleServerRoute(
 
   // Native desktop application preview. One exact local window per explicit
   // operator consent; never expose this endpoint through a public tunnel.
-  if (["/api/desktop/live/windows", "/api/desktop/live/start",
+  if (["/api/desktop/live/windows", "/api/desktop/live/challenge", "/api/desktop/live/start",
        "/api/desktop/live/frame", "/api/desktop/live/stop"].includes(pathname)) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -1288,6 +1288,11 @@ export async function handleServerRoute(
       const { nativeWindowPreviewManager } = await import("./core/desktopUi/livePreview.js");
       if (pathname === "/api/desktop/live/windows") {
         sendJSON(res, 200, { success: true, ...await nativeWindowPreviewManager.discover() });
+      } else if (pathname === "/api/desktop/live/challenge") {
+        const raw = await readBody(req);
+        if (raw !== "{}") throw Error("Invalid challenge payload.");
+        const { nativeDesktopApprovalGuard } = await import("./core/desktopUi/nativeApprovalProof.js");
+        sendJSON(res, 200, { success: true, ...nativeDesktopApprovalGuard.issue() });
       } else {
         const raw = await readBody(req);
         if (Buffer.byteLength(raw, "utf8") >
@@ -1296,7 +1301,9 @@ export async function handleServerRoute(
         }
         const parsed = JSON.parse(raw);
         const result = pathname === "/api/desktop/live/start"
-          ? await nativeWindowPreviewManager.start(parsed)
+          ? await nativeWindowPreviewManager.start(
+              (await import("./core/desktopUi/nativeApprovalProof.js"))
+                .nativeDesktopApprovalGuard.consume(parsed))
           : pathname === "/api/desktop/live/frame"
             ? await nativeWindowPreviewManager.frame(parsed)
             : nativeWindowPreviewManager.stop(parsed);

@@ -1,5 +1,10 @@
 import http from "node:http";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { getRootConfigDir } from "../../src/core/config/paths.js";
+import { NativeDesktopApprovalGuard } from "../../src/core/desktopUi/nativeApprovalProof.js";
+import { nativeWindowPreviewManager } from "../../src/core/desktopUi/livePreview.js";
 import { handleServerRoute } from "../../src/serverRoutes.js";
 import { ensureServerAuthToken } from "../../src/core/utils/serverSecurity.js";
 
@@ -79,6 +84,53 @@ describe("native desktop live private loopback HTTP guard", () => {
     expect(res.status).toBe(409);
     expect(JSON.stringify(res.body)).not.toMatch(/png|image|base64|window/i);
   });
+  it("does not allow bearer-only clients to impersonate native Tray consent", async () => {
+    const approved = {
+      pid: 4102, nativeId: "cg:123", consent: true,
+      expectedTitle: "Example", expectedApplication: "Example.app",
+      expectedBounds: { x: 0, y: 0, width: 400, height: 300 },
+    };
+    const auth = { Authorization: `Bearer ${bearer}` };
+    const denied = await request("POST", "/api/desktop/live/start", auth, JSON.stringify(approved));
+    expect(denied.status).toBe(409);
+    const challenge = await request("POST", "/api/desktop/live/challenge", auth, "{}");
+    expect(challenge.status).toBe(200);
+    expect(challenge.body.nonce).toMatch(/^[a-f0-9]{48}$/);
+    const forged = await request("POST", "/api/desktop/live/start", auth, JSON.stringify({
+      ...approved, approvalProof: { nonce: challenge.body.nonce, mac: "a".repeat(64) },
+    }));
+    expect(forged.status).toBe(409);
+    expect(JSON.stringify(forged.body)).not.toMatch(/png|base64|screenshots/i);
+  });
+
+  it("accepts exact native-signed proof only once and never forwards proof to capture manager", async () => {
+    const auth={Authorization:`Bearer ${bearer}`};
+    const body={pid:4792,nativeId:"cg:128",consent:true,
+      expectedTitle:"Screenshot — private",expectedApplication:"Test.app",
+      expectedBounds:{x:15,y:10,width:360,height:240}};
+    const challenge=await request("POST","/api/desktop/live/challenge",auth,"{}");
+    expect(challenge.status).toBe(200);
+    const keyPath=path.join(getRootConfigDir(),".desktop-live-native-approval.key");
+    const key=Buffer.from(fs.readFileSync(keyPath,"ascii").trim(),"hex");
+    const message={...body,approvalProof:{
+      nonce:challenge.body.nonce,
+      mac:NativeDesktopApprovalGuard.computeProofForTest(key,body,challenge.body.nonce),
+    }};
+    const spy=vi.spyOn(nativeWindowPreviewManager,"start").mockImplementation(async raw=>{
+      expect(raw).toEqual(body);
+      return {token:"c".repeat(64),expiresAt:Date.now()+30_000,
+        platform:"win32",backend:"test-source",window:body};
+    });
+    try {
+      const accepted=await request("POST","/api/desktop/live/start",auth,JSON.stringify(message));
+      expect(accepted.status).toBe(200);
+      expect(accepted.body.token).toBe("c".repeat(64));
+      const replay=await request("POST","/api/desktop/live/start",auth,JSON.stringify(message));
+      expect(replay.status).toBe(409);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {spy.mockRestore();}
+  });
+
   it("refuses start without explicit consent and other request fields", async () => {
     for (const payload of [
       {pid:4102,nativeId:"window",consent:false},

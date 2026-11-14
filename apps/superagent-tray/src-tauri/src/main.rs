@@ -760,6 +760,72 @@ async fn delegate_action(action: String, payload: Option<Value>) -> Result<Value
     }
 }
 
+fn desktop_live_hmac(key: &[u8], message: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut outer_pad = [0x5cu8; 64];
+    let mut inner_pad = [0x36u8; 64];
+    for (index, byte) in key.iter().enumerate() {
+        inner_pad[index] ^= byte;
+        outer_pad[index] ^= byte;
+    }
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(message);
+    let inner_digest = inner.finalize();
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner_digest);
+    format!("{:x}", outer.finalize())
+}
+
+fn desktop_live_native_approval_proof(nonce: &str, approved: &Value) -> Result<Value, String> {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    if nonce.len() != 48 || !nonce.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        return Err("Invalid native approval challenge".into());
+    }
+    let key_path = config_dir()?.join(".desktop-live-native-approval.key");
+    let metadata = std::fs::symlink_metadata(&key_path)
+        .map_err(|_| "Native approval key is unavailable")?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() ||
+       !(64..=80).contains(&metadata.len()) {
+        return Err("Native approval key file is not secure".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err("Native approval key permissions are too broad".into());
+        }
+    }
+    let text = std::fs::read_to_string(&key_path)
+        .map_err(|_| "Native approval key is unreadable")?;
+    let hex_key = text.trim();
+    if hex_key.len() != 64 || !hex_key.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        return Err("Native approval key is invalid".into());
+    }
+    let key = (0..32).map(|i| u8::from_str_radix(&hex_key[2*i..2*i+2], 16))
+        .collect::<Result<Vec<_>, _>>().map_err(|_| "Native approval key is invalid")?;
+    let pid = approved.get("pid").and_then(Value::as_u64).filter(|n| *n > 0)
+        .ok_or("Native approval PID is invalid")?;
+    let value = |key: &str| -> Result<String, String> {
+        let text = approved.get(key).and_then(Value::as_str)
+            .filter(|text| !text.is_empty()).ok_or("Missing approved window identity")?;
+        Ok(URL_SAFE_NO_PAD.encode(text.as_bytes()))
+    };
+    let bounds = approved.get("expectedBounds").and_then(Value::as_object)
+        .ok_or("Missing approved native window geometry")?;
+    let number = |field: &str| -> Result<i64, String> {
+        bounds.get(field).and_then(Value::as_i64)
+            .ok_or("Invalid native window geometry".into())
+    };
+    let message = format!("desktop-live-native-approval-v1:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        nonce, pid, value("nativeId")?, value("expectedTitle")?,
+        value("expectedApplication")?, number("x")?, number("y")?,
+        number("width")?, number("height")?);
+    let mac = desktop_live_hmac(&key, message.as_bytes());
+    Ok(json!({"nonce": nonce, "mac": mac}))
+}
+
 static DESKTOP_LIVE_APPROVAL_OPEN: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -863,6 +929,15 @@ async fn desktop_live_action(
                 let native_value = target.get(native_key).ok_or("Native approval target missing")?;
                 approved_obj.insert(key.to_string(), native_value.clone());
             }
+            // A bearer credential and JavaScript consent flag alone cannot
+            // forge native approval. The Core tracks a one-use, 30s challenge.
+            let challenge = core_request(Method::POST, "/api/desktop/live/challenge",
+                Some(json!({}))).await?;
+            let nonce = challenge.get("nonce").and_then(Value::as_str)
+                .ok_or("Native approval challenge is unavailable")?;
+            let proof = desktop_live_native_approval_proof(nonce, &approved_payload)?;
+            approved_payload.as_object_mut().ok_or("Invalid approved window payload")?
+                .insert("approvalProof".to_string(), proof);
             core_request(Method::POST, "/api/desktop/live/start", Some(approved_payload)).await
         }
         "frame" | "stop" => {
@@ -2149,6 +2224,19 @@ mod tests {
         assert!(limited_body("delete", Some(json!({}))).is_err());
         assert!(limited_body("run", Some(json!({"id": ""}))).is_err());
         assert!(limited_body("update", Some(json!({"id": "job-1", "prompt": "New"}))).is_ok());
+    }
+
+    #[test]
+    fn native_approval_hmac_matches_core_utf8_window_vector() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let nonce = "0123456789abcdef".repeat(3);
+        let message = format!("desktop-live-native-approval-v1:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            nonce, 4851, URL_SAFE_NO_PAD.encode("cg:12345"),
+            URL_SAFE_NO_PAD.encode("Editor — Hello"),
+            URL_SAFE_NO_PAD.encode("Sample.app"),
+            -220, 80, 1200, 800);
+        let mac = desktop_live_hmac(&[0x11; 32], message.as_bytes());
+        assert_eq!(mac, "a881eb0505eeef0f0994aab5b0839302259604cd7f1b757c5534be3efade3e51");
     }
 
     #[test]

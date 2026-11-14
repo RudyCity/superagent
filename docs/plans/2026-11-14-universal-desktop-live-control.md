@@ -383,6 +383,46 @@ hosts yet.** macOS/Linux CI build steps are committed in source but
 not validated by new Actions runs. No active Core, Tray, MCP, named
 tunnel, OS permissions, or production release was modified.
 
+## Milestone B10 — one-use native Tray consent attestation (local-only)
+
+HTTP Desktop Live now includes an authenticated **loopback-only**
+`POST /api/desktop/live/challenge` endpoint. Core issues a random
+192-bit nonce valid for 30 seconds and remembers at most eight pending
+challenges. Only after the user approves the *native OS dialog* does
+the Tauri Tray read a separate, local owner-only 32-byte approval key,
+sign the nonce plus pinned PID/CGWindowID/HWND/AT-SPI ID, UTF-8
+application/title, and exact bounds using HMAC-SHA256, then send
+`approvalProof` with `/api/desktop/live/start`. The HTTP handler
+consumes the nonce (even for forged proofs), checks the MAC in constant
+time, removes proof material, and only then calls the preview manager.
+A captured/replayed proof, bare bearer credential, forged consent
+boolean, modified window identity, expired challenge or changed
+window bounds cannot start or recover the preview. The signing key
+is never returned over HTTP or exposed to Tray JavaScript and is
+created only on authenticated challenge issuance.
+
+Tests include an independent UTF-8 signature vector checked against
+the native Rust implementation, a positive loopback protocol path,
+negative forged/replayed proofs, challenge expiration and rate caps.
+`bun run build`, Rust `cargo check --locked`, and focused tests
+passed on Windows. The Rust unit HMAC vector passed once the other
+agent's in-progress named-tunnel module was compilable.
+
+**Security scope remains local-only.** File-key secrecy prevents
+bearer-only/remote clients from invoking capture but is not a
+strong OS process identity attestation against a hostile process
+already running as the same local user, particularly on Windows
+where ACL inheritance must still be certified. No remote streaming
+endpoint has been enabled. Platform keystore/native IPC binding,
+separate remote-view and input approvals, remote transport, and R0–R7
+acceptance remain mandatory before internet desktop sharing.
+
+WSL2 Ubuntu x64 also successfully executed
+`scripts/build-desktop-live-x11.sh` and independently validated the
+resulting SHA-256-pinned Linux helper (`e9c6b3346ca4831b2ad19fc3a63e994a2948eee5281380034460602cbf929b6a`).
+That environment lacks `wmctrl`, `xprop`, ImageMagick and a full X11
+session; no physical Linux window capture was certified by this check.
+
 ## Next bounded milestones
 **B — capture backend**: Windows WGC/DXGI with protected-window and black-frame
 detection; macOS ScreenCaptureKit per-window filtered session, hardened TCC checks;
