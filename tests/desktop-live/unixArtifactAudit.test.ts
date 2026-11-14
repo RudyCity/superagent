@@ -18,8 +18,10 @@ function fixture(platform: Platform) {
   const stageDir = path.join(standalone, "dist", "native", dirName);
   fs.mkdirSync(buildDir, { recursive: true });
   fs.mkdirSync(stageDir, { recursive: true });
+  // Windows checkouts can rewrite Python LF to CRLF. The Linux artifact
+  // fixture must represent a real Unix checkout, not weakened runtime checks.
   const contents = platform === "linux"
-    ? fs.readFileSync(path.join(process.cwd(), "native", "desktop-live-x11", "linuxCapture.py"))
+    ? Buffer.from(fs.readFileSync(path.join(process.cwd(), "native", "desktop-live-x11", "linuxCapture.py"), "utf8").replace(/\r\n/g, "\n"), "utf8")
     : Buffer.alloc(128 * 1024);
   if (platform === "darwin") {
     contents.writeUInt32LE(0xfeedfacf, 0);
