@@ -89,6 +89,12 @@ fn token_file(path:&str,tunnel_id:&str)->Result<(),String>{
     if !meta.file_type().is_file()||meta.len()==0||meta.len()>MAX_TOKEN_BYTES as u64{
         return Err("Cloudflare token file is unsafe".into());
     }
+    #[cfg(unix)]{
+        use std::os::unix::fs::PermissionsExt;
+        if meta.permissions().mode()&0o077!=0{
+            return Err("Cloudflare token file permissions are too broad".into());
+        }
+    }
     read_token(&fs::read(file).map_err(|_|"Cannot read Cloudflare token file")?,tunnel_id)
 }
 fn lease_file(dir:&Path,tunnel_id:&str)->PathBuf{
@@ -96,6 +102,16 @@ fn lease_file(dir:&Path,tunnel_id:&str)->PathBuf{
 }
 pub fn lease_present(dir:&Path,tunnel_id:&str)->bool{
     !tunnel_id.is_empty() && fs::symlink_metadata(lease_file(dir,tunnel_id)).is_ok()
+}
+pub fn save_settings_guarded(dir:&Path,settings:&NamedTunnelSettings)->Result<NamedTunnelView,String>{
+    let _guard=CONNECTOR_ACTION_LOCK.lock()
+        .map_err(|_|"Named Tunnel settings are busy")?;
+    let existing=named_tunnel_settings::load(dir)?;
+    if existing!=*settings&&lease_present(dir,&existing.tunnel_id){
+        return Err("Stop and reconcile the current connector before changing its settings".into());
+    }
+    named_tunnel_settings::save(dir,settings)?;
+    Ok(named_tunnel_settings::load(dir)?.inspect())
 }
 fn read_lease(dir:&Path,tunnel_id:&str)->Result<Option<ConnectorLease>,String>{
     let path=lease_file(dir,tunnel_id);
@@ -158,14 +174,17 @@ pub fn status(dir:&Path,s:&NamedTunnelSettings)->ConnectorStatus{
         result.status="local_managed_outside_connector_control";return result;
     }
     result.token_verified=private_token_file(dir,s).is_ok();
-    if !result.token_verified{
-        result.status="token_missing_or_invalid";return result;
-    }
+    // Always check ownership even if credentials have been removed. A valid
+    // running process must not disappear from status merely because its token
+    // file was deleted or rotated elsewhere.
     let lease=match read_lease(dir,&s.tunnel_id){
         Ok(x)=>x,
         Err(_)=>{result.status="lease_unverified";return result;},
     };
-    let Some(lease)=lease else{result.status="not_started";return result};
+    let Some(lease)=lease else{
+        result.status=if result.token_verified{"not_started"}else{"token_missing_or_invalid"};
+        return result;
+    };
     if lease.hostname!=s.hostname||lease.anchor_port!=s.anchor_port||
        lease.token_file_path!=s.token_file_path||
        lease.cloudflared_path!=s.cloudflared_path{
@@ -175,7 +194,8 @@ pub fn status(dir:&Path,s:&NamedTunnelSettings)->ConnectorStatus{
         result.status="process_unverified";return result;
     }
     result.running=true;result.owned=true;result.pid=Some(lease.pid);
-    result.status="verified_local_only";result
+    result.status=if result.token_verified{"verified_local_only"}else{"credential_missing_but_owned"};
+    result
 }
 #[cfg(windows)]
 fn restrict_acl(path:&Path,is_directory:bool)->Result<(),String>{
@@ -203,39 +223,65 @@ fn restrict_acl(path:&Path,is_directory:bool)->Result<(),String>{
         .map_err(|_|"Cannot set private file permissions".into())
 }
 fn install_token(dir:&Path,s:&NamedTunnelSettings,source:&Path)->Result<NamedTunnelView,String>{
-    if s.connector_mode!="remote-managed"||!s.configured(){
-        return Err("Configure a remote-managed Named Tunnel first".into());
-    }
     let meta=fs::symlink_metadata(source).map_err(|_|"Selected token file does not exist")?;
     if !meta.file_type().is_file()||meta.len()==0||meta.len()>MAX_TOKEN_BYTES as u64{
         return Err("Selected token file is unsafe".into());
     }
     let bytes=fs::read(source).map_err(|_|"Cannot read selected token file")?;
-    read_token(&bytes,&s.tunnel_id)?;
-    if status(dir,s).running{return Err("Cannot replace token while connector is running".into());}
+    install_token_bytes(dir,s,&bytes)
+}
+pub(crate) fn install_token_bytes(dir:&Path,s:&NamedTunnelSettings,bytes:&[u8])->Result<NamedTunnelView,String>{
+    let _guard=CONNECTOR_ACTION_LOCK.lock()
+        .map_err(|_|"Named Tunnel credential operation is unavailable")?;
+    if named_tunnel_settings::load(dir)?!=*s{
+        return Err("Named Tunnel settings changed during credential import".into());
+    }
+    if s.connector_mode!="remote-managed"||!s.configured(){
+        return Err("Configure a remote-managed Named Tunnel first".into());
+    }
+    read_token(bytes,&s.tunnel_id)?;
+    // A running or stale connector lease blocks all credential changes,
+    // including replacing credentials when the old file has gone missing.
+    if lease_present(dir,&s.tunnel_id){
+        return Err("Connector lease exists: stop or reconcile it before importing token".into());
+    }
     let secret_dir=dir.join("private").join("cloudflare-named");
     fs::create_dir_all(&secret_dir).map_err(|_|"Cannot create private credentials directory")?;
-    if fs::symlink_metadata(&secret_dir).map_err(|_|"Cannot inspect credentials directory")?
-        .file_type().is_symlink(){
-        return Err("Credentials directory is not private".into());
+    for folder in [dir.to_path_buf(),dir.join("private"),secret_dir.clone()]{
+        let typ=fs::symlink_metadata(&folder)
+            .map_err(|_|"Cannot inspect private credentials directory")?
+            .file_type();
+        if !typ.is_dir()||typ.is_symlink(){
+            return Err("Credentials directory is not a real local directory".into());
+        }
     }
     restrict_acl(&secret_dir,true)?;
     let destination=secret_dir.join(format!("{}.token",s.tunnel_id));
+    let mut created=false;
     if let Ok(m)=fs::symlink_metadata(&destination){
         if !m.file_type().is_file(){return Err("Existing credentials path is unsafe".into());}
         if fs::read(&destination).map_err(|_|"Cannot inspect installed token")?!=bytes{
             return Err("A different token is already installed; rotate it with an explicit separate operation".into());
         }
     }else{
-        let mut out=OpenOptions::new().write(true).create_new(true).open(&destination)
+        let mut options=OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]{
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let mut out=options.open(&destination)
             .map_err(|_|"Cannot create private token file")?;
+        created=true;
         if out.write_all(&bytes).and_then(|_|out.sync_all()).is_err(){
             let _=fs::remove_file(&destination);
             return Err("Cannot write private token file".into());
         }
     }
     if let Err(e)=restrict_acl(&destination,false){
-        let _=fs::remove_file(&destination);
+        // Never delete a previously installed matching credential if ACL
+        // revalidation fails; only discard a file newly created by this call.
+        if created{let _=fs::remove_file(&destination);}
         return Err(e);
     }
     let mut updated=s.clone();
@@ -248,7 +294,10 @@ pub async fn pick_named_tunnel_token(
     app:tauri::AppHandle,
     window:tauri::WebviewWindow,
 )->Result<Option<NamedTunnelView>,String>{
-    if window.label()!="main"{return Err("Named Tunnel setup requires the main Tray window".into());}
+    if window.label()!="main"||!window.is_visible().unwrap_or(false)||
+       window.is_minimized().unwrap_or(true){
+        return Err("Credential import requires the visible native Tray window".into());
+    }
     let source=tauri::async_runtime::spawn_blocking(move||{
         app.dialog().file()
             .add_filter("Cloudflare token", &["token","txt"])
@@ -291,9 +340,23 @@ pub fn action(dir:&Path,s:&NamedTunnelSettings,action:&str,expected_tunnel_id:&s
     }
     let _guard=CONNECTOR_ACTION_LOCK.lock()
         .map_err(|_|"Another Named Tunnel lifecycle action is in progress")?;
-    let preflight=plan(dir,s)?;
+    let preflight=if action=="start"{
+        plan(dir,s)?.status
+    }else{
+        // Stopping an exactly attested process must remain possible if its
+        // credential file was accidentally deleted while cloudflared runs.
+        s.validate()?;
+        if s.connector_mode!="remote-managed"||!s.configured(){
+            return Err("Named connector identity is incomplete".into());
+        }
+        let state=status(dir,s);
+        if !state.owned || !state.running{
+            return Err("Refusing to stop a connector without verified ownership".into());
+        }
+        state
+    };
     if action=="start"{
-        if preflight.status.running{
+        if preflight.running{
             return Err("Named connector is already running".into());
         }
         if read_lease(dir,&s.tunnel_id)?.is_some(){
@@ -409,6 +472,7 @@ mod tests{
         let source=base.join("source.txt");
         fs::write(&source,fixture()).unwrap();
         let s=sample();
+        named_tunnel_settings::save(&base,&s).unwrap();
         let mut untrusted=s.clone();
         untrusted.token_file_path=source.to_string_lossy().into_owned();
         assert!(!status(&base,&untrusted).token_verified);
@@ -423,8 +487,46 @@ mod tests{
         assert_eq!(fs::read(&saved.token_file_path).unwrap(),fixture());
         let prefs=fs::read_to_string(base.join("mcp-named-tunnel-settings.json")).unwrap();
         assert!(!prefs.contains("sample-secret-123"));
-        assert!(install_token(&base,&s,&source).is_ok());
+        // An already imported profile must not accept stale metadata.
+        assert!(install_token(&base,&s,&source).is_err());
+        assert!(install_token(&base,&saved,&source).is_ok());
         let _=fs::remove_dir_all(&base);
+    }
+    #[test]
+    fn refuses_settings_changes_while_any_connector_lease_exists(){
+        let dir=std::env::temp_dir().join(format!(
+            "named-cf-locked-settings-{}-{}",
+            std::process::id(),std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        let old=sample();
+        save_settings_guarded(&dir,&old).unwrap();
+        fs::write(lease_file(&dir,&old.tunnel_id),"corrupted lease").unwrap();
+        let mut updated=old.clone();
+        updated.hostname="other.rcity.web.id".into();
+        assert!(save_settings_guarded(&dir,&updated).is_err());
+        assert_eq!(named_tunnel_settings::load(&dir).unwrap(),old);
+        let _=fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn stale_process_evidence_stays_visible_even_when_token_was_deleted(){
+        let dir=std::env::temp_dir().join(format!(
+            "named-cf-credential-missing-{}-{}",
+            std::process::id(),std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        fs::create_dir_all(&dir).unwrap();
+        let s=sample();
+        let lease=ConnectorLease{version:1,kind:KIND.into(),
+            pid:u32::MAX,process_start_seconds:1,
+            tunnel_id:s.tunnel_id.clone(),hostname:s.hostname.clone(),
+            token_file_path:s.token_file_path.clone(),
+            cloudflared_path:s.cloudflared_path.clone(),
+            anchor_port:s.anchor_port};
+        fs::write(lease_file(&dir,&s.tunnel_id),serde_json::to_vec(&lease).unwrap()).unwrap();
+        let observed=status(&dir,&s);
+        assert!(!observed.token_verified);
+        assert_eq!(observed.status,"process_unverified");
+        assert!(!observed.running);
+        let _=fs::remove_dir_all(dir);
     }
     #[test]
     fn refuses_missing_credentials_before_starting_binary(){

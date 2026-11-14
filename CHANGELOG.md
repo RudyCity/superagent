@@ -1,3 +1,10 @@
+## [1.14.94] - 2026-11-14
+### Native clipboard import and fail-closed Named Tunnel recovery guards
+- Allow an operator to copy a single Cloudflare token or Cloudflare dashboard install command and import it directly through an explicitly confirmed native Tray action. Token extraction is bounded and validated, never exposed to JavaScript, logging, the shell invocation, or Git; the real install command is never executed.
+- Harden private token installation with directory/symlink checks, restrictive Unix file creation, a shared connector/settings/import lock, and refusal of stale configuration or credential rotation whenever a connector lease exists.
+- Preserve independently verified connector ownership status even when the token file disappears, and allow an exactly verified owner to be stopped after the Anchor has safely closed, without requiring the missing token to be read again.
+- Add native clipboard/lease regression tests and document the safe dashboard copy-to-Tray workflow. Production credentials, OS auto-start services, Gemini cutover, live Quick Tunnel and Cloudflare DNS remain untouched.
+
 ## [1.14.93] - 2026-11-14
 ### Secure remote-managed Cloudflare Named Tunnel connector and runtime controls
 - Add native token-file import using an OS file picker, explicit tunnel UUID validation, private filesystem ACLs, and no token exposure to the WebView, command arguments, repository or logs. Keep token rotation separate from running connector ownership.

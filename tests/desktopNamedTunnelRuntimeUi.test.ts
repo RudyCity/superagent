@@ -35,7 +35,7 @@ function setup(options:{
     invokes.push({name,args});
     if(name==="get_named_tunnel_health")return {...health,...options.health};
     if(name==="get_named_tunnel_settings")return {settings:{tunnelId}};
-    if(name==="pick_named_tunnel_token")return options.cancelImport?null:
+    if(name==="pick_named_tunnel_token"||name==="import_named_tunnel_clipboard")return options.cancelImport?null:
       {status:"configured_not_connected",settings:{tunnelId,tokenFilePath:"C:/private/tunnel.token"}};
     if(name==="plan_named_tunnel_connector"){
       if(options.failPlan)throw Error("TOKEN_UNAVAILABLE");
@@ -66,7 +66,7 @@ describe("Named Tunnel native lifecycle and health UI",()=>{
     for(const id of [
       "named-tunnel-health","named-tunnel-connector-health","named-tunnel-anchor-health",
       "named-tunnel-owner-health","named-tunnel-edge-health","named-tunnel-health-reason",
-      "named-tunnel-import-token","named-tunnel-plan",
+      "named-tunnel-import-token","named-tunnel-import-clipboard","named-tunnel-plan",
       "named-tunnel-start","named-tunnel-stop",
     ])expect(html).toContain('id="'+id+'"');
     expect(html).toContain("./named-tunnel-runtime.js");
@@ -115,7 +115,18 @@ describe("Named Tunnel native lifecycle and health UI",()=>{
     ]);
     expect(ui.dispatched).toContain("named-tunnel-settings-refresh");
     expect(JSON.stringify(ui.invokes)).not.toMatch(/TunnelSecret|--token /);
-    expect(ui.node("named-tunnel-token-feedback").textContent).toContain("protected");
+    expect(ui.node("named-tunnel-token-feedback").textContent).toContain("private");
+  });
+  it("imports clipboard through native IPC without exposing token bytes to WebView",async()=>{
+    const ui=setup();await flush();
+    ui.listeners.get("named-tunnel-import-clipboard:click")!();
+    await flush();await flush();
+    expect(ui.invokes.map(x=>x.name)).toEqual([
+      "get_named_tunnel_health","import_named_tunnel_clipboard","get_named_tunnel_health",
+    ]);
+    expect(ui.dispatched).toContain("named-tunnel-settings-refresh");
+    expect(ui.invokes.find(x=>x.name==="import_named_tunnel_clipboard")?.args).toBeUndefined();
+    expect(ui.node("named-tunnel-token-feedback").textContent).toContain("private");
   });
   it("plan remains read-only, with no action or restart",async()=>{
     const ui=setup();await flush();

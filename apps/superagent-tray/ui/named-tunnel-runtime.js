@@ -37,7 +37,7 @@
       health.connectorStatus === "not_started";
     if (el("named-tunnel-start")) el("named-tunnel-start").disabled = !canStart;
     if (el("named-tunnel-stop")) el("named-tunnel-stop").disabled =
-      health.connectorStatus !== "verified_local_only" ||
+      !["verified_local_only","credential_missing_but_owned"].includes(health.connectorStatus) ||
       health.anchorStatus === "verified_local";
     if (el("named-tunnel-plan")) el("named-tunnel-plan").disabled =
       health.tokenVerified !== true;
@@ -63,17 +63,18 @@
       if (el("named-tunnel-check")) el("named-tunnel-check").disabled = false;
     }
   }
-  async function importToken() {
+  async function importToken(source = "file") {
     if (busy) return;
     busy = true;
     if (el("named-tunnel-import-token")) el("named-tunnel-import-token").disabled = true;
+    if (el("named-tunnel-import-clipboard")) el("named-tunnel-import-clipboard").disabled = true;
     try {
-      const response = await invoke("pick_named_tunnel_token");
+      const response = await invoke(source === "clipboard" ? "import_named_tunnel_clipboard" : "pick_named_tunnel_token");
       if (response === null) {
         text("named-tunnel-token-feedback", "Import cancelled. No token changed.");
       } else {
         text("named-tunnel-token-feedback",
-          "Token file imported and protected by the native Tray. Original selected file remains in place.");
+          "Cloudflare token imported into the private native Tray profile. No connector was started.");
         window.dispatchEvent?.(new Event("named-tunnel-settings-refresh"));
       }
     } catch (error) {
@@ -81,6 +82,7 @@
     } finally {
       busy = false;
       if (el("named-tunnel-import-token")) el("named-tunnel-import-token").disabled = false;
+      if (el("named-tunnel-import-clipboard")) el("named-tunnel-import-clipboard").disabled = false;
     }
     void refreshHealth();
   }
@@ -140,7 +142,8 @@
     if (el("named-tunnel-start")) el("named-tunnel-start").disabled = true;
     if (el("named-tunnel-stop")) el("named-tunnel-stop").disabled = true;
     if (el("named-tunnel-plan")) el("named-tunnel-plan").disabled = true;
-    el("named-tunnel-import-token")?.addEventListener("click", () => void importToken());
+    el("named-tunnel-import-token")?.addEventListener("click", () => void importToken("file"));
+    el("named-tunnel-import-clipboard")?.addEventListener("click", () => void importToken("clipboard"));
     el("named-tunnel-plan")?.addEventListener("click", () => void plan());
     el("named-tunnel-start")?.addEventListener("click", () => void change("start"));
     el("named-tunnel-stop")?.addEventListener("click", () => void change("stop"));

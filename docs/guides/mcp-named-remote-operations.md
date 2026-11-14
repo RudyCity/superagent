@@ -1,6 +1,6 @@
 # Cloudflare Remote-managed Named Tunnel — secure operations
 
-Version: SuperAgent source **1.14.93**. Applies to Windows, macOS and Linux.
+Version: SuperAgent source **1.14.94**. Applies to Windows, macOS and Linux.
 This is **not a production cutover approval**. Existing MCP Quick Tunnel
 sessions, ownership, Cloudflare DNS and OAuth tokens must remain unchanged.
 
@@ -22,14 +22,21 @@ Save the verified hostname/UUID, Anchor port, owner port and absolute
 \`~/.superagent-r/mcp-named-tunnel-settings.json\`. It cannot activate a
 tunnel or change the live Gemini client.
 
-Use **Import Cloudflare Token File** to select the token from an OS-native
-file picker. The native application validates the token's embedded tunnel
-UUID and account/secret structure, then copies it into a private profile
-folder with user-only OS permissions. It persists **only the path**, never
-the raw token. The original selected token file remains unchanged; remove
-the source using an approved secure file procedure after verifying import.
-Do not paste token bytes into an input, terminal command, issue, chat,
-project log, or Git checkout.
+In the Cloudflare dashboard, select **Add a replica** and copy the tunnel
+installation command or its single token to the OS clipboard. Back in Tray,
+select **Import from Clipboard** and approve the native confirmation dialog.
+The native application extracts exactly one bounded token, validates the
+embedded tunnel UUID and account/secret structure, and saves it in a private
+credential folder. Neither clipboard contents nor token bytes reach the
+WebView, command-line arguments, Git, or logs. The original OS clipboard
+remains unchanged; clear it yourself after a successful import if desired.
+
+**Choose Token File Instead** remains available using the OS-native file
+picker. Both imports persist **only the private file path**, never the raw
+token. The source file is unchanged. Do not paste credential bytes into a
+text input, terminal command, issue, chat, project log, or Git checkout.
+Credential rotation is refused while any connector lease exists; recovery
+requires deliberate ownership verification.
 
 The Cloudflare dashboard's \`service install TOKEN\` sample can expose
 the token in command arguments or service metadata. Prefer the private

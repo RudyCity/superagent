@@ -1195,8 +1195,9 @@
               </label>
               <div class="named-tunnel-setup-step">
                 <h3>Connector credentials</h3>
-                <p>The Remote-managed connector uses a token file managed by this device. Select a token file using the native file picker; SuperAgent validates its tunnel UUID and copies it into a private location. Token bytes never reach this screen.</p>
-                <button type="button" class="button ghost" id="named-tunnel-import-token">Import Cloudflare Token File</button>
+                <p>Copy the Cloudflare token or the full install command in the Cloudflare dashboard, then import directly from the OS clipboard. The native Tray validates the tunnel UUID and stores a protected token file without displaying the secret or running the install command.</p>
+                <button type="button" class="button primary" id="named-tunnel-import-clipboard">Import from Clipboard</button>
+                <button type="button" class="button ghost" id="named-tunnel-import-token">Choose Token File Instead</button>
                 <span id="named-tunnel-token-feedback" role="status" aria-live="polite"></span>
               </div>
               <label class="tray-field-row" id="named-tunnel-credentials-row" hidden>

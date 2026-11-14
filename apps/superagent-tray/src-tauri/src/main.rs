@@ -28,6 +28,7 @@ mod runtime_detection;
 mod tray_settings;
 mod named_tunnel_settings;
 mod named_tunnel_connector;
+mod named_tunnel_clipboard;
 mod named_tunnel_health;
 mod tray_lifecycle;
 mod lifecycle_console;
@@ -118,13 +119,7 @@ fn get_named_tunnel_settings() -> Result<named_tunnel_settings::NamedTunnelView,
 fn set_named_tunnel_settings(
     settings: named_tunnel_settings::NamedTunnelSettings,
 ) -> Result<named_tunnel_settings::NamedTunnelView, String> {
-    let dir = config_dir()?;
-    let existing=named_tunnel_settings::load(&dir)?;
-    if existing!=settings && named_tunnel_connector::lease_present(&dir,&existing.tunnel_id){
-        return Err("Stop and reconcile the existing Named Tunnel connector before changing its identity or credentials".into());
-    }
-    named_tunnel_settings::save(&dir, &settings)?;
-    Ok(named_tunnel_settings::load(&dir)?.inspect())
+    named_tunnel_connector::save_settings_guarded(&config_dir()?,&settings)
 }
 
 #[tauri::command]
@@ -159,13 +154,15 @@ async fn named_tunnel_connector_action(
     if expected_tunnel_id!=s.tunnel_id{
         return Err("Cloudflare tunnel ID changed during review".into());
     }
-    let planned=named_tunnel_connector::plan(&dir,&s)?;
     if action=="start"{
+        let planned=named_tunnel_connector::plan(&dir,&s)?;
         if planned.status.running {return Err("Named connector is already active".into());}
         let health=named_tunnel_health::inspect(&dir,&s).await?;
         if health.anchor_status!="verified_local" {
             return Err("Start a verified independent Named Tunnel Anchor first".into());
         }
+    } else if !named_tunnel_connector::status(&dir,&s).owned {
+        return Err("Refusing to stop an unverified connector process".into());
     } else if std::fs::symlink_metadata(
         dir.join(format!("mcp-tunnel-anchor-{}.json",s.anchor_port))
     ).is_ok() {
@@ -2147,6 +2144,7 @@ fn main() {
             plan_named_tunnel_connector,
             named_tunnel_connector_action,
             named_tunnel_connector::pick_named_tunnel_token,
+            named_tunnel_clipboard::import_named_tunnel_clipboard,
             get_tray_version,
             get_tray_build_number,
             release_updates::check_release_updates,
