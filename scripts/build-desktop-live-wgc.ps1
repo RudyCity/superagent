@@ -40,7 +40,9 @@ New-Item -Path $buildDir -ItemType Directory -Force | Out-Null
 try {
   $exe = Join-Path $buildDir "wgc.exe"
   $obj = Join-Path $buildDir "wgc.obj"
-  $command = 'call "' + $vcVars + '" >nul && cl /nologo /std:c++17 /EHsc /O2 /utf-8 /I "' +
+  # Modern MSVC removes experimental coroutine headers used by C++/WinRT in C++17 mode.
+  # Build as C++20 to use the standard <coroutine> implementation.
+  $command = 'call "' + $vcVars + '" >nul && cl /nologo /std:c++20 /EHsc /O2 /utf-8 /I "' +
     $cppwinrt + '" "' + $source + '" /Fo:"' + $obj +
     '" /Fe:"' + $exe + '" /link user32.lib d3d11.lib dwmapi.lib windowsapp.lib windowscodecs.lib crypt32.lib ole32.lib'
   & (Join-Path $env:WINDIR "System32\cmd.exe") /d /s /c $command

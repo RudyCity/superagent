@@ -13,7 +13,9 @@ scratch_base="${TMPDIR:-/tmp}"
 SCRATCH="$(mktemp -d "${scratch_base%/}/superagent-sck.XXXXXXXX")"
 cleanup() { rm -rf -- "$SCRATCH"; }
 trap cleanup EXIT
-"$SWIFTC" -O -parse-as-library -target arm64-apple-macos14.0 \
+# Swift Darwin triples use macosx (not macos). Pin the selected SDK explicitly.
+"$SWIFTC" -O -parse-as-library -target arm64-apple-macosx14.0 \
+  -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
   -framework ScreenCaptureKit -framework CoreGraphics -framework AppKit \
   -framework ImageIO -framework UniformTypeIdentifiers "$SOURCE" -o "$SCRATCH/sck"
 test -s "$SCRATCH/sck"
