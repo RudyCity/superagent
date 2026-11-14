@@ -1332,6 +1332,12 @@ export async function executeToolCall(
   cachedActiveTools?: any[]
 ): Promise<ToolResult> {
   // Enforcement also applies to direct callers bypassing ToolExecutor.
+  const { registeredFileToolGate } = await import("./tools/registeredFileToolGate.js");
+  const hostFileBlock = registeredFileToolGate(toolCall, cwd);
+  if (hostFileBlock) {
+    return { toolCallId: toolCall.id, name: toolCall.name,
+      result: "Access denied by permanent host file policy: " + hostFileBlock, isError: true };
+  }
   const { blockedYoloToolCall } = await import("./yoloBlocklist.js");
   const blockedRoot = blockedYoloToolCall(toolCall.args, cwd);
   if (blockedRoot) return { toolCallId: toolCall.id, name: toolCall.name, result: `Access denied by YOLO blocklist: ${blockedRoot}`, isError: true };

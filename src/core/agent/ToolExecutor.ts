@@ -19,6 +19,7 @@ import type { ToolCall, ToolResult } from "../conversation.js";
 import type { QuestionItem } from "./AgentEvents.js";
 import type { Agent } from "../agent.js";
 import { mapConcurrentOrdered } from "../concurrency.js";
+import { registeredFileToolGate } from "../tools/registeredFileToolGate.js";
 
 function isAgentYoloMode(agent: Agent): boolean {
   return !agent.disableAmbientYoloMode && isYoloMode();
@@ -197,6 +198,19 @@ export class ToolExecutor {
       ToolExecutor.normalizeToolCallArgs(tc);
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
+
+      const registeredFileBlock = registeredFileToolGate(tc,
+        agent.worktreePath || agent.workingDirectory);
+      if (registeredFileBlock) {
+        const blocked: ToolResult = {
+          toolCallId: tc.id, name: tc.name,
+          result: "Access denied by permanent host file policy: " + registeredFileBlock,
+          isError: true,
+        };
+        toolResults.push(blocked);
+        agent.onEvent({ type: "tool_end", toolResult: blocked, description });
+        continue;
+      }
 
       if (agent.fileScope && agent.fileScope.length > 0) {
         const { validateToolCallAgainstFileScope } = await import("./fileScopeGuard.js");

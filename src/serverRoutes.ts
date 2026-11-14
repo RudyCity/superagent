@@ -1262,7 +1262,7 @@ export async function handleServerRoute(
 
   // Native desktop application preview. One exact local window per explicit
   // operator consent; never expose this endpoint through a public tunnel.
-  if (["/api/desktop/live/windows", "/api/desktop/live/challenge", "/api/desktop/live/start",
+  if (["/api/desktop/live/access-executable", "/api/desktop/live/windows", "/api/desktop/live/challenge", "/api/desktop/live/start",
        "/api/desktop/live/frame", "/api/desktop/live/stop",
        "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop", "/api/desktop/live/manage", "/api/desktop/live/manage/stop", "/api/desktop/tray-password/status", "/api/desktop/tray-password/set", "/api/desktop/tray-remote/status", "/api/desktop/tray-remote/start", "/api/desktop/tray-remote/stop"].includes(pathname)) {
     res.setHeader("Cache-Control", "no-store");
@@ -1287,14 +1287,18 @@ export async function handleServerRoute(
       sendJSON(res, 403, { success: false, error: "DESKTOP_LIVE_URL_CREDENTIALS_FORBIDDEN" });
       return true;
     }
-    if (((pathname === "/api/desktop/live/windows" ||
+    if (((pathname === "/api/desktop/live/access-executable" || pathname === "/api/desktop/live/windows" ||
           pathname === "/api/desktop/live/manage" || pathname === "/api/desktop/tray-password/status" || pathname === "/api/desktop/tray-remote/status" || pathname === "/api/desktop/live/remote/status") ?
           req.method !== "GET" : req.method !== "POST")) {
       sendJSON(res, 405, { success: false, error: "DESKTOP_LIVE_INVALID_METHOD" });
       return true;
     }
     try {
-      if (pathname === "/api/desktop/live/manage") {
+      if (pathname === "/api/desktop/live/access-executable") {
+        // The native Tray independently attests the actual executing Core
+        // worker binary. Never accept a WebView PID/executable path for policy.
+        sendJSON(res, 200, { success: true, pid: process.pid });
+      } else if (pathname === "/api/desktop/live/manage") {
         const { listDesktopLiveInventory } = await import("./core/desktopUi/desktopLiveInventory.js");
         sendJSON(res, 200, { success:true, ...await listDesktopLiveInventory() });
       } else if (pathname === "/api/desktop/live/manage/stop") {

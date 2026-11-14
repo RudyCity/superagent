@@ -27,6 +27,7 @@ mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
 mod desktop_input_trust;
+mod desktop_access_registry;
 mod named_tunnel_settings;
 mod named_tunnel_connector;
 mod named_tunnel_clipboard;
@@ -2327,6 +2328,10 @@ fn main() {
             desktop_input_trust::trust_desktop_input_window,
             desktop_input_trust::revoke_desktop_input_window,
             desktop_input_trust::revoke_all_desktop_input_windows,
+            desktop_access_registry::get_permanent_access_registry,
+            desktop_access_registry::pick_permanent_access_path,
+            desktop_access_registry::register_permanent_access_rule,
+            desktop_access_registry::revoke_permanent_access_rule,
             get_named_tunnel_settings,
             set_named_tunnel_settings,
             get_named_tunnel_connector_status,

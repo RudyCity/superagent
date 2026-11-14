@@ -1,3 +1,4 @@
+import { registeredFileToolGate } from "../../tools/registeredFileToolGate.js";
 /**
  * workspaceTools.ts — Workspace switching, worktree operations, command execution, file tools, search, and checklist tools for MCP.
  */
@@ -289,6 +290,14 @@ export async function handleReadFile(args: any): Promise<McpToolResult> {
     return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
   }
 
+  // Defense-in-depth: direct callers cannot bypass MCP dispatch policy.
+  const fileBlock = registeredFileToolGate({ name: "superagent_read_file", args: { filePath } },
+    String(targetCwd));
+  if (fileBlock) return {
+    content: [{ type: "text", text: "Access denied by permanent host file policy: " + fileBlock }],
+    isError: true,
+  };
+
   let resolved: string;
   try {
     if (/^(?:ssh:|chain:)/i.test(String(targetCwd))) throw new Error("This file tool only supports local workspaces; use Workspace Chain tools for remote targets.");
@@ -363,6 +372,14 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
   if (!filePath) {
     return { content: [{ type: "text", text: "Error: 'filePath' is required." }], isError: true };
   }
+
+  // Defense-in-depth: direct callers cannot bypass MCP dispatch policy.
+  const fileBlock = registeredFileToolGate({ name: "superagent_write_file", args: { filePath } },
+    String(targetCwd));
+  if (fileBlock) return {
+    content: [{ type: "text", text: "Access denied by permanent host file policy: " + fileBlock }],
+    isError: true,
+  };
 
   let resolved: string;
   try {

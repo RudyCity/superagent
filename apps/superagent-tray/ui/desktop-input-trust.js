@@ -1,4 +1,14 @@
 "use strict";
+// Load permanent access registration UI as a separate native-only module.
+if (typeof document !== "undefined" && document.head?.appendChild) {
+  const style = document.createElement("link");
+  style.rel = "stylesheet";
+  style.href = "./access-manager.css";
+  document.head.appendChild(style);
+  const script = document.createElement("script");
+  script.src = "./access-manager.js";
+  document.head.appendChild(script);
+}
 (() => {
   // Tray UI only edits a fixed local policy through native Tauri commands.
   // The Core still requires fresh native human approval for EVERY input session.

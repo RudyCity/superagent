@@ -45,6 +45,11 @@ import { inspectSecurityPrompts } from "../desktopSecurity/index.js";
 import {readTrustedInputPolicy,trustedWindowMatch,
   type TrustedInputPolicy,type TrustedInputTarget} from "./desktopTrustedInput.js";
 import {createTrustedInputPrompt,type TrustedInputPrompt} from "../desktopUi/trustedInputPrompt.js";
+import {readPermanentAccessRegistry} from "../desktopUi/permanentRegistryStore.js";
+import {evaluatePersistentAccess,hasRegisteredDesktopInputCandidate,
+  type ExecutableIdentity,type PersistentAccessPolicy}
+  from "../desktopUi/persistentAccessPolicy.js";
+import {resolveNativeDesktopExecutable} from "../desktopUi/nativeExecutableIdentity.js";
 
 export const MAX_DESKTOP_UI_SESSIONS = 10;
 export const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
@@ -263,6 +268,9 @@ export interface ActiveSessionRecord {
   inputAllowed: boolean;
   trustedGrantId?: string;
   trustedTarget?: TrustedInputTarget;
+  registeredGrantId?: string;
+  registeredIdentity?: ExecutableIdentity;
+  registeredViewIdentity?: ExecutableIdentity;
   adapter: DesktopUiAdapter;
   getLatestCapture: () => NativeCapture | null;
 }
@@ -348,14 +356,20 @@ export class DesktopUiSessionManager {
   private consentManager: DesktopUiConsentManager;
   private readonly trustedPolicy: () => TrustedInputPolicy | null;
   private readonly trustedPrompt: TrustedInputPrompt;
+  private readonly permanentRegistry: () => PersistentAccessPolicy | null;
+  private readonly executableIdentity: (pid: number) => Promise<ExecutableIdentity | null>;
 
   constructor(consentManager = desktopUiConsentManager, trusted: {
     policy?: () => TrustedInputPolicy | null;
     prompt?: TrustedInputPrompt;
+    permanentRegistry?: () => PersistentAccessPolicy | null;
+    executableIdentity?: (pid: number) => Promise<ExecutableIdentity | null>;
   } = {}) {
     this.consentManager = consentManager;
     this.trustedPolicy = trusted.policy ?? readTrustedInputPolicy;
     this.trustedPrompt = trusted.prompt ?? createTrustedInputPrompt();
+    this.permanentRegistry = trusted.permanentRegistry ?? readPermanentAccessRegistry;
+    this.executableIdentity = trusted.executableIdentity ?? resolveNativeDesktopExecutable;
   }
 
   private trustedEntryStillActive(entry: TrustedInputTarget): boolean {
@@ -376,6 +390,7 @@ export class DesktopUiSessionManager {
     for (const [token, session] of this.sessions.entries()) {
       if (session.expiresAt <= now) {
         if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
+        if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
         this.sessions.delete(token);
       }
     }
@@ -494,21 +509,78 @@ export class DesktopUiSessionManager {
     // There is no global auto-grant, and no target match means no request.
     let policy: TrustedInputPolicy | null = null;
     try { policy = this.trustedPolicy(); } catch { policy = null; }
-    const trustedCandidate = policy?.mode === "trusted" &&
+    let permanent: PersistentAccessPolicy | null = null;
+    try { permanent = this.permanentRegistry(); } catch { permanent = null; }
+    // V2 takes precedence over old short-lived window trust when installed.
+    const registeredCandidate = Boolean(permanent?.rules.some(rule =>
+      rule.kind === "desktop" && rule.effect === "allow" &&
+      rule.operations.includes("input")));
+    const trustedCandidate = !permanent && policy?.mode === "trusted" &&
       policy.targets.some(entry => entry.pid === target.pid &&
         entry.nativeId === target.nativeId && entry.title === target.title &&
         entry.expiresAt > Date.now());
     const inputRequested = params.allowInput === true ||
-      (params.allowInput === undefined && trustedCandidate);
+      (params.allowInput === undefined && (registeredCandidate || trustedCandidate));
     const baseAdapter = params.adapter ?? createNativeDesktopUiAdapter();
+    let registeredViewIdentity: ExecutableIdentity | undefined;
+    if (permanent) {
+      // A registered application must be explicitly approved for observation.
+      // Window listing remains available so the owner can enroll a target.
+      if (typeof baseAdapter.listWindows !== "function") {
+        throw new DesktopUiError("INPUT_DISABLED", "Registered desktop view requires native OS window discovery.");
+      }
+      try {
+        const discovery = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
+        const observed = requireFreshWindowTarget(discovery, target.pid, target.nativeId);
+        if (!observed.active || observed.title !== target.title) throw Error("Window is not foreground");
+        const identity = await this.executableIdentity(target.pid);
+        if (!identity || evaluatePersistentAccess(permanent, {
+          kind: "desktop", app: identity, operation: "view", windowTitle: observed.title,
+        }).effect !== "allow") throw Error("Application not authorized for viewing");
+        const fresh = this.permanentRegistry();
+        if (!fresh || evaluatePersistentAccess(fresh, {
+          kind: "desktop", app: identity, operation: "view", windowTitle: observed.title,
+        }).effect !== "allow") throw Error("Viewing revoked during identity verification");
+        registeredViewIdentity = identity;
+      } catch {
+        throw new DesktopUiError("INPUT_DISABLED", "Application viewing not registered or OS identity changed.");
+      }
+    }
     let trustedGrantId: string | undefined;
     let trustedTarget: TrustedInputTarget | undefined;
+    let registeredGrantId: string | undefined;
+    let registeredIdentity: ExecutableIdentity | undefined;
+
+    // Registered native app rules have no policy expiry. The actual session
+    // still has a bounded token; native enrollment already required host approval.
+    if (inputRequested && permanent && typeof baseAdapter.listWindows === "function") {
+      try {
+        const windows = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
+        const observed = requireFreshWindowTarget(windows, target.pid, target.nativeId);
+        if (observed.active && observed.title === target.title) {
+          const executable = await this.executableIdentity(target.pid);
+          if (executable &&
+              hasRegisteredDesktopInputCandidate(permanent, executable, observed.title)) {
+            // Re-read after the potentially slow binary hash to detect revocation.
+            const current = this.permanentRegistry();
+            if (current && hasRegisteredDesktopInputCandidate(current, executable, observed.title)) {
+              registeredGrantId = this.consentManager.grantConsent({
+                sessionToken, ttlMs, grantedBy: "native-permanent-host-registration",
+              });
+              registeredIdentity = executable;
+            }
+          }
+        }
+      } catch {
+        // OS process identity unavailable, app replaced, or denied: no input.
+      }
+    }
 
     // Trusted means allow a native approval REQUEST, not an automatic grant.
     // The OS identity is re-discovered, the host sees the exact target, and
     // the persisted trust entry is re-read after the dialog to prevent races.
     if (inputRequested && !this.consentManager.hasConsent(target, sessionToken)) {
-      if (policy?.mode === "trusted" && typeof baseAdapter.listWindows === "function") {
+      if (!permanent && policy?.mode === "trusted" && typeof baseAdapter.listWindows === "function") {
         try {
           const windows = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
           const observed = requireFreshWindowTarget(windows, target.pid, target.nativeId);
@@ -535,7 +607,10 @@ export class DesktopUiSessionManager {
         }
       }
     }
-    const inputAllowed = inputRequested && this.consentManager.hasConsent(target, sessionToken);
+    // Older env/global consent must NEVER bypass an installed v2 deny rule.
+    const inputAllowed = inputRequested &&
+      (permanent ? Boolean(registeredGrantId) : true) &&
+      this.consentManager.hasConsent(target, sessionToken);
     const consentDenied = inputRequested && !inputAllowed;
     let latestCapture: NativeCapture | null = null;
     const adapter: DesktopUiAdapter = {
@@ -547,7 +622,27 @@ export class DesktopUiSessionManager {
         return cap;
       },
       inspectAccessibility: (t, c) => baseAdapter.inspectAccessibility(t, c),
-      dispatch: (a) => baseAdapter.dispatch(a),
+      dispatch: async (a) => {
+        if (registeredGrantId) {
+          // Dispatch-side guard, after semantic screenshot/accessibility validation.
+          // The target OS adapter still checks the exact native foreground HWND.
+          const latest = this.permanentRegistry();
+          const identity = await this.executableIdentity(target.pid);
+          const element = "element" in a ? a.element : undefined;
+          if (!identity || !registeredIdentity || !latest ||
+              identity.sha256.toLowerCase() !== registeredIdentity.sha256.toLowerCase() ||
+              identity.executablePath.toLowerCase() !== registeredIdentity.executablePath.toLowerCase() ||
+              evaluatePersistentAccess(latest, {
+                kind: "desktop", app: identity, operation: "input",
+                windowTitle: target.title, elementRole: element?.role,
+                elementLabel: element?.label ?? undefined,
+              }).effect !== "allow") {
+            throw new DesktopUiError("INPUT_DISABLED",
+              "This native control is blocked by the exact registered application/element policy.");
+          }
+        }
+        return baseAdapter.dispatch(a);
+      },
     };
 
     let vision = params.vision;
@@ -575,6 +670,8 @@ export class DesktopUiSessionManager {
       inputRequested,
       inputAllowed,
       ...(trustedGrantId ? { trustedGrantId, trustedTarget } : {}),
+      ...(registeredGrantId ? { registeredGrantId, registeredIdentity } : {}),
+      ...(registeredViewIdentity ? { registeredViewIdentity } : {}),
       adapter,
       getLatestCapture: () => latestCapture,
     };
@@ -609,6 +706,23 @@ export class DesktopUiSessionManager {
     const session = this.getSession(params.sessionToken, params.ownerPrincipal);
     if (!session) {
       throw new DesktopUiError("TARGET_NOT_FOUND", "Desktop UI session not found, expired, or owned by another principal.");
+    }
+    const currentViewRegistry = this.permanentRegistry();
+    if (currentViewRegistry && !session.registeredViewIdentity) {
+      throw new DesktopUiError("INPUT_DISABLED", "Application viewing now requires permanent registration.");
+    }
+    if (session.registeredViewIdentity) {
+      const currentRegistry = currentViewRegistry;
+      const currentIdentity = await this.executableIdentity(session.target.pid);
+      if (!currentRegistry || !currentIdentity ||
+          evaluatePersistentAccess(currentRegistry, {
+            kind: "desktop", app: currentIdentity, operation: "view",
+            windowTitle: session.target.title,
+          }).effect !== "allow" ||
+          currentIdentity.sha256.toLowerCase() !== session.registeredViewIdentity.sha256.toLowerCase() ||
+          currentIdentity.executablePath.toLowerCase() !== session.registeredViewIdentity.executablePath.toLowerCase()) {
+        throw new DesktopUiError("INPUT_DISABLED", "Permanent application viewing was revoked.");
+      }
     }
     session.lastAccessedAt = Date.now();
 
@@ -663,12 +777,31 @@ export class DesktopUiSessionManager {
       throw new DesktopUiError("TARGET_NOT_FOUND", "Desktop UI session not found, expired, or owned by another principal.");
     }
 
+    // V2 registry overrides ALL legacy input grants, including environment
+    // allowlists and previously opened v1 sessions.
+    const installed = this.permanentRegistry();
+    if (installed && !session.registeredGrantId) {
+      throw new DesktopUiError("INPUT_DISABLED", "Native input is not registered for this application.");
+    }
     // Revoke takes effect on the very next input action, even while a
     // previously host-approved session remains open in the Core process.
     if (session.trustedGrantId && (!session.trustedTarget ||
       !this.trustedEntryStillActive(session.trustedTarget))) {
       this.consentManager.revokeConsent(session.trustedGrantId);
       throw new DesktopUiError("INPUT_DISABLED", "Trusted window approval has expired or was revoked.");
+    }
+    if (session.registeredGrantId) {
+      // Revocation and executable replacement must prevent the *next* input.
+      const currentRegistry = this.permanentRegistry();
+      const currentIdentity = await this.executableIdentity(session.target.pid);
+      if (!session.registeredIdentity || !currentIdentity ||
+          currentIdentity.executablePath.toLowerCase() !== session.registeredIdentity.executablePath.toLowerCase() ||
+          currentIdentity.sha256.toLowerCase() !== session.registeredIdentity.sha256.toLowerCase() ||
+          !currentRegistry || !hasRegisteredDesktopInputCandidate(
+            currentRegistry, currentIdentity, session.target.title)) {
+        this.consentManager.revokeConsent(session.registeredGrantId);
+        throw new DesktopUiError("INPUT_DISABLED", "Permanent app access was revoked or executable changed.");
+      }
     }
     const hasConsent = this.consentManager.hasConsent(session.target, session.token);
     if (!session.inputRequested || !hasConsent) {
@@ -763,12 +896,14 @@ export class DesktopUiSessionManager {
     const session = this.getSession(sessionToken, ownerPrincipal);
     if (!session) return { closed: false };
     if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
+    if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
     return { closed: this.sessions.delete(sessionToken) };
   }
 
   clearAllSessions(): void {
     for (const session of this.sessions.values()) {
       if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
+      if (session.registeredGrantId) this.consentManager.revokeConsent(session.registeredGrantId);
     }
     this.sessions.clear();
   }

@@ -57,6 +57,18 @@ describe("native desktop live private loopback HTTP guard", () => {
     });
   }
 
+  it("exposes only the active Core worker PID through authenticated local native attestation", async()=>{
+    const route="/api/desktop/live/access-executable";
+    expect((await request("GET",route)).status).toBe(403);
+    expect((await request("GET",route+"?token=bad",{Authorization:"Bearer "+bearer})).status).toBe(403);
+    expect((await request("GET",route,{Authorization:"Bearer "+bearer,Origin:"http://localhost"})).status).toBe(403);
+    const invalidMethod=await request("POST",route,{Authorization:"Bearer "+bearer},"{}");
+    expect(invalidMethod.status).toBe(405);
+    const allowed=await request("GET",route,{Authorization:"Bearer "+bearer});
+    expect(allowed.status).toBe(200);
+    expect(allowed.body).toEqual({success:true,pid:process.pid});
+    expect(JSON.stringify(allowed.body)).not.toMatch(/executablePath|sha256|token|secret/i);
+  });
   it("denies an unauthenticated window discovery before inspecting the desktop", async () => {
     const res = await request("GET","/api/desktop/live/windows");
     expect(res.status).toBe(403);

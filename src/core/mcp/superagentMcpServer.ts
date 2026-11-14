@@ -1,3 +1,4 @@
+import { registeredFileToolGate } from "../tools/registeredFileToolGate.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -1270,6 +1271,41 @@ function extractMcpResultText(result: unknown): string {
       }
     }
 
+    // For nested gateway calls, derive file scope from the target operation,
+    // not the gateway wrapper's active workspace (which may be unrelated).
+    const nestedFileArgs = toolName === MCP_GATEWAY_TOOL_NAMES.execute
+      && rawArgs.arguments && typeof rawArgs.arguments === "object"
+      && !Array.isArray(rawArgs.arguments)
+      ? rawArgs.arguments as Record<string,unknown> : rawArgs;
+    let fileGuardWorkspace = effectiveWs;
+    if (nestedFileArgs !== rawArgs) {
+      const explicitProject = typeof nestedFileArgs.projectId === "string"
+        ? getProject(nestedFileArgs.projectId) : null;
+      if (typeof nestedFileArgs.projectId === "string" &&
+          (!explicitProject || !explicitProject.enabled || explicitProject.type !== "local" ||
+            !explicitProject.root)) {
+        fileGuardWorkspace = ""; // fail closed for missing/remote project
+      } else {
+        fileGuardWorkspace = explicitProject?.root || fileGuardWorkspace;
+        for (const key of ["cwd","workspace","worktreePath"]) {
+          if (typeof nestedFileArgs[key] === "string" && nestedFileArgs[key]) {
+            fileGuardWorkspace = String(nestedFileArgs[key]);
+            break;
+          }
+        }
+      }
+    }
+    const permanentFileBlock = registeredFileToolGate({
+      name: toolName, args: rawArgs,
+    }, fileGuardWorkspace);
+    if (permanentFileBlock) {
+      auditContext.authorizationDecision = "denied";
+      auditContext.errorCode = "permanent_file_policy_denied";
+      emitAudit({ tool: toolName, args: {}, ok: false,
+        error: "Permanent file restriction denied this call", durationMs: 0 });
+      throw new McpError(ErrorCode.InvalidRequest,
+        "Access denied by host permanent file policy: " + permanentFileBlock);
+    }
     const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
     if (blockedRoot) {
       emitAudit({ tool: toolName, args: rawArgs, ok: false, error: "YOLO blocklist denied access" });
