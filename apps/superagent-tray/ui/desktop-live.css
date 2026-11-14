@@ -1,0 +1,44 @@
+/* Hallmark · component: native window viewer · genre: utilitarian · theme: inherited
+ * states: default · hover · focus · active · disabled · loading · error · success
+ * contrast: inherits the established Tray tokens
+ */
+.desktop-live-panel { display: grid; gap: 1rem; }
+.desktop-live-picker { display: grid; gap: .65rem; }
+.desktop-live-picker > label { font-weight: 600; }
+.desktop-live-picker-row { display: flex; align-items: stretch; flex-wrap: wrap; gap: .7rem; }
+.desktop-live-picker-row select {
+  flex: 1 1 18rem; min-width: 0; max-width: 100%; padding: .65rem .8rem;
+  border: 1px solid var(--border, #374151); border-radius: .55rem;
+  background: var(--surface, #171b22); color: inherit;
+}
+.desktop-live-picker-row select:focus-visible,
+.desktop-live-picker-row button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.desktop-live-picker-row button:disabled { cursor: not-allowed; opacity: .55; }
+.desktop-live-quality {
+  display: flex; align-items: center; flex-wrap: wrap; gap: .65rem;
+}
+.desktop-live-quality label { font-weight: 600; }
+.desktop-live-quality select {
+  min-width: 13rem; max-width: 100%; padding: .55rem .75rem;
+  background: var(--surface); color: inherit;
+  border: 1px solid var(--border); border-radius: .55rem;
+}
+.desktop-live-quality select:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.desktop-live-quality span { font-size: .78rem; opacity: .78; }
+.desktop-live-screen {
+  display: grid; place-items: center; min-height: 260px;
+  padding: 1rem; border: 1px solid var(--border, #374151);
+  border-radius: .7rem; background: var(--surface, #101217);
+  overflow: hidden;
+}
+.desktop-live-screen img { max-width: 100%; max-height: min(68vh, 760px); object-fit: contain; }
+.desktop-live-screen img[hidden], .desktop-live-screen p[hidden] { display: none; }
+.desktop-live-screen p { margin: 0; text-align: center; opacity: .7; }
+#desktop-live-status { font-size: .875rem; }
+@media (max-width: 414px) {
+  .desktop-live-picker-row { flex-direction: column; }
+  .desktop-live-picker-row > * { width: 100%; flex-basis: auto; }
+  .desktop-live-quality { align-items: stretch; flex-direction: column; }
+  .desktop-live-quality select { width: 100%; }
+  .desktop-live-screen { min-height: 190px; }
+}

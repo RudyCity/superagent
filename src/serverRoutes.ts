@@ -1260,6 +1260,55 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Native desktop application preview. One exact local window per explicit
+  // operator consent; never expose this endpoint through a public tunnel.
+  if (["/api/desktop/live/windows", "/api/desktop/live/start",
+       "/api/desktop/live/frame", "/api/desktop/live/stop"].includes(pathname)) {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const safeHost = /^(?:127\.0\.0\.1|localhost)(?::[0-9]{2,5})?$/i.test(String(req.headers.host || ""));
+    const forwarded = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+      "cf-connecting-ip", "cf-ray"].some(name => Boolean(req.headers[name]));
+    const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
+    const bearer = typeof req.headers.authorization === "string" &&
+      /^Bearer [^\s]+$/.test(req.headers.authorization);
+    if (!loopback || !safeHost || forwarded || req.headers.origin || req.headers.referer ||
+        !bearer || !isRequestAuthorized(req, parsedUrl)) {
+      sendJSON(res, 403, { success: false, error: "DESKTOP_LIVE_LOCAL_OPERATOR_AUTH_REQUIRED" });
+      return true;
+    }
+    if (parsedUrl.search ||
+        (pathname === "/api/desktop/live/windows" ? req.method !== "GET" : req.method !== "POST")) {
+      sendJSON(res, 405, { success: false, error: "DESKTOP_LIVE_INVALID_METHOD" });
+      return true;
+    }
+    try {
+      const { nativeWindowPreviewManager } = await import("./core/desktopUi/livePreview.js");
+      if (pathname === "/api/desktop/live/windows") {
+        sendJSON(res, 200, { success: true, ...await nativeWindowPreviewManager.discover() });
+      } else {
+        const raw = await readBody(req);
+        if (Buffer.byteLength(raw, "utf8") >
+            (pathname === "/api/desktop/live/start" ? 4096 : 1000)) {
+          throw Error("Oversized private preview request.");
+        }
+        const parsed = JSON.parse(raw);
+        const result = pathname === "/api/desktop/live/start"
+          ? await nativeWindowPreviewManager.start(parsed)
+          : pathname === "/api/desktop/live/frame"
+            ? await nativeWindowPreviewManager.frame(parsed)
+            : nativeWindowPreviewManager.stop(parsed);
+        sendJSON(res, 200, { success: true, ...result });
+      }
+    } catch {
+      // Do not echo titles, native identifiers, tokens, screenshots, OS errors.
+      sendJSON(res, 409, { success: false, error: "DESKTOP_LIVE_UNAVAILABLE_OR_UNAUTHORIZED" });
+    }
+    return true;
+  }
+
   // Native-only managed CDP live updates and manual human hold. These routes
   // never accept browser content, owner capability, arbitrary CDP commands, or
   // bearer tokens in the URL. The Tray authenticates using its native bridge.

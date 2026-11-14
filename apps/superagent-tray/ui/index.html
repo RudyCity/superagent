@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="./lan-devices.css" />
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <link rel="stylesheet" href="./delegate-action-diagnostics.css" />
+  <link rel="stylesheet" href="./desktop-live.css" />
   <script src="./titlebar.js" defer></script>
   <script src="./feedback.js" defer></script>
   <script src="./app.js" defer></script>
@@ -22,6 +23,7 @@
   <script src="./logs.js" defer></script>
   <script src="./delegate.js" defer></script>
   <script src="./delegate-multitab.js" defer></script>
+  <script src="./desktop-live.js" defer></script>
   <script src="./action-menu.js" defer></script>
   <script src="./terminal.js" defer></script>
   <script src="./muse-files.js" defer></script>
@@ -111,7 +113,14 @@
           </svg>
           <span>Chrome Delegate</span>
         </a>
-                <a class="nav-link" href="#terminal" data-page="terminal" id="nav-terminal">
+                <a class="nav-link" href="#desktop-live" data-page="desktop-live" id="nav-desktop-live">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="2" y="4" width="20" height="14" rx="2" />
+            <path d="M8 22h8M12 18v4" />
+          </svg>
+          <span>Desktop Live</span>
+        </a>
+        <a class="nav-link" href="#terminal" data-page="terminal" id="nav-terminal">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="4 17 10 11 4 5"></polyline>
             <line x1="12" y1="19" x2="20" y2="19"></line>
@@ -1722,6 +1731,45 @@
               <p class="text-secondary">No verified replay proposals.</p>
             </div>
           </div>
+        </section>
+      </div>
+
+      <!-- PRIVATE NATIVE DESKTOP WINDOW PREVIEW · ALL SUPPORTED HOST OS -->
+      <div id="page-desktop-live" class="page-view" hidden>
+        <section class="panel desktop-live-panel" aria-labelledby="desktop-live-heading">
+          <div class="panel-head">
+            <div>
+              <div class="panel-eyebrow">LOCAL WINDOW PREVIEW · EXPLICIT CONSENT</div>
+              <h2 id="desktop-live-heading">Desktop Live</h2>
+              <p>Watch one selected application window, not the entire desktop. Private local preview only; remote control is never enabled by this viewer.</p>
+            </div>
+            <button type="button" id="desktop-live-refresh" class="button secondary">Find windows</button>
+          </div>
+          <div class="desktop-live-picker">
+            <label for="desktop-live-target">Verified application window</label>
+            <div class="desktop-live-picker-row">
+              <select id="desktop-live-target" aria-describedby="desktop-live-permission">
+                <option value="">Select Find windows</option>
+              </select>
+              <button type="button" id="desktop-live-start" class="button primary" disabled>Start private preview</button>
+              <button type="button" id="desktop-live-stop" class="button secondary" disabled>Stop</button>
+            </div>
+          </div>
+          <div class="desktop-live-quality">
+             <label for="desktop-live-quality">Preview quality</label>
+             <select id="desktop-live-quality" aria-describedby="desktop-live-quality-help">
+               <option value="balanced" selected>Balanced · 1280 px · up to 2 fps</option>
+               <option value="save">Save data · 768 px · up to 1 fps</option>
+               <option value="detail">Detail · 1920 px · up to 4 fps</option>
+             </select>
+             <span id="desktop-live-quality-help">Approximate target speed; capture may be slower. Changes do not grant new permissions.</span>
+           </div>
+           <div class="desktop-live-screen" id="desktop-live-screen">
+            <img id="desktop-live-image" alt="Private preview of the explicitly selected application window" referrerpolicy="no-referrer" hidden />
+            <p id="desktop-live-placeholder">No application is being shared.</p>
+          </div>
+          <p id="desktop-live-status" role="status" aria-live="polite">Preview is off.</p>
+          <p id="desktop-live-permission" class="delegate-hint">A native confirmation dialog must approve this exact window. Screen Recording permissions may also be required by the operating system. JPEG frames are size-limited, unchanged frames are skipped, and capture speed depends on the host. Every session expires after five minutes and stops on navigation, hidden Tray, changed window identity, or failed capture. No recording, remote input or public streaming.</p>
         </section>
       </div>
 

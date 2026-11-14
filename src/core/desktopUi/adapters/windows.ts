@@ -610,6 +610,13 @@ export function createWindowsDesktopUiAdapter(
       return active.length === 1 ? active[0] : null;
     },
 
+    async openVerifiedCapture(window: DesktopDiscoveredWindow) {
+      // Only the manually approved Desktop Live viewer uses this native
+      // per-session worker. Normal desktop_ui capture and input stay unchanged.
+      const { openWindowsVerifiedCapture } = await import("./windowsPreviewWorker.js");
+      return openWindowsVerifiedCapture(window);
+    },
+
     async capture(target: DesktopWindowTarget): Promise<NativeCapture> {
       const dir = await mkdtemp(path.join(os.tmpdir(), "superagent-desktop-ui-"));
       const outputPath = path.join(dir, "capture.png");

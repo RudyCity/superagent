@@ -745,6 +745,159 @@ async fn delegate_action(action: String, payload: Option<Value>) -> Result<Value
     }
 }
 
+static DESKTOP_LIVE_APPROVAL_OPEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+struct DesktopLiveApprovalGuard;
+impl Drop for DesktopLiveApprovalGuard {
+    fn drop(&mut self) {
+        DESKTOP_LIVE_APPROVAL_OPEN.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[tauri::command]
+async fn desktop_live_action(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    // Native approval cannot be bypassed by changing a JavaScript consent flag.
+    // All IPC actions originate in the actual installed main Tray window.
+    if window.label() != "main" {
+        return Err("Desktop Live is restricted to the main native Tray".into());
+    }
+    if action != "stop" && (!window.is_visible().unwrap_or(false) ||
+        window.is_minimized().unwrap_or(true)) {
+        return Err("Desktop Live is not available from a hidden Tray window".into());
+    }
+    // Native Tray to authenticated local Core only. Never proxy arbitrary routes,
+    // accept model-selected commands, or expose Core bearer to the WebView.
+    match action.as_str() {
+        "windows" => {
+            if payload.is_some() { return Err("Unexpected discovery payload".into()); }
+            core_request(Method::GET, "/api/desktop/live/windows", None).await
+        }
+        "start" => {
+            let data = payload.ok_or("Missing explicit window consent")?;
+            let obj = data.as_object().ok_or("Invalid window selection")?;
+            if obj.len() != 3 || obj.keys().any(|key|
+                !["pid", "nativeId", "consent"].contains(&key.as_str())) {
+                return Err("Unexpected window selection fields".into());
+            }
+            let pid = obj.get("pid").and_then(Value::as_u64).ok_or("Window PID required")?;
+            let native_id = obj.get("nativeId").and_then(Value::as_str).ok_or("Native window ID required")?;
+            if pid == 0 || pid > u32::MAX as u64 || native_id.is_empty() || native_id.len() > 256 ||
+                native_id.chars().any(char::is_control) || obj.get("consent").and_then(Value::as_bool) != Some(true) {
+                return Err("Preview requires explicit consent for a verified native window".into());
+            }
+            if DESKTOP_LIVE_APPROVAL_OPEN.compare_exchange(
+                false, true, std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            ).is_err() {
+                return Err("Another native Desktop Live approval is pending".into());
+            }
+            let _approval_guard = DesktopLiveApprovalGuard;
+            // Source metadata comes from the authenticated Core's fresh OS
+            // discovery, not untrusted window names supplied by the WebView.
+            let inventory = core_request(Method::GET, "/api/desktop/live/windows", None).await?;
+            let windows = inventory.get("windows").and_then(Value::as_array)
+                .ok_or("Native window inventory could not be verified")?;
+            let matches: Vec<_> = windows.iter().filter(|item|
+                item.get("pid").and_then(Value::as_u64) == Some(pid) &&
+                item.get("nativeId").and_then(Value::as_str) == Some(native_id)
+            ).collect();
+            if matches.len() != 1 { return Err("Selected native window is no longer available".into()); }
+            let target = matches[0];
+            let sanitized = |field: &str| target.get(field).and_then(Value::as_str)
+                .unwrap_or("Unknown").chars().filter(|ch| !ch.is_control())
+                .take(110).collect::<String>();
+            let prompt = format!(
+                "Allow a PRIVATE, READ-ONLY preview of this exact application window?\n\n\
+                 Application: {}\nTitle: {}\nProcess: {}\n\n\
+                 The screenshot may contain private information. Only the local Tray will display it. \
+                 No mouse or keyboard access is granted. The session expires after five minutes.",
+                sanitized("application"), sanitized("title"), pid,
+            );
+            let native = app.clone();
+            let approved = tauri::async_runtime::spawn_blocking(move || {
+                use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+                native.dialog().message(prompt).buttons(
+                    MessageDialogButtons::OkCancelCustom(
+                        "Allow preview".to_string(), "Deny".to_string(),
+                    )
+                ).blocking_show()
+            }).await.map_err(|_| "Native Desktop Live approval did not complete")?;
+            if !approved {
+                return Err("Native Desktop Live permission was denied".into());
+            }
+            if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+                return Err("Tray was hidden before approval completed".into());
+            }
+            // Pin the exact name, application and bounds that appeared in the
+            // OS approval. The Core refuses if navigation, resize or reuse
+            // changed that window while the native dialog was visible.
+            let mut approved_payload = data;
+            let approved_obj = approved_payload.as_object_mut()
+                .ok_or("Approved native window payload unavailable")?;
+            for (key, native_key) in [
+                ("expectedTitle", "title"),
+                ("expectedApplication", "application"),
+                ("expectedBounds", "bounds"),
+            ] {
+                let native_value = target.get(native_key).ok_or("Native approval target missing")?;
+                approved_obj.insert(key.to_string(), native_value.clone());
+            }
+            core_request(Method::POST, "/api/desktop/live/start", Some(approved_payload)).await
+        }
+        "frame" | "stop" => {
+            let data = payload.ok_or("Missing preview capability")?;
+            let obj = data.as_object().ok_or("Invalid preview capability")?;
+            let allowed: &[&str] = if action == "frame" {
+                &["token", "codec", "knownHash", "maxWidth", "quality"]
+            } else { &["token"] };
+            if obj.is_empty() || obj.len() > allowed.len() ||
+                obj.keys().any(|key| !allowed.contains(&key.as_str())) ||
+                !obj.contains_key("token") {
+                return Err("Unexpected preview capability field".into());
+            }
+            let token = obj.get("token").and_then(Value::as_str).ok_or("Preview capability required")?;
+            if token.len() != 64 || !token.bytes().all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase()) {
+                return Err("Invalid preview capability".into());
+            }
+            if action == "frame" {
+                let jpeg = match obj.get("codec") {
+                    None => false,
+                    Some(Value::String(name)) if name == "png" => false,
+                    Some(Value::String(name)) if name == "jpeg" => true,
+                    _ => return Err("Unsupported native preview codec".into()),
+                };
+                if let Some(hash) = obj.get("knownHash") {
+                    let hash = hash.as_str().ok_or("Invalid preview hash")?;
+                    if hash.len() != 64 || !hash.bytes().all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_uppercase()) {
+                        return Err("Invalid preview hash".into());
+                    }
+                }
+                if obj.contains_key("maxWidth") || obj.contains_key("quality") {
+                    if !jpeg { return Err("JPEG settings require the JPEG codec".into()); }
+                }
+                if let Some(width) = obj.get("maxWidth") {
+                    let n = width.as_u64().ok_or("Invalid preview width")?;
+                    if !(320..=1920).contains(&n) { return Err("Invalid preview width".into()); }
+                }
+                if let Some(quality) = obj.get("quality") {
+                    let n = quality.as_u64().ok_or("Invalid preview quality")?;
+                    if !(40..=85).contains(&n) { return Err("Invalid preview quality".into()); }
+                }
+            }
+            let path = if action == "frame" { "/api/desktop/live/frame" }
+                       else { "/api/desktop/live/stop" };
+            core_request(Method::POST, path, Some(data)).await
+        }
+        _ => Err("Unsupported desktop live action".into()),
+    }
+}
+
 #[tauri::command]
 async fn get_terminal_tasks(
     running_only: Option<bool>,
@@ -1201,6 +1354,12 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
     let url = format!("http://127.0.0.1:{}{}", info.port, path);
     let request_timeout = if path.starts_with("/api/desktop/cdp/live") {
         Duration::from_secs(14)
+    } else if path == "/api/desktop/live/frame" {
+        // Platform-native window discovery/capture may require several
+        // bounded OS subprocesses. A timeout is never automatically retried.
+        Duration::from_secs(36)
+    } else if path == "/api/desktop/live/windows" || path == "/api/desktop/live/start" {
+        Duration::from_secs(22)
     } else if path == "/api/desktop/regenerate-token" {
         // Local clipboard helper may require a short PowerShell invocation.
         Duration::from_secs(15)
@@ -1829,6 +1988,7 @@ fn main() {
             get_connection_logs,
             get_delegate_status,
             delegate_action,
+            desktop_live_action,
             lan_support_action,
             get_terminal_tasks,
             kill_terminal_task,

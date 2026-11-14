@@ -144,12 +144,25 @@ export type NativeDesktopAction =
       deltaY: number;
     };
 
+/** A native capture source that enforces approved target identity inside
+ * each OS-level capture operation; never usable for desktop input.
+ */
+export interface DesktopWindowCaptureSource {
+  readonly backend: string;
+  readonly verifiedInsideCapture: true;
+  capture(): Promise<NativeCapture>;
+  close(): void;
+}
+
 export interface DesktopUiAdapter {
   readonly platform: DesktopPlatform;
   probe(): Promise<DesktopUiCapabilities>;
   listWindows?(limit: number): Promise<DesktopWindowDiscoveryResult>;
   getActiveWindow?(): Promise<DesktopDiscoveredWindow | null>;
   capture(target: DesktopWindowTarget): Promise<NativeCapture>;
+  /** Optional Windows native fast path; unimplemented backends retain
+   * the full pre/post discovery checks in the session manager. */
+  openVerifiedCapture?(window: DesktopDiscoveredWindow): Promise<DesktopWindowCaptureSource>;
   inspectAccessibility(target: DesktopWindowTarget, capture: NativeCapture): Promise<AccessibilitySnapshot>;
   dispatch(action: NativeDesktopAction): Promise<void>;
 }
