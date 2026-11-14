@@ -1,3 +1,10 @@
+## [1.14.96] - 2026-11-14
+### Host-approved desktop input, private viewer and release hardening
+- Deliver the scoped Desktop Live private viewer and host listener integrations with explicit host consent, strict window identity, fail-closed remote input policy and no public bearer forwarding or automatic production cutover.
+- Add the native Tray Security Approval Manager trusted-input interface with bounded app/window grants, expiration and operator revocation; trusted mode does not bypass native OS approval.
+- Repair the Windows NSIS UIA audit PowerShell predicate that previously invoked `-and` as a command after a line break; preserve exact compressed member, checksum and source-provenance checks.
+- Release remains a prerelease pending verifiable Windows, Linux, macOS and extension packaging assets; installed-host certification, signing and operator-authorized production activation remain separate.
+
 ## [1.14.95] - 2026-11-14
 ### Cloudflare Named Tunnel Manager and isolated-readiness review
 - Add a five-stage Tray workflow for configuring a remote-managed Cloudflare Named Tunnel, native credential import, independently reviewed Anchor/owner actions, connector health diagnostics, and explicit OAuth/Gemini validation gates. Never treat a green connector or HTTP 200 as client cutover approval.

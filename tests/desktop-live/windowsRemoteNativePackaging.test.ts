@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -171,5 +172,28 @@ describe("Windows UIA standalone PE x64 receipt and trusted-source gate", () => 
     expect(preparation).toContain('activated: false');
     expect(preparation).toContain('path.join(stage, WINDOWS_UIA_RELATIVE_DIR)');
     expect(preparation).not.toContain('copy(path.join(root, "native", "desktop-live-windows-input")');
+  });
+
+  it.skipIf(process.platform !== "win32")("executes the NSIS archive member filter without PowerShell line-continuation errors", async () => {
+    const script = await fs.readFile(path.join(process.cwd(),
+      "scripts/build-desktop-live-windows-semantic-audit-nsis.ps1"), "utf8");
+    const start = script.indexOf("$unexpected = @($members | Where-Object {");
+    const end = script.indexOf("\nif ($unexpected.Count", start);
+    expect(start).toBeGreaterThan(0);
+    expect(end).toBeGreaterThan(start);
+    const filter = script.slice(start, end);
+    const program = [
+      '$ErrorActionPreference = "Stop"',
+      '$expected = @("standalone/native/desktop-live-windows-input/winremote.dll", "standalone/native/desktop-live-windows-input/winremote.sha256")',
+      '$members = @("standalone/native/desktop-live-windows-input/winremote.dll", "standalone/native/desktop-live-windows-input/winremote.sha256", "standalone/native/desktop-live-windows-input/winremote.obj", "other/unrelated")',
+      filter,
+      'if ($unexpected.Count -ne 1 -or $unexpected[0] -cne "standalone/native/desktop-live-windows-input/winremote.obj") { throw "Incorrect NSIS member filter" }',
+    ].join("\n");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand",
+      Buffer.from(program, "utf16le").toString("base64")], {
+      encoding: "utf8", timeout: 15_000, windowsHide: true,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr || result.stdout).toBe(0);
   });
 });

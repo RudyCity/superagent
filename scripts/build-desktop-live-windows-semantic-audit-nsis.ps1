@@ -47,9 +47,8 @@ foreach ($name in $expected) {
   }
 }
 $unexpected = @($members | Where-Object {
-  ($_ -match '(?i)(^|/)winremote(\.|/)' -and $_ -cnotin $expected) -or
-  ($_ -match '(?i)^standalone/(dist/)?native/desktop-live-windows-input/.+')
-    -and $_ -cnotin $expected
+  (($_ -match '(?i)(^|/)winremote(\.|/)') -and ($_ -cnotin $expected)) -or
+  (($_ -match '(?i)^standalone/(dist/)?native/desktop-live-windows-input/.+') -and ($_ -cnotin $expected))
 })
 if ($unexpected.Count -gt 0) {
   throw ("NSIS contains unexpected native UIA or compile outputs: " + ($unexpected -join ", "))
