@@ -12,8 +12,28 @@ import { DesktopUiError } from "../errors.js";
 
 export const WGC_HELPER_BACKEND = "win32-wgc-exact-hwnd";
 
-const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-const ARTIFACT_DIRECTORY = path.join(SOURCE_ROOT, "dist", "native", "desktop-live-wgc");
+/**
+ * Source module: <checkout>/src/core/desktopUi/adapters/windowsWgcArtifact.ts
+ * Built module:  <checkout>/dist/core/desktopUi/adapters/windowsWgcArtifact.js
+ * Installer:     <install>/standalone/dist/core/desktopUi/adapters/windowsWgcArtifact.js
+ * All three must use the matching dist/native payload without probing
+ * arbitrary parent directories or accepting paths from callers.
+ */
+export function resolveWindowsWgcArtifactDirectory(modulePath: string): string {
+  const adapterDir = path.dirname(modulePath);
+  if (path.basename(adapterDir) !== "adapters" ||
+      path.basename(path.dirname(adapterDir)) !== "desktopUi" ||
+      path.basename(path.dirname(path.dirname(adapterDir))) !== "core") {
+    throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Unexpected Core module layout for WGC helper.");
+  }
+  const treeRoot = path.resolve(adapterDir, "../../..");
+  const treeType = path.basename(treeRoot);
+  if (treeType === "dist") return path.join(treeRoot, "native", "desktop-live-wgc");
+  if (treeType === "src") return path.join(path.dirname(treeRoot), "dist", "native", "desktop-live-wgc");
+  throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Unknown WGC helper module layout.");
+}
+
+const ARTIFACT_DIRECTORY = resolveWindowsWgcArtifactDirectory(fileURLToPath(import.meta.url));
 const EXECUTABLE_PATH = path.join(ARTIFACT_DIRECTORY, "wgc.exe");
 const DIGEST_PATH = path.join(ARTIFACT_DIRECTORY, "wgc.sha256");
 

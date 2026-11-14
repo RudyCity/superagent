@@ -51,6 +51,29 @@ describe("Windows standalone installer and safe release contracts", () => {
     expect(workflow).toContain("bun run installer:package:unix");
     expect(read(".github/workflows/tray-build.yml")).toContain("superagent-standalone-windows-x64");
   });
+  it("builds and verifies the exact-window WGC helper before every Windows installer", () => {
+    const prepare = read("scripts/prepare-standalone-windows.ts");
+    const verify = read("scripts/verify-standalone-windows.ts");
+    expect(prepare).toContain("verifyWindowsWgcArtifactPair");
+    expect(prepare).toContain('path.join(stage, "dist", wgcRelative)');
+    expect(verify).toContain("verifyWindowsWgcArtifactPair");
+    expect(verify).toContain('path.join(stage, "dist", "native", "desktop-live-wgc")');
+    for (const workflowName of [
+      ".github/workflows/release-windows-standalone.yml",
+      ".github/workflows/release-windows-only.yml",
+      ".github/workflows/tray-build.yml",
+    ]) {
+      const workflow = read(workflowName);
+      expect(workflow).toContain("./scripts/build-desktop-live-wgc.ps1");
+      expect(workflow.indexOf("Build and verify opt-in Windows Graphics Capture helper"))
+        .toBeLessThan(workflow.indexOf("installer:prepare"));
+      expect(workflow).toContain("tests/desktop-live/windowsWgcArtifact.test.ts");
+    }
+    const builder = read("scripts/build-desktop-live-wgc.ps1");
+    expect(builder).toContain("vswhere.exe");
+    expect(builder).toContain("Get-FileHash");
+    expect(builder).toContain('"dist\\native\\desktop-live-wgc"');
+  });
   it("never commits runtime executables or bundled third-party dependencies", () => {
     const ignore = read(".gitignore");
     expect(ignore).toContain("/apps/superagent-tray/src-tauri/binaries/");

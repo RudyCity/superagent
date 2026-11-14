@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { spawnSync } from "node:child_process";
+import { verifyWindowsWgcArtifactPair } from "../src/core/desktopUi/adapters/windowsWgcArtifact.js";
 
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps", "superagent-tray", "src-tauri");
@@ -30,6 +31,11 @@ assert(process.platform === "win32" && process.arch === "x64", "Windows x64 requ
 assert(Bun.version === pinnedBun, `Expected Bun ${pinnedBun}; actual ${Bun.version}. Use oven-sh/setup-bun@v2 pinned for CI.`);
 assert(fs.existsSync(sourceCli), "Build Core first: bun run build");
 assert(fs.existsSync(sourceLauncher), "Build launcher first: cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml");
+const wgcRelative = path.join("native", "desktop-live-wgc");
+const wgcInput = path.join(root, "dist", wgcRelative);
+assert(verifyWindowsWgcArtifactPair(path.join(wgcInput, "wgc.exe"),
+  path.join(wgcInput, "wgc.sha256")) !== null,
+"Missing verified WGC helper; run scripts/build-desktop-live-wgc.ps1 before installer preparation.");
 const launcher = fs.readFileSync(sourceLauncher);
 assert(launcher[0] === 0x4d && launcher[1] === 0x5a, "Launcher is not a Windows PE executable.");
 const existing = fs.existsSync(stage);
@@ -42,6 +48,9 @@ if (fs.existsSync(path.join(root, "tsconfig.json"))) copy(path.join(root, "tscon
 copy(path.join(root, "bun.lock"), path.join(stage, "bun.lock"));
 copy(path.join(root, "patches"), path.join(stage, "patches"));
 copy(path.join(root, "dist"), path.join(stage, "dist"));
+const stagedWgc = path.join(stage, "dist", wgcRelative);
+assert(verifyWindowsWgcArtifactPair(path.join(stagedWgc, "wgc.exe"),
+  path.join(stagedWgc, "wgc.sha256")) !== null, "Verified WGC helper missing from standalone stage.");
 copy(path.join(root, "scripts", "media_backend.py"), path.join(stage, "scripts", "media_backend.py"));
 copy(path.join(root, "scripts", "setup_media_backends.py"), path.join(stage, "scripts", "setup_media_backends.py"));
 const androidApkDir = path.join(root, "apps", "superagent-lan-android", "app", "build", "outputs", "apk", "debug");

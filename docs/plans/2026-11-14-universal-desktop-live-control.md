@@ -233,6 +233,35 @@ backend, signed multi-platform release, and attended remote control.
 The helper has only been built in ignored local dist output; neither
 installed Core/Tray nor independent MCP/tunnel services were restarted.
 
+## Milestone B6 — Windows standalone artifact mapping and packaging gates
+
+The Windows native helper is now staged through the normal Windows
+standalone build contract. Its source layout, compiled `dist/` layout,
+and installed `standalone/dist/` layout resolve to the same logically
+corresponding `native/desktop-live-wgc/` directory; the Core will not
+search arbitrary fallback folders or accept executable paths from IPC.
+
+`scripts/prepare-standalone-windows.ts` requires a valid x64 WGC
+binary and matching SHA-256 before copying the `dist` tree and
+re-verifies the exact staged copy. `scripts/verify-standalone-windows.ts`
+requires that same verified payload in the portable Core. The Windows
+lanes of all three supported workflows (unified prerelease,
+Windows-only prerelease, and Tray CI) compile and check the helper
+before starting installer preparation. The PowerShell build script
+uses the installed MSVC `vswhere.exe` to support Build Tools, Community,
+or Enterprise hosts without fetching or installing any SDK on the user
+machine. The helper remains opt-in at **runtime**, not at packaging.
+
+Unit regressions verify the three module layouts, checksum/PE
+validation, a synthetic independent standalone layout and the
+presence/order of all Windows CI gates. Local Windows Core build,
+WGC helper compilation and compiled-module path smoke passed.
+**No actual new NSIS installer was built or installed in this
+development checkout, and the workflow changes have not yet run
+on GitHub Actions.** Physical clean-install, signed release,
+macOS and Linux capture backends, and remote attended control remain
+separate open gates.
+
 ## Next bounded milestones
 **B — capture backend**: Windows WGC/DXGI with protected-window and black-frame
 detection; macOS ScreenCaptureKit per-window filtered session, hardened TCC checks;

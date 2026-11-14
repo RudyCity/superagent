@@ -10,10 +10,20 @@ if ($env:OS -ne "Windows_NT") { throw "Windows x64 build host required." }
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $source = Join-Path $root "native\desktop-live-wgc\windowsCapture.cpp"
 $pf32 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)")
-$vcCandidates = @(
-  (Join-Path $pf32 "Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"),
-  (Join-Path $env:ProgramFiles "Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat")
-)
+# Windows CI images may provide Enterprise rather than Community or BuildTools.
+# Query the installed MSVC toolset through Microsoft's own installer first.
+$vcCandidates = @()
+$vswhere = Join-Path $pf32 "Microsoft Visual Studio\Installer\vswhere.exe"
+if (Test-Path -LiteralPath $vswhere -PathType Leaf) {
+  $installations = @(& $vswhere -all -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath)
+  if ($LASTEXITCODE -eq 0) {
+    foreach ($installation in $installations) {
+      if ($installation) { $vcCandidates += Join-Path $installation "VC\Auxiliary\Build\vcvars64.bat" }
+    }
+  }
+}
+$vcCandidates += Join-Path $pf32 "Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+$vcCandidates += Join-Path $env:ProgramFiles "Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 $vcVars = $vcCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
 if (-not $vcVars) { throw "MSVC x64 toolchain missing; no runtime compiler fallback." }
 $includes = Join-Path $pf32 "Windows Kits\10\Include"

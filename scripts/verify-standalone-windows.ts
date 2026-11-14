@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { verifyWindowsWgcArtifactPair } from "../src/core/desktopUi/adapters/windowsWgcArtifact.js";
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps", "superagent-tray", "src-tauri");
 const stage = path.join(tauri, "resources", "standalone");
@@ -19,6 +20,10 @@ for (const item of [portableBun, portableCli, path.join(stage, "node_modules", "
   path.join(stage, "dist", "cli.js"), path.join(stage, "standalone-manifest.json")]) {
   check(fs.existsSync(item), "Missing bundle input: " + item);
 }
+const bundledWgcDir = path.join(stage, "dist", "native", "desktop-live-wgc");
+check(verifyWindowsWgcArtifactPair(path.join(bundledWgcDir, "wgc.exe"),
+  path.join(bundledWgcDir, "wgc.sha256")) !== null,
+  "Portable Core must include checksum-verified Windows Graphics Capture helper.");
 const app = JSON.parse(fs.readFileSync(path.join(stage, "standalone-manifest.json"), "utf8"));
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 check(app.version === pkg.version && app.bunVersion === "1.4.2", "Runtime version manifest mismatch");
