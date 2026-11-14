@@ -20,8 +20,8 @@ describe("macOS and Linux Desktop Live native bundle and CI policy", () => {
 
   it("Linux exact-active-window worker refuses Wayland, monitors and unknown XIDs", () => {
     const source = read("native/desktop-live-x11/linuxCapture.py");
-    expect(source).toContain('os.environ.get("XDG_SESSION_TYPE"');
-    expect(source).toContain('!= "x11"');
+    expect(source).toMatch(/os\.environ\.get\(\s*"XDG_SESSION_TYPE"/);
+    expect(source).toMatch(/\.lower\(\)\s*!=\s*"x11"/);
     expect(source).toContain('"/usr/bin/wmctrl"');
     expect(source).toContain('"/usr/bin/xprop"');
     expect(source).toContain('"/usr/bin/import"');

@@ -32,6 +32,7 @@ func require(_ predicate: @autoclosure () -> Bool) throws {
 }
 
 @available(macOS 14.0, *)
+@MainActor
 struct ExactWindowSession {
     let approved: ApprovedWindow
     let windowID: CGWindowID
@@ -44,9 +45,11 @@ struct ExactWindowSession {
         approved = try JSONDecoder().decode(ApprovedWindow.self, from: data)
         let text = approved.nativeId
         guard text.hasPrefix("cg:"), let number = UInt32(text.dropFirst(3)), number > 0,
-              approved.pid > 0,
+              text == "cg:\(number)", approved.pid > 0,
               !approved.title.isEmpty, approved.title.count <= 512,
               !approved.application.isEmpty, approved.application.count <= 256,
+              approved.bounds.x.isFinite, approved.bounds.y.isFinite,
+              approved.bounds.width.isFinite, approved.bounds.height.isFinite,
               approved.bounds.width > 0, approved.bounds.height > 0,
               approved.bounds.width <= 8192, approved.bounds.height <= 8192,
               approved.bounds.width * approved.bounds.height <= 16_000_000
@@ -76,15 +79,18 @@ struct ExactWindowSession {
               let title = info[kCGWindowName as String] as? String,
               let app = info[kCGWindowOwnerName as String] as? String,
               let layer = info[kCGWindowLayer as String] as? NSNumber,
-              let rawBounds = info[kCGWindowBounds as String] as? CFDictionary,
-              let frame = CGRect(dictionaryRepresentation: rawBounds)
+              let rawBounds = info[kCGWindowBounds as String] as? [String: NSNumber],
+              let x = rawBounds["X"], let y = rawBounds["Y"],
+              let width = rawBounds["Width"], let height = rawBounds["Height"],
+              let sharing = info[kCGWindowSharingState as String] as? NSNumber
         else { throw PreviewFailure.denied }
+        let frame = CGRect(x: x.doubleValue, y: y.doubleValue,
+                           width: width.doubleValue, height: height.doubleValue)
+        try require(frame.origin.x.isFinite && frame.origin.y.isFinite &&
+                    frame.width.isFinite && frame.height.isFinite)
         try require(owner.int32Value == approved.pid)
         try require(title == approved.title && app == approved.application)
-        try require(layer.intValue == 0)
-        if let sharing = info[kCGWindowSharingState as String] as? NSNumber {
-            try require(sharing.intValue != 0)
-        }
+        try require(layer.intValue == 0 && sharing.intValue != 0)
         try require(near(frame.origin.x, approved.bounds.x))
         try require(near(frame.origin.y, approved.bounds.y))
         try require(near(frame.size.width, approved.bounds.width))
@@ -94,7 +100,7 @@ struct ExactWindowSession {
     func matchingShareableWindow() async throws -> SCWindow {
         try verifyCoreGraphics()
         let content = try await SCShareableContent.excludingDesktopWindows(
-            false, onScreenWindowsOnly: true)
+            true, onScreenWindowsOnly: true)
         let windows = content.windows.filter { $0.windowID == windowID }
         try require(windows.count == 1)
         let window = windows[0]
@@ -137,6 +143,8 @@ struct ExactWindowSession {
         CGImageDestinationAddImage(encoder, image, nil)
         try require(CGImageDestinationFinalize(encoder))
         try require(png.length >= 24 && png.length <= 8 * 1024 * 1024)
+        // Capture or encoding may outlive consent or session expiry.
+        try require(Date().timeIntervalSince(started) <= 300)
         try verifyCoreGraphics()
 
         return [
@@ -166,7 +174,7 @@ func emit(_ message: [String: Any]) throws {
 }
 
 @main struct ScreenCaptureHost {
-    static func main() async {
+    @MainActor static func main() async {
         guard #available(macOS 14.0, *) else {
             exit(2)
         }

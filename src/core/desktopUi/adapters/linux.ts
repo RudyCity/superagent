@@ -486,7 +486,7 @@ export function createLinuxDesktopUiAdapter(
         );
       }
       if (sessionType === "wayland") {
-        errors.push("Wayland Desktop Live denied: portal window streams do not carry a standard, verifiable AT-SPI PID/native-ID binding. " + portalDescription);
+        errors.push("Wayland Desktop Live target-bound capture denied: portal WINDOW consent has its own identity and does not provide an AT-SPI PID/native-ID binding. Separate attended one-shot consent cannot authorize an AT-SPI Desktop Live target. " + portalDescription);
       } else if (!useVerifiedX11 && !screenshotCommand) {
         errors.push("No scoped screenshot backend is available (gnome-screenshot, or scrot on verified X11).");
       }
@@ -499,7 +499,7 @@ export function createLinuxDesktopUiAdapter(
         input,
         scroll: input,
         sessionType: sessionType || "unknown",
-        prerequisites: ["Python 3", "PyGObject AT-SPI bindings", "AT-SPI accessibility bus", "X11 gnome-screenshot/scrot or compositor-verified PipeWire window binding"],
+        prerequisites: ["Python 3", "PyGObject AT-SPI bindings", "AT-SPI accessibility bus", "X11 gnome-screenshot/scrot or independently attested compositor window identity"],
         limitations: [
           "Native capture is limited to the already-active target window and is revalidated immediately after capture.",
           "Input injection is enabled only for a positively identified X11 session.",

@@ -3,7 +3,7 @@
  * bundled with Core. No user-supplied script path and no X11/Wayland fallback.
  */
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { DesktopUiError } from "../errors.js";
@@ -25,29 +25,38 @@ export function resolveLinuxX11ArtifactDirectory(modulePath: string): string {
 }
 
 export function verifyLinuxX11ArtifactPair(script: string, receipt: string): string | null {
-  const regular = (name: string) => {
+  // Read through an opened file descriptor, never through a pathname after
+  // lstat: a local rename must not turn a checked regular file into a symlink.
+  const regular = (name: string): Buffer | null => {
     try {
       const stat = lstatSync(name);
       if (!stat.isFile() || stat.isSymbolicLink())
         throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Linux X11 worker must be a regular file.");
-      return stat;
-    } catch(error) {
+      const fd = openSync(name, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      try {
+        const opened = fstatSync(fd);
+        if (!opened.isFile() || opened.dev !== stat.dev || opened.ino !== stat.ino)
+          throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Linux X11 worker changed during verification.");
+        return readFileSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw error;
     }
   };
-  const stat = regular(script);
-  const hashStat = regular(receipt);
-  if (!stat && !hashStat) return null;
-  if (!stat || !hashStat || stat.size < 2000 || stat.size > 120_000 ||
-      hashStat.size < 64 || hashStat.size > 80) {
+  const file = regular(script);
+  const hash = regular(receipt);
+  if (!file && !hash) return null;
+  if (!file || !hash || file.length < 2000 || file.length > 120_000 ||
+      hash.length < 64 || hash.length > 80) {
     throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Incomplete Linux X11 worker bundle.");
   }
-  const expected = readFileSync(receipt,"ascii").trim();
+  const expected = hash.toString("ascii").trim();
   if (!/^[a-f0-9]{64}$/.test(expected)) {
     throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Invalid Linux X11 checksum receipt.");
   }
-  const file = readFileSync(script);
   if (!file.toString("utf8",0,35).startsWith("#!/usr/bin/env python3\n")) {
     throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "Linux X11 worker header invalid.");
   }

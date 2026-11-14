@@ -3,6 +3,7 @@ import {
   WINDOW_ONLY_PORTAL_SELECTION,
   PYTHON_PORTAL_READINESS_SCRIPT,
   parseLinuxPortalReadiness,
+  parsePortalSelectedWindowStream,
   requireExactPortalWindowBinding,
 } from "../../src/core/desktopUi/adapters/linuxPortalPolicy.js";
 import { createLinuxDesktopUiAdapter } from "../../src/core/desktopUi/adapters/linux.js";
@@ -16,58 +17,65 @@ const target: DesktopDiscoveredWindow = {
 };
 
 describe("Linux XDG Portal ScreenCast / PipeWire privacy policy", () => {
-  it("only authorizes a single nonpersistent WINDOW with hidden cursor", () => {
+  it("requests only one nonpersistent WINDOW with hidden cursor", () => {
     expect(WINDOW_ONLY_PORTAL_SELECTION).toEqual({
       types: 2, multiple: false, cursor_mode: 1, persist_mode: 0,
     });
     expect(PYTHON_PORTAL_READINESS_SCRIPT).toContain("org.freedesktop.portal.ScreenCast");
     expect(PYTHON_PORTAL_READINESS_SCRIPT).toContain("AvailableSourceTypes");
-    expect(PYTHON_PORTAL_READINESS_SCRIPT).toContain("pipewiresrc");
     expect(PYTHON_PORTAL_READINESS_SCRIPT).not.toContain("SelectSources");
     expect(PYTHON_PORTAL_READINESS_SCRIPT).not.toContain("Start(");
   });
 
-  it("denies standard opaque portal node stream without PID and AT-SPI identity", () => {
-    const ordinary = [{
-      sourceType: 2, pipewireSerial: "124",
-      size: [640,480], id: "compositor-opaque-window",
-    }];
-    expect(() => requireExactPortalWindowBinding(ordinary,target)).toThrow(/attestation/);
-    expect(() => requireExactPortalWindowBinding([
-      {...ordinary[0],pid:512,nativeId:target.nativeId,title:target.title,
-        application:target.application,bounds:target.bounds},
-      ordinary[0],
-    ],target)).toThrow(/exactly one/);
-    expect(() => requireExactPortalWindowBinding([{
-      sourceType: 1, pipewireSerial: "124", ...target,
-    }],target)).toThrow(/attestation/);
+  it("rejects monitor, multiple streams, zero or reused-unsafe node-id-only metadata", () => {
+    expect(() => parsePortalSelectedWindowStream([])).toThrow(/exactly one/);
+    expect(() => parsePortalSelectedWindowStream([
+      { source_type: 2, "pipewire-serial": "19" },
+      { source_type: 2, "pipewire-serial": "20" },
+    ])).toThrow(/exactly one/);
+    expect(() => parsePortalSelectedWindowStream([
+      { source_type: 1, "pipewire-serial": "19" },
+    ])).toThrow(/WINDOW/);
+    expect(() => parsePortalSelectedWindowStream([
+      { source_type: 2, nodeId: 33 },
+    ])).toThrow(/serial/);
+    for (const bad of ["0", "-1", "01", "18446744073709551616", 19, "abc"]) {
+      expect(() => parsePortalSelectedWindowStream([
+        { source_type: 2, "pipewire-serial": bad },
+      ])).toThrow();
+    }
   });
 
-  it("accepts only a compositor-attested exact window and unique serial", () => {
-    const fullyAttested = {
-      sourceType:2,pipewireSerial:"123456",
-      pid:target.pid,nativeId:target.nativeId,title:target.title,
-      application:target.application,bounds:{...target.bounds},
+  it("has an explicitly separate consent identity without PID or AT-SPI claims", () => {
+    const identity = parsePortalSelectedWindowStream([
+      { source_type: 2, "pipewire-serial": "18446744073709551615", nodeId: 1,
+        title: "Untrusted", pid: 512, nativeId: target.nativeId },
+    ]);
+    expect(identity).toEqual({
+      kind: "portal-user-selected-window",
+      sourceType: 2, pipewireSerial: "18446744073709551615", atspiBound: false,
+    });
+    expect(identity).not.toHaveProperty("nodeId");
+    expect(identity).not.toHaveProperty("pid");
+    expect(identity).not.toHaveProperty("nativeId");
+
+    const inventedAttestation = {
+      sourceType: 2, pipewireSerial: "345", pid: target.pid,
+      nativeId: target.nativeId, title: target.title,
+      application: target.application, bounds: target.bounds,
     };
-    expect(requireExactPortalWindowBinding([fullyAttested],target)).toBe("123456");
-    for (const altered of [
-      {...fullyAttested,pid:target.pid+1},
-      {...fullyAttested,title:"Other"},
-      {...fullyAttested,pipewireSerial:"0"},
-      {...fullyAttested,bounds:{...target.bounds,width:1280}},
-    ]) {
-      expect(() => requireExactPortalWindowBinding([altered],target)).toThrow();
-    }
+    expect(() => requireExactPortalWindowBinding([inventedAttestation], target))
+      .toThrow(/cannot attest/);
   });
 
   it("strictly validates read-only portal capability status", () => {
     const ready = {
-      available:true,supportsWindow:true,hiddenCursor:true,
-      pipewireReader:true,version:6,
+      available: true, supportsWindow: true, hiddenCursor: true,
+      pipewireReader: true, version: 6,
     };
     expect(parseLinuxPortalReadiness(ready)).toEqual(ready);
-    expect(() => parseLinuxPortalReadiness({...ready,version:"6"})).toThrow();
-    expect(() => parseLinuxPortalReadiness({available:true})).toThrow();
+    expect(() => parseLinuxPortalReadiness({ ...ready, version: "6" })).toThrow();
+    expect(() => parseLinuxPortalReadiness({ available: true })).toThrow();
     expect(() => parseLinuxPortalReadiness(null)).toThrow();
   });
 
@@ -80,7 +88,7 @@ describe("Linux XDG Portal ScreenCast / PipeWire privacy policy", () => {
     const runner: DesktopProcessRunner = {
       run: vi.fn(async request => {
         called.push(request.executable);
-        return {stdout:'{"ok":true}',stderr:"",exitCode:0};
+        return { stdout: '{"ok":true}', stderr: "", exitCode: 0 };
       }),
     };
     try {
@@ -100,20 +108,20 @@ describe("Linux XDG Portal ScreenCast / PipeWire privacy policy", () => {
     }
   });
 
-  it("Wayland adapter refuses screen capture before invoking any screenshot command", async () => {
+  it("Wayland adapter refuses target-bound capture without invoking screenshot tools", async () => {
     const previous = process.env.XDG_SESSION_TYPE;
-    process.env.XDG_SESSION_TYPE="wayland";
+    process.env.XDG_SESSION_TYPE = "wayland";
     const called: string[] = [];
     const runner: DesktopProcessRunner = {
       run: vi.fn(async request => {
         called.push(request.executable);
         if (request.args[1]?.includes("Atspi")) {
-          return {stdout:'{"ok":true}',stderr:"",exitCode:0};
+          return { stdout: '{"ok":true}', stderr: "", exitCode: 0 };
         }
-        return {stdout:JSON.stringify({
-          available:true,supportsWindow:true,hiddenCursor:true,
-          pipewireReader:true,version:6,
-        }),stderr:"",exitCode:0};
+        return { stdout: JSON.stringify({
+          available: true, supportsWindow: true, hiddenCursor: true,
+          pipewireReader: true, version: 6,
+        }), stderr: "", exitCode: 0 };
       }),
     };
     try {
@@ -123,13 +131,13 @@ describe("Linux XDG Portal ScreenCast / PipeWire privacy policy", () => {
       expect(capability.available).toBe(false);
       expect(capability.errors.join(" ")).toContain("AT-SPI PID/native-ID");
       await expect(adapter.capture({
-        pid:target.pid,nativeId:target.nativeId,title:target.title,
-      })).rejects.toMatchObject({code:"OS_PERMISSION_REQUIRED"});
-      expect(called.every(executable => executable==="/usr/bin/python3")).toBe(true);
+        pid: target.pid, nativeId: target.nativeId, title: target.title,
+      })).rejects.toMatchObject({ code: "OS_PERMISSION_REQUIRED" });
+      expect(called.every(executable => executable === "/usr/bin/python3")).toBe(true);
       expect(runner.run).toHaveBeenCalledTimes(2);
     } finally {
-      if (previous===undefined) delete process.env.XDG_SESSION_TYPE;
-      else process.env.XDG_SESSION_TYPE=previous;
+      if (previous === undefined) delete process.env.XDG_SESSION_TYPE;
+      else process.env.XDG_SESSION_TYPE = previous;
     }
   });
 });

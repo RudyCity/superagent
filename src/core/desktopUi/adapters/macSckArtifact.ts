@@ -47,10 +47,17 @@ export function verifyMacSckArtifactPair(binary: string, receipt: string): strin
     throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "macOS SCK checksum receipt invalid.");
   }
   const contents = readFileSync(binary);
-  // Mach-O 64-bit little-endian arm64, with no universal/FAT fallback.
-  if (contents.readUInt32LE(0) !== 0xfeedfacf || contents.readUInt32LE(4) !== 0x0100000c ||
-      contents.readUInt32LE(12) !== 2) {
-    throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "macOS SCK helper must be an ARM64 executable.");
+  // Thin Mach-O 64-bit ARM64 executable; reject arm64e/FAT, object and
+  // malformed/truncated command tables before accepting a checksum receipt.
+  const commandCount = contents.readUInt32LE(16);
+  const commandBytes = contents.readUInt32LE(20);
+  if (contents.readUInt32LE(0) !== 0xfeedfacf ||
+      contents.readUInt32LE(4) !== 0x0100000c ||
+      (contents.readUInt32LE(8) & 0x00ffffff) !== 0 ||
+      contents.readUInt32LE(12) !== 2 ||
+      commandCount < 1 || commandCount > 512 ||
+      commandBytes < 8 || commandBytes > contents.length - 32) {
+    throw new DesktopUiError("SCREENSHOT_UNAVAILABLE", "macOS SCK helper must be a valid ARM64 executable.");
   }
   const digest = createHash("sha256").update(contents).digest("hex");
   if (digest !== expected) {

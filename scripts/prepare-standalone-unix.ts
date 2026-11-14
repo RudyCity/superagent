@@ -9,6 +9,7 @@ import { spawnSync } from "node:child_process";
 import { pruneMuslSharpFromLinuxStandalone } from "./prune-linux-musl-sharp.js";
 import { verifyMacSckArtifactPair } from "../src/core/desktopUi/adapters/macSckArtifact.js";
 import { verifyLinuxX11ArtifactPair } from "../src/core/desktopUi/adapters/linuxX11Artifact.js";
+import { verifyUnixDesktopLiveTree } from "./verify-desktop-live-unix-artifacts.js";
 
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps/superagent-tray/src-tauri");
@@ -94,4 +95,5 @@ fs.writeFileSync(path.join(stage, "standalone-manifest.json"), JSON.stringify({
   target, bunVersion: "1.4.2", cli: "superagent",
   entrypoint: "standalone/dist/cli.js", requiresGlobalBun: false, requiresGlobalNode: false,
 }, null, 2) + "\n");
+verifyUnixDesktopLiveTree(root, stage, process.platform as "darwin" | "linux");
 console.log("[standalone-unix] Prepared", target, "package version", pkg.version);

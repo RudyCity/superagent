@@ -32,7 +32,10 @@ describe("macOS ScreenCaptureKit fixed native artifact contract", () => {
       const bytes = Buffer.alloc(128 * 1024);
       bytes.writeUInt32LE(0xfeedfacf,0);
       bytes.writeUInt32LE(0x0100000c,4);
-      bytes.writeUInt32LE(2,12);
+      bytes.writeUInt32LE(0,8); // CPU_SUBTYPE_ARM64_ALL
+      bytes.writeUInt32LE(2,12); // MH_EXECUTE
+      bytes.writeUInt32LE(1,16); // one bounded synthetic load command
+      bytes.writeUInt32LE(72,20);
       await fs.writeFile(binary,bytes);
       expect(() => verifyMacSckArtifactPair(binary,receipt)).toThrow(/Incomplete/);
       const sha = crypto.createHash("sha256").update(bytes).digest("hex");
@@ -50,6 +53,69 @@ describe("macOS ScreenCaptureKit fixed native artifact contract", () => {
       if (process.platform !== "darwin") expect(locateVerifiedMacSckHelper()).toBeNull();
     } finally {
       await fs.rm(directory,{recursive:true,force:true});
+    }
+  });
+
+  it("rejects malformed ARM64 headers even when their checksum receipts match", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-sck-header-"));
+    const binary = path.join(directory, "sck");
+    const receipt = path.join(directory, "sck.sha256");
+    const bytes = Buffer.alloc(128 * 1024);
+    bytes.writeUInt32LE(0xfeedfacf, 0);
+    bytes.writeUInt32LE(0x0100000c, 4);
+    bytes.writeUInt32LE(2, 12);
+    bytes.writeUInt32LE(1, 16);
+    bytes.writeUInt32LE(72, 20);
+    const save = async () => {
+      await fs.writeFile(binary, bytes);
+      await fs.writeFile(receipt, crypto.createHash("sha256").update(bytes).digest("hex") + "\n");
+    };
+    try {
+      await save();
+      expect(verifyMacSckArtifactPair(binary, receipt)).toBe(binary);
+      bytes.writeUInt32LE(2, 8); // arm64e is not the fixed arm64-only target.
+      await save();
+      expect(() => verifyMacSckArtifactPair(binary, receipt)).toThrow(/valid ARM64/);
+      bytes.writeUInt32LE(0, 8);
+      bytes.writeUInt32LE(0, 16);
+      await save();
+      expect(() => verifyMacSckArtifactPair(binary, receipt)).toThrow(/valid ARM64/);
+      bytes.writeUInt32LE(1, 16);
+      bytes.writeUInt32LE(bytes.length, 20);
+      await save();
+      expect(() => verifyMacSckArtifactPair(binary, receipt)).toThrow(/valid ARM64/);
+      bytes.writeUInt32LE(72, 20);
+      bytes.writeUInt32LE(1, 12); // MH_OBJECT is never an executable helper.
+      await save();
+      expect(() => verifyMacSckArtifactPair(binary, receipt)).toThrow(/valid ARM64/);
+      bytes.writeUInt32LE(2, 12);
+      await save();
+      await fs.writeFile(receipt, "g".repeat(64) + "\n");
+      expect(() => verifyMacSckArtifactPair(binary, receipt)).toThrow(/checksum receipt invalid/);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(process.platform === "win32")("rejects symlinked binaries and receipts", async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-sck-symlink-"));
+    const binary = path.join(directory, "sck");
+    const receipt = path.join(directory, "sck.sha256");
+    const binaryTarget = path.join(directory, "actual-binary");
+    const receiptTarget = path.join(directory, "actual-receipt");
+    try {
+      await fs.writeFile(binaryTarget, Buffer.alloc(128 * 1024));
+      await fs.writeFile(receiptTarget, "a".repeat(64) + "\n");
+      await fs.symlink(binaryTarget, binary);
+      await fs.writeFile(receipt, "a".repeat(64) + "\n");
+      expect(() => verifyMacSckArtifactPair(binary, receipt)).toThrow(/not a regular file/);
+      await fs.unlink(binary);
+      await fs.writeFile(binary, Buffer.alloc(128 * 1024));
+      await fs.unlink(receipt);
+      await fs.symlink(receiptTarget, receipt);
+      expect(() => verifyMacSckArtifactPair(binary, receipt)).toThrow(/not a regular file/);
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true });
     }
   });
 });

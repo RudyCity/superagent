@@ -62,6 +62,10 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build Core
         run: bun run build
+      - name: Validate Unix host architecture and macOS ScreenCaptureKit SDK
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash scripts/verify-desktop-live-unix-host.sh
       - name: Build and verify opt-in Windows Graphics Capture helper
         if: runner.os == 'Windows'
         shell: pwsh
@@ -83,7 +87,7 @@ jobs:
       - name: Verify extension syntax
         run: bun run verify:extension-js
       - name: Core & package regression gate
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/mcpBackendBundleProducer.test.ts tests/mcpBackendGithubRelease.test.ts tests/mcpBackendReleaseStager.test.ts tests/mcpBackendReleasePolicy.test.ts tests/unifiedReleaseContract.test.ts tests/recoverUnifiedReleaseContract.test.ts tests/mcpTunnelAnchorObserver.test.ts tests/mcpNamedTunnelConfig.test.ts tests/mcpNamedTunnelAnchor.test.ts tests/mcpNamedRemoteProfile.test.ts tests/desktopNamedTunnelRuntimeUi.test.ts tests/desktopNamedTunnelSettingsUi.test.ts
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/mcpBackendBundleProducer.test.ts tests/mcpBackendGithubRelease.test.ts tests/mcpBackendReleaseStager.test.ts tests/mcpBackendReleasePolicy.test.ts tests/unifiedReleaseContract.test.ts tests/recoverUnifiedReleaseContract.test.ts tests/mcpTunnelAnchorObserver.test.ts tests/mcpNamedTunnelConfig.test.ts tests/mcpNamedTunnelAnchor.test.ts tests/mcpNamedRemoteProfile.test.ts tests/desktopNamedTunnelRuntimeUi.test.ts tests/desktopNamedTunnelSettingsUi.test.ts tests/desktop-live/unixCapturePackaging.test.ts tests/desktop-live/unixArtifactAudit.test.ts --maxWorkers=1
       - name: Test independent MCP Anchor and Windows owner lifecycle
         if: runner.os == 'Windows'
         run: bun --bun x vitest run tests/mcpTunnelAnchor.test.ts tests/mcpTunnelAnchorManagedOwner.test.ts tests/mcpReloadableOwner.test.ts tests/mcpNamedRemoteAnchorCli.test.ts --maxWorkers=2
@@ -127,6 +131,10 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: bash scripts/verify-packaged-standalone-unix.sh
+      - name: Audit extracted DMG / DEB / AppImage Desktop Live payload and receipt
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash scripts/verify-desktop-live-unix-packages.sh
       - name: Validate Windows installer
         if: runner.os == 'Windows'
         shell: pwsh

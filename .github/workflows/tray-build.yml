@@ -6,6 +6,7 @@ on:
       - "apps/superagent-tray/**"
       - ".github/workflows/tray-build.yml"
       - "scripts/*standalone*.ts"
+      - "scripts/verify-desktop-live-unix*"
       - "scripts/verify-installed-standalone-windows.ps1"
       - "scripts/verify-installed-wgc.ps1"
       - "scripts/verify-installed-wgc.mjs"
@@ -25,12 +26,17 @@ on:
       - "apps/superagent-tray/**"
       - ".github/workflows/tray-build.yml"
       - "scripts/*standalone*.ts"
+      - "scripts/verify-desktop-live-unix*"
       - "scripts/verify-installed-standalone-windows.ps1"
       - "scripts/verify-installed-wgc.ps1"
       - "scripts/verify-installed-wgc.mjs"
       - "scripts/verify-wgc-windows-nsis.ps1"
       - "scripts/build-desktop-live-wgc.ps1"
       - "native/desktop-live-wgc/**"
+      - "native/desktop-live-sck/**"
+      - "native/desktop-live-x11/**"
+      - "scripts/build-desktop-live-sck.sh"
+      - "scripts/build-desktop-live-x11.sh"
       - "tests/desktop-live/**"
       - "src/**"
       - "package.json"
@@ -82,6 +88,10 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Build Core
         run: bun run build
+      - name: Validate Unix host architecture and macOS ScreenCaptureKit SDK
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash scripts/verify-desktop-live-unix-host.sh
       - name: Build and verify opt-in Windows Graphics Capture helper
         if: runner.os == 'Windows'
         shell: pwsh
@@ -103,7 +113,7 @@ jobs:
       - name: Verify Chrome extension syntax
         run: bun run verify:extension-js
       - name: Core & packaging regression
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktop-live/unixCapturePackaging.test.ts tests/desktop-live/unixArtifactAudit.test.ts --maxWorkers=1
       - name: Native Rust regression
         run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
       - name: Build CLI launcher
@@ -172,6 +182,10 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: bash scripts/verify-packaged-standalone-unix.sh
+      - name: Audit extracted DMG / DEB / AppImage Desktop Live payload and receipt
+        if: runner.os != 'Windows'
+        shell: bash
+        run: bash scripts/verify-desktop-live-unix-packages.sh
       - name: Upload Windows setup
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4

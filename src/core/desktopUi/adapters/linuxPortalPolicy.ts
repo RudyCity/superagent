@@ -1,12 +1,12 @@
 /**
- * Linux Wayland ScreenCast/PipeWire capability and source policy.
+ * XDG ScreenCast/PipeWire policy: portal consent is NOT AT-SPI identity.
  *
- * The desktop portal can grant exactly one window stream (WINDOW=2,
- * multiple=false, cursor=hidden, no persistence). HOWEVER, the standard
- * StreamCast stream properties do not attest the selected window's PID,
- * AX title, or exact AT-SPI native ID. We must not present that stream
- * under another window's identity. Until the compositor can provide a
- * verifiable binding, never return its pixels to Desktop Live.
+ * ScreenCast selects exactly one user-selected WINDOW source (types=2,
+ * multiple=false, hidden cursor, no persistence). Portal stream metadata
+ * does not contain an authenticated PID/nativeId/window-title binding.
+ * Never adapt portal consent into DesktopWindow or NativeCapture.
+ *
+ * Protocol: https://flatpak.github.io/xdg-desktop-portal/docs/doc-org.freedesktop.portal.ScreenCast.html
  */
 import { DesktopUiError } from "../errors.js";
 import type { DesktopDiscoveredWindow } from "../types.js";
@@ -29,44 +29,63 @@ export const WINDOW_ONLY_PORTAL_SELECTION = Object.freeze({
   persist_mode: 0,
 });
 
-/**
- * Validate compositor identity attestation strictly, should a future
- * portal expose it. Ordinary standard ScreenCast tuples are intentionally
- * rejected rather than being treated as exact-window capabilities.
- */
-export function requireExactPortalWindowBinding(
-  selectedStreams: unknown,
-  target: DesktopDiscoveredWindow,
-): string {
-  if (!Array.isArray(selectedStreams) || selectedStreams.length !== 1 ||
-      !Number.isSafeInteger(target.pid) || target.pid <= 0 ||
-      !target.title || !target.application) {
-    throw new DesktopUiError("OS_PERMISSION_REQUIRED", "Portal must approve exactly one pinned application window.");
-  }
-  const stream = selectedStreams[0];
-  if (!stream || typeof stream !== "object" || Array.isArray(stream)) {
-    throw new DesktopUiError("OS_PERMISSION_REQUIRED", "Portal window identity was not attested.");
-  }
-  const record = stream as Record<string, unknown>;
-  const bounds = record.bounds;
-  const original = target.bounds;
-  const dims = bounds && typeof bounds === "object" && !Array.isArray(bounds)
-    ? bounds as Record<string, unknown> : null;
-  const serial = record.pipewireSerial;
-  if (record.sourceType !== XDG_PORTAL_WINDOW_TYPE || record.pid !== target.pid ||
-      record.nativeId !== target.nativeId || record.title !== target.title ||
-      record.application !== target.application ||
-      !dims || !["x", "y", "width", "height"].every(key =>
-        dims[key] === original[key as keyof typeof original]) ||
-      typeof serial !== "string" || !/^[1-9][0-9]{0,19}$/.test(serial)) {
-    throw new DesktopUiError("OS_PERMISSION_REQUIRED",
-      "PipeWire portal stream lacks an exact target PID/native-ID attestation.");
-  }
-  return serial;
+export interface PortalSelectedWindowIdentity {
+  readonly kind: "portal-user-selected-window";
+  readonly sourceType: 2;
+  readonly pipewireSerial: string;
+  /** This is never a PID/nativeId attestation. */
+  readonly atspiBound: false;
 }
 
-// Queries only portal availability and GStreamer PipeWire plugin presence;
-// never initiates a ScreenCast Start/SelectSources request or OS permission UI.
+const MAX_UINT64 = 18446744073709551615n;
+
+/**
+ * This validator accepts only metadata from the native ScreenCast.Start
+ * response, after the trusted same-process D-Bus request/response has been
+ * verified. It ignores the recyclable PipeWire node ID entirely. Validation
+ * is NOT proof of its provenance when called with arbitrary JavaScript data.
+ */
+export function parsePortalSelectedWindowStream(value: unknown): PortalSelectedWindowIdentity {
+  if (!Array.isArray(value) || value.length !== 1) {
+    throw new DesktopUiError("OS_PERMISSION_REQUIRED",
+      "ScreenCast must approve exactly one user-selected WINDOW stream.");
+  }
+  const stream: unknown = value[0];
+  if (!stream || typeof stream !== "object" || Array.isArray(stream)) {
+    throw new DesktopUiError("OS_PERMISSION_REQUIRED", "Malformed ScreenCast WINDOW stream.");
+  }
+  const props = stream as Record<string, unknown>;
+  if (props.source_type !== XDG_PORTAL_WINDOW_TYPE) {
+    throw new DesktopUiError("OS_PERMISSION_REQUIRED", "ScreenCast source was not WINDOW.");
+  }
+  const serial = props["pipewire-serial"];
+  if (typeof serial !== "string" || !/^[1-9]\d{0,19}$/.test(serial) ||
+      BigInt(serial) > MAX_UINT64) {
+    throw new DesktopUiError("OS_PERMISSION_REQUIRED",
+      "ScreenCast requires a valid unique PipeWire serial (portal v6).");
+  }
+  return Object.freeze({
+    kind: "portal-user-selected-window",
+    sourceType: XDG_PORTAL_WINDOW_TYPE,
+    pipewireSerial: serial,
+    atspiBound: false,
+  });
+}
+
+/**
+ * Deprecated target-identity API. Even a synthetic object claiming exact
+ * PID, nativeId, bounds and title is untrusted: the public ScreenCast API
+ * supplies no such attestation. It must NEVER unlock Desktop Live capture.
+ */
+export function requireExactPortalWindowBinding(
+  _selectedStreams: unknown,
+  _target: DesktopDiscoveredWindow,
+): never {
+  throw new DesktopUiError("OS_PERMISSION_REQUIRED",
+    "Portal WINDOW consent cannot attest an exact AT-SPI PID/native-ID target.");
+}
+
+// Read-only capability check; does not call SelectSources/Start or prompt.
 export const PYTHON_PORTAL_READINESS_SCRIPT = String.raw`
 import json
 try:
