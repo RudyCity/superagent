@@ -1,6 +1,6 @@
 {
   "name": "superagent",
-  "version": "1.14.94",
+  "version": "1.14.95",
   "description": "Terminal-native general-purpose AI assistant for research, writing, productivity, automation and software development",
   "type": "module",
   "bin": {
@@ -11,7 +11,7 @@
     "prebuild": "bun -e \"const p=require('./package.json');console.log('Building '+p.name+'@'+p.version+' with Bun '+Bun.version)\"",
     "build": "bun --bun x tsc",
     "sync-mcp": "bun scripts/syncMcpSchemas.ts",
-    "postbuild": "bun scripts/syncMcpSchemas.ts && bun scripts/write-core-build-manifest.ts",
+    "postbuild": "bun scripts/syncMcpSchemas.ts && bun scripts/build-mcp-named-launchers.ts && bun scripts/write-core-build-manifest.ts",
     "start": "bun dist/cli.js",
     "test": "bun --bun x vitest run",
     "test:unit": "bun --bun x vitest run --maxWorkers=4 --exclude \"**/*integration*\" --exclude \"**/*Integration*\" --exclude \"**/*e2e*\" --exclude \"**/*E2E*\"",

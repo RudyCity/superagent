@@ -1,3 +1,11 @@
+## [1.14.95] - 2026-11-14
+### Cloudflare Named Tunnel Manager and isolated-readiness review
+- Add a five-stage Tray workflow for configuring a remote-managed Cloudflare Named Tunnel, native credential import, independently reviewed Anchor/owner actions, connector health diagnostics, and explicit OAuth/Gemini validation gates. Never treat a green connector or HTTP 200 as client cutover approval.
+- Add fail-closed native lifecycle orchestration with exact tunnel identity, process-birth and nonce-owner evidence, per-action OS approval, and conservative unsupported-operation blockers. Preserve active Gemini Quick Tunnel and protected MCP port 9227.
+- Add read-only cross-OS recovery previews (Windows Task Scheduler, macOS launchd, Linux systemd) with no service installation, and bounded public OAuth metadata/PKCE discovery evidence (without credentials or client reauthorization).
+- Build and SHA-256-pin separate bundled Bun launchers for the Named Anchor and private OAuth owner, verified against the exact package version before a release Tray can launch them. The Windows isolated profile integration now covers start, authenticated owner drain/detach/stop and Anchor shutdown, without modifying the active Quick Tunnel.
+- Initial Named Tunnel production cutover, **installed release bundle certification**, auto-start/reboot certification, Cloudflare token import and Gemini PKCE client login remain pending real OS/operator evidence; do not claim the tunnel is online solely because the DNS route exists.
+
 ## [1.14.94] - 2026-11-14
 ### Native clipboard import and fail-closed Named Tunnel recovery guards
 - Allow an operator to copy a single Cloudflare token or Cloudflare dashboard install command and import it directly through an explicitly confirmed native Tray action. Token extraction is bounded and validated, never exposed to JavaScript, logging, the shell invocation, or Git; the real install command is never executed.

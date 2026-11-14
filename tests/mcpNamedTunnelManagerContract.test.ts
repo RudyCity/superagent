@@ -60,19 +60,29 @@ describe("Named Tunnel native IPC orchestrator contract", () => {
   it("sanitizes spawned Anchor environment and verifies its exact Bun executable", () => {
     expect(stack).toContain("cmd.env_clear()");
     expect(stack).toContain('cmd.env("SUPERAGENT_CONFIG_DIR", dir)');
-    expect(stack).toContain("fs::canonicalize(&pinned_bun)");
-    expect(stack).toContain("let Ok((_, pinned_bun)) = native_runner()");
+    expect(stack).toContain("fs::canonicalize(pinned_bun)");
+    expect(stack).toContain("let Ok(launcher) = native_runner()");
+    expect(stack).toContain("valid_manifest(&root)");
+    expect(stack).toContain("Sha256::digest(contents)");
     expect(stack).toContain("if !port_unused(s.anchor_port)");
     expect(stack).toContain("child.try_wait()");
     expect(stack).toContain("child.kill()");
   });
 
-  it("reports unsupported owner start and Anchor stop as blocked instead of fake success", () => {
-    expect(stack).toContain("existing managed MCP launcher requires an authenticated IPC parent");
-    expect(stack).toContain("has no authenticated graceful shutdown/drain endpoint");
-    expect(stack).toContain("stop_anchor_ready = false");
-    expect(stack).toContain("start_owner_ready = false");
+  it("requires attested OAuth launch and graceful nonce-authenticated detach/drain/shutdown", () => {
+    expect(stack).toContain("let start_owner_ready = valid && credential_verified");
+    expect(stack).toContain("mcp-named-owner.ts");
+    expect(stack).toContain('cmd.env("SUPERAGENT_CONFIG_DIR",dir)');
+    expect(stack).toContain("cmd.env_clear()");
     expect(stack).toContain("no_runtime_mutation: true");
+    expect(stack).toContain("/_internal/owner/drain");
+    expect(stack).toContain("/_internal/anchor/detach");
+    expect(stack).toContain("/_internal/owner/stop");
+    expect(stack).toContain("/_internal/anchor/shutdown");
+    expect(stack).toContain("let stop_anchor_ready = valid && anchor.verified && anchor_idle");
+    expect(stack).toContain('before["shutdownRequested"] != false');
+    expect(stack).toContain("Named Anchor accepted shutdown but OS/lease closure is not verified");
     expect(stack).toContain("Owner accepted graceful stop but shutdown is unverified");
+    expect(stack).not.toContain('Command::new("taskkill');
   });
 });

@@ -28,6 +28,8 @@ export interface McpTunnelAnchorOptions {
   createdAt:number;
   /** Externally operated named connector: NEVER start/stop Quick Tunnel. */
   externalNamedHostname?:string;
+  /** An operator-reviewed, nonce-authenticated shutdown callback, Named only. */
+  onStopRequested?:()=>Promise<void>;
 }
 export interface TunnelAnchorDeps {
   startTunnel?:(port:number)=>Promise<{publicUrl:string,pid?:number}>;
@@ -43,7 +45,7 @@ type OwnerStatus={
   kind:string;pid:number;port:number;startedAt:number;
   publicUrl:string;ingressMode?:string;reloadable?:boolean;
   backendHealthy?:boolean;draining?:boolean;activeSessions?:number;
-  inFlightRequests?:number;oauthEnabled?:boolean;oauthStatePersistent?:boolean;
+  inFlightRequests?:number;inFlightToolCalls?:number;oauthEnabled?:boolean;oauthStatePersistent?:boolean;
   safeToolsOnly?:boolean;
 };
 function shaEqual(received:string,expected:string):boolean{
@@ -104,6 +106,7 @@ export async function startMcpTunnelAnchor(
   let inFlight=0;
   let switching=false;
   let closing=false;
+  let shutdownRequested=false;
   let ownedTunnel=false;
   let tunnelPid:number|null=null;
   let baseUrl="";
@@ -144,6 +147,7 @@ export async function startMcpTunnelAnchor(
     currentOwnerPid:current?.pid??null,currentOwnerPort:current?.port??null,
     inFlightRequests:inFlight,switching,ready:current!==null,
     noImplicitReplay:true,quickTunnelUrlNotRecoverable:!namedHost,
+    shutdownRequested,
   });
   const reply=(res:ServerResponse,status:number,obj:unknown)=>{
     res.writeHead(status,{"Content-Type":"application/json","Cache-Control":"no-store"});
@@ -168,11 +172,66 @@ export async function startMcpTunnelAnchor(
       if(route==="/_internal/anchor/status"&&req.method==="GET"){
         reply(res,200,redactStatus());return;
       }
+      if(route==="/_internal/anchor/shutdown"&&req.method==="POST"){
+        void(async()=>{
+          if(!namedHost||!opts.onStopRequested)
+            throw Error("MCP_NAMED_ANCHOR_SHUTDOWN_UNAVAILABLE");
+          const body=await readJsonBounded(req);
+          if(body.reviewed!==true||body.expectedAnchorPid!==process.pid||
+             body.expectedPort!==opts.port||body.expectedPublicUrl!==baseUrl+"/mcp"||
+             body.expectedCurrentOwnerPid!==null)
+            throw Error("MCP_NAMED_ANCHOR_SHUTDOWN_NOT_REVIEWED");
+          if(shutdownRequested||closing||switching||plan!==null||
+             current!==null||inFlight!==0)
+            throw Error("MCP_NAMED_ANCHOR_NOT_IDLE_OR_DETACHED");
+          shutdownRequested=true;
+          res.once("finish",()=>{
+            setImmediate(()=>void opts.onStopRequested!().catch(()=>{shutdownRequested=false;}));
+          });
+          reply(res,200,{accepted:true,anchorPid:process.pid,
+            publicUrl:baseUrl+"/mcp",noQuickTunnelMutation:true});
+        })().catch(error=>reply(res,409,{
+          error:error instanceof Error?error.message:"MCP_NAMED_ANCHOR_SHUTDOWN_DENIED",
+        }));
+        return;
+      }
+      if(route==="/_internal/anchor/detach"&&req.method==="POST"){
+        void(async()=>{
+          if(!namedHost)throw Error("MCP_NAMED_ANCHOR_DETACH_UNAVAILABLE");
+          const body=await readJsonBounded(req);
+          if(body.reviewed!==true||body.expectedAnchorPid!==process.pid||
+             body.expectedPort!==opts.port||body.expectedPublicUrl!==baseUrl+"/mcp"||
+             body.expectedOwnerPid!==(current?.pid??null)||
+             body.expectedOwnerPort!==(current?.port??null))
+            throw Error("MCP_NAMED_ANCHOR_DETACH_NOT_REVIEWED");
+          if(shutdownRequested||closing||switching||plan!==null||
+             inFlight!==0||!current)
+            throw Error("MCP_NAMED_ANCHOR_DETACH_BUSY");
+          switching=true;
+          try{
+            const selected=current;
+            const owner=await readOwner(selected);
+            if(owner.pid!==selected.pid||owner.port!==selected.port||
+               owner.draining!==true||owner.activeSessions!==0||
+               owner.inFlightRequests!==0||owner.inFlightToolCalls!==0||
+               inFlight!==0||current!==selected)
+              throw Error("MCP_NAMED_ANCHOR_DETACH_OWNER_NOT_DRAINED");
+            current=null;
+            plan=null;
+            reply(res,200,{detached:true,ownerPid:selected.pid,
+              anchorPid:process.pid,publicUrl:baseUrl+"/mcp",
+              noQuickTunnelMutation:true,noRequestReplay:true});
+          }finally{switching=false;}
+        })().catch(error=>reply(res,409,{
+          error:error instanceof Error?error.message:"MCP_NAMED_ANCHOR_DETACH_REFUSED",
+        }));
+        return;
+      }
       if((route==="/_internal/anchor/plan"||route==="/_internal/anchor/activate")&&req.method==="POST"){
         void(async()=>{
           const body=await readJsonBounded(req);
           if(route==="/_internal/anchor/plan"){
-            if(switching||closing)throw Error("MCP_ANCHOR_BUSY");
+            if(switching||closing||shutdownRequested)throw Error("MCP_ANCHOR_BUSY");
             const next=body.target;
             if(!validTarget(next,opts.port))throw Error("MCP_ANCHOR_INVALID_TARGET");
             if(body.expectedAnchorPid!==process.pid||
@@ -199,7 +258,7 @@ export async function startMcpTunnelAnchor(
               newOwnerPort:next.port,requiresDrain,noTunnelRestart:true,noImplicitReplay:true});
             return;
           }
-          if(switching||closing)throw Error("MCP_ANCHOR_BUSY");
+          if(switching||closing||shutdownRequested)throw Error("MCP_ANCHOR_BUSY");
           if(!plan||typeof body.planId!=="string"||
              !shaEqual(body.planId,plan.id)||
              body.reviewed!==true||plan.expiresAt<Date.now()||
@@ -240,7 +299,7 @@ export async function startMcpTunnelAnchor(
       res.writeHead(404,{"Cache-Control":"no-store"});res.end();return;
     }
     const serving=current;
-    if(!serving||switching||closing||!verifyListener(serving.port,serving.pid)){
+    if(!serving||switching||closing||shutdownRequested||!verifyListener(serving.port,serving.pid)){
       reply(res,503,{error:"MCP_ANCHOR_TARGET_UNAVAILABLE"});return;
     }
     inFlight++;

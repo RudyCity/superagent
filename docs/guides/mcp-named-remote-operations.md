@@ -1,6 +1,6 @@
 # Cloudflare Remote-managed Named Tunnel — secure operations
 
-Version: SuperAgent source **1.14.94**. Applies to Windows, macOS and Linux.
+Version: SuperAgent source **1.14.95**. Applies to Windows, macOS and Linux.
 This is **not a production cutover approval**. Existing MCP Quick Tunnel
 sessions, ownership, Cloudflare DNS and OAuth tokens must remain unchanged.
 
@@ -45,7 +45,15 @@ the Tray passes those flags as discrete arguments and suppresses logs.
 Do not install a Windows service through the sample command before
 evaluating its credential and restart behavior.
 
-## 2. Start a new independent Anchor (separate from connector)
+## 2. Start an independently verified Anchor and owner
+
+In the updated **Cloudflare Tunnel Manager** UI, use the guided steps to review and start the dedicated Anchor and private OAuth owner. Each operation requires an exact tunnel ID, native confirmation, a free dedicated port and nonce/OS-verified process identity. The owner startup is backed by a version-matched, SHA-256-pinned bundled launcher. Source development commands below remain diagnostic alternatives, **not** an automatic production cutover.
+
+Only a detached, idle Named Anchor can be shut down. Stop Owner must first confirm zero active sessions/requests, drain the authenticated owner, detach it from the authenticated Anchor, and then stop the exact owner. Stop Anchor is an independent reviewed operation. None of these controls affect the legacy Gemini Quick Tunnel.
+
+This source code is not evidence that a release installer has been installed or that the platform-specific process attestation has passed in an installed build.
+
+### Source-only operator diagnostics
 
 From a trusted SuperAgent source checkout with Bun installed and the
 same private \`SUPERAGENT_CONFIG_DIR\` used by the Tray:

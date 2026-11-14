@@ -68,6 +68,23 @@ describe("Remote-managed Named Tunnel independent Anchor CLI",()=>{
       });
       expect(out).toContain('"tunnelMode": "named-external"');
       expect(errors).not.toContain("Quick Tunnel");
+      // Exercise the real child-process callback/lease cleanup, not just the
+      // in-process Anchor handler; no cloudflared process is created.
+      const leasePath=path.join(root,"mcp-tunnel-anchor-"+port+".json");
+      const lease=JSON.parse(fs.readFileSync(leasePath,"utf8"));
+      const stopped=await fetch("http://127.0.0.1:"+port+"/_internal/anchor/shutdown",{
+        method:"POST",headers:{Authorization:"Bearer "+lease.nonce,
+          "Content-Type":"application/json"},
+        body:JSON.stringify({reviewed:true,expectedAnchorPid:lease.pid,
+          expectedPort:port,expectedPublicUrl:"https://mcp.rcity.web.id/mcp",
+          expectedCurrentOwnerPid:null}),
+      });
+      expect(stopped.status).toBe(200);
+      expect(await stopped.json()).toMatchObject({accepted:true,noQuickTunnelMutation:true});
+      for(let i=0;i<40&&child.exitCode===null;i++)
+        await new Promise(r=>setTimeout(r,100));
+      expect(child.exitCode).toBe(0);
+      expect(fs.existsSync(leasePath)).toBe(false);
     }finally{
       if(child.exitCode===null){
         child.kill();

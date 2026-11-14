@@ -123,11 +123,26 @@ fn process_verified(pid: u32, created: u64, marker: &str, port: u16) -> bool {
     // Exact executable path attestation: matching "bun.exe" alone is not
     // authority to control an unrelated Bun worker. Only the pinned local
     // runner that this source Tray can launch is eligible.
-    let Ok((_, pinned_bun)) = native_runner() else { return false };
-    if fs::canonicalize(exe).ok() != fs::canonicalize(&pinned_bun).ok() ||
-        fs::canonicalize(&pinned_bun).is_err() { return false; }
+    let Ok(launcher) = native_runner() else { return false };
+    let pinned_bun = &launcher.bun;
+    if fs::canonicalize(exe).ok() != fs::canonicalize(pinned_bun).ok() ||
+        fs::canonicalize(pinned_bun).is_err() { return false; }
     let argv: Vec<String> = process.cmd().iter().map(|x| x.to_string()).collect();
-    let has_marker = argv.iter().any(|x| x.replace('\\', "/").contains(marker));
+    // Exact script location is pinned, never a matching substring in an
+    // unrelated command. The owner is the existing managed IPC child, while
+    // the Anchor is the standalone launcher bundle.
+    let cli_entry = launcher.root.join("dist/cli.js");
+    let pinned_script = if marker == "mcp-tunnel-anchor.ts" {
+        &launcher.anchor
+    } else {
+        &cli_entry
+    };
+    let expected_script = fs::canonicalize(pinned_script).ok();
+    let script_match = expected_script.is_some() && argv.iter().any(|arg|
+        fs::canonicalize(Path::new(arg)).ok() == expected_script
+    );
+    let has_marker = script_match && (marker == "mcp-tunnel-anchor.ts" ||
+        argv.iter().any(|x| x == "tunnel-owner"));
     let has_port = argv.iter().any(|x| x == &port.to_string());
     let prohibited = argv.iter().any(|x| x == "9227" || x == "--token" ||
         x == "--credentials-contents" || x == "--allow-dangerous");
@@ -229,7 +244,7 @@ async fn proof(dir: &Path, s: &NamedTunnelSettings)
                     if process_verified(pid, created, "tunnel-owner", s.owner_port) {
                         if let Ok(status) = authenticated_status(&c, s.owner_port, &lease,
                             "/_internal/owner/status").await {
-                            let idle = status["draining"] == true && status["activeSessions"] == 0 &&
+                            let idle = status["activeSessions"] == 0 &&
                                 status["inFlightRequests"] == 0 && status["inFlightToolCalls"] == 0;
                             if status["version"] == 1 && status["kind"] == "private_mcp_owner" &&
                                 status["pid"] == pid && status["port"] == s.owner_port &&
@@ -277,15 +292,21 @@ pub async fn status(dir: &Path, s: &NamedTunnelSettings) -> NamedTunnelManagerSt
     let start_anchor_ready = valid && credential_verified && anchor.state == "absent" &&
         owner.state == "absent" && native_runner().is_ok() && port_unused(s.anchor_port) &&
         !matches!(connector.status, "lease_unverified" | "lease_mismatch" | "process_unverified");
-    // The current managed MCP launcher requires an IPC parent and a separate
-    // OAuth-writer preflight not supplied by Tray. Refuse rather than run the
-    // interactive CLI or create an unverified owner.
-    let start_owner_ready = false;
+    // Launch through a version-matched private Bun script that uses the
+    // existing authenticated managed-owner IPC protocol, validates OAuth
+    // persistence, and attaches only to the detached Named Anchor.
+    let start_owner_ready = valid && credential_verified &&
+        anchor.verified && anchor_idle && attached.is_none() &&
+        owner.state == "absent" && inflight == Some(0) &&
+        connector.status == "not_started" &&
+        native_runner().is_ok() && port_unused(s.owner_port);
     let stop_owner_ready = valid && owner.verified && owner_idle &&
-        anchor.verified && anchor_idle && attached.is_none();
-    // Anchor has SIGTERM handlers but no authenticated shutdown command;
-    // arbitrary PID signalling cannot satisfy the private stop contract.
-    let stop_anchor_ready = false;
+        anchor.verified && inflight == Some(0) &&
+        (attached == owner.pid || (attached.is_none() && anchor_idle));
+    // Only a nonce-authenticated, OS-attested, detached and idle Named Anchor
+    // can be shut down cooperatively. No PID-only termination is allowed.
+    let stop_anchor_ready = valid && anchor.verified && anchor_idle &&
+        owner.state == "absent" && attached.is_none() && inflight == Some(0);
     if valid && !anchor.verified && anchor.state != "absent" {
         blockers.push("Named Anchor has not authenticated locally".into());
     }
@@ -295,8 +316,12 @@ pub async fn status(dir: &Path, s: &NamedTunnelSettings) -> NamedTunnelManagerSt
     if valid && native_runner().is_err() {
         blockers.push("Start Anchor needs a version-matched, trusted bundled Bun/Anchor launcher; unavailable in this build".into());
     }
-    blockers.push("Native owner start unavailable: managed CLI requires IPC and verified OAuth single-writer isolation".into());
-    blockers.push("Native Anchor stop unavailable: source Anchor lacks authenticated drain/shutdown IPC".into());
+    if valid && !start_owner_ready {
+        blockers.push("Start private owner requires a detached verified Anchor, private credential, free owner port and version-matched managed IPC launcher".into());
+    }
+    if valid && !stop_anchor_ready {
+        blockers.push("Anchor stop requires an authenticated, detached, request-free Named Anchor and no private owner lease".into());
+    }
     NamedTunnelManagerStatus {
         tunnel_id: s.tunnel_id.clone(), hostname: s.hostname.clone(),
         anchor_port: s.anchor_port, owner_port: s.owner_port,
@@ -321,23 +346,89 @@ pub async fn plan(dir: &Path, s: &NamedTunnelSettings) -> NamedTunnelStackPlan {
 fn regular(path: &Path) -> bool {
     fs::symlink_metadata(path).map_or(false, |m| m.file_type().is_file() && m.len() > 0)
 }
-fn native_runner() -> Result<(PathBuf, PathBuf), String> {
-    // Reuse the version-matched source Anchor CLI; do not execute a user-supplied
-    // arbitrary path or a PATH-selected binary. A packaged release without this
-    // CLI must ship a verified launcher before start becomes available.
-    if !cfg!(debug_assertions) {
-        return Err("Installed Tray has no verified bundled standalone Anchor launcher".into());
+struct NamedLauncher {
+    root:PathBuf,
+    bun:PathBuf,
+    anchor:PathBuf,
+    owner:PathBuf,
+}
+fn valid_manifest(root:&Path)->bool{
+    use sha2::{Digest,Sha256};
+    let manifest_file=root.join("dist/scripts/mcp-named-launchers.json");
+    let package_file=root.join("package.json");
+    if !regular(&manifest_file)||!regular(&package_file)||
+       !regular(&root.join("dist/cli.js")) {return false;}
+    let Ok(m)=fs::symlink_metadata(&manifest_file) else{return false};
+    if m.len()>8192||m.len()<100{return false;}
+    let (Ok(raw),Ok(package))=(fs::read(&manifest_file),fs::read(&package_file))
+    else{return false};
+    let (Ok(meta),Ok(pkg))=(serde_json::from_slice::<Value>(&raw),
+        serde_json::from_slice::<Value>(&package)) else{return false};
+    if meta["schemaVersion"]!=1||meta["target"]!="bun"||
+       meta["package"]!="superagent"||
+       meta["version"]!=env!("CARGO_PKG_VERSION")||
+       pkg["name"]!="superagent"||
+       pkg["version"]!=env!("CARGO_PKG_VERSION"){return false;}
+    let Some(scripts)=meta["scripts"].as_object() else{return false};
+    if scripts.len()!=2{return false;}
+    for name in ["mcp-tunnel-anchor.js","mcp-named-owner.js"]{
+        let file=root.join("dist/scripts").join(name);
+        let Some(hash)=scripts.get(name).and_then(Value::as_str) else{return false};
+        if hash.len()!=64||!hash.bytes().all(|x|x.is_ascii_hexdigit())||
+           !regular(&file){return false;}
+        let Ok(stat)=fs::symlink_metadata(&file) else{return false};
+        if stat.len()>20_000_000||stat.len()<1024{return false;}
+        let Ok(contents)=fs::read(&file) else{return false};
+        if format!("{:x}",Sha256::digest(contents))!=hash{return false;}
     }
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
-        .canonicalize().map_err(|_| "Cannot locate trusted source checkout")?;
-    if !regular(&root.join("package.json")) ||
-        !regular(&root.join("scripts/mcp-tunnel-anchor.ts")) {
-        return Err("Version-matched independent Anchor CLI unavailable".into());
+    true
+}
+fn native_runner()->Result<NamedLauncher,String>{
+    if cfg!(debug_assertions){
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..")
+            .canonicalize().map_err(|_|"Cannot locate trusted development checkout")?;
+        let anchor=root.join("scripts/mcp-tunnel-anchor.ts");
+        let owner=root.join("scripts/mcp-named-owner.ts");
+        if !regular(&root.join("package.json"))||
+           !regular(&root.join("dist/cli.js"))||
+           !regular(&anchor)||!regular(&owner){
+            return Err("Version-matched source-mode MCP launchers unavailable".into());
+        }
+        let home=dirs::home_dir().ok_or("Cannot locate trusted development Bun")?;
+        let bun=home.join(".bun").join("bin")
+            .join(if cfg!(windows){"bun.exe"}else{"bun"});
+        if !regular(&bun){
+            return Err("Trusted development Bun binary unavailable".into());
+        }
+        return Ok(NamedLauncher{root,bun,anchor,owner});
     }
-    let home = dirs::home_dir().ok_or("Cannot locate trusted Bun runtime")?;
-    let bun = home.join(".bun").join("bin").join(if cfg!(windows) { "bun.exe" } else { "bun" });
-    if !regular(&bun) { return Err("Bun executable is unavailable at the trusted installed path".into()); }
-    Ok((root, bun))
+    // Installed release: use only the app's own pinned portable Bun sidecar
+    // and SHA-256 verified bundled launchers, never PATH/CWD/environment.
+    let exe=std::env::current_exe().map_err(|_|"Installed Tray path unavailable")?;
+    let dir=exe.parent().ok_or("Installed Tray directory unavailable")?;
+    let bun=dir.join(if cfg!(windows){"bun.exe"}else{"bun"});
+    let bun_file=fs::symlink_metadata(&bun)
+        .map_err(|_|"Bundled Bun sidecar missing")?;
+    if !bun_file.file_type().is_file()||bun_file.len()<10_000_000||
+       fs::canonicalize(&bun).is_err(){
+        return Err("Bundled Bun sidecar identity or size unverified".into());
+    }
+    for path in [
+        dir.join("standalone"),
+        dir.join("resources/standalone"),
+        dir.join("../Resources/standalone"),
+        dir.join("../lib/superagent/standalone"),
+        dir.join("../lib/SuperAgent/standalone"),
+    ]{
+        let Ok(stat)=fs::symlink_metadata(&path) else{continue};
+        if !stat.file_type().is_dir(){continue;}
+        let Ok(root)=path.canonicalize() else{continue};
+        if !valid_manifest(&root){continue;}
+        let anchor=root.join("dist/scripts/mcp-tunnel-anchor.js");
+        let owner=root.join("dist/scripts/mcp-named-owner.js");
+        return Ok(NamedLauncher{root,bun,anchor,owner});
+    }
+    Err("Installed Named MCP launcher bundle is missing, has a version mismatch, or failed SHA-256 verification".into())
 }
 fn port_unused(port: u16) -> bool {
     TcpListener::bind(("127.0.0.1", port)).is_ok()
@@ -361,16 +452,16 @@ pub async fn action(dir: &Path, s: &NamedTunnelSettings, action: &str,
             if !state.start_anchor_ready || !no_connector_conflict {
                 return Err("Start Anchor blocked: verify private token, fixed UUID/ports and absence of any Anchor or ambiguous connector lease".into());
             }
-            let (root, bun) = native_runner()?;
+            let launcher = native_runner()?;
             if !port_unused(s.anchor_port) {
                 return Err("Anchor port 19320 is occupied; no process will be adopted or stopped".into());
             }
             // Use existing verified source protocol, never pass credentials or
             // Cloudflare token bytes through arguments/stdout/stderr.
-            let mut cmd = Command::new(&bun);
-            cmd.arg(root.join("scripts/mcp-tunnel-anchor.ts"))
+            let mut cmd = Command::new(&launcher.bun);
+            cmd.arg(&launcher.anchor)
                 .args(["start-profile", &s.anchor_port.to_string(), "--reviewed"])
-                .current_dir(&root).stdin(Stdio::null())
+                .current_dir(&launcher.root).stdin(Stdio::null())
                 .stdout(Stdio::null()).stderr(Stdio::null());
             // Do not pass the Tray's unrelated API, OAuth, tunnel or session
             // credentials to an independently launched Anchor process.
@@ -405,11 +496,60 @@ pub async fn action(dir: &Path, s: &NamedTunnelSettings, action: &str,
                 return Err("Spawned Anchor did not produce a verified nonce-authenticated lease; no success claimed".into());
             }
         }
-        "start-owner" => return Err(
-            "Start private owner blocked: existing managed MCP launcher requires an authenticated IPC parent and verified OAuth single-writer isolation; Tray cannot safely invoke it yet".into()),
+        "start-owner" => {
+            if !state.start_owner_ready || !no_connector_conflict {
+                return Err("Start owner blocked: authenticated detached Anchor, private credential, isolated OAuth and unused owner port required".into());
+            }
+            let launcher=native_runner()?;
+            if !port_unused(s.owner_port) {
+                return Err("Named private MCP owner port is occupied; no process adopted".into());
+            }
+            let mut cmd=Command::new(&launcher.bun);
+            cmd.arg(&launcher.owner)
+                .args(["start-profile","--reviewed"])
+                .current_dir(&launcher.root).stdin(Stdio::null())
+                .stdout(Stdio::null()).stderr(Stdio::null());
+            cmd.env_clear();
+            for name in ["PATH","HOME","USERPROFILE","APPDATA","LOCALAPPDATA",
+                "SystemRoot","WINDIR","TEMP","TMP","TMPDIR","LANG","LC_ALL"] {
+                if let Some(value)=std::env::var_os(name){cmd.env(name,value);}
+            }
+            cmd.env("SUPERAGENT_CONFIG_DIR",dir);
+            #[cfg(windows)]{
+                use std::os::windows::process::CommandExt;
+                cmd.creation_flags(0x0800_0000);
+            }
+            let mut child=cmd.spawn().map_err(|_|"Named owner IPC launcher could not start")?;
+            let mut completed=false;
+            for _ in 0..320 {
+                match child.try_wait().map_err(|_|"Cannot attest named owner launcher exit")? {
+                    Some(exit)=>{
+                        if !exit.success(){
+                            return Err("Named owner launcher refused or failed independent OAuth startup; inspect private status".into());
+                        }
+                        completed=true;break;
+                    },
+                    None=>tokio::time::sleep(Duration::from_millis(250)).await,
+                }
+            }
+            if !completed {
+                // Terminate only the freshly spawned wrapper child; never an
+                // owner PID or unrelated Cloudflare process. Reconcile any
+                // separately spawned owner before another start attempt.
+                let _=child.kill();let _=child.wait();
+                return Err("Named owner IPC launcher timed out; reconcile private lease before retrying".into());
+            }
+            let after=status(dir,s).await;
+            if !after.owner.verified||!after.anchor.verified||
+               after.anchor_attached_owner_pid!=after.owner.pid||
+               after.owner.pid.is_none()||after.owner.pid==state.owner.pid||
+               !after.quick_tunnel_untouched {
+                return Err("Named owner launcher exited but authenticated owner/Anchor attachment is unverified".into());
+            }
+        },
         "stop-owner" => {
             if !state.stop_owner_ready {
-                return Err("Stop private owner blocked: require authenticated process/nonce, explicit prior drain, zero sessions/tools/requests, and detached idle Anchor".into());
+                return Err("Stop private owner blocked: require verified ownership, zero active sessions/tools/requests and an idle Named Anchor".into());
             }
             let lease = safe_lease(dir, &format!("mcp-owner-{}.json", s.owner_port))?
                 .ok_or("Owner lease disappeared")?;
@@ -419,11 +559,85 @@ pub async fn action(dir: &Path, s: &NamedTunnelSettings, action: &str,
                 return Err("Owner changed since review; no stop sent".into());
             }
             let c = client()?;
-            let before = authenticated_status(&c, s.owner_port, &lease, "/_internal/owner/status").await?;
-            if before["draining"] != true || before["activeSessions"] != 0 ||
-                before["inFlightRequests"] != 0 || before["inFlightToolCalls"] != 0 ||
-                before["pid"] != pid {
-                return Err("Owner is not fully drained; no stop sent".into());
+            let mut before = authenticated_status(&c, s.owner_port, &lease, "/_internal/owner/status").await?;
+            if before["activeSessions"] != 0 || before["inFlightRequests"] != 0 ||
+                before["inFlightToolCalls"] != 0 || before["pid"] != pid ||
+                before["publicUrl"] != format!("https://{}/mcp", s.hostname) {
+                return Err("Owner has active sessions, requests, tools, or changed identity; no drain sent".into());
+            }
+            // Operator has approved a graceful shutdown. Drain only the exact
+            // nonce-authenticated owner, then recheck the quiescent state.
+            if before["draining"] != true {
+                let response = c.post(format!(
+                    "http://127.0.0.1:{}/_internal/owner/drain", s.owner_port))
+                    .header(reqwest::header::HOST, format!("127.0.0.1:{}", s.owner_port))
+                    .bearer_auth(nonce(&lease)?).send().await
+                    .map_err(|_|"Private owner did not acknowledge requested drain")?;
+                if response.status() != reqwest::StatusCode::OK {
+                    return Err("Private owner refused graceful drain".into());
+                }
+                before = authenticated_status(&c, s.owner_port, &lease,
+                    "/_internal/owner/status").await?;
+                if before["draining"] != true || before["pid"] != pid ||
+                    before["activeSessions"] != 0 ||
+                    before["inFlightRequests"] != 0 ||
+                    before["inFlightToolCalls"] != 0 {
+                    return Err("Owner drain not attested or new activity detected".into());
+                }
+            }
+            if state.anchor_attached_owner_pid == Some(pid) {
+                // Detach before stopping: the Anchor must not point at a dead
+                // backend. Refuse any stale or swapped control process.
+                let anchor_lease = safe_lease(dir,
+                    &format!("mcp-tunnel-anchor-{}.json", s.anchor_port))?
+                    .ok_or("Named Anchor lease disappeared")?;
+                let (anchor_pid,anchor_birth) = pid_birth(&anchor_lease)?;
+                if state.anchor.pid != Some(anchor_pid) ||
+                    !process_verified(anchor_pid,anchor_birth,
+                        "mcp-tunnel-anchor.ts",s.anchor_port) {
+                    return Err("Named Anchor process identity changed before detach".into());
+                }
+                let anchor_before = authenticated_status(&c, s.anchor_port,
+                    &anchor_lease, "/_internal/anchor/status").await?;
+                if anchor_before["pid"] != anchor_pid ||
+                    anchor_before["currentOwnerPid"] != pid ||
+                    anchor_before["currentOwnerPort"] != s.owner_port ||
+                    anchor_before["inFlightRequests"] != 0 ||
+                    anchor_before["switching"] != false ||
+                    anchor_before["publicUrl"] != format!("https://{}/mcp",s.hostname) {
+                    return Err("Named Anchor has traffic or changed owner; detach forbidden".into());
+                }
+                let payload = serde_json::json!({
+                    "reviewed":true,"expectedAnchorPid":anchor_pid,
+                    "expectedPort":s.anchor_port,
+                    "expectedPublicUrl":format!("https://{}/mcp",s.hostname),
+                    "expectedOwnerPid":pid,"expectedOwnerPort":s.owner_port
+                });
+                let response = c.post(format!(
+                    "http://127.0.0.1:{}/_internal/anchor/detach",s.anchor_port))
+                    .header(reqwest::header::HOST,format!("127.0.0.1:{}",s.anchor_port))
+                    .bearer_auth(nonce(&anchor_lease)?).json(&payload).send().await
+                    .map_err(|_|"Named Anchor did not acknowledge owner detach")?;
+                if response.status()!=reqwest::StatusCode::OK {
+                    return Err("Named Anchor refused safe drain/detach".into());
+                }
+                let result:Value=response.json().await
+                    .map_err(|_|"Named Anchor detach response malformed")?;
+                if result["detached"]!=true||result["ownerPid"]!=pid||
+                    result["anchorPid"]!=anchor_pid||
+                    result["noQuickTunnelMutation"]!=true {
+                    return Err("Named Anchor detach was not attested".into());
+                }
+                let detached = authenticated_status(&c, s.anchor_port,
+                    &anchor_lease, "/_internal/anchor/status").await?;
+                if detached["currentOwnerPid"]!=Value::Null ||
+                    detached["currentOwnerPort"]!=Value::Null||
+                    detached["ready"]!=false ||
+                    detached["inFlightRequests"]!=0 {
+                    return Err("Named Anchor is not detached after control acknowledgement".into());
+                }
+            } else if state.anchor_attached_owner_pid.is_some() {
+                return Err("Named Anchor points at a different owner; no stop sent".into());
             }
             let response = c.post(format!("http://127.0.0.1:{}/_internal/owner/stop", s.owner_port))
                 .header(reqwest::header::HOST, format!("127.0.0.1:{}", s.owner_port))
@@ -451,8 +665,63 @@ pub async fn action(dir: &Path, s: &NamedTunnelSettings, action: &str,
                 return Err("Owner accepted graceful stop but shutdown is unverified; operator inspection required (no forced kill)".into());
             }
         }
-        "stop-anchor" => return Err(
-            "Stop Anchor blocked: source Anchor has no authenticated graceful shutdown/drain endpoint; PID-only termination is forbidden".into()),
+        "stop-anchor" => {
+            if !state.stop_anchor_ready {
+                return Err("Named Anchor must be verified, detached and idle, with no private owner lease".into());
+            }
+            let lease = safe_lease(dir, &format!("mcp-tunnel-anchor-{}.json", s.anchor_port))?
+                .ok_or("Named Anchor lease disappeared")?;
+            let (pid, created) = pid_birth(&lease)?;
+            if state.anchor.pid != Some(pid) ||
+                !process_verified(pid, created, "mcp-tunnel-anchor.ts", s.anchor_port) {
+                return Err("Named Anchor process identity changed since review".into());
+            }
+            let c = client()?;
+            let before = authenticated_status(&c, s.anchor_port, &lease,
+                "/_internal/anchor/status").await?;
+            if before["pid"] != pid || before["port"] != s.anchor_port ||
+                before["publicUrl"] != format!("https://{}/mcp", s.hostname) ||
+                before["tunnelMode"] != "named-external" ||
+                before["currentOwnerPid"] != Value::Null ||
+                before["inFlightRequests"] != 0 || before["ready"] != false ||
+                before["shutdownRequested"] != false || before["switching"] != false {
+                return Err("Named Anchor not detached, idle, or still switching".into());
+            }
+            let payload = serde_json::json!({
+                "reviewed":true,"expectedAnchorPid":pid,"expectedPort":s.anchor_port,
+                "expectedPublicUrl":format!("https://{}/mcp", s.hostname),
+                "expectedCurrentOwnerPid":null,
+            });
+            let response = c.post(format!(
+                "http://127.0.0.1:{}/_internal/anchor/shutdown", s.anchor_port))
+                .header(reqwest::header::HOST,format!("127.0.0.1:{}",s.anchor_port))
+                .bearer_auth(nonce(&lease)?).json(&payload).send().await
+                .map_err(|_|"Named Anchor did not acknowledge cooperative shutdown")?;
+            if response.status()!=reqwest::StatusCode::OK {
+                return Err("Named Anchor rejected graceful shutdown; no forced termination".into());
+            }
+            let accepted:Value=response.json().await
+                .map_err(|_|"Named Anchor shutdown acknowledgement malformed")?;
+            if accepted["accepted"]!=true || accepted["anchorPid"]!=pid ||
+                accepted["noQuickTunnelMutation"]!=true {
+                return Err("Named Anchor shutdown acknowledgement not attested".into());
+            }
+            let mut stopped=false;
+            for _ in 0..25 {
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                let mut system=System::new();
+                system.refresh_processes();
+                if matches!(safe_lease(dir,
+                    &format!("mcp-tunnel-anchor-{}.json",s.anchor_port)),Ok(None)) &&
+                    system.process(Pid::from_u32(pid)).is_none() &&
+                    port_unused(s.anchor_port) {
+                    stopped=true;break;
+                }
+            }
+            if !stopped {
+                return Err("Named Anchor accepted shutdown but OS/lease closure is not verified".into());
+            }
+        },
         _ => return Err("Unsupported Named Tunnel stack action".into()),
     }
     Ok(NamedTunnelStackActionResult { action: action.into(),

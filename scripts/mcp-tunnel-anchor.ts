@@ -41,8 +41,16 @@ if(command==="start"||command==="start-named"||command==="start-profile"){
     throw Error("MCP_NAMED_REMOTE_ANCHOR_PORT_MISMATCH");
   const externalHost=namedSpec?.hostname??remoteProfile?.hostname;
   const createdAt=Date.now(),nonce=crypto.randomBytes(32).toString("hex");
+  // The externally managed Named Anchor can accept a reviewed private
+  // shutdown request only after its lease is installed and shutdown is ready.
+  let shutdownHandler:(()=>Promise<void>)|null=null;
   const handle=await startMcpTunnelAnchor({port,nonce,createdAt,
-    ...(externalHost?{externalNamedHostname:externalHost}:{})});
+    ...(externalHost?{externalNamedHostname:externalHost,
+      onStopRequested:async()=>{
+        const handler=shutdownHandler;
+        if(!handler)throw Error("MCP_NAMED_ANCHOR_SHUTDOWN_NOT_READY");
+        await handler();
+      }}:{})});
   let lease:McpTunnelAnchorLease|undefined;
   try{
     const response=await fetch("http://127.0.0.1:"+port+"/_internal/anchor/status",{
@@ -69,6 +77,7 @@ if(command==="start"||command==="start-named"||command==="start-profile"){
     try{await handle.close();}finally{if(lease)cleanMcpTunnelAnchorLease(lease);}
     process.exit(0);
   };
+  shutdownHandler=shutdown;
   process.once("SIGINT",()=>void shutdown());
   process.once("SIGTERM",()=>void shutdown());
 }else{
