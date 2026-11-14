@@ -30,6 +30,7 @@ mod named_tunnel_settings;
 mod named_tunnel_connector;
 mod named_tunnel_clipboard;
 mod named_tunnel_health;
+mod named_tunnel_orchestrator;
 mod tray_lifecycle;
 mod lifecycle_console;
 mod release_updates;
@@ -195,6 +196,70 @@ async fn get_named_tunnel_health() -> Result<named_tunnel_health::NamedTunnelHea
     let dir=config_dir()?;
     let s=named_tunnel_settings::load(&dir)?;
     named_tunnel_health::inspect(&dir,&s).await
+}
+
+#[tauri::command]
+async fn get_named_tunnel_manager_status(
+) -> Result<named_tunnel_orchestrator::NamedTunnelManagerStatus, String> {
+    let dir = config_dir()?;
+    let settings = named_tunnel_settings::load(&dir)?;
+    Ok(named_tunnel_orchestrator::status(&dir, &settings).await)
+}
+
+#[tauri::command]
+async fn plan_named_tunnel_stack(
+) -> Result<named_tunnel_orchestrator::NamedTunnelStackPlan, String> {
+    let dir = config_dir()?;
+    let settings = named_tunnel_settings::load(&dir)?;
+    Ok(named_tunnel_orchestrator::plan(&dir, &settings).await)
+}
+
+#[tauri::command]
+async fn named_tunnel_stack_action(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    expected_tunnel_id: String,
+    reviewed: bool,
+) -> Result<named_tunnel_orchestrator::NamedTunnelStackActionResult, String> {
+    if window.label() != "main" || !window.is_visible().unwrap_or(false) ||
+        window.is_minimized().unwrap_or(true) || !window.is_focused().unwrap_or(false) {
+        return Err("Named stack action requires a visible, focused native Tray window".into());
+    }
+    if !reviewed || !matches!(action.as_str(),
+        "start-anchor" | "start-owner" | "stop-owner" | "stop-anchor") {
+        return Err("Named stack requires explicit review of an allowed action".into());
+    }
+    let dir = config_dir()?;
+    let settings = named_tunnel_settings::load(&dir)?;
+    if expected_tunnel_id != settings.tunnel_id {
+        return Err("Cloudflare Tunnel UUID changed during review".into());
+    }
+    let prompt = format!(
+        "Review Named Tunnel stack action: {action}\n\nHost: {}\nTunnel UUID: {}\nAnchor: 127.0.0.1:{}\nPrivate owner: 127.0.0.1:{}\n\nNo Quick Tunnel or live Gemini MCP owner is affected. This is not OAuth cutover.",
+        settings.hostname, settings.tunnel_id, settings.anchor_port, settings.owner_port
+    );
+    let dialog_app = app.clone();
+    let approved = tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+        dialog_app.dialog().message(prompt).buttons(
+            MessageDialogButtons::OkCancelCustom(
+                "Approve isolated action".into(), "Cancel".into()
+            )
+        ).blocking_show()
+    }).await.map_err(|_| "Native stack approval dialog failed")?;
+    if !approved { return Err("Named Tunnel action canceled by operator".into()); }
+    if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) ||
+        !window.is_focused().unwrap_or(false) {
+        return Err("Native Tray lost focus before the reviewed operation".into());
+    }
+    let latest = named_tunnel_settings::load(&dir)?;
+    if latest != settings {
+        return Err("Named Tunnel settings changed while native approval was open".into());
+    }
+    named_tunnel_orchestrator::action(
+        &dir, &settings, &action, &expected_tunnel_id, true
+    ).await
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -2141,6 +2206,9 @@ fn main() {
             set_named_tunnel_settings,
             get_named_tunnel_connector_status,
             get_named_tunnel_health,
+            get_named_tunnel_manager_status,
+            plan_named_tunnel_stack,
+            named_tunnel_stack_action,
             plan_named_tunnel_connector,
             named_tunnel_connector_action,
             named_tunnel_connector::pick_named_tunnel_token,
