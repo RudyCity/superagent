@@ -83,10 +83,10 @@ jobs:
       - name: Verify extension syntax
         run: bun run verify:extension-js
       - name: Core & package regression gate
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/mcpBackendBundleProducer.test.ts tests/mcpBackendGithubRelease.test.ts tests/mcpBackendReleaseStager.test.ts tests/mcpBackendReleasePolicy.test.ts tests/unifiedReleaseContract.test.ts tests/recoverUnifiedReleaseContract.test.ts tests/mcpTunnelAnchorObserver.test.ts tests/mcpNamedTunnelConfig.test.ts tests/mcpNamedTunnelAnchor.test.ts
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/promptToolGuidance.test.ts tests/pdfPrimaryMcpIntegration.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktopRuntimeUi.test.ts tests/mcpBackendBundleProducer.test.ts tests/mcpBackendGithubRelease.test.ts tests/mcpBackendReleaseStager.test.ts tests/mcpBackendReleasePolicy.test.ts tests/unifiedReleaseContract.test.ts tests/recoverUnifiedReleaseContract.test.ts tests/mcpTunnelAnchorObserver.test.ts tests/mcpNamedTunnelConfig.test.ts tests/mcpNamedTunnelAnchor.test.ts tests/mcpNamedRemoteProfile.test.ts tests/desktopNamedTunnelRuntimeUi.test.ts tests/desktopNamedTunnelSettingsUi.test.ts
       - name: Test independent MCP Anchor and Windows owner lifecycle
         if: runner.os == 'Windows'
-        run: bun --bun x vitest run tests/mcpTunnelAnchor.test.ts tests/mcpTunnelAnchorManagedOwner.test.ts tests/mcpReloadableOwner.test.ts --maxWorkers=2
+        run: bun --bun x vitest run tests/mcpTunnelAnchor.test.ts tests/mcpTunnelAnchorManagedOwner.test.ts tests/mcpReloadableOwner.test.ts tests/mcpNamedRemoteAnchorCli.test.ts --maxWorkers=2
       - name: Test native Tray
         run: bun run tray:test
       - name: Compile native CLI

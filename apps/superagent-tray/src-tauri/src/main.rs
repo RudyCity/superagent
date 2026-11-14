@@ -27,6 +27,8 @@ mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
 mod named_tunnel_settings;
+mod named_tunnel_connector;
+mod named_tunnel_health;
 mod tray_lifecycle;
 mod lifecycle_console;
 mod release_updates;
@@ -117,8 +119,85 @@ fn set_named_tunnel_settings(
     settings: named_tunnel_settings::NamedTunnelSettings,
 ) -> Result<named_tunnel_settings::NamedTunnelView, String> {
     let dir = config_dir()?;
+    let existing=named_tunnel_settings::load(&dir)?;
+    if existing!=settings && named_tunnel_connector::lease_present(&dir,&existing.tunnel_id){
+        return Err("Stop and reconcile the existing Named Tunnel connector before changing its identity or credentials".into());
+    }
     named_tunnel_settings::save(&dir, &settings)?;
     Ok(named_tunnel_settings::load(&dir)?.inspect())
+}
+
+#[tauri::command]
+fn get_named_tunnel_connector_status() -> Result<named_tunnel_connector::ConnectorStatus, String> {
+    let dir=config_dir()?;
+    let s=named_tunnel_settings::load(&dir)?;
+    Ok(named_tunnel_connector::status(&dir,&s))
+}
+
+#[tauri::command]
+fn plan_named_tunnel_connector() -> Result<named_tunnel_connector::ConnectorActionResult,String> {
+    let dir=config_dir()?;
+    let s=named_tunnel_settings::load(&dir)?;
+    named_tunnel_connector::plan(&dir,&s)
+}
+
+#[tauri::command]
+async fn named_tunnel_connector_action(
+    app:tauri::AppHandle,
+    window:tauri::WebviewWindow,
+    action:String,expected_tunnel_id:String,reviewed:bool,
+) -> Result<named_tunnel_connector::ConnectorActionResult,String> {
+    if window.label()!="main"||!window.is_visible().unwrap_or(false)||
+        window.is_minimized().unwrap_or(true) {
+        return Err("Named Tunnel lifecycle requires the visible native Tray window".into());
+    }
+    if !reviewed||!matches!(action.as_str(),"start"|"stop"){
+        return Err("Explicit lifecycle review is required".into());
+    }
+    let dir=config_dir()?;
+    let s=named_tunnel_settings::load(&dir)?;
+    if expected_tunnel_id!=s.tunnel_id{
+        return Err("Cloudflare tunnel ID changed during review".into());
+    }
+    let planned=named_tunnel_connector::plan(&dir,&s)?;
+    if action=="start"{
+        if planned.status.running {return Err("Named connector is already active".into());}
+        let health=named_tunnel_health::inspect(&dir,&s).await?;
+        if health.anchor_status!="verified_local" {
+            return Err("Start a verified independent Named Tunnel Anchor first".into());
+        }
+    } else if std::fs::symlink_metadata(
+        dir.join(format!("mcp-tunnel-anchor-{}.json",s.anchor_port))
+    ).is_ok() {
+        // Refuse abrupt interruption while an Anchor may still proxy MCP
+        // requests. Owner/Anchor drain is an independent reviewed operation.
+        return Err("Drain and close the independent Named Tunnel Anchor before stopping its connector".into());
+    }
+    let prompt=format!(
+        "{} ONLY the independently owned Cloudflare Named Tunnel connector?\n\nHostname: {}\nTunnel ID: {}\n\nThis does NOT change or stop the active Gemini Quick Tunnel. The action is not an OAuth cutover.",
+        if action=="start"{"Start"}else{"Stop"},s.hostname,s.tunnel_id,
+    );
+    let native=app.clone();
+    let accepted=tauri::async_runtime::spawn_blocking(move||{
+        use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+        native.dialog().message(prompt).buttons(
+            MessageDialogButtons::OkCancelCustom(
+                "Confirm connector action".into(),"Cancel".into(),
+            )
+        ).blocking_show()
+    }).await.map_err(|_|"Native connector approval failed")?;
+    if !accepted{return Err("Connector action was not approved".into());}
+    let dir_clone=dir.clone();
+    tauri::async_runtime::spawn_blocking(move||
+        named_tunnel_connector::action(&dir_clone,&s,&action,&expected_tunnel_id,true)
+    ).await.map_err(|_|"Connector process control failed")?
+}
+
+#[tauri::command]
+async fn get_named_tunnel_health() -> Result<named_tunnel_health::NamedTunnelHealth,String> {
+    let dir=config_dir()?;
+    let s=named_tunnel_settings::load(&dir)?;
+    named_tunnel_health::inspect(&dir,&s).await
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -2063,6 +2142,11 @@ fn main() {
             get_tray_settings,
             get_named_tunnel_settings,
             set_named_tunnel_settings,
+            get_named_tunnel_connector_status,
+            get_named_tunnel_health,
+            plan_named_tunnel_connector,
+            named_tunnel_connector_action,
+            named_tunnel_connector::pick_named_tunnel_token,
             get_tray_version,
             get_tray_build_number,
             release_updates::check_release_updates,

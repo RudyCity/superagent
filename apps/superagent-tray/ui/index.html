@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="./lifecycle.css" />
   <script src="./settings.js" defer></script>
   <script src="./named-tunnel-settings.js" defer></script>
+  <script src="./named-tunnel-runtime.js" defer></script>
   <link rel="stylesheet" href="./named-tunnel-settings.css" />
   <script src="./updates.js" defer></script>
   <link rel="stylesheet" href="./updates.css" />
@@ -1192,6 +1193,12 @@
                 <span><strong>Token file path</strong><small>Absolute path to a private Cloudflare tunnel token file. Token contents are never copied into this form, persisted here, or returned by the Tray.</small></span>
                 <input type="text" id="named-tunnel-token-file" maxlength="512" placeholder="C:\Users\USER\.cloudflared\superagent-mcp.token" spellcheck="false" />
               </label>
+              <div class="named-tunnel-setup-step">
+                <h3>Connector credentials</h3>
+                <p>The Remote-managed connector uses a token file managed by this device. Select a token file using the native file picker; SuperAgent validates its tunnel UUID and copies it into a private location. Token bytes never reach this screen.</p>
+                <button type="button" class="button ghost" id="named-tunnel-import-token">Import Cloudflare Token File</button>
+                <span id="named-tunnel-token-feedback" role="status" aria-live="polite"></span>
+              </div>
               <label class="tray-field-row" id="named-tunnel-credentials-row" hidden>
                 <span><strong>Credentials JSON path</strong><small>Used only for locally managed tunnels, not the remote-managed tunnel created in the Cloudflare dashboard.</small></span>
                 <input type="text" id="named-tunnel-credentials-file" maxlength="512" placeholder="C:\Users\USER\.cloudflared\&lt;UUID&gt;.json" spellcheck="false" />
@@ -1204,10 +1211,22 @@
             </div>
             <div class="tray-settings-actions">
               <button type="submit" class="button primary" id="named-tunnel-save">Save Named Tunnel Settings</button>
-              <button type="button" class="button ghost" id="named-tunnel-check">Check Local Readiness</button>
+              <button type="button" class="button ghost" id="named-tunnel-check">Check Real Health</button>
+              <button type="button" class="button ghost" id="named-tunnel-plan">Review Connector Plan</button>
+              <button type="button" class="button ghost" id="named-tunnel-start">Start Named Connector</button>
+              <button type="button" class="button ghost" id="named-tunnel-stop">Stop Named Connector</button>
+
               <span id="named-tunnel-feedback" role="status" aria-live="polite"></span>
             </div>
             <div class="named-tunnel-readiness" id="named-tunnel-readiness" role="status" aria-live="polite">Local readiness not checked. No tunnel activation is performed here.</div>
+            <div class="named-tunnel-health" id="named-tunnel-health" aria-live="polite">
+              <div class="named-tunnel-health-row"><span>Connector</span><strong id="named-tunnel-connector-health">Not checked</strong></div>
+              <div class="named-tunnel-health-row"><span>Anchor</span><strong id="named-tunnel-anchor-health">Not checked</strong></div>
+              <div class="named-tunnel-health-row"><span>MCP owner</span><strong id="named-tunnel-owner-health">Not checked</strong></div>
+              <div class="named-tunnel-health-row"><span>Cloudflare HTTPS</span><strong id="named-tunnel-edge-health">Not checked</strong></div>
+              <p id="named-tunnel-health-reason">Client cutover requires separate OAuth and Gemini verification. The existing Quick Tunnel is unchanged.</p>
+            </div>
+
           </form>
         </section>
 

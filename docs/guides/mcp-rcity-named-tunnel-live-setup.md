@@ -33,18 +33,13 @@ Quick Tunnel yang sudah dipakai Gemini tetap berjalan di `https://tigers-dame-sy
 
 Sesi Cloudflare di Chrome Delegate telah login dan halaman detail tunnel telah terbuka. Dashboard menyediakan perintah `cloudflared.exe service install <TOKEN>` melalui tombol Copy. Token bersifat rahasia, jangan tempelkan di chat, PR, skrip dalam repo, atau rekaman command gateway.
 
-**Tindakan pada Windows dengan sesi desktop yang sama:**
-
-1. Buka halaman detail tunnel di atas, bagian **Install cloudflared connector**.
-2. Gunakan **Copy to clipboard** untuk menyalin perintah lengkap yang ditampilkan Cloudflare.
-3. Buka **Command Prompt as Administrator** di Windows dan tempel/jalankan perintah Cloudflare tersebut secara langsung, tanpa menyimpannya di riwayat/log proyek.
-4. Periksa dashboard hingga tunnel menunjukkan konektor terhubung/Healthy; jika gagal, jangan mengulangi instalasi secara membabi-buta.
+**Revised security workflow (source v1.14.93):** Do not run or paste the Cloudflare dashboard `service install TOKEN` command. It may expose the token in process arguments or service metadata. Instead, save the remote-managed token in a private local file, open **Settings → Cloudflare Named Tunnel → Import Cloudflare Token File**, and use the native connector plan/start workflow with OS confirmation. The token is passed to `cloudflared` through `--token-file`, never as token bytes in arguments. See [Remote-managed operations](mcp-named-remote-operations.md).
 
 Pra-pemeriksaan menemukan executable `C:\ProgramData\chocolatey\bin\cloudflared.exe`, serta **tidak ada Windows service Cloudflare Tunnel** yang terdaftar. Terdapat proses `cloudflared.exe` lain untuk Quick Tunnel; proses-proses itu tidak boleh dihentikan. Instalasi service baru memerlukan persetujuan UAC/admin dari pengguna.
 
 ## Integrasi SuperAgent setelah konektor sehat
 
-Kode SuperAgent v1.14.91 memiliki `McpTunnelAnchor` dengan `externalNamedHostname`, tetapi CLI `scripts/mcp-tunnel-anchor.ts start-named` dan `scripts/mcp-named-tunnel.ts` saat ini hanya melakukan preflight terhadap **locally-managed tunnel** (file kredensial `TunnelID`, `AccountTag`, `TunnelSecret`). **Jangan menggunakan token remote-managed seolah-olah file JSON lokal.**
+**Updated in SuperAgent source v1.14.93:** the Remote-managed Tray profile now supports `start-profile PORT --reviewed` through the independent Anchor CLI, plus native token-file import, reviewed connector start/stop, and read-only health checks. The older `start-named` and `mcp-named-tunnel.ts` commands remain Local-managed only. Do not represent the new hostname as online until its connector, Anchor, OAuth owner and client are separately verified.
 
 Sebelum menjadikan subdomain ini layanan MCP aktif, siapkan alur runtime remote-managed dengan validasi token-file/identitas tunnel yang aman, terpisah dari proses Quick Tunnel. Jalankan Anchor khusus pada 127.0.0.1:19320, lalu owner MCP terisolasi pada port internal berbeda (misalnya 19321) dengan profil konfigurasi privat, OAuth issuer `https://mcp.rcity.web.id`, dan tes init/tool/auth yang nyata. Jangan menyalin session ID atau OAuth token lama.
 

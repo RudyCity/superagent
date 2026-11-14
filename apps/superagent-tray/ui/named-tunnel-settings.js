@@ -114,6 +114,8 @@
       const settings = readForm();
       const view = await invoke("set_named_tunnel_settings", { settings });
       display(view);
+      if (typeof Event === "function")
+        window.dispatchEvent?.(new Event("named-tunnel-settings-changed"));
       el("named-tunnel-feedback").textContent =
         "Saved locally. Named Tunnel and DNS were NOT changed. Activation still requires a separate verified handoff.";
       window.TrayFeedback?.notify?.({ kind:"success", message:"Named Tunnel settings saved locally.", scope:"settings" });
@@ -130,6 +132,7 @@
     el("named-tunnel-settings-form")?.addEventListener("submit", save);
     el("named-tunnel-check")?.addEventListener("click", () => { void load(); });
     window.__TAURI__?.event?.listen?.("desktop-open-settings", () => { void load(); });
+    window.addEventListener?.("named-tunnel-settings-refresh", () => { void load(); });
     void load();
   }
   if (document.readyState === "loading") {

@@ -1,3 +1,10 @@
+## [1.14.93] - 2026-11-14
+### Secure remote-managed Cloudflare Named Tunnel connector and runtime controls
+- Add native token-file import using an OS file picker, explicit tunnel UUID validation, private filesystem ACLs, and no token exposure to the WebView, command arguments, repository or logs. Keep token rotation separate from running connector ownership.
+- Add independently verified connector plan/start/stop guarded by OS-native confirmation, exact process birth/executable/command-line attestation, and fail-closed stale-lease behavior. Add bounded read-only Named Tunnel health diagnostics for connector, authenticated Anchor, private MCP owner and public HTTPS/OAuth challenge. Never mark a client cutover as approved from local health alone.
+- Bridge the Tray remote-managed profile to the fixed-hostname independent Anchor CLI without local-managed Cloudflare credentials JSON, with isolated child-process integration, Rust native credential tests, UI regression and release CI gates.
+- Preserve the active Gemini Quick Tunnel and DNS; no production token import, connector start, OS-service installation, client OAuth cutover or release deployment is performed by this source update.
+
 ## [1.14.92] - 2026-11-14
 ### Named Cloudflare Tunnel settings in native SuperAgent Tray
 - Add Settings → Cloudflare Named Tunnel with remote-managed token-file and local-managed credentials-file modes; configure an operator-owned hostname, Cloudflare UUID, separate Anchor/owner ports and installed cloudflared path without ever entering token bytes.

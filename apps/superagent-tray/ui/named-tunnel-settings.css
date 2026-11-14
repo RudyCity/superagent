@@ -69,6 +69,49 @@
 #named-tunnel-save[data-loading="true"] {
   opacity: .75;
 }
+
+/* Hallmark · connector operations · Tray tokens · P5 H4 E5 S5 R5 V4 */
+.named-tunnel-setup-step {
+  border-top: 1px solid var(--border-subtle);
+  padding: 18px 0 22px;
+}
+.named-tunnel-setup-step h3 {
+  margin: 0 0 6px; font-size: 13px; color: var(--text-primary);
+}
+.named-tunnel-setup-step p {
+  margin: 0 0 12px; max-width: 70ch;
+  color: var(--text-secondary); font-size: 12px; line-height: 1.65;
+}
+#named-tunnel-token-feedback {
+  display: block; max-width: 65ch; overflow-wrap: anywhere;
+  color: var(--text-secondary); font-size: 12px; margin: 10px 0 0;
+}
+.named-tunnel-health {
+  margin: 0 26px 24px; border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-surface);
+}
+.named-tunnel-health-row {
+  display: flex; gap: 16px; align-items: center; justify-content: space-between;
+  padding: 10px 15px; border-top: 1px solid var(--border-subtle); font-size: 12px;
+}
+.named-tunnel-health-row:first-child { border-top: 0; }
+.named-tunnel-health-row span { color: var(--text-secondary); }
+.named-tunnel-health-row strong {
+  color: var(--text-primary); font-family: var(--font-mono); font-size: 11.5px;
+  text-align: right; overflow-wrap: anywhere;
+}
+#named-tunnel-health-reason {
+  margin: 0; padding: 12px 15px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary); font-size: 12px; line-height: 1.65;
+}
+#named-tunnel-start[data-loading="true"],
+#named-tunnel-stop[data-loading="true"] { opacity: .65; }
+@media (max-width: 750px) {
+  .named-tunnel-health-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+  .named-tunnel-health-row strong { text-align: left; }
+}
+
 @media (max-width: 750px) {
   .named-tunnel-settings .tray-field-row {
     align-items: stretch;
