@@ -423,6 +423,52 @@ resulting SHA-256-pinned Linux helper (`e9c6b3346ca4831b2ad19fc3a63e994a2948eee5
 That environment lacks `wmctrl`, `xprop`, ImageMagick and a full X11
 session; no physical Linux window capture was certified by this check.
 
+## Milestone B11 — parallel Unix hardening and remote safety foundations
+
+**Implementation, not a production activation.** Commit `c0415613`
+contains independently scoped results from six GPT-6 High delegates:
+macOS ScreenCaptureKit boundary hardening, Linux X11 worker and artifact
+hardening, independent Wayland WINDOW portal consent proof, strict
+view-only remote-session/frame policies, separate host-first remote
+input authorization with human takeover, and fail-closed Unix CI
+artifact/package verification. The Wayland portal client intentionally
+discards the selected stream and closes the session; it does **not**
+unlock AT-SPI-bound Desktop Live, export pixels, or silently capture
+a display. The remote viewer and input policy modules are **not wired**
+to network listeners, OS action dispatch, or a production native
+approval UI. Both capabilities remain disabled.
+
+**Verified at the shared Windows checkout after integration:**
+- `bun --bun x vitest run tests/desktop-live tests/desktop-ui
+  tests/desktop-ui-discovery tests/unixStandaloneInstaller.test.ts
+  --maxWorkers=2`: **238 passed, 12 skipped, 0 failed**. Optional
+  Windows WGC tests were then explicitly run with the pinned helper;
+  all **5/5** passed on a disposable WinForms window.
+- `bun --bun x vitest run tests/desktop-live/windowsGraphicsCapture.e2e.test.ts
+  tests/desktop-live/remoteControlAuthority.test.ts
+  tests/desktop-live/remoteInputGuard.test.ts --maxWorkers=2`:
+  **58 passed, 0 failed**.
+- `bun run build` and `bun --bun x tsc --noEmit --pretty false`: PASS.
+- `cargo check --locked --quiet` for Tauri and native Rust HMAC
+  cross-language unit verification: PASS.
+- Ubuntu WSL2 Linux x64: X11 Python build, AST, SHA-256 checksum,
+  Unix host guard, Python Wayland syntax, and shell scripts: PASS.
+  Current checksum of X11 script: `90f92617656e521f648ddb53c345f1b723765103bafae32bfdeb902a27139ca5`.
+  The Wayland helper is checksum pinned but not a live capture backend.
+- `git diff --cached --check` before integration commit: PASS;
+  staged files were exactly the 33 Desktop Live-owned paths.
+
+**Still BLOCKED by native evidence / architecture, not papered over:**
+macOS ARM64 compilation with Xcode and real Screen Recording consent;
+Linux X11 capture with `wmctrl`, `xprop`, ImageMagick and a real GUI
+session; Wayland actual PipeWire frames from an attended OS portal;
+a separately host-approved and identity-bound remote viewer over a
+trusted private TLS transport (not a public tunnel); exact native
+remote-control dispatch and revoke-on-takeover; installed per-OS
+DMG/DEB/AppImage/Windows installer smoke, signing/notarization, soak,
+and R0–R7 operator approval. No live Core/MCP/Tray/tunnel was
+restarted, no public desktop port opened, and no push/release was made.
+
 ## Next bounded milestones
 **B — capture backend**: Windows WGC/DXGI with protected-window and black-frame
 detection; macOS ScreenCaptureKit per-window filtered session, hardened TCC checks;
