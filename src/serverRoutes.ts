@@ -1263,51 +1263,69 @@ export async function handleServerRoute(
   // Native desktop application preview. One exact local window per explicit
   // operator consent; never expose this endpoint through a public tunnel.
   if (["/api/desktop/live/windows", "/api/desktop/live/challenge", "/api/desktop/live/start",
-       "/api/desktop/live/frame", "/api/desktop/live/stop"].includes(pathname)) {
+       "/api/desktop/live/frame", "/api/desktop/live/stop",
+       "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop"].includes(pathname)) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
     const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
     const safeHost = /^(?:127\.0\.0\.1|localhost)(?::[0-9]{2,5})?$/i.test(String(req.headers.host || ""));
-    const forwarded = ["x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
-      "cf-connecting-ip", "cf-ray"].some(name => Boolean(req.headers[name]));
+    const forwarded = ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+      "x-real-ip", "true-client-ip", "cf-connecting-ip", "cf-ray", "cf-visitor",
+      "cf-worker", "proxy-authorization"].some(name => Object.hasOwn(req.headers, name));
     const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
     const bearer = typeof req.headers.authorization === "string" &&
       /^Bearer [^\s]+$/.test(req.headers.authorization);
-    if (!loopback || !safeHost || forwarded || req.headers.origin || req.headers.referer ||
+    if (!loopback || !safeHost || forwarded ||
+        Object.hasOwn(req.headers, "origin") || Object.hasOwn(req.headers, "referer") ||
         !bearer || !isRequestAuthorized(req, parsedUrl)) {
       sendJSON(res, 403, { success: false, error: "DESKTOP_LIVE_LOCAL_OPERATOR_AUTH_REQUIRED" });
       return true;
     }
-    if (parsedUrl.search ||
-        (pathname === "/api/desktop/live/windows" ? req.method !== "GET" : req.method !== "POST")) {
+    // No query strings at all: in particular, never tolerate URL credentials.
+    if (parsedUrl.search) {
+      sendJSON(res, 403, { success: false, error: "DESKTOP_LIVE_URL_CREDENTIALS_FORBIDDEN" });
+      return true;
+    }
+    if (((pathname === "/api/desktop/live/windows" ||
+          pathname === "/api/desktop/live/remote/status") ?
+          req.method !== "GET" : req.method !== "POST")) {
       sendJSON(res, 405, { success: false, error: "DESKTOP_LIVE_INVALID_METHOD" });
       return true;
     }
     try {
-      const { nativeWindowPreviewManager } = await import("./core/desktopUi/livePreview.js");
-      if (pathname === "/api/desktop/live/windows") {
-        sendJSON(res, 200, { success: true, ...await nativeWindowPreviewManager.discover() });
-      } else if (pathname === "/api/desktop/live/challenge") {
-        const raw = await readBody(req);
-        if (raw !== "{}") throw Error("Invalid challenge payload.");
-        const { nativeDesktopApprovalGuard } = await import("./core/desktopUi/nativeApprovalProof.js");
-        sendJSON(res, 200, { success: true, ...nativeDesktopApprovalGuard.issue() });
+      if (pathname === "/api/desktop/live/remote/status") {
+        const { remotePrivateHostOperator } = await import("./core/desktopUi/remotePrivateOperator.js");
+        sendJSON(res, 200, { success: true, ...remotePrivateHostOperator.status() });
+      } else if (pathname === "/api/desktop/live/remote/stop") {
+        if (await readBody(req) !== "{}") throw Error("Invalid private remote stop request.");
+        const { remotePrivateHostOperator } = await import("./core/desktopUi/remotePrivateOperator.js");
+        sendJSON(res, 200, { success: true, ...remotePrivateHostOperator.humanTakeover() });
       } else {
-        const raw = await readBody(req);
-        if (Buffer.byteLength(raw, "utf8") >
-            (pathname === "/api/desktop/live/start" ? 4096 : 1000)) {
-          throw Error("Oversized private preview request.");
+        const { nativeWindowPreviewManager } = await import("./core/desktopUi/livePreview.js");
+        if (pathname === "/api/desktop/live/windows") {
+          sendJSON(res, 200, { success: true, ...await nativeWindowPreviewManager.discover() });
+        } else if (pathname === "/api/desktop/live/challenge") {
+          const raw = await readBody(req);
+          if (raw !== "{}") throw Error("Invalid challenge payload.");
+          const { nativeDesktopApprovalGuard } = await import("./core/desktopUi/nativeApprovalProof.js");
+          sendJSON(res, 200, { success: true, ...nativeDesktopApprovalGuard.issue() });
+        } else {
+          const raw = await readBody(req);
+          if (Buffer.byteLength(raw, "utf8") >
+              (pathname === "/api/desktop/live/start" ? 4096 : 1000)) {
+            throw Error("Oversized private preview request.");
+          }
+          const parsed = JSON.parse(raw);
+          const result = pathname === "/api/desktop/live/start"
+            ? await nativeWindowPreviewManager.start(
+                (await import("./core/desktopUi/nativeApprovalProof.js"))
+                  .nativeDesktopApprovalGuard.consume(parsed))
+            : pathname === "/api/desktop/live/frame"
+              ? await nativeWindowPreviewManager.frame(parsed)
+              : nativeWindowPreviewManager.stop(parsed);
+          sendJSON(res, 200, { success: true, ...result });
         }
-        const parsed = JSON.parse(raw);
-        const result = pathname === "/api/desktop/live/start"
-          ? await nativeWindowPreviewManager.start(
-              (await import("./core/desktopUi/nativeApprovalProof.js"))
-                .nativeDesktopApprovalGuard.consume(parsed))
-          : pathname === "/api/desktop/live/frame"
-            ? await nativeWindowPreviewManager.frame(parsed)
-            : nativeWindowPreviewManager.stop(parsed);
-        sendJSON(res, 200, { success: true, ...result });
       }
     } catch {
       // Do not echo titles, native identifiers, tokens, screenshots, OS errors.

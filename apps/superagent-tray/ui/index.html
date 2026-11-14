@@ -1935,6 +1935,21 @@
             <p id="desktop-live-placeholder">No application is being shared.</p>
           </div>
           <p id="desktop-live-status" role="status" aria-live="polite">Preview is off.</p>
+          <section class="desktop-live-remote" aria-labelledby="desktop-live-remote-heading">
+            <div class="desktop-live-remote-head">
+              <div>
+                <h3 id="desktop-live-remote-heading">Private remote viewer</h3>
+                <p>A remote viewer is separate from the local preview. It requires pinned mTLS identity and its own native host approval.</p>
+              </div>
+              <strong id="desktop-live-remote-state" class="desktop-live-remote-state" data-state="unknown">Checking</strong>
+            </div>
+            <p id="desktop-live-remote-detail" role="status" aria-live="polite">Checking trusted remote-viewer readiness.</p>
+            <div class="desktop-live-remote-actions">
+              <button type="button" class="button secondary" id="desktop-live-remote-review">Native security review</button>
+              <button type="button" class="button secondary" id="desktop-live-takeover">Stop sharing / take over</button>
+            </div>
+            <p class="delegate-hint">Remote input is disabled. Viewing consent never authorizes mouse or keyboard control. Public tunnels, browser tokens, forwarded headers, and arbitrary bind addresses cannot activate this feature.</p>
+          </section>
           <p id="desktop-live-permission" class="delegate-hint">A native confirmation dialog must approve this exact window. Screen Recording permissions may also be required by the operating system. JPEG frames are size-limited, unchanged frames are skipped, and capture speed depends on the host. Every session expires after five minutes and stops on navigation, hidden Tray, changed window identity, or failed capture. No recording, remote input or public streaming.</p>
         </section>
       </div>

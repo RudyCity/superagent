@@ -31,12 +31,25 @@ const folderFile = (path: string, contents: string | Buffer) => {
 function setup({ incoming, name = "remote.safolder", supported = true, connected = true }:
   { incoming?: Buffer; name?: string; supported?: boolean; connected?: boolean } = {}) {
   const nodes = new Map<string, any>();
+  // Observe the same status updates that the real UI renders. Polling a fixed
+  // number of setImmediate turns races the asynchronous WebCrypto digest on CI.
+  const statusObservers = new Set<() => void>();
   const get = (id: string): any => {
     if (!nodes.has(id)) {
       const el: any = {
         value: "", disabled: false, files: [], listeners: new Map<string, Function>(),
         textContent: "", addEventListener(type: string, cb: Function) { this.listeners.set(type, cb); },
       };
+      if (id === "lan-file-info") {
+        let status = "";
+        Object.defineProperty(el, "textContent", {
+          get: () => status,
+          set: (value: string) => {
+            status = String(value);
+            for (const observer of statusObservers) observer();
+          },
+        });
+      }
       nodes.set(id, el);
     }
     return nodes.get(id);
@@ -98,14 +111,26 @@ function setup({ incoming, name = "remote.safolder", supported = true, connected
     get("lan-folder-source").listeners.get("change")?.();
   };
   const click = (id: string) => get(id).listeners.get("click")?.();
-  return { choose, click, get, requests, saves, chunks, target, window };
-}
-async function until(predicate: () => boolean, count = 300) {
-  for (let i = 0; i < count; i++) {
-    if (predicate()) return;
-    await new Promise((resolve) => setImmediate(resolve));
-  }
-  throw Error("Timed out waiting for isolated folder UI operation.");
+  const waitFor = (predicate: () => boolean): Promise<void> => {
+    if (predicate()) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      const onStatus = () => {
+        if (!predicate()) return;
+        clearTimeout(watchdog);
+        statusObservers.delete(onStatus);
+        resolve();
+      };
+      statusObservers.add(onStatus);
+      // A deadlocked operation must still fail with its last visible UI state.
+      // This bounds real elapsed time, not the number of event-loop turns.
+      const watchdog = setTimeout(() => {
+        statusObservers.delete(onStatus);
+        reject(Error("Timed out waiting for folder UI state: " + get("lan-file-info").textContent));
+      }, 3000);
+      onStatus();
+    });
+  };
+  return { choose, click, get, requests, saves, chunks, target, window, waitFor };
 }
 const message = (ui: ReturnType<typeof setup>) => ui.get("lan-file-info").textContent;
 
@@ -123,7 +148,7 @@ describe("LAN Tray SAFOLDER1 user-selected directory exchange", () => {
     ui.choose([folderFile("photos/z.txt", "Z"), folderFile("photos/sub/a.txt", "HELLO")]);
     expect(ui.get("lan-folder-send").disabled).toBe(false);
     ui.click("lan-folder-send");
-    await until(() => message(ui).startsWith("Folder package sent"));
+    await ui.waitFor(() => message(ui).startsWith("Folder package sent"));
     const archive = Buffer.concat(ui.chunks);
     expect(archive.subarray(0, 9).toString()).toBe("SAFOLDER1");
     const length = archive.readUInt32BE(9);
@@ -154,26 +179,26 @@ describe("LAN Tray SAFOLDER1 user-selected directory exchange", () => {
     const ui = setup();
     ui.choose([folderFile(path, "secret")]);
     ui.click("lan-folder-send");
-    await until(() => message(ui).startsWith("Folder send failed:"));
+    await ui.waitFor(() => message(ui).startsWith("Folder send failed:"));
     expect(ui.requests.filter((r) => r.action === "file_offer")).toHaveLength(0);
   });
   it("rejects more than 64 files and total size greater than 4 MiB", async () => {
     const many = setup();
     many.choose(Array.from({ length: 65 }, (_, i) => folderFile("photos/f" + i, "x")));
     many.click("lan-folder-send");
-    await until(() => message(many).includes("1–64"));
+    await many.waitFor(() => message(many).includes("1–64"));
     expect(many.requests).toHaveLength(0);
     const huge = setup();
     huge.choose([folderFile("photos/big.bin", Buffer.alloc(4 * 1024 * 1024))]);
     huge.click("lan-folder-send");
-    await until(() => message(huge).startsWith("Folder send failed:"));
+    await huge.waitFor(() => message(huge).startsWith("Folder send failed:"));
     expect(huge.requests.filter((r) => r.action === "file_offer")).toHaveLength(0);
   });
   it("refuses case-insensitive duplicates", async () => {
     const ui = setup();
     ui.choose([folderFile("photos/A.txt", "A"), folderFile("photos/a.txt", "B")]);
     ui.click("lan-folder-send");
-    await until(() => message(ui).startsWith("Folder send failed:"));
+    await ui.waitFor(() => message(ui).startsWith("Folder send failed:"));
     expect(ui.requests).toHaveLength(0);
   });
   it("fails closed if directory picker is unsupported and never falls back to files", async () => {
@@ -191,7 +216,7 @@ describe("LAN Tray SAFOLDER1 user-selected directory exchange", () => {
     ]);
     const ui = setup({ incoming: bytes });
     ui.click("lan-file-receive");
-    await until(() => ui.saves.length > 0 && message(ui).startsWith("Folder received and verified"));
+    await ui.waitFor(() => ui.saves.length > 0 && message(ui).startsWith("Folder received and verified"));
     expect(ui.saves.map((s) => s.command)).toEqual(["lan_folder_save"]);
     expect(ui.saves[0].input.name).toBe("remote.safolder");
     expect(ui.saves[0].input.sha256).toBe(sha(bytes));
@@ -203,11 +228,15 @@ describe("LAN Tray SAFOLDER1 user-selected directory exchange", () => {
     ["hidden entry", makeArchive([{ path: ".config/key", bytes: Buffer.from("X") }])],
     ["duplicate names", makeArchive([{ path: "a.txt", bytes: Buffer.from("X") }, { path: "A.txt", bytes: Buffer.from("Y") }])],
     ["file/directory path collision", makeArchive([{ path: "photos/a", bytes: Buffer.from("X") }, { path: "photos/a/b", bytes: Buffer.from("Y") }])],
+    ["file/directory path collision (reverse order)", makeArchive([{ path: "photos/a/b", bytes: Buffer.from("Y") }, { path: "photos/a", bytes: Buffer.from("X") }])],
     ["incorrect magic", Buffer.from("NOTFOLDER000000")],
   ])("does not save a malformed received folder: %s", async (_reason, bytes) => {
     const ui = setup({ incoming: bytes });
     ui.click("lan-file-receive");
-    await until(() => message(ui).startsWith("Receive failed:"));
+    await ui.waitFor(() => message(ui).startsWith("Receive failed:"));
+    if (_reason.startsWith("file/directory path collision")) {
+      expect(message(ui)).toContain("conflicting paths");
+    }
     expect(ui.saves).toHaveLength(0);
     expect(ui.requests.map((r) => r.action)).toContain("file_abort");
     expect(ui.requests.map((r) => r.action)).not.toContain("file_finish");
@@ -215,7 +244,7 @@ describe("LAN Tray SAFOLDER1 user-selected directory exchange", () => {
   it("keeps ordinary files on existing lan_file_save path", async () => {
     const ui = setup({ incoming: Buffer.from("normal file"), name: "report.txt" });
     ui.click("lan-file-receive");
-    await until(() => ui.saves.length > 0);
+    await ui.waitFor(() => ui.saves.length > 0);
     expect(ui.saves.map((s) => s.command)).toEqual(["lan_file_save"]);
   });
   it("requires active approved session before folder sending", async () => {

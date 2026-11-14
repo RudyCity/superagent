@@ -989,13 +989,56 @@ async fn desktop_live_action(
     if window.label() != "main" {
         return Err("Desktop Live is restricted to the main native Tray".into());
     }
-    if action != "stop" && (!window.is_visible().unwrap_or(false) ||
+    if !matches!(action.as_str(), "stop" | "remote-stop") &&
+       (!window.is_visible().unwrap_or(false) ||
         window.is_minimized().unwrap_or(true)) {
         return Err("Desktop Live is not available from a hidden Tray window".into());
     }
     // Native Tray to authenticated local Core only. Never proxy arbitrary routes,
     // accept model-selected commands, or expose Core bearer to the WebView.
     match action.as_str() {
+        // These requests carry no viewer credentials, private key material,
+        // socket configuration, or local preview bearer into WebView JavaScript.
+        "remote-status" => {
+            if payload.is_some() { return Err("Unexpected remote readiness payload".into()); }
+            core_request(Method::GET, "/api/desktop/live/remote/status", None).await
+        }
+        "remote-stop" => {
+            if payload.is_some() { return Err("Unexpected remote stop payload".into()); }
+            core_request(Method::POST, "/api/desktop/live/remote/stop", Some(json!({}))).await
+        }
+        "remote-review" => {
+            if payload.is_some() { return Err("Remote review does not accept a browser-selected identity".into()); }
+            if DESKTOP_LIVE_APPROVAL_OPEN.compare_exchange(
+                false, true, std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            ).is_err() {
+                return Err("Another native Desktop Live dialog is pending".into());
+            }
+            let _approval_guard = DesktopLiveApprovalGuard;
+            let status = core_request(Method::GET, "/api/desktop/live/remote/status", None).await?;
+            // No separate mTLS host listener/certificate provisioning exists in
+            // this build. Never convert a browser boolean into remote permission.
+            if status.get("state").and_then(Value::as_str) != Some("NOT_CONFIGURED") ||
+               status.get("approvalAvailable").and_then(Value::as_bool) != Some(false) ||
+               status.get("viewerCertificateSha256") != Some(&Value::Null) {
+                return Err("Unverifiable private viewer readiness — access denied".into());
+            }
+            let prompt = concat!(
+                "PRIVATE REMOTE VIEWER — NOT CONFIGURED\n\n",
+                "No independently verified mTLS 1.3 private listener, pinned viewer ",
+                "certificate fingerprint, or secure viewer credential handoff exists.\n\n",
+                "Local window-preview approval NEVER grants remote viewing. ",
+                "Remote mouse and keyboard input would require a separate native approval. ",
+                "No remote session will be opened."
+            );
+            let native = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                use tauri_plugin_dialog::DialogExt;
+                native.dialog().message(prompt).blocking_show();
+            }).await.map_err(|_| "Native private-viewer review could not complete")?;
+            Ok(json!({"success":true,"state":"NOT_CONFIGURED","approved":false}))
+        }
         "windows" => {
             if payload.is_some() { return Err("Unexpected discovery payload".into()); }
             core_request(Method::GET, "/api/desktop/live/windows", None).await

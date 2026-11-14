@@ -57,8 +57,25 @@ describe("Windows UIA native disposable control host smoke", () => {
       };
       expect(scope.nativeId).toMatch(/^[0-9]+$/);
       expect(scope.processBirthId).toMatch(/^filetime:\d+$/);
-      const observation = native.inspect(scope, descriptor.nativeRef);
-      expect(observation, "Native identity + UIA probe: status=" + native.lastStatus()).not.toBeNull();
+      // MCP-launched PowerShell may not own foreground. An attending human can
+      // select only the disposable fixture; never steal focus or use SendInput.
+      const statuses = new Set<number>();
+      const until = Date.now() + 12_000;
+      let observation = native.inspect(scope, descriptor.nativeRef);
+      statuses.add(native.lastStatus());
+      while (!observation && native.lastStatus() === -356 &&
+          child.exitCode === null && Date.now() < until) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+        observation = native.inspect(scope, descriptor.nativeRef);
+        statuses.add(native.lastStatus());
+      }
+      expect(observation,
+        "ATTENDED_FOREGROUND_BLOCKED: exact disposable HWND must be foreground " +
+        "on the Default input desktop; nativeStatus=" + native.lastStatus() +
+        ", statusHistory=" + [...statuses].join(",") +
+        ", foregroundAtShown=" + descriptor.foregroundAtShown +
+        ", defaultInputDesktopAtShown=" + descriptor.defaultInputDesktopAtShown +
+        ". No focus takeover, SendInput, or app fallback attempted.").not.toBeNull();
       if (!observation) throw new Error("No verified native UIA control");
       expect(observation.element.role).toBe("button");
       expect(observation.element.patterns.invoke).toBe(true);
@@ -72,5 +89,5 @@ describe("Windows UIA native disposable control host smoke", () => {
       native.close();
       child.kill(); // Only the test-owned disposable child, never an existing app.
     }
-  }, 30000);
+  }, 45000);
 });

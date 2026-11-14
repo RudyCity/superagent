@@ -12,6 +12,8 @@ on:
       - "scripts/verify-installed-wgc.mjs"
       - "scripts/verify-wgc-windows-nsis.ps1"
       - "scripts/build-desktop-live-wgc.ps1"
+      - "scripts/build-desktop-live-windows-semantic*.ps1"
+      - "native/desktop-live-windows-input/windowsRemoteSemantic.cpp"
       - "native/desktop-live-wgc/**"
       - "native/desktop-live-sck/**"
       - "native/desktop-live-x11/**"
@@ -32,6 +34,8 @@ on:
       - "scripts/verify-installed-wgc.mjs"
       - "scripts/verify-wgc-windows-nsis.ps1"
       - "scripts/build-desktop-live-wgc.ps1"
+      - "scripts/build-desktop-live-windows-semantic*.ps1"
+      - "native/desktop-live-windows-input/windowsRemoteSemantic.cpp"
       - "native/desktop-live-wgc/**"
       - "native/desktop-live-sck/**"
       - "native/desktop-live-x11/**"
@@ -98,6 +102,12 @@ jobs:
         run: |
           ./scripts/build-desktop-live-wgc.ps1
           bun --bun x vitest run tests/desktop-live/windowsWgcArtifact.test.ts tests/desktop-live/windowsInstalledBundleSmoke.test.ts --maxWorkers=1
+      - name: Compile opt-in Windows UIA DLL from source on trusted hosted runner
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/build-desktop-live-windows-semantic.ps1
+          bun --bun x vitest run tests/desktop-live/windowsRemoteNativePackaging.test.ts --maxWorkers=1
       - name: Build and verify macOS ScreenCaptureKit helper
         if: runner.os == 'macOS'
         shell: bash
@@ -113,7 +123,7 @@ jobs:
       - name: Verify Chrome extension syntax
         run: bun run verify:extension-js
       - name: Core & packaging regression
-        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktop-live/unixCapturePackaging.test.ts tests/desktop-live/unixArtifactAudit.test.ts --maxWorkers=1
+        run: bun --bun x vitest run tests/toolRegistryConsistency.test.ts tests/desktopRuntimeUi.test.ts tests/mediaTransforms.test.ts tests/mediaFormatGuard.test.ts tests/mediaPlanner.test.ts tests/windowsStandaloneInstaller.test.ts tests/prebuiltWindowsInstaller.test.ts tests/unixStandaloneInstaller.test.ts tests/desktop-live/unixCapturePackaging.test.ts tests/desktop-live/unixArtifactAudit.test.ts tests/desktop-live/windowsRemoteNativePackaging.test.ts --maxWorkers=1
       - name: Native Rust regression
         run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml
       - name: Build CLI launcher
@@ -131,6 +141,10 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/verify-wgc-windows-nsis.ps1
+      - name: Audit actual compressed NSIS UIA payload, x64 PE and provenance
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build-desktop-live-windows-semantic-audit-nsis.ps1
       - name: Prepare Unix standalone distribution
         if: runner.os != 'Windows'
         run: bun run installer:prepare:unix

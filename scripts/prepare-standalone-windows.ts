@@ -5,9 +5,12 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import os from "node:os";
 import { spawnSync } from "node:child_process";
 import { verifyWindowsWgcArtifactPair } from "../src/core/desktopUi/adapters/windowsWgcArtifact.js";
+import {
+  WINDOWS_UIA_RELATIVE_DIR, WINDOWS_UIA_SOURCE_RELATIVE,
+  verifyWindowsRemoteNativePackaging, windowsNativeCiContext,
+} from "./verify-standalone-windows.js";
 
 const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps", "superagent-tray", "src-tauri");
@@ -28,6 +31,7 @@ function copy(source: string, destination: string): void {
   fs.cpSync(source, destination, { recursive: true, force: true });
 }
 assert(process.platform === "win32" && process.arch === "x64", "Windows x64 required; other platforms retain normal Tray build.");
+const nativeContext = windowsNativeCiContext();
 assert(Bun.version === pinnedBun, `Expected Bun ${pinnedBun}; actual ${Bun.version}. Use oven-sh/setup-bun@v2 pinned for CI.`);
 assert(fs.existsSync(sourceCli), "Build Core first: bun run build");
 assert(fs.existsSync(sourceLauncher), "Build launcher first: cargo build --release --bin superagent --manifest-path apps/superagent-tray/src-tauri/Cargo.toml");
@@ -35,7 +39,15 @@ const wgcRelative = path.join("native", "desktop-live-wgc");
 const wgcInput = path.join(root, "dist", wgcRelative);
 assert(verifyWindowsWgcArtifactPair(path.join(wgcInput, "wgc.exe"),
   path.join(wgcInput, "wgc.sha256")) !== null,
-"Missing verified WGC helper; run scripts/build-desktop-live-wgc.ps1 before installer preparation.");
+  "Missing verified WGC helper; run scripts/build-desktop-live-wgc.ps1 before installer preparation.");
+
+// The checkout-local native/*.obj, *.dll, *.lib, *.exp and SHA are never inputs.
+// Only the new, checksum-pinned build under dist is allowed, when stamped by
+// this exact CI commit and run on a trusted hosted Windows x64 runner.
+const uiaSource = path.join(root, WINDOWS_UIA_SOURCE_RELATIVE);
+const uiaBuildDir = path.join(root, "dist", WINDOWS_UIA_RELATIVE_DIR);
+const uiaHash = verifyWindowsRemoteNativePackaging(uiaBuildDir, uiaSource, nativeContext);
+
 const launcher = fs.readFileSync(sourceLauncher);
 assert(launcher[0] === 0x4d && launcher[1] === 0x5a, "Launcher is not a Windows PE executable.");
 const existing = fs.existsSync(stage);
@@ -48,6 +60,19 @@ if (fs.existsSync(path.join(root, "tsconfig.json"))) copy(path.join(root, "tscon
 copy(path.join(root, "bun.lock"), path.join(stage, "bun.lock"));
 copy(path.join(root, "patches"), path.join(stage, "patches"));
 copy(path.join(root, "dist"), path.join(stage, "dist"));
+
+// The fixed loader's module location in the installer is
+// <install>/standalone/dist/core/desktopUi/adapters/... and ../../../../native
+// resolves to <install>/standalone/native/desktop-live-windows-input.
+// Remove the dist-native intermediate copy only in disposable staging.
+fs.rmSync(path.join(stage, "dist", WINDOWS_UIA_RELATIVE_DIR), { recursive: true, force: true });
+const uiaStage = path.join(stage, WINDOWS_UIA_RELATIVE_DIR);
+for (const name of ["winremote.dll", "winremote.sha256", "winremote.provenance.json"]) {
+  copy(path.join(uiaBuildDir, name), path.join(uiaStage, name));
+}
+assert(verifyWindowsRemoteNativePackaging(uiaStage, uiaSource, nativeContext) === uiaHash,
+  "Native UIA staging must match fresh source-built Windows x64 DLL and CI receipt.");
+
 const stagedWgc = path.join(stage, "dist", wgcRelative);
 assert(verifyWindowsWgcArtifactPair(path.join(stagedWgc, "wgc.exe"),
   path.join(stagedWgc, "wgc.sha256")) !== null, "Verified WGC helper missing from standalone stage.");
@@ -82,9 +107,14 @@ const metadata = {
   platform: "win32", arch: "x64", bunVersion: pinnedBun, binary: "bun.exe",
   cli: "superagent.exe", entrypoint: "standalone/dist/cli.js",
   requiresGlobalBun: false, requiresGlobalNode: false,
+  optionalWindowsRemoteSemanticInput: {
+    installedRelativeDirectory: "standalone/native/desktop-live-windows-input",
+    sha256: uiaHash, activated: false,
+  },
 };
 fs.writeFileSync(path.join(stage, "standalone-manifest.json"), JSON.stringify(metadata, null, 2) + "\n");
 console.log("[standalone] Prepared " + stage);
 console.log("[standalone] Runtime sidecar: " + runtimeExe);
 console.log("[standalone] CLI sidecar: " + coreExe);
 console.log("[standalone] Manifest: " + JSON.stringify(metadata));
+console.log("[standalone] Optional UIA input helper staged but not activated: " + uiaHash);

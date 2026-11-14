@@ -59,15 +59,22 @@ bool parseU64(const wchar_t* s, uint64_t& out) {
   out = acc;
   return acc != 0;
 }
-bool verifyDefaultDesktop() {
-  HDESK d = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+bool desktopIsDefault(HDESK d) {
   if (!d) return false;
   wchar_t name[128]{};
   DWORD bytes = 0;
-  bool valid = GetUserObjectInformationW(
+  return GetUserObjectInformationW(
     d, UOI_NAME, name, sizeof(name), &bytes) && wcscmp(name, L"Default") == 0;
-  CloseDesktop(d);
-  return valid;
+}
+bool verifyDefaultDesktop() {
+  // The UIA caller must itself be on the interactive input desktop.
+  // Merely finding a desktop named Default is insufficient.
+  HDESK input = OpenInputDesktop(0, FALSE, DESKTOP_READOBJECTS);
+  if (!input) return false;
+  const bool validInput = desktopIsDefault(input);
+  CloseDesktop(input);
+  HDESK caller = GetThreadDesktop(GetCurrentThreadId()); // borrowed handle
+  return validInput && desktopIsDefault(caller);
 }
 bool tokenSid(HANDLE process, std::wstring& out) {
   HANDLE raw = nullptr;
@@ -132,7 +139,10 @@ bool verifyWindow(
   if (!IsWindowVisible(hwnd)) return rejected(-353);
   if (IsIconic(hwnd)) return rejected(-354);
   if (GetAncestor(hwnd, GA_ROOT) != hwnd) return rejected(-355);
-  if (GetForegroundWindow() != hwnd) return rejected(-356);
+  // Never activate another window; only a human-attended exact foreground
+  // match on the caller's current input desktop permits native UIA.
+  const HWND foreground = GetForegroundWindow();
+  if (!foreground || foreground != hwnd) return rejected(-356);
   DWORD actualPid = 0;
   DWORD thread = GetWindowThreadProcessId(hwnd, &actualPid);
   if (!thread || actualPid != pid) return rejected(-36);

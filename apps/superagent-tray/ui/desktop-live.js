@@ -20,6 +20,59 @@
     const el = $("desktop-live-status");
     if (el) el.textContent = message;
   };
+  const remoteMessage = (state, message) => {
+    const badge = $("desktop-live-remote-state");
+    if (badge) {
+      badge.textContent = state;
+      badge.dataset.state = state.toLowerCase().replace(/[^a-z_-]/g, "");
+    }
+    const detail = $("desktop-live-remote-detail");
+    if (detail) detail.textContent = message;
+  };
+  async function remoteReadiness() {
+    try {
+      const result = await invoke("remote-status");
+      if (!result || result.success !== true || result.state !== "NOT_CONFIGURED" ||
+          result.viewAvailable !== false || result.inputAvailable !== false ||
+          result.approvalAvailable !== false || result.viewerCertificateSha256 !== null) {
+        throw Error("Remote provisioning not verified");
+      }
+      remoteMessage("NOT CONFIGURED",
+        "No trusted mTLS 1.3 private host listener or pinned viewer identity. " +
+        "Local preview remains local. Separate remote input approval is unavailable.");
+    } catch {
+      remoteMessage("UNAVAILABLE", "Remote readiness cannot be verified. All remote access stays off.");
+    }
+  }
+  async function remoteReview() {
+    if (!pageVisible()) return;
+    const button = $("desktop-live-remote-review");
+    if (button) button.disabled = true;
+    try {
+      // Rust owns the native dialog and refuses WebView-supplied viewer,
+      // fingerprint, TLS keys, bind address, or consent boolean.
+      const result = await invoke("remote-review");
+      if (result?.state !== "NOT_CONFIGURED" || result?.approved !== false) {
+        throw Error("Unexpected remote approval state");
+      }
+    } catch {
+      remoteMessage("UNAVAILABLE", "Native private-viewer review failed. Remote access stays off.");
+    } finally {
+      if (button) button.disabled = false;
+      await remoteReadiness();
+    }
+  }
+  async function revokeRemote() {
+    try {
+      const result = await invoke("remote-stop");
+      if (!result || result.success !== true || result.state !== "NOT_CONFIGURED") {
+        throw Error("Private remote revocation could not be verified");
+      }
+      remoteMessage("NOT CONFIGURED", "Remote viewing and input are off. Host takeover requested.");
+    } catch {
+      remoteMessage("UNAVAILABLE", "Host revocation could not be confirmed. Remote access must remain disabled.");
+    }
+  }
   const resetImage = () => {
     const image = $("desktop-live-image");
     if (image) { image.removeAttribute("src"); image.hidden = true; }
@@ -44,10 +97,14 @@
     resetImage();
     buttons();
     status(message);
+    // Revoke remote and local scopes immediately without serializing behind
+    // either request. The preview token stays in local, native-only IPC.
+    const remoteRevocation = revokeRemote();
     if (token) {
       try { await invoke("stop", { token }); }
-      catch { status("Preview cleared locally. Core will expire the revoked/unused capability."); }
+      catch { status("Preview cleared locally. Core will expire the unused capability."); }
     }
+    await remoteRevocation;
   }
   async function refresh() {
     if (state.loading || state.token || state.starting || !pageVisible()) return;
@@ -85,6 +142,7 @@
       state.loading = false;
       if ($("desktop-live-refresh")) $("desktop-live-refresh").disabled = false;
       buttons();
+      void remoteReadiness();
     }
   }
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -186,6 +244,9 @@
     $("desktop-live-refresh")?.addEventListener("click", () => void refresh());
     $("desktop-live-start")?.addEventListener("click", () => void start());
     $("desktop-live-stop")?.addEventListener("click", () => void stop());
+    $("desktop-live-remote-review")?.addEventListener("click", () => void remoteReview());
+    $("desktop-live-takeover")?.addEventListener("click",
+      () => void stop("Host takeover requested. Local preview and private viewer revoked."));
     $("desktop-live-target")?.addEventListener("change", buttons);
     $("desktop-live-quality")?.addEventListener("change", () => {
       // A different codec profile requires a full frame; the Core also
@@ -197,6 +258,7 @@
     });
     window.addEventListener("pagehide", () => void stop("Preview stopped on viewer exit."));
     buttons();
+    void remoteReadiness();
   }
   window.__superagentDesktopLiveRefresh = refresh;
   window.__superagentDesktopLiveStop = () => stop("Preview stopped on page navigation.");

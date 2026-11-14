@@ -262,11 +262,21 @@ describe("Windows nativeRef-only UI Automation: attended one-shot dispatch", () 
       .toEqual({ status: "uncertain", reason: "NATIVE_DISPATCH_UNVERIFIED" });
   });
 
-  it("loaded native DLL (when present) rejects a nonexistent window without invoking UIA action", async () => {
+  it("native signed i32 ABI denies a nonexistent HWND before any authorization callback", async () => {
     const native = await openVerifiedWindowsRemoteSemanticNative();
     if (!native) return; // CI without the separately compiled Windows-only artifact.
     try {
-      expect(native.inspect({ ...scope, nativeId: "1" }, element.nativeRef!)).toBeNull();
+      const missingWindow = { ...scope, nativeId: "1" };
+      expect(native.inspect(missingWindow, element.nativeRef!)).toBeNull();
+      // -351: no verified input desktop; -352: no matching HWND. A signed
+      // negative return proves the FFI has not interpreted i32 as u32.
+      expect([-351, -352]).toContain(native.lastStatus());
+      let checkpointCalls = 0;
+      expect(native.act(missingWindow, element.nativeRef!, "click",
+        JSON.stringify(nativeElement()), "", 0, 0, () => { checkpointCalls++; }))
+        .toBe(false);
+      expect(native.lastStatus()).toBe(-3);
+      expect(checkpointCalls).toBe(0);
     } finally { native.close(); }
   });
 });
