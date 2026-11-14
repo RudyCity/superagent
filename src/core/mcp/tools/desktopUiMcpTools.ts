@@ -58,7 +58,7 @@ const inputSchema = {
     title: { type: "string", minLength: 1, maxLength: 512, description: "Window title metadata; never authorization." },
     allowInput: {
       type: "boolean",
-      description: "Request native input. Exact host consent is still required at dispatch time.",
+      description: "true requests input; false forces read-only. Omission auto-requests only an exact currently Trusted window, and still requires a fresh native host approval.",
     },
     enableVision: {
       type: "boolean",
@@ -267,7 +267,7 @@ export async function dispatchDesktopUiMcpTool(
           nativeId: String(rawArgs.nativeId ?? ""),
           title: String(rawArgs.title ?? ""),
           ownerPrincipal: context.principalId,
-          allowInput: rawArgs.allowInput === true,
+          allowInput: rawArgs.allowInput === true ? true : rawArgs.allowInput === false ? false : undefined,
           enableVision: rawArgs.enableVision === true,
           visionEndpoint: typeof rawArgs.visionEndpoint === "string" ? rawArgs.visionEndpoint : undefined,
           ttlMs: typeof rawArgs.ttlMs === "number" ? rawArgs.ttlMs : undefined,

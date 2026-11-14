@@ -26,6 +26,7 @@ mod remote_service_detection;
 mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
+mod desktop_input_trust;
 mod named_tunnel_settings;
 mod named_tunnel_connector;
 mod named_tunnel_clipboard;
@@ -2245,6 +2246,12 @@ fn main() {
             create_connection,
             regenerate_token,
             get_tray_settings,
+            desktop_input_trust::get_desktop_input_policy,
+            desktop_input_trust::list_desktop_input_windows,
+            desktop_input_trust::set_desktop_input_mode,
+            desktop_input_trust::trust_desktop_input_window,
+            desktop_input_trust::revoke_desktop_input_window,
+            desktop_input_trust::revoke_all_desktop_input_windows,
             get_named_tunnel_settings,
             set_named_tunnel_settings,
             get_named_tunnel_connector_status,

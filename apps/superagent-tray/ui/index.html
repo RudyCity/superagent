@@ -18,6 +18,8 @@
   <script src="./lifecycle.js" defer></script>
   <link rel="stylesheet" href="./lifecycle.css" />
   <script src="./settings.js" defer></script>
+  <script src="./desktop-input-trust.js" defer></script>
+  <link rel="stylesheet" href="./desktop-input-trust.css" />
   <script src="./named-tunnel-settings.js" defer></script>
   <script src="./named-tunnel-runtime.js" defer></script>
   <script src="./named-tunnel-manager.js" defer></script>
@@ -1151,6 +1153,58 @@
               <span id="settings-feedback" role="status" aria-live="polite"></span>
             </div>
           </form>
+        </section>
+
+        <section class="panel tray-settings-panel desktop-trust-panel" id="desktop-trust-panel" aria-labelledby="desktop-trust-title">
+          <div class="panel-head desktop-trust-header">
+            <div>
+              <div class="panel-eyebrow">SECURITY APPROVAL MANAGER</div>
+              <h2 id="desktop-trust-title">Trusted Desktop Input</h2>
+              <p>Approve only a specific application window. Trusted does not grant automatic mouse or keyboard access: Core requests a separate native host confirmation for every input session.</p>
+            </div>
+            <span class="subtle-badge" id="desktop-trust-status">Reading policy...</span>
+          </div>
+          <div class="desktop-trust-controls">
+            <div class="desktop-trust-row">
+              <label class="desktop-trust-field" for="desktop-trust-mode">
+                <span>Default request mode</span>
+                <select id="desktop-trust-mode">
+                  <option value="trusted">Trusted - exact windows, host approval required</option>
+                  <option value="off">Off - refuse Trusted requests</option>
+                </select>
+              </label>
+              <button type="button" class="button ghost" id="desktop-trust-mode-save">Save mode</button>
+            </div>
+            <p class="desktop-trust-explainer">The mode is stored locally, not in a browser or MCP prompt. An empty Trusted list grants nothing. Every window needs its own attended approval and expires automatically in at most 30 minutes. Revocation is checked on every Core input action.</p>
+            <div class="desktop-trust-row">
+              <label class="desktop-trust-field" for="desktop-trust-window">
+                <span>Verified native application window</span>
+                <select id="desktop-trust-window"><option value="">Refresh to discover windows...</option></select>
+              </label>
+              <button type="button" class="button ghost" id="desktop-trust-refresh">Refresh windows</button>
+            </div>
+            <div class="desktop-trust-row">
+              <label class="desktop-trust-field" for="desktop-trust-duration">
+                <span>Approval request lifetime</span>
+                <select id="desktop-trust-duration">
+                  <option value="5">5 minutes</option>
+                  <option value="10" selected>10 minutes</option>
+                  <option value="15">15 minutes</option>
+                  <option value="30">30 minutes (maximum)</option>
+                </select>
+              </label>
+              <button type="button" class="button primary" id="desktop-trust-add">Review &amp; Trust window</button>
+            </div>
+            <div>
+              <h3>Active trusted windows</h3>
+              <ul class="desktop-trust-targets" id="desktop-trust-targets" aria-label="Active trusted desktop input targets"></ul>
+            </div>
+            <div class="desktop-trust-danger">
+              <button type="button" class="button ghost danger" id="desktop-trust-revoke-all">Revoke all windows</button>
+              <span>Host consent expires, can be revoked at any time, and does not persist as an active input session after Core restart.</span>
+            </div>
+            <p id="desktop-trust-feedback" role="status" aria-live="polite"></p>
+          </div>
         </section>
 
         <section class="panel tray-settings-panel named-tunnel-settings" aria-labelledby="named-tunnel-settings-title">

@@ -1,0 +1,96 @@
+/* Security Approval Manager: restrained native-console settings surface. */
+.desktop-trust-panel .desktop-trust-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.desktop-trust-panel .desktop-trust-controls {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+.desktop-trust-panel .desktop-trust-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.desktop-trust-panel .desktop-trust-field {
+  flex: 1 1 220px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.desktop-trust-panel .desktop-trust-field span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted, #98a3b2);
+}
+.desktop-trust-panel select {
+  max-width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  background: var(--bg-surface-raised, #18212c);
+  color: var(--text-primary, #f5f7fa);
+  border: 1px solid var(--border-medium, #414d5c);
+  border-radius: 8px;
+}
+.desktop-trust-panel .desktop-trust-explainer {
+  margin: 10px 0 0;
+  color: var(--text-muted, #9da9b5);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.desktop-trust-panel .desktop-trust-targets {
+  display: grid;
+  gap: 10px;
+  padding: 0;
+  margin: 10px 0 0;
+  list-style: none;
+}
+.desktop-trust-panel .desktop-trust-target {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  border: 1px solid var(--border-subtle, #344150);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.desktop-trust-panel .desktop-trust-target-detail {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.desktop-trust-panel .desktop-trust-target-detail strong {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+.desktop-trust-panel .desktop-trust-target-detail small,
+.desktop-trust-panel .desktop-trust-empty {
+  color: var(--text-muted, #9da9b5);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.desktop-trust-panel #desktop-trust-feedback {
+  margin: 8px 0 0;
+  min-height: 1.25rem;
+  color: var(--text-muted, #a6b3c0);
+  font-size: 12px;
+}
+.desktop-trust-panel .desktop-trust-danger {
+  border-top: 1px solid var(--border-subtle, #354152);
+  padding-top: 14px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+@media(max-width:620px) {
+  .desktop-trust-panel .desktop-trust-row > .button {width:100%}
+  .desktop-trust-panel .desktop-trust-field {flex-basis:100%}
+}

@@ -42,6 +42,9 @@ import {
 import type { Tool } from "./types.js";
 import { DesktopAppManager } from "../desktopApp/index.js";
 import { inspectSecurityPrompts } from "../desktopSecurity/index.js";
+import {readTrustedInputPolicy,trustedWindowMatch,
+  type TrustedInputPolicy,type TrustedInputTarget} from "./desktopTrustedInput.js";
+import {createTrustedInputPrompt,type TrustedInputPrompt} from "../desktopUi/trustedInputPrompt.js";
 
 export const MAX_DESKTOP_UI_SESSIONS = 10;
 export const DEFAULT_SESSION_TTL_MS = 10 * 60 * 1000;
@@ -258,6 +261,8 @@ export interface ActiveSessionRecord {
   ttlMs: number;
   inputRequested: boolean;
   inputAllowed: boolean;
+  trustedGrantId?: string;
+  trustedTarget?: TrustedInputTarget;
   adapter: DesktopUiAdapter;
   getLatestCapture: () => NativeCapture | null;
 }
@@ -341,9 +346,25 @@ function createHostAuthorizedVisionDetector(endpoint?: string): DesktopVisionDet
 export class DesktopUiSessionManager {
   private sessions = new Map<string, ActiveSessionRecord>();
   private consentManager: DesktopUiConsentManager;
+  private readonly trustedPolicy: () => TrustedInputPolicy | null;
+  private readonly trustedPrompt: TrustedInputPrompt;
 
-  constructor(consentManager = desktopUiConsentManager) {
+  constructor(consentManager = desktopUiConsentManager, trusted: {
+    policy?: () => TrustedInputPolicy | null;
+    prompt?: TrustedInputPrompt;
+  } = {}) {
     this.consentManager = consentManager;
+    this.trustedPolicy = trusted.policy ?? readTrustedInputPolicy;
+    this.trustedPrompt = trusted.prompt ?? createTrustedInputPrompt();
+  }
+
+  private trustedEntryStillActive(entry: TrustedInputTarget): boolean {
+    const policy = this.trustedPolicy();
+    if (policy?.mode !== "trusted" || entry.expiresAt <= Date.now()) return false;
+    return policy.targets.some(current => current.pid === entry.pid &&
+      current.nativeId === entry.nativeId && current.application === entry.application &&
+      current.title === entry.title && current.approvedAt === entry.approvedAt &&
+      current.expiresAt === entry.expiresAt);
   }
 
   getConsentManager(): DesktopUiConsentManager {
@@ -354,6 +375,7 @@ export class DesktopUiSessionManager {
     const now = Date.now();
     for (const [token, session] of this.sessions.entries()) {
       if (session.expiresAt <= now) {
+        if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
         this.sessions.delete(token);
       }
     }
@@ -445,12 +467,54 @@ export class DesktopUiSessionManager {
       title: params.title.trim(),
     };
 
-    const inputRequested = params.allowInput === true;
-    const hasConsent = this.consentManager.hasConsent(target, sessionToken);
-    const inputAllowed = inputRequested && hasConsent;
-    const consentDenied = inputRequested && !hasConsent;
-
+    // A Trusted-mode allowlist can auto-REQUEST consent when callers omit the
+    // flag. Explicit allowInput:false always keeps the session read-only.
+    // There is no global auto-grant, and no target match means no request.
+    let policy: TrustedInputPolicy | null = null;
+    try { policy = this.trustedPolicy(); } catch { policy = null; }
+    const trustedCandidate = policy?.mode === "trusted" &&
+      policy.targets.some(entry => entry.pid === target.pid &&
+        entry.nativeId === target.nativeId && entry.title === target.title &&
+        entry.expiresAt > Date.now());
+    const inputRequested = params.allowInput === true ||
+      (params.allowInput === undefined && trustedCandidate);
     const baseAdapter = params.adapter ?? createNativeDesktopUiAdapter();
+    let trustedGrantId: string | undefined;
+    let trustedTarget: TrustedInputTarget | undefined;
+
+    // Trusted means allow a native approval REQUEST, not an automatic grant.
+    // The OS identity is re-discovered, the host sees the exact target, and
+    // the persisted trust entry is re-read after the dialog to prevent races.
+    if (inputRequested && !this.consentManager.hasConsent(target, sessionToken)) {
+      if (policy?.mode === "trusted" && typeof baseAdapter.listWindows === "function") {
+        try {
+          const windows = await listDiscoveredWindows(baseAdapter, MAX_WINDOW_DISCOVERY_LIMIT);
+          const observed = requireFreshWindowTarget(windows, target.pid, target.nativeId);
+          const trustedEntry = trustedWindowMatch(policy, target, observed);
+          if (trustedEntry) {
+            const expiry = Math.min(Date.now() + ttlMs, trustedEntry.expiresAt);
+            if (expiry - Date.now() >= MIN_SESSION_TTL_MS &&
+              await this.trustedPrompt.confirm({
+                principal: ownerPrincipal, pid: target.pid, nativeId: target.nativeId,
+                application: observed.application, title: observed.title, expiresAt: expiry,
+              }) && this.trustedEntryStillActive(trustedEntry)) {
+              const remainingMs = Math.min(ttlMs, trustedEntry.expiresAt - Date.now());
+              if (remainingMs >= MIN_SESSION_TTL_MS) {
+                trustedGrantId = this.consentManager.grantConsent({
+                  sessionToken, ttlMs: remainingMs, grantedBy: "native-host-confirmation",
+                });
+                trustedTarget = trustedEntry;
+              }
+            }
+          }
+        } catch {
+          // Missing OS inventory, a denied/failed dialog, or a stale window
+          // must leave this session read-only; never trust client metadata.
+        }
+      }
+    }
+    const inputAllowed = inputRequested && this.consentManager.hasConsent(target, sessionToken);
+    const consentDenied = inputRequested && !inputAllowed;
     let latestCapture: NativeCapture | null = null;
     const adapter: DesktopUiAdapter = {
       platform: baseAdapter.platform,
@@ -488,6 +552,7 @@ export class DesktopUiSessionManager {
       ttlMs,
       inputRequested,
       inputAllowed,
+      ...(trustedGrantId ? { trustedGrantId, trustedTarget } : {}),
       adapter,
       getLatestCapture: () => latestCapture,
     };
@@ -576,6 +641,13 @@ export class DesktopUiSessionManager {
       throw new DesktopUiError("TARGET_NOT_FOUND", "Desktop UI session not found, expired, or owned by another principal.");
     }
 
+    // Revoke takes effect on the very next input action, even while a
+    // previously host-approved session remains open in the Core process.
+    if (session.trustedGrantId && (!session.trustedTarget ||
+      !this.trustedEntryStillActive(session.trustedTarget))) {
+      this.consentManager.revokeConsent(session.trustedGrantId);
+      throw new DesktopUiError("INPUT_DISABLED", "Trusted window approval has expired or was revoked.");
+    }
     const hasConsent = this.consentManager.hasConsent(session.target, session.token);
     if (!session.inputRequested || !hasConsent) {
       throw new DesktopUiError(
@@ -668,10 +740,14 @@ export class DesktopUiSessionManager {
     }
     const session = this.getSession(sessionToken, ownerPrincipal);
     if (!session) return { closed: false };
+    if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
     return { closed: this.sessions.delete(sessionToken) };
   }
 
   clearAllSessions(): void {
+    for (const session of this.sessions.values()) {
+      if (session.trustedGrantId) this.consentManager.revokeConsent(session.trustedGrantId);
+    }
     this.sessions.clear();
   }
 }
@@ -771,7 +847,7 @@ export const desktopUiTool: Tool = {
       title: { type: "string", minLength: 1, maxLength: 512, description: "Window title metadata for 'open'; never used as authorization." },
       allowInput: {
         type: "boolean",
-        description: "Request native input. Exact host consent is still required at dispatch time.",
+        description: "true requests input; false forces read-only. Omission auto-requests only an exact currently Trusted window, and still requires a fresh native host approval.",
       },
       enableVision: {
         type: "boolean",
@@ -890,7 +966,7 @@ export const desktopUiTool: Tool = {
             nativeId: String(args.nativeId ?? ""),
             title: String(args.title ?? ""),
             ownerPrincipal: LOCAL_DESKTOP_UI_OWNER,
-            allowInput: args.allowInput === true,
+            allowInput: args.allowInput === true ? true : args.allowInput === false ? false : undefined,
             enableVision: args.enableVision === true,
             visionEndpoint: typeof args.visionEndpoint === "string" ? args.visionEndpoint : undefined,
             ttlMs: typeof args.ttlMs === "number" ? args.ttlMs : undefined,
