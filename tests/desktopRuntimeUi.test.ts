@@ -7,12 +7,16 @@ const js = fs.readFileSync(
   path.resolve("apps/superagent-tray/ui/runtime.js"), "utf8",
 );
 
-function mountRuntime(snapshot: unknown) {
+function mountRuntime(snapshot: unknown, extra: {
+  gateway?: Record<string, unknown>;
+  named?: Record<string, unknown>;
+} = {}) {
   const elements = new Map<string, any>();
   const listeners = new Map<string, (e: unknown) => unknown>();
   const requested: Array<{ action: string; args: unknown }> = [];
   const events: string[] = [];
   const confirm = vi.fn(() => true);
+  const copy = vi.fn(async (_value: string) => {});
   const byId = (id: string) => {
     let item = elements.get(id);
     if (!item) {
@@ -37,21 +41,25 @@ function mountRuntime(snapshot: unknown) {
     window: {
       __TAURI__: { core: { invoke: async (action: string, args: unknown) => {
         requested.push({ action, args });
-        return action === "detect_runtime" ? snapshot : { success: true };
+        if (action === "detect_runtime") return snapshot;
+        if (action === "desktop_live_action") return extra.gateway ?? { active: false };
+        if (action === "get_named_tunnel_health") return extra.named ?? null;
+        return { success: true };
       } } },
       addEventListener: () => {},
       dispatchEvent: (e: { type: string }) => events.push(e.type),
       confirm,
+      navigator: { clipboard: { writeText: copy } },
     },
     setInterval: vi.fn(),
     setTimeout: (fn: Function, ms: number) => setTimeout(fn, ms),
     clearTimeout: (id: any) => clearTimeout(id),
     Event: class { constructor(public type: string) {} },
     alert: vi.fn(),
-    Date, Number, String, Array, Math,
+    Date, Number, String, Array, Math, URL,
   });
   vm.runInContext(js, context);
-  return { byId, requested, events, context, listeners, confirm };
+  return { byId, requested, events, context, listeners, confirm, copy };
 }
 
 describe("SuperAgent desktop Runtime Detection UI", () => {
@@ -164,6 +172,89 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     await vm.runInContext('runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"cloudflare",runtimeAction:"stop",runtimePort:"8080",runtimePid:"202"}})}})', ui.context);
     expect(ui.requested.some(entry => entry.action === "service_action")).toBe(false);
     expect(ui.byId("runtime-notes").textContent).toContain("OS cloudflared processes");
+  });
+
+  it("shows owner-recorded MCP and Quick ingress URLs, never external or token-bearing URLs", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 0, activeProcessCount: 0,
+      cores: [], processes: [], independentHosts: [],
+      remoteServices: [
+        {kind:"mcp",source:"registry",state:"observed",port:9227,pid:100,
+          publicUrl:"https://mcp.rcity.web.id/mcp",urlEvidence:"verified local owner"},
+        {kind:"cloudflare",source:"registry",state:"online",port:9227,pid:101,
+          publicUrl:"https://example-public.trycloudflare.com",urlEvidence:"healthy heartbeat"},
+        {kind:"cloudflare",source:"os",state:"observed",pid:102,
+          publicUrl:"https://external.trycloudflare.com",transport:"named"},
+        {kind:"cloudflare",source:"registry",state:"online",pid:103,
+          publicUrl:"https://bad.trycloudflare.com/?token=secret"},
+      ],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    const html=ui.byId("runtime-remote").innerHTML;
+    expect(html).toContain("https://mcp.rcity.web.id/mcp");
+    expect(html).toContain("https://example-public.trycloudflare.com");
+    expect(html).not.toContain("external.trycloudflare.com");
+    expect(html).not.toContain("token=secret");
+    expect(html.match(/runtime-copy-public-url/g)).toHaveLength(2);
+    expect(ui.byId("runtime-tray-gateway").hidden).toBe(true);
+    vm.runInContext('runtimeSelectTab("cloudflare")',ui.context);
+    expect(ui.byId("runtime-tray-gateway").hidden).toBe(false);
+  });
+
+  it("displays the password-protected Tray Quick URL separately and copies only allowlisted URLs", async () => {
+    const gateway={active:true, configured:true, mode:"quick", connectorReady:true,
+      publicUrl:"https://tray-demo.trycloudflare.com",originPort:19330,routeVerified:false};
+    const ui=mountRuntime({
+      scannedAt:Date.now(),cores:[],processes:[],independentHosts:[],remoteServices:[],
+    },{gateway});
+    await new Promise(resolve=>setImmediate(resolve));
+    const html=ui.byId("runtime-tray-gateway").innerHTML;
+    expect(html).toContain("SuperAgent Tray · Quick Tunnel");
+    expect(html).toContain("https://tray-demo.trycloudflare.com");
+    expect(html).toContain("public HTTPS reachability not independently verified");
+    expect(html).toContain("Copy URL");
+    const click=(url:string)=>vm.runInContext(
+      `runtimeCopyPublicUrl({target:{closest:()=>({disabled:false,dataset:{runtimeCopyUrl:${JSON.stringify(url)}}})}})`,ui.context
+    ) as Promise<void>;
+    await click("https://tray-demo.trycloudflare.com");
+    await click("https://evil.trycloudflare.com");
+    await click("https://tray-demo.trycloudflare.com/?token=abcd");
+    expect(ui.copy).toHaveBeenCalledExactlyOnceWith("https://tray-demo.trycloudflare.com");
+    expect(ui.requested).toContainEqual({action:"desktop_live_action",args:{action:"gateway-status",payload:null}});
+    expect(ui.requested.some(entry=>entry.action==="service_action")).toBe(false);
+  });
+
+  it("never offers stale, malformed or credential-bearing Tray URLs for copy", async () => {
+    const snapshot={scannedAt:Date.now(),cores:[],processes:[],independentHosts:[],remoteServices:[]};
+    for (const gateway of [
+      {active:false, configured:true, mode:"quick", connectorReady:true, publicUrl:"https://old.trycloudflare.com"},
+      {active:true, configured:false, mode:"quick", connectorReady:true, publicUrl:"https://old.trycloudflare.com"},
+      {active:true, configured:true, mode:"quick", connectorReady:false, publicUrl:"https://old.trycloudflare.com"},
+      {active:true, configured:true, mode:"named", publicUrl:"https://tray.test"},
+      {active:true, configured:true, mode:"named", publicUrl:"https://tray.rcity.web.id/?token=secret"},
+    ]) {
+      const ui=mountRuntime(snapshot,{gateway});
+      await new Promise(resolve=>setImmediate(resolve));
+      const html=ui.byId("runtime-tray-gateway").innerHTML;
+      expect(html).not.toContain("runtime-copy-public-url");
+      expect(html).not.toContain("token=secret");
+      expect(html).not.toContain("href=");
+    }
+  });
+
+  it("requires a verified connector, owner and edge OAuth challenge before copying MCP Named URL", async () => {
+    const snapshot={scannedAt:Date.now(),cores:[],processes:[],independentHosts:[],remoteServices:[]};
+    const named={hostname:"mcp.rcity.web.id",connectorStatus:"verified_local_only",
+      anchorStatus:"verified_local",ownerStatus:"verified_local",
+      mcpAuthChallengeObserved:true,edgeObserved:true};
+    const verified=mountRuntime(snapshot,{named});
+    await new Promise(resolve=>setImmediate(resolve));
+    expect(verified.byId("runtime-named-mcp-status").innerHTML).toContain("https://mcp.rcity.web.id/mcp");
+    expect(verified.byId("runtime-named-mcp-status").innerHTML).toContain("Copy URL");
+    const unverified=mountRuntime(snapshot,{named:{...named,ownerStatus:"not_verified"}});
+    await new Promise(resolve=>setImmediate(resolve));
+    expect(unverified.byId("runtime-named-mcp-status").innerHTML).toContain("Not verified end-to-end");
+    expect(unverified.byId("runtime-named-mcp-status").innerHTML).not.toContain("Copy URL");
   });
 
   it("separates Core, MCP, Cloudflare, Muse, Processes and Hosts into accessible tabs", async () => {

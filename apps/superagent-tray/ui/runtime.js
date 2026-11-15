@@ -8,6 +8,84 @@ const runtimeEscape = (value) => String(value ?? "").replace(/[&<>"']/g, (char) 
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[char]));
 
+function runtimeSafePublicUrl(value, endpoint = "origin") {
+  if (typeof value !== "string" || value.length > 254 || !value.startsWith("https://")) return null;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname;
+    if (!/^[a-z0-9.-]+$/.test(host) || host.length > 253 || !host.includes(".") ||
+        host.startsWith(".") || host.endsWith(".") ||
+        host.split(".").some(part => !part || part.length > 63 ||
+          !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(part)) ||
+        /^(?:[0-9]+[.]){3}[0-9]+$/.test(host) ||
+        [".local", ".localhost", ".internal", ".example", ".test", ".invalid", ".cfargotunnel.com"].some(suffix => host.endsWith(suffix)) ||
+        parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash) return null;
+    const expected = parsed.origin + (endpoint === "mcp" ? "/mcp" : "");
+    return value === expected ? value : null;
+  } catch { return null; }
+}
+let runtimeCopyAllowedUrls = new Set();
+function runtimeCopyButton(url) {
+  runtimeCopyAllowedUrls.add(url);
+  return `<button type="button" class="button ghost runtime-copy-public-url"
+    data-runtime-copy-url="${runtimeEscape(url)}">Copy URL</button>`;
+}
+function runtimeEndpointMarkup(url, evidence) {
+  return `<div class="runtime-evidence runtime-endpoint">
+    <span class="runtime-public-url">${runtimeEscape(url)}</span>
+    ${runtimeCopyButton(url)}
+    <a class="button ghost" href="${runtimeEscape(url)}"
+      target="_blank" rel="noopener noreferrer">Open URL</a>
+    <small>${runtimeEscape(evidence)}</small>
+  </div>`;
+}
+function runtimeTrayGatewayCard(status) {
+  if (!status || status.active !== true || status.configured !== true)
+    return '<article class="runtime-instance compact"><strong>SuperAgent Tray management</strong><div class="runtime-evidence">Gateway inactive · no public Tray URL. Configure a password-protected gateway under Settings → Security.</div></article>';
+  const kind = status.mode === "quick" ? "Quick" : status.mode === "named" ? "Named" : "Unknown";
+  const url = !["quick", "named"].includes(status.mode) ||
+    (status.mode === "quick" && status.connectorReady !== true)
+    ? null : runtimeSafePublicUrl(status.publicUrl, "origin");
+  return `<article class="runtime-instance compact">
+    <div class="runtime-instance-head"><strong>SuperAgent Tray · ${runtimeEscape(kind)} Tunnel</strong>
+    ${runtimeStatusPill("observed")}</div>
+    <div class="runtime-evidence">Password-protected management only · origin port ${runtimeEscape(status.originPort ?? "-")} · no desktop frames exposed</div>
+    ${url ? runtimeEndpointMarkup(url, status.routeVerified === true
+      ? "Management route verified by gateway" : "Owner-reported URL · public HTTPS reachability not independently verified")
+      : '<div class="runtime-evidence">No safe public Tray URL confirmed.</div>'}
+  </article>`;
+}
+function runtimeNamedMcpCard(health) {
+  if (!health || typeof health.hostname !== "string" || !health.hostname)
+    return '<article class="runtime-instance compact"><strong>MCP Named Tunnel</strong><div class="runtime-evidence">No configured, verified Named MCP endpoint available.</div></article>';
+  const url = runtimeSafePublicUrl("https://" + health.hostname + "/mcp", "mcp");
+  if (!url) return "";
+  const verified = health.connectorStatus === "verified_local_only" &&
+    health.ownerStatus === "verified_local" &&
+    health.anchorStatus === "verified_local" &&
+    health.mcpAuthChallengeObserved === true && health.edgeObserved === true;
+  return `<article class="runtime-instance compact">
+    <strong>MCP Named Tunnel · configured hostname</strong>
+    <div class="runtime-evidence">${runtimeEscape(health.hostname)} · ${verified
+      ? "Connector, owner and OAuth challenge verified" : "Not verified end-to-end; URL cannot be copied"}</div>
+    ${verified ? runtimeEndpointMarkup(url, "Dedicated MCP endpoint · verified edge challenge; client authorization separate") : ""}
+  </article>`;
+}
+async function runtimeCopyPublicUrl(event) {
+  const button = event.target?.closest?.("button.runtime-copy-public-url");
+  if (!button || button.disabled) return;
+  const url = button.dataset?.runtimeCopyUrl;
+  if (!runtimeCopyAllowedUrls.has(url) ||
+      !runtimeSafePublicUrl(url, url.endsWith("/mcp") ? "mcp" : "origin")) return;
+  try {
+    if (!window.navigator?.clipboard?.writeText) throw Error("Clipboard unavailable");
+    await window.navigator.clipboard.writeText(url);
+    window.TrayFeedback?.notify?.({ kind: "success", scope: "runtime", message: "Public URL copied." });
+  } catch {
+    window.TrayFeedback?.notify?.({ kind: "error", scope: "runtime", message: "Could not copy URL. Use the displayed address." });
+  }
+}
+
 const runtimeInvoke = (action, args = {}) => {
   const invoke = window.__TAURI__?.core?.invoke;
   if (!invoke) throw new Error("Runtime Detection is available only in the Tauri desktop application.");
@@ -198,6 +276,11 @@ function runtimeRemoteCard(service) {
     ? service.kind === "muse-watch" ? ` · control :${service.port}` : ` · :${service.port}`
     : "";
   const supported = service.canStop === true || service.canRestart === true;
+  const endpointKind = service.kind === "mcp" ? "mcp" : "origin";
+  const url = service.source === "registry" &&
+    ["online", "observed"].includes(service.state) &&
+    ["mcp", "cloudflare"].includes(service.kind)
+    ? runtimeSafePublicUrl(service.publicUrl, endpointKind) : null;
   const isMcpTunnel = service.kind === "cloudflare" && service.transport === "mcp-http";
   const mcpService = isMcpTunnel
     ? runtimeLastResult?.remoteServices?.find(s => s.kind === "mcp" && s.port === service.port)
@@ -247,6 +330,11 @@ function runtimeRemoteCard(service) {
     </div>
     <div class="runtime-evidence">${runtimeEscape(service.detail || "")}
       · ${runtimeEscape(service.evidence || "")}</div>
+    ${url ? runtimeEndpointMarkup(url, service.urlEvidence || "Owner-reported endpoint · edge status unverified")
+      : service.kind === "cloudflare" && !service.publicUrl
+        ? `<div class="runtime-evidence">${isExternalTunnel
+          ? "External cloudflared detected; public URL unknown and controls disabled."
+          : "Public URL unavailable from verified owner metadata."}</div>` : ""}
     ${controls}
     ${service.controlReason
       ? `<div class="runtime-evidence">${runtimeEscape(service.controlReason)}</div>`
@@ -374,6 +462,10 @@ function runtimeApplyTab() {
   if (remoteNode?.dataset) remoteNode.dataset.runtimeView = tab;
   const namedEntry=rt("runtime-named-tunnel-entry");
   if (namedEntry) namedEntry.hidden = tab !== "cloudflare";
+  const trayCard = rt("runtime-tray-gateway");
+  const namedCard = rt("runtime-named-mcp-status");
+  if (trayCard) trayCard.hidden = tab !== "cloudflare";
+  if (namedCard) namedCard.hidden = tab !== "cloudflare";
   const remotePanel = rt("runtime-remote-panel");
   remotePanel?.setAttribute?.("aria-labelledby", "runtime-tab-" + tab);
   if (config) {
@@ -411,6 +503,7 @@ function runtimeTabKeydown(event) {
 
 function runtimeRender(snapshot) {
   runtimeLastResult = snapshot;
+  runtimeCopyAllowedUrls = new Set();
   rt("runtime-core-count").textContent = String(snapshot.healthyCoreCount || 0);
   rt("runtime-process-count").textContent = String(snapshot.activeProcessCount || 0);
   rt("runtime-selected-port").textContent = snapshot.selectedCorePort ? `:${snapshot.selectedCorePort}` : "Default";
@@ -443,7 +536,7 @@ function runtimeRender(snapshot) {
 
   rt("runtime-notes").textContent =
     "Online status requires an authentic loopback HTTP response with bearer authentication. Process discovery validates OS PID, creation time, and fresh heartbeats. " +
-    "Registered service status uses owner records and endpoint/heartbeat evidence. The Cloudflare tab additionally observes visible OS cloudflared processes without claiming public ingress health. External tunnels are read-only; process visibility depends on OS permissions. No credentials, command lines or public tunnel URLs are displayed.";
+    "Registered service status uses owner records and endpoint/heartbeat evidence. The Cloudflare tab also observes OS cloudflared processes, but external tunnels remain read-only. Only validated HTTPS URLs from authenticated owner records are copyable. Public reachability is separate from process discovery. No credentials, command lines or token-bearing URLs are displayed.";
   rt("runtime-notes").hidden = false;
   runtimeApplyTab();
   window.__superagentLifecycleUpdateMuseControls?.();
@@ -966,6 +1059,14 @@ async function runtimeRefresh(background = false) {
   try {
     const snapshot = await runtimeInvoke("detect_runtime");
     runtimeRender(snapshot);
+    const [gateway, named] = await Promise.allSettled([
+      runtimeInvoke("desktop_live_action", { action: "gateway-status", payload: null }),
+      runtimeInvoke("get_named_tunnel_health"),
+    ]);
+    const trayNode = rt("runtime-tray-gateway");
+    if (trayNode) trayNode.innerHTML = runtimeTrayGatewayCard(gateway.status === "fulfilled" ? gateway.value : null);
+    const namedNode = rt("runtime-named-mcp-status");
+    if (namedNode) namedNode.innerHTML = runtimeNamedMcpCard(named.status === "fulfilled" ? named.value : null);
   } catch (error) {
     rt("runtime-scanned").textContent = "Scan failed";
     rt("runtime-servers").replaceChildren();
@@ -1029,6 +1130,7 @@ function runtimeInstall() {
   rt("runtime-servers")?.addEventListener("click", runtimeSelect);
   rt("runtime-remote")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-remote")?.addEventListener("click", runtimeRegenerateToken);
+  rt("runtime-remote-panel")?.addEventListener("click", runtimeCopyPublicUrl);
   rt("runtime-muse-local")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-muse-local")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeServiceAction);

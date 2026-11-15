@@ -1604,7 +1604,22 @@ tbody tr:hover {
   background: var(--accent-muted);
 }
 .runtime-content > [hidden],
-#runtime-remote-empty[hidden] { display: none !important; }
+#runtime-remote-empty[hidden],
+#runtime-tray-gateway[hidden],
+#runtime-named-mcp-status[hidden] { display: none !important; }
+.runtime-endpoint {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.runtime-public-url {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  font-family: var(--font-mono, monospace);
+  user-select: text;
+}
+.runtime-endpoint small { flex-basis: 100%; }
 #runtime-remote[data-runtime-view="core"] > [data-runtime-service-kind]:not([data-runtime-service-kind="core-supervisor"]),
 #runtime-remote[data-runtime-view="mcp"] > [data-runtime-service-kind]:not([data-runtime-service-kind="mcp"]),
 #runtime-remote[data-runtime-view="cloudflare"] > [data-runtime-service-kind]:not([data-runtime-service-kind="cloudflare"]),

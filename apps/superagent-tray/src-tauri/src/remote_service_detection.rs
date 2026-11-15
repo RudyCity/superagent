@@ -23,6 +23,8 @@ pub struct RemoteService {
     pub pid: Option<u32>,
     pub state: &'static str,
     pub transport: Option<String>,
+    pub public_url: Option<String>,
+    pub url_evidence: Option<&'static str>,
     pub detail: String,
     pub evidence: &'static str,
 }
@@ -71,6 +73,34 @@ fn tunnel_executable(system: &System, pid: u32) -> bool {
 
 /// Only return a loopback port. Never serialize command arguments, especially
 /// secrets passed using --token or --credentials-file, to the WebView.
+/// Accept only a bare HTTPS hostname or the exact MCP endpoint, without
+/// userinfo, fragments, queries, ports or arbitrary paths. No tokens ever pass
+/// through this field and the UI must independently validate before linking.
+fn safe_public_url(raw: &str, mcp: bool) -> Option<String> {
+    if raw.len() > 254 || !raw.starts_with("https://") { return None; }
+    let (host, suffix) = raw[8..].split_once('/').unwrap_or((&raw[8..], ""));
+    let suffix = if raw[8..].contains('/') { format!("/{suffix}") } else { String::new() };
+    if !matches!(suffix.as_str(), "" | "/") && !(mcp && suffix == "/mcp") {
+        return None;
+    }
+    if host.len() < 4 || host.len() > 253 ||
+       host != host.to_ascii_lowercase() || !host.contains('.') ||
+       host.starts_with('.') || host.ends_with('.') ||
+       host.contains(':') || host.contains('@') ||
+       host.parse::<std::net::IpAddr>().is_ok() ||
+       host.ends_with(".localhost") || host.ends_with(".local") ||
+       host.ends_with(".internal") || host.ends_with(".example") ||
+       host.ends_with(".test") || host.ends_with(".invalid") ||
+       host.ends_with(".cfargotunnel.com") { return None; }
+    if !host.split('.').all(|label| !label.is_empty() && label.len() <= 63 &&
+        label.as_bytes()[0].is_ascii_alphanumeric() &&
+        label.as_bytes()[label.len()-1].is_ascii_alphanumeric() &&
+        label.bytes().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-')) {
+        return None;
+    }
+    Some(format!("https://{host}{}", if suffix == "/" { "" } else { &suffix }))
+}
+
 fn local_origin_port(raw: &str) -> Option<u16> {
     let authority = raw
         .strip_prefix("http://")
@@ -257,6 +287,8 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
         pid,
         state: "stale",
         transport: None,
+        public_url: None,
+        url_evidence: None,
         detail: String::new(),
         evidence: "registry only: owner PID is dead, reused or unverifiable",
     };
@@ -294,6 +326,13 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
                     service.evidence = "owner PID verified + local MCP Bearer challenge";
                     service.detail =
                         "MCP HTTP listener responds (authentication not attempted)".into();
+                    if candidate.record["tunnelProvider"] == "cloudflare" {
+                        service.public_url = candidate.record["publicUrl"]
+                            .as_str().and_then(|raw| safe_public_url(raw, true));
+                        if service.public_url.is_some() {
+                            service.url_evidence = Some("owner-recorded MCP endpoint; public edge not independently verified");
+                        }
+                    }
                     if let Some(pid) = pid {
                         (service.can_stop, service.can_restart) =
                             runtime_control::capabilities(dir, "mcp", port, pid).await;
@@ -326,6 +365,11 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
             let fresh = success > 0
                 && success <= now.saturating_add(5000)
                 && now.saturating_sub(success) <= 120_000;
+            service.public_url = candidate.record["publicUrl"]
+                .as_str().and_then(|raw| safe_public_url(raw, false));
+            if service.public_url.is_some() {
+                service.url_evidence = Some("verified cloudflared PID and owner-recorded URL; ingress not independently verified");
+            }
             if fresh && heartbeat["lastStatus"] == "healthy" {
                 service.state = "online";
                 service.evidence = "cloudflared owner PID + healthy recent tunnel heartbeat";
@@ -433,6 +477,8 @@ pub async fn scan(dir: &Path) -> Vec<RemoteService> {
             pid: Some(os_pid),
             state: if mode == "unknown" { "unverified" } else { "observed" },
             transport: Some(mode.into()),
+            public_url: None,
+            url_evidence: None,
             detail: detail.into(),
             evidence: "live OS process only; ingress and ownership not authenticated",
         });
@@ -541,6 +587,24 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].port, Some(8857));
         fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn public_url_sanitizer_accepts_only_plain_https_endpoints() {
+        assert_eq!(safe_public_url("https://a-b.trycloudflare.com",false).as_deref(),
+            Some("https://a-b.trycloudflare.com"));
+        assert_eq!(safe_public_url("https://mcp.rcity.web.id/mcp",true).as_deref(),
+            Some("https://mcp.rcity.web.id/mcp"));
+        for raw in [
+            "https://a.trycloudflare.com/?token=abc", "https://a.trycloudflare.com@evil.example",
+            "http://x.example.com", "https://localhost", "https://127.0.0.1",
+            "https://foo.example", "https://foo.test", "https://foo.invalid",
+            "https://mcp.rcity.web.id/mcp?token=abc", "https://x.com:9443",
+            "https://foo.com#hash", "https://-foo.com", "https://foo..com",
+            "https://x.com/other/path", "https://x.com/%2fadmin",
+        ] {
+            assert!(safe_public_url(raw, true).is_none(), "{raw}");
+        }
+        assert_eq!(safe_public_url("https://mcp.rcity.web.id/mcp",false),None);
     }
     #[test]
     fn external_cloudflared_metadata_never_exposes_secrets_or_foreign_origins() {
