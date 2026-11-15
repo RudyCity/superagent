@@ -1,3 +1,11 @@
+## [1.14.100] - 2026-11-15
+### Tray-only Quick Tunnel mode for password-protected Desktop Live management
+- Add a Named/Quick selector in Tray Settings -> Security, displaying an ephemeral trycloudflare.com link after an attended Quick start; default remains Named.
+- Run an independently owned cloudflared process forwarding only the dedicated loopback Tray management port. Stop touches only the owned child; unexpectedly exited connectors close the gateway.
+- Bind the public host only after validating the Cloudflare-issued HTTPS origin. Protect browser actions with the separate Tray password, Secure HttpOnly cookie and CSRF; never expose Desktop Live frames, native input, Core bearer, CDP debug port or MCP tunnel.
+- Reject protected ports, URL/command injection, unexpected origin changes and stale/failed Quick connection. Password rotation cancels startup and invalidates remote sessions.
+- Add URL parser, process ownership, mode lifecycle, gateway security and Tray UI tests. Public network and installed Tray behavior require separate operator-authorized end-to-end validation.
+
 ## [1.14.99] - 2026-11-15
 ### Desktop Live session manager in Tray, password-protected management-only gateway
 - Restore Desktop Live as a per-handle operator console for native windows, managed Chrome CDP targets and individual Chrome CDP Delegate tabs, with exact-session stop/revoke and authenticated agent-owned stop.

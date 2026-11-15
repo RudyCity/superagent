@@ -1264,7 +1264,7 @@ export async function handleServerRoute(
   // operator consent; never expose this endpoint through a public tunnel.
   if (["/api/desktop/live/access-executable", "/api/desktop/live/windows", "/api/desktop/live/challenge", "/api/desktop/live/start",
        "/api/desktop/live/frame", "/api/desktop/live/stop",
-       "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop", "/api/desktop/live/manage", "/api/desktop/live/manage/stop", "/api/desktop/tray-password/status", "/api/desktop/tray-password/set", "/api/desktop/tray-remote/status", "/api/desktop/tray-remote/start", "/api/desktop/tray-remote/stop"].includes(pathname)) {
+       "/api/desktop/live/remote/status", "/api/desktop/live/remote/stop", "/api/desktop/live/manage", "/api/desktop/live/manage/stop", "/api/desktop/tray-password/status", "/api/desktop/tray-password/set", "/api/desktop/tray-remote/status", "/api/desktop/tray-remote/start", "/api/desktop/tray-remote/start-quick", "/api/desktop/tray-remote/stop"].includes(pathname)) {
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
@@ -1331,6 +1331,11 @@ export async function handleServerRoute(
         if(Buffer.byteLength(raw,"utf8")>384)throw Error("Oversized remote origin request.");
         const { startTrayRemoteManagement }=await import("./core/desktopUi/trayRemoteRuntime.js");
         sendJSON(res,200,{success:true,...await startTrayRemoteManagement(JSON.parse(raw))});
+      } else if (pathname === "/api/desktop/tray-remote/start-quick") {
+        const raw=await readBody(req);
+        if(Buffer.byteLength(raw,"utf8")>96)throw Error("Oversized Quick Tunnel request.");
+        const { startTrayQuickManagement }=await import("./core/desktopUi/trayRemoteRuntime.js");
+        sendJSON(res,200,{success:true,...await startTrayQuickManagement(JSON.parse(raw))});
       } else if (pathname === "/api/desktop/tray-remote/stop") {
         if(await readBody(req)!=="{}")throw Error("Invalid remote stop request.");
         const { stopTrayRemoteManagement }=await import("./core/desktopUi/trayRemoteRuntime.js");

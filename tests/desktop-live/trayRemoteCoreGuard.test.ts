@@ -47,6 +47,7 @@ describe("Tray management operator routes reject HTTP tunnel/proxy and missing C
       ["POST","/api/desktop/tray-password/set"],
       ["GET","/api/desktop/tray-remote/status"],
       ["POST","/api/desktop/tray-remote/start"],
+      ["POST","/api/desktop/tray-remote/start-quick"],
       ["POST","/api/desktop/tray-remote/stop"],
     ])expect((await request(method,path)).status).toBe(403);
   });

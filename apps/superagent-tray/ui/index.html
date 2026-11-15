@@ -1220,8 +1220,14 @@
           <p class="tray-settings-note">Remote management is disabled by default; only a separately authenticated Tray gateway may be exposed. Never forward native Tauri IPC or Desktop Live image/frame APIs.</p>
           <div class="tray-access-password-form">
             <h3>Remote Tray management origin</h3>
-            <p>Runs a password-protected, management-only gateway in Core. Configure a dedicated Cloudflare Named Tunnel hostname to reach this origin separately; starting does not configure DNS or the connector.</p>
-            <label for="tray-remote-origin">Dedicated HTTPS hostname
+            <p>Choose Named Tunnel for a permanent hostname or Quick Tunnel for a temporary trycloudflare.com link. Both expose only the password-protected Tray management list, never screen frames.</p>
+            <label for="tray-remote-mode">Cloudflare access mode
+              <select id="tray-remote-mode">
+                <option value="named">Named Tunnel · permanent domain</option>
+                <option value="quick">Quick Tunnel · temporary URL</option>
+              </select>
+            </label>
+            <label id="tray-remote-origin-row" for="tray-remote-origin">Dedicated HTTPS hostname (Named only)
               <input id="tray-remote-origin" type="url" placeholder="https://tray.yourdomain.example" autocomplete="url" maxlength="254">
             </label>
             <label for="tray-remote-port">Internal origin port (dedicated, loopback only)
@@ -1232,6 +1238,8 @@
               <button id="tray-remote-stop" class="button ghost" type="button" disabled>Stop gateway</button>
             </div>
             <span id="tray-remote-status" role="status" aria-live="polite">Remote gateway inactive.</span>
+            <a id="tray-remote-public-url" href="#" rel="noopener noreferrer" target="_blank" hidden>Open protected Tray management</a>
+            <p id="tray-remote-quick-hint" class="tray-settings-note" hidden>Quick Tunnel creates its own temporary URL. The link expires when stopped or restarted; the MCP tunnel is untouched.</p>
           </div>
         </section>
 

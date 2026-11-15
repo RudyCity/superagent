@@ -1072,6 +1072,21 @@ async fn desktop_live_action(
             }
             core_request(Method::POST, "/api/desktop/tray-remote/start", Some(data)).await
         }
+        "gateway-start-quick" => {
+            let data = payload.ok_or("Missing Quick Tunnel origin port")?;
+            let body = data.as_object().ok_or("Invalid Quick Tunnel request")?;
+            if body.len()!=1 || body.keys().any(|k| k!="originPort") {
+                return Err("Quick Tunnel accepts only the dedicated origin port".into());
+            }
+            let port=body.get("originPort").and_then(Value::as_u64)
+                .ok_or("Origin port required")?;
+            if !(1024..=65535).contains(&port) ||
+                [7888,9227,6759,6789,9877,17341,19320,19321].contains(&port) {
+                return Err("Quick Tunnel requires a dedicated unprotected port".into());
+            }
+            // Never accept a hostname, shell command, executable path or MCP tunnel PID.
+            core_request(Method::POST, "/api/desktop/tray-remote/start-quick", Some(data)).await
+        }
         "gateway-stop" => {
             if payload.is_some() { return Err("Unexpected remote gateway stop payload".into()); }
             core_request(Method::POST, "/api/desktop/tray-remote/stop", Some(json!({}))).await

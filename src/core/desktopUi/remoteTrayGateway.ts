@@ -13,6 +13,7 @@ import { REMOTE_TRAY_LOCK_HTML, REMOTE_TRAY_MANAGER_HTML, REMOTE_TRAY_CSS, REMOT
 export interface RemoteTrayGatewayOptions {
   publicOrigin: string;
   originPort: number;
+  mode?: "named" | "quick";
   passwordStore?: TrayManagementPassword;
   now?: () => number;
   inventory?: typeof listDesktopLiveInventory;
@@ -22,6 +23,7 @@ export interface RemoteTrayGateway {
   publicUrl: string;
   originPort: number;
   server: Server;
+  activateQuickOrigin(url: string): void;
   close(): Promise<void>;
 }
 const LOOPBACK = "127.0.0.1";
@@ -69,12 +71,22 @@ function digest(token:string):Buffer{return createHash("sha256").update(token).d
 export async function startRemoteTrayGateway(options:RemoteTrayGatewayOptions):Promise<RemoteTrayGateway>{
   if(!options||!Number.isSafeInteger(options.originPort)||options.originPort<0||options.originPort>65535)
     throw Error("INVALID_TRAY_ORIGIN_PORT");
-  let url:URL;
-  try{url=new URL(options.publicOrigin);}catch{throw Error("INVALID_TRAY_HTTPS_ORIGIN");}
-  if(url.origin!==options.publicOrigin||url.protocol!=="https:"||
-     url.username||url.password||url.port||url.hostname==="localhost"||
-     !/^[a-z0-9.-]{4,253}$/i.test(url.hostname)||!url.hostname.includes("."))
-    throw Error("INVALID_TRAY_HTTPS_ORIGIN");
+  const quick = options.mode === "quick";
+  if(options.mode && !["named","quick"].includes(options.mode))
+    throw Error("INVALID_TRAY_MODE");
+  let publicOrigin = "";
+  if(quick){
+    if(options.publicOrigin !== "") throw Error("QUICK_ORIGIN_MUST_BE_GENERATED");
+  }else{
+    let url:URL;
+    try{url=new URL(options.publicOrigin);}catch{throw Error("INVALID_TRAY_HTTPS_ORIGIN");}
+    if(url.origin!==options.publicOrigin||url.protocol!=="https:"||
+       url.username||url.password||url.port||url.hostname==="localhost"||
+       !/^[a-z0-9.-]{4,253}$/i.test(url.hostname)||!url.hostname.includes(".")||
+       url.hostname.endsWith(".trycloudflare.com"))
+      throw Error("INVALID_TRAY_HTTPS_ORIGIN");
+    publicOrigin=options.publicOrigin;
+  }
   const store=options.passwordStore??trayManagementPassword;
   if(!store.status().configured)throw Error("TRAY_PASSWORD_REQUIRED_BEFORE_REMOTE_EXPOSURE");
   const now=options.now??Date.now;
@@ -104,7 +116,7 @@ export async function startRemoteTrayGateway(options:RemoteTrayGatewayOptions):P
     res.setHeader("Cross-Origin-Resource-Policy","same-origin");
     res.setHeader("Permissions-Policy","camera=(), microphone=(), geolocation=(), display-capture=()");
     res.setHeader("Content-Security-Policy","default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
-    if(!validProxy(req,options.publicOrigin)||!req.url||req.url.length>128||
+    if(!publicOrigin||!validProxy(req,publicOrigin)||!req.url||req.url.length>128||
        !req.url.startsWith("/")||req.url.startsWith("//")||req.url.includes("?")){
       page(res,403,"Forbidden");return;
     }
@@ -190,7 +202,21 @@ export async function startRemoteTrayGateway(options:RemoteTrayGatewayOptions):P
   if(!address||typeof address==="string"||address.address!==LOOPBACK) {
     server.close();throw Error("TRAY_GATEWAY_REFUSED_NON_LOOPBACK_BIND");
   }
-  return {publicUrl:options.publicOrigin,originPort:address.port,server,close:async()=>{
+  return {get publicUrl(){return publicOrigin;},originPort:address.port,server,
+    activateQuickOrigin(url:string){
+      let accepted=false;
+      try {
+        const parsed=new URL(url);
+        accepted=parsed.origin===url && parsed.protocol==="https:" &&
+          /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(parsed.hostname.split(".")[0]) &&
+          parsed.hostname.split(".").slice(1).join(".")==="trycloudflare.com";
+      } catch {}
+      if(!quick||publicOrigin||!accepted)
+        throw Error("TRAY_QUICK_ORIGIN_INVALID_OR_ALREADY_BOUND");
+      publicOrigin=url;
+    },
+    close:async()=>{
+    publicOrigin="";
     sessions.clear();
     await new Promise<void>(resolve=>{
       server.close(()=>resolve());

@@ -27,7 +27,8 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     expect(html).toContain('id="tray-remote-start"');
     expect(html).toContain('id="tray-remote-stop"');
     expect(pw).toContain('invoke("password-set"');
-    expect(pw).toContain('invoke("gateway-start"');
+    expect(pw).toContain('action="gateway-start"');
+    expect(pw).toContain('action="gateway-start-quick"');
     expect(runtime).not.toContain('"/api/desktop/live/frame"');
     expect(runtime).not.toContain("getDisplayMedia");
     expect(runtime).not.toContain("captureJpeg");
