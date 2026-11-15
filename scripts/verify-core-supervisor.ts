@@ -395,9 +395,27 @@ try {
       throw new Error("Post-recovery restart lost session: " + id);
     }
   }
+  // A recovered supervisor may retire verified, quiescent adopted workers via
+  // authenticated graceful shutdown, or remove dead unpinned metadata. Neither
+  // operation implies sending a PID signal. Session-pinned owners must remain.
+  const pinnedRecoveryPids = new Set(
+    persistedAfterRecovery.sessions.map(({ owner }) => owner.pid),
+  );
   const adoptedDrain = await requestCoreSupervisor("drain", publicPort);
-  if (adoptedDrain.lastDrain?.retiredPids.length) {
-    throw new Error("Recovered supervisor should not signal adopted worker processes");
+  if (!adoptedDrain.lastDrain ||
+      adoptedDrain.lastDrain.retiredPids.some(pid => pinnedRecoveryPids.has(pid))) {
+    throw new Error("Recovered supervisor retired a session-pinned worker: " +
+      JSON.stringify(adoptedDrain.lastDrain));
+  }
+  for (const id of [oldId, newId]) {
+    const retained = await jsonApi(publicPort, initialToken, "GET", "/api/status?sessionId=" + id);
+    if (retained.status !== 200 || retained.data.sessionId !== id) {
+      throw new Error("Recovered supervisor drained a live adopted session: " + id);
+    }
+  }
+  if ((await jsonApi(publicPort, initialToken, "GET",
+    "/api/status?sessionId=" + crashedSessionId)).status !== 503) {
+    throw new Error("Drain silently reassigned a dead worker's session");
   }
   if ((await fetch("http://127.0.0.1:" + channelPort + "/_channel/health")).status !== 200) {
     throw new Error("Independent channel host died after API core recovery/restart");
