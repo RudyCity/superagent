@@ -128,6 +128,44 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-processes-panel").hidden).toBe(true);
   });
 
+  it("lists unmanaged cloudflared processes as read-only without leaking command arguments", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 0, activeProcessCount: 0,
+      cores: [], processes: [], independentHosts: [],
+      remoteServices: [
+        {kind: "cloudflare", source: "registry", port: 9227, pid: 101,
+          state: "online", transport: "mcp-http", detail: "Verified owner"},
+        {kind: "cloudflare", source: "os", port: 8080, pid: 202,
+          state: "observed", transport: "quick",
+          detail: "Quick Tunnel process; edge health not verified",
+          controlReason: "External OS process: read-only",
+          canStop: false, canRestart: false},
+        {kind: "cloudflare", source: "os", pid: 303,
+          state: "observed", transport: "named",
+          detail: "<img src=x> process", canStop: false, canRestart: false},
+      ],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("cloudflare")', ui.context);
+    expect(ui.byId("runtime-tab-cloudflare-count").textContent).toBe("3");
+    expect(ui.byId("runtime-remote-count").textContent).toContain("3 found");
+    const html = ui.byId("runtime-remote").innerHTML;
+    expect(html).toContain("External Cloudflare Tunnel");
+    expect(html).toContain("PID 202");
+    expect(html).toContain("quick");
+    expect(html).toContain("named");
+    expect(html).toContain("Read-only · External process");
+    expect(html).toContain("&lt;img src=x&gt;");
+    expect(html).not.toContain("<img src=x>");
+    const cards = html.split("</article>").filter(part => part.includes('data-runtime-service-kind="cloudflare"'));
+    expect(cards).toHaveLength(3);
+    expect(cards[1]).not.toContain("runtime-lifecycle");
+    expect(cards[2]).not.toContain("runtime-lifecycle");
+    await vm.runInContext('runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"cloudflare",runtimeAction:"stop",runtimePort:"8080",runtimePid:"202"}})}})', ui.context);
+    expect(ui.requested.some(entry => entry.action === "service_action")).toBe(false);
+    expect(ui.byId("runtime-notes").textContent).toContain("OS cloudflared processes");
+  });
+
   it("separates Core, MCP, Cloudflare, Muse, Processes and Hosts into accessible tabs", async () => {
     const ui = mountRuntime({
       scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 1,

@@ -14,6 +14,7 @@ use sysinfo::{Pid, System};
 #[serde(rename_all = "camelCase")]
 pub struct RemoteService {
     pub kind: &'static str,
+    pub source: &'static str,
     pub can_stop: bool,
     pub can_restart: bool,
     pub can_regenerate_token: bool,
@@ -67,6 +68,55 @@ fn tunnel_executable(system: &System, pid: u32) -> bool {
         name == "cloudflared.exe" || name == "cloudflared"
     })
 }
+
+/// Only return a loopback port. Never serialize command arguments, especially
+/// secrets passed using --token or --credentials-file, to the WebView.
+fn local_origin_port(raw: &str) -> Option<u16> {
+    let authority = raw
+        .strip_prefix("http://")
+        .or_else(|| raw.strip_prefix("https://"))?
+        .split(['/', '?', '#'])
+        .next()?;
+    let (host, port) = authority.rsplit_once(':')?;
+    if !matches!(host.to_ascii_lowercase().as_str(), "127.0.0.1" | "localhost" | "[::1]") {
+        return None;
+    }
+    port.parse::<u16>().ok().filter(|port| *port > 0)
+}
+
+fn classify_cloudflared(args: &[String]) -> (&'static str, Option<u16>, &'static str) {
+    let mut has_tunnel = false;
+    let mut has_run = false;
+    let mut has_url = false;
+    let mut url_next = false;
+    let mut target_port = None;
+    for arg in args.iter().skip(1) {
+        if url_next {
+            target_port = local_origin_port(arg);
+            url_next = false;
+            continue;
+        }
+        match arg.as_str() {
+            "tunnel" => has_tunnel = true,
+            "run" => has_run = true,
+            "--url" => { has_url = true; url_next = true; }
+            _ => {
+                if let Some(url) = arg.strip_prefix("--url=") {
+                    has_url = true;
+                    target_port = local_origin_port(url);
+                }
+            }
+        }
+    }
+    if has_tunnel && has_run {
+        ("named", None, "Named Tunnel connector process; edge health not verified")
+    } else if has_tunnel && has_url {
+        ("quick", target_port, "Quick Tunnel process; edge health not verified")
+    } else {
+        ("unknown", None, "cloudflared process observed; tunnel mode unverified")
+    }
+}
+
 struct Candidate {
     kind: &'static str,
     port: Option<u16>,
@@ -198,6 +248,7 @@ async fn evaluate(candidate: Candidate, system: &System, now: u64, dir: &Path) -
     let alive = pid.is_some_and(|id| owner_live(system, id, registered));
     let mut service = RemoteService {
         kind: candidate.kind,
+        source: "registry",
         can_stop: false,
         can_restart: false,
         can_regenerate_token: false,
@@ -353,7 +404,40 @@ pub async fn scan(dir: &Path) -> Vec<RemoteService> {
             results.push(evaluated);
         }
     }
-    results.sort_by_key(|item| (item.kind, item.port, item.pid));
+    // Observe foreign/manual/Windows-service connectors without adopting them.
+    // PID and matching origin port NEVER grant control. Bounded to 256 entries.
+    let mut external_seen = 0usize;
+    for (pid, process) in system.processes() {
+        let name = process.name().to_ascii_lowercase();
+        if name != "cloudflared.exe" && name != "cloudflared" {
+            continue;
+        }
+        let os_pid = pid.as_u32();
+        if results.iter().any(|entry| {
+            entry.kind == "cloudflare" && entry.pid == Some(os_pid) && entry.state != "stale"
+        }) {
+            continue;
+        }
+        if external_seen >= 256 { break; }
+        external_seen += 1;
+        let args: Vec<String> = process.cmd().iter().map(|arg| arg.to_string()).collect();
+        let (mode, port, detail) = classify_cloudflared(&args);
+        results.push(RemoteService {
+            kind: "cloudflare",
+            source: "os",
+            can_stop: false,
+            can_restart: false,
+            can_regenerate_token: false,
+            control_reason: Some("External OS process: read-only, not adopted or controlled by SuperAgent".into()),
+            port,
+            pid: Some(os_pid),
+            state: if mode == "unknown" { "unverified" } else { "observed" },
+            transport: Some(mode.into()),
+            detail: detail.into(),
+            evidence: "live OS process only; ingress and ownership not authenticated",
+        });
+    }
+    results.sort_by_key(|item| (item.kind, item.port, item.pid, item.source));
     results
 }
 
@@ -395,9 +479,10 @@ mod tests {
         .unwrap();
         let result = scan(&root).await;
         listener.join().unwrap();
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].state, "observed");
-        let safe = serde_json::to_string(&result[0]).unwrap();
+        let mcp: Vec<_> = result.iter().filter(|service| service.kind == "mcp").collect();
+        assert_eq!(mcp.len(), 1);
+        assert_eq!(mcp[0].state, "observed");
+        let safe = serde_json::to_string(mcp[0]).unwrap();
         assert!(!safe.contains("must-not-leak"));
         fs::remove_dir_all(root).unwrap();
     }
@@ -419,16 +504,18 @@ mod tests {
         });
         fs::write(&filename, value.to_string()).unwrap();
         let live = scan(&root).await;
-        assert_eq!(live.len(), 1);
-        assert_eq!(live[0].state, "online");
-        assert!(!serde_json::to_string(&live[0])
+        let muse: Vec<_> = live.iter().filter(|service| service.kind == "muse-watch").collect();
+        assert_eq!(muse.len(), 1);
+        assert_eq!(muse[0].state, "online");
+        assert!(!serde_json::to_string(muse[0])
             .unwrap()
             .contains("must-not-leak"));
         let mut stale = value;
         stale["updatedAt"] = serde_json::json!(1);
         fs::write(&filename, stale.to_string()).unwrap();
         let old = scan(&root).await;
-        assert_eq!(old[0].state, "unverified");
+        let stale_muse = old.iter().find(|service| service.kind == "muse-watch").unwrap();
+        assert_eq!(stale_muse.state, "unverified");
         fs::remove_dir_all(root).unwrap();
     }
 
@@ -455,6 +542,25 @@ mod tests {
         assert_eq!(list[0].port, Some(8857));
         fs::remove_dir_all(dir).unwrap();
     }
+    #[test]
+    fn external_cloudflared_metadata_never_exposes_secrets_or_foreign_origins() {
+        let quick = ["cloudflared.exe", "tunnel", "--url", "http://127.0.0.1:8080",
+            "--token", "DO_NOT_EXPOSE"].map(String::from);
+        let (mode, port, detail) = classify_cloudflared(&quick);
+        assert_eq!((mode, port), ("quick", Some(8080)));
+        assert!(!detail.contains("DO_NOT_EXPOSE"));
+        let named = ["cloudflared", "--config", "C:/private/credentials.json", "tunnel",
+            "run", "sensitive-tunnel-id"].map(String::from);
+        let (mode, port, detail) = classify_cloudflared(&named);
+        assert_eq!((mode, port), ("named", None));
+        assert!(!detail.contains("sensitive-tunnel-id"));
+        assert_eq!(local_origin_port("https://localhost:9300/health"), Some(9300));
+        assert_eq!(local_origin_port("http://[::1]:9227"), Some(9227));
+        assert_eq!(local_origin_port("https://private.example:9227"), None);
+        assert_eq!(local_origin_port("http://127.0.0.1:0"), None);
+        assert_eq!(local_origin_port("http://127.0.0.1:99999"), None);
+    }
+
     #[test]
     fn stale_pid_is_never_reported_online_even_with_healthy_heartbeat() {
         let system = System::new();

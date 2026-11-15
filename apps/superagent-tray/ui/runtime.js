@@ -191,7 +191,9 @@ function runtimeRemoteCard(service) {
     "muse-watch": "Muse Watch",
     "core-supervisor": "Core Supervisor"
   };
-  const name = titles[service.kind] || "SuperAgent Remote Service";
+  const isExternalTunnel = service.kind === "cloudflare" && service.source === "os";
+  const name = isExternalTunnel ? "External Cloudflare Tunnel" :
+    (titles[service.kind] || "SuperAgent Remote Service");
   const port = service.port
     ? service.kind === "muse-watch" ? ` · control :${service.port}` : ` · :${service.port}`
     : "";
@@ -224,7 +226,9 @@ function runtimeRemoteCard(service) {
        ${canRotate ? "" : "disabled"}
        title="Regenerate supported owner credential; new token is copied to OS clipboard">Regenerate Token</button>`
     : "";
-  const controls = `<div class="runtime-instance-footer">
+  const controls = isExternalTunnel
+    ? '<div class="runtime-instance-footer"><span class="subtle-badge">Read-only · External process</span></div>'
+    : `<div class="runtime-instance-footer">
         <button type="button" class="button ghost runtime-lifecycle"
           data-runtime-kind="${runtimeEscape(service.kind)}" data-runtime-action="stop"
           data-runtime-port="${runtimeEscape(service.port)}" data-runtime-pid="${runtimeEscape(service.pid)}"
@@ -376,7 +380,7 @@ function runtimeApplyTab() {
     rt("runtime-remote-heading").textContent = config.title;
     rt("runtime-remote-tag").textContent = config.tag;
     const active = matched.filter(s => s.state === "online" || s.state === "observed").length;
-    rt("runtime-remote-count").textContent = `(${active} active/detected · ${matched.length} registered)`;
+    rt("runtime-remote-count").textContent = `(${active} active/detected · ${matched.length} ${tab === "cloudflare" ? "found" : "registered"})`;
     const empty = rt("runtime-remote-empty");
     if (empty) {
       empty.hidden = matched.length > 0;
@@ -439,7 +443,7 @@ function runtimeRender(snapshot) {
 
   rt("runtime-notes").textContent =
     "Online status requires an authentic loopback HTTP response with bearer authentication. Process discovery validates OS PID, creation time, and fresh heartbeats. " +
-    "Local Core summaries do not establish global MCP/Muse status. The independent MCP, Cloudflare and Muse Watch cards use owner records, live PID and endpoint/heartbeat evidence. No credentials or tunnel URLs are displayed.";
+    "Registered service status uses owner records and endpoint/heartbeat evidence. The Cloudflare tab additionally observes visible OS cloudflared processes without claiming public ingress health. External tunnels are read-only; process visibility depends on OS permissions. No credentials, command lines or public tunnel URLs are displayed.";
   rt("runtime-notes").hidden = false;
   runtimeApplyTab();
   window.__superagentLifecycleUpdateMuseControls?.();
