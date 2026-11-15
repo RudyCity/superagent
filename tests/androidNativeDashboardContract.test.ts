@@ -12,8 +12,8 @@ const gradle = fs.readFileSync("apps/superagent-lan-android/app/build.gradle", "
 const colors = fs.readFileSync("apps/superagent-lan-android/app/src/main/res/values/colors.xml", "utf8");
 
 describe("Android native dashboard redesign", () => {
-  it("uses four functional native tabs, retaining scroll position and selection", () => {
-    expect(main).toContain('String[] labels = { "Home", "Connect", "Control", "Files" };');
+  it("uses five functional native tabs, retaining scroll position and selection", () => {
+    expect(main).toContain('String[] labels = { "Home", "Connect", "Control", "Files", "Terminal" };');
     expect(main).toContain("pages = new ScrollView[]");
     expect(main).toContain("AndroidUiKit.scroll(this, homePage)");
     expect(main).toContain("AndroidUiKit.scroll(this, connectPage)");
@@ -65,11 +65,11 @@ describe("Android native dashboard redesign", () => {
     expect(ui).toContain("static final int SURFACE");
     expect(ui).toContain("static LinearLayout panel(");
     expect(ui).toContain("RippleDrawable");
-    expect(ui).toContain("button.setMinHeight(dp(ctx, 52))");
+    expect(ui).toContain("button.setMinHeight(dp(ctx, AndroidTvUi.isTv(ctx) ? 64 : 52))");
     expect(ui).toContain("static void activeTab(");
     expect(ui).toContain("button.setSingleLine(true)");
     expect(colors).toContain("#0B1422");
-    expect(gradle).toContain("versionCode 18");
-    expect(gradle).toContain("versionName '0.10.1-internet-tunnel'");
+    expect(gradle).toContain("versionCode 19");
+    expect(gradle).toContain("versionName '0.10.2-tv-terminal'");
   });
 });

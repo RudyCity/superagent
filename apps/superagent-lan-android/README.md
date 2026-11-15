@@ -24,6 +24,34 @@ If Core/tunnel or the new build is unavailable, the stale QR stays hidden.
 During a confirmed build sync, Tray retries at a bounded 15-second cadence
 until the APK is available. Ambiguous timeouts are never retried automatically.
 
+## Android TV, Google TV and local terminal (0.10.2)
+
+The same debug-signed APK now includes a TV launcher banner and LEANBACK_LAUNCHER,
+optional touchscreen/camera requirements, a ten-foot left navigation rail with
+D-pad focus highlights, a TV-specific Home and Connect presentation, and a
+keyboard-friendly local Terminal tab. The phone dashboard remains touch-first.
+
+On Android TV or Google TV (Android 10+): install the APK only with explicit
+owner approval, launch it from the TV apps list, open Connect and select
+**Start LAN sharing**. In the Windows Tray choose **LAN Devices > Scan LAN**,
+verify the certificate fingerprint and enter the one-time 8-digit code on the
+controller. Approve pairing on the TV with the remote. The scanner is hidden
+on TV; outbound HTTPS invitations may instead be entered in Manual setup with
+a TV keyboard or paired Bluetooth keyboard. This does NOT create an insecure
+public listener or bypass Android support-session permission gates. Some TV
+firmware does not expose MediaProjection or Accessibility functions; in those
+cases screen/input actions remain unavailable. Real TV device verification
+is still required before declaring brand/model compatibility.
+
+The **Terminal** tab runs an explicit command locally through /system/bin/sh
+as the Android app UID in its own sandbox. It never runs as root and does not
+run on the Windows Core. It accepts only text submitted locally in the Activity,
+does not expose a terminal over LAN/tunnel, and limits commands to 10 seconds
+and output to 24 KiB; Stop and app close cancel the active process. Commands
+are not saved as history. A Bluetooth keyboard makes terminal entry easier on TV.
+This is an app-sandbox shell, not an unrestricted Android system shell or an
+authenticated remote terminal to the PC.
+
 ## Native Android dashboard (0.10.0)
 
 The companion now uses a native, accessible, four-tab mobile dashboard:
@@ -148,7 +176,7 @@ is generated in Android Keystore; pair/session tokens are process-memory only.
 | `getprop ro.build.version.release` | Android version |
 | `getprop ro.build.version.sdk` | Android SDK |
 
-The client does not expose an arbitrary shell, remote installation,
+The device protocol does not expose an arbitrary shell, remote installation,
 filesystem enumeration, silent system setting changes, camera, microphone
 or unapproved screen sharing. Approved media-volume steps are supported. The phone
 owner must change Android system settings locally; choosing
@@ -181,7 +209,7 @@ settings, not the controller, and opening it terminates LAN sharing/pairing.
 The owner must pair again to continue. Volume changes one media-volume step
 and displays Android's own volume UI; each step needs approval.
 
-No arbitrary shell, APK installation, unrestricted file access, ADB, root,
+No remotely triggered shell, APK installation, unrestricted file access, ADB, root,
 accessibility screen control or silent Wi-Fi toggle has been added. The
 exact Android allowlist is enforced by both controller and phone.
 

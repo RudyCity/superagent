@@ -1,3 +1,11 @@
+## [1.14.101] - 2026-11-15
+### Android TV compatibility and on-device sandbox terminal
+- Add Android/Google TV launcher intent, branded xhdpi banner and optional touchscreen, camera and portrait feature requirements while retaining Android 10+ compatibility.
+- Provide a dedicated TV navigation rail with D-pad focus styling, ten-foot-friendly text and TV-first LAN pairing using the displayed one-time code without camera access.
+- Preserve phone QR scanning, opt-in screen sharing, Android Accessibility authorization and remote input consent; allow TV manual HTTPS invitations with a keyboard.
+- Add a local on-device Android terminal tab with explicit foreground command submission, app UID permissions only, 10-second execution ceiling, capped output, Stop and lifecycle cancellation. No root, ADB, remote shell or Windows terminal exposure.
+- Rebuild the Android debug preview as 0.10.2-tv-terminal (versionCode 19); verify compilation, APK manifest TV metadata and static security regressions. Real Android TV hardware behavior remains unverified.
+
 ## [1.14.100] - 2026-11-15
 ### Tray-only Quick Tunnel mode for password-protected Desktop Live management
 - Add a Named/Quick selector in Tray Settings -> Security, displaying an ephemeral trycloudflare.com link after an attended Quick start; default remains Named.

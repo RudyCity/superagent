@@ -12,6 +12,7 @@ const permit = java("RemoteControlPermit");
 const tunnel = java("TunnelRelayClient");
 const tunnelService = java("TunnelForegroundService");
 const activity = java("MainActivity");
+const qrScanner = java("AndroidQrScanner");
 const androidBuild = fs.readFileSync(path.join(root, "app/build.gradle"), "utf8");
 const manifest = fs.readFileSync(path.join(root, "app/src/main/AndroidManifest.xml"), "utf8");
 
@@ -48,10 +49,10 @@ describe("Android 0.7 standalone health and consent contract", () => {
   it("supports an outbound-only HTTPS Device Tunnel without replacing local consent", () => {
     expect(activity).toContain("DEVICE TUNNEL · QR CONNECT");
     expect(activity).toContain("Scan QR & Connect");
-    expect(activity).toContain("GmsBarcodeScanning.getClient");
-    expect(activity).toContain("Barcode.FORMAT_QR_CODE");
-    expect(activity).not.toContain("enableAutoZoom()");
-    expect(activity).toContain("Hold the phone steady about 20–35 cm from the QR.");
+    expect(qrScanner).toContain("GmsBarcodeScanning.getClient");
+    expect(qrScanner).toContain("Barcode.FORMAT_QR_CODE");
+    expect(qrScanner).not.toContain("enableAutoZoom()");
+    expect(qrScanner).toContain("Use manual setup JSON instead.");
     expect(androidBuild).toContain("play-services-code-scanner:16.1.0");
     expect(manifest).toContain("com.google.mlkit.vision.DEPENDENCIES");
     expect(manifest).toContain("barcode_ui");
@@ -74,8 +75,8 @@ describe("Android 0.7 standalone health and consent contract", () => {
       "QUERY_ALL_PACKAGES", "WRITE_SECURE_SETTINGS", "DEVICE_ADMIN"]) {
       expect(manifest).not.toContain(forbidden);
     }
-    expect(androidBuild).toContain("versionCode 18");
-    expect(androidBuild).toContain("versionName '0.10.1-internet-tunnel'");
+    expect(androidBuild).toContain("versionCode 19");
+    expect(androidBuild).toContain("versionName '0.10.2-tv-terminal'");
     expect(fs.existsSync(path.join(root, "gradle/wrapper/gradle-wrapper.jar"))).toBe(true);
   });
 });

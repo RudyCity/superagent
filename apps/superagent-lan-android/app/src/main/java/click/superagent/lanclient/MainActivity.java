@@ -35,10 +35,6 @@ import android.text.InputType;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanner;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
-import com.google.mlkit.vision.barcode.common.Barcode;
 import org.json.JSONObject;
 
 import java.util.concurrent.CountDownLatch;
@@ -76,6 +72,7 @@ public final class MainActivity extends Activity {
     private EditText segmentInput, tunnelSetupInput;
     private boolean qrScanInProgress;
     private String pendingQrPayload;
+    private AndroidLocalTerminalUi terminalUi;
 
     private String appBuildLabel() {
         try {
@@ -154,6 +151,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        boolean tv = AndroidTvUi.isTv(this);
         getWindow().setStatusBarColor(AndroidUiKit.CANVAS);
         getWindow().setNavigationBarColor(AndroidUiKit.CANVAS);
 
@@ -167,25 +165,25 @@ public final class MainActivity extends Activity {
         LinearLayout connectPage = AndroidUiKit.page(this);
         LinearLayout controlPage = AndroidUiKit.page(this);
         LinearLayout filesPage = AndroidUiKit.page(this);
+        LinearLayout terminalPage = AndroidUiKit.page(this);
         pageHost = new FrameLayout(this);
         pages = new ScrollView[] {
                 AndroidUiKit.scroll(this, homePage),
                 AndroidUiKit.scroll(this, connectPage),
                 AndroidUiKit.scroll(this, controlPage),
-                AndroidUiKit.scroll(this, filesPage)
+                AndroidUiKit.scroll(this, filesPage),
+                AndroidUiKit.scroll(this, terminalPage)
         };
         for (ScrollView page : pages) pageHost.addView(page);
-        shell.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1f));
-
-        LinearLayout navigation = AndroidUiKit.bottomBar(this);
-        String[] labels = { "Home", "Connect", "Control", "Files" };
+        LinearLayout navigation = AndroidTvUi.navigation(this, tv);
+        String[] labels = { "Home", "Connect", "Control", "Files", "Terminal" };
         tabButtons = new Button[labels.length];
         for (int i = 0; i < labels.length; i++) {
             final int destination = i;
             tabButtons[i] = AndroidUiKit.tab(this, labels[i], () -> showTab(destination));
-            navigation.addView(tabButtons[i], new LinearLayout.LayoutParams(0, dp(50), 1f));
+            AndroidTvUi.addTab(this, navigation, tabButtons[i], tv);
         }
-        shell.addView(navigation);
+        AndroidTvUi.attach(this, shell, pageHost, navigation, tv);
         setContentView(shell);
 
         add(homePage, label("Overview", 24, AndroidUiKit.TEXT, true), 0);
@@ -196,9 +194,11 @@ public final class MainActivity extends Activity {
         add(controlPage, label("Decide exactly what your paired controller can do.", 13, AndroidUiKit.MUTED, false), 2);
         add(filesPage, label("Private file transfer", 24, AndroidUiKit.TEXT, true), 0);
         add(filesPage, label("Share only the items you choose and approve.", 13, AndroidUiKit.MUTED, false), 2);
+        terminalUi = new AndroidLocalTerminalUi(this, terminalPage);
 
         LinearLayout layout = section(homePage, "DEVICE OVERVIEW");
-        add(layout, label("Your phone. Your call.", 27, AndroidUiKit.TEXT, true), 2);
+        add(layout, label(tv ? "Your TV. Your choice." : "Your phone. Your call.",
+                27, AndroidUiKit.TEXT, true), 2);
         add(layout, label("Secure support with permission at every step.", 14, AndroidUiKit.MUTED, false), 4);
         add(layout, label(appBuildLabel(), 12, AndroidUiKit.BLUE, false), 2);
         dashboardStatus = label("Not connected", 21, AndroidUiKit.TEXT, true);
@@ -243,6 +243,12 @@ public final class MainActivity extends Activity {
         segmentInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(64)});
         AndroidUiKit.field(segmentInput);
         add(layout, segmentInput, 4);
+        LinearLayout tvPairingCard = null;
+        if (tv) {
+            segmentInput.setText("support-tv");
+            tvPairingCard = section(connectPage, "TV PAIRING · NO CAMERA");
+            add(tvPairingCard, label("Select Start LAN sharing, then on Windows use SuperAgent Tray > LAN Devices > Scan LAN. Verify the fingerprint, enter the one-time code shown below and approve with your TV remote.", 16, AndroidUiKit.ACCENT, true), 7);
+        }
 
         layout = section(connectPage, "SHARING");
         LinearLayout sharingCard = layout;
@@ -280,6 +286,12 @@ public final class MainActivity extends Activity {
         AndroidUiKit.field(tunnelSetupInput);
         add(layout, tunnelSetupInput, 7);
         tunnelConnect = action(layout, "Connect with manual setup", this::connectTunnel);
+        if (tv) {
+            tunnelScan.setVisibility(View.GONE);
+            qrScanStatus.setText("On TV, use the LAN pairing code or enter a trusted tunnel invitation with your remote or Bluetooth keyboard.");
+            manualSetupPanel.setVisibility(View.VISIBLE);
+            manualSetupToggle.setText("Hide manual setup");
+        }
 
         layout = section(connectPage, "PAIRING DETAILS");
         add(layout, label("Phone IP / port", 12, AndroidUiKit.MUTED, false), 0);
@@ -360,12 +372,20 @@ public final class MainActivity extends Activity {
             fileSelected.setText("No document selected");
             stopSharing();
         });
-        connectPage.removeView(connectQrCard);
-        connectPage.addView(connectQrCard, 2);
-        connectPage.removeView(sharingCard);
-        connectPage.addView(sharingCard, 3);
-        // Keep segment settings visible, but secondary to the one-tap QR flow.
-        showTab(state == null ? 0 : Math.max(0, Math.min(3, state.getInt("selectedTab", 0))));
+        if (tv) {
+            connectPage.removeView(tvPairingCard);
+            connectPage.addView(tvPairingCard, 2);
+            connectPage.removeView(sharingCard);
+            connectPage.addView(sharingCard, 3);
+        } else {
+            connectPage.removeView(connectQrCard);
+            connectPage.addView(connectQrCard, 2);
+            connectPage.removeView(sharingCard);
+            connectPage.addView(sharingCard, 3);
+        }
+        // Keep direct pairing prominent on TV and QR-first pairing on phones.
+        showTab(state == null ? 0 : Math.max(0, Math.min(4, state.getInt("selectedTab", 0))));
+        if (tv) tabButtons[0].requestFocus();
         refresh();
     }
 
@@ -597,16 +617,6 @@ public final class MainActivity extends Activity {
         connectTunnelFromQr(setup);
     }
 
-    private boolean isConnectQrPayload(String raw) {
-        try {
-            JSONObject qr = new JSONObject(raw);
-            return "sat".equals(qr.optString("k", ""))
-                    || "superagent-device-tunnel".equals(qr.optString("kind", ""));
-        } catch (org.json.JSONException invalidQr) {
-            return false;
-        }
-    }
-
     private void scanTunnelQr() {
         if (qrScanInProgress) return;
         if (TunnelForegroundService.isActive()) {
@@ -615,48 +625,18 @@ public final class MainActivity extends Activity {
         }
         qrScanInProgress = true;
         refresh();
-        try {
-            GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
-                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                    .build();
-            GmsBarcodeScanner scanner = GmsBarcodeScanning.getClient(this, options);
-            qrFeedback("Opening QR scanner. Scan the Connection QR in SuperAgent Tray. Hold the phone steady about 20–35 cm from the QR.");
-            scanner.startScan()
-                    .addOnSuccessListener(barcode -> {
-                        qrScanInProgress = false;
-                        String raw = barcode.getRawValue();
-                        if (raw == null || raw.isEmpty() || raw.length() > 2048) {
-                            qrFeedback("QR rejected. Scan a fresh Connect QR from SuperAgent Tray.");
-                        } else if (!isConnectQrPayload(raw)) {
-                            qrFeedback(raw.startsWith("https://")
-                                    ? "This is an APK download QR. In Tray choose Create connect QR instead."
-                                    : "Wrong QR format. In Tray choose Create connect QR and scan it here.");
-                        } else {
-                            pendingQrPayload = raw;
-                            qrFeedback("QR detected. Returning to SuperAgent to connect...");
-                            // Wait for scanner dismissal; onStart also drains if this callback
-                            // arrived before the Activity returned to foreground.
-                            main.postDelayed(this::connectPendingQrWhenForeground, 700);
-                        }
-                        refresh();
-                    })
-                    .addOnCanceledListener(() -> {
-                        qrScanInProgress = false;
-                        qrFeedback("QR scan cancelled. Tap Scan QR & Connect to retry.");
-                        refresh();
-                    })
-                    .addOnFailureListener(error -> {
-                        qrScanInProgress = false;
-                        qrFeedback("QR scanner failed (" + error.getClass().getSimpleName()
-                                + "). Update Google Play Services or use manual setup JSON.");
-                        refresh();
-                    });
-        } catch (Exception error) {
-            qrScanInProgress = false;
-            qrFeedback("QR scanner unavailable (" + error.getClass().getSimpleName()
-                    + "). Update Google Play Services or use manual setup JSON.");
-            refresh();
-        }
+        AndroidQrScanner.scan(this, raw -> {
+            if (raw == null || raw.isEmpty() || raw.length() > 2048)
+                qrFeedback("QR rejected. Scan a fresh Connect QR from SuperAgent Tray.");
+            else if (!AndroidQrScanner.isConnectPayload(raw))
+                qrFeedback(raw.startsWith("https://") ? "Use Create connect QR, not APK download QR."
+                        : "Wrong QR format. Choose Create connect QR in Tray.");
+            else {
+                pendingQrPayload = raw;
+                qrFeedback("QR detected. Returning to SuperAgent to connect...");
+                main.postDelayed(this::connectPendingQrWhenForeground, 700);
+            }
+        }, this::qrFeedback, () -> { qrScanInProgress = false; refresh(); });
     }
 
     private void connectTunnelFromQr(String setup) {
@@ -756,6 +736,7 @@ public final class MainActivity extends Activity {
 
     private boolean requestApproval(String kind, String controller, String address, int seconds) {
         if (!visible || isFinishing() || !approvalPending.compareAndSet(false, true)) return false;
+        if (terminalUi != null) terminalUi.stopRunningCommand();
         CountDownLatch latch = new CountDownLatch(1);
         AtomicBoolean allowed = new AtomicBoolean(false);
         main.post(() -> {
@@ -828,6 +809,7 @@ public final class MainActivity extends Activity {
         MediaProjectionManager projection = (MediaProjectionManager)
                 getSystemService(MEDIA_PROJECTION_SERVICE);
         if (projection == null) { notifyEvent("MediaProjection unavailable on this phone."); return; }
+        if (terminalUi != null) terminalUi.stopRunningCommand();
         requestingCapture = true;
         refresh();
         // If the Android consent sheet is abandoned, never keep a LAN
@@ -983,14 +965,21 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStop() {
         visible = false;
+        if (terminalUi != null) terminalUi.stopRunningCommand();
         // Direct LAN is screen-bound; the foreground HTTPS service owns its
         // own loopback listener and survives normal Activity backgrounding.
         if (!requestingCapture && !ScreenProjectionService.isActive()) stopDirectSharing();
         super.onStop();
     }
 
+    @Override public void onBackPressed() {
+        if (AndroidTvUi.isTv(this) && selectedTab != 0) showTab(0);
+        else super.onBackPressed();
+    }
+
     @Override protected void onDestroy() {
         if (currentActivity.get() == this) currentActivity.clear();
+        if (terminalUi != null) terminalUi.close();
         stopDirectSharing();
         super.onDestroy();
     }

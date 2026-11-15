@@ -5,6 +5,7 @@ import path from "node:path";
 const mainActivity = fs.readFileSync(path.resolve(
   "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/MainActivity.java",
 ), "utf8");
+const scanner = fs.readFileSync("apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/AndroidQrScanner.java", "utf8");
 const gradle = fs.readFileSync(path.resolve(
   "apps/superagent-lan-android/app/build.gradle",
 ), "utf8");
@@ -24,16 +25,16 @@ describe("Android QR scanner foreground return contract", () => {
   it("shows QR scan progress and recovery errors beside the scanner control", () => {
     expect(mainActivity).toContain('qrScanStatus = label("Ready to scan the Connection QR');
     expect(mainActivity).toContain('qrFeedback("QR detected. Returning to SuperAgent to connect...");');
-    expect(mainActivity).toContain("QR scanner failed (");
-    expect(mainActivity).toContain("Update Google Play Services or use manual setup JSON.");
+    expect(scanner).toContain("QR scanner failed (");
+    expect(scanner).toContain("Use manual setup JSON instead.");
     expect(mainActivity).toContain("if (qrScanInProgress) return;");
     expect(mainActivity).toContain("qrScanInProgress = false;");
-    expect(mainActivity).toContain("if (!isConnectQrPayload(raw))");
-    expect(mainActivity).toContain("This is an APK download QR. In Tray choose Create connect QR instead.");
-    expect(mainActivity).toContain("Wrong QR format. In Tray choose Create connect QR and scan it here.");
+    expect(mainActivity).toContain("!AndroidQrScanner.isConnectPayload(raw)");
+    expect(mainActivity).toContain("Use Create connect QR, not APK download QR.");
+    expect(mainActivity).toContain("Wrong QR format. Choose Create connect QR in Tray.");
   });
 
   it("identifies the rebuilt Android APK with the next build number", () => {
-    expect(gradle).toContain("versionCode 18");
+    expect(gradle).toContain("versionCode 19");
   });
 });

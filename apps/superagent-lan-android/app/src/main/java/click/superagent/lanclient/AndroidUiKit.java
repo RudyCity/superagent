@@ -6,6 +6,8 @@ import android.content.res.ColorStateList;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.StateListDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -66,20 +68,29 @@ final class AndroidUiKit {
         root.addView(child, params);
     }
 
+    private static Drawable buttonSkin(Context ctx, int base, int border, int ripple) {
+        RippleDrawable normal = new RippleDrawable(ColorStateList.valueOf(ripple),
+                shape(base, border, 14, ctx), null);
+        if (!AndroidTvUi.isTv(ctx)) return normal;
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[] { android.R.attr.state_focused },
+                shape(SURFACE_HIGH, ACCENT, 14, ctx));
+        states.addState(new int[] {}, normal);
+        return states;
+    }
+
     static Button button(Context ctx, String title, Runnable onClick) {
         Button button = new Button(ctx);
         button.setAllCaps(false);
         button.setSingleLine(true);
         button.setText(title);
-        button.setTextSize(14);
+        button.setTextSize(AndroidTvUi.isTv(ctx) ? 18 : 14);
         button.setTextColor(TEXT);
         button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        button.setMinHeight(dp(ctx, 52));
-        button.setMinimumHeight(dp(ctx, 52));
+        button.setMinHeight(dp(ctx, AndroidTvUi.isTv(ctx) ? 64 : 52));
+        button.setMinimumHeight(dp(ctx, AndroidTvUi.isTv(ctx) ? 64 : 52));
         button.setPadding(dp(ctx, 12), dp(ctx, 8), dp(ctx, 12), dp(ctx, 8));
-        button.setBackground(new RippleDrawable(
-                ColorStateList.valueOf(0x408dbaff),
-                shape(SURFACE_HIGH, LINE, 14, ctx), null));
+        button.setBackground(buttonSkin(ctx, SURFACE_HIGH, LINE, 0x408dbaff));
         button.setOnClickListener(v -> onClick.run());
         button.setStateListAnimator(null);
         return button;
@@ -88,32 +99,31 @@ final class AndroidUiKit {
     static void primary(Button button) {
         Context context = button.getContext();
         button.setTextColor(INK);
-        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x309bc2ce),
-                shape(ACCENT, 0, 14, context), null));
+        button.setBackground(buttonSkin(context, ACCENT, 0, 0x309bc2ce));
     }
 
     static void destructive(Button button) {
         Context context = button.getContext();
         button.setTextColor(DANGER);
-        button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x30ff9da2),
-                shape(SURFACE, 0xff744650, 14, context), null));
+        button.setBackground(buttonSkin(context, SURFACE, 0xff744650, 0x30ff9da2));
     }
 
     static void field(EditText view) {
         Context ctx = view.getContext();
         view.setTextColor(TEXT);
         view.setHintTextColor(SUBTLE);
-        view.setTextSize(14);
+        view.setTextSize(AndroidTvUi.isTv(ctx) ? 17 : 14);
         view.setPadding(dp(ctx, 16), dp(ctx, 12), dp(ctx, 16), dp(ctx, 12));
         view.setMinHeight(dp(ctx, 52));
-        view.setBackground(shape(SURFACE_HIGH, LINE, 13, ctx));
+        view.setBackground(buttonSkin(ctx, SURFACE_HIGH, LINE, 0x408dbaff));
     }
 
     static LinearLayout page(Activity activity) {
         LinearLayout column = new LinearLayout(activity);
         column.setOrientation(LinearLayout.VERTICAL);
-        column.setPadding(dp(activity, 20), dp(activity, 12),
-                dp(activity, 20), dp(activity, 30));
+        int inset = AndroidTvUi.isTv(activity) ? 32 : 20;
+        column.setPadding(dp(activity, inset), dp(activity, 12),
+                dp(activity, inset), dp(activity, 30));
         return column;
     }
 
@@ -148,10 +158,12 @@ final class AndroidUiKit {
         shell.setOrientation(LinearLayout.VERTICAL);
         shell.setPadding(dp(ctx, 20), dp(ctx, 8), dp(ctx, 20), dp(ctx, 10));
         shell.setBackgroundColor(CANVAS);
-        TextView wordmark = text(ctx, "SUPERAGENT   /   ANDROID", 12, ACCENT, true);
+        TextView wordmark = text(ctx, AndroidTvUi.isTv(ctx)
+                ? "SUPERAGENT   /   ANDROID TV" : "SUPERAGENT   /   ANDROID", 12, ACCENT, true);
         wordmark.setLetterSpacing(.12f);
         add(shell, wordmark, 0);
-        TextView subtitle = text(ctx, "Private device companion", 12, MUTED, false);
+        TextView subtitle = text(ctx, AndroidTvUi.isTv(ctx)
+                ? "Private TV companion · D-pad navigation" : "Private device companion", 12, MUTED, false);
         add(shell, subtitle, 0);
         return shell;
     }
@@ -167,11 +179,11 @@ final class AndroidUiKit {
 
     static Button tab(Context ctx, String title, Runnable onClick) {
         Button button = button(ctx, title, onClick);
-        button.setTextSize(12);
+        button.setTextSize(AndroidTvUi.isTv(ctx) ? 17 : 12);
         button.setPadding(dp(ctx, 2), dp(ctx, 7), dp(ctx, 2), dp(ctx, 7));
         button.setMinHeight(dp(ctx, 48));
         button.setMinimumHeight(dp(ctx, 48));
-        button.setBackground(shape(SURFACE, 0, 12, ctx));
+        button.setBackground(buttonSkin(ctx, SURFACE, 0, 0x408dbaff));
         button.setTextColor(MUTED);
         return button;
     }
@@ -179,8 +191,8 @@ final class AndroidUiKit {
     static void activeTab(Button button, boolean active) {
         button.setSelected(active);
         button.setTextColor(active ? ACCENT : MUTED);
-        button.setBackground(shape(active ? SURFACE_HIGH : SURFACE,
-                active ? LINE : 0, 12, button.getContext()));
+        button.setBackground(buttonSkin(button.getContext(),
+                active ? SURFACE_HIGH : SURFACE, active ? LINE : 0, 0x408dbaff));
         button.setContentDescription(button.getText() + (active ? ", selected tab" : ", tab"));
     }
 }
