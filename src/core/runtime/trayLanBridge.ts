@@ -21,11 +21,12 @@ import {
 import { createDeviceTunnelInvite, getDeviceTunnelInviteStatus, listDeviceTunnelDevices, revokeDeviceTunnel, revokeDeviceTunnelInvite } from "../deviceTunnel/broker.js";
 import { buildDeviceTunnelQrPayload, renderDeviceTunnelQrDataUrl, renderDeviceTunnelQrMatrix } from "../deviceTunnel/qrInvite.js";
 import { createAndroidApkDownloadTicket, getAndroidApkDownloadTicketStatus, revokeAndroidApkDownloadTicket } from "../deviceTunnel/apkDownload.js";
+import { approveTvTunnelBootstrap } from "../deviceTunnel/tvBootstrap.js";
 import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
-export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_finish" | "file_abort";
+export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_finish" | "file_abort";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"]);
+const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"]);
 
 export function parseTrayLanAction(input: unknown): { action: TrayLanAction; args: LanArgs } {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("Invalid LAN request.");
@@ -41,6 +42,7 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     pair_cancel: ["action", "requestId"],
     tunnel_invite: ["action"], apk_download_qr: ["action"], qr_heartbeat: ["action", "kind", "id"], tunnel_list: ["action"],
     tunnel_pair_request: ["action", "tunnelId", "fingerprint", "controller"],
+    tunnel_tv_approve: ["action", "requestId", "challenge"],
     tunnel_revoke: ["action", "tunnelId"],
     open: ["action", "deviceId"], exec: ["action", "deviceId", "command"],
     android_shell: ["action", "deviceId", "command"],
@@ -242,6 +244,9 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
     case "tunnel_pair_request": return { success: true, request: createTunnelPairRequest({
       tunnelId: args.tunnelId as string, fingerprint: args.fingerprint as string,
       controller: args.controller as string | undefined,
+    }) };
+    case "tunnel_tv_approve": return { success: true, request: approveTvTunnelBootstrap({
+      id: String(args.requestId), challenge: String(args.challenge),
     }) };
     case "tunnel_revoke": revokeDeviceTunnel(args.tunnelId as string); return { success: true, state: "tunnel_device_revoked" };
     case "pair_request": return { success: true, request: createLanPairRequest({

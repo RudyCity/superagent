@@ -24,6 +24,47 @@ If Core/tunnel or the new build is unavailable, the stale QR stays hidden.
 During a confirmed build sync, Tray retries at a bounded 15-second cadence
 until the APK is available. Ambiguous timeouts are never retried automatically.
 
+## Android TV shows the pairing QR (0.10.4 preview)
+
+Android TV devices generally have no camera. The TV now **creates and displays**
+a one-time reverse HTTPS Device Tunnel pairing QR, instead of scanning a Tray QR.
+
+1. Install this APK on an Android TV/Google TV running Android 10+ (API 29).
+   The installed Core build must include the new TV bootstrap endpoints and MCP
+   tool; an older Core will reject the request. Use a trusted, reachable
+   SuperAgent Core HTTPS tunnel endpoint (named or currently active quick
+   tunnel). **Enter the HTTPS origin on the TV once**, using the remote or a
+   Bluetooth keyboard. This hostname is stored locally, never a password.
+2. Open **Connect → TV PAIRING · NO CAMERA → Show pairing QR on TV**. The TV
+   makes a bounded, time-limited HTTPS request and displays a public
+   request ID, verification challenge and QR. Photograph the TV and provide
+   the picture to your **trusted** controller/agent. If the agent cannot decode
+   the QR, the request ID and challenge are printed beneath it.
+3. The authorized agent calls the dangerous MCP tool
+   `superagent_device_tunnel_tv_approve` with the **exact** request ID and
+   64-character challenge. This requires the Core's locally authorized
+   Full YOLO mode and MCP permissions. The agent receives **no pairing
+   token, enrollment code, or session credential**.
+4. The TV polls with its **private, in-memory token** which is never encoded in
+   the QR. Once approved, the TV shows its own separate **CONNECT / DENY**
+   confirmation. Connecting starts an outbound HTTPS foreground service and
+   the existing on-TV pairing approval dialog. A remote support session, screen
+   sharing, and remote input each require their own separate permissions and
+   owner approvals. Notifications include a STOP SHARING action.
+5. QR requests expire after **3 minutes**, the subsequent enrollment invite
+   after **10 minutes**. Leaving the TV app foreground or pressing Cancel
+   invalidates that display immediately. The unused server-side entry expires.
+   Approving a QR does NOT grant unattended screen or terminal access.
+
+**Trust boundary:** The TV must know the public HTTPS origin before it can
+contact a remote Core. Neither a photograph nor a QR by itself can provide
+Internet reachability to a TV that has no configured destination. QR displays
+only a public challenge and request ID; protect the device screen while pairing
+and inspect the Core URL before accepting. Do not disable Android security
+features to force installation. An Android TV brand/model and screen/input
+permissions still need real-device acceptance testing. APK remains a
+debug-signed preview; do not treat compilation as production certification.
+
 ## Agent-driven Android/Android TV shell (0.10.3)
 
 **Agent executes; owner approves. No Tray UI is needed for command execution.**

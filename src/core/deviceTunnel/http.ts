@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { isFullYoloMode } from "../permissions.js";
 import { pairTunnelDevice } from "../lanRemote/controller.js";
 import { getAndroidApkDownloadTicket } from "./apkDownload.js";
+import { pollTvTunnelBootstrap, requestTvTunnelBootstrap } from "./tvBootstrap.js";
 import {
   authenticateDeviceTunnel,
   enrollDeviceTunnel,
@@ -106,6 +107,32 @@ export async function handleDeviceTunnelPublicRoute(
     return true;
   }
   try {
+    if (pathname === "/api/device-tunnel/tv/request") {
+      const body = JSON.parse(await readBounded(req, 512) || "{}") as Record<string, unknown>;
+      if (!body || Array.isArray(body)
+        || Object.keys(body).sort().join(",") !== "challenge,name"
+        || typeof body.challenge !== "string" || typeof body.name !== "string") {
+        json(res, 400, { success: false, error: "TV_BOOTSTRAP_INVALID_REQUEST" });
+        return true;
+      }
+      json(res, 200, { success: true, request: requestTvTunnelBootstrap({
+        challenge: body.challenge, name: body.name,
+      }) });
+      return true;
+    }
+    if (pathname === "/api/device-tunnel/tv/poll") {
+      const body = JSON.parse(await readBounded(req, 512) || "{}") as Record<string, unknown>;
+      if (!body || Array.isArray(body)
+        || Object.keys(body).sort().join(",") !== "id,pollToken"
+        || typeof body.id !== "string" || typeof body.pollToken !== "string") {
+        json(res, 400, { success: false, error: "TV_BOOTSTRAP_INVALID_POLL" });
+        return true;
+      }
+      json(res, 200, { success: true, result: pollTvTunnelBootstrap({
+        id: body.id, pollToken: body.pollToken,
+      }) });
+      return true;
+    }
     if (pathname === "/api/device-tunnel/enroll") {
       const raw = await readBounded(req, 4096);
       const body = JSON.parse(raw || "{}") as Record<string, unknown>;

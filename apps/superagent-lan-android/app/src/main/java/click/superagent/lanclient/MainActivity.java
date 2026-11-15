@@ -19,6 +19,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
@@ -29,6 +30,7 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ImageView;
 import android.widget.EditText;
 import android.text.InputFilter;
 import android.text.InputType;
@@ -71,6 +73,11 @@ public final class MainActivity extends Activity {
     private int selectedTab = 0;
     private EditText segmentInput, tunnelSetupInput;
     private boolean qrScanInProgress;
+    private EditText tvCoreUrlInput;
+    private ImageView tvQrPreview;
+    private TextView tvQrStatus;
+    private Button tvQrCreate, tvQrCancel;
+    private volatile int tvQrGeneration;
     private String pendingQrPayload;
     private AndroidLocalTerminalUi terminalUi;
 
@@ -247,7 +254,27 @@ public final class MainActivity extends Activity {
         if (tv) {
             segmentInput.setText("support-tv");
             tvPairingCard = section(connectPage, "TV PAIRING · NO CAMERA");
-            add(tvPairingCard, label("Select Start LAN sharing, then on Windows use SuperAgent Tray > LAN Devices > Scan LAN. Verify the fingerprint, enter the one-time code shown below and approve with your TV remote.", 16, AndroidUiKit.ACCENT, true), 7);
+            add(tvPairingCard, label("For local LAN, start sharing and pair in Tray. For a remote internet connection, display a QR from your TV using the trusted HTTPS Core URL below.", 16, AndroidUiKit.ACCENT, true), 7);
+            add(tvPairingCard, label("TRUSTED CORE HTTPS URL", 12, AndroidUiKit.MUTED, false), 3);
+            tvCoreUrlInput = new EditText(this);
+            tvCoreUrlInput.setSingleLine(true);
+            tvCoreUrlInput.setHint("https://your-superagent-tunnel.example");
+            tvCoreUrlInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+            tvCoreUrlInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(240)});
+            tvCoreUrlInput.setText(getPreferences(MODE_PRIVATE).getString("tvCoreOrigin", ""));
+            AndroidUiKit.field(tvCoreUrlInput);
+            add(tvPairingCard, tvCoreUrlInput, 6);
+            tvQrCreate = action(tvPairingCard, "Show pairing QR on TV", this::showTvQr);
+            AndroidUiKit.primary(tvQrCreate);
+            tvQrPreview = new ImageView(this);
+            tvQrPreview.setAdjustViewBounds(true);
+            tvQrPreview.setContentDescription("Camera-free TV pairing QR, shown only during a pending request");
+            tvQrPreview.setVisibility(View.GONE);
+            add(tvPairingCard, tvQrPreview, 3);
+            tvQrStatus = label("No pairing request. QR contains no device password or session token.", 13, AndroidUiKit.MUTED, false);
+            add(tvPairingCard, tvQrStatus, 3);
+            tvQrCancel = action(tvPairingCard, "Cancel TV pairing", this::cancelTvQr);
+            tvQrCancel.setEnabled(false);
         }
 
         layout = section(connectPage, "SHARING");
@@ -617,6 +644,106 @@ public final class MainActivity extends Activity {
         connectTunnelFromQr(setup);
     }
 
+    private void cancelTvQr() {
+        tvQrGeneration++;
+        if (tvQrPreview != null) {
+            tvQrPreview.setImageDrawable(null);
+            tvQrPreview.setVisibility(View.GONE);
+        }
+        if (tvQrStatus != null) tvQrStatus.setText("TV pairing cancelled. Create a new QR when ready.");
+        if (tvQrCreate != null) tvQrCreate.setEnabled(true);
+        if (tvQrCancel != null) tvQrCancel.setEnabled(false);
+        if (server == null && !TunnelForegroundService.isActive())
+            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    private void showTvQr() {
+        if (!AndroidTvUi.isTv(this) || tvCoreUrlInput == null || !visible
+                || launching || preparingFolder || TunnelForegroundService.isActive()
+                || server != null) {
+            if (tvQrStatus != null) tvQrStatus.setText("Stop current sharing before starting TV QR pairing.");
+            return;
+        }
+        if (!notificationsReady()) {
+            requestNotificationSetup();
+            return;
+        }
+        final String origin;
+        try {
+            origin = AndroidTvQrPairing.requireHttpsOrigin(tvCoreUrlInput.getText().toString().trim());
+        } catch (Exception invalid) {
+            tvCoreUrlInput.setError(invalid.getMessage());
+            return;
+        }
+        final int generation = ++tvQrGeneration;
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        tvQrCreate.setEnabled(false);
+        tvQrCancel.setEnabled(true);
+        tvQrStatus.setText("Requesting a temporary QR from the trusted HTTPS Core...");
+        new Thread(() -> {
+            try {
+                AndroidTvQrPairing.Ticket ticket = AndroidTvQrPairing.create(
+                        origin, ("Android TV " + Build.MODEL).replaceAll("[^A-Za-z0-9_ .-]", "").trim());
+                Bitmap bitmap = AndroidTvQrPairing.bitmap(ticket.publicQr(), 440);
+                main.post(() -> {
+                    if (generation != tvQrGeneration || !visible) return;
+                    getPreferences(MODE_PRIVATE).edit().putString("tvCoreOrigin", origin).apply();
+                    tvQrPreview.setImageBitmap(bitmap);
+                    tvQrPreview.setVisibility(View.VISIBLE);
+                    tvQrStatus.setText("Take a photo and send it to your SuperAgent controller. "
+                            + "The controller approves this exact TV challenge. Expires in 3 minutes."
+                            + "\nRequest ID: " + ticket.id
+                            + "\nChallenge: " + ticket.challenge
+                            + "\nNo private token is displayed.");
+                });
+                while (generation == tvQrGeneration && System.currentTimeMillis() < ticket.expiresAt) {
+                    if (!visible) break;
+                    JSONObject reply = AndroidTvQrPairing.poll(ticket);
+                    if ("approved".equals(reply.optString("state"))) {
+                        final String setup = AndroidTvQrPairing.validatedSetup(ticket, reply);
+                        main.post(() -> {
+                            if (generation != tvQrGeneration || !visible) return;
+                            tvQrGeneration++;
+                            tvQrPreview.setImageDrawable(null);
+                            tvQrPreview.setVisibility(View.GONE);
+                            tvQrCreate.setEnabled(true);
+                            tvQrCancel.setEnabled(false);
+                            getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                            tvQrStatus.setText("Your controller approved the QR. Confirm on this TV to enroll.");
+                            new AlertDialog.Builder(this)
+                                    .setTitle("Connect this Android TV?")
+                                    .setMessage("A privileged controller approved your temporary QR. "
+                                            + "Start an outbound secure HTTPS tunnel to " + ticket.url
+                                            + "? You must separately approve device pairing, support sessions "
+                                            + "and any future remote input on this TV.")
+                                    .setNegativeButton("DENY", (dialog, which) ->
+                                            tvQrStatus.setText("TV owner denied the connection."))
+                                    .setPositiveButton("CONNECT", (dialog, which) ->
+                                            connectTunnelSetup(setup, null))
+                                    .show();
+                        });
+                        return;
+                    }
+                    Thread.sleep(2500);
+                }
+                main.post(() -> {
+                    if (generation == tvQrGeneration) {
+                        cancelTvQr();
+                        tvQrStatus.setText("TV QR expired or app left the foreground. Create a new QR.");
+                    }
+                });
+            } catch (Exception error) {
+                main.post(() -> {
+                    if (generation == tvQrGeneration) {
+                        cancelTvQr();
+                        tvQrStatus.setText("Cannot show TV pairing QR: "
+                                + error.getClass().getSimpleName() + " · " + error.getMessage());
+                    }
+                });
+            }
+        }, "superagent-tv-qr-bootstrap").start();
+    }
+
     private void scanTunnelQr() {
         if (qrScanInProgress) return;
         if (TunnelForegroundService.isActive()) {
@@ -698,6 +825,7 @@ public final class MainActivity extends Activity {
     }
 
     private void stopSharing() {
+        if (tvQrCreate != null && !tvQrCreate.isEnabled()) cancelTvQr();
         TunnelForegroundService.requestStop(this);
         stopDirectSharing();
         RemoteControlPermit.revoke();
@@ -973,6 +1101,7 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onStop() {
         visible = false;
+        if (tvQrCreate != null && !tvQrCreate.isEnabled()) cancelTvQr();
         if (terminalUi != null) terminalUi.stopRunningCommand();
         LanClientServer target = activeServer();
         if (target != null) target.stopRemoteShell();
