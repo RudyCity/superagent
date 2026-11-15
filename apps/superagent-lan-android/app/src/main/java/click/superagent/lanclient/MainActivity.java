@@ -742,11 +742,18 @@ public final class MainActivity extends Activity {
         main.post(() -> {
             if (!visible || isFinishing()) { latch.countDown(); return; }
             approvalDialog = new AlertDialog.Builder(this)
-                    .setTitle(kind.startsWith("file:") ? "Approve file transfer?"
+                    .setTitle(kind.startsWith("shell:") ? "Approve agent Android terminal command?"
+                            : kind.startsWith("file:") ? "Approve file transfer?"
                             : kind.startsWith("action:") ? "Approve Android support action?"
                             : kind.equals("pair") ? "Approve controller pairing?" : "Approve support session?")
                     .setMessage("Controller: " + controller + "\nLocal IP: " + address
-                            + (kind.startsWith("file:")
+                            + (kind.startsWith("shell:")
+                              ? String.valueOf((char)10) + String.valueOf((char)10)
+                                + "Agent command (Android app sandbox only):" + String.valueOf((char)10)
+                                + kind.substring(6)
+                                + String.valueOf((char)10) + String.valueOf((char)10)
+                                + "Runs for up to 10 seconds. This command executes only if you approve here. Never approve unfamiliar commands."
+                              : kind.startsWith("file:")
                               ? String.valueOf((char)10) + String.valueOf((char)10) + kind.substring(5)
                                 + String.valueOf((char)10) + "Approve each transfer. Incoming files: Downloads/SuperAgent LAN."
                               : kind.startsWith("action:")
@@ -810,6 +817,8 @@ public final class MainActivity extends Activity {
                 getSystemService(MEDIA_PROJECTION_SERVICE);
         if (projection == null) { notifyEvent("MediaProjection unavailable on this phone."); return; }
         if (terminalUi != null) terminalUi.stopRunningCommand();
+        LanClientServer target = activeServer();
+        if (target != null) target.stopRemoteShell();
         requestingCapture = true;
         refresh();
         // If the Android consent sheet is abandoned, never keep a LAN
@@ -955,7 +964,6 @@ public final class MainActivity extends Activity {
                     refresh();
                 }).show();
     }
-
     @Override protected void onStart() {
         super.onStart();
         currentActivity = new WeakReference<>(this);
@@ -966,17 +974,17 @@ public final class MainActivity extends Activity {
     @Override protected void onStop() {
         visible = false;
         if (terminalUi != null) terminalUi.stopRunningCommand();
+        LanClientServer target = activeServer();
+        if (target != null) target.stopRemoteShell();
         // Direct LAN is screen-bound; the foreground HTTPS service owns its
         // own loopback listener and survives normal Activity backgrounding.
         if (!requestingCapture && !ScreenProjectionService.isActive()) stopDirectSharing();
         super.onStop();
     }
-
     @Override public void onBackPressed() {
         if (AndroidTvUi.isTv(this) && selectedTab != 0) showTab(0);
         else super.onBackPressed();
     }
-
     @Override protected void onDestroy() {
         if (currentActivity.get() == this) currentActivity.clear();
         if (terminalUi != null) terminalUi.close();

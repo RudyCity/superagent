@@ -8,21 +8,28 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-/** Explicit on-device commands only. Never wired to the LAN or Device Tunnel protocol. */
+/**
+ * App-sandbox Android shell. Agent access is separately gated in LanClientServer
+ * and needs physical owner approval for every command; it is never privileged.
+ */
 final class LocalAndroidShell {
     private static final int MAX_OUTPUT = 24 * 1024;
     private final Context app;
     private volatile Process running;
     private final AtomicBoolean stopRequested = new AtomicBoolean(false);
     private volatile boolean closed;
+    private volatile int lastExitCode = -1;
 
     LocalAndroidShell(Context context) {
         app = context.getApplicationContext();
     }
 
     void prepare() {
+        lastExitCode = -1;
         if (!closed) stopRequested.set(false);
     }
+
+    int exitCode() { return lastExitCode; }
 
     String execute(String command) {
         if (closed || stopRequested.get()) return "Command cancelled.";
@@ -46,9 +53,12 @@ final class LocalAndroidShell {
             try (InputStream in = new FileInputStream(log)) {
                 length = in.read(bytes);
             }
+            int exit = !finished || stopRequested.get() ? -1 : current.exitValue();
+            lastExitCode = exit;
             String output = length <= 0 ? "" : new String(bytes, 0, length, StandardCharsets.UTF_8);
             String suffix = !finished ? "\n[Stopped: 10-second limit]"
-                    : "\n[Exit " + current.exitValue() + "]";
+                    : stopRequested.get() ? "\n[Stopped by owner or session revocation]"
+                    : "\n[Exit " + exit + "]";
             if (log.length() > MAX_OUTPUT) suffix += "\n[Output truncated at 24 KiB]";
             return output + suffix;
         } catch (InterruptedException interrupted) {

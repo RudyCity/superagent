@@ -29,7 +29,7 @@ describe("Android TV and local terminal release contract", () => {
     expect(banner.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     expect([banner.readUInt32BE(16), banner.readUInt32BE(20)]).toEqual([320, 180]);
     expect(gradle).toContain("minSdk 29");
-    expect(gradle).toContain("versionCode 19");
+    expect(gradle).toContain("versionCode 20");
   });
 
   it("uses a distinct D-pad-friendly TV rail while preserving touch navigation", () => {
@@ -76,7 +76,8 @@ describe("Android TV and local terminal release contract", () => {
     expect(shell).toContain("stopRequested.get()");
     expect(activity).toContain("if (terminalUi != null) terminalUi.stopRunningCommand()");
     expect(shell).not.toContain("su -c");
-    expect(server).not.toContain("LocalAndroidShell");
+    expect(server).toContain('approval.ask("shell:" + command, owner.label, ip, 90)');
+    expect(server).not.toContain("new ProcessBuilder(");
     expect(tunnel).not.toContain("LocalAndroidShell");
     expect(activity).toContain("if (terminalUi != null) terminalUi.close()");
   });

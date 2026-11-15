@@ -24,6 +24,39 @@ If Core/tunnel or the new build is unavailable, the stale QR stays hidden.
 During a confirmed build sync, Tray retries at a bounded 15-second cadence
 until the APK is available. Ambiguous timeouts are never retried automatically.
 
+## Agent-driven Android/Android TV shell (0.10.3)
+
+**Agent executes; owner approves. No Tray UI is needed for command execution.**
+SuperAgent Core and its first-class MCP surface now provide the separate
+dangerous tools **superagent_device_android_shell** (alias
+**superagent_lan_android_shell**) and **lan_support** with
+**action=android_shell**. These are NOT the Android Terminal tab,
+which continues to accept commands typed by the device owner.
+
+1. Open SuperAgent Android/Android TV, start sharing or connect an enrolled
+   Device Tunnel, and physically approve device pairing. For LAN, Core/MCP
+   tools can pair directly using the complete verified fingerprint and
+   one-time code without opening Tray.
+2. Ask the agent to open a separate approved device session, then submit
+   the exact shell command with the paired deviceId.
+3. The Android app must be foreground/visible. It displays the COMPLETE
+   command and controller label for a fresh **APPROVE / DENY** decision.
+   Pairing or support-session approval alone NEVER authorizes shell.
+4. Once approved, the command runs through /system/bin/sh as this app's
+   Android sandbox UID and its output/exit code go back to the agent.
+
+This requires Full YOLO locally at the Core, an MCP dangerous-tool grant,
+pinned TLS identity, authenticated pairing and session tokens, and one
+manual approval per command. The 512-printable-character command and
+24-KiB output limits apply; execution is bounded to 10 seconds.
+Android remote screen sharing and Accessibility remote input must be
+disabled while reviewing/running agent commands, preventing the agent
+from clicking APPROVE through its own remote control.
+Leaving the app foreground, revoking access, or closing the session
+cancels an active command. No root, ADB, terminal on the Windows PC,
+silent background execution or new unauthenticated listener is provided.
+On TV, the owner can approve using the remote D-pad.
+
 ## Android TV, Google TV and local terminal (0.10.2)
 
 The same debug-signed APK now includes a TV launcher banner and LEANBACK_LAUNCHER,
@@ -46,7 +79,7 @@ is still required before declaring brand/model compatibility.
 The **Terminal** tab runs an explicit command locally through /system/bin/sh
 as the Android app UID in its own sandbox. It never runs as root and does not
 run on the Windows Core. It accepts only text submitted locally in the Activity,
-does not expose a terminal over LAN/tunnel, and limits commands to 10 seconds
+does not expose its text entry through the network, and limits commands to 10 seconds
 and output to 24 KiB; Stop and app close cancel the active process. Commands
 are not saved as history. A Bluetooth keyboard makes terminal entry easier on TV.
 This is an app-sandbox shell, not an unrestricted Android system shell or an
@@ -54,7 +87,7 @@ authenticated remote terminal to the PC.
 
 ## Native Android dashboard (0.10.0)
 
-The companion now uses a native, accessible, four-tab mobile dashboard:
+The companion now uses a native, accessible, five-tab mobile dashboard:
 
 - **Home:** actual sharing/tunnel state, shortcuts, quick Stop all sharing,
   privacy explanation, and event history.
@@ -176,10 +209,11 @@ is generated in Android Keystore; pair/session tokens are process-memory only.
 | `getprop ro.build.version.release` | Android version |
 | `getprop ro.build.version.sdk` | Android SDK |
 
-The device protocol does not expose an arbitrary shell, remote installation,
-filesystem enumeration, silent system setting changes, camera, microphone
-or unapproved screen sharing. Approved media-volume steps are supported. The phone
-owner must change Android system settings locally; choosing
+The diagnostic command operation does not expose an arbitrary shell. The distinct
+per-command-approved agent shell runs as the app UID. Remote installation,
+unrestricted filesystem enumeration, silent system setting changes, camera,
+microphone and unapproved screen sharing remain denied. Approved media-volume
+steps are supported. The owner changes system settings locally; choosing
 **Open Android Settings** ends sharing first.
 
 
@@ -209,7 +243,7 @@ settings, not the controller, and opening it terminates LAN sharing/pairing.
 The owner must pair again to continue. Volume changes one media-volume step
 and displays Android's own volume UI; each step needs approval.
 
-No remotely triggered shell, APK installation, unrestricted file access, ADB, root,
+No unattended shell, APK installation, unrestricted file access, ADB, root,
 accessibility screen control or silent Wi-Fi toggle has been added. The
 exact Android allowlist is enforced by both controller and phone.
 

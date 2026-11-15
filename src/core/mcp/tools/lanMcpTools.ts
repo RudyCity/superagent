@@ -38,6 +38,7 @@ const DEVICE_MCP_ALIAS_TO_LEGACY: Record<string, string> = {
   superagent_device_session_open: "superagent_lan_session_open",
   superagent_device_exec: "superagent_lan_device_exec",
   superagent_device_android_diagnostic: "superagent_lan_android_diagnostic",
+  superagent_device_android_shell: "superagent_lan_android_shell",
   superagent_device_android_ui_schema: "superagent_lan_android_ui_schema",
   superagent_device_android_ui_click: "superagent_lan_android_ui_click",
   superagent_device_android_screen: "superagent_lan_android_screen",
@@ -66,6 +67,7 @@ export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> 
   superagent_lan_device_exec: "dangerous",
   superagent_lan_terminal_exec: "dangerous", // compatibility alias
   superagent_lan_android_diagnostic: "dangerous",
+  superagent_lan_android_shell: "dangerous",
   superagent_lan_android_ui_schema: "dangerous",
   superagent_lan_android_ui_click: "dangerous",
   superagent_lan_android_screen: "dangerous",
@@ -184,6 +186,15 @@ const LAN_MCP_BASE_TOOL_DEFS = [
       deviceId,
       diagnostic: { type: "string", enum: [...ANDROID_READONLY_DIAGNOSTICS] },
     }, ["deviceId", "diagnostic"]),
+  },
+  {
+    name: "superagent_lan_android_shell",
+    description: "Ask the Android owner to run one exact shell command inside the Android app sandbox (NOT root, ADB, Windows shell or Tray). Requires Full YOLO, approved pairing/session and separate physical consent on Android for each command. Remote screen/input must be OFF. 512 printable characters, 10 seconds, 24 KiB output; revoke or background cancels.",
+    inputSchema: closed({
+      deviceId,
+      command: { type: "string", minLength: 1, maxLength: 512,
+        description: "Exact single-line Android sandbox shell command displayed to owner for per-command approval. Do not send secrets." },
+    }, ["deviceId", "command"]),
   },
   {
     name: "superagent_lan_android_ui_schema",
@@ -343,6 +354,7 @@ export async function dispatchLanMcpTool(
             diagnostics: ANDROID_READONLY_DIAGNOSTICS,
             ownerApprovedActions: ANDROID_APPROVED_ACTIONS,
             uiSchema: true, semanticClick: true, screenFrame: true, boundedInput: true,
+            ownerApprovedSandboxShell: { commandLimit: 512, durationSeconds: 10, maxOutputBytes: 24 * 1024, remoteInputDisabled: true },
           },
           files: { upload: true, download: true, maxBytes: 4 * 1024 * 1024, chunkBytes: 4096 },
         });
@@ -379,6 +391,8 @@ export async function dispatchLanMcpTool(
         return await coreLan({ action: "exec", deviceId: id, command: str(args.command) }, 125_000);
       case "superagent_lan_android_diagnostic":
         return await coreLan({ action: "exec", deviceId: id, command: str(args.diagnostic) }, 45_000);
+      case "superagent_lan_android_shell":
+        return await coreLan({ action: "android_shell", deviceId: id, command: str(args.command) }, 125_000);
       case "superagent_lan_android_ui_schema":
         return await coreLan({ action: "schema", deviceId: id,
           ...(integer(args.knownRevision) === undefined ? {} : { knownRevision: integer(args.knownRevision) }) }, 15_000);

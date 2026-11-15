@@ -1,3 +1,10 @@
+## [1.14.102] - 2026-11-15
+### Agent-executed Android/Android TV shell through Core and MCP
+- Add first-class agent/MCP tools lan_support(action=android_shell) and superagent_device_android_shell with explicit Full YOLO/dangerous tool policy, reusing existing authenticated direct LAN and reverse HTTPS Device Tunnel sessions, not the Tray UI.
+- Separate remote shell operation from the existing read-only Android diagnostic exec allowlist. Each exact 1–512 character shell command requires fresh visible Android owner approval after pairing and support-session consent; no remote self-approval, screen projection or remote input may be active.
+- Run approved commands only as the Android app UID using /system/bin/sh, limited to 10 seconds and 24 KiB output; return command output and actual exit code. Closing/revoking session, foreground loss and screen-capture request cancel running shell.
+- Preserve the one-time TLS pairing fingerprint and Android consent protocol. No root/ADB, silent permission changes, unattended command execution, broad file permission grants or new public ports.
+- Add agent-shell source-contract and negative-path tests and update Android preview build metadata to 0.10.3-agent-shell (versionCode 20). Hardware end-to-end pairing, Android TV compatibility and installed APK behavior require separate physical test.
 ## [1.14.101] - 2026-11-15
 ### Android TV compatibility and on-device sandbox terminal
 - Add Android/Google TV launcher intent, branded xhdpi banner and optional touchscreen, camera and portrait feature requirements while retaining Android 10+ compatibility.

@@ -41,8 +41,8 @@ import javax.net.ssl.SSLSocket;
  * - TLS 1.3 certificate pin verified on the controller before code submission.
  * - One-time 8 digit code / 120 seconds / 5 attempts + on-device consent.
  * - Explicit per-session consent; tokens expire on stop, idle, or absolute timeout.
- * - At most one session, diagnostic allowlist and separately owner-approved
- *   local Settings handoffs / one-step media volume actions; no general shell.
+ * - At most one session; remote shell needs independent on-device approval
+ *   for every command, never through the diagnostics allowlist.
  * - No remote control while the Activity is hidden (MainActivity closes this server).
  */
 public final class LanClientServer implements AutoCloseable {
@@ -117,6 +117,7 @@ public final class LanClientServer implements AutoCloseable {
     private long expires;
     private int attempts;
     private boolean busy;
+    private volatile LocalAndroidShell remoteShell;
 
     public LanClientServer(Context context, Approval approval, Notice notice,
                            ApprovedAction approvedAction) {
@@ -263,6 +264,7 @@ public final class LanClientServer implements AutoCloseable {
     }
 
     public void revoke() {
+        stopRemoteShell();
         fileExchange.clear();
         RemoteControlPermit.revoke();
         ScreenProjectionService.stop(context);
@@ -405,6 +407,7 @@ public final class LanClientServer implements AutoCloseable {
         }
         if ("open".equals(op)) { handleOpen(socket, owner, ip); return; }
         if ("revoke".equals(op)) {
+            stopRemoteShell();
             // Acknowledge authenticated remote revocation BEFORE closing sockets.
             // Keep the controller's current socket alive until the receipt is sent.
             synchronized (guard) {
@@ -429,6 +432,7 @@ public final class LanClientServer implements AutoCloseable {
             long now = SystemClock.elapsedRealtime();
             if (active != null && (now - active.lastUsed > SESSION_IDLE_MS
                     || now - active.created > SESSION_MAX_MS)) {
+                stopRemoteShell();
                 active = null;
                 session = null;
                 fileExchange.clear();
@@ -445,6 +449,7 @@ public final class LanClientServer implements AutoCloseable {
         }
         if (active == null) { fail(socket, "Session expired or denied."); return; }
         if ("close".equals(op)) {
+            stopRemoteShell();
             synchronized (guard) { session = null; fileExchange.clear(); }
             RemoteControlPermit.session(false);
             send(socket, new JSONObject().put("ok", true));
@@ -546,6 +551,7 @@ public final class LanClientServer implements AutoCloseable {
             return;
         }
         if ("screen".equals(op)) {
+            if (remoteShell != null) { fail(socket, "Shell active: screen disabled."); return; }
             if (!RemoteControlPermit.canView()) {
                 fail(socket, "Screen capture must be enabled by the phone owner.");
                 return;
@@ -563,7 +569,12 @@ public final class LanClientServer implements AutoCloseable {
             return;
         }
         if ("input".equals(op)) {
+            if (remoteShell != null) { fail(socket, "Shell active: remote input disabled."); return; }
             handleRemoteInput(socket, request);
+            return;
+        }
+        if ("shell".equals(op)) {
+            handleAgentShell(socket, request, ip, owner, active);
             return;
         }
         if (!"exec".equals(op)) { fail(socket, "Unknown operation."); return; }
@@ -623,6 +634,63 @@ public final class LanClientServer implements AutoCloseable {
         }
     }
 
+    /** Agent requests require device owner approval for each exact command. */
+    private void handleAgentShell(SSLSocket socket, JSONObject request, String ip,
+                                  Paired owner, Session active) throws Exception {
+        String command = request.optString("command", "");
+        boolean invalid = command.isEmpty() || command.length() > 512 || !command.equals(command.trim());
+        for (int i = 0; i < command.length(); i++)
+            if (Character.isISOControl(command.charAt(i))) invalid = true;
+        if (invalid) {
+            fail(socket, "Android shell command must be 1–512 printable characters."); return;
+        }
+        if (!MainActivity.hasVisibleOwner() || RemoteControlPermit.canView()
+                || RemoteControlPermit.canControl() || ScreenProjectionService.isActive()) {
+            fail(socket, "The owner must keep Android visible and disable remote screen/input."); return;
+        }
+        synchronized (guard) {
+            if (busy || session != active) {
+                fail(socket, "Another operation is active or session closed."); return;
+            }
+            busy = true;
+        }
+        LocalAndroidShell shell = null;
+        try {
+            // The owner sees the complete command before approving. A support
+            // session by itself never authorizes shell execution.
+            if (!approval.ask("shell:" + command, owner.label, ip, 90)
+                    || !isStillAuthorized(active, owner, ip) || socket.isClosed()) {
+                fail(socket, "Android owner denied command or session expired."); return;
+            }
+            if (!MainActivity.hasVisibleOwner() || RemoteControlPermit.canView()
+                    || RemoteControlPermit.canControl() || ScreenProjectionService.isActive()) {
+                fail(socket, "The owner must keep Android visible with remote screen/input disabled."); return;
+            }
+            shell = new LocalAndroidShell(context);
+            remoteShell = shell;
+            shell.prepare();
+            if (!MainActivity.hasVisibleOwner() || !isStillAuthorized(active, owner, ip) || socket.isClosed()) return;
+            String output = shell.execute(command);
+            if (!MainActivity.hasVisibleOwner() || !isStillAuthorized(active, owner, ip) || socket.isClosed()
+                    || RemoteControlPermit.canView() || RemoteControlPermit.canControl()
+                    || ScreenProjectionService.isActive()) return;
+            send(socket, new JSONObject().put("event", "output").put("stream", "stdout")
+                    .put("data", output));
+            int exit = shell.exitCode();
+            send(socket, new JSONObject().put("event", "done")
+                    .put("ok", exit == 0).put("exitCode", exit));
+            notice.show("Owner-approved Android sandbox command completed (contents not logged).");
+        } finally {
+            if (shell != null) shell.close();
+            if (remoteShell == shell) remoteShell = null;
+            synchronized (guard) { busy = false; }
+        }
+    }
+
+    public void stopRemoteShell() {
+        LocalAndroidShell shell = remoteShell;
+        if (shell != null) shell.stop();
+    }
     private static float normalized(JSONObject request, String key) {
         Object value = request.opt(key);
         if (!(value instanceof Number)) throw new SecurityException("Coordinate must be numeric.");
@@ -782,6 +850,7 @@ public final class LanClientServer implements AutoCloseable {
     }
 
     @Override public void close() {
+        stopRemoteShell();
         fileExchange.clear();
         RemoteControlPermit.revoke();
         ScreenProjectionService.stop(context);

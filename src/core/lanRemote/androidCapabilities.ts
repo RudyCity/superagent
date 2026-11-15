@@ -1,7 +1,16 @@
 /**
  * Conservative controller-side mirror of Android target-side command allowlists.
- * The Android app enforces its own rules independently. No arbitrary shell.
+ * Android diagnostics remain allowlisted. Agent shell is a separate op with explicit owner consent.
  */
+export const ANDROID_SHELL_COMMAND_LIMIT = 512;
+export function assertAndroidShellCommand(command: string): void {
+  if (typeof command !== "string" || !command || command !== command.trim()
+      || command.length > ANDROID_SHELL_COMMAND_LIMIT
+      || [...command].some((character) => {
+        const value = character.charCodeAt(0);
+        return value < 32 || value === 127;
+      })) throw new Error("Android shell command must be 1–512 printable characters.");
+}
 export const ANDROID_READONLY_DIAGNOSTICS = [
   "android.info", "android.network", "android.network_details",
   "android.battery", "android.storage", "android.memory", "android.power",

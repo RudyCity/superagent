@@ -4,7 +4,7 @@ import dgram from "node:dgram";
 import crypto from "node:crypto";
 import { lanInterfaces, onLinkToPeer, privateIntranetPeer, outboundLanSource, LAN_PORT, type LanInterface } from "./transport.js";
 import { discoveryRequestForSegment, networkSegmentTag, parseSegmentDiscoveryResponse } from "./networkSegment.js";
-import { isAllowedAndroidLanCommand, requiresAndroidOwnerActionApproval } from "./androidCapabilities.js";
+import { assertAndroidShellCommand, isAllowedAndroidLanCommand, requiresAndroidOwnerActionApproval } from "./androidCapabilities.js";
 import { listDeviceTunnelDevices, requestDeviceTunnel } from "../deviceTunnel/broker.js";
 
 export interface LanDevice {
@@ -195,6 +195,32 @@ export async function execLanCommand(id: string, command: string): Promise<{ std
     sessions.delete(id);
   }
   return { stdout, stderr, exitCode: typeof done.exitCode === "number" ? done.exitCode : null, ok: done.ok === true, ...(done.error ? { error: String(done.error) } : {}) };
+}
+/** Agent-to-Android shell: separate from diagnostic exec and Tray UI.
+ * Full YOLO/MCP policy is enforced at the entry points. Every command also
+ * requires a fresh physical confirmation on the Android device.
+ */
+export async function execAndroidShellCommand(id: string, command: string): Promise<{
+  stdout: string; exitCode: number | null; ok: boolean; error?: string
+}> {
+  assertAndroidShellCommand(command);
+  // Last-chance policy gate for non-MCP callers.
+  const { isFullYoloMode, isSystemDestructiveCommand } = await import("../permissions.js");
+  if (!isFullYoloMode()) throw new Error("Full YOLO is required for Android agent shell.");
+  if (isSystemDestructiveCommand(command)) throw new Error("Potentially destructive Android command blocked.");
+  const d = authenticatedAndroid(id);
+  const frames = await requestSaved(d, {
+    op: "shell", pairId: d.pairId, pairToken: d.pairToken,
+    sessionId: d.sessionId, sessionToken: d.sessionToken, command,
+  }, 116_000, 44_000);
+  const stdout = frames.filter((f) => f.event === "output" && f.stream === "stdout")
+    .map((f) => String(f.data || "")).join("");
+  const done = frames.find((f) => f.event === "done");
+  if (!done || typeof done.ok !== "boolean"
+      || typeof done.exitCode !== "number" || !Number.isInteger(done.exitCode))
+    throw new Error("Android shell did not return a valid completion receipt.");
+  return { stdout, exitCode: done.exitCode, ok: done.ok === true,
+    ...(done.error ? { error: String(done.error) } : {}) };
 }
 export interface AndroidScreenFrame {
   mime: "image/jpeg";
