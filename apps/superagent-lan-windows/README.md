@@ -10,9 +10,28 @@ Build on a Windows development host with the Rust/MSVC toolchain, Bun, Tauri and
 
 The finished NSIS installer is copied to:
 
-    artifacts/lan-client/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe
+    artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe
 
 The target laptop does not need Rust, Bun or MSVC. WebView2 is the standard Tauri Windows runtime prerequisite. The installer is not yet code-signed.
+
+## Show pairing QR on this Windows laptop (0.2.1)
+
+The target Windows LAN Client can now display a camera-free QR like Android TV.
+Start the receiver using an authorized physical private IPv4 adapter, enter the
+trusted SuperAgent Core **HTTPS origin** (not the MCP `/mcp` URL), then select
+**Show my pairing QR**. The device contacts Core using outbound HTTPS and
+renders a three-minute public QR. Photograph the QR and give it to the authorized
+agent; the agent invokes the dangerous
+`superagent_device_tunnel_qr_approve` tool with the request ID and full
+64-character challenge. The receiver retains its private poll token internally,
+not in the QR or JavaScript UI. The owner then verifies the Core hostname,
+chooses **Connect this laptop** and separately approves the pairing/session
+requests in the existing receiver UI. No camera or same-network requirement on
+the controlling PC; the receiver still needs its own working private adapter.
+
+This is an unsigned Windows installer preview. Installed GUI testing on a
+separate real laptop, public HTTPS tunnel and human consent checks remain
+necessary. The existing Scan QR, Use image and manual setup methods still work.
 
 ## Connect two Windows laptops
 

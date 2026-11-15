@@ -12,6 +12,8 @@ import { lanInterfaces, startLanServer, LAN_PORT, type ApprovalRequest } from ".
 import { normalizeNetworkSegment } from "./core/lanRemote/networkSegment.js";
 import { runDeviceTunnelRelay } from "./core/deviceTunnel/client.js";
 import { parseWindowsTunnelQrPayload } from "./core/deviceTunnel/windowsQrConnect.js";
+import { startDeviceQrRequest, pollDeviceQrRequest, normalizeDeviceQrOrigin } from "./core/deviceTunnel/displayQrClient.js";
+import type { DeviceTunnelEnrollment } from "./core/deviceTunnel/client.js";
 
 const PREFIX = "@@SUPERAGENT_LAN_GUI@@";
 function emit(event: string, fields: Record<string, unknown> = {}) {
@@ -50,6 +52,16 @@ async function main() {
   let pending: { id: string; resolve: (allowed: boolean) => void; timer: ReturnType<typeof setTimeout> } | null = null;
   let relay: AbortController | null = null;
   let relayInProgress = false;
+  let qrController: AbortController | null = null;
+  let pendingDeviceEnrollment: DeviceTunnelEnrollment | null = null;
+  let pendingQrOrigin: string | null = null;
+  function cancelDisplayQr() {
+    qrController?.abort();
+    qrController = null;
+    pendingDeviceEnrollment = null;
+    pendingQrOrigin = null;
+    emit("device_qr_cancelled");
+  }
   let relayTask: Promise<void> | null = null;
   let tunnelPhase: "disconnected" | "enrolling" | "awaiting_approval" | "paired" | "active_session" | "revoking" = "disconnected";
   let stopped = false;
@@ -121,6 +133,7 @@ async function main() {
     if (stopped) return;
     stopped = true;
     cancelPending();
+    cancelDisplayQr();
     client.revoke();
     await disconnectRelay();
     await client.close();
@@ -145,10 +158,63 @@ async function main() {
       emit("approval_resolved", { id: request.id, allowed: type === "approve" });
       return;
     }
+    if (type === "show_qr") {
+      if (Object.keys(action).sort().join(",") !== "origin,type" || typeof action.origin !== "string")
+        throw Error("Invalid device QR request.");
+      if (qrController || pendingDeviceEnrollment || relay || relayInProgress)
+        throw Error("Disconnect or cancel the current pairing before starting a new QR.");
+      const origin = normalizeDeviceQrOrigin(action.origin);
+      const qr = new AbortController();
+      qrController = qr;
+      emit("device_qr_pending", { origin });
+      void (async () => {
+        try {
+          const name = os.hostname().replace(/[^A-Za-z0-9_ .-]/g, "").slice(0, 60) || "Windows laptop";
+          const { ticket, qrDataUrl } = await startDeviceQrRequest(origin, name, qr.signal);
+          if (qr.signal.aborted) return;
+          emit("device_qr_ready", { origin, qrDataUrl, requestId: ticket.id,
+            challenge: ticket.challenge, expiresAt: ticket.expiresAt });
+          while (!qr.signal.aborted && Date.now() < ticket.expiresAt) {
+            const polled = await pollDeviceQrRequest(ticket, qr.signal);
+            if (qr.signal.aborted) return;
+            if (polled.state === "approved") {
+              pendingDeviceEnrollment = polled.enrollment;
+              pendingQrOrigin = origin;
+              qrController = null;
+              emit("device_qr_approved", { origin });
+              return;
+            }
+            await new Promise(resolve => setTimeout(resolve, 2500));
+          }
+          if (!qr.signal.aborted) emit("device_qr_expired");
+        } catch (error) {
+          if (!qr.signal.aborted) fail(error);
+        } finally {
+          if (qrController === qr) qrController = null;
+        }
+      })();
+      return;
+    }
+    if (type === "cancel_qr") {
+      if (Object.keys(action).length !== 1) throw Error("Invalid QR cancel action.");
+      cancelDisplayQr();
+      return;
+    }
+    if (type === "accept_qr") {
+      if (Object.keys(action).length !== 1) throw Error("Invalid QR approval action.");
+      if (!pendingDeviceEnrollment || !pendingQrOrigin)
+        throw Error("No approved device QR request awaiting local confirmation.");
+      const enrollment = pendingDeviceEnrollment;
+      pendingDeviceEnrollment = null;
+      pendingQrOrigin = null;
+      await handle(JSON.stringify({ type: "connect", payload: JSON.stringify(enrollment) }));
+      return;
+    }
     if (type === "connect") {
       if (Object.keys(action).sort().join(",") !== "payload,type" || typeof action.payload !== "string")
         throw Error("Invalid QR connection request.");
-      if (relay || relayInProgress) throw Error("Device Tunnel already active. Disconnect first.");
+      if (relay || relayInProgress || qrController || pendingDeviceEnrollment)
+        throw Error("Another Device Tunnel or QR pairing request is already active. Cancel it first.");
       const invite = parseWindowsTunnelQrPayload(action.payload);
       relayInProgress = true;
       relay = new AbortController();
@@ -157,7 +223,7 @@ async function main() {
       emit("pairing_code", { code: pairCode });
       tunnelPhase = "enrolling";
       emit("connecting", { origin: invite.url });
-      const autoPair = { code: pairCode, controller: "SuperAgent Tray QR" };
+      const autoPair = { code: pairCode, controller: "SuperAgent controller" };
       relayTask = runDeviceTunnelRelay({
         enrollment: invite, platform: "windows", name: os.hostname().slice(0, 60),
         fingerprint: client.fingerprint, localHost: client.host, localPort: client.port,
@@ -196,6 +262,7 @@ async function main() {
     if (type === "disconnect") {
       if (Object.keys(action).length !== 1) throw Error("Invalid disconnect request.");
       cancelPending();
+      cancelDisplayQr();
       client.revoke();
       await disconnectRelay();
       emit("pairing_code", { code: "Expired" });
@@ -205,6 +272,7 @@ async function main() {
     if (type === "revoke") {
       if (Object.keys(action).length !== 1) throw Error("Invalid revoke request.");
       cancelPending();
+      cancelDisplayQr();
       client.revoke();
       await disconnectRelay();
       emit("pairing_code", { code: "Expired" });

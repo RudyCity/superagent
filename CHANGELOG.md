@@ -1,3 +1,10 @@
+## [1.14.103] - 2026-11-15
+### Universal camera-free Device Tunnel QR pairing for Android and Windows laptop
+- Extend owner-displayed outbound HTTPS pairing QR from Android TV to ordinary Android phones without removing their existing camera-scan flow. Android preview v0.10.5-device-qr (versionCode 22).
+- Add **Show my pairing QR** to the standalone Windows LAN receiver v0.2.1, retaining camera/image/manual connection paths. The Windows receiver holds the secret poll token in its own native child, renders only a public challenge/QR, and requires a separate owner confirmation before joining.
+- Expose dangerous `superagent_device_tunnel_qr_approve` for any supported display-QR device while retaining the original TV alias. Three-minute QR expiration, Core-side Full YOLO/MCP authorization, device-side pairing/session permissions, and explicit revocation remain mandatory.
+- Add QR payload secrecy/validation tests and update Windows/Android packaging metadata and CI gates. Local build/static tests are not a substitute for separate-network physical-device, signing and release certification.
+
 ## [1.14.102] - 2026-11-15
 ### Android TV camera-free QR bootstrap (rc.2)
 - Add an owner-initiated "Show pairing QR on TV" flow for Android TV without a camera: the TV uses a trusted Core HTTPS origin, generates a 3-minute public pairing challenge, and privately polls for an operator-issued one-time invitation.

@@ -59,6 +59,7 @@ export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> 
   superagent_device_tunnel_list: "safe",
   superagent_device_tunnel_pair_request: "dangerous",
   superagent_device_tunnel_tv_approve: "dangerous",
+  superagent_device_tunnel_qr_approve: "dangerous",
   superagent_device_tunnel_revoke: "dangerous",
   superagent_lan_pair_request: "dangerous",
   superagent_lan_pair_status: "safe",
@@ -122,6 +123,14 @@ const LAN_MCP_BASE_TOOL_DEFS = [
   {
     name: "superagent_device_tunnel_tv_approve",
     description: "Approve a camera-free Android TV's pending reverse HTTPS bootstrap QR. Requires the exact request ID and 64-character challenge from the TV display, Full YOLO and MCP authorization. This grants a one-time invitation ONLY to that TV's private poll channel; the TV owner must still accept and physically approve pairing. QR carries no bearer secret.",
+    inputSchema: closed({
+      requestId: { type: "string", pattern: "^[a-fA-F0-9-]{36}$" },
+      challenge: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
+    }, ["requestId", "challenge"]),
+  },
+  {
+    name: "superagent_device_tunnel_qr_approve",
+    description: "Approve a temporary public QR displayed by an Android phone, Android TV, or Windows LAN Client, with exact request ID and 64-character challenge. Full YOLO and MCP dangerous-tool authorization are mandatory. This issues a one-time invitation to a private device poll channel only; the device owner must separately consent before enrolling, pairing and opening a session. Never request the private poll token.",
     inputSchema: closed({
       requestId: { type: "string", pattern: "^[a-fA-F0-9-]{36}$" },
       challenge: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
@@ -372,6 +381,7 @@ export async function dispatchLanMcpTool(
       case "superagent_device_tunnel_pair_request":
         return await coreLan({ action: "tunnel_pair_request", tunnelId: str(args.tunnelId),
           fingerprint: str(args.fingerprint), controller: str(args.controller) || "SuperAgent MCP" }, 10_000);
+      case "superagent_device_tunnel_qr_approve":
       case "superagent_device_tunnel_tv_approve":
         return await coreLan({ action: "tunnel_tv_approve",
           requestId: str(args.requestId), challenge: str(args.challenge) }, 10_000);

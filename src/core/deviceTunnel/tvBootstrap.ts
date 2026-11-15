@@ -3,9 +3,10 @@ import { createDeviceTunnelInvite } from "./broker.js";
 import { isFullYoloMode } from "../permissions.js";
 
 /**
- * Camera-free TV bootstrap. The TV owns a secret poll token that is NEVER
- * encoded in its visible QR. A privileged local operator approves the QR
- * challenge; enrollment still requires the TV to accept a local prompt.
+ * Camera-free device bootstrap (originally TV, now Android/Windows). The
+ * device keeps a secret poll token that is NEVER encoded in its displayed QR.
+ * A privileged controller approves the public challenge; enrollment still
+ * requires the target device's separate local confirmation and pairing approval.
  */
 interface Request {
   id: string;

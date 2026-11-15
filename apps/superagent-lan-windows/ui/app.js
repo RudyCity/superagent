@@ -5,7 +5,7 @@
   const native = window.__TAURI__;
   const invoke = native?.core?.invoke;
   const listen = native?.event?.listen;
-  const model = { running: false, tunnel: false, phase: "disconnected", paired: false, session: false, adaptersLoaded: false, transfer: null, starting: false, waiting: null, selected: null, camera: null, scanning: false, busy: false, events: 0 };
+  const model = { running: false, tunnel: false, phase: "disconnected", paired: false, session: false, adaptersLoaded: false, transfer: null, starting: false, waiting: null, selected: null, camera: null, scanning: false, busy: false, events: 0, displayQr: "idle" };
   const set = (id, value) => { const target = $(id); if (target) target.textContent = String(value ?? "—"); };
   const btn = (id, enabled) => { if ($(id)) $(id).disabled = !enabled; };
   const label = (value) => typeof value === "string" ? value.slice(0, 230) : "Unknown";
@@ -33,6 +33,8 @@
     btn("start", !model.running && !model.starting && model.adaptersLoaded && Boolean($("adapter").value));
     btn("stop", model.running);
     btn("camera-btn", model.running && !model.scanning);
+    btn("display-qr-start", model.running && model.displayQr === "idle" && !model.tunnel);
+    btn("display-qr-cancel", model.displayQr !== "idle");
     btn("inspect", model.running);
     btn("disconnect", model.running && !["disconnected","revoking"].includes(model.phase));
     btn("revoke", model.running);
@@ -106,10 +108,43 @@
       $("connect-btn").focus();
     } catch (error) { clearSelection(); toast(error.message); }
   }
+  function clearDisplayQr() {
+    model.displayQr = "idle";
+    $("display-qr-image").removeAttribute("src");
+    $("display-qr-image-wrap").hidden = true;
+    $("display-qr-approval").hidden = true;
+    set("display-qr-id", "");
+    set("display-qr-challenge", "");
+    present();
+  }
   function emitStatus(data) {
     if (!data || typeof data !== "object") return;
     const event = data.event;
-    if (event === "ready") {
+    if (event === "device_qr_pending") {
+      model.displayQr = "pending";
+      set("display-qr-status", "Requesting a short-lived pairing QR from the trusted Core...");
+    } else if (event === "device_qr_ready") {
+      if (!/^data:image\/png;base64,[a-zA-Z0-9+/=]{100,180000}$/.test(data.qrDataUrl || "")) {
+        toast("Malformed QR image from receiver."); return;
+      }
+      model.displayQr = "ready";
+      $("display-qr-image").src = data.qrDataUrl;
+      $("display-qr-image-wrap").hidden = false;
+      set("display-qr-id", data.requestId);
+      set("display-qr-challenge", data.challenge);
+      set("display-qr-status", "QR ready. Take a photo and send it to your authorized agent.");
+    } else if (event === "device_qr_approved") {
+      model.displayQr = "approved";
+      $("display-qr-image").removeAttribute("src");
+      $("display-qr-image-wrap").hidden = true;
+      set("display-qr-verified-origin", data.origin);
+      $("display-qr-approval").hidden = false;
+      set("display-qr-status", "Your controller approved the QR. Confirm the host and consent locally.");
+      $("display-qr-accept").focus();
+    } else if (event === "device_qr_cancelled" || event === "device_qr_expired") {
+      clearDisplayQr();
+      set("display-qr-status", event === "device_qr_expired" ? "QR expired. Generate a new QR." : "QR request cancelled.");
+    } else if (event === "ready") {
       model.starting = false; model.running = true;
       set("local-ip", String(data.host || "—") + ":" + String(data.port || "—"));
       set("local-adapter", data.adapter || "—");
@@ -158,11 +193,14 @@
       note("Local paired-device access and sessions revoked.");
     } else if (event === "shared") note("Owner selected " + label(data.kind) + " for sharing: " + label(data.name));
     else if (event === "notice") note(label(data.message));
-    else if (event === "error") { toast(label(data.message)); note("Receiver error: " + label(data.message)); }
+    else if (event === "error") {
+      if (model.displayQr === "pending" || model.displayQr === "ready") clearDisplayQr();
+      toast(label(data.message)); note("Receiver error: " + label(data.message));
+    }
     else if (event === "stopped" || event === "process_closed") {
       model.running = false; model.starting = false; model.tunnel = false;
       model.phase = "disconnected"; model.paired = false; model.session = false; model.transfer = null;
-      hideApproval(); stopCamera(); clearSelection();
+      hideApproval(); stopCamera(); clearSelection(); clearDisplayQr();
       note(event === "process_closed" ? "Receiver process closed." : "Sharing stopped.");
     }
     present();
@@ -273,6 +311,31 @@
     });
   });
   $("adapter").addEventListener("change", present);
+  try {
+    const savedOrigin = localStorage.getItem("superagent-device-qr-origin");
+    if (savedOrigin && /^https:\/\/[^/]{1,220}$/.test(savedOrigin))
+      $("display-qr-origin").value = savedOrigin;
+  } catch { /* The hostname is optional; secrets are never stored. */ }
+  $("display-qr-start").addEventListener("click", () => void protectedAction(async () => {
+    const origin = $("display-qr-origin").value.trim();
+    const url = new URL(origin);
+    if (url.protocol !== "https:" || url.pathname !== "/" || url.search || url.hash
+        || url.username || url.password || url.port) throw Error("Use a clean trusted HTTPS Core origin.");
+    await invokeAction("show_qr", { origin: url.origin });
+    try { localStorage.setItem("superagent-device-qr-origin", url.origin); } catch {}
+    set("display-qr-status", "Creating your one-time device QR...");
+  }));
+  $("display-qr-cancel").addEventListener("click", () => void protectedAction(
+    () => invokeAction("cancel_qr"), "Owner cancelled device QR pairing."
+  ));
+  $("display-qr-accept").addEventListener("click", () => void protectedAction(async () => {
+    await invokeAction("accept_qr");
+    clearDisplayQr();
+    set("display-qr-status", "Connecting through HTTPS. Pairing and session approvals remain required.");
+  }));
+  $("display-qr-deny").addEventListener("click", () => void protectedAction(
+    () => invokeAction("cancel_qr"), "Owner denied device QR pairing."
+  ));
   $("camera-btn").addEventListener("click", () => { void scanCamera(); });
   $("camera-stop").addEventListener("click", stopCamera);
   $("qr-file").addEventListener("change", event => {

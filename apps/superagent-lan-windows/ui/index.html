@@ -21,7 +21,7 @@
       <div class="privacy-note"><span class="privacy-icon">◈</span><strong>Owner-controlled</strong>
         <p>Each pairing, session, and file transfer requires your approval. This app never runs as administrator.</p>
       </div>
-      <span class="release">WINDOWS CLIENT · 0.2.0</span>
+      <span class="release">WINDOWS CLIENT · 0.2.1</span>
     </div>
   </aside>
   <main class="main">
@@ -54,7 +54,29 @@
       <div class="main-grid">
         <section class="panel qr-panel">
           <div class="panel-heading"><div><span class="step-index">02 / CONNECT</span><h2>Scan connection QR</h2></div><span class="method-tag">ONE-TIME QR</span></div>
-          <p class="panel-lead">On the other computer, open <strong>SuperAgent Tray → LAN Devices → Device Tunnel</strong> and create a Connect QR.</p>
+          <p class="panel-lead">Scan a one-time QR from SuperAgent Tray, or show a QR on this laptop for your authorized agent to approve.</p>
+          <div class="display-qr-panel" id="display-qr-panel">
+            <label class="input-label" for="display-qr-origin">Trusted SuperAgent Core HTTPS origin</label>
+            <input id="display-qr-origin" placeholder="https://your-core-tunnel.example" maxlength="240" spellcheck="false" autocomplete="url">
+            <div class="scan-actions">
+              <button id="display-qr-start" class="button primary" disabled>Show my pairing QR</button>
+              <button id="display-qr-cancel" class="button secondary" disabled>Cancel QR</button>
+            </div>
+            <p class="panel-lead" id="display-qr-status" role="status" aria-live="polite">Start the receiver, enter the trusted Core URL, then generate a temporary QR.</p>
+            <div id="display-qr-image-wrap" hidden>
+              <img id="display-qr-image" alt="Temporary laptop pairing QR; no private enrollment token" width="320" height="320">
+              <p class="panel-lead">Photograph this QR and send it to your authorized agent. Request expires in 3 minutes.</p>
+              <p class="panel-lead mono">Request ID: <span id="display-qr-id"></span></p>
+              <p class="panel-lead mono">Challenge: <span id="display-qr-challenge"></span></p>
+            </div>
+            <div id="display-qr-approval" class="verify-panel" hidden>
+              <div class="verify-overline">APPROVED BY CONTROLLER · VERIFY DESTINATION</div>
+              <strong id="display-qr-verified-origin">—</strong>
+              <p>Only connect to your trusted Core. The laptop owner must still approve pairing and subsequent access requests.</p>
+              <button id="display-qr-accept" class="button primary">Connect this laptop</button>
+              <button id="display-qr-deny" class="button secondary">Deny</button>
+            </div>
+          </div>
           <div class="scanner-viewport" id="scanner-viewport">
             <div class="scan-frame"><span class="corner a"></span><span class="corner b"></span><span class="corner c"></span><span class="corner d"></span>
               <div class="scan-placeholder" id="scan-placeholder"><span class="scan-symbol">▦</span><strong>Ready to scan</strong><span>Use your camera or select a QR image</span></div>

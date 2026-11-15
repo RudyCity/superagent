@@ -10,9 +10,9 @@ const root = path.resolve(import.meta.dir, "..");
 const tauri = path.join(root, "apps", "superagent-lan-windows", "src-tauri");
 const sidecar = path.join(tauri, "resources", "superagent-lan-client.exe");
 const target = path.join(tauri, "target");
-const installer = path.join(target, "release", "bundle", "nsis", "SuperAgent LAN Client_0.2.0_x64-setup.exe");
+const installer = path.join(target, "release", "bundle", "nsis", "SuperAgent LAN Client_0.2.1_x64-setup.exe");
 const outputDir = path.join(root, "artifacts", "lan-client");
-const output = path.join(outputDir, "SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe");
+const output = path.join(outputDir, "SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe");
 
 function run(args: string[], extra: Record<string, string> = {}) {
   const result = spawnSync(process.execPath, args, {

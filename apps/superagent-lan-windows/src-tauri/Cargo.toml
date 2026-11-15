@@ -1,6 +1,6 @@
 [package]
 name = "superagent-lan-windows"
-version = "0.2.0"
+version = "0.2.1"
 description = "SuperAgent Windows device receiver"
 authors = ["SuperAgent"]
 edition = "2021"

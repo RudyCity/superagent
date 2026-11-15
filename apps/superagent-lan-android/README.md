@@ -2,8 +2,8 @@
 
 Native Android **target-side** client for the existing Windows SuperAgent Tray's
 **LAN Devices** page. This does not make Android a full SuperAgent controller;
-it enables consent-based diagnostics and on-phone-approved actions on an
-Android device connected to the same physical LAN. A visible Android MediaProjection foreground service is
+it enables consent-based diagnostics and on-device-approved actions through
+direct private LAN or a separately configured outbound HTTPS Device Tunnel. A visible Android MediaProjection foreground service is
 used only after the owner approves screen capture; there is no unattended
 background support, root, ADB, hidden capture, or silent system configuration.
 
@@ -23,6 +23,24 @@ automatically, silently install on phones, or bypass installation consent.
 If Core/tunnel or the new build is unavailable, the stale QR stays hidden.
 During a confirmed build sync, Tray retries at a bounded 15-second cadence
 until the APK is available. Ambiguous timeouts are never retried automatically.
+
+## Android phone or TV shows the pairing QR (0.10.5 preview)
+
+Ordinary Android phones now have the same **Show pairing QR** control as
+Android TV. The existing **Scan QR & Connect** is preserved for phones with
+cameras. To use the reverse flow, open Connect → DISPLAY PAIRING QR · ALL
+ANDROID, enter the trusted Core HTTPS origin and choose Show pairing QR.
+Photograph the displayed QR from another device and provide it to the authorized
+agent. The agent can invoke `superagent_device_tunnel_qr_approve` with the
+public request ID/challenge, never a private token. The owner then confirms on
+the target Android phone/TV, approves pairing and separately grants each support
+session, screen-sharing or remote-input permission.
+
+Neither device needs to share a Wi-Fi network with the Core as long as the
+configured HTTPS Device Tunnel endpoint is reachable. The **MCP** URL is not
+the Device Tunnel origin: do not paste a `/mcp` address into this field.
+QR display expires after 3 minutes; no unattended or background pairing is
+enabled. Android device integration tests remain necessary.
 
 ## Android TV shows the pairing QR (0.10.4 preview)
 
@@ -154,8 +172,10 @@ screen-control safeguards and file-transfer limits are unchanged.
 
 ## Requirements and build
 
-- Android 10+ (API 29), Wi-Fi or Ethernet on the same physical private IPv4
-  subnet as Windows SuperAgent; no cellular-only link or VPN.
+- Android 10+ (API 29). Direct LAN mode requires a suitable private IPv4
+  network shared with Windows SuperAgent; outbound HTTPS Device Tunnel mode
+  supports different networks and mobile data when the trusted Core HTTPS
+  endpoint is reachable.
 - Java 17, Android SDK 35, Gradle 9.6.1 and Android Gradle Plugin 9.3.1.
   The project includes a Gradle wrapper and is importable in Android Studio.
 - Windows Tray and Core updated from the same repository. Full YOLO is

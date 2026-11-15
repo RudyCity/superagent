@@ -250,11 +250,9 @@ public final class MainActivity extends Activity {
         segmentInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(64)});
         AndroidUiKit.field(segmentInput);
         add(layout, segmentInput, 4);
-        LinearLayout tvPairingCard = null;
-        if (tv) {
-            segmentInput.setText("support-tv");
-            tvPairingCard = section(connectPage, "TV PAIRING · NO CAMERA");
-            add(tvPairingCard, label("For local LAN, start sharing and pair in Tray. For a remote internet connection, display a QR from your TV using the trusted HTTPS Core URL below.", 16, AndroidUiKit.ACCENT, true), 7);
+        if (tv) segmentInput.setText("support-tv");
+        LinearLayout tvPairingCard = section(connectPage, "DISPLAY PAIRING QR · ALL ANDROID");
+            add(tvPairingCard, label("For a remote connection, display a QR from this device using a trusted HTTPS Core URL. Share a photo of the QR with your authorized controller.", 16, AndroidUiKit.ACCENT, true), 7);
             add(tvPairingCard, label("TRUSTED CORE HTTPS URL", 12, AndroidUiKit.MUTED, false), 3);
             tvCoreUrlInput = new EditText(this);
             tvCoreUrlInput.setSingleLine(true);
@@ -264,18 +262,17 @@ public final class MainActivity extends Activity {
             tvCoreUrlInput.setText(getPreferences(MODE_PRIVATE).getString("tvCoreOrigin", ""));
             AndroidUiKit.field(tvCoreUrlInput);
             add(tvPairingCard, tvCoreUrlInput, 6);
-            tvQrCreate = action(tvPairingCard, "Show pairing QR on TV", this::showTvQr);
+            tvQrCreate = action(tvPairingCard, "Show pairing QR", this::showTvQr);
             AndroidUiKit.primary(tvQrCreate);
             tvQrPreview = new ImageView(this);
             tvQrPreview.setAdjustViewBounds(true);
-            tvQrPreview.setContentDescription("Camera-free TV pairing QR, shown only during a pending request");
+            tvQrPreview.setContentDescription("Camera-free device pairing QR, shown only during a pending request");
             tvQrPreview.setVisibility(View.GONE);
             add(tvPairingCard, tvQrPreview, 3);
             tvQrStatus = label("No pairing request. QR contains no device password or session token.", 13, AndroidUiKit.MUTED, false);
             add(tvPairingCard, tvQrStatus, 3);
-            tvQrCancel = action(tvPairingCard, "Cancel TV pairing", this::cancelTvQr);
+            tvQrCancel = action(tvPairingCard, "Cancel QR pairing", this::cancelTvQr);
             tvQrCancel.setEnabled(false);
-        }
 
         layout = section(connectPage, "SHARING");
         LinearLayout sharingCard = layout;
@@ -407,6 +404,8 @@ public final class MainActivity extends Activity {
         } else {
             connectPage.removeView(connectQrCard);
             connectPage.addView(connectQrCard, 2);
+            connectPage.removeView(tvPairingCard);
+            connectPage.addView(tvPairingCard, 3);
             connectPage.removeView(sharingCard);
             connectPage.addView(sharingCard, 3);
         }
@@ -658,7 +657,7 @@ public final class MainActivity extends Activity {
     }
 
     private void showTvQr() {
-        if (!AndroidTvUi.isTv(this) || tvCoreUrlInput == null || !visible
+        if (tvCoreUrlInput == null || !visible
                 || launching || preparingFolder || TunnelForegroundService.isActive()
                 || server != null) {
             if (tvQrStatus != null) tvQrStatus.setText("Stop current sharing before starting TV QR pairing.");
@@ -683,7 +682,7 @@ public final class MainActivity extends Activity {
         new Thread(() -> {
             try {
                 AndroidTvQrPairing.Ticket ticket = AndroidTvQrPairing.create(
-                        origin, ("Android TV " + Build.MODEL).replaceAll("[^A-Za-z0-9_ .-]", "").trim());
+                        origin, ("Android " + Build.MODEL).replaceAll("[^A-Za-z0-9_ .-]", "").trim());
                 Bitmap bitmap = AndroidTvQrPairing.bitmap(ticket.publicQr(), 440);
                 main.post(() -> {
                     if (generation != tvQrGeneration || !visible) return;
@@ -709,13 +708,13 @@ public final class MainActivity extends Activity {
                             tvQrCreate.setEnabled(true);
                             tvQrCancel.setEnabled(false);
                             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-                            tvQrStatus.setText("Your controller approved the QR. Confirm on this TV to enroll.");
+                            tvQrStatus.setText("Your controller approved the QR. Confirm on this device to enroll.");
                             new AlertDialog.Builder(this)
-                                    .setTitle("Connect this Android TV?")
+                                    .setTitle("Connect this Android device?")
                                     .setMessage("A privileged controller approved your temporary QR. "
                                             + "Start an outbound secure HTTPS tunnel to " + ticket.url
                                             + "? You must separately approve device pairing, support sessions "
-                                            + "and any future remote input on this TV.")
+                                            + "and any future remote input on this device.")
                                     .setNegativeButton("DENY", (dialog, which) ->
                                             tvQrStatus.setText("TV owner denied the connection."))
                                     .setPositiveButton("CONNECT", (dialog, which) ->

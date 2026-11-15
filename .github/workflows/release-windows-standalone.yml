@@ -276,14 +276,14 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun --bun x tsc --noEmit --pretty false
       - name: Test Windows LAN receiver safety independently of APK
-        run: bun --bun x vitest run tests/desktopLanWindowsGui.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts --maxWorkers=1
+        run: bun --bun x vitest run tests/desktopLanWindowsGui.test.ts tests/deviceDisplayQrClient.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts --maxWorkers=1
       - run: bun scripts/build-lan-windows-gui.ts
       - run: bun scripts/verify-lan-gui-receiver.ts
       - name: Verify unsigned development LAN installer size
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $file = "artifacts/lan-client/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe"
+          $file = "artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe"
           if (!(Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -lt 20000000) {
             throw "Windows LAN receiver installer missing or truncated"
           }
@@ -291,7 +291,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: release-lan-windows-preview
-          path: artifacts/lan-client/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe
+          path: artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe
           if-no-files-found: error
 
   publish:

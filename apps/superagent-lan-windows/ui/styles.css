@@ -80,3 +80,9 @@ footer{font-size:10px;color:#657892;letter-spacing:.16em;margin-top:30px;text-al
 .transfer-status{display:grid;gap:8px;margin-top:24px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:#c7d5e9}
 .transfer-status progress{width:100%;height:7px;accent-color:var(--blue)}
 .transfer-status button{justify-self:start}
+.display-qr-panel{padding:18px;border:1px solid #31506f;border-radius:10px;background:#0f1d2b;margin-top:20px}
+.display-qr-panel>input{width:100%}
+#display-qr-image-wrap{margin-top:18px;overflow-wrap:anywhere}
+#display-qr-image{display:block;max-width:100%;height:auto;margin:0 auto 14px;background:white;border-radius:10px;padding:8px}
+#display-qr-challenge{word-break:break-all}
+#display-qr-approval{margin-top:14px}

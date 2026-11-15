@@ -48,7 +48,7 @@ jobs:
       - name: Check TypeScript
         run: bun --bun x tsc --noEmit --pretty false
       - name: Check Windows GUI and remote access regressions
-        run: bun x vitest run tests/desktopLanWindowsGui.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts
+        run: bun x vitest run tests/desktopLanWindowsGui.test.ts tests/deviceDisplayQrClient.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts
       - name: Build standalone Tauri receiver and bundled executable
         run: bun scripts/build-lan-windows-gui.ts
       - name: Smoke test compiled receiver, approval safety and shutdown
@@ -57,7 +57,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $file = "artifacts/lan-client/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe"
+          $file = "artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe"
           if (!(Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -lt 20000000) {
             throw "Windows LAN GUI installer missing or incomplete"
           }
@@ -70,6 +70,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: superagent-lan-windows-gui-ci-only
-          path: artifacts/lan-client/SuperAgent-LAN-Client-0.2.0-Windows-x64-setup.exe
+          path: artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe
           if-no-files-found: error
           retention-days: 14

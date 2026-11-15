@@ -167,6 +167,15 @@ fn send_action(state: State<'_, Receiver>, request: Value) -> Result<(), String>
                 return Err("Invalid one-time QR payload.".into());
             }
         }
+        "show_qr" => {
+            if obj.len() != 2 || obj.get("origin").and_then(Value::as_str)
+                .filter(|s| !s.is_empty() && s.len() <= 240 && s.starts_with("https://")).is_none() {
+                return Err("A trusted HTTPS Core origin is required.".into());
+            }
+        }
+        "cancel_qr" | "accept_qr" => {
+            if obj.len() != 1 { return Err("Unexpected device QR action parameters.".into()); }
+        }
         "stop" | "disconnect" | "revoke" | "rotate" | "status" | "cancel_transfer" => {
             if obj.len() != 1 { return Err("Invalid action parameters.".into()); }
         }
