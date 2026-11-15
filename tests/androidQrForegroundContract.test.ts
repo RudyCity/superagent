@@ -35,6 +35,6 @@ describe("Android QR scanner foreground return contract", () => {
   });
 
   it("identifies the rebuilt Android APK with the next build number", () => {
-    expect(gradle).toContain("versionCode 20");
+    expect(gradle).toContain("versionCode 22");
   });
 });

@@ -29,7 +29,7 @@ describe("Android TV and local terminal release contract", () => {
     expect(banner.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     expect([banner.readUInt32BE(16), banner.readUInt32BE(20)]).toEqual([320, 180]);
     expect(gradle).toContain("minSdk 29");
-    expect(gradle).toContain("versionCode 20");
+    expect(gradle).toContain("versionCode 22");
   });
 
   it("uses a distinct D-pad-friendly TV rail while preserving touch navigation", () => {
@@ -46,7 +46,8 @@ describe("Android TV and local terminal release contract", () => {
   });
 
   it("pairs TV without a camera but keeps all native approvals", () => {
-    expect(activity).toContain('section(connectPage, "TV PAIRING · NO CAMERA")');
+    expect(activity).toContain('section(connectPage, "DISPLAY PAIRING QR · ALL ANDROID")');
+    expect(activity).toContain('tvQrCreate = action(tvPairingCard, "Show pairing QR", this::showTvQr)');
     expect(activity).toContain('segmentInput.setText("support-tv")');
     expect(activity).toContain('tunnelScan.setVisibility(View.GONE)');
     expect(activity).toContain('manualSetupPanel.setVisibility(View.VISIBLE)');

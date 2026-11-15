@@ -5,9 +5,38 @@ import { spawn, spawnSync } from "node:child_process";
 import { lanInterfaces } from "../src/core/lanRemote/transport.js";
 
 if (process.platform !== "win32") throw Error("Native GUI receiver smoke test needs Windows.");
-const adapter = lanInterfaces()[0];
-if (!adapter) throw Error("No physical private adapter available.");
 const exe = path.resolve("apps/superagent-lan-windows/src-tauri/resources/superagent-lan-client.exe");
+const adapter = lanInterfaces()[0];
+// Hosted CI may have no eligible *physical* private NIC. In that case prove
+// that the compiled executable fails closed, rather than inventing an adapter
+// or skipping native verification. A positive real-NIC test is mandatory on
+// a separate standard-user Windows host and is NOT claimed by this branch.
+if (!adapter) {
+  const inventory = spawnSync(exe, ["--list-adapters"], {
+    encoding: "utf8", windowsHide: true, timeout: 10000,
+  });
+  const noPhysicalNic = inventory.status === 0
+    && (() => {
+      try { const parsed = JSON.parse(inventory.stdout); return Array.isArray(parsed.adapters) && parsed.adapters.length === 0; }
+      catch { return false; }
+    })();
+  const elevatedDenied = inventory.status === 1
+    && inventory.stdout.includes("Run SuperAgent LAN Client as a standard non-elevated Windows user.");
+  if (!noPhysicalNic && !elevatedDenied)
+    throw Error("Hosted runner adapter inspection was neither empty nor securely denied: "
+      + String(inventory.stdout || inventory.stderr).slice(0, 260));
+  const refusal = spawnSync(exe, [
+    "--tauri-receiver", "--segment=ci-no-physical-adapter", "--bind=192.168.250.250",
+  ], { encoding: "utf8", windowsHide: true, timeout: 10000 });
+  const expected = elevatedDenied
+    ? "Run SuperAgent LAN Client as a standard non-elevated Windows user."
+    : "No eligible physical private IPv4 adapter";
+  if (refusal.status !== 1 || !refusal.stdout.includes(expected))
+    throw Error("Receiver did not refuse an unowned private adapter: " + String(refusal.stdout).slice(0, 260));
+  console.log("CI_PREVIEW_NO_PHYSICAL_ADAPTER_FAIL_CLOSED_PASS: bundled receiver rejected an unowned bind.");
+  console.log("PHYSICAL_NIC_POSITIVE_E2E_NOT_RUN_IN_THIS_RUNNER: requires standard-user Windows hardware.");
+  process.exit(0);
+}
 const inspected = spawnSync(exe, ["--list-adapters"], { encoding: "utf8", windowsHide: true, timeout: 10000 });
 if (inspected.error || inspected.status !== 0) {
   const elevation = spawnSync("powershell.exe", [

@@ -69,7 +69,7 @@ describe("Android native dashboard redesign", () => {
     expect(ui).toContain("static void activeTab(");
     expect(ui).toContain("button.setSingleLine(true)");
     expect(colors).toContain("#0B1422");
-    expect(gradle).toContain("versionCode 20");
-    expect(gradle).toContain("versionName '0.10.3-agent-shell'");
+    expect(gradle).toContain("versionCode 22");
+    expect(gradle).toContain("versionName '0.10.5-device-qr'");
   });
 });

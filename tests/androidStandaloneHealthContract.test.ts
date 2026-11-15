@@ -75,8 +75,8 @@ describe("Android 0.7 standalone health and consent contract", () => {
       "QUERY_ALL_PACKAGES", "WRITE_SECURE_SETTINGS", "DEVICE_ADMIN"]) {
       expect(manifest).not.toContain(forbidden);
     }
-    expect(androidBuild).toContain("versionCode 20");
-    expect(androidBuild).toContain("versionName '0.10.3-agent-shell'");
+    expect(androidBuild).toContain("versionCode 22");
+    expect(androidBuild).toContain("versionName '0.10.5-device-qr'");
     expect(fs.existsSync(path.join(root, "gradle/wrapper/gradle-wrapper.jar"))).toBe(true);
   });
 });
