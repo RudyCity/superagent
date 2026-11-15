@@ -253,7 +253,7 @@ jobs:
       - name: Validate QR and device-download contract with real APK
         run: |
           bun install --frozen-lockfile
-          bun --bun x vitest run tests/deviceTunnelApkDownload.test.ts tests/deviceTunnelHttp.test.ts --maxWorkers=1
+          bun --bun x vitest run tests/deviceTunnelApkDownload.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelTvBootstrap.test.ts --maxWorkers=1
       - uses: actions/upload-artifact@v4
         with:
           name: release-android-lan-preview

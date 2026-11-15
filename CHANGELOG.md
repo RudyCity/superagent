@@ -1,4 +1,9 @@
 ## [1.14.102] - 2026-11-15
+### Android TV camera-free QR bootstrap (rc.2)
+- Add an owner-initiated "Show pairing QR on TV" flow for Android TV without a camera: the TV uses a trusted Core HTTPS origin, generates a 3-minute public pairing challenge, and privately polls for an operator-issued one-time invitation.
+- Add Core-scoped TV bootstrap routes and a dangerous MCP QR approval tool. Never display the private poll credential or auto-authorize screen, input, or shell access; retain on-TV connection/pairing approval and per-session permissions.
+- Update Android preview to 0.10.4-tv-qr (versionCode 21), add QR/bootstrap negative-path coverage and require its tests in the tagged Android release gate. Build and local tests pass; hardware/network separation tests, debug signing and production readiness remain separate gates.
+
 ### Agent-executed Android/Android TV shell through Core and MCP
 - Add first-class agent/MCP tools lan_support(action=android_shell) and superagent_device_android_shell with explicit Full YOLO/dangerous tool policy, reusing existing authenticated direct LAN and reverse HTTPS Device Tunnel sessions, not the Tray UI.
 - Separate remote shell operation from the existing read-only Android diagnostic exec allowlist. Each exact 1–512 character shell command requires fresh visible Android owner approval after pairing and support-session consent; no remote self-approval, screen projection or remote input may be active.
