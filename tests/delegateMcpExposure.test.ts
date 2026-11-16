@@ -75,9 +75,68 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     expect(validateDelegateMcpArgs(read, { newTab: true })).toBe("DELEGATE_UNEXPECTED_ARGUMENT");
   });
 
-  it("read-only OAuth exposes live/history/index diagnostics, never mutations, in gateway mode", async () => {
+  it("read-only OAuth exposes live/history/index diagnostics, never mutations, via gateway search", async () => {
     const server = createSuperagentMcpServer({
       authMode: "oauth", toolExposure: "gateway",
+      getIdentity: () => ({ mode: "oauth", subject: "reader", scopes: ["mcp:tools"] }),
+    });
+    try {
+      const names = await listed(server);
+      // Delegate tools are NOT advertised in main in gateway mode
+      for (const name of Object.values(DELEGATE_MCP_TOOL_NAMES)) {
+        expect(names).not.toContain(name);
+      }
+      const searchRes = await invoke(server, "superagent_tool_search", { query: "delegate", limit: 20 });
+      const searchNames = JSON.parse((searchRes as any).content[0].text).tools.map((t: any) => t.name);
+      for (const name of [
+        DELEGATE_MCP_TOOL_NAMES.read,
+        DELEGATE_MCP_TOOL_NAMES.list,
+        DELEGATE_MCP_TOOL_NAMES.readFull,
+        DELEGATE_MCP_TOOL_NAMES.search,
+        DELEGATE_MCP_TOOL_NAMES.searchIndex,
+        DELEGATE_MCP_TOOL_NAMES.doctor,
+      ]) expect(searchNames).toContain(name);
+      for (const name of [
+        DELEGATE_MCP_TOOL_NAMES.sync,
+        DELEGATE_MCP_TOOL_NAMES.runUntilDone,
+        DELEGATE_MCP_TOOL_NAMES.create,
+        DELEGATE_MCP_TOOL_NAMES.send,
+        DELEGATE_MCP_TOOL_NAMES.stop,
+      ]) expect(searchNames).not.toContain(name);
+      await expect(invoke(server, DELEGATE_MCP_TOOL_NAMES.runUntilDone, {
+        message: "must-not-send",
+      })).rejects.toThrow(/mcp:tools:write/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("OAuth write and local YOLO enable mutation discovery via gateway search, revocation blocks cached calls", async () => {
+    setYoloMode(true);
+    let scopes = ["mcp:tools", "mcp:tools:write"];
+    const server = createSuperagentMcpServer({
+      authMode: "oauth", toolExposure: "gateway", allowDangerous: true,
+      getIdentity: () => ({ mode: "oauth", subject: "writer", scopes }),
+    });
+    try {
+      const searchRes = await invoke(server, "superagent_tool_search", { query: "delegate", limit: 20 });
+      const searchNames = JSON.parse((searchRes as any).content[0].text).tools.map((t: any) => t.name);
+      for (const name of Object.values(DELEGATE_MCP_TOOL_NAMES)) expect(searchNames).toContain(name);
+      scopes = ["mcp:tools"];
+      const searchResRevoked = await invoke(server, "superagent_tool_search", { query: "delegate", limit: 20 });
+      const searchNamesRevoked = JSON.parse((searchResRevoked as any).content[0].text).tools.map((t: any) => t.name);
+      expect(searchNamesRevoked).not.toContain(DELEGATE_MCP_TOOL_NAMES.send);
+      await expect(invoke(server, DELEGATE_MCP_TOOL_NAMES.send, {
+        message: "must-not-send",
+      })).rejects.toThrow(/mcp:tools:write/);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("full tool exposure directly lists delegate tools in the main catalog", async () => {
+    const server = createSuperagentMcpServer({
+      authMode: "oauth", toolExposure: "full",
       getIdentity: () => ({ mode: "oauth", subject: "reader", scopes: ["mcp:tools"] }),
     });
     try {
@@ -90,36 +149,6 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
         DELEGATE_MCP_TOOL_NAMES.searchIndex,
         DELEGATE_MCP_TOOL_NAMES.doctor,
       ]) expect(names).toContain(name);
-      for (const name of [
-        DELEGATE_MCP_TOOL_NAMES.sync,
-        DELEGATE_MCP_TOOL_NAMES.runUntilDone,
-        DELEGATE_MCP_TOOL_NAMES.create,
-        DELEGATE_MCP_TOOL_NAMES.send,
-        DELEGATE_MCP_TOOL_NAMES.stop,
-      ]) expect(names).not.toContain(name);
-      await expect(invoke(server, DELEGATE_MCP_TOOL_NAMES.runUntilDone, {
-        message: "must-not-send",
-      })).rejects.toThrow(/mcp:tools:write/);
-    } finally {
-      await server.close();
-    }
-  });
-
-  it("OAuth write and local YOLO enable mutation discovery, revocation blocks cached calls", async () => {
-    setYoloMode(true);
-    let scopes = ["mcp:tools", "mcp:tools:write"];
-    const server = createSuperagentMcpServer({
-      authMode: "oauth", toolExposure: "gateway", allowDangerous: true,
-      getIdentity: () => ({ mode: "oauth", subject: "writer", scopes }),
-    });
-    try {
-      const names = await listed(server);
-      for (const name of Object.values(DELEGATE_MCP_TOOL_NAMES)) expect(names).toContain(name);
-      scopes = ["mcp:tools"];
-      expect(await listed(server)).not.toContain(DELEGATE_MCP_TOOL_NAMES.send);
-      await expect(invoke(server, DELEGATE_MCP_TOOL_NAMES.send, {
-        message: "must-not-send",
-      })).rejects.toThrow(/mcp:tools:write/);
     } finally {
       await server.close();
     }

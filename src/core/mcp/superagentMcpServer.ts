@@ -1304,13 +1304,18 @@ function extractMcpResultText(result: unknown): string {
       auditContext.errorCode = "permanent_file_policy_denied";
       emitAudit({ tool: toolName, args: {}, ok: false,
         error: "Permanent file restriction denied this call", durationMs: 0 });
-      throw new McpError(ErrorCode.InvalidRequest,
-        "Access denied by host permanent file policy: " + permanentFileBlock);
+      return {
+        content: [{ type: "text", text: "Access denied by host permanent file policy: " + permanentFileBlock }],
+        isError: true,
+      };
     }
     const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
     if (blockedRoot) {
       emitAudit({ tool: toolName, args: rawArgs, ok: false, error: "YOLO blocklist denied access" });
-      throw new McpError(ErrorCode.InvalidRequest, `Access denied by YOLO blocklist: ${blockedRoot}`);
+      return {
+        content: [{ type: "text", text: `Access denied by YOLO blocklist: ${blockedRoot}` }],
+        isError: true,
+      };
     }
 
     // Block direct calls too, including clients that cached an old tools/list response.

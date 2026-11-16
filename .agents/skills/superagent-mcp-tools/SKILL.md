@@ -32,7 +32,7 @@ Superagent supports two operational exposure modes configured via `~/.superagent
 
 | Exposure Mode | Advertised Tools | Behavior & Benefits |
 |---|---|---|
-| **`gateway` (Default)** | Curated core set (~20 tools) | Eagerly advertises gateway discovery tools (`superagent_tool_search`, `superagent_tool_describe`, `superagent_tool_execute`, `superagent_tool_status`), core project/workspace tools, and delegate chat readers. Prevents context window explosion while granting access to the full catalog on-demand. |
+| **`gateway` (Default)** | Curated core set (~15 tools) | Eagerly advertises gateway discovery tools (`superagent_tool_search`, `superagent_tool_describe`, `superagent_tool_execute`, `superagent_tool_status`), core project/workspace tools, and core status. Delegate Chat & History tools are discovered dynamically on-demand via search and describe, keeping the main catalog lean and preventing context window explosion. |
 | **`full`** | Entire catalog (80+ tools) | Directly advertises all registered tools across all domains. Best suited for high-context models or specialized single-agent setups. |
 
 ### 2. YOLO Modes & Safety Guardrails

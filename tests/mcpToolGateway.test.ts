@@ -64,7 +64,8 @@ describe("static MCP gateway catalog", () => {
       "superagent_delegate_doctor",
       "superagent_delegate_inspect_chat_config",
     ];
-    for (const toolName of safeDelegateTools) expect(advertised).toContain(toolName);
+    // Delegate Chat & History tools are NOT advertised eagerly in main
+    for (const toolName of safeDelegateTools) expect(advertised).not.toContain(toolName);
     for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES) {
       if (!safeDelegateTools.includes(toolName)) expect(advertised).not.toContain(toolName);
     }
@@ -80,6 +81,11 @@ describe("static MCP gateway catalog", () => {
     expect(search.tools.map((entry: any) => entry.name)).not.toContain("superagent_grant_project_access");
     expect(search.tools.map((entry: any) => entry.name)).not.toContain("superagent_write_files");
     expect(search.tools.map((entry: any) => entry.name)).not.toContain("superagent_read_file");
+
+    const delegateSearch = parseResult(await invoke(server, MCP_GATEWAY_TOOL_NAMES.search, { query: "delegate", limit: 20 }));
+    expect(delegateSearch.tools.map((entry: any) => entry.name)).toEqual(expect.arrayContaining(safeDelegateTools));
+    const delegateDesc = parseResult(await invoke(server, MCP_GATEWAY_TOOL_NAMES.describe, { name: "superagent_delegate_list_chats" }));
+    expect(delegateDesc.name).toBe("superagent_delegate_list_chats");
 
     const rejected = await invoke(server, MCP_GATEWAY_TOOL_NAMES.describe, { name: "superagent_grant_project_access" });
     expect(rejected.isError).toBe(true);

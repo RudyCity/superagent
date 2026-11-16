@@ -32,7 +32,10 @@ export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
 
 // Stable, explicit MCP entrypoints for a connected Chrome Delegate profile.
 // Live/history readers are safe. Create/send/stop remain subject to MCP write checks.
-export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([
+// Delegate tools are dynamic on-demand tools discovered via superagent_tool_search,
+// described via superagent_tool_describe, and dispatched via superagent_tool_execute.
+// They are intentionally NOT eagerly advertised in the initial gateway list ("main").
+export const MCP_GATEWAY_DELEGATE_TOOL_NAMES = Object.freeze([
   "superagent_delegate_read_chat",
   "superagent_delegate_list_chats",
   "superagent_delegate_read_chat_full",
@@ -48,31 +51,33 @@ export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([
   "superagent_delegate_stop_generation",
 ] as const);
 
+export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([] as readonly string[]);
+
 export const MCP_GATEWAY_TOOL_DEFS = [
   {
     name: MCP_GATEWAY_TOOL_NAMES.search,
-    description: "Find authorized SuperAgent MCP tools by task intent or keyword. Returns short capability summaries, not tool schemas.",
+    description: "Find authorized SuperAgent MCP tools by task intent or keyword (e.g. 'delegate', 'chat history', 'browser', 'cdp', 'media', 'projects'). Returns short capability summaries. Use to discover specialized on-demand tools not pre-advertised in the main list.",
     inputSchema: {
       type: "object",
       properties: {
-        intent: { type: "string", description: "Natural-language task description." },
-        query: { type: "string", description: "Short keyword or tool name." },
-        limit: { type: "number", minimum: 1, maximum: 20, description: "Maximum matching tools. Default 8." },
+        intent: { type: "string", description: "Natural-language task description or intent." },
+        query: { type: "string", description: "Short keyword or tool name (e.g. 'delegate', 'chat', 'history')." },
+        limit: { type: "number", minimum: 1, maximum: 20, description: "Maximum matching tools to return. Default 8." },
       },
     },
   },
   {
     name: MCP_GATEWAY_TOOL_NAMES.describe,
-    description: "Read the input schema for one currently authorized SuperAgent MCP tool.",
+    description: "Read the input schema and parameter requirements for one authorized SuperAgent MCP tool discovered via search (e.g. 'superagent_delegate_list_chats', 'superagent_delegate_send_message'). Call before executing an unadvertised tool.",
     inputSchema: {
       type: "object",
-      properties: { name: { type: "string", description: "Exact target tool name from search." } },
+      properties: { name: { type: "string", description: "Exact target tool name from superagent_tool_search." } },
       required: ["name"],
     },
   },
   {
     name: MCP_GATEWAY_TOOL_NAMES.execute,
-    description: "Invoke one authorized MCP tool using its exact name and arguments. Every call is rechecked against the original tool's permission, OAuth, and workspace policy. Safe/read-only targets work with read credentials; mutation targets still require write permission and an authorized tool allowance.",
+    description: "Invoke any authorized SuperAgent MCP tool (including dynamic tools discovered via search like Delegate Chat & History, CDP, or media) using its exact name and arguments. Gateway recursion is blocked; all YOLO, OAuth, and security checks are strictly enforced.",
     inputSchema: {
       type: "object",
       properties: {
@@ -84,7 +89,7 @@ export const MCP_GATEWAY_TOOL_DEFS = [
   },
   {
     name: MCP_GATEWAY_TOOL_NAMES.status,
-    description: "Report current MCP gateway catalog size and authorization visibility without exposing hidden tools.",
+    description: "Report current MCP gateway catalog status: mode (gateway/full), visible tool count, initially advertised tools, and dynamic catalog visibility.",
     inputSchema: { type: "object", properties: {} },
   },
 ] as const;

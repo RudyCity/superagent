@@ -259,8 +259,9 @@ export function registerResourcesAndPrompts(
           `1. TOOL_FIRST: For requests that need MCP action or evidence, use authorized tools promptly; for conversation or explanation, answer directly without unnecessary tool calls.`,
           `2. ACTION OVER ADVICE: For executable user requests, use authorized MCP tools instead of merely giving manual steps. Batch file operations.`,
           `3. AUTONOMOUS LOOP: Complete the entire task end-to-end (Inspect -> Plan -> Act -> Verify -> Report) without unnecessary intermediate pauses.`,
-          `4. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
-          `5. ERROR RECOVERY: If a tool fails, diagnose the error, fix the root cause, and retry.`,
+          `4. DYNAMIC TOOL DISCOVERY: The MCP catalog initially advertises a lean, curated core set of tools. When specialized capabilities are needed (such as Delegate Chat & History, browser automation, or media tools), use 'superagent_tool_search' (with query or intent), inspect the input schema via 'superagent_tool_describe', and execute via 'superagent_tool_execute'. Never assume a tool is missing without searching first.`,
+          `5. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
+          `6. ERROR RECOVERY: If a tool fails, diagnose the error, fix the root cause, and retry.`,
         ].join("\n");
 
         return {
@@ -448,9 +449,10 @@ export function registerResourcesAndPrompts(
           `\n## EXECUTION PROTOCOL (TOOL_FIRST):`,
           `1. ACTION-BASED ROUTING: Use MCP tools when the requested work requires actions or fresh evidence; ordinary questions and drafting can be answered directly.`,
           `2. NEVER DELEGATE TO USER: Never tell the user to run commands, edit files, or test changes manually. Execute commands with 'superagent_exec_command'; batch reads/writes with 'superagent_read_files' and 'superagent_write_files'; use 'superagent_replace_file_content' for targeted edits. Legacy 'superagent_read_file' and 'superagent_write_file' endpoints are disabled.`,
-          `3. SAFE EXECUTION LOOP: Inspect -> Plan when needed -> Act when authorized -> Verify -> Conclude. Respect confirmation, permission and destructive-action gates; never infer consent from ambiguous replies.`,
-          `4. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
-          `5. RESILIENT RECOVERY: If a tool fails, analyze the error output, adapt your parameters, and retry. Never output raw error dumps or surrender.`,
+          `3. DYNAMIC GATEWAY DISCOVERY: The MCP catalog initially advertises a lean, curated core set of tools. When a specialized tool is needed but not in the initial catalog (e.g. Delegate Chat & History, browser automation, media tools), call 'superagent_tool_search' with query/intent, inspect its schema with 'superagent_tool_describe', and dispatch it with 'superagent_tool_execute'.`,
+          `4. SAFE EXECUTION LOOP: Inspect -> Plan when needed -> Act when authorized -> Verify -> Conclude. Respect confirmation, permission and destructive-action gates; never infer consent from ambiguous replies.`,
+          `5. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
+          `6. RESILIENT RECOVERY: If a tool fails, analyze the error output, adapt your parameters, and retry. Never output raw error dumps or surrender.`,
         ].filter(Boolean).join("\n");
 
         return {

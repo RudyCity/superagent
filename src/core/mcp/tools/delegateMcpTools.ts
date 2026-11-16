@@ -54,7 +54,7 @@ const schema = (properties: Record<string, unknown>, required: string[] = []) =>
 export const DELEGATE_MCP_TOOL_DEFS = [
   {
     name: DELEGATE_MCP_TOOL_NAMES.read,
-    description: "Read the current ChatGPT chat through the connected Delegate extension, or list paired Chrome profiles with {connections:true}. Detects ChatGPT's visible delivery-timeout banner as status=delivery_timeout; the extension handles that UI state with one guarded 'continue until done' follow-up without clicking Retry. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading; connections:true never opens a tab.",
+    description: "Read active ChatGPT/Claude conversation through connected Delegate extension, or list paired profiles with {connections:true}. Detects delivery-timeout banner as status=delivery_timeout and handles recovery without clicking Retry. If no ChatGPT tab exists and tabId is omitted, Delegate opens https://chatgpt.com/ automatically before reading; connections:true never opens a tab.",
     inputSchema: schema({
       ...optionalTarget,
       connections: { type: "boolean", description: "Only list paired Chrome Delegate profiles; no ChatGPT DOM read." },
@@ -62,7 +62,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.list,
-    description: "List ChatGPT history from the connected Chrome profile using an inactive read-only worker tab. Scrolls the Chat history sidebar to load older chats; paginate with cursor/limit until next_cursor is null.",
+    description: "List ChatGPT/Claude conversation history threads and titles from connected Chrome profile. Scrolls sidebar to paginate older chats; use cursor/limit until next_cursor is null.",
     inputSchema: schema({
       clientId,
       cursor: { type: "integer", minimum: 0, maximum: 5000 },
@@ -71,7 +71,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.readFull,
-    description: "Read a historical ChatGPT conversation by chatId through an inactive read-only worker tab, including older/virtualized turns. Paginate message output with cursor/limit.",
+    description: "Read full historical ChatGPT/Claude conversation transcript by chatId through read-only tab, including earlier messages and thinking blocks. Paginate with cursor/limit.",
     inputSchema: schema({
       clientId,
       chatId: { type: "string", minLength: 8, maxLength: 180 },
@@ -81,7 +81,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.search,
-    description: "Search ChatGPT history titles and message content without modifying the user's active chat. Scans up to maxChats conversations and returns matching chats with snippets.",
+    description: "Search ChatGPT/Claude history titles and message content across past conversations without modifying active chat. Returns matching chats with text snippets. Scans up to maxChats conversations.",
     inputSchema: schema({
       clientId,
       query: { type: "string", minLength: 1, maxLength: 500 },
@@ -91,7 +91,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.sync,
-    description: "Incrementally sync ChatGPT history into the local Delegate SQLite index without changing the active chat.",
+    description: "Incrementally sync ChatGPT/Claude history into local Delegate SQLite index without changing active chat tab.",
     inputSchema: schema({
       clientId,
       maxChats: { type: "integer", minimum: 1, maximum: 500 },
@@ -101,7 +101,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.searchIndex,
-    description: "Search the local Delegate SQLite history index without browser navigation.",
+    description: "Search local Delegate SQLite history index of indexed ChatGPT/Claude conversations with fast full-text search without browser navigation.",
     inputSchema: schema({
       clientId,
       query: { type: "string", minLength: 1, maxLength: 500 },
@@ -110,12 +110,12 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.doctor,
-    description: "Read-only Delegate diagnostics for bridge, browser DOM compatibility, and local history-index health.",
+    description: "Read-only Delegate diagnostics for bridge connection, browser DOM compatibility, paired profiles, and local history-index health.",
     inputSchema: schema({ clientId, tabId }),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.runUntilDone,
-    description: "Send and monitor on an explicit clientId/tabId. Holds the shared target lock; never replays uncertain sends.",
+    description: "Delegate run until done: Send prompt and monitor ChatGPT/Claude until model generation is completely finished on explicit clientId/tabId. Holds target lock; handles stalls safely.",
     inputSchema: schema({
       clientId,
       tabId,
@@ -133,12 +133,12 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.inspectConfig,
-    description: "Read only visible ChatGPT model/reasoning control labels and model-menu option labels for one explicit tab. Never reads conversation text or selects a model.",
+    description: "Inspect visible ChatGPT/Claude model/reasoning control labels and menu options for one explicit tab. Never reads conversation text or alters model.",
     inputSchema: schema({ clientId, tabId }, ["clientId", "tabId"]),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.configure,
-    description: "Set ChatGPT model and/or reasoning effort on one explicit Delegate tab. Fails closed if the visible UI option is unavailable or ambiguous.",
+    description: "Configure ChatGPT/Claude model and/or reasoning effort on one explicit Delegate tab. Fails closed if visible UI option is unavailable or ambiguous.",
     inputSchema: schema({
       clientId,
       tabId,
@@ -149,13 +149,13 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.create,
-    description: "Start a ChatGPT chat on explicit clientId/tabId, or newTab:true for an independent tab in clientId.",
+    description: "Create new ChatGPT/Claude chat thread on explicit clientId/tabId, or newTab:true for an independent tab in connected Delegate profile.",
     inputSchema: schema({ ...optionalTarget, requestId, model, effort,
       newTab: { type: "boolean", description: "Open an independent ChatGPT tab; mutually exclusive with tabId." } }),
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.send,
-    description: "Send once to explicit clientId and tabId; optional requestId prevents replay after uncertain RPC outcomes. No implicit tab fallback.",
+    description: "Send prompt or message to connected ChatGPT/Claude chat on explicit clientId and tabId; optional requestId prevents duplicate execution.",
     inputSchema: schema({
       ...optionalTarget,
       requestId,
@@ -166,7 +166,7 @@ export const DELEGATE_MCP_TOOL_DEFS = [
   },
   {
     name: DELEGATE_MCP_TOOL_NAMES.stop,
-    description: "Explicit Stop generation only for clientId/tabId; no implicit fallback or automatic retry.",
+    description: "Stop ongoing ChatGPT/Claude model generation immediately on target Delegate clientId/tabId without implicit fallback.",
     inputSchema: schema({ ...optionalTarget, requestId }),
   },
 ];

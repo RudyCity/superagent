@@ -547,4 +547,89 @@ describe("per-session transport isolation", () => {
       await server.close();
     }
   });
+
+  it("handles parallel concurrent tool calls and batches on the same stateful session without dropping connections", async () => {
+    const customToken = generateMcpBearerToken();
+    const server = await startMcpHttpServer({
+      port: 0,
+      bearerToken: customToken,
+      allowDangerous: false,
+    });
+    const sUrl = `http://127.0.0.1:${server.port}${MCP_HTTP_PATH}`;
+    const baseHeaders = {
+      Authorization: `Bearer ${customToken}`,
+      Accept: "application/json, text/event-stream",
+      "Content-Type": "application/json",
+    };
+
+    try {
+      const initRes = await fetch(sUrl, {
+        method: "POST",
+        headers: baseHeaders,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } },
+        }),
+      });
+      expect(initRes.status).toBe(200);
+      const sid = initRes.headers.get("mcp-session-id");
+      expect(sid).toBeTruthy();
+
+      // 1. Fire 10 parallel tool calls concurrently with the same session id
+      const parallelCalls = Array.from({ length: 10 }, async (_, index) => {
+        const res = await fetch(sUrl, {
+          method: "POST",
+          headers: { ...baseHeaders, "mcp-session-id": sid! },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 100 + index,
+            method: "tools/call",
+            params: {
+              name: "superagent_read_files",
+              arguments: { filePaths: ["package.json"] },
+            },
+          }),
+        });
+        expect(res.status).toBe(200);
+        const text = await res.text();
+        const json = JSON.parse(text);
+        expect(json.id).toBe(100 + index);
+        expect(json.result).toBeDefined();
+        expect(json.result.content).toBeDefined();
+        return json.id;
+      });
+
+      const ids = await Promise.all(parallelCalls);
+      expect(ids).toHaveLength(10);
+
+      // 2. Fire a batch JSON-RPC request containing multiple tools/call
+      const batchRes = await fetch(sUrl, {
+        method: "POST",
+        headers: { ...baseHeaders, "mcp-session-id": sid! },
+        body: JSON.stringify([
+          {
+            jsonrpc: "2.0",
+            id: 201,
+            method: "tools/call",
+            params: { name: "superagent_read_files", arguments: { filePaths: ["package.json"] } },
+          },
+          {
+            jsonrpc: "2.0",
+            id: 202,
+            method: "tools/call",
+            params: { name: "superagent_read_files", arguments: { filePaths: ["package.json"] } },
+          },
+        ]),
+      });
+      expect(batchRes.status).toBe(200);
+      const batchJson = JSON.parse(await batchRes.text());
+      expect(Array.isArray(batchJson)).toBe(true);
+      expect(batchJson).toHaveLength(2);
+      expect(batchJson.map((r: any) => r.id).sort()).toEqual([201, 202]);
+    } finally {
+      await server.close();
+    }
+  });
 });

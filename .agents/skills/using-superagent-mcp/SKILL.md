@@ -64,7 +64,7 @@ Superagent supports two operational modes via `SUPERAGENT_MCP_TOOL_EXPOSURE` or 
 
 | Mode | Tools Advertised | Best Used For |
 |---|---|---|
-| **`gateway` (Default & Recommended)** | ~20 curated tools (discovery, workspace, status, delegate readers) | Preserves context budget; tools are discovered and executed dynamically on demand. |
+| **`gateway` (Default & Recommended)** | ~15 curated tools (discovery, workspace, status; delegate & specialized tools accessed via search) | Preserves context budget; tools are discovered and executed dynamically on demand. |
 | **`full`** | All 80+ tools across all domains | High-context agents needing immediate visibility into every specialized schema. |
 
 ---
