@@ -2,11 +2,25 @@
 
 ## Development build
 
-On the SuperAgent Windows laptop, run:
+On the SuperAgent host, run:
 
     bun scripts/build-lan-client.ts
 
-Copy `artifacts/lan-client/superagent-lan-client.exe` to a second Windows 10/11 laptop. This is a *portable console application*, not yet a native Tray UI, signed installer, or Windows service. No Bun installation is required on that target laptop.
+This compiles standalone portable executables and packages ready-to-run `.zip` and `.tar.gz` archives in `artifacts/lan-client/` for:
+- **Windows (x64)**:
+  - CLI portable executable: `superagent-lan-client-windows-x64.exe` (and `superagent-lan-client.exe`)
+  - CLI portable archive: `superagent-lan-client-windows-x64.zip`
+  - GUI portable companion archive: `superagent-lan-windows-portable-x64.zip` (with System Tray and custom titlebar)
+  - NSIS full installer: `SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe`
+- **Linux (x64 & arm64)**:
+  - Standalone binaries: `superagent-lan-client-linux-x64`, `superagent-lan-client-linux-arm64`
+  - Portable archives: `superagent-lan-client-linux-x64.tar.gz`, `superagent-lan-client-linux-arm64.tar.gz`
+- **macOS (x64 Intel & arm64 Apple Silicon)**:
+  - Standalone binaries: `superagent-lan-client-macos-x64`, `superagent-lan-client-macos-arm64`
+  - Portable archives: `superagent-lan-client-macos-x64.tar.gz`, `superagent-lan-client-macos-arm64.tar.gz`
+- **Master Checksums**: `artifacts/lan-client/SHA256SUMS`
+
+No Bun, Node.js, or runtime installation is required on the target machine. Each portable binary runs completely self-contained.
 
 ## Connect another Windows laptop by QR
 

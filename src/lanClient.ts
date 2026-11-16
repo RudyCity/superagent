@@ -12,16 +12,22 @@ import { runDeviceTunnelRelay } from "./core/deviceTunnel/client.js";
 import { startWindowsQrConnectCapture } from "./core/deviceTunnel/windowsQrConnect.js";
 
 function ensureStandardUser(): void {
-  if (process.platform !== "win32") return;
-  const check = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-    "([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
-  ], { encoding: "utf8", timeout: 5000, windowsHide: true });
-  if (check.error || check.status !== 0) {
-    throw new Error("Cannot verify Windows token elevation; refusing remote support.");
+  if (process.platform === "win32") {
+    const check = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+      "([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+    ], { encoding: "utf8", timeout: 5000, windowsHide: true });
+    if (check.error || check.status !== 0) {
+      throw new Error("Cannot verify Windows token elevation; refusing remote support.");
+    }
+    if (check.stdout.trim().toLowerCase() !== "false") {
+      throw new Error("The LAN Client must be launched as a standard, non-elevated user. Remote support never inherits an administrator token.");
+    }
+    return;
   }
-  if (check.stdout.trim().toLowerCase() !== "false") {
-    throw new Error("The LAN Client must be launched as a standard, non-elevated user. Remote support never inherits an administrator token.");
+  if (typeof process.getuid === "function" && process.getuid() === 0) {
+    throw new Error("The LAN Client must be launched as a standard, non-root user. Remote support never inherits root privileges.");
   }
+
 }
 
 async function main() {
