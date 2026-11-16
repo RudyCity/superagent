@@ -84,7 +84,34 @@
 
   function toast(message) {
     const node = $("toast");
-    node.textContent = label(message);
+    node.innerHTML = "";
+    const text = label(message);
+    const span = document.createElement("span");
+    span.className = "toast-message";
+    span.textContent = text;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "toast-copy-btn";
+    copy.title = "Copy message";
+    copy.setAttribute("aria-label", "Copy message");
+    copy.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+    copy.addEventListener("click", async (e) => {
+      e?.stopPropagation?.();
+      if (navigator?.clipboard?.writeText) {
+        try { await navigator.clipboard.writeText(text); } catch {}
+      }
+      copy.classList.add("copied");
+      copy.title = "Copied!";
+      copy.setAttribute("aria-label", "Message copied to clipboard");
+      copy.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      setTimeout(() => {
+        copy.classList.remove("copied");
+        copy.title = "Copy message";
+        copy.setAttribute("aria-label", "Copy message");
+        copy.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+      }, 2000);
+    });
+    node.append(span, copy);
     node.hidden = false;
     clearTimeout(toast.timeout);
     toast.timeout = setTimeout(() => {
