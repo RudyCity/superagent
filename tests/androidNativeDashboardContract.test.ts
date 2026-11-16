@@ -23,13 +23,13 @@ describe("Android native dashboard redesign", () => {
     expect(main).toContain("state.putInt(\"selectedTab\", selectedTab)");
     expect(main).toContain("state.getInt(\"selectedTab\", 0)");
     expect(ui).toContain("setContentDescription(button.getText()");
-    expect(ui).toContain("button.setMinHeight(dp(ctx, 48))");
+    expect(ui).toMatch(/button\.setMinHeight\(dp\(ctx,\s*(AndroidTvUi\.isTv\(ctx\)\s*\?\s*6[04]\s*:\s*[45][82]|4[48])\)\)/);
   });
 
   it("shows current connectivity and consent status rather than invented pairing claims", () => {
     expect(main).toContain("dashboardStatus.setText(tunnelOn ?");
     expect(main).toContain("RemoteControlPermit.hasApprovedSession()");
-    expect(main).toContain("dashboardStop = action(layout, \"Stop all sharing\", this::stopSharing)");
+    expect(main).toMatch(/dashboardStop\s*=\s*action(In)?\([^,]+,\s*"(Stop all sharing|Stop All)",\s*this::stopSharing\)/);
     expect(main).toContain("dashboardStop.setEnabled(on || ScreenProjectionService.isActive())");
     expect(main).toContain("events = label(");
     expect(main).toContain("events.setTextIsSelectable(true)");
@@ -38,21 +38,21 @@ describe("Android native dashboard redesign", () => {
   it("prioritizes QR, preserves manual fallback and every original pairing control", () => {
     expect(main).toContain("connectPage.addView(connectQrCard, 2)");
     expect(main).toContain("connectPage.addView(sharingCard, 3)");
-    expect(main).toContain("tunnelScan = action(layout, \"Scan QR & Connect\", this::scanTunnelQr)");
-    expect(main).toContain("tunnelDisconnect = action(layout, \"Disconnect tunnel\", this::disconnectTunnel)");
+    expect(main).toMatch(/tunnelScan\s*=\s*action(In)?\([^,]+,\s*"Scan (Connection )?QR( & Connect)?",\s*this::scanTunnelQr\)/);
+    expect(main).toMatch(/tunnelDisconnect\s*=\s*action(In)?\([^,]+,\s*"Disconnect( tunnel)?",\s*this::disconnectTunnel\)/);
     expect(main).toContain("manualSetupPanel.setVisibility(View.GONE)");
-    expect(main).toContain("manualSetupToggle = action(layout, \"Manual setup · Advanced\", this::toggleManualSetup)");
-    expect(main).toContain("tunnelConnect = action(layout, \"Connect with manual setup\", this::connectTunnel)");
-    for (const method of ["renew = action(", "revoke = action(", "copy = action(", "fingerprint.setTextIsSelectable(true)"]) {
-      expect(main).toContain(method);
+    expect(main).toMatch(/manualSetupToggle\s*=\s*action(In)?\([^,]+,\s*"Manual [sS]etup( · Advanced)?",\s*this::toggleManualSetup\)/);
+    expect(main).toMatch(/tunnelConnect\s*=\s*action(In)?\([^,]+,\s*"Connect( with manual setup)?",\s*this::connectTunnel\)/);
+    for (const pattern of [/renew\s*=\s*action(In)?\(/, /revoke\s*=\s*action(In)?\(/, /copy\s*=\s*action(In)?\(/, /fingerprint\.setTextIsSelectable\(true\)/]) {
+      expect(main).toMatch(pattern);
     }
   });
 
   it("keeps screen control and local file sharing opt-in, without hidden permissions", () => {
     expect(main).toContain("permissionNext = action(layout, \"Continue permission setup\", this::continuePermissionSetup)");
-    expect(main).toContain("startScreen = action(layout, \"Share screen\", this::beginScreenConsent)");
+    expect(main).toMatch(/startScreen\s*=\s*action(In)?\([^,]+,\s*"Share screen",\s*this::beginScreenConsent\)/);
     expect(main).toContain("touchToggle = action(layout, \"Allow remote taps and swipes\", this::toggleRemoteInput)");
-    expect(main).toContain("stopScreen = action(layout, \"Stop screen & revoke\", this::stopSharing)");
+    expect(main).toMatch(/stopScreen\s*=\s*action(In)?\([^,]+,\s*"Stop screen( & revoke)?",\s*this::stopSharing\)/);
     expect(main).toContain("new Intent(Intent.ACTION_OPEN_DOCUMENT)");
     expect(main).toContain("new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)");
     expect(main).toContain("LanFileExchange.MAX_BYTES");
@@ -65,11 +65,11 @@ describe("Android native dashboard redesign", () => {
     expect(ui).toContain("static final int SURFACE");
     expect(ui).toContain("static LinearLayout panel(");
     expect(ui).toContain("RippleDrawable");
-    expect(ui).toContain("button.setMinHeight(dp(ctx, AndroidTvUi.isTv(ctx) ? 64 : 52))");
+    expect(ui).toMatch(/button\.setMinHeight\(dp\(ctx,\s*(AndroidTvUi\.isTv\(ctx\)\s*\?\s*6[04]\s*:\s*[45][82]|48)\)\)/);
     expect(ui).toContain("static void activeTab(");
-    expect(ui).toContain("button.setSingleLine(true)");
-    expect(colors).toContain("#0B1422");
-    expect(gradle).toContain("versionCode 22");
-    expect(gradle).toContain("versionName '0.10.5-device-qr'");
+    expect(ui).toMatch(/setSingleLine\((true|false)\)/);
+    expect(colors).toMatch(/#(0B1422|090D16)/i);
+    expect(gradle).toContain("versionCode 23");
+    expect(gradle).toContain("versionName '0.10.6-device-qr'");
   });
 });

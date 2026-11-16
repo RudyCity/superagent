@@ -31,6 +31,8 @@ const otherNames=[
   `SuperAgent-LAN-Client-${lan.version}-Windows-x64-setup.exe`,
   `SuperAgent-LAN-Android-${androidVersion}-debug.apk`,
   `SuperAgent-LAN-Android-${androidVersion}-metadata.json`,
+  `superagent-lan-windows-portable-x64.zip`,
+  `superagent-lan-client-windows-x64.zip`,
 ];
 const extNames=exts.flatMap(([kind,manifest])=>[
   `superagent-${kind}-${manifest.version}.zip`,

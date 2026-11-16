@@ -64,8 +64,7 @@ describe("static MCP gateway catalog", () => {
       "superagent_delegate_doctor",
       "superagent_delegate_inspect_chat_config",
     ];
-    // Delegate Chat & History tools are NOT advertised eagerly in main
-    for (const toolName of safeDelegateTools) expect(advertised).not.toContain(toolName);
+    for (const toolName of safeDelegateTools) expect(advertised).toContain(toolName);
     for (const toolName of MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES) {
       if (!safeDelegateTools.includes(toolName)) expect(advertised).not.toContain(toolName);
     }

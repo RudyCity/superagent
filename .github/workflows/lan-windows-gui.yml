@@ -57,7 +57,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $file = "artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe"
+          $v = (Get-Content apps/superagent-lan-windows/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $file = "artifacts/lan-client/SuperAgent-LAN-Client-${v}-Windows-x64-setup.exe"
           if (!(Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -lt 20000000) {
             throw "Windows LAN GUI installer missing or incomplete"
           }
@@ -70,6 +71,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: superagent-lan-windows-gui-ci-only
-          path: artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe
+          path: artifacts/lan-client/SuperAgent-LAN-Client-*-Windows-x64-setup.exe
           if-no-files-found: error
           retention-days: 14

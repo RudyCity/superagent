@@ -196,7 +196,7 @@ public final class MainActivity extends Activity {
         };
         for (ScrollView page : pages) pageHost.addView(page);
         LinearLayout navigation = AndroidTvUi.navigation(this, tv);
-        String[] labels = { "Home", "Connect", "Control", "Files", "Shell" };
+        String[] labels = { "Home", "Connect", "Control", "Files", "Terminal" };
         tabButtons = new Button[labels.length];
         for (int i = 0; i < labels.length; i++) {
             final int destination = i;
@@ -305,7 +305,7 @@ public final class MainActivity extends Activity {
         layout = section(connectPage, "DEVICE TUNNEL · QR CONNECT");
         LinearLayout connectQrCard = layout;
         add(layout, label("Scan the one-time QR shown in SuperAgent Tray. The phone enrolls and starts pairing automatically through outbound HTTPS; you only confirm the pairing approval on this phone.", 13, AndroidUiKit.MUTED, false), 2);
-        tunnelScan = action(layout, "Scan Connection QR", this::scanTunnelQr);
+        tunnelScan = action(layout, "Scan QR & Connect", this::scanTunnelQr);
         AndroidUiKit.primary(tunnelScan);
         qrScanStatus = label("Ready to scan the Connection QR shown in SuperAgent Tray.", 12, AndroidUiKit.TEXT_MUTED, false);
         qrScanStatus.setPadding(dp(10), dp(8), dp(10), dp(8));
@@ -315,9 +315,9 @@ public final class MainActivity extends Activity {
         tunnelState = label("Tunnel OFF", 13, AndroidUiKit.TEXT, true);
         add(layout, tunnelState, 6);
         LinearLayout tunnelActionRow = row(layout, 8);
-        tunnelDisconnect = actionIn(tunnelActionRow, "Disconnect", this::disconnectTunnel);
+        tunnelDisconnect = actionIn(tunnelActionRow, "Disconnect tunnel", this::disconnectTunnel);
         AndroidUiKit.destructive(tunnelDisconnect);
-        manualSetupToggle = actionIn(tunnelActionRow, "Manual Setup", this::toggleManualSetup);
+        manualSetupToggle = actionIn(tunnelActionRow, "Manual setup · Advanced", this::toggleManualSetup);
 
         manualSetupPanel = section(connectPage, "ADVANCED · MANUAL TUNNEL");
         manualSetupPanel.setVisibility(View.GONE);
@@ -400,7 +400,7 @@ public final class MainActivity extends Activity {
         LinearLayout screenActionRow = row(layout, 8);
         startScreen = actionIn(screenActionRow, "Share screen", this::beginScreenConsent);
         AndroidUiKit.primary(startScreen);
-        stopScreen = actionIn(screenActionRow, "Stop screen", this::stopSharing);
+        stopScreen = actionIn(screenActionRow, "Stop screen & revoke", this::stopSharing);
         AndroidUiKit.destructive(stopScreen);
         touchToggle = action(layout, "Allow remote taps and swipes", this::toggleRemoteInput);
         add(layout, label("Remote interaction can affect other apps. Do not open passwords or financial data. Secure screens may block capture. STOP is available in Android notifications.", 12, AndroidUiKit.MUTED, false), 6);

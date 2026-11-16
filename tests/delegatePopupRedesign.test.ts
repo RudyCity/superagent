@@ -42,7 +42,7 @@ describe("SuperAgent Delegate compact popup redesign", () => {
     expect(js).toContain('$("cdp-count").textContent');
     expect(js).toContain('renderExtensionVersion()');
     expect(js).toContain('chrome.runtime.getManifest().version');
-    expect(manifest.version).toBe("1.10.1");
+    expect(manifest.version).toBe("1.10.2");
     expect(manifest.host_permissions).toEqual(["https://chatgpt.com/*", "http://127.0.0.1/*"]);
     expect(manifest.permissions).toEqual(["tabs", "alarms", "storage", "scripting", "debugger"]);
     const viewCode = js.slice(js.indexOf("function activateView("), js.indexOf("function displayTime("));

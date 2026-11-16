@@ -80,6 +80,8 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
       fs.writeFileSync(path.join(tmp,`SuperAgent-LAN-Android-${android}-metadata.json`),
         JSON.stringify({applicationId:"click.superagent.lanclient",variantName:"debug",
           elements:[{versionName:android}]}));
+      fs.writeFileSync(path.join(tmp,"superagent-lan-windows-portable-x64.zip"),Buffer.alloc(1001,0x42));
+      fs.writeFileSync(path.join(tmp,"superagent-lan-client-windows-x64.zip"),Buffer.alloc(1001,0x42));
       for(const [kind,source,label] of [
         ["delegate","chrome-extension-delegate","SuperAgent Delegate (ChatGPT)"],
         ["sidepanel","chrome-extension","SuperAgent Chrome SidePanel"],
@@ -98,7 +100,7 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
       const ok=spawnSync("node",["scripts/verify-unified-release-assets.mjs",tmp],
         {cwd:process.cwd(),encoding:"utf8",timeout:30000});
       expect(ok.status,ok.stderr).toBe(0);
-      expect(ok.stdout).toContain("UNIFIED_RELEASE_INVENTORY_VERIFIED 12 assets");
+      expect(ok.stdout).toContain("UNIFIED_RELEASE_INVENTORY_VERIFIED 14 assets");
       const delegate=JSON.parse(fs.readFileSync("chrome-extension-delegate/manifest.json","utf8"));
       const receipt=path.join(tmp,`superagent-delegate-${delegate.version}.receipt.json`);
       const record=JSON.parse(fs.readFileSync(receipt,"utf8"));
@@ -124,7 +126,7 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
       expect(verifier).toContain("receipt.sha256===digest");
       expect(verifier).toContain("Android version mismatch");
       expect(workflow.jobs.publish.steps.find((s:any)=>s.name?.includes("Require exact"))?.run)
-        .toContain('test "$(wc -l < SHA256SUMS.txt)" -eq 12');
+        .toContain('test "$(wc -l < SHA256SUMS.txt)" -eq 14');
     } finally { fs.rmSync(temp,{recursive:true,force:true}); }
   });
 });

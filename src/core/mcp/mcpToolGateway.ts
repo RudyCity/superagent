@@ -51,7 +51,7 @@ export const MCP_GATEWAY_DELEGATE_TOOL_NAMES = Object.freeze([
   "superagent_delegate_stop_generation",
 ] as const);
 
-export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = Object.freeze([] as readonly string[]);
+export const MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES = MCP_GATEWAY_DELEGATE_TOOL_NAMES;
 
 export const MCP_GATEWAY_TOOL_DEFS = [
   {

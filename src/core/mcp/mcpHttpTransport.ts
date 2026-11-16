@@ -735,14 +735,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         const diagnosticStart = performance.now();
         const isToolCall = diagnosticStage === "mcp.tools_call";
         if (isToolCall) inFlightToolCalls++;
-        let releaseSessionQueue: () => void = () => {};
-        const prevSessionRequest = (session as any)._requestQueue || Promise.resolve();
-        (session as any)._requestQueue = new Promise<void>((resolve) => { releaseSessionQueue = resolve; });
         try {
-          await prevSessionRequest;
           await session.transport.handleRequest(req, res, body);
         } finally {
-          releaseSessionQueue();
           registry.endRequest(requestSessionId);
           if (isToolCall) inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
           if (diagnosticStage) {
@@ -791,7 +786,6 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         }
         const newTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),
-          enableJsonResponse: true,
         });
         const sessionCtx: { sessionHash?: string } = {
           sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
@@ -850,9 +844,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
 
       // Stateless execution: handles direct POST requests without prior initialization
       // (e.g. tools/call, tools/list) as well as graceful recovery from stale/evicted session IDs.
-      const statelessTransport = new StreamableHTTPServerTransport({
-        enableJsonResponse: true,
-      });
+      const statelessTransport = new StreamableHTTPServerTransport();
       const sessionCtx: { sessionHash?: string } = {
         sessionHash: (identity as McpIdentity).credentialHash.slice(0, 16),
       };

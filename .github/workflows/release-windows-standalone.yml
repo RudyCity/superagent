@@ -278,20 +278,33 @@ jobs:
       - name: Test Windows LAN receiver safety independently of APK
         run: bun --bun x vitest run tests/desktopLanWindowsGui.test.ts tests/deviceDisplayQrClient.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts --maxWorkers=1
       - run: bun scripts/build-lan-windows-gui.ts
+      - run: bun scripts/build-lan-client.ts --target=windows-x64
       - run: bun scripts/verify-lan-gui-receiver.ts
       - name: Verify unsigned development LAN installer size
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          $file = "artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe"
+          $v = (Get-Content apps/superagent-lan-windows/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $file = "artifacts/lan-client/SuperAgent-LAN-Client-${v}-Windows-x64-setup.exe"
           if (!(Test-Path -LiteralPath $file) -or (Get-Item -LiteralPath $file).Length -lt 20000000) {
             throw "Windows LAN receiver installer missing or truncated"
           }
           Write-Host "LAN_WINDOWS_PREVIEW_UNSIGNED" (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash
+          $guiZip = "artifacts/lan-client/superagent-lan-windows-portable-x64.zip"
+          if (!(Test-Path -LiteralPath $guiZip) -or (Get-Item -LiteralPath $guiZip).Length -lt 10000000) {
+            throw "Portable Windows LAN GUI archive missing or truncated"
+          }
+          $cliZip = "artifacts/lan-client/superagent-lan-client-windows-x64.zip"
+          if (!(Test-Path -LiteralPath $cliZip) -or (Get-Item -LiteralPath $cliZip).Length -lt 10000000) {
+            throw "Portable Windows LAN CLI archive missing or truncated"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: release-lan-windows-preview
-          path: artifacts/lan-client/SuperAgent-LAN-Client-0.2.1-Windows-x64-setup.exe
+          path: |
+            artifacts/lan-client/SuperAgent-LAN-Client-*-Windows-x64-setup.exe
+            artifacts/lan-client/superagent-lan-windows-portable-x64.zip
+            artifacts/lan-client/superagent-lan-client-windows-x64.zip
           if-no-files-found: error
 
   publish:
@@ -319,7 +332,7 @@ jobs:
           mkdir -p release-assets
           cp -- downloaded-assets/* release-assets/
           (cd release-assets && sha256sum ./* > ../SHA256SUMS.txt)
-          test "$(wc -l < SHA256SUMS.txt)" -eq 12
+          test "$(wc -l < SHA256SUMS.txt)" -eq 14
           cat SHA256SUMS.txt
       - name: Publish single complete GitHub prerelease
         shell: bash
@@ -344,9 +357,11 @@ jobs:
           - **Chrome Delegate Extension (v${delegate_version})**: \`superagent-delegate-${delegate_version}.zip\` (with verified receipt) — MV3 developer extension for ChatGPT automation.
           - **Chrome SidePanel Extension (v${sidepanel_version})**: \`superagent-sidepanel-${sidepanel_version}.zip\` (with verified receipt) — MV3 AI assistant sidepanel.
           - **Windows LAN Receiver GUI (v${lan_version})**: \`SuperAgent-LAN-Client-${lan_version}-Windows-x64-setup.exe\` — Desktop LAN client unsigned preview installer.
+          - **Windows LAN GUI Portable (v${lan_version})**: \`superagent-lan-windows-portable-x64.zip\` — Standalone portable companion with System Tray (no installation required).
+          - **Windows LAN CLI Portable (v${lan_version})**: \`superagent-lan-client-windows-x64.zip\` — Standalone portable CLI receiver.
           - **Android LAN Preview (v${android_version})**: \`SuperAgent-LAN-Android-${android_version}-debug.apk\` + metadata — Debug-signed APK.
           - **Windows x64 MCP backend bundle (v${core_version})**: \`SuperAgent-MCP-Backend-${core_version}-windows-x64.tgz\` — immutable side-by-side backend only; no automatic owner/tunnel restart.
-          - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 12 binary, archive and metadata assets.
+          - **Checksum Manifest**: \`SHA256SUMS.txt\` — SHA-256 checksums for all 14 binary, archive and metadata assets.
 
           The release does not migrate users, modify Core/MCP ownership, restart a
           running instance or certify production deployment (R0–R7 remain separate).
