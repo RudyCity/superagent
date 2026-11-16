@@ -514,9 +514,31 @@
                 <button type="submit" class="button primary" id="runtime-create-submit">Create Connection</button>
                 <span id="runtime-create-feedback" role="status" aria-live="polite"></span>
               </div>
-              <div id="runtime-create-result" class="runtime-create-result" hidden></div>
             </form>
           </section>
+          <div id="runtime-create-result-dialog" class="overlay runtime-result-overlay" role="presentation" hidden>
+            <section class="modal-dialog runtime-result-dialog" role="dialog" aria-modal="true" aria-labelledby="runtime-result-title" aria-describedby="runtime-result-description" tabindex="-1">
+              <header class="modal-header runtime-result-header">
+                <div>
+                  <span class="runtime-result-success-label">Connection created</span>
+                  <h2 id="runtime-result-title">Connection details</h2>
+                  <p id="runtime-result-description">Save these connection details securely. Private credentials are shown only for this session.</p>
+                </div>
+                <button type="button" id="runtime-result-close" class="icon-button" aria-label="Close connection details" title="Close">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20" aria-hidden="true">
+                    <path d="M18 6 6 18M6 6l12 12"></path>
+                  </svg>
+                </button>
+              </header>
+              <div class="modal-body runtime-result-body">
+                <div id="runtime-create-result" class="runtime-create-result" hidden></div>
+              </div>
+              <footer class="modal-footer runtime-result-footer">
+                <span>Do not share your OAuth approval code or bearer token.</span>
+                <button type="button" id="runtime-result-done" class="button primary">Done</button>
+              </footer>
+            </section>
+          </div>
           <p id="runtime-action-feedback" class="runtime-notes" role="status" aria-live="polite" hidden></p>
           <div class="runtime-service-tabs" role="tablist" aria-label="Runtime service categories">
             <button id="runtime-tab-core" class="runtime-service-tab" type="button" role="tab" data-runtime-tab="core" aria-controls="runtime-servers-panel" aria-selected="true" tabindex="0">Core <span id="runtime-tab-core-count" class="runtime-tab-count">0</span></button>
