@@ -28,3 +28,141 @@
 .tray-access-password-form input:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .tray-access-password-form button{justify-self:start}
 @media(max-width:600px){.desktop-live-item{grid-template-columns:38px minmax(0,1fr)}.desktop-live-actions{grid-column:2}.desktop-live-stop{max-width:100%}}
+
+
+/* Security settings: use the same visual rhythm as LAN pairing.
+   Scoped to this pane so existing Desktop Live components stay untouched. */
+#settings-subpage-security > .tray-settings-panel:first-child {
+  overflow: hidden;
+}
+#settings-subpage-security > .tray-settings-panel:first-child .panel-head {
+  padding: 26px 30px 24px;
+  border-bottom: 1px solid var(--border-subtle, rgba(148,163,184,.12));
+}
+#settings-subpage-security > .tray-settings-panel:first-child .panel-head p {
+  max-width: 76ch;
+  margin-bottom: 0;
+  line-height: 1.65;
+}
+#tray-access-password-status {
+  margin: 24px 30px 0;
+  padding: 16px 20px;
+  border: 1px dashed var(--border-medium, rgba(148,163,184,.25));
+  border-radius: 10px;
+  background: var(--bg-surface, rgba(255,255,255,.025));
+  color: var(--text-secondary, #a9bbd2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+#tray-access-password-form {
+  max-width: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  padding: 26px 30px 12px;
+  align-items: end;
+}
+#tray-access-password-form > label,
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form label {
+  min-width: 0;
+  gap: 8px;
+  color: var(--text-secondary, #9fb3ce);
+  font-size: 12px;
+  font-weight: 600;
+}
+#settings-subpage-security .tray-access-password-form input,
+#settings-subpage-security .tray-access-password-form select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 11px 13px;
+  background: var(--bg-base, #090e19);
+  border: 1px solid var(--border-medium, rgba(148,163,184,.25));
+  border-radius: 8px;
+  color: var(--text-primary, #eef3fa);
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+#settings-subpage-security .tray-access-password-form input:focus-visible,
+#settings-subpage-security .tray-access-password-form select:focus-visible {
+  outline: 2px solid var(--border-focus, #3b82f6);
+  outline-offset: 2px;
+  border-color: var(--border-focus, #3b82f6);
+}
+#tray-access-password-form > button {
+  grid-column: 1 / -1;
+  justify-self: start;
+  min-height: 42px;
+}
+#tray-access-password-feedback {
+  grid-column: 1 / -1;
+  min-height: 0;
+  font-size: 12px;
+  color: var(--text-secondary, #9fb3ce);
+}
+#tray-access-password-feedback:empty {
+  display: none;
+}
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-settings-note {
+  margin: 14px 30px 28px;
+  padding: 14px 18px;
+  border: 1px dashed var(--border-medium, rgba(148,163,184,.25));
+  border-radius: 9px;
+  background: var(--bg-surface, rgba(255,255,255,.025));
+  font-size: 12px;
+  line-height: 1.6;
+}
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form {
+  max-width: none;
+  margin: 0;
+  padding: 28px 30px 30px;
+  border-top: 1px solid var(--border-subtle, rgba(148,163,184,.12));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form h3,
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form > p,
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form > .tray-settings-actions,
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form > #tray-remote-status,
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form > #tray-remote-public-url,
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form > #tray-remote-quick-hint {
+  grid-column: 1 / -1;
+}
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form > p {
+  margin: -8px 0 4px;
+  max-width: 84ch;
+  color: var(--text-secondary, #9fb3ce);
+  line-height: 1.6;
+  font-size: 12px;
+}
+#settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form > .tray-settings-actions {
+  padding: 8px 0 0;
+  border: 0;
+}
+#tray-remote-status {
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary, #9fb3ce);
+  overflow-wrap: anywhere;
+}
+#tray-remote-public-url { justify-self: start; overflow-wrap: anywhere; }
+#tray-remote-quick-hint[hidden], #tray-remote-origin-row[hidden], #tray-remote-public-url[hidden] { display: none !important; }
+@media (max-width: 900px) {
+  #tray-access-password-form { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 680px) {
+  #settings-subpage-security > .tray-settings-panel:first-child .panel-head { padding: 20px; }
+  #tray-access-password-status { margin: 18px 20px 0; }
+  #tray-access-password-form { padding: 22px 20px 12px; }
+  #settings-subpage-security > .tray-settings-panel:first-child > .tray-settings-note { margin: 12px 20px 20px; }
+  #settings-subpage-security > .tray-settings-panel:first-child > .tray-access-password-form {
+    padding: 22px 20px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
