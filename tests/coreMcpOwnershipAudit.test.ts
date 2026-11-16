@@ -1,6 +1,13 @@
 import {describe,it,expect} from "vitest";
-import {auditCoreMcpOwnership,parseWindowsListenerOwners} from "../src/core/runtime/coreMcpOwnershipAudit.js";
+import {auditCoreMcpOwnership,parseWindowsListenerOwners,readListenerOwners} from "../src/core/runtime/coreMcpOwnershipAudit.js";
 describe("Phase 5m read-only Core/MCP process ownership",()=>{
+  it("readListenerOwners resolves kernel listeners on supported OS",()=>{
+    const map = readListenerOwners();
+    if (process.platform === "win32" || process.platform === "linux") {
+      expect(map).not.toBeNull();
+      expect(map instanceof Map).toBe(true);
+    }
+  });
   it("parses Windows listeners without mistaking established connections for owners",()=>{
     const out=parseWindowsListenerOwners([
       "  TCP    127.0.0.1:7888   0.0.0.0:0   LISTENING   13424",

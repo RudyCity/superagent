@@ -288,8 +288,10 @@ export async function verifyManagedOwnerIdentity(
 
   let lastError: Error | null = null;
   while (true) {
-    const state = readMcpStateFile(getMcpStateFile(lease.port));
-    const listenerPid = readListenerOwners()?.get(lease.port);
+    const stateFile = getMcpStateFile(lease.port);
+    const state = readMcpStateFile(stateFile);
+    const listenerOwners = readListenerOwners();
+    const listenerPid = listenerOwners?.get(lease.port);
 
     if (state && state.pid === lease.pid && listenerPid === lease.pid) {
       if (process.platform === "win32") {

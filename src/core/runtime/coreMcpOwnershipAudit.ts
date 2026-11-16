@@ -64,6 +64,17 @@ function parseNetstat(stdout:string):Map<number,number>{
   }
   return map;
 }
+function resolveWindowsBinary(name: string, fallbackSubpaths: string[]): string {
+  const sysRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+  for (const rel of fallbackSubpaths) {
+    const candidate = path.win32.join(sysRoot, rel);
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {}
+  }
+  return name;
+}
+
 export function readListenerOwners(): Map<number,number>|null {
   if (process.platform === "linux") {
     try {
@@ -86,32 +97,55 @@ export function readListenerOwners(): Map<number,number>|null {
     }
   }
   if(process.platform!=="win32")return null; // fail closed on unsupported OS
-  try{
-    const output=execFileSync("netstat.exe",["-ano","-p","TCP"],{
-      encoding:"utf8",timeout:4000,maxBuffer:2*1024*1024,windowsHide:true,
+
+  const sysRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+  const system32 = path.win32.join(sysRoot, "System32");
+  const sysPowerShell = path.win32.join(system32, "WindowsPowerShell", "v1.0");
+  const pathVar = process.env.PATH || process.env.Path || "";
+  const augmentedPath = `${system32};${sysPowerShell};${pathVar}`;
+  const execEnv = { ...process.env, PATH: augmentedPath, Path: augmentedPath };
+
+  const netstatBin = resolveWindowsBinary("netstat.exe", ["System32\\netstat.exe", "SysWOW64\\netstat.exe"]);
+  const psBin = resolveWindowsBinary("powershell.exe", [
+    "System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "System32\\powershell.exe",
+    "SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe",
+  ]);
+
+  let map: Map<number, number> | null = null;
+  try {
+    const output = execFileSync(netstatBin, ["-ano", "-p", "TCP"], {
+      encoding: "utf8", timeout: 4000, maxBuffer: 2 * 1024 * 1024, windowsHide: true, env: execEnv,
     });
-    const map = parseNetstat(output);
-    const needsPsFallback = map.size === 0 || Array.from(map.values()).includes(0);
-    if (needsPsFallback) {
-      try {
-        const psOut = execFileSync("powershell.exe", ["-NoProfile", "-Command", "Get-NetTCPConnection -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Listen' -or $_.State -eq 2 -or $null -eq $_.State } | Select-Object -Property LocalPort,OwningProcess | ConvertTo-Json"], {
-          encoding: "utf8", timeout: 4000, windowsHide: true,
-        });
-        if (psOut && psOut.trim()) {
-          const raw = JSON.parse(psOut.trim());
-          const items = Array.isArray(raw) ? raw : [raw];
-          for (const item of items) {
-            const port = Number(item.LocalPort);
-            const pid = Number(item.OwningProcess);
-            if (validPort(port) && Number.isSafeInteger(pid) && pid > 0) {
-              if (!map.has(port) || map.get(port) === 0) map.set(port, pid);
-            }
+    map = parseNetstat(output);
+  } catch {}
+
+  const needsPsFallback = !map || map.size === 0 || Array.from(map.values()).includes(0);
+  if (needsPsFallback) {
+    try {
+      const psOut = execFileSync(psBin, [
+        "-NoProfile",
+        "-Command",
+        "Get-NetTCPConnection -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Listen' -or $_.State -eq 2 -or $null -eq $_.State } | Select-Object -Property LocalPort,OwningProcess | ConvertTo-Json",
+      ], {
+        encoding: "utf8", timeout: 4000, windowsHide: true, env: execEnv,
+      });
+      if (psOut && psOut.trim()) {
+        const raw = JSON.parse(psOut.trim());
+        const items = Array.isArray(raw) ? raw : [raw];
+        if (!map) map = new Map<number, number>();
+        for (const item of items) {
+          const port = Number(item.LocalPort);
+          const pid = Number(item.OwningProcess);
+          if (validPort(port) && Number.isSafeInteger(pid) && pid > 0) {
+            if (!map.has(port) || map.get(port) === 0) map.set(port, pid);
           }
         }
-      } catch {}
-    }
-    return map;
-  }catch{return null;}
+      }
+    } catch {}
+  }
+
+  return map;
 }
 export function parseWindowsListenerOwners(text:string):Map<number,number>{
   return parseNetstat(text);

@@ -312,29 +312,40 @@ export async function runCoreSupervisor(
       workerRecordId = reg.recordId;
     } catch {}
 
+    const workerEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      SUPERAGENT_CORE_WORKER: "1",
+      SUPERAGENT_CORE_GENERATION_ID: generationId,
+      SUPERAGENT_CORE_PUBLIC_PORT: String(port),
+      SUPERAGENT_CORE_INSPECT_TOKEN: inspectToken,
+      // Retained workers are drainable only after the supervisor has
+      // completed Delegate-listener handoff and the authenticated drain
+      // report proves no live work remains.
+      SUPERAGENT_CORE_TRANSPORT_ISOLATED: "1",
+      // Vision has an independent managed lifecycle; Core workers must never
+      // own its fixed port or block generation retirement.
+      SUPERAGENT_CORE_VISION_OWNER: "0",
+      // The supervisor explicitly hands over the single Delegate listener.
+      // New blue-green candidates must never race the current owner for 17341.
+      SUPERAGENT_CORE_DELEGATE_OWNER: staging || active ? "0" : "1",
+      SUPERAGENT_SERVER_AUTH_TOKEN: serverToken,
+    };
+    if (process.platform === "win32") {
+      const sysRoot = process.env.SystemRoot || process.env.windir || "C:\\Windows";
+      const system32 = path.win32.join(sysRoot, "System32");
+      const sysPowerShell = path.win32.join(system32, "WindowsPowerShell", "v1.0");
+      const currentPath = workerEnv.PATH || workerEnv.Path || "";
+      const augmentedPath = `${system32};${sysPowerShell};${currentPath}`;
+      workerEnv.PATH = augmentedPath;
+      workerEnv.Path = augmentedPath;
+    }
+
     const child = fork(entry, ["--server", String(workerPort), "--client-mode", clientMode], {
       execPath: process.execPath,
       cwd: process.cwd(),
       stdio: ["ignore", "ignore", "ignore", "ipc"],
       detached: true,
-      env: {
-        ...process.env,
-        SUPERAGENT_CORE_WORKER: "1",
-        SUPERAGENT_CORE_GENERATION_ID: generationId,
-        SUPERAGENT_CORE_PUBLIC_PORT: String(port),
-        SUPERAGENT_CORE_INSPECT_TOKEN: inspectToken,
-        // Retained workers are drainable only after the supervisor has
-        // completed Delegate-listener handoff and the authenticated drain
-        // report proves no live work remains.
-        SUPERAGENT_CORE_TRANSPORT_ISOLATED: "1",
-        // Vision has an independent managed lifecycle; Core workers must never
-        // own its fixed port or block generation retirement.
-        SUPERAGENT_CORE_VISION_OWNER: "0",
-        // The supervisor explicitly hands over the single Delegate listener.
-        // New blue-green candidates must never race the current owner for 17341.
-        SUPERAGENT_CORE_DELEGATE_OWNER: staging || active ? "0" : "1",
-        SUPERAGENT_SERVER_AUTH_TOKEN: serverToken,
-      },
+      env: workerEnv,
     });
     child.once("error", () => { /* readiness reports a failed spawn */ });
     if (workerRecordId && child.pid) {
