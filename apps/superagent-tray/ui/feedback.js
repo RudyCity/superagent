@@ -8,12 +8,15 @@
   const MAX_VISIBLE = 3;
   const KINDS = new Set(["success", "error", "warning", "info"]);
   const host = () => document.getElementById("toast");
+  const COPY_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>';
+  const CHECK_ICON = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
   function remove(entry) {
     const index = entries.indexOf(entry);
     if (index < 0) return;
     entries.splice(index, 1);
     if (entry.timer) clearTimeout(entry.timer);
+    if (entry.copyTimer) clearTimeout(entry.copyTimer);
     entry.element.remove?.();
     const node = host();
     if (node && entries.length === 0) node.hidden = true;
@@ -30,7 +33,7 @@
       recent.set(key, now);
       if (recent.size > 80) recent.clear();
     }
-    const entry = { scope, sticky, timer: null, element: null };
+    const entry = { scope, sticky, timer: null, element: null, copyTimer: null };
     const item = document.createElement("div");
     item.className = "tray-toast-item tray-toast-" + type;
     item.setAttribute("role", type === "error" || type === "warning" ? "alert" : "status");
@@ -43,7 +46,52 @@
     close.textContent = "×";
     close.setAttribute("aria-label", "Dismiss notification");
     close.addEventListener("click", () => remove(entry));
-    item.append(label, close);
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "tray-toast-copy";
+    copy.setAttribute("aria-label", "Copy notification message");
+    copy.setAttribute("title", "Copy message");
+    copy.innerHTML = COPY_ICON;
+    copy.addEventListener("click", async (e) => {
+      e?.stopPropagation?.();
+      const textToCopy = label.textContent || message;
+      const nav = typeof navigator !== "undefined" ? navigator : (typeof window !== "undefined" ? window.navigator : undefined);
+      let ok = false;
+      if (nav?.clipboard?.writeText) {
+        try {
+          await nav.clipboard.writeText(textToCopy);
+          ok = true;
+        } catch {}
+      }
+      if (!ok && typeof document !== "undefined" && typeof document.createElement === "function") {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = textToCopy;
+          if (ta.style) {
+            ta.style.position = "fixed";
+            ta.style.opacity = "0";
+          }
+          if (document.body && typeof document.body.appendChild === "function") {
+            document.body.appendChild(ta);
+          }
+          ta.select?.();
+          if (document.execCommand) document.execCommand("copy");
+          ta.remove?.();
+        } catch {}
+      }
+      copy.classList?.add?.("copied");
+      copy.setAttribute("aria-label", "Message copied to clipboard");
+      copy.setAttribute("title", "Copied!");
+      copy.innerHTML = CHECK_ICON;
+      if (entry.copyTimer) clearTimeout(entry.copyTimer);
+      entry.copyTimer = setTimeout(() => {
+        copy.classList?.remove?.("copied");
+        copy.setAttribute("aria-label", "Copy notification message");
+        copy.setAttribute("title", "Copy message");
+        copy.innerHTML = COPY_ICON;
+      }, 2000);
+    });
+    item.append(label, close, copy);
     entry.element = item;
     entries.push(entry);
     node.append(item);

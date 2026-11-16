@@ -23,7 +23,7 @@ class Element {
   insertBefore(node:Element,old:Element){const i=this.children.indexOf(old);if(i<0)throw Error("not child");this.children.splice(i,0,node);node.parentNode=this;}
   click(){this.events.get("click")?.();}
   change(){this.events.get("change")?.();}
-  input(){this.events.get("input")?.();}
+  input(e?:any){this.events.get("input")?.(e || {target:this});}
 }
 const discovered={pid:35416,nativeId:"10553336",title:"Antigravity editor",application:"Antigravity"};
 const app={platform:"win32",executablePath:"C:\\Apps\\Antigravity.exe",sha256:"f".repeat(64)};
@@ -33,6 +33,7 @@ function boot(nativeEnabled=true){
   const old=new Element("section");old.id="desktop-trust-panel";parent.append(old);
   const listeners=new Map<string,Function>();
   let policy:any={version:2,defaultEffect:"deny",rules:[]};
+  let auditLogs:any[]=[];
   const calls:{name:string,args:any}[]=[];
   const invoke=vi.fn(async(name:string,args:any)=>{
     calls.push({name,args});
@@ -45,18 +46,43 @@ function boot(nativeEnabled=true){
       return args.directory?"G:/project/tryout-online":"G:/project/tryout-online/.env";
     }
     if(name==="register_permanent_access_rule"){
-      policy={...policy,rules:[...policy.rules,{
+      const rule={
         id:"abc",kind:args.kind,effect:args.effect,app,operations:args.operations,
         scope:args.kind==="file"
           ?{path:args.filePath,recursive:args.recursive}
           :args.exactWindow?{windowTitle:discovered.title}:{},
-      }]};
+      };
+      policy={...policy,rules:[...policy.rules,rule]};
+      auditLogs.push({
+        id:"audit-reg",
+        timestamp:Date.now(),
+        kind:args.kind,
+        application:args.kind==="file"?"SuperAgent Core file tools":discovered.application,
+        executablePath:app.executablePath,
+        operation:args.operations.join(", "),
+        target:args.kind==="file"?args.filePath:discovered.title,
+        effect:args.effect,
+        ruleId:"abc",
+      });
       return policy;
     }
     if(name==="revoke_permanent_access_rule"){
       policy={...policy,rules:policy.rules.filter((r:any)=>r.id!==args.id)};
+      auditLogs.push({
+        id:"audit-rev",
+        timestamp:Date.now(),
+        kind:"rule_management",
+        application:"Access Manager",
+        executablePath:"SuperAgent Tray",
+        operation:"revoke",
+        target:args.id,
+        effect:"deny",
+        ruleId:args.id,
+      });
       return policy;
     }
+    if(name==="get_permanent_access_audit_log")return auditLogs;
+    if(name==="clear_permanent_access_audit_log"){auditLogs=[];return true;}
     throw Error("unknown native command");
   });
   const document={
@@ -94,6 +120,7 @@ describe("real permanent Access Manager Tray panel",()=>{
     expect(ui.getPolicy().rules).toHaveLength(1);
     expect(ui.document.getElementById("access-onboarding")!.hidden).toBe(true);
     const rows=ui.document.getElementById("access-rule-list")!.children;
+    expect(rows[0].children[1].children.some((c:any)=>c.className==="access-rule-path" && c.textContent.includes("Antigravity.exe"))).toBe(true);
     rows[0].lastChild!.click();await flush();
     expect(ui.calls.some(c=>c.name==="revoke_permanent_access_rule" && c.args.id==="abc")).toBe(true);
     expect(ui.getPolicy().rules).toHaveLength(0);
@@ -113,6 +140,66 @@ describe("real permanent Access Manager Tray panel",()=>{
     expect(ui.calls.some(c=>c.name==="register_permanent_access_rule" &&
       c.args.kind==="file" && c.args.pid===0 && c.args.nativeId==="" &&
       c.args.operations.includes("read") && c.args.recursive===true)).toBe(true);
+  });
+  it("filters rules by category tabs and rule search query",async()=>{
+    const ui=boot();await flush();
+    // Register desktop rule
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click();await flush();
+    // Register file rule
+    const select=ui.document.getElementById("access-kind")!;
+    select.value="file";select.change();
+    ui.document.getElementById("access-pick-folder")!.click();await flush();
+    ui.document.getElementById("access-submit")!.click();await flush();
+
+    expect(ui.getPolicy().rules).toHaveLength(2);
+    expect(ui.document.getElementById("access-rule-list")!.children).toHaveLength(2);
+
+    // Switch to desktop tab
+    ui.document.getElementById("access-tab-desktop")!.click();
+    expect(ui.document.getElementById("access-rule-list")!.children).toHaveLength(1);
+
+    // Switch to file tab
+    ui.document.getElementById("access-tab-file")!.click();
+    expect(ui.document.getElementById("access-rule-list")!.children).toHaveLength(1);
+
+    // Switch back to all
+    ui.document.getElementById("access-tab-all")!.click();
+    expect(ui.document.getElementById("access-rule-list")!.children).toHaveLength(2);
+
+    // Search query filter
+    const search=ui.document.getElementById("access-rule-search")!;
+    search.value="tryout-online";
+    search.input();
+    expect(ui.document.getElementById("access-rule-list")!.children).toHaveLength(1);
+
+    search.value="nonexistent_app";
+    search.input();
+    expect(ui.document.getElementById("access-rule-list")!.children[0].textContent).toContain("Tidak ada aturan");
+  });
+  it("renders operation chip badges and kind badges for registered rules",async()=>{
+    const ui=boot();await flush();
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click();await flush();
+
+    const row=ui.document.getElementById("access-rule-list")!.children[0];
+    const headerLine=row.children[1].children[0];
+    expect(headerLine.children.some((c:any)=>c.className?.includes("access-scope-badge desktop"))).toBe(true);
+    expect(headerLine.children.some((c:any)=>c.className?.includes("access-op-chips"))).toBe(true);
+  });
+  it("displays native access audit trail and allows clearing logs",async()=>{
+    const ui=boot();await flush();
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click();await flush();
+
+    const auditList=ui.document.getElementById("access-audit-list")!;
+    expect(auditList.children.length).toBeGreaterThan(0);
+    expect(auditList.children[0].className).toContain("access-audit-row");
+
+    // Clear logs
+    ui.document.getElementById("access-audit-clear")!.click();await flush();
+    expect(ui.calls.some(c=>c.name==="clear_permanent_access_audit_log")).toBe(true);
+    expect(auditList.children[0].textContent).toContain("Belum ada rekaman audit");
   });
 });
 
@@ -134,5 +221,19 @@ describe("element-specific UI enrollment",()=>{
     ui.document.getElementById("access-submit")!.click();
     await flush();
     expect(ui.calls.some(c=>c.name==="register_permanent_access_rule")).toBe(false);
+  });
+});
+
+describe("main navigation promotion", () => {
+  it("exposes Security Approval in the primary sidebar navigation menu", () => {
+    const html = fs.readFileSync("apps/superagent-tray/ui/index.html", "utf8");
+    const appJs = fs.readFileSync("apps/superagent-tray/ui/app.js", "utf8");
+    expect(html).toContain('id="nav-security"');
+    expect(html).toContain('href="#security"');
+    expect(html).toContain('data-page="security"');
+    expect(html).toContain('id="page-security"');
+    expect(html).toContain('id="page-security-container"');
+    expect(appJs).toContain('"security"');
+    expect(appJs).toMatch(/validPages\s*=\s*\[[^\]]*"security"[^\]]*\]/);
   });
 });

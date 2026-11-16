@@ -92,12 +92,43 @@ fn tray_window_action(
                 .map_err(|_| "Cannot drag Tray window")?;
         }
         "close" => window.close().map_err(|_| "Cannot close Tray window")?,
+        "reload" => {
+            let _ = window.eval("window.location.reload()");
+        }
         "state" => {}
         _ => return Err("Unsupported Tray window action".into()),
     };
     let maximized = window.is_maximized().unwrap_or(false);
     let minimized = window.is_minimized().unwrap_or(false);
     Ok(json!({"maximized":maximized,"minimized":minimized}))
+}
+
+/// Allowlisted external URL launcher for community support and release verification.
+/// Never permits arbitrary schemas, loopback navigation, or unapproved domains.
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    const ALLOWED_PREFIXES: &[&str] = &[
+        "https://ko-fi.com/rudycity",
+        "https://github.com/RudyCity/superagent",
+    ];
+    if !ALLOWED_PREFIXES.iter().any(|prefix| url.starts_with(prefix)) {
+        return Err("URL not allowlisted".into());
+    }
+    #[cfg(windows)]
+    {
+        std::process::Command::new("rundll32")
+            .args(["url.dll,FileProtocolHandler", &url])
+            .spawn()
+            .map_err(|e| format!("Failed to launch browser: {e}"))?;
+    }
+    #[cfg(not(windows))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("Failed to launch browser: {e}"))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -1672,6 +1703,59 @@ async fn stop_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Va
 }
 
 #[tauri::command]
+async fn restart_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Value, String> {
+    let target = port.unwrap_or(7888);
+    let _ = stop_core_server_inner(target).await;
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    match launch_server_process(target).await {
+        Ok(pid) => {
+            let message = format!("SuperAgent Core server restarted on port {}", target);
+            let _ = app.notification()
+                .builder()
+                .title("SuperAgent Core")
+                .body(&message)
+                .show();
+            Ok(json!({
+                "success": true,
+                "port": target,
+                "pid": pid,
+                "message": message
+            }))
+        }
+        Err(e) => {
+            let _ = app.notification()
+                .builder()
+                .title("SuperAgent Core Error")
+                .body(format!("Failed to restart Core: {}", e))
+                .show();
+            Err(e)
+        }
+    }
+}
+
+#[tauri::command]
+async fn get_core_version() -> Result<Value, String> {
+    match core_request(Method::GET, "/api/status", None).await {
+        Ok(val) => {
+            let version = val.get("version").and_then(Value::as_str).unwrap_or("unknown");
+            Ok(json!({
+                "online": true,
+                "version": version,
+                "port": val.get("port"),
+                "raw": val
+            }))
+        }
+        Err(e) => {
+            Ok(json!({
+                "online": false,
+                "version": null,
+                "error": e
+            }))
+        }
+    }
+}
+
+#[tauri::command]
 fn get_connection_logs(
     query: connection_logs::ConnectionLogsQuery,
 ) -> Result<connection_logs::ConnectionLogsResponse, String> {
@@ -1881,6 +1965,7 @@ fn limited_body(action: &str, payload: Option<Value>) -> Result<Value, String> {
 async fn daemon_action(action: String, payload: Option<Value>) -> Result<Value, String> {
     match action.as_str() {
         "status" => core_request(Method::GET, "/api/daemon/status", None).await,
+        "core_status" => core_request(Method::GET, "/api/status", None).await,
         "list" => core_request(Method::GET, "/api/daemon/jobs", None).await,
         "runs" => core_request(Method::GET, "/api/daemon/runs?limit=100", None).await,
         "start" => core_request(Method::POST, "/api/daemon/start", Some(json!({}))).await,
@@ -2134,6 +2219,7 @@ fn main() {
             let sep0 = PredefinedMenuItem::separator(app)?;
             let open = MenuItem::with_id(app, "open", "📊 Open Dashboard", true, None::<&str>)?;
             let start_server = MenuItem::with_id(app, "start_server", "🟢 Start Core Server (:7888)", true, None::<&str>)?;
+            let restart_server = MenuItem::with_id(app, "restart_server", "🔄 Restart Core Server (:7888)", true, None::<&str>)?;
             let stop_server = MenuItem::with_id(app, "stop_server", "🛑 Stop Core Server (:7888)", true, None::<&str>)?;
             let runtime =
                 MenuItem::with_id(app, "runtime", "🔍 Runtime Detection", true, None::<&str>)?;
@@ -2141,6 +2227,8 @@ fn main() {
                 MenuItem::with_id(app, "connection_logs", "📜 Connection Logs", true, None::<&str>)?;
             let delegate =
                 MenuItem::with_id(app, "delegate", "🌐 Chrome Delegate", true, None::<&str>)?;
+            let security =
+                MenuItem::with_id(app, "security", "🛡️ Security Approval", true, None::<&str>)?;
             let terminal =
                 MenuItem::with_id(app, "terminal", "💻 Terminal Processes", true, None::<&str>)?;
             let muse_files =
@@ -2159,10 +2247,12 @@ fn main() {
                 &sep0,
                 &open,
                 &start_server,
+                &restart_server,
                 &stop_server,
                 &runtime,
                 &conn_logs,
                 &delegate,
+                &security,
                 &terminal,
                 &muse_files,
                 &lan_devices,
@@ -2215,6 +2305,35 @@ fn main() {
                             }
                         });
                     }
+                    "restart_server" => {
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = stop_core_server_inner(7888).await;
+                            tokio::time::sleep(Duration::from_millis(600)).await;
+                            match launch_server_process(7888).await {
+                                Ok(pid) => {
+                                    show_main(&handle, false);
+                                    let msg = format!("SuperAgent Core server restarted on port 7888 (PID {})", pid);
+                                    let _ = handle.notification()
+                                        .builder()
+                                        .title("SuperAgent Core")
+                                        .body(&msg)
+                                        .show();
+                                    let _ = handle.emit("desktop-server-started", 7888);
+                                }
+                                Err(e) => {
+                                    eprintln!("[tray] Failed to restart Core server: {}", e);
+                                    show_main(&handle, false);
+                                    let _ = handle.notification()
+                                        .builder()
+                                        .title("SuperAgent Core Error")
+                                        .body(format!("Failed to restart Core: {}", e))
+                                        .show();
+                                    let _ = handle.emit("desktop-server-start-failed", e);
+                                }
+                            }
+                        });
+                    }
                     "stop_server" => {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
@@ -2253,6 +2372,10 @@ fn main() {
                     "delegate" => {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-delegate", ());
+                    }
+                    "security" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-security", ());
                     }
                     "terminal" => {
                         show_main(app, false);
@@ -2347,6 +2470,8 @@ fn main() {
             desktop_access_registry::pick_permanent_access_path,
             desktop_access_registry::register_permanent_access_rule,
             desktop_access_registry::revoke_permanent_access_rule,
+            desktop_access_registry::get_permanent_access_audit_log,
+            desktop_access_registry::clear_permanent_access_audit_log,
             get_named_tunnel_settings,
             set_named_tunnel_settings,
             get_named_tunnel_connector_status,
@@ -2370,8 +2495,11 @@ fn main() {
             regenerate_muse_ws_token,
             apply_muse_settings,
             tray_window_action,
+            open_external_url,
             start_core_server,
             stop_core_server,
+            restart_core_server,
+            get_core_version,
             get_connection_logs,
             get_delegate_status,
             delegate_action,

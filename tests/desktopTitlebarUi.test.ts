@@ -15,8 +15,14 @@ function mount() {
   const node=(id:string)=>{
     if (!nodes.has(id)) {
       const attr=new Map<string,string>();
+      const classes=new Set<string>();
       nodes.set(id,{
         id,hidden:false,disabled:false,textContent:"",
+        classList:{
+          add:(c:string)=>classes.add(c),
+          remove:(c:string)=>classes.delete(c),
+          contains:(c:string)=>classes.has(c),
+        },
         addEventListener:(kind:string,cb:(e:any)=>void)=>callbacks.set(id+":"+kind,cb),
         setAttribute:(key:string,value:string)=>attr.set(key,value),
         getAttribute:(key:string)=>attr.get(key),
@@ -69,10 +75,11 @@ describe("SuperAgent Tray frameless native window controls",()=>{
     });
     const html=fs.readFileSync(path.resolve(ROOT,"ui/index.html"),"utf8");
     expect(html).toContain('src="./titlebar.js"');
-    for(const id of ["tray-titlebar","tray-titlebar-drag","tray-window-minimize",
+    for(const id of ["tray-titlebar","tray-titlebar-drag","tray-window-reload","tray-window-minimize",
       "tray-window-maximize","tray-window-close"]) {
       expect(html).toContain(`id="${id}"`);
     }
+    expect(html).toContain('aria-label="Reload SuperAgent Tray"');
     expect(html).toContain('aria-label="Minimize window"');
     expect(html).toContain('aria-label="Maximize window"');
     expect(html).toContain('aria-label="Close window"');
@@ -151,5 +158,25 @@ describe("SuperAgent Tray frameless native window controls",()=>{
     ui.trigger("window","resize");await flush();
     expect(ui.node("tray-window-maximize").getAttribute("aria-label")).toBe("Restore window");
     expect(ui.actions.at(-1)).toBe("state");
+  });
+
+  it("reloads tray window via button click when window.location.reload is present",async()=>{
+    let reloaded = false;
+    const ui = mount();
+    ui.context.window.location = {
+      reload: () => { reloaded = true; }
+    };
+    await flush();
+    ui.trigger("tray-window-reload", "click");
+    await flush();
+    expect(reloaded).toBe(true);
+  });
+
+  it("falls back to native reload action if window.location.reload is unavailable",async()=>{
+    const ui = mount();
+    await flush();
+    ui.trigger("tray-window-reload", "click");
+    await flush();
+    expect(ui.actions).toContain("reload");
   });
 });

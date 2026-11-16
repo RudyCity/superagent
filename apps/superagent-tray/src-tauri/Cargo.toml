@@ -3,6 +3,7 @@ name = "superagent-tray"
 version = "1.14.103"
 description = "SuperAgent tray and daemon cron manager"
 edition = "2021"
+default-run = "superagent-tray"
 
 [[bin]]
 name = "superagent-tray"

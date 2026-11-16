@@ -1,13 +1,15 @@
 "use strict";
-// Load permanent access registration UI as a separate native-only module.
+// Load permanent access registration UI as a separate native-only module if not already in document.
 if (typeof document !== "undefined" && document.head?.appendChild) {
-  const style = document.createElement("link");
-  style.rel = "stylesheet";
-  style.href = "./access-manager.css";
-  document.head.appendChild(style);
-  const script = document.createElement("script");
-  script.src = "./access-manager.js";
-  document.head.appendChild(script);
+  if (!document.querySelector?.('script[src*="access-manager.js"]')) {
+    const style = document.createElement("link");
+    style.rel = "stylesheet";
+    style.href = "./access-manager.css";
+    document.head.appendChild(style);
+    const script = document.createElement("script");
+    script.src = "./access-manager.js";
+    document.head.appendChild(script);
+  }
 }
 (() => {
   // Tray UI only edits a fixed local policy through native Tauri commands.

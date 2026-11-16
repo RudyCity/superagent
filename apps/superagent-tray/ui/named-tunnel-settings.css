@@ -9,10 +9,14 @@
   gap: 20px;
   flex-wrap: wrap;
   padding: 15px 18px;
-  margin: 4px 0 16px;
+  margin: 0;
   border: 1px solid var(--border-medium);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: var(--bg-surface-elevated);
+  transition: border-color var(--transition-fast);
+}
+.runtime-named-tunnel-entry:hover {
+  border-color: var(--border-strong);
 }
 .runtime-named-tunnel-entry[hidden] { display: none !important; }
 .runtime-named-tunnel-entry > div {

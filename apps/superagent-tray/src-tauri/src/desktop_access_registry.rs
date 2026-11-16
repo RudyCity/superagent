@@ -60,6 +60,48 @@ impl Rule {
     fn id(&self) -> &str {
         match self { Rule::Desktop { id, .. } | Rule::File { id, .. } => id }
     }
+    fn kind(&self) -> &str {
+        match self { Rule::Desktop { .. } => "desktop", Rule::File { .. } => "file" }
+    }
+    fn effect(&self) -> &str {
+        match self { Rule::Desktop { effect, .. } | Rule::File { effect, .. } => effect }
+    }
+    fn same_target(&self, other: &Rule) -> bool {
+        match (self, other) {
+            (
+                Rule::Desktop { effect: e1, app: a1, scope: s1, .. },
+                Rule::Desktop { effect: e2, app: a2, scope: s2, .. },
+            ) => {
+                e1 == e2
+                    && a1.platform == a2.platform
+                    && a1.sha256.eq_ignore_ascii_case(&a2.sha256)
+                    && if a1.platform == "win32" {
+                        a1.executable_path.eq_ignore_ascii_case(&a2.executable_path)
+                    } else {
+                        a1.executable_path == a2.executable_path
+                    }
+                    && s1.window_title == s2.window_title
+                    && s1.element_role == s2.element_role
+                    && s1.element_label == s2.element_label
+            }
+            (
+                Rule::File { effect: e1, app: a1, scope: s1, .. },
+                Rule::File { effect: e2, app: a2, scope: s2, .. },
+            ) => {
+                e1 == e2
+                    && a1.platform == a2.platform
+                    && a1.sha256.eq_ignore_ascii_case(&a2.sha256)
+                    && if a1.platform == "win32" {
+                        a1.executable_path.eq_ignore_ascii_case(&a2.executable_path)
+                            && s1.path.eq_ignore_ascii_case(&s2.path)
+                    } else {
+                        a1.executable_path == a2.executable_path && s1.path == s2.path
+                    }
+                    && s1.recursive == s2.recursive
+            }
+            _ => false,
+        }
+    }
     fn validate(&self) -> Result<(), String> {
         let (effect, app, operations, allowed) = match self {
             Rule::Desktop { effect, app, operations, scope, .. } => {
@@ -264,12 +306,14 @@ pub(crate) fn get_permanent_access_registry(window: tauri::WebviewWindow) -> Res
 pub(crate) async fn pick_permanent_access_path(
     app: tauri::AppHandle, window: tauri::WebviewWindow, directory: bool,
 ) -> Result<Option<String>, String> {
-    focused(&window, true)?;
+    focused(&window, false)?;
+    let win = window.clone();
     let selection = tauri::async_runtime::spawn_blocking(move || {
-        if directory { app.dialog().file().blocking_pick_folder() }
-        else { app.dialog().file().blocking_pick_file() }
+        let builder = app.dialog().file().set_parent(&win);
+        if directory { builder.blocking_pick_folder() }
+        else { builder.blocking_pick_file() }
     }).await.map_err(|_| "Native file/folder picker failed")?;
-    focused(&window, true)?;
+    focused(&window, false)?;
     let Some(selected) = selection else { return Ok(None) };
     let selected = selected.into_path().map_err(|_| "Only native local paths allowed")?;
     let meta = fs::symlink_metadata(&selected).map_err(|_| "Selected path unavailable")?;
@@ -281,7 +325,7 @@ pub(crate) async fn pick_permanent_access_path(
     let canonical = fs::canonicalize(&selected).map_err(|_| "Cannot canonicalize file path")?;
     let raw = canonical.to_string_lossy().to_string();
     #[cfg(windows)]
-    let path = raw.strip_prefix(r"\?\").unwrap_or(&raw).to_owned();
+    let path = raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_owned();
     #[cfg(not(windows))]
     let path = raw;
     let platform = if cfg!(windows) { "win32" } else if cfg!(target_os="macos") {
@@ -383,16 +427,27 @@ Target element label: {}
             return Err("Core worker changed while native approval was shown".into());
         }
     } else {
-        let fresh = super::core_request(Method::GET, "/api/desktop/live/windows", None).await?;
-        if match_window(&fresh, pid, &native_id)? != (application, title.clone())
-            || verified_app(pid)? != identity {
-            return Err("Process identity or window changed while approval was shown".into());
+        if exact_window {
+            let fresh = super::core_request(Method::GET, "/api/desktop/live/windows", None).await?;
+            let (fresh_app, fresh_title) = match_window(&fresh, pid, &native_id)?;
+            if fresh_app != application || fresh_title != title {
+                return Err("Window title or application changed while approval was shown".into());
+            }
+        } else if let Ok(fresh) = super::core_request(Method::GET, "/api/desktop/live/windows", None).await {
+            if let Ok((fresh_app, _)) = match_window(&fresh, pid, &native_id) {
+                if fresh_app != application {
+                    return Err("Window application changed while approval was shown".into());
+                }
+            }
+        }
+        if verified_app(pid)? != identity {
+            return Err("Process identity changed while approval was shown".into());
         }
     }
     let rule = if kind == "desktop" {
         Rule::Desktop {
-            id: uuid::Uuid::new_v4().simple().to_string(), effect, app: identity,
-            operations,
+            id: uuid::Uuid::new_v4().simple().to_string(), effect, app: identity.clone(),
+            operations: operations.clone(),
             scope: DesktopScope {
                 window_title: if exact_window { Some(title) } else { None },
                 element_role, element_label,
@@ -400,8 +455,8 @@ Target element label: {}
         }
     } else {
         Rule::File {
-            id: uuid::Uuid::new_v4().simple().to_string(), effect, app: identity,
-            operations,
+            id: uuid::Uuid::new_v4().simple().to_string(), effect, app: identity.clone(),
+            operations: operations.clone(),
             scope: FileScope { path: chosen_path.ok_or("File path not verified")?,
                 recursive: recursive.unwrap_or(false) },
         }
@@ -412,9 +467,42 @@ Target element label: {}
     if policy != before_approval {
         return Err("Registry changed during approval; retry with current settings".into());
     }
-    if policy.rules.len() >= MAX_RULES { return Err("Access registry full".into()); }
-    policy.rules.push(rule);
+    if let Some(pos) = policy.rules.iter().position(|r| r.same_target(&rule)) {
+        let mut merged_ops = match &policy.rules[pos] {
+            Rule::Desktop { operations, .. } | Rule::File { operations, .. } => operations.clone(),
+        };
+        for op in match &rule {
+            Rule::Desktop { operations, .. } | Rule::File { operations, .. } => operations,
+        } {
+            if !merged_ops.contains(op) {
+                merged_ops.push(op.clone());
+            }
+        }
+        match &mut policy.rules[pos] {
+            Rule::Desktop { operations, .. } | Rule::File { operations, .. } => {
+                *operations = merged_ops;
+            }
+        }
+    } else {
+        if policy.rules.len() >= MAX_RULES { return Err("Access registry full".into()); }
+        policy.rules.push(rule.clone());
+    }
     save(&dir, &policy)?;
+    let target_desc = match &rule {
+        Rule::Desktop { scope, .. } => scope.window_title.clone().unwrap_or_else(|| "All windows".into()),
+        Rule::File { scope, .. } => format!("{}{}", scope.path, if scope.recursive { " (recursive)" } else { "" }),
+    };
+    let _ = record_audit_entry(&dir, &AccessAuditEntry {
+        id: uuid::Uuid::new_v4().simple().to_string(),
+        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+        kind: rule.kind().to_string(),
+        application: application.clone(),
+        executable_path: identity.executable_path.clone(),
+        operation: operations.join(", "),
+        target: target_desc,
+        effect: rule.effect().to_string(),
+        rule_id: Some(rule.id().to_string()),
+    });
     Ok(policy)
 }
 #[tauri::command]
@@ -428,7 +516,78 @@ pub(crate) fn revoke_permanent_access_rule(
     policy.rules.retain(|entry| entry.id() != id);
     if policy.rules.len() == before { return Err("Rule not found".into()); }
     save(&dir, &policy)?;
+    let _ = record_audit_entry(&dir, &AccessAuditEntry {
+        id: uuid::Uuid::new_v4().simple().to_string(),
+        timestamp: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64,
+        kind: "rule_management".into(),
+        application: "Access Manager".into(),
+        executable_path: "SuperAgent Tray".into(),
+        operation: "revoke".into(),
+        target: id.clone(),
+        effect: "deny".into(),
+        rule_id: Some(id),
+    });
     Ok(policy)
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AccessAuditEntry {
+    pub id: String,
+    pub timestamp: u64,
+    pub kind: String,
+    pub application: String,
+    pub executable_path: String,
+    pub operation: String,
+    pub target: String,
+    pub effect: String,
+    pub rule_id: Option<String>,
+}
+
+pub(crate) fn record_audit_entry(dir: &Path, entry: &AccessAuditEntry) -> Result<(), String> {
+    let file_path = dir.join("desktop-access-audit.jsonl");
+    let mut line = serde_json::to_string(entry).map_err(|e| e.to_string())?;
+    line.push('\n');
+    let mut file = OpenOptions::new().create(true).append(true).open(file_path).map_err(|e| e.to_string())?;
+    file.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub(crate) fn get_permanent_access_audit_log(
+    window: tauri::WebviewWindow, limit: Option<usize>,
+) -> Result<Vec<AccessAuditEntry>, String> {
+    focused(&window, false)?;
+    let dir = super::config_dir()?;
+    let file_path = dir.join("desktop-access-audit.jsonl");
+    if !file_path.exists() {
+        return Ok(Vec::new());
+    }
+    let content = fs::read_to_string(file_path).map_err(|e| e.to_string())?;
+    let max = limit.unwrap_or(50).min(200);
+    let mut entries = Vec::new();
+    for line in content.lines().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() { continue; }
+        if let Ok(entry) = serde_json::from_str::<AccessAuditEntry>(trimmed) {
+            entries.push(entry);
+            if entries.len() >= max { break; }
+        }
+    }
+    Ok(entries)
+}
+
+#[tauri::command]
+pub(crate) fn clear_permanent_access_audit_log(
+    window: tauri::WebviewWindow,
+) -> Result<bool, String> {
+    focused(&window, true)?;
+    let dir = super::config_dir()?;
+    let file_path = dir.join("desktop-access-audit.jsonl");
+    if file_path.exists() {
+        let _ = fs::remove_file(file_path);
+    }
+    Ok(true)
 }
 #[cfg(test)]
 mod tests {
@@ -470,5 +629,104 @@ mod tests {
         assert!(!valid_path(r"C:\Apps\*", "win32"));
         assert!(valid_path(r"C:\Apps\Antigravity.exe", "win32"));
         assert!(!valid_path("/home/../private", "linux"));
+    }
+    #[test]
+    fn strips_windows_verbatim_namespace_prefix() {
+        let raw = r"\\?\C:\Apps\Workspace";
+        let path = raw.strip_prefix(r"\\?\").unwrap_or(raw);
+        assert_eq!(path, r"C:\Apps\Workspace");
+        assert!(valid_path(path, "win32"));
+    }
+    #[test]
+    fn detects_identical_target_for_deduplication() {
+        let app1 = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"C:\Apps\bun.exe".into(),
+            sha256: "a".repeat(64),
+        };
+        let app2 = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"c:\apps\bun.exe".into(), // case difference on win32
+            sha256: "A".repeat(64),                     // case difference in hash
+        };
+        let r1 = Rule::File {
+            id: "r1".into(),
+            effect: "allow".into(),
+            app: app1,
+            operations: vec!["read".into()],
+            scope: FileScope {
+                path: r"D:\Project".into(),
+                recursive: true,
+            },
+        };
+        let r2 = Rule::File {
+            id: "r2".into(),
+            effect: "allow".into(),
+            app: app2,
+            operations: vec!["write".into()],
+            scope: FileScope {
+                path: r"d:\project".into(),
+                recursive: true,
+            },
+        };
+        assert!(r1.same_target(&r2));
+    }
+    #[test]
+    fn detects_identical_desktop_target_for_deduplication() {
+        let app1 = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"C:\Apps\Chrome.exe".into(),
+            sha256: "b".repeat(64),
+        };
+        let app2 = ExecutableIdentity {
+            platform: "win32".into(),
+            executable_path: r"c:\apps\chrome.exe".into(),
+            sha256: "B".repeat(64),
+        };
+        let r1 = Rule::Desktop {
+            id: "r1".into(),
+            effect: "allow".into(),
+            app: app1,
+            operations: vec!["view".into()],
+            scope: DesktopScope {
+                window_title: None,
+                element_role: None,
+                element_label: None,
+            },
+        };
+        let r2 = Rule::Desktop {
+            id: "r2".into(),
+            effect: "allow".into(),
+            app: app2,
+            operations: vec!["input".into()],
+            scope: DesktopScope {
+                window_title: None,
+                element_role: None,
+                element_label: None,
+            },
+        };
+        assert!(r1.same_target(&r2));
+    }
+    #[test]
+    fn audit_entry_appends_and_reads_back() {
+        let root = std::env::temp_dir().join(format!("access-audit-test-{}", uuid::Uuid::new_v4()));
+        fs::create_dir_all(&root).unwrap();
+        let entry = AccessAuditEntry {
+            id: "audit-1".into(),
+            timestamp: 123456789,
+            kind: "desktop".into(),
+            application: "Chrome".into(),
+            executable_path: r"C:\Apps\Chrome.exe".into(),
+            operation: "view, input".into(),
+            target: "All windows".into(),
+            effect: "allow".into(),
+            rule_id: Some("rule-1".into()),
+        };
+        record_audit_entry(&root, &entry).unwrap();
+        let file_path = root.join("desktop-access-audit.jsonl");
+        let content = fs::read_to_string(file_path).unwrap();
+        assert!(content.contains("Chrome"));
+        assert!(content.contains("audit-1"));
+        let _ = fs::remove_dir_all(root);
     }
 }

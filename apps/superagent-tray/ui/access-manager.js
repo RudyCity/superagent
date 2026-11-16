@@ -3,7 +3,7 @@
   // Native Tray Access Manager: no WebView-side policy writes or localStorage.
   // All grants are performed by the native host after OS verification + dialog.
   const $ = (id) => document.getElementById(id);
-  const state = { registry: null, windows: [], selected: "", busy: false, view: "desktop" };
+  const state = { registry: null, windows: [], selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [] };
   const invoke = (name, args) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("Installed native Tray required");
@@ -61,7 +61,7 @@
     for (const id of ["access-submit","access-refresh","access-select-window",
       "access-effect","access-kind","access-exact","access-view","access-input","access-element-role","access-element-label",
       "access-file-path","access-file-recursive","access-file-read","access-file-write","access-file-delete",
-      "access-pick-file","access-pick-folder"]) {
+      "access-pick-file","access-pick-folder","access-audit-clear","access-audit-refresh"]) {
       const el = $(id);
       if (el) el.disabled = value;
     }
@@ -94,9 +94,13 @@
       const avatar = make("span", "access-app-avatar", (w.application[0] || "A").toUpperCase());
       const description = make("span", "access-app-description");
       description.append(make("strong", "", w.application), make("small", "", w.title));
-      const registered = (state.registry?.rules || []).some(r =>
-        r.kind === "desktop" && r.effect === "allow" &&
-        (r.scope.windowTitle === w.title || !r.scope.windowTitle));
+      const registered = (state.registry?.rules || []).some(r => {
+        if (r.kind !== "desktop" || r.effect !== "allow") return false;
+        const appMatches = appName(r.app?.executablePath).toLowerCase().replace(/\.exe$/, "") ===
+          w.application.toLowerCase().replace(/\.exe$/, "");
+        if (!appMatches) return false;
+        return r.scope?.windowTitle === w.title || !r.scope?.windowTitle;
+      });
       const badge = make("span", "access-app-badge" + (registered ? " registered" : ""),
         registered ? "Aturan ada" : "Belum");
       row.append(avatar, description, badge);
@@ -116,33 +120,87 @@
       ? !$("access-file-path")?.value.trim()
       : !active);
   }
+  function setRuleFilter(filter) {
+    state.ruleFilter = filter;
+    for (const [id, val] of [["access-tab-all", "all"], ["access-tab-desktop", "desktop"], ["access-tab-file", "file"]]) {
+      const el = $(id);
+      if (el) {
+        if (val === filter) el.className = "access-filter-btn active";
+        else el.className = "access-filter-btn";
+      }
+    }
+    renderRules();
+  }
   function renderRules() {
     const list = $("access-rule-list");
     const count = $("access-rule-count");
     const empty = $("access-onboarding");
     if (!list) return;
     list.replaceChildren();
-    const rules = state.registry?.rules || [];
-    if (count) count.textContent = rules.length + " aturan";
-    if (empty) empty.hidden = rules.length > 0;
-    if (!rules.length) {
+    const allRules = state.registry?.rules || [];
+    if (count) count.textContent = allRules.length + " aturan";
+    if (empty) empty.hidden = allRules.length > 0;
+
+    const desktopCount = allRules.filter(r => r.kind === "desktop").length;
+    const fileCount = allRules.filter(r => r.kind === "file").length;
+    const tabAll = $("access-tab-all");
+    const tabDesktop = $("access-tab-desktop");
+    const tabFile = $("access-tab-file");
+    if (tabAll) tabAll.textContent = "Semua (" + allRules.length + ")";
+    if (tabDesktop) tabDesktop.textContent = "Desktop (" + desktopCount + ")";
+    if (tabFile) tabFile.textContent = "File & Folder (" + fileCount + ")";
+
+    const query = (state.ruleSearch || "").trim().toLowerCase();
+    const filtered = allRules.filter(r => {
+      if (state.ruleFilter !== "all" && r.kind !== state.ruleFilter) return false;
+      if (!query) return true;
+      const app = appName(r.app?.executablePath).toLowerCase();
+      const path = (r.kind === "desktop" ? (r.scope?.windowTitle || "") : (r.scope?.path || "")).toLowerCase();
+      const ops = (r.operations || []).join(" ").toLowerCase();
+      return app.includes(query) || path.includes(query) || ops.includes(query);
+    });
+
+    if (!allRules.length) {
       list.append(make("p", "access-empty",
         "Belum ada aplikasi tepercaya. Registrasikan aplikasi dan pilih operasi yang diperbolehkan."));
       return;
     }
-    for (const rule of rules) {
+    if (!filtered.length) {
+      list.append(make("p", "access-empty", "Tidak ada aturan yang cocok dengan filter atau pencarian."));
+      return;
+    }
+    for (const rule of filtered) {
       const row = make("div", "access-rule-row");
       const symbol = make("span", "access-rule-effect " + rule.effect,
         rule.effect === "deny" ? "Blokir" : "Izinkan");
       const detail = make("div", "access-rule-detail");
-      const op = rule.operations.join(", ");
-      detail.append(make("strong", "", appName(rule.app.executablePath) + " · " + op),
-        make("small", "", rule.kind === "desktop"
-          ? [rule.scope.windowTitle || "Semua jendela aplikasi terverifikasi",
-              rule.scope.elementRole ? "Role: "+rule.scope.elementRole : "",
-              rule.scope.elementLabel ? "Label: "+rule.scope.elementLabel : ""].filter(Boolean).join(" · ")
-          : rule.scope.path + (rule.scope.recursive ? " (termasuk subfolder)" : "")),
-        make("small", "access-rule-meta", "Permanen sampai dicabut · SHA-256: " + rule.app.sha256.slice(0,12) + "…"));
+
+      const headerLine = make("div", "access-rule-header");
+      const title = make("strong", "access-rule-title", appName(rule.app?.executablePath));
+      const kindBadge = make("span", "access-scope-badge " + rule.kind,
+        rule.kind === "desktop" ? "Desktop" : "File");
+      const chips = make("span", "access-op-chips");
+      for (const op of (rule.operations || [])) {
+        const chip = make("span", "access-op-chip op-" + op, op);
+        chips.append(chip);
+      }
+      headerLine.append(title, kindBadge, chips);
+
+      const scopeDesc = rule.kind === "desktop"
+        ? [rule.scope.windowTitle || "Semua jendela aplikasi terverifikasi",
+            rule.scope.elementRole ? "Role: " + rule.scope.elementRole : "",
+            rule.scope.elementLabel ? "Label: " + rule.scope.elementLabel : ""].filter(Boolean).join(" · ")
+        : rule.scope.path + (rule.scope.recursive ? " (termasuk subfolder)" : "");
+      const pathMeta = make("small", "access-rule-path", rule.app.executablePath);
+      pathMeta.title = rule.app.executablePath;
+      const infoMeta = make("small", "access-rule-meta",
+        "Permanen sampai dicabut · SHA-256: " + rule.app.sha256.slice(0, 12) + "…");
+      detail.append(
+        headerLine,
+        make("small", "access-rule-scope", scopeDesc),
+        pathMeta,
+        infoMeta
+      );
       const revoke = action("Cabut", "access-revoke", () => void revokeRule(rule.id));
       revoke.setAttribute("aria-label", "Cabut aturan " + rule.id);
       revoke.disabled = state.busy;
@@ -228,6 +286,7 @@
       if (!registryValid(registry)) throw Error("Respons registrasi tidak valid");
       state.registry = registry;
       renderRegistry();
+      void refreshAuditLog();
       status("Aturan permanen tersimpan. Berlaku sampai kamu mencabutnya.", "success");
     } catch (error) {
       status("Registrasi tidak diterapkan: " + String(error), "error");
@@ -243,9 +302,73 @@
       if (!registryValid(registry)) throw Error("Respons pencabutan tidak valid");
       state.registry = registry;
       renderRegistry();
+      void refreshAuditLog();
       status("Aturan dicabut. Sesi input berikutnya akan ditolak.", "success");
     } catch (error) {
       status("Gagal mencabut aturan: " + String(error), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+  function formatTime(ts) {
+    if (!ts) return "";
+    try {
+      const d = new Date(ts);
+      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    } catch {
+      return "";
+    }
+  }
+  function renderAuditLog() {
+    const list = $("access-audit-list");
+    const count = $("access-audit-count");
+    if (!list) return;
+    list.replaceChildren();
+    if (count) count.textContent = state.auditLogs.length + " rekaman";
+    if (!state.auditLogs.length) {
+      list.append(make("p", "access-empty", "Belum ada rekaman audit aktivitas akses."));
+      return;
+    }
+    for (const entry of state.auditLogs) {
+      const row = make("div", "access-audit-row");
+      const isAllow = entry.effect === "allow";
+      const verdict = make("span", "access-audit-verdict " + (isAllow ? "allow" : "deny"),
+        isAllow ? "IZIN" : "BLOKIR");
+      const info = make("div", "access-audit-info");
+      const top = make("div", "access-audit-top");
+      top.append(
+        make("strong", "access-audit-app", entry.application || "Unknown"),
+        make("span", "access-audit-op", entry.operation || ""),
+        make("span", "access-audit-time", formatTime(entry.timestamp))
+      );
+      const target = make("small", "access-audit-target", entry.target || entry.executablePath || "");
+      target.title = entry.target || entry.executablePath || "";
+      info.append(top, target);
+      row.append(verdict, info);
+      list.append(row);
+    }
+  }
+  async function refreshAuditLog() {
+    try {
+      const logs = await invoke("get_permanent_access_audit_log", { limit: 50 });
+      if (Array.isArray(logs)) {
+        state.auditLogs = logs;
+        renderAuditLog();
+      }
+    } catch {
+      // Gracefully ignore on legacy Tray or mock without audit log command
+    }
+  }
+  async function clearAuditLog() {
+    if (state.busy) return;
+    setBusy(true);
+    try {
+      await invoke("clear_permanent_access_audit_log");
+      state.auditLogs = [];
+      renderAuditLog();
+      status("Log audit akses berhasil dibersihkan.", "success");
+    } catch (e) {
+      status("Gagal membersihkan log audit: " + String(e), "error");
     } finally {
       setBusy(false);
     }
@@ -289,15 +412,14 @@
       make("p", "", "Belum ada aplikasi yang diizinkan. Daftarkan aplikasi tepercaya sekali tanpa batas waktu."));
     const controls = make("div", "access-reminder-controls");
     controls.append(action("Buka Access Manager", "access-submit", () => {
-      if (typeof location !== "undefined") location.hash = "#settings";
-      $("settings-tab-btn-security")?.click();
+      if (typeof location !== "undefined") location.hash = "#security";
       reminder.remove();
     }), action("Nanti", "access-revoke", () => reminder.remove()));
     reminder.append(message, controls);
     document.body.appendChild(reminder);
   }
   function build() {
-    const parent = $("settings-subpage-security");
+    const parent = $("page-security-container") || $("settings-subpage-security");
     const old = $("desktop-trust-panel");
     if (!parent || !old) return;
     const root = make("section", "access-manager");
@@ -388,19 +510,61 @@
     h.lastChild.id = "access-rule-count";
     const summary = make("p","access-summary","");
     summary.id = "access-policy-summary";
+
+    const filterBar = make("div", "access-filter-bar");
+    const tabs = make("div", "access-filter-tabs");
+    const tabAll = action("Semua (0)", "access-filter-btn active", () => setRuleFilter("all"));
+    tabAll.id = "access-tab-all";
+    const tabDesktop = action("Desktop (0)", "access-filter-btn", () => setRuleFilter("desktop"));
+    tabDesktop.id = "access-tab-desktop";
+    const tabFile = action("File & Folder (0)", "access-filter-btn", () => setRuleFilter("file"));
+    tabFile.id = "access-tab-file";
+    tabs.append(tabAll, tabDesktop, tabFile);
+
+    const ruleSearch = make("input", "access-rule-search");
+    ruleSearch.id = "access-rule-search";
+    ruleSearch.type = "search";
+    ruleSearch.placeholder = "Cari aturan berdasarkan nama, path, atau izin...";
+    ruleSearch.addEventListener("input", (e) => {
+      state.ruleSearch = e?.target?.value || ruleSearch.value || "";
+      renderRules();
+    });
+    filterBar.append(tabs, ruleSearch);
+
     const rules = make("div","access-rule-list");
     rules.id = "access-rule-list";
-    stored.append(h,summary,rules);
+    stored.append(h, summary, filterBar, rules);
+
+    const auditPanel = make("div", "access-audit-panel");
+    auditPanel.id = "access-audit-panel";
+    const auditHead = make("div", "access-audit-head");
+    const auditTitleWrap = make("div", "access-audit-title-wrap");
+    const auditPulse = make("span", "access-live-pulse", "●");
+    auditTitleWrap.append(make("h3", "", "Audit Trail Akses Native"), auditPulse, make("span", "access-count", "0 rekaman"));
+    auditTitleWrap.lastChild.id = "access-audit-count";
+
+    const auditActions = make("div", "access-audit-actions");
+    const clearBtn = action("Bersihkan Log", "access-audit-clear", () => void clearAuditLog());
+    clearBtn.id = "access-audit-clear";
+    const auditRefreshBtn = action("Refresh Log", "access-audit-refresh", () => void refreshAuditLog());
+    auditRefreshBtn.id = "access-audit-refresh";
+    auditActions.append(clearBtn, auditRefreshBtn);
+    auditHead.append(auditTitleWrap, auditActions);
+
+    const auditList = make("div", "access-audit-list");
+    auditList.id = "access-audit-list";
+    auditPanel.append(auditHead, auditList);
+
     const footer=make("p","access-status","Memuat kebijakan native...");
     footer.id="access-status";footer.setAttribute("role","status");footer.setAttribute("aria-live","polite");
-    root.append(head,onboarding,split,stored,footer);
+    root.append(head,onboarding,split,stored,auditPanel,footer);
     parent.insertBefore(root,old);
     old.hidden = true;
     updateSelection();
   }
   async function install() {
     const old = $("desktop-trust-panel");
-    if (!old || !$("settings-subpage-security")) return;
+    if (!old || (!$("page-security-container") && !$("settings-subpage-security"))) return;
     try {
       // Hide legacy only after the native v2 command is verified.
       const registry = await invoke("get_permanent_access_registry");
@@ -408,13 +572,21 @@
       state.registry = registry;
       build();
       renderRegistry();
+      void refreshAuditLog();
       showInitialSetupReminder();
       await refreshWindows();
       window.addEventListener("hashchange",()=>{
-        if (location.hash === "#settings" || location.hash.startsWith("#settings:")) {
+        if (location.hash === "#security" || location.hash.startsWith("#security:") ||
+            location.hash === "#settings" || location.hash.startsWith("#settings:")) {
           void refreshRegistry().catch(()=>status("Registri native tidak tersedia.","error"));
+          void refreshAuditLog().catch(() => {});
         }
       });
+      window.__superagentAccessManagerRefresh = () => {
+        void refreshRegistry().catch(() => {});
+        void refreshWindows().catch(() => {});
+        void refreshAuditLog().catch(() => {});
+      };
     } catch {
       // Older installed Tray: preserve legacy panel, never fake active v2.
     }

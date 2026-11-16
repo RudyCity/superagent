@@ -24,4 +24,29 @@ describe("SuperAgent optional community support", () => {
     expect(readme).toMatch(/Donations are completely optional/);
     expect(styles).toContain(".support-link:focus-visible");
   });
+
+  it("provides a dedicated Ko-fi support modal dialog with copy and open actions", () => {
+    const html = readFileSync("apps/superagent-tray/ui/index.html", "utf8");
+    const appJs = readFileSync("apps/superagent-tray/ui/app.js", "utf8");
+    const styles = readFileSync("apps/superagent-tray/ui/styles.css", "utf8");
+
+    // Modal structure in index.html
+    expect(html).toContain('id="support-modal-dialog"');
+    expect(html).toContain('id="support-modal-close"');
+    expect(html).toContain('id="support-modal-url"');
+    expect(html).toContain('id="support-modal-copy-btn"');
+    expect(html).toContain('id="support-modal-open-btn"');
+    expect(html).toContain('id="support-modal-done-btn"');
+    expect(html).toContain("https://ko-fi.com/rudycity");
+
+    // Styling present in styles.css
+    expect(styles).toContain(".support-modal");
+    expect(styles).toContain(".support-modal-hero");
+    expect(styles).toContain(".support-modal-url-input");
+
+    // Logic wired in app.js
+    expect(appJs).toContain("support-modal-dialog");
+    expect(appJs).toContain("open_external_url");
+    expect(appJs).toContain("openSupportModal");
+  });
 });

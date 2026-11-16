@@ -11,6 +11,7 @@
 (() => {
   const byId = (id) => document.getElementById(id);
   const dragArea = byId("tray-titlebar-drag");
+  const reloadButton = byId("tray-window-reload");
   const minimizeButton = byId("tray-window-minimize");
   const maximizeButton = byId("tray-window-maximize");
   const closeButton = byId("tray-window-close");
@@ -59,7 +60,7 @@
   }
 
   async function controlWindow(action) {
-    if (actionBusy || !["minimize", "toggle-maximize", "close"].includes(action)) return;
+    if (actionBusy || !["minimize", "toggle-maximize", "close", "reload"].includes(action)) return;
     actionBusy = true;
     try {
       const next = await invoke(action);
@@ -115,6 +116,29 @@
     pendingDrag = null;
     void controlWindow("toggle-maximize");
   });
+
+  if (reloadButton) {
+    reloadButton.addEventListener("click", () => {
+      pendingDrag = null;
+      report("Reloading SuperAgent Tray...");
+      reloadButton.classList?.add?.("tray-window-reloading");
+      try {
+        if (typeof window.location?.reload === "function") {
+          window.location.reload();
+          return;
+        }
+      } catch (_) {}
+      try {
+        void invoke("reload").catch((error) => {
+          report("Reload failed: " + String(error));
+          reloadButton.classList?.remove?.("tray-window-reloading");
+        });
+      } catch (error) {
+        report("Reload failed: " + String(error));
+        reloadButton.classList?.remove?.("tray-window-reloading");
+      }
+    });
+  }
 
   minimizeButton.addEventListener("click", () => {
     pendingDrag = null;

@@ -35,6 +35,7 @@
     "tray:check": "cargo check --manifest-path apps/superagent-tray/src-tauri/Cargo.toml",
     "tray:test": "cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml",
     "tray:build": "bun x @tauri-apps/cli build --config apps/superagent-tray/src-tauri/tauri.conf.json",
+    "tray:dev": "bun scripts/tray-dev.ts",
     "tray:prebuilt:check": "bun scripts/install-prebuilt-windows.ts --check",
     "tray:prebuilt:download": "bun scripts/install-prebuilt-windows.ts --download",
     "tray:prebuilt:install": "bun scripts/install-prebuilt-windows.ts --install",

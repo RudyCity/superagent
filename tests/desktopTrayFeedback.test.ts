@@ -30,14 +30,17 @@ function setup() {
     return el;
   }
   const host = node();
+  const writeTextMock = vi.fn().mockResolvedValue(undefined);
   const context: any = {
     document: { getElementById: (key: string) => key === "toast" ? host : null, createElement: node },
     window: {}, Date, String, Error, Number, Map, Set, Object,
     setTimeout: (cb: () => void) => { timers.set(nextTimer, cb); return nextTimer++; },
     clearTimeout: (id: number) => timers.delete(id),
   };
+  context.navigator = { clipboard: { writeText: writeTextMock } };
+  context.window.navigator = context.navigator;
   vm.runInNewContext(script, context);
-  return { feedback: context.window.TrayFeedback as any, host, timers, node, elements };
+  return { feedback: context.window.TrayFeedback as any, host, timers, node, elements, writeTextMock };
 }
 
 describe("Tray shared loading and toast", () => {
@@ -140,5 +143,34 @@ describe("Tray shared loading and toast", () => {
     });
     expect(quiet.status).toBe("success");
     expect(host.children).toHaveLength(1);
+  });
+
+  it("provides copy button on toast to copy message text and display feedback", async () => {
+    const { feedback, host, writeTextMock, timers } = setup();
+    expect(feedback.notify({ kind: "info", message: "Schedule status updated.", scope: "test" })).toBe(true);
+    const item = host.children[0];
+    expect(item).toBeDefined();
+    expect(item.children).toHaveLength(3);
+    const label = item.children[0];
+    const dismiss = item.children[1];
+    const copy = item.children[2];
+    expect(label.textContent).toBe("Schedule status updated.");
+    expect(dismiss.className).toBe("tray-toast-dismiss");
+    expect(copy.className).toBe("tray-toast-copy");
+    expect(copy.getAttribute("title")).toBe("Copy message");
+    expect(copy.getAttribute("aria-label")).toBe("Copy notification message");
+
+    await copy.listeners.get("click")();
+    expect(writeTextMock).toHaveBeenCalledWith("Schedule status updated.");
+    expect(copy.classList.contains("copied")).toBe(true);
+    expect(copy.getAttribute("title")).toBe("Copied!");
+    expect(copy.getAttribute("aria-label")).toBe("Message copied to clipboard");
+
+    // Execute the timeout to reset copy button (last timer registered)
+    const allTimers = [...timers.values()];
+    const copyResetTimer = allTimers[allTimers.length - 1];
+    if (copyResetTimer) copyResetTimer();
+    expect(copy.classList.contains("copied")).toBe(false);
+    expect(copy.getAttribute("title")).toBe("Copy message");
   });
 });

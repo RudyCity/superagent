@@ -62,3 +62,11 @@ demo-studio-output/
 
 # Nested generated Rust target from external-terminal release builds (local cache only).
 /apps/superagent-tray/src-tauri/src-tauri/target/
+
+# Native Windows live input binaries and build outputs
+native/desktop-live-windows-input/*.dll
+native/desktop-live-windows-input/*.lib
+native/desktop-live-windows-input/*.exp
+native/desktop-live-windows-input/*.obj
+native/desktop-live-windows-input/*.sha256
+

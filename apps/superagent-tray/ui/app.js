@@ -115,20 +115,46 @@ function drawRuns() {
   </li>`).join("") : '<li class="empty-state">No execution activity recorded yet.</li>';
 }
 
-function connection(isOnline, message) {
+function connection(isOnline, message, coreVersion) {
   state.online = isOnline;
   $("connection-dot").classList.toggle("offline", !isOnline);
   $("connection-text").textContent = isOnline ? "Core Connected" : "Core Disconnected";
   $("connection-detail").textContent = isOnline
     ? `127.0.0.1:${window.__SUPERAGENT_CORE_PORT || "selected"} · Secured via Rust IPC`
     : String(message || "Core is offline").slice(0, 180);
+  const ver = coreVersion || state.coreVersion;
+  const versionTag = $("core-version-tag");
+  if (versionTag) {
+    if (isOnline && ver) {
+      versionTag.textContent = `v${String(ver).replace(/^v/, "")}`;
+      versionTag.hidden = false;
+    } else {
+      versionTag.hidden = true;
+    }
+  }
   const startBtn = $("btn-start-core");
   if (startBtn) {
     startBtn.hidden = isOnline;
   }
+  const runningBtns = $("connection-running-btns");
+  if (runningBtns) {
+    runningBtns.hidden = !isOnline;
+  }
   const stopBtn = $("btn-stop-core");
-  if (stopBtn) {
+  if (stopBtn && !runningBtns) {
     stopBtn.hidden = !isOnline;
+  }
+  const restartBtn = $("btn-restart-core");
+  if (restartBtn && !runningBtns) {
+    restartBtn.hidden = !isOnline;
+  }
+  const loaderStatus = $("tray-loader-status-text");
+  const loaderTelemetry = $("tray-loader-telemetry-text");
+  if (loaderStatus && !$("tray-startup-loader")?.classList.contains("tray-loader-fade-out")) {
+    loaderStatus.textContent = isOnline ? "Core Online · Initialized" : "Core Offline · Standalone Mode";
+  }
+  if (loaderTelemetry) {
+    loaderTelemetry.textContent = isOnline ? `:${window.__SUPERAGENT_CORE_PORT || "7888"} ONLINE` : "OFFLINE";
   }
 }
 
@@ -156,10 +182,15 @@ async function refresh() {
   $("refresh-btn").disabled = true;
 
   try {
-    const [status, jobs, runs] = await Promise.all([
-      api("status"), api("list"), api("runs"),
+    const [status, jobs, runs, coreStatus] = await Promise.all([
+      api("status"),
+      api("list"),
+      api("runs"),
+      api("core_status").catch(() => null),
     ]);
-    connection(true);
+    const coreVer = coreStatus?.version || null;
+    if (coreVer) state.coreVersion = coreVer;
+    connection(true, null, coreVer);
     state.jobs = jobs.jobs || [];
     state.runs = runs.runs || [];
     drawJobs();
@@ -377,8 +408,8 @@ async function onRowClick(event) {
 }
 
 function navigateToPage(pageId) {
-  const validPages = ["jobs", "runtime", "history", "logs", "delegate", "desktop-live", "terminal", "muse-files", "lan-devices", "updates", "settings"];
-  const target = validPages.includes(pageId) ? pageId : "jobs";
+  const validPages = ["overview", "jobs", "runtime", "history", "logs", "delegate", "desktop-live", "security", "terminal", "muse-files", "lan-devices", "updates", "settings"];
+  const target = validPages.includes(pageId) ? pageId : "overview";
 
   if (window.location.hash !== `#${target}`) {
     if (typeof history.replaceState === "function") {
@@ -401,6 +432,7 @@ function navigateToPage(pageId) {
   const topEyebrow = $("top-eyebrow");
   const topTitle = $("top-title");
   const topDesc = $("top-desc");
+  const actionsOverview = $("actions-overview");
   const actionsJobs = $("actions-jobs");
   const actionsRuntime = $("actions-runtime");
   const actionsHistory = $("actions-history");
@@ -412,6 +444,7 @@ function navigateToPage(pageId) {
   const actionsUpdates = $("actions-updates");
 
   // Every page first hides all other page-specific actions.
+  if (actionsOverview) actionsOverview.hidden = true;
   if (actionsJobs) actionsJobs.hidden = true;
   if (actionsRuntime) actionsRuntime.hidden = true;
   if (actionsHistory) actionsHistory.hidden = true;
@@ -422,7 +455,13 @@ function navigateToPage(pageId) {
   if (actionsLanDevices) actionsLanDevices.hidden = true;
   if (actionsUpdates) actionsUpdates.hidden = true;
 
-  if (target === "jobs") {
+  if (target === "overview") {
+    if (topEyebrow) topEyebrow.textContent = "COMMAND & TELEMETRY";
+    if (topTitle) topTitle.textContent = "System Overview";
+    if (topDesc) topDesc.textContent = "Real-time companion topology, active subsystem health, connected services, and system metrics.";
+    if (actionsOverview) actionsOverview.hidden = false;
+    window.__superagentOverviewRefresh?.();
+  } else if (target === "jobs") {
     if (topEyebrow) topEyebrow.textContent = "AUTOMATION CONSOLE";
     if (topTitle) topTitle.textContent = "Schedules & Reminders";
     if (topDesc) topDesc.textContent = "Manage background cron jobs, native reminders, and active schedules.";
@@ -464,6 +503,15 @@ function navigateToPage(pageId) {
     if (topTitle) topTitle.textContent = "Desktop Live";
     if (topDesc) topDesc.textContent = "Manage per-window native, Chrome CDP and Delegate session handles.";
     window.__superagentDesktopLiveRefresh?.();
+  } else if (target === "security") {
+    if (topEyebrow) topEyebrow.textContent = "HOST ACCESS CONTROL";
+    if (topTitle) topTitle.textContent = "Security Approval Manager";
+    if (topDesc) topDesc.textContent =
+      "Enroll and review permanent access permissions for applications, files, and folders.";
+    window.__superagentAccessManagerRefresh?.();
+    if (typeof window.__superagentLoadTrustPolicy === "function") {
+      void window.__superagentLoadTrustPolicy();
+    }
   } else if (target === "terminal") {
     if (topEyebrow) topEyebrow.textContent = "PROCESS SUPERVISOR";
     if (topTitle) topTitle.textContent = "Terminal Processes";
@@ -507,6 +555,14 @@ function navigateToPage(pageId) {
 }
 window.navigateToPage = navigateToPage;
 
+function dismissStartupLoader(startTime) {
+  document.body.classList.add("tray-app-ready");
+  const loader = $("tray-startup-loader");
+  if (!loader || loader.dataset.dismissed === "true") return;
+  loader.dataset.dismissed = "true";
+  loader.remove();
+}
+
 function install() {
   $("timezone").textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
   $("new-btn")?.addEventListener("click", () => openEditor());
@@ -536,7 +592,7 @@ function install() {
     startBtn.addEventListener("click", async () => {
       startBtn.disabled = true;
       const originalHtml = startBtn.innerHTML;
-      startBtn.innerHTML = `<span>Starting Core (:7888)...</span>`;
+      startBtn.innerHTML = `<span>Starting...</span>`;
       try {
         const invoke = window.__TAURI__?.core?.invoke;
         if (!invoke) throw new Error("Tauri IPC is not available");
@@ -556,12 +612,37 @@ function install() {
     });
   }
 
+  const restartBtn = $("btn-restart-core");
+  if (restartBtn) {
+    restartBtn.addEventListener("click", async () => {
+      restartBtn.disabled = true;
+      const originalHtml = restartBtn.innerHTML;
+      restartBtn.innerHTML = `<span>Restarting...</span>`;
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (!invoke) throw new Error("Tauri IPC is not available");
+        const res = await invoke("restart_core_server", { port: 7888 });
+        toast(res?.message || "SuperAgent Core server restarted");
+        setBanner("");
+        await refresh();
+        if (typeof runtimeRefresh === "function") await runtimeRefresh();
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err || "Failed to restart Core");
+        toast("Failed to restart Core: " + msg, true);
+        setBanner("Core restart failed: " + msg, "Retry Restart", () => restartBtn.click());
+      } finally {
+        restartBtn.disabled = false;
+        restartBtn.innerHTML = originalHtml;
+      }
+    });
+  }
+
   const stopBtn = $("btn-stop-core");
   if (stopBtn) {
     stopBtn.addEventListener("click", async () => {
       stopBtn.disabled = true;
       const originalHtml = stopBtn.innerHTML;
-      stopBtn.innerHTML = `<span>Stopping Core...</span>`;
+      stopBtn.innerHTML = `<span>Stopping...</span>`;
       try {
         const invoke = window.__TAURI__?.core?.invoke;
         if (!invoke) throw new Error("Tauri IPC is not available");
@@ -639,6 +720,10 @@ function install() {
     navigateToPage("delegate");
   });
 
+  window.__TAURI__?.event?.listen?.("desktop-open-security", () => {
+    navigateToPage("security");
+  });
+
   window.__TAURI__?.event?.listen?.("desktop-open-terminal", () => {
     navigateToPage("terminal");
   });
@@ -656,19 +741,118 @@ function install() {
     navigateToPage("settings");
   });
 
+  window.__TAURI__?.event?.listen?.("desktop-open-overview", () => {
+    navigateToPage("overview");
+  });
+
   window.__TAURI__?.event?.listen?.("desktop-create-reminder", () => {
     navigateToPage("jobs");
     openEditor(null, "reminder");
   });
 
+  // Community Support / Ko-fi modal dialog handler
+  const supportLink = $("tray-support-link");
+  const supportDialog = $("support-modal-dialog");
+  const supportClose = $("support-modal-close");
+  const supportDoneBtn = $("support-modal-done-btn");
+  const supportCopyBtn = $("support-modal-copy-btn");
+  const supportOpenBtn = $("support-modal-open-btn");
+  const supportUrlInput = $("support-modal-url");
+
+  function openSupportModal() {
+    if (supportDialog) {
+      supportDialog.hidden = false;
+      supportClose?.focus();
+    }
+  }
+
+  function closeSupportModal() {
+    if (supportDialog) {
+      supportDialog.hidden = true;
+      supportLink?.focus();
+    }
+  }
+
+  if (supportLink) {
+    supportLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      openSupportModal();
+    });
+  }
+
+  if (supportClose) {
+    supportClose.addEventListener("click", closeSupportModal);
+  }
+
+  if (supportDoneBtn) {
+    supportDoneBtn.addEventListener("click", closeSupportModal);
+  }
+
+  if (supportDialog) {
+    supportDialog.addEventListener("click", (e) => {
+      if (e.target === supportDialog) closeSupportModal();
+    });
+  }
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && supportDialog && !supportDialog.hidden) {
+      closeSupportModal();
+    }
+  });
+
+  if (supportCopyBtn) {
+    supportCopyBtn.addEventListener("click", async () => {
+      const url = supportUrlInput?.value || "https://ko-fi.com/rudycity";
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(url);
+        } else if (supportUrlInput) {
+          supportUrlInput.select();
+          document.execCommand("copy");
+        }
+        supportCopyBtn.textContent = "Copied!";
+        toast("Ko-fi URL copied to clipboard");
+        setTimeout(() => {
+          supportCopyBtn.textContent = "Copy Link";
+        }, 2000);
+      } catch {
+        toast("Failed to copy URL", true);
+      }
+    });
+  }
+
+  if (supportOpenBtn) {
+    supportOpenBtn.addEventListener("click", async () => {
+      const url = supportUrlInput?.value || "https://ko-fi.com/rudycity";
+      try {
+        const invoke = window.__TAURI__?.core?.invoke;
+        if (invoke) {
+          await invoke("open_external_url", { url });
+          toast("Opening Ko-fi in default browser...");
+        } else {
+          if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
+          toast("Link copied to clipboard! Paste in your browser.");
+        }
+      } catch {
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
+        toast("Link copied to clipboard! Paste in your browser.");
+      }
+    });
+  }
+
+  window.__superagentJobsState = state;
+
   const initialHash = window.location.hash.replace(/^#/, "");
   window.__superagentTrayHadInitialHash = Boolean(initialHash);
-  navigateToPage(initialHash || "jobs");
+  navigateToPage(initialHash || "overview");
 
   window.addEventListener("tray-settings-changed", (event) => {
     trayConfigureJobsRefresh(event.detail?.jobsRefreshSeconds);
   });
-  window.__TAURI__?.core?.invoke?.("get_tray_version")
+  const startupStart = Date.now();
+  const loaderSafetyTimer = setTimeout(() => dismissStartupLoader(startupStart), 1800);
+
+  const versionPromise = window.__TAURI__?.core?.invoke?.("get_tray_version")
     .then((version) => {
       const el = $("tray-version");
       if (el && typeof version === "string" && /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.+-]+)?$/.test(version)) {
@@ -676,7 +860,7 @@ function install() {
       }
     })
     .catch(() => {});
-  window.__TAURI__?.core?.invoke?.("get_tray_build_number")
+  const buildPromise = window.__TAURI__?.core?.invoke?.("get_tray_build_number")
     .then((build) => {
       const el = $("tray-build-number");
       if (el && typeof build === "string" && /^\d{10,12}$/.test(build)) {
@@ -684,7 +868,12 @@ function install() {
       }
     })
     .catch(() => {});
-  refresh();
+  const refreshPromise = refresh().catch(() => {});
+
+  Promise.allSettled([versionPromise, buildPromise, refreshPromise]).finally(() => {
+    clearTimeout(loaderSafetyTimer);
+    dismissStartupLoader(startupStart);
+  });
   trayConfigureJobsRefresh(30);
 }
 

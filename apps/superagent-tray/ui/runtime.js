@@ -205,7 +205,10 @@ function runtimeServerCard(server) {
         <strong>SuperAgent Core · :${server.port}</strong>
         <small>PID ${runtimeEscape(server.pid ?? "-")} · v${runtimeEscape(server.version ?? "-")}</small>
       </div>
-      ${runtimeStatusPill(server.state)}
+      <div style="display:inline-flex;align-items:center;gap:8px;">
+        ${online ? `<button type="button" class="button ghost runtime-restart-core" data-runtime-port="${server.port}" style="padding:3px 8px;font-size:11px;" title="Restart SuperAgent Core (:${server.port})">Restart</button>` : ""}
+        ${runtimeStatusPill(server.state)}
+      </div>
     </div>
     <div class="runtime-evidence">
       ${runtimeEscape(server.evidence)}
@@ -1061,12 +1064,15 @@ async function runtimeCreateConnection(event) {
     await runtimeRefresh();
   } catch (error) {
     const unknown = /timed out|timeout|connection lost/i.test(String(error));
+    const errText = typeof error === "string" ? error : (error?.message || String(error || ""));
+    const cleanErr = errText ? errText.replace(/^Core HTTP \d+:\s*/i, "") : "";
+    const displayMsg = cleanErr || "Connection was not created or not verified. Check Core and the connection details.";
     if (feedback) feedback.textContent = unknown
       ? "Connection creation result is uncertain. Inspect registered owners before another attempt; do not retry automatically."
-      : "Connection was not created or not verified. Check Core and the connection details.";
+      : displayMsg;
     window.TrayFeedback?.notify({ kind: unknown ? "warning" : "error", scope: "runtime",
       message: unknown ? "Create Connection result unknown. Inspect owners before retrying."
-        : "Connection was not created. Check the inline details." });
+        : (cleanErr || "Connection was not created. Check the inline details.") });
     if (resultView) resultView.hidden = true;
   } finally {
     runtimeActionBusy = false;
@@ -1113,20 +1119,46 @@ async function runtimeRefresh(background = false) {
 
 async function runtimeSelect(event) {
   const button = event.target.closest("button.runtime-select");
-  if (!button) return;
-  const port = Number(button.dataset.runtimePort);
-  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) return;
-  if (!runtimeLastResult?.cores?.some((core) => core.port === port && core.state === "online")) return;
+  if (button) {
+    const port = Number(button.dataset.runtimePort);
+    if (!Number.isSafeInteger(port) || port < 1 || port > 65535) return;
+    if (!runtimeLastResult?.cores?.some((core) => core.port === port && core.state === "online")) return;
 
-  button.disabled = true;
-  try {
-    await runtimeInvoke("select_runtime_core", { port });
-    window.__SUPERAGENT_CORE_PORT = port;
-    window.dispatchEvent(new Event("superagent-core-selected"));
-    await runtimeRefresh();
-  } catch (error) {
-    button.disabled = false;
-    alert("Could not select Core: " + String(error));
+    button.disabled = true;
+    try {
+      await runtimeInvoke("select_runtime_core", { port });
+      window.__SUPERAGENT_CORE_PORT = port;
+      window.dispatchEvent(new Event("superagent-core-selected"));
+      await runtimeRefresh();
+    } catch (error) {
+      button.disabled = false;
+      alert("Could not select Core: " + String(error));
+    }
+    return;
+  }
+
+  const restartBtn = event.target.closest("button.runtime-restart-core");
+  if (restartBtn) {
+    const port = Number(restartBtn.dataset.runtimePort) || 7888;
+    restartBtn.disabled = true;
+    restartBtn.textContent = "Restarting...";
+    try {
+      await runtimeInvoke("restart_core_server", { port });
+      if (typeof window.TrayFeedback?.notify === "function") {
+        window.TrayFeedback.notify({
+          kind: "success",
+          message: `SuperAgent Core (:${port}) restarted successfully`,
+          scope: "runtime",
+        });
+      }
+      await runtimeRefresh();
+      if (typeof refresh === "function") await refresh();
+    } catch (e) {
+      alert("Failed to restart Core: " + String(e));
+      restartBtn.disabled = false;
+      restartBtn.textContent = "Restart";
+    }
+    return;
   }
 }
 
