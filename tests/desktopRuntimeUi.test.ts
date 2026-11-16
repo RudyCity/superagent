@@ -37,6 +37,8 @@ function mountRuntime(snapshot: unknown, extra: {
     document: {
       getElementById: byId,
       querySelectorAll: () => [],
+      addEventListener: (event: string, callback: (e: unknown) => unknown) =>
+        listeners.set("document:" + event, callback),
     },
     window: {
       __TAURI__: { core: { invoke: async (action: string, args: unknown) => {
@@ -526,7 +528,7 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.requested.filter(a=>a.action==="create_connection")).toHaveLength(4);
   });
 
-  it("displays one-time OAuth approval code in the create connection result view", async () => {
+  it("opens a focused connection-result modal and clears private data when closed", async () => {
     const ui=mountRuntime({
       scannedAt:Date.now(),healthyCoreCount:1,activeProcessCount:0,selectedCorePort:7888,
       cores:[{port:7888,pid:100,state:"online",selected:true,pidVerified:true}],
@@ -554,6 +556,14 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-create-result").hidden).toBe(false);
     expect(ui.byId("runtime-create-result").textContent).toContain("test-oauth-bootstrap-code-999");
     expect(ui.byId("runtime-create-result").textContent).toContain("One-Time OAuth Approval Code");
+    expect(ui.byId("runtime-create-result-dialog").hidden).toBe(false);
+    expect(ui.byId("runtime-create-panel").hidden).toBe(true);
+    expect(ui.byId("runtime-result-close").focus).toHaveBeenCalledTimes(1);
+    ui.listeners.get("document:keydown")?.({key:"Escape",preventDefault:()=>{}});
+    expect(ui.byId("runtime-create-result-dialog").hidden).toBe(true);
+    expect(ui.byId("runtime-create-result").hidden).toBe(true);
+    expect(ui.byId("runtime-create-result").textContent).toBe("");
+    expect(ui.byId("runtime-create-toggle").focus).toHaveBeenCalledTimes(1);
   });
 
   it("renders endpoint with a working Copy Endpoint button and clipboard interaction", async () => {
