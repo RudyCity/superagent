@@ -13,7 +13,7 @@ import { delegateBridge } from "../delegate/bridge.js";
 import { getBrowserTransport } from "../browserTransport/router.js";
 import { listDelegateSessions } from "../browserTransport/sessionCoordinator.js";
 
-export type DesktopLiveKind = "native" | "managed-cdp" | "cdp-delegate";
+export type DesktopLiveKind = "native" | "managed-cdp" | "cdp-delegate" | "lan-device";
 export type DesktopLiveItem = {
   id: string; kind: DesktopLiveKind; title: string; application: string;
   handle: string; status: "available" | "controlled" | "human" | "unknown";
@@ -24,6 +24,7 @@ const safe = (v:unknown, n=130) => String(v ?? "").replace(/[\u0000-\u001f\u007f
 const idNative = (pid:number, nativeId:string) => "native:"+pid+":"+nativeId;
 const idManaged = (port:number, targetId:string) => "managed:"+port+":"+targetId;
 const idDelegate = (clientId:string, tabId:number) => "delegate:"+clientId+":"+tabId;
+const idLan = (deviceId:string) => "lan:"+deviceId;
 
 export async function listDesktopLiveInventory(): Promise<{
   observedAt:number; items:DesktopLiveItem[]; sources:Record<DesktopLiveKind,"ok"|"unavailable">;
@@ -31,6 +32,7 @@ export async function listDesktopLiveInventory(): Promise<{
   const items:DesktopLiveItem[] = [];
   const sources:Record<DesktopLiveKind,"ok"|"unavailable"> = {
     native:"unavailable","managed-cdp":"unavailable","cdp-delegate":"unavailable",
+    "lan-device":"unavailable",
   };
   try {
     const discovery = await desktopUiSessionManager.listWindows({ limit: 100 });
@@ -114,6 +116,25 @@ export async function listDesktopLiveInventory(): Promise<{
     }
     sources["cdp-delegate"]="ok";
   } catch {}
+  try {
+    const { listLanDevices } = await import("../lanRemote/controller.js");
+    const lanDevices = listLanDevices();
+    for (const dev of lanDevices) {
+      const isAndroid = dev.platform === "android";
+      items.push({
+        id: idLan(dev.id),
+        kind: "lan-device",
+        title: safe(dev.label || (isAndroid ? "Android Screen" : "Windows LAN Client Screen")),
+        application: safe(isAndroid ? "Android LAN Client" : "Windows LAN Client", 70),
+        handle: safe(`${dev.host}:${dev.port} · ${dev.platform.toUpperCase()}`, 100),
+        status: dev.connected ? "controlled" : "available",
+        owner: dev.transport === "tunnel" ? "Device Tunnel" : "LAN Intranet",
+        stopAction: dev.connected ? "stop-session" : null,
+        impact: isAndroid ? "Mirror screen of Android device via MediaProjection" : "Mirror screen of secondary Windows LAN client",
+      });
+    }
+    sources["lan-device"]="ok";
+  } catch {}
   return {observedAt:Date.now(),items:items.slice(0,256),sources};
 }
 
@@ -194,6 +215,12 @@ export async function stopDesktopLiveHandle(
     const disconnected=delegateBridge.disconnectClient(id);
     return {stopped:disconnected,scope:"profile:"+id,
       reason:"Chrome Delegate profile disconnected; browser tabs stay open"};
+  }
+  if(row.kind==="lan-device") {
+    const deviceId = row.id.slice(4);
+    const { closeLanSession } = await import("../lanRemote/controller.js");
+    try { await closeLanSession(deviceId); } catch {}
+    return { stopped: true, scope: row.id, reason: "LAN device session disconnected; device remains connected to Wi-Fi" };
   }
   throw Error("UNSUPPORTED_STOP");
 }

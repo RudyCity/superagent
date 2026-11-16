@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 
 export const PRIVATE_PREVIEW_TTL_MS = 5 * 60_000;
-export const PRIVATE_PREVIEW_INTERVAL_MS = 250;
+export const PRIVATE_PREVIEW_INTERVAL_MS = 50;
 export const PRIVATE_PREVIEW_MAX_PNG_BYTES = 2 * 1024 * 1024;
 
 /** Host-only lease. The preview bearer never leaves the host process. */
@@ -386,6 +386,27 @@ export class NativeWindowPreviewManager {
     return active && active.expiresAt > this.now()
       ? { pid: active.window.pid, nativeId: active.window.nativeId, expiresAt: active.expiresAt }
       : null;
+  }
+  /** Look up active session identity and bounds by token for verified operator control. */
+  getActiveSession(token: string): {
+    pid: number;
+    nativeId: string;
+    title: string;
+    application: string;
+    bounds: { x: number; y: number; width: number; height: number };
+  } | null {
+    try {
+      const session = this.requireSession(token);
+      return {
+        pid: session.window.pid,
+        nativeId: session.window.nativeId,
+        title: session.window.title,
+        application: session.window.application,
+        bounds: { ...session.window.bounds },
+      };
+    } catch {
+      return null;
+    }
   }
   /** Stop only exact capture, never close its OS application. */
   operatorStop(pid: number, nativeId: string): boolean {

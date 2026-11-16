@@ -48,15 +48,19 @@ describe("Desktop Live LAN Stream Routes (/api/desktop/live/lan-preview & lan-fr
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   });
 
-  function request(method: string, path: string, headers: Record<string, string> = {}) {
+  function request(method: string, path: string, headers: Record<string, string> = {}, reqBody?: string) {
     return new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: string }>((resolve, reject) => {
+      const finalHeaders: Record<string, string> = { Host: `127.0.0.1:${port}`, ...headers };
+      if (reqBody && !finalHeaders["Content-Length"]) {
+        finalHeaders["Content-Length"] = String(Buffer.byteLength(reqBody));
+      }
       const req = http.request(
         {
           host: "127.0.0.1",
           port,
           method,
           path,
-          headers: { Host: `127.0.0.1:${port}`, ...headers },
+          headers: finalHeaders,
         },
         (res) => {
           let data = "";
@@ -65,6 +69,7 @@ describe("Desktop Live LAN Stream Routes (/api/desktop/live/lan-preview & lan-fr
         },
       );
       req.on("error", reject);
+      if (reqBody) req.write(reqBody);
       req.end();
     });
   }
@@ -107,5 +112,33 @@ describe("Desktop Live LAN Stream Routes (/api/desktop/live/lan-preview & lan-fr
     expect([400, 409]).toContain(res.status);
     const body = JSON.parse(res.body);
     expect(body.success).toBe(false);
+  });
+
+  it("lan-takeover rejects invalid or inactive tokens cleanly", async () => {
+    const resNoToken = await request("POST", "/api/desktop/live/lan-takeover");
+    expect(resNoToken.status).toBe(400);
+
+    const resInactive = await request("POST", `/api/desktop/live/lan-takeover?token=${dummyToken}`);
+    expect(resInactive.status).toBe(409);
+    const body = JSON.parse(resInactive.body);
+    expect(body.success).toBe(false);
+    expect(body.error).toBe("SESSION_NOT_ACTIVE");
+  });
+
+  it("lan-input rejects invalid payload, unsupported action or inactive session", async () => {
+    const resNoMethod = await request("GET", `/api/desktop/live/lan-input?token=${dummyToken}`);
+    expect(resNoMethod.status).toBe(405);
+
+    const resBadJson = await request("POST", "/api/desktop/live/lan-input", { "Content-Type": "application/json" }, "{invalid-json");
+    expect(resBadJson.status).toBe(400);
+
+    const resNoToken = await request("POST", "/api/desktop/live/lan-input", { "Content-Type": "application/json" }, JSON.stringify({ action: "click" }));
+    expect(resNoToken.status).toBe(400);
+
+    const resInactive = await request("POST", "/api/desktop/live/lan-input", { "Content-Type": "application/json" }, JSON.stringify({ token: dummyToken, action: "click" }));
+    expect(resInactive.status).toBe(409);
+    const body = JSON.parse(resInactive.body);
+    expect(body.success).toBe(false);
+    expect(body.error).toBe("SESSION_NOT_ACTIVE");
   });
 });
