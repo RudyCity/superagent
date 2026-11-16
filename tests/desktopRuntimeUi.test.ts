@@ -221,7 +221,8 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     await click("https://tray-demo.trycloudflare.com");
     await click("https://evil.trycloudflare.com");
     await click("https://tray-demo.trycloudflare.com/?token=abcd");
-    expect(ui.copy).toHaveBeenCalledExactlyOnceWith("https://tray-demo.trycloudflare.com");
+    expect(ui.copy).toHaveBeenCalledTimes(1);
+    expect(ui.copy).toHaveBeenCalledWith("https://tray-demo.trycloudflare.com");
     expect(ui.requested).toContainEqual({action:"desktop_live_action",args:{action:"gateway-status",payload:null}});
     expect(ui.requested.some(entry=>entry.action==="service_action")).toBe(false);
   });
@@ -743,5 +744,44 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     vm.runInContext("runtimeCreateKindChanged()",ui.context);
     expect(ui.byId("runtime-create-kind").value).toBe("mcp-tunnel");
     expect(ui.requested.filter(x=>x.action==="create_connection")).toHaveLength(0);
+  });
+
+  it("renders YOLO execution policy control on MCP cards and supports switching modes", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 0,
+      selectedCorePort: 7888,
+      cores: [],
+      processes: [],
+      independentHosts: [],
+      remoteServices: [{
+        kind: "mcp", source: "registry", port: 9227, pid: 8260,
+        state: "observed", canStop: true, canRestart: true, canRegenerateToken: true,
+        transport: "mcp-http", detail: "MCP HTTP listener responds", evidence: "owner PID verified"
+      }],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    const remoteHtml = ui.byId("runtime-remote").innerHTML;
+    expect(remoteHtml).toContain("YOLO Policy");
+    expect(remoteHtml).toContain("Tanpa YOLO");
+    expect(remoteHtml).toContain("YOLO Standar");
+    expect(remoteHtml).toContain("YOLO Full");
+
+    // Click on YOLO Standar chip
+    const clickHandler = ui.listeners.get("runtime-remote:click");
+    expect(clickHandler).toBeTypeOf("function");
+    await clickHandler?.({
+      target: {
+        closest: (selector: string) => {
+          if (selector === "button.yolo-chip") {
+            return { dataset: { runtimeYolo: "scoped" } };
+          }
+          return null;
+        }
+      }
+    });
+
+    const setYoloCalls = ui.requested.filter(x => x.action === "set_yolo_mode");
+    expect(setYoloCalls).toHaveLength(1);
+    expect(setYoloCalls[0].args).toEqual({ mode: "scoped" });
   });
 });

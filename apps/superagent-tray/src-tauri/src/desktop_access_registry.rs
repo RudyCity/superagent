@@ -256,6 +256,59 @@ fn verified_app(pid: u32) -> Result<ExecutableIdentity, String> {
     }
     Ok(identity)
 }
+pub(crate) fn verified_executable_from_path(raw_path: &str) -> Result<(String, ExecutableIdentity), String> {
+    if !descriptor(raw_path, 2048) { return Err("Invalid executable path length or characters".into()); }
+    let path = Path::new(raw_path);
+    let meta = fs::symlink_metadata(path).map_err(|_| "Executable file not found or inaccessible")?;
+    if meta.file_type().is_symlink() {
+        return Err("Symbolic links cannot be registered".into());
+    }
+    if !meta.is_file() {
+        return Err("Target path is not a regular executable file".into());
+    }
+    let canonical = fs::canonicalize(path).map_err(|_| "Executable path cannot be resolved")?;
+    let raw = canonical.to_string_lossy().to_string();
+    #[cfg(windows)]
+    let executable_path = raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_owned();
+    #[cfg(not(windows))]
+    let executable_path = raw;
+
+    let platform = match std::env::consts::OS {
+        "windows" => "win32",
+        "macos" => "darwin",
+        "linux" => "linux",
+        _ => return Err("Unsupported registration host".into()),
+    };
+    if !valid_path(&executable_path, platform) {
+        return Err("Executable path has invalid format".into());
+    }
+    #[cfg(windows)]
+    if !executable_path.to_lowercase().ends_with(".exe") {
+        return Err("Target file must be a Windows .exe binary".into());
+    }
+
+    let mut file = File::open(&canonical).map_err(|_| "Executable cannot be read")?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buffer).map_err(|_| "Executable hash computation failed")?;
+        if n == 0 { break; }
+        hasher.update(&buffer[..n]);
+    }
+
+    let app_name = Path::new(&executable_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("Application")
+        .to_string();
+
+    let identity = ExecutableIdentity {
+        platform: platform.into(),
+        executable_path,
+        sha256: format!("{:x}", hasher.finalize()),
+    };
+    Ok((app_name, identity))
+}
 fn match_window(inventory: &Value, pid: u32, native_id: &str) -> Result<(String, String), String> {
     let windows = inventory.get("windows").and_then(Value::as_array)
         .ok_or("Native window inventory unavailable")?;
@@ -302,6 +355,233 @@ pub(crate) fn get_permanent_access_registry(window: tauri::WebviewWindow) -> Res
     }
     load(&dir)
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledAppEntry {
+    pub name: String,
+    pub executable_path: String,
+}
+
+fn scan_dir_executables(dir: &Path, depth: u8, apps: &mut Vec<InstalledAppEntry>, seen: &mut HashSet<String>) {
+    if depth == 0 { return; }
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            if path.extension().and_then(|s| s.to_str()).map(|s| s.eq_ignore_ascii_case("exe")) == Some(true) {
+                let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                let stem_lower = stem.to_lowercase();
+                if stem_lower.starts_with("unins") || stem_lower.starts_with("elevate")
+                    || stem_lower.starts_with("update") || stem_lower.contains("crash")
+                    || stem_lower.contains("setup") || stem_lower.starts_with("vc_redist") {
+                    continue;
+                }
+                let raw = path.to_string_lossy().to_string();
+                let key = raw.to_lowercase();
+                if !seen.contains(&key) {
+                    seen.insert(key);
+                    apps.push(InstalledAppEntry {
+                        name: stem.to_string(),
+                        executable_path: raw,
+                    });
+                }
+            }
+        } else if path.is_dir() && depth > 1 {
+            let dir_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let dir_lower = dir_name.to_lowercase();
+            if !dir_name.starts_with('.') && dir_lower != "node_modules" && dir_lower != "windows"
+                && dir_lower != "temp" && dir_lower != "common files" {
+                scan_dir_executables(&path, depth - 1, apps, seen);
+            }
+        }
+    }
+}
+
+fn discover_installed_desktop_apps() -> Vec<InstalledAppEntry> {
+    let mut apps: Vec<InstalledAppEntry> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    #[cfg(windows)]
+    {
+        let mut search_dirs = Vec::new();
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            let programs = PathBuf::from(local_app_data).join("Programs");
+            if programs.is_dir() { search_dirs.push(programs); }
+        }
+        if let Some(pf) = std::env::var_os("ProgramFiles") {
+            let p = PathBuf::from(pf);
+            if p.is_dir() { search_dirs.push(p); }
+        }
+        if let Some(pf86) = std::env::var_os("ProgramFiles(x86)") {
+            let p = PathBuf::from(pf86);
+            if p.is_dir() { search_dirs.push(p); }
+        }
+
+        for dir in search_dirs {
+            scan_dir_executables(&dir, 2, &mut apps, &mut seen);
+        }
+
+        let ps_script = r#"
+$paths = @(Get-Item -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\App Paths\*', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\App Paths\*' -ErrorAction SilentlyContinue)
+$list = @()
+foreach ($item in $paths) {
+  $val = Get-ItemPropertyValue -Path $item.PSPath -Name '(default)' -ErrorAction SilentlyContinue
+  if (-not $val) { continue }
+  $clean = [string]$val
+  $clean = $clean.Trim(' ').Trim('"')
+  if ($clean -and (Test-Path $clean -PathType Leaf)) {
+    $ext = [System.IO.Path]::GetExtension($clean)
+    if ($ext -ieq '.exe') {
+      $name = [System.IO.Path]::GetFileNameWithoutExtension($clean)
+      $list += [pscustomobject]@{ name = $name; executablePath = $clean }
+    }
+  }
+}
+$list | ConvertTo-Json -Compress
+"#;
+        if let Ok(output) = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", ps_script])
+            .output()
+        {
+            if output.status.success() {
+                if let Ok(text) = String::from_utf8(output.stdout) {
+                    let trimmed = text.trim();
+                    if let Ok(val) = serde_json::from_str::<Value>(trimmed) {
+                        let items: Vec<&Value> = match &val {
+                            Value::Array(arr) => arr.iter().collect(),
+                            Value::Object(_) => vec![&val],
+                            _ => Vec::new(),
+                        };
+                        for item in items {
+                            if let (Some(name), Some(path)) = (
+                                item.get("name").and_then(Value::as_str),
+                                item.get("executablePath").and_then(Value::as_str),
+                            ) {
+                                let key = path.to_lowercase();
+                                if !seen.contains(&key) && Path::new(path).is_file() {
+                                    seen.insert(key);
+                                    apps.push(InstalledAppEntry {
+                                        name: name.to_string(),
+                                        executable_path: path.to_string(),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for root in &["/Applications", "/System/Applications"] {
+            if let Ok(entries) = fs::read_dir(root) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|s| s.to_str()) == Some("app") {
+                        let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("App").to_string();
+                        let key = p.to_string_lossy().to_string();
+                        if !seen.contains(&key) {
+                            seen.insert(key.clone());
+                            apps.push(InstalledAppEntry { name, executable_path: key });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for root in &["/usr/share/applications", "/usr/local/share/applications"] {
+            if let Ok(entries) = fs::read_dir(root) {
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|s| s.to_str()) == Some("desktop") {
+                        if let Ok(content) = fs::read_to_string(&p) {
+                            let mut name = None;
+                            let mut exec = None;
+                            for line in content.lines() {
+                                if line.starts_with("Name=") && name.is_none() {
+                                    name = Some(line.trim_start_matches("Name=").trim().to_string());
+                                } else if line.starts_with("Exec=") && exec.is_none() {
+                                    let raw_exec = line.trim_start_matches("Exec=").split_whitespace().next().unwrap_or("");
+                                    exec = Some(raw_exec.to_string());
+                                }
+                            }
+                            if let (Some(n), Some(e)) = (name, exec) {
+                                if !e.is_empty() && !seen.contains(&e) {
+                                    seen.insert(e.clone());
+                                    apps.push(InstalledAppEntry { name: n, executable_path: e });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    if apps.len() > 150 {
+        apps.truncate(150);
+    }
+    apps
+}
+
+#[tauri::command]
+pub(crate) async fn list_installed_desktop_apps(
+    window: tauri::WebviewWindow,
+) -> Result<Vec<InstalledAppEntry>, String> {
+    focused(&window, false)?;
+    let apps = tauri::async_runtime::spawn_blocking(discover_installed_desktop_apps)
+        .await
+        .map_err(|_| "Installed app discovery failed")?;
+    Ok(apps)
+}
+
+#[tauri::command]
+pub(crate) async fn pick_permanent_access_executable(
+    app: tauri::AppHandle, window: tauri::WebviewWindow,
+) -> Result<Option<String>, String> {
+    focused(&window, false)?;
+    let win = window.clone();
+    let selection = tauri::async_runtime::spawn_blocking(move || {
+        let mut builder = app.dialog().file().set_parent(&win);
+        #[cfg(windows)]
+        {
+            builder = builder.add_filter("Executable (*.exe)", &["exe"]);
+        }
+        #[cfg(target_os = "macos")]
+        {
+            builder = builder.add_filter("Application (*.app)", &["app"]);
+        }
+        builder.blocking_pick_file()
+    }).await.map_err(|_| "Native executable picker failed")?;
+    focused(&window, false)?;
+    let Some(selected) = selection else { return Ok(None) };
+    let selected = selected.into_path().map_err(|_| "Only native local paths allowed")?;
+    let meta = fs::symlink_metadata(&selected).map_err(|_| "Selected executable unavailable")?;
+    if meta.file_type().is_symlink() {
+        return Err("Symlink or reparse point cannot be enrolled".into());
+    }
+    if !meta.is_file() { return Err("Pick a regular executable file".into()); }
+    let canonical = fs::canonicalize(&selected).map_err(|_| "Cannot canonicalize executable path")?;
+    let raw = canonical.to_string_lossy().to_string();
+    #[cfg(windows)]
+    let path = raw.strip_prefix(r"\\?\").unwrap_or(&raw).to_owned();
+    #[cfg(not(windows))]
+    let path = raw;
+    let platform = if cfg!(windows) { "win32" } else if cfg!(target_os="macos") { "darwin" } else { "linux" };
+    if !valid_path(&path, platform) { return Err("Invalid executable path".into()); }
+    #[cfg(windows)]
+    if !path.to_lowercase().ends_with(".exe") {
+        return Err("Only .exe executable files are supported".into());
+    }
+    Ok(Some(path))
+}
+
 #[tauri::command]
 pub(crate) async fn pick_permanent_access_path(
     app: tauri::AppHandle, window: tauri::WebviewWindow, directory: bool,
@@ -341,9 +621,11 @@ pub(crate) async fn register_permanent_access_rule(
     kind: String, operations: Vec<String>,
     exact_window: bool, element_role: Option<String>, element_label: Option<String>,
     file_path: Option<String>, recursive: Option<bool>,
+    executable_path: Option<String>,
 ) -> Result<Registry, String> {
     focused(&window, true)?;
-    if (kind == "desktop" && !descriptor(&native_id, 256))
+    if (kind == "desktop" && pid > 0 && !descriptor(&native_id, 256))
+        || (kind == "desktop" && pid == 0 && executable_path.as_deref().map_or(true, |p| p.trim().is_empty()))
         || !["allow", "deny"].contains(&effect.as_str())
         || !["desktop", "file"].contains(&kind.as_str()) || operations.is_empty() {
         return Err("Invalid registration request".into());
@@ -361,7 +643,7 @@ pub(crate) async fn register_permanent_access_rule(
     let _busy = begin_approval()?;
     // Reject concurrent edits while native confirmation is displayed.
     let before_approval = load(&super::config_dir()?)?;
-    // Desktop registration binds to exact OS window. File policy instead
+    // Desktop registration binds to exact OS window or verified executable. File policy
     // binds to authenticated selected Core process, never a browser-supplied
     // PID or app name. Scope is displayed explicitly in the host dialog.
     let (application, title, identity, core_pid) = if kind == "file" {
@@ -379,10 +661,14 @@ pub(crate) async fn register_permanent_access_rule(
         let identity = verified_app(core_pid)?;
         ("SuperAgent Core file tools".to_owned(), "Core-managed file access".to_owned(),
           identity, Some(core_pid))
-    } else {
+    } else if pid > 0 {
         let inventory = super::core_request(Method::GET, "/api/desktop/live/windows", None).await?;
         let (application,title) = match_window(&inventory, pid, &native_id)?;
         (application, title, verified_app(pid)?, None)
+    } else {
+        let exe_raw = executable_path.as_deref().ok_or("Executable path required for installed application")?;
+        let (app_name, id) = verified_executable_from_path(exe_raw)?;
+        (app_name, "All windows of this executable".to_string(), id, None)
     };
     let chosen_path = if kind == "file" {
         let requested = file_path.as_deref().ok_or("File path required")?;
@@ -405,7 +691,7 @@ pub(crate) async fn register_permanent_access_rule(
         "REGISTER PERMANENT {} RULE\n\nApplication: {}\nExecutable: {}\nSHA-256: {}\nWindow: {}\nKind: {}\nOperations: {}\nScope: {}\n\nThis rule has NO TIME LIMIT. It remains until you revoke it.\nBlocked rules always override allowed rules.\nSession tokens and OS restrictions remain separate.\nOnly approve if you selected this precise app/scope.",
         effect.to_uppercase(), application, identity.executable_path,
         identity.sha256, title, kind, operations.join(", "),
-        chosen_path.as_deref().unwrap_or(if exact_window { &title } else { "All windows of this exact executable" })
+        chosen_path.as_deref().unwrap_or(if exact_window && pid > 0 { &title } else { "All windows of this exact executable" })
     );
     let prompt = format!(
         "{prompt}
@@ -426,7 +712,7 @@ Target element label: {}
             || verified_app(core_pid.ok_or("Core PID absent")?)? != identity {
             return Err("Core worker changed while native approval was shown".into());
         }
-    } else {
+    } else if pid > 0 {
         if exact_window {
             let fresh = super::core_request(Method::GET, "/api/desktop/live/windows", None).await?;
             let (fresh_app, fresh_title) = match_window(&fresh, pid, &native_id)?;
@@ -443,13 +729,19 @@ Target element label: {}
         if verified_app(pid)? != identity {
             return Err("Process identity changed while approval was shown".into());
         }
+    } else {
+        let exe_raw = executable_path.as_deref().ok_or("Executable path required")?;
+        let (_, fresh_identity) = verified_executable_from_path(exe_raw)?;
+        if fresh_identity != identity {
+            return Err("Executable binary changed while approval was displayed".into());
+        }
     }
     let rule = if kind == "desktop" {
         Rule::Desktop {
             id: uuid::Uuid::new_v4().simple().to_string(), effect, app: identity.clone(),
             operations: operations.clone(),
             scope: DesktopScope {
-                window_title: if exact_window { Some(title) } else { None },
+                window_title: if exact_window && pid > 0 { Some(title) } else { None },
                 element_role, element_label,
             },
         }
@@ -728,5 +1020,26 @@ mod tests {
         assert!(content.contains("Chrome"));
         assert!(content.contains("audit-1"));
         let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn verifies_executable_from_real_binary() {
+        let current_exe = std::env::current_exe().unwrap();
+        let path_str = current_exe.to_string_lossy().to_string();
+        #[cfg(windows)]
+        let path_str = path_str.strip_prefix(r"\\?\").unwrap_or(&path_str).to_owned();
+        let (name, identity) = verified_executable_from_path(&path_str).unwrap();
+        assert!(!name.is_empty());
+        assert_eq!(identity.executable_path.to_lowercase(), path_str.to_lowercase());
+        assert_eq!(identity.sha256.len(), 64);
+    }
+    #[test]
+    fn installed_app_discovery_returns_structured_entries() {
+        let apps = discover_installed_desktop_apps();
+        // Discovery is best-effort and bounded to 150 items
+        assert!(apps.len() <= 150);
+        for a in &apps {
+            assert!(!a.name.is_empty());
+            assert!(!a.executable_path.is_empty());
+        }
     }
 }

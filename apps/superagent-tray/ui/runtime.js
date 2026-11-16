@@ -265,6 +265,133 @@ function runtimeHostCard(host) {
   </article>`;
 }
 
+let runtimeCurrentYoloMode = "off";
+
+function runtimeYoloMarkup(currentMode = runtimeCurrentYoloMode) {
+  const mode = ["off", "scoped", "full"].includes(currentMode) ? currentMode : "off";
+  const captions = {
+    off: "Tanpa YOLO: Fail-closed (hanya tool aman / read-only). Tool mutasi & eksekusi diblokir.",
+    scoped: "YOLO Standar: Tool berbahaya diizinkan terbatas dalam workspace & 1 parent.",
+    full: "YOLO Full: Akses penuh tanpa batasan workspace, path, atau grant."
+  };
+  const badgeClasses = {
+    off: "yolo-badge-safe",
+    scoped: "yolo-badge-warn",
+    full: "yolo-badge-danger"
+  };
+  const badgeLabels = {
+    off: "OFF",
+    scoped: "STANDAR",
+    full: "FULL"
+  };
+  return `<div class="runtime-yolo-control" data-current-yolo="${runtimeEscape(mode)}">
+    <div class="runtime-yolo-header">
+      <div class="runtime-yolo-title">
+        <span class="yolo-badge ${badgeClasses[mode]}">${badgeLabels[mode]}</span>
+        <strong>YOLO Policy</strong>
+      </div>
+      <small class="runtime-yolo-caption">${runtimeEscape(captions[mode])}</small>
+    </div>
+    <div class="runtime-yolo-chips" role="radiogroup" aria-label="YOLO Execution Mode">
+      <button type="button" class="button ghost yolo-chip ${mode === 'off' ? 'active' : ''}"
+        data-runtime-yolo="off" title="Tanpa YOLO: Fail-closed, hanya tool aman/read-only">Tanpa YOLO</button>
+      <button type="button" class="button ghost yolo-chip ${mode === 'scoped' ? 'active' : ''}"
+        data-runtime-yolo="scoped" title="YOLO Standar: Scoped tools diizinkan di workspace">YOLO Standar</button>
+      <button type="button" class="button ghost yolo-chip ${mode === 'full' ? 'active' : ''}"
+        data-runtime-yolo="full" title="YOLO Full: Akses penuh tool berbahaya & luar workspace">YOLO Full</button>
+    </div>
+  </div>`;
+}
+
+async function runtimeGetYoloMode() {
+  try {
+    const res = await runtimeInvoke("get_yolo_mode");
+    if (typeof res === "string" && ["off", "scoped", "full"].includes(res)) {
+      runtimeCurrentYoloMode = res;
+      return res;
+    }
+  } catch {
+    try {
+      if (typeof fetch === "function") {
+        const resp = await fetch("/api/desktop/yolo");
+        if (resp?.ok) {
+          const data = await resp.json();
+          if (data && ["off", "scoped", "full"].includes(data.mode)) {
+            runtimeCurrentYoloMode = data.mode;
+            return data.mode;
+          }
+        }
+      }
+    } catch {}
+  }
+  return runtimeCurrentYoloMode;
+}
+
+async function runtimeSetYoloMode(mode) {
+  if (!["off", "scoped", "full"].includes(mode)) return;
+  const labels = {
+    off: "Tanpa YOLO (Safe / Read-only)",
+    scoped: "YOLO Standar (Scoped)",
+    full: "YOLO Full (Unrestricted)"
+  };
+  try {
+    try {
+      await runtimeInvoke("set_yolo_mode", { mode });
+    } catch (invokeErr) {
+      if (typeof fetch === "function") {
+        const resp = await fetch("/api/desktop/yolo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode })
+        });
+        if (!resp?.ok) throw invokeErr;
+      } else {
+        throw invokeErr;
+      }
+    }
+    runtimeCurrentYoloMode = mode;
+    document.querySelectorAll(".runtime-yolo-control").forEach(ctrl => {
+      ctrl.dataset.currentYolo = mode;
+      ctrl.querySelectorAll(".yolo-chip").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.runtimeYolo === mode);
+      });
+      const badge = ctrl.querySelector(".yolo-badge");
+      if (badge) {
+        badge.className = "yolo-badge " + (mode === "full" ? "yolo-badge-danger" : mode === "scoped" ? "yolo-badge-warn" : "yolo-badge-safe");
+        badge.textContent = mode === "full" ? "FULL" : mode === "scoped" ? "STANDAR" : "OFF";
+      }
+      const caption = ctrl.querySelector(".runtime-yolo-caption");
+      if (caption) {
+        const captions = {
+          off: "Tanpa YOLO: Fail-closed (hanya tool aman / read-only). Tool mutasi & eksekusi diblokir.",
+          scoped: "YOLO Standar: Tool berbahaya diizinkan terbatas dalam workspace & 1 parent.",
+          full: "YOLO Full: Akses penuh tanpa batasan workspace, path, atau grant."
+        };
+        caption.textContent = captions[mode];
+      }
+    });
+    window.TrayFeedback?.notify?.({
+      kind: "success",
+      scope: "runtime",
+      message: `YOLO policy diubah ke ${labels[mode]}.`
+    });
+  } catch (err) {
+    window.TrayFeedback?.notify?.({
+      kind: "error",
+      scope: "runtime",
+      message: "Gagal mengubah mode YOLO: " + (err?.message || String(err))
+    });
+  }
+}
+
+async function runtimeYoloChipClick(event) {
+  const chip = event.target?.closest?.("button.yolo-chip");
+  if (!chip || !chip.dataset.runtimeYolo) return;
+  const targetMode = chip.dataset.runtimeYolo;
+  if (targetMode === runtimeCurrentYoloMode) return;
+  await runtimeSetYoloMode(targetMode);
+}
+
 function runtimeRemoteCard(service) {
   const titles = {
     mcp: "MCP HTTP Server",
@@ -273,6 +400,7 @@ function runtimeRemoteCard(service) {
     "core-supervisor": "Core Supervisor"
   };
   const isExternalTunnel = service.kind === "cloudflare" && service.source === "os";
+  const isMcpOwner = service.kind === "mcp" || (service.kind === "cloudflare" && service.transport === "mcp-http");
   const name = isExternalTunnel ? "External Cloudflare Tunnel" :
     (titles[service.kind] || "SuperAgent Remote Service");
   const port = service.port
@@ -338,6 +466,7 @@ function runtimeRemoteCard(service) {
         ? `<div class="runtime-evidence">${isExternalTunnel
           ? "External cloudflared detected; public URL unknown and controls disabled."
           : "Public URL unavailable from verified owner metadata."}</div>` : ""}
+    ${isMcpOwner ? runtimeYoloMarkup(runtimeCurrentYoloMode) : ""}
     ${controls}
     ${service.controlReason
       ? `<div class="runtime-evidence">${runtimeEscape(service.controlReason)}</div>`
@@ -1096,6 +1225,7 @@ async function runtimeRefresh(background = false) {
     const [gateway, named] = await Promise.allSettled([
       runtimeInvoke("desktop_live_action", { action: "gateway-status", payload: null }),
       runtimeInvoke("get_named_tunnel_health"),
+      runtimeGetYoloMode(),
     ]);
     const trayNode = rt("runtime-tray-gateway");
     if (trayNode) trayNode.innerHTML = runtimeTrayGatewayCard(gateway.status === "fulfilled" ? gateway.value : null);
@@ -1215,7 +1345,9 @@ function runtimeInstall() {
   rt("runtime-servers")?.addEventListener("click", runtimeSelect);
   rt("runtime-remote")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-remote")?.addEventListener("click", runtimeRegenerateToken);
+  rt("runtime-remote")?.addEventListener("click", runtimeYoloChipClick);
   rt("runtime-remote-panel")?.addEventListener("click", runtimeCopyPublicUrl);
+  rt("runtime-remote-panel")?.addEventListener("click", runtimeYoloChipClick);
   rt("runtime-muse-local")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-muse-local")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeServiceAction);

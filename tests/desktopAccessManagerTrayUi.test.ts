@@ -3,11 +3,16 @@ import vm from "node:vm";
 import fs from "node:fs";
 const code=fs.readFileSync("apps/superagent-tray/ui/access-manager.js","utf8");
 class Element {
-  tagName:string;id="";className="";placeholder="";type="";textContent="";hidden=false;disabled=false;checked=false;
-  rel="";href="";src="";readOnly=false;dataset:Record<string,string>={};parentNode:Element|null=null;
+  tagName:string;id="";className="";placeholder="";type="";#textContent="";title="";hidden=false;disabled=false;checked=false;
+  rel="";href="";src="";readOnly=false;style:Record<string,string>={};dataset:Record<string,string>={};parentNode:Element|null=null;
   children:Element[]=[];events=new Map<string,Function>();attributes=new Map<string,string>();
   #value:string|undefined;
   constructor(tag:string){this.tagName=tag.toLowerCase();}
+  get textContent():string{
+    if(this.#textContent)return this.#textContent;
+    return this.children.map(c=>c.textContent).join(" ");
+  }
+  set textContent(v:string){this.#textContent=v;}
   get value():string{
     if(this.#value!==undefined)return this.#value;
     return this.tagName==="select"?this.children[0]?.value||"":"";
@@ -42,12 +47,17 @@ function boot(nativeEnabled=true){
       return policy;
     }
     if(name==="list_desktop_input_windows")return {success:true,windows:[discovered]};
+    if(name==="list_installed_desktop_apps")return [{name:"VS Code",executablePath:"C:\\Apps\\Code.exe"}];
+    if(name==="pick_permanent_access_executable")return "C:\\Apps\\Notepad.exe";
     if(name==="pick_permanent_access_path"){
       return args.directory?"G:/project/tryout-online":"G:/project/tryout-online/.env";
     }
     if(name==="register_permanent_access_rule"){
+      const ruleApp = args.executablePath
+        ? {platform:"win32",executablePath:args.executablePath,sha256:"e".repeat(64)}
+        : app;
       const rule={
-        id:"abc",kind:args.kind,effect:args.effect,app,operations:args.operations,
+        id:"abc",kind:args.kind,effect:args.effect,app:ruleApp,operations:args.operations,
         scope:args.kind==="file"
           ?{path:args.filePath,recursive:args.recursive}
           :args.exactWindow?{windowTitle:discovered.title}:{},
@@ -57,10 +67,10 @@ function boot(nativeEnabled=true){
         id:"audit-reg",
         timestamp:Date.now(),
         kind:args.kind,
-        application:args.kind==="file"?"SuperAgent Core file tools":discovered.application,
-        executablePath:app.executablePath,
+        application:args.kind==="file"?"SuperAgent Core file tools":(args.executablePath?"VS Code":discovered.application),
+        executablePath:ruleApp.executablePath,
         operation:args.operations.join(", "),
-        target:args.kind==="file"?args.filePath:discovered.title,
+        target:args.kind==="file"?args.filePath:(args.exactWindow?discovered.title:"All windows"),
         effect:args.effect,
         ruleId:"abc",
       });
@@ -221,6 +231,148 @@ describe("element-specific UI enrollment",()=>{
     ui.document.getElementById("access-submit")!.click();
     await flush();
     expect(ui.calls.some(c=>c.name==="register_permanent_access_rule")).toBe(false);
+  });
+});
+
+describe("installed applications enrollment and discovery", () => {
+  it("switches to Terinstall tab, lists installed applications, and registers with executablePath", async () => {
+    const ui = boot();
+    await flush();
+
+    const tabInstalled = ui.document.getElementById("access-src-installed")!;
+    expect(tabInstalled).not.toBeNull();
+    tabInstalled.click();
+    await flush();
+
+    const list = ui.document.getElementById("access-app-list")!;
+    expect(list.children.length).toBe(1);
+    expect(list.children[0].textContent).toContain("VS Code");
+    expect(list.children[0].textContent).toContain("C:\\Apps\\Code.exe");
+
+    // Click installed app row
+    list.children[0].click();
+    expect(ui.document.getElementById("access-selected-title")?.textContent).toBe("VS Code");
+    expect(ui.document.getElementById("access-selected-subtitle")?.textContent).toContain("Code.exe");
+    expect(ui.document.getElementById("access-exact")?.disabled).toBe(true);
+
+    // Register rule
+    ui.document.getElementById("access-submit")!.click();
+    await flush();
+
+    const registerCall = ui.calls.find(c => c.name === "register_permanent_access_rule" && c.args.executablePath === "C:\\Apps\\Code.exe");
+    expect(registerCall).toBeDefined();
+    expect(registerCall?.args).toMatchObject({
+      pid: 0,
+      nativeId: "",
+      executablePath: "C:\\Apps\\Code.exe",
+      kind: "desktop",
+      effect: "allow",
+      exactWindow: false,
+    });
+    expect(ui.getPolicy().rules).toHaveLength(1);
+    expect(ui.getPolicy().rules[0].app.executablePath).toBe("C:\\Apps\\Code.exe");
+  });
+
+  it("allows browsing and selecting any executable via pick_permanent_access_executable", async () => {
+    const ui = boot();
+    await flush();
+
+    const pickExeBtn = ui.document.getElementById("access-pick-exe")!;
+    expect(pickExeBtn).not.toBeNull();
+    pickExeBtn.click();
+    await flush();
+
+    expect(ui.calls.some(c => c.name === "pick_permanent_access_executable")).toBe(true);
+    expect(ui.document.getElementById("access-selected-title")?.textContent).toBe("Notepad");
+    expect(ui.document.getElementById("access-selected-subtitle")?.textContent).toContain("Notepad.exe");
+
+    // Register picked executable
+    ui.document.getElementById("access-submit")!.click();
+    await flush();
+
+    const reg = ui.calls.find(c => c.name === "register_permanent_access_rule" && c.args.executablePath === "C:\\Apps\\Notepad.exe");
+    expect(reg).toBeDefined();
+    expect(reg?.args.pid).toBe(0);
+    expect(ui.getPolicy().rules[0].app.executablePath).toBe("C:\\Apps\\Notepad.exe");
+  });
+});
+
+describe("Security Approval Manager tab navigation and grouping", () => {
+  it("renders the 3 main section tabs with accurate initial badges and active pane", async () => {
+    const ui = boot();
+    await flush();
+
+    const tabReg = ui.document.getElementById("access-nav-tab-register");
+    const tabRules = ui.document.getElementById("access-nav-tab-rules");
+    const tabAudit = ui.document.getElementById("access-nav-tab-audit");
+    expect(tabReg).not.toBeNull();
+    expect(tabRules).not.toBeNull();
+    expect(tabAudit).not.toBeNull();
+
+    expect(tabReg?.className).toContain("active");
+    expect(tabRules?.className).not.toContain("active");
+    expect(tabAudit?.className).not.toContain("active");
+
+    const badgeRules = ui.document.getElementById("access-tab-badge-rules");
+    expect(badgeRules?.textContent).toBe("0");
+
+    const paneReg = ui.document.getElementById("access-pane-register");
+    const paneRules = ui.document.getElementById("access-pane-rules");
+    const paneAudit = ui.document.getElementById("access-pane-audit");
+    expect(paneReg?.hidden).toBe(false);
+    expect(paneRules?.hidden).toBe(true);
+    expect(paneAudit?.hidden).toBe(true);
+  });
+
+  it("switches between tabs and activates corresponding panels on click", async () => {
+    const ui = boot();
+    await flush();
+
+    // Click Aturan Terdaftar
+    ui.document.getElementById("access-nav-tab-rules")!.click();
+    expect(ui.document.getElementById("access-pane-rules")?.hidden).toBe(false);
+    expect(ui.document.getElementById("access-pane-register")?.hidden).toBe(true);
+    expect(ui.document.getElementById("access-pane-audit")?.hidden).toBe(true);
+    expect(ui.document.getElementById("access-nav-tab-rules")?.className).toContain("active");
+    expect(ui.document.getElementById("access-nav-tab-register")?.className).not.toContain("active");
+
+    // Click Log Audit
+    ui.document.getElementById("access-nav-tab-audit")!.click();
+    expect(ui.document.getElementById("access-pane-audit")?.hidden).toBe(false);
+    expect(ui.document.getElementById("access-pane-rules")?.hidden).toBe(true);
+    expect(ui.document.getElementById("access-pane-register")?.hidden).toBe(true);
+    expect(ui.document.getElementById("access-nav-tab-audit")?.className).toContain("active");
+
+    // Click Daftarkan Izin
+    ui.document.getElementById("access-nav-tab-register")!.click();
+    expect(ui.document.getElementById("access-pane-register")?.hidden).toBe(false);
+    expect(ui.document.getElementById("access-pane-rules")?.hidden).toBe(true);
+    expect(ui.document.getElementById("access-pane-audit")?.hidden).toBe(true);
+    expect(ui.document.getElementById("access-nav-tab-register")?.className).toContain("active");
+  });
+
+  it("dynamically updates tab badges when rules and audit logs are modified", async () => {
+    const ui = boot();
+    await flush();
+
+    // Register a rule
+    ui.document.getElementById("access-app-list")!.firstChild!.click();
+    ui.document.getElementById("access-submit")!.click();
+    await flush();
+
+    const badgeRules = ui.document.getElementById("access-tab-badge-rules");
+    expect(badgeRules?.textContent).toBe("1");
+
+    const badgeAudit = ui.document.getElementById("access-tab-badge-audit");
+    expect(Number(badgeAudit?.textContent)).toBeGreaterThan(0);
+
+    // Switch to rules tab and revoke rule
+    ui.document.getElementById("access-nav-tab-rules")!.click();
+    const rows = ui.document.getElementById("access-rule-list")!.children;
+    rows[0].lastChild!.click();
+    await flush();
+
+    expect(badgeRules?.textContent).toBe("0");
   });
 });
 

@@ -2558,6 +2558,7 @@
               <button type="button" id="desktop-live-filter-native" aria-pressed="false">Applications</button>
               <button type="button" id="desktop-live-filter-managed-cdp" aria-pressed="false">Chrome CDP</button>
               <button type="button" id="desktop-live-filter-cdp-delegate" aria-pressed="false">CDP Delegate</button>
+              <button type="button" id="desktop-live-filter-lan-device" aria-pressed="false">LAN Devices</button>
             </div>
           </div>
 
@@ -2575,11 +2576,14 @@
               <div class="desktop-live-stream-controls">
                 <span id="desktop-live-stream-fps" class="desktop-live-stream-fps" title="Delivered frame rate and resolution">0.0 FPS · 0×0</span>
                 <label for="desktop-live-stream-quality" class="desktop-live-sr-only">Quality preset</label>
-                <select id="desktop-live-stream-quality" class="desktop-live-stream-select" title="Adaptive preview quality and resolution">
-                  <option value="balanced" selected>Balanced · 1280px</option>
-                  <option value="detail">Detail · 1920px</option>
-                  <option value="save">Save data · 768px</option>
+                <select id="desktop-live-stream-quality" class="desktop-live-stream-select" title="Pilihan preset kualitas dan framerate">
+                  <option value="ultra" selected>Ultra · 60 FPS (1280px · Q78)</option>
+                  <option value="detail">Detail · 30 FPS (1920px · Q85)</option>
+                  <option value="balanced">Balanced · 25 FPS (1280px · Q72)</option>
+                  <option value="save">Save data · 6 FPS (768px · Q55)</option>
                 </select>
+                <button type="button" id="desktop-live-stream-takeover" class="button secondary small desktop-live-takeover-btn" title="Ambil alih kendali jendela ini secara fisik dari agen dan bawa ke depan">Take Over</button>
+                <button type="button" id="desktop-live-stream-toggle-control" class="button ghost small desktop-live-control-toggle-btn" title="Toggle kontrol klik dan ketik teks pada layar">Control: OFF</button>
                 <button type="button" id="desktop-live-stream-stop" class="button secondary small">Stop stream</button>
               </div>
             </div>
@@ -2588,6 +2592,20 @@
               <div id="desktop-live-stream-placeholder" class="desktop-live-stream-placeholder">
                 <div class="desktop-live-stream-spinner" aria-hidden="true"></div>
                 <p id="desktop-live-stream-placeholder-text">Awaiting native OS confirmation dialog…</p>
+              </div>
+            </div>
+            <div id="desktop-live-stream-input-bar" class="desktop-live-stream-input-bar" hidden>
+              <div class="desktop-live-stream-input-row">
+                <input type="text" id="desktop-live-stream-type-input" class="input desktop-live-stream-type-input" placeholder="Ketik teks untuk dikirim ke aplikasi..." autocomplete="off" />
+                <button type="button" id="desktop-live-stream-type-send" class="button primary small">Send</button>
+              </div>
+              <div class="desktop-live-stream-quick-keys">
+                <span class="desktop-live-stream-keys-label">Quick keys:</span>
+                <button type="button" class="button ghost small desktop-live-key-btn" data-key="ENTER">Enter ↵</button>
+                <button type="button" class="button ghost small desktop-live-key-btn" data-key="TAB">Tab ⇥</button>
+                <button type="button" class="button ghost small desktop-live-key-btn" data-key="ESCAPE">Esc</button>
+                <button type="button" class="button ghost small desktop-live-key-btn" data-key="BACKSPACE">Bksp ⌫</button>
+                <button type="button" class="button ghost small desktop-live-key-btn" data-key="SPACE">Space ␣</button>
               </div>
             </div>
             <div id="desktop-live-lan-banner" class="desktop-live-lan-banner" hidden>

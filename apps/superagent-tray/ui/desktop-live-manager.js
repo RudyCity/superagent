@@ -5,12 +5,13 @@
 (function () {
   const el = id => document.getElementById(id);
   const kinds = Object.freeze({ all:"All screens", native:"Applications",
-    "managed-cdp":"Chrome CDP", "cdp-delegate":"CDP Delegate" });
+    "managed-cdp":"Chrome CDP", "cdp-delegate":"CDP Delegate", "lan-device":"LAN Devices" });
   const state = {items:[],sources:{},filter:"all",loading:false,poll:null};
   const streamPresets = Object.freeze({
-    balanced: { maxWidth: 1280, quality: 65, intervalMs: 250 },
-    detail: { maxWidth: 1920, quality: 80, intervalMs: 150 },
-    save: { maxWidth: 768, quality: 50, intervalMs: 500 },
+    ultra: { maxWidth: 1280, quality: 78, intervalMs: 16 },
+    detail: { maxWidth: 1920, quality: 85, intervalMs: 33 },
+    balanced: { maxWidth: 1280, quality: 72, intervalMs: 40 },
+    save: { maxWidth: 768, quality: 55, intervalMs: 160 },
   });
   const stream = {
     active: false,
@@ -20,7 +21,7 @@
     application: "",
     pid: 0,
     nativeId: "",
-    quality: "balanced",
+    quality: "ultra",
     lastHash: null,
     timer: null,
     inFlight: false,
@@ -29,6 +30,9 @@
     fpsLastTime: 0,
     currentFps: "0.0",
     lanUrl: "",
+    controlEnabled: false,
+    isLanDevice: false,
+    deviceId: "",
   };
 
   const invoke = async (action,payload) => {
@@ -50,9 +54,17 @@
 
   function scheduleNextFrame() {
     if (!stream.active || !stream.token) return;
-    if (stream.timer) clearTimeout(stream.timer);
-    const cfg = streamPresets[stream.quality] || streamPresets.balanced;
-    stream.timer = setTimeout(fetchFrame, cfg.intervalMs);
+    if (stream.timer) {
+      clearTimeout(stream.timer);
+      cancelAnimationFrame(stream.timer);
+      stream.timer = null;
+    }
+    const cfg = streamPresets[stream.quality] || streamPresets.ultra;
+    if (cfg.intervalMs <= 20) {
+      stream.timer = requestAnimationFrame(() => void fetchFrame());
+    } else {
+      stream.timer = setTimeout(fetchFrame, cfg.intervalMs);
+    }
   }
 
   async function fetchFrame() {
@@ -64,13 +76,29 @@
     stream.inFlight = true;
     const cfg = streamPresets[stream.quality] || streamPresets.balanced;
     try {
-      const frameData = await invoke("frame", {
-        token: stream.token,
-        codec: "jpeg",
-        maxWidth: cfg.maxWidth,
-        quality: cfg.quality,
-        ...(stream.lastHash ? { knownHash: stream.lastHash } : {}),
-      });
+      let frameData;
+      if (stream.isLanDevice) {
+        const call = window.__TAURI__?.core?.invoke;
+        const res = await call("lan_support_action", {
+          action: "screen",
+          payload: { deviceId: stream.deviceId },
+        });
+        if (!res?.success) throw Error(res?.error || "Gagal mengambil frame screen dari LAN client");
+        frameData = {
+          success: true,
+          jpeg: res.frame?.data || res.data,
+          width: res.frame?.width || res.width,
+          height: res.frame?.height || res.height,
+        };
+      } else {
+        frameData = await invoke("frame", {
+          token: stream.token,
+          codec: "jpeg",
+          maxWidth: cfg.maxWidth,
+          quality: cfg.quality,
+          ...(stream.lastHash ? { knownHash: stream.lastHash } : {}),
+        });
+      }
       if (!stream.active) return;
       if (!frameData?.success && frameData?.error) throw Error(frameData.error);
 
@@ -111,14 +139,21 @@
   }
 
   async function startStream(item, button) {
-    const parts = (item.id || "").split(":");
-    if (parts.length < 3 || parts[0] !== "native") return;
-    const pid = Number(parts[1]);
-    const nativeId = parts.slice(2).join(":");
-    if (!Number.isSafeInteger(pid) || pid <= 0 || !nativeId) return;
-
     if (stream.active) {
       await stopStream();
+    }
+
+    const isLan = item.kind === "lan-device" || item.id.startsWith("lan:");
+    let pid = 0, nativeId = "", deviceId = "";
+    if (isLan) {
+      deviceId = item.id.slice(4);
+      if (!deviceId) return;
+    } else {
+      const parts = (item.id || "").split(":");
+      if (parts.length < 3 || parts[0] !== "native") return;
+      pid = Number(parts[1]);
+      nativeId = parts.slice(2).join(":");
+      if (!Number.isSafeInteger(pid) || pid <= 0 || !nativeId) return;
     }
 
     const panel = el("desktop-live-stream-panel");
@@ -132,41 +167,70 @@
     const lanUrlEl = el("desktop-live-lan-url");
 
     if (panel) panel.hidden = false;
-    if (titleEl) titleEl.textContent = item.title || item.application || "Native Window";
-    if (metaEl) metaEl.textContent = (item.application || "App") + " (PID: " + pid + ")";
+    if (titleEl) titleEl.textContent = item.title || item.application || (isLan ? "LAN Screen" : "Native Window");
+    if (metaEl) metaEl.textContent = isLan ? `LAN Device (${item.handle})` : `${item.application || "App"} (PID: ${pid})`;
     if (placeholder) placeholder.hidden = false;
-    if (placeholderText) placeholderText.textContent = "Awaiting native OS confirmation dialog…";
+    if (placeholderText) placeholderText.textContent = isLan ? "Connecting to LAN client screen projection…" : "Awaiting native OS confirmation dialog…";
     if (img) { img.src = ""; img.hidden = true; }
     if (fpsPill) fpsPill.textContent = "0.0 FPS";
 
-    status("Prompting native OS confirmation for " + (item.title || item.application) + "…");
+    status(isLan ? ("Connecting to " + (item.title || "LAN device") + "…") : ("Prompting native OS confirmation for " + (item.title || item.application) + "…"));
     try {
       if (button) button.disabled = true;
-      const result = await invoke("start", { pid, nativeId, consent: true });
-      if (!result?.token) throw Error("Stream consent was not granted.");
 
-      stream.active = true;
-      stream.token = result.token;
-      stream.id = item.id;
-      stream.title = item.title || item.application;
-      stream.application = item.application;
-      stream.pid = pid;
-      stream.nativeId = nativeId;
-      stream.lastHash = null;
-      stream.framesDelivered = 0;
-      stream.fpsWindowCount = 0;
-      stream.fpsLastTime = performance.now();
+      if (isLan) {
+        const call = window.__TAURI__?.core?.invoke;
+        try {
+          await call("lan_support_action", { action: "open", payload: { deviceId } });
+        } catch {}
 
-      // Configure LAN streaming info
-      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
-      const hostIp = window.__SUPERAGENT_LAN_IP || location.hostname || "127.0.0.1";
-      stream.lanUrl = `http://${hostIp}:${corePort}/api/desktop/live/lan-preview?token=${result.token}`;
-      if (lanUrlEl) lanUrlEl.textContent = stream.lanUrl;
-      if (lanBanner) lanBanner.hidden = false;
+        stream.active = true;
+        stream.token = "lan-" + deviceId;
+        stream.id = item.id;
+        stream.title = item.title || "LAN Device";
+        stream.application = item.application || "LAN Client";
+        stream.isLanDevice = true;
+        stream.deviceId = deviceId;
+        stream.pid = 0;
+        stream.nativeId = "";
+        stream.lastHash = null;
+        stream.framesDelivered = 0;
+        stream.fpsWindowCount = 0;
+        stream.fpsLastTime = performance.now();
+        if (lanBanner) lanBanner.hidden = true;
 
-      status("Live stream active for " + (item.title || item.application) + " (5 min TTL).");
-      draw();
-      scheduleNextFrame();
+        status("Live stream active for " + (item.title || "LAN Device") + ".");
+        draw();
+        scheduleNextFrame();
+      } else {
+        const result = await invoke("start", { pid, nativeId, consent: true });
+        if (!result?.token) throw Error("Stream consent was not granted.");
+
+        stream.active = true;
+        stream.token = result.token;
+        stream.id = item.id;
+        stream.title = item.title || item.application;
+        stream.application = item.application;
+        stream.pid = pid;
+        stream.nativeId = nativeId;
+        stream.isLanDevice = false;
+        stream.deviceId = "";
+        stream.lastHash = null;
+        stream.framesDelivered = 0;
+        stream.fpsWindowCount = 0;
+        stream.fpsLastTime = performance.now();
+
+        // Configure LAN streaming info
+        const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
+        const hostIp = window.__SUPERAGENT_LAN_IP || location.hostname || "127.0.0.1";
+        stream.lanUrl = `http://${hostIp}:${corePort}/api/desktop/live/lan-preview?token=${result.token}&quality=78&width=1280`;
+        if (lanUrlEl) lanUrlEl.textContent = stream.lanUrl;
+        if (lanBanner) lanBanner.hidden = false;
+
+        status("Live stream active for " + (item.title || item.application) + " (5 min TTL).");
+        draw();
+        scheduleNextFrame();
+      }
     } catch (err) {
       status("Live stream not started: " + (err?.message || "Denied or cancelled."), true);
       await stopStream();
@@ -178,6 +242,7 @@
   async function stopStream(reason) {
     if (stream.timer) {
       clearTimeout(stream.timer);
+      cancelAnimationFrame(stream.timer);
       stream.timer = null;
     }
     const token = stream.token;
@@ -193,6 +258,17 @@
     if (img) { img.src = ""; img.hidden = true; }
     const lanBanner = el("desktop-live-lan-banner");
     if (lanBanner) lanBanner.hidden = true;
+
+    stream.controlEnabled = false;
+    const inputBar = el("desktop-live-stream-input-bar");
+    if (inputBar) inputBar.hidden = true;
+    const toggleBtn = el("desktop-live-stream-toggle-control");
+    if (toggleBtn) {
+      toggleBtn.textContent = "Control: OFF";
+      toggleBtn.classList.remove("active");
+    }
+    const viewport = el("desktop-live-stream-viewport");
+    if (viewport) viewport.classList.remove("interactive");
 
     if (token) {
       try { await invoke("stop", { token }); } catch {}
@@ -223,7 +299,7 @@
       const card=node("article","desktop-live-item");
       card.dataset.kind=item.kind;
       const glyph=node("span","desktop-live-kind",
-        item.kind==="native"?"APP":item.kind==="managed-cdp"?"CDP":"DLG");
+        item.kind==="native"?"APP":item.kind==="managed-cdp"?"CDP":item.kind==="lan-device"?"LAN":"DLG");
       glyph.setAttribute("aria-hidden","true");
       const info=node("div","desktop-live-information");
       const top=node("div","desktop-live-item-top");
@@ -236,12 +312,12 @@
       if(item.owner)info.append(node("p","desktop-live-owner","Agent: "+item.owner));
       const actions=node("div","desktop-live-actions");
 
-      if (item.kind === "native") {
+      if (item.kind === "native" || item.kind === "lan-device") {
         const isCurrentStreaming = stream.active && stream.id === item.id;
         const watch = node("button", "button " + (isCurrentStreaming ? "primary desktop-live-stream-active-btn" : "secondary") + " desktop-live-watch",
           isCurrentStreaming ? "Streaming…" : "Watch stream");
         watch.type = "button";
-        watch.title = isCurrentStreaming ? "Live stream aktif" : "Mulai live stream pratinjau jendela native";
+        watch.title = isCurrentStreaming ? "Live stream aktif" : item.kind === "lan-device" ? "Mulai live stream layar perangkat LAN" : "Mulai live stream pratinjau jendela native";
         if (isCurrentStreaming) {
           watch.disabled = true;
         } else {
@@ -315,6 +391,139 @@
     el("desktop-live-stream-quality")?.addEventListener("change",(e)=>{
       stream.quality=e.target?.value||"balanced";
       stream.lastHash=null;
+    });
+
+    el("desktop-live-stream-takeover")?.addEventListener("click", async () => {
+      if (!stream.active || !stream.token) return;
+      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
+      status("Mengambil alih kendali aplikasi (Human Takeover)…");
+      try {
+        const res = await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-takeover?token=${encodeURIComponent(stream.token)}`, { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          status("⚡ Human Takeover Aktif: Sesi agen dicabut & jendela aplikasi diaktifkan ke depan layar.");
+        } else {
+          status("Gagal takeover: " + (data.error || "Sesi tidak aktif"), true);
+        }
+      } catch (err) {
+        status("Kesalahan saat takeover: " + (err?.message || "Koneksi gagal"), true);
+      }
+    });
+
+    el("desktop-live-stream-toggle-control")?.addEventListener("click", () => {
+      if (!stream.active) return;
+      stream.controlEnabled = !stream.controlEnabled;
+      const btn = el("desktop-live-stream-toggle-control");
+      const inputBar = el("desktop-live-stream-input-bar");
+      const viewport = el("desktop-live-stream-viewport");
+      if (btn) {
+        btn.textContent = stream.controlEnabled ? "Control: ON" : "Control: OFF";
+        btn.classList.toggle("active", stream.controlEnabled);
+      }
+      if (inputBar) inputBar.hidden = !stream.controlEnabled;
+      if (viewport) viewport.classList.toggle("interactive", stream.controlEnabled);
+      status(stream.controlEnabled ? "Mode Kontrol Aktif: Klik pada stream atau ketik teks untuk mengontrol jendela." : "Mode Kontrol Dimatikan.");
+    });
+
+    el("desktop-live-stream-img")?.addEventListener("click", async (e) => {
+      if (!stream.controlEnabled || !stream.active) return;
+      const img = el("desktop-live-stream-img");
+      if (!img || img.clientWidth <= 0 || img.clientHeight <= 0) return;
+      const relX = Math.max(0, Math.min(1, e.offsetX / img.clientWidth));
+      const relY = Math.max(0, Math.min(1, e.offsetY / img.clientHeight));
+      if (stream.isLanDevice) {
+        const call = window.__TAURI__?.core?.invoke;
+        try {
+          await call("lan_support_action", {
+            action: "input",
+            payload: { deviceId: stream.deviceId, kind: "tap", x: relX, y: relY },
+          });
+        } catch (err) {
+          status("Gagal tap ke perangkat LAN: " + (err?.message || "Koneksi terputus"), true);
+        }
+        return;
+      }
+      if (!stream.token) return;
+      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
+      try {
+        await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-input`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: stream.token, action: "click", relX, relY }),
+        });
+      } catch {}
+    });
+
+    async function sendTrayType() {
+      const input = el("desktop-live-stream-type-input");
+      if (!input || !stream.active) return;
+      const text = input.value;
+      if (!text) return;
+      if (stream.isLanDevice) {
+        const call = window.__TAURI__?.core?.invoke;
+        try {
+          await call("lan_support_action", {
+            action: "input",
+            payload: { deviceId: stream.deviceId, kind: "text", text },
+          });
+          input.value = "";
+          status("Teks berhasil dikirim ke perangkat LAN.");
+        } catch (err) {
+          status("Gagal mengirim teks ke perangkat LAN: " + (err?.message || "Koneksi terputus"), true);
+        }
+        return;
+      }
+      if (!stream.token) return;
+      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
+      try {
+        await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-input`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token: stream.token, action: "type", text }),
+        });
+        input.value = "";
+        status("Teks berhasil dikirim ke jendela aplikasi.");
+      } catch (err) {
+        status("Gagal mengirim teks: " + (err?.message || "Koneksi gagal"), true);
+      }
+    }
+    el("desktop-live-stream-type-send")?.addEventListener("click", () => void sendTrayType());
+    el("desktop-live-stream-type-input")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); void sendTrayType(); }
+    });
+
+    document.querySelectorAll(".desktop-live-key-btn").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        if (!stream.active) return;
+        const key = btn.dataset.key;
+        if (!key) return;
+        if (stream.isLanDevice) {
+          const call = window.__TAURI__?.core?.invoke;
+          const androidKind = key === "ESCAPE" ? "back" : key === "SPACE" ? "home" : key === "TAB" ? "recents" : null;
+          if (androidKind) {
+            try {
+              await call("lan_support_action", {
+                action: "input",
+                payload: { deviceId: stream.deviceId, kind: androidKind },
+              });
+              status(`Aksi navigasi ${androidKind} terkirim ke perangkat LAN.`);
+            } catch (err) {
+              status("Gagal kirim navigasi: " + (err?.message || "Error"), true);
+            }
+          }
+          return;
+        }
+        if (!stream.token) return;
+        const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
+        try {
+          await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-input`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: stream.token, action: "key", key }),
+          });
+          status("Tombol " + key + " terkirim ke aplikasi.");
+        } catch {}
+      });
     });
     el("desktop-live-lan-copy")?.addEventListener("click",async()=>{
       if(stream.lanUrl){

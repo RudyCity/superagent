@@ -122,3 +122,30 @@
 .access-audit-op{font-size:9px;color:#c4b5fd;background:rgba(139,92,246,.12);padding:1px 5px;border-radius:4px;font-weight:600}
 .access-audit-time{font-size:10px;color:var(--text-muted,#718096);margin-left:auto}
 .access-audit-target{font-size:10px;color:var(--text-muted,#8998b1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:ui-monospace,SFMono-Regular,monospace}
+
+/* Source Bar & Tabs (Jendela Aktif vs Terinstall) */
+.access-source-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px}
+.access-source-tabs{display:flex;gap:4px;background:rgba(0,0,0,.28);padding:3px;border-radius:9px;border:1px solid rgba(255,255,255,.08);flex:1}
+.access-source-btn{flex:1;appearance:none;border:none;background:transparent;color:var(--text-secondary,#9aa7bc);padding:6px 8px;border-radius:7px;font-size:11px;font-weight:650;cursor:pointer;text-align:center;white-space:nowrap;transition:all .15s ease}
+.access-source-btn:hover:not(.active){color:var(--text-primary,#fff);background:rgba(255,255,255,.06)}
+.access-source-btn.active{background:rgba(139,92,246,.28);color:#fff;font-weight:750;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.access-browse-btn{appearance:none;border:1px solid rgba(167,139,250,.3);background:rgba(139,92,246,.12);color:#d8b4fe;padding:6px 10px;border-radius:8px;font-size:11px;font-weight:680;cursor:pointer;white-space:nowrap;transition:all .15s ease}
+.access-browse-btn:hover{background:rgba(139,92,246,.24);color:#fff;border-color:rgba(167,139,250,.5)}
+.access-app-avatar.installed{background:rgba(45,212,191,.18);color:#2dd4bf}
+
+/* Grouped Main Section Tabs */
+.access-nav-tabs{display:flex;align-items:center;gap:6px;padding:6px;background:var(--bg-surface,#111827);border:1px solid var(--border-subtle,rgba(255,255,255,.08));border-radius:13px;overflow-x:auto}
+.access-nav-tab{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;background:transparent;border:1px solid transparent;border-radius:9px;color:var(--text-secondary,#9aa7bc);font-size:12px;font-weight:650;cursor:pointer;white-space:nowrap;user-select:none;transition:all .15s ease}
+.access-nav-tab:hover:not(.active){color:var(--text-primary,#fff);background:rgba(255,255,255,.05)}
+.access-nav-tab:active{transform:translateY(1px)}
+.access-nav-tab:focus-visible{outline:2px solid #a78bfa;outline-offset:1px}
+.access-nav-tab.active{color:#fff;background:rgba(139,92,246,.22);border-color:rgba(167,139,250,.4);box-shadow:0 2px 8px rgba(0,0,0,.25);font-weight:750}
+.access-nav-tab-icon{font-size:13px;line-height:1}
+.access-nav-tab-badge{font-size:10px;font-weight:750;padding:2px 7px;border-radius:100px;background:rgba(148,163,184,.14);color:var(--text-secondary,#cbd5e1);border:1px solid rgba(255,255,255,.08);line-height:1.2}
+.access-nav-tab.active .access-nav-tab-badge{background:rgba(167,139,250,.3);color:#f3e8ff;border-color:rgba(196,181,253,.35)}
+.access-live-pulse-dot{color:#34d399;font-size:10px;animation:access-pulse 2s cubic-bezier(.4,0,.6,1) infinite}
+
+/* Tab Panes */
+.access-pane{display:grid;gap:18px}
+.access-pane[hidden]{display:none !important}
+@media(max-width:640px){.access-nav-tabs{gap:4px;padding:4px}.access-nav-tab{padding:7px 10px;font-size:11px}}

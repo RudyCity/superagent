@@ -133,6 +133,11 @@
   color: var(--accent);
   border-color: var(--border-medium);
 }
+.desktop-live-item[data-kind="lan-device"] .desktop-live-kind {
+  color: #34d399;
+  border-color: rgba(52, 211, 153, 0.35);
+  background: rgba(52, 211, 153, 0.08);
+}
 .desktop-live-information {
   display: grid;
   gap: 4px;
@@ -625,4 +630,80 @@
   border-color: rgba(56, 189, 248, 0.5) !important;
   color: #38bdf8 !important;
 }
+
+.desktop-live-takeover-btn {
+  background: rgba(245, 158, 11, 0.16) !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  color: #fbbf24 !important;
+  font-weight: 650;
+}
+.desktop-live-takeover-btn:hover {
+  background: rgba(245, 158, 11, 0.28) !important;
+}
+
+.desktop-live-control-toggle-btn.active {
+  background: rgba(56, 189, 248, 0.2) !important;
+  border-color: var(--accent, #38bdf8) !important;
+  color: var(--accent, #38bdf8) !important;
+}
+
+.desktop-live-stream-viewport.interactive .desktop-live-stream-img {
+  cursor: crosshair;
+}
+
+.desktop-live-stream-input-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-surface-raised, #101622);
+  border: 1px solid var(--border-medium, rgba(148, 163, 184, 0.22));
+  border-radius: var(--radius-sm, 6px);
+}
+
+.desktop-live-stream-input-bar[hidden] {
+  display: none !important;
+}
+
+.desktop-live-stream-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.desktop-live-stream-type-input {
+  flex: 1;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 12px;
+  background: var(--bg-surface-sunken, #080c13);
+  border: 1px solid var(--border-subtle, rgba(148, 163, 184, 0.18));
+  border-radius: var(--radius-xs, 4px);
+  color: var(--text-primary, #f1f5fa);
+  outline: none;
+}
+.desktop-live-stream-type-input:focus {
+  border-color: var(--accent, #38bdf8);
+}
+
+.desktop-live-stream-quick-keys {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.desktop-live-stream-keys-label {
+  font-size: 11px;
+  color: var(--text-secondary, #94a3b8);
+  margin-right: 2px;
+}
+
+.desktop-live-key-btn {
+  min-height: 24px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 

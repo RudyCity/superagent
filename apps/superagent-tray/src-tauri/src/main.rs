@@ -1798,6 +1798,47 @@ async fn select_runtime_core(port: u16) -> Result<Value, String> {
     Ok(json!({ "success": true, "port": port }))
 }
 
+#[tauri::command]
+fn get_yolo_mode() -> Result<String, String> {
+    let dir = config_dir()?;
+    let path = dir.join("yolo-mode.json");
+    if !path.exists() {
+        return Ok("off".to_string());
+    }
+    let content = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let parsed: Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+    let mode = parsed.get("mode").and_then(|m| m.as_str()).unwrap_or("off");
+    if mode == "full" || mode == "scoped" {
+        Ok(mode.to_string())
+    } else {
+        Ok("off".to_string())
+    }
+}
+
+#[tauri::command]
+fn set_yolo_mode(mode: String) -> Result<String, String> {
+    if mode != "off" && mode != "scoped" && mode != "full" {
+        return Err("Invalid YOLO mode. Allowed: off, scoped, full".into());
+    }
+    let dir = config_dir()?;
+    if !dir.exists() {
+        fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    let state = json!({
+        "mode": mode,
+        "updatedAt": now,
+        "source": "superagent-tray"
+    });
+    let path = dir.join("yolo-mode.json");
+    fs::write(&path, serde_json::to_string_pretty(&state).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    Ok(mode)
+}
+
 async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
     // path comes from the fixed match below, never from the webview.
     let info = server_info()?;
@@ -2455,6 +2496,8 @@ fn main() {
             daemon_action,
             detect_runtime,
             select_runtime_core,
+            get_yolo_mode,
+            set_yolo_mode,
             service_action,
             lifecycle_console_request,
             create_connection,
@@ -2467,6 +2510,8 @@ fn main() {
             desktop_input_trust::revoke_desktop_input_window,
             desktop_input_trust::revoke_all_desktop_input_windows,
             desktop_access_registry::get_permanent_access_registry,
+            desktop_access_registry::list_installed_desktop_apps,
+            desktop_access_registry::pick_permanent_access_executable,
             desktop_access_registry::pick_permanent_access_path,
             desktop_access_registry::register_permanent_access_rule,
             desktop_access_registry::revoke_permanent_access_rule,

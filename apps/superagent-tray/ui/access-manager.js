@@ -3,7 +3,7 @@
   // Native Tray Access Manager: no WebView-side policy writes or localStorage.
   // All grants are performed by the native host after OS verification + dialog.
   const $ = (id) => document.getElementById(id);
-  const state = { registry: null, windows: [], selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [] };
+  const state = { registry: null, windows: [], installedApps: [], appSource: "active", selected: "", busy: false, view: "desktop", ruleFilter: "all", ruleSearch: "", auditLogs: [], activeTab: "register" };
   const invoke = (name, args) => {
     const native = window.__TAURI__?.core?.invoke;
     if (typeof native !== "function") throw Error("Installed native Tray required");
@@ -61,14 +61,15 @@
     for (const id of ["access-submit","access-refresh","access-select-window",
       "access-effect","access-kind","access-exact","access-view","access-input","access-element-role","access-element-label",
       "access-file-path","access-file-recursive","access-file-read","access-file-write","access-file-delete",
-      "access-pick-file","access-pick-folder","access-audit-clear","access-audit-refresh"]) {
+      "access-pick-file","access-pick-folder","access-audit-clear","access-audit-refresh",
+      "access-src-active","access-src-installed","access-pick-exe"]) {
       const el = $(id);
       if (el) el.disabled = value;
     }
     const submit = $("access-submit");
     if (submit && !value) submit.disabled = state.view === "file"
       ? !$("access-file-path")?.value.trim()
-      : !state.selected;
+      : !selectedTarget();
   }
   function appName(path) {
     return String(path || "Unknown executable").split(/[\\/]/).pop() || "Unknown executable";
@@ -76,49 +77,151 @@
   function selectedWindow() {
     return state.windows.find(w => String(w.pid) + ":" + w.nativeId === state.selected);
   }
+  function selectedInstalledApp() {
+    return state.installedApps.find(a => "installed:" + a.executablePath === state.selected);
+  }
+  function selectedTarget() {
+    if (state.appSource === "active") {
+      const w = selectedWindow();
+      if (!w) return null;
+      return {
+        type: "active",
+        name: w.application,
+        title: w.title,
+        pid: w.pid,
+        nativeId: w.nativeId,
+        path: null,
+        desc: w.title + " · PID " + w.pid,
+      };
+    } else {
+      const a = selectedInstalledApp();
+      if (!a) return null;
+      return {
+        type: "installed",
+        name: a.name,
+        title: "Semua jendela aplikasi ini",
+        pid: 0,
+        nativeId: "",
+        path: a.executablePath,
+        desc: a.executablePath + " · Aplikasi Terinstall",
+      };
+    }
+  }
+  function updateSourceTabs() {
+    const tabActive = $("access-src-active");
+    const tabInstalled = $("access-src-installed");
+    if (tabActive) {
+      tabActive.textContent = "Jendela Aktif (" + state.windows.length + ")";
+      tabActive.className = "access-source-btn" + (state.appSource === "active" ? " active" : "");
+    }
+    if (tabInstalled) {
+      tabInstalled.textContent = "Terinstall (" + state.installedApps.length + ")";
+      tabInstalled.className = "access-source-btn" + (state.appSource === "installed" ? " active" : "");
+    }
+  }
+  function setAppSource(source) {
+    state.appSource = source;
+    updateSourceTabs();
+    state.selected = "";
+    renderCandidateList();
+    updateSelection();
+    if (source === "installed" && !state.installedApps.length) {
+      void refreshInstalledApps();
+    }
+  }
   function renderCandidateList() {
     const list = $("access-app-list");
     if (!list) return;
     list.replaceChildren();
     const query = ($("access-search")?.value || "").trim().toLowerCase();
-    const candidates = state.windows.filter(w =>
-      (w.application + " " + w.title).toLowerCase().includes(query));
-    if (!candidates.length) list.append(make("p", "access-empty", "Tidak ada jendela cocok. Buka aplikasinya, lalu klik Refresh."));
-    for (const w of candidates) {
-      const key = String(w.pid) + ":" + w.nativeId;
-      const row = action("", "access-app-row" + (key === state.selected ? " selected" : ""), () => {
-        state.selected = key;
-        renderCandidateList();
-        updateSelection();
-      });
-      const avatar = make("span", "access-app-avatar", (w.application[0] || "A").toUpperCase());
-      const description = make("span", "access-app-description");
-      description.append(make("strong", "", w.application), make("small", "", w.title));
-      const registered = (state.registry?.rules || []).some(r => {
-        if (r.kind !== "desktop" || r.effect !== "allow") return false;
-        const appMatches = appName(r.app?.executablePath).toLowerCase().replace(/\.exe$/, "") ===
-          w.application.toLowerCase().replace(/\.exe$/, "");
-        if (!appMatches) return false;
-        return r.scope?.windowTitle === w.title || !r.scope?.windowTitle;
-      });
-      const badge = make("span", "access-app-badge" + (registered ? " registered" : ""),
-        registered ? "Aturan ada" : "Belum");
-      row.append(avatar, description, badge);
-      list.append(row);
+
+    if (state.appSource === "active") {
+      const candidates = state.windows.filter(w =>
+        (w.application + " " + w.title).toLowerCase().includes(query));
+      if (!candidates.length) {
+        list.append(make("p", "access-empty", "Tidak ada jendela aktif cocok. Buka aplikasinya, klik Refresh, atau pilih tab Terinstall."));
+      }
+      for (const w of candidates) {
+        const key = String(w.pid) + ":" + w.nativeId;
+        const row = action("", "access-app-row" + (key === state.selected ? " selected" : ""), () => {
+          state.selected = key;
+          renderCandidateList();
+          updateSelection();
+        });
+        const avatar = make("span", "access-app-avatar", (w.application[0] || "A").toUpperCase());
+        const description = make("span", "access-app-description");
+        description.append(make("strong", "", w.application), make("small", "", w.title + " (PID " + w.pid + ")"));
+        const registered = (state.registry?.rules || []).some(r => {
+          if (r.kind !== "desktop" || r.effect !== "allow") return false;
+          const appMatches = appName(r.app?.executablePath).toLowerCase().replace(/\.exe$/, "") ===
+            w.application.toLowerCase().replace(/\.exe$/, "");
+          if (!appMatches) return false;
+          return r.scope?.windowTitle === w.title || !r.scope?.windowTitle;
+        });
+        const badge = make("span", "access-app-badge" + (registered ? " registered" : ""),
+          registered ? "Aturan ada" : "Belum");
+        row.append(avatar, description, badge);
+        list.append(row);
+      }
+    } else {
+      const candidates = state.installedApps.filter(a =>
+        (a.name + " " + (a.executablePath || "")).toLowerCase().includes(query));
+      if (!candidates.length) {
+        list.append(make("p", "access-empty", "Tidak ada aplikasi terinstall cocok. Gunakan tombol '📁 .exe' untuk memilih executable langsung."));
+      }
+      for (const a of candidates) {
+        const key = "installed:" + a.executablePath;
+        const row = action("", "access-app-row" + (key === state.selected ? " selected" : ""), () => {
+          state.selected = key;
+          renderCandidateList();
+          updateSelection();
+        });
+        const avatar = make("span", "access-app-avatar installed", (a.name[0] || "A").toUpperCase());
+        const description = make("span", "access-app-description");
+        description.append(make("strong", "", a.name), make("small", "", a.executablePath));
+        const registered = (state.registry?.rules || []).some(r => {
+          if (r.kind !== "desktop" || r.effect !== "allow") return false;
+          return (r.app?.executablePath || "").toLowerCase() === a.executablePath.toLowerCase() ||
+            appName(r.app?.executablePath).toLowerCase().replace(/\.exe$/, "") === a.name.toLowerCase().replace(/\.exe$/, "");
+        });
+        const badge = make("span", "access-app-badge" + (registered ? " registered" : ""),
+          registered ? "Aturan ada" : "Belum");
+        row.append(avatar, description, badge);
+        list.append(row);
+      }
     }
   }
   function updateSelection() {
-    const active = selectedWindow();
+    const target = selectedTarget();
     const title = $("access-selected-title");
-    if (title) title.textContent = active ? active.application : "Pilih aplikasi";
+    if (title) title.textContent = target ? target.name : "Pilih aplikasi";
     const sub = $("access-selected-subtitle");
-    if (sub) sub.textContent = active
-      ? active.title + " · PID " + active.pid
-      : "Pilih jendela aktif dari daftar untuk registrasi.";
+    if (sub) sub.textContent = target
+      ? target.desc
+      : (state.appSource === "active"
+          ? "Pilih jendela aktif dari daftar untuk registrasi."
+          : "Pilih aplikasi terinstall dari daftar untuk registrasi.");
+    const exactWrap = $("access-exact")?.parentNode;
+    if ($("access-exact")) {
+      if (target?.type === "installed") {
+        $("access-exact").checked = false;
+        $("access-exact").disabled = true;
+        if (exactWrap?.style) {
+          exactWrap.style.opacity = "0.5";
+        }
+        if (exactWrap) exactWrap.title = "Aturan aplikasi terinstall berlaku untuk seluruh jendela executable ini";
+      } else {
+        $("access-exact").disabled = state.busy;
+        if (exactWrap?.style) {
+          exactWrap.style.opacity = "1";
+        }
+        if (exactWrap) exactWrap.title = "";
+      }
+    }
     const submit = $("access-submit");
     if (submit) submit.disabled = state.busy || (state.view === "file"
       ? !$("access-file-path")?.value.trim()
-      : !active);
+      : !target);
   }
   function setRuleFilter(filter) {
     state.ruleFilter = filter;
@@ -140,6 +243,8 @@
     const allRules = state.registry?.rules || [];
     if (count) count.textContent = allRules.length + " aturan";
     if (empty) empty.hidden = allRules.length > 0;
+    const ruleBadge = $("access-tab-badge-rules");
+    if (ruleBadge) ruleBadge.textContent = String(allRules.length);
 
     const desktopCount = allRules.filter(r => r.kind === "desktop").length;
     const fileCount = allRules.filter(r => r.kind === "file").length;
@@ -216,14 +321,59 @@
       if (!result || result.success !== true || !Array.isArray(result.windows) || result.windows.length > 100)
         throw Error("Inventaris jendela tidak valid");
       state.windows = result.windows.filter(validWindow);
-      if (!selectedWindow()) state.selected = "";
+      if (state.appSource === "active" && !selectedWindow()) state.selected = "";
+      updateSourceTabs();
       renderCandidateList();
       updateSelection();
-      status(state.windows.length + " jendela ditemukan. Pilih aplikasi untuk membuat aturan.");
+      status(state.windows.length + " jendela aktif ditemukan. Pilih aplikasi untuk membuat aturan.");
     } catch {
-      state.windows = []; state.selected = "";
-      renderCandidateList(); updateSelection();
+      state.windows = [];
+      if (state.appSource === "active") state.selected = "";
+      updateSourceTabs();
+      renderCandidateList();
+      updateSelection();
       status("Jendela tidak bisa diverifikasi. Periksa Core dan fokuskan Tray.", "error");
+    }
+  }
+  async function refreshInstalledApps() {
+    if (state.busy) return;
+    status("Memeriksa aplikasi terinstall pada sistem...");
+    try {
+      const list = await invoke("list_installed_desktop_apps");
+      if (!Array.isArray(list)) throw Error("Inventaris aplikasi terinstall tidak valid");
+      state.installedApps = list.filter(a => a && typeof a.name === "string" && typeof a.executablePath === "string");
+      if (state.appSource === "installed" && !selectedInstalledApp()) state.selected = "";
+      updateSourceTabs();
+      renderCandidateList();
+      updateSelection();
+      status(state.installedApps.length + " aplikasi terinstall ditemukan. Pilih aplikasi untuk membuat aturan.");
+    } catch (error) {
+      state.installedApps = [];
+      if (state.appSource === "installed") state.selected = "";
+      updateSourceTabs();
+      renderCandidateList();
+      updateSelection();
+      status("Gagal mendeteksi aplikasi terinstall: " + String(error), "warning");
+    }
+  }
+  async function pickExecutable() {
+    if (state.busy) return;
+    try {
+      const chosen = await invoke("pick_permanent_access_executable");
+      if (!chosen) return;
+      const name = appName(chosen).replace(/\.exe$/i, "");
+      const existing = state.installedApps.find(a => a.executablePath.toLowerCase() === chosen.toLowerCase());
+      if (!existing) {
+        state.installedApps.unshift({ name, executablePath: chosen });
+      }
+      setAppSource("installed");
+      state.selected = "installed:" + chosen;
+      renderCandidateList();
+      updateSelection();
+      updateSourceTabs();
+      status("Executable terpilih: " + name + ". Siap diregistrasikan.", "info");
+    } catch (error) {
+      status("Pemilihan executable gagal: " + String(error), "error");
     }
   }
   function registryValid(value) {
@@ -246,13 +396,13 @@
   async function registerRule() {
     if (state.busy) return;
     const kind = state.view;
-    const window = selectedWindow();
-    if (kind === "desktop" && !window) return;
+    const target = selectedTarget();
+    if (kind === "desktop" && !target) return;
     const operations = [];
     if (kind === "desktop") {
       if ($("access-view")?.checked) operations.push("view");
       if ($("access-input")?.checked) operations.push("input");
-      if ($("access-element-label").value.trim() && !$("access-element-role").value.trim()) {
+      if ($("access-element-label")?.value.trim() && !$("access-element-role")?.value.trim()) {
         status("Isi role elemen terlebih dahulu jika membatasi label.", "error");
         return;
       }
@@ -273,15 +423,16 @@
     status("Konfirmasi aturan permanen lewat dialog native...");
     try {
       const registry = await invoke("register_permanent_access_rule", {
-        pid: kind === "desktop" ? window.pid : 0,
-        nativeId: kind === "desktop" ? window.nativeId : "",
+        pid: kind === "desktop" ? target.pid : 0,
+        nativeId: kind === "desktop" ? target.nativeId : "",
         effect: $("access-effect").value,
         kind, operations,
-        exactWindow: kind === "desktop" && $("access-exact").checked,
+        exactWindow: kind === "desktop" && target.type === "active" && $("access-exact").checked,
         elementRole: kind === "desktop" ? ($("access-element-role").value.trim() || null) : null,
         elementLabel: kind === "desktop" ? ($("access-element-label").value.trim() || null) : null,
         filePath: kind === "file" ? $("access-file-path").value.trim() : null,
         recursive: kind === "file" ? $("access-file-recursive").checked : null,
+        executablePath: kind === "desktop" && target.type === "installed" ? target.path : null,
       });
       if (!registryValid(registry)) throw Error("Respons registrasi tidak valid");
       state.registry = registry;
@@ -325,6 +476,8 @@
     if (!list) return;
     list.replaceChildren();
     if (count) count.textContent = state.auditLogs.length + " rekaman";
+    const auditBadge = $("access-tab-badge-audit");
+    if (auditBadge) auditBadge.textContent = String(state.auditLogs.length);
     if (!state.auditLogs.length) {
       list.append(make("p", "access-empty", "Belum ada rekaman audit aktivitas akses."));
       return;
@@ -400,6 +553,48 @@
     }
     updateSelection();
   }
+  function setActiveTab(tabName) {
+    state.activeTab = tabName;
+    const tabRegister = $("access-nav-tab-register");
+    const tabRules = $("access-nav-tab-rules");
+    const tabAudit = $("access-nav-tab-audit");
+    const paneRegister = $("access-pane-register");
+    const paneRules = $("access-pane-rules");
+    const paneAudit = $("access-pane-audit");
+
+    if (tabRegister) {
+      const active = tabName === "register";
+      tabRegister.className = "access-nav-tab" + (active ? " active" : "");
+      tabRegister.setAttribute("aria-selected", active ? "true" : "false");
+      tabRegister.tabIndex = active ? 0 : -1;
+    }
+    if (tabRules) {
+      const active = tabName === "rules";
+      tabRules.className = "access-nav-tab" + (active ? " active" : "");
+      tabRules.setAttribute("aria-selected", active ? "true" : "false");
+      tabRules.tabIndex = active ? 0 : -1;
+    }
+    if (tabAudit) {
+      const active = tabName === "audit";
+      tabAudit.className = "access-nav-tab" + (active ? " active" : "");
+      tabAudit.setAttribute("aria-selected", active ? "true" : "false");
+      tabAudit.tabIndex = active ? 0 : -1;
+    }
+
+    if (paneRegister) paneRegister.hidden = (tabName !== "register");
+    if (paneRules) paneRules.hidden = (tabName !== "rules");
+    if (paneAudit) paneAudit.hidden = (tabName !== "audit");
+  }
+  function updateTabFromHash() {
+    const hash = typeof location !== "undefined" ? location.hash || "" : "";
+    if (hash.includes(":audit")) {
+      setActiveTab("audit");
+    } else if (hash.includes(":rules")) {
+      setActiveTab("rules");
+    } else if (hash.includes(":register")) {
+      setActiveTab("register");
+    }
+  }
   function showInitialSetupReminder() {
     if (!document.body?.appendChild || (state.registry?.rules || []).length > 0 ||
         $("access-initial-setup-reminder")) return;
@@ -435,18 +630,34 @@
     const onboarding = make("div","access-onboarding");
     onboarding.id = "access-onboarding";
     onboarding.append(make("strong","","Mulai dengan aplikasi yang dipercaya"),
-      make("p","","Default semua aplikasi diblokir. Pilih jendela aktif, kemampuan yang boleh digunakan, lalu konfirmasi di dialog native."));
+      make("p","","Default semua aplikasi diblokir. Pilih jendela aktif atau aplikasi terinstall, kemampuan yang boleh digunakan, lalu konfirmasi di dialog native."));
     const topbar = make("div","access-toolbar");
     const search = make("input","access-search");
     search.id = "access-search"; search.placeholder = "Cari aplikasi / jendela..."; search.type = "search";
     search.addEventListener("input",renderCandidateList);
-    topbar.append(search,action("Refresh","access-refresh",()=>void refreshWindows()));
-    topbar.lastChild.id = "access-refresh";
+    const refreshBtn = action("Refresh","access-refresh", () => {
+      if (state.appSource === "installed") void refreshInstalledApps();
+      else void refreshWindows();
+    });
+    refreshBtn.id = "access-refresh";
+    topbar.append(search, refreshBtn);
 
     const split = make("div","access-layout");
     const aside = make("aside","access-sidebar");
-    aside.append(make("div","access-section-label","Aplikasi aktif"),
-      topbar);
+
+    const sourceBar = make("div", "access-source-bar");
+    const sourceTabs = make("div", "access-source-tabs");
+    const tabActive = action("Jendela Aktif (" + state.windows.length + ")", "access-source-btn active", () => setAppSource("active"));
+    tabActive.id = "access-src-active";
+    const tabInstalled = action("Terinstall (" + state.installedApps.length + ")", "access-source-btn", () => setAppSource("installed"));
+    tabInstalled.id = "access-src-installed";
+    sourceTabs.append(tabActive, tabInstalled);
+    const browseExeBtn = action("📁 .exe", "access-browse-btn", () => void pickExecutable());
+    browseExeBtn.id = "access-pick-exe";
+    browseExeBtn.title = "Pilih file .exe langsung dari disk";
+    sourceBar.append(sourceTabs, browseExeBtn);
+
+    aside.append(sourceBar, topbar);
     const candidates = make("div","access-app-list");
     candidates.id = "access-app-list";
     aside.append(candidates);
@@ -555,11 +766,88 @@
     auditList.id = "access-audit-list";
     auditPanel.append(auditHead, auditList);
 
-    const footer=make("p","access-status","Memuat kebijakan native...");
-    footer.id="access-status";footer.setAttribute("role","status");footer.setAttribute("aria-live","polite");
-    root.append(head,onboarding,split,stored,auditPanel,footer);
-    parent.insertBefore(root,old);
+    const navTabs = make("nav", "access-nav-tabs");
+    navTabs.setAttribute("role", "tablist");
+    navTabs.setAttribute("aria-label", "Kelompok Bagian Security Approval Manager");
+
+    const tabRegister = make("button", "access-nav-tab active");
+    tabRegister.id = "access-nav-tab-register";
+    tabRegister.type = "button";
+    tabRegister.setAttribute("role", "tab");
+    tabRegister.setAttribute("aria-selected", "true");
+    tabRegister.setAttribute("aria-controls", "access-pane-register");
+    tabRegister.tabIndex = 0;
+    tabRegister.append(
+      make("span", "access-nav-tab-icon", "➕"),
+      make("span", "access-nav-tab-label", "Daftarkan Izin")
+    );
+    tabRegister.addEventListener("click", () => setActiveTab("register"));
+
+    const tabRules = make("button", "access-nav-tab");
+    tabRules.id = "access-nav-tab-rules";
+    tabRules.type = "button";
+    tabRules.setAttribute("role", "tab");
+    tabRules.setAttribute("aria-selected", "false");
+    tabRules.setAttribute("aria-controls", "access-pane-rules");
+    tabRules.tabIndex = -1;
+    const ruleBadge = make("span", "access-nav-tab-badge", "0");
+    ruleBadge.id = "access-tab-badge-rules";
+    tabRules.append(
+      make("span", "access-nav-tab-icon", "📋"),
+      make("span", "access-nav-tab-label", "Aturan Terdaftar"),
+      ruleBadge
+    );
+    tabRules.addEventListener("click", () => setActiveTab("rules"));
+
+    const tabAudit = make("button", "access-nav-tab");
+    tabAudit.id = "access-nav-tab-audit";
+    tabAudit.type = "button";
+    tabAudit.setAttribute("role", "tab");
+    tabAudit.setAttribute("aria-selected", "false");
+    tabAudit.setAttribute("aria-controls", "access-pane-audit");
+    tabAudit.tabIndex = -1;
+    const auditPulseDot = make("span", "access-live-pulse-dot", "●");
+    const auditBadge = make("span", "access-nav-tab-badge", "0");
+    auditBadge.id = "access-tab-badge-audit";
+    tabAudit.append(
+      make("span", "access-nav-tab-icon", "📜"),
+      make("span", "access-nav-tab-label", "Log Audit"),
+      auditPulseDot,
+      auditBadge
+    );
+    tabAudit.addEventListener("click", () => setActiveTab("audit"));
+
+    navTabs.append(tabRegister, tabRules, tabAudit);
+
+    const paneRegister = make("div", "access-pane");
+    paneRegister.id = "access-pane-register";
+    paneRegister.setAttribute("role", "tabpanel");
+    paneRegister.setAttribute("aria-labelledby", "access-nav-tab-register");
+    paneRegister.append(onboarding, split);
+
+    const paneRules = make("div", "access-pane");
+    paneRules.id = "access-pane-rules";
+    paneRules.setAttribute("role", "tabpanel");
+    paneRules.setAttribute("aria-labelledby", "access-nav-tab-rules");
+    paneRules.hidden = true;
+    paneRules.append(stored);
+
+    const paneAudit = make("div", "access-pane");
+    paneAudit.id = "access-pane-audit";
+    paneAudit.setAttribute("role", "tabpanel");
+    paneAudit.setAttribute("aria-labelledby", "access-nav-tab-audit");
+    paneAudit.hidden = true;
+    paneAudit.append(auditPanel);
+
+    const footer = make("p", "access-status", "Memuat kebijakan native...");
+    footer.id = "access-status";
+    footer.setAttribute("role", "status");
+    footer.setAttribute("aria-live", "polite");
+
+    root.append(head, navTabs, paneRegister, paneRules, paneAudit, footer);
+    parent.insertBefore(root, old);
     old.hidden = true;
+    updateTabFromHash();
     updateSelection();
   }
   async function install() {
@@ -575,17 +863,21 @@
       void refreshAuditLog();
       showInitialSetupReminder();
       await refreshWindows();
-      window.addEventListener("hashchange",()=>{
+      void refreshInstalledApps();
+      window.addEventListener("hashchange", () => {
         if (location.hash === "#security" || location.hash.startsWith("#security:") ||
             location.hash === "#settings" || location.hash.startsWith("#settings:")) {
-          void refreshRegistry().catch(()=>status("Registri native tidak tersedia.","error"));
+          updateTabFromHash();
+          void refreshRegistry().catch(() => status("Registri native tidak tersedia.", "error"));
           void refreshAuditLog().catch(() => {});
         }
       });
       window.__superagentAccessManagerRefresh = () => {
         void refreshRegistry().catch(() => {});
         void refreshWindows().catch(() => {});
+        void refreshInstalledApps().catch(() => {});
         void refreshAuditLog().catch(() => {});
+        updateTabFromHash();
       };
     } catch {
       // Older installed Tray: preserve legacy panel, never fake active v2.

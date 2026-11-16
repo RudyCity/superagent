@@ -4164,3 +4164,113 @@ tbody tr:hover {
   background: #e04e4b;
   border-color: #e04e4b;
 }
+
+
+/* YOLO Execution Policy Switcher in Runtime Detection */
+.runtime-yolo-control {
+  background: rgba(15, 23, 42, 0.4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.runtime-yolo-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.runtime-yolo-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.runtime-yolo-title strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.yolo-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  text-transform: uppercase;
+  display: inline-block;
+}
+
+.yolo-badge.yolo-badge-safe {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.yolo-badge.yolo-badge-warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.yolo-badge.yolo-badge-danger {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.runtime-yolo-caption {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.runtime-yolo-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.yolo-chip {
+  font-size: 11px;
+  padding: 5px 11px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast, 0.15s ease);
+}
+
+.yolo-chip:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  border-color: var(--border-medium);
+}
+
+.yolo-chip.active[data-runtime-yolo="off"] {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border-color: rgba(16, 185, 129, 0.4);
+  font-weight: 600;
+}
+
+.yolo-chip.active[data-runtime-yolo="scoped"] {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+  font-weight: 600;
+}
+
+.yolo-chip.active[data-runtime-yolo="full"] {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.4);
+  font-weight: 600;
+}
