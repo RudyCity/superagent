@@ -22,6 +22,8 @@
   <script src="./settings.js" defer></script>
   <script src="./desktop-input-trust.js" defer></script>
   <link rel="stylesheet" href="./desktop-input-trust.css" />
+  <script src="./access-manager.js" defer></script>
+  <link rel="stylesheet" href="./access-manager.css" />
   <script src="./named-tunnel-settings.js" defer></script>
   <script src="./named-tunnel-runtime.js" defer></script>
   <script src="./named-tunnel-manager.js" defer></script>
@@ -127,6 +129,13 @@
             <path d="M8 22h8M12 18v4" />
           </svg>
           <span>Desktop Live</span>
+        </a>
+        <a class="nav-link" href="#security" data-page="security" id="nav-security">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+            <polyline points="9 12 11 14 15 10"></polyline>
+          </svg>
+          <span>Security Approval</span>
         </a>
         <a class="nav-link" href="#terminal" data-page="terminal" id="nav-terminal">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -795,6 +804,45 @@
 
       <!-- ================= LAN SUPPORT MANAGER ================= -->
       <div id="page-lan-devices" class="page-view" hidden>
+        <!-- In-page Sub-navigation for LAN Devices -->
+        <nav class="lan-subnav" role="tablist" aria-label="LAN Support Sub-Navigation">
+          <button type="button" class="lan-subnav-btn active" role="tab" data-lan-tab="devices" id="lan-tab-btn-devices" aria-selected="true" tabindex="0">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span>Devices &amp; Pairing</span>
+          </button>
+
+          <button type="button" class="lan-subnav-btn" role="tab" data-lan-tab="terminal" id="lan-tab-btn-terminal" aria-selected="false" tabindex="-1">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <polyline points="4 17 10 11 4 5"></polyline>
+              <line x1="12" y1="19" x2="20" y2="19"></line>
+            </svg>
+            <span>Remote Terminal</span>
+          </button>
+
+          <button type="button" class="lan-subnav-btn" role="tab" data-lan-tab="files" id="lan-tab-btn-files" aria-selected="false" tabindex="-1">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"></path>
+              <polyline points="13 2 13 9 20 9"></polyline>
+            </svg>
+            <span>File Exchange</span>
+          </button>
+
+          <button type="button" class="lan-subnav-btn" role="tab" data-lan-tab="screen" id="lan-tab-btn-screen" aria-selected="false" tabindex="-1">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="5" y="2" width="14" height="20" rx="2" ry="2"></rect>
+              <line x1="12" y1="18" x2="12.01" y2="18"></line>
+            </svg>
+            <span>Android Screen</span>
+          </button>
+        </nav>
+
+        <div id="lan-banner" class="banner" role="status" aria-live="polite" hidden></div>
+
+        <div id="lan-subpage-devices" class="lan-subpage" role="tabpanel" aria-labelledby="lan-tab-btn-devices">
 <!-- Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 -->
         <section class="lan-overview" aria-label="Local support workflow">
           <div class="lan-overview-title">
@@ -808,8 +856,6 @@
             <span><b>03</b> Request access</span>
           </div>
         </section>
-
-        <div id="lan-banner" class="banner" role="status" aria-live="polite" hidden></div>
 
         <div class="lan-route-tabs" role="tablist" aria-label="Connection method">
           <button id="lan-route-lan-tab" type="button" class="lan-route-tab" role="tab" aria-selected="true" tabindex="0" aria-controls="lan-route-lan">
@@ -938,7 +984,9 @@
             <div class="lan-empty">No paired devices in this Core process.</div>
           </div>
         </section>
+        </div>
 
+        <div id="lan-subpage-terminal" class="lan-subpage" role="tabpanel" aria-labelledby="lan-tab-btn-terminal" hidden>
         <section class="panel lan-panel" aria-labelledby="lan-terminal-title">
           <div class="panel-head">
             <div>
@@ -966,7 +1014,9 @@
           <pre id="lan-output" class="lan-output" aria-live="polite">Select a paired device and request an approved session.</pre>
           <p class="lan-security-note">Selected transport only. Android diagnostics are read-only; actions require separate approval on the phone. Settings open locally and disconnect sharing. Volume changes one step per approval. Android remote touch requires explicit on-device Accessibility and input consent; no arbitrary Android shell, root or ADB. Full TLS fingerprint comparison and target approval are required. PAKE, signed releases and cross-device security review remain pending.</p>
         </section>
+        </div>
 
+        <div id="lan-subpage-files" class="lan-subpage" role="tabpanel" aria-labelledby="lan-tab-btn-files" hidden>
         <section id="lan-file-panel" class="panel lan-panel" aria-labelledby="lan-files-title">
           <div class="panel-head">
             <div>
@@ -994,7 +1044,9 @@
             <p id="lan-file-info" aria-live="polite" class="lan-file-info">First pair and open a support session. On a Windows target, choose a source with <code>share &lt;path&gt;</code> in its LAN Client console. On Android, tap Choose document to share. Every file requires separate target-side approval.</p>
           </div>
         </section>
+        </div>
 
+        <div id="lan-subpage-screen" class="lan-subpage" role="tabpanel" aria-labelledby="lan-tab-btn-screen" hidden>
         <!-- Android full-screen support is explicitly opted into on the target phone. -->
         <section id="lan-screen-panel" class="panel lan-panel" aria-labelledby="lan-screen-title" hidden inert aria-hidden="true">
           <div class="panel-head">
@@ -1035,6 +1087,7 @@
             </div>
           </div>
         </section>
+        </div>
       </div>
 
       <!-- ================= PAGE 4: TRAY SETTINGS ================= -->
@@ -1160,6 +1213,7 @@
                   <option value="logs">Connection Logs</option>
                   <option value="delegate">Chrome Delegate</option>
                   <option value="desktop-live">Desktop Live</option>
+                  <option value="security">Security Approval</option>
                   <option value="terminal">Terminal Processes</option>
                   <option value="muse-files">Muse File Transfer</option>
                   <option value="lan-devices">LAN Devices</option>
@@ -1267,152 +1321,19 @@
           </div>
         </section>
 
-        <section class="panel tray-settings-panel desktop-trust-panel" id="desktop-trust-panel" aria-labelledby="desktop-trust-title">
-          <div class="panel-head desktop-trust-header">
+        <div class="panel tray-settings-panel">
+          <div class="panel-head">
             <div>
-              <div class="panel-eyebrow">
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M8 1.5 2.5 3.8v4.4c0 3.6 2.3 6.9 5.5 7.8 3.2-.9 5.5-4.2 5.5-7.8V3.8L8 1.5Z" />
-                </svg>
-                <span>SECURITY APPROVAL MANAGER</span>
-              </div>
-              <h2 id="desktop-trust-title">Trusted Desktop Input</h2>
-              <p>Approve only a specific application window. Trusted does not grant automatic mouse or keyboard access: Core requests a separate native host confirmation for every input session.</p>
+              <div class="panel-eyebrow">HOST ACCESS CONTROL</div>
+              <h3>Security Approval &amp; Access Manager</h3>
+              <p>Security Approval Manager is now available directly in the main navigation menu for quick access.</p>
             </div>
-            <span class="subtle-badge" id="desktop-trust-status">Reading policy...</span>
+            <a href="#security" class="button primary" id="open-security-page-btn" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;">
+              <span>Open Security Approval</span>
+              <span>→</span>
+            </a>
           </div>
-
-          <div class="desktop-trust-section">
-            <div class="desktop-trust-section-head">
-              <div class="desktop-trust-section-info">
-                <h3>Request Policy &amp; Security Gate</h3>
-                <p>Configure default input authorization behavior. An empty trusted list blocks all input attempts.</p>
-              </div>
-            </div>
-            <div class="desktop-trust-mode-box">
-              <div class="desktop-trust-mode-input-wrap">
-                <label class="desktop-trust-field" for="desktop-trust-mode">
-                  <span class="field-label">Default request mode</span>
-                  <div class="select-container">
-                    <select id="desktop-trust-mode">
-                      <option value="trusted">Trusted: exact windows, host approval required</option>
-                      <option value="off">Off: refuse Trusted requests</option>
-                    </select>
-                    <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                      <path d="M3.5 6l4.5 4.5 4.5-4.5" />
-                    </svg>
-                  </div>
-                </label>
-                <button type="button" class="button secondary" id="desktop-trust-mode-save">
-                  <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="M2.5 13.5h11M8 2.5v8m-3.5-3.5L8 10.5l3.5-3.5" />
-                  </svg>
-                  <span>Save mode</span>
-                </button>
-              </div>
-              <div class="desktop-trust-callout">
-                <svg class="callout-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                  <circle cx="8" cy="8" r="6.5" />
-                  <path d="M8 5.5v.5M8 8v3" />
-                </svg>
-                <p class="desktop-trust-explainer">The mode is stored locally, not in a browser or MCP prompt. An empty Trusted list grants nothing. Every window needs its own attended approval and expires automatically in at most 30 minutes. Revocation is checked on every Core input action.</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="desktop-trust-section">
-            <div class="desktop-trust-section-head">
-              <div class="desktop-trust-section-info">
-                <h3>Authorize Native Application Window</h3>
-                <p>Select a verified running application window and specify maximum approval lifetime.</p>
-              </div>
-              <button type="button" class="button ghost" id="desktop-trust-refresh">
-                <svg class="btn-icon refresh-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M2.5 8a5.5 5.5 0 0 1 9.3-3.9l1.7-1.6V7H9M13.5 8a5.5 5.5 0 0 1-9.3 3.9L2.5 13.5V9H7" />
-                </svg>
-                <span>Refresh windows</span>
-              </button>
-            </div>
-            <div class="desktop-trust-grid">
-              <label class="desktop-trust-field" for="desktop-trust-window">
-                <span class="field-label">Verified native application window</span>
-                <div class="select-container">
-                  <select id="desktop-trust-window">
-                    <option value="">Refresh to discover windows...</option>
-                  </select>
-                  <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="M3.5 6l4.5 4.5 4.5-4.5" />
-                  </svg>
-                </div>
-              </label>
-
-              <label class="desktop-trust-field" for="desktop-trust-duration">
-                <span class="field-label">Approval request lifetime</span>
-                <div class="select-container">
-                  <select id="desktop-trust-duration">
-                    <option value="5">5 minutes</option>
-                    <option value="10" selected>10 minutes</option>
-                    <option value="15">15 minutes</option>
-                    <option value="30">30 minutes (maximum)</option>
-                  </select>
-                  <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                    <path d="M3.5 6l4.5 4.5 4.5-4.5" />
-                  </svg>
-                </div>
-              </label>
-            </div>
-
-            <div class="desktop-trust-action-bar">
-              <button type="button" class="button primary desktop-trust-submit-btn" id="desktop-trust-add">
-                <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M8 1.5 2.5 3.8v4.4c0 3.6 2.3 6.9 5.5 7.8 3.2-.9 5.5-4.2 5.5-7.8V3.8L8 1.5Z" />
-                  <path d="m6 8 1.5 1.5 3-3" />
-                </svg>
-                <span>Review &amp; Trust window</span>
-              </button>
-              <span class="desktop-trust-action-note">Requires explicit confirmation via native OS prompt.</span>
-            </div>
-          </div>
-
-          <div class="desktop-trust-section">
-            <div class="desktop-trust-section-head">
-              <div class="desktop-trust-section-info">
-                <h3>Active Trusted Windows</h3>
-                <p>Applications currently granted temporary attended input permissions.</p>
-              </div>
-            </div>
-            <ul class="desktop-trust-targets" id="desktop-trust-targets" aria-label="Active trusted desktop input targets"></ul>
-          </div>
-
-          <div class="desktop-trust-danger-section">
-            <div class="desktop-trust-danger-card">
-              <div class="desktop-trust-danger-info">
-                <svg class="danger-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                  <path d="M8 1.5 14.5 13H1.5L8 1.5Z" />
-                  <path d="M8 6v3.5M8 11.5v.5" />
-                </svg>
-                <div>
-                  <strong>Emergency Revocation &amp; Session Safety</strong>
-                  <p>Host consent expires, can be revoked at any time, and does not persist as an active input session after Core restart.</p>
-                </div>
-              </div>
-              <button type="button" class="button ghost danger" id="desktop-trust-revoke-all">
-                <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <circle cx="8" cy="8" r="6" />
-                  <line x1="4" y1="4" x2="12" y2="12" />
-                </svg>
-                <span>Revoke all windows</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="desktop-trust-footer">
-            <div class="desktop-trust-feedback-wrap">
-              <span class="desktop-trust-feedback-dot" aria-hidden="true"></span>
-              <p id="desktop-trust-feedback" role="status" aria-live="polite">Trusted preferences loaded. Every input session still requires host consent.</p>
-            </div>
-          </div>
-        </section>
+        </div>
         </div>
 
         <div id="settings-subpage-tunnel" class="settings-subpage" hidden>
@@ -1885,6 +1806,46 @@
           </article>
         </section>
 
+        <!-- In-page Sub-navigation for Chrome Delegate Management -->
+        <nav class="delegate-subnav" role="tablist" aria-label="Chrome Delegate Sub-Navigation">
+          <button type="button" class="delegate-subnav-btn active" role="tab" data-delegate-tab="connection" id="delegate-tab-btn-connection" aria-selected="true" tabindex="0">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+            <span>Bridge &amp; Pairing</span>
+          </button>
+
+          <button type="button" class="delegate-subnav-btn" role="tab" data-delegate-tab="orchestrator" id="delegate-tab-btn-orchestrator" aria-selected="false" tabindex="-1">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+            <span>Multi-Tab Orchestrator</span>
+          </button>
+
+          <button type="button" class="delegate-subnav-btn" role="tab" data-delegate-tab="diagnostics" id="delegate-tab-btn-diagnostics" aria-selected="false" tabindex="-1">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+            </svg>
+            <span>Action Diagnostics</span>
+          </button>
+
+          <button type="button" class="delegate-subnav-btn" role="tab" data-delegate-tab="cdp" id="delegate-tab-btn-cdp" aria-selected="false" tabindex="-1">
+            <svg class="subnav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"></circle>
+              <circle cx="12" cy="12" r="4"></circle>
+              <line x1="4.93" y1="4.93" x2="9.17" y2="9.17"></line>
+              <line x1="14.83" y1="14.83" x2="19.07" y2="19.07"></line>
+              <line x1="14.83" y1="9.17" x2="19.07" y2="4.93"></line>
+              <line x1="4.93" y1="19.07" x2="9.17" y2="14.83"></line>
+            </svg>
+            <span>CDP &amp; Agent Presence</span>
+          </button>
+        </nav>
+
+        <div id="delegate-subpage-connection" class="delegate-subpage" role="tabpanel" aria-labelledby="delegate-tab-btn-connection">
         <!-- Pairing & Bridge Controller Grid -->
         <div class="delegate-grid">
           <!-- Pairing Verification Card -->
@@ -1974,7 +1935,9 @@
             </table>
           </div>
         </section>
+        </div>
 
+        <div id="delegate-subpage-orchestrator" class="delegate-subpage" role="tabpanel" aria-labelledby="delegate-tab-btn-orchestrator" hidden>
         <section class="panel delegate-multitab-panel" aria-labelledby="multitab-heading">
           <div class="panel-head">
             <div>
@@ -1984,6 +1947,7 @@
             </div>
             <button id="multitab-refresh" class="button secondary" type="button">Refresh</button>
           </div>
+          <div class="delegate-multitab-body">
           <div class="multitab-summary">
             <span id="multitab-count-tabs">0 tabs</span>
             <span id="multitab-count-active">0 running</span>
@@ -2071,8 +2035,11 @@
               </div>
             </div>
           </div>
+          </div>
         </section>
+        </div>
 
+        <div id="delegate-subpage-diagnostics" class="delegate-subpage" role="tabpanel" aria-labelledby="delegate-tab-btn-diagnostics" hidden>
         <!-- Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V4.
              Local-only diagnostic timeline: no URL, DOM, token or typed text. -->
         <section class="panel delegate-multitab-panel" aria-labelledby="delegate-action-heading">
@@ -2088,6 +2055,7 @@
                 aria-pressed="false" aria-controls="delegate-action-history">Show activity</button>
             </div>
           </div>
+          <div class="delegate-multitab-body">
           <div id="delegate-action-summary" class="multitab-summary" aria-live="polite">
             <span>Telemetry unavailable</span>
           </div>
@@ -2100,8 +2068,11 @@
             </svg>
             <span>Read-only, in-memory diagnostics. Unknown actions require checking the real browser before any retry. OpenAI-side tool rejection occurs before SuperAgent and is not visible here.</span>
           </p>
+          </div>
         </section>
+        </div>
 
+        <div id="delegate-subpage-cdp" class="delegate-subpage" role="tabpanel" aria-labelledby="delegate-tab-btn-cdp" hidden>
         <section class="panel delegate-multitab-panel" aria-labelledby="cdp-presence-heading">
           <div class="panel-head">
             <div>
@@ -2111,6 +2082,7 @@
             </div>
             <button type="button" id="cdp-presence-refresh" class="button secondary">Refresh</button>
           </div>
+          <div class="delegate-multitab-body">
           <div class="multitab-summary" aria-live="polite">
             <span id="cdp-presence-state">Status unknown</span>
             <span id="cdp-presence-agents">— agents</span>
@@ -2163,7 +2135,9 @@
               <p class="text-secondary">No verified replay proposals.</p>
             </div>
           </div>
+          </div>
         </section>
+        </div>
       </div>
 
 
@@ -2192,6 +2166,158 @@
           <p id="desktop-live-manager-status" role="status">No session discovery has run.</p>
           <p class="delegate-hint">Human takeover blocks agent mutations. Delegate profile disconnect affects every tab in that profile; Chrome and native applications remain open. All operations are validated by the local Core.</p>
         </section>
+      </div>
+
+      <!-- ================= PAGE: SECURITY APPROVAL & ACCESS MANAGER ================= -->
+      <div id="page-security" class="page-view" hidden>
+        <div id="page-security-container">
+          <section class="panel tray-settings-panel desktop-trust-panel" id="desktop-trust-panel" aria-labelledby="desktop-trust-title">
+            <div class="panel-head desktop-trust-header">
+              <div>
+                <div class="panel-eyebrow">
+                  <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M8 1.5 2.5 3.8v4.4c0 3.6 2.3 6.9 5.5 7.8 3.2-.9 5.5-4.2 5.5-7.8V3.8L8 1.5Z" />
+                  </svg>
+                  <span>SECURITY APPROVAL MANAGER</span>
+                </div>
+                <h2 id="desktop-trust-title">Trusted Desktop Input</h2>
+                <p>Approve only a specific application window. Trusted does not grant automatic mouse or keyboard access: Core requests a separate native host confirmation for every input session.</p>
+              </div>
+              <span class="subtle-badge" id="desktop-trust-status">Reading policy...</span>
+            </div>
+
+            <div class="desktop-trust-section">
+              <div class="desktop-trust-section-head">
+                <div class="desktop-trust-section-info">
+                  <h3>Request Policy &amp; Security Gate</h3>
+                  <p>Configure default input authorization behavior. An empty trusted list blocks all input attempts.</p>
+                </div>
+              </div>
+              <div class="desktop-trust-mode-box">
+                <div class="desktop-trust-mode-input-wrap">
+                  <label class="desktop-trust-field" for="desktop-trust-mode">
+                    <span class="field-label">Default request mode</span>
+                    <div class="select-container">
+                      <select id="desktop-trust-mode">
+                        <option value="trusted">Trusted: exact windows, host approval required</option>
+                        <option value="off">Off: refuse Trusted requests</option>
+                      </select>
+                      <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <path d="M3.5 6l4.5 4.5 4.5-4.5" />
+                      </svg>
+                    </div>
+                  </label>
+                  <button type="button" class="button secondary" id="desktop-trust-mode-save">
+                    <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M2.5 13.5h11M8 2.5v8m-3.5-3.5L8 10.5l3.5-3.5" />
+                    </svg>
+                    <span>Save mode</span>
+                  </button>
+                </div>
+                <div class="desktop-trust-callout">
+                  <svg class="callout-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6.5" />
+                    <path d="M8 5.5v.5M8 8v3" />
+                  </svg>
+                  <p class="desktop-trust-explainer">The mode is stored locally, not in a browser or MCP prompt. An empty Trusted list grants nothing. Every window needs its own attended approval and expires automatically in at most 30 minutes. Revocation is checked on every Core input action.</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="desktop-trust-section">
+              <div class="desktop-trust-section-head">
+                <div class="desktop-trust-section-info">
+                  <h3>Authorize Native Application Window</h3>
+                  <p>Select a verified running application window and specify maximum approval lifetime.</p>
+                </div>
+                <button type="button" class="button ghost" id="desktop-trust-refresh">
+                  <svg class="btn-icon refresh-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M2.5 8a5.5 5.5 0 0 1 9.3-3.9l1.7-1.6V7H9M13.5 8a5.5 5.5 0 0 1-9.3 3.9L2.5 13.5V9H7" />
+                  </svg>
+                  <span>Refresh windows</span>
+                </button>
+              </div>
+              <div class="desktop-trust-grid">
+                <label class="desktop-trust-field" for="desktop-trust-window">
+                  <span class="field-label">Verified native application window</span>
+                  <div class="select-container">
+                    <select id="desktop-trust-window">
+                      <option value="">Refresh to discover windows...</option>
+                    </select>
+                    <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M3.5 6l4.5 4.5 4.5-4.5" />
+                    </svg>
+                  </div>
+                </label>
+
+                <label class="desktop-trust-field" for="desktop-trust-duration">
+                  <span class="field-label">Approval request lifetime</span>
+                  <div class="select-container">
+                    <select id="desktop-trust-duration">
+                      <option value="5">5 minutes</option>
+                      <option value="10" selected>10 minutes</option>
+                      <option value="15">15 minutes</option>
+                      <option value="30">30 minutes (maximum)</option>
+                    </select>
+                    <svg class="select-arrow" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                      <path d="M3.5 6l4.5 4.5 4.5-4.5" />
+                    </svg>
+                  </div>
+                </label>
+              </div>
+
+              <div class="desktop-trust-action-bar">
+                <button type="button" class="button primary desktop-trust-submit-btn" id="desktop-trust-add">
+                  <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M8 1.5 2.5 3.8v4.4c0 3.6 2.3 6.9 5.5 7.8 3.2-.9 5.5-4.2 5.5-7.8V3.8L8 1.5Z" />
+                    <path d="m6 8 1.5 1.5 3-3" />
+                  </svg>
+                  <span>Review &amp; Trust window</span>
+                </button>
+                <span class="desktop-trust-action-note">Requires explicit confirmation via native OS prompt.</span>
+              </div>
+            </div>
+
+            <div class="desktop-trust-section">
+              <div class="desktop-trust-section-head">
+                <div class="desktop-trust-section-info">
+                  <h3>Active Trusted Windows</h3>
+                  <p>Applications currently granted temporary attended input permissions.</p>
+                </div>
+              </div>
+              <ul class="desktop-trust-targets" id="desktop-trust-targets" aria-label="Active trusted desktop input targets"></ul>
+            </div>
+
+            <div class="desktop-trust-danger-section">
+              <div class="desktop-trust-danger-card">
+                <div class="desktop-trust-danger-info">
+                  <svg class="danger-icon" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                    <path d="M8 1.5 14.5 13H1.5L8 1.5Z" />
+                    <path d="M8 6v3.5M8 11.5v.5" />
+                  </svg>
+                  <div>
+                    <strong>Emergency Revocation &amp; Session Safety</strong>
+                    <p>Host consent expires, can be revoked at any time, and does not persist as an active input session after Core restart.</p>
+                  </div>
+                </div>
+                <button type="button" class="button ghost danger" id="desktop-trust-revoke-all">
+                  <svg class="btn-icon" viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <circle cx="8" cy="8" r="6" />
+                    <line x1="4" y1="4" x2="12" y2="12" />
+                  </svg>
+                  <span>Revoke all windows</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="desktop-trust-footer">
+              <div class="desktop-trust-feedback-wrap">
+                <span class="desktop-trust-feedback-dot" aria-hidden="true"></span>
+                <p id="desktop-trust-feedback" role="status" aria-live="polite">Trusted preferences loaded. Every input session still requires host consent.</p>
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
 
       <!-- ================= PAGE 6: TERMINAL PROCESSES ================= -->
@@ -2312,7 +2438,7 @@
 
       <!-- Muse File Transfer Manager: only the native Tauri bridge can select a file -->
       <div id="page-muse-files" class="page-view" hidden>
-        <!-- Telemetry Stats Cards -->
+        <!-- Telemetry Stats Ribbon -->
         <section class="muse-file-stats" aria-label="Muse transfer connectivity">
           <article class="stat-card">
             <div class="stat-header">
@@ -2365,264 +2491,321 @@
         <!-- Alert / Notice Banner -->
         <div id="muse-files-banner" class="banner" role="alert" hidden></div>
 
-        <!-- Panel 1: File Send & Selection -->
-        <section class="panel muse-files-panel">
-          <div class="panel-head">
-            <div>
-              <div class="panel-eyebrow">SECURE FILE DELIVERY</div>
-              <h2>Send to Muse</h2>
-              <p>Select a file with the native file picker. Maximum 8 MiB with single active transfer protection.</p>
-            </div>
-          </div>
-          <div class="muse-panel-body">
-            <div class="muse-file-picker">
-              <div class="muse-file-picker-main">
-                <span class="muse-file-picker-icon" aria-hidden="true">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                    <polyline points="17 8 12 3 7 8"></polyline>
-                    <line x1="12" y1="3" x2="12" y2="15"></line>
+        <!-- Workbench Grid: 2-Column Cockpit Layout -->
+        <div class="muse-workbench-grid">
+          <!-- Primary Column: Transmission Station & History Ledger -->
+          <div class="muse-main-column">
+            <!-- Panel 1: File Staging & Active Delivery Console -->
+            <section class="panel muse-files-panel muse-transmission-panel" aria-live="polite">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-eyebrow">TRANSMISSION CONSOLE</div>
+                  <h2>Send &amp; Stream to Muse</h2>
+                  <p>Select a file with the native file picker. Maximum 8 MiB with single active transfer protection.</p>
+                </div>
+                <span id="muse-files-current-status" class="stat-chip">Idle</span>
+              </div>
+              <div class="muse-panel-body">
+                <!-- Native File Picker Dropzone -->
+                <div class="muse-file-picker">
+                  <div class="muse-file-picker-main">
+                    <span class="muse-file-picker-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17 8 12 3 7 8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                      </svg>
+                    </span>
+                    <div class="muse-file-picker-text">
+                      <strong id="muse-files-selected-name">No file selected</strong>
+                      <p id="muse-files-selected-meta">Supported formats: CSV, JSON, XLSX, TXT, PDF, ZIP</p>
+                    </div>
+                  </div>
+                  <button type="button" id="muse-files-choose" class="button ghost">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                    </svg>
+                    <span>Browse Files</span>
+                  </button>
+                </div>
+
+                <!-- Channel Selection & Dispatch Row -->
+                <div class="muse-file-send-row">
+                  <div class="muse-file-channel-field">
+                    <label for="muse-files-transport">
+                      <span>Channel</span>
+                      <span class="stat-sub">Verification model</span>
+                    </label>
+                    <div class="select-wrapper">
+                      <select id="muse-files-transport">
+                        <option value="muse-websocket">Muse WebSocket (verified SHA-256 receipt)</option>
+                        <option value="telegram">Telegram document (Bot API acceptance only)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button type="button" id="muse-files-send" class="button primary muse-file-send-btn" disabled>
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="22" y1="2" x2="11" y2="13"></line>
+                      <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                    </svg>
+                    <span>Send File</span>
+                  </button>
+                </div>
+
+                <!-- Integrated Live Delivery Monitor -->
+                <div class="muse-live-monitor-section">
+                  <div id="muse-files-empty" class="empty-state muse-files-empty-state">
+                    <div class="empty-icon-wrap" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="12" y1="18" x2="12" y2="12"></line>
+                        <line x1="9" y1="15" x2="15" y2="15"></line>
+                      </svg>
+                    </div>
+                    <div class="empty-text-wrap">
+                      <h3 class="empty-title">Ready for Transmission</h3>
+                      <p class="empty-desc">Choose a local file above to stream with verified checksum receipts.</p>
+                    </div>
+                  </div>
+
+                  <div id="muse-files-progress-area" class="muse-file-progress-container" hidden>
+                    <div class="muse-file-progress-heading">
+                      <div class="muse-file-progress-title-block">
+                        <strong id="muse-files-progress-name">-</strong>
+                        <p id="muse-files-progress-detail">Preparing transfer</p>
+                      </div>
+                      <strong id="muse-files-progress-percent">0%</strong>
+                    </div>
+
+                    <div class="muse-files-track" id="muse-files-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                      <div id="muse-files-progress-fill"></div>
+                    </div>
+
+                    <div class="muse-file-progress-metrics">
+                      <div class="muse-metric-card">
+                        <span class="muse-metric-label">Data Volume</span>
+                        <span id="muse-files-progress-bytes" class="muse-metric-value">0 MiB / 0 MiB</span>
+                      </div>
+                      <div class="muse-metric-card">
+                        <span class="muse-metric-label">Throughput</span>
+                        <span id="muse-files-progress-rate" class="muse-metric-value">- MiB/s</span>
+                      </div>
+                      <div class="muse-metric-card">
+                        <span class="muse-metric-label">Estimated Time</span>
+                        <span id="muse-files-progress-eta" class="muse-metric-value">ETA -</span>
+                      </div>
+                    </div>
+
+                    <div class="muse-file-actions">
+                      <button type="button" id="muse-files-pause" class="button ghost" disabled title="Pause WebSocket transfer">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="6" y="4" width="4" height="16"></rect>
+                          <rect x="14" y="4" width="4" height="16"></rect>
+                        </svg>
+                        <span>Pause</span>
+                      </button>
+                      <button type="button" id="muse-files-resume" class="button ghost" disabled title="Resume transfer from checkpoint">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                        </svg>
+                        <span>Resume</span>
+                      </button>
+                      <button type="button" id="muse-files-cancel" class="button ghost danger" disabled title="Cancel active transfer">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="18" y1="6" x2="6" y2="18"></line>
+                          <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        <span>Cancel</span>
+                      </button>
+                    </div>
+
+                    <p id="muse-files-progress-error" class="muse-files-error" hidden></p>
+                  </div>
+                </div>
+
+                <!-- Security Note -->
+                <div class="muse-files-security-note">
+                  <svg class="note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                   </svg>
-                </span>
-                <div class="muse-file-picker-text">
-                  <strong id="muse-files-selected-name">No file selected</strong>
-                  <p id="muse-files-selected-meta">Supported formats: CSV, JSON, XLSX, TXT, PDF, ZIP</p>
+                  <p class="muse-files-note">A live Cloudflare tunnel alone does not prove the Muse receiver is connected. Pause/resume requires WebSocket: Telegram uploads cannot be safely paused once submitted.</p>
                 </div>
               </div>
-              <button type="button" id="muse-files-choose" class="button ghost">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
-                <span>Browse Files</span>
-              </button>
-            </div>
+            </section>
 
-            <div class="muse-file-send-row">
-              <div class="muse-file-channel-field">
-                <label for="muse-files-transport">
-                  <span>Channel</span>
-                  <span class="stat-sub">Verification model</span>
-                </label>
-                <div class="select-wrapper">
-                  <select id="muse-files-transport">
-                    <option value="muse-websocket">Muse WebSocket (verified SHA-256 receipt)</option>
-                    <option value="telegram">Telegram document (Bot API acceptance only)</option>
-                  </select>
+            <!-- Panel 2: Transfer Ledger / History Table -->
+            <section class="panel muse-files-panel muse-ledger-panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-eyebrow">TRANSFER LEDGER</div>
+                  <h2>Transfer History</h2>
+                  <p>Inspect outcomes, then manually retry interrupted WebSocket deliveries.</p>
+                </div>
+                <div class="panel-tools">
+                  <div class="select-wrapper sm">
+                    <select id="muse-files-filter" aria-label="Filter transfer history">
+                      <option value="all">All statuses</option>
+                      <option value="completed">Completed</option>
+                      <option value="failed">Failed</option>
+                      <option value="paused">Paused</option>
+                    </select>
+                  </div>
                 </div>
               </div>
-              <button type="button" id="muse-files-send" class="button primary muse-file-send-btn" disabled>
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-                <span>Send File</span>
-              </button>
-            </div>
-
-            <div class="muse-files-security-note">
-              <svg class="note-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-              <p class="muse-files-note">A live Cloudflare tunnel alone does not prove the Muse receiver is connected. Pause/resume requires WebSocket; Telegram uploads cannot be safely paused once submitted.</p>
-            </div>
+              <div class="table-wrap">
+                <table class="data-table" aria-label="Muse transfer history">
+                  <thead>
+                    <tr>
+                      <th>FILE</th>
+                      <th>CHANNEL</th>
+                      <th>STATUS</th>
+                      <th>STARTED</th>
+                      <th class="text-right">ACTION</th>
+                    </tr>
+                  </thead>
+                  <tbody id="muse-files-history-table">
+                    <tr><td colspan="5" class="empty-state">No transfer history yet.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
           </div>
-        </section>
 
-        <!-- Panel 2: Transfer Progress -->
-        <section class="panel muse-files-panel" aria-live="polite">
-          <div class="panel-head">
-            <div>
-              <div class="panel-eyebrow">CURRENT DELIVERY</div>
-              <h2>Transfer Progress</h2>
-            </div>
-            <span id="muse-files-current-status" class="stat-chip">Idle</span>
-          </div>
-          <div class="muse-panel-body">
-            <div id="muse-files-empty" class="empty-state muse-files-empty-state">
-              <div class="empty-icon-wrap" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="12" y1="18" x2="12" y2="12"></line>
-                  <line x1="9" y1="15" x2="15" y2="15"></line>
-                </svg>
-              </div>
-              <h3 class="empty-title">No Active Transfer</h3>
-              <p class="empty-desc">No transfer started. Choose a file above to begin streaming with verified checksum receipts.</p>
-            </div>
-
-            <div id="muse-files-progress-area" class="muse-file-progress-container" hidden>
-              <div class="muse-file-progress-heading">
-                <div class="muse-file-progress-title-block">
-                  <strong id="muse-files-progress-name">-</strong>
-                  <p id="muse-files-progress-detail">Preparing transfer</p>
-                </div>
-                <strong id="muse-files-progress-percent">0%</strong>
-              </div>
-
-              <div class="muse-files-track" id="muse-files-progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-                <div id="muse-files-progress-fill"></div>
-              </div>
-
-              <div class="muse-file-progress-metrics">
-                <div class="muse-metric-card">
-                  <span class="muse-metric-label">Data Volume</span>
-                  <span id="muse-files-progress-bytes" class="muse-metric-value">0 MiB / 0 MiB</span>
-                </div>
-                <div class="muse-metric-card">
-                  <span class="muse-metric-label">Throughput</span>
-                  <span id="muse-files-progress-rate" class="muse-metric-value">- MiB/s</span>
-                </div>
-                <div class="muse-metric-card">
-                  <span class="muse-metric-label">Estimated Time</span>
-                  <span id="muse-files-progress-eta" class="muse-metric-value">ETA -</span>
+          <!-- Side Column: Preferences & Architecture Reference -->
+          <div class="muse-side-column">
+            <!-- Panel 3: Transfer Settings -->
+            <section class="panel muse-files-panel muse-settings-panel">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-eyebrow">LOCAL PREFERENCES</div>
+                  <h2>Transfer Settings</h2>
+                  <p>Receiver destination and storage belong to Muse.</p>
                 </div>
               </div>
+              <form id="muse-files-settings" class="muse-file-settings-grid">
+                <div class="form-group">
+                  <div class="muse-setting-label-block">
+                    <label for="muse-files-limit">Maximum file size</label>
+                    <small>Upper limit for file transfer payload buffer.</small>
+                  </div>
+                  <div class="select-wrapper">
+                    <select id="muse-files-limit">
+                      <option value="1">1 MiB</option>
+                      <option value="2">2 MiB</option>
+                      <option value="4">4 MiB</option>
+                      <option value="6">6 MiB</option>
+                      <option value="8">8 MiB</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <div class="muse-setting-label-block">
+                    <label for="muse-files-retention">Local history retention</label>
+                    <small>Retention window for local delivery receipt logs.</small>
+                  </div>
+                  <div class="select-wrapper">
+                    <select id="muse-files-retention">
+                      <option value="1">1 day</option>
+                      <option value="7">7 days</option>
+                      <option value="14">14 days</option>
+                      <option value="30">30 days</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <div class="muse-setting-label-block">
+                    <label for="muse-files-poll">Polling interval</label>
+                    <small>Background status refresh frequency.</small>
+                  </div>
+                  <div class="select-wrapper">
+                    <select id="muse-files-poll">
+                      <option value="1">1 second</option>
+                      <option value="2">2 seconds</option>
+                      <option value="5">5 seconds</option>
+                      <option value="10">10 seconds</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <div class="muse-setting-label-block">
+                    <label for="muse-files-default">Default transport</label>
+                    <small>Primary transport route for newly picked files.</small>
+                  </div>
+                  <div class="select-wrapper">
+                    <select id="muse-files-default">
+                      <option value="muse-websocket">Muse WebSocket</option>
+                      <option value="telegram">Telegram</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="muse-file-settings-footer">
+                  <button type="submit" id="muse-files-save-settings" class="button primary">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                      <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                      <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    <span>Save Settings</span>
+                  </button>
+                  <span id="muse-files-settings-feedback" role="status"></span>
+                </div>
+              </form>
+            </section>
 
-              <div class="muse-file-actions">
-                <button type="button" id="muse-files-pause" class="button ghost" disabled title="Pause WebSocket transfer">
-                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="6" y="4" width="4" height="16"></rect>
-                    <rect x="14" y="4" width="4" height="16"></rect>
-                  </svg>
-                  <span>Pause</span>
-                </button>
-                <button type="button" id="muse-files-resume" class="button ghost" disabled title="Resume transfer from checkpoint">
-                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
-                  </svg>
-                  <span>Resume</span>
-                </button>
-                <button type="button" id="muse-files-cancel" class="button ghost danger" disabled title="Cancel active transfer">
-                  <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                  </svg>
-                  <span>Cancel</span>
-                </button>
+            <!-- Panel 4: Protocol & Integrity Specifications -->
+            <section class="panel muse-files-panel muse-spec-panel" aria-label="Protocol specifications">
+              <div class="panel-head">
+                <div>
+                  <div class="panel-eyebrow">INTEGRITY &amp; PROTOCOL</div>
+                  <h2>Delivery Guarantees</h2>
+                  <p>Security boundary and transport contracts.</p>
+                </div>
               </div>
+              <div class="muse-spec-body">
+                <div class="muse-spec-item">
+                  <div class="muse-spec-icon-wrap" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                    </svg>
+                  </div>
+                  <div class="muse-spec-content">
+                    <strong>Cryptographic Checksums</strong>
+                    <p>WebSocket streaming validates block-level SHA-256 acknowledgements from the remote Muse receiver. Telegram only guarantees Bot API server acceptance.</p>
+                  </div>
+                </div>
 
-              <p id="muse-files-progress-error" class="muse-files-error" hidden></p>
-            </div>
-          </div>
-        </section>
+                <div class="muse-spec-item">
+                  <div class="muse-spec-icon-wrap" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                      <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                  </div>
+                  <div class="muse-spec-content">
+                    <strong>Native Ticket Isolation</strong>
+                    <p>The native Rust dialog generates a single-use opaque ticket. Absolute filesystem paths are never disclosed to the WebView DOM.</p>
+                  </div>
+                </div>
 
-        <!-- Panel 3: Transfer History -->
-        <section class="panel muse-files-panel">
-          <div class="panel-head">
-            <div>
-              <div class="panel-eyebrow">TRANSFER LEDGER</div>
-              <h2>Transfer History</h2>
-              <p>Inspect outcomes, then manually retry interrupted WebSocket deliveries.</p>
-            </div>
-            <div class="panel-tools">
-              <div class="select-wrapper sm">
-                <select id="muse-files-filter" aria-label="Filter transfer history">
-                  <option value="all">All statuses</option>
-                  <option value="completed">Completed</option>
-                  <option value="failed">Failed</option>
-                  <option value="paused">Paused</option>
-                </select>
+                <div class="muse-spec-item">
+                  <div class="muse-spec-icon-wrap" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                  </div>
+                  <div class="muse-spec-content">
+                    <strong>Resilient Checkpoints</strong>
+                    <p>Interrupted or paused WebSocket transfers retain durable state offsets in Core configuration, allowing manual continuation without duplicate transfers.</p>
+                  </div>
+                </div>
               </div>
-            </div>
+            </section>
           </div>
-          <div class="table-wrap">
-            <table class="data-table" aria-label="Muse transfer history">
-              <thead>
-                <tr>
-                  <th>FILE</th>
-                  <th>CHANNEL</th>
-                  <th>STATUS</th>
-                  <th>STARTED</th>
-                  <th class="text-right">ACTION</th>
-                </tr>
-              </thead>
-              <tbody id="muse-files-history-table">
-                <tr><td colspan="5" class="empty-state">No transfer history yet.</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Panel 4: Transfer Settings -->
-        <section class="panel muse-files-panel">
-          <div class="panel-head">
-            <div>
-              <div class="panel-eyebrow">LOCAL PREFERENCES</div>
-              <h2>Transfer Settings</h2>
-              <p>Receiver destination and incoming retention belong to Muse and must be configured there.</p>
-            </div>
-          </div>
-          <form id="muse-files-settings" class="muse-file-settings-grid">
-            <div class="form-group">
-              <div class="muse-setting-label-block">
-                <label for="muse-files-limit">Maximum file size</label>
-                <small>Upper limit for file transfer payload buffer.</small>
-              </div>
-              <div class="select-wrapper">
-                <select id="muse-files-limit">
-                  <option value="1">1 MiB</option>
-                  <option value="2">2 MiB</option>
-                  <option value="4">4 MiB</option>
-                  <option value="6">6 MiB</option>
-                  <option value="8">8 MiB</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-group">
-              <div class="muse-setting-label-block">
-                <label for="muse-files-retention">Local history retention</label>
-                <small>Retention window for local delivery receipt logs.</small>
-              </div>
-              <div class="select-wrapper">
-                <select id="muse-files-retention">
-                  <option value="1">1 day</option>
-                  <option value="7">7 days</option>
-                  <option value="14">14 days</option>
-                  <option value="30">30 days</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-group">
-              <div class="muse-setting-label-block">
-                <label for="muse-files-poll">Polling interval</label>
-                <small>Background status refresh frequency.</small>
-              </div>
-              <div class="select-wrapper">
-                <select id="muse-files-poll">
-                  <option value="1">1 second</option>
-                  <option value="2">2 seconds</option>
-                  <option value="5">5 seconds</option>
-                  <option value="10">10 seconds</option>
-                </select>
-              </div>
-            </div>
-            <div class="form-group">
-              <div class="muse-setting-label-block">
-                <label for="muse-files-default">Default transport</label>
-                <small>Primary transport route for newly picked files.</small>
-              </div>
-              <div class="select-wrapper">
-                <select id="muse-files-default">
-                  <option value="muse-websocket">Muse WebSocket</option>
-                  <option value="telegram">Telegram</option>
-                </select>
-              </div>
-            </div>
-            <div class="muse-file-settings-footer">
-              <button type="submit" id="muse-files-save-settings" class="button primary">
-                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
-                  <polyline points="17 21 17 13 7 13 7 21"></polyline>
-                  <polyline points="7 3 7 8 15 8"></polyline>
-                </svg>
-                <span>Save Settings</span>
-              </button>
-              <span id="muse-files-settings-feedback" role="status"></span>
-            </div>
-          </form>
-        </section>
+        </div>
       </div>
 
       <!-- Footer Info -->

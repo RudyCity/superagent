@@ -8,18 +8,21 @@
   --muse-accent: #38bdf8;
   --muse-accent-rgb: 56, 189, 248;
   --muse-accent-hover: #7dd3fc;
-  --muse-accent-glow: rgba(56, 189, 248, 0.25);
+  --muse-accent-glow: rgba(56, 189, 248, 0.2);
   --muse-surface: var(--bg-surface, #0f1523);
   --muse-surface-raised: var(--bg-surface-raised, #141c2e);
   --muse-surface-elevated: var(--bg-surface-elevated, #1a243a);
+  --muse-surface-sunken: var(--bg-surface-sunken, #090d16);
   --muse-border-subtle: var(--border-subtle, rgba(255, 255, 255, 0.07));
   --muse-border-medium: var(--border-medium, rgba(255, 255, 255, 0.12));
   --muse-border-strong: var(--border-strong, rgba(255, 255, 255, 0.2));
   --muse-border-focus: var(--border-focus, #38bdf8);
 
-  /* Max width constraint prevents awkward stretching on maximized 1080p/4K desktop monitors */
-  max-width: 1240px;
+  /* Max width constraint ensures comfortable wide-aspect viewing on desktop monitors */
+  max-width: 1280px;
   width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 /* ==========================================================================
@@ -29,7 +32,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
-  margin-bottom: 22px;
+  margin-bottom: 20px;
 }
 
 .muse-file-stats .stat-card {
@@ -160,13 +163,31 @@
 }
 
 /* ==========================================================================
-   3. Panel Containers
+   3. Workbench Grid (2-Column Architecture)
+   ========================================================================== */
+.muse-workbench-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 1fr);
+  gap: 20px;
+  align-items: start;
+  margin-bottom: 24px;
+}
+
+.muse-main-column,
+.muse-side-column {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+}
+
+/* ==========================================================================
+   4. Panel Containers
    ========================================================================== */
 .muse-files-panel {
   background: var(--muse-surface);
   border: 1px solid var(--muse-border-subtle);
   border-radius: var(--radius-lg, 14px);
-  margin-bottom: 22px;
   overflow: hidden;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.18);
   transition: border-color var(--transition-fast, 150ms ease);
@@ -177,7 +198,7 @@
 }
 
 .muse-files-panel .panel-head {
-  padding: 20px 24px;
+  padding: 18px 22px;
   border-bottom: 1px solid var(--muse-border-subtle);
   display: flex;
   align-items: flex-start;
@@ -187,7 +208,7 @@
 
 .muse-files-panel .panel-head h2 {
   margin: 2px 0 4px;
-  font-size: 17px;
+  font-size: 16.5px;
   font-weight: 700;
   letter-spacing: -0.2px;
   color: var(--text-primary, #f8fafc);
@@ -196,27 +217,27 @@
 .muse-files-panel .panel-head p {
   margin: 0;
   color: var(--text-secondary, #94a3b8);
-  font-size: 12.5px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
 .muse-panel-body {
-  padding: 22px 24px;
+  padding: 20px 22px;
 }
 
 /* ==========================================================================
-   4. Native File Picker & Dropzone
+   5. Native File Picker & Staging Zone
    ========================================================================== */
 .muse-file-picker {
   border: 1px dashed rgba(56, 189, 248, 0.35);
   border-radius: var(--radius-md, 12px);
-  padding: 20px 22px;
+  padding: 18px 20px;
   background: radial-gradient(ellipse at top left, rgba(56, 189, 248, 0.06) 0%, rgba(15, 21, 35, 0.4) 100%);
   display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 18px;
+  gap: 16px;
   transition: all var(--transition-fast, 150ms ease);
   position: relative;
 }
@@ -230,19 +251,19 @@
 
 .muse-file-picker-main {
   display: flex;
-  gap: 16px;
+  gap: 14px;
   align-items: center;
   min-width: 0;
-  flex: 1 1 300px;
+  flex: 1 1 280px;
 }
 
 .muse-file-picker-icon {
   display: grid;
   place-items: center;
-  flex: 0 0 50px;
-  width: 50px;
-  height: 50px;
-  border-radius: 12px;
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
   color: var(--muse-accent);
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.14) 0%, rgba(37, 99, 235, 0.14) 100%);
   border: 1px solid rgba(56, 189, 248, 0.3);
@@ -255,8 +276,8 @@
 }
 
 .muse-file-picker-icon svg {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   stroke: var(--muse-accent);
 }
 
@@ -267,7 +288,7 @@
 
 .muse-file-picker-text strong {
   display: block;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 650;
   color: var(--text-primary, #f8fafc);
   overflow-wrap: anywhere;
@@ -275,28 +296,28 @@
 }
 
 .muse-file-picker-text p {
-  margin: 4px 0 0;
+  margin: 3px 0 0;
   color: var(--text-secondary, #94a3b8);
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.4;
 }
 
 /* ==========================================================================
-   5. Channel Selection & Send Actions
+   6. Channel Selection & Dispatch Row
    ========================================================================== */
 .muse-file-send-row {
   display: flex;
   align-items: flex-end;
   gap: 16px;
-  margin-top: 20px;
-  padding-top: 18px;
+  margin-top: 18px;
+  padding-top: 16px;
   border-top: 1px solid var(--muse-border-subtle);
   flex-wrap: wrap;
 }
 
 .muse-file-channel-field {
-  flex: 0 1 440px;
-  min-width: 260px;
+  flex: 1 1 320px;
+  min-width: 240px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -331,77 +352,68 @@
   flex-shrink: 0;
 }
 
-.muse-files-security-note {
-  margin: 18px 0 0;
-  padding: 12px 14px;
-  border-radius: var(--radius-sm, 8px);
-  background: var(--muse-surface-raised);
-  border: 1px solid var(--muse-border-subtle);
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  max-width: 850px;
-}
-
-.muse-files-security-note .note-icon {
-  width: 16px;
-  height: 16px;
-  color: var(--muse-accent);
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.muse-files-note {
-  margin: 0;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: var(--text-secondary, #94a3b8);
-}
-
 /* ==========================================================================
-   6. Transfer Progress Area & Empty State
+   7. Integrated Live Monitor Section
    ========================================================================== */
+.muse-live-monitor-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--muse-border-subtle);
+}
+
 .muse-files-empty-state {
-  padding: 42px 24px;
-  text-align: center;
+  padding: 16px 18px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--muse-surface-raised);
+  border: 1px dashed var(--muse-border-subtle);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 14px;
+  text-align: left;
 }
 
 .muse-files-empty-state .empty-icon-wrap {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--muse-surface-raised);
-  border: 1px solid var(--muse-border-medium);
+  width: 38px;
+  height: 38px;
+  border-radius: 9px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted, #64748b);
-  margin-bottom: 4px;
+  color: var(--muse-accent);
+  flex-shrink: 0;
+}
+
+.muse-files-empty-state .empty-text-wrap {
+  min-width: 0;
+  flex: 1;
 }
 
 .muse-files-empty-state .empty-title {
-  font-size: 14.5px;
+  font-size: 13px;
   font-weight: 650;
   color: var(--text-primary, #f8fafc);
-  margin: 0;
+  margin: 0 0 2px;
+  letter-spacing: -0.1px;
 }
 
 .muse-files-empty-state .empty-desc {
-  font-size: 12.5px;
+  font-size: 11.5px;
   color: var(--text-secondary, #94a3b8);
-  max-width: 440px;
-  margin: 0 auto;
-  line-height: 1.5;
+  margin: 0;
+  line-height: 1.4;
 }
 
 .muse-file-progress-container {
+  background: var(--muse-surface-raised);
+  border: 1px solid var(--muse-border-medium);
+  border-radius: var(--radius-md, 10px);
+  padding: 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  animation: muse-fade-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .muse-file-progress-heading {
@@ -418,7 +430,7 @@
 
 .muse-file-progress-title-block strong {
   display: block;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
   color: var(--text-primary, #f8fafc);
   letter-spacing: -0.3px;
@@ -434,7 +446,7 @@
 
 #muse-files-progress-percent {
   font-variant-numeric: tabular-nums;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 750;
   letter-spacing: -0.5px;
   color: var(--muse-accent);
@@ -465,11 +477,11 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .muse-metric-card {
-  background: var(--muse-surface-raised);
+  background: var(--muse-surface);
   border: 1px solid var(--muse-border-subtle);
   border-radius: var(--radius-sm, 8px);
   padding: 10px 14px;
@@ -500,12 +512,12 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 8px;
+  margin-top: 6px;
   flex-wrap: wrap;
 }
 
 .muse-files-error {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
   padding: 10px 14px;
   border-radius: var(--radius-sm, 8px);
   background: rgba(239, 68, 68, 0.1);
@@ -516,8 +528,34 @@
   overflow-wrap: anywhere;
 }
 
+.muse-files-security-note {
+  margin: 18px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm, 8px);
+  background: var(--muse-surface-raised);
+  border: 1px solid var(--muse-border-subtle);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.muse-files-security-note .note-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--muse-accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.muse-files-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary, #94a3b8);
+}
+
 /* ==========================================================================
-   7. Transfer Ledger Table & Status Tags
+   8. Transfer Ledger Table & Status Tags
    ========================================================================== */
 #page-muse-files .table-wrap {
   overflow-x: auto;
@@ -607,32 +645,35 @@
 }
 
 /* ==========================================================================
-   8. Transfer Settings: Elegant Preference Rows
+   9. Transfer Settings (Side Column Preferences)
    ========================================================================== */
-.muse-file-settings-grid {
+.muse-settings-panel .muse-file-settings-grid {
+  padding: 6px 20px 20px;
   display: flex;
   flex-direction: column;
-  padding: 8px 24px 22px;
 }
 
-.muse-file-settings-grid .form-group {
+.muse-settings-panel .form-group {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 16px 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px 0;
   border-bottom: 1px solid var(--muse-border-subtle);
+}
+
+.muse-settings-panel .form-group:last-of-type {
+  border-bottom: none;
 }
 
 .muse-setting-label-block {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  max-width: 580px;
+  gap: 2px;
 }
 
 .muse-setting-label-block label {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 650;
   color: var(--text-primary, #f8fafc);
   letter-spacing: -0.1px;
@@ -640,21 +681,21 @@
 
 .muse-setting-label-block small {
   color: var(--text-secondary, #94a3b8);
-  font-size: 11.5px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
-.muse-file-settings-grid .select-wrapper {
-  width: 260px;
-  flex-shrink: 0;
+.muse-settings-panel .select-wrapper {
+  width: 100%;
 }
 
 .muse-file-settings-footer {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 14px;
-  padding-top: 16px;
+  gap: 14px;
+  margin-top: 12px;
+  padding-top: 14px;
+  border-top: 1px solid var(--muse-border-subtle);
 }
 
 #muse-files-settings-feedback {
@@ -665,7 +706,58 @@
 }
 
 /* ==========================================================================
-   9. Animations & Media Queries
+   10. Protocol & Specification Card
+   ========================================================================== */
+.muse-spec-body {
+  padding: 18px 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.muse-spec-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.muse-spec-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--muse-surface-raised);
+  border: 1px solid var(--muse-border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muse-accent);
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.muse-spec-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.muse-spec-content strong {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--text-primary, #f8fafc);
+  margin-bottom: 3px;
+  letter-spacing: -0.1px;
+}
+
+.muse-spec-content p {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.45;
+}
+
+/* ==========================================================================
+   11. Animations & Media Queries
    ========================================================================== */
 @keyframes muse-fade-enter {
   from {
@@ -678,17 +770,20 @@
   }
 }
 
+@media (max-width: 1080px) {
+  .muse-workbench-grid {
+    grid-template-columns: minmax(0, 1.4fr) minmax(290px, 1fr);
+    gap: 16px;
+  }
+}
+
 @media (max-width: 900px) {
   .muse-file-stats {
     grid-template-columns: 1fr;
   }
-  .muse-file-settings-grid .form-group {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .muse-file-settings-grid .select-wrapper {
-    width: 100%;
+  .muse-workbench-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
   }
   .muse-file-progress-metrics {
     grid-template-columns: 1fr;
@@ -705,7 +800,8 @@
 @media (prefers-reduced-motion: reduce) {
   #muse-files-progress-fill,
   .muse-file-stats .stat-card,
-  #muse-files-banner {
+  #muse-files-banner,
+  .muse-file-progress-container {
     transition: none !important;
     animation: none !important;
   }

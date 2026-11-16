@@ -7,6 +7,33 @@
 }
 
 /* ==========================================================================
+   Panel Body Container (Ensures consistent padding & vertical rhythm)
+   ========================================================================== */
+
+.delegate-multitab-body {
+  padding: 20px 24px 24px;
+  display: block;
+}
+
+.delegate-multitab-body > :first-child {
+  margin-top: 0;
+}
+
+.delegate-multitab-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* Fallback for direct children if not wrapped in .delegate-multitab-body */
+.delegate-multitab-panel > :not(.panel-head):not(.delegate-multitab-body) {
+  margin-left: 24px;
+  margin-right: 24px;
+}
+
+.delegate-multitab-panel > :not(.panel-head):not(.delegate-multitab-body):last-child {
+  margin-bottom: 24px;
+}
+
+/* ==========================================================================
    Summary Metrics Strip
    ========================================================================== */
 
@@ -844,6 +871,10 @@ p#multitab-feedback.error::before {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.cdp-sub-section > :last-child {
+  margin-bottom: 0;
+}
+
 .cdp-sub-header {
   margin-bottom: 14px;
 }
@@ -895,5 +926,105 @@ p#multitab-feedback.error::before {
   }
   .multitab-form-grid {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .delegate-multitab-body {
+    padding: 16px 16px 20px;
+  }
+  .delegate-multitab-panel > :not(.panel-head):not(.delegate-multitab-body) {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .delegate-multitab-panel > :not(.panel-head):not(.delegate-multitab-body):last-child {
+    margin-bottom: 20px;
+  }
+}
+
+/* ==========================================================================
+   Sub-Menu Navigation for Chrome Delegate Management
+   ========================================================================== */
+.delegate-subnav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  margin: 18px 0 22px;
+  background: var(--bg-surface-raised, #141c2e);
+  border: 1px solid var(--border-medium, rgba(255, 255, 255, 0.12));
+  border-radius: var(--radius-md, 10px);
+  overflow-x: auto;
+}
+.delegate-subnav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 15px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary, #94a3b8);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: all var(--transition-fast, 150ms ease);
+}
+.delegate-subnav-btn:hover {
+  color: var(--text-primary, #f8fafc);
+  background: var(--bg-surface-elevated, #1a243a);
+}
+.delegate-subnav-btn:active {
+  transform: translateY(1px);
+}
+.delegate-subnav-btn:focus-visible {
+  outline: 2px solid var(--border-focus, #3b82f6);
+  outline-offset: -1px;
+}
+.delegate-subnav-btn.active {
+  color: #ffffff;
+  background: var(--bg-surface-elevated, #1a243a);
+  border-color: var(--border-strong, rgba(255, 255, 255, 0.2));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.delegate-subnav-btn .subnav-icon {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  color: var(--text-muted, #64748b);
+  transition: color var(--transition-fast, 150ms ease);
+}
+.delegate-subnav-btn:hover .subnav-icon {
+  color: var(--text-secondary, #94a3b8);
+}
+.delegate-subnav-btn.active .subnav-icon {
+  color: var(--accent, #38bdf8);
+}
+.delegate-subpage {
+  animation: delegateSubpageFade 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+.delegate-subpage[hidden] {
+  display: none !important;
+}
+@keyframes delegateSubpageFade {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 720px) {
+  .delegate-subnav {
+    gap: 4px;
+    padding: 4px;
+  }
+  .delegate-subnav-btn {
+    padding: 7px 11px;
+    font-size: 11.5px;
   }
 }

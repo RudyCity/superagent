@@ -870,8 +870,79 @@
     window.addEventListener?.("beforeunload", () => {
       if (heartbeatTimer !== null) window.clearInterval?.(heartbeatTimer);
     }, { once: true });
+
+    const lanTabNames = ["devices", "terminal", "files", "screen"];
+    const lanTabButtons = lanTabNames
+      .map((name) => $(`lan-tab-btn-${name}`))
+      .filter(Boolean);
+
+    lanTabButtons.forEach((btn, idx) => {
+      const tabName = lanTabNames[idx];
+      btn?.addEventListener?.("click", () => lanSwitchTab(tabName));
+      btn?.addEventListener?.("keydown", (e) => {
+        let targetIdx = -1;
+        if (e.key === "ArrowRight") {
+          targetIdx = (idx + 1) % lanTabButtons.length;
+        } else if (e.key === "ArrowLeft") {
+          targetIdx = (idx - 1 + lanTabButtons.length) % lanTabButtons.length;
+        } else if (e.key === "Home") {
+          targetIdx = 0;
+        } else if (e.key === "End") {
+          targetIdx = lanTabButtons.length - 1;
+        }
+        if (targetIdx !== -1) {
+          e.preventDefault?.();
+          lanTabButtons[targetIdx]?.focus?.();
+          lanTabButtons[targetIdx]?.click?.();
+        }
+      });
+    });
+
+    window.addEventListener?.("hashchange", () => {
+      const hash = window.location?.hash?.replace(/^#/, "") || "";
+      if (hash.startsWith("lan-devices:") || hash.startsWith("lan:")) {
+        const sub = hash.split(":")[1];
+        if (sub) lanSwitchTab(sub);
+      }
+    });
+    const initialHash = window.location?.hash?.replace(/^#/, "") || "";
+    if (initialHash.startsWith("lan-devices:") || initialHash.startsWith("lan:")) {
+      const sub = initialHash.split(":")[1];
+      if (sub) lanSwitchTab(sub);
+    }
+
     if ($("page-lan-devices")?.hidden === false) void refresh();
   }
+
+  function lanSwitchTab(tabName) {
+    const tabs = ["devices", "terminal", "files", "screen"];
+    const activeTab = tabs.includes(tabName) ? tabName : "devices";
+
+    for (const name of tabs) {
+      const btn = $(`lan-tab-btn-${name}`);
+      if (btn) {
+        const isTarget = name === activeTab;
+        btn.classList?.toggle?.("active", isTarget);
+        btn.setAttribute?.("aria-selected", isTarget ? "true" : "false");
+        btn.tabIndex = isTarget ? 0 : -1;
+      }
+      const subpage = $(`lan-subpage-${name}`);
+      if (subpage) {
+        subpage.hidden = name !== activeTab;
+      }
+    }
+
+    if (activeTab === "screen") {
+      const screenPanel = $("lan-screen-panel");
+      if (screenPanel) {
+        screenPanel.hidden = false;
+        screenPanel.removeAttribute?.("inert");
+        screenPanel.removeAttribute?.("aria-hidden");
+      }
+    }
+  }
+  window.lanSwitchTab = lanSwitchTab;
+
   window.__superagentLanGetSelected = () => active();
   window.__superagentLanRefresh = refresh;
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true });

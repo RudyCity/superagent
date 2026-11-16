@@ -465,7 +465,68 @@
         }
       }
     });
+
+    // Sub-navigation tabs
+    const delegateTabNames = ["connection", "orchestrator", "diagnostics", "cdp"];
+    const delegateTabButtons = delegateTabNames
+      .map((name) => $(`delegate-tab-btn-${name}`))
+      .filter(Boolean);
+
+    delegateTabButtons.forEach((btn, idx) => {
+      const tabName = delegateTabNames[idx];
+      btn?.addEventListener?.("click", () => delegateSwitchTab(tabName));
+      btn?.addEventListener?.("keydown", (e) => {
+        let targetIdx = -1;
+        if (e.key === "ArrowRight") {
+          targetIdx = (idx + 1) % delegateTabButtons.length;
+        } else if (e.key === "ArrowLeft") {
+          targetIdx = (idx - 1 + delegateTabButtons.length) % delegateTabButtons.length;
+        } else if (e.key === "Home") {
+          targetIdx = 0;
+        } else if (e.key === "End") {
+          targetIdx = delegateTabButtons.length - 1;
+        }
+        if (targetIdx !== -1) {
+          e.preventDefault?.();
+          delegateTabButtons[targetIdx]?.focus?.();
+          delegateTabButtons[targetIdx]?.click?.();
+        }
+      });
+    });
+
+    window.addEventListener?.("hashchange", () => {
+      const hash = window.location?.hash?.replace(/^#/, "") || "";
+      if (hash.startsWith("delegate:")) {
+        const sub = hash.split(":")[1];
+        if (sub) delegateSwitchTab(sub);
+      }
+    });
+    const initialHash = window.location?.hash?.replace(/^#/, "") || "";
+    if (initialHash.startsWith("delegate:")) {
+      const sub = initialHash.split(":")[1];
+      if (sub) delegateSwitchTab(sub);
+    }
   }
+
+  function delegateSwitchTab(tabName) {
+    const tabs = ["connection", "orchestrator", "diagnostics", "cdp"];
+    const activeTab = tabs.includes(tabName) ? tabName : "connection";
+
+    for (const name of tabs) {
+      const btn = $(`delegate-tab-btn-${name}`);
+      if (btn) {
+        const isTarget = name === activeTab;
+        btn.classList?.toggle?.("active", isTarget);
+        btn.setAttribute?.("aria-selected", isTarget ? "true" : "false");
+        btn.tabIndex = isTarget ? 0 : -1;
+      }
+      const subpage = $(`delegate-subpage-${name}`);
+      if (subpage) {
+        subpage.hidden = name !== activeTab;
+      }
+    }
+  }
+  window.delegateSwitchTab = delegateSwitchTab;
 
   function startPolling() {
     if (delegateState.pollTimer) clearInterval(delegateState.pollTimer);
