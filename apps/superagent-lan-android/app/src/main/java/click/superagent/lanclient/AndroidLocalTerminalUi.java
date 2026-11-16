@@ -30,37 +30,42 @@ final class AndroidLocalTerminalUi {
     AndroidLocalTerminalUi(Activity activity, LinearLayout page) {
         this.activity = activity;
         shell = new LocalAndroidShell(activity);
-        AndroidUiKit.add(page, AndroidUiKit.text(activity, "Android terminal", 24,
+        AndroidUiKit.add(page, AndroidUiKit.text(activity, "On-Device Shell", 24,
                 AndroidUiKit.TEXT, true), 0);
         AndroidUiKit.add(page, AndroidUiKit.text(activity,
-                "LOCAL DEVICE ONLY · Commands run as this app, not as root or on the Windows PC. "
-                + "Only commands you type here are executed. Nothing is accepted from connected controllers.",
-                14, AndroidUiKit.MUTED, false), 6);
-        LinearLayout panel = AndroidUiKit.panel(page, "ON-DEVICE SHELL");
+                "Commands execute locally under app UID. Zero root or cloud telemetry.",
+                13, AndroidUiKit.TEXT_MUTED, false), 2);
+        LinearLayout panel = AndroidUiKit.panel(page, "CONSOLE OUTPUT");
         output = AndroidUiKit.text(activity,
                 "Ready. Try: pwd, id, getprop ro.product.model or ls\n"
-                + "Commands have a 10-second limit and output is capped at 24 KiB.",
-                14, AndroidUiKit.ACCENT, false);
+                + "Limit: 10s timeout, 24 KiB output.",
+                13, AndroidUiKit.ACCENT, false);
         output.setTypeface(Typeface.MONOSPACE);
         output.setTextIsSelectable(true);
+        output.setPadding(AndroidUiKit.dp(activity, 12), AndroidUiKit.dp(activity, 10),
+                AndroidUiKit.dp(activity, 12), AndroidUiKit.dp(activity, 10));
+        output.setBackground(AndroidUiKit.shape(AndroidUiKit.SURFACE_INSET, AndroidUiKit.LINE_SUBTLE, 12, activity));
         AndroidUiKit.add(panel, output, 6);
         input = new EditText(activity);
-        input.setHint("Android shell command");
+        input.setHint("Enter shell command...");
         input.setSingleLine(true);
         input.setImeOptions(EditorInfo.IME_ACTION_GO);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         input.setFilters(new InputFilter[] { new InputFilter.LengthFilter(512) });
         AndroidUiKit.field(input);
-        AndroidUiKit.add(panel, input, 14);
-        run = AndroidUiKit.button(activity, "Run on this Android device", this::execute);
+        AndroidUiKit.add(panel, input, 12);
+        LinearLayout actionRow = AndroidUiKit.row(activity);
+        run = AndroidUiKit.button(activity, "Run", this::execute);
         AndroidUiKit.primary(run);
-        AndroidUiKit.add(panel, run, 10);
-        stop = AndroidUiKit.button(activity, "Stop running command", this::cancel);
+        AndroidUiKit.addToRow(actionRow, run, 1.2f);
+        stop = AndroidUiKit.button(activity, "Stop", this::cancel);
+        AndroidUiKit.destructive(stop);
         stop.setEnabled(false);
-        AndroidUiKit.add(panel, stop, 7);
-        Button clear = AndroidUiKit.button(activity, "Clear local output", () ->
-                output.setText("Output cleared. No command history is saved."));
-        AndroidUiKit.add(panel, clear, 7);
+        AndroidUiKit.addToRow(actionRow, stop, 1.0f);
+        Button clear = AndroidUiKit.button(activity, "Clear", () ->
+                output.setText("Console cleared."));
+        AndroidUiKit.addToRow(actionRow, clear, 1.0f);
+        AndroidUiKit.add(panel, actionRow, 10);
         input.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId != EditorInfo.IME_ACTION_GO) return false;
             execute();

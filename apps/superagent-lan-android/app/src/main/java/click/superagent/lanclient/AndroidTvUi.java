@@ -30,21 +30,31 @@ final class AndroidTvUi {
     }
 
     static void addTab(Activity activity, LinearLayout nav, Button tab, boolean tv) {
-        nav.addView(tab, tv
+        LinearLayout.LayoutParams params = tv
                 ? new LinearLayout.LayoutParams(-1, AndroidUiKit.dp(activity, 66))
-                : new LinearLayout.LayoutParams(0, AndroidUiKit.dp(activity, 50), 1f));
+                : new LinearLayout.LayoutParams(0, AndroidUiKit.dp(activity, 46), 1f);
+        if (!tv) {
+            params.setMargins(AndroidUiKit.dp(activity, 3), 0, AndroidUiKit.dp(activity, 3), 0);
+        }
+        nav.addView(tab, params);
     }
 
     static void attach(Activity activity, LinearLayout root, FrameLayout pageHost,
                        LinearLayout nav, boolean tv) {
         if (!tv) {
             root.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1f));
+            android.view.View divider = new android.view.View(activity);
+            divider.setBackgroundColor(AndroidUiKit.LINE);
+            root.addView(divider, new LinearLayout.LayoutParams(-1, AndroidUiKit.dp(activity, 1)));
             root.addView(nav);
             return;
         }
         LinearLayout workspace = new LinearLayout(activity);
         workspace.setOrientation(LinearLayout.HORIZONTAL);
         workspace.addView(nav, new LinearLayout.LayoutParams(AndroidUiKit.dp(activity, 206), -1));
+        android.view.View divider = new android.view.View(activity);
+        divider.setBackgroundColor(AndroidUiKit.LINE);
+        workspace.addView(divider, new LinearLayout.LayoutParams(AndroidUiKit.dp(activity, 1), -1));
         workspace.addView(pageHost, new LinearLayout.LayoutParams(0, -1, 1f));
         root.addView(workspace, new LinearLayout.LayoutParams(-1, 0, 1f));
     }

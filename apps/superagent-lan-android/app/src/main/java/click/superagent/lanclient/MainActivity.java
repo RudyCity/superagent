@@ -27,6 +27,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.view.WindowManager;
 import android.view.View;
+import android.view.Gravity;
 import android.widget.FrameLayout;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -138,6 +139,18 @@ public final class MainActivity extends Activity {
         return button;
     }
 
+    private LinearLayout row(LinearLayout container, int topMargin) {
+        LinearLayout row = AndroidUiKit.row(this);
+        add(container, row, topMargin);
+        return row;
+    }
+
+    private Button actionIn(LinearLayout row, String title, Runnable callback) {
+        Button button = AndroidUiKit.button(this, title, callback);
+        AndroidUiKit.addToRow(row, button, 1.0f);
+        return button;
+    }
+
     private LinearLayout section(LinearLayout page, String title) {
         return AndroidUiKit.panel(page, title);
     }
@@ -183,7 +196,7 @@ public final class MainActivity extends Activity {
         };
         for (ScrollView page : pages) pageHost.addView(page);
         LinearLayout navigation = AndroidTvUi.navigation(this, tv);
-        String[] labels = { "Home", "Connect", "Control", "Files", "Terminal" };
+        String[] labels = { "Home", "Connect", "Control", "Files", "Shell" };
         tabButtons = new Button[labels.length];
         for (int i = 0; i < labels.length; i++) {
             final int destination = i;
@@ -193,42 +206,47 @@ public final class MainActivity extends Activity {
         AndroidTvUi.attach(this, shell, pageHost, navigation, tv);
         setContentView(shell);
 
-        add(homePage, label("Overview", 24, AndroidUiKit.TEXT, true), 0);
-        add(homePage, label("Connection, permissions and activity at a glance.", 13, AndroidUiKit.MUTED, false), 2);
-        add(connectPage, label("Connect your device", 24, AndroidUiKit.TEXT, true), 0);
-        add(connectPage, label("Scan the QR in SuperAgent Tray or use your local network.", 13, AndroidUiKit.MUTED, false), 2);
-        add(controlPage, label("Screen & control", 24, AndroidUiKit.TEXT, true), 0);
-        add(controlPage, label("Decide exactly what your paired controller can do.", 13, AndroidUiKit.MUTED, false), 2);
-        add(filesPage, label("Private file transfer", 24, AndroidUiKit.TEXT, true), 0);
-        add(filesPage, label("Share only the items you choose and approve.", 13, AndroidUiKit.MUTED, false), 2);
+        add(homePage, label("Dashboard", 26, AndroidUiKit.TEXT, true), 0);
+        add(homePage, label("Active pairing, screen assistance, and local telemetry.", 13, AndroidUiKit.TEXT_MUTED, false), 2);
+        add(connectPage, label("Device Pairing", 26, AndroidUiKit.TEXT, true), 0);
+        add(connectPage, label("Pair via QR scan (recommended) or direct local Wi-Fi.", 13, AndroidUiKit.TEXT_MUTED, false), 2);
+        add(controlPage, label("Screen & Touch", 26, AndroidUiKit.TEXT, true), 0);
+        add(controlPage, label("Assisted screen mirroring and remote interaction.", 13, AndroidUiKit.TEXT_MUTED, false), 2);
+        add(filesPage, label("Document Vault", 26, AndroidUiKit.TEXT, true), 0);
+        add(filesPage, label("Encrypted peer-to-peer file transfer over local Wi-Fi.", 13, AndroidUiKit.TEXT_MUTED, false), 2);
         terminalUi = new AndroidLocalTerminalUi(this, terminalPage);
 
-        LinearLayout layout = section(homePage, "DEVICE OVERVIEW");
-        add(layout, label(tv ? "Your TV. Your choice." : "Your phone. Your call.",
-                27, AndroidUiKit.TEXT, true), 2);
-        add(layout, label("Secure support with permission at every step.", 14, AndroidUiKit.MUTED, false), 4);
-        add(layout, label(appBuildLabel(), 12, AndroidUiKit.BLUE, false), 2);
-        dashboardStatus = label("Not connected", 21, AndroidUiKit.TEXT, true);
-        add(layout, dashboardStatus, 15);
-        dashboardConnection = label("Connect your phone to SuperAgent Tray to begin.", 13,
-                AndroidUiKit.MUTED, false);
-        add(layout, dashboardConnection, 1);
-        Button connectShortcut = action(layout, "Connect a device", () -> showTab(1));
+        LinearLayout layout = section(homePage, "SYSTEM STATUS");
+        add(layout, label(appBuildLabel(), 11, AndroidUiKit.BLUE, false), 0);
+        dashboardStatus = label("Ready to Connect", 22, AndroidUiKit.TEXT, true);
+        add(layout, dashboardStatus, 4);
+        dashboardConnection = label("Connect your phone to SuperAgent Tray on your PC to begin.", 13,
+                AndroidUiKit.TEXT_MUTED, false);
+        add(layout, dashboardConnection, 2);
+
+        LinearLayout quickActionRow = row(layout, 12);
+        Button connectShortcut = actionIn(quickActionRow, "Connect PC", () -> showTab(1));
         AndroidUiKit.primary(connectShortcut);
-        action(layout, "Set up remote control", () -> showTab(2));
-        action(layout, "Send or receive files", () -> showTab(3));
-        dashboardStop = action(layout, "Stop all sharing", this::stopSharing);
+        dashboardStop = actionIn(quickActionRow, "Stop All", this::stopSharing);
         AndroidUiKit.destructive(dashboardStop);
 
-        layout = section(homePage, "YOUR PRIVACY");
-        add(layout, label("You stay in control", 19, AndroidUiKit.TEXT, true), 0);
-        add(layout, label("Every pairing and support session requires approval on your phone. Screen capture and remote touch need their own separate consent. Stop sharing at any time.", 13, AndroidUiKit.MUTED, false), 3);
+        LinearLayout bentoModules = section(homePage, "COMPANION MODULES");
+        add(bentoModules, label("Direct access to companion capabilities", 12, AndroidUiKit.TEXT_MUTED, false), 2);
+        LinearLayout modRow1 = row(bentoModules, 10);
+        actionIn(modRow1, "Screen Control", () -> showTab(2));
+        actionIn(modRow1, "File Transfer", () -> showTab(3));
+        LinearLayout modRow2 = row(bentoModules, 8);
+        actionIn(modRow2, "Local Shell", () -> showTab(4));
+        actionIn(modRow2, "System Settings", () -> startActivity(new Intent(Settings.ACTION_SETTINGS)));
 
-        layout = section(homePage, "RECENT ACTIVITY");
-        events = label("No requests accepted while sharing is off.", 12, AndroidUiKit.MUTED, false);
+        layout = section(homePage, "SECURITY & AUDIT LOG");
+        events = label("Waiting for connection request. Zero cloud telemetry.", 12, AndroidUiKit.TEXT_MUTED, false);
         events.setTypeface(Typeface.MONOSPACE);
         events.setTextIsSelectable(true);
-        add(layout, events, 4);
+        events.setPadding(dp(12), dp(10), dp(12), dp(10));
+        events.setBackground(AndroidUiKit.shape(AndroidUiKit.SURFACE_INSET, AndroidUiKit.LINE_SUBTLE, 12, this));
+        add(layout, events, 6);
+        add(layout, label("Every pairing and support session requires explicit on-phone approval.", 11, AndroidUiKit.TEXT_SUBTLE, false), 4);
 
         layout = section(controlPage, "PERMISSIONS · YOUR CHOICE");
         add(layout, label("Optional screen assistance requires four separate Android permissions. Continue requests each step on this phone. Opening Android Settings ends the current sharing session; reconnect and approve a new support session afterward.", 13, AndroidUiKit.MUTED, false), 3);
@@ -276,25 +294,30 @@ public final class MainActivity extends Activity {
 
         layout = section(connectPage, "SHARING");
         LinearLayout sharingCard = layout;
-        status = label("OFF — no access", 19, Color.WHITE, true);
+        status = label("OFF · no access", 19, Color.WHITE, true);
         add(layout, status, 2);
-        start = action(layout, "Start LAN sharing", this::startSharing);
+        LinearLayout lanActionRow = row(layout, 10);
+        start = actionIn(lanActionRow, "Start LAN", this::startSharing);
         AndroidUiKit.primary(start);
-        stop = action(layout, "Stop sharing", this::stopSharing);
+        stop = actionIn(lanActionRow, "Stop sharing", this::stopSharing);
         AndroidUiKit.destructive(stop);
 
         layout = section(connectPage, "DEVICE TUNNEL · QR CONNECT");
         LinearLayout connectQrCard = layout;
         add(layout, label("Scan the one-time QR shown in SuperAgent Tray. The phone enrolls and starts pairing automatically through outbound HTTPS; you only confirm the pairing approval on this phone.", 13, AndroidUiKit.MUTED, false), 2);
-        tunnelScan = action(layout, "Scan QR & Connect", this::scanTunnelQr);
+        tunnelScan = action(layout, "Scan Connection QR", this::scanTunnelQr);
         AndroidUiKit.primary(tunnelScan);
-        qrScanStatus = label("Ready to scan the Connection QR shown in SuperAgent Tray.", 13, AndroidUiKit.MUTED, false);
-        add(layout, qrScanStatus, 2);
-        add(layout, label("Scan with this app, not your phone's regular camera. Connection approval stays on this device.", 12, AndroidUiKit.MUTED, false), 4);
-        tunnelState = label("Tunnel OFF", 14, AndroidUiKit.TEXT, true);
-        add(layout, tunnelState, 8);
-        tunnelDisconnect = action(layout, "Disconnect tunnel", this::disconnectTunnel);
-        manualSetupToggle = action(layout, "Manual setup · Advanced", this::toggleManualSetup);
+        qrScanStatus = label("Ready to scan the Connection QR shown in SuperAgent Tray.", 12, AndroidUiKit.TEXT_MUTED, false);
+        qrScanStatus.setPadding(dp(10), dp(8), dp(10), dp(8));
+        qrScanStatus.setBackground(AndroidUiKit.shape(AndroidUiKit.SURFACE_INSET, AndroidUiKit.LINE_SUBTLE, 10, this));
+        add(layout, qrScanStatus, 4);
+        add(layout, label("Scan with this app, not your phone's regular camera. Secure TLS connection.", 11, AndroidUiKit.TEXT_SUBTLE, false), 4);
+        tunnelState = label("Tunnel OFF", 13, AndroidUiKit.TEXT, true);
+        add(layout, tunnelState, 6);
+        LinearLayout tunnelActionRow = row(layout, 8);
+        tunnelDisconnect = actionIn(tunnelActionRow, "Disconnect", this::disconnectTunnel);
+        AndroidUiKit.destructive(tunnelDisconnect);
+        manualSetupToggle = actionIn(tunnelActionRow, "Manual Setup", this::toggleManualSetup);
 
         manualSetupPanel = section(connectPage, "ADVANCED · MANUAL TUNNEL");
         manualSetupPanel.setVisibility(View.GONE);
@@ -317,25 +340,22 @@ public final class MainActivity extends Activity {
             manualSetupToggle.setText("Hide manual setup");
         }
 
-        layout = section(connectPage, "PAIRING DETAILS");
-        add(layout, label("Phone IP / port", 12, AndroidUiKit.MUTED, false), 0);
-        ip = label("Not connected", 17, Color.WHITE, true);
-        add(layout, ip, 0);
-        add(layout, label("One-time 8-digit pairing code (2 minutes)", 12, AndroidUiKit.MUTED, false), 6);
-        code = label("—", 26, Color.WHITE, true);
+        layout = section(connectPage, "VERIFICATION PIN & TLS");
+        add(layout, label("One-time 8-digit pairing code (valid 2 minutes)", 12, AndroidUiKit.TEXT_MUTED, false), 0);
+        LinearLayout pinBox = AndroidUiKit.insetBox(this, 4);
+        code = label("- - - -", 26, AndroidUiKit.ACCENT, true);
         code.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
-        add(layout, code, 0);
-        renew = action(layout, "Generate new code", () -> {
+        code.setGravity(Gravity.CENTER);
+        code.setLetterSpacing(0.15f);
+        pinBox.addView(code);
+        add(layout, pinBox, 4);
+
+        LinearLayout codeActionRow = row(layout, 8);
+        renew = actionIn(codeActionRow, "Rotate PIN", () -> {
             LanClientServer live = activeServer();
             if (live != null) code.setText(live.rotateCode());
         });
-        add(layout, label("SHA-256 TLS certificate fingerprint", 12, AndroidUiKit.MUTED, false), 6);
-        fingerprint = label("Not generated", 12, Color.WHITE, false);
-        fingerprint.setTypeface(Typeface.MONOSPACE);
-        fingerprint.setTextIsSelectable(true);
-        fingerprint.setTextSize(11);
-        add(layout, fingerprint, 0);
-        copy = action(layout, "Copy fingerprint", () -> {
+        copy = actionIn(codeActionRow, "Copy Fingerprint", () -> {
             LanClientServer live = activeServer();
             if (live == null || live.currentInfo() == null) return;
             ClipboardManager mgr = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
@@ -343,11 +363,22 @@ public final class MainActivity extends Activity {
             notifyEvent("Fingerprint copied. Compare all 64 digits on the controller.");
         });
 
+        add(layout, label("Phone IP & Port:", 11, AndroidUiKit.TEXT_SUBTLE, false), 8);
+        ip = label("Not connected", 13, AndroidUiKit.TEXT, true);
+        add(layout, ip, 0);
+
+        fingerprint = label("Fingerprint not generated", 11, AndroidUiKit.TEXT_MUTED, false);
+        fingerprint.setTypeface(Typeface.MONOSPACE);
+        fingerprint.setTextIsSelectable(true);
+        fingerprint.setTextSize(10);
+        add(layout, fingerprint, 2);
+
         layout = section(connectPage, "LOCAL APPROVAL");
-        paired = label("No paired controllers", 15, Color.WHITE, true);
+        paired = label("No paired controllers", 14, AndroidUiKit.TEXT, true);
         add(layout, paired, 0);
-        add(layout, label("Approve pairing and every support session. Every additional Android action requires its own on-screen approval. Only you can change system settings.", 13, AndroidUiKit.MUTED, false), 4);
-        revoke = action(layout, "Revoke all paired access", () -> {
+        add(layout, label("Approve pairing and every support session. Every additional Android action requires its own on-screen approval. Only you can change system settings.", 12, AndroidUiKit.TEXT_MUTED, false), 4);
+        LinearLayout securityRow = row(layout, 8);
+        revoke = actionIn(securityRow, "Revoke Access", () -> {
             LanClientServer live = activeServer();
             if (live != null) {
                 live.revoke();
@@ -355,9 +386,8 @@ public final class MainActivity extends Activity {
                 refresh();
             }
         });
-        layout = section(connectPage, "ASSISTED CONTROLS");
-        add(layout, label("SuperAgent may request Wi-Fi, Bluetooth, display, battery, storage, apps or date/time Settings, or a one-step media volume change. Every action requires approval; opening Settings stops sharing.", 13, AndroidUiKit.MUTED, false), 4);
-        action(layout, "Open Android settings", () -> {
+        AndroidUiKit.destructive(revoke);
+        actionIn(securityRow, "System Settings", () -> {
             stopSharing();
             startActivity(new Intent(Settings.ACTION_SETTINGS));
         });
@@ -367,30 +397,35 @@ public final class MainActivity extends Activity {
         screenState = label("Screen OFF · Remote touch OFF", 15, Color.WHITE, true);
         add(layout, screenState, 4);
         action(layout, "Request Accessibility setup", this::requestAccessibilitySetup);
-        startScreen = action(layout, "Share screen", this::beginScreenConsent);
+        LinearLayout screenActionRow = row(layout, 8);
+        startScreen = actionIn(screenActionRow, "Share screen", this::beginScreenConsent);
         AndroidUiKit.primary(startScreen);
-        stopScreen = action(layout, "Stop screen & revoke", this::stopSharing);
+        stopScreen = actionIn(screenActionRow, "Stop screen", this::stopSharing);
         AndroidUiKit.destructive(stopScreen);
         touchToggle = action(layout, "Allow remote taps and swipes", this::toggleRemoteInput);
         add(layout, label("Remote interaction can affect other apps. Do not open passwords or financial data. Secure screens may block capture. STOP is available in Android notifications.", 12, AndroidUiKit.MUTED, false), 6);
         layout = section(filesPage, "SEND FILES · OWNER APPROVAL");
         add(layout, label("Send a selected Android document to Windows or receive into Downloads/SuperAgent LAN. 4 MiB maximum per file. Each transfer needs an on-phone APPROVE.", 13, AndroidUiKit.MUTED, false), 6);
-        fileSelected = label("No document selected", 13, Color.WHITE, true);
-        add(layout, fileSelected, 2);
-        action(layout, "Choose document to share", () -> {
+        LinearLayout filePreviewBox = AndroidUiKit.insetBox(this, 4);
+        fileSelected = label("No document selected", 13, AndroidUiKit.TEXT, true);
+        fileSelected.setGravity(Gravity.CENTER);
+        filePreviewBox.addView(fileSelected);
+        add(layout, filePreviewBox, 4);
+        LinearLayout fileSelectRow = row(layout, 8);
+        actionIn(fileSelectRow, "Select File", () -> {
             stopSharing();
             Intent chooser = new Intent(Intent.ACTION_OPEN_DOCUMENT)
                     .addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
             startActivityForResult(chooser, FILE_SELECT_REQUEST);
         });
-        action(layout, "Choose a folder", () -> {
+        actionIn(fileSelectRow, "Select Folder", () -> {
             stopSharing();
             Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             startActivityForResult(picker, FOLDER_SELECT_REQUEST);
         });
-        add(layout, label("Only the selected files leave this phone. Transfers are verified and limited to 4 MiB; unsafe files and unsupported folders are refused.", 12, AndroidUiKit.MUTED, false), 4);
-        action(layout, "Clear selected file or folder", () -> {
+        add(layout, label("Transfers are encrypted and verified over local Wi-Fi. Unsafe files are refused.", 11, AndroidUiKit.TEXT_SUBTLE, false), 4);
+        action(layout, "Clear Selected Document", () -> {
             if (sharedFileBytes != null) Arrays.fill(sharedFileBytes, (byte) 0);
             sharedFileBytes = null; sharedFileName = null;
             fileSelected.setText("No document selected");
@@ -433,7 +468,7 @@ public final class MainActivity extends Activity {
         if (tunnelState != null) tunnelState.setText(tunnelOn
                 ? TunnelForegroundService.currentStatus() : "Tunnel OFF · " + TunnelForegroundService.currentStatus());
         if (status != null && server == null)
-            status.setText(tunnelOn ? "ON — secure HTTPS tunnel" : "OFF — no access");
+            status.setText(tunnelOn ? "ON · secure HTTPS tunnel" : "OFF · no access");
         if (tunnelOn && live != null && live.currentInfo() != null) {
             LanClientServer.Info tunnelInfo = live.currentInfo();
             if (ip != null) ip.setText("Local TLS " + tunnelInfo.ip + ":" + tunnelInfo.port);

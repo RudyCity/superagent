@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="SuperAgentTheme" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
+        <item name="android:fontFamily">sans-serif</item>
         <item name="android:windowLightStatusBar">false</item>
-        <item name="android:statusBarColor">#0B1422</item>
-        <item name="android:navigationBarColor">#0B1422</item>
-        <item name="android:windowBackground">#0B1422</item>
-        <item name="android:colorAccent">#70DEC3</item>
+        <item name="android:statusBarColor">#090D16</item>
+        <item name="android:navigationBarColor">#090D16</item>
+        <item name="android:windowBackground">#090D16</item>
+        <item name="android:colorAccent">#2DD4BF</item>
     </style>
 </resources>
