@@ -30,8 +30,12 @@
     const rows=state.items.filter(row=>state.filter==="all"||row.kind===state.filter);
     for(const [kind,text] of Object.entries(kinds)) {
       const button=el("desktop-live-filter-"+kind);
-      if(button){button.textContent=text+" · "+(kind==="all"?state.items.length:state.items.filter(x=>x.kind===kind).length);
-        button.setAttribute("aria-pressed",String(state.filter===kind));}
+      if(button){
+        const count=kind==="all"?state.items.length:state.items.filter(x=>x.kind===kind).length;
+        button.replaceChildren(node("span","desktop-live-filter-label",text),
+          node("span","desktop-live-filter-count",count));
+        button.setAttribute("aria-pressed",String(state.filter===kind));
+      }
     }
     if(!rows.length) {
       outlet.append(node("p","desktop-live-empty","No verified handles in this category. Refresh to rescan."));
@@ -39,8 +43,10 @@
     }
     for(const item of rows) {
       const card=node("article","desktop-live-item");
+      card.dataset.kind=item.kind;
       const glyph=node("span","desktop-live-kind",
         item.kind==="native"?"APP":item.kind==="managed-cdp"?"CDP":"DLG");
+      glyph.setAttribute("aria-hidden","true");
       const info=node("div","desktop-live-information");
       const top=node("div","desktop-live-item-top");
       top.append(node("strong","desktop-live-item-title",item.title||"Untitled window"));
@@ -58,7 +64,12 @@
         stop.title=item.impact||"Revoke session";
         stop.addEventListener("click",()=>void stopSession(item,stop));
         actions.append(stop);
-      } else actions.append(node("span","desktop-live-unavailable",item.status==="available"?"Not controlled":"Unavailable"));
+      } else {
+        const indicator=node("span","desktop-live-control-state",
+          item.status==="available"?"Not controlled":"Unavailable");
+        indicator.dataset.state=item.status==="available"?"idle":"unavailable";
+        actions.append(indicator);
+      }
       card.append(glyph,info,actions);
       outlet.append(card);
     }
