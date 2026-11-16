@@ -86,6 +86,8 @@ export interface SystemSettings {
   motionPiperModel?: string;
   /** Max concurrent renderers for Superagent Studio queue (default: 2, max: 4) */
   motionMaxRenderers?: number;
+  /** Suppress initial provider and API key setup prompt on startup */
+  skipStartupPrompt?: boolean;
 }
 
 export interface McpServerConfigBase {

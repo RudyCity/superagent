@@ -48,7 +48,11 @@
     delegatePaired: false,
     terminalTasks: 0,
     lanDevices: 0,
+    lanActive: 0,
     securityApproved: 0,
+    securityRules: 0,
+    securityPolicyMode: "deny",
+    trustedTargets: 0,
     mcpServers: 0,
     trayVersion: null,
     trayBuildNumber: null,
@@ -96,6 +100,10 @@
         connectionLogs,
         trayVersion,
         trayBuild,
+        lanSnap,
+        permanentAccessSnap,
+        inputPolicySnap,
+        accessAuditSnap,
       ] = await Promise.allSettled([
         overviewInvoke("detect_runtime"),
         overviewInvoke("daemon_action", { action: "list", payload: null }),
@@ -105,6 +113,10 @@
         overviewInvoke("get_connection_logs", { limit: 12 }),
         overviewInvoke("get_tray_version"),
         overviewInvoke("get_tray_build_number"),
+        overviewInvoke("lan_support_action", { action: "list", payload: {} }),
+        overviewInvoke("get_permanent_access_registry"),
+        overviewInvoke("get_desktop_input_policy"),
+        overviewInvoke("get_permanent_access_audit_log", { limit: 6 }),
       ]);
 
       // 1. Process Runtime Snapshot
@@ -161,7 +173,30 @@
         overviewState.trayBuildNumber = String(trayBuild.value);
       }
 
-      // 6. Assemble Activities (Logs + Scheduler Runs)
+      // 6. Process LAN Devices
+      if (lanSnap.status === "fulfilled" && lanSnap.value) {
+        const lanData = lanSnap.value;
+        const devices = Array.isArray(lanData.devices) ? lanData.devices : [];
+        const tunnelDevs = Array.isArray(lanData.tunnelDevices) ? lanData.tunnelDevices : [];
+        const allDevices = [...devices, ...tunnelDevs];
+        overviewState.lanDevices = allDevices.length;
+        overviewState.lanActive = allDevices.filter((d) => Boolean(d.connected)).length;
+      }
+
+      // 7. Process Security & Permanent ACL
+      if (permanentAccessSnap.status === "fulfilled" && permanentAccessSnap.value) {
+        const reg = permanentAccessSnap.value;
+        const rules = Array.isArray(reg.rules) ? reg.rules : [];
+        overviewState.securityRules = rules.length;
+        overviewState.securityApproved = rules.filter((r) => r.effect === "allow").length;
+      }
+      if (inputPolicySnap.status === "fulfilled" && inputPolicySnap.value) {
+        const pol = inputPolicySnap.value;
+        overviewState.securityPolicyMode = pol.mode || "trusted";
+        overviewState.trustedTargets = Array.isArray(pol.targets) ? pol.targets.length : 0;
+      }
+
+      // 8. Assemble Activities (Logs + Scheduler Runs + Access Audits)
       const acts = [];
 
       if (daemonRuns.status === "fulfilled" && Array.isArray(daemonRuns.value)) {
@@ -178,6 +213,21 @@
         }
       }
 
+      if (accessAuditSnap.status === "fulfilled" && Array.isArray(accessAuditSnap.value)) {
+        for (const audit of accessAuditSnap.value.slice(0, 4)) {
+          const isAllowed = audit.effect === "allow";
+          acts.push({
+            id: `audit-${audit.id || audit.timestamp}`,
+            timestamp: audit.timestamp,
+            tag: "security",
+            tagLabel: "SECURITY",
+            title: `${audit.application || "Desktop App"}: ${audit.operation || "access"} (${audit.effect || "checked"})`,
+            subtitle: audit.target || audit.executablePath || "",
+            status: isAllowed ? "success" : "error",
+          });
+        }
+      }
+
       if (connectionLogs.status === "fulfilled" && Array.isArray(connectionLogs.value?.items)) {
         for (const item of connectionLogs.value.items.slice(0, 7)) {
           let tag = "core";
@@ -185,6 +235,7 @@
           else if (item.source === "mcp") tag = "mcp";
           else if (item.source === "terminal") tag = "terminal";
           else if (item.source === "lan") tag = "lan";
+          else if (item.source === "security" || item.source === "access") tag = "security";
 
           acts.push({
             id: item.id,
@@ -262,6 +313,7 @@
       if (isOnline) {
         const issues = [];
         if (!overviewState.delegatePaired) issues.push("Delegate Standby");
+        if (overviewState.lanActive > 0) issues.push(`${overviewState.lanActive} LAN Active`);
         summary.textContent = issues.length ? `Core Active · ${issues.join(" · ")}` : "All Primary Subsystems Operational";
       } else {
         summary.textContent = "Companion Running · Core Offline";
@@ -317,14 +369,56 @@
     // 5. LAN Devices
     const kpiLanVal = $("kpi-lan-devices");
     const kpiLanMeta = $("kpi-lan-meta");
-    if (kpiLanVal) kpiLanVal.textContent = `${overviewState.lanDevices} Paired`;
-    if (kpiLanMeta) kpiLanMeta.textContent = "Local Peer Network";
+    const kpiLanBadge = $("kpi-lan-badge");
+    if (kpiLanVal) {
+      kpiLanVal.textContent = `${overviewState.lanDevices} Paired`;
+    }
+    if (kpiLanMeta) {
+      if (overviewState.lanActive > 0) {
+        kpiLanMeta.textContent = `${overviewState.lanActive} active session${overviewState.lanActive > 1 ? "s" : ""}`;
+      } else if (overviewState.lanDevices > 0) {
+        kpiLanMeta.textContent = "Local Peer Network";
+      } else {
+        kpiLanMeta.textContent = "No peers paired";
+      }
+    }
+    if (kpiLanBadge) {
+      if (overviewState.lanActive > 0) {
+        kpiLanBadge.textContent = "Active";
+        kpiLanBadge.className = "stat-chip success";
+      } else if (overviewState.lanDevices > 0) {
+        kpiLanBadge.textContent = "Paired";
+        kpiLanBadge.className = "stat-chip accent";
+      } else {
+        kpiLanBadge.textContent = "P2P";
+        kpiLanBadge.className = "stat-chip";
+      }
+    }
 
     // 6. Security
     const kpiSecVal = $("kpi-security-status");
     const kpiSecMeta = $("kpi-security-meta");
-    if (kpiSecVal) kpiSecVal.textContent = "Protected";
-    if (kpiSecMeta) kpiSecMeta.textContent = "Permanent Host ACL";
+    const kpiSecBadge = $("kpi-security-badge");
+    if (kpiSecVal) {
+      if (overviewState.securityRules > 0) {
+        kpiSecVal.textContent = `${overviewState.securityRules} Rules`;
+      } else {
+        kpiSecVal.textContent = "Protected";
+      }
+    }
+    if (kpiSecMeta) {
+      if (overviewState.trustedTargets > 0) {
+        kpiSecMeta.textContent = `${overviewState.trustedTargets} active target${overviewState.trustedTargets > 1 ? "s" : ""} · Permanent ACL`;
+      } else if (overviewState.securityRules > 0) {
+        kpiSecMeta.textContent = `${overviewState.securityApproved} allowed · Permanent ACL`;
+      } else {
+        kpiSecMeta.textContent = "Default Deny · Permanent ACL";
+      }
+    }
+    if (kpiSecBadge) {
+      kpiSecBadge.textContent = "Enforced";
+      kpiSecBadge.className = "stat-chip success";
+    }
   }
 
   function renderServicesGrid() {
@@ -509,6 +603,22 @@
   /* --------------------------------------------------------------------------
      Initialization
      -------------------------------------------------------------------------- */
+  let refreshTimer = null;
+  function schedulePolling() {
+    if (refreshTimer && typeof window.clearInterval === "function") {
+      window.clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
+    if (typeof window.setInterval === "function") {
+      refreshTimer = window.setInterval(() => {
+        const pageOverview = $("page-overview");
+        if (pageOverview && !pageOverview.hidden && pageOverview.classList.contains("active")) {
+          fetchOverviewTelemetry();
+        }
+      }, 15000);
+    }
+  }
+
   window.__superagentOverviewRefresh = fetchOverviewTelemetry;
   window.__superagentOverviewState = overviewState;
 
@@ -520,9 +630,11 @@
     document.addEventListener("DOMContentLoaded", () => {
       wireEventListeners();
       fetchOverviewTelemetry();
+      schedulePolling();
     });
   } else {
     wireEventListeners();
     fetchOverviewTelemetry();
+    schedulePolling();
   }
 })();

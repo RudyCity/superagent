@@ -740,6 +740,7 @@ export function getSettings(): SystemSettings {
     advisorErrorThreshold: s.advisorErrorThreshold ?? 5,
     advisorAdaptiveScaling: s.advisorAdaptiveScaling ?? true,
     advisorPatternMemory: s.advisorPatternMemory ?? true,
+    skipStartupPrompt: s.skipStartupPrompt ?? false,
     singleAgentMode: s.singleAgentMode,
     motionPiperBin: s.motionPiperBin,
     motionPiperModel: s.motionPiperModel,

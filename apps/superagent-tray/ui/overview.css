@@ -566,6 +566,7 @@
 .overview-activity-tag.mcp { color: #f59e0b; border-color: rgba(245, 158, 11, 0.3); }
 .overview-activity-tag.terminal { color: #ec4899; border-color: rgba(236, 72, 153, 0.3); }
 .overview-activity-tag.lan { color: #60a5fa; border-color: rgba(96, 165, 250, 0.3); }
+.overview-activity-tag.security { color: #f43f5e; border-color: rgba(244, 63, 94, 0.3); }
 
 .overview-activity-info {
   display: flex;

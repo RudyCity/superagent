@@ -61,6 +61,7 @@ const BUILTIN_DESCRIPTIONS: Record<string, string> = {
   "/setting-history-limit": "Set checklist history visible limit",
   "/setting-procs-limit": "Set processes visible limit",
   "/setting-hide-timeline": "Hide or show the timeline lines connecting turns (on or off)",
+  "/setting-startup-prompt": "Configure whether to show or skip the startup setup prompt (on or off)",
   "/setting-classifier": "Enable or disable multi-category request classifier (on or off)",
   "/setting-classifier-threshold": "Set classifier heuristic confidence threshold (high, medium, low)",
   "/setting-advisor": "Enable or disable the Real-Time Execution Advisor (on or off)",
@@ -707,6 +708,14 @@ export function getDashboardSuggestions(originalQuery: string, cursorPosition: n
       const possibilities = [
         "/setting-hide-timeline on",
         "/setting-hide-timeline off",
+      ];
+      return filterSuggestions(possibilities, query);
+    }
+
+    if (mainCommand === "/setting-startup-prompt") {
+      const possibilities = [
+        "/setting-startup-prompt on",
+        "/setting-startup-prompt off",
       ];
       return filterSuggestions(possibilities, query);
     }

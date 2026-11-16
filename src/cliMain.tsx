@@ -567,10 +567,17 @@ export async function runCli() {
     const isSetupArg = process.argv.includes("setup") || process.argv.includes("--setup");
     if (isSetupArg) {
       startWithWizard = true;
-    } else if (!isQuickMode && process.stdin.isTTY && !autoResume) {
-      const { getConfiguredProviders } = await import("./core/config/providers.js");
-      const providers = getConfiguredProviders();
-      if (providers.length === 0) {
+    } else {
+      const { shouldShowStartupPrompt } = await import("./core/config/providers.js");
+      const { updateSettings } = await import("./core/config/jsonConfig.js");
+      if (
+        shouldShowStartupPrompt({
+          isQuickMode,
+          isTTY: process.stdin.isTTY,
+          autoResume: Boolean(autoResume),
+          isSetupArg: false,
+        })
+      ) {
         const React = (await import("react")).default;
         const { render } = await import("ink");
         const { StartupPrompt } = await import("./components/startup-prompt.js");
@@ -587,6 +594,7 @@ export async function runCli() {
         if (choice === "wizard") {
           startWithWizard = true;
         }
+        updateSettings({ skipStartupPrompt: true });
       }
     }
 

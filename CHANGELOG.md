@@ -1,3 +1,18 @@
+## [1.14.104] - 2026-11-17
+### Desktop Overview UI live telemetry & polling
+- Add real-time telemetry integration to the Tray Overview dashboard for LAN Devices (paired vs active session tracking with dynamic status badge) and Security Guard (active rules count, allowed rules, and default-deny status).
+- Stream live Security Guard audit logs into the Overview activity list with dedicated security badge styling.
+- Add background polling (every 15s) when the Overview tab is visible and active.
+
+### Configurable first-run setup prompt suppression
+- Add `skipStartupPrompt` system setting to suppress the initial API key and provider setup prompt on startup.
+- Add `/setting-startup-prompt <on|off>` command with full autocomplete suggestions in dashboard and terminal.
+- Automatically remember user completion or dismissal of the startup prompt to avoid repeated prompts.
+
+### Portable LAN client companion and parallel MCP tool gateway
+- Bundle standalone portable Windows LAN receiver GUI (`superagent-lan-windows-portable-x64.zip`) and portable CLI receiver (`superagent-lan-client-windows-x64.zip`) for zero-install companion access.
+- Support parallel concurrent tool calls and on-demand delegate tool discovery in MCP gateway.
+
 ## [1.14.103] - 2026-11-15
 ### Universal camera-free Device Tunnel QR pairing for Android and Windows laptop
 - Extend owner-displayed outbound HTTPS pairing QR from Android TV to ordinary Android phones without removing their existing camera-scan flow. Android preview v0.10.5-device-qr (versionCode 22).

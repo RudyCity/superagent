@@ -1,4 +1,4 @@
-import { getProviders, loadModelConfig, getActivePreset, setActivePreset, mutateModelConfig, TierModelConfig } from "./jsonConfig.js";
+import { getProviders, loadModelConfig, getActivePreset, setActivePreset, mutateModelConfig, TierModelConfig, getSettings } from "./jsonConfig.js";
 import { PROVIDER_TEMPLATE_LABELS } from "../loginWizardLogic.js";
 
 export interface ConfiguredProvider {
@@ -507,4 +507,34 @@ export function getAllTierModels(mode: ModelMode | "auto"): Record<string, strin
   }
 
   return result;
+}
+
+export interface StartupPromptCheckOptions {
+  isQuickMode?: boolean;
+  isTTY?: boolean;
+  autoResume?: boolean | string;
+  isSetupArg?: boolean;
+}
+
+/**
+ * Determine if the first-run API key / provider setup prompt should be displayed.
+ * Returns false if:
+ * - CLI was explicitly invoked with setup flag (--setup or setup)
+ * - quick mode is active or non-interactive TTY or auto-resuming
+ * - user has already configured one or more providers
+ * - user previously skipped the startup prompt (settings.skipStartupPrompt = true)
+ */
+export function shouldShowStartupPrompt(options: StartupPromptCheckOptions = {}): boolean {
+  if (options.isSetupArg) {
+    return false;
+  }
+  if (options.isQuickMode || (options.isTTY !== undefined && !options.isTTY) || Boolean(options.autoResume)) {
+    return false;
+  }
+  const settings = getSettings();
+  if (settings.skipStartupPrompt) {
+    return false;
+  }
+  const providers = getConfiguredProviders();
+  return providers.length === 0;
 }

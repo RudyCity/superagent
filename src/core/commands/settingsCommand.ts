@@ -205,6 +205,7 @@ export const settingsCommand: SlashCommand = {
         `│ • Processes Limit    : ${s.maxProcsVisible} items`,
         `│ • Force Prompt Tools : ${s.forcePromptBasedToolCalling ? "ENABLED" : "DISABLED"}`,
         `│ • Hide Timeline Line : ${s.hideTimeline ? "ENABLED" : "DISABLED"}`,
+        `│ • Startup Setup Prompt: ${s.skipStartupPrompt ? "OFF (SKIPPED)" : "ON (ENABLED)"}`,
         `│ • Request Classifier : ${s.classifierEnabled !== false ? "ENABLED" : "DISABLED"}`,
         `│ • Classifier Threshold: ${s.classifierConfidenceThreshold ?? "high"}`,
         `│ • Advisor Active      : ${s.enableAdvisor !== false ? "ENABLED" : "DISABLED"}  warn=${s.advisorWarningThreshold ?? 3}  pause=${s.advisorPauseThreshold ?? 5}  error=${s.advisorErrorThreshold ?? 5}  adaptive=${s.advisorAdaptiveScaling !== false ? "on" : "off"}  pattern=${s.advisorPatternMemory !== false ? "on" : "off"}`,
@@ -236,6 +237,7 @@ export const settingsCommand: SlashCommand = {
         "  /setting-procs-limit <number>",
         "  /setting-force-prompt-tools <on|off>",
         "  /setting-hide-timeline <on|off>",
+        "  /setting-startup-prompt <on|off>",
         "  /setting-advisor <on|off>",
         "  /setting-classifier <on|off>",
         "  /setting-classifier-threshold <high|medium|low>",
@@ -884,6 +886,48 @@ export const settingHideTimelineCommand: SlashCommand = {
   }
 };
 
+// /setting-startup-prompt command
+export const settingStartupPromptCommand: SlashCommand = {
+  name: "setting-startup-prompt",
+  description: "Configure whether to show or skip the startup setup prompt when no providers are configured",
+  execute(args, ctx) {
+    const now = Date.now();
+    const val = args.trim().toLowerCase();
+    if (!val) {
+      const current = getSettings().skipStartupPrompt;
+      ctx.addLine({
+        type: "system",
+        content: `Usage: /setting-startup-prompt <on|off>\nCurrent value: ${current ? "off (skipped/suppressed)" : "on (will prompt if unconfigured)"}`,
+        timestamp: now,
+      });
+      return;
+    }
+    if (val !== "on" && val !== "off") {
+      ctx.addLine({
+        type: "error",
+        content: "Invalid value. Must be 'on' (show prompt when unconfigured) or 'off' (skip/suppress prompt).",
+        timestamp: now,
+      });
+      return;
+    }
+    const skip = val === "off";
+    try {
+      updateSettings({ skipStartupPrompt: skip });
+      ctx.addLine({
+        type: "system",
+        content: `✓ Startup setup prompt set to: ${skip ? "OFF (skipped/suppressed)" : "ON (enabled)"}`,
+        timestamp: now,
+      });
+    } catch (err: any) {
+      ctx.addLine({
+        type: "error",
+        content: `Failed to save setting: ${err.message}`,
+        timestamp: now,
+      });
+    }
+  }
+};
+
 // /setting-classifier command
 export const settingClassifierCommand: SlashCommand = {
   name: "setting-classifier",
@@ -1191,6 +1235,7 @@ registry.register(settingProcsLimitCommand);
 registry.register(settingRmemoryCommand);
 registry.register(settingForcePromptToolsCommand);
 registry.register(settingHideTimelineCommand);
+registry.register(settingStartupPromptCommand);
 registry.register(settingClassifierCommand);
 registry.register(settingClassifierThresholdCommand);
 registry.register(settingAdvisorCommand);

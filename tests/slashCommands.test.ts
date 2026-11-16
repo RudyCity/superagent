@@ -720,6 +720,31 @@ describe("Slash Commands: /settings & /setting-*", () => {
     expect(s6).toContain("/setting-hide-timeline on");
     expect(s6).toContain("/setting-hide-timeline off");
   });
+
+  it("should configure startup setup prompt when running /setting-startup-prompt", () => {
+    handleSlashCommand("/setting-startup-prompt", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].content).toContain("Usage: /setting-startup-prompt");
+
+    handleSlashCommand("/setting-startup-prompt invalid", mockCtx as any);
+    expect(addedLines[addedLines.length - 1].type).toBe("error");
+
+    handleSlashCommand("/setting-startup-prompt off", mockCtx as any);
+    expect(getSettings().skipStartupPrompt).toBe(true);
+    expect(addedLines[addedLines.length - 1].content).toContain("Startup setup prompt set to: OFF (skipped/suppressed)");
+
+    handleSlashCommand("/setting-startup-prompt on", mockCtx as any);
+    expect(getSettings().skipStartupPrompt).toBe(false);
+    expect(addedLines[addedLines.length - 1].content).toContain("Startup setup prompt set to: ON (enabled)");
+  });
+
+  it("should return autocomplete suggestions for setting-startup-prompt", () => {
+    const s1 = getDashboardSuggestions("/setting-startup");
+    expect(s1).toContain("/setting-startup-prompt");
+
+    const s2 = getDashboardSuggestions("/setting-startup-prompt ");
+    expect(s2).toContain("/setting-startup-prompt on");
+    expect(s2).toContain("/setting-startup-prompt off");
+  });
 });
 
 describe("Slash Command: /worktree", () => {

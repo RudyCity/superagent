@@ -29,6 +29,7 @@ export const DEFAULT_CONFIG: GlobalModelConfig = {
     advisorErrorThreshold: 5,
     advisorAdaptiveScaling: true,
     advisorPatternMemory: true,
+    skipStartupPrompt: false,
   },
   trustedDirectories: [],
   providers: [

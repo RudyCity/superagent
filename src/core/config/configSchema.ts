@@ -240,6 +240,7 @@ function validateSettings(input: unknown): ValidationResult<SystemSettings> {
   const boolFields = [
     "forcePromptBasedToolCalling", "enableRmemory", "enableAdvisor",
     "advisorAdaptiveScaling", "advisorPatternMemory", "disableStreaming",
+    "skipStartupPrompt",
   ] as const;
   for (const f of boolFields) {
     if ((input as any)[f] !== undefined && !isBoolean((input as any)[f])) {

@@ -15,6 +15,10 @@ function mountOverview(mockData: {
   delegate?: any;
   terminal?: any;
   logs?: any;
+  lan?: any;
+  permanentAccess?: any;
+  inputPolicy?: any;
+  accessAudit?: any;
   trayVersion?: string;
   trayBuild?: string;
 } = {}) {
@@ -143,6 +147,46 @@ function mountOverview(mockData: {
                 ],
               };
             }
+            if (action === "lan_support_action") {
+              if (payload?.action === "list") {
+                return mockData.lan ?? {
+                  devices: [
+                    { id: "lan-1", name: "Pixel 8 Pro", ip: "192.168.1.105", connected: true },
+                  ],
+                  pairingRequests: [],
+                  tunnelDevices: [],
+                };
+              }
+            }
+            if (action === "get_permanent_access_registry") {
+              return mockData.permanentAccess ?? {
+                version: 2,
+                defaultEffect: "deny",
+                rules: [
+                  { id: "rule-1", effect: "allow" },
+                  { id: "rule-2", effect: "allow" },
+                ],
+              };
+            }
+            if (action === "get_desktop_input_policy") {
+              return mockData.inputPolicy ?? {
+                version: 1,
+                mode: "trusted",
+                targets: [{ pid: 1234, nativeId: "win-1" }],
+              };
+            }
+            if (action === "get_permanent_access_audit_log") {
+              return mockData.accessAudit ?? [
+                {
+                  id: "audit-1",
+                  timestamp: Date.now() - 10000,
+                  application: "Cursor",
+                  operation: "input",
+                  effect: "allow",
+                  target: "Code.exe",
+                },
+              ];
+            }
             if (action === "get_tray_version") return mockData.trayVersion ?? "1.14.83";
             if (action === "get_tray_build_number") return mockData.trayBuild ?? "9842";
             return { ok: true };
@@ -198,6 +242,7 @@ describe("SuperAgent Tray System Overview Dashboard", () => {
     expect(css).toContain(".overview-split-grid");
     expect(css).toContain(".overview-activity-card");
     expect(css).toContain(".overview-actions-card");
+    expect(css).toContain(".overview-activity-tag.security");
     expect(css).toContain("@media (max-width: 860px)");
     expect(css).toContain("@media (max-width: 520px)");
   });
@@ -216,6 +261,10 @@ describe("SuperAgent Tray System Overview Dashboard", () => {
         "get_connection_logs",
         "get_tray_version",
         "get_tray_build_number",
+        "lan_support_action",
+        "get_permanent_access_registry",
+        "get_desktop_input_policy",
+        "get_permanent_access_audit_log",
       ])
     );
   });
@@ -323,5 +372,70 @@ describe("SuperAgent Tray System Overview Dashboard", () => {
     const scanRuntimeBtn = harness.byId("overview-action-scan-runtime");
     scanRuntimeBtn.click();
     expect(harness.navigatedPages).toContain("runtime");
+  });
+
+  it("renders live LAN Devices KPI and active session counter from native telemetry", async () => {
+    const harness = mountOverview({
+      lan: {
+        devices: [
+          { id: "lan-1", name: "Pixel 8 Pro", ip: "192.168.1.105", connected: true },
+          { id: "lan-2", name: "ThinkPad X1", ip: "192.168.1.120", connected: false },
+        ],
+        pairingRequests: [],
+        tunnelDevices: [],
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(harness.byId("kpi-lan-devices").textContent).toBe("2 Paired");
+    expect(harness.byId("kpi-lan-meta").textContent).toBe("1 active session");
+    expect(harness.byId("kpi-lan-badge").textContent).toBe("Active");
+  });
+
+  it("renders live Security Guard KPI and Permanent Access ACL rules from native registry", async () => {
+    const harness = mountOverview({
+      permanentAccess: {
+        version: 2,
+        defaultEffect: "deny",
+        rules: [
+          { id: "rule-1", effect: "allow" },
+          { id: "rule-2", effect: "allow" },
+          { id: "rule-3", effect: "deny" },
+        ],
+      },
+      inputPolicy: {
+        version: 1,
+        mode: "trusted",
+        targets: [{ pid: 1234, nativeId: "win-1" }, { pid: 5678, nativeId: "win-2" }],
+      },
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(harness.byId("kpi-security-status").textContent).toBe("3 Rules");
+    expect(harness.byId("kpi-security-meta").textContent).toBe("2 active targets · Permanent ACL");
+    expect(harness.byId("kpi-security-badge").textContent).toBe("Enforced");
+  });
+
+  it("merges security access audit log entries into recent activity feed", async () => {
+    const harness = mountOverview({
+      accessAudit: [
+        {
+          id: "audit-1",
+          timestamp: Date.now() - 2000,
+          application: "Code",
+          operation: "input",
+          effect: "allow",
+          target: "Code.exe",
+        },
+      ],
+    });
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    const listHtml = harness.byId("overview-activity-list").innerHTML;
+    expect(listHtml).toContain("Code: input (allow)");
+    expect(listHtml).toContain("SECURITY");
   });
 });
