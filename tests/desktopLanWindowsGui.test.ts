@@ -54,6 +54,19 @@ describe("Native Windows LAN Client", () => {
     expect(manifest.bundle.resources["resources/superagent-lan-client.exe"])
       .toBe("binaries/superagent-lan-client.exe");
     expect(manifest.bundle.targets).toContain("nsis");
+    const mainWindow = manifest.app.windows.find((w: any) => w.label === "main");
+    expect(mainWindow).toMatchObject({
+      decorations: false,
+      resizable: true,
+      minimizable: true,
+      maximizable: true,
+    });
+    expect(html).toContain('src="./titlebar.js"');
+    for (const id of ["lan-titlebar", "lan-titlebar-drag", "lan-window-minimize",
+      "lan-window-maximize", "lan-window-close"]) {
+      expect(html).toContain(`id="${id}"`);
+    }
+    expect(rust).toContain("lan_window_action");
     const capabilities = JSON.parse(fs.readFileSync(path.resolve("apps/superagent-lan-windows/src-tauri/capabilities/default.json"), "utf8"));
     expect(capabilities.permissions).not.toContain("shell:default");
     expect(capabilities.permissions).not.toContain("fs:default");

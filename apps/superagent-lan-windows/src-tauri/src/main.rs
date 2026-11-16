@@ -11,7 +11,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
 
@@ -246,13 +246,60 @@ fn scan_qr_frame(width: usize, height: usize, gray_b64: String) -> Result<Option
     }
     Ok(None)
 }
+
+#[tauri::command]
+fn lan_window_action(
+    window: WebviewWindow,
+    action: String,
+) -> Result<serde_json::Value, String> {
+    if window.label() != "main" {
+        return Err("Window operation is restricted to SuperAgent LAN Client".into());
+    }
+    match action.as_str() {
+        "minimize" => window
+            .minimize()
+            .map_err(|_| "Cannot minimize LAN Client window")?,
+        "toggle-maximize" => {
+            if window
+                .is_maximized()
+                .map_err(|_| "Cannot inspect window state")?
+            {
+                window
+                    .unmaximize()
+                    .map_err(|_| "Cannot restore LAN Client window")?;
+            } else {
+                window
+                    .maximize()
+                    .map_err(|_| "Cannot maximize LAN Client window")?;
+            }
+        }
+        "start-drag" => {
+            if window
+                .is_maximized()
+                .map_err(|_| "Cannot inspect window state")?
+            {
+                return Err("Restore the maximized window before dragging".into());
+            }
+            window
+                .start_dragging()
+                .map_err(|_| "Cannot drag LAN Client window")?;
+        }
+        "close" => window.close().map_err(|_| "Cannot close LAN Client window")?,
+        "state" => {}
+        _ => return Err("Unsupported LAN Client window action".into()),
+    };
+    let maximized = window.is_maximized().unwrap_or(false);
+    let minimized = window.is_minimized().unwrap_or(false);
+    Ok(json!({"maximized":maximized,"minimized":minimized}))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(Receiver::default())
         .invoke_handler(tauri::generate_handler![
-            start_client, list_adapters, send_action, receiver_running, stop_client, select_share, scan_qr_frame
+            start_client, list_adapters, send_action, receiver_running, stop_client, select_share, scan_qr_frame, lan_window_action
         ])
         .on_window_event(|window, event| {
             if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {

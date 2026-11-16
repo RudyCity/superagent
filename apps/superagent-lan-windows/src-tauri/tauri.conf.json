@@ -12,12 +12,15 @@
       {
         "label": "main",
         "title": "SuperAgent LAN Client",
+        "decorations": false,
+        "resizable": true,
+        "minimizable": true,
+        "maximizable": true,
         "width": 1140,
         "height": 780,
         "minWidth": 840,
         "minHeight": 600,
-        "center": true,
-        "resizable": true
+        "center": true
       }
     ],
     "security": {

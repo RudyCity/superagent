@@ -6,9 +6,47 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src ipc: http://ipc.localhost https://ipc.localhost">
   <title>SuperAgent LAN Client</title>
   <link rel="stylesheet" href="./styles.css">
+  <script src="./titlebar.js" defer></script>
   <script src="./app.js" defer></script>
 </head>
 <body>
+  <!-- Native Windows decorations are disabled; these controls use strict
+       Rust/Tauri window actions, not arbitrary browser or shell commands. -->
+  <header id="lan-titlebar" class="lan-titlebar" aria-label="SuperAgent LAN Client window title bar">
+    <div id="lan-titlebar-drag" class="lan-titlebar-drag" aria-label="Drag to move window, double-click to maximize or restore" title="Drag to move · Double-click to maximize/restore">
+      <span class="lan-titlebar-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 12 12 17 22 12"></polyline>
+          <polyline points="2 17 12 22 22 17"></polyline>
+        </svg>
+      </span>
+      <span class="lan-titlebar-name">SuperAgent <span class="lan-titlebar-edition">LAN Client</span></span>
+      <span class="lan-titlebar-separator" aria-hidden="true"></span>
+      <span class="lan-titlebar-description">Secure Device Receiver · Windows</span>
+    </div>
+    <div class="lan-window-actions" role="group" aria-label="Window controls">
+      <button id="lan-window-minimize" class="lan-window-button" type="button" aria-label="Minimize window" title="Minimize">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <path d="M3 8.5h10" />
+        </svg>
+      </button>
+      <button id="lan-window-maximize" class="lan-window-button" type="button" aria-label="Maximize window" title="Maximize" aria-pressed="false">
+        <svg class="lan-icon-maximize" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+          <rect x="3" y="3" width="10" height="10" rx="1" />
+        </svg>
+        <svg class="lan-icon-restore" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" hidden>
+          <path d="M5.5 3H12a1 1 0 0 1 1 1v6.5M4 5.5h6.5a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1z" />
+        </svg>
+      </button>
+      <button id="lan-window-close" class="lan-window-button lan-window-close" type="button" aria-label="Close window" title="Close">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" />
+        </svg>
+      </button>
+    </div>
+    <span id="lan-window-action-feedback" class="visually-hidden" role="status" aria-live="polite"></span>
+  </header>
 <div class="app">
   <aside class="rail">
     <div class="brand"><span class="brand-mark">S</span><span>SUPERAGENT<small>LAN CLIENT</small></span></div>
