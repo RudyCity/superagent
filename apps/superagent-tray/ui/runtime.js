@@ -700,6 +700,33 @@ async function runtimeRegenerateToken(event) {
   }
 }
 
+let runtimeResultReturnFocus = null;
+
+function runtimeCloseConnectionResult() {
+  const dialog = rt("runtime-create-result-dialog");
+  if (!dialog || dialog.hidden) return;
+  dialog.hidden = true;
+  const resultView = rt("runtime-create-result");
+  if (resultView) {
+    resultView.hidden = true;
+    // Do not retain bootstrap codes or bearer tokens in the hidden page.
+    resultView.replaceChildren?.();
+    resultView.textContent = "";
+  }
+  runtimeResultReturnFocus?.focus?.();
+  runtimeResultReturnFocus = null;
+}
+
+function runtimeOpenConnectionResult() {
+  const dialog = rt("runtime-create-result-dialog");
+  if (!dialog) return;
+  runtimeResultReturnFocus = rt("runtime-create-toggle") || document.activeElement;
+  const createPanel = rt("runtime-create-panel");
+  if (createPanel) createPanel.hidden = true;
+  dialog.hidden = false;
+  rt("runtime-result-close")?.focus?.();
+}
+
 async function runtimeCreateConnection(event) {
   event?.preventDefault?.();
   if (runtimeActionBusy) return;
@@ -1030,6 +1057,7 @@ async function runtimeCreateConnection(event) {
         resultView.textContent = text;
       }
     }
+    if (resultView) runtimeOpenConnectionResult();
     await runtimeRefresh();
   } catch (error) {
     const unknown = /timed out|timeout|connection lost/i.test(String(error));
@@ -1112,6 +1140,31 @@ function runtimeInstall() {
   });
   rt("runtime-create-close")?.addEventListener("click", () => {
     if (rt("runtime-create-panel")) rt("runtime-create-panel").hidden = true;
+  });
+  rt("runtime-result-close")?.addEventListener("click", runtimeCloseConnectionResult);
+  rt("runtime-result-done")?.addEventListener("click", runtimeCloseConnectionResult);
+  rt("runtime-create-result-dialog")?.addEventListener("click", (event) => {
+    if (event.target === event.currentTarget) runtimeCloseConnectionResult();
+  });
+  document.addEventListener("keydown", (event) => {
+    const dialog = rt("runtime-create-result-dialog");
+    if (!dialog || dialog.hidden) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      runtimeCloseConnectionResult();
+    } else if (event.key === "Tab") {
+      const controls = Array.from(dialog.querySelectorAll("button:not([disabled]), a[href], input:not([disabled]), select:not([disabled])"))
+        .filter(element => !element.hidden && element.getClientRects().length > 0);
+      if (!controls.length) return;
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
   });
   for (const name of runtimeTabNames) {
     const tab = rt("runtime-tab-" + name);
