@@ -7,6 +7,30 @@
   const kinds = Object.freeze({ all:"All screens", native:"Applications",
     "managed-cdp":"Chrome CDP", "cdp-delegate":"CDP Delegate" });
   const state = {items:[],sources:{},filter:"all",loading:false,poll:null};
+  const streamPresets = Object.freeze({
+    balanced: { maxWidth: 1280, quality: 65, intervalMs: 250 },
+    detail: { maxWidth: 1920, quality: 80, intervalMs: 150 },
+    save: { maxWidth: 768, quality: 50, intervalMs: 500 },
+  });
+  const stream = {
+    active: false,
+    token: null,
+    id: null,
+    title: "",
+    application: "",
+    pid: 0,
+    nativeId: "",
+    quality: "balanced",
+    lastHash: null,
+    timer: null,
+    inFlight: false,
+    framesDelivered: 0,
+    fpsWindowCount: 0,
+    fpsLastTime: 0,
+    currentFps: "0.0",
+    lanUrl: "",
+  };
+
   const invoke = async (action,payload) => {
     const call=window.__TAURI__?.core?.invoke;
     if(typeof call!=="function")throw Error("Native Tray is required.");
@@ -23,6 +47,160 @@
     const e=el("desktop-live-manager-status");
     if(e){e.textContent=message;e.dataset.error=error?"true":"false";}
   }
+
+  function scheduleNextFrame() {
+    if (!stream.active || !stream.token) return;
+    if (stream.timer) clearTimeout(stream.timer);
+    const cfg = streamPresets[stream.quality] || streamPresets.balanced;
+    stream.timer = setTimeout(fetchFrame, cfg.intervalMs);
+  }
+
+  async function fetchFrame() {
+    if (!stream.active || !stream.token || stream.inFlight) return;
+    if (!visible()) {
+      await stopStream("Live stream paused: Tray window is hidden.");
+      return;
+    }
+    stream.inFlight = true;
+    const cfg = streamPresets[stream.quality] || streamPresets.balanced;
+    try {
+      const frameData = await invoke("frame", {
+        token: stream.token,
+        codec: "jpeg",
+        maxWidth: cfg.maxWidth,
+        quality: cfg.quality,
+        ...(stream.lastHash ? { knownHash: stream.lastHash } : {}),
+      });
+      if (!stream.active) return;
+      if (!frameData?.success && frameData?.error) throw Error(frameData.error);
+
+      const img = el("desktop-live-stream-img");
+      const placeholder = el("desktop-live-stream-placeholder");
+      const fpsPill = el("desktop-live-stream-fps");
+
+      if (frameData.jpeg) {
+        if (img) {
+          img.src = "data:image/jpeg;base64," + frameData.jpeg;
+          img.hidden = false;
+        }
+        if (placeholder) placeholder.hidden = true;
+        if (frameData.hash) stream.lastHash = frameData.hash;
+      }
+
+      stream.framesDelivered++;
+      stream.fpsWindowCount++;
+      const now = performance.now();
+      const elapsed = now - stream.fpsLastTime;
+      if (elapsed >= 1000) {
+        const fpsVal = ((stream.fpsWindowCount * 1000) / elapsed).toFixed(1);
+        stream.currentFps = fpsVal;
+        stream.fpsWindowCount = 0;
+        stream.fpsLastTime = now;
+        if (fpsPill) {
+          const dims = (frameData.width && frameData.height) ? `${frameData.width}×${frameData.height}` : "";
+          fpsPill.textContent = `${fpsVal} FPS` + (dims ? ` · ${dims}` : "");
+        }
+      }
+    } catch (err) {
+      await stopStream("Stream ended: " + (err?.message || "Window identity changed or closed."));
+      return;
+    } finally {
+      stream.inFlight = false;
+      if (stream.active) scheduleNextFrame();
+    }
+  }
+
+  async function startStream(item, button) {
+    const parts = (item.id || "").split(":");
+    if (parts.length < 3 || parts[0] !== "native") return;
+    const pid = Number(parts[1]);
+    const nativeId = parts.slice(2).join(":");
+    if (!Number.isSafeInteger(pid) || pid <= 0 || !nativeId) return;
+
+    if (stream.active) {
+      await stopStream();
+    }
+
+    const panel = el("desktop-live-stream-panel");
+    const titleEl = el("desktop-live-stream-title");
+    const metaEl = el("desktop-live-stream-meta");
+    const placeholder = el("desktop-live-stream-placeholder");
+    const placeholderText = el("desktop-live-stream-placeholder-text");
+    const img = el("desktop-live-stream-img");
+    const fpsPill = el("desktop-live-stream-fps");
+    const lanBanner = el("desktop-live-lan-banner");
+    const lanUrlEl = el("desktop-live-lan-url");
+
+    if (panel) panel.hidden = false;
+    if (titleEl) titleEl.textContent = item.title || item.application || "Native Window";
+    if (metaEl) metaEl.textContent = (item.application || "App") + " (PID: " + pid + ")";
+    if (placeholder) placeholder.hidden = false;
+    if (placeholderText) placeholderText.textContent = "Awaiting native OS confirmation dialog…";
+    if (img) { img.src = ""; img.hidden = true; }
+    if (fpsPill) fpsPill.textContent = "0.0 FPS";
+
+    status("Prompting native OS confirmation for " + (item.title || item.application) + "…");
+    try {
+      if (button) button.disabled = true;
+      const result = await invoke("start", { pid, nativeId, consent: true });
+      if (!result?.token) throw Error("Stream consent was not granted.");
+
+      stream.active = true;
+      stream.token = result.token;
+      stream.id = item.id;
+      stream.title = item.title || item.application;
+      stream.application = item.application;
+      stream.pid = pid;
+      stream.nativeId = nativeId;
+      stream.lastHash = null;
+      stream.framesDelivered = 0;
+      stream.fpsWindowCount = 0;
+      stream.fpsLastTime = performance.now();
+
+      // Configure LAN streaming info
+      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
+      const hostIp = window.__SUPERAGENT_LAN_IP || location.hostname || "127.0.0.1";
+      stream.lanUrl = `http://${hostIp}:${corePort}/api/desktop/live/lan-preview?token=${result.token}`;
+      if (lanUrlEl) lanUrlEl.textContent = stream.lanUrl;
+      if (lanBanner) lanBanner.hidden = false;
+
+      status("Live stream active for " + (item.title || item.application) + " (5 min TTL).");
+      draw();
+      scheduleNextFrame();
+    } catch (err) {
+      status("Live stream not started: " + (err?.message || "Denied or cancelled."), true);
+      await stopStream();
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  async function stopStream(reason) {
+    if (stream.timer) {
+      clearTimeout(stream.timer);
+      stream.timer = null;
+    }
+    const token = stream.token;
+    stream.active = false;
+    stream.token = null;
+    stream.id = null;
+    stream.inFlight = false;
+    stream.lastHash = null;
+
+    const panel = el("desktop-live-stream-panel");
+    if (panel) panel.hidden = true;
+    const img = el("desktop-live-stream-img");
+    if (img) { img.src = ""; img.hidden = true; }
+    const lanBanner = el("desktop-live-lan-banner");
+    if (lanBanner) lanBanner.hidden = true;
+
+    if (token) {
+      try { await invoke("stop", { token }); } catch {}
+    }
+    if (reason) status(reason);
+    draw();
+  }
+
   function draw() {
     const outlet=el("desktop-live-list");
     if(!outlet)return;
@@ -57,6 +235,21 @@
       info.append(top,meta);
       if(item.owner)info.append(node("p","desktop-live-owner","Agent: "+item.owner));
       const actions=node("div","desktop-live-actions");
+
+      if (item.kind === "native") {
+        const isCurrentStreaming = stream.active && stream.id === item.id;
+        const watch = node("button", "button " + (isCurrentStreaming ? "primary desktop-live-stream-active-btn" : "secondary") + " desktop-live-watch",
+          isCurrentStreaming ? "Streaming…" : "Watch stream");
+        watch.type = "button";
+        watch.title = isCurrentStreaming ? "Live stream aktif" : "Mulai live stream pratinjau jendela native";
+        if (isCurrentStreaming) {
+          watch.disabled = true;
+        } else {
+          watch.addEventListener("click", () => void startStream(item, watch));
+        }
+        actions.append(watch);
+      }
+
       if(item.stopAction) {
         const stop=node("button","button secondary desktop-live-stop",
           item.stopAction==="takeover"?"Take over":item.stopAction==="disconnect-profile"?"Disconnect profile":item.stopAction==="stop-delegate-tab"?"Stop tab session":"Stop session");
@@ -112,14 +305,36 @@
     finally{button.disabled=false;}
   }
   window.__superagentDesktopLiveRefresh=refresh;
+  window.__superagentDesktopLiveStopStream=stopStream;
   function install() {
     for(const kind of Object.keys(kinds))el("desktop-live-filter-"+kind)?.addEventListener("click",()=>{
       state.filter=kind;draw();
     });
     el("desktop-live-manager-refresh")?.addEventListener("click",()=>void refresh());
+    el("desktop-live-stream-stop")?.addEventListener("click",()=>void stopStream("Live stream stopped by operator."));
+    el("desktop-live-stream-quality")?.addEventListener("change",(e)=>{
+      stream.quality=e.target?.value||"balanced";
+      stream.lastHash=null;
+    });
+    el("desktop-live-lan-copy")?.addEventListener("click",async()=>{
+      if(stream.lanUrl){
+        try{
+          await navigator.clipboard.writeText(stream.lanUrl);
+          status("Link LAN stream disalin ke clipboard!");
+        }catch{
+          status("Gagal menyalin link LAN stream.",true);
+        }
+      }
+    });
+    window.addEventListener("beforeunload",()=>{
+      if(stream.token)void invoke("stop",{token:stream.token});
+    });
     if(state.poll)clearInterval(state.poll);
     state.poll=setInterval(()=>{if(visible())void refresh();},15000);
-    document.addEventListener("visibilitychange",()=>{if(visible())void refresh();});
+    document.addEventListener("visibilitychange",()=>{
+      if(visible())void refresh();
+      else if(stream.active)void stopStream("Stream auto-paused: Tray window is hidden.");
+    });
     if(visible())void refresh();
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",install);

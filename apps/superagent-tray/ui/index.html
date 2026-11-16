@@ -2560,6 +2560,49 @@
               <button type="button" id="desktop-live-filter-cdp-delegate" aria-pressed="false">CDP Delegate</button>
             </div>
           </div>
+
+          <!-- Real-Time Desktop Live Stream Viewport (Local & LAN Stream) -->
+          <div id="desktop-live-stream-panel" class="desktop-live-stream-panel" hidden>
+            <div class="desktop-live-stream-header">
+              <div class="desktop-live-stream-target-info">
+                <span class="desktop-live-stream-pill live" id="desktop-live-stream-badge">
+                  <span class="desktop-live-pulse-dot" aria-hidden="true"></span>
+                  LIVE STREAM
+                </span>
+                <strong id="desktop-live-stream-title" class="desktop-live-stream-title">Window Name</strong>
+                <span id="desktop-live-stream-meta" class="desktop-live-stream-meta">PID: 0000</span>
+              </div>
+              <div class="desktop-live-stream-controls">
+                <span id="desktop-live-stream-fps" class="desktop-live-stream-fps" title="Delivered frame rate and resolution">0.0 FPS · 0×0</span>
+                <label for="desktop-live-stream-quality" class="desktop-live-sr-only">Quality preset</label>
+                <select id="desktop-live-stream-quality" class="desktop-live-stream-select" title="Adaptive preview quality and resolution">
+                  <option value="balanced" selected>Balanced · 1280px</option>
+                  <option value="detail">Detail · 1920px</option>
+                  <option value="save">Save data · 768px</option>
+                </select>
+                <button type="button" id="desktop-live-stream-stop" class="button secondary small">Stop stream</button>
+              </div>
+            </div>
+            <div id="desktop-live-stream-viewport" class="desktop-live-stream-viewport">
+              <img id="desktop-live-stream-img" class="desktop-live-stream-img" alt="Live preview of the selected native application window" referrerpolicy="no-referrer" hidden />
+              <div id="desktop-live-stream-placeholder" class="desktop-live-stream-placeholder">
+                <div class="desktop-live-stream-spinner" aria-hidden="true"></div>
+                <p id="desktop-live-stream-placeholder-text">Awaiting native OS confirmation dialog…</p>
+              </div>
+            </div>
+            <div id="desktop-live-lan-banner" class="desktop-live-lan-banner" hidden>
+              <div class="desktop-live-lan-info">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M5 12.55a11 11 0 0 1 14.08 0"></path>
+                  <path d="M1.42 9a16 16 0 0 1 21.16 0"></path>
+                  <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
+                  <line x1="12" y1="20" x2="12.01" y2="20"></line>
+                </svg>
+                <span><strong>LAN Device Stream:</strong> Tonton di HP / perangkat Wi-Fi yang sama: <code id="desktop-live-lan-url">http://...</code></span>
+              </div>
+              <button type="button" id="desktop-live-lan-copy" class="button ghost small" title="Salin link LAN stream">Copy URL</button>
+            </div>
+          </div>
           <div id="desktop-live-list" class="desktop-live-list" aria-live="polite">
             <p class="desktop-live-empty">Refresh to discover application and browser handles.</p>
           </div>

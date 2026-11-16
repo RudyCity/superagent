@@ -1380,6 +1380,130 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Dedicated private LAN live stream viewer for paired local network devices.
+  // Restricted strictly to RFC1918 private IPv4 or local loopback. Public proxy headers are rejected.
+  if (pathname === "/api/desktop/live/lan-preview" || pathname === "/api/desktop/live/lan-frame") {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    const peer = req.socket.remoteAddress || "";
+    const cleanPeer = peer.replace(/^::ffff:/, "");
+    const loopback = ["127.0.0.1", "::1"].includes(cleanPeer);
+    const { privateV4 } = await import("./core/lanRemote/transport.js");
+    const isPrivateLan = loopback || privateV4(cleanPeer);
+    const forwarded = ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
+      "cf-connecting-ip", "cf-ray"].some(name => Object.hasOwn(req.headers, name));
+    if (!isPrivateLan || forwarded) {
+      sendJSON(res, 403, { success: false, error: "LAN_STREAM_PRIVATE_NETWORK_REQUIRED" });
+      return true;
+    }
+    const token = parsedUrl.searchParams.get("token") || "";
+    if (!token || !/^[a-f0-9]{64}$/.test(token)) {
+      sendJSON(res, 400, { success: false, error: "VALID_STREAM_TOKEN_REQUIRED" });
+      return true;
+    }
+    const { nativeWindowPreviewManager } = await import("./core/desktopUi/livePreview.js");
+    if (pathname === "/api/desktop/live/lan-preview") {
+      if (req.method !== "GET") {
+        sendJSON(res, 405, { success: false, error: "METHOD_NOT_ALLOWED" });
+        return true;
+      }
+      const html = `<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SuperAgent Desktop Live · LAN Stream</title>
+  <style>
+    :root { --bg: #080c14; --surface: #121824; --accent: #38bdf8; --text: #f1f5fa; --muted: #7e8fa4; --border: rgba(148,163,184,0.18); }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
+    header { background: var(--surface); padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 13.5px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 9999px; font-size: 10px; font-weight: 800; background: rgba(239,68,68,0.16); border: 1px solid rgba(239,68,68,0.4); color: #f87171; letter-spacing: .05em; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 6px #ef4444; animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.85)} }
+    .stats { color: var(--accent); font-size: 12px; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+    main { flex: 1; display: grid; place-items: center; padding: 16px; }
+    .viewport { position: relative; width: 100%; max-width: 1400px; aspect-ratio: 16 / 9; max-height: 84vh; background: #000; border-radius: 8px; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--border); box-shadow: 0 8px 30px rgba(0,0,0,0.6); }
+    img { width: 100%; height: 100%; object-fit: contain; }
+    .hint { font-size: 13px; color: var(--muted); text-align: center; }
+    footer { text-align: center; padding: 12px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="badge"><span class="dot"></span>LAN LIVE STREAM</span>
+      <span id="title">Desktop Window Preview</span>
+    </div>
+    <div class="stats" id="fps">0.0 FPS</div>
+  </header>
+  <main>
+    <div class="viewport">
+      <img id="stream" alt="Live stream feed" hidden>
+      <p id="msg" class="hint">Menghubungkan ke live stream desktop…</p>
+    </div>
+  </main>
+  <footer>SuperAgent LAN Stream · Enkripsi Intranet Privat RFC1918 · Read-only</footer>
+  <script>
+    const token = new URLSearchParams(location.search).get("token");
+    const img = document.getElementById("stream");
+    const msg = document.getElementById("msg");
+    const fpsEl = document.getElementById("fps");
+    let lastHash = null, frames = 0, lastTime = performance.now();
+    async function poll() {
+      if (!token) { msg.textContent = "Token sesi live stream tidak ditemukan."; return; }
+      try {
+        const url = "/api/desktop/live/lan-frame?token=" + encodeURIComponent(token) + (lastHash ? "&hash=" + encodeURIComponent(lastHash) : "");
+        const res = await fetch(url);
+        if (!res.ok) throw Error("Sesi live stream telah berakhir atau ditutup oleh operator PC.");
+        const data = await res.json();
+        if (data.jpeg) {
+          img.src = "data:image/jpeg;base64," + data.jpeg;
+          img.hidden = false;
+          msg.hidden = true;
+        }
+        if (data.hash) lastHash = data.hash;
+        frames++;
+        const now = performance.now();
+        if (now - lastTime >= 1000) {
+          const fps = ((frames * 1000) / (now - lastTime)).toFixed(1);
+          fpsEl.textContent = fps + " FPS" + (data.width ? " · " + data.width + "×" + data.height : "");
+          frames = 0; lastTime = now;
+        }
+        setTimeout(poll, data.unchanged ? 600 : 250);
+      } catch (e) {
+        msg.hidden = false;
+        msg.textContent = e.message || "Koneksi stream terputus.";
+      }
+    }
+    poll();
+  </script>
+</body>
+</html>`;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.writeHead(200);
+      res.end(html);
+      return true;
+    }
+    if (pathname === "/api/desktop/live/lan-frame") {
+      try {
+        const knownHash = parsedUrl.searchParams.get("hash") || undefined;
+        const result = await nativeWindowPreviewManager.frame({
+          token,
+          codec: "jpeg",
+          maxWidth: 1280,
+          quality: 65,
+          knownHash,
+        });
+        sendJSON(res, 200, { success: true, ...result });
+      } catch (err) {
+        sendJSON(res, 409, { success: false, error: err instanceof Error ? err.message : "FRAME_UNAVAILABLE" });
+      }
+      return true;
+    }
+  }
+
   // Native-only managed CDP live updates and manual human hold. These routes
   // never accept browser content, owner capability, arbitrary CDP commands, or
   // bearer tokens in the URL. The Tray authenticates using its native bridge.
