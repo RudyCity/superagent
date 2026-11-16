@@ -11,7 +11,11 @@ use serde::Serialize;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, State, WebviewWindow};
+use tauri::{
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    AppHandle, Emitter, Manager, State, WebviewWindow, WindowEvent,
+};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_notification::NotificationExt;
 
@@ -247,6 +251,14 @@ fn scan_qr_frame(width: usize, height: usize, gray_b64: String) -> Result<Option
     Ok(None)
 }
 
+fn show_main(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 #[tauri::command]
 fn lan_window_action(
     window: WebviewWindow,
@@ -284,7 +296,12 @@ fn lan_window_action(
                 .start_dragging()
                 .map_err(|_| "Cannot drag LAN Client window")?;
         }
-        "close" => window.close().map_err(|_| "Cannot close LAN Client window")?,
+        "close" => {
+            window.hide().map_err(|_| "Cannot hide LAN Client window")?;
+            let maximized = window.is_maximized().unwrap_or(false);
+            let minimized = window.is_minimized().unwrap_or(false);
+            return Ok(json!({"maximized":maximized,"minimized":minimized,"status":"hidden"}));
+        }
         "state" => {}
         _ => return Err("Unsupported LAN Client window action".into()),
     };
@@ -301,13 +318,54 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             start_client, list_adapters, send_action, receiver_running, stop_client, select_share, scan_qr_frame, lan_window_action
         ])
+        .setup(|app| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_decorations(false);
+                let _ = window.set_resizable(true);
+            }
+            let open = MenuItem::with_id(app, "open", "Open SuperAgent LAN Client", true, None::<&str>)?;
+            let sep = PredefinedMenuItem::separator(app)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit SuperAgent LAN Client", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&open, &sep, &quit])?;
+
+            TrayIconBuilder::new()
+                .icon(
+                    app.default_window_icon()
+                        .expect("App icon not generated")
+                        .clone(),
+                )
+                .tooltip("SuperAgent LAN Client · Secure Receiver")
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .on_menu_event(|app, event| match event.id().as_ref() {
+                    "open" => show_main(app),
+                    "quit" => {
+                        let state = app.state::<Receiver>();
+                        if let Ok(mut owner) = state.child.lock() {
+                            if let Some(mut child) = owner.take() { terminate_owned(&mut child); }
+                        };
+                        if let Ok(mut job) = state.job.lock() { job.take(); };
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main(tray.app_handle());
+                    }
+                })
+                .build(app)?;
+            Ok(())
+        })
         .on_window_event(|window, event| {
-            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
-                let state = window.state::<Receiver>();
-                if let Ok(mut owner) = state.child.lock() {
-                    if let Some(mut child) = owner.take() { terminate_owned(&mut child); }
-                };
-                if let Ok(mut job) = state.job.lock() { job.take(); };
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .run(tauri::generate_context!())
