@@ -5,8 +5,9 @@ describe("R1 process birth identity",()=>{
  it("matches only process birth before lease issuance with a narrow startup window",()=>{
   expect(compareProcessBirth(1_792_983_500_000,1_792_983_496_000)).toBe("matched");
   expect(compareProcessBirth(1_792_983_500_000,1_792_983_470_000)).toBe("matched");
+  expect(compareProcessBirth(1_792_983_500_000,1_792_983_500_500)).toBe("matched");
   expect(compareProcessBirth(1_792_983_500_000,1_792_983_469_999)).toBe("mismatch");
-  expect(compareProcessBirth(1_792_983_500_000,1_792_983_501_000)).toBe("mismatch");
+  expect(compareProcessBirth(1_792_983_500_000,1_792_983_506_000)).toBe("mismatch");
  });
  it("refuses unverifiable OS or invalid start timestamps",()=>{
   expect(compareProcessBirth(1_792_983_500_000,null)).toBe("unverified");

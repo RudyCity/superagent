@@ -971,8 +971,9 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           return await handleMerge(args);
         case "superagent_manage":
           return await handleManage(args);
+        case "superagent_services_status":
         case "superagent_manage_services":
-          return await dispatchServiceManagerMcpTool(args);
+          return await dispatchServiceManagerMcpTool(name, args);
         case "superagent_core_status":
         case "superagent_core_plan":
         case "superagent_core_restart":

@@ -5,7 +5,21 @@
  */
 import { MANAGED_SERVICE_NAMES } from "../../runtime/serviceManagerTypes.js";
 
-export const SERVICE_MANAGER_MCP_TOOL_DEFS=[{
+export const SERVICE_MANAGER_MCP_TOOL_DEFS=[
+  {
+    name:"superagent_services_status",
+    description:"Read-only inspection of SuperAgent runtime services: inventory Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, process registry and tunnels. Returns health dashboard, service inventory, diagnostics, active profiles, and bounded event timeline. Safe and non-destructive.",
+    inputSchema:{
+      type:"object",
+      properties:{
+        action:{type:"string",enum:["status","inventory","doctor","health","dashboard","logs","profile"],description:"Read-only action. Defaults to 'status'."},
+        service:{type:"string",enum:["all",...MANAGED_SERVICE_NAMES],description:"Filter by specific service or 'all'. Defaults to 'all'."},
+        port:{type:"integer",minimum:1024,maximum:65535},
+        limit:{type:"integer",minimum:1,maximum:200,description:"Max event logs to return (default 50)."},
+      },
+    },
+  },
+  {
   name:"superagent_manage_services",
   description:"Unified SuperAgent runtime manager. Inventory Core, MCP, Transport, Channel Host, Muse, Telegram, Vision, Guardian, daemon, Tray, process registry and tunnels. Includes ready/health dashboard, bounded event timeline, declarative profiles, guarded watchdog, manual operation reconciliation, and transactional Tray upgrade/rollback. Safe mutations: independently verified Core cold start (plan then confirm), supervised Core restart/rollback/drain, verified sidecar and native Tray start/stop/restart, URL-preserving Reloadable MCP backend reload; destructive Quick Tunnel stop requires public disruption acknowledgment. Explicit read-only plan required before a mutation. Never arbitrary PID kill, implicit auto-start, or Legacy Cloudflare URL rotation. Requires write OAuth scope and local YOLO.",
   inputSchema:{
@@ -54,12 +68,35 @@ export const SERVICE_MANAGER_MCP_TOOL_DEFS=[{
   },
 }] as const;
 export const SERVICE_MANAGER_MCP_TOOL_CLASSIFICATIONS={
+  superagent_services_status:"safe",
   superagent_manage_services:"dangerous",
 } as const;
-export async function dispatchServiceManagerMcpTool(args:Record<string,unknown>={}) {
+export async function dispatchServiceManagerMcpTool(nameOrArgs:string|Record<string,unknown>={},maybeArgs:Record<string,unknown>={}) {
+  let toolName = "superagent_manage_services";
+  let args: Record<string,unknown> = {};
+  if (typeof nameOrArgs === "string") {
+    toolName = nameOrArgs;
+    args = maybeArgs || {};
+  } else if (nameOrArgs && typeof nameOrArgs === "object") {
+    args = nameOrArgs;
+  }
+  if (toolName === "superagent_services_status") {
+    const action = typeof args.action === "string" ? args.action : "status";
+    const readOnlyActions = new Set(["status","inventory","doctor","health","dashboard","logs","profile"]);
+    if (!readOnlyActions.has(action)) {
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Action '${action}' is not permitted on read-only superagent_services_status. Use superagent_manage_services for lifecycle mutations.`,
+        }],
+        isError: true,
+      };
+    }
+    args = { ...args, action };
+  }
   try {
     const { manageServices }=await import("../../runtime/serviceManager.js");
-    const result=await manageServices(args);
+    const result=await manageServices(args as any);
     return {content:[{type:"text" as const,text:JSON.stringify(result)}]};
   }catch(e) {
     return {content:[{type:"text" as const,

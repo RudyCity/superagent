@@ -23,6 +23,7 @@ export interface McpSessionEntry {
   identity: McpIdentity;
   createdAt: number;
   lastActivityAt: number;
+  inFlight?: number;
 }
 
 export type McpSessionRemovalReason =
@@ -31,6 +32,7 @@ export type McpSessionRemovalReason =
   | "idle_timeout"
   | "max_lifetime"
   | "shutdown"
+  | "capacity_eviction"
   | "internal";
 
 export interface McpSessionRegistryStats {
@@ -48,27 +50,37 @@ export interface McpSessionRegistryStats {
   removals: Record<McpSessionRemovalReason, number>;
 }
 
+function parseEnvInt(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = parseInt(raw, 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export interface McpSessionRegistryOptions {
-  /** Max concurrent sessions across all principals (default 32). */
+  /** Max concurrent sessions across all principals (default 64, or SUPERAGENT_MCP_MAX_SESSIONS). */
   maxSessions?: number;
-  /** Max concurrent sessions for one authenticated principal (default 8). */
+  /** Max concurrent sessions for one authenticated principal (default 16/32, or SUPERAGENT_MCP_MAX_SESSIONS_PER_PRINCIPAL). */
   maxSessionsPerPrincipal?: number;
-  /** Close sessions idle longer than this (default 30 min). */
+  /** Close sessions idle longer than this (default 10 min, or SUPERAGENT_MCP_SESSION_IDLE_TIMEOUT_MS). */
   idleTimeoutMs?: number;
-  /** Hard cap on session age (default 4 hours). */
+  /** Hard cap on session age (default 4 hours, or SUPERAGENT_MCP_SESSION_MAX_LIFETIME_MS). */
   maxLifetimeMs?: number;
+  /** Minimum idle duration in ms before an inactive session can be evicted under capacity contention (default 1000ms). */
+  minIdleAgeMs?: number;
   /** Notify an outer transport owner after a session leaves this registry. */
   onSessionRemoved?: (sessionId: string, reason: McpSessionRemovalReason) => void;
 }
 
-export const DEFAULT_MAX_SESSIONS = 32;
-export const DEFAULT_MAX_SESSIONS_PER_PRINCIPAL = 8;
-export const DEFAULT_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-export const DEFAULT_MAX_LIFETIME_MS = 4 * 60 * 60 * 1000;
+export const DEFAULT_MAX_SESSIONS = parseEnvInt("SUPERAGENT_MCP_MAX_SESSIONS", 64);
+export const DEFAULT_MAX_SESSIONS_PER_PRINCIPAL = parseEnvInt("SUPERAGENT_MCP_MAX_SESSIONS_PER_PRINCIPAL", 16);
+export const DEFAULT_IDLE_TIMEOUT_MS = parseEnvInt("SUPERAGENT_MCP_SESSION_IDLE_TIMEOUT_MS", 10 * 60 * 1000);
+export const DEFAULT_MAX_LIFETIME_MS = parseEnvInt("SUPERAGENT_MCP_SESSION_MAX_LIFETIME_MS", 4 * 60 * 60 * 1000);
+export const DEFAULT_MIN_IDLE_AGE_MS = 1000;
 
 const REMOVAL_REASONS: readonly McpSessionRemovalReason[] = [
   "client_delete", "transport_close", "idle_timeout",
-  "max_lifetime", "shutdown", "internal",
+  "max_lifetime", "shutdown", "capacity_eviction", "internal",
 ];
 
 function emptyRemovalCounts(): Record<McpSessionRemovalReason, number> {
@@ -88,8 +100,10 @@ export class McpSessionRegistry {
   private lifetimeTimers = new Map<string, NodeJS.Timeout>();
   private readonly maxSessions: number;
   private readonly maxSessionsPerPrincipal: number;
+  private readonly explicitMaxSessionsPerPrincipal: boolean;
   private readonly idleTimeoutMs: number;
   private readonly maxLifetimeMs: number;
+  private readonly minIdleAgeMs: number;
   private readonly onSessionRemoved?: (sessionId: string, reason: McpSessionRemovalReason) => void;
   private createdTotal = 0;
   private removedTotal = 0;
@@ -99,6 +113,7 @@ export class McpSessionRegistry {
 
   constructor(opts: McpSessionRegistryOptions = {}) {
     this.maxSessions = Math.max(1, Math.floor(opts.maxSessions ?? DEFAULT_MAX_SESSIONS));
+    this.explicitMaxSessionsPerPrincipal = opts.maxSessionsPerPrincipal !== undefined;
     this.maxSessionsPerPrincipal = Math.max(
       1,
       Math.min(this.maxSessions, Math.floor(
@@ -107,6 +122,7 @@ export class McpSessionRegistry {
     );
     this.idleTimeoutMs = opts.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.maxLifetimeMs = opts.maxLifetimeMs ?? DEFAULT_MAX_LIFETIME_MS;
+    this.minIdleAgeMs = opts.minIdleAgeMs ?? DEFAULT_MIN_IDLE_AGE_MS;
     this.onSessionRemoved = opts.onSessionRemoved;
   }
 
@@ -136,8 +152,18 @@ export class McpSessionRegistry {
     return count;
   }
 
+  maxSessionsFor(identity: McpIdentity): number {
+    if (!this.explicitMaxSessionsPerPrincipal && identity.mode === "static-bearer") {
+      // In static-bearer mode, all local subagents and CLI bridge workers share
+      // the single bearer subject. Provide a higher ceiling (up to maxSessions)
+      // to avoid false-positive principal saturation.
+      return Math.max(this.maxSessionsPerPrincipal, Math.min(this.maxSessions, 32));
+    }
+    return this.maxSessionsPerPrincipal;
+  }
+
   isFullFor(identity: McpIdentity): boolean {
-    return this.countForPrincipal(identity) >= this.maxSessionsPerPrincipal;
+    return this.countForPrincipal(identity) >= this.maxSessionsFor(identity);
   }
 
   snapshot(now = Date.now()): McpSessionRegistryStats {
@@ -167,19 +193,92 @@ export class McpSessionRegistry {
   }
 
   /**
+   * Track request lifecycle for in-flight safety so active sessions are never
+   * prematurely evicted while executing an MCP call.
+   */
+  beginRequest(sessionId: string): void {
+    const s = this.sessions.get(sessionId);
+    if (!s) return;
+    s.inFlight = (s.inFlight ?? 0) + 1;
+    s.lastActivityAt = Date.now();
+    this.armIdleTimer(sessionId);
+  }
+
+  endRequest(sessionId: string): void {
+    const s = this.sessions.get(sessionId);
+    if (!s) return;
+    s.inFlight = Math.max(0, (s.inFlight ?? 1) - 1);
+    s.lastActivityAt = Date.now();
+    this.armIdleTimer(sessionId);
+  }
+
+  /**
+   * Proactively evicts the oldest idle session (not currently in-flight)
+   * if its idle duration exceeds minIdleAgeMs (default: this.minIdleAgeMs).
+   *
+   * If identity is provided, evicts the oldest idle session for that principal.
+   * If identity is omitted, evicts the oldest idle session globally.
+   *
+   * Returns true if an idle session was evicted, false otherwise.
+   */
+  evictOldestIdle(
+    identity?: McpIdentity,
+    minIdleAgeMs = this.minIdleAgeMs,
+    now = Date.now(),
+  ): boolean {
+    let candidate: McpSessionEntry | undefined;
+
+    if (identity) {
+      const targetKey = principalKey(identity);
+      for (const session of this.sessions.values()) {
+        if (principalKey(session.identity) !== targetKey) continue;
+        if ((session.inFlight ?? 0) > 0) continue;
+        if (now - session.lastActivityAt < minIdleAgeMs) continue;
+        if (!candidate || session.lastActivityAt < candidate.lastActivityAt) {
+          candidate = session;
+        }
+      }
+    } else {
+      for (const session of this.sessions.values()) {
+        if ((session.inFlight ?? 0) > 0) continue;
+        if (now - session.lastActivityAt < minIdleAgeMs) continue;
+        if (!candidate || session.lastActivityAt < candidate.lastActivityAt) {
+          candidate = session;
+        }
+      }
+    }
+
+    if (!candidate) return false;
+    void this.remove(candidate.sessionId, "capacity_eviction");
+    return true;
+  }
+
+  /**
    * Register a new session. Throws if the ID is taken or capacity is exhausted.
+   * Proactively reaps idle sessions under capacity contention.
    * Arms idle + lifetime timers.
    */
-  add(entry: McpSessionEntry): void {
+  add(
+    entry: McpSessionEntry,
+    options: { allowEviction?: boolean; minIdleAgeMs?: number } = {},
+  ): void {
     if (!entry.sessionId) throw new Error("sessionId is required");
     if (this.sessions.has(entry.sessionId)) throw new Error("session ID already registered");
+
+    const allowEviction = options.allowEviction ?? true;
+    const minIdleAgeMs = options.minIdleAgeMs ?? this.minIdleAgeMs;
+
     if (this.isFull()) {
-      this.rejectedGlobal++;
-      throw new Error("too many concurrent MCP sessions");
+      if (!allowEviction || !this.evictOldestIdle(undefined, minIdleAgeMs)) {
+        this.rejectedGlobal++;
+        throw new Error("too many concurrent MCP sessions");
+      }
     }
     if (this.isFullFor(entry.identity)) {
-      this.rejectedPrincipal++;
-      throw new Error("too many concurrent MCP sessions for principal");
+      if (!allowEviction || !this.evictOldestIdle(entry.identity, minIdleAgeMs)) {
+        this.rejectedPrincipal++;
+        throw new Error("too many concurrent MCP sessions for principal");
+      }
     }
     this.sessions.set(entry.sessionId, entry);
     this.createdTotal++;

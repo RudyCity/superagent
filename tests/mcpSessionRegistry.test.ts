@@ -149,4 +149,73 @@ describe("McpSessionRegistry", () => {
     await reg.closeAll();
     expect(reg.size).toBe(0);
   });
+
+  it("proactively evicts oldest idle session when principal limit is reached", async () => {
+    const r = new McpSessionRegistry({
+      maxSessions: 4,
+      maxSessionsPerPrincipal: 2,
+      minIdleAgeMs: 20,
+    });
+    r.add(entry("p1", "user-1"));
+    await sleep(25);
+    r.add(entry("p2", "user-1"));
+    expect(r.size).toBe(2);
+    // Adding 3rd session for user-1 should evict p1 (which is >20ms idle)
+    r.add(entry("p3", "user-1"));
+    expect(r.get("p1")).toBeUndefined();
+    expect(r.get("p2")).toBeDefined();
+    expect(r.get("p3")).toBeDefined();
+    expect(r.size).toBe(2);
+    expect(r.snapshot().removals.capacity_eviction).toBe(1);
+  });
+
+  it("never evicts in-flight sessions even under capacity pressure", async () => {
+    const r = new McpSessionRegistry({
+      maxSessions: 4,
+      maxSessionsPerPrincipal: 2,
+      minIdleAgeMs: 20,
+    });
+    r.add(entry("p1", "user-1"));
+    r.beginRequest("p1");
+    await sleep(25);
+    r.add(entry("p2", "user-1"));
+    // p1 is in-flight, p2 is fresh (<20ms). Adding p3 must throw because no eligible idle session exists.
+    expect(() => r.add(entry("p3", "user-1")))
+      .toThrow("too many concurrent MCP sessions for principal");
+    expect(r.get("p1")).toBeDefined();
+    expect(r.get("p2")).toBeDefined();
+    expect(r.get("p3")).toBeUndefined();
+    // End request on p1 so it becomes idle
+    r.endRequest("p1");
+    await sleep(25);
+    r.add(entry("p3", "user-1"));
+    expect(r.get("p1")).toBeUndefined();
+    expect(r.get("p3")).toBeDefined();
+  });
+
+  it("globally evicts oldest idle session when global maxSessions is reached", async () => {
+    const r = new McpSessionRegistry({
+      maxSessions: 2,
+      maxSessionsPerPrincipal: 2,
+      minIdleAgeMs: 20,
+    });
+    r.add(entry("g1", "user-a"));
+    await sleep(25);
+    r.add(entry("g2", "user-b"));
+    expect(r.isFull()).toBe(true);
+    // Global eviction should evict g1
+    r.add(entry("g3", "user-c"));
+    expect(r.get("g1")).toBeUndefined();
+    expect(r.get("g2")).toBeDefined();
+    expect(r.get("g3")).toBeDefined();
+    expect(r.snapshot().removals.capacity_eviction).toBe(1);
+  });
+
+  it("grants static-bearer principal a generous default ceiling up to 32", () => {
+    const r = new McpSessionRegistry({ maxSessions: 64 });
+    const bearerId = identity("bearer");
+    expect(r.maxSessionsFor(bearerId)).toBe(32);
+    const oauthId = { mode: "oauth" as const, subject: "app-client", scopes: [], credentialHash: "def" };
+    expect(r.maxSessionsFor(oauthId)).toBe(16);
+  });
 });

@@ -281,8 +281,9 @@ export async function verifyManagedOwnerIdentity(
   lease: ManagedMcpTunnelLease,
   options?: { timeoutMs?: number; pollIntervalMs?: number },
 ): Promise<void> {
-  const timeoutMs = options?.timeoutMs ?? (process.platform === "win32" ? 8_000 : 2_000);
-  const pollIntervalMs = options?.pollIntervalMs ?? 200;
+  const defaultTimeout = process.platform === "win32" ? 15_000 : 2_000;
+  const timeoutMs = options?.timeoutMs !== undefined ? options.timeoutMs : defaultTimeout;
+  const pollIntervalMs = options?.pollIntervalMs ?? (process.platform === "win32" ? 500 : 200);
   const deadline = Date.now() + timeoutMs;
 
   let lastError: Error | null = null;
@@ -301,7 +302,9 @@ export async function verifyManagedOwnerIdentity(
         return;
       }
     } else {
-      lastError = new Error("MCP tunnel owner identity does not match state and kernel listener");
+      if (!lastError || lastError.message !== "MCP tunnel owner process birth could not be verified") {
+        lastError = new Error("MCP tunnel owner identity does not match state and kernel listener");
+      }
     }
 
     if (Date.now() >= deadline || !isProcessRunning(lease.pid)) {

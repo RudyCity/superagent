@@ -27,9 +27,17 @@ const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","li
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
 const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace",
   "superagent_tool_search","superagent_tool_describe","superagent_tool_status",
-  "superagent_core_status","superagent_server_health","get_current_time",
+  "superagent_core_status","superagent_core_plan","superagent_server_health","get_current_time",
   "superagent_get_project","superagent_list_projects","superagent_list_project_access",
-  "superagent_get_token_usage",
+  "superagent_discover_projects","superagent_get_token_usage","superagent_get_remote_status",
+  "superagent_services_status",
+  "superagent_delegate_doctor","superagent_delegate_list_chats",
+  "superagent_delegate_read_chat","superagent_delegate_read_chat_full",
+  "superagent_delegate_search_history","superagent_delegate_sync_history",
+  "superagent_delegate_search_index","superagent_delegate_inspect_chat_config",
+]);
+const READ_ONLY_SERVICE_ACTIONS = new Set([
+  "status","inventory","doctor","health","dashboard","logs","profile",
 ]);
 const keyOf = (identity: ExecutableIdentity) => [identity.platform,identity.executablePath,identity.sha256].join(":");
 let cachedSelf:{key:string,identity:ExecutableIdentity}|null=null;
@@ -119,6 +127,11 @@ export function registeredFileToolGate(
   const identity=(options.identity ?? identityOfSelf)();
   if(!identity)return "Core executable identity could not be verified.";
   if(BENIGN.has(call.name))return null;
+  if(call.name === "superagent_manage_services" &&
+     call.args && typeof call.args.action === "string" &&
+     READ_ONLY_SERVICE_ACTIONS.has(call.args.action)) {
+    return null;
+  }
   if(READ_SEARCH.has(call.name))return "Unmediated discovery/search could expose explicitly blocked child files.";
   const operations:FileOperation[]=
     READ_TOOLS.has(call.name)?["read"]:

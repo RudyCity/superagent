@@ -18,8 +18,9 @@ export function compareProcessBirth(
       kernelCreatedAt <= 0) return "unverified";
   // The lease is created *by* the running owner after the process was born.
   // A short startup/import gap is acceptable; future or stale birth is not.
+  // Allow a small clock skew (up to 5s) for Windows kernel timer jitter vs user-space Date.now().
   const startupGap = recordedOwnerStartedAt - kernelCreatedAt;
-  return startupGap >= 0 && startupGap <= 30_000 ? "matched" : "mismatch";
+  return startupGap >= -5_000 && startupGap <= 30_000 ? "matched" : "mismatch";
 }
 
 export function verifyWindowsProcessBirth(

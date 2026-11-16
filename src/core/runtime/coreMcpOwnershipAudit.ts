@@ -91,22 +91,25 @@ export function readListenerOwners(): Map<number,number>|null {
       encoding:"utf8",timeout:4000,maxBuffer:2*1024*1024,windowsHide:true,
     });
     const map = parseNetstat(output);
-    try {
-      const psOut = execFileSync("powershell.exe", ["-NoProfile", "-Command", "Get-NetTCPConnection -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Listen' -or $_.State -eq 2 -or $null -eq $_.State } | Select-Object -Property LocalPort,OwningProcess | ConvertTo-Json"], {
-        encoding: "utf8", timeout: 4000, windowsHide: true,
-      });
-      if (psOut && psOut.trim()) {
-        const raw = JSON.parse(psOut.trim());
-        const items = Array.isArray(raw) ? raw : [raw];
-        for (const item of items) {
-          const port = Number(item.LocalPort);
-          const pid = Number(item.OwningProcess);
-          if (validPort(port) && Number.isSafeInteger(pid) && pid > 0) {
-            if (!map.has(port)) map.set(port, pid);
+    const needsPsFallback = map.size === 0 || Array.from(map.values()).includes(0);
+    if (needsPsFallback) {
+      try {
+        const psOut = execFileSync("powershell.exe", ["-NoProfile", "-Command", "Get-NetTCPConnection -LocalAddress 127.0.0.1 -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Listen' -or $_.State -eq 2 -or $null -eq $_.State } | Select-Object -Property LocalPort,OwningProcess | ConvertTo-Json"], {
+          encoding: "utf8", timeout: 4000, windowsHide: true,
+        });
+        if (psOut && psOut.trim()) {
+          const raw = JSON.parse(psOut.trim());
+          const items = Array.isArray(raw) ? raw : [raw];
+          for (const item of items) {
+            const port = Number(item.LocalPort);
+            const pid = Number(item.OwningProcess);
+            if (validPort(port) && Number.isSafeInteger(pid) && pid > 0) {
+              if (!map.has(port) || map.get(port) === 0) map.set(port, pid);
+            }
           }
         }
-      }
-    } catch {}
+      } catch {}
+    }
     return map;
   }catch{return null;}
 }

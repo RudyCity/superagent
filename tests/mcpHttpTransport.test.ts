@@ -491,4 +491,60 @@ describe("per-session transport isolation", () => {
     expect(gone.status).toBe(404);
     await gone.text();
   });
+
+  it("proactively evicts idle sessions to prevent false 429 when capacity is reached", async () => {
+    const customToken = generateMcpBearerToken();
+    const server = await startMcpHttpServer({
+      port: 0,
+      bearerToken: customToken,
+      allowDangerous: false,
+      maxSessions: 2,
+      maxSessionsPerPrincipal: 2,
+      sessionMinIdleAgeMs: 20,
+    });
+    const sUrl = `http://127.0.0.1:${server.port}${MCP_HTTP_PATH}`;
+    const init = async () => {
+      const res = await fetch(sUrl, {
+        method: "POST",
+        headers: baseHeaders(customToken),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "test", version: "1" } },
+        }),
+      });
+      await res.text();
+      return res;
+    };
+
+    try {
+      const res1 = await init();
+      expect(res1.status).toBe(200);
+      const sid1 = res1.headers.get("mcp-session-id");
+      expect(sid1).toBeTruthy();
+
+      await new Promise((r) => setTimeout(r, 25));
+
+      const res2 = await init();
+      expect(res2.status).toBe(200);
+
+      // Even though maxSessionsPerPrincipal is 2, adding a 3rd session should evict sid1 and return 200 instead of 429
+      const res3 = await init();
+      expect(res3.status).toBe(200);
+      const sid3 = res3.headers.get("mcp-session-id");
+      expect(sid3).toBeTruthy();
+
+      // sid1 should now be gone (404)
+      const listOld = await fetch(sUrl, {
+        method: "POST",
+        headers: { ...baseHeaders(customToken), "mcp-session-id": sid1! },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      });
+      expect(listOld.status).toBe(404);
+      await listOld.text();
+    } finally {
+      await server.close();
+    }
+  });
 });

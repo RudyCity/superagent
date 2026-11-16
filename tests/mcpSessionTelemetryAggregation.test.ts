@@ -24,6 +24,7 @@ const sample = (values: Partial<McpSessionRegistryStats> = {}): McpSessionRegist
     idle_timeout: 0,
     max_lifetime: 0,
     shutdown: 0,
+    capacity_eviction: 0,
     internal: 0,
   },
   ...values,

@@ -335,14 +335,16 @@ export interface McpHttpServerOptions {
   oauth?: McpOAuthServerConfig;
   /** Public base URL used for the WWW-Authenticate challenge metadata hint. */
   publicBaseUrl?: string;
-  /** Max concurrent MCP sessions (default 32). */
+  /** Max concurrent MCP sessions (default 64, or SUPERAGENT_MCP_MAX_SESSIONS). */
   maxSessions?: number;
-  /** Max concurrent sessions for one authenticated principal (default 8). */
+  /** Max concurrent sessions for one authenticated principal (default 16/32, or SUPERAGENT_MCP_MAX_SESSIONS_PER_PRINCIPAL). */
   maxSessionsPerPrincipal?: number;
-  /** Close sessions idle longer than this (default 30 min). */
+  /** Close sessions idle longer than this (default 10 min, or SUPERAGENT_MCP_SESSION_IDLE_TIMEOUT_MS). */
   sessionIdleTimeoutMs?: number;
-  /** Hard cap on session age (default 4 hours). */
+  /** Hard cap on session age (default 4 hours, or SUPERAGENT_MCP_SESSION_MAX_LIFETIME_MS). */
   sessionMaxLifetimeMs?: number;
+  /** Minimum idle duration in ms before an inactive session can be evicted under capacity contention (default 1000ms). */
+  sessionMinIdleAgeMs?: number;
   /** Internal lifecycle observer used by durable ingress owners. */
   onSessionClosed?: (sessionId: string, reason: McpSessionRemovalReason) => void;
   /** Host/Origin validation policy (defense in depth). */
@@ -445,6 +447,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     maxSessionsPerPrincipal: opts.maxSessionsPerPrincipal,
     idleTimeoutMs: opts.sessionIdleTimeoutMs,
     maxLifetimeMs: opts.sessionMaxLifetimeMs,
+    minIdleAgeMs: opts.sessionMinIdleAgeMs,
     onSessionRemoved: opts.onSessionClosed,
   });
   let inFlightToolCalls = 0;
@@ -727,6 +730,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           body = r.body;
         }
         registry.touch(requestSessionId);
+        registry.beginRequest(requestSessionId);
         const diagnosticStage = getMcpDiagnosticStage(body);
         const diagnosticStart = performance.now();
         const isToolCall = diagnosticStage === "mcp.tools_call";
@@ -734,6 +738,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         try {
           await session.transport.handleRequest(req, res, body);
         } finally {
+          registry.endRequest(requestSessionId);
           if (isToolCall) inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
           if (diagnosticStage) {
             recordMcpOAuthAudit({
@@ -764,14 +769,20 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           return;
         }
         if (registry.isFull()) {
-          res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
-          res.end(JSON.stringify({ error: "too many concurrent MCP sessions" }));
-          return;
+          registry.evictOldestIdle();
+          if (registry.isFull()) {
+            res.writeHead(503, { "Content-Type": "application/json", "Retry-After": "5" });
+            res.end(JSON.stringify({ error: "too many concurrent MCP sessions" }));
+            return;
+          }
         }
         if (registry.isFullFor(identity as McpIdentity)) {
-          res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "5" });
-          res.end(JSON.stringify({ error: "too many concurrent MCP sessions for principal" }));
-          return;
+          registry.evictOldestIdle(identity as McpIdentity);
+          if (registry.isFullFor(identity as McpIdentity)) {
+            res.writeHead(429, { "Content-Type": "application/json", "Retry-After": "5" });
+            res.end(JSON.stringify({ error: "too many concurrent MCP sessions for principal" }));
+            return;
+          }
         }
         const newTransport = new StreamableHTTPServerTransport({
           sessionIdGenerator: () => crypto.randomUUID(),

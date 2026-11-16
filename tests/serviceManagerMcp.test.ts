@@ -59,4 +59,20 @@ describe("MCP unified management authorization",()=>{
       expect(names).not.toContain("superagent_manage_services");
     } finally {await server.close();}
   });
+  it("exposes read-only superagent_services_status to read-only callers without YOLO",async()=>{
+    const {server,list,call}=handlers(["mcp:tools"],false);
+    try {
+      expect(MCP_TOOL_CLASSIFICATION.superagent_services_status).toBe("safe");
+      const tools=(await list({method:"tools/list",params:{}})).tools;
+      const statusTool=tools.find((x:any)=>x.name==="superagent_services_status");
+      expect(statusTool).toBeDefined();
+      expect(statusTool.annotations?.readOnlyHint).toBe(true);
+      expect(statusTool.annotations?.destructiveHint).toBe(false);
+      const invalid=await call({method:"tools/call",params:{
+        name:"superagent_services_status",arguments:{action:"stop"},
+      }});
+      expect(invalid.isError).toBe(true);
+      expect(JSON.stringify(invalid)).toContain("Action 'stop' is not permitted");
+    } finally {await server.close();}
+  });
 });
