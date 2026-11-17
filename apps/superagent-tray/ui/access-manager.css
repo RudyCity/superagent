@@ -217,3 +217,15 @@
   .access-mcp-history-row .access-revoke{width:100%}
   .access-mcp-primary{max-width:none}
 }
+
+/* Notification deep-link keeps the existing human approval gate untouched. */
+.access-mcp-request-card.access-mcp-request-highlight,
+.access-mcp-history-row.access-mcp-request-highlight {
+  border-color: var(--accent, #38bdf8);
+  box-shadow: 0 0 0 1px var(--accent, #38bdf8) inset;
+  scroll-margin: 110px;
+}
+.access-mcp-request-highlight:focus-visible {
+  outline: 2px solid var(--accent, #38bdf8);
+  outline-offset: 3px;
+}
