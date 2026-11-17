@@ -119,6 +119,44 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       expect(gate(name,{})).toMatch(/not certified/);
     }
   });
+  it("certifies LAN inventory without permitting filePath injection or device actions",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>
+      registeredFileToolGate({name,args},a.root,opts);
+    for(const name of ["superagent_lan_list_devices","superagent_device_list","superagent_device_tunnel_list"]) {
+      expect(getPermanentFileToolReadiness(name)).toBe("action_dependent");
+      expect(gate(name,{})).toBeNull();
+      expect(gate(name,{filePath:".env"})).toMatch(/not certified/);
+    }
+    for(const name of ["superagent_lan_pair_status","superagent_device_pair_status"]){
+      expect(gate(name,{requestId:"12345678-1234-1234-1234-123456789abc"})).toBeNull();
+      expect(gate(name,{requestId:"invalid"})).toMatch(/not certified/);
+      expect(gate(name,{requestId:"12345678-1234-1234-1234-123456789abc",
+        workspace:a.root})).toMatch(/not certified/);
+    }
+    expect(gate("superagent_lan_device_exec",{command:"cat /private"})).toMatch(/not certified/);
+    expect(gate("superagent_lan_android_screen",{deviceId:"123"})).toMatch(/not certified/);
+  });
+
+  it("allows only attested Core lifecycle requests through file policy, not through MCP authorization",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>
+      registeredFileToolGate({name,args},a.root,opts);
+    const approvedShape={port:7888,confirm:true,
+      operationId:"sample-operation-id-0001",expectedBuildDigest:"a".repeat(64)};
+    for(const name of ["superagent_core_restart","superagent_core_rollback","superagent_core_drain"]){
+      expect(getPermanentFileToolReadiness(name)).toBe("action_dependent");
+      expect(gate(name,approvedShape)).toBeNull();
+      expect(gate("superagent_tool_execute",{name,arguments:approvedShape})).toBeNull();
+      expect(gate(name,{...approvedShape,confirm:false})).toMatch(/not certified/);
+      expect(gate(name,{...approvedShape,expectedBuildDigest:"bad"})).toMatch(/not certified/);
+      expect(gate(name,{...approvedShape,operationId:"short"})).toMatch(/not certified/);
+      expect(gate(name,{...approvedShape,executablePath:"/tmp/core"})).toMatch(/not certified/);
+      expect(gate(name,{...approvedShape,filePath:"/secret"})).toMatch(/not certified/);
+    }
+    expect(gate("superagent_cli_bridge",{action:"delegate",permissionMode:"full-auto"}))
+      .toMatch(/not certified/);
+  });
   it("blocks symlinked targets before IO when host OS authorizes links",()=>{
     const a=setup();
     const link=path.join(a.root,"link.ts");
