@@ -22,6 +22,33 @@
     return invoke(name, args);
   };
   const lifecycle = request => call("lifecycle_console_request", {request});
+  const pendingTelemetryReads = new Map();
+  const TELEMETRY_DEADLINE_MS = 10000;
+  // A stalled native IPC must not freeze Overview or spawn a new stuck request
+  // on every poll. A late response releases its slot but is not rendered stale.
+  function readTelemetry(key, operation) {
+    const pending=pendingTelemetryReads.get(key);
+    if(pending)return pending;
+    let timer;
+    const source=Promise.resolve().then(operation);
+    const bounded=new Promise((resolve,reject)=>{
+      timer=setTimeout(()=>reject(Error("Telemetry timed out: "+key)),TELEMETRY_DEADLINE_MS);
+      source.then(
+        value=>{
+          clearTimeout(timer);
+          if(pendingTelemetryReads.get(key)===bounded)pendingTelemetryReads.delete(key);
+          resolve(value);
+        },
+        error=>{
+          clearTimeout(timer);
+          if(pendingTelemetryReads.get(key)===bounded)pendingTelemetryReads.delete(key);
+          reject(error);
+        }
+      );
+    });
+    pendingTelemetryReads.set(key,bounded);
+    return bounded;
+  }
   const text = (id, value) => {const el=$(id); if(el) el.textContent=String(value ?? "—");};
   const element = (tag, className, value) => {
     const node=document.createElement(tag);
@@ -210,8 +237,10 @@
     text("op-mcp-rss",bytes(memory?.rssBytes));
     text("op-mcp-heap",bytes(memory?.heapUsedBytes));
     const trend=memory?.trend;
-    text("op-memory-trend",trend?.suspicious===true?"Growing":trend?.suspicious===false?
-      "Stable":"Unverified");
+    const enoughTrendSamples=number(trend?.sampleCount)!==null && trend.sampleCount>=4 &&
+      number(trend?.windowMs)!==null && trend.windowMs>=120000;
+    text("op-memory-trend",trend?.suspicious===true?"Growing":enoughTrendSamples &&
+      trend?.suspicious===false?"Stable":trend?.sampleCount>=0?"Collecting":"Unverified");
     const root=$("op-process-resources");
     const chart=$("op-resource-history");
     if(chart)chart.replaceChildren();
@@ -262,7 +291,9 @@
     const claims=document.getElementById("op-security-boundary");
     if(claims)claims.textContent="Chat Agent YOLO never authorizes MCP access. MCP grants, native host policy and app/window approvals remain independent.";
     const consistent=rules && input && typeof mode==="string";
-    text("op-security-evidence",consistent?"Configured · enforcement is checked per action":"Security telemetry incomplete · never assume Enforced");
+    text("op-security-evidence",consistent?
+      "Access requests are pending approvals, not tool calls. Grant identities are not necessarily active MCP sessions. Enforcement is checked per action.":
+      "Security telemetry incomplete · never assume Enforced");
   }
   function renderEvents(dashboard, logs) {
     const core=Array.isArray(window.__superagentOverviewState?.activities)?
@@ -307,13 +338,15 @@
     text("op-refresh-state","Checking authenticated owners…");
     text("op-resources-status","Sampling verified process owners…");
     const requests=[
-      lifecycle({action:"dashboard",limit:35}), lifecycle({action:"logs",limit:40}),
-      call("get_yolo_mode"),call("get_permanent_access_registry"),
-      call("get_desktop_input_policy"),
-      call("mcp_project_access_action",{action:"requests",payload:{}}),
-      call("mcp_project_access_action",{action:"identities",payload:{}}),
-      call("get_overview_owner_metrics"),
-      call("mcp_project_access_action",{action:"connected_clients",payload:{}})
+      readTelemetry("lifecycle-dashboard",()=>lifecycle({action:"dashboard",limit:35})),
+      readTelemetry("lifecycle-logs",()=>lifecycle({action:"logs",limit:40})),
+      readTelemetry("chat-yolo",()=>call("get_yolo_mode")),
+      readTelemetry("permanent-access",()=>call("get_permanent_access_registry")),
+      readTelemetry("desktop-input",()=>call("get_desktop_input_policy")),
+      readTelemetry("mcp-access-requests",()=>call("mcp_project_access_action",{action:"requests",payload:{}})),
+      readTelemetry("mcp-grant-identities",()=>call("mcp_project_access_action",{action:"identities",payload:{}})),
+      readTelemetry("native-owner-metrics",()=>call("get_overview_owner_metrics")),
+      readTelemetry("mcp-connected-clients",()=>call("mcp_project_access_action",{action:"connected_clients",payload:{}}))
     ];
     // Refresh the native process monitor as soon as its own sample arrives;
     // slow security/agent queries must not block CPU/RAM visualization.
@@ -324,6 +357,7 @@
       state.metrics=null;
       renderResources(null,null);
     });
+    try {
     const calls=await Promise.allSettled(requests);
     const results=calls.map(x=>x.status==="fulfilled"?x.value:null);
     const names=["lifecycle","events","chat yolo","access rules","desktop policy","mcp requests","mcp identities","resources","connected clients"];
@@ -349,7 +383,13 @@
       "All available sources checked at "+localTime(Date.now()));
     const quality=$("op-refresh-state");
     if(quality)quality.dataset.tone=state.errors.length?"warning":"success";
-    state.loading=false;
+    } catch(error) {
+      text("op-refresh-state","Overview telemetry refresh failed: "+String(error?.message||error));
+      const quality=$("op-refresh-state");
+      if(quality)quality.dataset.tone="warning";
+    } finally {
+      state.loading=false;
+    }
   }
   function setPlan(plan){
     const el=$("op-lifecycle-plan");
