@@ -186,3 +186,38 @@ runs typecheck, existing owner-consent and folder regressions, plus
 queue, uncertain-ACK and read-only status tests on Ubuntu and Windows.
 Native APK Gradle compilation and real-device Android/Windows round
 trips are separate release gates.
+
+## In-session pause and Android cancel atomicity (2026-11-17)
+
+SuperAgent Tray's LAN transfer pane now supports **Pause transfer** and
+**Resume transfer** for an already approved, active file or folder
+exchange. Pausing stops issuing additional chunks at the next chunk
+boundary; it does not suspend a currently in-flight TLS request, revoke
+the target's approval, or extend its 10-minute idle/session expiry. The
+owner can cancel while paused: the waiting loop is released, outstanding
+transfer handles are aborted, and the queue stops rather than silently
+continuing. It is **not** durable resume after application restart or
+network/session expiration.
+
+The Tray keeps a bounded list of the latest six transfer receipts
+(direction, selected basename, byte count and verification outcome)
+**in the current view's memory only**. No file contents, target paths,
+pairing tokens or credentials are persisted by this list. A failed or
+ambiguous transfer is marked *Not verified*; do not blindly retry it
+when the target may have completed a final save.
+
+Android's `LanFileExchange.abort` now changes an atomic revocation
+generation **before** waiting for a synchronized MediaStore write.
+The in-progress commit must recheck that generation and delete staged
+output if the owner cancelled before it committed. The active transfer
+reference is visible to the abort thread. Races at the exact point
+a final commit has already completed remain an uncertain-outcome
+case; the UI explicitly warns the owner to inspect the target.
+
+Verification is tracked in
+`.github/workflows/lan-file-transfer-regression.yml` with dedicated
+Pause/Resume/Cancel UI regressions, Android cancellation source contracts,
+the existing TLS/owner-consent tests and an Android Java compilation
+job. Native Java compilation does **not** substitute for physical
+Android device tests, OEM MediaStore acceptance, or distributed
+network/expiry tests.
