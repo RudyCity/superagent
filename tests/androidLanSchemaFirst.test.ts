@@ -27,8 +27,14 @@ describe("Android UI schema-first protocol and privacy", () => {
     ]) expect(() => parseTrayLanAction({ action: "schema", deviceId, ...extra })).toThrow();
   });
 
+  it("denies semantic input unless native controller approval is independently present", () => {
+    expect(() => parseTrayLanAction({
+      action:"element",deviceId,kind:"click",elementId:"0.1",revision:8,
+    })).toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
+  });
+
   it("requires fresh revision and exact semantic element ID for click", () => {
-    const valid = { action: "element", deviceId, kind: "click", elementId: "0.1.12", revision: 8 };
+    const valid = { action: "element", deviceId, kind: "click", elementId: "0.1.12", revision: 8, controllerToken: "a".repeat(64) };
     expect(parseTrayLanAction(valid).action).toBe("element");
     for (const extra of [
       { kind: "type" }, { kind: "scroll" }, { elementId: "../0" },
