@@ -1014,8 +1014,16 @@ async fn lan_support_action(
     // The native controller permission does not exist in WebView state,
     // local storage, Core preview tokens or MCP project access grants.
     if action == "control_revoke" {
-        desktop_live_android_control::revoke_device(
-            data["deviceId"].as_str().ok_or("Device ID required")?);
+        let id = data["deviceId"].as_str().ok_or("Device ID required")?;
+        // Best-effort Core revocation; the native bearer is destroyed even if
+        // Core is temporarily offline. No WebView can recover that credential.
+        if let Ok((_, fp)) = desktop_live_android_device(id).await {
+            if let Ok(token) = desktop_live_android_control::credential(id,&fp,true) {
+                let _ = core_request(Method::POST,"/api/desktop/lan-controller/revoke",
+                    Some(json!({"deviceId":id,"controllerToken":token}))).await;
+            }
+        }
+        desktop_live_android_control::revoke_device(id);
         return Ok(json!({"success":true,"approved":false}));
     }
     if matches!(action.as_str(), "input" | "element" | "control_request" | "control_status") &&
@@ -1026,14 +1034,25 @@ async fn lan_support_action(
     }
     if action == "control_status" {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
-        let result = match desktop_live_android_device(id).await {
-            Ok((_, fingerprint)) => desktop_live_android_control::check(id, &fingerprint, true),
-            Err(_) => { desktop_live_android_control::revoke_device(id);
-                return Ok(json!({"success":true,"approved":false,"secondsRemaining":0})); },
-        };
+        let result = async {
+            let (_, fp) = desktop_live_android_device(id).await?;
+            let token = desktop_live_android_control::credential(id,&fp,true)?;
+            let response = core_request(Method::POST,"/api/desktop/lan-controller/status",
+                Some(json!({"deviceId":id,"controllerToken":token}))).await?;
+            if response.get("approved").and_then(Value::as_bool) != Some(true) {
+                return Err("ANDROID_CONTROLLER_CORE_GRANT_REVOKED".into());
+            }
+            let seconds = response.get("secondsRemaining").and_then(Value::as_u64)
+                .ok_or("ANDROID_CONTROLLER_CORE_STATUS_INVALID")?;
+            if seconds < 1 || seconds > desktop_live_android_control::MAX_CONTROL_SECONDS {
+                return Err("ANDROID_CONTROLLER_CORE_STATUS_EXPIRED".into());
+            }
+            Ok::<u64,String>(seconds)
+        }.await;
         return Ok(match result {
             Ok(seconds) => json!({"success":true,"approved":true,"secondsRemaining":seconds}),
-            Err(_) => json!({"success":true,"approved":false,"secondsRemaining":0}),
+            Err(_) => { desktop_live_android_control::revoke_device(id);
+                json!({"success":true,"approved":false,"secondsRemaining":0}) },
         });
     }
     if action == "control_request" {
@@ -1046,6 +1065,14 @@ async fn lan_support_action(
         }
         let _guard = DesktopLiveApprovalGuard;
         let (label, fingerprint) = desktop_live_android_device(id).await?;
+        let challenge = core_request(Method::POST,"/api/desktop/lan-controller/challenge",
+            Some(json!({"deviceId":id}))).await?;
+        let nonce = challenge.get("nonce").and_then(Value::as_str)
+            .ok_or("ANDROID_CONTROLLER_CHALLENGE_UNAVAILABLE")?;
+        if challenge.get("deviceId").and_then(Value::as_str) != Some(id) ||
+           challenge.get("fingerprint").and_then(Value::as_str) != Some(fingerprint.as_str()) {
+            return Err("ANDROID_CONTROLLER_CHALLENGE_IDENTITY_MISMATCH".into());
+        }
         let prompt = format!(concat!(
             "ALLOW ANDROID REMOTE INPUT?\\n\\n",
             "Device: {}\\nFingerprint: {}…\\n\\n",
@@ -1077,14 +1104,30 @@ async fn lan_support_action(
             desktop_live_android_control::revoke_device(id);
             return Err("ANDROID_CONTROLLER_DEVICE_CHANGED_DURING_APPROVAL".into());
         }
-        desktop_live_android_control::approve(id, &fingerprint)?;
+        let mac = desktop_live_android_controller_proof(nonce,id,&fingerprint)?;
+        let result = core_request(Method::POST,"/api/desktop/lan-controller/approve",
+            Some(json!({"deviceId":id,"fingerprint":fingerprint,
+                "nonce":nonce,"mac":mac}))).await?;
+        let controller_token = result.get("controllerToken").and_then(Value::as_str)
+            .ok_or("ANDROID_CONTROLLER_CORE_GRANT_MISSING")?;
+        let expires = result.get("expiresAt").and_then(Value::as_u64)
+            .ok_or("ANDROID_CONTROLLER_CORE_GRANT_INVALID")?;
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)
+            .map_err(|_| "ANDROID_CONTROLLER_HOST_CLOCK_INVALID")?.as_millis() as u64;
+        if expires <= now || expires > now + 120_500 ||
+           controller_token.len()!=64 ||
+           !controller_token.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+            return Err("ANDROID_CONTROLLER_CORE_GRANT_INVALID".into());
+        }
+        desktop_live_android_control::approve(id, &fingerprint, controller_token)?;
         return Ok(json!({"success":true,"approved":true,
             "secondsRemaining": desktop_live_android_control::MAX_CONTROL_SECONDS}));
     }
+    let mut controller_token: Option<String> = None;
     if matches!(action.as_str(), "input" | "element") {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
         let (_, fingerprint) = desktop_live_android_device(id).await?;
-        desktop_live_android_control::check(id, &fingerprint, true)?;
+        controller_token = Some(desktop_live_android_control::credential(id, &fingerprint, true)?);
     }
     if matches!(action.as_str(), "open" | "close" | "revoke" | "pair") {
         if let Some(id) = data.get("deviceId").and_then(Value::as_str) {
@@ -1096,6 +1139,9 @@ async fn lan_support_action(
     let mut body = Map::new();
     body.insert("action".into(), Value::String(action));
     body.extend(obj.iter().map(|(key, value)| (key.clone(), value.clone())));
+    if let Some(token) = controller_token {
+        body.insert("controllerToken".into(),Value::String(token));
+    }
     let response = core_request(Method::POST, "/api/desktop/lan-support",
         Some(Value::Object(body))).await;
     if matches!(action.as_str(), "input" | "element") &&
@@ -1232,6 +1278,41 @@ async fn delegate_action(action: String, payload: Option<Value>) -> Result<Value
         }
         _ => Err("Unsupported delegate action".into()),
     }
+}
+
+/// Domain-separated signature for a Core-issued Android controller challenge.
+/// The key stays in host-only native memory. The WebView never sees a MAC or
+/// controller token and cannot turn a screenshot approval into input authority.
+fn desktop_live_android_controller_proof(nonce: &str, id: &str, fp: &str) -> Result<String, String> {
+    if nonce.len() != 48 || !nonce.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) ||
+       fp.len() != 64 || !fp.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) ||
+       id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+        return Err("ANDROID_CONTROLLER_CHALLENGE_INVALID".into());
+    }
+    let file = config_dir()?.join(".desktop-live-native-approval.key");
+    let metadata = std::fs::symlink_metadata(&file)
+        .map_err(|_| "ANDROID_CONTROLLER_NATIVE_KEY_UNAVAILABLE")?;
+    if !metadata.file_type().is_file() || metadata.file_type().is_symlink() ||
+       !(64..=80).contains(&metadata.len()) {
+        return Err("ANDROID_CONTROLLER_NATIVE_KEY_INVALID".into());
+    }
+    #[cfg(unix)] {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err("ANDROID_CONTROLLER_NATIVE_KEY_PERMISSIONS".into());
+        }
+    }
+    let value = std::fs::read_to_string(&file)
+        .map_err(|_| "ANDROID_CONTROLLER_NATIVE_KEY_UNREADABLE")?;
+    let hex = value.trim();
+    if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+        return Err("ANDROID_CONTROLLER_NATIVE_KEY_INVALID".into());
+    }
+    let key: Vec<u8> = (0..32).map(|i|
+        u8::from_str_radix(&hex[2*i..2*i+2], 16))
+        .collect::<Result<_,_>>().map_err(|_| "ANDROID_CONTROLLER_NATIVE_KEY_INVALID")?;
+    let message = format!("superagent-desktop-live-android-controller-v1:{}:{}:{}",nonce,id,fp);
+    Ok(desktop_live_hmac(&key, message.as_bytes()))
 }
 
 fn desktop_live_hmac(key: &[u8], message: &[u8]) -> String {
