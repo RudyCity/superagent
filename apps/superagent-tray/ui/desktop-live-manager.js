@@ -31,6 +31,7 @@
     currentFps: "0.0",
     lanUrl: "",
     controlEnabled: false,
+    controlRequested: false,
     isLanDevice: false,
     deviceId: "",
   };
@@ -50,6 +51,48 @@
   function status(message,error=false) {
     const e=el("desktop-live-manager-status");
     if(e){e.textContent=message;e.dataset.error=error?"true":"false";}
+  }
+
+  // Permission indicators are informational, never a remote-control grant.
+  // The only native input authority is a separately attended host approval.
+  function renderStreamPermissions() {
+    const active = stream.active && !!stream.token;
+    const isLan = active && stream.isLanDevice;
+    const view = el("desktop-live-view-permission");
+    const controller = el("desktop-live-controller-permission");
+    const request = el("desktop-live-stream-request-control");
+    const toggle = el("desktop-live-stream-toggle-control");
+    const takeover = el("desktop-live-stream-takeover");
+    const inputBar = el("desktop-live-stream-input-bar");
+    const viewport = el("desktop-live-stream-viewport");
+    if (view) {
+      view.textContent = !active ? "Not started" :
+        isLan ? "Device-approved support session · View Only" :
+        "Host-approved local window · View Only";
+      view.dataset.status = active ? "active" : "blocked";
+    }
+    if (controller) {
+      controller.textContent = !active ? "No controller grant" :
+        !isLan ? "Native remote input unavailable · separate approval required" :
+        !stream.controlRequested ? "Device input permission not requested" :
+        stream.controlEnabled ? "Input UI open · device must authorize every action" :
+        "Input UI paused · device consent remains mandatory";
+      controller.dataset.status = "blocked";
+    }
+    if (request) {
+      request.disabled = !active || stream.controlRequested;
+      request.title = !active ? "Start a separately approved viewer first" :
+        isLan ? "Request access to the on-device input controls, without automatic approval" :
+        "Review required host-native controller approval; no input token is granted";
+    }
+    if (toggle) {
+      toggle.disabled = !isLan || !stream.controlRequested;
+      toggle.textContent = stream.controlEnabled ? "Hide Input UI" : "Show Input UI";
+      toggle.classList.toggle("active", Boolean(isLan && stream.controlEnabled));
+    }
+    if (takeover) takeover.disabled = !active || isLan;
+    if (inputBar) inputBar.hidden = !isLan || !stream.controlEnabled;
+    if (viewport) viewport.classList.toggle("interactive", Boolean(isLan && stream.controlEnabled));
   }
 
   function scheduleNextFrame() {
@@ -180,9 +223,8 @@
 
       if (isLan) {
         const call = window.__TAURI__?.core?.invoke;
-        try {
-          await call("lan_support_action", { action: "open", payload: { deviceId } });
-        } catch {}
+        const opened = await call("lan_support_action", { action: "open", payload: { deviceId } });
+        if (!opened?.success) throw Error(opened?.error || "Device support session was not approved");
 
         stream.active = true;
         stream.token = "lan-" + deviceId;
@@ -190,6 +232,8 @@
         stream.title = item.title || "LAN Device";
         stream.application = item.application || "LAN Client";
         stream.isLanDevice = true;
+        stream.controlRequested = false;
+        stream.controlEnabled = false;
         stream.deviceId = deviceId;
         stream.pid = 0;
         stream.nativeId = "";
@@ -199,18 +243,8 @@
         stream.fpsLastTime = performance.now();
         if (lanBanner) lanBanner.hidden = true;
 
-        const controller = el("desktop-live-stream-toggle-control");
-        if (controller) {
-          controller.disabled = false;
-          controller.textContent = "Control: OFF";
-          controller.title = "LAN device input requires its own pairing and device permission";
-        }
-        const takeover = el("desktop-live-stream-takeover");
-        if (takeover) {
-          takeover.disabled = true;
-          takeover.title = "Device control belongs in the LAN Devices permission workflow";
-        }
-        status("Live stream active for " + (item.title || "LAN Device") + ".");
+        renderStreamPermissions();
+        status("Approved LAN device viewer opened. Remote input still requires a separate request and device consent.");
         draw();
         scheduleNextFrame();
       } else {
@@ -225,6 +259,8 @@
         stream.pid = pid;
         stream.nativeId = nativeId;
         stream.isLanDevice = false;
+        stream.controlRequested = false;
+        stream.controlEnabled = false;
         stream.deviceId = "";
         stream.lastHash = null;
         stream.framesDelivered = 0;
@@ -238,18 +274,8 @@
           "Remote viewing requires a separately approved private mTLS viewer.";
         if (lanBanner) lanBanner.hidden = true;
 
-        const controller = el("desktop-live-stream-toggle-control");
-        if (controller) {
-          controller.disabled = true;
-          controller.textContent = "Control: requires approval";
-          controller.title = "Preview approval never permits remote keyboard or mouse input";
-        }
-        const takeover = el("desktop-live-stream-takeover");
-        if (takeover) {
-          takeover.disabled = false;
-          takeover.title = "Revoke agent control and return physical control to host";
-        }
-        status("Read-only window preview active (5 min TTL).");
+        renderStreamPermissions();
+        status("Host-approved View Only preview active (5 min TTL). Remote controller remains separate.");
         draw();
         scheduleNextFrame();
       }
@@ -276,6 +302,8 @@
     const wasLanDevice = stream.isLanDevice;
     stream.isLanDevice = false;
     stream.deviceId = "";
+    stream.controlRequested = false;
+    stream.controlEnabled = false;
     stream.lanUrl = "";
 
     const panel = el("desktop-live-stream-panel");
@@ -285,12 +313,11 @@
     const lanBanner = el("desktop-live-lan-banner");
     if (lanBanner) lanBanner.hidden = true;
 
-    stream.controlEnabled = false;
     const inputBar = el("desktop-live-stream-input-bar");
     if (inputBar) inputBar.hidden = true;
     const toggleBtn = el("desktop-live-stream-toggle-control");
     if (toggleBtn) {
-      toggleBtn.textContent = "Control: OFF";
+      toggleBtn.textContent = "Show Input UI";
       toggleBtn.classList.remove("active");
       toggleBtn.disabled = true;
     }
@@ -300,6 +327,7 @@
     if (token && !wasLanDevice) {
       try { await invoke("stop", { token }); } catch {}
     }
+    renderStreamPermissions();
     if (reason) status(reason);
     draw();
   }
