@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { revokeAllProjectAccess } from "./projectAccessPolicy.js";
 import path from "node:path";
 import { getRootConfigDir } from "../config/paths.js";
 import { getWorkspaceChain } from "../workspace/WorkspaceChainConfig.js";
@@ -233,6 +234,13 @@ export function updateProject(id: string, updates: UpdateProjectInput, registryP
   normalized.createdAt = existing.createdAt;
   document.projects[index] = normalized;
   writeRegistry(document, registryPath);
+  // A project ID never keeps stale authorization after its filesystem/SSH
+  // target changes or is disabled. Existing identities must request approval again.
+  if (!registryPath && (normalized.root !== existing.root ||
+      normalized.target !== existing.target ||
+      (existing.enabled && !normalized.enabled))) {
+    revokeAllProjectAccess(existing.id);
+  }
   return normalized;
 }
 
