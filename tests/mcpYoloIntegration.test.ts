@@ -42,7 +42,7 @@ describe("MCP Security Approval is separate from chat agent YOLO", () => {
     fs.mkdirSync(root);
     process.env.SUPERAGENT_CONFIG_DIR = cfg;
     setYoloMode(false);
-    registerProject({ projectId: "mcp-workspace", name: "MCP Project", type: "local", root });
+    registerProject({ id: "mcp-workspace", name: "MCP Project", type: "local", root });
   });
   afterEach(() => {
     setYoloMode(false);
