@@ -13,6 +13,10 @@ describe("remote MCP response formatter", () => {
     expect(formatRemoteMcpResult({ content: [{ type: "text", text: "Completed" }], structuredContent: { id: 1 } }))
       .toBe('Completed\n{"id":1}');
   });
+  it("preserves SDK task-result envelopes that have no content property", () => {
+    expect(formatRemoteMcpResult({ toolResult: { status: "pending" } }))
+      .toBe('{"toolResult":{"status":"pending"}}');
+  });
   it("supports structured-only, image placeholders, and error responses", () => {
     expect(formatRemoteMcpResult({ structuredContent: { status: "ok" } })).toBe('{"status":"ok"}');
     expect(formatRemoteMcpResult({ content: [{ type: "image", mimeType: "image/jpeg" }] }))

@@ -7,11 +7,10 @@ function isEquivalentJsonText(text: string, structured: unknown): boolean {
   }
 }
 
-export function formatRemoteMcpResult(response: {
-  content?: readonly unknown[];
-  structuredContent?: unknown;
-  isError?: boolean;
-}): string {
+export function formatRemoteMcpResult(value: unknown): string {
+  const response = value && typeof value === "object"
+    ? value as { content?: readonly unknown[]; structuredContent?: unknown; isError?: boolean }
+    : {};
   const rendered = Array.isArray(response.content)
     ? response.content.map((item: unknown) => {
         if (!item || typeof item !== "object") return JSON.stringify(item);
@@ -28,5 +27,5 @@ export function formatRemoteMcpResult(response: {
   const extraStructured = structured && !isEquivalentJsonText(rendered.trim(), response.structuredContent)
     ? structured : "";
   const text = [rendered, extraStructured].filter(Boolean).join("\n");
-  return response.isError ? "MCP tool error: " + text : text || JSON.stringify(response);
+  return response.isError ? "MCP tool error: " + text : text || JSON.stringify(value);
 }
