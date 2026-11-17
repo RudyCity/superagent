@@ -55,7 +55,8 @@ public final class MainActivity extends Activity {
     private String sharedFileName;
     private volatile boolean preparingFolder;
     private volatile LanClientServer server;
-    // Direct LAN is Activity-owned; internet tunnel is ForegroundService-owned.
+    // Direct LAN is Activity-owned unless an already-approved V2 file transfer
+    // is temporarily held by the visible notification ForegroundService.
     private volatile boolean visible;
     private volatile boolean launching;
     private AlertDialog approvalDialog;
@@ -621,6 +622,7 @@ public final class MainActivity extends Activity {
     }
 
     private void startSharing() {
+        if (server != null && !server.isRunning()) server = null;
         if (server != null || TunnelForegroundService.isActive() || launching || preparingFolder) return;
         final String segmentName;
         try {
@@ -635,7 +637,8 @@ public final class MainActivity extends Activity {
         refresh();
         new Thread(() -> {
             LanClientServer pending = new LanClientServer(
-                    this, this::requestApproval, this::notifyEvent, this::executeApprovedAction);
+                    getApplicationContext(), MainActivity::requestTunnelApproval,
+                    MainActivity::tunnelNotice, MainActivity::executeTunnelApprovedAction);
             try {
                 if (sharedFileBytes != null && sharedFileName != null)
                     pending.selectLocalFile(sharedFileName, sharedFileBytes);
@@ -851,6 +854,7 @@ public final class MainActivity extends Activity {
     }
 
     private void stopDirectSharing() {
+        LanTransferForegroundService.requestStop(this);
         LanClientServer old = server;
         server = null;
         if (old != null) old.close();
@@ -1141,7 +1145,8 @@ public final class MainActivity extends Activity {
         if (target != null) target.stopRemoteShell();
         // Direct LAN is screen-bound; the foreground HTTPS service owns its
         // own loopback listener and survives normal Activity backgrounding.
-        if (!requestingCapture && !ScreenProjectionService.isActive()) stopDirectSharing();
+        if (!requestingCapture && !ScreenProjectionService.isActive() &&
+                !LanTransferForegroundService.isHolding(server)) stopDirectSharing();
         super.onStop();
     }
     @Override public void onBackPressed() {
@@ -1151,7 +1156,7 @@ public final class MainActivity extends Activity {
     @Override protected void onDestroy() {
         if (currentActivity.get() == this) currentActivity.clear();
         if (terminalUi != null) terminalUi.close();
-        stopDirectSharing();
+        if (!LanTransferForegroundService.isHolding(server)) stopDirectSharing();
         super.onDestroy();
     }
 }
