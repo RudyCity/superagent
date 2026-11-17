@@ -2046,7 +2046,7 @@ async fn mcp_project_access_action(
         for cap in caps {
             let value = cap.as_str().ok_or_else(|| "Invalid capability".to_string())?;
             if !["read", "write", "execute", "git", "worktree", "planning", "chain"]
-                .contains(&value) || values.iter().any(|existing| existing == value) {
+                .contains(&value) || values.iter().any(|existing| existing.as_str() == value) {
                 return Err("Invalid or duplicate capability".into());
             }
             values.push(value.to_string());
