@@ -1392,8 +1392,12 @@ export function MultiAgentDashboard({
 
   // Use ContextManager's TokenTracker for accurate context usage if available,
   // falling back to lastMasterPromptTokens from API responses.
-  const historyMessages = agent ? agent.getHistory().getMessages() : [];
-  const tokenRecountKey = getContextRecountKey(historyMessages);
+  // Skip the O(history) recount for keyboard/cursor/stream repaints.
+  // Re-evaluate when a log entry or agent phase changes instead.
+  const tokenRecountKey = useMemo(() => {
+    const historyMessages = agent ? agent.getHistory().getMessages() : [];
+    return getContextRecountKey(historyMessages);
+  }, [agent, masterLogs.length, isProcessing, isExecutingTool]);
   const estimatedContextTotal = useMemo(() => {
     const cm = agent?.getContextManager?.();
     if (cm && agent) {
