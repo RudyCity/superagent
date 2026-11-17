@@ -120,7 +120,8 @@ fn read(dir: &Path) -> Result<Ledger, String> {
     let ledger: Ledger = serde_json::from_slice(&bytes).map_err(|_| "Notification store is invalid")?;
     if ledger.version != 1 || ledger.items.len() > MAX_ITEMS ||
         ledger.items.iter().any(|i| i.id.len() > 180 || i.source.len() > 48 ||
-            i.title.len() > 160 || i.body.len() > 320 || !SOURCES.contains(&i.source.as_str()) ||
+            i.title.len() > 160 || i.body.len() > 320 || i.id.chars().any(char::is_control) ||
+            !SOURCES.contains(&i.source.as_str()) ||
             !["info", "warning", "critical"].contains(&i.severity.as_str()) ||
             i.occurrences == 0) {
         return Err("Notification store failed validation".into());
@@ -285,7 +286,12 @@ pub fn perform(dir: &Path, action: &str, id: Option<&str>) -> Result<Value, Stri
     }
     let _guard = LEDGER_LOCK.lock().map_err(|_| "Notification store locked")?;
     let mut ledger = read(dir)?;
-    if action == "list" { return Ok(snapshot(&ledger)); }
+    if action == "list" {
+        let before = ledger.items.len();
+        compact(&mut ledger);
+        if ledger.items.len() != before { write(dir, &mut ledger)?; }
+        return Ok(snapshot(&ledger));
+    }
     let now = now_ms();
     let mut changed = false;
     if ["read", "unread", "archive", "restore", "acknowledge", "resolve", "reopen"].contains(&action) {
@@ -355,6 +361,42 @@ mod tests {
         let rows = perform(&dir, "list", None).unwrap();
         assert!(!rows["items"][1]["resolvedAt"].is_null());
         assert!(resolve_missing(&dir, "arbitrary:", &active).is_err());
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn bounds_oversized_history_without_losing_all_critical_incidents() {
+        let dir = isolated();
+        let mut ledger = Ledger::default();
+        let now = now_ms();
+        for i in 0..MAX_ITEMS {
+            ledger.items.push(Entry {
+                id: format!("{}-{i}", "I".repeat(160)),
+                source: "core".into(), severity: "critical".into(),
+                title: "T".repeat(160), body: "B".repeat(320),
+                created_at: now, read_at: None, archived_at: None,
+                acknowledged_at: None, resolved_at: None,
+                occurrences: 1, last_seen_at: None,
+            });
+        }
+        write(&dir, &mut ledger).unwrap();
+        let stored = read(&dir).unwrap();
+        assert!(!stored.items.is_empty());
+        assert!(stored.items.len() < MAX_ITEMS);
+        assert!(stored.evicted_count > 0);
+        assert!(fs::metadata(file(&dir)).unwrap().len() <= MAX_BYTES);
+        let _ = fs::remove_dir_all(dir);
+    }
+    #[test]
+    fn migrates_legacy_inbox_without_dropping_records() {
+        let dir = isolated();
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(file(&dir), r#"{"version":1,"items":[{"id":"old","source":"core",
+            "severity":"warning","title":"Old","body":"Old message","createdAt":1,
+            "readAt":null,"archivedAt":null}]}"#).unwrap();
+        let result = perform(&dir, "list", None).unwrap();
+        assert_eq!(result["items"][0]["id"], "old");
+        assert_eq!(result["items"][0]["occurrences"], 1);
+        assert_eq!(result["preferences"]["minSeverity"], "warning");
         let _ = fs::remove_dir_all(dir);
     }
     #[test]
