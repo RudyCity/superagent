@@ -43,6 +43,23 @@ export class RemotePrivateHostOperator {
     this.runtime = runtime;
   }
 
+  /** Atomic native-host registration: a second viewer/controller must not
+   * partially replace a live session or revoke somebody else's control.
+   * This is trusted same-process composition, never an MCP/HTTP endpoint.
+   */
+  registerNativeHost(
+    runtime: Pick<RemotePrivateLiveRuntime,"humanTakeover">,
+    controller: Pick<RemoteControlAuthority,"humanTakeover">,
+  ): void {
+    if (this.runtime || this.controller ||
+        !runtime || typeof runtime.humanTakeover !== "function" ||
+        !controller || typeof controller.humanTakeover !== "function") {
+      throw Error("PRIVATE_HOST_ALREADY_REGISTERED");
+    }
+    this.controller = controller;
+    this.runtime = runtime;
+  }
+
   /** Trusted host-only input lease revoker. Do not expose this registration
    * through Core routes, WebView, MCP or untrusted viewer messages.
    */
