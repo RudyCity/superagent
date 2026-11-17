@@ -199,9 +199,9 @@ export class ToolExecutor {
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
 
-      const registeredFileBlock = isAgentFullYoloMode(agent)
-        ? null
-        : registeredFileToolGate(tc, agent.worktreePath || agent.workingDirectory);
+      // Full YOLO never bypasses host-owned permanent file restrictions.
+      const registeredFileBlock = registeredFileToolGate(tc,
+        agent.worktreePath || agent.workingDirectory);
       if (registeredFileBlock) {
         const blocked: ToolResult = {
           toolCallId: tc.id, name: tc.name,
