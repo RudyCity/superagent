@@ -706,14 +706,13 @@
         status("Pilih minimal satu capability.", "warn");
         return;
       }
+      if (!window.confirm("Berikan hak akses " + caps.join(", ") + " untuk proyek '" + projId + "' ke identitas MCP terpilih?\nAkses berlaku sampai dicabut.")) return;
       try {
         status("Memberikan hak akses proyek...", "info");
-        const res = await fetch("/api/desktop/access/direct-grant", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ identityHandle: identHandle, projectId: projId, capabilities: caps }),
+        const data = await invoke("mcp_project_access_action", {
+          action: "direct_grant",
+          payload: { identityHandle: identHandle, projectId: projId, capabilities: caps },
         });
-        const data = await res.json();
         if (data.success) {
           status("Izin proyek '" + projId + "' berhasil diberikan.", "success");
           void refreshMcpRequests();
@@ -743,9 +742,9 @@
   async function refreshMcpRequests() {
     try {
       const [reqRes, identRes, projRes] = await Promise.all([
-        fetch("/api/desktop/access/requests").then(r => r.json()).catch(() => ({ success: false })),
-        fetch("/api/desktop/access/identities").then(r => r.json()).catch(() => ({ success: false })),
-        fetch("/api/projects/browser?filter=all").then(r => r.json()).catch(() => ({ success: false })),
+        invoke("mcp_project_access_action", { action: "requests" }).catch(() => ({ success: false })),
+        invoke("mcp_project_access_action", { action: "identities" }).catch(() => ({ success: false })),
+        invoke("mcp_project_access_action", { action: "projects" }).catch(() => ({ success: false })),
       ]);
 
       const requests = reqRes?.success && Array.isArray(reqRes.requests) ? reqRes.requests : [];
@@ -812,12 +811,10 @@
             const approveBtn = action("Setujui Akses", "access-submit", async () => {
               try {
                 status("Menyetujui permintaan akses...", "info");
-                const res = await fetch("/api/desktop/access/requests/approve", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ requestId: req.requestId }),
+                const data = await invoke("mcp_project_access_action", {
+                  action: "approve",
+                  payload: { requestId: req.requestId },
                 });
-                const data = await res.json();
                 if (data.success) {
                   status("Izin untuk '" + req.projectName + "' disetujui.", "success");
                   void refreshMcpRequests();
@@ -832,12 +829,10 @@
             const denyBtn = action("Tolak", "access-revoke", async () => {
               try {
                 status("Menolak permintaan akses...", "info");
-                const res = await fetch("/api/desktop/access/requests/deny", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ requestId: req.requestId, reason: "Ditolak oleh operator" }),
+                const data = await invoke("mcp_project_access_action", {
+                  action: "deny",
+                  payload: { requestId: req.requestId },
                 });
-                const data = await res.json();
                 if (data.success) {
                   status("Permintaan untuk '" + req.projectName + "' ditolak.", "warn");
                   void refreshMcpRequests();
@@ -882,12 +877,10 @@
               const revBtn = action("Cabut Izin", "access-revoke", async () => {
                 try {
                   status("Mencabut izin...", "info");
-                  const res = await fetch("/api/desktop/access/requests/revoke", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ requestId: req.requestId }),
+                  const data = await invoke("mcp_project_access_action", {
+                    action: "revoke",
+                    payload: { requestId: req.requestId },
                   });
-                  const data = await res.json();
                   if (data.success) {
                     status("Izin proyek '" + req.projectName + "' dicabut.", "warn");
                     void refreshMcpRequests();
