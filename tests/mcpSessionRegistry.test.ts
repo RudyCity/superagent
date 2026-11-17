@@ -70,6 +70,19 @@ describe("McpSessionRegistry", () => {
     expect(reg.connectedAgentSessions()[0].lastToolRequest).toBeNull();
   });
 
+  it("only includes genuinely idle sessions in oldestIdleMs, not open requests", () => {
+    const idle = entry("s1");
+    const busy = entry("s2");
+    idle.lastActivityAt = 2_000;
+    busy.lastActivityAt = 1_000;
+    reg.add(idle);
+    reg.add(busy);
+    reg.beginRequest("s2");
+    expect(reg.snapshot(10_000).oldestIdleMs).toBe(8_000);
+    reg.endRequest("s2");
+    reg.touch("s1");
+    expect(reg.snapshot(10_000).oldestIdleMs).toBeGreaterThanOrEqual(0);
+  });
   it("adds and retrieves sessions", () => {
     reg.add(entry("s1"));
     expect(reg.size).toBe(1);
