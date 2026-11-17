@@ -61,6 +61,20 @@ function certifiedMediaPlanPaths(args:Args|undefined):string[]|null {
   if(args.inputPaths!==undefined&&args.inputPath!==undefined)return null;
   if(typeof args.outputPath!=="string"||!args.outputPath.trim())return null;
   if(args.mode!==undefined&&!["convert","transform"].includes(String(args.mode)))return null;
+  const operations=["resize","crop","convert","compress","rotate","flip_vertical",
+    "flop_horizontal","grayscale","watermark","remove_background","upscale_ai"];
+  if(args.operation!==undefined &&
+      (typeof args.operation!=="string"||!operations.includes(args.operation)))return null;
+  if(args.mode==="convert"&&args.operation!==undefined)return null;
+  if(args.quality!==undefined &&
+      (!Number.isSafeInteger(args.quality)||Number(args.quality)<1||Number(args.quality)>100))return null;
+  if(args.targetBytes!==undefined &&
+      (!Number.isSafeInteger(args.targetBytes)||Number(args.targetBytes)<1||
+       Number(args.targetBytes)>209715200))return null;
+  if(args.targetKB!==undefined &&
+      (!Number.isSafeInteger(args.targetKB)||Number(args.targetKB)<1||
+       Number(args.targetKB)>204800))return null;
+  if(args.targetBytes!==undefined&&args.targetKB!==undefined)return null;
   const paths=[...inputs as string[],args.outputPath];
   if(args.operation==="watermark"){
     if(typeof args.watermarkPath!=="string"||!args.watermarkPath.trim())return null;
@@ -92,7 +106,8 @@ export function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
 const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","list_dir",
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
 const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace",
-  "git_status", // Git diffs/logs may expose denied source-file contents.
+  // git_status is intentionally excluded: Git can execute configured fsmonitor
+  // helpers and inspect blocked paths. An unmediated status is not file-safe.
   "inspect_port","find_process","get_remote_service_status",
   "superagent_tool_search","superagent_tool_describe","superagent_tool_status",
   "superagent_core_status","superagent_core_plan","superagent_server_health","get_current_time",
