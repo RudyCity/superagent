@@ -15,6 +15,7 @@ pub const MAX_CONTROL_SECONDS: u64 = 120;
 struct ControlLease {
     device_id: String,
     fingerprint: String,
+    token: String,
     expires_at: Instant,
 }
 
@@ -36,14 +37,16 @@ fn valid_fingerprint(fp: &str) -> bool {
 impl AndroidControllerGate {
     /// Caller must have already shown the attended native approval. Never call
     /// from a browser or from preview/display permission code.
-    pub fn approve(&mut self, id: &str, fingerprint: &str, now: Instant) -> Result<(), String> {
+    pub fn approve(&mut self, id: &str, fingerprint: &str, token: &str, now: Instant) -> Result<(), String> {
         self.active = None;
-        if !valid_device_id(id) || !valid_fingerprint(fingerprint) {
+        if !valid_device_id(id) || !valid_fingerprint(fingerprint) ||
+            token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
             return Err("ANDROID_CONTROLLER_TARGET_INVALID".into());
         }
         self.active = Some(ControlLease {
             device_id: id.to_string(),
             fingerprint: fingerprint.to_ascii_lowercase(),
+            token: token.to_ascii_lowercase(),
             expires_at: now + Duration::from_secs(MAX_CONTROL_SECONDS),
         });
         Ok(())
@@ -68,6 +71,14 @@ impl AndroidControllerGate {
         Ok(grant.expires_at.duration_since(now).as_secs())
     }
 
+    pub fn credential(
+        &mut self, id: &str, fingerprint: &str, connected: bool, now: Instant,
+    ) -> Result<String, String> {
+        self.check(id, fingerprint, connected, now)?;
+        self.active.as_ref().map(|grant| grant.token.clone())
+            .ok_or_else(|| "ANDROID_CONTROLLER_NATIVE_APPROVAL_REQUIRED".to_string())
+    }
+
     pub fn revoke(&mut self) { self.active = None; }
 
     pub fn revoke_device(&mut self, id: &str) {
@@ -80,13 +91,17 @@ static GATE: OnceLock<Mutex<AndroidControllerGate>> = OnceLock::new();
 fn gate() -> &'static Mutex<AndroidControllerGate> {
     GATE.get_or_init(|| Mutex::new(AndroidControllerGate::default()))
 }
-pub fn approve(id: &str, fp: &str) -> Result<(), String> {
+pub fn approve(id: &str, fp: &str, token: &str) -> Result<(), String> {
     gate().lock().map_err(|_| "ANDROID_CONTROLLER_GATE_UNAVAILABLE")?
-        .approve(id, fp, Instant::now())
+        .approve(id, fp, token, Instant::now())
 }
 pub fn check(id: &str, fp: &str, connected: bool) -> Result<u64, String> {
     gate().lock().map_err(|_| "ANDROID_CONTROLLER_GATE_UNAVAILABLE")?
         .check(id, fp, connected, Instant::now())
+}
+pub fn credential(id: &str, fp: &str, connected: bool) -> Result<String, String> {
+    gate().lock().map_err(|_| "ANDROID_CONTROLLER_GATE_UNAVAILABLE")?
+        .credential(id, fp, connected, Instant::now())
 }
 pub fn revoke() {
     // A poisoned lock is a permanent deny until a trusted host restart.
@@ -101,6 +116,7 @@ mod tests {
     use super::*;
     fn id() -> &'static str { "123e4567-e89b-12d3-a456-426614174000" }
     fn fp() -> String { "af".repeat(32) }
+    fn token() -> String { "ab".repeat(32) }
 
     #[test]
     fn viewing_does_not_enable_input_without_native_approval() {
@@ -112,7 +128,7 @@ mod tests {
     fn binds_grant_to_exact_device_and_fingerprint() {
         let mut g = AndroidControllerGate::default();
         let now = Instant::now();
-        g.approve(id(), &fp(), now).unwrap();
+        g.approve(id(), &fp(), &token(), now).unwrap();
         assert!(g.check(id(), &fp(), true, now).is_ok());
         assert!(g.check("123e4567-e89b-12d3-a456-426614174111", &fp(), true, now).is_err());
         assert!(g.check(id(), &fp(), true, now).is_err());
@@ -147,7 +163,7 @@ mod tests {
         let mut g = AndroidControllerGate::default();
         let now = Instant::now();
         g.approve(id(), &fp(), now).unwrap();
-        assert!(g.approve("not-an-id", &fp(), now).is_err());
+        assert!(g.approve("not-an-id", &fp(), &token(), now).is_err());
         assert!(g.check(id(), &fp(), true, now).is_err());
     }
 }
