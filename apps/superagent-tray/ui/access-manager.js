@@ -514,6 +514,8 @@
   }
   async function clearAuditLog() {
     if (state.busy) return;
+    if (typeof window.confirm !== "function" || !window.confirm(
+      "Bersihkan seluruh log audit akses native? Tindakan ini tidak dapat dibatalkan.")) return;
     setBusy(true);
     try {
       await invoke("clear_permanent_access_audit_log");
@@ -717,7 +719,7 @@
     grantCard.append(field("Identitas MCP", identitySelect), grant);
 
     const historyCard = make("section", "access-stored");
-    historyCard.append(make("h3", "", "Izin Koneksi & Riwayat"));
+    historyCard.append(make("h3", "", "Riwayat Keputusan Koneksi"));
     const historyList = make("div", "access-mcp-list");
     historyList.id = "access-mcp-connection-history-list";
     historyCard.append(historyList);
@@ -838,7 +840,7 @@
     // Section 3: History & Active Grants
     const histSection = make("div", "access-stored");
     const histHead = make("div", "access-audit-head");
-    histHead.append(make("h3", "", "Riwayat Izin & Hak Akses Aktif"));
+    histHead.append(make("h3", "", "Riwayat Keputusan Proyek"));
     const histList = make("div", "access-audit-list");
     histList.id = "access-mcp-history-list";
     histSection.append(histHead, histList);
@@ -1059,10 +1061,11 @@
           connectionPending ? connectionPending.length + " permintaan" : "Belum dimuat";
       }
 
-      renderMcpPending("access-mcp-pending-list", projectPending, false);
-      renderMcpPending("access-mcp-connection-pending-list", connectionPending, true);
-      renderMcpHistory("access-mcp-history-list", projectHistory);
-      renderMcpHistory("access-mcp-connection-history-list", connectionHistory);
+      // Failed refreshes never leave stale, actionable approval buttons on screen.
+      renderMcpPending("access-mcp-pending-list", failures.requests ? null : projectPending, false);
+      renderMcpPending("access-mcp-connection-pending-list", failures.requests ? null : connectionPending, true);
+      renderMcpHistory("access-mcp-history-list", failures.requests ? null : projectHistory);
+      renderMcpHistory("access-mcp-connection-history-list", failures.requests ? null : connectionHistory);
       renderMcpIdentities(mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-ident-select", mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-connection-identity", mcpCache.identities);
@@ -1087,10 +1090,10 @@
       const identitiesAvailable = Boolean(mcpCache.identities?.length);
       if ($("access-mcp-project-grant")) {
         $("access-mcp-project-grant").disabled =
-          !identitiesAvailable || !(mcpCache.projects?.length);
+          Boolean(failures.identities || failures.projects) || !identitiesAvailable || !(mcpCache.projects?.length);
       }
       if ($("access-mcp-connection-grant")) {
-        $("access-mcp-connection-grant").disabled = !identitiesAvailable;
+        $("access-mcp-connection-grant").disabled = Boolean(failures.identities) || !identitiesAvailable;
       }
       if (Object.keys(failures).length) {
         status("Ada data izin MCP yang gagal dimuat. Lihat pesan pada tab MCP.", "warning");
