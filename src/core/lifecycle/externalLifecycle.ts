@@ -388,9 +388,17 @@ export function lifecycleAction(action: string, args: Record<string, unknown>, c
         const flow = findWorkflow(s, args.workflowId, ctx);
         flow.enabled = false;
         for (const run of s.runs.filter(r => r.workflowId === flow.id && ["queued", "running"].includes(r.state))) {
-          run.state = "cancelled"; run.updatedAt = now;
-          for (const stage of run.stages) if (stage.state === "queued" || stage.state === "waiting" || stage.state === "leased") {
-            stage.state = "cancelled"; stage.leaseDigest = undefined; stage.leaseUntil = undefined;
+          // Cancelling a lease cannot stop an already dispatched external agent.
+          // Keep an uncertain side effect in review_required, not falsely cancelled.
+          const hasActiveLease = run.stages.some(stage => stage.state === "leased");
+          run.state = hasActiveLease ? "review_required" : "cancelled";
+          run.updatedAt = now;
+          for (const stage of run.stages) {
+            if (stage.state === "leased") {
+              stage.state = "review_required";
+              stage.error = "Cancelled while external worker may still be active; reconcile manually.";
+              stage.leaseDigest = undefined; stage.leaseUntil = undefined;
+            } else if (stage.state === "queued" || stage.state === "waiting") stage.state = "cancelled";
           }
         }
         return { workflowId: flow.id, status: "cancelled" };
@@ -425,6 +433,17 @@ export type CdpWakeCandidate = {
 export function listCdpWakeCandidates(): CdpWakeCandidate[] {
   return withStore(false, state => {
     const result: CdpWakeCandidate[] = [];
+    const suppressed = new Set<string>();
+    // A worker with a leased stage or an already-sent, unclaimed wake-up
+    // must not receive another asynchronous prompt in the same ChatGPT tab.
+    for (const run of state.runs) {
+      const flow = state.workflows.find(w => w.id === run.workflowId);
+      for (const stage of run.stages) {
+        if (stage.state === "leased" && stage.workerId) suppressed.add(stage.workerId);
+        const selected = flow?.steps.find(step => step.id === stage.id)?.targetWorkerId;
+        if (stage.state === "queued" && stage.nudge && selected) suppressed.add(selected);
+      }
+    }
     for (const run of state.runs) {
       if (run.state !== "queued" && run.state !== "running") continue;
       const workflow = state.workflows.find(w => w.id === run.workflowId);
@@ -435,7 +454,8 @@ export function listCdpWakeCandidates(): CdpWakeCandidate[] {
         if (!step?.targetWorkerId) continue;
         const worker = state.workers.find(w => w.id === step.targetWorkerId && w.workspace === workflow.workspace
           && w.enabled && w.cdp);
-        if (!worker?.cdp) continue;
+        if (!worker?.cdp || suppressed.has(worker.id)) continue;
+        suppressed.add(worker.id);
         result.push({ runId: run.id, stepId: stage.id, workerId: worker.id, workflowId: workflow.id,
           clientId: worker.cdp.clientId, tabId: worker.cdp.tabId });
         if (result.length >= 12) return result;
