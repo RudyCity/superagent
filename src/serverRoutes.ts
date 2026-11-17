@@ -1190,15 +1190,47 @@ export async function handleServerRoute(
 
   // =========================================================================
   // Desktop Security Approval & Access Manager (MCP Project Broker)
-  // Human approval endpoints for Tray & Desktop UI.
+  // All access-management data and mutations are local-operator-only.
+  // A general Core bearer token or a request arriving via public tunnel is
+  // NOT sufficient authority to mint or inspect persistent MCP project grants.
   // =========================================================================
+  if (pathname.startsWith("/api/desktop/access/")) {
+    const localPeer = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket?.remoteAddress || "");
+    const host = String(req.headers.host || "");
+    const localHost = /^(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?$/i.test(host);
+    const forwarded = ["forwarded", "x-forwarded-for", "x-forwarded-host",
+      "x-forwarded-proto", "x-real-ip", "cf-connecting-ip", "cf-ray"]
+      .some(header => req.headers[header] !== undefined);
+    const origin = req.headers.origin;
+    let sameLocalOrigin = origin === undefined;
+    if (typeof origin === "string") {
+      try {
+        const parsedOrigin = new URL(origin);
+        sameLocalOrigin = (parsedOrigin.protocol === "http:" || parsedOrigin.protocol === "https:") &&
+          parsedOrigin.host.toLowerCase() === host.toLowerCase();
+      } catch { sameLocalOrigin = false; }
+    }
+    const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
+    const headerAuth = typeof req.headers.authorization === "string" &&
+      /^Bearer [^\\s]+$/.test(req.headers.authorization);
+    const headerToken = typeof req.headers["x-auth-token"] === "string" &&
+      req.headers["x-auth-token"].length > 0;
+    if (!localPeer || !localHost || forwarded || !sameLocalOrigin ||
+        !["none", "same-origin", undefined].includes(req.headers["sec-fetch-site"] as string | undefined) ||
+        (!headerAuth && !headerToken) || !isRequestAuthorized(req, parsedUrl)) {
+      sendJSON(res, 403, { success: false, code: "LOCAL_OPERATOR_AUTH_REQUIRED",
+        error: "Project access approval and identity inventory require a local authenticated operator." });
+      return true;
+    }
+  }
   if (pathname === "/api/desktop/access/requests" && req.method === "GET") {
     res.setHeader("Cache-Control", "no-store");
     try {
       const { listProjectAccessRequests } = await import("./core/project/projectAccessRequestStore.js");
       const statusFilter = parsedUrl.searchParams.get("status") as any;
       const requests = listProjectAccessRequests(statusFilter ? { status: statusFilter } : undefined);
-      sendJSON(res, 200, { success: true, requests });
+      // Never expose the internal credential binding to the browser UI.
+      sendJSON(res, 200, { success: true, requests: requests.map(({ credentialHash: _credentialHash, ...record }) => record) });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err.message || "Failed to list access requests" });
     }
@@ -1296,9 +1328,15 @@ export async function handleServerRoute(
         sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
         return true;
       }
-      const { grantProjectAccess } = await import("./core/project/projectAccessPolicy.js");
-      const grant = grantProjectAccess(identity, projectId, capabilities);
-      sendJSON(res, 200, { success: true, grant });
+      if (!project.enabled) {
+        sendJSON(res, 403, { success: false, error: "Project is disabled." });
+        return true;
+      }
+      const { grantProjectAccessToIdentity } = await import("./core/project/projectAccessRequestStore.js");
+      const approved = grantProjectAccessToIdentity(identity, projectId, capabilities);
+      sendJSON(res, 200, { success: true, grant: {
+        projectId: approved.projectId, capabilities: approved.capabilities
+      }, requestId: approved.requestId });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || "Failed to grant access" });
     }
