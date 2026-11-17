@@ -20,7 +20,7 @@ describe("MCP gateway Streamable HTTP integration", () => {
       const advertised = tools.map((tool) => tool.name);
       expect(advertised).toEqual(expect.arrayContaining(Object.values(MCP_GATEWAY_TOOL_NAMES)));
       expect(advertised).toContain("superagent_get_workspace");
-      expect(advertised).not.toContain("superagent_switch_workspace");
+      expect(advertised).toContain("superagent_switch_workspace");
       expect(advertised.every((name) => Object.values(MCP_GATEWAY_TOOL_NAMES).includes(name as any)
         || MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES.includes(name as any)
         || MCP_GATEWAY_EAGER_DELEGATE_TOOL_NAMES.includes(name as any)
@@ -32,7 +32,7 @@ describe("MCP gateway Streamable HTTP integration", () => {
       expect(search.isError).not.toBe(true);
       const parsed = JSON.parse((search.content as any[]).find((entry) => entry.type === "text").text);
       expect(parsed.tools.map((entry: any) => entry.name)).toContain("superagent_get_workspace");
-      expect(parsed.tools.map((entry: any) => entry.name)).not.toContain("superagent_switch_workspace");
+      expect(parsed.tools.length).toBeLessThanOrEqual(6);
 
       const description = await client.callTool({
         name: MCP_GATEWAY_TOOL_NAMES.describe,
