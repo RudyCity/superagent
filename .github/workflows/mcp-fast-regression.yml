@@ -6,6 +6,10 @@ on:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
       - "scripts/mcp-tool-policy-live-verify.ts"
+      - "src/core/runtime/mcpManagedTunnelOwner.ts"
+      - "src/core/runtime/serviceManager.ts"
+      - "src/core/desktopUi/liveActivationGate.ts"
+      - "tests/desktop-ui-activation/live-activation-gate.test.ts"
       - "src/core/tools/registeredFileToolGate.ts"
       - "src/core/tools/browserFilePolicyCertification.ts"
       - "src/core/tools/safeManagedChromeObservation.ts"
@@ -32,6 +36,10 @@ on:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
       - "scripts/mcp-tool-policy-live-verify.ts"
+      - "src/core/runtime/mcpManagedTunnelOwner.ts"
+      - "src/core/runtime/serviceManager.ts"
+      - "src/core/desktopUi/liveActivationGate.ts"
+      - "tests/desktop-ui-activation/live-activation-gate.test.ts"
       - "src/core/tools/registeredFileToolGate.ts"
       - "src/core/tools/browserFilePolicyCertification.ts"
       - "src/core/tools/safeManagedChromeObservation.ts"
@@ -88,6 +96,7 @@ jobs:
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
             tests/mcpPolicyHttpSmoke.test.ts \
+            tests/desktop-ui-activation/live-activation-gate.test.ts \
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
             tests/mcpResponseLease.test.ts \
@@ -122,6 +131,7 @@ jobs:
           tests/mcpExactFileSearch.test.ts
           tests/mcpExplicitGrepIntegration.test.ts
           tests/mcpPolicyHttpSmoke.test.ts
+          tests/desktop-ui-activation/live-activation-gate.test.ts
           tests/mcpFilePolicyMatrix.test.ts
           tests/desktop-ui-integration/registered-file-tool-gate.test.ts
           tests/mcpCrossIdeGateway.test.ts
