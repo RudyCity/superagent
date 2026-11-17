@@ -1,4 +1,4 @@
-import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness } from "../tools/registeredFileToolGate.js";
+import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness, describePermanentFileToolReadiness } from "../tools/registeredFileToolGate.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -676,6 +676,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         filePolicy: {
           active: filePolicyActive,
           readiness: filePolicyActive ? getPermanentFileToolReadiness(t.name) : "inactive",
+          requirement: filePolicyActive ? describePermanentFileToolReadiness(t.name) : "Host permanent file policy is not registered.",
           note: "File-policy readiness is not an execution grant; per-action OAuth, project and host approvals still apply.",
         },
       },
@@ -1459,6 +1460,7 @@ function extractMcpResultText(result: unknown): string {
         result = gatewayTextResult({
           tools: searchGatewayTools(authorizedTools, rawArgs).map((tool) => ({
             ...tool, filePolicy: active ? getPermanentFileToolReadiness(tool.name) : "inactive",
+            filePolicyRequirement: active ? describePermanentFileToolReadiness(tool.name) : undefined,
           })),
           filePolicyActive: active,
         });
@@ -1467,6 +1469,8 @@ function extractMcpResultText(result: unknown): string {
         result = found ? gatewayTextResult({
           ...found, filePolicy: fileRulesRegistered()
             ? getPermanentFileToolReadiness(found.name) : "inactive",
+          filePolicyRequirement: fileRulesRegistered()
+            ? describePermanentFileToolReadiness(found.name) : undefined,
           note: "Discovery never grants execution; inspect the action and obtain required MCP/host approvals.",
         }) : { content: [{ type: "text", text: "Tool unavailable or not authorized." }], isError: true };
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.status) {
