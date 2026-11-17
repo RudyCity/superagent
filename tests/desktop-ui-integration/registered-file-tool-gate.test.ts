@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  registeredFileToolGate,type FileToolCall,
+  registeredFileToolGate,getPermanentFileToolReadiness,type FileToolCall,
 } from "../../src/core/tools/registeredFileToolGate.js";
 import type {ExecutableIdentity,PersistentAccessPolicy} from "../../src/core/desktopUi/persistentAccessPolicy.js";
 const roots:string[]=[];
@@ -93,6 +93,31 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       ["superagent_list_running_chrome",{customUserDataPath:"/secret"}],
       ["superagent_list_chrome_profiles",{}],
     ] as const)expect(gate(name,args)).toMatch(/not certified/);
+  });
+  it("distinguishes metadata, app-owned storage, explicit file paths and action-dependent tools",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>registeredFileToolGate({name,args},a.root,opts);
+    for(const name of ["superagent_process_pool_status","superagent_lan_capabilities"]) {
+      expect(getPermanentFileToolReadiness(name)).toBe("certified_metadata");
+      expect(gate(name,{})).toBeNull();
+    }
+    expect(getPermanentFileToolReadiness("superagent_delegate_sync_history")).toBe("certified_app_storage");
+    expect(gate("superagent_delegate_sync_history",{maxChats:100,refreshRecent:10,force:false})).toBeNull();
+    expect(gate("superagent_tool_execute",{name:"superagent_delegate_sync_history",
+      arguments:{clientId:"client_1234",maxChats:25}})).toBeNull();
+    for(const args of [
+      {workspace:a.root}, {filePath:"src/main.ts"}, {maxChats:501},
+      {force:"true"}, {clientId:"../../etc"},
+    ]) {
+      expect(gate("superagent_delegate_sync_history",args)).toMatch(/not certified/);
+    }
+    expect(getPermanentFileToolReadiness("superagent_read_files")).toBe("requires_explicit_files");
+    expect(getPermanentFileToolReadiness("superagent_browser_gateway")).toBe("action_dependent");
+    expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("uncertified");
+    expect(gate("superagent_exec_command",{command:"echo hi"})).toMatch(/not certified/);
+    for(const name of ["git_diff","get_git_diff","git_log"]) {
+      expect(gate(name,{})).toMatch(/not certified/);
+    }
   });
   it("blocks symlinked targets before IO when host OS authorizes links",()=>{
     const a=setup();
