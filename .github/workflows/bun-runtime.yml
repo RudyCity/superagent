@@ -6,7 +6,9 @@ on:
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  # Keep the active regression run alive during parallel development pushes.
+  # GitHub retains the latest pending run for the same workflow/ref group.
+  cancel-in-progress: false
 
 jobs:
   runtime:
