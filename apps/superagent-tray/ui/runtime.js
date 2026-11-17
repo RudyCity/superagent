@@ -173,7 +173,10 @@ function runtimeNativeShutdownProgress(event) {
       service.pid === Number(match[2]));
     if (owner) runtimeAnimateVerifiedStop(owner);
   }
-  if (["complete", "partial"].includes(progress?.stage)) void runtimeRefresh(true);
+  if (["complete", "partial"].includes(progress?.stage)) {
+    if (runtimeScanBusy) runtimeRefreshQueued = true;
+    else void runtimeRefresh(true);
+  }
 }
 
 function runtimeLabel(state) {
