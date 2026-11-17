@@ -1,7 +1,11 @@
+import { Console } from "node:console";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import * as inkModule from "ink";
 import { ChatTextInput } from "../src/components/ChatTextInput.js";
+
+// Ink's patched console expects console.Console under Bun.
+if (!console.Console) console.Console = Console;
 
 describe("ChatTextInput Escape debounce regression", () => {
   let inputHandler: ((input: string, key: any) => void) | undefined;
