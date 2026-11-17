@@ -11,7 +11,7 @@ export const MCP_GATEWAY_TOOL_NAMES = {
  * Core project/workspace lifecycle tools are eagerly advertised in Gateway mode.
  * They still pass through the normal authorized catalog first, so read-only
  * identities only see safe tools while mutation/admin tools remain hidden until
- * their original OAuth/YOLO policy allows them.
+ * their original OAuth and MCP Security Approval policy allows them.
  */
 export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
   "superagent_get_workspace",
