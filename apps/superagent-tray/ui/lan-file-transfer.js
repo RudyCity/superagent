@@ -88,10 +88,16 @@
     if ($("lan-folder-send")) $("lan-folder-send").disabled =
       busy || relayBusy || !hasDevice || !folderSupported() || !folder?.files?.length;
     if ($("lan-file-receive")) $("lan-file-receive").disabled = busy || relayBusy || !hasDevice;
-    if ($("lan-file-cancel")) $("lan-file-cancel").disabled = !busy;
+    if ($("lan-file-cancel")) {
+      $("lan-file-cancel").disabled = !busy;
+      $("lan-file-cancel").textContent = batch?.total > 1 ? "Cancel all" : "Cancel transfer";
+    }
     if ($("lan-file-pause")) {
       $("lan-file-pause").disabled = !busy || !activeTransfer || cancelled;
-      $("lan-file-pause").textContent = paused ? "Resume transfer" : "Pause transfer";
+      const allFiles = batch?.total > 1;
+      $("lan-file-pause").textContent = paused
+        ? (allFiles ? "Resume all" : "Resume transfer")
+        : (allFiles ? "Pause all" : "Pause transfer");
     }
     if ($("lan-file-source")) $("lan-file-source").disabled = busy || relayBusy;
     if ($("lan-file-send-all")) $("lan-file-send-all").disabled = busy || relayBusy || !hasDevice;
