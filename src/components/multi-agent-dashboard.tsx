@@ -1177,7 +1177,7 @@ export function MultiAgentDashboard({
     }
     
     // Abort master agent
-    if (agent && agent.isAgentRunning()) {
+    if (agent && (agent.isAgentRunning() || isProcessing)) {
       try {
         agent.abort();
       } catch {}
