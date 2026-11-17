@@ -3,144 +3,157 @@ import {
   NativeAndroidControllerApproval,
   ANDROID_CONTROL_CHALLENGE_TTL_MS,
   ANDROID_CONTROL_LEASE_TTL_MS,
+  type AndroidControlKind,
 } from "../../src/core/desktopUi/nativeAndroidControllerApproval.js";
 import type { LanDevice } from "../../src/core/lanRemote/controller.js";
 
-const secret = Buffer.from("a6".repeat(32), "hex");
+const secret = Buffer.from("a6".repeat(32),"hex");
 const deviceId = "123e4567-e89b-12d3-a456-426614174000";
 const fingerprint = "af".repeat(32);
 const otherId = "123e4567-e89b-12d3-a456-426614174111";
-const device = (overrides: Partial<LanDevice> = {}): LanDevice => ({
-  id:deviceId, host:"192.168.1.20",port:17845,
-  fingerprint,label:"Test Android",platform:"android",
-  paired:true,connected:true,transport:"lan", ...overrides,
+const device=(overrides:Partial<LanDevice>={}):LanDevice=>({
+  id:deviceId,host:"192.168.1.20",port:17845,fingerprint,label:"Android",
+  platform:"android",paired:true,connected:true,transport:"lan",...overrides,
 });
-function fixture() {
-  let now = 1_800_000_000_000;
-  let devices = [device(),device({id:otherId})];
-  let supportSession = "cd".repeat(32);
-  const gate = new NativeAndroidControllerApproval(
-    () => secret,
-    () => devices,
-    () => now,
-    () => supportSession,
-  );
-  const approve = (id=deviceId) => {
-    const challenge = gate.challenge(id);
-    const mac = NativeAndroidControllerApproval.computeProofForTest(
-      secret,challenge.nonce,id,challenge.fingerprint,
-    );
-    return {challenge,grant:gate.confirm({
-      deviceId:id,fingerprint:challenge.fingerprint,nonce:challenge.nonce,mac,
-    })};
+function fixture(){
+  let now=1_800_000_000_000;
+  let devices=[device(),device({id:otherId})];
+  let session="cd".repeat(32);
+  const gate=new NativeAndroidControllerApproval(()=>secret,()=>devices,()=>now,()=>session);
+  const approve=(kind:AndroidControlKind="mouse",id=deviceId)=>{
+    const challenge=gate.challenge(id,kind);
+    const mac=NativeAndroidControllerApproval.computeProofForTest(
+      secret,challenge.nonce,id,challenge.fingerprint,kind);
+    const grant=gate.confirm({deviceId:id,fingerprint:challenge.fingerprint,
+      nonce:challenge.nonce,kind,mac});
+    return {challenge,grant};
   };
   return {
     gate,approve,
-    get now(){return now;},set now(value:number){now=value;},
-    get devices(){return devices;},set devices(value:LanDevice[]){devices=value;},
-    get supportSession(){return supportSession;},
-    set supportSession(value:string){supportSession=value;},
+    get now(){return now;},set now(x:number){now=x;},
+    get devices(){return devices;},set devices(x:LanDevice[]){devices=x;},
+    get session(){return session;},set session(x:string){session=x;},
   };
 }
-
-describe("Native Android input capability, separate from a Viewer", () => {
-  it("does not treat a paired/connected viewer or a preview token as input permission", () => {
+describe("Independent attended Android mouse and keyboard controller grants",()=>{
+  it("viewer consent never grants mouse OR keyboard",()=>{
     const f=fixture();
-    expect(() => f.gate.authorize(deviceId,"a".repeat(64)))
-      .toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
-    const c=f.gate.challenge(deviceId);
-    expect(c.expiresAt-f.now).toBe(ANDROID_CONTROL_CHALLENGE_TTL_MS);
-    expect(() => f.gate.authorize(deviceId,c.nonce))
-      .toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
+    for(const kind of ["mouse","keyboard"] as const)
+      expect(()=>f.gate.authorize(deviceId,"a".repeat(64),kind))
+        .toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
+    expect(()=>f.gate.challenge(deviceId,"all"))
+      .toThrow("ANDROID_CONTROLLER_INVALID_SCOPE");
   });
 
-  it("issues an unrelated controller bearer only after signed native approval", () => {
+  it("a mouse approval cannot type, navigate, or revoke keyboard",()=>{
     const f=fixture();
-    const {challenge,grant}=f.approve();
-    expect(grant.controllerToken).toMatch(/^[a-f0-9]{64}$/);
-    expect(grant.controllerToken).not.toBe(challenge.nonce);
+    const {challenge,grant}=f.approve("mouse");
+    expect(challenge).toMatchObject({kind:"mouse",deviceId,fingerprint});
+    expect(challenge.expiresAt-f.now).toBe(ANDROID_CONTROL_CHALLENGE_TTL_MS);
+    expect(grant).toMatchObject({kind:"mouse"});
     expect(grant.expiresAt-f.now).toBe(ANDROID_CONTROL_LEASE_TTL_MS);
-    expect(() => f.gate.authorize(deviceId,grant.controllerToken)).not.toThrow();
-    expect(f.gate.status(deviceId,grant.controllerToken)).toMatchObject({
-      approved:true,secondsRemaining:120,
-    });
-  });
-
-  it("burns a forged proof; the same challenge cannot be replayed", () => {
-    const f=fixture();
-    const c=f.gate.challenge(deviceId);
-    expect(() => f.gate.confirm({
-      deviceId,nonce:c.nonce,fingerprint:c.fingerprint,mac:"f".repeat(64),
-    })).toThrow("ANDROID_CONTROLLER_NATIVE_PROOF_INVALID");
-    const correct=NativeAndroidControllerApproval.computeProofForTest(
-      secret,c.nonce,deviceId,c.fingerprint,
-    );
-    expect(() => f.gate.confirm({
-      deviceId,nonce:c.nonce,fingerprint:c.fingerprint,mac:correct,
-    })).toThrow("ANDROID_CONTROLLER_NATIVE_PROOF_REQUIRED");
-  });
-
-  it("binds input to the same exact live device and fingerprint", () => {
-    const f=fixture();
-    const {grant}=f.approve();
-    expect(() => f.gate.authorize(otherId,grant.controllerToken))
+    expect(()=>f.gate.authorize(deviceId,grant.controllerToken,"mouse")).not.toThrow();
+    expect(()=>f.gate.authorize(deviceId,grant.controllerToken,"keyboard"))
       .toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
-    f.devices=[device({fingerprint:"bc".repeat(32)})];
-    expect(() => f.gate.authorize(deviceId,grant.controllerToken)).toThrow();
-    f.devices=[device()];
-    expect(f.gate.status(deviceId,grant.controllerToken).approved).toBe(false);
-  });
-
-  it("expires previous controller after Android closes and reopens its support session", () => {
-    const f=fixture();
-    const {grant}=f.approve();
-    f.supportSession="ef".repeat(32);
-    expect(() => f.gate.authorize(deviceId,grant.controllerToken))
-      .toThrow("ANDROID_CONTROLLER_DEVICE_CHANGED");
-    f.supportSession="cd".repeat(32);
-    expect(f.gate.status(deviceId,grant.controllerToken).approved).toBe(false);
-  });
-
-  it("never sends the support-session proof to the native approval dialog", () => {
-    const f=fixture();
-    const challenge=f.gate.challenge(deviceId);
-    expect(Object.keys(challenge).sort()).toEqual(
-      ["nonce","deviceId","fingerprint","expiresAt"].sort());
-    expect(JSON.stringify(challenge)).not.toContain(f.supportSession);
-  });
-
-  it("revokes when session closes, expires, or the host clock regresses", () => {
-    const f=fixture();
-    const {grant}=f.approve();
-    f.now+=ANDROID_CONTROL_LEASE_TTL_MS;
-    expect(() => f.gate.authorize(deviceId,grant.controllerToken))
-      .toThrow("ANDROID_CONTROLLER_APPROVAL_EXPIRED");
-    const second=f.approve().grant.controllerToken;
-    f.gate.revokeDevice(deviceId);
-    expect(f.gate.status(deviceId,second).approved).toBe(false);
-    const third=f.approve().grant.controllerToken;
-    f.now-=1;
-    expect(() => f.gate.authorize(deviceId,third))
-      .toThrow("ANDROID_CONTROLLER_HOST_CLOCK_INVALID");
-  });
-
-  it("does not allow another bearer to revoke an approved controller", () => {
-    const f=fixture();
-    const {grant}=f.approve();
-    expect(() => f.gate.revoke("0".repeat(64)))
+    expect(()=>f.gate.revoke(grant.controllerToken,"keyboard"))
       .toThrow("ANDROID_CONTROLLER_REVOKE_PROOF_REQUIRED");
-    expect(() => f.gate.authorize(deviceId,grant.controllerToken)).not.toThrow();
-    f.gate.revoke(grant.controllerToken);
-    expect(() => f.gate.authorize(deviceId,grant.controllerToken)).toThrow();
+    expect(f.gate.status(deviceId,grant.controllerToken,"mouse").approved).toBe(true);
   });
 
-  it("rejects an old approval after the phone has been disconnected", () => {
+  it("keyboard approval is independent, and a new mouse challenge preserves it",()=>{
     const f=fixture();
-    const c=f.gate.challenge(deviceId);
+    const keyboard=f.approve("keyboard").grant.controllerToken;
+    expect(()=>f.gate.authorize(deviceId,keyboard,"keyboard")).not.toThrow();
+    const mouse=f.approve("mouse").grant.controllerToken;
+    expect(mouse).not.toBe(keyboard);
+    expect(()=>f.gate.authorize(deviceId,mouse,"mouse")).not.toThrow();
+    expect(()=>f.gate.authorize(deviceId,keyboard,"keyboard")).not.toThrow();
+    f.gate.revoke(mouse,"mouse");
+    expect(f.gate.status(deviceId,mouse,"mouse").approved).toBe(false);
+    expect(f.gate.status(deviceId,keyboard,"keyboard").approved).toBe(true);
+  });
+
+  it("scope tampering invalidates HMAC and burns the challenge",()=>{
+    const f=fixture();
+    const c=f.gate.challenge(deviceId,"mouse");
+    const wrong=NativeAndroidControllerApproval.computeProofForTest(
+      secret,c.nonce,deviceId,c.fingerprint,"keyboard");
+    expect(()=>f.gate.confirm({deviceId,nonce:c.nonce,
+      fingerprint:c.fingerprint,kind:"mouse",mac:wrong}))
+      .toThrow("ANDROID_CONTROLLER_NATIVE_PROOF_INVALID");
+    const good=NativeAndroidControllerApproval.computeProofForTest(
+      secret,c.nonce,deviceId,c.fingerprint,"mouse");
+    expect(()=>f.gate.confirm({deviceId,nonce:c.nonce,
+      fingerprint:c.fingerprint,kind:"mouse",mac:good}))
+      .toThrow("ANDROID_CONTROLLER_NATIVE_PROOF_REQUIRED");
+  });
+
+  it("binds each grant to exact live device, fingerprint, and support-session generation",()=>{
+    const f=fixture();
+    const mouse=f.approve("mouse").grant.controllerToken;
+    expect(()=>f.gate.authorize(otherId,mouse,"mouse"))
+      .toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
+    f.session="ef".repeat(32);
+    expect(()=>f.gate.authorize(deviceId,mouse,"mouse"))
+      .toThrow("ANDROID_CONTROLLER_DEVICE_CHANGED");
+    f.session="cd".repeat(32);
+    expect(f.gate.status(deviceId,mouse,"mouse").approved).toBe(false);
+    const keyboard=f.approve("keyboard").grant.controllerToken;
+    f.devices=[device({fingerprint:"bc".repeat(32)})];
+    expect(()=>f.gate.authorize(deviceId,keyboard,"keyboard")).toThrow();
+    f.devices=[device()];
+    expect(f.gate.status(deviceId,keyboard,"keyboard").approved).toBe(false);
+  });
+
+  it("never sends private support-session proof to native dialog",()=>{
+    const f=fixture();
+    const c=f.gate.challenge(deviceId,"keyboard");
+    expect(Object.keys(c).sort()).toEqual(
+      ["nonce","deviceId","fingerprint","kind","expiresAt"].sort());
+    expect(JSON.stringify(c)).not.toContain(f.session);
+  });
+
+  it("expires one scope independently of a separately approved newer scope",()=>{
+    const f=fixture();
+    const mouse=f.approve("mouse").grant.controllerToken;
+    f.now+=60_000;
+    const keyboard=f.approve("keyboard").grant.controllerToken;
+    f.now+=60_000;
+    expect(()=>f.gate.authorize(deviceId,mouse,"mouse"))
+      .toThrow("ANDROID_CONTROLLER_APPROVAL_EXPIRED");
+    expect(f.gate.status(deviceId,keyboard,"keyboard").approved).toBe(true);
+  });
+
+  it("rejects an old controller on clock regression and disconnected device",()=>{
+    const f=fixture();
+    const mouse=f.approve("mouse").grant.controllerToken;
+    f.now-=1;
+    expect(()=>f.gate.authorize(deviceId,mouse,"mouse"))
+      .toThrow("ANDROID_CONTROLLER_HOST_CLOCK_INVALID");
+    const c=f.gate.challenge(deviceId,"keyboard");
+    const mac=NativeAndroidControllerApproval.computeProofForTest(
+      secret,c.nonce,deviceId,c.fingerprint,"keyboard");
     f.devices=[device({connected:false})];
-    const mac=NativeAndroidControllerApproval.computeProofForTest(secret,
-      c.nonce,deviceId,c.fingerprint);
-    expect(() => f.gate.confirm({deviceId,nonce:c.nonce,fingerprint:c.fingerprint,mac}))
-      .toThrow("ANDROID_CONTROLLER_DEVICE_SESSION_UNAVAILABLE");
+    expect(()=>f.gate.confirm({deviceId,nonce:c.nonce,fingerprint:c.fingerprint,
+      kind:"keyboard",mac})).toThrow("ANDROID_CONTROLLER_DEVICE_SESSION_UNAVAILABLE");
+  });
+
+  it("revokeDevice clears both, and invalid scope never succeeds",()=>{
+    const f=fixture();
+    const mouse=f.approve("mouse").grant.controllerToken;
+    const keyboard=f.approve("keyboard").grant.controllerToken;
+    expect(()=>f.gate.authorize(deviceId,keyboard,"all")).toThrow("ANDROID_CONTROLLER_INVALID_SCOPE");
+    f.gate.revokeDevice(deviceId);
+    expect(f.gate.status(deviceId,mouse,"mouse").approved).toBe(false);
+    expect(f.gate.status(deviceId,keyboard,"keyboard").approved).toBe(false);
+  });
+
+  it("a forged token cannot revoke the other scope",()=>{
+    const f=fixture();
+    const mouse=f.approve("mouse").grant.controllerToken;
+    const keyboard=f.approve("keyboard").grant.controllerToken;
+    expect(()=>f.gate.revoke(mouse,"keyboard"))
+      .toThrow("ANDROID_CONTROLLER_REVOKE_PROOF_REQUIRED");
+    expect(()=>f.gate.authorize(deviceId,keyboard,"keyboard")).not.toThrow();
   });
 });
