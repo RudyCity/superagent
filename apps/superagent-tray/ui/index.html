@@ -56,6 +56,7 @@
   <script src="./lan-sha256.js" defer></script>
   <script src="./lan-file-transfer.js" defer></script>
   <script src="./lan-file-relay.js" defer></script>
+  <script src="./lan-large-receive.js" defer></script>
   <script src="./lan-transfer-diagnostics.js" defer></script>
 </head>
 <body style="background-color: #07090e; color: #f8fafc;">
@@ -1813,6 +1814,16 @@
               <button type="button" class="button ghost" id="lan-file-receive" disabled>Receive owner's shared file</button>
               <button type="button" class="button ghost" id="lan-file-pause" disabled>Pause transfer</button>
               <button type="button" class="button ghost danger" id="lan-file-cancel" disabled>Cancel transfer</button>
+            </div>
+            <div class="lan-relay-panel">
+              <div class="panel-eyebrow">RECEIVE LARGE FILE · V2 STREAMING</div>
+              <p class="lan-file-info">The Android or Windows owner selects a document over 4 MiB (up to 256 MiB). Core writes encrypted-session chunks directly into Downloads/SuperAgent LAN/Received and publishes only after SHA-256 verification. Each attempt needs fresh owner approval.</p>
+              <div class="lan-transfer-actions">
+                <button type="button" class="button primary" id="lan-large-receive-start" disabled>Receive selected large file</button>
+                <button type="button" class="button ghost danger" id="lan-large-receive-cancel" disabled>Cancel large receive</button>
+              </div>
+              <progress id="lan-large-receive-progress" class="lan-file-progress" max="100" value="0"></progress>
+              <p id="lan-large-receive-status" class="lan-file-info" aria-live="polite">Select a paired device and ask its owner to select a large file.</p>
             </div>
             <div class="lan-relay-panel">
               <div class="panel-eyebrow">DEVICE-TO-DEVICE · OWNER APPROVAL ON BOTH ENDS</div>
