@@ -450,18 +450,23 @@
     const viewport = el("desktop-live-stream-viewport");
     if (viewport) viewport.classList.remove("interactive");
 
+    let controllerRevokeVerified = true;
     if (wasLanDevice && previousDeviceId) {
       try {
-        await window.__TAURI__?.core?.invoke?.("lan_support_action", {
+        const outcome=await window.__TAURI__?.core?.invoke?.("lan_support_action", {
           action: "control_revoke", payload: { deviceId: previousDeviceId },
         });
-      } catch { /* Fails closed: native gate rejects hidden Tray and lease expires. */ }
+        if (outcome?.success !== true || outcome?.approved !== false)
+          throw Error("Controller revocation not verified by Core");
+      } catch { controllerRevokeVerified = false; }
     }
     if (token && !wasLanDevice) {
       try { await invoke("stop", { token }); } catch {}
     }
     renderStreamPermissions();
-    if (reason) status(reason);
+    if (!controllerRevokeVerified)
+      status("Local control disabled. Core-wide revocation unverified; controller token expires automatically.",true);
+    else if (reason) status(reason);
     draw();
   }
 
