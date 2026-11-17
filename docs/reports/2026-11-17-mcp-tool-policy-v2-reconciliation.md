@@ -88,3 +88,62 @@ calls, malformed/unexpected arguments, and cross-domain negative cases.
 installed-desktop/Android E2E, platform soak, or R0–R7 production certification.
 GitHub commits are not automatically installed on the active MCP host.
 Do not auto-restart or migrate a shared Core/MCP owner based only on CI success.
+
+## 2026-11-17 follow-up — four-stage implementation and evidence
+
+### Stage 1 — effect certification and usable restricted search
+
+- `superagent_manage_services` read-only actions now reject mutation-only/path
+  parameters, even under a valid MCP Connection Controls grant.
+- `superagent_media_plan` enforces a read grant against **every** explicit
+  input file, the destination existence lookup and optional watermark file.
+  Its tool schema includes `watermarkPath`. This still creates no artifacts.
+- `superagent_grep_search` has an **explicit `filePaths` mode** that scans
+  bounded regular files using a literal query only; recursive grep, regex,
+  arbitrary `path`/glob/include/exclude and unapproved inputs remain denied.
+  Exact-file mode limits 50 paths, 1 MiB per file, 8 MiB total, 200 returned
+  matches, supports offset/limit, rejects traversal, symlinks and unapproved
+  native host read paths, and does not launch a shell.
+- General CLI/shell, recursive inventory, remote Android shell, browser
+  `evaluate`, Desktop Input/screenshots, and PDF/media output-producing
+  tools remain fail-closed until their real effects are mediated per action.
+  A broad name-based exemption is **not** security approval.
+
+### Stage 2 — independent operator authorization
+
+- MCP `tools/list`, `superagent_tool_search` and `tool_describe` now expose
+  **separate** file-policy readiness and MCP authorization requirements.
+  Project grant, MCP Connection Controls `execute`, OAuth scope, and
+  gateway nested-target requirements are distinguished.
+- `tests/mcpApprovalAndFilePolicy.test.ts` proves that a certified Desktop
+  metadata action still requires a human-issued MCP Connection Controls grant
+  and `mcp:tools:write`; a revoked grant takes effect on the next call.
+  Chat-agent YOLO is not used to grant MCP permissions.
+
+### Stage 3 — test evidence and open acceptance
+
+- Focused Linux CI at
+  [run 44042532389](https://github.com/RudyCity/superagent/actions/runs/44042532389)
+  passed **167/167 tests (19 files)** and TypeScript typecheck.
+- The independent host-policy matrix passed **24/24 tests on each** of
+  Ubuntu 24.04, Windows-latest and macOS 15 at the same run.
+- Exact-file grep has additional tests and an added CI gate; its final result
+  must be checked on the latest commit before marking the new search certified.
+- GitHub Actions unit/CI success does **not** establish installed desktop,
+  Android physical device, authenticated live MCP over tunnel, native input,
+  24–72h soak, or a production R0–R7 certificate.
+
+### Stage 4 — activation and release gate: BLOCKED
+
+- Read-only `superagent_core_status`, `superagent_services_status` and
+  `superagent_tool_status` calls through the connected fast1 MCP route
+  returned an internal connection failure. The agent **did not** restart,
+  kill, adopt, rewire, or silently replace an independently owned process.
+- The current published prerelease inspected was
+  [v1.14.104-rc.3](https://github.com/RudyCity/superagent/releases/tag/v1.14.104-rc.3)
+  (15 assets, published 2026-11-17 02:13:20 UTC), **predating these changes**.
+- A new release must meet the release-incident playbook's native package,
+  checksum, immutable tag/SHA and per-client requirements. Production cutover
+  is blocked by the outstanding R0–R7 host/identity/soak/operator evidence.
+  Never equate a GitHub commit or CI build with code installed on the live
+  Windows Core/MCP/Tray or public tunnel.
