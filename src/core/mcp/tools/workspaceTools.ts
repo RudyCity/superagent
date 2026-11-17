@@ -1,4 +1,4 @@
-import { registeredFileToolGate, isPathAllowedByPermanentRegistry } from "../../tools/registeredFileToolGate.js";
+import { registeredFileToolGate } from "../../tools/registeredFileToolGate.js";
 /**
  * workspaceTools.ts — Workspace switching, worktree operations, command execution, file tools, search, and checklist tools for MCP.
  */
@@ -19,10 +19,9 @@ import { loadRegistry } from "../../tools/superagentRegistry.js";
 import { handleGetCurrentTask } from "./workspaceStatusTools.js";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../../config.js";
 import {
-  isYoloMode,
   isSystemDestructiveCommand,
-  isPathWithinYoloScope,
-  isToolCallWithinYoloScope,
+  isPathWithinMcpScope,
+  isToolCallWithinMcpScope,
 } from "../../permissions.js";
 import { mapConcurrentOrdered } from "../../concurrency.js";
 import {
@@ -54,22 +53,16 @@ export async function handleSwitchWorkspace(
     resolved = target.workspace;
     resolvedProjectId = target.projectId;
     projectAccessGranted = Boolean(resolvedProjectId && canSelectRegisteredProject?.(resolvedProjectId));
-    if (/^ssh:/i.test(resolved) && !projectAccessGranted) {
+    if (/^(?:ssh:|chain:)/i.test(resolved) && !projectAccessGranted) {
       throw new Error(`Standalone SSH project access is not granted for project ${resolvedProjectId || resolved}.`);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const target = path.isAbsolute(ws) ? path.resolve(ws) : path.resolve(currentWorkspace, ws);
-    if (!args.projectId && (message.includes("Workspace target is not registered or authorized") || message.includes("escapes registered project"))
-      && isPathWithinYoloScope(target, currentWorkspace)) {
-      resolved = target;
-    } else {
-      return { content: [{ type: "text", text: message }], isError: true };
-    }
+    return { content: [{ type: "text", text: message }], isError: true };
   }
   const withinScopedRoot = isWorkspaceWithinScopedRoot
     ? isWorkspaceWithinScopedRoot(resolved)
-    : isPathWithinYoloScope(resolved, currentWorkspace);
+    : isPathWithinMcpScope(resolved, currentWorkspace);
   if (/^(?:ssh:|chain:)/i.test(resolved)) {
     const requiresProjectGrant = Boolean(/^ssh:/i.test(resolved) && projectAccessGranted && !withinScopedRoot);
     onWorkspaceChange?.(resolved, resolvedProjectId, requiresProjectGrant);
@@ -80,7 +73,7 @@ export async function handleSwitchWorkspace(
   }
 
   // The Core executable\u0027s native file permission cannot authorize an MCP identity.
-  if (!projectAccessGranted && !withinScopedRoot) {
+  if (!projectAccessGranted) {
     return {
       content: [{
         type: "text",
@@ -137,9 +130,11 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
       isError: true,
     };
   }
-  const isCwdAllowedByAccessManager = isPathAllowedByPermanentRegistry(String(targetCwd), "read");
-  const inScope = isToolCallWithinYoloScope({ name: "superagent_exec_command", args: { command, cwd: targetCwd } }, targetCwd);
-  if (!inScope && !isCwdAllowedByAccessManager) {
+  const inScope = isToolCallWithinMcpScope(
+    { name: "superagent_exec_command", args: { command, cwd: targetCwd } },
+    getMcpWorkspacePath(),
+  );
+  if (!inScope) {
     return {
       content: [{
         type: "text",
@@ -391,8 +386,7 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
       isError: true,
     };
   }
-  const isWriteAllowedByAccessManager = isPathAllowedByPermanentRegistry(resolved, "write");
-  if (!isPathWithinYoloScope(resolved, targetCwd) && !isWriteAllowedByAccessManager) {
+  if (!isPathWithinMcpScope(resolved, getMcpWorkspacePath())) {
     return {
       content: [{
         type: "text",
@@ -410,7 +404,7 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
     const { checkFileLock, releaseFile } = await import("../../storage/sharedMemory.js");
     const lockCheck = checkFileLock(resolved, undefined, targetCwd);
     if (lockCheck.locked) {
-      if (args.force || isYoloMode()) releaseFile(resolved, undefined, targetCwd, true);
+      if (args.force === true) releaseFile(resolved, undefined, targetCwd, true);
       else return { content: [{ type: "text", text: `Error: [LOCK_CONFLICT] File "${resolved}" is locked by session ${lockCheck.owner?.sessionId || "unknown"}. Use superagent_unlock_file with action: "force_unlock" to override.` }], isError: true };
     }
   } catch (err: any) {
