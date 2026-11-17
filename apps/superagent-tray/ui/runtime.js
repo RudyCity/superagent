@@ -126,7 +126,7 @@ function runtimeReconcileStoppedOwners(snapshot, scanStartedAt) {
   const services = Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [];
   for (const [key, transition] of runtimeStopTransitions) {
     if (transition.phase === "stopping" ||
-        (transition.confirmedAt && scanStartedAt < transition.confirmedAt)) continue;
+        (transition.confirmedAt && scanStartedAt <= transition.confirmedAt)) continue;
     const owner = services.find(service => runtimeStopKey(service) === key);
     if (!owner && transition.phase === "removed") {
       runtimeStopTransitions.delete(key);
