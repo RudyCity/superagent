@@ -181,7 +181,7 @@
     renderStreamPermissions();
   }
 
-  function scheduleNextFrame() {
+  function scheduleNextFrame(hostSuggestedMs=0) {
     if (!stream.active || !stream.token) return;
     if (stream.timer) {
       clearTimeout(stream.timer);
@@ -189,12 +189,17 @@
       stream.timer = null;
     }
     const cfg = streamPresets[stream.quality] || streamPresets.ultra;
+    // Respect bounded Core backpressure; never request unchanged pixels more
+    // frequently than the host recommends. Local preset remains a minimum.
+    const hint = Number.isSafeInteger(hostSuggestedMs) && hostSuggestedMs>=16 &&
+      hostSuggestedMs<=1600 ? hostSuggestedMs : 0;
+    const nextMs = Math.max(cfg.intervalMs, hint);
     const generation = stream.generation;
     const next = () => {if (stream.generation === generation) void fetchFrame();};
-    if (cfg.intervalMs <= 20) {
+    if (nextMs <= 20) {
       stream.timer = requestAnimationFrame(next);
     } else {
-      stream.timer = setTimeout(next, cfg.intervalMs);
+      stream.timer = setTimeout(next, nextMs);
     }
   }
 
@@ -208,6 +213,7 @@
     const generation = stream.generation, token = stream.token;
     const deviceId = stream.deviceId, isLan = stream.isLanDevice;
     const cfg = streamPresets[stream.quality] || streamPresets.balanced;
+    let suggestedWait = 0;
     try {
       let frameData;
       if (isLan) {
@@ -235,6 +241,7 @@
       if (!stream.active || generation !== stream.generation || token !== stream.token ||
           deviceId !== stream.deviceId) return;
       if (frameData?.success!==true) throw Error(frameData?.error || "Frame capture denied.");
+      suggestedWait = frameData.nextPollMs;
 
       const img = el("desktop-live-stream-img");
       const placeholder = el("desktop-live-stream-placeholder");
@@ -281,7 +288,7 @@
     } finally {
       if (generation === stream.generation) {
         stream.inFlight = false;
-        if (stream.active) scheduleNextFrame();
+        if (stream.active) scheduleNextFrame(suggestedWait);
       }
     }
   }
