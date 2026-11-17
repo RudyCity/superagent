@@ -10,7 +10,15 @@
   };
   const active=item=>!["inactive","stopped","stale","embedded"].includes(item.state);
   const forceReady=()=>state.preview?.services?.filter(s=>active(s)&&s.forceSelectable===true)??[];
-  const manualReady=()=>state.preview?.services?.filter(s=>active(s)&&s.manualKillSelectable===true)??[];
+  const manualReady=()=>{
+    const seen=new Set();
+    return (state.preview?.services??[]).filter(s=>{
+      if(!active(s)||s.manualKillSelectable!==true||
+         !Number.isSafeInteger(s.pid)||s.pid<=4||seen.has(s.pid))return false;
+      seen.add(s.pid);
+      return true;
+    });
+  };
   function node(parent,tag,className,value){
     const element=document.createElement(tag);
     if(className)element.className=className;
@@ -48,8 +56,11 @@
     $("shutdown-manual-select-all").disabled=lock||!manualReady().length;
     $("shutdown-refresh").disabled=lock;
     $("shutdown-close").disabled=state.loading;
+    const selectedPids=new Set((state.preview?.services??[])
+      .filter(s=>state.manualSelected.has(s.id)&&s.manualKillSelectable)
+      .map(s=>s.pid)).size;
     $("shutdown-selection-count").textContent=String(state.selected.size)+
-      " graceful selected · "+String(state.manualSelected.size)+
+      " graceful selected · "+String(selectedPids)+
       " manual PID(s) selected · "+String(manualReady().length)+" manual-eligible · "+
       String(counts().blocked)+" need graceful review";
   }
@@ -85,6 +96,11 @@
         item.activeSessions!=null?item.activeSessions+" active jobs/sessions":null,
       ].filter(Boolean).join(" · ");
       node(copy,"small","",details||item.detail);
+      if(item.manualKillSelectable && item.processPath)
+        node(copy,"small","shutdown-executable","Executable: "+item.processPath);
+      if(item.id?.startsWith("guardian-os:"))
+        node(copy,"span","shutdown-explanation",
+          "Local Guardian lease + live OS PID; Core API not required for manual kill.");
       if(item.forceSelectable&&!item.selectable&&active(item))
         node(copy,"span","shutdown-force-explanation",
           "Force stop available after explicit approval. May interrupt active sessions or public tunnels.");
