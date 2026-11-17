@@ -66,7 +66,7 @@ import { WizardDialog } from "./wizard-dialog.js";
 import { handleSlashCommand, getDefaultModel } from "../core/slash-commands.js";
 import { listCheckpointsForSession, restoreCheckpoint } from "../core/checkpoints.js";
 import { allTools } from "../core/tools.js";
-import { readChecklistTasks, readTaskHistory } from "../core/taskChecklist.js";
+import { getActiveSessionTaskPath, readChecklistTasks, readTaskHistory } from "../core/taskChecklist.js";
 
 // Import extracted subcomponents
 import { RegistryPanel } from "./dashboard/registry-panel.js";
@@ -410,28 +410,14 @@ export function MultiAgentDashboard({
     let intervalId: NodeJS.Timeout | null = null;
 
     const check = async () => {
-      const candidates: string[] = [];
-      if (agent?.getTaskFilePath) {
-        try {
-          candidates.push(agent.getTaskFilePath());
-        } catch {}
-      }
-      const ws = agent?.workingDirectory || process.cwd();
-      candidates.push(path.join(ws, "task.md"));
-      candidates.push(path.join(ws, "_task.md"));
-      candidates.push(path.join(ws, "tasks.md"));
-
-      let foundPath: string | null = null;
-      for (const p of candidates) {
-        if (p && existsSync(p)) {
-          foundPath = p;
-          break;
+      const foundPath = getActiveSessionTaskPath(agent);
+      if (!foundPath) {
+        if (active) {
+          setChecklistTasks([]);
+          setRawCompletedHistory([]);
         }
+        return;
       }
-      if (!foundPath && candidates[0]) {
-        foundPath = candidates[0];
-      }
-      if (!foundPath) return;
 
       try {
         const result = await readChecklistTasks(foundPath);
