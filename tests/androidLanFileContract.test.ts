@@ -19,7 +19,7 @@ describe("Android + Windows LAN file transfer security and interoperability cont
     expect(exchange).toContain("CHUNK_BYTES = 4096");
     expect(transport).toContain("LanTargetFiles");
     expect(server).toContain('"file_offer".equals(op)');
-    for (const op of ["file_offer", "file_put", "file_get", "file_finish", "file_abort"]) {
+    for (const op of ["file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"]) {
       expect(server).toContain('"' + op + '"');
       expect(transport).toContain('"' + op + '"');
       expect(bridge).toContain('"' + op + '"');
@@ -36,6 +36,9 @@ describe("Android + Windows LAN file transfer security and interoperability cont
     expect(activity).toContain("pending.selectLocalFile(sharedFileName, sharedFileBytes)");
     expect(activity).toMatch(/Clear [Ss]elected (?:file or folder|Document)/);
     expect(exchange).toContain("Select a file on the Android phone first.");
+    expect(exchange).toContain("selectionRevision != approvedSelectionRevision");
+    expect(server).toContain("long selectedRevision = fileExchange.selectionRevision()");
+    expect(server).toContain("request.optString(\"sha256\", \"\"), selectedRevision");
     expect(exchange).not.toContain("MANAGE_EXTERNAL_STORAGE");
     expect(exchange).not.toContain("getExternalStorageDirectory()");
     expect(exchange).not.toContain("getPath()");
@@ -68,6 +71,8 @@ describe("Android + Windows LAN file transfer security and interoperability cont
     expect(tray).toContain('invoke("file_abort"');
     expect(tray).toContain('const name = isFolder ? "lan_folder_save" : "lan_file_save"');
     expect(tray).toContain('crypto.subtle.digest("SHA-256"');
+    expect(tray).toContain("file_status");
+    expect(exchange).toContain("JSONObject status(String id)");
     expect(native).toContain("blocking_save_file()");
     expect(native).toContain("create_new(true)");
     expect(native).toContain('format!("{:x}", Sha256::digest(&bytes))');
