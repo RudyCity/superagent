@@ -68,7 +68,8 @@ describe("Android + Windows LAN file transfer security and interoperability cont
     expect(tray).toContain('invoke("file_offer"');
     expect(tray).toContain('invoke("file_put"');
     expect(tray).toContain('invoke("file_get"');
-    expect(tray).toContain('invoke("file_abort"');
+    expect(tray).toContain('activeProtocol === 2 ? "file_v2_abort" : "file_abort"');
+    expect(tray).toContain("await abortIfNeeded()");
     expect(tray).toContain('const name = isFolder ? "lan_folder_save" : "lan_file_save"');
     expect(tray).toContain('crypto.subtle.digest("SHA-256"');
     expect(tray).toContain("file_status");
