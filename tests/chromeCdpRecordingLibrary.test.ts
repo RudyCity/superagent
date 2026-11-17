@@ -60,7 +60,7 @@ describe("project-local CDP Recording Manager",()=>{
   test("requires explicit confirmation and a valid exact UUID to delete",async()=>{
     await expect(deleteProjectCdpRecording(project,uuid,false)).rejects.toThrow(/approval/);
     await expect(locateProjectCdpRecording(project,"../../secrets","video")).rejects.toThrow(/UUID/);
-    await expect(stopProjectCdpRecording(project,uuid)).rejects.toThrow(/no longer active/);
+    await expect(stopProjectCdpRecording(project,uuid)).resolves.toMatchObject({recordingId:uuid,status:"saved",alreadyFinalized:true});
     expect((await deleteProjectCdpRecording(project,uuid,true)).deleted).toBe(true);
     expect((await listProjectCdpRecordings(project)).recordings).toEqual([]);
   });
