@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import * as inkModule from "ink";
 import { MultiAgentDashboard } from "../src/components/multi-agent-dashboard.js";
+import { appendDashboardLiveLog, normalizeDashboardLiveLog, MAX_DASHBOARD_LIVE_LOG_CHARS } from "../src/utils/dashboardLiveLog.js";
 
 describe("multi-agent CLI input responsiveness", () => {
   beforeEach(() => {
@@ -57,5 +58,31 @@ describe("multi-agent CLI input responsiveness", () => {
     } finally {
       view.unmount();
     }
+  });
+});
+
+describe("bounded dashboard log normalization", () => {
+  it("retains the agent tag and recent output without unbounded growth", () => {
+    const long = "[AGENT]" + "a".repeat(MAX_DASHBOARD_LIVE_LOG_CHARS + 200);
+    const normalized = normalizeDashboardLiveLog(long);
+    expect(normalized.length).toBeLessThanOrEqual(MAX_DASHBOARD_LIVE_LOG_CHARS);
+    expect(normalized.startsWith("[AGENT]")).toBe(true);
+    expect(normalized).toContain("older live output omitted");
+    expect(normalized.endsWith("a".repeat(200))).toBe(true);
+  });
+
+  it("stays bounded across many appended streaming fragments", () => {
+    let live = "[AGENT] Initial output";
+    for (let i = 0; i < 100; i++) {
+      live = appendDashboardLiveLog(live, "x".repeat(2000));
+    }
+    expect(live.length).toBeLessThanOrEqual(MAX_DASHBOARD_LIVE_LOG_CHARS);
+    expect(live.startsWith("[AGENT]")).toBe(true);
+    expect(live.endsWith("x".repeat(1000))).toBe(true);
+  });
+
+  it("normalizes carriage-return progress output", () => {
+    const live = appendDashboardLiveLog("[AGENT] Step one\\r", "Step two");
+    expect(live).not.toContain("\\r");
   });
 });
