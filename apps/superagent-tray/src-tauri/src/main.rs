@@ -1048,15 +1048,24 @@ async fn lan_support_action(
     // local storage, Core preview tokens or MCP project access grants.
     if action == "control_revoke" {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
-        // Best-effort Core revocation; the native bearer is destroyed even if
-        // Core is temporarily offline. No WebView can recover that credential.
-        if let Ok((_, fp)) = desktop_live_android_device(id).await {
-            if let Ok(token) = desktop_live_android_control::credential(id,&fp,true) {
-                let _ = core_request(Method::POST,"/api/desktop/lan-controller/revoke",
-                    Some(json!({"deviceId":id,"controllerToken":token}))).await;
+        // Always destroy the native bearer, but never claim Core-wide
+        // revocation unless the separately authorized Core confirms it.
+        let outcome = async {
+            let (_, fp) = desktop_live_android_device(id).await?;
+            let token = match desktop_live_android_control::credential(id,&fp,true) {
+                Ok(token) => token,
+                Err(_) => return Ok::<(),String>(()),
+            };
+            let result = core_request(Method::POST,"/api/desktop/lan-controller/revoke",
+                Some(json!({"deviceId":id,"controllerToken":token}))).await?;
+            if result.get("success").and_then(Value::as_bool) != Some(true) ||
+               result.get("approved").and_then(Value::as_bool) != Some(false) {
+                return Err("ANDROID_CONTROLLER_CORE_REVOKE_UNVERIFIED".into());
             }
-        }
+            Ok(())
+        }.await;
         desktop_live_android_control::revoke_device(id);
+        outcome?;
         return Ok(json!({"success":true,"approved":false}));
     }
     if matches!(action.as_str(), "input" | "element" | "control_request" | "control_status") &&
