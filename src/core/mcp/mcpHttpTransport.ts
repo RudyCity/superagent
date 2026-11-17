@@ -739,11 +739,14 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
         const diagnosticStart = performance.now();
         const isToolCall = diagnosticStage === "mcp.tools_call";
         if (isToolCall) inFlightToolCalls++;
-        // Streamable HTTP can resolve handleRequest while an SSE response
-        // remains open. Only settle on the actual response lifecycle.
+        // A dropped HTTP response does not imply the tool handler's effects
+        // have stopped. Wait for BOTH the actual response lifecycle and the
+        // async MCP handler before releasing this session's in-flight lease.
+        let responseDone = false;
+        let handlerDone = false;
         let settled = false;
-        const settleSessionRequest = () => {
-          if (settled) return;
+        const maybeSettle = () => {
+          if (settled || !responseDone || !handlerDone) return;
           settled = true;
           registry.endRequest(requestSessionId);
           if (isToolCall) inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
@@ -756,13 +759,20 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
             });
           }
         };
-        res.once("finish", settleSessionRequest);
-        res.once("close", settleSessionRequest);
+        const finishResponse = () => { responseDone = true; maybeSettle(); };
+        res.once("finish", finishResponse);
+        res.once("close", finishResponse);
         try {
           await session.transport.handleRequest(req, res, body);
-          if (res.writableEnded || res.destroyed) settleSessionRequest();
+          handlerDone = true;
+          if (res.writableEnded || res.destroyed) responseDone = true;
+          maybeSettle();
         } catch (error) {
-          settleSessionRequest();
+          // A rejected handler can no longer make progress; its lease must not
+          // remain pinned by an unwritable response.
+          handlerDone = true;
+          responseDone = true;
+          maybeSettle();
           throw error;
         }
         return;

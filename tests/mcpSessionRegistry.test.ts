@@ -251,6 +251,44 @@ describe("McpSessionRegistry", () => {
     expect(closed).toHaveBeenCalledTimes(1);
   });
 
+  it("defers DELETE until the accepted tool call finishes and rejects re-use", async () => {
+    vi.useFakeTimers();
+    const removed: string[] = [];
+    const closed = vi.fn(async () => {});
+    const r = new McpSessionRegistry({
+      idleTimeoutMs: 20, maxLifetimeMs: 60_000,
+      onSessionRemoved: (_id, reason) => removed.push(reason),
+    });
+    const e = entry("active-delete");
+    e.transport = { close: closed } as any;
+    r.add(e);
+    r.beginRequest("active-delete");
+    expect(await r.remove("active-delete", "client_delete")).toBe(true);
+    expect(r.isRetiring("active-delete")).toBe(true);
+    expect(r.snapshot()).toMatchObject({ activeSessions: 1, inFlightSessions: 1, retiringSessions: 1 });
+    expect(closed).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(25);
+    expect(r.get("active-delete")).toBeDefined();
+    r.endRequest("active-delete");
+    await Promise.resolve();
+    expect(r.get("active-delete")).toBeUndefined();
+    expect(closed).toHaveBeenCalledTimes(1);
+    expect(removed).toEqual(["client_delete"]);
+  });
+
+  it("defers transport-close removal while another MCP call is in flight", async () => {
+    vi.useFakeTimers();
+    const r = new McpSessionRegistry({ idleTimeoutMs: 15, maxLifetimeMs: 60_000 });
+    r.add(entry("sse-tool"));
+    r.beginRequest("sse-tool");
+    expect(await r.remove("sse-tool", "transport_close")).toBe(true);
+    await vi.advanceTimersByTimeAsync(30);
+    expect(r.isRetiring("sse-tool")).toBe(true);
+    r.endRequest("sse-tool");
+    expect(r.snapshot()).toMatchObject({ activeSessions: 0, retiringSessions: 0 });
+    expect(r.snapshot().removals.transport_close).toBe(1);
+  });
+
   it("does not keep expired entries or pending lifetime state after explicit close", async () => {
     vi.useFakeTimers();
     const r = new McpSessionRegistry({ idleTimeoutMs: 10_000, maxLifetimeMs: 30 });

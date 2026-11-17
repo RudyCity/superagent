@@ -48,7 +48,8 @@ describe("MCP process-local session telemetry", () => {
     }));
     const snapshot = getMcpProcessSessionTelemetry();
     expect(snapshot).toEqual({
-      registries: 2, activeSessions: 4, activePrincipals: 3,
+      registries: 2, activeSessions: 4, inFlightSessions: 0,
+      retiringSessions: 0, activePrincipals: 3,
       largestPrincipalSessionCount: 2, oldestSessionAgeMs: 90_000,
       oldestIdleMs: 40_000, createdTotal: 9, removedTotal: 5,
       rejectedTotal: 4,

@@ -12,6 +12,8 @@ let nextProviderId = 1;
 export interface McpProcessSessionTelemetry {
   registries: number;
   activeSessions: number;
+  inFlightSessions: number;
+  retiringSessions: number;
   activePrincipals: number;
   largestPrincipalSessionCount: number;
   oldestSessionAgeMs: number;
@@ -36,7 +38,8 @@ export function registerMcpSessionTelemetry(
 
 export function getMcpProcessSessionTelemetry(): McpProcessSessionTelemetry {
   const aggregate: McpProcessSessionTelemetry = {
-    registries: 0, activeSessions: 0, activePrincipals: 0,
+    registries: 0, activeSessions: 0, inFlightSessions: 0,
+    retiringSessions: 0, activePrincipals: 0,
     largestPrincipalSessionCount: 0, oldestSessionAgeMs: 0, oldestIdleMs: 0,
     createdTotal: 0, removedTotal: 0, rejectedTotal: 0,
   };
@@ -45,6 +48,8 @@ export function getMcpProcessSessionTelemetry(): McpProcessSessionTelemetry {
       const value = provider();
       aggregate.registries++;
       aggregate.activeSessions += value.activeSessions;
+      aggregate.inFlightSessions += value.inFlightSessions;
+      aggregate.retiringSessions += value.retiringSessions;
       aggregate.activePrincipals += value.activePrincipals;
       aggregate.largestPrincipalSessionCount = Math.max(
         aggregate.largestPrincipalSessionCount,

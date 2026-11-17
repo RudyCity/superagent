@@ -100,7 +100,7 @@ export class McpSessionRegistry {
   private sessions = new Map<string, McpSessionEntry>();
   private idleTimers = new Map<string, NodeJS.Timeout>();
   private lifetimeTimers = new Map<string, NodeJS.Timeout>();
-  private retiringSessions = new Set<string>();
+  private retiringSessions = new Map<string, McpSessionRemovalReason>();
   private readonly maxSessions: number;
   private readonly maxSessionsPerPrincipal: number;
   private readonly explicitMaxSessionsPerPrincipal: boolean;
@@ -220,8 +220,9 @@ export class McpSessionRegistry {
     const s = this.sessions.get(sessionId);
     if (!s) return;
     s.inFlight = Math.max(0, (s.inFlight ?? 1) - 1);
-    if (s.inFlight === 0 && this.retiringSessions.has(sessionId)) {
-      void this.remove(sessionId, "max_lifetime");
+    const pendingRemoval = this.retiringSessions.get(sessionId);
+    if (s.inFlight === 0 && pendingRemoval) {
+      void this.remove(sessionId, pendingRemoval);
       return;
     }
     s.lastActivityAt = Date.now();
@@ -304,7 +305,7 @@ export class McpSessionRegistry {
       if (!current) return;
       if ((current.inFlight ?? 0) > 0) {
         // Existing work/SSE must complete; do not accept new requests.
-        this.retiringSessions.add(entry.sessionId);
+        this.retiringSessions.set(entry.sessionId, "max_lifetime");
         return;
       }
       void this.remove(entry.sessionId, "max_lifetime");
@@ -322,8 +323,9 @@ export class McpSessionRegistry {
   }
 
   /**
-   * Close and remove a session. Returns true if a session was removed.
-   * Never throws.
+   * Close a session, deferring client DELETE and transport-close until all
+   * already-accepted requests finish. New requests are rejected while retiring.
+   * Returns true if removed or scheduled for removal. Never throws.
    */
   async remove(
     sessionId: string,
@@ -331,6 +333,11 @@ export class McpSessionRegistry {
   ): Promise<boolean> {
     const s = this.sessions.get(sessionId);
     if (!s) return false;
+    if ((reason === "client_delete" || reason === "transport_close") &&
+        (s.inFlight ?? 0) > 0) {
+      if (!this.retiringSessions.has(sessionId)) this.retiringSessions.set(sessionId, reason);
+      return true;
+    }
     this.clearTimers(sessionId);
     this.retiringSessions.delete(sessionId);
     this.sessions.delete(sessionId);
