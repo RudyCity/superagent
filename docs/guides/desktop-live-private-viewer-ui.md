@@ -140,7 +140,9 @@ The Desktop Live panel now displays **two separate authorization areas**:
   provisioning and native semantic adapters have been certified. On a paired
   LAN Android device it opens the input UI only after explicit user action;
   every touch/text/navigation command must still be accepted by the phone
-  under its separate Accessibility/input consent.
+  under its separate Accessibility/input consent. The Windows LAN client is
+  still discoverable/manageable, but its screen and input actions are labelled
+  unavailable in this transport instead of claiming unsupported control.
 - **Take Over**: locally revokes agent/native preview access on the exact
   window. The host operator then uses physical mouse and keyboard; this is
   distinct from remote controller access.
