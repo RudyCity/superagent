@@ -56,7 +56,7 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     expect(html).toContain('id="desktop-live-remote-readiness"');
     expect(js).toContain('await invoke("remote-status")');
     expect(js).toContain('stream.remoteReadiness');
-    expect(js).toContain('controllerScopes:{mouse:false,keyboard:false}');
+    expect(js).toContain('controllerScopes: {mouse:false,keyboard:false}');
 
     expect(html).toContain('id="desktop-live-mouse-status"');
     expect(html).toContain('id="desktop-live-keyboard-status"');
