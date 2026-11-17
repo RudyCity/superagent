@@ -264,6 +264,32 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
       return;
     }
 
+    // Interrupt an active turn before panel-specific Escape handlers consume the key.
+    // Without this, ESC in history/chat/checklist only changes focus while the
+    // agent keeps running. Wizard navigation retains its existing precedence.
+    if (isEscape && !activeWizard && (
+      isProcessing ||
+      isExecutingTool ||
+      agentRef.current?.isAgentRunning() ||
+      [...subagentInstances.values()].some((inst) => inst.status === "running")
+    )) {
+      stopRunningSubagents();
+      agentRef.current?.abort();
+      setIsProcessing(false);
+      setIsExecutingTool?.(false);
+      clearActiveToolOutput();
+      setFocusedResponseIndex(null);
+      setFocusedResponseOffset(0);
+      setScrollOffset(0);
+      setFocusMode("input");
+      addLine({
+        type: "system",
+        content: "Process / execution aborted by user (Esc).",
+        timestamp: Date.now(),
+      });
+      return;
+    }
+
     if (focusedResponseIndex !== null && focusedResponseIndex !== undefined && !activeWizard) {
       const width = Math.max(20, terminalWidth - 6);
       const maxLines = Math.max(8, Math.min(18, Math.floor(terminalHeight * 0.45)));
