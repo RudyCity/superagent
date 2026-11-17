@@ -378,6 +378,103 @@ export async function clickAndroidUiElement(id: string, revision: number, elemen
   return { ok: true, kind: "click" };
 }
 
+export const LAN_TRANSFER_V2_MAX = 256 * 1024 * 1024;
+export const LAN_TRANSFER_V2_CHUNK = 16 * 1024;
+export type LanV2Offer = {
+  transferId: string; name: string; size: number; sha256: string;
+  chunkBytes: number; seq: number; received: number; resumed: boolean;
+};
+function validV2Handle(id: string, seq?: number) {
+  if (!/^[a-f0-9-]{36}$/i.test(id) ||
+      (seq !== undefined && (!Number.isSafeInteger(seq) || seq < 0 ||
+        seq > Math.ceil(LAN_TRANSFER_V2_MAX / LAN_TRANSFER_V2_CHUNK))))
+    throw Error("Invalid V2 transfer handle or sequence.");
+}
+export async function offerLanFileV2(id: string, metadata: {
+  name: string; size: number; sha256: string;
+}): Promise<LanV2Offer> {
+  const device = authFile(id);
+  if (device.platform !== "windows") throw Error("Disk-backed V2 currently requires an updated Windows LAN target.");
+  if (!metadata || !/^[A-Za-z0-9_][A-Za-z0-9_ .()-]{0,95}$/.test(metadata.name) ||
+      metadata.name.endsWith(".") || metadata.name.endsWith(" ") ||
+      metadata.name.endsWith(".safolder") ||
+      !Number.isSafeInteger(metadata.size) || metadata.size < 1 ||
+      metadata.size > LAN_TRANSFER_V2_MAX ||
+      typeof metadata.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(metadata.sha256))
+    throw Error("Invalid V2 upload metadata.");
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_offer", { direction: "upload", ...metadata }), 110_000);
+  if (!reply || reply.ok !== true || reply.version !== 2 ||
+      typeof reply.transferId !== "string" || !/^[a-f0-9-]{36}$/i.test(reply.transferId) ||
+      reply.name !== metadata.name || reply.size !== metadata.size ||
+      reply.sha256 !== metadata.sha256 || reply.direction !== "upload" ||
+      reply.chunkBytes !== LAN_TRANSFER_V2_CHUNK ||
+      !Number.isSafeInteger(reply.seq) || !Number.isSafeInteger(reply.received) ||
+      Number(reply.received) < 0 || Number(reply.received) > metadata.size ||
+      Number(reply.seq) !== Math.ceil(Number(reply.received) / LAN_TRANSFER_V2_CHUNK) ||
+      (Number(reply.received) % LAN_TRANSFER_V2_CHUNK !== 0 &&
+        Number(reply.received) !== metadata.size) ||
+      typeof reply.resumed !== "boolean")
+    throw Error("Invalid V2 checkpoint returned by target.");
+  return {
+    transferId: reply.transferId, name: reply.name, size: metadata.size,
+    sha256: metadata.sha256, chunkBytes: LAN_TRANSFER_V2_CHUNK,
+    seq: Number(reply.seq), received: Number(reply.received), resumed: reply.resumed,
+  };
+}
+export async function putLanFileChunkV2(id: string, transferId: string, seq: number, data: string) {
+  const device = authFile(id);
+  if (device.platform !== "windows") throw Error("V2 target is not available on this client.");
+  validV2Handle(transferId, seq);
+  if (typeof data !== "string" || data.length > 21848 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))
+    throw Error("Invalid V2 base64 chunk.");
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_put", { transferId, seq, data }), 15_000);
+  if (!reply || reply.ok !== true || reply.seq !== seq + 1 ||
+      !Number.isSafeInteger(reply.received) || Number(reply.received) > LAN_TRANSFER_V2_MAX)
+    throw Error("V2 chunk acknowledgement rejected.");
+  return { seq: seq + 1, received: Number(reply.received) };
+}
+export async function getLanFileStatusV2(id: string, transferId: string) {
+  const device = authFile(id);
+  validV2Handle(transferId);
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_status", { transferId }), 10_000);
+  if (!reply || reply.ok !== true || reply.transferId !== transferId ||
+      reply.version !== 2 || reply.direction !== "upload" ||
+      typeof reply.name !== "string" ||
+      !Number.isSafeInteger(reply.size) || Number(reply.size) < 1 ||
+      Number(reply.size) > LAN_TRANSFER_V2_MAX ||
+      typeof reply.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(reply.sha256) ||
+      !Number.isSafeInteger(reply.seq) || !Number.isSafeInteger(reply.received) ||
+      Number(reply.received) < 0 || Number(reply.received) > Number(reply.size) ||
+      Number(reply.seq) !== Math.ceil(Number(reply.received) / LAN_TRANSFER_V2_CHUNK))
+    throw Error("V2 checkpoint rejected.");
+  return { transferId, direction: "upload" as const, name: reply.name,
+    size: Number(reply.size), sha256: reply.sha256, seq: Number(reply.seq),
+    received: Number(reply.received) };
+}
+export async function finalizeLanFileV2(id: string, transferId: string) {
+  const device = authFile(id);
+  validV2Handle(transferId);
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_finish", { transferId }), 90_000);
+  if (!reply || reply.ok !== true || reply.transferId !== transferId ||
+      !Number.isSafeInteger(reply.bytes) || Number(reply.bytes) < 1 ||
+      Number(reply.bytes) > LAN_TRANSFER_V2_MAX ||
+      typeof reply.savedTo !== "string" || reply.savedTo.length > 1024)
+    throw Error("V2 target did not confirm verified final save.");
+  return { ok: true, bytes: Number(reply.bytes), savedTo: reply.savedTo.slice(0, 256) };
+}
+export async function abortLanFileV2(id: string, transferId: string) {
+  const device = authFile(id);
+  validV2Handle(transferId);
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_abort", { transferId }), 10_000);
+  if (!reply || reply.ok !== true) throw Error("Target did not confirm V2 abort.");
+}
+
 export const LAN_TRANSFER_MAX = 4 * 1024 * 1024;
 export const LAN_TRANSFER_CHUNK = 4096;
 function authFile(id: string) {
