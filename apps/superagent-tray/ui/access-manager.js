@@ -629,9 +629,93 @@
     document.body.appendChild(reminder);
   }
 
+  function buildMcpConnectionsPane() {
+    const pane = make("section", "access-pane access-mcp-section");
+    pane.id = "access-pane-connections";
+    pane.setAttribute("role", "tabpanel");
+    pane.setAttribute("aria-labelledby", "access-nav-tab-connections");
+    pane.hidden = true;
+
+    const introduction = make("div", "access-editor access-mcp-intro");
+    introduction.append(
+      make("span", "access-eyebrow", "MCP · INDEPENDENT AUTHORIZATION"),
+      make("h3", "", "MCP Connections"),
+      make("p", "access-mcp-description",
+        "Kelola izin operasi koneksi MCP terpisah dari hak akses file proyek. Chat Agent YOLO tidak memberi izin koneksi MCP."),
+    );
+    const notice = make("div", "access-mcp-load-error");
+    notice.id = "access-mcp-connection-load-error";
+    notice.setAttribute("role", "alert");
+    notice.hidden = true;
+
+    const identityCard = make("section", "access-stored");
+    const identityHead = make("div", "access-stored-head");
+    identityHead.append(
+      make("h3", "", "Identitas MCP Terverifikasi"),
+      action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests()),
+    );
+    identityCard.append(identityHead);
+    identityCard.append(make("p", "access-hint",
+      "Menampilkan identitas yang terdeteksi oleh Core atau dari permintaan akses terbaru. Identitas dari permintaan terdahulu belum tentu sedang online."));
+    const identities = make("div", "access-mcp-identities");
+    identities.id = "access-mcp-identity-list";
+    identityCard.append(identities);
+
+    const pendingCard = make("section", "access-stored");
+    const pendingHead = make("div", "access-stored-head");
+    pendingHead.append(make("h3", "", "Permintaan Izin Koneksi"));
+    const pendingCount = make("span", "access-count", "—");
+    pendingCount.id = "access-mcp-connection-count";
+    pendingHead.append(pendingCount);
+    const pendingList = make("div", "access-mcp-list");
+    pendingList.id = "access-mcp-connection-pending-list";
+    pendingCard.append(pendingHead, pendingList);
+
+    const grantCard = make("section", "access-editor");
+    grantCard.append(make("h3", "", "Berikan Izin Operasi Koneksi"),
+      make("p", "access-hint", "Izin ini hanya untuk operasi MCP non-proyek. Tidak memberikan akses baca/tulis ke file mana pun."));
+    const identitySelect = select("access-mcp-connection-identity", [["", "Memuat identitas MCP..."]]);
+    const grant = action("Setujui MCP Connection Controls (Execute)", "access-submit access-mcp-primary", async () => {
+      const identityHandle = identitySelect.value;
+      if (!identityHandle) {
+        status("Pilih identitas MCP terverifikasi terlebih dahulu.", "warning");
+        return;
+      }
+      if (typeof window.confirm !== "function" || !window.confirm(
+        "Izinkan identitas MCP terpilih menjalankan operasi non-proyek yang memerlukan execute?\n" +
+        "Izin ini tidak termasuk akses file proyek dan bisa dicabut kapan saja.")) return;
+      grant.disabled = true;
+      try {
+        const data = await invoke("mcp_project_access_action", {
+          action: "direct_grant",
+          payload: { identityHandle, projectId: "mcp-connection", capabilities: ["execute"] },
+        });
+        if (!data?.success) throw Error(data?.error || "Persetujuan MCP gagal.");
+        status("MCP Connection Controls disetujui untuk identitas yang dipilih.", "success");
+        await refreshMcpRequests();
+      } catch (err) {
+        status("Gagal memberikan izin koneksi: " + String(err?.message || err), "error");
+      } finally {
+        grant.disabled = false;
+      }
+    });
+    grant.id = "access-mcp-connection-grant";
+    grantCard.append(field("Identitas MCP", identitySelect), grant);
+
+    const historyCard = make("section", "access-stored");
+    historyCard.append(make("h3", "", "Izin Koneksi & Riwayat"));
+    const historyList = make("div", "access-mcp-list");
+    historyList.id = "access-mcp-connection-history-list";
+    historyCard.append(historyList);
+
+    pane.append(introduction, notice, identityCard, pendingCard, grantCard, historyCard);
+    return pane;
+  }
+
   function buildMcpPane() {
     const pane = make("div", "access-pane");
     pane.id = "access-pane-mcp";
+    pane.classList.add("access-mcp-section");
     pane.setAttribute("role", "tabpanel");
     pane.setAttribute("aria-labelledby", "access-nav-tab-mcp");
     pane.hidden = true;
@@ -639,11 +723,16 @@
     const banner = make("div", "access-editor");
     banner.style.background = "linear-gradient(135deg, rgba(88,28,135,0.18), rgba(17,24,39,0.85))";
     banner.style.borderColor = "rgba(167,139,250,0.3)";
-    const bannerTitle = make("h3", "", "🛡️ MCP Project Access & Security Approval Broker");
-    const bannerDesc = make("p", "access-hint", "Agen MCP eksternal (Gemini, Claude, Cursor) tidak dapat menyetujui atau memperluas izin secara mandiri. Permintaan izin proyek diproses di sini dan memerlukan persetujuan eksplisit dari operator manusia.");
+    const bannerTitle = make("h3", "", "Project Access · MCP");
+    const bannerDesc = make("p", "access-hint", "Agen MCP hanya bisa meminta izin. Pemilik proyek menyetujui kemampuan read/write/execute/git secara terpisah. Tidak terkait mode YOLO Chat Agent.");
     bannerDesc.style.fontSize = "12px";
     bannerDesc.style.marginTop = "4px";
     banner.append(bannerTitle, bannerDesc);
+
+    const loadError = make("div", "access-mcp-load-error");
+    loadError.id = "access-mcp-project-load-error";
+    loadError.setAttribute("role", "alert");
+    loadError.hidden = true;
 
     // Section 1: Pending Access Requests
     const reqSection = make("div", "access-stored");
@@ -663,8 +752,8 @@
 
     // Section 2: Direct Grant Form
     const grantSection = make("div", "access-editor");
-    const grantTitle = make("h3", "", "Pemberian Izin Proyek Langsung (Direct Human Grant)");
-    const grantDesc = make("p", "access-hint", "Izin file proyek dan izin MCP Connection Controls terpisah. Chat YOLO tidak memengaruhi MCP. Gunakan opsi MCP Connection Controls hanya untuk operasi non-proyek yang memerlukan execute.");
+    const grantTitle = make("h3", "", "Berikan Izin Proyek ke Agent MCP");
+    const grantDesc = make("p", "access-hint", "Hanya proyek yang terdaftar dan aktif yang dapat dipilih. Untuk izin operasi non-proyek, buka tab MCP Connections.");
     grantDesc.style.fontSize = "11px";
 
     const grantForm = make("form");
@@ -673,15 +762,15 @@
     grantForm.style.gap = "12px";
     grantForm.style.marginTop = "10px";
 
-    const identField = field("Pilih Agen MCP Terhubung", select("access-mcp-ident-select", [["", "Memuat agen terhubung..."]]), "Identitas yang terdeteksi via transport MCP.");
-    const projField = field("Pilih Proyek Target", select("access-mcp-proj-select", [["", "Memuat daftar proyek..."]]), "Direktori proyek lokal yang terdaftar.");
+    const identField = field("Identitas MCP", select("access-mcp-ident-select", [["", "Memuat identitas terverifikasi..."]]), "Identitas terverifikasi atau identitas dari permintaan terbaru; tidak semua sedang online.");
+    const projField = field("Proyek Terdaftar & Aktif", select("access-mcp-proj-select", [["", "Memuat daftar proyek..."]]), "Tidak termasuk proyek yang belum terdaftar atau dinonaktifkan.");
 
     const capsWrap = make("div");
     const capsLabel = make("span", "access-field-title", "Hak Akses (Capabilities):");
     const capsGrid = make("div");
-    capsGrid.style.display = "flex";
-    capsGrid.style.gap = "12px";
-    capsGrid.style.marginTop = "6px";
+    capsGrid.className = "access-mcp-capabilities";
+
+
     capsGrid.append(
       checkbox("access-cap-read", "Read (Baca)", true),
       checkbox("access-cap-write", "Write (Tulis/Edit)", false),
@@ -690,7 +779,7 @@
     );
     capsWrap.append(capsLabel, capsGrid);
 
-    const grantBtn = action("Beri Izin Proyek", "access-submit", async () => {
+    const grantBtn = action("Beri Izin Proyek", "access-submit access-mcp-primary", async () => {
       const identHandle = $("access-mcp-ident-select")?.value;
       const projId = $("access-mcp-proj-select")?.value;
       if (!identHandle || !projId) {
@@ -698,10 +787,10 @@
         return;
       }
       const caps = [];
-      if ($("access-cap-read")?.querySelector("input")?.checked) caps.push("read");
-      if ($("access-cap-write")?.querySelector("input")?.checked) caps.push("write");
-      if ($("access-cap-execute")?.querySelector("input")?.checked) caps.push("execute");
-      if ($("access-cap-git")?.querySelector("input")?.checked) caps.push("git");
+      if ($("access-cap-read")?.checked) caps.push("read");
+      if ($("access-cap-write")?.checked) caps.push("write");
+      if ($("access-cap-execute")?.checked) caps.push("execute");
+      if ($("access-cap-git")?.checked) caps.push("git");
       if (caps.length === 0) {
         status("Pilih minimal satu capability.", "warn");
         return;
@@ -724,6 +813,7 @@
       }
     });
 
+    grantBtn.id = "access-mcp-project-grant";
     grantForm.append(identField, projField, capsWrap, grantBtn);
     grantSection.append(grantTitle, grantDesc, grantForm);
 
@@ -735,7 +825,7 @@
     histList.id = "access-mcp-history-list";
     histSection.append(histHead, histList);
 
-    pane.append(banner, reqSection, grantSection, histSection);
+    pane.append(banner, loadError, reqSection, grantSection, histSection);
     return pane;
   }
 
