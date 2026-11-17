@@ -67,6 +67,17 @@ describe("MCP project access operator route boundary", () => {
     expect(result.status).toBe(403);
   });
 
+  it("rejects Add Project through remote/tunnel hosts or invalid local credentials", async () => {
+    const pathname="/api/desktop/access/projects/register";
+    const remote=await invoke(pathname,{peer:"203.0.113.10",host:"superagent.example.com"});
+    expect(remote.status).toBe(403);
+    expect(remote.body?.code).toBe("LOCAL_OPERATOR_AUTH_REQUIRED");
+    const invalid=await invoke(pathname,{token:"not-a-real-operator-token"});
+    expect(invalid.status).toBe(403);
+    const mismatched=await invoke(pathname,{origin:"https://untrusted.example.com"});
+    expect(mismatched.status).toBe(403);
+  });
+
   it("returns only explicitly registered enabled project choices to native Tray", async () => {
     const result = await invoke("/api/desktop/access/projects", { method: "GET" });
     expect(result.handled).toBe(true);
