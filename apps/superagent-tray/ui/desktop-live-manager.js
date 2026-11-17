@@ -429,23 +429,32 @@
 
     el("desktop-live-stream-takeover")?.addEventListener("click", async () => {
       if (!stream.active || !stream.token) return;
-      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
-      status("Mengambil alih kendali aplikasi (Human Takeover)…");
+      if (stream.isLanDevice) {
+        status("Use the separately paired LAN Devices control workflow.", true);
+        return;
+      }
+      if (!window.confirm("Revoke agent control over this exact local window? The application stays open for physical human input.")) return;
+      const id = "native:" + stream.pid + ":" + stream.nativeId;
+      status("Requesting exact-session revocation through authenticated Tray…");
       try {
-        const res = await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-takeover?token=${encodeURIComponent(stream.token)}`, { method: "POST" });
-        const data = await res.json();
-        if (data.success) {
-          status("⚡ Human Takeover Aktif: Sesi agen dicabut & jendela aplikasi diaktifkan ke depan layar.");
-        } else {
-          status("Gagal takeover: " + (data.error || "Sesi tidak aktif"), true);
+        const response = await invoke("stop-handle", { id });
+        if (response?.success !== true || response?.stopped !== true) {
+          throw Error("Session revocation was not verified");
         }
-      } catch (err) {
-        status("Kesalahan saat takeover: " + (err?.message || "Koneksi gagal"), true);
+        await stopStream();
+        await refresh();
+        status("Human takeover verified: native agent session revoked. Use the host mouse and keyboard.");
+      } catch (error) {
+        status("Takeover unverified: " + (error?.message || "Unknown error"), true);
       }
     });
 
     el("desktop-live-stream-toggle-control")?.addEventListener("click", () => {
       if (!stream.active) return;
+      if (!stream.isLanDevice) {
+        status("Native previews are view-only; input requires separately attended approval.", true);
+        return;
+      }
       stream.controlEnabled = !stream.controlEnabled;
       const btn = el("desktop-live-stream-toggle-control");
       const inputBar = el("desktop-live-stream-input-bar");
@@ -477,15 +486,7 @@
         }
         return;
       }
-      if (!stream.token) return;
-      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
-      try {
-        await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-input`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: stream.token, action: "click", relX, relY }),
-        });
-      } catch {}
+      status("Remote native clicks require separately attended controller approval.", true);
     });
 
     async function sendTrayType() {
@@ -507,19 +508,7 @@
         }
         return;
       }
-      if (!stream.token) return;
-      const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
-      try {
-        await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-input`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: stream.token, action: "type", text }),
-        });
-        input.value = "";
-        status("Teks berhasil dikirim ke jendela aplikasi.");
-      } catch (err) {
-        status("Gagal mengirim teks: " + (err?.message || "Koneksi gagal"), true);
-      }
+      status("Remote native typing requires separately attended controller approval.", true);
     }
     el("desktop-live-stream-type-send")?.addEventListener("click", () => void sendTrayType());
     el("desktop-live-stream-type-input")?.addEventListener("keydown", (e) => {
@@ -547,16 +536,7 @@
           }
           return;
         }
-        if (!stream.token) return;
-        const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
-        try {
-          await fetch(`http://127.0.0.1:${corePort}/api/desktop/live/lan-input`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token: stream.token, action: "key", key }),
-          });
-          status("Tombol " + key + " terkirim ke aplikasi.");
-        } catch {}
+        status("Remote native keys require separately attended controller approval.", true);
       });
     });
     el("desktop-live-lan-copy")?.addEventListener("click",async()=>{
