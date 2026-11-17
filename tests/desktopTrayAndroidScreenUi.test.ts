@@ -15,7 +15,7 @@ type Stub = {
   setPointerCapture: () => void;
 };
 
-function setup(approved: boolean) {
+function setup(approved: boolean, controllerApproved = true) {
   const elements = new Map<string, Stub>();
   const create = (): Stub => ({
     hidden: false, disabled: false, textContent: "", value: "", src: "", type: "",
@@ -56,6 +56,14 @@ function setup(approved: boolean) {
         invoke: async (name: string, { action, payload }: any) => {
           expect(name).toBe("lan_support_action");
           requests.push({ action, payload });
+          if (action === "control_request") return {
+            success: true, approved: controllerApproved,
+            secondsRemaining: controllerApproved ? 120 : 0,
+          };
+          if (action === "control_revoke") return { success: true, approved: false };
+          if (action === "control_status") return {
+            success: true, approved: controllerApproved, secondsRemaining: controllerApproved ? 120 : 0,
+          };
           if (action === "schema") return { success: true,
             schema: payload.knownRevision === 8 ? { version: 1, revision: 8, changed: false } : schema };
           if (action === "element") return { success: true, result: { ok: true, kind: "click" } };
@@ -100,13 +108,41 @@ describe("Android schema-first viewer UI interactions", () => {
     expect(ui.get("lan-schema-list").children).toHaveLength(2);
     expect(ui.get("lan-screen-image").hidden).toBe(true);
     expect(ui.get("lan-schema-status").textContent).toContain("revision 8");
-    expect(ui.get("lan-schema-list").children[0].disabled).toBe(false);
+    expect(ui.get("lan-schema-list").children[0].disabled).toBe(true); // Viewing never authorizes input.
     expect(ui.get("lan-schema-list").children[1].disabled).toBe(true);
+  });
+
+  it("refuses all input when separate native controller permission is denied", async () => {
+    const ui = setup(true, false);
+    await click(ui.get("lan-screen-start"));
+    await click(ui.get("lan-screen-request-control"));
+    expect(ui.get("lan-schema-list").children[0].disabled).toBe(true);
+    await click(ui.get("lan-schema-list").children[0]);
+    await click(ui.get("lan-screen-home"));
+    expect(ui.requests.some((r) => r.action === "element" || r.action === "input")).toBe(false);
+    expect(ui.get("lan-screen-controller-status").textContent).toContain("Separate native");
+  });
+
+  it("revokes native controller without stopping the read-only viewer", async () => {
+    const ui = setup(true);
+    await click(ui.get("lan-screen-start"));
+    await click(ui.get("lan-screen-request-control"));
+    expect(ui.get("lan-screen-controller-status").textContent).toContain("controller approved");
+    await click(ui.get("lan-screen-revoke-control"));
+    expect(ui.requests.some((r) => r.action === "control_revoke")).toBe(true);
+    expect(ui.get("lan-schema-list").children[0].disabled).toBe(true);
+    await click(ui.get("lan-schema-list").children[0]);
+    expect(ui.requests.some((r) => r.action === "element")).toBe(false);
+    expect(ui.get("lan-screen-stop").disabled).toBe(false);
   });
 
   it("clicks a current clickable element by ID and revision, not by screenshot coordinates", async () => {
     const ui = setup(true);
     await click(ui.get("lan-screen-start"));
+    await click(ui.get("lan-schema-list").children[0]);
+    expect(ui.requests.some((r) => r.action === "element")).toBe(false);
+    await click(ui.get("lan-screen-request-control"));
+    expect(ui.get("lan-schema-list").children[0].disabled).toBe(false);
     await click(ui.get("lan-schema-list").children[0]);
     expect(ui.requests.find((r) => r.action === "element")?.payload)
       .toMatchObject({ kind: "click", deviceId: ui.target.id, elementId: "0.1", revision: 8 });
@@ -116,6 +152,7 @@ describe("Android schema-first viewer UI interactions", () => {
   it("requests a single screenshot only on manual fallback and supports tap/swipe", async () => {
     const ui = setup(true);
     await click(ui.get("lan-screen-start"));
+    await click(ui.get("lan-screen-request-control"));
     await click(ui.get("lan-screen-capture"));
     expect(ui.requests.filter((r) => r.action === "screen")).toHaveLength(1);
     expect(ui.get("lan-screen-image").src).toBe("data:image/jpeg;base64,AA==");
@@ -141,6 +178,7 @@ describe("Android schema-first viewer UI interactions", () => {
   it("supports navigation/text without screenshot and explicitly closes remote session", async () => {
     const ui = setup(true);
     await click(ui.get("lan-screen-start"));
+    await click(ui.get("lan-screen-request-control"));
     await click(ui.get("lan-screen-home"));
     expect(ui.requests.some((r) => r.action === "input" && r.payload.kind === "home")).toBe(true);
     ui.get("lan-screen-text").value = "Safe edit";
