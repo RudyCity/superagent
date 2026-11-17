@@ -82,7 +82,7 @@ function mount(calls: Record<string,any> = {}) {
   byId("op-lifecycle-service").value="core";
   byId("op-lifecycle-action").value="restart";
   vm.runInContext(ui,context);
-  return {byId,requests,handlers};
+  return {byId,requests,handlers,uiWindow:context.window};
 }
 const settle=()=>new Promise(resolve=>setTimeout(resolve,30));
 
@@ -137,6 +137,28 @@ describe("Tray Overview owner-verified cockpit",()=>{
       x.args.request.action==="plan")).toBe(true);
     expect(h.requests.some(x=>x.name==="restart_core_server")).toBe(false);
     expect(overview).not.toContain('await overviewInvoke("restart_core_server"');
+  });
+  it("prepares an owner-bound plan even when the Overview dashboard snapshot is unavailable",async()=>{
+    const h=mount({dashboard:{}});await settle();
+    h.handlers.get("op-lifecycle-prepare:click")?.();await settle();
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request" &&
+      x.args.request.action==="plan" && x.args.request.service==="core" &&
+      x.args.request.port===7888)).toBe(true);
+    expect(h.byId("op-lifecycle-plan").textContent).toContain("safe-op-123");
+  });
+  it("does not execute a prepared plan when a fresh authenticated owner is unavailable",async()=>{
+    const h=mount({dashboard:{}});await settle();
+    h.handlers.get("op-lifecycle-prepare:click")?.();await settle();
+    h.handlers.get("op-lifecycle-execute:click")?.();await settle();
+    expect(h.requests.some(x=>x.name==="lifecycle_console_request" &&
+      x.args.request.action==="restart")).toBe(false);
+    expect(h.byId("op-feedback").textContent).toContain("Owner changed since plan");
+  });
+  it("reports a rejected native Shutdown Manager open action",async()=>{
+    const h=mount();await settle();
+    h.uiWindow.__superagentShutdownManagerOpen=()=>Promise.reject(new Error("SHUTDOWN_NATIVE_WINDOW_REQUIRED"));
+    h.handlers.get("op-shutdown-open:click")?.();await settle();
+    expect(h.byId("op-feedback").textContent).toContain("SHUTDOWN_NATIVE_WINDOW_REQUIRED");
   });
   it("registers native verified-owner CPU/RSS and responsive operation UI",()=>{
     expect(native).toContain("async fn get_overview_owner_metrics()");
