@@ -1189,6 +1189,25 @@ function extractMcpResultText(result: unknown): string {
         // Audit observers must never break tool execution.
       }
     };
+    // Block direct calls too, including clients that cached an old tools/list response.
+    if (DISABLED_MCP_TOOLS.has(toolName)) {
+      // Permanently disabled tools are non-executable, regardless of OAuth,
+      // project grants, MCP connection approvals, or chat YOLO.
+      const errReason = "disabled and hidden from MCP tool discovery";
+      emitAudit({ tool: toolName, args: {}, ok: false, error: errReason });
+      emitMcpActivity({
+        type: "tool_call",
+        tool: toolName,
+        args: {},
+        ok: false,
+        error: "Tool is disabled and hidden from MCP tool discovery",
+        durationMs: 0,
+        timestamp: Date.now(),
+        workspace: effectiveWs,
+      });
+      throw new McpError(ErrorCode.MethodNotFound, `Tool '${toolName}' is disabled and not exposed by this MCP server.`);
+    }
+
     // Opening dangerous tools locally does not elevate OAuth client scopes.
     // Fail before project routing to avoid leaking routing details to callers
     // without an explicit write grant.
@@ -1313,23 +1332,6 @@ function extractMcpResultText(result: unknown): string {
         content: [{ type: "text", text: `Access denied by MCP hard safety blocklist: ${blockedRoot}` }],
         isError: true,
       };
-    }
-
-    // Block direct calls too, including clients that cached an old tools/list response.
-    if (DISABLED_MCP_TOOLS.has(toolName)) {
-      const errReason = "disabled and hidden from MCP tool discovery";
-      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
-      emitMcpActivity({
-        type: "tool_call",
-        tool: toolName,
-        args: rawArgs,
-        ok: false,
-        error: "Tool is disabled and hidden from MCP tool discovery",
-        durationMs: 0,
-        timestamp: Date.now(),
-        workspace: effectiveWs,
-      });
-      throw new McpError(ErrorCode.MethodNotFound, `Tool '${toolName}' is disabled and not exposed by this MCP server.`);
     }
 
     if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
