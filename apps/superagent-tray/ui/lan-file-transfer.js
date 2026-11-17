@@ -22,6 +22,7 @@
   let cancelled = false;
   let activeTransfer = null;
   let activeProtocol = 1;
+  let sendingMany = false;
   let transferStartTime = 0;
   let targetId = null;
   let batch = null;
@@ -90,6 +91,7 @@
       $("lan-file-pause").textContent = paused ? "Resume transfer" : "Pause transfer";
     }
     if ($("lan-file-source")) $("lan-file-source").disabled = busy;
+    if ($("lan-file-send-all")) $("lan-file-send-all").disabled = busy || !hasDevice;
     if (folder) folder.disabled = busy || !folderSupported();
     if ($("lan-folder-support")) $("lan-folder-support").textContent = folderSupported()
       ? "Choose one folder. Up to 64 files and 4 MiB total (including package overhead). Hidden files and unsafe paths are blocked."
@@ -147,7 +149,10 @@
       && !sensitiveSuffix.test(part));
   }
   function assertActive() {
-    if (cancelled || !busy || !selected() || selected().id !== targetId) {
+    const current = sendingMany
+      ? window.__superagentLanListTransferTargets?.()?.some((d) => d.connected && d.id === targetId)
+      : selected()?.id === targetId;
+    if (cancelled || !busy || !current) {
       throw Error("File transfer cancelled or approved LAN session ended.");
     }
   }
@@ -392,36 +397,52 @@
   }
   async function send() {
     if (busy) return;
-    const device = selected();
+    const selectedDevice = selected();
     const input = $("lan-file-source");
     const files = Array.from(input?.files || []);
-    if (!device || !files.length) return;
-    const allowedMax = device.platform === "windows" ? V2_MAX : MAX;
+    if (!selectedDevice || !files.length) return;
+    const all = $("lan-file-send-all")?.checked === true;
+    const available = all ? window.__superagentLanListTransferTargets?.() : [selectedDevice];
+    if (!Array.isArray(available) || !available.length || available.length > 8 ||
+        available.some((d) => !d || !d.connected || typeof d.id !== "string" ||
+          typeof d.label !== "string" || !["windows", "android"].includes(d.platform)) ||
+        new Set(available.map((d) => d.id)).size !== available.length) {
+      state("No valid target sessions, or more than 8 connected devices. Refresh your LAN sessions.");
+      return;
+    }
+    const targets = available.map((d) => ({ id: d.id, label: d.label, platform: d.platform }));
     if (files.length > MAX_QUEUE_FILES || files.some((file) =>
         !filenameAllowed(file.name) || !Number.isSafeInteger(file.size) ||
-        file.size < 1 || file.size > allowedMax ||
-        (file.size > MAX && file.name.endsWith(".safolder")))) {
+        file.size < 1 || file.size > V2_MAX ||
+        (file.size > MAX && file.name.endsWith(".safolder")) ||
+        targets.some((target) => file.size > (target.platform === "windows" ? V2_MAX : MAX)))) {
       state("Select 1–32 safe ASCII files, max 4 MiB for Android or 256 MiB with updated Windows V2.");
       return;
     }
-    if (!window.confirm("Send " + files.length + " selected file(s) to " + device.label +
-      "? The target owner must approve EACH file individually.")) return;
+    const jobs = targets.flatMap((device) => files.map((file) => ({ device, file })));
+    const summary = targets.map((d) => d.label).join(", ");
+    if (!window.confirm("Send " + files.length + " owner-selected file(s) to " +
+      targets.length + " connected device(s): " + summary +
+      "? Files are sent sequentially, and EACH target owner must approve EACH file.")) return;
     const ticket = window.TrayFeedback?.begin({
       key: "lan:file:send", button: $("lan-file-send"),
-      label: files.length > 1 ? "Sending file queue…" : "Sending file…",
+      label: jobs.length > 1 ? "Sending verified file queue…" : "Sending file…",
     });
     if (window.TrayFeedback && !ticket) return;
-    busy = true; cancelled = false; paused = false; targetId = device.id; activeTransfer = null;
-    activeProtocol = 1;
-    batch = { index: 0, total: files.length };
+    busy = true; cancelled = false; paused = false;
+    sendingMany = targets.length > 1; targetId = jobs[0].device.id;
+    activeTransfer = null; activeProtocol = 1;
+    batch = { index: 0, total: jobs.length };
     controls();
     try {
       let message = "";
-      for (let i = 0; i < files.length; i++) {
+      for (let i = 0; i < jobs.length; i++) {
+        const { file, device } = jobs[i];
+        targetId = device.id;
         assertActive();
         batch.index = i;
-        const file = files[i];
-        state("Queue " + (i + 1) + "/" + files.length + " · preparing " + file.name, 0);
+        state("Queue " + (i + 1) + "/" + jobs.length + " · " + device.label +
+          " · preparing " + file.name, 0);
         if (file.size > MAX) {
           message = await sendLargeFile(device, file);
         } else {
@@ -432,20 +453,21 @@
         }
       }
       if (input) input.value = "";
-      batch.index = files.length;
-      state(files.length === 1 ? message :
-        "Sent " + files.length + "/" + files.length +
-        " selected files; SHA-256 verified on each target.", 100);
-      notifyTransfer("success", files.length + " file(s) verified on target.");
+      batch.index = jobs.length;
+      state(jobs.length === 1 ? message :
+        "Sent " + jobs.length + "/" + jobs.length +
+        " selected file/device transfers; SHA-256 verified on every target.", 100);
+      notifyTransfer("success", jobs.length + " verified file/device transfers.");
     } catch (error) {
       await abortIfNeeded();
       state("Send failed: " + String(error).slice(0, 200));
-      const unsuccessful = files[batch?.index ?? 0];
-      if (unsuccessful) receipt("Send", unsuccessful.name, unsuccessful.size, "Not verified");
+      const item = jobs[batch?.index ?? 0];
+      if (item) receipt("Send", item.device.label + ": " + item.file.name,
+        item.file.size, "Not verified");
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
-        "File queue stopped. Inspect device status before retrying unsent files.");
+        "File queue stopped. Inspect target device status before retrying unsent files.");
     } finally {
-      activeTransfer = null; activeProtocol = 1;
+      activeTransfer = null; activeProtocol = 1; sendingMany = false;
       busy = false; cancelled = false; paused = false;
       wake(); targetId = null; batch = null;
       ticket?.end(); controls();
