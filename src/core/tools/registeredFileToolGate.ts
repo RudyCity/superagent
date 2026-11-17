@@ -24,6 +24,27 @@ const READ_TOOLS = new Set(["read","read_file","view_file","view","superagent_re
 const WRITE_TOOLS = new Set(["write","write_to_file","write_file","superagent_write_files",
   "superagent_write_file","edit","replace_file_content","multi_replace_file_content"]);
 const PATCH_TOOLS = new Set(["apply_patch"]);
+/**
+ * Explicit-source document/media readers: only named input files are inspected.
+ * Do not include render, edit, sign, media_plan or outputs that can touch
+ * implicit/unbounded files. Their effects need separate output-path mediation.
+ */
+const EXPLICIT_INPUT_READERS: Record<string,readonly string[]> = {
+  superagent_read_document: ["filePath","workspace","projectId"],
+  superagent_pdf_inspect: ["inputPath","workspace","projectId"],
+  superagent_pdf_extract: ["inputPath","pages","maxChars","workspace","projectId"],
+  superagent_pdf_ocr: ["inputPath","pages","engine","language","forceOcr","scale",
+    "expectedInputSha256","maxChars","workspace","projectId"],
+  superagent_pdf_verify: ["inputPath","expectedSha256","expectedPageCount","workspace","projectId"],
+  superagent_media_inspect: ["inputPath","workspace","projectId"],
+};
+function certifiedInputReaderArguments(name:string,args:Args|undefined):boolean {
+  const allowed=EXPLICIT_INPUT_READERS[name];
+  if(!allowed || !args || typeof args!=="object" || Array.isArray(args))return false;
+  if(Object.keys(args).some(key=>!allowed.includes(key)))return false;
+  const selected=name==="superagent_read_document"?args.filePath:args.inputPath;
+  return typeof selected==="string" && selected.length>0;
+}
 const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","list_dir",
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
 const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace",
@@ -40,6 +61,7 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_delegate_search_history",
   "superagent_delegate_search_index","superagent_delegate_inspect_chat_config",
   "superagent_process_pool_status","superagent_lan_capabilities",
+  "superagent_media_capabilities",
 ]);
 const READ_ONLY_SERVICE_ACTIONS = new Set([
   "status","inventory","doctor","health","dashboard","logs","profile",
@@ -136,7 +158,8 @@ export type PermanentFileToolReadiness = "certified_metadata" | "certified_app_s
 export function getPermanentFileToolReadiness(name: string): PermanentFileToolReadiness {
   if (BENIGN.has(name)) return "certified_metadata";
   if (name === "superagent_delegate_sync_history") return "certified_app_storage";
-  if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name))
+  if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name) ||
+      Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name))
     return "requires_explicit_files";
   if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services" ||
       name === "superagent_tool_execute" ||
@@ -199,7 +222,7 @@ function pathsIn(args:Args):string[]|null {
     Array.isArray(args.files)?args.files:
     Array.isArray(args.edits)?args.edits:
     Array.isArray(args.patches)?args.patches:null;
-  const rawPaths=rawEntries || [args.filePath ?? args.path ?? args.file ?? args.targetFile];
+  const rawPaths=rawEntries || [args.filePath ?? args.inputPath ?? args.path ?? args.file ?? args.targetFile];
   if(!rawPaths.length || rawPaths.length>50)return null;
   const paths=rawPaths.map(v=>{
     if(typeof v==="string")return v;
@@ -247,8 +270,11 @@ export function registeredFileToolGate(
     return null;
   }
   if(READ_SEARCH.has(call.name))return "Unmediated discovery/search could expose explicitly blocked child files.";
+  if(Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,call.name) &&
+      !certifiedInputReaderArguments(call.name,call.args))
+    return "Document/media reader requires exactly one explicit input path and certified argument keys.";
   const operations:FileOperation[]=
-    READ_TOOLS.has(call.name)?["read"]:
+    READ_TOOLS.has(call.name) || certifiedInputReaderArguments(call.name,call.args)?["read"]:
     WRITE_TOOLS.has(call.name)?["read","write"]:
     PATCH_TOOLS.has(call.name)?["read","write","delete"]:[];
   if(!operations.length)return "Tool is not certified for permanent file access restrictions.";
