@@ -2619,6 +2619,10 @@ fn main() {
                     }
                     "exit_superagent" => shutdown_manager::open(app),
                     "quit" => {
+                        if shutdown_manager::is_running() {
+                            shutdown_manager::open(app);
+                            return;
+                        }
                         tray_lifecycle::cleanup();
                         std::process::exit(0);
                     }
@@ -2657,6 +2661,13 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
+                if shutdown_manager::is_running() {
+                    // Closing the window cannot abort a partially completed
+                    // verified shutdown. Keep the owner and progress alive.
+                    api.prevent_close();
+                    let _ = window.hide();
+                    return;
+                }
                 let close_to_tray = config_dir()
                     .ok()
                     .map(|dir| tray_settings::load_or_default(&dir).close_to_tray)
