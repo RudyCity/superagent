@@ -457,8 +457,99 @@
             <button class="notification-filter active" type="button" data-notification-filter="all" aria-pressed="true">All</button>
             <button class="notification-filter" type="button" data-notification-filter="unread" aria-pressed="false">Unread</button>
             <button class="notification-filter" type="button" data-notification-filter="important" aria-pressed="false">Important</button>
+            <button class="notification-filter" type="button" data-notification-filter="open" aria-pressed="false">Open</button>
+            <button class="notification-filter" type="button" data-notification-filter="acknowledged" aria-pressed="false">Acknowledged</button>
+            <button class="notification-filter" type="button" data-notification-filter="resolved" aria-pressed="false">Resolved</button>
             <button class="notification-filter" type="button" data-notification-filter="archived" aria-pressed="false">Archived</button>
           </div>
+          <div class="notification-toolbar">
+            <label class="notification-tool-field notification-tool-search">Search events
+              <input id="notification-search" type="search" placeholder="Search title, category or details" autocomplete="off" maxlength="80">
+            </label>
+            <label class="notification-tool-field">Period
+              <select id="notification-period">
+                <option value="all">Any time</option>
+                <option value="24h">Last 24 hours</option>
+                <option value="7d">Last 7 days</option>
+                <option value="30d">Last 30 days</option>
+                <option value="90d">Last 90 days</option>
+              </select>
+            </label>
+            <label class="notification-tool-field">Source
+              <select id="notification-source">
+                <option value="all">All sources</option>
+                <option value="core">Core</option>
+                <option value="security">Security Approval</option>
+                <option value="mcp">MCP</option>
+                <option value="tunnel">Tunnels</option>
+                <option value="delegate">Delegate / CDP</option>
+                <option value="runtime">Runtime</option>
+                <option value="desktop-live">Desktop Live</option>
+                <option value="terminal">Terminal</option>
+                <option value="lan-devices">LAN Devices</option>
+                <option value="reminder">Reminders</option>
+                <option value="jobs">Schedules / Jobs</option>
+                <option value="updates">Updates</option>
+                <option value="shutdown">Shutdown</option>
+                <option value="settings">Settings</option>
+                <option value="muse-files">Muse Files</option>
+                <option value="overview">Overview</option>
+                <option value="logs">Logs</option>
+              </select>
+            </label>
+          </div>
+          <details class="notification-preferences" id="notification-preferences">
+            <summary>Notification delivery &amp; retention <span>Customize OS alerts and inbox history</span></summary>
+            <div class="notification-preferences-body">
+              <p class="notification-setting-note">All important events remain visible in this private inbox. These settings control OS pop-up alerts only. Sound follows your operating system notification settings.</p>
+              <div class="notification-preferences-top">
+                <label class="notification-tool-field">Minimum OS severity
+                  <select id="notification-min-severity">
+                    <option value="critical">Critical</option>
+                    <option value="warning" selected>Warning</option>
+                    <option value="info">All events</option>
+                  </select>
+                </label>
+                <label class="notification-tool-field">Keep history for
+                  <select id="notification-retention-days">
+                    <option value="7">7 days</option>
+                    <option value="30" selected>30 days</option>
+                    <option value="90">90 days</option>
+                  </select>
+                </label>
+              </div>
+              <div class="notification-toggle-list">
+                <label><input id="notification-os-critical" type="checkbox" checked> Desktop pop-ups for critical events</label>
+                <label><input id="notification-os-warnings" type="checkbox"> Desktop pop-ups for warnings and info</label>
+              </div>
+              <fieldset class="notification-category-fieldset">
+                <legend>Categories allowed to show OS notifications</legend>
+                <div class="notification-category-grid">
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="core" checked> Core</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="security" checked> Security Approval</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="mcp" checked> MCP</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="tunnel" checked> Tunnels</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="delegate" checked> Delegate / CDP</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="runtime" checked> Runtime</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="desktop-live" checked> Desktop Live</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="terminal" checked> Terminal</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="lan-devices" checked> LAN Devices</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="reminder" checked> Reminders</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="jobs" checked> Schedules / Jobs</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="updates" checked> Updates</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="shutdown" checked> Shutdown</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="settings" checked> Settings</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="muse-files" checked> Muse Files</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="overview" checked> Overview</label>
+                    <label class="notification-category-choice"><input type="checkbox" data-notification-category="logs" checked> Logs</label>
+                </div>
+              </fieldset>
+              <div class="notification-preferences-foot">
+                <span id="notification-preferences-feedback" role="status" aria-live="polite">Changes apply to future OS notifications.</span>
+                <button id="notification-save-preferences" class="button primary" type="button">Save preferences</button>
+              </div>
+            </div>
+          </details>
           <div id="notification-inbox-list" class="notification-inbox-list" aria-live="polite"></div>
         </div>
       </section>
