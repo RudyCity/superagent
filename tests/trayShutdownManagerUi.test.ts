@@ -127,6 +127,8 @@ describe("native Shutdown Manager UI",()=>{
     owned.services[0].forceSelectable=true; // owner-verified managed guardian
     const m=mount(owned);
     await m.open();
+    expect(m.node("shutdown-services").children[1].children[2].textContent).toBe("Force ready");
+    expect(m.node("shutdown-services").children[1].dataset.state).toBe("force");
     expect(m.node("shutdown-force-all").disabled).toBe(true);
     const phrase=m.node("shutdown-force-confirm");
     phrase.value="force stop all";
