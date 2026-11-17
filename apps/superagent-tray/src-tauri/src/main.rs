@@ -293,12 +293,10 @@ fn tray_notification_center_ui_alert(
         .map_or(0, |t| t.as_secs() / 60);
     let id = format!("tray-ui:{scope}:{kind}:{timestamp}");
     let title = format!("{} needs attention", scope.replace('-', " "));
-    if tray_notification_center::publish(
-        &config_dir()?, &scope, severity, &id, &title,
+    record_operational_incident(
+        &app, &scope, severity, &id, &title,
         "An operation reported an issue. Open its Tray page to review current status.",
-    )? {
-        let _ = app.emit("tray-notifications-changed", ());
-    }
+    )?;
     Ok(())
 }
 
@@ -2713,13 +2711,10 @@ async fn poll_reminders(
                 ("warning", "Scheduled notification delivery failed",
                     "A scheduled run could not deliver its notification. Review Execution History.")
             };
-            if let Ok(dir) = config_dir() {
-                if let Ok(true) = tray_notification_center::publish(
-                    &dir, "jobs", severity, &format!("daemon-run:{id}:{title}"), title, body,
-                ) {
-                    let _ = app.emit("tray-notifications-changed", ());
-                }
-            }
+            record_operational_incident(
+                app, "jobs", severity, &format!("daemon-run:{id}:{title}"),
+                title, body,
+            )?;
         }
     }
     let reminder_jobs: HashMap<String, (String, String)> = jobs["jobs"]
