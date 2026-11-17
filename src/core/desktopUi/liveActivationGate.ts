@@ -9,6 +9,7 @@ export interface McpServiceEvidence {
     reloadable?: boolean;
     backendPid?: number | null;
     backendHealthy?: boolean;
+    backendReleaseDigest?: string | null;
     authMode?: string;
     backendGenerationDetails?: Array<{ sessions?: number; inFlight?: number }>;
   };
@@ -26,6 +27,7 @@ export function assessDesktopMcpOwnerEvidence(
   status: McpServiceEvidence | undefined,
   doctor: McpServiceEvidence | undefined,
   expectedUrl: string,
+  expectedReleaseDigest?: string,
 ): DesktopMcpActivationGate {
   const reasons: string[] = [];
   const warnings: string[] = [];
@@ -56,6 +58,14 @@ export function assessDesktopMcpOwnerEvidence(
     }
     if (status.details?.authMode !== doctor.details?.authMode) {
       reasons.push("MCP_AUTH_MODE_CHANGED");
+    }
+    // Runtime Verified for a tagged backend requires the exact activated artifact,
+    // not merely a healthy older owner on the expected URL.
+    if (expectedReleaseDigest !== undefined &&
+      (!/^[a-f0-9]{64}$/.test(expectedReleaseDigest) ||
+        status.details?.backendReleaseDigest !== expectedReleaseDigest ||
+        doctor.details?.backendReleaseDigest !== expectedReleaseDigest)) {
+      reasons.push("MCP_BACKEND_RELEASE_DIGEST_MISMATCH");
     }
     const generations = status.details?.backendGenerationDetails ?? [];
     const sessions = generations.reduce((sum, item) => sum + (item.sessions ?? 0), 0);
