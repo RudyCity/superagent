@@ -43,6 +43,13 @@ jobs:
           set -euo pipefail
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev libssl-dev pkg-config libayatana-appindicator3-dev
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install pinned Core dependencies
+        run: bun install --frozen-lockfile
+      - name: Build Core assets required by the native Tray build script
+        run: bun run build
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
