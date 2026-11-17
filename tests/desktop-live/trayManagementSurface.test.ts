@@ -24,7 +24,7 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     const inventory=read("src/core/desktopUi/desktopLiveInventory.ts");
     const routes=read("src/serverRoutes.ts");
     expect(js).toContain('await invoke("stop-handle", { id })');
-    expect(js).toContain("Native remote input unavailable · separate approval required");
+    expect(js).toContain("Native PC remote input is not configured");
     expect(js).not.toContain("/api/desktop/live/lan-input");
     expect(js).not.toContain("/api/desktop/live/lan-takeover");
     expect(js).not.toContain("/api/desktop/live/lan-preview");
@@ -51,7 +51,10 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     expect(html).toContain('id="desktop-live-stream-toggle-control"');
     expect(html).toContain('id="desktop-live-stream-takeover"');
     expect(js).toContain('await invoke("controller-review")');
-    expect(js).toContain("stream.controlRequested = true");
+    expect(js).toContain("stream.controllerScopes[kind]=true");
+    expect(html).toContain('id="desktop-live-stream-request-keyboard"');
+    expect(html).toContain('id="desktop-live-mouse-status"');
+    expect(html).toContain('id="desktop-live-keyboard-status"');
     expect(js).toContain("if (accepted?.success !== true || accepted?.result?.ok !== true)");
     expect(js).toContain("inputEnabled !== false");
     expect(js).toContain('item.stopAction==="return-to-agent"?"Return to Agent"');
