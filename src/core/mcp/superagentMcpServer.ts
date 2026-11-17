@@ -203,7 +203,7 @@ import {
   gatewayTextResult,
 } from "./mcpToolGateway.js";
 import { getMcpToolExposure } from "./mcpToolExposure.js";
-import { canUnlockMcpDangerousTools, isR1OwnerToolCallAllowed } from "./mcpSafeOwnerPolicy.js";
+import { isR1OwnerToolCallAllowed } from "./mcpSafeOwnerPolicy.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, PRIVILEGED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
 export type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -630,8 +630,9 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     // MCP discovery is independent of the chat-agent YOLO mode.
     // Listing a tool never authorizes execution: OAuth, grants, file policy,
     // and per-tool host approvals are verified again for every invocation.
-    const isDangerousUnlocked = canUnlockMcpDangerousTools({ lockSafeTools });
-    const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
+    // Explicit MCP owner allowlists are hard ceilings, never removed by the
+    // listener's legacy allowDangerous flag or the chat agent's YOLO mode.
+    const effectiveAllowedTools = allowedTools;
     // OAuth tool discovery must reflect the CURRENT token, not local YOLO
     // configuration. A revoked/read-only token must not see write tools.
     const oauthScopes = authMode === "oauth" ? getIdentity?.()?.scopes : undefined;
@@ -1121,8 +1122,9 @@ function extractMcpResultText(result: unknown): string {
       (key === "command" || key === "action" || key === "sessionToken" || key === "text")
         ? value : "[REDACTED_DESKTOP_INPUT]",
     ]));
-    const isDangerousUnlocked = canUnlockMcpDangerousTools({ lockSafeTools });
-    const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
+    // Explicit MCP owner allowlists are hard ceilings, never removed by the
+    // listener's legacy allowDangerous flag or the chat agent's YOLO mode.
+    const effectiveAllowedTools = allowedTools;
     const level = MCP_TOOL_CLASSIFICATION[toolName];
     const isDangerous = level === "dangerous";
     if (lockSafeTools && (level !== "safe" || PRIVILEGED_MCP_TOOLS.has(toolName) ||
