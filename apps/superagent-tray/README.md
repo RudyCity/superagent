@@ -13,31 +13,59 @@ Windows, macOS and Linux **standalone installers and GitHub prerelease procedure
 
 ## Notification Center
 
-The titlebar bell (next to Reload), **Notifications** main-menu page, and
-Windows notification-area **🔔 Notifications** entry show one native-owned inbox.
-Read, mark unread, mark all read, archive, restore and filter by unread,
-important and archived. A count badge indicates unread active alerts.
+The titlebar bell beside **Reload**, the **Notifications** sidebar page, and
+the native **🔔 Notifications** context-menu entry share one native, private inbox.
+It persists in `tray-notifications.json` under the selected SuperAgent local
+configuration directory; it is not a remote push service and does not change
+MCP or Chat Agent permissions.
 
-Important sources currently include Core lifecycle successes/failures, completed
-reminders, failed/interrupted/timed-out daemon executions, notification delivery
-failures, pending MCP Security Approval requests, and generic redacted warning/
-error feedback from Tray pages. Native polling continues while the window is
-hidden. Pending Security Approval is **informational only**—not a permission
-grant, agent action or bypass of host approval. Unknown sources are rejected.
+### Sources and incident lifecycle
 
-The Rust host alone writes to the capped local
-`tray-notifications.json` (300 records / 256 KiB), deduplicating event IDs
-across reloads/restarts. The WebView cannot insert arbitrary notification
-content: it may only read and acknowledge records, or report a fixed source and
-severity for a generic sanitized UI alert. Never store raw task prompts,
-process command lines, IPC exceptions, file paths, identities, or secrets.
-`notificationsEnabled` continues to control **native OS reminder toasts**; it
-does not erase inbox history. This is not a remote push notification service.
+- Native sources: Core start/stop/failure, redacted completed reminders,
+  scheduled execution/delivery failures, and pending MCP Security Approval.
+- Background read-only health projection: previously connected MCP services and
+  clients, Cloudflare tunnel state reported by **this Core process**, Muse,
+  Telegram, verified channel hosts, and an enabled Delegate listener.
+- Other Tray sections can persist only fixed-category generic warnings/errors;
+  arbitrary WebView alert bodies and secrets are never accepted.
+- Unknown, stopped-by-choice or independently owned services are not inferred
+  to be faulty. A successful, authenticated recovery can mark a known health
+  incident **Resolved**; a later recurrence **Reopens** it.
+- Events can be **Read**, **Acknowledged**, **Resolved/Reopened**,
+  **Archived/Restored**. Search by title/details/source, filter by age, category,
+  severity, status, and see repeated-incident counts.
+
+Pending MCP approvals are **informational only**. Opening or acknowledging an
+alert does **not** approve a request, alter permissions, connect a device, or
+execute a tool. Review the actual Security Approval screen to make a decision.
+
+### Delivery, privacy, and retention
+
+The expanded **Notification delivery & retention** panel sets minimum OS alert
+severity, critical and warning/info pop-ups, explicit categories, and
+7/30/90-day history cleanup. All sources continue appearing in the private
+inbox regardless of OS delivery preferences. OS alerts deliberately use a
+generic private message and at most **three pop-ups per minute**. OS sounds
+follow system preferences; this feature cannot override system sounds.
+
+The native ledger keeps up to **300 events / 256 KiB**, deduplicates stable
+IDs, and writes a staged JSON replacement. It favors preserving active unread
+critical incidents when reaching capacity. Older acknowledged/resolved/archived
+events are eligible for retention pruning; truncated event history is visible
+through the native `evictedCount` statistic. Native reminders now commit their
+inbox entry **before** OS delivery or updating the legacy seen-run cursor.
+The existing `notificationsEnabled` setting still controls **reminder OS
+notifications**, not the inbox.
+
+Native errors are surfaced rather than silently clearing incidents on unknown
+Core responses. The app continues checking while the window is hidden. An
+installed native Tray run is required to verify OS notifications, permission
+integration, Core reachability and actual Desktop Live/Delegate/MCP behavior.
 
 Focused tests: `bun --bun x vitest run tests/desktopTrayNotificationsUi.test.ts`;
-native tests: `cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml`.
-An installed desktop acceptance check is still necessary before declaring
-runtime-verified behavior.
+Rust tests: `cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml`.
+These tests and an installed desktop acceptance run are release gates, not
+substituted by source-only review.
 
 ## Terminal Processes — external Stop / Start
 
