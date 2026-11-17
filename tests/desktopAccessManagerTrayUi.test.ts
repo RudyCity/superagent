@@ -35,6 +35,7 @@ const app={platform:"win32",executablePath:"C:\\Apps\\Antigravity.exe",sha256:"f
 const flush=async()=>{for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve));};
 function boot(nativeEnabled=true, mcpData?: {
   requests?: any[]; identities?: any[]; projects?: any[];
+  connectedClients?: {success:boolean;state:string;clients:any[]|null;observedAt?:number};
   failActions?: string[];
 }){
   const parent=new Element("section");parent.id="settings-subpage-security";
@@ -104,6 +105,8 @@ function boot(nativeEnabled=true, mcpData?: {
       if(args.action==="requests") return {success:true,requests:mcpRequests};
       if(args.action==="identities") return {success:true,identities:mcpIdentities};
       if(args.action==="projects") return {success:true,projects:mcpProjects};
+      if(args.action==="connected_clients") return mcpData?.connectedClients ??
+        {success:true,state:"unavailable",clients:null};
       if(["approve","deny","revoke","direct_grant"].includes(args.action)) return {success:true};
     }
     throw Error("unknown native command");
@@ -438,6 +441,64 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(project.hidden).toBe(false);
     expect(ui.document.getElementById("access-mcp-pending-list")!.children).toHaveLength(1);
     expect(ui.document.getElementById("access-mcp-connection-pending-list")!.children).toHaveLength(1);
+  });
+
+  it("shows live MCP sessions even when there is no Core-approved identity", async () => {
+    const ui=boot(true,{
+      requests:[],identities:[],projects:[],
+      connectedClients:{success:true,state:"verified",observedAt:Date.now(),clients:[
+        {sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
+          authMode:"oauth",state:"idle",inFlight:0,lastSeenAt:Date.now(),
+          claimedClientName:"ChatGPT",claimedClientVersion:"1.0"},
+        {sessionHandle:"ses_bbbbbbbbbbbb",principalHandle:"idh_1111111111111111",
+          authMode:"oauth",state:"active",inFlight:1,lastSeenAt:Date.now(),
+          claimedClientName:"ChatGPT",claimedClientVersion:"1.0"}
+      ]}
+    });await flush();
+    ui.document.getElementById("access-nav-tab-connections")!.click();await flush();
+    expect(ui.document.getElementById("access-mcp-live-summary")!.textContent)
+      .toContain("2 sesi · 1 identitas");
+    const rows=ui.document.getElementById("access-mcp-live-list")!.children;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain("ChatGPT (nama dari klien)");
+    expect(rows[0].textContent).toContain("OAuth");
+    expect(rows[1].textContent).toContain("ses_bbbbbbbbbbbb");
+    expect(ui.document.getElementById("access-mcp-connection-identity")!.children)
+      .toHaveLength(1);
+    expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled).toBe(true);
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
+      c.args.action==="direct_grant")).toBe(false);
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
+      c.args.action==="connected_clients")).toBe(true);
+  });
+
+  it("does not mistake unavailable or invalid session inventory for zero sessions", async () => {
+    const unavailable=boot(true,{requests:[],identities:[],projects:[]});await flush();
+    expect(unavailable.document.getElementById("access-mcp-live-summary")!.textContent)
+      .toBe("Tidak tersedia");
+    expect(unavailable.document.getElementById("access-mcp-live-list")!.textContent)
+      .toContain("bukan bukti bahwa MCP terputus");
+
+    const invalid=boot(true,{connectedClients:{
+      success:true,state:"verified",clients:[
+        {sessionHandle:"untrusted",principalHandle:"idh_1111111111111111",
+          authMode:"oauth",state:"active",inFlight:0,lastSeenAt:Date.now()}
+      ]},requests:[],identities:[],projects:[]});await flush();
+    expect(invalid.document.getElementById("access-mcp-live-summary")!.textContent)
+      .toBe("Data tidak valid");
+    expect(invalid.document.getElementById("access-mcp-live-list")!.children)
+      .toHaveLength(1);
+  });
+
+  it("surfaces live inventory errors without disabling separately verified Core grants", async () => {
+    const ui=boot(true,{...fixtures,failActions:["connected_clients"]});await flush();
+    const alert=ui.document.getElementById("access-mcp-connection-load-error")!;
+    expect(alert.hidden).toBe(false);
+    expect(alert.textContent).toContain("live");
+    expect(ui.document.getElementById("access-mcp-live-summary")!.textContent)
+      .toBe("Tidak tersedia");
+    expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled)
+      .toBe(false);
   });
 
   it("offers only enabled registered projects and sends the selected read grant", async () => {
