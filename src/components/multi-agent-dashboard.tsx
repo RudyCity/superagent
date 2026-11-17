@@ -56,7 +56,6 @@ import {
   formatCompactNumber,
   getPasteSplit,
   stripSgrMouseSequences,
-  resolveCarriageReturns,
   updatePasteState,
   getActiveCommandContext
 } from "../utils/text.js";
