@@ -39,8 +39,9 @@ const EXPLICIT_INPUT_READERS: Record<string,readonly string[]> = {
   superagent_media_inspect: ["inputPath","workspace","projectId"],
 };
 function certifiedInputReaderArguments(name:string,args:Args|undefined):boolean {
-  const allowed=EXPLICIT_INPUT_READERS[name];
-  if(!allowed || !args || typeof args!=="object" || Array.isArray(args))return false;
+  if(!Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name))return false;
+  const allowed=EXPLICIT_INPUT_READERS[name]!;
+  if(!args || typeof args!=="object" || Array.isArray(args))return false;
   if(Object.keys(args).some(key=>!allowed.includes(key)))return false;
   const selected=name==="superagent_read_document"?args.filePath:args.inputPath;
   return typeof selected==="string" && selected.length>0;
