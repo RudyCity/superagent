@@ -269,21 +269,108 @@ function runtimeHostCard(host) {
 let runtimeCurrentYoloMode = "off";
 
 function runtimeMcpSecurityControlMarkup() {
-  return `<div class="runtime-yolo-control runtime-mcp-security-box">
-    <div class="runtime-yolo-header">
-      <div class="runtime-yolo-title">
-        <span class="yolo-badge yolo-badge-safe">SECURITY APPROVAL</span>
-        <strong>MCP Security &amp; Access Control</strong>
-      </div>
-      <small class="runtime-yolo-caption">Izin MCP dikontrol secara ketat oleh <strong>Security Approval Manager</strong> &amp; <strong>Access Manager</strong> (Host ACL, Project Registry, &amp; OAuth Scopes). Mode YOLO hanya berlaku untuk Chat Agent.</small>
-    </div>
-    <div class="runtime-yolo-chips">
-      <a href="#security" class="button ghost" data-jump-page="security" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;" onclick="if(typeof window.navigateToPage==='function'){window.navigateToPage('security');}else{location.hash='#security';}">
-        <span>🛡️ Buka Security Approval Manager</span>
-        <span>→</span>
-      </a>
-    </div>
-  </div>`;
+  // MCP authorization is read-only here; native Security Approval owns every grant.
+  return [
+    '<section class="runtime-mcp-access-overview" aria-labelledby="runtime-mcp-access-title">',
+    '<div class="runtime-mcp-access-head"><div>',
+    '<span class="runtime-mcp-eyebrow">INDEPENDENT MCP SECURITY</span>',
+    '<h4 id="runtime-mcp-access-title">MCP Access &amp; Approval</h4>',
+    '<p>Koneksi MCP memakai OAuth dan izin terpisah. YOLO Chat Agent tidak berpengaruh.</p>',
+    '</div><span class="runtime-mcp-separation">Terpisah dari YOLO</span></div>',
+    '<div class="runtime-mcp-access-grid">',
+    '<article class="runtime-mcp-access-card">',
+    '<div class="runtime-mcp-access-card-title"><strong>Koneksi MCP</strong></div>',
+    '<p>Izin operasi non-proyek untuk identitas MCP yang telah diverifikasi.</p>',
+    '<div class="runtime-mcp-count-row"><span class="runtime-mcp-count" id="runtime-mcp-connection-pending">—</span><span>permintaan menunggu</span></div>',
+    '<small id="runtime-mcp-identity-summary">Identitas: belum diperiksa</small>',
+    '<button type="button" class="button ghost runtime-mcp-security-link" data-runtime-security-tab="connections">Kelola Koneksi MCP</button>',
+    '</article>',
+    '<article class="runtime-mcp-access-card">',
+    '<div class="runtime-mcp-access-card-title"><strong>Akses Proyek</strong></div>',
+    '<p>Izin read, write, execute dan Git per identitas dan per proyek.</p>',
+    '<div class="runtime-mcp-count-row"><span class="runtime-mcp-count" id="runtime-mcp-project-pending">—</span><span>permintaan menunggu</span></div>',
+    '<small id="runtime-mcp-approved-summary">Riwayat: belum diperiksa</small>',
+    '<button type="button" class="button ghost runtime-mcp-security-link" data-runtime-security-tab="mcp">Kelola Akses Proyek</button>',
+    '</article></div>',
+    '<p id="runtime-mcp-access-status" class="runtime-mcp-access-status" role="status" aria-live="polite">Memeriksa status izin MCP.</p>',
+    '</section>',
+  ].join("");
+}
+
+let runtimeMcpSecurityBusy = false;
+async function runtimeRefreshMcpSecurity() {
+  if (runtimeMcpSecurityBusy || runtimeActiveTab !== "mcp") return;
+  runtimeMcpSecurityBusy = true;
+  const status = rt("runtime-mcp-access-status");
+  if (status) {
+    status.textContent = "Memeriksa permintaan dan identitas MCP…";
+    status.dataset.state = "loading";
+  }
+  try {
+    const results = await Promise.allSettled([
+      runtimeInvoke("mcp_project_access_action", {action:"requests"}),
+      runtimeInvoke("mcp_project_access_action", {action:"identities"}),
+    ]);
+    const reqResult = results[0], idResult = results[1];
+    const reqOk = reqResult.status === "fulfilled" && reqResult.value?.success === true &&
+      Array.isArray(reqResult.value.requests);
+    const idOk = idResult.status === "fulfilled" && idResult.value?.success === true &&
+      Array.isArray(idResult.value.identities);
+    const records = reqOk ? reqResult.value.requests : null;
+    const identities = idOk ? idResult.value.identities : null;
+    const count = (connection, state) => records.filter(record =>
+      (record.projectId === "mcp-connection") === connection && record.status === state).length;
+    if (rt("runtime-mcp-connection-pending")) {
+      rt("runtime-mcp-connection-pending").textContent = reqOk ? String(count(true, "pending")) : "—";
+    }
+    if (rt("runtime-mcp-project-pending")) {
+      rt("runtime-mcp-project-pending").textContent = reqOk ? String(count(false, "pending")) : "—";
+    }
+    if (rt("runtime-mcp-approved-summary")) {
+      rt("runtime-mcp-approved-summary").textContent = reqOk
+        ? count(false, "approved") + " riwayat keputusan disetujui (bukan verifikasi grant aktif)"
+        : "Riwayat: tidak tersedia";
+    }
+    if (rt("runtime-mcp-identity-summary")) {
+      rt("runtime-mcp-identity-summary").textContent = idOk
+        ? identities.length + " identitas dikenal (termasuk permintaan terakhir; bukan jumlah online)"
+        : "Identitas: tidak tersedia";
+    }
+    if (status) {
+      const missing = [];
+      if (!reqOk) missing.push("permintaan izin");
+      if (!idOk) missing.push("identitas");
+      status.dataset.state = missing.length ? "error" : "ready";
+      status.textContent = missing.length
+        ? "Data " + missing.join(" dan ") + " tidak tersedia. Tanda — bukan berarti nol. Periksa Core atau Security Approval Manager."
+        : "Data read-only; setiap persetujuan atau pencabutan dilakukan melalui dialog native Security Approval Manager.";
+    }
+  } catch {
+    if (status) {
+      status.dataset.state = "error";
+      status.textContent = "Status MCP tidak tersedia. Tidak ada izin yang diubah.";
+    }
+  } finally {
+    runtimeMcpSecurityBusy = false;
+  }
+}
+
+function runtimeOpenMcpSecurity(event) {
+  const button = event.target?.closest?.("button[data-runtime-security-tab]");
+  if (!button || button.disabled) return;
+  const tab = button.dataset.runtimeSecurityTab;
+  if (tab !== "connections" && tab !== "mcp") return;
+  if (typeof window.navigateToPage !== "function") {
+    window.TrayFeedback?.notify?.({kind:"error",scope:"runtime",
+      message:"Buka Security Approval Manager dari navigasi utama."});
+    return;
+  }
+  window.navigateToPage("security");
+  if (typeof window.__superagentAccessManagerOpenTab === "function") {
+    window.__superagentAccessManagerOpenTab(tab);
+  } else {
+    rt(tab === "mcp" ? "access-nav-tab-mcp" : "access-nav-tab-connections")?.click?.();
+  }
 }
 
 function runtimeYoloMarkup(currentMode = runtimeCurrentYoloMode) {
@@ -419,7 +506,6 @@ function runtimeRemoteCard(service) {
     "core-supervisor": "Core Supervisor"
   };
   const isExternalTunnel = service.kind === "cloudflare" && service.source === "os";
-  const isMcpOwner = service.kind === "mcp" || (service.kind === "cloudflare" && service.transport === "mcp-http");
   const name = isExternalTunnel ? "External Cloudflare Tunnel" :
     (titles[service.kind] || "SuperAgent Remote Service");
   const port = service.port
@@ -485,7 +571,7 @@ function runtimeRemoteCard(service) {
         ? `<div class="runtime-evidence">${isExternalTunnel
           ? "External cloudflared detected; public URL unknown and controls disabled."
           : "Public URL unavailable from verified owner metadata."}</div>` : ""}
-    ${isMcpOwner ? runtimeYoloMarkup(runtimeCurrentYoloMode) : ""}
+    ${service.kind === "mcp" ? '<div class="runtime-mcp-owner-scope">OAuth + Security Approval · Chat YOLO tidak berlaku untuk MCP</div>' : ""}
     ${controls}
     ${service.controlReason
       ? `<div class="runtime-evidence">${runtimeEscape(service.controlReason)}</div>`
@@ -617,6 +703,8 @@ function runtimeApplyTab() {
   const namedCard = rt("runtime-named-mcp-status");
   if (trayCard) trayCard.hidden = tab !== "cloudflare";
   if (namedCard) namedCard.hidden = tab !== "cloudflare";
+  const mcpAccess = rt("runtime-mcp-security");
+  if (mcpAccess) mcpAccess.hidden = tab !== "mcp";
   const remotePanel = rt("runtime-remote-panel");
   remotePanel?.setAttribute?.("aria-labelledby", "runtime-tab-" + tab);
   if (config) {
@@ -636,6 +724,7 @@ function runtimeSelectTab(tab, focus = false) {
   if (!runtimeTabNames.includes(tab)) return;
   runtimeActiveTab = tab;
   runtimeApplyTab();
+  if (tab === "mcp") void runtimeRefreshMcpSecurity();
   if (focus) rt("runtime-tab-" + tab)?.focus?.();
 }
 
@@ -677,6 +766,7 @@ function runtimeRender(snapshot) {
   rt("runtime-remote-count").textContent =
     `(${remote.filter(s => s.state === "online" || s.state === "observed").length} active/detected · ${remote.length} registered)`;
   rt("runtime-remote").innerHTML = remote.map(runtimeRemoteCard).join("");
+  if (rt("runtime-mcp-security")) rt("runtime-mcp-security").innerHTML = runtimeMcpSecurityControlMarkup();
   rt("runtime-muse-local").innerHTML = runtimeMuseLocalCard(snapshot);
 
   const hosts = Array.isArray(snapshot.independentHosts) ? snapshot.independentHosts : [];
@@ -1250,6 +1340,7 @@ async function runtimeRefresh(background = false) {
     if (trayNode) trayNode.innerHTML = runtimeTrayGatewayCard(gateway.status === "fulfilled" ? gateway.value : null);
     const namedNode = rt("runtime-named-mcp-status");
     if (namedNode) namedNode.innerHTML = runtimeNamedMcpCard(named.status === "fulfilled" ? named.value : null);
+    if (runtimeActiveTab === "mcp") await runtimeRefreshMcpSecurity();
   } catch (error) {
     rt("runtime-scanned").textContent = "Scan failed";
     rt("runtime-servers").replaceChildren();
@@ -1364,9 +1455,10 @@ function runtimeInstall() {
   rt("runtime-servers")?.addEventListener("click", runtimeSelect);
   rt("runtime-remote")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-remote")?.addEventListener("click", runtimeRegenerateToken);
-  rt("runtime-remote")?.addEventListener("click", runtimeYoloChipClick);
-  rt("runtime-remote-panel")?.addEventListener("click", runtimeCopyPublicUrl);
-  rt("runtime-remote-panel")?.addEventListener("click", runtimeYoloChipClick);
+  rt("runtime-remote-panel")?.addEventListener("click", event => {
+    void runtimeCopyPublicUrl(event);
+    runtimeOpenMcpSecurity(event);
+  });
   rt("runtime-muse-local")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-muse-local")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeServiceAction);
