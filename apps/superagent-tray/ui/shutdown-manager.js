@@ -44,7 +44,8 @@
     $("shutdown-refresh").disabled=lock;
     $("shutdown-close").disabled=state.loading;
     $("shutdown-selection-count").textContent=String(state.selected.size)+
-      " selected · "+String(counts().blocked)+" require separate review";
+      " graceful selected · "+String(forceReady().length)+" force-capable · "+
+      String(counts().blocked)+" require review";
   }
   function drawServices(){
     const list=$("shutdown-services");
