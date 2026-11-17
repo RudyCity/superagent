@@ -40,6 +40,7 @@ describe("MCP full-catalog host file-policy transparency", () => {
     expect(getPermanentFileToolReadiness("superagent_exec_command")).toBe("uncertified");
     expect(getPermanentFileToolReadiness("superagent_delegate_sync_history")).toBe("certified_app_storage");
     expect(getPermanentFileToolReadiness("superagent_lan_capabilities")).toBe("certified_metadata");
+    expect(getPermanentFileToolReadiness("superagent_tool_execute")).toBe("action_dependent");
   });
 
   it("reports active v2 restrictions for discovery without treating certification as authorization", async () => {
