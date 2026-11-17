@@ -11,6 +11,7 @@ import { createCommandLog } from "../../tools/commandLogger.js";
 import { applyProcessIntent, traceChildProcess } from "../../process/processSpawnPolicy.js";
 import { getProcessSupervisor } from "../../process/processSupervisor.js";
 import { rollingCommandOutput, readCommandOutputPage } from "../../tools/commandOutputPaging.js";
+import { readMcpTextFilePage } from "../mcpTextFilePaging.js";
 import { McpToolResult } from "../types.js";
 
 import { getMcpWorkspacePath } from "./workspaceContext.js";
@@ -300,17 +301,22 @@ export async function handleReadFile(args: any): Promise<McpToolResult> {
   }
 
   try {
-    const content = await fs.promises.readFile(resolved, "utf-8");
-    const lines = content.split(/\r?\n/);
-    const selected = endLine ? lines.slice(startLine - 1, endLine) : lines.slice(startLine - 1);
-    const numbered = selected.map((line, idx) => `${startLine + idx}: ${line}`).join("\n");
+    const page = await readMcpTextFilePage(resolved, {
+      startLine,
+      endLine,
+      offsetBytes: args.offsetBytes,
+      maxBytes: args.maxBytes,
+      maxLines: args.maxLines,
+    });
+    const numbered = page.rows.map((row) => `${row.line}: ${row.text}`).join("\n");
+    const continuation = page.hasMore
+      ? `\n\nMore content: startLine=${page.nextStartLine}, offsetBytes=${page.nextOffsetBytes}${page.partialLine ? " (continuation within a long line)" : ""}. Pass both values with the same filePath.`
+      : "";
     return {
-      content: [
-        {
-          type: "text",
-          text: `File: ${resolved} (Lines ${startLine} to ${endLine || lines.length}/${lines.length})\n\n${numbered}`,
-        },
-      ],
+      content: [{
+        type: "text",
+        text: `File: ${resolved} (Bytes ${page.nextOffsetBytes}/${page.totalBytes}; ${page.rows.length} lines returned)\n\n${numbered}${continuation}`,
+      }],
     };
   } catch (err: any) {
     return { content: [{ type: "text", text: `Error reading file: ${err.message}` }], isError: true };
@@ -328,6 +334,7 @@ export async function handleReadFiles(args: any): Promise<McpToolResult> {
   }
 
   const targetCwd = args.cwd || args.workspace || getMcpWorkspacePath();
+  const perFileMaxBytes = Math.max(512, Math.floor((96 * 1024) / entries.length));
   const perFileResults = await mapConcurrentOrdered(entries, 6, async (entry) => {
     const filePath = typeof entry === "string" ? entry : String(entry?.filePath || entry?.path || "");
     if (!filePath) {
@@ -338,6 +345,10 @@ export async function handleReadFiles(args: any): Promise<McpToolResult> {
       filePath,
       startLine: typeof entry === "object" && entry?.startLine !== undefined ? entry.startLine : args.startLine,
       endLine: typeof entry === "object" && entry?.endLine !== undefined ? entry.endLine : args.endLine,
+      offsetBytes: typeof entry === "object" && entry?.offsetBytes !== undefined ? entry.offsetBytes : args.offsetBytes,
+      maxBytes: Math.min(perFileMaxBytes, typeof entry === "object" && entry?.maxBytes !== undefined
+        ? Number(entry.maxBytes) : (args.maxBytes === undefined ? 16_384 : Number(args.maxBytes))),
+      maxLines: typeof entry === "object" && entry?.maxLines !== undefined ? entry.maxLines : args.maxLines,
       cwd: targetCwd,
     });
     const output = (result.content || []).map((part) => part.type === "text" ? part.text : "").filter(Boolean).join("\n");

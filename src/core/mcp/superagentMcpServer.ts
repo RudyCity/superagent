@@ -372,20 +372,23 @@ export const MCP_TOOL_DEFINITIONS = [
     },
     {
       name: "superagent_read_files",
-      description: "Read multiple files in one MCP call. Provide files as path strings or objects { filePath, startLine?, endLine? }; optional global startLine/endLine and cwd. Maximum 50 files.",
+      description: "Read up to 50 workspace files in one MCP call using bounded 200-line / byte-cursor pages. For large results, continue with the returned startLine and offsetBytes. Individual and global ranges are supported.",
       inputSchema: {
         type: "object",
         properties: {
           files: { type: "array", items: { anyOf: [
             { type: "string" },
-            { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
+            { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" }, offsetBytes: { type: "number" }, maxBytes: { type: "number", minimum: 256, maximum: 32768 }, maxLines: { type: "number", minimum: 1, maximum: 200 } } },
           ] } },
           filePaths: { type: "array", items: { anyOf: [
             { type: "string" },
-            { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" } } },
+            { type: "object", properties: { filePath: { type: "string" }, path: { type: "string" }, startLine: { type: "number" }, endLine: { type: "number" }, offsetBytes: { type: "number" }, maxBytes: { type: "number", minimum: 256, maximum: 32768 }, maxLines: { type: "number", minimum: 1, maximum: 200 } } },
           ] } },
           startLine: { type: "number" },
           endLine: { type: "number" },
+          offsetBytes: { type: "number" },
+          maxBytes: { type: "number", minimum: 256, maximum: 32768 },
+          maxLines: { type: "number", minimum: 1, maximum: 200 },
           cwd: { type: "string" },
           workspace: { type: "string" },
           projectId: { type: "string", description: "Registered project ID. Takes precedence over implicit session workspace." },
