@@ -67,6 +67,29 @@ describe("MCP project access operator route boundary", () => {
     expect(result.status).toBe(403);
   });
 
+  it("returns only explicitly registered enabled project choices to native Tray", async () => {
+    const result = await invoke("/api/desktop/access/projects", { method: "GET" });
+    expect(result.handled).toBe(true);
+    expect(result.status).toBe(200);
+    expect(result.body?.success).toBe(true);
+    expect(Array.isArray(result.body?.projects)).toBe(true);
+    for (const project of result.body.projects) {
+      expect(project.projectId).toMatch(/^[a-z0-9][a-z0-9-]{0,62}$/);
+      expect(project.name.length).toBeGreaterThan(0);
+      expect(["local", "ssh", "chain"]).toContain(project.type);
+      expect(project.projectId).not.toBe("mcp-connection");
+    }
+  });
+
+  it("denies remote reads of MCP grantable project choices", async () => {
+    const result = await invoke("/api/desktop/access/projects", {
+      method: "GET", peer: "203.0.113.10", host: "superagent.example.com",
+    });
+    expect(result.handled).toBe(true);
+    expect(result.status).toBe(403);
+    expect(result.body?.code).toBe("LOCAL_OPERATOR_AUTH_REQUIRED");
+  });
+
   it("permits authenticated local read-only identity inventory", async () => {
     const result = await invoke("/api/desktop/access/identities", {
       method: "GET",
