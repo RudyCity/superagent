@@ -1484,7 +1484,8 @@ mod tests {
         let ids=vec![guardian.id.clone(),core.id.clone(),external.id.clone(),supervisor.id.clone()];
         let chosen=manual_candidates(&all,&ids).unwrap();
         assert_eq!(chosen.len(),3);
-        assert_eq!(chosen[0].kind,"cloudflare");
+        assert_eq!(chosen[0].id,"managed:guardian");
+        assert_eq!(chosen[1].kind,"cloudflare");
         assert_eq!(chosen.last().unwrap().kind,"core-supervisor");
         assert!(manual_candidates(&all,&[guardian.id.clone(),guardian.id.clone()]).is_err());
         assert!(manual_candidates(&all,&["unknown:pid".into()]).is_err());
@@ -1495,6 +1496,28 @@ mod tests {
         assert!(!same_manual_owner(&supervisor,&changed));
         changed=supervisor.clone();changed.manual_kill_selectable=false;
         assert!(!same_manual_owner(&supervisor,&changed));
+    }
+    #[test]
+    fn replacement_detection_flags_only_new_owner_pid_for_same_service_and_port() {
+        let mut original=item("guardian-os:7888:101",false);
+        original.kind="managed".into();original.port=Some(7888);original.pid=Some(101);
+        let mut next=item("guardian-os:7888:202",false);
+        next.kind="managed".into();next.port=Some(7888);next.pid=Some(202);
+        assert!(replacement_matches(&original,&next));
+        next.port=Some(7889);
+        assert!(!replacement_matches(&original,&next));
+        next.port=Some(7888);next.pid=Some(101);
+        assert!(!replacement_matches(&original,&next));
+        next.pid=Some(202);next.state="stopped".into();
+        assert!(!replacement_matches(&original,&next));
+        let mut sup=item("supervisor:7888:701",false);
+        sup.kind="core-supervisor".into();sup.port=Some(7888);sup.pid=Some(701);
+        let mut restarted=item("supervisor:7888:702",false);
+        restarted.kind="core-supervisor".into();
+        restarted.port=Some(7888);restarted.pid=Some(702);
+        assert!(replacement_matches(&sup,&restarted));
+        restarted.kind="cloudflare".into();
+        assert!(!replacement_matches(&sup,&restarted));
     }
     #[test]
     fn manual_candidates_reject_os_unpinned_or_protected_processes() {
