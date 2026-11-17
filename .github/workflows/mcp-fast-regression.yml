@@ -6,6 +6,10 @@ on:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
       - "tests/mcp*.test.ts"
+      - "tests/desktopAccessManagerTrayUi.test.ts"
+      - "apps/superagent-tray/ui/access-manager.js"
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "src/serverRoutes.ts"
       - "apps/superagent-tray/ui/overview-operations.js"
       - "apps/superagent-tray/ui/index.html"
       - "tests/desktopOverviewOperations.test.ts"
@@ -15,6 +19,10 @@ on:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
       - "tests/mcp*.test.ts"
+      - "tests/desktopAccessManagerTrayUi.test.ts"
+      - "apps/superagent-tray/ui/access-manager.js"
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "src/serverRoutes.ts"
       - "apps/superagent-tray/ui/overview-operations.js"
       - "apps/superagent-tray/ui/index.html"
       - "tests/desktopOverviewOperations.test.ts"
@@ -51,4 +59,6 @@ jobs:
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
             tests/mcpResponseLease.test.ts \
-            tests/desktopOverviewOperations.test.ts
+            tests/desktopOverviewOperations.test.ts \
+            tests/desktopAccessManagerTrayUi.test.ts \
+            tests/mcpProjectAccessOperatorRoutes.test.ts
