@@ -42,6 +42,7 @@
     devicePlatform: null,
     deviceId: "",
     generation: 0,
+    startPending: false,
     pointer: null,
     inputPending: false,
     lastFrameAt: 0,
@@ -268,6 +269,13 @@
   }
 
   async function startStream(item, button) {
+    if (stream.startPending) return;
+    stream.startPending = true;
+    try { await startStreamOwned(item, button); }
+    finally { stream.startPending = false; }
+  }
+
+  async function startStreamOwned(item, button) {
     if (stream.active) {
       await stopStream();
     }
@@ -293,6 +301,7 @@
     stream.pointer = null;
     stream.inputPending = false;
     stream.lastFrameAt = 0;
+    const requestedGeneration = stream.generation;
     const panel = el("desktop-live-stream-panel");
     const titleEl = el("desktop-live-stream-title");
     const metaEl = el("desktop-live-stream-meta");
@@ -319,9 +328,16 @@
         const call = window.__TAURI__?.core?.invoke;
         // A previously connected support session already passed its device
         // approval. Do not open a duplicate session or bypass a new denial.
-        if (item.status !== "controlled") {
+        const newlyOpened = item.status !== "controlled";
+        if (newlyOpened) {
           const opened = await call("lan_support_action", { action: "open", payload: { deviceId } });
           if (!opened?.success) throw Error(opened?.error || "Device support session was not approved");
+        }
+        if (requestedGeneration !== stream.generation) {
+          if (newlyOpened) {
+            try { await call("lan_support_action", {action:"close",payload:{deviceId}}); } catch {}
+          }
+          return;
         }
 
         stream.active = true;
@@ -351,6 +367,12 @@
         scheduleNextFrame();
       } else {
         const result = await invoke("start", { pid, nativeId, consent: true });
+        if (requestedGeneration !== stream.generation) {
+          if (result?.token) {
+            try { await invoke("stop", {token:result.token}); } catch {}
+          }
+          return;
+        }
         if (!result?.token) throw Error("Stream consent was not granted.");
 
         stream.active = true;
