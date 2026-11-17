@@ -1537,8 +1537,7 @@ mod tests {
             .stdout(Stdio::null()).stderr(Stdio::null())
             .spawn().expect("spawn disposable isolated test child");
         let pid=child.id();
-        let result=async {
-            let mut info=None;
+        let mut info=None;
             for _ in 0..30 {
                 let mut system=System::new();
                 system.refresh_processes();
@@ -1564,14 +1563,13 @@ mod tests {
             owner.process_name=Some(name);
             owner.process_started_at=Some(birth);
             owner.process_path=path;
+            // Reap the specifically spawned child in parallel so Unix does not
+            // retain its zombie PID while the native kill verifier polls.
+            let reaper=std::thread::spawn(move||child.wait());
             manual_kill_one(&owner).await.expect("native OS kill and exit verification");
-            assert!(child.try_wait().expect("check disposable exit").is_some());
-        }.await;
-        // Parent owns this exact child handle. Cleanup is never a global PID
-        // enumeration and runs only if the test assertion returned normally.
-        let _=child.kill();
-        let _=child.wait();
-        result
+            let status=reaper.join().expect("join disposable child reaper")
+                .expect("reap disposable child");
+            assert!(!status.success(),"disposable child exited normally, not by OS kill");
     }
     #[test]
     fn manual_candidates_reject_os_unpinned_or_protected_processes() {
