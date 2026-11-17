@@ -181,7 +181,7 @@ ${host}-main`, stderr: "", exitCode: 0 } as any;
 
       const blockedEnv = await provider.writeFiles(context, { files: [{ filePath: ".env", content: "REMOTE_SECRET=blocked" }] });
       expect(blockedEnv.isError).toBe(true);
-      expect(blockedEnv.text).toContain("MCP access to .env files is blocked");
+      expect(blockedEnv.text).toMatch(/MCP access to protected \.env files is prohibited/i);
       expect(writes).toHaveLength(1);
 
       const blockedModelConfig = await provider.readFiles(context, { filePaths: [path.join(getRootConfigDir(), "model-config.json")] });
