@@ -91,6 +91,40 @@ Security invariants:
   administration. Remote browser requests use the separate gateway, never
   the Core admin API routes.
 
+## Human takeover versus read-only viewing (17 November 2026)
+
+The local native Tray preview is approved window-by-window with an attended OS
+dialog and an exact PID/native window handle. **Preview consent is not input
+consent.** The Tray's native Take over action revokes an exact session via the
+authenticated `stop-handle` bridge; it does **not** promise to force a window
+into the foreground or issue mouse/keyboard events. Managed CDP takeover
+continues to use the existing revision-checked human hold and agent write fence.
+Individual Delegate tab release uses numeric tab IDs and exact expected
+revisions. Connected LAN device stops route to the LAN controller, not the
+native-window PID parser, and a rejected disconnect is never reported as success.
+
+The legacy `/api/desktop/live/lan-preview` and `lan-frame` HTTP endpoints are
+now **loopback-only**, even when the caller is on a private RFC1918 network.
+Their minimal local viewer uses a URL-fragment token removed from browser
+history, a same-origin JSON POST frame request, no-cache headers, and a
+nonce-based CSP. They are not an advertised remote browser/viewer service.
+The legacy `lan-input` and `lan-takeover` endpoints always refuse requests:
+an image-preview capability cannot authorize clicks, typing, or human takeover.
+No cleartext screenshot feed is exposed to Wi-Fi or Cloudflare.
+
+Remote screens across devices remain subject to separate mTLS 1.3 transport,
+independent host/viewer identity, private certificate provisioning, and
+attended controller approval. These controls are intentionally fail-closed until
+installed runtime and release certification. A paired Android/Windows LAN
+device uses its separate device-specific `lan_support_action` authorization
+policy, not the native desktop preview token.
+
+**Current verification boundary:** GitHub source and regression tests were
+updated; this does not establish a clean build, live host takeover, installer
+readiness, or a published release. A real OS E2E should verify the
+agent-to-human-to-agent handoff, revocation races, active foreground, and
+disconnection behavior before promotion.
+
 ## Deployment and verification status
 
 The feature code can be built and tested **without** changing active MCP tunnel
