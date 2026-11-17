@@ -2261,6 +2261,56 @@ async fn daemon_action(action: String, payload: Option<Value>) -> Result<Value, 
     }
 }
 
+/// Native-only operator controls for outbound MCP worker schedules.
+/// The bearer token is never forwarded to the webview.
+#[tauri::command]
+async fn external_lifecycle_action(
+    window: tauri::WebviewWindow,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    if window.label() != "main" {
+        return Err("External lifecycle is available only in the main Tray window".into());
+    }
+    let mutating = !matches!(action.as_str(), "list" | "status" | "workers");
+    if !matches!(
+        action.as_str(),
+        "list" | "status" | "workers" | "create" | "run.now" | "pause" | "resume" | "cancel" | "review.retry"
+    ) {
+        return Err("Unsupported external lifecycle action".into());
+    }
+    if mutating && (!window.is_visible().unwrap_or(false)
+        || window.is_minimized().unwrap_or(true)
+        || !window.is_focused().unwrap_or(false))
+    {
+        return Err("Bring SuperAgent Tray to the foreground to manage external workflow jobs".into());
+    }
+    let source = payload.unwrap_or_else(|| json!({}));
+    let obj = source.as_object().ok_or("Expected lifecycle request object")?;
+    let workspace = obj.get("workspace").and_then(Value::as_str).ok_or("Select a workspace")?;
+    if workspace.is_empty() || workspace.len() > 4096 || workspace.contains('\0') {
+        return Err("Invalid workspace".into());
+    }
+    let args = obj.get("args").cloned().unwrap_or_else(|| json!({}));
+    let fields = args.as_object().ok_or("Invalid lifecycle arguments")?;
+    let allowed: &[&str] = match action.as_str() {
+        "create" => &["name", "cronExpression", "prompt", "steps", "maxRuns", "enabled"],
+        "run.now" | "pause" | "resume" | "cancel" => &["workflowId"],
+        "review.retry" => &["runId", "stepId"],
+        "list" => &["limit"],
+        _ => &[],
+    };
+    if fields.keys().any(|key| !allowed.contains(&key.as_str())) {
+        return Err("Unsupported lifecycle argument".into());
+    }
+    if serde_json::to_string(&args).map_err(|e| e.to_string())?.len() > 70_000 {
+        return Err("Lifecycle request too large".into());
+    }
+    core_request(Method::POST, "/api/lifecycle/action", Some(json!({
+        "workspace": workspace, "action": action, "args": args,
+    }))).await
+}
+
 fn seen_file() -> Result<PathBuf, String> {
     Ok(config_dir()?.join("desktop-notified-runs.json"))
 }
@@ -2723,6 +2773,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             mcp_project_access_action,
             daemon_action,
+            external_lifecycle_action,
             detect_runtime,
             select_runtime_core,
             get_yolo_mode,
