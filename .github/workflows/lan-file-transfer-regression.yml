@@ -45,7 +45,8 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Preserve a complete evidence run while agents push unrelated work.
+  cancel-in-progress: false
 
 jobs:
   file-transfer:
