@@ -1520,6 +1520,60 @@ mod tests {
         assert!(!replacement_matches(&sup,&restarted));
     }
     #[test]
+    fn manual_kill_disposable_child_helper() {
+        if std::env::var("SA_TRAY_KILL_TEST_CHILD").as_deref()==Ok("1") {
+            std::thread::sleep(Duration::from_secs(15));
+        }
+    }
+    #[tokio::test]
+    async fn manual_kill_terminates_only_a_disposable_child_created_by_this_test() {
+        use std::process::{Command, Stdio};
+        // Never target an ambient Core, Guardian, tunnel, user app, or runner.
+        let executable=std::env::current_exe().expect("current test executable");
+        let mut child=Command::new(executable)
+            .arg("--exact")
+            .arg("shutdown_manager::tests::manual_kill_disposable_child_helper")
+            .env("SA_TRAY_KILL_TEST_CHILD","1")
+            .stdout(Stdio::null()).stderr(Stdio::null())
+            .spawn().expect("spawn disposable isolated test child");
+        let pid=child.id();
+        let result=async {
+            let mut info=None;
+            for _ in 0..30 {
+                let mut system=System::new();
+                system.refresh_processes();
+                if let Some(process)=system.process(Pid::from_u32(pid)) {
+                    if child.try_wait().expect("poll disposable child").is_none() {
+                        info=Some((
+                            process.name().to_string(),
+                            process.start_time(),
+                            process.exe().map(|path|path.to_string_lossy().into_owned()),
+                        ));
+                        break;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            let (name,birth,path)=info.expect("disposable helper still alive");
+            assert!(manual_process_allowed("managed",pid,&name));
+            let mut owner=Item::new(format!("disposable:{pid}"),
+                "Isolated test helper","managed","active",
+                "Disposable child owned by the running native test only",
+                false,false,None,None,Some(pid));
+            owner.manual_kill_selectable=true;
+            owner.process_name=Some(name);
+            owner.process_started_at=Some(birth);
+            owner.process_path=path;
+            manual_kill_one(&owner).await.expect("native OS kill and exit verification");
+            assert!(child.try_wait().expect("check disposable exit").is_some());
+        }.await;
+        // Parent owns this exact child handle. Cleanup is never a global PID
+        // enumeration and runs only if the test assertion returned normally.
+        let _=child.kill();
+        let _=child.wait();
+        result
+    }
+    #[test]
     fn manual_candidates_reject_os_unpinned_or_protected_processes() {
         let mut item=item("managed:guardian",false);
         item.manual_kill_selectable=true;item.process_name=Some("bun.exe".into());
