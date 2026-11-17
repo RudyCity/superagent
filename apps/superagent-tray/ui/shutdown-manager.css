@@ -24,15 +24,18 @@
   transition:border-color .12s ease,background .12s ease}
 .shutdown-service[data-state="ready"]:hover {border-color:#58738f;background:#182537}
 .shutdown-service[data-state="blocked"] {border-color:#63454b;background:#241c25}
+.shutdown-service[data-state="force"] {border-color:#6f6247;background:#25241f}
 .shutdown-service[data-state="inactive"] {opacity:.62}
 .shutdown-service input[type="checkbox"] {flex:none;width:16px;height:16px;accent-color:#6b9dea;margin:3px 0 0}
 .shutdown-service-copy {display:flex;flex:1;flex-direction:column;min-width:0;gap:4px}
 .shutdown-service-copy strong {font-size:12px;color:#f2f7fc}
 .shutdown-service-copy small,.shutdown-explanation {font-size:11px;color:#a8bacf;line-height:1.45;overflow-wrap:anywhere}
 .shutdown-blocker {font-size:11px;color:#f3afac;line-height:1.5;overflow-wrap:anywhere}
+.shutdown-force-explanation {font-size:11px;color:#e9cb96;line-height:1.5;overflow-wrap:anywhere}
 .shutdown-status {align-self:flex-start;white-space:nowrap;border-radius:6px;padding:4px 8px;
   font-size:10px;line-height:1.15;font-weight:700;color:#a4d7ba;background:rgba(41,155,108,.13)}
 .shutdown-service[data-state="blocked"] .shutdown-status {color:#f2b1a5;background:rgba(233,116,99,.12)}
+.shutdown-service[data-state="force"] .shutdown-status {color:#f1d49e;background:rgba(193,148,63,.15)}
 .shutdown-service[data-state="inactive"] .shutdown-status {color:#adb5c3;background:rgba(128,142,160,.13)}
 .shutdown-empty {padding:20px;text-align:center;font-size:12px;color:#a5b5ca}
 .shutdown-note {padding:10px 12px;background:#172230;border:1px solid #2a3b4c;border-radius:8px;
