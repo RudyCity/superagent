@@ -14,6 +14,7 @@ import {
   getAndroidScreenFrame, sendAndroidScreenInput, type AndroidScreenInput,
   getAndroidUiSchema, clickAndroidUiElement, offerLanFile, putLanFileChunk,
   getLanFileChunk, getLanFileStatus, finalizeLanFile, abortLanFile,
+  offerLanFileV2, putLanFileChunkV2, getLanFileStatusV2, finalizeLanFileV2, abortLanFileV2,
 } from "../lanRemote/controller.js";
 import {
   cancelLanPairRequest, completeLanPairRequest, createLanPairRequest, createTunnelPairRequest,
@@ -25,9 +26,11 @@ import { createAndroidApkDownloadTicket, getAndroidApkDownloadTicketStatus, revo
 import { approveTvTunnelBootstrap } from "../deviceTunnel/tvBootstrap.js";
 import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
-export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort";
+export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
+  "file_v2_offer" | "file_v2_put" | "file_v2_status" | "file_v2_finish" | "file_v2_abort";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"]);
+const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
+  "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort"]);
 
 export function parseTrayLanAction(input: unknown): { action: TrayLanAction; args: LanArgs } {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("Invalid LAN request.");
@@ -54,6 +57,11 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     file_status: ["action", "deviceId", "transferId"],
     file_finish: ["action", "deviceId", "transferId"],
     file_abort: ["action", "deviceId", "transferId"],
+    file_v2_offer: ["action", "deviceId", "direction", "name", "size", "sha256"],
+    file_v2_put: ["action", "deviceId", "transferId", "seq", "data"],
+    file_v2_status: ["action", "deviceId", "transferId"],
+    file_v2_finish: ["action", "deviceId", "transferId"],
+    file_v2_abort: ["action", "deviceId", "transferId"],
     schema: ["action", "deviceId", "knownRevision"],
     element: ["action", "deviceId", "elementId", "revision", "kind", "controllerToken"],
     screen: ["action", "deviceId"],
@@ -105,14 +113,34 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
       if (typeof data.code !== "string" || !/^\d{8}$/.test(data.code)) throw Error("Eight-digit code required.");
       if (data.verified !== true) throw Error("Local fingerprint confirmation required.");
     }
-  } else if (["open", "exec", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"].includes(action)) {
+  } else if (["open", "exec", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
+    "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort"].includes(action)) {
     if (typeof data.deviceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.deviceId)) throw Error("Valid paired device ID required.");
     if (action === "exec" &&
       (typeof data.command !== "string" || !data.command.trim() || data.command.length > 2000)) throw Error("PowerShell command must contain 1–2000 characters.");
     if (action === "android_shell") assertAndroidShellCommand(data.command as string);
   }
   if (action.startsWith("file_")) {
-    if (action === "file_offer") {
+    if (action === "file_v2_offer") {
+      if (data.direction !== "upload" ||
+          typeof data.name !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_ .()-]{0,95}$/.test(data.name) ||
+          data.name.endsWith(".") || data.name.endsWith(" ") || data.name.endsWith(".safolder") ||
+          !Number.isSafeInteger(data.size) || Number(data.size) < 1 ||
+          Number(data.size) > 256 * 1024 * 1024 ||
+          typeof data.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(data.sha256))
+        throw Error("Invalid V2 offer fields.");
+    } else if (action.startsWith("file_v2_")) {
+      if (typeof data.transferId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.transferId))
+        throw Error("Invalid V2 transfer handle.");
+      if (action === "file_v2_put") {
+        if (!Number.isSafeInteger(data.seq) || Number(data.seq) < 0 ||
+            Number(data.seq) > Math.ceil(256 * 1024 * 1024 / (16 * 1024)) ||
+            typeof data.data !== "string" || data.data.length < 1 ||
+            data.data.length > 21848 ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data.data))
+          throw Error("Invalid V2 chunk.");
+      }
+    } else if (action === "file_offer") {
       if (data.direction !== "upload" && data.direction !== "download") throw Error("Invalid file direction.");
       if (data.direction === "download" && ["name", "size", "sha256"].some((key) => data[key] !== undefined))
         throw Error("Remote file must be selected on the target; local paths are never accepted.");
@@ -299,6 +327,14 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
     case "file_status": return { success: true, result: await getLanFileStatus(id, args.transferId as string) };
     case "file_finish": return { success: true, result: await finalizeLanFile(id, args.transferId as string) };
     case "file_abort": await abortLanFile(id, args.transferId as string); return { success: true };
+    case "file_v2_offer": return { success: true, file: await offerLanFileV2(id, {
+      name: args.name as string, size: args.size as number, sha256: args.sha256 as string,
+    }) };
+    case "file_v2_put": return { success: true, result: await putLanFileChunkV2(id,
+      args.transferId as string, args.seq as number, args.data as string) };
+    case "file_v2_status": return { success: true, result: await getLanFileStatusV2(id, args.transferId as string) };
+    case "file_v2_finish": return { success: true, result: await finalizeLanFileV2(id, args.transferId as string) };
+    case "file_v2_abort": await abortLanFileV2(id, args.transferId as string); return { success: true };
     case "schema": return { success: true, schema: await getAndroidUiSchema(id, args.knownRevision as number | undefined) };
     case "element":
       nativeAndroidControllerApproval.authorize(id,args.controllerToken);
