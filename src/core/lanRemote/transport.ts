@@ -298,7 +298,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
       socket.end(); notice("Support session closed."); return;
     }
     if (op === "file_v2_offer") {
-      if (busy || transfer?.status === "active") {
+      if (busy || (transfer?.status === "active" && transfer.transferId !== v2TransferId)) {
         fail(socket, "Another transfer is active."); socket.end(); return;
       }
       try {
@@ -347,7 +347,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
             notifyTransfer(true);
           }
         }
-        if (op === "file_v2_finish" || op === "file_v2_abort") v2TransferId = null;
+        // Retain the last completed transfer handle briefly: a lost finish ACK
+        // can be reconciled by idempotently repeating file_v2_finish.
+        if (op === "file_v2_abort") v2TransferId = null;
         send(socket, reply as object);
       } catch { fail(socket, "V2 transfer rejected; verify checkpoint, session and digest."); }
       socket.end(); return;
