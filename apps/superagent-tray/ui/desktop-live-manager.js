@@ -365,6 +365,23 @@
       const meta=node("p","desktop-live-item-meta",item.application+" · "+item.handle);
       info.append(top,meta);
       if(item.owner)info.append(node("p","desktop-live-owner","Agent: "+item.owner));
+      // Separate read-only visibility from actual input authorization.
+      if (item.access && typeof item.access === "object") {
+        const meta=node("div","desktop-live-permission-meta");
+        const viewLabel = {
+          active:"Viewer: active", available:"Viewer: available",
+          "device-approval-required":"Viewer: device approval",
+          "not-supported":"Viewer: not supported",
+        }[item.access.view] || "Viewer: unknown";
+        const controlLabel = {
+          "native-approval-required":"Controller: separate approval",
+          "device-approval-required":"Controller: device consent",
+          "agent-held":"Control: agent", "human-held":"Control: human",
+          "not-supported":"Controller: not enabled",
+        }[item.access.controller] || "Controller: unknown";
+        meta.append(node("span","",viewLabel),node("span","",controlLabel));
+        info.append(meta);
+      }
       const actions=node("div","desktop-live-actions");
 
       if (item.kind === "native" || item.kind === "lan-device") {
@@ -383,7 +400,7 @@
 
       if(item.stopAction) {
         const stop=node("button","button secondary desktop-live-stop",
-          item.stopAction==="takeover"?"Take over":item.stopAction==="disconnect-profile"?"Disconnect profile":item.stopAction==="stop-delegate-tab"?"Stop tab session":"Stop session");
+          item.stopAction==="takeover"?"Take Over":item.stopAction==="return-to-agent"?"Return to Agent":item.stopAction==="disconnect-profile"?"Disconnect profile":item.stopAction==="stop-delegate-tab"?"Stop tab session":"Stop session");
         stop.type="button";
         stop.title=item.impact||"Revoke session";
         stop.addEventListener("click",()=>void stopSession(item,stop));
@@ -421,18 +438,20 @@
     if(button.disabled)return;
     if(item.stopAction==="disconnect-profile"&&
        !window.confirm("Disconnect the entire Chrome Delegate profile? Other tabs in this profile will lose agent access. Browser windows remain open."))return;
+    if(item.stopAction==="return-to-agent"&&
+       !window.confirm("Return this exact managed CDP target to the agent? Any active takeover reservation will keep it locked."))return;
     button.disabled=true;
     status("Revoking exact session authorization…");
     try{
       const data=await invoke("stop-handle",{
         id:item.id,
-        ...(["takeover","stop-delegate-tab"].includes(item.stopAction)?{expectedRevision:item.revision}:{}),
+        ...(["takeover","return-to-agent","stop-delegate-tab"].includes(item.stopAction)?{expectedRevision:item.revision}:{}),
         ...(item.stopAction==="disconnect-profile"?{confirmProfile:true}:{}),
       });
       if(!data?.success||!data.stopped)throw Error("Session was already inactive");
       status(data.reason||"Session authorization revoked.");
       await refresh();
-    }catch{status("Stop was not confirmed. Refresh the exact handle and retry.",true);}
+    }catch{status("Handoff was not verified. A human hold remains in place until explicitly released.",true);}
     finally{button.disabled=false;}
   }
   window.__superagentDesktopLiveRefresh=refresh;
