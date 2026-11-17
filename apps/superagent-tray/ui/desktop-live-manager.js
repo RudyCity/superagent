@@ -331,6 +331,32 @@
     }
   }
 
+  let recordingStatusPending=false;
+  async function reconcileNativeRecording() {
+    const current=stream.recording;
+    if(!current||recordingStatusPending||stream.recordingPending||!visible())return;
+    recordingStatusPending=true;
+    try{
+      const invokeNative=window.__TAURI__?.core?.invoke;
+      if(typeof invokeNative!=="function")return;
+      const result=await invokeNative("recordings_action",{
+        action:"list",payload:{projectDirectory:current.projectDirectory},
+      });
+      if(!stream.recording||stream.recording.recordingId!==current.recordingId)return;
+      const recording=Array.isArray(result?.recordings)
+        ? result.recordings.find(item=>item.recordingId===current.recordingId) : null;
+      if(recording && ["saved","failed","interrupted"].includes(recording.status)){
+        stream.recording=null;
+        renderStreamPermissions();
+        status(recording.status==="saved"
+          ? "Window recording finalized automatically; open Recordings to play or export."
+          : "Recording ended unexpectedly. Review the project archive.",
+          recording.status!=="saved");
+      }
+    }catch{
+      // A temporary Core outage must not be interpreted as a successful stop.
+    }finally{recordingStatusPending=false;}
+  }
   async function toggleNativeRecording() {
     if(!stream.active||!stream.token||stream.isLanDevice||stream.recordingPending)return;
     const native=window.__TAURI__?.core?.invoke;
@@ -761,6 +787,7 @@
     });
     if(state.poll)clearInterval(state.poll);
     state.poll=setInterval(()=>{if(visible()){void refresh();void refreshControlPermission();}},15000);
+    setInterval(()=>{if(visible())void reconcileNativeRecording();},3000);
     document.addEventListener("visibilitychange",()=>{
       if(visible())void refresh();
       else if(stream.active)void stopStream("Stream auto-paused: Tray window is hidden.");
