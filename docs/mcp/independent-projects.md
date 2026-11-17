@@ -34,34 +34,37 @@ Use an SSH key/profile already available to SuperAgent. MCP SSH operations do no
 
 Use \`superagent_list_projects\` to discover registered projects and \`superagent_get_project\` to inspect one by ID.
 
-## 2. Grant access intentionally
+## 2. Grant MCP access through Security Approval
 
-Registration is not permission. Project registration, update, removal, and granting access require Full YOLO to be enabled locally. A registered project outside the current Scoped YOLO scope requires an explicit grant for the authenticated MCP identity.
+**Chat Agent YOLO does not control MCP connections.** MCP access requires an authenticated identity and a human-approved grant. Registration does not grant permission.
 
-Use \`superagent_grant_project_access\` with the stable project ID and the minimum required capabilities:
+Use the safe `superagent_request_project_access` tool:
 
-\`\`\`json
+```json
 {
   "projectId": "shop-api",
-  "capabilities": ["read", "write", "git"]
+  "capabilities": ["read", "write", "git"],
+  "reason": "Audit and maintain this authorized project"
 }
-\`\`\`
+```
 
-Granting access requires Full YOLO to be enabled locally and the dangerous MCP tool to be available. Access grants are stored in the SuperAgent config directory's \`project-access.json\` file and bound to the authenticated MCP identity (auth mode + subject). \`superagent_list_project_access\` lists only the current identity's grants. \`superagent_revoke_project_access\` revokes that identity's grant for one project.
-
-Capabilities:
+The agent receives `APPROVAL_PENDING` until the owner approves in SuperAgent Tray > Security Approval Manager > MCP Project Access. The deprecated `superagent_grant_project_access` can only enqueue a request, never self-grant. Grants persist in `project-access.json`, bound to the verified MCP identity.
 
 | Capability | Intended operations |
 |---|---|
-| \`read\` | Read files, list/find files, search, inspect workspace, read-only Git status/diff/log |
-| \`write\` | Write batches, edit/patch files, manage file locks |
-| \`execute\` | Run commands / office CLI. Commands execute with the local process or remote SSH user's OS permissions; this is not a sandbox |
-| \`git\` | Stage, commit, restore, or perform other mutating Git operations |
-| \`worktree\` | Manage project worktrees |
-| \`planning\` | Read/update project plans and task checklists |
-| \`chain\` | Manage or execute Workspace Chain operations, which retain their own Full YOLO and chain checks |
+| `read` | Read, list, find/search files and inspect project state |
+| `write` | Write, edit and patch files inside that project |
+| `execute` | Run commands in the project (not an OS sandbox) |
+| `git` | Mutating Git operations |
+| `worktree` | Manage project worktrees |
+| `planning` | Manage project plans and tasks |
+| `chain` | Manage registered Workspace Chain operations and their node boundaries |
 
-Project grants are considered only for workspace-scoped MCP tools; unrelated tools cannot inherit a project grant merely because a projectId is supplied. Granting access does not override protected \`model-config.json\` restrictions, dangerous-tool discovery rules, OAuth scopes, project-root checks, or the disabled-tool policy. Disabling/removing a project or changing its root/target revokes its existing grants.
+Project grants never authorize unrelated MCP tools or other projects. OAuth scopes, native host access rules, protected files and tool restrictions remain enforced. Changing/disabling/removing a project revokes existing grants.
+
+### Non-project MCP actions
+
+Service management, LAN/device controls and Desktop UI operations require separate **MCP Connection Controls** permission: request `{ projectId: "mcp-connection", capabilities: ["execute"], reason: "Operator-approved MCP operations" }` and approve it in SuperAgent Tray. It never grants project-file access, and native device/desktop approvals still apply.
 
 ## 3. Target each tool call by project ID
 
@@ -102,14 +105,14 @@ When a registered \`type: "ssh"\` project is selected, supported MCP operations 
 
 The provider checks that remote paths stay under the registered root and checks resolved remote paths for symlink escapes where SFTP realpath is available. Separate project IDs use separate SSH proxy/client instances and do not share a mutable target connection. Project removal, disablement, or a target change closes the cached connection.
 
-**Important SSH execution boundary:** the root is enforced for supported file operations and as the command's working directory; arbitrary shell commands are still executed with the SSH account's operating-system privileges. The \`execute\` capability is therefore high privilege. Destructive system commands remain blocked unless Full YOLO is enabled locally. Do not treat a registered root as an OS-level container/sandbox.
+**Important SSH execution boundary:** the root is enforced for supported file operations and as the command's working directory; arbitrary shell commands are still executed with the SSH account's operating-system privileges. The \`execute\` capability is therefore high privilege. Destructive system commands remain blocked by MCP security policy, regardless of Chat Agent YOLO. Do not treat a registered root as an OS-level container/sandbox.
 
 Tools not implemented for standalone SSH return an explicit unsupported-capability error; they are not run against the local checkout. Use Workspace Chain only for operations that require multiple nodes or chain-specific execution.
 
 ## 5. Troubleshooting and safe defaults
 
 - Unknown, disabled, ambiguous, unregistered, or unauthorized project targets fail closed; explicit bad targets never silently fall back to another project.
-- If access is denied, inspect \`superagent_list_projects\` and \`superagent_list_project_access\`, then grant only the needed capability while the local administrator has intentionally enabled Full YOLO.
+- If access is denied, inspect \`superagent_list_projects\` and \`superagent_list_project_access\`, then request only the needed capability via the MCP Security Approval Manager.
 - Avoid using \`execute\` for read-only tasks. Prefer \`read\`, \`write\`, \`git\`, or \`planning\` as appropriate.
 - If SSH authentication fails, configure a supported SSH key/profile first; the MCP provider intentionally does not prompt interactively.
 - Workspace Chain remains a separate optional layer and retains its own node/path/permission checks.
@@ -137,7 +140,7 @@ Authorized MCP operations
 Discovery, registration, and authorization remain strictly isolated:
 1. **Discovery** is completely read-only, strips secrets/credentials, and makes zero changes to `projects.json` or capabilities.
 2. **Registration / Import** writes metadata to `projects.json` after validating directory existence and Git/monorepo boundaries. It NEVER grants filesystem permissions or capabilities.
-3. **Authorization** requires explicit operator action through `superagent_grant_project_access` with local Full YOLO enabled.
+3. **Authorization** requires human approval in SuperAgent Tray, independent of Chat Agent YOLO.
 
 ### Discovery vs Registry Tools
 
