@@ -41,6 +41,44 @@ mod release_updates;
 
 /// Reads the installed binary version from the Tauri package metadata.
 #[tauri::command]
+async fn get_overview_owner_metrics() -> Result<Value, String> {
+    use sysinfo::{Pid, System};
+    // No PID from the WebView: only authenticated service owners are sampled.
+    let dashboard = lifecycle_console_request(json!({"action":"dashboard","limit":1})).await?;
+    let services = dashboard.get("services").and_then(Value::as_array)
+        .ok_or("OVERVIEW_OWNER_INVENTORY_UNAVAILABLE")?;
+    let owners: Vec<(String,u32)> = services.iter().filter_map(|item| {
+        if item.get("ownershipVerified") != Some(&Value::Bool(true)) ||
+           !matches!(item.get("state").and_then(Value::as_str), Some("active"|"embedded")) {
+            return None;
+        }
+        let pid = item.get("ownerPid")?.as_u64()?;
+        if !(1..=u32::MAX as u64).contains(&pid) {return None;}
+        Some((item.get("service")?.as_str()?.to_string(),pid as u32))
+    }).take(13).collect();
+    let mut system = System::new();
+    system.refresh_processes();
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    system.refresh_processes();
+    let confirmed = lifecycle_console_request(json!({"action":"dashboard","limit":1})).await?;
+    let current = confirmed.get("services").and_then(Value::as_array)
+        .ok_or("OVERVIEW_OWNER_RECHECK_UNAVAILABLE")?;
+    let processes: Vec<Value> = owners.into_iter().filter_map(|(service,pid)| {
+        let still_owned=current.iter().any(|item|
+            item.get("service").and_then(Value::as_str)==Some(service.as_str()) &&
+            item.get("ownerPid").and_then(Value::as_u64)==Some(pid as u64) &&
+            item.get("ownershipVerified")==Some(&Value::Bool(true)));
+        if !still_owned {return None;}
+        let process=system.process(Pid::from_u32(pid))?;
+        Some(json!({"service":service,"cpuPct":process.cpu_usage(),
+            "rssBytes":process.memory()}))
+    }).collect();
+    Ok(json!({"observedAt":SystemTime::now()
+        .duration_since(UNIX_EPOCH).map_or(0,|x|x.as_millis() as u64),
+        "processes":processes}))
+}
+
+#[tauri::command]
 fn get_tray_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
 }
@@ -2722,6 +2760,7 @@ fn main() {
             named_tunnel_connector::pick_named_tunnel_token,
             named_tunnel_clipboard::import_named_tunnel_clipboard,
             get_tray_version,
+            get_overview_owner_metrics,
             get_tray_build_number,
             release_updates::check_release_updates,
             release_updates::download_release_update,

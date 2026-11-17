@@ -342,18 +342,13 @@ describe("SuperAgent Tray System Overview Dashboard", () => {
     expect(harness.navigatedPages).toContain("jobs");
   });
 
-  it("provides interactive action to gracefully restart core server with operator confirmation", async () => {
+  it("does not use unbound legacy restart and directs operator to owner-bound planning", async () => {
     const harness = mountOverview();
     await new Promise((r) => setTimeout(r, 20));
-
     const restartBtn = harness.byId("overview-action-restart-core");
     restartBtn.click();
-
     expect(harness.context.window.confirm).toHaveBeenCalled();
-    expect(harness.requested).toContainEqual({
-      action: "restart_core_server",
-      payload: { port: 7888 },
-    });
+    expect(harness.requested.some(x => x.action === "restart_core_server")).toBe(false);
   });
 
   it("navigates to jobs when New Schedule action is triggered", async () => {

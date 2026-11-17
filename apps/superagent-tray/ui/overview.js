@@ -57,6 +57,9 @@
     trayVersion: null,
     trayBuildNumber: null,
     activities: [],
+    telemetryUnavailable: [],
+    runtimeObserved: false,
+    securityObserved: false,
   };
 
   const overviewInvoke = async (action, payload) => {
@@ -86,6 +89,26 @@
   async function fetchOverviewTelemetry() {
     if (overviewState.loading) return;
     overviewState.loading = true;
+    overviewState.coreOnline = false;
+    overviewState.runtimeObserved = false;
+    overviewState.securityObserved = false;
+    overviewState.corePid = null;
+    overviewState.coreVersion = null;
+    overviewState.trayVersion = null;
+    overviewState.trayBuildNumber = null;
+    overviewState.delegateTabs = 0;
+    overviewState.delegateClients = 0;
+    overviewState.delegatePaired = false;
+    overviewState.terminalTasks = 0;
+    overviewState.jobsTotal = 0;
+    overviewState.jobsActive = 0;
+    overviewState.nextRun = null;
+    overviewState.securityRules = 0;
+    overviewState.securityApproved = 0;
+    overviewState.trustedTargets = 0;
+    overviewState.lanDevices = 0;
+    overviewState.lanActive = 0;
+    overviewState.telemetryUnavailable = [];
 
     const refreshBtn = $("overview-refresh-btn");
     if (refreshBtn) refreshBtn.classList.add("loading");
@@ -119,9 +142,19 @@
         overviewInvoke("get_permanent_access_audit_log", { limit: 6 }),
       ]);
 
+      const telemetrySources = ["runtime", "scheduler jobs", "scheduler runs", "delegate",
+        "terminal", "connection logs", "tray version", "tray build", "LAN devices",
+        "access registry", "desktop policy", "access audit"];
+      const telemetryResults = [runtimeSnap, daemonJobs, daemonRuns, delegateStatus,
+        terminalTasks, connectionLogs, trayVersion, trayBuild, lanSnap,
+        permanentAccessSnap, inputPolicySnap, accessAuditSnap];
+      overviewState.telemetryUnavailable = telemetrySources.filter((name, i) =>
+        telemetryResults[i].status !== "fulfilled" || telemetryResults[i].value == null);
+
       // 1. Process Runtime Snapshot
       if (runtimeSnap.status === "fulfilled" && runtimeSnap.value) {
         const snap = runtimeSnap.value;
+        overviewState.runtimeObserved = true;
         const selectedPort = snap.selectedCorePort || window.__SUPERAGENT_CORE_PORT || 7888;
         overviewState.corePort = selectedPort;
 
@@ -133,7 +166,7 @@
           overviewState.daemonRunning = Boolean(activeCore.daemon?.running);
           overviewState.mcpServers = activeCore.services?.mcp?.serverCount || 0;
         } else {
-          overviewState.coreOnline = Boolean(snap.healthyCoreCount > 0);
+          overviewState.coreOnline = false; // No selected verified Core; never adopt another owner.
         }
       } else {
         // Fallback to global state
@@ -185,6 +218,7 @@
 
       // 7. Process Security & Permanent ACL
       if (permanentAccessSnap.status === "fulfilled" && permanentAccessSnap.value) {
+        overviewState.securityObserved = true;
         const reg = permanentAccessSnap.value;
         const rules = Array.isArray(reg.rules) ? reg.rules : [];
         overviewState.securityRules = rules.length;
@@ -199,8 +233,9 @@
       // 8. Assemble Activities (Logs + Scheduler Runs + Access Audits)
       const acts = [];
 
-      if (daemonRuns.status === "fulfilled" && Array.isArray(daemonRuns.value)) {
-        for (const run of daemonRuns.value.slice(0, 5)) {
+      const recordedRuns = daemonRuns.value?.runs || daemonRuns.value;
+      if (daemonRuns.status === "fulfilled" && Array.isArray(recordedRuns)) {
+        for (const run of recordedRuns.slice(0, 5)) {
           acts.push({
             id: `run-${run.id || run.startedAt}`,
             timestamp: run.completedAt || run.startedAt,
@@ -283,16 +318,17 @@
     const syncTime = $("overview-last-sync");
 
     const isOnline = overviewState.coreOnline;
+    const isPartial = overviewState.telemetryUnavailable.length > 0;
 
     if (beacon) {
       beacon.className = "overview-beacon-dot";
-      if (!isOnline) {
-        beacon.classList.add("offline");
-      }
+      if (!overviewState.runtimeObserved || !isOnline) beacon.classList.add("offline");
+      else if (isPartial) beacon.classList.add("degraded");
     }
 
     if (statusText) {
-      statusText.textContent = isOnline ? "Core Online & Operating" : "Core Offline / Standalone";
+      statusText.textContent = !overviewState.runtimeObserved ? "Core Status Unavailable" :
+        isOnline ? "Core Online & Operating" : "Core Offline / Standalone";
     }
 
     if (portPill) {
@@ -305,18 +341,20 @@
     }
 
     if (verPill) {
-      const ver = overviewState.coreVersion || "v1.14.83";
-      verPill.textContent = ver.startsWith("v") ? ver : `v${ver}`;
+      const ver = overviewState.coreVersion;
+      verPill.textContent = ver ? (ver.startsWith("v") ? ver : `v${ver}`) : "Version unverified";
     }
 
     if (summary) {
       if (isOnline) {
         const issues = [];
+        if (isPartial) issues.push(`${overviewState.telemetryUnavailable.length} telemetry sources unavailable`);
         if (!overviewState.delegatePaired) issues.push("Delegate Standby");
         if (overviewState.lanActive > 0) issues.push(`${overviewState.lanActive} LAN Active`);
         summary.textContent = issues.length ? `Core Active · ${issues.join(" · ")}` : "All Primary Subsystems Operational";
       } else {
-        summary.textContent = "Companion Running · Core Offline";
+        summary.textContent = overviewState.runtimeObserved ? "Companion Running · Core Offline" :
+          "Runtime status unavailable · retry diagnostics";
       }
     }
 
@@ -330,7 +368,7 @@
     const kpiCoreVal = $("kpi-core-state");
     const kpiCoreMeta = $("kpi-core-meta");
     const kpiCoreBadge = $("kpi-core-badge");
-    if (kpiCoreVal) kpiCoreVal.textContent = overviewState.coreOnline ? "Online" : "Offline";
+    if (kpiCoreVal) kpiCoreVal.textContent = !overviewState.runtimeObserved ? "Unknown" : overviewState.coreOnline ? "Online" : "Offline";
     if (kpiCoreMeta) kpiCoreMeta.textContent = `Port :${overviewState.corePort || 7888} Loopback`;
     if (kpiCoreBadge) {
       kpiCoreBadge.textContent = overviewState.coreOnline ? "Live" : "Inactive";
@@ -400,14 +438,18 @@
     const kpiSecMeta = $("kpi-security-meta");
     const kpiSecBadge = $("kpi-security-badge");
     if (kpiSecVal) {
-      if (overviewState.securityRules > 0) {
+      if (!overviewState.securityObserved) {
+        kpiSecVal.textContent = "Unverified";
+      } else if (overviewState.securityRules > 0) {
         kpiSecVal.textContent = `${overviewState.securityRules} Rules`;
       } else {
-        kpiSecVal.textContent = "Protected";
+        kpiSecVal.textContent = overviewState.securityObserved ? "Default Deny" : "Unverified";
       }
     }
     if (kpiSecMeta) {
-      if (overviewState.trustedTargets > 0) {
+      if (!overviewState.securityObserved) {
+        kpiSecMeta.textContent = "ACL unavailable · review Security Approval";
+      } else if (overviewState.trustedTargets > 0) {
         kpiSecMeta.textContent = `${overviewState.trustedTargets} active target${overviewState.trustedTargets > 1 ? "s" : ""} · Permanent ACL`;
       } else if (overviewState.securityRules > 0) {
         kpiSecMeta.textContent = `${overviewState.securityApproved} allowed · Permanent ACL`;
@@ -416,8 +458,8 @@
       }
     }
     if (kpiSecBadge) {
-      kpiSecBadge.textContent = "Enforced";
-      kpiSecBadge.className = "stat-chip success";
+      kpiSecBadge.textContent = overviewState.securityObserved ? "Configured" : "Unverified";
+      kpiSecBadge.className = `stat-chip ${overviewState.securityObserved ? "accent" : ""}`;
     }
   }
 
@@ -511,10 +553,10 @@
     const coreTarget = $("overview-core-target");
 
     if (appVer) {
-      appVer.textContent = overviewState.trayVersion || "1.14.83";
+      appVer.textContent = overviewState.trayVersion || "Unverified";
     }
     if (appBuild) {
-      appBuild.textContent = overviewState.trayBuildNumber || "production";
+      appBuild.textContent = overviewState.trayBuildNumber || "Unverified";
     }
     if (coreTarget) {
       coreTarget.textContent = `127.0.0.1:${overviewState.corePort || 7888}`;
@@ -592,10 +634,9 @@
           message: `Restarting Core on port ${port}...`,
           scope: "overview",
         });
-        await overviewInvoke("restart_core_server", { port });
-        if (typeof window.setTimeout === "function") {
-          window.setTimeout(fetchOverviewTelemetry, 1500);
-        }
+        window.TrayFeedback?.notify({kind:"warning",scope:"overview",
+          message:"Legacy unbound restart disabled. Use the owner-bound plan in Operational Readiness."});
+        document.getElementById("op-lifecycle-service")?.focus?.();
       });
     }
   }

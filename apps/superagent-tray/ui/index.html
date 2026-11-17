@@ -9,12 +9,14 @@
   <title>SuperAgent Tray · Automation &amp; Runtime Console</title>
   <link rel="stylesheet" href="./styles.css" />
   <link rel="stylesheet" href="./overview.css" />
+  <link rel="stylesheet" href="./overview-operations.css" />
   <link rel="stylesheet" href="./muse-files.css" />
   <link rel="stylesheet" href="./lan-devices.css" />
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <link rel="stylesheet" href="./delegate-action-diagnostics.css" />
   <link rel="stylesheet" href="./desktop-live-manager.css" />
   <script src="./overview.js" defer></script>
+  <script src="./overview-operations.js" defer></script>
   <script src="./desktop-live-manager.js" defer></script>
   <script src="./tray-access-password.js" defer></script>
   <script src="./titlebar.js" defer></script>
@@ -629,6 +631,98 @@
             </div>
           </section>
 
+          <!-- Authenticated operator cockpit: no raw PID or unsanctioned action controls. -->
+          <section class="op-section" aria-label="Operational readiness and diagnostics" id="overview-operations">
+            <div class="op-head">
+              <div><h3>Operational readiness</h3>
+                <p id="op-refresh-state" role="status" aria-live="polite">Checking authenticated service ownership…</p></div>
+              <button type="button" id="op-refresh" class="button ghost">Refresh diagnostics</button>
+            </div>
+            <div class="op-frame">
+              <div class="op-head">
+                <div><h3 id="op-readiness">—</h3><p id="op-essential">Essential stack not checked</p></div>
+                <small id="op-observed" class="op-note">Not inspected</small>
+              </div>
+              <p class="op-note" id="op-readiness-detail">Verification is required before showing readiness.</p>
+              <div id="op-service-list" class="op-service-list" aria-live="polite"></div>
+            </div>
+            <div class="op-row">
+              <section class="op-frame" aria-label="MCP session inspector">
+                <h3 class="op-mini-title">MCP sessions · authenticated owner</h3>
+                <div class="op-metrics">
+                  <div class="op-stat"><span>Active sessions</span><strong id="op-mcp-sessions">—</strong></div>
+                  <div class="op-stat"><span>In-flight requests</span><strong id="op-mcp-inflight">—</strong></div>
+                  <div class="op-stat"><span>Backend</span><strong id="op-mcp-backend">—</strong></div>
+                  <div class="op-stat"><span>Active principals</span><strong id="op-mcp-principals">—</strong></div>
+                  <div class="op-stat"><span>Rejected sessions</span><strong id="op-mcp-rejected">—</strong></div>
+                  <div class="op-stat"><span>Oldest idle</span><strong id="op-mcp-oldest">—</strong></div>
+                </div>
+                <p class="op-note">Backend generations: <strong id="op-mcp-generations">—</strong></p>
+                <p class="op-note" id="op-mcp-note">Awaiting verified owner telemetry</p>
+              </section>
+              <section class="op-frame" aria-label="Owner resources monitor">
+                <h3 class="op-mini-title">Resource monitor</h3>
+                <div class="op-metrics">
+                  <div class="op-stat"><span>MCP RSS</span><strong id="op-mcp-rss">—</strong></div>
+                  <div class="op-stat"><span>MCP heap</span><strong id="op-mcp-heap">—</strong></div>
+                  <div class="op-stat"><span>Memory trend</span><strong id="op-memory-trend">—</strong></div>
+                </div>
+                <div id="op-process-resources" class="op-process-resources" aria-label="Verified owner CPU and RSS"></div>
+                <div class="op-history" id="op-resource-history" aria-label="Recent owner memory samples"></div>
+                <p class="op-note">Local CPU samples and RSS only for verified owners. No arbitrary process enumeration.</p>
+              </section>
+              <section class="op-frame" aria-label="Security separation">
+                <h3 class="op-mini-title">Security boundaries</h3>
+                <div class="op-metrics">
+                  <div class="op-stat"><span>Chat Agent YOLO</span><strong id="op-chat-yolo">—</strong></div>
+                  <div class="op-stat"><span>Desktop input</span><strong id="op-desktop-policy">—</strong></div>
+                  <div class="op-stat"><span>Permanent rules</span><strong id="op-security-rules">—</strong></div>
+                  <div class="op-stat"><span>Trusted targets</span><strong id="op-trusted-targets">—</strong></div>
+                  <div class="op-stat"><span>MCP requests</span><strong id="op-mcp-requests">—</strong></div>
+                  <div class="op-stat"><span>MCP identities</span><strong id="op-mcp-identities">—</strong></div>
+                </div>
+                <p class="op-note" id="op-security-boundary">Chat YOLO does not authorize MCP connections.</p>
+                <p class="op-note" id="op-security-evidence">Checking enforcement evidence…</p>
+              </section>
+            </div>
+            <div class="op-pair">
+              <section class="op-frame" aria-label="Unified diagnostic events">
+                <div class="op-head"><div><h3>Unified diagnostics</h3>
+                  <p>Lifecycle events, owner results, access decisions and connection activity</p></div>
+                  <label for="op-event-filter" class="visually-hidden">Event filter</label>
+                  <select id="op-event-filter" aria-label="Filter diagnostic events">
+                    <option value="all">All events</option><option value="core">Core</option>
+                    <option value="mcp">MCP</option><option value="security">Security</option>
+                    <option value="delegate">Delegate</option><option value="daemon">Daemon</option>
+                  </select></div>
+                <ol id="op-events" class="op-timeline" aria-live="polite"></ol>
+              </section>
+              <section class="op-frame" aria-label="Owner-verified lifecycle control">
+                <div class="op-head"><div><h3>Lifecycle &amp; Shutdown</h3>
+                  <p>Native approval required for every mutation; unknown owners cannot be adopted</p></div></div>
+                <div class="op-actions" style="margin-top:14px">
+                  <label class="visually-hidden" for="op-lifecycle-service">Service</label>
+                  <select id="op-lifecycle-service" aria-label="Service">
+                    <option value="core">Core</option><option value="tray">Tray</option>
+                    <option value="transport">Transport</option><option value="channel_host">Channel Host</option>
+                    <option value="vision">Vision</option><option value="guardian">Guardian</option>
+                    <option value="daemon">Daemon</option>
+                  </select>
+                  <label class="visually-hidden" for="op-lifecycle-action">Action</label>
+                  <select id="op-lifecycle-action" aria-label="Lifecycle action">
+                    <option value="restart">Safe restart</option><option value="start">Start</option><option value="stop">Stop</option>
+                  </select>
+                </div>
+                <div id="op-lifecycle-plan" class="op-plan" role="status">No plan prepared. Authenticated plan required.</div>
+                <div class="op-actions">
+                  <button type="button" id="op-lifecycle-prepare" class="button ghost">Prepare plan</button>
+                  <button type="button" id="op-lifecycle-execute" class="button primary" disabled>Confirm &amp; execute</button>
+                  <button type="button" id="op-shutdown-open" class="button ghost">Shutdown Manager</button>
+                </div>
+                <p id="op-feedback" class="op-note" role="status" aria-live="polite">No lifecycle operation requested.</p>
+              </section>
+            </div>
+          </section>
           <!-- 4. Split Layout: Live Activity & Quick Actions -->
           <div class="overview-split-grid">
             <!-- Left: Live Activity Feed -->
