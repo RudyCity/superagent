@@ -426,7 +426,10 @@
         status("Use the separately paired LAN Devices control workflow.", true);
         return;
       }
+      const takeoverButton = el("desktop-live-stream-takeover");
+      if (takeoverButton?.disabled) return;
       if (!window.confirm("Revoke agent control over this exact local window? The application stays open for physical human input.")) return;
+      if (takeoverButton) takeoverButton.disabled = true;
       const id = "native:" + stream.pid + ":" + stream.nativeId;
       status("Requesting exact-session revocation through authenticated Tray…");
       try {
@@ -439,6 +442,8 @@
         status("Human takeover verified: native agent session revoked. Use the host mouse and keyboard.");
       } catch (error) {
         status("Takeover unverified: " + (error?.message || "Unknown error"), true);
+      } finally {
+        if (takeoverButton && stream.active && !stream.isLanDevice) takeoverButton.disabled = false;
       }
     });
 
