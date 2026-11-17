@@ -161,7 +161,7 @@ export class LanFileRelayManager {
       if (destination.name !== source.name || destination.size !== source.size ||
           destination.sha256 !== source.sha256 || destination.chunkBytes !== chunkBytes)
         throw Error("Approved relay destination metadata differs from source.");
-      const existing = v2 ? ("received" in destination ? destination.received : NaN) : 0;
+      const existing = v2 ? ("received" in destination && typeof destination.received === "number" ? destination.received : Number.NaN) : 0;
       if (!Number.isSafeInteger(existing) || existing < 0 || existing > source.size ||
           existing % chunkBytes !== 0 && existing !== source.size)
         throw Error("Invalid V2 target resume boundary.");
