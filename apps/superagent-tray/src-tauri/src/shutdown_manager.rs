@@ -436,6 +436,96 @@ fn validate_selection(preview: &Preview, selected: &[String], exit_after: bool)
     Ok(chosen)
 }
 
+fn same_force_owner(before:&Item,after:&Item)->bool {
+    before.id==after.id && before.pid==after.pid && before.port==after.port &&
+        before.process_started_at.is_some() &&
+        before.process_started_at==after.process_started_at &&
+        after.force_selectable && running(&after.state)
+}
+fn force_candidates(preview:&Preview)->Result<Vec<Item>,String> {
+    let mut selected:Vec<Item>=preview.active()
+        .filter(|item|item.force_selectable && item.process_started_at.is_some())
+        .cloned().collect();
+    if selected.is_empty() {
+        return Err("SHUTDOWN_FORCE_NO_VERIFIED_OWNER".into());
+    }
+    // Independent MCP / registered Cloudflare first, managed services next,
+    // and direct Core last. A supervisor/foreign process never enters the list.
+    selected.sort_by_key(|item|match item.kind.as_str(){
+        "mcp"=>0,"cloudflare"=>1,"managed"=>2,"daemon-direct"=>3,"core"=>9,_=>8,
+    });
+    Ok(selected)
+}
+fn os_birth_matches(item:&Item)->bool {
+    let (Some(pid),Some(birth))=(item.pid,item.process_started_at) else{return false};
+    let mut system=System::new();
+    system.refresh_processes();
+    system.process(Pid::from_u32(pid)).is_some_and(|p|p.start_time()==birth)
+}
+async fn force_stop_one(item:&Item)->Result<(),String> {
+    // Confirm fresh native identity, not a stale cached preview or WebView PID.
+    let fresh=inspect().await?;
+    let live=fresh.services.iter().find(|current|current.id==item.id);
+    if !live.is_some_and(|current|same_force_owner(item,current)) {
+        // A previously owned Cloudflare child may already have exited as a
+        // consequence of stopping its parent MCP owner.
+        if item.kind=="cloudflare" && !os_birth_matches(item) {
+            let mut system=System::new();
+            system.refresh_processes();
+            if item.pid.is_some_and(|pid|system.process(Pid::from_u32(pid)).is_none()){
+                return Ok(());
+            }
+        }
+        return Err("SHUTDOWN_FORCE_OWNER_CHANGED".into());
+    }
+    if !os_birth_matches(item){return Err("SHUTDOWN_FORCE_PROCESS_BIRTH_CHANGED".into());}
+    match item.kind.as_str(){
+        "mcp"=>{
+            runtime_control::force_stop_mcp(&config_dir()?,
+                item.port.ok_or("SHUTDOWN_FORCE_PORT_REQUIRED")?,
+                item.pid.ok_or("SHUTDOWN_FORCE_PID_REQUIRED")?,
+                item.process_started_at.ok_or("SHUTDOWN_FORCE_BIRTH_REQUIRED")?).await
+        }
+        "cloudflare"=>{
+            // A Cloudflare entry scanned from an arbitrary OS process is not an
+            // owned service. Re-verify exact private registry provenance and
+            // executable immediately before sending the native force signal.
+            let verified=remote_service_detection::scan(&config_dir()?).await
+                .into_iter().any(|owner|owner.kind=="cloudflare" &&
+                    owner.source=="registry" &&
+                    matches!(owner.state,"online"|"observed") &&
+                    owner.pid==item.pid && owner.port==item.port);
+            if !verified{return Err("SHUTDOWN_FORCE_TUNNEL_NOT_REGISTERED".into());}
+            let pid=item.pid.ok_or("SHUTDOWN_FORCE_PID_REQUIRED")?;
+            let mut system=System::new();
+            system.refresh_processes();
+            let process=system.process(Pid::from_u32(pid))
+                .ok_or("SHUTDOWN_FORCE_OWNER_EXITED")?;
+            let name=process.name().to_ascii_lowercase();
+            if !matches!(name.as_str(),"cloudflared"|"cloudflared.exe") ||
+                Some(process.start_time())!=item.process_started_at {
+                return Err("SHUTDOWN_FORCE_TUNNEL_IDENTITY_CHANGED".into());
+            }
+            if !process.kill(){return Err("SHUTDOWN_FORCE_TUNNEL_SIGNAL_REJECTED".into());}
+            let began=Instant::now();
+            loop{
+                system.refresh_processes();
+                if system.process(Pid::from_u32(pid)).is_none(){
+                    return Ok(());
+                }
+                if began.elapsed()>Duration::from_secs(6){
+                    return Err("SHUTDOWN_FORCE_TUNNEL_EXIT_UNVERIFIED".into());
+                }
+                tokio::time::sleep(Duration::from_millis(200)).await;
+            }
+        }
+        // Existing owner-bound stop plans remain mandatory for every other
+        // supported service. No generic process-tree or Core-supervisor kill.
+        "managed"|"daemon-direct"|"core" if item.selectable=>stop_one(item).await,
+        _=>Err("SHUTDOWN_FORCE_NO_OWNER_PROTOCOL".into()),
+    }
+}
+
 fn stop_plan_request(service: &str, plan: &Value, port: u16, expected_pid:u32) -> Result<Value,String> {
     if !MANAGED_ORDER.contains(&service) || plan["service"]!=service ||
         plan["action"]!="stop" || port_of(&plan["port"])!=Some(port) ||
@@ -555,6 +645,57 @@ fn set_progress(app:&AppHandle, progress:&Progress) {
     if let Ok(mut state)=locked(){state.progress=Some(progress.clone());}
     let _=app.emit("shutdown-manager-progress",progress);
 }
+async fn run_force_shutdown(app:AppHandle, chosen:Vec<Item>, mut progress:Progress) {
+    for (index,item) in chosen.iter().enumerate(){
+        let Some(step)=progress.steps.iter().position(|step|step.id==item.id) else {
+            progress.stage="partial".into();
+            progress.error=Some("SHUTDOWN_FORCE_PROGRESS_MISMATCH".into());
+            set_progress(&app,&progress);
+            if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
+            return;
+        };
+        progress.steps[step].status="stopping".into();
+        progress.steps[step].message="Revalidating registered owner and process birth".into();
+        set_progress(&app,&progress);
+        match force_stop_one(item).await{
+            Ok(())=>{
+                progress.steps[step].status="stopped".into();
+                progress.steps[step].message="Registered owner exit verified".into();
+                set_progress(&app,&progress);
+            }
+            Err(error)=>{
+                progress.steps[step].status="blocked".into();
+                progress.steps[step].message=redacted(&error);
+                progress.error=Some(redacted(&error));
+                progress.stage="partial".into();
+                for later in chosen.iter().skip(index+1){
+                    if let Some(other)=progress.steps.iter_mut().find(|s|s.id==later.id){
+                        other.status="skipped".into();
+                        other.message="Not attempted after an uncertain force-stop result".into();
+                    }
+                }
+                set_progress(&app,&progress);
+                if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
+                return;
+            }
+        }
+    }
+    // Unknown/foreign owners are never taken over. A force-stop may finish
+    // only partially; keep the Tray running for evidence and reconciliation.
+    let remaining=inspect().await.map(|after|
+        after.active().any(|item|!matches!(item.kind.as_str(),"daemon-direct") ||
+            item.state=="active"));
+    match remaining{
+        Ok(false)=>progress.stage="complete".into(),
+        _=>{
+            progress.stage="partial".into();
+            progress.error=Some("SHUTDOWN_FORCE_REMAINING_OWNERS_REQUIRE_REVIEW".into());
+        }
+    }
+    set_progress(&app,&progress);
+    if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
+}
+
 async fn run_shutdown(app:AppHandle, chosen:Vec<Item>, exit_after:bool, mut progress:Progress) {
     for (index,item) in chosen.iter().enumerate() {
         progress.steps[index].status=if item.kind=="mcp" {"draining"} else {"stopping"}.into();
