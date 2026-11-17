@@ -5,6 +5,8 @@ import path from "node:path";
 import {createSuperagentMcpServer} from "../src/core/mcp/superagentMcpServer.js";
 import {identityOfSelf} from "../src/core/tools/registeredFileToolGate.js";
 import {MCP_GATEWAY_TOOL_NAMES} from "../src/core/mcp/mcpToolGateway.js";
+import {registerProject} from "../src/core/project/projectRegistry.js";
+import {grantProjectAccess} from "../src/core/project/projectAccessPolicy.js";
 
 const invoke=async(server:ReturnType<typeof createSuperagentMcpServer>,name:string,args:Record<string,unknown>)=>
   (server as any)._requestHandlers.get("tools/call")({
@@ -35,28 +37,30 @@ describe("MCP explicit file grep enforces registered host denies end-to-end",()=
       ],
     }));
     const identity={mode:"oauth" as const,subject:"explicit-grep-reader",scopes:["mcp:tools"]};
+    registerProject({id:"explicit-grep-project",name:"Explicit Grep Test",type:"local",root:project});
+    grantProjectAccess(identity,"explicit-grep-project",["read"]);
     const server=createSuperagentMcpServer({authMode:"oauth",toolExposure:"full",
       getIdentity:()=>identity,workspace:project});
     try{
       const safe=await invoke(server,"superagent_grep_search",{
-        workspace:project,filePaths:["allowed.txt"],query:"PUBLIC_MARKER",
+        workspace:project,projectId:"explicit-grep-project",filePaths:["allowed.txt"],query:"PUBLIC_MARKER",
       });
       expect(safe.isError).not.toBe(true);
       expect(JSON.stringify(safe)).toContain("PUBLIC_MARKER");
       const prohibited=await invoke(server,"superagent_grep_search",{
-        workspace:project,filePaths:["allowed.txt","blocked.txt"],query:"PRIVATE_MARKER",
+        workspace:project,projectId:"explicit-grep-project",filePaths:["allowed.txt","blocked.txt"],query:"PRIVATE_MARKER",
       });
       expect(prohibited.isError).toBe(true);
       expect(JSON.stringify(prohibited)).toMatch(/denies read|Access denied/);
       expect(JSON.stringify(prohibited)).not.toContain("PRIVATE_MARKER");
       const recursive=await invoke(server,"superagent_grep_search",{
-        workspace:project,path:".",query:"PRIVATE_MARKER",
+        workspace:project,projectId:"explicit-grep-project",path:".",query:"PRIVATE_MARKER",
       });
       expect(recursive.isError).toBe(true);
       expect(JSON.stringify(recursive)).toMatch(/Unmediated discovery/);
       const nested=await invoke(server,MCP_GATEWAY_TOOL_NAMES.execute,{
         name:"superagent_grep_search",
-        arguments:{workspace:project,filePaths:["blocked.txt"],query:"PRIVATE_MARKER"},
+        arguments:{workspace:project,projectId:"explicit-grep-project",filePaths:["blocked.txt"],query:"PRIVATE_MARKER"},
       });
       expect(nested.isError).toBe(true);
       expect(JSON.stringify(nested)).not.toContain("PRIVATE_MARKER");
