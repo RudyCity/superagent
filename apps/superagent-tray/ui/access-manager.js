@@ -760,6 +760,117 @@
     loadError.setAttribute("role", "alert");
     loadError.hidden = true;
 
+    // Registration adds project metadata only; each MCP identity still needs
+    // a separate, attended Security Approval decision for capabilities.
+    const projectSection = make("section", "access-stored access-project-registry");
+    const projectHead = make("div", "access-project-head");
+    const projectTitle = make("div");
+    projectTitle.append(make("h3", "", "Proyek Terdaftar"),
+      make("p", "access-hint", "Tambahkan folder lokal atau target SSH sebelum memberikan izin MCP."));
+    const projectForm = make("div", "access-project-form");
+    projectForm.id = "access-project-form";
+    projectForm.hidden = true;
+    const toggleProject = action("+ Add Project", "access-submit access-project-add", () => {
+      projectForm.hidden = !projectForm.hidden;
+      toggleProject.textContent = projectForm.hidden ? "+ Add Project" : "Tutup Form";
+      toggleProject.setAttribute("aria-expanded", String(!projectForm.hidden));
+    });
+    toggleProject.id = "access-project-add";
+    toggleProject.setAttribute("aria-expanded", "false");
+    toggleProject.setAttribute("aria-controls", "access-project-form");
+    projectHead.append(projectTitle, toggleProject);
+
+    const projectName = make("input", "access-search");
+    projectName.id = "access-project-name"; projectName.maxLength = 120;
+    projectName.placeholder = "Contoh: Tryout Online";
+    const projectId = make("input", "access-search");
+    projectId.id = "access-project-id"; projectId.maxLength = 63;
+    projectId.placeholder = "Opsional, otomatis dari nama";
+    const projectType = select("access-project-type", [["local", "Folder lokal"], ["ssh", "SSH"]]);
+    const projectLocal = make("div", "access-project-target");
+    projectLocal.id = "access-project-local";
+    const projectPath = make("input", "access-search");
+    projectPath.id = "access-project-root"; projectPath.readOnly = true;
+    projectPath.placeholder = "Pilih folder proyek...";
+    const chooseFolder = action("Pilih Folder", "access-revoke access-project-folder", async () => {
+      chooseFolder.disabled = true;
+      try {
+        const chosen = await invoke("pick_permanent_access_path", { directory: true });
+        if (typeof chosen === "string" && chosen.trim()) projectPath.value = chosen;
+      } catch (error) { status("Tidak dapat memilih folder: " + String(error?.message || error), "error"); }
+      finally { chooseFolder.disabled = false; }
+    });
+    chooseFolder.id = "access-project-browse";
+    projectLocal.append(projectPath, chooseFolder);
+    const projectRemote = make("div");
+    projectRemote.id = "access-project-remote"; projectRemote.hidden = true;
+    const projectTarget = make("input", "access-search");
+    projectTarget.id = "access-project-target"; projectTarget.maxLength = 2048;
+    projectTarget.placeholder = "ssh://user@host/absolute/path";
+    projectRemote.append(field("SSH target (tanpa password)", projectTarget,
+      "Gunakan kredensial SSH yang sudah dikonfigurasi. Jangan masukkan password di URL."));
+    projectType.addEventListener("change", () => {
+      projectLocal.hidden = projectType.value !== "local";
+      projectRemote.hidden = projectType.value !== "ssh";
+    });
+    const projectDesc = make("input", "access-search");
+    projectDesc.id = "access-project-description"; projectDesc.maxLength = 500;
+    projectDesc.placeholder = "Opsional";
+    const projectSubmit = action("Daftarkan Proyek", "access-submit access-project-save", async () => {
+      const name = projectName.value.trim();
+      const id = projectId.value.trim();
+      const description = projectDesc.value.trim();
+      const type = projectType.value;
+      const target = type === "local" ? projectPath.value.trim() : projectTarget.value.trim();
+      if (!name || name.length > 120 || !target || !["local", "ssh"].includes(type) ||
+          (id && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(id))) {
+        status("Lengkapi nama dan target; Project ID hanya huruf kecil, angka, atau tanda hubung.", "warning");
+        return;
+      }
+      projectSubmit.disabled = true;
+      try {
+        const payload = { name, type, ...(id ? { id } : {}),
+          ...(description ? { description } : {}),
+          ...(type === "local" ? { root: target } : { target }) };
+        const response = await invoke("mcp_project_access_action",
+          { action: "register_project", payload });
+        if (!response?.success || response.capabilitiesGranted !== false ||
+            !response.project?.projectId) {
+          throw Error(response?.error || "Core belum mengonfirmasi registrasi tanpa izin MCP.");
+        }
+        projectName.value = ""; projectId.value = ""; projectDesc.value = "";
+        projectPath.value = ""; projectTarget.value = "";
+        projectForm.hidden = true;
+        toggleProject.textContent = "+ Add Project";
+        toggleProject.setAttribute("aria-expanded", "false");
+        status("Proyek " + response.project.projectId +
+          " terdaftar. Akses agent MCP belum diberikan.", "success");
+        await refreshMcpRequests();
+        const selectProject = $("access-mcp-proj-select");
+        if (selectProject?.children && Array.from(selectProject.children)
+            .some(item => item.value === response.project.projectId)) {
+          selectProject.value = response.project.projectId;
+        }
+      } catch (error) {
+        status("Proyek gagal didaftarkan: " + String(error?.message || error), "error");
+      } finally {
+        projectSubmit.disabled = false;
+      }
+    });
+    projectSubmit.id = "access-project-save";
+    projectForm.append(
+      field("Nama proyek", projectName),
+      field("Project ID", projectId, "ID tetap untuk pemilihan project oleh agent MCP."),
+      field("Jenis proyek", projectType),
+      projectLocal, projectRemote,
+      field("Deskripsi", projectDesc),
+      make("p", "access-hint", "Registrasi tidak memberi izin kepada agent. Setelah berhasil, pilih identitas dan capability di bagian bawah."),
+      projectSubmit
+    );
+    const projectList = make("div", "access-project-list");
+    projectList.id = "access-project-list";
+    projectSection.append(projectHead, projectForm, projectList);
+
     // Section 1: Pending Access Requests
     const reqSection = make("div", "access-stored");
     const reqHead = make("div", "access-audit-head");
@@ -857,7 +968,7 @@
     histList.id = "access-mcp-history-list";
     histSection.append(histHead, histList);
 
-    pane.append(banner, loadError, reqSection, grantSection, histSection);
+    pane.append(banner, loadError, projectSection, reqSection, grantSection, histSection);
     return pane;
   }
 
@@ -1150,6 +1261,24 @@
         }
         if (validProjects.some(project => project.projectId === previousProject)) {
           projectSelect.value = previousProject;
+        }
+      }
+      const registeredList = $("access-project-list");
+      if (registeredList) {
+        registeredList.replaceChildren();
+        if (failures.projects) {
+          registeredList.append(make("p", "access-empty", "Daftar proyek tidak tersedia. Muat ulang."));
+        } else if (!validProjects.length) {
+          registeredList.append(make("p", "access-empty", "Belum ada proyek aktif terdaftar. Pilih Add Project."));
+        } else {
+          for (const project of validProjects) {
+            const row = make("div", "access-project-row");
+            row.append(make("strong", "", String(project.name || project.projectId)),
+              make("span", "access-mcp-meta", String(project.projectId) + " · " +
+                String(project.type || "local") + " · " + String(project.target || "")),
+              make("span", "access-project-no-grant", "Izin MCP terpisah"));
+            registeredList.append(row);
+          }
         }
       }
       const identitiesAvailable = Boolean(mcpCache.identities?.length);
