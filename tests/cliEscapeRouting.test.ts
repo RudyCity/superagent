@@ -119,7 +119,7 @@ describe("CLI Escape routing regression", () => {
   });
 
   it("keeps idle Escape as focus navigation without aborting", () => {
-    const { ctx, abort } = singleAgentContext({
+    const { ctx } = singleAgentContext({
       isProcessing: false,
       isExecutingTool: false,
       focusMode: "history",
@@ -129,7 +129,7 @@ describe("CLI Escape routing regression", () => {
     callbacks[0]("", { escape: true });
 
     expect(ctx.setFocusMode).toHaveBeenCalledWith("input");
-    expect(abort).not.toHaveBeenCalled();
+    expect(ctx.agentRef.current.abort).not.toHaveBeenCalled();
     expect(ctx.setIsProcessing).not.toHaveBeenCalled();
   });
 
