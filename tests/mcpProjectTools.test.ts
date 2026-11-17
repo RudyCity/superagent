@@ -78,7 +78,7 @@ describe("project registry MCP tools", () => {
     expect(getProject("api-tools-test")).toBeNull();
   });
 
-  it("requires Full YOLO to grant project access and scopes capabilities to one MCP identity", async () => {
+  it("never self-grants MCP project access regardless of chat YOLO", async () => {
     const identity = { mode: "oauth" as const, subject: "project-tools-client" };
     await dispatchProjectMcpTool("superagent_register_project", {
       projectId: "access-test", name: "Access Test", type: "local", root: projectRoot,
@@ -87,25 +87,30 @@ describe("project registry MCP tools", () => {
       projectId: "access-test", capabilities: ["read"],
     }, identity);
     expect(denied.isError).toBe(true);
-    expect(textOf(denied)).toContain("Full YOLO");
+    expect(JSON.parse(textOf(denied))).toMatchObject({
+      code: "POLICY_DENIED", status: "pending", projectId: "access-test",
+    });
+    expect(hasProjectAccess(identity, "access-test", "read")).toBe(false);
 
     setFullYoloMode(true);
-    const granted = await dispatchProjectMcpTool("superagent_grant_project_access", {
-      projectId: "access-test", capabilities: ["read"],
+    const stillDenied = await dispatchProjectMcpTool("superagent_grant_project_access", {
+      projectId: "access-test", capabilities: ["read", "write"],
     }, identity);
-    expect(granted.isError).toBeUndefined();
-    expect(hasProjectAccess(identity, "access-test", "read")).toBe(true);
+    expect(stillDenied.isError).toBe(true);
+    expect(JSON.parse(textOf(stillDenied))).toMatchObject({
+      code: "POLICY_DENIED", status: "pending", projectId: "access-test",
+    });
+    expect(hasProjectAccess(identity, "access-test", "read")).toBe(false);
     expect(hasProjectAccess(identity, "access-test", "write")).toBe(false);
     expect(hasProjectAccess({ mode: "oauth", subject: "other-client" }, "access-test", "read")).toBe(false);
 
     const listed = await dispatchProjectMcpTool("superagent_list_project_access", {}, identity);
-    expect(JSON.parse(textOf(listed)).grants).toMatchObject([{ projectId: "access-test", capabilities: ["read"] }]);
+    expect(JSON.parse(textOf(listed)).grants).toEqual([]);
 
     const disabled = await dispatchProjectMcpTool("superagent_update_project", {
       projectId: "access-test", enabled: false,
     }, identity);
     expect(JSON.parse(textOf(disabled)).previousAccessGrantsRevoked).toBe(true);
-    expect(hasProjectAccess(identity, "access-test", "read")).toBe(false);
     setFullYoloMode(false);
   });
 
