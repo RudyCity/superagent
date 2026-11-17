@@ -173,27 +173,27 @@ async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<
     Ok(())
 }
 
-/// Manual override is intentionally bounded to the runtime's observed
-/// SuperAgent owner categories and process executables, not arbitrary OS PIDs.
+/// Only OS-observed service entries can be manually killed. An unknown
+/// runtime executable is allowed after human approval, but critical OS
+/// processes and this Tray cannot be selected. No free-form PID control.
 fn manual_process_allowed(kind:&str,pid:u32,name:&str)->bool {
     if pid<=4 || pid==std::process::id() {return false;}
     let executable=name.to_ascii_lowercase();
-    if matches!(executable.as_str(),"superagent-tray"|"superagent-tray.exe") {
+    if executable.is_empty()||executable.len()>128 ||
+        !executable.chars().all(|ch|ch.is_ascii_alphanumeric()||
+            matches!(ch,'-'|'_'|'.')) {
         return false;
     }
-    if kind=="cloudflare" {
-        return matches!(executable.as_str(),"cloudflared"|"cloudflared.exe");
-    }
-    if !matches!(kind,"managed"|"core"|"core-supervisor"|"mcp"|
-        "muse-watch"|"daemon-direct"|"external") {
+    let base=executable.strip_suffix(".exe").unwrap_or(&executable);
+    if matches!(base,"superagent-tray"|"system"|"registry"|"smss"|"csrss"|
+        "wininit"|"winlogon"|"lsass"|"services"|"svchost"|"dwm"|
+        "explorer"|"systemd"|"launchd"|"kernel_task"|"windowserver"|
+        "loginwindow"|"finder") {
         return false;
     }
-    matches!(executable.as_str(),"bun"|"bun.exe"|"node"|"node.exe"|
-        "superagent"|"superagent.exe") ||
-        (executable.starts_with("superagent-") &&
-            executable.len()<=96 &&
-            executable.chars().all(|ch|ch.is_ascii_alphanumeric()||
-                matches!(ch,'-'|'_'|'.')))
+    if kind=="cloudflare" {return base=="cloudflared";}
+    matches!(kind,"managed"|"core"|"core-supervisor"|"mcp"|
+        "muse-watch"|"daemon-direct"|"external")
 }
 
 async fn inspect() -> Result<Preview, String> {
