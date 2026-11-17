@@ -1170,7 +1170,7 @@ async fn lan_support_action(
         }
     }
     let mut body = Map::new();
-    body.insert("action".into(), Value::String(action));
+    body.insert("action".into(), Value::String(action.clone()));
     body.extend(obj.iter().map(|(key, value)| (key.clone(), value.clone())));
     if let Some(token) = controller_token {
         body.insert("controllerToken".into(),Value::String(token));
