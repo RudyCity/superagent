@@ -5,6 +5,7 @@
  * access or arbitrary URL is exposed to Tauri/JavaScript.
  */
 import { isFullYoloMode, isSystemDestructiveCommand } from "../permissions.js";
+import { nativeAndroidControllerApproval } from "../desktopUi/nativeAndroidControllerApproval.js";
 import { privateIntranetPeer } from "../lanRemote/transport.js";
 import { assertAndroidShellCommand } from "../lanRemote/androidCapabilities.js";
 import {
@@ -54,9 +55,9 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     file_finish: ["action", "deviceId", "transferId"],
     file_abort: ["action", "deviceId", "transferId"],
     schema: ["action", "deviceId", "knownRevision"],
-    element: ["action", "deviceId", "elementId", "revision", "kind"],
+    element: ["action", "deviceId", "elementId", "revision", "kind", "controllerToken"],
     screen: ["action", "deviceId"],
-    input: ["action", "deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text"],
+    input: ["action", "deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text", "controllerToken"],
   };
   const keys = Object.keys(data);
   if (keys.some((key) => !allowed[action].includes(key))) throw Error("Unexpected LAN request field.");
@@ -140,6 +141,9 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
          || Number(data.knownRevision) > 1_000_000_000)) throw Error("Invalid known UI schema revision.");
   }
   if (action === "element") {
+    if (typeof data.controllerToken !== "string" ||
+        !/^[a-f0-9]{64}$/.test(data.controllerToken))
+      throw Error("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
     if (data.kind !== "click" || typeof data.elementId !== "string"
         || !/^0(?:[.]\d{1,2}){0,12}$/.test(data.elementId)
         || data.elementId.length > 48
@@ -147,12 +151,15 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
         || Number(data.revision) > 1_000_000_000) throw Error("Invalid semantic UI action.");
   }
   if (action === "input") {
+    if (typeof data.controllerToken !== "string" ||
+        !/^[a-f0-9]{64}$/.test(data.controllerToken))
+      throw Error("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
     const kind = data.kind;
     const allowed: Record<string, string[]> = {
-      tap: ["action", "deviceId", "kind", "x", "y"],
-      swipe: ["action", "deviceId", "kind", "x", "y", "endX", "endY", "durationMs"],
-      back: ["action", "deviceId", "kind"], home: ["action", "deviceId", "kind"],
-      recents: ["action", "deviceId", "kind"], text: ["action", "deviceId", "kind", "text"],
+      tap: ["action", "deviceId", "kind", "x", "y", "controllerToken"],
+      swipe: ["action", "deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "controllerToken"],
+      back: ["action", "deviceId", "kind", "controllerToken"], home: ["action", "deviceId", "kind", "controllerToken"],
+      recents: ["action", "deviceId", "kind", "controllerToken"], text: ["action", "deviceId", "kind", "text", "controllerToken"],
     };
     if (typeof kind !== "string" || !Object.prototype.hasOwnProperty.call(allowed, kind)
         || Object.keys(data).some((key) => !allowed[kind].includes(key))) throw Error("Unsupported Android input.");
@@ -265,7 +272,9 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
        fingerprint: args.fingerprint as string, controller: args.controller as string | undefined,
        segmentName: args.segment as string | undefined,
     }) };
-    case "open": return { success: true, device: await openLanSession(id) };
+    case "open":
+      nativeAndroidControllerApproval.revokeDevice(id);
+      return { success: true, device: await openLanSession(id) };
     case "exec": {
       const command = args.command as string;
       if (isSystemDestructiveCommand(command)) throw Error("Potentially destructive remote system command blocked.");
@@ -291,15 +300,22 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
     case "file_finish": return { success: true, result: await finalizeLanFile(id, args.transferId as string) };
     case "file_abort": await abortLanFile(id, args.transferId as string); return { success: true };
     case "schema": return { success: true, schema: await getAndroidUiSchema(id, args.knownRevision as number | undefined) };
-    case "element": return { success: true,
-      result: await clickAndroidUiElement(id, args.revision as number, args.elementId as string) };
+    case "element":
+      nativeAndroidControllerApproval.authorize(id,args.controllerToken);
+      return { success: true,
+        result: await clickAndroidUiElement(id, args.revision as number, args.elementId as string) };
     case "screen": return { success: true, frame: await getAndroidScreenFrame(id) };
     case "input": {
+      nativeAndroidControllerApproval.authorize(id,args.controllerToken);
       const command = toAndroidScreenInput(args);
       // No arbitrary shell/URI/browser/native command path is exposed here.
       return { success: true, result: await sendAndroidScreenInput(id, command) };
     }
-    case "close": await closeLanSession(id); return { success: true, state: "session_closed" };
-    case "revoke": await revokeLanDevice(id); return { success: true, state: "device_revoked" };
+    case "close":
+      nativeAndroidControllerApproval.revokeDevice(id);
+      await closeLanSession(id); return { success: true, state: "session_closed" };
+    case "revoke":
+      nativeAndroidControllerApproval.revokeDevice(id);
+      await revokeLanDevice(id); return { success: true, state: "device_revoked" };
   }
 }
