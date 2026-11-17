@@ -482,6 +482,43 @@ export function grantProjectAccessToIdentity(
 }
 
 /**
+ * Cross-process discovery for identities that have authenticated and filed a
+ * recent access request. Reuses the existing protected request store rather
+ * than persisting all MCP connection tokens or bearer-derived identities.
+ */
+export function listRequestedMcpIdentityCandidates(now = Date.now()): Array<{
+  identityHandle: string; subject: string; mode: "oauth" | "static-bearer";
+  scopes: string[]; lastSeenAt: number;
+}> {
+  const latest = new Map<string, { identityHandle: string; subject: string;
+    mode: "oauth" | "static-bearer"; scopes: string[]; lastSeenAt: number }>();
+  for (const req of readAccessRequests().requests) {
+    if (!Number.isFinite(req.createdAt) || req.createdAt > now ||
+        now - req.createdAt > 4 * 60 * 60 * 1000) continue;
+    const identity: ProjectAccessIdentity = { mode: req.mode, subject: req.subject, credentialHash: req.credentialHash };
+    if (deriveIdentityHandle(identity) !== req.identityHandle) continue;
+    if (!latest.has(req.identityHandle)) {
+      latest.set(req.identityHandle, {
+        identityHandle: req.identityHandle, subject: req.subject,
+        mode: req.mode, scopes: [], lastSeenAt: req.createdAt,
+      });
+    }
+  }
+  return [...latest.values()];
+}
+
+export function getRequestedMcpIdentityByHandle(handle: string, now = Date.now()): ProjectAccessIdentity | null {
+  if (!/^idh_[a-f0-9]{16}$/.test(handle)) return null;
+  for (const req of readAccessRequests().requests) {
+    if (req.identityHandle !== handle || !Number.isFinite(req.createdAt) ||
+        req.createdAt > now || now - req.createdAt > 4 * 60 * 60 * 1000) continue;
+    const identity: ProjectAccessIdentity = { mode: req.mode, subject: req.subject, credentialHash: req.credentialHash };
+    if (deriveIdentityHandle(identity) === handle) return identity;
+  }
+  return null;
+}
+
+/**
  * Lists stored project access requests with optional status / identity filtering.
  */
 export function listProjectAccessRequests(
