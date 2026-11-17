@@ -39,7 +39,8 @@ function mount(preview=fixture()){
     calls.push(args);
     if(args.action==="preview")return {preview};
     if(args.action==="status")return {busy:false,progress:null};
-    if(args.action==="execute")return {accepted:true,runId:"run-confirmed"};
+    if(args.action==="execute"||args.action==="force_all")
+      return {accepted:true,runId:"run-confirmed"};
     throw Error("Unexpected request");
   });
   const window:any={
@@ -62,7 +63,8 @@ function mount(preview=fixture()){
 describe("native Shutdown Manager UI",()=>{
   it("mounts one accessible dialog, bounded progress and CSP-compatible files",()=>{
     for(const id of ["shutdown-manager-dialog","shutdown-services","shutdown-exit-all",
-      "shutdown-stop-selected","shutdown-progress","shutdown-feedback"])
+      "shutdown-stop-selected","shutdown-force-all","shutdown-force-confirm",
+      "shutdown-progress","shutdown-feedback"])
       expect(html).toContain('id="'+id+'"');
     expect(html).toContain('role="dialog" aria-modal="true"');
     expect(html).toContain('src="./shutdown-manager.js"');
@@ -112,6 +114,54 @@ describe("native Shutdown Manager UI",()=>{
     const action=m.calls.find(c=>c.action==="execute");
     expect(action).toMatchObject({action:"execute",selected:[],exitAfter:true});
   });
+  it("requires an exact typed phrase and native approval before Force Stop All",async()=>{
+    const owned=fixture();
+    owned.services[1].forceSelectable=true; // authenticated busy MCP owner
+    owned.services[0].forceSelectable=true; // owner-verified managed guardian
+    const m=mount(owned);
+    await m.open();
+    expect(m.node("shutdown-force-all").disabled).toBe(true);
+    const phrase=m.node("shutdown-force-confirm");
+    phrase.value="force stop all";
+    phrase.handlers.input();
+    expect(m.node("shutdown-force-all").disabled).toBe(true);
+    expect(m.calls.some(c=>c.action==="force_all")).toBe(false);
+    phrase.value="FORCE STOP ALL";phrase.handlers.input();
+    expect(m.node("shutdown-force-all").disabled).toBe(false);
+    await m.click("shutdown-force-all");
+    const action=m.calls.find(c=>c.action==="force_all");
+    expect(action).toMatchObject({
+      action:"force_all",previewId:"trusted-preview",
+      forceConfirmation:"FORCE STOP ALL",
+    });
+    expect(action.selected).toBeUndefined();
+    expect(action.exitAfter).toBeUndefined();
+    expect(action.pid).toBeUndefined();
+    expect(m.node("shutdown-progress").hidden).toBe(false);
+    expect(m.node("shutdown-progress-status").textContent).toContain("in progress");
+  });
+  it("never enables force control when only foreign/unverified owners remain",async()=>{
+    const inventory=fixture();
+    inventory.services[0].forceSelectable=false;
+    inventory.services[1].forceSelectable=false;
+    const m=mount(inventory);await m.open();
+    m.node("shutdown-force-confirm").value="FORCE STOP ALL";
+    m.node("shutdown-force-confirm").handlers.input();
+    expect(m.node("shutdown-force-all").disabled).toBe(true);
+    expect(m.calls.every(c=>c.action!=="force_all")).toBe(true);
+  });
+  it("clears typed force authorization after refreshing the owner preview",async()=>{
+    const inventory=fixture();
+    inventory.services[1].forceSelectable=true;
+    const m=mount(inventory);await m.open();
+    m.node("shutdown-force-confirm").value="FORCE STOP ALL";
+    m.node("shutdown-force-confirm").handlers.input();
+    expect(m.node("shutdown-force-all").disabled).toBe(false);
+    await m.click("shutdown-refresh");
+    await new Promise(resolve=>setTimeout(resolve,20));
+    expect(m.node("shutdown-force-confirm").value).toBe("");
+    expect(m.node("shutdown-force-all").disabled).toBe(true);
+  });
   it("renders progress through textContent and never replays a blocked operation",async()=>{
     const m=mount();
     await m.open();
@@ -122,7 +172,7 @@ describe("native Shutdown Manager UI",()=>{
         status:"blocked",message:"Identity changed"}]}});
     const item=m.node("shutdown-progress-steps").children[0];
     expect(item.children[0].textContent).toBe("<script>bad()</script>");
-    expect(m.node("shutdown-progress-status").textContent).toContain("blockers");
+    expect(m.node("shutdown-progress-status").textContent).toContain("remaining owners");
     expect(m.calls.every(c=>c.action!=="execute")).toBe(true);
   });
 });
