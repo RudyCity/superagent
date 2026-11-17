@@ -147,6 +147,34 @@ function runtimeRenderRemoteList() {
   root.innerHTML = runtimeVisibleRemote().map(runtimeRemoteCard).join("");
   runtimeApplyTab();
 }
+function runtimeAnimateVerifiedStop(service) {
+  const key = runtimeStopKey(service);
+  const previous = runtimeStopTransitions.get(key);
+  if (previous?.phase === "stopped" || previous?.phase === "removed") return;
+  runtimeStopTransitions.set(key, {
+    phase: "stopped", service, confirmedAt: Date.now(),
+  });
+  runtimeRenderRemoteList();
+  setTimeout(() => {
+    const current = runtimeStopTransitions.get(key);
+    if (current?.phase !== "stopped") return;
+    runtimeStopTransitions.set(key, { ...current, phase: "removed" });
+    runtimeRenderRemoteList();
+  }, 420);
+}
+function runtimeNativeShutdownProgress(event) {
+  const progress = event?.payload;
+  for (const step of Array.isArray(progress?.steps) ? progress.steps : []) {
+    const match = typeof step?.id === "string" && step.status === "stopped"
+      ? /^mcp:(\\d{4,5}):(\\d+)$/.exec(step.id) : null;
+    if (!match) continue;
+    const owner = runtimeLastResult?.remoteServices?.find(service =>
+      service.kind === "mcp" && service.port === Number(match[1]) &&
+      service.pid === Number(match[2]));
+    if (owner) runtimeAnimateVerifiedStop(owner);
+  }
+  if (["complete", "partial"].includes(progress?.stage)) void runtimeRefresh(true);
+}
 
 function runtimeLabel(state) {
   const labels = {
@@ -904,16 +932,8 @@ async function runtimeServiceAction(event) {
     if (result?.success !== true) throw new Error("The service owner did not confirm the operation");
     message.textContent = result.message || `${label} ${startAction ? "start" : action} confirmed.`;
     if (stopKey) {
-      runtimeStopTransitions.set(stopKey, { phase: "stopped", service, confirmedAt: Date.now() });
-      runtimeRenderRemoteList();
-      // The native stop call returns success only after owner exit proof.
-      // Animate first, then remove the exact PID from active listing.
-      setTimeout(() => {
-        if (runtimeStopTransitions.get(stopKey)?.phase !== "stopped") return;
-        const original = runtimeStopTransitions.get(stopKey);
-        runtimeStopTransitions.set(stopKey, { ...original, phase: "removed" });
-        runtimeRenderRemoteList();
-      }, 420);
+      // Native stop success means process exit has already been verified.
+      runtimeAnimateVerifiedStop(service);
     }
     window.TrayFeedback?.notify({ kind: "success", scope: "runtime",
       message: stopKey ? "Owner stopped and verified; listing is updating." :
@@ -1551,10 +1571,7 @@ function runtimeInstall() {
   rt("runtime-servers")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeYoloChipClick);
 
-  window.__TAURI__?.event?.listen?.("shutdown-manager-progress", (event) => {
-    // Manual shutdown from the native manager must refresh this panel too.
-    if (["complete", "partial"].includes(event?.payload?.stage)) void runtimeRefresh(true);
-  });
+  window.__TAURI__?.event?.listen?.("shutdown-manager-progress", runtimeNativeShutdownProgress);
   window.__TAURI__?.event?.listen?.("desktop-open-runtime", () => {
     if (typeof window.navigateToPage === "function") {
       window.navigateToPage("runtime");
