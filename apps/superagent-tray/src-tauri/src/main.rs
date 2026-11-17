@@ -2531,6 +2531,16 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
     let url = format!("http://127.0.0.1:{}{}", info.port, path);
     let request_timeout = if path.starts_with("/api/desktop/cdp/live") {
         Duration::from_secs(14)
+    } else if path == "/api/desktop/cdp/recordings" {
+        // Recording start requires OS-verified capture and FFmpeg readiness;
+        // finalize waits for the encoder; ZIP may copy 175 MB of local data.
+        // Never retry these operations after an ambiguous timeout.
+        match body.as_ref().and_then(|b|b.get("action")).and_then(Value::as_str) {
+            Some("start-native") => Duration::from_secs(42),
+            Some("stop") => Duration::from_secs(28),
+            Some("export-zip") => Duration::from_secs(95),
+            _ => Duration::from_secs(12),
+        }
     } else if path == "/api/desktop/live/frame" {
         // Platform-native window discovery/capture may require several
         // bounded OS subprocesses. A timeout is never automatically retried.
