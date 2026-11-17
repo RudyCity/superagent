@@ -21,6 +21,7 @@ type Workflow = {
 type Stage = {
   id: string; state: StageState; attempts: number; workerId?: string;
   leaseDigest?: string; leaseUntil?: number; result?: string; error?: string;
+  nudge?: { requestId: string; state: "dispatching" | "confirmed" | "uncertain"; at: number; reason?: string };
 };
 type Run = {
   id: string; workflowId: string; workspace: string; createdAt: number; updatedAt: number;
@@ -29,6 +30,7 @@ type Run = {
 type Worker = {
   id: string; workspace: string; principal: string; actor: string; label: string;
   capabilities: string[]; resumeDigest: string; lastSeen: number; enabled: boolean;
+  cdp?: { clientId: string; tabId: number; boundAt: number };
 };
 type Store = { version: 1; workflows: Workflow[]; runs: Run[]; workers: Worker[] };
 const EMPTY = (): Store => ({ version: 1, workflows: [], runs: [], workers: [] });
@@ -184,7 +186,7 @@ function scheduleDue(s: Store, now: number) {
     if (!flow.enabled || flow.lastDueMinute === minute || !matchesCron(flow.cronExpression, date)) continue;
     flow.lastDueMinute = minute;
     makeRun(s, flow, now);
-    flow.nextRun = flow.enabled ? getNextCronTime(flow.cronExpression, new Date(now + 60_000)).getTime() : null;
+    flow.nextRun = flow.enabled ? getNextCronTime(flow.cronExpression, new Date(now)).getTime() : null;
   }
 }
 function evolveRun(run: Run, flow: Workflow, now: number) {
@@ -256,6 +258,7 @@ export function lifecycleAction(action: string, args: Record<string, unknown>, c
       case "workers": {
         return { workers: s.workers.filter(w => w.workspace === ctx.workspace && w.enabled).map(w => ({
           id: w.id, label: w.label, capabilities: w.capabilities, status: now - w.lastSeen < ONLINE_MS ? "online" : "offline",
+          ...(ctx.admin && w.cdp ? { cdp: { ...w.cdp } } : {}),
         })) };
       }
       case "worker.register": {
@@ -281,6 +284,38 @@ export function lifecycleAction(action: string, args: Record<string, unknown>, c
         }
         w.actor = ctx.actor; w.lastSeen = now;
         return { workerId: w.id, status: "online" };
+      }
+      case "worker.bind": {
+        if (!ctx.admin) throw new Error("Only the native operator may approve a CDP notification target.");
+        const workerId = identifier(args.workerId, "workerId");
+        const target = s.workers.find(w => w.id === workerId && w.workspace === ctx.workspace && w.enabled);
+        if (!target) throw new Error("Registered worker not found.");
+        const clientId = identifier(args.clientId, "clientId");
+        if (!Number.isSafeInteger(args.tabId) || Number(args.tabId) <= 0) throw new Error("Exact ChatGPT tabId is required.");
+        target.cdp = { clientId, tabId: Number(args.tabId), boundAt: now };
+        return { workerId: target.id, cdp: { ...target.cdp } };
+      }
+      case "worker.unbind":
+      case "worker.revoke": {
+        if (!ctx.admin) throw new Error("Only the native operator may revoke a CDP target or worker.");
+        const target = s.workers.find(w => w.id === args.workerId && w.workspace === ctx.workspace);
+        if (!target) throw new Error("Worker not found.");
+        target.cdp = undefined;
+        if (action === "worker.revoke") {
+          target.enabled = false;
+          for (const run of s.runs.filter(r => r.workspace === ctx.workspace)) {
+            let uncertain = false;
+            for (const stage of run.stages) {
+              if (stage.workerId === target.id && stage.state === "leased") {
+                stage.state = "review_required"; stage.leaseDigest = undefined; stage.leaseUntil = undefined;
+                stage.error = "Worker revoked; operator reconciliation required.";
+                uncertain = true;
+              }
+            }
+            if (uncertain) { run.state = "review_required"; run.updatedAt = now; }
+          }
+        }
+        return { workerId: target.id, enabled: target.enabled, bound: false };
       }
       case "worker.heartbeat": {
         const w = findWorker(s, args.workerId, ctx);
@@ -378,5 +413,63 @@ export function tickExternalLifecycle(now = Date.now()): void {
   withStore(true, state => {
     refreshState(state, now);
     scheduleDue(state, now);
+  });
+}
+
+
+export type CdpWakeCandidate = {
+  runId: string; stepId: string; workerId: string; workflowId: string;
+  clientId: string; tabId: number; requestId?: string;
+};
+/** Read-only: validate the exact paired Chrome tab BEFORE reserving a wake-up. */
+export function listCdpWakeCandidates(): CdpWakeCandidate[] {
+  return withStore(false, state => {
+    const result: CdpWakeCandidate[] = [];
+    for (const run of state.runs) {
+      if (run.state !== "queued" && run.state !== "running") continue;
+      const workflow = state.workflows.find(w => w.id === run.workflowId);
+      if (!workflow) continue;
+      for (const stage of run.stages) {
+        if (stage.state !== "queued" || stage.nudge) continue;
+        const step = workflow.steps.find(t => t.id === stage.id);
+        if (!step?.targetWorkerId) continue;
+        const worker = state.workers.find(w => w.id === step.targetWorkerId && w.workspace === workflow.workspace
+          && w.enabled && w.cdp);
+        if (!worker?.cdp) continue;
+        result.push({ runId: run.id, stepId: stage.id, workerId: worker.id, workflowId: workflow.id,
+          clientId: worker.cdp.clientId, tabId: worker.cdp.tabId });
+        if (result.length >= 12) return result;
+      }
+    }
+    return result;
+  });
+}
+/** Single-use durable reservation. A crash or timeout is uncertain, never automatically replayed. */
+export function reserveCdpWake(candidate: CdpWakeCandidate): CdpWakeCandidate | null {
+  return withStore(true, s => {
+    const run = s.runs.find(r => r.id === candidate.runId);
+    const stage = run?.stages.find(st => st.id === candidate.stepId);
+    const flow = s.workflows.find(w => w.id === run?.workflowId);
+    const step = flow?.steps.find(t => t.id === stage?.id);
+    const worker = s.workers.find(w => w.id === candidate.workerId);
+    if (!run || !stage || !flow || !worker?.cdp || !worker.enabled ||
+        stage.state !== "queued" || stage.nudge ||
+        step?.targetWorkerId !== worker.id ||
+        worker.cdp.clientId !== candidate.clientId || worker.cdp.tabId !== candidate.tabId) return null;
+    const requestId = "life_" + crypto.randomUUID();
+    stage.nudge = { requestId, state: "dispatching", at: Date.now() };
+    return { ...candidate, requestId };
+  });
+}
+export function settleCdpWake(candidate: CdpWakeCandidate, success: boolean, reason?: string): void {
+  withStore(true, state => {
+    const run = state.runs.find(r => r.id === candidate.runId);
+    const stage = run?.stages.find(st => st.id === candidate.stepId);
+    if (!stage?.nudge || stage.nudge.requestId !== candidate.requestId ||
+        stage.nudge.state !== "dispatching") return;
+    stage.nudge.state = success ? "confirmed" : "uncertain";
+    stage.nudge.at = Date.now();
+    if (!success) stage.nudge.reason = (reason || "Delivery uncertain; no automatic replay.").slice(0, 250);
+    if (run) run.updatedAt = Date.now();
   });
 }
