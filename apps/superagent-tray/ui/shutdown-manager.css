@@ -40,6 +40,24 @@
 .shutdown-feedback {border-radius:9px;background:#1e2e40;border:1px solid #345069;
   font-size:12px;line-height:1.55;color:#c5d9ed;padding:10px 13px;overflow-wrap:anywhere}
 .shutdown-feedback[data-tone="error"] {background:#30212a;border-color:#754f58;color:#f3b1b3}
+.shutdown-force-panel {
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(165px,.7fr);
+  align-items:end;column-gap:16px;row-gap:8px;
+  border:1px solid #65474d;border-radius:10px;padding:13px 15px;
+  background:linear-gradient(130deg,#291d28,#1a202c);
+}
+.shutdown-force-copy {display:flex;flex-direction:column;gap:4px;grid-row:span 2}
+.shutdown-force-copy strong {color:#f3b9b6;font-size:12px}
+.shutdown-force-copy small {color:#b9b4c3;font-size:11px;line-height:1.5}
+.shutdown-force-panel label {font-size:11px;color:#d1c0c7}
+.shutdown-force-panel label code {font-size:10px;color:#f5c1c1}
+.shutdown-force-panel input {
+  min-height:37px;min-width:0;width:100%;box-sizing:border-box;
+  border:1px solid #71555e;border-radius:7px;padding:8px 11px;
+  background:#101720;color:#f6eeee;font-size:12px;letter-spacing:.02em;
+}
+.shutdown-force-panel input:focus-visible {outline:2px solid #8bc4ff;outline-offset:2px}
+.shutdown-force-panel input::placeholder {color:#827780}
 .shutdown-progress {border:1px solid #334657;border-radius:10px;padding:14px;background:#111d29}
 .shutdown-progress h3 {font-size:12px;margin:0 0 10px;color:#f4f8fc}
 .shutdown-progress ol {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
@@ -67,5 +85,7 @@
   .shutdown-stat {padding:11px}
   .shutdown-stat strong {font-size:19px}
   .shutdown-service {gap:9px;padding:10px}
+  .shutdown-force-panel {grid-template-columns:minmax(0,1fr)}
+  .shutdown-force-copy {grid-row:auto}
   .shutdown-manager .modal-footer .shutdown-selection-count {flex-basis:100%}
 }
