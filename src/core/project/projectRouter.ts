@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getProject, listProjects, type RegisteredProject } from "./projectRegistry.js";
-import { isPathAllowedByPermanentRegistry } from "../tools/registeredFileToolGate.js";
 
 export type ProjectResolutionSource = "projectId" | "workspace" | "cwd" | "worktreePath" | "session";
 
@@ -205,30 +204,23 @@ export function resolveProjectTarget(input: ResolveProjectTargetInput): Resolved
 /** Resolve a local file path and ensure it stays within its registered root. */
 export function assertPathWithinProject(filePath: string, projectRoot: string): string {
   const resolved = path.resolve(projectRoot, filePath);
-  let root = projectRoot;
-  try {
-    root = fs.realpathSync(projectRoot);
-  } catch {}
+  const root = fs.realpathSync(projectRoot);
   let checked = resolved;
   if (fs.existsSync(resolved)) {
-    try { checked = fs.realpathSync(resolved); } catch {}
+    checked = fs.realpathSync(resolved);
   } else {
     let parent = path.dirname(resolved);
-    while (parent !== path.dirname(parent) && !fs.existsSync(parent)) parent = path.dirname(parent);
+    while (parent !== path.dirname(parent) && !fs.existsSync(parent)) {
+      parent = path.dirname(parent);
+    }
     if (fs.existsSync(parent)) {
-      try {
-        const canonicalParent = fs.realpathSync(parent);
-        if (!isWithin(canonicalParent, root)) {
-          if (isPathAllowedByPermanentRegistry(canonicalParent, "read")) return resolved;
-          throw new Error(`Path escapes registered project root: ${filePath}`);
-        }
-      } catch (err: any) {
-        if (err?.message?.includes("Path escapes")) throw err;
+      const canonicalParent = fs.realpathSync(parent);
+      if (!isWithin(canonicalParent, root)) {
+        throw new Error(`Path escapes registered project root: ${filePath}`);
       }
     }
   }
   if (!isWithin(checked, root)) {
-    if (isPathAllowedByPermanentRegistry(checked, "read")) return resolved;
     throw new Error(`Path escapes registered project root: ${filePath}`);
   }
   return resolved;
