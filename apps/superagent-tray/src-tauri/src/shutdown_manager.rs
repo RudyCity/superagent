@@ -179,9 +179,8 @@ async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<
 fn manual_process_allowed(kind:&str,pid:u32,name:&str)->bool {
     if pid<=4 || pid==std::process::id() {return false;}
     let executable=name.to_ascii_lowercase();
-    if executable.is_empty()||executable.len()>128 ||
-        !executable.chars().all(|ch|ch.is_ascii_alphanumeric()||
-            matches!(ch,'-'|'_'|'.')) {
+    if executable.trim().is_empty()||executable.len()>128 ||
+        !executable.chars().all(|ch|ch.is_ascii_graphic()||ch==' ') {
         return false;
     }
     let base=executable.strip_suffix(".exe").unwrap_or(&executable);
