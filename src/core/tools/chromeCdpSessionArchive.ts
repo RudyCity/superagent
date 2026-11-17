@@ -156,11 +156,15 @@ function queueSafe(item: Session, file: string, payload: object) {
       // Preserve the queue after one failure, but report it in the manifest.
     });
 }
+function archiveSource(item: Session): "managed-cdp-exact-tab" | "delegate-cdp-exact-tab" | "native-window-exact-window" {
+  return item.scope.targetKey.startsWith("native:") ? "native-window-exact-window" :
+    item.scope.targetKey.startsWith("delegate:") ? "delegate-cdp-exact-tab" : "managed-cdp-exact-tab";
+}
 function publicStatus(item: Session) {
   return { recordingId: item.id,
     source: item.scope.targetKey.startsWith("delegate:") ? "delegate-cdp-exact-tab" : "managed-cdp-exact-tab",
     status: item.status, startedAt: new Date(item.start).toISOString(),
-    elapsedMs: safeCount(Date.now() - item.start), video: true,
+    elapsedMs: safeCount(Date.now() - item.start), video: true, source:archiveSource(item),
     fps: item.profile.fps, videoPreset:item.preset,
     videoWidth:item.profile.width, videoHeight:item.profile.height,
     frameCount: item.frames, droppedFrames: item.dropped,
@@ -224,8 +228,8 @@ async function frameTick(item: Session, capture: () => Promise<string>, valid: (
 export async function startCdpSessionArchive(
   scope: ArchiveScope, opts: SessionArchiveOptions,
 ): Promise<ReturnType<typeof publicStatus>> {
-  if (!/^(managed|delegate):/.test(scope.targetKey) || !scope.actorId || !scope.generation)
-    throw Error("A verified managed or Delegate CDP target and agent are required.");
+  if (!/^(managed|delegate|native):/.test(scope.targetKey) || !scope.actorId || !scope.generation)
+    throw Error("A verified managed/Delegate CDP target or native approved window is required.");
   if (opts.video === false || opts.confirmSensitiveVideo !== true)
     throw Error("MP4 recording is enabled by default and requires confirmSensitiveVideo:true.");
   const previous = sessions.get(scopeKey(scope));
@@ -452,12 +456,12 @@ async function finalizeCdpSessionArchive(item: Session, actionTranscript?: objec
   const publicManifest = {...publicStatus(item), finishedAt:new Date().toISOString(),
     videoBytes:mp4Bytes, sensitiveVisualContent:true,
     includesAudio:false, includesNetworkBodies:false, includesTypedText:false,
-    source:item.scope.targetKey.startsWith("delegate:") ? "delegate-cdp-exact-tab" : "managed-cdp-exact-tab",
+    source:archiveSource(item),
     retention:"Local; delete manually when no longer required."};
   await writeFile(join(item.directory,"manifest.json"),
     JSON.stringify(publicManifest,null,2),{flag:"wx",mode:0o600});
   const summary = [
-    "# SuperAgent CDP session recording",
+    "# SuperAgent exact-target session recording",
     "Recording ID: " + item.id,
     "Status: " + item.status,
     "Captured frames: " + item.frames,
@@ -468,7 +472,7 @@ async function finalizeCdpSessionArchive(item: Session, actionTranscript?: objec
     "Action transcript: transcript.jsonl, actions.json",
     "Console: console.jsonl | Errors: errors.jsonl | Network metadata: network.jsonl",
     "Combined diagnostics: diagnostics.jsonl",
-    "Sensitive contents of visible tabs may appear in the video. Keep the archive private.",
+    "Sensitive contents of the approved window may appear in the video. Keep the archive private.",
     ...item.problems.map(problem=>"Warning: "+safeError(problem)),
   ].join("\n") + "\n";
   await writeFile(join(item.directory,"README.txt"),summary,{flag:"wx",mode:0o600});
