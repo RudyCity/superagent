@@ -29,6 +29,7 @@ on:
       - "tests/desktop-live/desktopLiveAccessModes.test.ts"
       - "tests/desktop-live/desktopLiveTakeoverAuthorization.test.ts"
       - "tests/desktop-live/trayManagementSurface.test.ts"
+      - "tests/desktop-live/trayAndroidGestures.test.ts"
       - "tests/androidLanRemoteScreen.test.ts"
       - "tests/androidLanSchemaFirst.test.ts"
       - "tests/desktopTrayAndroidScreenUi.test.ts"
@@ -78,6 +79,7 @@ jobs:
           tests/desktop-live/desktopLiveAccessModes.test.ts
           tests/desktop-live/desktopLiveTakeoverAuthorization.test.ts
           tests/desktop-live/trayManagementSurface.test.ts
+          tests/desktop-live/trayAndroidGestures.test.ts
           tests/desktop-live/lanLiveStream.test.ts
           tests/androidLanRemoteScreen.test.ts
           tests/androidLanSchemaFirst.test.ts
