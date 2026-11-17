@@ -429,8 +429,8 @@ export async function offerLanFileV2(id: string, metadata: {
  */
 export async function offerLanFileV2Source(id: string): Promise<LanV2Offer> {
   const device = authFile(id);
-  if (device.platform !== "windows")
-    throw Error("V2 large source sharing currently requires updated Windows LAN client.");
+  if (device.platform !== "windows" && device.platform !== "android")
+    throw Error("V2 large source sharing requires an updated Windows or Android LAN client.");
   const [reply] = await requestSaved(device,
     fileEnvelope(device, "file_v2_offer", { direction: "download" }), 110_000);
   if (!reply || reply.ok !== true || reply.version !== 2 ||
