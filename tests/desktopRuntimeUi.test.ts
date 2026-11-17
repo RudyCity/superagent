@@ -326,6 +326,85 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.requested.every(item => item.action !== "service_action")).toBe(true);
   });
 
+  it("shows Stopping immediately then animates verified MCP stop out of the list", async () => {
+    const owner={kind:"mcp",source:"registry",port:9227,pid:3628,
+      state:"observed",canStop:true,canRestart:true,transport:"cloudflare"};
+    const snapshot={scannedAt:Date.now(),cores:[],processes:[],
+      independentHosts:[],remoteServices:[owner]};
+    const ui=mountRuntime(snapshot);
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    const initial=ui.context.window.__TAURI__.core.invoke;
+    let acceptStop: ((value:unknown)=>void)|undefined;
+    ui.context.window.__TAURI__.core.invoke=async(action:string,args:any)=>{
+      if(action==="service_action")return new Promise(resolve=>{acceptStop=resolve;});
+      if(action==="detect_runtime")return {...snapshot,
+        remoteServices:[{...owner,state:"stale",canStop:false,canRestart:false}]};
+      return initial(action,args);
+    };
+    const pending=vm.runInContext(
+      'runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"mcp",runtimeAction:"stop",runtimePort:"9227",runtimePid:"3628"}})}})',
+      ui.context) as Promise<void>;
+    expect(ui.byId("runtime-remote").innerHTML).toContain("Stopping…");
+    expect(ui.byId("runtime-remote").innerHTML).toContain("runtime-instance--stopping");
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("Regenerate Token");
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("1");
+    expect(acceptStop).toBeTypeOf("function");
+    acceptStop!({success:true,message:"MCP owner stopped gracefully"});
+    await pending;
+    expect(ui.byId("runtime-remote").innerHTML).toContain("runtime-instance--stopped");
+    expect(ui.byId("runtime-remote").innerHTML).toContain("Owner exit verified");
+    await new Promise(resolve=>setTimeout(resolve,460));
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("MCP HTTP Server");
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("0");
+    expect(ui.byId("runtime-remote-empty").hidden).toBe(false);
+    expect(ui.requested.filter(item=>item.action==="service_action")).toHaveLength(0);
+    const css=fs.readFileSync(path.resolve("apps/superagent-tray/ui/styles.css"),"utf8");
+    expect(css).toContain("@keyframes runtime-owner-exit");
+    expect(css).toContain(".runtime-instance--stopping");
+    expect(css).toContain("prefers-reduced-motion: reduce");
+  });
+
+  it("reverses pending Stop when native control rejects or reports an uncertain outcome", async () => {
+    const owner={kind:"mcp",source:"registry",port:9227,pid:3628,
+      state:"observed",canStop:true,transport:"cloudflare"};
+    const snapshot={scannedAt:Date.now(),cores:[],processes:[],
+      independentHosts:[],remoteServices:[owner]};
+    const ui=mountRuntime(snapshot);
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    const initial=ui.context.window.__TAURI__.core.invoke;
+    ui.context.window.__TAURI__.core.invoke=async(action:string,args:any)=>{
+      if(action==="service_action")throw Error("MCP owner shutdown timeout");
+      return initial(action,args);
+    };
+    await (vm.runInContext(
+      'runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"mcp",runtimeAction:"stop",runtimePort:"9227",runtimePid:"3628"}})}})',
+      ui.context) as Promise<void>);
+    expect(ui.byId("runtime-remote").innerHTML).toContain("MCP HTTP Server");
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("runtime-instance--stopped");
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("1");
+    expect(ui.byId("runtime-action-feedback").textContent).toContain("Outcome uncertain");
+  });
+
+  it("re-shows an owner if a fresh scan still observes it despite a stop receipt", async () => {
+    const owner={kind:"mcp",source:"registry",port:9227,pid:3628,
+      state:"observed",canStop:true,transport:"cloudflare"};
+    const snapshot={scannedAt:Date.now(),cores:[],processes:[],
+      independentHosts:[],remoteServices:[owner]};
+    const ui=mountRuntime(snapshot);
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    await (vm.runInContext(
+      'runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"mcp",runtimeAction:"stop",runtimePort:"9227",runtimePid:"3628"}})}})',
+      ui.context) as Promise<void>);
+    expect(ui.byId("runtime-remote").innerHTML).toContain("MCP HTTP Server");
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("runtime-instance--stopped");
+    await new Promise(resolve=>setTimeout(resolve,440));
+    expect(ui.byId("runtime-remote").innerHTML).toContain("MCP HTTP Server");
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("1");
+  });
+
   it("requires human confirmation and fresh owner capability before any stop/restart RPC", async () => {
     const ui = mountRuntime({
       scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 0,
