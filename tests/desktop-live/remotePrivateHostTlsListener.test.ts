@@ -175,6 +175,9 @@ describe("private host TLS listener (manual, attended, no default port)", () => 
         onFrame:()=>{},
       });
       expect(viewer.isConnected).toBe(true);
+      // Wait for the authenticated viewer to claim native capture before
+      // proving disconnect revokes an *active* controller and capture lease.
+      await vi.waitFor(()=>expect(f.listener.isViewing).toBe(true),{timeout:4000});
       viewer.close();
       await vi.waitFor(()=>expect(f.listener.isStopped).toBe(true));
       expect(controller.viewerDisconnected).toHaveBeenCalledOnce();
