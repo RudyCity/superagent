@@ -636,16 +636,19 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     if (name === MCP_GATEWAY_TOOL_NAMES.execute) {
       return { kind: "target_dependent", note: "The nested target is reauthorized for OAuth scopes, project grants, host file policy and MCP Connection Controls." };
     }
-    if (MCP_TOOL_CLASSIFICATION[name] !== "dangerous") {
-      return { kind: "read_only", oauthScope: "mcp:tools", note: "Read-only classification does not bypass host file or project rules." };
-    }
     if (PRIVILEGED_MCP_TOOLS.has(name)) {
       return { kind: "operator_admin", oauthScope: "mcp:tools:admin",
         note: "Operator consent and admin scope are required for project registry/grant changes." };
     }
     if (WORKSPACE_SCOPED_MCP_TOOLS.has(name)) {
-      return { kind: "project", oauthScope: "mcp:tools:write",
-        note: "Requires a grant matching the selected project and per-action capability; authorization is checked when called." };
+      const readonly = MCP_TOOL_CLASSIFICATION[name] !== "dangerous";
+      return { kind: "project",
+        oauthScope: readonly ? "mcp:tools" : "mcp:tools:write",
+        capability: getProjectCapabilityForTool(name, {}),
+        note: "Requires an identity-bound project capability grant even for safe readers. Rechecked per action; host permanent file policy remains independent." };
+    }
+    if (MCP_TOOL_CLASSIFICATION[name] !== "dangerous") {
+      return { kind: "read_only", oauthScope: "mcp:tools", note: "Read-only classification does not bypass host file or project rules." };
     }
     if (name === "superagent_grant_project_access" || name === "superagent_revoke_project_access") {
       return { kind: "operator_admin", oauthScope: "mcp:tools:admin", note: "Project grant mutation requires separate operator authorization." };
