@@ -97,6 +97,11 @@ public final class MainActivity extends Activity {
         return owner != null && owner.visible && !owner.isFinishing();
     }
 
+    static boolean canShowLanTransferNotification() {
+        MainActivity owner = currentActivity.get();
+        return owner != null && owner.visible && !owner.isFinishing() && owner.notificationsReady();
+    }
+
     static boolean requestTunnelApproval(String kind, String controller, String address, int seconds) {
         MainActivity owner = currentActivity.get();
         if (owner == null || !owner.visible || owner.isFinishing()) return false;
