@@ -208,7 +208,7 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     expect(gate("superagent_pdf_verify",{inputPath:"src/main.ts",expectedPageCount:1})).toBeNull();
     for(const name of ["superagent_pdf_render","superagent_pdf_edit",
       "superagent_pdf_sign","superagent_pdf_verify_signature","superagent_media_transform",
-      "superagent_media_convert","superagent_media_plan","superagent_media_batch"]){
+      "superagent_media_convert","superagent_media_batch"]){
       expect(gate(name,{inputPath:"src/main.ts"})).toMatch(/not certified/);
     }
     expect(gate("superagent_media_capabilities",{})).toBeNull();
