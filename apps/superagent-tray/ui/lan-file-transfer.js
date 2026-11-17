@@ -6,6 +6,8 @@
  */
 (() => {
   const MAX = 4 * 1024 * 1024;
+  const V2_MAX = 256 * 1024 * 1024;
+  const V2_CHUNK = 16 * 1024;
   const CHUNK = 4096;
   const MAX_FILES = 64;
   const MAX_QUEUE_FILES = 32;
@@ -19,6 +21,8 @@
   let busy = false;
   let cancelled = false;
   let activeTransfer = null;
+  let activeProtocol = 1;
+  let transferStartTime = 0;
   let targetId = null;
   let batch = null;
   let paused = false;
@@ -48,6 +52,14 @@
     const device = window.__superagentLanGetSelected?.();
     return device?.connected ? device : null;
   };
+  function metrics(bytes, size, prefix = "") {
+    const time = Math.max(1, Date.now() - transferStartTime) / 1000;
+    const speed = bytes / time;
+    const eta = speed > 0 ? Math.ceil((size - bytes) / speed) : 0;
+    const label = $("lan-file-metrics");
+    if (label) label.textContent = prefix + bytes + "/" + size + " bytes · " +
+      (speed / 1024).toFixed(1) + " KiB/s · ETA " + eta + "s";
+  }
   function state(message, progress = null) {
     const visible = paused && !String(message).startsWith("Paused") && progress !== null
       ? "Paused · " + String(message) : String(message);
@@ -141,7 +153,8 @@
   }
   async function abortIfNeeded() {
     if (!activeTransfer || !targetId) return;
-    try { await invoke("file_abort", { deviceId: targetId, transferId: activeTransfer }); }
+    try { await invoke(activeProtocol === 2 ? "file_v2_abort" : "file_abort",
+      { deviceId: targetId, transferId: activeTransfer }); }
     catch { /* Session revoke is also a valid cleanup path. */ }
   }
 
@@ -251,6 +264,8 @@
         offer.sha256 !== sha256 || offer.chunkBytes !== CHUNK ||
         typeof offer.transferId !== "string") throw Error("Target file metadata mismatch.");
     activeTransfer = offer.transferId;
+    activeProtocol = 1;
+    transferStartTime = Date.now();
     controls();
     for (let offset = 0, seq = 0; offset < bytes.length; offset += CHUNK, seq++) {
       await waitIfPaused();
@@ -272,6 +287,7 @@
       if (!result || result.seq !== seq + 1 ||
           result.received !== Math.min(offset + CHUNK, bytes.length))
         throw Error("Target chunk confirmation mismatch.");
+      metrics(result.received, bytes.length);
       state("Sending " + name + " · " + result.received + "/" + bytes.length + " bytes",
         100 * result.received / bytes.length);
     }
@@ -286,16 +302,106 @@
     return successText || ("File sent, SHA-256 verified on target. Saved to: " +
       (committed.savedTo || "the target's approved Downloads folder"));
   }
+  async function hashLargeFile(file) {
+    const Constructor = window.LanStreamingSha256;
+    if (typeof Constructor !== "function" || typeof file?.slice !== "function")
+      throw Error("Streaming SHA-256 unavailable; update the Tray to send files above 4 MiB.");
+    const hasher = new Constructor();
+    for (let offset = 0; offset < file.size; offset += 1024 * 1024) {
+      assertActive();
+      const part = new Uint8Array(await file.slice(offset, offset + 1024 * 1024).arrayBuffer());
+      if (!part.length || part.length > 1024 * 1024)
+        throw Error("Selected file became unreadable while hashing.");
+      hasher.update(part);
+      state("Calculating streaming SHA-256 for " + file.name + " · " +
+        Math.min(offset + part.length, file.size) + "/" + file.size + " bytes", 0);
+    }
+    return hasher.hex();
+  }
+  async function largeCheckpoint(file, sha256) {
+    assertActive();
+    const result = (await invoke("file_v2_status", {
+      deviceId: targetId, transferId: activeTransfer,
+    })).result;
+    if (!result || result.transferId !== activeTransfer || result.direction !== "upload" ||
+        result.name !== file.name || result.size !== file.size || result.sha256 !== sha256 ||
+        !Number.isSafeInteger(result.seq) || !Number.isSafeInteger(result.received) ||
+        result.received < 0 || result.received > file.size ||
+        result.seq !== Math.ceil(result.received / V2_CHUNK) ||
+        (result.received % V2_CHUNK !== 0 && result.received !== file.size))
+      throw Error("V2 target checkpoint does not match the selected file.");
+    return result;
+  }
+  async function sendLargeFile(device, file) {
+    if (device.platform !== "windows") throw Error("V2 disk-backed upload requires updated Windows LAN client.");
+    if (file.size <= MAX || file.size > V2_MAX || file.name.endsWith(".safolder"))
+      throw Error("Large folder archives or invalid V2 file size are not supported.");
+    const sha256 = await hashLargeFile(file);
+    assertActive();
+    state("Waiting for Windows owner approval to receive large file " + file.name, 0);
+    const offer = (await invoke("file_v2_offer", {
+      deviceId: targetId, direction: "upload", name: file.name, size: file.size, sha256,
+    })).file;
+    if (!offer || offer.version !== undefined && offer.version !== 2 ||
+        offer.name !== file.name || offer.size !== file.size || offer.sha256 !== sha256 ||
+        offer.chunkBytes !== V2_CHUNK || typeof offer.transferId !== "string" ||
+        !Number.isSafeInteger(offer.received) || !Number.isSafeInteger(offer.seq) ||
+        offer.received < 0 || offer.received > file.size ||
+        offer.seq !== Math.ceil(offer.received / V2_CHUNK) ||
+        (offer.received % V2_CHUNK !== 0 && offer.received !== file.size))
+      throw Error("Invalid V2 negotiated offer or restart checkpoint.");
+    activeProtocol = 2;
+    activeTransfer = offer.transferId;
+    transferStartTime = Date.now();
+    controls();
+    for (let offset = offer.received, seq = offer.seq; offset < file.size; seq++) {
+      await waitIfPaused();
+      const raw = new Uint8Array(await file.slice(offset, offset + V2_CHUNK).arrayBuffer());
+      assertActive();
+      if (!raw.length || raw.length > V2_CHUNK || (raw.length !== V2_CHUNK && offset + raw.length !== file.size))
+        throw Error("Source file changed or became unreadable while streaming.");
+      let result;
+      try {
+        result = (await invoke("file_v2_put", {
+          deviceId: targetId, transferId: activeTransfer, seq, data: bytesToBase64(raw),
+        })).result;
+      } catch (error) {
+        const remote = await largeCheckpoint(file, sha256);
+        if (remote.seq !== seq + 1 || remote.received !== offset + raw.length) throw error;
+        result = remote;
+      }
+      if (!result || result.seq !== seq + 1 || result.received !== offset + raw.length)
+        throw Error("Invalid V2 chunk acknowledgement.");
+      offset = result.received;
+      metrics(offset, file.size, offer.resumed ? "Resumed · " : "");
+      state("Streaming " + file.name + " · " + offset + "/" + file.size + " bytes",
+        offset * 100 / file.size);
+    }
+    assertActive();
+    const result = (await invoke("file_v2_finish", {
+      deviceId: targetId, transferId: activeTransfer,
+    })).result;
+    if (!result?.ok || result.bytes !== file.size)
+      throw Error("Target did not confirm full SHA-256 verified V2 commit.");
+    activeTransfer = null;
+    activeProtocol = 1;
+    controls();
+    receipt("Sent", file.name, file.size, offer.resumed ? "V2 resumed & verified" : "V2 verified");
+    return "Large file sent and SHA-256 verified on target. Saved to: " +
+      (result.savedTo || "target's approved Downloads folder");
+  }
   async function send() {
     if (busy) return;
     const device = selected();
     const input = $("lan-file-source");
     const files = Array.from(input?.files || []);
     if (!device || !files.length) return;
+    const allowedMax = device.platform === "windows" ? V2_MAX : MAX;
     if (files.length > MAX_QUEUE_FILES || files.some((file) =>
         !filenameAllowed(file.name) || !Number.isSafeInteger(file.size) ||
-        file.size < 1 || file.size > MAX)) {
-      state("Select 1–32 files with safe ASCII names, each between 1 byte and 4 MiB.");
+        file.size < 1 || file.size > allowedMax ||
+        (file.size > MAX && file.name.endsWith(".safolder")))) {
+      state("Select 1–32 safe ASCII files, max 4 MiB for Android or 256 MiB with updated Windows V2.");
       return;
     }
     if (!window.confirm("Send " + files.length + " selected file(s) to " + device.label +
@@ -306,6 +412,7 @@
     });
     if (window.TrayFeedback && !ticket) return;
     busy = true; cancelled = false; paused = false; targetId = device.id; activeTransfer = null;
+    activeProtocol = 1;
     batch = { index: 0, total: files.length };
     controls();
     try {
@@ -315,10 +422,14 @@
         batch.index = i;
         const file = files[i];
         state("Queue " + (i + 1) + "/" + files.length + " · preparing " + file.name, 0);
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        assertActive();
-        if (bytes.length !== file.size) throw Error("Local file changed during selection.");
-        message = await sendBuffer(device, file.name, bytes);
+        if (file.size > MAX) {
+          message = await sendLargeFile(device, file);
+        } else {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          assertActive();
+          if (bytes.length !== file.size) throw Error("Local file changed during selection.");
+          message = await sendBuffer(device, file.name, bytes);
+        }
       }
       if (input) input.value = "";
       batch.index = files.length;
@@ -334,7 +445,8 @@
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
         "File queue stopped. Inspect device status before retrying unsent files.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; paused = false;
+      activeTransfer = null; activeProtocol = 1;
+      busy = false; cancelled = false; paused = false;
       wake(); targetId = null; batch = null;
       ticket?.end(); controls();
     }
