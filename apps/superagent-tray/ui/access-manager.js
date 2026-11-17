@@ -684,9 +684,9 @@
     capsGrid.style.marginTop = "6px";
     capsGrid.append(
       checkbox("access-cap-read", "Read (Baca)", true),
-      checkbox("access-cap-write", "Write (Tulis/Edit)", true),
+      checkbox("access-cap-write", "Write (Tulis/Edit)", false),
       checkbox("access-cap-execute", "Execute (Terminal)", false),
-      checkbox("access-cap-git", "Git", true)
+      checkbox("access-cap-git", "Git", false)
     );
     capsWrap.append(capsLabel, capsGrid);
 
