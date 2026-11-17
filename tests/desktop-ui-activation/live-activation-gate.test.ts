@@ -63,4 +63,23 @@ describe("desktop MCP live owner preflight", () => {
     expect(assessDesktopMcpOwnerEvidence(active, unhealthy, publicUrl).reasons)
       .toContain("MCP_BACKEND_NOT_HEALTHY");
   });
+
+  it("attests exact activated release digest across status and doctor snapshots", () => {
+    const digest = "b".repeat(64);
+    const matching = structuredClone(active);
+    matching.details!.backendReleaseDigest = digest;
+    const doctor = structuredClone(matching);
+    expect(assessDesktopMcpOwnerEvidence(matching, doctor, publicUrl, digest).ready).toBe(true);
+
+    // A healthy owner without a staged release is not the expected new build.
+    expect(assessDesktopMcpOwnerEvidence(active, active, publicUrl, digest).reasons)
+      .toContain("MCP_BACKEND_RELEASE_DIGEST_MISMATCH");
+    doctor.details!.backendReleaseDigest = "c".repeat(64);
+    expect(assessDesktopMcpOwnerEvidence(matching, doctor, publicUrl, digest).reasons)
+      .toContain("MCP_BACKEND_RELEASE_DIGEST_MISMATCH");
+    expect(assessDesktopMcpOwnerEvidence(matching, matching, publicUrl, "invalid").ready)
+      .toBe(false);
+    expect(assessDesktopMcpOwnerEvidence(matching, matching, publicUrl, "c".repeat(64)).ready)
+      .toBe(false);
+  });
 });
