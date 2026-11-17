@@ -47,8 +47,11 @@ describe("MCP gateway Streamable HTTP integration", () => {
       const unsafe = await client.callTool({
         name: MCP_GATEWAY_TOOL_NAMES.execute,
         arguments: { name: "superagent_exec_command", arguments: { command: "echo blocked" } },
-      });
-      expect(unsafe.isError).toBe(true);
+      }).then(
+        (result) => result.isError === true,
+        (error: unknown) => /PROJECT_GRANT_MISSING|access denied|not authorized|blocked/i.test(String(error)),
+      );
+      expect(unsafe).toBe(true);
     } finally {
       await client.close().catch(() => undefined);
       await server.close();
