@@ -944,6 +944,12 @@
   window.lanSwitchTab = lanSwitchTab;
 
   window.__superagentLanGetSelected = () => active();
+  // Read-only snapshot, scoped to the currently chosen route. Transfer callers
+  // still use individual authenticated sessions and separate target approvals.
+  window.__superagentLanListTransferTargets = () => routeDevices()
+    .filter((device) => device.connected)
+    .map((device) => ({ id: device.id, connected: true, label: device.label,
+      platform: device.platform, transport: device.transport }));
   window.__superagentLanRefresh = refresh;
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", install, { once: true });
   else install();
