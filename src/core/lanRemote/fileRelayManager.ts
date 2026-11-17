@@ -87,12 +87,12 @@ export class LanFileRelayManager {
     const destination = devices.find((d) => d.id === destinationId);
     if (!source?.connected || !destination?.connected)
       throw Error("Both endpoints require active, owner-approved support sessions.");
-    if (protocol === "v2" && (source.platform !== "windows" ||
+    if (protocol === "v2" && (!["windows", "android"].includes(source.platform) ||
         !["windows", "android"].includes(destination.platform) ||
         !this.api.offerV2Source || !this.api.offerV2Upload || !this.api.getV2 ||
         !this.api.statusV2 || !this.api.putV2 || !this.api.finishV2Source ||
         !this.api.finishV2Upload || !this.api.abortV2))
-      throw Error("V2 relay requires an updated Windows source and Windows/Android destination.");
+      throw Error("V2 relay requires an updated Android/Windows source and destination.");
     if ((source.transport || "lan") !== (destination.transport || "lan"))
       throw Error("Cross-route relay is disabled; pair both devices on the same verified route.");
     for (const existing of this.jobs.values()) {
