@@ -87,7 +87,9 @@ function mount(calls: Record<string,any> = {}) {
     window:{__TAURI__:{core:{invoke:ipc}},
       setInterval(){},addEventListener(){},confirm:()=>true,
       __superagentOverviewState:{activities:[]}},
-    Date,Math,String,Array,Set,Number,Intl,Promise,console
+    Date,Math,String,Array,Set,Number,Intl,Promise,console,
+    setTimeout:(fn:any,ms:number)=>setTimeout(fn,Math.min(ms,80)),
+    clearTimeout,
   });
   byId("page-overview").classList.contains=(name:string)=>name==="active";
   byId("op-lifecycle-service").value="core";
@@ -154,6 +156,28 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(h.byId("op-mcp-rss").textContent).toBe("10.0 MiB");
     expect(h.byId("op-mcp-heap").textContent).toBe("5.0 MiB");
     expect(h.byId("op-resources-status").textContent).toContain("verified process");
+  });
+  it("continues sampling resources when a native dashboard call never settles",async()=>{
+    const h=mount({dashboardPending:true});
+    await settle();
+    const initial=h.requests.filter(x=>x.name==="lifecycle_console_request" &&
+      x.args.request.action==="dashboard").length;
+    await new Promise(resolve=>setTimeout(resolve,110));
+    expect(h.byId("op-refresh-state").textContent).toContain("Partial telemetry");
+    h.handlers.get("op-refresh:click")?.();
+    await settle();
+    expect(h.requests.filter(x=>x.name==="lifecycle_console_request" &&
+      x.args.request.action==="dashboard")).toHaveLength(initial);
+    expect(h.requests.filter(x=>x.name==="get_overview_owner_metrics").length).toBeGreaterThan(1);
+  });
+  it("distinguishes insufficient memory trend samples from verified stability",async()=>{
+    const h=mount({metrics:{observedAt:Date.now(),processes:[
+      {service:"mcp",cpuPct:0,rssBytes:10485760}
+    ],mcpTelemetry:{rssBytes:10485760,heapUsedBytes:5242880,
+      trend:{suspicious:false,sampleCount:1,windowMs:0}}}});await settle();
+    expect(h.byId("op-memory-trend").textContent).toBe("Collecting");
+    expect(markup).toContain("Access requests");
+    expect(markup).toContain("Grant identities");
   });
   it("does not display stale or failed native process samples",async()=>{
     for(const config of [
