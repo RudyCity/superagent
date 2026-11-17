@@ -3,10 +3,14 @@
  */
 
 import { McpToolResult } from "../types.js";
+import { fileRulesRegistered } from "../../tools/registeredFileToolGate.js";
+import { certifiedBrowserObservation } from "../../tools/browserFilePolicyCertification.js";
+import { safeManagedChromeObservation } from "../../tools/safeManagedChromeObservation.js";
 import { controlChromeCdpTool } from "../../tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../../tools/chromeVisionTools.js";
 import {
   listRunningChromeTool,
+  listRunningChromeRestrictedInventory,
   closeChromeProfileTool,
   closeChromeWindowTool,
 } from "../../tools/chromeProcessTools.js";
@@ -56,6 +60,12 @@ function toResult(res: unknown): McpToolResult {
 export async function handleControlChromeCdp(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
   return runWithDelegateMcpBoundary(async () => {
     try {
+      if (fileRulesRegistered()) {
+        if (!certifiedBrowserObservation({name:"superagent_chrome_cdp",args:args||{}})) {
+          return {content:[{type:"text",text:"Chrome command is not certified for permanent file access restrictions."}],isError:true};
+        }
+        return toResult(await safeManagedChromeObservation(args));
+      }
       if (needsDelegateCoreHost(args)) {
         let payload: Record<string, unknown> = {};
         try { payload = typeof args?.payload === "string" ? JSON.parse(args.payload) : (args?.payload || {}); } catch {}
@@ -114,6 +124,11 @@ export async function handleControlChromeVision(args: any, options: { hostOwned?
 
 export async function handleListRunningChrome(args: any): Promise<McpToolResult> {
   try {
+    if (fileRulesRegistered()) {
+      if (!certifiedBrowserObservation({name:"superagent_list_running_chrome",args:args||{}}))
+        return {content:[{type:"text",text:"Chrome inventory arguments not certified for permanent file access restrictions."}],isError:true};
+      return toResult(await listRunningChromeRestrictedInventory());
+    }
     const res = await listRunningChromeTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
     return toResult(res);
   } catch (err: any) {
