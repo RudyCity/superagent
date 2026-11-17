@@ -16,6 +16,7 @@ on:
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanClientServer.java"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "apps/superagent-tray/ui/lan-file-relay.js"
+      - "apps/superagent-tray/ui/lan-large-receive.js"
       - "apps/superagent-tray/ui/lan-transfer-diagnostics.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.js"
@@ -43,6 +44,8 @@ on:
       - "tests/lanV2Source.test.ts"
       - "tests/lanV2Relay.test.ts"
       - "tests/lanV2DuplexE2E.test.ts"
+      - "tests/lanLargeReceiveManager.test.ts"
+      - "tests/lanLargeReceiveUi.test.ts"
       - "tests/androidLanLargeSourceContract.test.ts"
       - "tests/androidLanBackgroundTransferContract.test.ts"
       - "tests/trayLanBridge.test.ts"
@@ -55,6 +58,7 @@ on:
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/**"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "apps/superagent-tray/ui/lan-file-relay.js"
+      - "apps/superagent-tray/ui/lan-large-receive.js"
       - "apps/superagent-tray/ui/lan-transfer-diagnostics.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.js"
@@ -99,6 +103,7 @@ jobs:
         run: |
           node --check apps/superagent-tray/ui/lan-file-transfer.js
           node --check apps/superagent-tray/ui/lan-file-relay.js
+          node --check apps/superagent-tray/ui/lan-large-receive.js
           node --check apps/superagent-tray/ui/lan-transfer-diagnostics.js
           node --check apps/superagent-tray/ui/lan-sha256.js
           node --check apps/superagent-tray/ui/lan-devices.js
@@ -128,6 +133,8 @@ jobs:
           tests/lanV2Source.test.ts
           tests/lanV2Relay.test.ts
           tests/lanV2DuplexE2E.test.ts
+          tests/lanLargeReceiveManager.test.ts
+          tests/lanLargeReceiveUi.test.ts
           tests/androidLanLargeSourceContract.test.ts
           tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
