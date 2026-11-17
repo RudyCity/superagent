@@ -83,3 +83,14 @@ export function assessDesktopMcpOwnerEvidence(
     backendPid: status?.details?.backendPid ?? null,
   };
 }
+
+/** Refuse acceptance if the authenticated owner/backend changed during the MCP probe. */
+export function isSameVerifiedMcpGeneration(
+  before: DesktopMcpActivationGate,
+  after: DesktopMcpActivationGate,
+): boolean {
+  return before.ready && after.ready &&
+    before.ownerPid !== null && before.ownerPid > 0 &&
+    before.backendPid !== null && before.backendPid > 0 &&
+    before.ownerPid === after.ownerPid && before.backendPid === after.backendPid;
+}
