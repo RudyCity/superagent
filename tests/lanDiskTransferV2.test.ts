@@ -66,7 +66,11 @@ describe("LAN target V2 encrypted-session, disk-backed staging", () => {
     await feed(engine, offer.transferId, bytes);
     const staging = path.join(root, ".superagent-v2-partials", offer.transferId + ".part");
     const handle = await fs.open(staging, "r+");
-    try { await handle.write(Buffer.from([0]), 0, 1, 0); }
+    try {
+      const original = Buffer.alloc(1);
+      await handle.read(original, 0, 1, 0);
+      await handle.write(Buffer.from([original[0] ^ 0xff]), 0, 1, 0);
+    }
     finally { await handle.close(); }
     await expect(engine.finish(offer.transferId)).rejects.toThrow("SHA-256");
     expect((await fs.readdir(root)).filter(x => x.endsWith(".bin"))).toEqual([]);
