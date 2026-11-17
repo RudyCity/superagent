@@ -56,6 +56,19 @@
     if (!result || result.success !== true) throw Error("File transfer request was rejected.");
     return result;
   }
+  async function checkpoint(direction, name, size, sha256) {
+    assertActive();
+    const result = (await invoke("file_status", {
+      deviceId: targetId, transferId: activeTransfer,
+    })).result;
+    if (!result || result.transferId !== activeTransfer || result.direction !== direction ||
+        result.name !== name || result.size !== size || result.sha256 !== sha256 ||
+        !Number.isInteger(result.seq) || result.seq < 0 ||
+        !Number.isInteger(result.received) || result.received < 0 || result.received > size) {
+      throw Error("Transfer checkpoint does not match the approved file.");
+    }
+    return result;
+  }
   const hash = async (bytes) => {
     if (!crypto?.subtle?.digest) throw Error("Secure browser SHA-256 is unavailable.");
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
@@ -207,8 +220,19 @@
     for (let offset = 0, seq = 0; offset < bytes.length; offset += CHUNK, seq++) {
       assertActive();
       const data = base64(bytes.subarray(offset, offset + CHUNK));
-      const result = (await invoke("file_put", { deviceId: targetId,
-        transferId: activeTransfer, seq, data })).result;
+      let result;
+      try {
+        result = (await invoke("file_put", { deviceId: targetId,
+          transferId: activeTransfer, seq, data })).result;
+      } catch (error) {
+        // A transport reply may be lost after the target committed a chunk.
+        // Query the authenticated checkpoint rather than blindly replaying
+        // an ambiguous mutating request.
+        const remote = await checkpoint("upload", name, bytes.length, sha256);
+        if (remote.seq !== seq + 1 ||
+            remote.received !== Math.min(offset + CHUNK, bytes.length)) throw error;
+        result = { seq: remote.seq, received: remote.received };
+      }
       if (!result || result.seq !== seq + 1 ||
           result.received !== Math.min(offset + CHUNK, bytes.length))
         throw Error("Target chunk confirmation mismatch.");
@@ -321,8 +345,17 @@
       const received = new Uint8Array(offer.size);
       for (let offset = 0, seq = 0; offset < offer.size; offset += CHUNK, seq++) {
         assertActive();
-        const reply = (await invoke("file_get", { deviceId: targetId,
-          transferId: activeTransfer, seq })).result;
+        let reply;
+        try {
+          reply = (await invoke("file_get", { deviceId: targetId,
+            transferId: activeTransfer, seq })).result;
+        } catch (error) {
+          // Re-read only an unchanged, authenticated source, at most once.
+          const remote = await checkpoint("download", offer.name, offer.size, offer.sha256);
+          if (remote.seq !== seq && remote.seq !== seq + 1) throw error;
+          reply = (await invoke("file_get", { deviceId: targetId,
+            transferId: activeTransfer, seq })).result;
+        }
         if (!reply || reply.seq !== seq || typeof reply.data !== "string" ||
             reply.data.length > 5464 || !/^[A-Za-z0-9+/]+={0,2}$/.test(reply.data))
           throw Error("Malformed file chunk.");
