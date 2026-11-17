@@ -17,6 +17,7 @@ type Workflow = {
   id: string; owner: string; workspace: string; name: string; cronExpression: string;
   steps: Step[]; enabled: boolean; createdAt: number; nextRun: number | null;
   maxRuns?: number; runCount: number; lastDueMinute?: string;
+  createKey?: string; createFingerprint?: string;
 };
 type Stage = {
   id: string; state: StageState; attempts: number; workerId?: string;
@@ -25,7 +26,7 @@ type Stage = {
 };
 type Run = {
   id: string; workflowId: string; workspace: string; createdAt: number; updatedAt: number;
-  state: RunState; stages: Stage[];
+  state: RunState; stages: Stage[]; manualRequestKey?: string;
 };
 type Worker = {
   id: string; workspace: string; principal: string; actor: string; label: string;
@@ -220,18 +221,30 @@ export function lifecycleAction(action: string, args: Record<string, unknown>, c
     if (!isRead) refreshState(s, now);
     switch (action) {
       case "create": {
-        if (s.workflows.length >= LIMIT.workflows) throw new Error("Lifecycle workflow limit reached.");
         const cron = text(args.cronExpression, "cronExpression", 120);
         if (!isValidCron(cron)) throw new Error("Invalid 5-field cron expression.");
         const name = text(args.name, "name", 120);
         const prompt = typeof args.prompt === "string" ? args.prompt : "";
         const steps = asSteps(args.steps, prompt);
         const maxRuns = args.maxRuns === undefined ? undefined : bounded(args.maxRuns, 100000, 1);
+        const enabled = args.enabled !== false;
+        const createKey = args.idempotencyKey === undefined ? undefined : identifier(args.idempotencyKey, "idempotencyKey");
+        const createFingerprint = tokenDigest(JSON.stringify({ name, cron, steps, maxRuns, enabled }));
+        if (createKey) {
+          const previous = s.workflows.find(w => w.workspace === ctx.workspace &&
+            w.owner === ctx.principal && w.createKey === createKey);
+          if (previous) {
+            if (previous.createFingerprint !== createFingerprint) throw new Error("Idempotency key already used for a different workflow.");
+            return { workflow: workflowView(previous, ctx), replayed: true };
+          }
+        }
+        if (s.workflows.length >= LIMIT.workflows) throw new Error("Lifecycle workflow limit reached.");
         const flow: Workflow = {
           id: id("life_flow"), owner: ctx.principal, workspace: ctx.workspace, name,
-          cronExpression: cron, steps, enabled: args.enabled !== false, createdAt: now,
+          cronExpression: cron, steps, enabled, createdAt: now,
           nextRun: getNextCronTime(cron).getTime(), runCount: 0,
           ...(maxRuns ? { maxRuns } : {}),
+          ...(createKey ? { createKey, createFingerprint } : {}),
         };
         s.workflows.push(flow);
         return { workflow: workflowView(flow, ctx) };
@@ -377,7 +390,13 @@ export function lifecycleAction(action: string, args: Record<string, unknown>, c
       }
       case "run.now": {
         const flow = findWorkflow(s, args.workflowId, ctx);
-        return { run: makeRun(s, flow, now) };
+        const clientKey = args.idempotencyKey === undefined ? undefined : identifier(args.idempotencyKey, "idempotencyKey");
+        const key = clientKey ? tokenDigest(ctx.principal + ":" + flow.id + ":" + clientKey) : undefined;
+        const duplicate = key ? s.runs.find(r => r.manualRequestKey === key && r.workflowId === flow.id) : undefined;
+        if (duplicate) return { run: duplicate, replayed: true };
+        const run = makeRun(s, flow, now);
+        if (key) run.manualRequestKey = key;
+        return { run };
       }
       case "pause":
       case "resume": {
