@@ -599,9 +599,14 @@ fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
         // Kill that PID at most once and never recursively kill children.
         if unique_pids.insert(pid){chosen.push(item.clone());}
     }
+    // Guardian first, supervisor before its workers. This prevents the
+    // in-process Guardian from reviving a just-killed Core supervisor while
+    // the rest of the selected generation is being retired.
     chosen.sort_by_key(|item|match item.kind.as_str(){
-        "cloudflare"=>0,"mcp"=>1,"muse-watch"=>2,"managed"=>3,
-        "daemon-direct"=>4,"external"=>5,"core"=>8,"core-supervisor"=>9,_=>7,
+        "managed" if item.id=="managed:guardian" ||
+            item.id.starts_with("guardian-os:")=>0,
+        "cloudflare"=>1,"mcp"=>2,"muse-watch"=>3,"managed"=>4,
+        "daemon-direct"=>5,"external"=>6,"core-supervisor"=>8,"core"=>9,_=>7,
     });
     Ok(chosen)
 }
@@ -851,6 +856,23 @@ fn set_progress(app:&AppHandle, progress:&Progress) {
     if let Ok(mut state)=locked(){state.progress=Some(progress.clone());}
     let _=app.emit("shutdown-manager-progress",progress);
 }
+fn replacement_matches(before:&Item,current:&Item)->bool {
+    if before.pid.is_none()||current.pid.is_none()||before.pid==current.pid ||
+        !running(&current.state)||before.port!=current.port {
+        return false;
+    }
+    if before.id=="managed:guardian"||before.id.starts_with("guardian-os:") {
+        return current.id=="managed:guardian"||current.id.starts_with("guardian-os:");
+    }
+    match before.kind.as_str() {
+        "core-supervisor"=>current.kind=="core-supervisor",
+        "core"=>current.kind=="core",
+        "mcp"=>current.kind=="mcp",
+        "cloudflare"=>current.kind=="cloudflare"&&before.port.is_some(),
+        _=>before.id==current.id,
+    }
+}
+
 async fn run_manual_shutdown(app:AppHandle,chosen:Vec<Item>,mut progress:Progress) {
     let mut partial=false;
     for (index,item) in chosen.iter().enumerate() {
@@ -874,6 +896,29 @@ async fn run_manual_shutdown(app:AppHandle,chosen:Vec<Item>,mut progress:Progres
             }
         }
         set_progress(&app,&progress);
+    }
+    // One bounded post-stop observation: do not kill replacement PIDs under
+    // the old approval. A new owner requires a fresh preview and human choice.
+    tokio::time::sleep(Duration::from_millis(900)).await;
+    match tokio::time::timeout(Duration::from_secs(10),inspect()).await {
+        Ok(Ok(after))=>{
+            for (index,item) in chosen.iter().enumerate(){
+                if progress.steps[index].status!="stopped"{continue}
+                if let Some(new_owner)=after.services.iter().find(|current|
+                    replacement_matches(item,current)) {
+                    partial=true;
+                    progress.steps[index].status="restarted".into();
+                    progress.steps[index].message=format!(
+                        "PID {} exited; new PID {} detected. Review and approve separately.",
+                        item.pid.unwrap_or(0),new_owner.pid.unwrap_or(0));
+                    progress.error=Some("SHUTDOWN_MANUAL_OWNER_RESPAWNED".into());
+                }
+            }
+        }
+        _=>{
+            partial=true;
+            progress.error=Some("SHUTDOWN_MANUAL_POSTCHECK_UNAVAILABLE".into());
+        }
     }
     progress.stage=if partial {"partial"} else {"complete"}.into();
     set_progress(&app,&progress);
