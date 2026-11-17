@@ -105,13 +105,21 @@ function setup() {
   async function mouse(){
     await click(get("desktop-live-stream-request-control"));
     expect(get("desktop-live-mouse-status").textContent).toContain("approved");
+    // Controller consent alone never enables pointer interaction: show the input UI explicitly.
+    await click(get("desktop-live-stream-toggle-control"));
+    expect(get("desktop-live-stream-viewport").classList).toBeDefined();
+  }
+  async function keyboard(){
+    await click(get("desktop-live-stream-request-keyboard"));
+    expect(get("desktop-live-keyboard-status").textContent).toContain("approved");
+    await click(get("desktop-live-stream-toggle-control"));
   }
   function point(type:string,x:number,y:number,id=7){
     get("desktop-live-stream-img").listeners.get(type)?.({
       pointerId:id,isPrimary:true,clientX:x,clientY:y,
     });
   }
-  return {get,requests,deviceId,frames,start,mouse,point,flush,click,
+  return {get,requests,deviceId,frames,start,mouse,keyboard,point,flush,click,
     advance:(ms:number)=>{now+=ms;},
     deny:()=>{approved=false;},
     watch:()=>get("desktop-live-list").children[0].children[2].children[0],
@@ -230,7 +238,7 @@ describe("Desktop Live scoped Android pointer and keyboard regression",()=>{
     field.value="Text";
     await ui.click(ui.get("desktop-live-stream-type-send"));
     expect(ui.requests.some(x=>x.action==="input")).toBe(false);
-    await ui.click(ui.get("desktop-live-stream-request-keyboard"));
+    await ui.keyboard();
     field.value="a".repeat(161);
     await ui.click(ui.get("desktop-live-stream-type-send"));
     field.value="unsafe\ntext";
