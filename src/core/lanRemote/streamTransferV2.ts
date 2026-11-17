@@ -51,6 +51,16 @@ export class LanDiskTargetV2 {
   private receipt: Receipt | null = null;
   private receiptAt = 0;
   private readonly stage: string;
+  private lastOperation: Promise<void> = Promise.resolve();
+  private revoked = 0;
+  private async serialized<T>(work: () => Promise<T>): Promise<T> {
+    const previous = this.lastOperation;
+    let release!: () => void;
+    this.lastOperation = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try { return await work(); }
+    finally { release(); }
+  }
   constructor(private readonly outputDirectory = path.join(os.homedir(), "Downloads", "SuperAgent LAN")) {
     this.stage = path.join(this.outputDirectory, ".superagent-v2-partials");
   }
@@ -86,6 +96,9 @@ export class LanDiskTargetV2 {
    * Never accept a network-supplied staging filename or arbitrary offset.
    */
   async offerUpload(name: unknown, size: unknown, sha256: unknown) {
+    return this.serialized(() => this.offerUploadExclusive(name, size, sha256));
+  }
+  private async offerUploadExclusive(name: unknown, size: unknown, sha256: unknown) {
     validMetadata(name, size, sha256);
     if (this.active) throw Error("Another V2 transfer is active.");
     await this.ensureStage();
@@ -140,6 +153,9 @@ export class LanDiskTargetV2 {
       received: t.received, seq: t.sequence, completed: false };
   }
   async put(id: unknown, seq: unknown, encoded: unknown) {
+    return this.serialized(() => this.putExclusive(id, seq, encoded));
+  }
+  private async putExclusive(id: unknown, seq: unknown, encoded: unknown) {
     const t = this.transfer(id);
     if (!Number.isSafeInteger(seq) || seq !== t.sequence) throw Error("Out-of-order V2 chunk.");
     const bytes = decodeV2Chunk(encoded);
@@ -165,19 +181,25 @@ export class LanDiskTargetV2 {
     return { ok: true, seq: t.sequence, received: t.received };
   }
   async finish(id: unknown): Promise<Receipt> {
+    return this.serialized(() => this.finishExclusive(id));
+  }
+  private async finishExclusive(id: unknown): Promise<Receipt> {
     if (this.receipt && id === this.receipt.transferId && Date.now() - this.receiptAt < 600_000)
       return this.receipt;
     const t = this.transfer(id);
+    const expectedEpoch = this.revoked;
     if (t.received !== t.size) throw Error("Incomplete V2 transfer.");
     const info = await fs.lstat(this.part(t.id));
     if (!info.isFile() || info.isSymbolicLink() || info.size !== t.size ||
         await sha256OfFile(this.part(t.id)) !== t.sha256)
       throw Error("V2 SHA-256 mismatch or source changed.");
+    if (this.revoked !== expectedEpoch || this.active !== t)
+      throw Error("Transfer revoked before final commit.");
     const destination = path.join(this.outputDirectory, crypto.randomUUID().slice(0, 8) + "-" + t.name);
     // Hardlink is atomic, create-only and same-volume, and never exposes an
     // unverified file in the user-visible destination.
     await fs.link(this.part(t.id), destination);
-    if (this.active !== t) {
+    if (this.active !== t || this.revoked !== expectedEpoch) {
       await fs.unlink(destination).catch(() => {});
       throw Error("Transfer revoked during final commit.");
     }
@@ -194,17 +216,29 @@ export class LanDiskTargetV2 {
    */
   async abort(id: unknown) {
     if (typeof id !== "string" || !UUID.test(id)) throw Error("Invalid V2 transfer ID.");
-    if (this.active?.id !== id) return { ok: true };
-    this.active = null;
+    if (this.active?.id === id) {
+      this.revoked++;
+      this.active = null;
+    }
+    return this.serialized(() => this.abortExclusive(id));
+  }
+  private async abortExclusive(id: string) {
     await Promise.all([
       fs.unlink(this.part(id)).catch(() => {}),
       fs.unlink(this.meta(id)).catch(() => {}),
     ]);
     return { ok: true };
   }
-  suspend() { this.active = null; this.receipt = null; }
+  suspend() {
+    this.revoked++;
+    this.active = null;
+    this.receipt = null;
+  }
   async purge() {
     this.suspend();
+    return this.serialized(() => this.purgeExclusive());
+  }
+  private async purgeExclusive() {
     try {
       const entries = await fs.readdir(this.stage);
       for (const entry of entries) {
