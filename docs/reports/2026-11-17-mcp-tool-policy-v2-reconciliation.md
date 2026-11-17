@@ -241,3 +241,43 @@ at the commit above; Runtime Verified BLOCKED; Released BLOCKED.
   `v1.14.104-rc.3` (15 assets; published 2026-11-17 02:13 UTC).
   It does **not** contain the changes in this report. Native release,
   hardware tests, signing, R0–R7 review and cutover are separate gates.
+
+### 2026-11-17 09:01 UTC — final focused remediation and CI receipts
+
+- [MCP Fast Regression 44051446113](https://github.com/RudyCity/superagent/actions/runs/44051446113)
+  is **successful on all four jobs**: focused suite **195/195 tests**,
+  host-policy matrix **52/52 tests on each** Windows-latest, macOS-15 and
+  Ubuntu-24.04. TypeScript check and `bun run build` both passed.
+- `src/core/mcp/mcpLiveVerifierDiagnostics.ts` classifies connection errors
+  using structured status/code/cause only. It never formats raw remote
+  exception text, request bodies, credentials or URLs; nested/circular
+  exception causes are bounded. `tests/mcpLiveVerifierDiagnostics.test.ts`
+  adds 16 regression cases. `scripts/mcp-tool-policy-live-verify.ts` emits
+  redacted `phase` and `code` on BLOCKED. It still requires exact digest
+  parity and independent verified owner identity **before and after** calls.
+- [CLI Interaction Regression 44051615399](https://github.com/RudyCity/superagent/actions/runs/44051615399)
+  succeeded on **Windows and Ubuntu** after fixing the CLI StatusBar
+  `activeChain` scoping error and the Bun Ink test harness. The canonical
+  solution computes `primaryWorkspacePath` and `activeChain` from the
+  same memoized Workspace Chain config read rather than introducing another
+  synchronous file read per render. CLI regression test fixture work occurred
+  concurrently; no other agent's runtime settings were modified.
+- `mcp-fast-regression.yml` now executes the emitted TypeScript Core build,
+  not only `tsc --noEmit`, and includes the main CLI render entrypoint in
+  the trigger paths to catch this cross-domain compiler failure.
+- Operator-facing failure classifications and safe attended acceptance are
+  documented in `docs/guides/mcp-connected-agents-tray.md`.
+
+**Unavailable evidence:** Connected `fast1` MCP `superagent_core_status`,
+`superagent_services_status`, `superagent_tool_status` and
+`superagent_tool_search` all returned an internal connector error. That
+error does **not** demonstrate an MCP file-policy denial, and no live host
+acceptance or release activation was attempted. The installed source/backend
+digest, physical OS process birth identity, active connection sessions,
+private OAuth authorization, native package release receipts, and R0–R7
+readiness cannot be asserted from this session.
+
+**Stage status:** Implemented PASS for reviewed changes, Tested PASS for
+focused/MCP/cross-OS/CLI gates above, Runtime Verified BLOCKED,
+Released BLOCKED. Do not push production cutover, restart or rotate a
+protected MCP owner based on this report.
