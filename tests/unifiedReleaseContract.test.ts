@@ -55,7 +55,7 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
     expect(workflowText).toContain("unsigned preview installer");
   });
 
-  it("accepts exactly twelve version-pinned assets including MCP backend and rejects corrupt receipts", () => {
+  it("accepts exactly fourteen staged version-pinned assets before publishing fifteen with checksums", () => {
     const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"unified-release-positive-"));
     try {
       const version=JSON.parse(fs.readFileSync("package.json","utf8")).version;
@@ -101,6 +101,10 @@ describe("Unified 3-OS + Chrome + LAN preview release integrity", () => {
         {cwd:process.cwd(),encoding:"utf8",timeout:30000});
       expect(ok.status,ok.stderr).toBe(0);
       expect(ok.stdout).toContain("UNIFIED_RELEASE_INVENTORY_VERIFIED 14 assets");
+      const releaseGuide=fs.readFileSync("docs/guides/release-incident-playbook.md","utf8");
+      const agentRules=fs.readFileSync(".agents/AGENTS.md","utf8");
+      expect(releaseGuide).toContain("15 published assets");
+      expect(agentRules).toContain("15 public assets");
       const delegate=JSON.parse(fs.readFileSync("chrome-extension-delegate/manifest.json","utf8"));
       const receipt=path.join(tmp,`superagent-delegate-${delegate.version}.receipt.json`);
       const record=JSON.parse(fs.readFileSync(receipt,"utf8"));
