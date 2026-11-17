@@ -81,6 +81,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Typecheck
         run: bun --bun x tsc --noEmit
+      - name: Build Core TypeScript artifacts
+        run: bun run build
       - name: MCP focused regression
         if: ${{ always() && !cancelled() }}
         run: |
