@@ -499,6 +499,37 @@ pub async fn unavailable_reason(dir: &Path, kind: &str, port: u16, pid: u32) -> 
     }
 }
 
+/// Force-stop only an authenticated managed MCP owner. This does not adopt an OS
+/// process or kill a PID: the exact private owner handles its force-stop route.
+pub async fn force_stop_mcp(
+    dir: &Path, port: u16, pid: u32, expected_birth: u64,
+) -> Result<(), String> {
+    let lease = read_lease(dir, port, pid)
+        .map_err(|_| "SHUTDOWN_FORCE_MCP_OWNER_UNVERIFIED")?;
+    mcp_status(&lease).await
+        .map_err(|_| "SHUTDOWN_FORCE_MCP_CONTROL_UNVERIFIED")?;
+    let mut system = System::new();
+    system.refresh_processes();
+    if system.process(Pid::from_u32(pid))
+        .is_none_or(|process| process.start_time() != expected_birth) {
+        return Err("SHUTDOWN_FORCE_MCP_PROCESS_CHANGED".into());
+    }
+    // Owner-specific, nonce-authenticated control is the only force route.
+    // It may interrupt active sessions, but never signals a foreign PID.
+    let reply = call(port, "/_internal/owner/stop?force=1", &lease.nonce,
+        Method::POST, Duration::from_secs(4)).await;
+    for _ in 0..30 {
+        if !owned_pid(pid, lease.created_at) {
+            return Ok(());
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    if reply.is_err() {
+        return Err("SHUTDOWN_FORCE_MCP_RECEIPT_UNCERTAIN".into());
+    }
+    Err("SHUTDOWN_FORCE_MCP_EXIT_UNVERIFIED".into())
+}
+
 pub async fn control(
     dir: &Path,
     kind: &str,
