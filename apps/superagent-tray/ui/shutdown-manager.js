@@ -36,7 +36,7 @@
   }
   function buttons(){
     const lock=state.busy||state.loading;
-    $("shutdown-stop-selected").disabled=lock||state.selected.size===0;
+    $("shutdown-stop-selected").disabled=lock||!state.preview||state.selected.size===0;
     $("shutdown-exit-all").disabled=lock||!canExit();
     $("shutdown-refresh").disabled=lock;
     $("shutdown-close").disabled=state.loading;
@@ -112,7 +112,10 @@
     if(!progress||!Array.isArray(progress.steps))return;
     if(state.progress&&state.progress.runId!==progress.runId&&state.busy)return;
     state.progress=progress;state.busy=progress.stage==="running";
-    if(!state.busy){state.preview=null;state.selected.clear();}
+    if(!state.busy){
+      state.preview=null;state.selected.clear();
+      drawServices();
+    }
     drawProgress();buttons();
     if(!state.busy&&state.poller!==null){
       clearInterval(state.poller);state.poller=null;
