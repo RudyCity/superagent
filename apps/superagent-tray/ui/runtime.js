@@ -122,10 +122,11 @@ function runtimeVisibleRemote(snapshot = runtimeLastResult) {
   }
   return visible;
 }
-function runtimeReconcileStoppedOwners(snapshot) {
+function runtimeReconcileStoppedOwners(snapshot, scanStartedAt) {
   const services = Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [];
   for (const [key, transition] of runtimeStopTransitions) {
-    if (transition.phase === "stopping") continue;
+    if (transition.phase === "stopping" ||
+        (transition.confirmedAt && scanStartedAt < transition.confirmedAt)) continue;
     const owner = services.find(service => runtimeStopKey(service) === key);
     if (!owner && transition.phase === "removed") {
       runtimeStopTransitions.delete(key);
@@ -789,8 +790,8 @@ function runtimeTabKeydown(event) {
   runtimeSelectTab(runtimeTabNames[next], true);
 }
 
-function runtimeRender(snapshot) {
-  runtimeReconcileStoppedOwners(snapshot);
+function runtimeRender(snapshot, scanStartedAt = Date.now()) {
+  runtimeReconcileStoppedOwners(snapshot, scanStartedAt);
   runtimeLastResult = snapshot;
   runtimeCopyAllowedUrls = new Set();
   rt("runtime-core-count").textContent = String(snapshot.healthyCoreCount || 0);
@@ -903,13 +904,14 @@ async function runtimeServiceAction(event) {
     if (result?.success !== true) throw new Error("The service owner did not confirm the operation");
     message.textContent = result.message || `${label} ${startAction ? "start" : action} confirmed.`;
     if (stopKey) {
-      runtimeStopTransitions.set(stopKey, { phase: "stopped", service });
+      runtimeStopTransitions.set(stopKey, { phase: "stopped", service, confirmedAt: Date.now() });
       runtimeRenderRemoteList();
       // The native stop call returns success only after owner exit proof.
       // Animate first, then remove the exact PID from active listing.
       setTimeout(() => {
         if (runtimeStopTransitions.get(stopKey)?.phase !== "stopped") return;
-        runtimeStopTransitions.set(stopKey, { phase: "removed", service });
+        const original = runtimeStopTransitions.get(stopKey);
+        runtimeStopTransitions.set(stopKey, { ...original, phase: "removed" });
         runtimeRenderRemoteList();
       }, 420);
     }
@@ -1399,6 +1401,7 @@ async function runtimeRefresh(background = false) {
     return;
   }
   runtimeScanBusy = true;
+  const scanStartedAt = Date.now();
   const ticket = window.TrayFeedback?.begin({
     key: "runtime:refresh", button: rt("runtime-refresh"),
     label: "Scanning runtime…", background: background === true,
@@ -1410,7 +1413,7 @@ async function runtimeRefresh(background = false) {
       runtimeInvoke("detect_runtime"),
       runtimeGetYoloMode(),
     ]);
-    runtimeRender(snapshot);
+    runtimeRender(snapshot, scanStartedAt);
     const [gateway, named] = await Promise.allSettled([
       runtimeInvoke("desktop_live_action", { action: "gateway-status", payload: null }),
       runtimeInvoke("get_named_tunnel_health"),
