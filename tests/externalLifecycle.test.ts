@@ -147,6 +147,24 @@ describe("external ChatGPT lifecycle — persistent MCP pull worker contract", (
     expect(call("worker.heartbeat",{workerId:w.workerId},successor).active).toBe(0);
   });
 
+  it("deduplicates retried schedule creation and manual runs using stable caller keys", () => {
+    const input = {
+      name: "Daily audit", cronExpression: "0 8 * * *", prompt: "Read CI results",
+      idempotencyKey: "request_abcdef012345",
+    };
+    const first = call("create", input, owner(workspace));
+    const second = call("create", input, owner(workspace));
+    expect(second.workflow.id).toBe(first.workflow.id);
+    expect(second.replayed).toBe(true);
+    expect(() => call("create", { ...input, prompt: "different intent" }, owner(workspace)))
+      .toThrow(/different workflow/);
+    const manual1 = call("run.now", {workflowId:first.workflow.id, idempotencyKey:"manual_001"}, owner(workspace));
+    const manual2 = call("run.now", {workflowId:first.workflow.id, idempotencyKey:"manual_001"}, owner(workspace));
+    expect(manual2.run.id).toBe(manual1.run.id);
+    expect(manual2.replayed).toBe(true);
+    expect(call("list",{},owner(workspace)).runs).toHaveLength(1);
+  });
+
   it("rejects invalid workflow graphs, unsafe identities and corrupt persisted state", () => {
     expect(() => call("create", {name:"bad", cronExpression:"* * * * *", steps:[
       {id:"a", prompt:"one", dependsOn:["b"]},
