@@ -18,6 +18,7 @@ on:
       - "src/core/desktopUi/desktopLiveAccessModes.ts"
       - "src/core/desktopUi/desktopLiveInventory.ts"
       - "src/core/runtime/trayLanBridge.ts"
+      - "src/core/lanRemote/fileRelayManager.ts"
       - "src/serverRoutes.ts"
       - "apps/superagent-tray/src-tauri/src/desktop_live_android_control.rs"
       - "apps/superagent-tray/src-tauri/src/main.rs"
