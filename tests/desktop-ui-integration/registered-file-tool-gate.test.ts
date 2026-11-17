@@ -230,6 +230,27 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       {action:"health",limit:9999},
     ])expect(gate(args)).toMatch(/not certified/);
   });
+  it("fails closed for Git status and malformed media-plan effects under v2",()=>{
+    const a=setup();
+    const allow=a.rule("scope","allow",a.root,["read"],true);
+    const opts={registry:()=>a.p(allow),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>
+      registeredFileToolGate({name,args},a.root,opts);
+    // Git status may invoke repository-configured fsmonitor commands.
+    expect(gate("git_status",{})).toMatch(/not certified/);
+    expect(getPermanentFileToolReadiness("git_status")).toBe("uncertified");
+    const source={inputPath:"src/main.ts",outputPath:"src/output.webp"};
+    expect(gate("superagent_media_plan",{...source,mode:"transform",operation:"compress",
+      quality:80,targetKB:128})).toBeNull();
+    for(const extra of [
+      {operation:"evaluate"}, {operation:{"operation":"compress"}},
+      {mode:"convert",operation:"compress"}, {quality:0}, {quality:101},
+      {targetBytes:0}, {targetBytes:209715201}, {targetKB:204801},
+      {targetBytes:1024,targetKB:1}, {mode:"bad"},
+    ]){
+      expect(gate("superagent_media_plan",{...source,...extra})).toMatch(/requires all explicit/);
+    }
+  });
   it("authorizes every explicit media plan input, watermark and destination lookup",()=>{
     const a=setup();
     fs.writeFileSync(path.join(a.root,"src","stamp.png"),"fake png signature for policy test");
