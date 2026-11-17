@@ -797,7 +797,7 @@ async fn lan_support_action(
     action: String,
     payload: Option<Value>,
 ) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"];
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
     if window.label() != "main" { return Err("LAN control requires the installed main Tray".into()); }
     let data = payload.unwrap_or_else(|| json!({}));
@@ -820,6 +820,9 @@ async fn lan_support_action(
         "file_get" => &["deviceId", "transferId", "seq"],
         "file_status" => &["deviceId", "transferId"],
         "file_finish" | "file_abort" => &["deviceId", "transferId"],
+        "file_v2_offer" => &["deviceId", "direction", "name", "size", "sha256"],
+        "file_v2_put" => &["deviceId", "transferId", "seq", "data"],
+        "file_v2_status" | "file_v2_finish" | "file_v2_abort" => &["deviceId", "transferId"],
         "schema" => &["deviceId", "knownRevision"],
         "element" => &["deviceId", "elementId", "revision", "kind"],
         _ => &["deviceId"],
@@ -920,7 +923,37 @@ async fn lan_support_action(
         }
     }
     if action.starts_with("file_") {
-        if action == "file_offer" {
+        if action == "file_v2_offer" {
+            if data["direction"].as_str() != Some("upload") {
+                return Err("V2 currently supports receiving files on Windows only".into());
+            }
+            let name = data["name"].as_str().ok_or("V2 file name required")?;
+            if name.is_empty() || name.len() > 96 || name.starts_with('.')
+                || name.ends_with('.') || name.ends_with(' ') || name.ends_with(".safolder")
+                || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b" _.-()".contains(&b)) {
+                return Err("Unsafe V2 file name".into());
+            }
+            let size = data["size"].as_u64().ok_or("V2 file size required")?;
+            let sha256 = data["sha256"].as_str().ok_or("V2 SHA-256 required")?;
+            if !(1..=256 * 1024 * 1024).contains(&size) || sha256.len() != 64
+                || !sha256.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
+                return Err("Invalid V2 file metadata".into());
+            }
+        } else if action.starts_with("file_v2_") {
+            let id = data["transferId"].as_str().ok_or("V2 transfer ID required")?;
+            if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+                return Err("Invalid V2 transfer handle".into());
+            }
+            if action == "file_v2_put" {
+                let seq = data["seq"].as_u64().ok_or("V2 sequence required")?;
+                if seq > 16384 { return Err("V2 sequence exceeds file bound".into()); }
+                let data64 = data["data"].as_str().ok_or("V2 base64 chunk required")?;
+                if data64.is_empty() || data64.len() > 21848 ||
+                    !data64.bytes().all(|b| b.is_ascii_alphanumeric() || b"+/=".contains(&b)) {
+                    return Err("Invalid V2 base64 chunk".into());
+                }
+            }
+        } else if action == "file_offer" {
             let direction = data["direction"].as_str().ok_or("File direction required")?;
             if direction != "upload" && direction != "download" {
                 return Err("Invalid file direction".into());
