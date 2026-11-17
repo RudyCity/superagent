@@ -46,6 +46,28 @@ function certifiedInputReaderArguments(name:string,args:Args|undefined):boolean 
   const selected=name==="superagent_read_document"?args.filePath:args.inputPath;
   return typeof selected==="string" && selected.length>0;
 }
+/**
+ * media_plan is non-mutating, but it checks destination existence and may
+ * inspect up to 50 sources plus a watermark. Mediate every referenced file.
+ */
+function certifiedMediaPlanPaths(args:Args|undefined):string[]|null {
+  if(!args||typeof args!=="object"||Array.isArray(args))return null;
+  const allowed=["inputPath","inputPaths","outputPath","watermarkPath","mode","operation",
+    "quality","targetBytes","targetKB","workspace","projectId"];
+  if(Object.keys(args).some(key=>!allowed.includes(key)))return null;
+  const inputs=args.inputPaths===undefined?[args.inputPath]:args.inputPaths;
+  if(!Array.isArray(inputs)||inputs.length<1||inputs.length>50||
+      inputs.some(item=>typeof item!=="string"||!item.trim()))return null;
+  if(args.inputPaths!==undefined&&args.inputPath!==undefined)return null;
+  if(typeof args.outputPath!=="string"||!args.outputPath.trim())return null;
+  if(args.mode!==undefined&&!["convert","transform"].includes(String(args.mode)))return null;
+  const paths=[...inputs as string[],args.outputPath];
+  if(args.operation==="watermark"){
+    if(typeof args.watermarkPath!=="string"||!args.watermarkPath.trim())return null;
+    paths.push(args.watermarkPath);
+  }else if(args.watermarkPath!==undefined)return null;
+  return paths;
+}
 const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","list_dir",
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
 const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace",
@@ -198,7 +220,8 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
   if (BENIGN.has(name)) return "certified_metadata";
   if (name === "superagent_delegate_sync_history") return "certified_app_storage";
   if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name) ||
-      Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name))
+      Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name) ||
+      name==="superagent_media_plan")
     return "requires_explicit_files";
   if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services" ||
       name === "superagent_tool_execute" ||
@@ -309,13 +332,18 @@ export function registeredFileToolGate(
   if(Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,call.name) &&
       !certifiedInputReaderArguments(call.name,call.args))
     return "Document/media reader requires exactly one explicit input path and certified argument keys.";
+  const mediaPlanPaths=call.name==="superagent_media_plan"
+    ? certifiedMediaPlanPaths(call.args) : null;
+  if(call.name==="superagent_media_plan" && !mediaPlanPaths)
+    return "Media planner requires all explicit input, output and watermark paths with certified argument keys.";
   const operations:FileOperation[]=
-    READ_TOOLS.has(call.name) || certifiedInputReaderArguments(call.name,call.args)?["read"]:
+    READ_TOOLS.has(call.name) || certifiedInputReaderArguments(call.name,call.args) ||
+    mediaPlanPaths!==null?["read"]:
     WRITE_TOOLS.has(call.name)?["read","write"]:
     PATCH_TOOLS.has(call.name)?["read","write","delete"]:[];
   if(!operations.length)return "Tool is not certified for permanent file access restrictions.";
   const args=call.args??{};
-  const entries=pathsIn(args);
+  const entries=mediaPlanPaths ?? pathsIn(args);
   if(!entries)return "Explicit target file path(s) required by permanent file access policy.";
   if(!path.isAbsolute(workspace))return "Local absolute workspace required.";
   for(const raw of entries){
