@@ -47,7 +47,8 @@ import javax.net.ssl.SSLSocket;
  */
 public final class LanClientServer implements AutoCloseable {
     public static final int PORT = 17845;
-    private static final int MAX_REQUEST_BYTES = 8192;
+    // Legacy payload remains <=8KiB; opt-in V2 uses 16KiB chunks (~22KiB base64).
+    private static final int MAX_REQUEST_BYTES = 32 * 1024;
     private static final long PAIR_MS = 120_000;
     private static final long SESSION_IDLE_MS = 600_000;
     private static final long SESSION_MAX_MS = 3_600_000;
@@ -95,6 +96,7 @@ public final class LanClientServer implements AutoCloseable {
     private final Object guard = new Object();
     private final SecureRandom random = new SecureRandom();
     private final LanFileExchange fileExchange;
+    private final LanFileExchangeV2 fileExchangeV2;
     private final Context context;
     private final Approval approval;
     private final Notice notice;
@@ -123,6 +125,7 @@ public final class LanClientServer implements AutoCloseable {
                            ApprovedAction approvedAction) {
         this.context = context.getApplicationContext();
         this.fileExchange = new LanFileExchange(this.context);
+        this.fileExchangeV2 = new LanFileExchangeV2(this.context);
         this.approval = approval;
         this.notice = notice;
         this.approvedAction = approvedAction;
@@ -414,6 +417,7 @@ public final class LanClientServer implements AutoCloseable {
             synchronized (guard) {
                 paired.clear(); session = null; busy = false; nextCode();
                 fileExchange.clear();
+                fileExchangeV2.purge();
                 RemoteControlPermit.revoke();
             }
             send(socket, new JSONObject().put("ok", true));
@@ -437,6 +441,7 @@ public final class LanClientServer implements AutoCloseable {
                 active = null;
                 session = null;
                 fileExchange.clear();
+                fileExchangeV2.suspend();
                 RemoteControlPermit.session(false);
                 ScreenProjectionService.stop(context);
             }
@@ -451,7 +456,7 @@ public final class LanClientServer implements AutoCloseable {
         if (active == null) { fail(socket, "Session expired or denied."); return; }
         if ("close".equals(op)) {
             stopRemoteShell();
-            synchronized (guard) { session = null; fileExchange.clear(); }
+            synchronized (guard) { session = null; fileExchange.clear(); fileExchangeV2.suspend(); }
             RemoteControlPermit.session(false);
             send(socket, new JSONObject().put("ok", true));
             ScreenProjectionService.stop(context);
@@ -485,6 +490,57 @@ public final class LanClientServer implements AutoCloseable {
                 notice.show("Approved " + direction + " file: " + declaredName);
             } catch (Exception invalid) {
                 fail(socket, "Another transfer active or invalid file metadata.");
+            }
+            return;
+        }
+        if ("file_v2_offer".equals(op)) {
+            if (!"upload".equals(request.optString("direction", ""))) {
+                fail(socket, "Android V2 only accepts owner-approved incoming files."); return;
+            }
+            String filename = request.optString("name", "");
+            long size = request.optLong("size", -1);
+            String sha256 = request.optString("sha256", "");
+            if (size < 1 || size > LanFileExchangeV2.MAX_BYTES ||
+                    filename.endsWith(".safolder") ||
+                    !sha256.matches("[a-f0-9]{64}")) {
+                fail(socket, "Invalid V2 file metadata."); return;
+            }
+            try { LanFileExchange.name(filename); }
+            catch (Exception invalid) { fail(socket, "Unsafe incoming V2 basename."); return; }
+            String description = "Receive " + filename + " (" + size + " bytes; V2 resumable)";
+            if (!approval.ask("file:" + description, owner.label, ip, 90) ||
+                    !isStillAuthorized(active, owner, ip) || socket.isClosed()) {
+                fail(socket, "Android owner declined V2 file."); return;
+            }
+            try {
+                JSONObject offer = fileExchangeV2.offer(filename, size, sha256);
+                send(socket, offer);
+                notice.show("Approved V2 file: " + filename);
+            } catch (Exception denied) {
+                fail(socket, "V2 file staging unavailable or another transfer active.");
+            }
+            return;
+        }
+        if ("file_v2_put".equals(op) || "file_v2_status".equals(op) ||
+                "file_v2_finish".equals(op) || "file_v2_abort".equals(op)) {
+            String transferId = request.optString("transferId", "");
+            try {
+                JSONObject response;
+                if ("file_v2_put".equals(op))
+                    response = fileExchangeV2.put(transferId, request.optInt("seq", -1),
+                            request.optString("data", ""));
+                else if ("file_v2_status".equals(op))
+                    response = fileExchangeV2.status(transferId);
+                else if ("file_v2_finish".equals(op)) {
+                    response = fileExchangeV2.finish(transferId);
+                    notice.show("V2 file committed to Android Downloads; SHA-256 verified.");
+                } else response = fileExchangeV2.abort(transferId);
+                if (!isStillAuthorized(active, owner, ip)) {
+                    fail(socket, "LAN session expired during V2 transfer."); return;
+                }
+                send(socket, response);
+            } catch (Exception denied) {
+                fail(socket, "V2 transfer refused: session, sequence, staging, or SHA-256 invalid.");
             }
             return;
         }
