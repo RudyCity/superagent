@@ -5,6 +5,8 @@ import vm from "node:vm";
 
 const html=fs.readFileSync(path.resolve("apps/superagent-tray/ui/index.html"),"utf8");
 const script=fs.readFileSync(path.resolve("apps/superagent-tray/ui/shutdown-manager.js"),"utf8");
+const native=fs.readFileSync(path.resolve("apps/superagent-tray/src-tauri/src/shutdown_manager.rs"),"utf8");
+const ownerControl=fs.readFileSync(path.resolve("apps/superagent-tray/src-tauri/src/runtime_control.rs"),"utf8");
 
 function fixture(exitReady=false){
   return {previewId:"trusted-preview",createdAt:12345,exitReady,warning:null,services:[
@@ -70,6 +72,11 @@ describe("native Shutdown Manager UI",()=>{
     expect(html).toContain('src="./shutdown-manager.js"');
     expect(html).toContain('href="./shutdown-manager.css"');
     expect(script).not.toMatch(/innerHTML|eval\s*\(|taskkill|process\.kill/);
+    expect(native).toContain('force_confirmation.as_deref()!=Some("FORCE STOP ALL")');
+    expect(native).toContain('owner.source=="registry"');
+    expect(native).toContain('process.start_time())!=item.process_started_at');
+    expect(ownerControl).toContain('"/_internal/owner/stop?force=1"');
+    expect(ownerControl).toContain('read_lease(dir, port, pid)');
   });
   it("previews owner states read-only, and excludes unverified services from selection",async()=>{
     const m=mount();
