@@ -77,6 +77,18 @@ export class LanTargetFiles {
       received: 0, sequence: 0, updated: Date.now(), outbound };
     return { transferId: id, direction, name, size: chosen.size, sha256: chosen.sha256, chunkBytes: LAN_FILE_CHUNK_BYTES };
   }
+  /** Read-only checkpoint for reconciling an uncertain transport reply.
+   * Never exposes file bytes, filesystem paths or session credentials.
+   */
+  status(id: unknown) {
+    const t = this.transfer(id);
+    return {
+      ok: true, transferId: t.id, direction: t.direction, name: t.name,
+      size: t.size, sha256: t.sha256, seq: t.sequence,
+      received: t.direction === "upload" ? t.received
+        : Math.min(t.size, t.sequence * LAN_FILE_CHUNK_BYTES),
+    };
+  }
   private transfer(id: unknown): Transfer {
     const t = this.active;
     if (!t || typeof id !== "string" || t.id !== id) throw Error("Unknown transfer.");
@@ -94,12 +106,16 @@ export class LanTargetFiles {
   }
   get(id: unknown, seq: unknown) {
     const t = this.transfer(id);
-    if (t.direction !== "download" || !t.outbound || !Number.isInteger(seq) || seq !== t.sequence)
+    if (t.direction !== "download" || !t.outbound || !Number.isInteger(seq) ||
+        (seq !== t.sequence && seq !== t.sequence - 1))
       throw Error("Out-of-order chunk.");
     const offset = seq * LAN_FILE_CHUNK_BYTES;
     if (offset >= t.size) throw Error("No further bytes.");
     const part = t.outbound.subarray(offset, Math.min(offset + LAN_FILE_CHUNK_BYTES, t.size));
-    t.sequence++; t.updated = Date.now();
+    // The previous chunk may be re-read after a lost acknowledgement, but
+    // only the next chunk advances the transfer cursor.
+    if (seq === t.sequence) t.sequence++;
+    t.updated = Date.now();
     return { ok: true, seq, data: part.toString("base64"), received: offset + part.length };
   }
   async finish(id: unknown) {
