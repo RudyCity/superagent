@@ -365,6 +365,41 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(css).toContain("prefers-reduced-motion: reduce");
   });
 
+  it("ignores a pre-stop in-flight scan and queues an up-to-date verification scan", async () => {
+    const owner={kind:"mcp",source:"registry",port:9227,pid:3628,
+      state:"observed",canStop:true,transport:"cloudflare"};
+    const snapshot={scannedAt:Date.now(),cores:[],processes:[],
+      independentHosts:[],remoteServices:[owner]};
+    const ui=mountRuntime(snapshot);
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    const initial=ui.context.window.__TAURI__.core.invoke;
+    let completeOldScan:((value:unknown)=>void)|undefined;
+    let reads=0;
+    ui.context.window.__TAURI__.core.invoke=async(action:string,args:any)=>{
+      if(action==="detect_runtime"){
+        reads++;
+        return reads===1 ? new Promise(resolve=>{completeOldScan=resolve;}) :
+          {...snapshot,remoteServices:[{...owner,state:"stale",canStop:false}]};
+      }
+      if(action==="service_action")return {success:true,message:"Exited"};
+      return initial(action,args);
+    };
+    const scanning=vm.runInContext("runtimeRefresh(true)",ui.context) as Promise<void>;
+    expect(completeOldScan).toBeTypeOf("function");
+    const stopping=vm.runInContext(
+      'runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"mcp",runtimeAction:"stop",runtimePort:"9227",runtimePid:"3628"}})}})',
+      ui.context) as Promise<void>;
+    await stopping;
+    completeOldScan!(snapshot); // old scan saw owner before it exited
+    await scanning;
+    await new Promise(resolve=>setImmediate(resolve));
+    expect(reads).toBeGreaterThanOrEqual(2);
+    await new Promise(resolve=>setTimeout(resolve,460));
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("0");
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("MCP HTTP Server");
+  });
+
   it("reverses pending Stop when native control rejects or reports an uncertain outcome", async () => {
     const owner={kind:"mcp",source:"registry",port:9227,pid:3628,
       state:"observed",canStop:true,transport:"cloudflare"};
