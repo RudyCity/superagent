@@ -15,11 +15,14 @@ import {
 import type { RemoteHostIntent } from "./remoteSessionPolicy.js";
 import { AttendedNativeControllerSession } from "./attendedNativeControllerSession.js";
 import { RemotePrivateHostOperator } from "./remotePrivateOperator.js";
+import type { RemotePrivateControllerTlsHost } from "./remotePrivateControllerTls.js";
 
 export interface AttendedPrivateHostComponents {
   readonly listener: RemotePrivateHostTlsListener;
   readonly controller: AttendedNativeControllerSession;
   readonly operator: RemotePrivateHostOperator;
+  /** Installed native-host-only factory, not callable from remote messages. */
+  readonly createControllerTlsHost?: (approvedViewer: PrivateHostStarted) => RemotePrivateControllerTlsHost;
 }
 export interface AttendedPrivateHostStart {
   readonly nativeWindow: RemoteHostIntent;
@@ -37,6 +40,10 @@ export class AttendedPrivateDesktopHostSession {
   private starting = false;
   private started = false;
   private ended = false;
+  private approvedViewer: PrivateHostStarted | null = null;
+  private controlHost: RemotePrivateControllerTlsHost | null = null;
+  private readonly createControllerTlsHost:
+    ((approvedViewer: PrivateHostStarted) => RemotePrivateControllerTlsHost) | null;
 
   constructor(components: AttendedPrivateHostComponents) {
     if (!components) throw Error("PRIVATE_DESKTOP_HOST_NOT_ATTESTED");
@@ -54,11 +61,21 @@ export class AttendedPrivateDesktopHostSession {
     this.listener=listener;
     this.controller=controller;
     this.operator=operator;
+    this.createControllerTlsHost=components.createControllerTlsHost??null;
+    if(this.createControllerTlsHost && typeof this.createControllerTlsHost!=="function")
+      throw Error("PRIVATE_DESKTOP_HOST_INVALID_CONTROLLER_FACTORY");
     try {
       // Register all terminal revocations before opening ANY mTLS socket.
       // Physical takeover calls input before viewer. A viewer-side socket
       // close calls input revocation even when no operator UI is visible.
-      listener.registerControllerEndHook(controller);
+      listener.registerControllerEndHook({
+        viewerDisconnected:()=>{
+          // A vanished viewer invalidates native input *and* the separately
+          // provisioned control socket before any further OS action.
+          try {controller.viewerDisconnected();}
+          finally{this.controlHost?.stop();}
+        },
+      });
       operator.registerNativeHost(listener, controller);
     } catch {
       // Listener has never started. Stop only this rejected candidate; never
@@ -78,11 +95,36 @@ export class AttendedPrivateDesktopHostSession {
       const result = await this.listener.start(raw);
       if (this.isStopped) throw Error("PRIVATE_DESKTOP_HOST_STOPPED_DURING_START");
       this.started = true;
+      this.approvedViewer = result;
       return result;
     } catch {
       this.terminate();
       throw Error("PRIVATE_DESKTOP_HOST_START_FAILED");
     } finally { this.starting = false; }
+  }
+
+  /** Host-only opt-in, only AFTER the independently approved viewer is
+   * actively authenticated and receiving its exact-window stream. Never
+   * start an input listener just because a preview token exists.
+   */
+  async startController():Promise<{address:string;port:number;expiresAt:number}>{
+    if(!this.approvedViewer||!this.started||this.isStopped||
+       !this.listener.isViewing||!this.createControllerTlsHost||
+       this.controlHost)throw Error("PRIVATE_DESKTOP_CONTROLLER_NOT_READY");
+    let host:RemotePrivateControllerTlsHost|null=null;
+    try{
+      host=this.createControllerTlsHost(this.approvedViewer);
+      if(!host||typeof host.start!=="function"||typeof host.stop!=="function")
+        throw Error("PRIVATE_DESKTOP_CONTROLLER_INVALID_HOST");
+      this.controlHost=host;
+      const started=await host.start();
+      if(this.isStopped||!this.listener.isViewing)throw Error("VIEWER_DISCONNECTED_DURING_CONTROLLER_START");
+      return started;
+    }catch{
+      try{host?.stop();}catch{}
+      this.terminate();
+      throw Error("PRIVATE_DESKTOP_CONTROLLER_START_FAILED");
+    }
   }
 
   /** Native user can end the exact window session without killing the app.
@@ -106,7 +148,7 @@ export class AttendedPrivateDesktopHostSession {
     } catch {
       // Defensive fallback for an unexpected operator implementation failure.
       try { this.controller.humanTakeover(); }
-      finally { this.listener.stop(); }
+      finally { try{this.controlHost?.stop();}finally{this.listener.stop();} }
     }
   }
 }
