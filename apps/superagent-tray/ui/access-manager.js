@@ -1007,6 +1007,31 @@
   }
 
   const mcpCache = { requests: null, identities: null, projects: null, inventory: null, live: null, refreshing: null };
+  const mcpNotificationFocus = { id: null, didFocus: false };
+
+  function highlightMcpNotificationRequest() {
+    const id = mcpNotificationFocus.id;
+    if (!id || !Array.isArray(mcpCache.requests)) return;
+    const target = mcpCache.requests.find((request) => request.requestId === id);
+    if (!target) return; // A resolved/expired request is not an active approval.
+    const tab = target.projectId === "mcp-connection" ? "connections" : "mcp";
+    if (state.activeTab !== tab) setActiveTab(tab);
+    for (const listId of ["access-mcp-pending-list", "access-mcp-connection-pending-list",
+      "access-mcp-history-list", "access-mcp-connection-history-list"]) {
+      const root = $(listId);
+      if (!root) continue;
+      for (const entry of root.children) {
+        if (entry.dataset.requestId !== id) continue;
+        entry.classList.add("access-mcp-request-highlight");
+        if (!mcpNotificationFocus.didFocus) {
+          entry.tabIndex = -1;
+          entry.focus({ preventScroll: true });
+          entry.scrollIntoView?.({ behavior: "smooth", block: "center" });
+          mcpNotificationFocus.didFocus = true;
+        }
+      }
+    }
+  }
 
   function setMcpLoadError(id, problems) {
     const node = $(id);
@@ -1049,6 +1074,7 @@
     }
     for (const req of requests) {
       const card = make("article", "access-mcp-request-card");
+      card.dataset.requestId = String(req.requestId || "");
       const title = make("div", "access-mcp-request-head");
       title.append(make("strong", "", String(req.subject || "Identitas MCP tidak dikenal")));
       title.append(make("span", "access-mcp-meta", String(req.mode || "") +
@@ -1104,6 +1130,7 @@
       Number(b.decidedAt || b.createdAt || 0) - Number(a.decidedAt || a.createdAt || 0));
     for (const req of ordered.slice(0, 30)) {
       const row = make("div", "access-mcp-history-row");
+      row.dataset.requestId = String(req.requestId || "");
       const details = make("div", "access-mcp-history-detail");
       const title = make("strong", "", humanMcpTarget(req));
       const state = make("span", "access-mcp-state access-mcp-state-" + String(req.status || "unknown"),
@@ -1364,6 +1391,7 @@
       renderMcpPending("access-mcp-connection-pending-list", failures.requests ? null : connectionPending, true);
       renderMcpHistory("access-mcp-history-list", failures.requests ? null : projectHistory);
       renderMcpHistory("access-mcp-connection-history-list", failures.requests ? null : connectionHistory);
+      highlightMcpNotificationRequest();
       renderMcpConnectedClients(mcpCache.live);
       renderMcpIdentities(failures.identities ? null : mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-ident-select", mcpCache.identities);
@@ -1722,6 +1750,16 @@
         if (tabName !== "connections" && tabName !== "mcp") return;
         setActiveTab(tabName);
         void refreshMcpRequests();
+      };
+      // Navigation-only notification affordance. The actual approval/deny
+      // buttons remain protected by their existing native human review.
+      window.__superagentAccessManagerFocusRequest = async (requestId) => {
+        if (typeof requestId !== "string" || !requestId || requestId.length > 150 ||
+          /[\\x00-\\x1f]/.test(requestId)) return;
+        mcpNotificationFocus.id = requestId;
+        mcpNotificationFocus.didFocus = false;
+        await refreshMcpRequests();
+        highlightMcpNotificationRequest();
       };
       window.__superagentAccessManagerRefresh = () => {
         void refreshRegistry().catch(() => {});
