@@ -14,7 +14,7 @@
   });
   const viewer = {
     running: false, generation: 0, id: null, hasFrame: false, hasSchema: false,
-    schemaRevision: 0, nodes: [], origin: null, controllerApproved: false,
+    schemaRevision: 0, nodes: [], origin: null, scopes:{mouse:false,keyboard:false},approvalPending:false,
   };
   const getTarget = () => {
     const d = window.__superagentLanGetSelected?.();
@@ -32,30 +32,35 @@
     if ($("lan-schema-status")) $("lan-schema-status").textContent = String(value).slice(0, 160);
   }
   function controls() {
-    const target = getTarget();
-    const eligible = Boolean(target && viewer.running && target.id === viewer.id);
-    if ($("lan-screen-start")) $("lan-screen-start").disabled = viewer.running || !target;
-    if ($("lan-screen-stop")) $("lan-screen-stop").disabled = !viewer.running;
-    if ($("lan-screen-capture")) $("lan-screen-capture").disabled = !eligible;
-    if ($("lan-screen-request-control")) $("lan-screen-request-control").disabled = !eligible || viewer.controllerApproved;
-    if ($("lan-screen-revoke-control")) $("lan-screen-revoke-control").disabled = !viewer.controllerApproved;
-    if ($("lan-screen-controller-status")) {
+    const target=getTarget();
+    const eligible=Boolean(target&&viewer.running&&target.id===viewer.id);
+    const mouse=eligible&&viewer.scopes.mouse;
+    const keyboard=eligible&&viewer.scopes.keyboard;
+    const control={
+      "lan-screen-request-control":!eligible||mouse||viewer.approvalPending,
+      "lan-screen-revoke-control":!mouse,
+      "lan-screen-request-keyboard":!eligible||keyboard||viewer.approvalPending,
+      "lan-screen-revoke-keyboard":!keyboard,
+    };
+    for(const [id,disabled] of Object.entries(control))
+      if($(id))$(id).disabled=disabled;
+    if($("lan-screen-start"))$("lan-screen-start").disabled=viewer.running||!target;
+    if($("lan-screen-stop"))$("lan-screen-stop").disabled=!viewer.running;
+    if($("lan-screen-capture"))$("lan-screen-capture").disabled=!eligible;
+    if($("lan-screen-controller-status"))
       $("lan-screen-controller-status").textContent =
-        viewer.controllerApproved
-          ? "Native Tray controller approved. Android device can still deny every action."
-          : "View Only · Separate native controller approval required for remote touch/typing.";
-    }
-    const actionable = eligible && viewer.controllerApproved;
-    const list = $("lan-schema-list");
-    if (list) [...list.children].forEach((button, i) => {
-      const node = viewer.nodes[i];
-      button.disabled = !actionable || !node || !node.clickable || !node.enabled;
+        "Mouse: "+(mouse?"approved":"not approved")+
+        " · Keyboard: "+(keyboard?"approved":"not approved")+
+        " · Android must still accept every command";
+    const list=$("lan-schema-list");
+    if(list)[...list.children].forEach((button,i)=>{
+      const node=viewer.nodes[i];
+      button.disabled=!mouse||!node||!node.clickable||!node.enabled;
     });
-    for (const id of ["lan-screen-back", "lan-screen-home", "lan-screen-recents",
-      "lan-screen-send-text", "lan-screen-text"]) {
-      if ($(id)) $(id).disabled = !actionable || (!viewer.hasSchema && !viewer.hasFrame);
-    }
-    if ($("lan-screen-disconnect")) $("lan-screen-disconnect").disabled = !target;
+    for(const id of ["lan-screen-back","lan-screen-home","lan-screen-recents",
+       "lan-screen-send-text","lan-screen-text"])
+      if($(id))$(id).disabled=!keyboard||(!viewer.hasSchema&&!viewer.hasFrame);
+    if($("lan-screen-disconnect"))$("lan-screen-disconnect").disabled=!target;
   }
   function clearScreenshot() {
     viewer.hasFrame = false;
@@ -63,25 +68,28 @@
     if (img) { img.src = ""; img.hidden = true; }
   }
   function stop(message = "Schema-first viewer stopped") {
-    const oldId = viewer.id;
-    if (oldId && viewer.controllerApproved) {
-      void invoke("control_revoke", { deviceId: oldId }).catch(() => {
-        // Native permission is also denied while hidden and expires.
-      });
+    const oldId=viewer.id;
+    for(const kind of ["mouse","keyboard"]){
+      if(oldId&&viewer.scopes[kind]){
+        void invoke("control_revoke",{deviceId:oldId,kind}).catch(()=>{
+          status(kind+" local control disabled; Core revoke unverified (lease expires).");
+        });
+      }
     }
-    viewer.controllerApproved = false;
-    viewer.running = false;
+    viewer.scopes={mouse:false,keyboard:false};
+    viewer.approvalPending=false;
+    viewer.running=false;
     viewer.generation++;
-    viewer.id = null;
-    viewer.origin = null;
-    viewer.hasSchema = false;
-    viewer.schemaRevision = 0;
-    viewer.nodes = [];
+    viewer.id=null;
+    viewer.origin=null;
+    viewer.hasSchema=false;
+    viewer.schemaRevision=0;
+    viewer.nodes=[];
     clearScreenshot();
     $("lan-schema-list")?.replaceChildren();
-    if ($("lan-screen-placeholder")) {
-      $("lan-screen-placeholder").hidden = false;
-      $("lan-screen-placeholder").textContent = message;
+    if($("lan-screen-placeholder")){
+      $("lan-screen-placeholder").hidden=false;
+      $("lan-screen-placeholder").textContent=message;
     }
     schemaStatus("Schema stopped");
     status("Screen off");
@@ -117,7 +125,7 @@
       meta.textContent = node.id + (node.clickable ? " · tap" : " · view");
       button.appendChild(role);
       button.appendChild(meta);
-      button.disabled = !viewer.controllerApproved || !node.clickable || !node.enabled;
+      button.disabled = !viewer.scopes.mouse || !node.clickable || !node.enabled;
       const currentRevision = schema.revision;
       button.addEventListener("click", () => {
         if (!viewer.running || viewer.schemaRevision !== currentRevision
@@ -134,7 +142,7 @@
 
   async function clickElement(revision, elementId) {
     const target = getTarget();
-    if (!viewer.running || !viewer.controllerApproved || !target || target.id !== viewer.id
+    if (!viewer.running || !viewer.scopes.mouse || !target || target.id !== viewer.id
       || viewer.schemaRevision !== revision) return;
     try {
       const result = await invoke("element", { deviceId: target.id, kind: "click", elementId, revision });
@@ -204,7 +212,8 @@
     if (!target || viewer.running) return;
     if (!window.confirm("Use Android Accessibility UI schema instead of repeated screenshots? The phone owner must approve the LAN session, system screen capture, and separate remote touch permission.")) return;
     viewer.running = true;
-    viewer.controllerApproved = false;
+    viewer.scopes={mouse:false,keyboard:false};
+    viewer.approvalPending=false;
     viewer.id = target.id;
     viewer.generation++;
     viewer.hasSchema = false;
@@ -217,57 +226,67 @@
     void pollSchema(viewer.generation);
   }
 
-  async function requestController() {
-    const target = getTarget();
-    if (!viewer.running || viewer.controllerApproved || !target || target.id !== viewer.id) return;
-    const button = $("lan-screen-request-control");
-    if (button) button.disabled = true;
-    schemaStatus("Requesting a SEPARATE attended native Tray controller approval...");
-    try {
-      const result = await invoke("control_request", { deviceId: target.id });
-      if (!viewer.running || viewer.id !== target.id || !result?.success ||
-          result?.approved !== true || !Number.isSafeInteger(result.secondsRemaining) ||
-          result.secondsRemaining < 1) throw Error("Native controller permission denied");
-      viewer.controllerApproved = true;
-      status("Controller approved at host. Android input consent still required.");
-      notifyScreen("success", "Native controller approved for this device only (max two minutes).");
-    } catch {
-      viewer.controllerApproved = false;
-      status("Controller not approved. View Only remains available.");
-      notifyScreen("warning", "Remote input was not approved by the host.");
-    } finally { controls(); }
+  async function requestController(kind) {
+    if(!["mouse","keyboard"].includes(kind)||viewer.approvalPending)return;
+    const target=getTarget();
+    if(!viewer.running||viewer.scopes[kind]||!target||target.id!==viewer.id)return;
+    viewer.approvalPending=true;
+    controls();
+    schemaStatus("Requesting separate "+kind+" permission from native host...");
+    try{
+      const result=await invoke("control_request",{deviceId:target.id,kind});
+      if(!viewer.running||viewer.id!==target.id||result?.success!==true||
+         result?.approved!==true||result?.kind!==kind||
+         !Number.isSafeInteger(result.secondsRemaining)||result.secondsRemaining<1)
+        throw Error("Native "+kind+" permission denied");
+      viewer.scopes[kind]=true;
+      status(kind+" approved by host; Android input consent still required.");
+      notifyScreen("success",kind+" approved by native host for up to two minutes.");
+    }catch{
+      viewer.scopes[kind]=false;
+      status(kind+" not approved. View Only remains available.");
+      notifyScreen("warning",kind+" controller permission was not granted.");
+    }finally{
+      viewer.approvalPending=false;
+      controls();
+    }
   }
 
-  async function revokeController() {
-    const id = viewer.id;
-    viewer.controllerApproved = false;
+  async function revokeController(kind) {
+    if(!["mouse","keyboard"].includes(kind))return;
+    const id=viewer.id;
+    viewer.scopes[kind]=false;
     controls();
-    if (!id) { status("Local controller disabled."); return; }
-    try {
-      const result=await invoke("control_revoke", { deviceId: id });
-      if (result?.success !== true || result?.approved !== false)
-        throw Error("Core revocation not confirmed");
-      status("Controller revoked at host and Core. View Only remains available.");
-    } catch {
-      status("Local input disabled, but Core revoke is unverified. Grant expires automatically.",true);
-      notifyScreen("warning","Core-wide revocation unverified; local input remains disabled.");
+    if(!id){status(kind+" local input disabled.");return;}
+    try{
+      const result=await invoke("control_revoke",{deviceId:id,kind});
+      if(result?.success!==true||result?.approved!==false)
+        throw Error("Core revoke unverified");
+      status(kind+" revoked in native Tray and Core. View Only remains.");
+    }catch{
+      status(kind+" local input disabled; Core revoke unverified. Lease expires automatically.");
+      notifyScreen("warning",kind+" Core revoke unverified; no more local commands.");
     }
   }
 
   async function refreshController() {
-    if (!viewer.running || !viewer.controllerApproved || !viewer.id) return;
-    const id = viewer.id;
-    try {
-      const result = await invoke("control_status", { deviceId: id });
-      if (!viewer.running || viewer.id !== id) return;
-      if (result?.success !== true || result?.approved !== true ||
-          !Number.isSafeInteger(result.secondsRemaining) ||
-          result.secondsRemaining < 1) throw Error("Controller grant expired");
-    } catch {
-      viewer.controllerApproved = false;
-      controls();
-      status("Native controller expired/revoked. Viewer remains read-only.");
+    if(!viewer.running||!viewer.id)return;
+    const id=viewer.id;
+    for(const kind of ["mouse","keyboard"]){
+      if(!viewer.scopes[kind])continue;
+      try{
+        const result=await invoke("control_status",{deviceId:id,kind});
+        if(!viewer.running||viewer.id!==id)return;
+        if(result?.success!==true||result?.approved!==true||
+           !Number.isSafeInteger(result.secondsRemaining)||result.secondsRemaining<1)
+          throw Error("Scoped controller expired");
+      }catch{
+        if(!viewer.running||viewer.id!==id)return;
+        viewer.scopes[kind]=false;
+        status(kind+" expired or revoked; viewer remains read-only for this scope.");
+      }
     }
+    controls();
   }
 
   async function captureFallback() {
@@ -308,7 +327,9 @@
 
   async function input(command) {
     const target = getTarget();
-    if (!viewer.running || !viewer.controllerApproved || !target || target.id !== viewer.id
+    if (!viewer.running || !viewer.scopes[
+       command.kind === "tap" || command.kind === "swipe" ? "mouse" : "keyboard"
+     ] || !target || target.id !== viewer.id
       || (!viewer.hasSchema && !viewer.hasFrame)) return;
     const button = $("lan-screen-" + (command.kind === "text" ? "send-text" : command.kind));
     const ticket = window.TrayFeedback?.begin({
@@ -349,13 +370,15 @@
 
   function install() {
     $("lan-screen-start")?.addEventListener("click", start);
-    $("lan-screen-request-control")?.addEventListener("click", () => { void requestController(); });
-    $("lan-screen-revoke-control")?.addEventListener("click", () => { void revokeController(); });
+    $("lan-screen-request-control")?.addEventListener("click",()=>{void requestController("mouse");});
+    $("lan-screen-revoke-control")?.addEventListener("click",()=>{void revokeController("mouse");});
+    $("lan-screen-request-keyboard")?.addEventListener("click",()=>{void requestController("keyboard");});
+    $("lan-screen-revoke-keyboard")?.addEventListener("click",()=>{void revokeController("keyboard");});
     $("lan-screen-capture")?.addEventListener("click", () => { void captureFallback(); });
     $("lan-screen-stop")?.addEventListener("click", () =>
       stop("Schema viewer stopped. Use End remote session or the phone's STOP SHARING notification to revoke access."));
     $("lan-screen-image")?.addEventListener("pointerdown", (e) => {
-      if (!viewer.running || !viewer.controllerApproved || !viewer.hasFrame) return;
+      if (!viewer.running || !viewer.scopes.mouse || !viewer.hasFrame) return;
       const from = point(e);
       if (!from) return;
       viewer.origin = { ...from, pointer: e.pointerId, when: Date.now() };
@@ -410,7 +433,10 @@
     window.__superagentLanViewerStop = stop;
     if (typeof window.setInterval === "function") window.setInterval(() => { void refreshController(); }, 10_000);
     document.addEventListener?.("visibilitychange", () => {
-      if (document.hidden && viewer.controllerApproved) void revokeController();
+      if(document.hidden){
+        for(const kind of ["mouse","keyboard"])
+          if(viewer.scopes[kind])void revokeController(kind);
+      }
     });
     controls();
   }
