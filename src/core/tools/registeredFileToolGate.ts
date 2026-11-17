@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { readPermanentAccessRegistry } from "../desktopUi/permanentRegistryStore.js";
+import { certifiedBrowserObservation } from "./browserFilePolicyCertification.js";
 import { evaluatePersistentAccess, type ExecutableIdentity, type FileOperation, type PersistentAccessPolicy }
   from "../desktopUi/persistentAccessPolicy.js";
 
@@ -130,6 +131,9 @@ export function registeredFileToolGate(
   const identity=(options.identity ?? identityOfSelf)();
   if(!identity)return "Core executable identity could not be verified.";
   if(BENIGN.has(call.name))return null;
+  // No blanket Chrome exemption: only side-effect-free, non-file inventory
+  // operations qualify. All other browser/file-capable actions fail closed.
+  if(certifiedBrowserObservation(call))return null;
   if(call.name === "superagent_manage_services" &&
      call.args && typeof call.args.action === "string" &&
      READ_ONLY_SERVICE_ACTIONS.has(call.args.action)) {
