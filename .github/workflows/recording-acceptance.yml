@@ -19,6 +19,7 @@ on:
       - "tests/desktop-live/nativeApprovalProof.test.ts"
       - "tests/desktop-live/nativeWindowRecording.test.ts"
       - "tests/desktopTrayRecordingUi.test.ts"
+      - "tests/desktopTrayRecordingInteractions.test.ts"
       - ".github/workflows/recording-acceptance.yml"
   pull_request:
     paths:
@@ -91,3 +92,4 @@ jobs:
           tests/desktop-live/nativeApprovalProof.test.ts
           tests/desktop-live/nativeWindowRecording.test.ts
           tests/desktopTrayRecordingUi.test.ts
+          tests/desktopTrayRecordingInteractions.test.ts
