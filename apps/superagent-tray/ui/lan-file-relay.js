@@ -42,8 +42,11 @@
     select.replaceChildren(empty, ...options);
     select.value = choices.some((device) => device.id === prior) ? prior : "";
     select.disabled = busy || !choices.length;
+    const protocol = $("lan-relay-protocol")?.value || "v1";
+    const selectedSource = source();
     if ($("lan-relay-start")) $("lan-relay-start").disabled =
-      busy || !source() || !select.value;
+      busy || !selectedSource || !select.value ||
+      (protocol === "v2" && selectedSource.platform !== "windows");
     if ($("lan-relay-cancel")) $("lan-relay-cancel").disabled = !busy || !jobId;
   }
   function report(job) {
@@ -100,14 +103,20 @@
     if (busy) return;
     const src = source();
     const dstId = $("lan-relay-destination")?.value;
+    const protocol = $("lan-relay-protocol")?.value || "v1";
     const dst = destinations().find(d => d.id === dstId);
-    if (!src?.connected || !dst?.connected) {
+    if (!src?.connected || !dst?.connected ||
+        !["v1", "v2"].includes(protocol) ||
+        (protocol === "v2" && src.platform !== "windows")) {
       status("Choose two connected devices on the same route."); return;
     }
     if (!window.confirm("Relay the file the " + src.platform +
         " owner ALREADY selected on " + src.label + " to " + dst.label +
         "? Both device owners must separately approve the exact file. " +
-        "Maximum 4 MiB per relay; no source paths or pairing credentials are shared.")) return;
+        (protocol === "v2" ?
+          "V2: Windows source must have used share-large; max 256 MiB. " :
+          "V1: max 4 MiB. ") +
+        "No source paths or pairing credentials are shared.")) return;
     busy = true;
     window.__superagentLanRelayBusy = true;
     window.__superagentLanFilesRefresh?.();
@@ -116,7 +125,7 @@
     const nonce = ++generation;
     try {
       const result = await invoke("file_relay_start", {
-        sourceId: src.id, destinationId: dst.id,
+        sourceId: src.id, destinationId: dst.id, protocol,
       });
       if (!result?.success || typeof result.job?.id !== "string")
         throw Error("Core rejected relay start.");
@@ -143,6 +152,7 @@
   }
   function install() {
     $("lan-relay-destination")?.addEventListener("change", controls);
+    $("lan-relay-protocol")?.addEventListener("change", controls);
     $("lan-relay-start")?.addEventListener("click", () => { void start(); });
     $("lan-relay-cancel")?.addEventListener("click", () => { void cancel(); });
     window.__superagentLanRelayRefresh = controls;
