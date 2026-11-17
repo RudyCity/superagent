@@ -1,0 +1,50 @@
+name: CLI Interaction Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/app.tsx"
+      - "src/components/multi-agent-dashboard.tsx"
+      - "src/components/ChatTextInput.tsx"
+      - "src/hooks/useKeyboardHandler.ts"
+      - "src/hooks/useDashboardKeyboard.ts"
+      - "tests/cliEscapeRouting.test.ts"
+      - "tests/chatTextInputEscape.test.ts"
+      - "tests/cliInputResponsiveness.test.ts"
+      - ".github/workflows/cli-interaction-regression.yml"
+  pull_request:
+    paths:
+      - "src/app.tsx"
+      - "src/components/multi-agent-dashboard.tsx"
+      - "src/components/ChatTextInput.tsx"
+      - "src/hooks/useKeyboardHandler.ts"
+      - "src/hooks/useDashboardKeyboard.ts"
+      - "tests/cliEscapeRouting.test.ts"
+      - "tests/chatTextInputEscape.test.ts"
+      - "tests/cliInputResponsiveness.test.ts"
+      - ".github/workflows/cli-interaction-regression.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: cli-interaction-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  cli-interaction:
+    name: CLI keyboard + render regression (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Verify ESC routing and CLI log responsiveness
+        run: bun --bun x vitest run --maxWorkers=2 tests/cliEscapeRouting.test.ts tests/chatTextInputEscape.test.ts tests/cliInputResponsiveness.test.ts tests/keyboardAbortInterrupt.test.ts tests/multiAgentDashboard.test.ts
