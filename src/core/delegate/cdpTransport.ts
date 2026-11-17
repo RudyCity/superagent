@@ -21,6 +21,8 @@ import { DELEGATE_V18_COMMANDS, unsupportedBrowserCommand } from "../browserTran
 import { getDelegateLeaseRuntimeStatus } from "../browserTransport/delegateLeaseRuntime.js";
 import { startCdpSessionArchive, getCdpSessionArchiveStatus, stopCdpSessionArchive,
   recordCdpSessionCommand, recordCdpSessionDiagnostic } from "../tools/chromeCdpSessionArchive.js";
+import { beginBrowserActionRecording, browserActionRecordingStatus, stopBrowserActionRecording,
+  readBrowserActionRecording, appendBrowserActionRecord } from "../tools/chromeCdpActionRecorder.js";
 
 type RpcMethod =
   | "delegate.cdp.list_targets" | "delegate.cdp.attach" | "delegate.cdp.detach"
@@ -341,8 +343,16 @@ async function executeDelegateChromeCommandInternal(
     };
     if (command === "record_session_status")
       return JSON.stringify(getCdpSessionArchiveStatus(scope));
-    if (command === "record_session_stop")
-      return JSON.stringify(await stopCdpSessionArchive(scope));
+    if (command === "record_session_stop") {
+      const journal=browserActionRecordingStatus(scope.targetKey,scope.actorId,scope.generation);
+      if (journal.active) stopBrowserActionRecording(scope.targetKey,scope.actorId,scope.generation);
+      let actions: object | undefined;
+      if ("recordingId" in journal && typeof journal.recordingId==="string") {
+        try { actions=readBrowserActionRecording(scope.targetKey,scope.actorId,
+          scope.generation,journal.recordingId); } catch {}
+      }
+      return JSON.stringify(await stopCdpSessionArchive(scope,actions));
+    }
     if (payload.confirmSensitiveVideo !== true || payload.video === false)
       throw new BrowserTransportError("DELEGATE_RECORDING_CONSENT_REQUIRED",
         "Explicit confirmSensitiveVideo:true is required to record visible tab content.");
@@ -402,7 +412,8 @@ async function executeDelegateChromeCommandInternal(
         } catch { return false; }
       },
     });
-    return JSON.stringify(recorded);
+    const journal=beginBrowserActionRecording(scope.targetKey,scope.actorId,scope.generation);
+    return JSON.stringify({...recorded,actionRecordingId:journal.recordingId});
   }
 
   if (command === "recover_session") {
@@ -709,8 +720,17 @@ async function executeDelegateChromeCommandInternal(
   if (agentId && sessionToken && typeof operationResult === "string") {
     try {
       const lease=inspectDelegateRecordingOwner(target.connectionId,target.tabId!,agentId,sessionToken);
-      recordCdpSessionCommand({targetKey:delegateTargetId(target.connectionId,target.tabId!),
-        actorId:lease.actorId,generation:lease.generation},command,operationResult);
+      const scope={targetKey:delegateTargetId(target.connectionId,target.tabId!),
+        actorId:lease.actorId,generation:lease.generation};
+      recordCdpSessionCommand(scope,command,operationResult);
+      if (!operationResult.startsWith("control_chrome_cdp failed:")) {
+        const journalAction=command==="click_cursor" ? "click" :
+          command==="hover_cursor" ? "move_cursor" : command;
+        const position=journalAction==="move_cursor"
+          ? delegateCursorPositions.get(target.connectionId+":"+target.tabId) : undefined;
+        appendBrowserActionRecord(scope.targetKey,scope.actorId,scope.generation,
+          journalAction,position);
+      }
     } catch { /* Recording is opt-in and must never alter browser action outcome. */ }
   }
   return operationResult;
