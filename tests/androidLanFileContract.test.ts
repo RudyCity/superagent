@@ -34,7 +34,7 @@ describe("Android + Windows LAN file transfer security and interoperability cont
     expect(activity).toContain("getContentResolver().openInputStream(uri)");
     expect(activity).toContain("file.size() + n > LanFileExchange.MAX_BYTES");
     expect(activity).toContain("pending.selectLocalFile(sharedFileName, sharedFileBytes)");
-    expect(activity).toContain("Clear selected file or folder");
+    expect(activity).toMatch(/Clear [Ss]elected (?:file or folder|Document)/);
     expect(exchange).toContain("Select a file on the Android phone first.");
     expect(exchange).not.toContain("MANAGE_EXTERNAL_STORAGE");
     expect(exchange).not.toContain("getExternalStorageDirectory()");

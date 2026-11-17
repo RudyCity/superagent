@@ -1824,7 +1824,13 @@ export async function handleServerRoute(
           fpsEl.textContent = fps + " FPS" + (data.width ? " · " + data.width + "×" + data.height : "");
           frames = 0; lastTime = now;
         }
-        setTimeout(poll, data.unchanged ? 300 : 30);
+        if (data.unchanged) {
+          setTimeout(poll, 80);
+        } else if (typeof requestAnimationFrame === "function") {
+          requestAnimationFrame(poll);
+        } else {
+          setTimeout(poll, 16);
+        }
       } catch (e) {
         msg.hidden = false;
         msg.textContent = e.message || "Koneksi stream terputus.";

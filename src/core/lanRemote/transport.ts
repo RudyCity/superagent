@@ -208,6 +208,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     key: keypair.key, cert: keypair.cert, minVersion: "TLSv1.3", maxVersion: "TLSv1.3",
     requestCert: false,
   }, (socket) => {
+    try { socket.setNoDelay(true); } catch {}
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
     const ip = (socket.remoteAddress || "").replace(/^::ffff:/, "");

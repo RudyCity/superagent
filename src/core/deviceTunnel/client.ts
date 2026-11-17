@@ -103,6 +103,8 @@ export async function relayLocalLanRequest(input: {
     const transport = net.connect({ host: input.host, port: input.port });
     const socket = tls.connect({ socket: transport, rejectUnauthorized: false,
       minVersion: "TLSv1.3", maxVersion: "TLSv1.3" });
+    try { transport.setNoDelay(true); } catch {}
+    try { socket.setNoDelay(true); } catch {}
     const frames: Record<string, unknown>[] = [];
     let text = "", done = false;
     const maxChars = Math.max(4096, Math.min(700 * 1024, input.maxReplyChars ?? 256 * 1024));

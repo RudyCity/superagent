@@ -174,6 +174,7 @@ public final class TunnelRelayClient {
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(null, trustLocalSelfSigned(), new SecureRandom());
         try (SSLSocket socket = (SSLSocket) context.getSocketFactory().createSocket(host, port)) {
+            try { socket.setTcpNoDelay(true); } catch (Exception ignored) {}
             socket.setEnabledProtocols(new String[]{"TLSv1.3"});
             socket.setSoTimeout(120_000);
             socket.startHandshake();

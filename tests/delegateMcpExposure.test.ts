@@ -82,8 +82,14 @@ describe("Dedicated Delegate MCP tools: arguments, rights and single dispatch", 
     });
     try {
       const names = await listed(server);
-      // Delegate tools are NOT advertised in main in gateway mode
-      for (const name of Object.values(DELEGATE_MCP_TOOL_NAMES)) {
+      // Mutation delegate tools are NOT advertised in main in read-only OAuth mode
+      for (const name of [
+        DELEGATE_MCP_TOOL_NAMES.sync,
+        DELEGATE_MCP_TOOL_NAMES.runUntilDone,
+        DELEGATE_MCP_TOOL_NAMES.create,
+        DELEGATE_MCP_TOOL_NAMES.send,
+        DELEGATE_MCP_TOOL_NAMES.stop,
+      ]) {
         expect(names).not.toContain(name);
       }
       const searchRes = await invoke(server, "superagent_tool_search", { query: "delegate", limit: 20 });

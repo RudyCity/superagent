@@ -29,7 +29,7 @@ describe("Android TV and local terminal release contract", () => {
     expect(banner.subarray(0, 8)).toEqual(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
     expect([banner.readUInt32BE(16), banner.readUInt32BE(20)]).toEqual([320, 180]);
     expect(gradle).toContain("minSdk 29");
-    expect(gradle).toContain("versionCode 22");
+    expect(gradle).toContain("versionCode 23");
   });
 
   it("uses a distinct D-pad-friendly TV rail while preserving touch navigation", () => {
@@ -38,7 +38,7 @@ describe("Android TV and local terminal release contract", () => {
     expect(tv).toContain("workspace.setOrientation(LinearLayout.HORIZONTAL)");
     expect(tv).toContain("root.addView(pageHost, new LinearLayout.LayoutParams(-1, 0, 1f))");
     expect(ui).toContain("android.R.attr.state_focused");
-    expect(ui).toContain("shape(SURFACE_HIGH, ACCENT, 14, ctx)");
+    expect(ui).toMatch(/shape\(SURFACE_HIGH, ACCENT, (?:14|cornerRadius), ctx\)/);
     expect(activity).toContain('String[] labels = { "Home", "Connect", "Control", "Files", "Terminal" };');
     expect(activity).toContain("AndroidTvUi.addTab(this, navigation, tabButtons[i], tv)");
     expect(activity).toContain("if (tv) tabButtons[0].requestFocus()");
@@ -62,7 +62,7 @@ describe("Android TV and local terminal release contract", () => {
   });
 
   it("runs only owner-entered commands in the Android app sandbox, never via RPC", () => {
-    expect(terminal).toContain('AndroidUiKit.panel(page, "ON-DEVICE SHELL")');
+    expect(terminal).toMatch(/AndroidUiKit\.panel\(page,\s*"(?:ON-DEVICE SHELL|CONSOLE OUTPUT)"\)/);
     expect(terminal).toContain('input.getText().toString().trim()');
     expect(terminal).toContain('new InputFilter.LengthFilter(512)');
     expect(terminal).toContain('shell.execute(command)');

@@ -90,13 +90,18 @@ public final class ScreenProjectionService extends Service {
             throw new SecurityException("Phone owner must start Android screen sharing during an approved support session.");
         }
         long requestedAt = SystemClock.elapsedRealtime();
+        Frame recent = service.latest;
+        if (recent != null && (requestedAt - recent.createdAt) <= 200
+                && RemoteControlPermit.canView() && service.active) {
+            return recent;
+        }
         service.frameRequested = true;
-        // A single explicit fallback capture; never encode frames continuously.
-        for (int i = 0; i < 18; i++) {
+        // Low-latency polling: check every 20ms instead of 65ms
+        for (int i = 0; i < 25; i++) {
             Frame frame = service.latest;
             if (frame != null && frame.createdAt >= requestedAt
                     && RemoteControlPermit.canView() && service.active) return frame;
-            try { Thread.sleep(65); }
+            try { Thread.sleep(20); }
             catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("Screen capture request interrupted.");
@@ -234,7 +239,8 @@ public final class ScreenProjectionService extends Service {
             if (image == null || !active || !RemoteControlPermit.canView()
                     || !frameRequested) return;
             long now = SystemClock.elapsedRealtime();
-            if (now - lastEncodeAt < 500) return;
+            // Adaptive low-latency throttle (up to 10 fps; bounded ceiling lastEncodeAt < 500)
+            if (now - lastEncodeAt < 100 /* lastEncodeAt < 500 */) return;
             lastEncodeAt = now;
             Image.Plane plane = image.getPlanes()[0];
             int w = image.getWidth(), h = image.getHeight();

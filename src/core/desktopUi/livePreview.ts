@@ -20,7 +20,7 @@ import type {
 } from "./types.js";
 
 export const PRIVATE_PREVIEW_TTL_MS = 5 * 60_000;
-export const PRIVATE_PREVIEW_INTERVAL_MS = 50;
+export const PRIVATE_PREVIEW_INTERVAL_MS = 16;
 export const PRIVATE_PREVIEW_MAX_PNG_BYTES = 2 * 1024 * 1024;
 
 /** Host-only lease. The preview bearer never leaves the host process. */
@@ -353,7 +353,7 @@ export class NativeWindowPreviewManager {
       const unchanged = request.knownHash === hash &&
         session.lastRendered?.hash === hash && session.lastRendered.profile === profile;
       const elapsedMs = Math.max(0, this.now() - startedAt);
-      const nextPollMs = unchanged ? 1200
+      const nextPollMs = unchanged ? 150
         : Math.max(PRIVATE_PREVIEW_INTERVAL_MS, Math.min(1600, Math.round(elapsedMs * 0.75)));
       if (unchanged) {
         return { unchanged: true as const, hash, capturedAt: capture.capturedAt, nextPollMs };

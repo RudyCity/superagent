@@ -42,6 +42,8 @@ async function request(host: string, port: number, fingerprint: string, body: ob
   return await new Promise<Reply[]>((resolve, reject) => {
     const transport = net.connect({ host, port, localAddress: outboundLanSource(host) });
     const socket = tls.connect({ socket: transport, rejectUnauthorized: false, minVersion: "TLSv1.3", maxVersion: "TLSv1.3" });
+    try { transport.setNoDelay(true); } catch {}
+    try { socket.setNoDelay(true); } catch {}
     const responses: Reply[] = [];
     let completed = false, text = "";
     const done = (error?: Error) => {

@@ -33,7 +33,7 @@ export class RemotePrivateHostStream {
     private readonly viewer: RemotePrivateHostFrameSender,
     private readonly intervalMs = PRIVATE_HOST_STREAM_INTERVAL_MS,
   ) {
-    if (!Number.isSafeInteger(intervalMs) || intervalMs < 250 || intervalMs > 5_000) {
+    if (!Number.isSafeInteger(intervalMs) || intervalMs < 50 || intervalMs > 5_000) {
       throw new RemoteLiveDenied("INVALID_REQUEST");
     }
   }

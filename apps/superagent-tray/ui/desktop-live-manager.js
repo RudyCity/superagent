@@ -9,9 +9,9 @@
   const state = {items:[],sources:{},filter:"all",loading:false,poll:null};
   const streamPresets = Object.freeze({
     ultra: { maxWidth: 1280, quality: 78, intervalMs: 16 },
-    detail: { maxWidth: 1920, quality: 85, intervalMs: 33 },
-    balanced: { maxWidth: 1280, quality: 72, intervalMs: 40 },
-    save: { maxWidth: 768, quality: 55, intervalMs: 160 },
+    detail: { maxWidth: 1920, quality: 85, intervalMs: 25 },
+    balanced: { maxWidth: 1280, quality: 72, intervalMs: 25 },
+    save: { maxWidth: 768, quality: 55, intervalMs: 80 },
   });
   const stream = {
     active: false,

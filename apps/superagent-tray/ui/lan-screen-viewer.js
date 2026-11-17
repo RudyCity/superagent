@@ -174,7 +174,7 @@
         : "Waiting for Android Accessibility schema...");
       if (nextFailures > 6) nextFailures = 3; // Never auto-trigger screenshots or hidden retries.
     }
-    setTimeout(() => pollSchema(generation, nextFailures), nextFailures ? 1600 : 1100);
+    setTimeout(() => pollSchema(generation, nextFailures), nextFailures ? 1600 : 400);
   }
 
   function start() {

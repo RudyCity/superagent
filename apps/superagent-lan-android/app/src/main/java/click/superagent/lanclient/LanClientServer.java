@@ -300,6 +300,7 @@ public final class LanClientServer implements AutoCloseable {
                 SSLServerSocket listener = tlsListener;
                 if (listener == null) return;
                 SSLSocket socket = (SSLSocket) listener.accept();
+                try { socket.setTcpNoDelay(true); } catch (Exception ignored) {}
                 if (!running.get()) { closeQuietly(socket); return; }
                 String remoteIp = LanPolicy.canonicalIpv4(socket.getInetAddress().getHostAddress());
                 String localIp = LanPolicy.canonicalIpv4(socket.getLocalAddress().getHostAddress());

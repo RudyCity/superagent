@@ -43,7 +43,7 @@ export class RemotePrivateLiveRuntime {
       throw new RemoteLiveDenied("CONSENT_REQUIRED");
     }
     try {
-      this.active = new RemotePrivateHostStream(capture, this.transport);
+      this.active = new RemotePrivateHostStream(capture, this.transport, 100);
       this.active.start();
     } catch {
       try { capture.close(); } finally { this.stop(); }
