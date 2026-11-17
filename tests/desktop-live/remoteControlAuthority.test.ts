@@ -8,6 +8,7 @@ import {
 } from "../../src/core/desktopUi/remoteControlAuthority.js";
 
 const secret = Buffer.from("97".repeat(32), "hex");
+const allKinds = ["click", "type", "key", "scroll"] as const;
 const caller: RemotePrincipal = {
   principalId: "authenticated-person", connectionId: "wss-authenticated-1",
   viewSessionId: "host-pinned-viewer",
@@ -39,7 +40,7 @@ function fixture() {
   };
   const authority = new RemoteControlAuthority(trust, () => now);
   const approve = (remote: RemotePrincipal = caller) => {
-    const challenge = authority.request(remote);
+    const challenge = authority.request(remote, allKinds);
     return authority.confirmNativeApproval(challenge.nonce, signature(challenge));
   };
   return {
@@ -56,7 +57,7 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
     const f = fixture();
     expect(() => f.authority.beginAction(caller, "0".repeat(64), "click", 1))
       .toThrow(/not approved/i);
-    const challenge = f.authority.request(caller);
+    const challenge = f.authority.request(caller, allKinds);
     expect(challenge.scope).toEqual(scope);
     expect(challenge.kinds).toEqual(["click", "type", "key", "scroll"]);
     expect(() => f.authority.beginAction(caller, "0".repeat(64), "click", 1))
@@ -105,7 +106,7 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
 
   it("binds a single-use signed human approval to the exact host scope and caller", () => {
     const f = fixture();
-    const challenge = f.authority.request(caller);
+    const challenge = f.authority.request(caller, allKinds);
     expect(challenge.expiresAt - challenge.issuedAt)
       .toBe(REMOTE_CONTROL_CHALLENGE_TTL_MS);
     const grant = f.authority.confirmNativeApproval(challenge.nonce, signature(challenge));
@@ -113,7 +114,7 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
     expect(grant.token).toMatch(/^[a-f0-9]{64}$/);
     expect(() => f.authority.confirmNativeApproval(challenge.nonce, signature(challenge)))
       .toThrow(/approval/);
-    expect(() => f.authority.request(other)).toThrow(/already exists/);
+    expect(() => f.authority.request(other, allKinds)).toThrow(/already exists/);
     expect(() => f.authority.beginAction(other, grant.token, "click", 1))
       .toThrow(/different authenticated controller/);
     const lease = f.authority.beginAction(caller, grant.token, "click", 1);
@@ -125,11 +126,11 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
 
   it("rejects replays, forged proofs and wrong challenges without resurrecting consent", () => {
     const f = fixture();
-    const c = f.authority.request(caller);
+    const c = f.authority.request(caller, allKinds);
     expect(() => f.authority.confirmNativeApproval("x".repeat(64), signature(c))).toThrow();
     expect(() => f.authority.confirmNativeApproval(c.nonce, signature(c))).toThrow();
     const f2 = fixture();
-    const c2 = f2.authority.request(caller);
+    const c2 = f2.authority.request(caller, allKinds);
     const f3 = fixture();
     expect(() => f3.authority.confirmNativeApproval(c2.nonce, signature(c2))).toThrow();
     expect(() => f2.authority.confirmNativeApproval(c2.nonce, "0".repeat(64))).toThrow();
@@ -137,7 +138,7 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
 
   it("expires approval challenges and granted input after five minutes", () => {
     const f = fixture();
-    const challenge = f.authority.request(caller);
+    const challenge = f.authority.request(caller, allKinds);
     f.now = challenge.expiresAt;
     expect(() => f.authority.confirmNativeApproval(challenge.nonce, signature(challenge)))
       .toThrow(/expired/);
@@ -160,7 +161,7 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
     ["platform", { platform: "linux" as const }],
   ])("denies changed %s during native approval", (_label, difference) => {
     const f = fixture();
-    const challenge = f.authority.request(caller);
+    const challenge = f.authority.request(caller, allKinds);
     f.pinned = { ...scope, ...difference };
     expect(() => f.authority.confirmNativeApproval(challenge.nonce, signature(challenge)))
       .toThrow(/does not match/);
@@ -198,7 +199,7 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
     expect(() => first.consumeForNativeDispatch()).toThrow();
     first.finish();
     expect(() => f.authority.beginAction(caller, grant.token, "click", 2)).toThrow();
-    expect(() => f.authority.request(caller)).toThrow(/takeover/);
+    expect(() => f.authority.request(caller, allKinds)).toThrow(/takeover/);
   });
 
   it("never accepts repeated/malformed sequence, and aborts leases on host restart", () => {
@@ -226,9 +227,9 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
 
   it("reaps an expired, unused challenge and allows a new attended approval", () => {
     const f = fixture();
-    const pending = f.authority.request(caller);
+    const pending = f.authority.request(caller, allKinds);
     f.now = pending.expiresAt;
-    const renewed = f.authority.request(caller);
+    const renewed = f.authority.request(caller, allKinds);
     expect(renewed.nonce).not.toBe(pending.nonce);
     expect(() => f.authority.confirmNativeApproval(pending.nonce, signature(pending)))
       .toThrow(/approval/);
@@ -267,10 +268,10 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
       },
     };
     authority = new RemoteControlAuthority(host, () => 100_000);
-    const pending = authority.request(caller);
+    const pending = authority.request(caller, allKinds);
     expect(() => authority.confirmNativeApproval(pending.nonce, "native-signed-proof"))
       .toThrow(/expired|changed/);
-    expect(() => authority.request(caller)).toThrow(/takeover/);
+    expect(() => authority.request(caller, allKinds)).toThrow(/takeover/);
   });
 
   it("does not issue a challenge when takeover happens during RBAC verification", () => {
@@ -284,8 +285,8 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
       verifyNativeControlApproval: () => true,
     };
     authority = new RemoteControlAuthority(host, () => 100_000);
-    expect(() => authority.request(caller)).toThrow(/not authorized/);
-    expect(() => authority.request(caller)).toThrow(/takeover/);
+    expect(() => authority.request(caller, allKinds)).toThrow(/not authorized/);
+    expect(() => authority.request(caller, allKinds)).toThrow(/takeover/);
   });
 
   it("rejects unsupported direct action kinds even with an otherwise valid token", () => {
@@ -298,12 +299,12 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
   it("fails closed for missing host identity, bad caller, and RBAC denial", () => {
     const f = fixture();
     f.pinned = null;
-    expect(() => f.authority.request(caller)).toThrow(/host/);
+    expect(() => f.authority.request(caller, allKinds)).toThrow(/host/);
     f.pinned = scope;
     f.allow = false;
-    expect(() => f.authority.request(caller)).toThrow(/not authorized/);
+    expect(() => f.authority.request(caller, allKinds)).toThrow(/not authorized/);
     f.allow = true;
-    expect(() => f.authority.request({ ...caller, viewSessionId: "other-view" })).toThrow();
-    expect(() => f.authority.request({ ...caller, connectionId: "" })).toThrow();
+    expect(() => f.authority.request({ ...caller, viewSessionId: "other-view" }, allKinds)).toThrow();
+    expect(() => f.authority.request({ ...caller, connectionId: "" }, allKinds)).toThrow();
   });
 });
