@@ -230,6 +230,29 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       {action:"health",limit:9999},
     ])expect(gate(args)).toMatch(/not certified/);
   });
+  it("authorizes every explicit media plan input, watermark and destination lookup",()=>{
+    const a=setup();
+    fs.writeFileSync(path.join(a.root,"src","stamp.png"),"fake png signature for policy test");
+    const permit=a.rule("project","allow",a.root,["read"],true);
+    const protectedFile=a.rule("secret","deny",path.join(a.root,".env"),["read"]);
+    const opts={registry:()=>a.p(permit,protectedFile),identity:a.identity};
+    const gate=(args:Record<string,unknown>)=>
+      registeredFileToolGate({name:"superagent_media_plan",args},a.root,opts);
+    expect(getPermanentFileToolReadiness("superagent_media_plan")).toBe("requires_explicit_files");
+    expect(gate({inputPaths:["src/main.ts","src/stamp.png"],outputPath:"src/new.png"})).toBeNull();
+    expect(gate({inputPath:"src/main.ts",outputPath:"src/new.png",
+      operation:"watermark",watermarkPath:"src/stamp.png"})).toBeNull();
+    expect(gate({inputPaths:["src/main.ts",".env"],outputPath:"src/new.png"}))
+      .toMatch(/denies read/);
+    expect(gate({inputPath:"src/main.ts",outputPath:".env"})).toMatch(/denies read/);
+    expect(gate({inputPath:"src/main.ts",outputPath:"src/new.png",
+      operation:"watermark",watermarkPath:".env"})).toMatch(/denies read/);
+    expect(gate({inputPath:"src/main.ts",inputPaths:[".env"],outputPath:"src/new.png"}))
+      .toMatch(/requires all explicit/);
+    expect(gate({inputPath:"src/main.ts",outputPath:"src/new.png",
+      filePath:"/private/hidden.txt"})).toMatch(/certified argument|requires all explicit/);
+    expect(gate({inputPath:"src/main.ts",outputPath:"../private/new.png"})).toMatch(/traversal/);
+  });
   it("blocks symlinked targets before IO when host OS authorizes links",()=>{
     const a=setup();
     const link=path.join(a.root,"link.ts");
