@@ -83,7 +83,7 @@ export async function listDesktopLiveInventory(): Promise<{
           owner: session?.agentId ? safe(session.agentId,80) : undefined,
           revision:session?.revision,
           stopAction:registration && session && mode==="agent" ? "takeover" :
-            registration && session && mode==="human" ? "return-to-agent" : null,
+            registration && mode==="human" ? "return-to-agent" : null,
           impact:"Human takeover blocks agent mutations; browser tab stays open",
         });
       }
@@ -219,7 +219,11 @@ export async function stopDesktopLiveHandle(
   if(row.stopAction==="return-to-agent") {
     if(row.kind!=="managed-cdp" || row.status!=="human")
       throw Error("MANAGED_CDP_HUMAN_HOLD_REQUIRED");
-    if(!Number.isSafeInteger(b.expectedRevision)||b.expectedRevision!==row.revision)
+    // A verified durable human hold may outlive the agent's CDP session.
+    // Releasing it must not depend on a now-absent agent lease revision.
+    if(row.revision === undefined
+      ? b.expectedRevision !== undefined
+      : !Number.isSafeInteger(b.expectedRevision)||b.expectedRevision!==row.revision)
       throw Error("STALE_CDP_REVISION");
     const m=/^managed:(\d+):([A-Za-z0-9_-]{1,128})$/.exec(row.id);
     if(!m)throw Error("INVALID_CDP_TARGET");
@@ -230,7 +234,7 @@ export async function stopDesktopLiveHandle(
     // remains active; no remote URL, preview token, or fake approval can lift it.
     await setManagedBrowserControl({mode:"agent",port,targetId,profileId:reg.profileId,
       generation:reg.generation,browserFingerprint:reg.browserFingerprint},
-      undefined,Number(b.expectedRevision));
+      undefined,row.revision === undefined ? undefined : Number(b.expectedRevision));
     return {stopped:true,scope:row.id,
       reason:"Verified human hold released; managed agent may resume on the same browser target"};
   }
