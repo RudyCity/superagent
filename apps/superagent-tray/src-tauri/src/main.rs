@@ -2750,6 +2750,7 @@ fn main() {
                                         .title("SuperAgent Core")
                                         .body(&msg)
                                         .show();
+                                    record_core_notification(&handle, "info", "Core started", "Core is active.");
                                     let _ = handle.emit("desktop-server-started", 7888);
                                 }
                                 Err(e) => {
@@ -2760,6 +2761,7 @@ fn main() {
                                         .title("SuperAgent Core Error")
                                         .body(format!("Failed to start Core: {}", e))
                                         .show();
+                                    record_core_notification(&handle, "critical", "Core start failed", "Core could not start. Open Runtime Detection.");
                                     let _ = handle.emit("desktop-server-start-failed", e);
                                 }
                             }
@@ -2779,6 +2781,7 @@ fn main() {
                                         .title("SuperAgent Core")
                                         .body(&msg)
                                         .show();
+                                    record_core_notification(&handle, "info", "Core restarted", "Core was restarted from the notification area.");
                                     let _ = handle.emit("desktop-server-started", 7888);
                                 }
                                 Err(e) => {
@@ -2789,6 +2792,7 @@ fn main() {
                                         .title("SuperAgent Core Error")
                                         .body(format!("Failed to restart Core: {}", e))
                                         .show();
+                                    record_core_notification(&handle, "critical", "Core restart failed", "Core restart failed. Inspect Runtime Detection.");
                                     let _ = handle.emit("desktop-server-start-failed", e);
                                 }
                             }
@@ -2805,6 +2809,7 @@ fn main() {
                                         .title("SuperAgent Core")
                                         .body("SuperAgent Core server stopped")
                                         .show();
+                                    record_core_notification(&handle, "warning", "Core stopped", "Core was stopped from the notification area.");
                                     let _ = handle.emit("desktop-server-stopped", 7888);
                                 }
                                 Err(e) => {
@@ -2815,6 +2820,7 @@ fn main() {
                                         .title("SuperAgent Core Error")
                                         .body(format!("Failed to stop Core: {}", e))
                                         .show();
+                                    record_core_notification(&handle, "critical", "Core stop failed", "Core could not be stopped. Inspect the verified owner.");
                                     let _ = handle.emit("desktop-server-stop-failed", e);
                                 }
                             }
