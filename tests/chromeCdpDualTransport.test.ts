@@ -12,6 +12,10 @@ describe("control_chrome_cdp dual transport", () => {
     expect(props.transport.enum).toEqual(["managed", "delegate", "auto"]);
     expect(props.delegateClientId).toBeTruthy();
     expect(props.delegateTabId).toBeTruthy();
+    const { browserCommandSupported } = await import("../src/core/browserTransport/commandCapabilities.js");
+    expect(browserCommandSupported("delegate","record_session_start")).toBe(true);
+    expect(browserCommandSupported("delegate","record_session_status")).toBe(true);
+    expect(browserCommandSupported("delegate","record_session_stop")).toBe(true);
     const { CHROME_MCP_TOOL_DEFS } = await import("../src/core/mcp/tools/chromeMcpTools.js");
     const def: any = CHROME_MCP_TOOL_DEFS.find((item: any) => item.name === "superagent_chrome_cdp");
     expect(def.inputSchema.properties.transport.enum).toEqual(["managed", "delegate", "auto"]);

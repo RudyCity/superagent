@@ -8,6 +8,7 @@ const DELEGATE_V18 = new Set([
   "click", "type", "wait_for", "screenshot", "get_dialogs", "handle_dialog", "transport_status",
   "get_cursor", "move_cursor", "hover_cursor", "click_cursor", "show_cursor", "hide_cursor", "scroll_cursor", "drag_and_drop", "emulate_device",
   "list_file_inputs", "upload_file", "handle_file_chooser", "verify_upload",
+  "record_session_start", "record_session_status", "record_session_stop",
 ]);
 
 export function browserCommandSupported(kind: BrowserTransportKind, command: string): boolean {

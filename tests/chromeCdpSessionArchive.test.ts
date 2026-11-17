@@ -79,6 +79,10 @@ describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>
     expect(consoleLog).toContain('"kind":"console"');
     expect(network).toContain('"kind":"response"');
     expect(diagnostic).toContain('"kind":"response"');
+    expect(consoleLog).toContain('"messageRedacted":true');
+    expect(consoleLog).not.toContain("values");
+    expect(consoleLog).not.toContain("TOP_SECRET");
+    expect(network).not.toContain("https://example.test");
     for(const text of [transcript,errors,consoleLog,network,diagnostic]){
       expect(text).not.toContain("TOP_SECRET");
       expect(text).not.toContain("password=SECRET");
@@ -90,6 +94,26 @@ describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>
     const streams=JSON.parse(probe.stdout).streams;
     expect(streams[0]).toMatchObject({codec_name:"h264",width:960,height:540});
     expect(getCdpSessionArchiveStatus(scope).status).toBe("saved");
+  },25000);
+
+  test("Delegate capture requires the same verified exact target and marks its manifest source",async()=>{
+    const delegated={targetKey:"delegate:chrome-record-001:42",actorId:"owner",generation:"claim-a"};
+    const record=await startCdpSessionArchive(delegated,{
+      projectDirectory:projectRoot,confirmSensitiveVideo:true,
+      captureFrame:async()=>encodedJpeg,checkLease:async()=>true,
+    });
+    recordCdpSessionDiagnostic(delegated.targetKey,{at:new Date().toISOString(),
+      kind:"exception",details:{description:"user-token-in-exception",url:"https://secret.example",
+        text:"password=secret",level:"error",status:503}});
+    const finished=await stopCdpSessionArchive(delegated);
+    expect(finished.status).toBe("saved");
+    expect(JSON.parse(await readFile(finished.manifestFile,"utf8")).source)
+      .toBe("delegate-cdp-exact-tab");
+    const errors=await readFile(finished.errorsFile,"utf8");
+    expect(errors).toContain('"kind":"exception"');
+    expect(errors).not.toContain("user-token-in-exception");
+    expect(errors).not.toContain("secret.example");
+    expect(record.directory).toContain("recordings");
   },25000);
 
   test("refuses SuperAgent source/runtime paths and supports multiple saved recordings",async()=>{

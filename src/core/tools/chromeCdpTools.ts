@@ -983,7 +983,7 @@ export const controlChromeCdpTool: Tool = {
         assertDelegateMcpActorForCommand(command, args.agentId, payload.agentId);
         return await executeDelegateChromeCommand(
           command,
-          { ...args, delegateClientId, delegateTabId, targetId, __uploadWorkspace: uploadWorkspace },
+          { ...args, delegateClientId, delegateTabId, targetId, __uploadWorkspace: uploadWorkspace, __recordingWorkspace: recordingWorkspace },
           { ...payload, delegateClientId, delegateTabId, targetId },
           signal,
         );

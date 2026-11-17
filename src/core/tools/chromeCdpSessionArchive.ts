@@ -4,7 +4,7 @@
  * User opt-in is required for video. Sensitive browser pixels may appear in
  * MP4, so archives are saved under the ACTIVE PROJECT workspace,
  * never in the SuperAgent installation or ~/.superagent-r configuration.
- * No camera/microphone/OS screen capture; only the exact managed CDP page.
+ * No camera/microphone/OS screen capture; only the exact verified managed or Delegate CDP page.
  * Commands and diagnostics are redacted before persistence.
  */
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from "node:child_process";
@@ -199,8 +199,8 @@ async function frameTick(item: Session, capture: () => Promise<string>, valid: (
 export async function startCdpSessionArchive(
   scope: ArchiveScope, opts: SessionArchiveOptions,
 ): Promise<ReturnType<typeof publicStatus>> {
-  if (!scope.targetKey.startsWith("managed:") || !scope.actorId || !scope.generation)
-    throw Error("A verified managed CDP target and agent are required.");
+  if (!/^(managed|delegate):/.test(scope.targetKey) || !scope.actorId || !scope.generation)
+    throw Error("A verified managed or Delegate CDP target and agent are required.");
   if (opts.video === false || opts.confirmSensitiveVideo !== true)
     throw Error("MP4 recording is enabled by default and requires confirmSensitiveVideo:true.");
   const previous = sessions.get(scopeKey(scope));
@@ -293,27 +293,38 @@ export function recordCdpSessionCommand(scope: ArchiveScope, command: string, re
   const row = {
     at:new Date().toISOString(), sequence:item.commands, action:command,
     outcome: failed ? "failed" : "completed",
-    ...(failed ? { error:safeError(result) } : {}),
+    ...(failed ? { errorCode:"BROWSER_ACTION_FAILED" } : {}),
     // Never persist selector, typed text, URL, tokens or arbitrary raw outputs.
   };
   queueSafe(item, join(item.directory,"transcript.jsonl"), row);
   if (failed) queueSafe(item,join(item.directory,"errors.jsonl"),row);
 }
 export function recordCdpSessionDiagnostic(targetKey: string, event: ArchiveDiagnostics) {
+  // Console messages, exception descriptions and request URLs are untrusted
+  // page data. Never persist their text, even after best-effort regex redaction.
+  const kinds = new Set(["console","log","exception","request","response",
+    "request_failed","request_finished"]);
+  if (!kinds.has(event.kind)) return;
+  const input = event.details || {};
+  const details: Record<string, string | number | boolean> = {};
+  const levels = new Set(["error","warning","warn","info","debug","log","verbose"]);
+  if (typeof input.level === "string" && levels.has(input.level.toLowerCase()))
+    details.level = input.level.toLowerCase();
+  const methods = new Set(["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"]);
+  if (typeof input.method === "string" && methods.has(input.method.toUpperCase()))
+    details.method = input.method.toUpperCase();
+  for (const field of ["status","lineNumber","columnNumber","durationMs"] as const) {
+    const value = input[field];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1_000_000)
+      details[field] = value;
+  }
+  if (typeof input.canceled === "boolean") details.canceled = input.canceled;
+  details.messageRedacted = true;
   for (const item of sessions.values()) {
     if (item.scope.targetKey !== targetKey || item.status !== "recording" ||
         item.diagnostics >= MAX_LOG_ROWS) continue;
     item.diagnostics++;
-    // Diagnostics are already redacted by chromeCdpDiagnostics. Retain the
-    // existing limited event schema, never CDP request/response bodies.
-    const details = Object.fromEntries(Object.entries(event.details)
-      .filter(([key]) => ["level","source","text","description","url",
-        "lineNumber","columnNumber","method","status","mimeType",
-        "type","errorText","canceled","blockedReason","durationMs","values"].includes(key))
-      .map(([key, value]) => [key, Array.isArray(value)
-        ? value.slice(0,12).map(v=>safeError(v)) :
-        typeof value === "string" ? safeError(value) : value]));
-    const row = {at:event.at,kind:event.kind,details};
+    const row = {at:new Date().toISOString(),kind:event.kind,details};
     queueSafe(item, join(item.directory,"diagnostics.jsonl"),row);
     if (event.kind === "console" || event.kind === "log" || event.kind === "exception")
       queueSafe(item,join(item.directory,"console.jsonl"),row);
@@ -414,7 +425,8 @@ async function finalizeCdpSessionArchive(item: Session, actionTranscript?: objec
   const publicManifest = {...publicStatus(item), finishedAt:new Date().toISOString(),
     videoBytes:mp4Bytes, sensitiveVisualContent:true,
     includesAudio:false, includesNetworkBodies:false, includesTypedText:false,
-    source:"managed-cdp-exact-tab", retention:"Local; delete manually when no longer required."};
+    source:item.scope.targetKey.startsWith("delegate:") ? "delegate-cdp-exact-tab" : "managed-cdp-exact-tab",
+    retention:"Local; delete manually when no longer required."};
   await writeFile(join(item.directory,"manifest.json"),
     JSON.stringify(publicManifest,null,2),{flag:"wx",mode:0o600});
   const summary = [

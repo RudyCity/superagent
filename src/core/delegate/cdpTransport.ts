@@ -11,7 +11,7 @@ import {
 } from "../browserTransport/delegatePrincipalPolicy.js";
 import {
   authorizeDelegateTarget, assertDelegateLeaseReady, enterDelegateProtectedCdpRpc,
-  claimDelegateTarget, recoverDelegateTarget, hasDelegateClaim,
+  claimDelegateTarget, recoverDelegateTarget, hasDelegateClaim, inspectDelegateRecordingOwner,
   listDelegateSessions, noteDelegateWriteSuccess, releaseDelegateTarget, withDelegateTargetLock,
   setDelegateSharing, inviteDelegateAgent, joinDelegateTarget,
   leaveDelegateTarget, revokeDelegateAgent, handoverDelegateTarget, getDelegateParticipation, heartbeatDelegateSession,
@@ -19,6 +19,8 @@ import {
 import { BrowserTransportError, type BrowserTargetRef, type BrowserTransport } from "../browserTransport/types.js";
 import { DELEGATE_V18_COMMANDS, unsupportedBrowserCommand } from "../browserTransport/commandCapabilities.js";
 import { getDelegateLeaseRuntimeStatus } from "../browserTransport/delegateLeaseRuntime.js";
+import { startCdpSessionArchive, getCdpSessionArchiveStatus, stopCdpSessionArchive,
+  recordCdpSessionCommand, recordCdpSessionDiagnostic } from "../tools/chromeCdpSessionArchive.js";
 
 type RpcMethod =
   | "delegate.cdp.list_targets" | "delegate.cdp.attach" | "delegate.cdp.detach"
@@ -320,12 +322,86 @@ async function executeDelegateChromeCommandInternal(
   const target = await resolveTarget(args, payload, signal);
   const agentId = principalAgent;
   const sessionToken = args.sessionToken !== undefined ? String(args.sessionToken) : payload.sessionToken !== undefined ? String(payload.sessionToken) : undefined;
-  if ((command === "claim_target" || command === "recover_session" || WRITE_COMMANDS.has(command) ||
+  if ((command === "claim_target" || command === "recover_session" || command === "record_session_start" || WRITE_COMMANDS.has(command) ||
        ["share_target", "stop_sharing", "invite_agent", "join_target", "leave_target",
         "revoke_agent", "handover_target"].includes(command)) &&
       delegateMultiTabOrchestrator.isReserved(target.connectionId, target.tabId!)) {
     throw new BrowserTransportError("MULTITAB_TARGET_RESERVED",
       "The tab is owned by the multi-tab orchestrator. Release its claim before a competing CDP mutation.");
+  }
+
+  if (["record_session_start","record_session_status","record_session_stop"].includes(command)) {
+    if (!agentId || !sessionToken)
+      throw new BrowserTransportError("DELEGATE_CDP_OWNER_REQUIRED",
+        "Exact Delegate owner agentId and sessionToken are required.");
+    const claim = inspectDelegateRecordingOwner(target.connectionId,target.tabId!,agentId,sessionToken);
+    const scope = {
+      targetKey:delegateTargetId(target.connectionId,target.tabId!),
+      actorId:claim.actorId, generation:claim.generation,
+    };
+    if (command === "record_session_status")
+      return JSON.stringify(getCdpSessionArchiveStatus(scope));
+    if (command === "record_session_stop")
+      return JSON.stringify(await stopCdpSessionArchive(scope));
+    if (payload.confirmSensitiveVideo !== true || payload.video === false)
+      throw new BrowserTransportError("DELEGATE_RECORDING_CONSENT_REQUIRED",
+        "Explicit confirmSensitiveVideo:true is required to record visible tab content.");
+    const seenEvents = new Set<string>();
+    const recorded = await startCdpSessionArchive(scope,{
+      projectDirectory:typeof args.__recordingWorkspace === "string" ? args.__recordingWorkspace : "",
+      confirmSensitiveVideo:true,
+      captureFrame:async() => withDelegateTargetLock(target.connectionId,target.tabId!,async() => {
+        inspectDelegateRecordingOwner(target.connectionId,target.tabId!,agentId,sessionToken);
+        await delegateCdpTransport.attach(target);
+        try {
+          await delegateCdpTransport.command(target,"Page.enable");
+          await delegateCdpTransport.command(target,"Runtime.enable");
+          await delegateCdpTransport.command(target,"Network.enable");
+          await delegateCdpTransport.command(target,"Log.enable");
+          const result = await delegateCdpTransport.command(target,"Page.captureScreenshot",{
+            format:"jpeg",quality:42,captureBeyondViewport:false,fromSurface:true,optimizeForSpeed:true,
+          }) as { data?:unknown };
+          if (typeof result?.data !== "string") throw Error("Delegate screenshot unavailable.");
+          // Browser-event payloads are never copied into logs: only bounded
+          // severity/status metadata is projected by the shared archive writer.
+          const events = await delegateCdpTransport.events(target,false).catch(() => []);
+          for (const event of events.slice(-40)) {
+            const method = String(event?.method || "");
+            const kind = method === "Runtime.exceptionThrown" ? "exception" :
+              method === "Runtime.consoleAPICalled" ? "console" :
+              method === "Log.entryAdded" ? "log" :
+              method === "Network.responseReceived" ? "response" :
+              method === "Network.loadingFailed" ? "request_failed" : "";
+            if (!kind) continue;
+            const params = event?.params || {};
+            const marker = JSON.stringify([method,params.timestamp ?? event?.timestamp ?? null,
+              params.requestId ?? null,params.response?.status ?? null]);
+            if (seenEvents.has(marker)) continue;
+            if (seenEvents.size >= 200) seenEvents.clear();
+            seenEvents.add(marker);
+            recordCdpSessionDiagnostic(scope.targetKey,{
+              at:new Date().toISOString(), kind,
+              details:{
+                level:params.type ?? params.entry?.level,
+                status:params.response?.status,
+                canceled:params.canceled,
+              },
+            });
+          }
+          return result.data;
+        } finally {
+          await delegateCdpTransport.detach(target).catch(() => {});
+        }
+      }),
+      checkLease:async() => {
+        try {
+          const current=inspectDelegateRecordingOwner(target.connectionId,target.tabId!,agentId,sessionToken);
+          return current.generation===scope.generation &&
+            delegateBridge.listConnections().some(c=>c.clientId===target.connectionId);
+        } catch { return false; }
+      },
+    });
+    return JSON.stringify(recorded);
   }
 
   if (command === "recover_session") {
@@ -629,6 +705,13 @@ async function executeDelegateChromeCommandInternal(
       noteDelegateWriteSuccess(target.connectionId, target.tabId!, agentId, sessionToken);
     }
   });
+  if (agentId && sessionToken && typeof operationResult === "string") {
+    try {
+      const lease=inspectDelegateRecordingOwner(target.connectionId,target.tabId!,agentId,sessionToken);
+      recordCdpSessionCommand({targetKey:delegateTargetId(target.connectionId,target.tabId!),
+        actorId:lease.actorId,generation:lease.generation},command,operationResult);
+    } catch { /* Recording is opt-in and must never alter browser action outcome. */ }
+  }
   return operationResult;
 }
 

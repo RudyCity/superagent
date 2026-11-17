@@ -576,3 +576,23 @@ export function hasDelegateClaim(clientId: string, tabId: number): boolean {
 export function delegateTargetBusy(clientId: string, tabId: number): boolean {
   return targetTails.has(keyOf(clientId, tabId));
 }
+
+/** Read-only video lease proof. Unlike authorizeDelegateTarget this MUST NOT
+ * renew the owner TTL: an abandoned recorder must finalize on expiry. */
+export function inspectDelegateRecordingOwner(
+  clientId: string, tabId: number, agentId: string, token?: string,
+): { actorId: string; generation: string; expiresAt: number } {
+  assertDurableCurrent();
+  clean();
+  const session = sessions.get(keyOf(clientId,tabId));
+  if (!session || session.agentId !== agentId ||
+      !tokenMatches(token,session.tokenHash)) {
+    fail("DELEGATE_CDP_OWNER_REQUIRED","A live exact-tab owner lease is required for video recording.");
+  }
+  requireRecovered(session);
+  return {
+    actorId:session.agentId,
+    generation:`${session.claimedAt}:${session.tokenHash.slice(0,20)}:${session.recoveredEpoch}`,
+    expiresAt:session.expiresAt,
+  };
+}

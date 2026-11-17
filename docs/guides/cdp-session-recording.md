@@ -1,6 +1,6 @@
-# Managed Chrome CDP session recording (project-local)
+# Managed and Delegate Chrome CDP session recording (project-local)
 
-The `control_chrome_cdp` managed transport can save an **opt-in browser session archive** with genuine H.264 MP4 video, redacted action transcript, console/error events and network metadata. This is a browser-tab capture, not a video of the operating-system desktop or an audio recording.
+The `control_chrome_cdp` managed and Delegate transports can save an **opt-in browser session archive** with genuine H.264 MP4 video, redacted action transcript, console/error events and network metadata. This is a browser-tab capture, not a video of the operating-system desktop or an audio recording.
 
 ## Storage: the current project, not SuperAgent
 
@@ -28,7 +28,7 @@ Each recording gets a new UUID folder; existing files are not overwritten. The p
 
 ## Start, inspect and stop
 
-1. On a managed Chrome tab, claim ownership with `claim_target` and retain your `targetId`, `agentId` and secret `sessionToken`. Sharing a tab as an observer or contributor does not grant permission to start a sensitive video recording.
+1. On an exact managed or Delegate Chrome tab, claim ownership with `claim_target` and retain your `targetId`, `agentId` and secret `sessionToken`. Sharing a tab as an observer or contributor does not grant permission to start a sensitive video recording.
 2. Call `control_chrome_cdp` with `command:"record_session_start"`, `transport:"managed"`, the exact target and owner identity, and `confirmSensitiveVideo:true`. **MP4 is enabled by default**; you need not pass `video:true`.
 3. Perform the actions to be documented. Native `hover_cursor` and `click_cursor` are logged as action categories and accompanied by video frames; no raw selector, typed value or form content is written to JSON logs.
 4. Call `record_session_status` to inspect the frame count, dropped frames, file paths and errors. Finish with `record_session_stop`. The stop command flushes queued text logs, finalizes FFmpeg and returns the output paths and actual status.
@@ -61,4 +61,4 @@ Requires locally installed `ffmpeg` on PATH. SuperAgent now checks both `ffmpeg`
 
 This recorder is deliberately **not** a full raw conversation/keystroke recorder. It saves a structured transcript of browser actions and diagnostic events, not private chat message bodies, cookies, unredacted HTTP traffic, typed secrets or OS audio. The video itself can still contain whatever was visibly rendered inside the tab.
 
-**Transport boundary:** these recording commands currently operate only on claimed **managed CDP** targets, not Delegate-CDP or unverified Chrome extensions. The source feature requires a running, correctly authorized Core; its presence in the repository does not prove the installed Tray or Core has been updated.
+**Transport boundary:** recording supports verified exact-tab owner leases on **managed CDP** and **Delegate CDP** (`transport:"delegate"` with an explicit qualified target). For Delegate, the extension must be connected and enable CDP. Its debugger is attached only for bounded frame capture, then detached; another debugger owner is never displaced. Both transports require an explicit active project workspace and video consent. These are source capabilities, not proof of installed Core/Tray availability. Logs record event kinds and numeric status, never arbitrary console messages, exception text, request URLs or typed values.
