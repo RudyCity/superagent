@@ -42,6 +42,7 @@ export const mediaPlanTool = makeTool(
   "media_plan",
   "Read-only conversion route planner: inspect input signatures, determine backend availability, editable/visual fidelity, warnings and supported output format without creating an artifact.",
   { inputPath, inputPaths: { type: "array", items: inputPath, minItems: 1, maxItems: 50 },
+    watermarkPath: inputPath,
     outputPath, mode: { type: "string", enum: ["convert", "transform"] },
     operation, quality: common.quality, targetBytes: common.targetBytes, targetKB: common.targetKB },
   ["outputPath"], mediaPlan,
