@@ -10,7 +10,7 @@
  * platform keystore/native IPC attestation is still required before remote
  * Desktop Live is enabled.
  */
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getRootConfigDir } from "../config/paths.js";
@@ -45,7 +45,8 @@ function localKey(): Buffer {
   return Buffer.from(raw, "hex");
 }
 
-function nativeApprovalMessage(body: Record<string, unknown>, nonce: string): string {
+function nativeApprovalMessage(body: Record<string, unknown>, nonce: string,
+  purpose: "preview" | "recording" = "preview"): string {
   const pid = body.pid;
   const id = body.nativeId;
   const title = body.expectedTitle;
@@ -60,11 +61,22 @@ function nativeApprovalMessage(body: Record<string, unknown>, nonce: string): st
   if (Object.keys(b).length !== 4 || !["x", "y", "width", "height"].every(k =>
     Number.isSafeInteger(b[k])) || Number(b.width) <= 0 || Number(b.height) <= 0) denied();
   const b64 = (value: string) => Buffer.from(value, "utf8").toString("base64url");
-  return [
-    "desktop-live-native-approval-v1", nonce, String(pid),
+  const fields = [
+    purpose === "recording" ? "desktop-live-native-recording-v1" :
+      "desktop-live-native-approval-v1", nonce, String(pid),
     b64(id), b64(title), b64(application),
     ...["x", "y", "width", "height"].map(k => String(b[k])),
-  ].join(":");
+  ];
+  if (purpose === "recording") {
+    const token=body.previewToken,project=body.projectDirectory,preset=body.videoPreset;
+    if (typeof token !== "string" || !/^[a-f0-9]{64}$/.test(token) ||
+        typeof project !== "string" || !path.isAbsolute(project) ||
+        project.length<2 || project.length>1024 ||
+        !["compact","standard","detail"].includes(String(preset))) denied();
+    fields.push(createHash("sha256").update(token).digest("hex"),
+      b64(project),String(preset));
+  }
+  return fields.join(":");
 }
 
 export class NativeDesktopApprovalGuard {
@@ -72,6 +84,7 @@ export class NativeDesktopApprovalGuard {
   constructor(
     private readonly key: () => Buffer = localKey,
     private readonly now: () => number = Date.now,
+    private readonly purpose: "preview" | "recording" = "preview",
   ) {}
 
   issue(): { nonce: string; expiresAt: number } {
@@ -100,7 +113,7 @@ export class NativeDesktopApprovalGuard {
     const expiry = this.pending.get(record.nonce);
     this.pending.delete(record.nonce); // Burn even a forged proof.
     if (expiry === undefined || this.now() >= expiry) denied();
-    const message = nativeApprovalMessage(body, record.nonce);
+    const message = nativeApprovalMessage(body, record.nonce, this.purpose);
     const valid = createHmac("sha256", this.key()).update(message).digest();
     const presented = Buffer.from(record.mac, "hex");
     if (!timingSafeEqual(valid, presented)) denied();
@@ -109,9 +122,14 @@ export class NativeDesktopApprovalGuard {
   }
 
   /** Public only for test clients exercising the exact native protocol. */
-  static computeProofForTest(key: Buffer, target: Record<string, unknown>, nonce: string): string {
-    return createHmac("sha256", key).update(nativeApprovalMessage(target, nonce)).digest("hex");
+  static computeProofForTest(key: Buffer, target: Record<string, unknown>, nonce: string,
+    purpose: "preview" | "recording" = "preview"): string {
+    return createHmac("sha256", key).update(nativeApprovalMessage(target, nonce,purpose)).digest("hex");
   }
 }
 
 export const nativeDesktopApprovalGuard = new NativeDesktopApprovalGuard();
+
+/** Separate nonce ledger and HMAC domain; an approved preview cannot approve recording. */
+export const nativeWindowRecordingApprovalGuard =
+  new NativeDesktopApprovalGuard(undefined,undefined,"recording");
