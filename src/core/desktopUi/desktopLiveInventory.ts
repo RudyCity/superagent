@@ -212,8 +212,12 @@ export async function stopDesktopLiveHandle(
     const port=Number(m[1]),targetId=m[2];
     const reg=listManagedBrowserRegistrations().find(r=>r.port===port&&r.targetId===targetId);
     if(!reg)throw Error("UNVERIFIED_CDP_TARGET");
-    await setManagedBrowserControl({mode:"human",port,targetId,profileId:reg.profileId,
+    const changed = await setManagedBrowserControl({mode:"human",port,targetId,profileId:reg.profileId,
       generation:reg.generation,browserFingerprint:reg.browserFingerprint},undefined,Number(b.expectedRevision));
+    // Confirm the authoritative per-target human write fence; a successful
+    // command dispatch is not proof that the handoff is still active.
+    if(changed.mode!=="human" || await readManagedControlStatus(port,targetId)!=="human")
+      throw Error("CDP_HUMAN_HOLD_NOT_VERIFIED");
     return {stopped:true,scope:row.id,reason:"Agent mutations blocked; browser tab remains open"};
   }
   if(row.stopAction==="return-to-agent") {
@@ -232,9 +236,13 @@ export async function stopDesktopLiveHandle(
     if(!reg)throw Error("UNVERIFIED_CDP_TARGET");
     // The coordination fence refuses return while a takeover reservation
     // remains active; no remote URL, preview token, or fake approval can lift it.
-    await setManagedBrowserControl({mode:"agent",port,targetId,profileId:reg.profileId,
+    const changed = await setManagedBrowserControl({mode:"agent",port,targetId,profileId:reg.profileId,
       generation:reg.generation,browserFingerprint:reg.browserFingerprint},
       undefined,row.revision === undefined ? undefined : Number(b.expectedRevision));
+    // If another operator reclaimed this tab immediately, do not advertise
+    // Return to Agent success while its human reservation still fences writes.
+    if(changed.mode!=="agent" || await readManagedControlStatus(port,targetId)!=="agent")
+      throw Error("CDP_AGENT_RETURN_NOT_VERIFIED");
     return {stopped:true,scope:row.id,
       reason:"Verified human hold released; managed agent may resume on the same browser target"};
   }
