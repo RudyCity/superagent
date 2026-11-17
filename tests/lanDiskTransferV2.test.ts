@@ -91,6 +91,23 @@ describe("LAN target V2 encrypted-session, disk-backed staging", () => {
     expect(await fs.readFile(done.savedTo)).toEqual(bytes);
   });
 
+  it("rejects racing duplicate chunks without advancing the same checkpoint twice", async () => {
+    const { engine } = await target();
+    const bytes = crypto.randomBytes(2 * LAN_V2_CHUNK_BYTES);
+    const offer = await engine.offerUpload("racing.bin", bytes.length, hash(bytes));
+    const payload = bytes.subarray(0, LAN_V2_CHUNK_BYTES).toString("base64");
+    const outcomes = await Promise.allSettled([
+      engine.put(offer.transferId, 0, payload),
+      engine.put(offer.transferId, 0, payload),
+    ]);
+    expect(outcomes.filter(x => x.status === "fulfilled")).toHaveLength(1);
+    expect(outcomes.filter(x => x.status === "rejected")).toHaveLength(1);
+    expect(engine.status(offer.transferId).received).toBe(LAN_V2_CHUNK_BYTES);
+    await feed(engine, offer.transferId, bytes, LAN_V2_CHUNK_BYTES);
+    const done = await engine.finish(offer.transferId);
+    expect(await fs.readFile(done.savedTo)).toEqual(bytes);
+  });
+
   it("does not retain cancelled bytes", async () => {
     const { root, engine } = await target();
     const offer = await engine.offerUpload("cancel.txt", LAN_V2_CHUNK_BYTES * 2, "a".repeat(64));
