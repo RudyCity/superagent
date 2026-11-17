@@ -1324,7 +1324,9 @@ export async function handleServerRoute(
         return true;
       }
       const { getProject } = await import("./core/project/projectRegistry.js");
-      const project = getProject(projectId);
+      const { MCP_CONNECTION_PROJECT_ID, grantProjectAccessToIdentity } = await import("./core/project/projectAccessRequestStore.js");
+      const project = projectId === MCP_CONNECTION_PROJECT_ID
+        ? { enabled: true } : getProject(projectId);
       if (!project) {
         sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
         return true;
@@ -1333,7 +1335,6 @@ export async function handleServerRoute(
         sendJSON(res, 403, { success: false, error: "Project is disabled." });
         return true;
       }
-      const { grantProjectAccessToIdentity } = await import("./core/project/projectAccessRequestStore.js");
       const approved = grantProjectAccessToIdentity(identity, projectId, capabilities);
       sendJSON(res, 200, { success: true, grant: {
         projectId: approved.projectId, capabilities: approved.capabilities
