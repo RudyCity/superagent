@@ -34,7 +34,7 @@ import { tryStatSync } from "./core/tools/helpers.js";
 import { getTruncatedAssistantIndexes } from "./utils/responseScroll.js";
 import { wrapTextForDisplay } from "./utils/responseScroll.js";
 import type { ChatLine } from "./core/slash-commands.js";
-import { readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
+import { getActiveSessionTaskPath, readChecklistTasks, readTaskHistory } from "./core/taskChecklist.js";
 import { getActiveChainId, getWorkspaceChain } from "./core/workspace/WorkspaceChainConfig.js";
 import { lockEventEmitter, getLockStats } from "./core/storage/sharedMemory.js";
 import { PROVIDER_TEMPLATE_LABELS } from "./core/loginWizardLogic.js";
@@ -2033,29 +2033,14 @@ export function App({
     let intervalId: NodeJS.Timeout | null = null;
 
     const check = async () => {
-      const agent = agentRef.current;
-      const candidates: string[] = [];
-      if (agent?.getTaskFilePath) {
-        try {
-          candidates.push(agent.getTaskFilePath());
-        } catch {}
-      }
-      const ws = agent?.workingDirectory || process.cwd();
-      candidates.push(path.join(ws, "task.md"));
-      candidates.push(path.join(ws, "_task.md"));
-      candidates.push(path.join(ws, "tasks.md"));
-
-      let foundPath: string | null = null;
-      for (const p of candidates) {
-        if (p && fsSync.existsSync(p)) {
-          foundPath = p;
-          break;
+      const foundPath = getActiveSessionTaskPath(agentRef.current);
+      if (!foundPath) {
+        if (active) {
+          setChecklistTasks([]);
+          setRawCompletedHistory([]);
         }
+        return;
       }
-      if (!foundPath && candidates[0]) {
-        foundPath = candidates[0];
-      }
-      if (!foundPath) return;
 
       try {
         const result = await readChecklistTasks(foundPath);
