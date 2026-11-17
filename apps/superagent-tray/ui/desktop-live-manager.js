@@ -180,10 +180,12 @@
       stream.timer = null;
     }
     const cfg = streamPresets[stream.quality] || streamPresets.ultra;
+    const generation = stream.generation;
+    const next = () => {if (stream.generation === generation) void fetchFrame();};
     if (cfg.intervalMs <= 20) {
-      stream.timer = requestAnimationFrame(() => void fetchFrame());
+      stream.timer = requestAnimationFrame(next);
     } else {
-      stream.timer = setTimeout(fetchFrame, cfg.intervalMs);
+      stream.timer = setTimeout(next, cfg.intervalMs);
     }
   }
 
@@ -194,14 +196,16 @@
       return;
     }
     stream.inFlight = true;
+    const generation = stream.generation, token = stream.token;
+    const deviceId = stream.deviceId, isLan = stream.isLanDevice;
     const cfg = streamPresets[stream.quality] || streamPresets.balanced;
     try {
       let frameData;
-      if (stream.isLanDevice) {
+      if (isLan) {
         const call = window.__TAURI__?.core?.invoke;
         const res = await call("lan_support_action", {
           action: "screen",
-          payload: { deviceId: stream.deviceId },
+          payload: { deviceId },
         });
         if (!res?.success) throw Error(res?.error || "Gagal mengambil frame screen dari LAN client");
         frameData = {
@@ -212,14 +216,15 @@
         };
       } else {
         frameData = await invoke("frame", {
-          token: stream.token,
+          token,
           codec: "jpeg",
           maxWidth: cfg.maxWidth,
           quality: cfg.quality,
           ...(stream.lastHash ? { knownHash: stream.lastHash } : {}),
         });
       }
-      if (!stream.active) return;
+      if (!stream.active || generation !== stream.generation || token !== stream.token ||
+          deviceId !== stream.deviceId) return;
       if (!frameData?.success && frameData?.error) throw Error(frameData.error);
 
       const img = el("desktop-live-stream-img");
@@ -251,11 +256,14 @@
         }
       }
     } catch (err) {
-      await stopStream("Stream ended: " + (err?.message || "Window identity changed or closed."));
+      if (generation === stream.generation)
+        await stopStream("Stream ended: " + (err?.message || "Window identity changed or closed."));
       return;
     } finally {
-      stream.inFlight = false;
-      if (stream.active) scheduleNextFrame();
+      if (generation === stream.generation) {
+        stream.inFlight = false;
+        if (stream.active) scheduleNextFrame();
+      }
     }
   }
 
@@ -462,6 +470,13 @@
     }
     const token = stream.token;
     const recording=stream.recording;
+    // Fence stale network responses before any asynchronous recorder cleanup.
+    stream.active = false;
+    stream.generation++;
+    stream.pointer = null;
+    stream.inputPending = false;
+    stream.lastFrameAt = 0;
+    stream.inFlight = false;
     stream.recording=null;
     if(recording&&!stream.isLanDevice){
       try{
@@ -474,11 +489,6 @@
         // Core will auto-finalize after the exact preview capability is revoked.
       }
     }
-    stream.active = false;
-    stream.generation++;
-    stream.pointer = null;
-    stream.inputPending = false;
-    stream.lastFrameAt = 0;
     stream.token = null;
     stream.id = null;
     stream.inFlight = false;
