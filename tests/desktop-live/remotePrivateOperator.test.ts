@@ -31,6 +31,32 @@ describe("private remote Desktop Live host operator fail-closed integration", ()
     expect(humanTakeover).toHaveBeenCalledTimes(1);
   });
 
+  it("physical takeover revokes input before terminating the private viewer", () => {
+    const operator = new RemotePrivateHostOperator();
+    const calls: string[] = [];
+    const controller = { humanTakeover: vi.fn(() => { calls.push("input"); }) };
+    const viewer = { humanTakeover: vi.fn(() => { calls.push("viewer"); }) };
+    operator.registerStopHook(viewer);
+    operator.registerControllerStopHook(controller);
+    expect(() => operator.registerControllerStopHook(controller)).toThrow();
+    expect(operator.status().inputAvailable).toBe(false);
+    expect(operator.humanTakeover().state).toBe("NOT_CONFIGURED");
+    expect(calls).toEqual(["input", "viewer"]);
+    operator.humanTakeover();
+    expect(calls).toEqual(["input", "viewer"]);
+  });
+
+  it("still tears down private viewer if native input revocation throws", () => {
+    const operator = new RemotePrivateHostOperator();
+    const controller = { humanTakeover: vi.fn(() => { throw Error("Input lease already gone"); }) };
+    const viewer = { humanTakeover: vi.fn() };
+    operator.registerControllerStopHook(controller);
+    operator.registerStopHook(viewer);
+    expect(operator.humanTakeover().inputAvailable).toBe(false);
+    expect(controller.humanTakeover).toHaveBeenCalledOnce();
+    expect(viewer.humanTakeover).toHaveBeenCalledOnce();
+  });
+
   it("fails closed if a native revoke hook throws, and never re-arms it", () => {
     const operator = new RemotePrivateHostOperator();
     const humanTakeover = vi.fn(() => { throw Error("OS transport closed"); });
