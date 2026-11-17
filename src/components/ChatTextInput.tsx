@@ -316,11 +316,22 @@ export const ChatTextInput = forwardRef<ChatTextInputRef, Props>(function ChatTe
         return;
       }
 
-      // ── ESC — hook for tunnel menu when in Muse mode ──────────────────────
-      if (key.escape) {
-        if (onEscapeKey) {
-          onEscapeKey();
+      // ── ESC: discard pending debounce before it can restore a cleared draft.
+      // The parent hook owns wizard navigation and agent interruption.
+      if (key.escape || input === "\x1b") {
+        if (debounceTimerRef.current) {
+          clearTimeout(debounceTimerRef.current);
+          debounceTimerRef.current = null;
         }
+        if (!immediate) {
+          // Parent value can already be empty while local edits are pending.
+          // Reset both states synchronously so ESC still clears that draft.
+          lastSentValueRef.current = "";
+          setLocalValue("");
+          setCursorOffset(0);
+          onChange("");
+        }
+        onEscapeKey?.();
         return;
       }
 
