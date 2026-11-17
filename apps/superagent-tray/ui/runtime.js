@@ -289,9 +289,9 @@ function runtimeMcpSecurityControlMarkup() {
 function runtimeYoloMarkup(currentMode = runtimeCurrentYoloMode) {
   const mode = ["off", "scoped", "full"].includes(currentMode) ? currentMode : "off";
   const captions = {
-    off: "Tanpa YOLO: Fail-closed (hanya tool aman / read-only). Tool mutasi & eksekusi diblokir.",
-    scoped: "YOLO Standar: Tool berbahaya diizinkan terbatas dalam workspace project.",
-    full: "YOLO Full: Akses penuh tanpa batasan workspace, path, atau grant."
+    off: "Chat Agent: YOLO nonaktif. Pengaturan ini tidak memengaruhi izin koneksi MCP.",
+    scoped: "Chat Agent: eksekusi terbatas dalam workspace. MCP tetap memakai Security Approval.",
+    full: "Chat Agent: mode Full. MCP tetap memerlukan grant dan OAuth yang terpisah."
   };
   const badgeClasses = {
     off: "yolo-badge-safe",
@@ -307,7 +307,7 @@ function runtimeYoloMarkup(currentMode = runtimeCurrentYoloMode) {
     <div class="runtime-yolo-header">
       <div class="runtime-yolo-title">
         <span class="yolo-badge ${badgeClasses[mode]}">${badgeLabels[mode]}</span>
-        <strong>YOLO Policy</strong>
+        <strong>Chat Agent YOLO Policy</strong>
       </div>
       <small class="runtime-yolo-caption">${runtimeEscape(captions[mode])}</small>
     </div>
@@ -369,7 +369,7 @@ async function runtimeSetYoloMode(mode) {
       }
     }
     runtimeCurrentYoloMode = mode;
-    document.querySelectorAll(".runtime-yolo-control").forEach(ctrl => {
+    document.querySelectorAll(".runtime-yolo-control[data-current-yolo]").forEach(ctrl => {
       ctrl.dataset.currentYolo = mode;
       ctrl.querySelectorAll(".yolo-chip").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.runtimeYolo === mode);
@@ -382,9 +382,9 @@ async function runtimeSetYoloMode(mode) {
       const caption = ctrl.querySelector(".runtime-yolo-caption");
       if (caption) {
         const captions = {
-          off: "Tanpa YOLO: Fail-closed (hanya tool aman / read-only). Tool mutasi & eksekusi diblokir.",
-          scoped: "YOLO Standar: Tool berbahaya diizinkan terbatas dalam workspace & 1 parent.",
-          full: "YOLO Full: Akses penuh tanpa batasan workspace, path, atau grant."
+          off: "Chat Agent: YOLO nonaktif. Pengaturan ini tidak memengaruhi izin koneksi MCP.",
+          scoped: "Chat Agent: tool terbatas pada workspace & parent; izin MCP terpisah.",
+          full: "Chat Agent: mode Full. MCP tetap memerlukan grant dan OAuth yang terpisah."
         };
         caption.textContent = captions[mode];
       }
