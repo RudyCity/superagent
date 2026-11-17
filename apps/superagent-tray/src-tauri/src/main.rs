@@ -1364,6 +1364,97 @@ async fn recordings_action(
         if canonical.parent().is_none() { return Err("Filesystem root is not a project".into()); }
         return Ok(json!({"projectDirectory":canonical.to_string_lossy()}));
     }
+    if action=="start-native" {
+        let data=payload.ok_or("Exact preview and recording project required")?;
+        let args=data.as_object().ok_or("Invalid native recording request")?;
+        if args.len()!=3 || args.keys().any(|k|
+            !["previewToken","projectDirectory","videoPreset"].contains(&k.as_str())) {
+            return Err("Unexpected native recording parameters".into());
+        }
+        let preview_token=args.get("previewToken").and_then(Value::as_str)
+            .filter(|v|v.len()==64 && v.bytes().all(|c|c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+            .ok_or("A valid approved preview is required")?.to_string();
+        let project=args.get("projectDirectory").and_then(Value::as_str)
+            .filter(|p|p.len()>2 && p.len()<=1024 && std::path::Path::new(p).is_absolute())
+            .ok_or("Choose an existing absolute project folder")?;
+        let project=fs::canonicalize(project)
+            .map_err(|_| "Selected recording project is unavailable")?;
+        let attributes=fs::symlink_metadata(&project)
+            .map_err(|_| "Selected recording project is unavailable")?;
+        if !attributes.is_dir() || attributes.file_type().is_symlink() {
+            return Err("Recording requires a real local project folder".into());
+        }
+        let project=project.to_string_lossy().to_string();
+        let preset=args.get("videoPreset").and_then(Value::as_str)
+            .filter(|p|["compact","standard","detail"].contains(p))
+            .ok_or("Invalid recording quality preset")?.to_string();
+        if DESKTOP_LIVE_APPROVAL_OPEN.compare_exchange(false,true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst).is_err() {
+            return Err("Another native approval is pending".into());
+        }
+        let _guard=DesktopLiveApprovalGuard;
+        let response=core_request(Method::POST,"/api/desktop/cdp/recordings",
+            Some(json!({"action":"native-preview","previewToken":preview_token}))).await?;
+        let pinned=response.get("window").and_then(Value::as_object)
+            .ok_or("Approved preview was not found")?;
+        let pid=pinned.get("pid").and_then(Value::as_u64)
+            .filter(|pid|*pid>0 && *pid<=u32::MAX as u64)
+            .ok_or("Preview PID invalid")?;
+        let native_id=pinned.get("nativeId").and_then(Value::as_str)
+            .filter(|id|!id.is_empty() && id.len()<=256)
+            .ok_or("Preview window ID invalid")?.to_string();
+        let title=pinned.get("title").and_then(Value::as_str)
+            .filter(|title|!title.is_empty()).ok_or("Preview title invalid")?.to_string();
+        let application=pinned.get("application").and_then(Value::as_str)
+            .filter(|app|!app.is_empty()).ok_or("Preview application invalid")?.to_string();
+        let bounds=pinned.get("bounds").and_then(Value::as_object)
+            .filter(|bounds|bounds.len()==4)
+            .ok_or("Preview bounds invalid")?.clone();
+        let clean=|s:&str|s.chars().filter(|c|!c.is_control()).take(95).collect::<String>();
+        let prompt=format!(
+            "RECORD PRIVATE APPLICATION WINDOW\n\n\
+             Application: {}\nWindow: {}\nProcess: {}\n\
+             Project: {}\nQuality: {}\n\n\
+             The video can contain passwords, messages and private information. \
+             Only this already-approved window will be recorded; no audio or input control. \
+             Recording stops if its 5-minute preview permission expires or this window changes. \
+             The MP4 is kept locally in the chosen project. Start recording?",
+            clean(&application),clean(&title),pid,clean(&project),preset
+        );
+        let dialog_app=app.clone();
+        let approved=tauri::async_runtime::spawn_blocking(move || {
+            use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+            dialog_app.dialog().message(prompt).title("Approve window recording")
+                .buttons(MessageDialogButtons::OkCancelCustom(
+                    "Start recording".to_string(),"Cancel".to_string()))
+                .blocking_show()
+        }).await.map_err(|_| "Native recording approval dialog failed")?;
+        if !approved {return Err("Native recording permission denied".into());}
+        if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+            return Err("Tray was hidden during recording approval".into());
+        }
+        let challenge=core_request(Method::POST,"/api/desktop/cdp/recordings",
+            Some(json!({"action":"native-challenge"}))).await?;
+        let nonce=challenge.get("nonce").and_then(Value::as_str)
+            .ok_or("Native recording challenge unavailable")?;
+        let mut request=json!({
+            "action":"start-native","projectDirectory":project,
+            "previewToken":preview_token,"pid":pid,"nativeId":native_id,
+            "expectedTitle":title,"expectedApplication":application,
+            "expectedBounds":bounds,"videoPreset":preset,"consent":true
+        });
+        let proof=desktop_recording_native_approval_proof(nonce,&request)?;
+        request["approvalProof"]=proof;
+        let result=core_request(Method::POST,"/api/desktop/cdp/recordings",Some(request)).await?;
+        let id=result.get("recordingId").and_then(Value::as_str)
+            .ok_or("Recorder did not confirm recording identity")?;
+        if result.get("status").and_then(Value::as_str)!=Some("recording") {
+            return Err("Recorder did not verify an active recording".into());
+        }
+        return Ok(json!({"success":true,"recordingId":id,
+            "status":"recording","projectDirectory":project,"videoPreset":preset}));
+    }
     if !matches!(action.as_str(),"list" | "stop" | "open-video" | "open-folder" | "export-zip" | "delete") {
         return Err("Unsupported recording operation".into());
     }
