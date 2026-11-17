@@ -423,6 +423,65 @@ export async function offerLanFileV2(id: string, metadata: {
     seq: Number(reply.seq), received: Number(reply.received), resumed: reply.resumed,
   };
 }
+/** The Windows owner has already selected a large local source in the LAN CLI.
+ * The remote controller cannot pass arbitrary paths; physical consent is still
+ * required on this offer and on every new support session.
+ */
+export async function offerLanFileV2Source(id: string): Promise<LanV2Offer> {
+  const device = authFile(id);
+  if (device.platform !== "windows")
+    throw Error("V2 large source sharing currently requires updated Windows LAN client.");
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_offer", { direction: "download" }), 110_000);
+  if (!reply || reply.ok !== true || reply.version !== 2 ||
+      typeof reply.transferId !== "string" || !/^[a-f0-9-]{36}$/i.test(reply.transferId) ||
+      reply.direction !== "download" ||
+      typeof reply.name !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_ .()-]{0,95}$/.test(reply.name) ||
+      reply.name.endsWith(".") || reply.name.endsWith(" ") ||
+      !Number.isSafeInteger(reply.size) || Number(reply.size) <= 4 * 1024 * 1024 ||
+      Number(reply.size) > LAN_TRANSFER_V2_MAX ||
+      typeof reply.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(reply.sha256) ||
+      reply.chunkBytes !== LAN_TRANSFER_V2_CHUNK ||
+      reply.seq !== 0 || reply.received !== 0 || reply.resumed !== false)
+    throw Error("Invalid owner-selected V2 source offer.");
+  return {
+    transferId: reply.transferId, name: reply.name, size: Number(reply.size),
+    sha256: reply.sha256, chunkBytes: LAN_TRANSFER_V2_CHUNK,
+    seq: 0, received: 0, resumed: false,
+  };
+}
+export async function getLanFileChunkV2(id: string, transferId: string, seq: number) {
+  const device = authFile(id);
+  validV2Handle(transferId, seq);
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_get", { transferId, seq }), 15_000, 32 * 1024);
+  const expectedOffset = seq * LAN_TRANSFER_V2_CHUNK;
+  if (!reply || reply.ok !== true || reply.seq !== seq ||
+      typeof reply.data !== "string" || reply.data.length > 21848 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(reply.data) ||
+      !Number.isSafeInteger(reply.received) ||
+      Number(reply.received) <= expectedOffset ||
+      Number(reply.received) > LAN_TRANSFER_V2_MAX)
+    throw Error("Invalid V2 source chunk response.");
+  const bytes = Buffer.from(reply.data, "base64");
+  if (!bytes.length || bytes.length > LAN_TRANSFER_V2_CHUNK ||
+      bytes.toString("base64") !== reply.data ||
+      expectedOffset + bytes.length !== reply.received)
+    throw Error("V2 source chunk integrity or length invalid.");
+  return { seq, received: Number(reply.received), data: reply.data };
+}
+export async function finalizeLanFileV2Source(id: string, transferId: string) {
+  const device = authFile(id);
+  validV2Handle(transferId);
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_v2_finish", { transferId }), 90_000);
+  if (!reply || reply.ok !== true || reply.transferId !== transferId ||
+      !Number.isSafeInteger(reply.bytes) || Number(reply.bytes) < 1 ||
+      Number(reply.bytes) > LAN_TRANSFER_V2_MAX)
+    throw Error("V2 source did not confirm complete SHA-256 verification.");
+  return { ok: true, bytes: Number(reply.bytes) };
+}
+
 export async function putLanFileChunkV2(id: string, transferId: string, seq: number, data: string) {
   const device = authFile(id);
   if (device.platform !== "windows" && device.platform !== "android")
