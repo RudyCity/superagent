@@ -395,6 +395,19 @@ export function formatBrowserBlock(b: ChromeBrowserInfo): string {
   return lines.join("\n");
 }
 
+/** Process metadata only: never read Chrome Local State or enumerate tab/UIA titles. */
+export async function listRunningChromeRestrictedInventory():Promise<string>{
+ const scan=await safeScanChromeBrowsers("processes");
+ if("error" in scan)return scan.error;
+ if(!scan.browsers.length)return "No running Chrome browser processes found.";
+ const rows=scan.browsers.slice(0,64).map(b=>{
+   const profile=/^[A-Za-z0-9 ._-]{1,64}$/.test(b.profileDir)?b.profileDir:"redacted";
+   return `PID ${b.pid} | Profile directory: ${profile} | Windows: ${b.windows.length}`;
+ });
+ return [`Running Chrome processes (${scan.browsers.length})`,...rows,
+   "Restricted inventory: no profile file reads, window/tab titles or URLs."].join("\n");
+}
+
 export const listRunningChromeTool: Tool = {
   name: "list_running_chrome",
   description:
