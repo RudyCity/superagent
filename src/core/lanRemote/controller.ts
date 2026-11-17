@@ -503,7 +503,7 @@ export async function getLanFileStatusV2(id: string, transferId: string) {
   const [reply] = await requestSaved(device,
     fileEnvelope(device, "file_v2_status", { transferId }), 10_000);
   if (!reply || reply.ok !== true || reply.transferId !== transferId ||
-      reply.version !== 2 || reply.direction !== "upload" ||
+      reply.version !== 2 || (reply.direction !== "upload" && reply.direction !== "download") ||
       typeof reply.name !== "string" ||
       !Number.isSafeInteger(reply.size) || Number(reply.size) < 1 ||
       Number(reply.size) > LAN_TRANSFER_V2_MAX ||
@@ -512,7 +512,7 @@ export async function getLanFileStatusV2(id: string, transferId: string) {
       Number(reply.received) < 0 || Number(reply.received) > Number(reply.size) ||
       Number(reply.seq) !== Math.ceil(Number(reply.received) / LAN_TRANSFER_V2_CHUNK))
     throw Error("V2 checkpoint rejected.");
-  return { transferId, direction: "upload" as const, name: reply.name,
+  return { transferId, direction: reply.direction as "upload" | "download", name: reply.name,
     size: Number(reply.size), sha256: reply.sha256, seq: Number(reply.seq),
     received: Number(reply.received) };
 }
