@@ -60,6 +60,26 @@ describe("tool annotations", () => {
   });
 });
 
+describe("disabled MCP tool enforcement", () => {
+  it("rejects disabled legacy calls before connection approval and redacts audit arguments", async () => {
+    const audits: Array<{ args?: unknown; ok?: boolean }> = [];
+    const server = createSuperagentMcpServer({
+      allowDangerous: true,
+      onToolCall: (event) => { audits.push(event); },
+    });
+    const list = await listTools(server);
+    expect(list.map((tool) => tool.name)).not.toContain("superagent_remote_chrome");
+
+    const handler = (server as any)._requestHandlers.get("tools/call");
+    await expect(handler({
+      method: "tools/call",
+      params: { name: "superagent_remote_chrome", arguments: { action: "status", token: "must-not-log" } },
+    })).rejects.toThrow("disabled and not exposed by this MCP server");
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ args: {}, ok: false });
+  });
+});
+
 describe("per-tool security metadata", () => {
   it("static-bearer mode advertises bearer scheme", () => {
     const schemes = getToolSecuritySchemes("superagent_read_files", "static-bearer");
