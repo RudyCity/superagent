@@ -760,6 +760,7 @@ pub fn open(app:&AppHandle) {
 pub async fn shutdown_manager_action(
     app:AppHandle,window:WebviewWindow,action:String,
     preview_id:Option<String>,selected:Option<Vec<String>>,exit_after:Option<bool>,
+    force_confirmation:Option<String>,
 ) -> Result<Value,String> {
     if window.label()!="main" || !window.is_visible().unwrap_or(false) ||
         window.is_minimized().unwrap_or(true) {
@@ -767,14 +768,16 @@ pub async fn shutdown_manager_action(
     }
     match action.as_str() {
         "status" => {
-            if preview_id.is_some()||selected.is_some()||exit_after.is_some() {
+            if preview_id.is_some()||selected.is_some()||exit_after.is_some()||
+                force_confirmation.is_some() {
                 return Err("SHUTDOWN_UNEXPECTED_ARGUMENT".into());
             }
             let state=locked()?;
             Ok(json!({"busy":state.busy,"progress":state.progress.clone()}))
         }
         "preview" => {
-            if preview_id.is_some()||selected.is_some()||exit_after.is_some() {
+            if preview_id.is_some()||selected.is_some()||exit_after.is_some()||
+                force_confirmation.is_some() {
                 return Err("SHUTDOWN_UNEXPECTED_ARGUMENT".into());
             }
             if locked()?.busy{return Err("SHUTDOWN_ALREADY_RUNNING".into());}
@@ -782,7 +785,72 @@ pub async fn shutdown_manager_action(
             locked()?.preview=Some(preview.clone());
             Ok(json!({"preview":preview}))
         }
+        "force_all" => {
+            if !window.is_focused().unwrap_or(false) {
+                return Err("SHUTDOWN_FOCUSED_NATIVE_WINDOW_REQUIRED".into());
+            }
+            if selected.is_some()||exit_after.is_some() ||
+                force_confirmation.as_deref()!=Some("FORCE STOP ALL") {
+                return Err("SHUTDOWN_FORCE_TYPED_APPROVAL_REQUIRED".into());
+            }
+            let token=preview_id.ok_or("SHUTDOWN_PREVIEW_REQUIRED")?;
+            let original={
+                let state=locked()?;
+                if state.busy{return Err("SHUTDOWN_ALREADY_RUNNING".into());}
+                state.preview.clone().ok_or("SHUTDOWN_PREVIEW_REQUIRED")?
+            };
+            if original.preview_id!=token ||
+                timestamp().saturating_sub(original.created_at)>PREVIEW_TTL_MS {
+                return Err("SHUTDOWN_PREVIEW_EXPIRED".into());
+            }
+            let chosen=force_candidates(&original)?;
+            let blocked=original.active().filter(|item|!item.force_selectable).count();
+            let summary=format!(
+                "FORCE STOP ALL VERIFIED SUPERAGENT OWNERS?\n\n                Force stop may interrupt MCP sessions, in-flight requests and public                 Cloudflare tunnels. Quick Tunnel URLs can change after restart.\n\n                {} authenticated owner(s) eligible. {} unknown, foreign or                 unsupported owner(s) WILL REMAIN RUNNING.\n\n                The Tray stays open for status verification. Continue?",
+                chosen.len(),blocked);
+            let dialog=app.clone();
+            let approved=tauri::async_runtime::spawn_blocking(move||{
+                use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+                dialog.dialog().message(summary).buttons(
+                    MessageDialogButtons::OkCancelCustom(
+                        "Force stop verified owners".into(),"Cancel".into()
+                    )).blocking_show()
+            }).await.map_err(|_|"SHUTDOWN_NATIVE_APPROVAL_FAILED")?;
+            if !approved{return Err("SHUTDOWN_OPERATOR_CANCELLED".into());}
+            let latest=inspect().await?;
+            for item in &chosen {
+                if !latest.services.iter().any(|current|same_force_owner(item,current)) {
+                    return Err("SHUTDOWN_FORCE_OWNER_CHANGED_SINCE_PREVIEW".into());
+                }
+            }
+            let progress=Progress {run_id:Uuid::new_v4().simple().to_string(),
+                stage:"running".into(),exit_after:false,
+                steps:original.active().map(|item|Step {
+                    id:item.id.clone(),label:item.label.clone(),
+                    status:if item.force_selectable {"queued"} else {"blocked"}.into(),
+                    message:if item.force_selectable {
+                        "Force stop approved; awaiting fresh owner verification".into()
+                    } else {
+                        "Not force-stoppable: foreign, busy, or unverified owner".into()
+                    },
+                }).collect(),error:None};
+            {
+                let mut state=locked()?;
+                if state.busy{return Err("SHUTDOWN_ALREADY_RUNNING".into());}
+                if state.preview.as_ref().is_none_or(|p|p.preview_id!=token) {
+                    return Err("SHUTDOWN_PREVIEW_REPLACED".into());
+                }
+                state.busy=true;state.progress=Some(progress.clone());
+            }
+            set_progress(&app,&progress);
+            let run_id=progress.run_id.clone();
+            tauri::async_runtime::spawn(run_force_shutdown(app,chosen,progress));
+            Ok(json!({"accepted":true,"runId":run_id}))
+        }
         "execute" => {
+            if force_confirmation.is_some(){
+                return Err("SHUTDOWN_UNEXPECTED_ARGUMENT".into());
+            }
             if !window.is_focused().unwrap_or(false) {
                 return Err("SHUTDOWN_FOCUSED_NATIVE_WINDOW_REQUIRED".into());
             }
