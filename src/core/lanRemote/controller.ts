@@ -394,7 +394,8 @@ export async function offerLanFileV2(id: string, metadata: {
   name: string; size: number; sha256: string;
 }): Promise<LanV2Offer> {
   const device = authFile(id);
-  if (device.platform !== "windows") throw Error("Disk-backed V2 currently requires an updated Windows LAN target.");
+  if (device.platform !== "windows" && device.platform !== "android")
+    throw Error("Disk-backed V2 requires an updated Windows or Android LAN target.");
   if (!metadata || !/^[A-Za-z0-9_][A-Za-z0-9_ .()-]{0,95}$/.test(metadata.name) ||
       metadata.name.endsWith(".") || metadata.name.endsWith(" ") ||
       metadata.name.endsWith(".safolder") ||
@@ -424,7 +425,8 @@ export async function offerLanFileV2(id: string, metadata: {
 }
 export async function putLanFileChunkV2(id: string, transferId: string, seq: number, data: string) {
   const device = authFile(id);
-  if (device.platform !== "windows") throw Error("V2 target is not available on this client.");
+  if (device.platform !== "windows" && device.platform !== "android")
+    throw Error("V2 target is not available on this client.");
   validV2Handle(transferId, seq);
   if (typeof data !== "string" || data.length > 21848 ||
       !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data))
