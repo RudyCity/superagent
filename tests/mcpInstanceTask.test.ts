@@ -7,16 +7,32 @@ import {
   ChecklistTask,
 } from "../src/core/taskChecklist.js";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
+import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 import { superagentInstances, subagentInstances } from "../src/core/tools/state.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
 describe("Instance Current Task Tracking via MCP", () => {
   let testDir: string;
+  let priorConfigDir: string | undefined;
+  const identity = { mode: "oauth" as const, subject: "instance-task-fixture",
+    scopes: ["mcp:tools", "mcp:tools:write"] };
+  function createTaskMcpServer(options: Parameters<typeof createSuperagentMcpServer>[0] = {}) {
+    return createSuperagentMcpServer({
+      workspace: testDir, authMode: "oauth", getIdentity: () => identity, ...options,
+    });
+  }
 
   beforeEach(() => {
     setFullYoloMode(true);
+    priorConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
     testDir = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-instance-task-test-"));
+    process.env.SUPERAGENT_CONFIG_DIR = testDir;
+    registerProject({ id: "instance-task-fixture", name: "Instance Task Fixture", type: "local", root: testDir });
+    // Simulate an existing human-approved MCP planning grant in this isolated fixture.
+    // Chat YOLO on its own never authorizes MCP project access.
+    grantProjectAccess(identity, "instance-task-fixture", ["read", "planning"]);
     superagentInstances.clear();
     subagentInstances.clear();
   });
@@ -26,6 +42,9 @@ describe("Instance Current Task Tracking via MCP", () => {
     setYoloMode(false);
     superagentInstances.clear();
     subagentInstances.clear();
+    removeProject("instance-task-fixture");
+    if (priorConfigDir === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+    else process.env.SUPERAGENT_CONFIG_DIR = priorConfigDir;
     try {
       fs.rmSync(testDir, { recursive: true, force: true });
     } catch {}
@@ -91,7 +110,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     it("is registered in ListToolsRequestSchema", async () => {
       // Verify direct per-tool exposure without overriding the global
       // gateway-first default for actual MCP transports.
-      const server = createSuperagentMcpServer({ toolExposure: "full" });
+      const server = createTaskMcpServer({ toolExposure: "full" });
       const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
       const res = await listHandler({ method: "tools/list", params: {} });
       const toolNames = res.tools.map((t: any) => t.name);
@@ -101,7 +120,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("retrieves current in-progress task for a Superagent instance", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       const worktreeDir = path.join(testDir, "worktree_auth");
@@ -141,7 +160,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("supports currentOnly flag returning only the task string", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       const worktreeDir = path.join(testDir, "worktree_ui");
@@ -174,7 +193,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("retrieves current atomic task for a Subagent instance", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       subagentInstances.set("sub-research-99", {
@@ -203,7 +222,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("returns clear error for non-existent instance ID", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       const res = await callHandler({
@@ -219,7 +238,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("works through alias superagent_get_instance_task", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       subagentInstances.set("sub-coder-1", {
@@ -246,7 +265,7 @@ describe("Instance Current Task Tracking via MCP", () => {
 
   describe("MCP Tools: superagent_get_plan_and_tasks enhancements", () => {
     it("displays Current Active Task header in plan output", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       const worktreeDir = path.join(testDir, "worktree_plan_test");
@@ -286,7 +305,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("supports currentOnly: true in superagent_get_plan_and_tasks", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       const worktreeDir = path.join(testDir, "worktree_current_only");
@@ -321,7 +340,7 @@ describe("Instance Current Task Tracking via MCP", () => {
 
   describe("MCP Tools: superagent_get_status & superagent_update_tasks & superagent_manage", () => {
     it("superagent_get_status includes Goal, Current Task, and Progress", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       const worktreeDir = path.join(testDir, "worktree_status_test");
@@ -359,7 +378,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("superagent_update_tasks supports action get_current_task", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
       const worktreeDir = path.join(testDir, "worktree_update_test");
@@ -396,7 +415,7 @@ describe("Instance Current Task Tracking via MCP", () => {
     });
 
     it("superagent_manage is hidden and rejected by the MCP server", async () => {
-      const server = createSuperagentMcpServer();
+      const server = createTaskMcpServer();
       const listHandler = (server as any)._requestHandlers.get(ListToolsRequestSchema.shape.method.value);
       const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
 
@@ -505,7 +524,7 @@ describe("Instance Current Task Tracking via MCP", () => {
         expect(resolution.currentTaskStatus).toBe("in_progress");
 
         // superagent_get_plan_and_tasks auto-discovers this running superagent
-        const server = createSuperagentMcpServer();
+        const server = createTaskMcpServer();
         const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
         const planRes = await callHandler({
           method: "tools/call",
