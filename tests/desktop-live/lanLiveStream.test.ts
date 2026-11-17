@@ -2,7 +2,7 @@ import http from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { handleServerRoute } from "../../src/serverRoutes.js";
 
-describe("Desktop Live LAN Stream Routes (/api/desktop/live/lan-preview & lan-frame)", () => {
+describe("Desktop Live legacy loopback-only preview endpoints", () => {
   let server: http.Server;
   let port: number;
 
@@ -86,14 +86,14 @@ describe("Desktop Live LAN Stream Routes (/api/desktop/live/lan-preview & lan-fr
       "/api/desktop/live/lan-takeover"]) {
       const res = await request("GET", pathname, { "X-Forwarded-For": "203.0.113.7" });
       expect(res.status).toBe(403);
-      expect(JSON.parse(res.body).error).toBe("LAN_STREAM_PRIVATE_NETWORK_REQUIRED");
+      expect(JSON.parse(res.body).error).toBe("LAN_STREAM_LOOPBACK_REQUIRED");
     }
   });
 
   it("rejects DNS-rebinding Host headers on a private transport peer", async () => {
     const res = await request("GET", viewerPath, {Host: "attacker.example.test:9000"});
     expect(res.status).toBe(403);
-    expect(JSON.parse(res.body).error).toBe("LAN_STREAM_PRIVATE_NETWORK_REQUIRED");
+    expect(JSON.parse(res.body).error).toBe("LAN_STREAM_LOOPBACK_REQUIRED");
   });
 
   it("serves only a CSP-restricted, capability-free, read-only shell", async () => {
@@ -103,7 +103,7 @@ describe("Desktop Live LAN Stream Routes (/api/desktop/live/lan-preview & lan-fr
     expect(res.headers["content-security-policy"]).toContain("script-src 'nonce-");
     expect(res.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
     expect(res.headers["referrer-policy"]).toBe("no-referrer");
-    expect(res.body).toContain("LAN · View only");
+    expect(res.body).toContain("Local · View only");
     expect(res.body).toContain("history.replaceState");
     expect(res.body).toContain('method: "POST"');
     expect(res.body).not.toContain("/api/desktop/live/lan-input");
