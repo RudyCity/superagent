@@ -609,15 +609,19 @@
           offer.chunkBytes !== CHUNK || typeof offer.transferId !== "string")
         throw Error("Target returned invalid file metadata.");
       activeTransfer = offer.transferId;
+      diagnosticsStart(device, "v1", offer.size, "download");
       controls();
       const received = new Uint8Array(offer.size);
       for (let offset = 0, seq = 0; offset < offer.size; offset += CHUNK, seq++) {
         await waitIfPaused();
+        const requestStarted = Date.now();
+        let recovered = false;
         let reply;
         try {
           reply = (await invoke("file_get", { deviceId: targetId,
             transferId: activeTransfer, seq })).result;
         } catch (error) {
+          recovered = true;
           // Re-read only an unchanged, authenticated source, at most once.
           const remote = await checkpoint("download", offer.name, offer.size, offer.sha256);
           if (remote.seq !== seq && remote.seq !== seq + 1) throw error;
@@ -632,6 +636,8 @@
             offset + raw.length > offer.size || reply.received !== offset + raw.length)
           throw Error("Invalid file size/sequence in received chunk.");
         for (let i = 0; i < raw.length; i++) received[offset + i] = raw.charCodeAt(i);
+        window.LanTransferDiagnostics?.sample(offset + raw.length,
+          Date.now() - requestStarted, recovered);
         state("Receiving " + offer.name + " · " + (offset + raw.length) + "/" + offer.size + " bytes",
           (offset + raw.length) / offer.size * 100);
       }
@@ -657,12 +663,14 @@
           "File received and saved after SHA-256 verification.")
         : (isFolder ? "Folder received, but destination selection was cancelled; nothing was written." :
           "File received, but Save As was cancelled; nothing was written."), 100);
+      window.LanTransferDiagnostics?.finish(saved?.saved ? "verified" : "cancelled");
       if (saved?.saved) {
         receipt("Received", offer.name, offer.size, "Verified");
         notifyTransfer("success", "Received file saved with SHA-256 verification.");
       }
     } catch (error) {
       await abortIfNeeded();
+      window.LanTransferDiagnostics?.failure(error);
       state("Receive failed: " + String(error).slice(0, 200));
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
         "File receive outcome was not verified. Inspect device status.");
