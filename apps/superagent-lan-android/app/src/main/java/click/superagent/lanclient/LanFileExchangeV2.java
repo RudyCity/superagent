@@ -115,8 +115,19 @@ public final class LanFileExchangeV2 {
     }
     public synchronized JSONObject offer(String name, long size, String sha) throws Exception {
         validate(name, size, sha);
-        if (active != null && SystemClock.elapsedRealtime() - active.lastUsed < EXPIRE_MS)
-            throw new SecurityException("Another V2 transfer active.");
+        if (active != null && SystemClock.elapsedRealtime() - active.lastUsed < EXPIRE_MS) {
+            Pending same = active;
+            if (!same.name.equals(name) || same.size != size || !same.sha256.equals(sha))
+                throw new SecurityException("Another V2 transfer active.");
+            if (!part(same.id).isFile() || part(same.id).length() != same.received)
+                throw new SecurityException("V2 staged checkpoint changed.");
+            same.lastUsed = SystemClock.elapsedRealtime();
+            return new JSONObject().put("ok", true).put("version", 2)
+                    .put("transferId", same.id).put("direction", "upload")
+                    .put("name", name).put("size", size).put("sha256", sha)
+                    .put("chunkBytes", CHUNK_BYTES).put("seq", same.seq)
+                    .put("received", same.received).put("resumed", same.received > 0);
+        }
         active = null;
         ensureStage();
         File[] entries = stage.listFiles((dir, filename) -> filename.endsWith(".json"));
