@@ -160,12 +160,63 @@ describe("separately approved private mTLS controller (no Core HTTP/MCP)",()=>{
       });
       expect(client.isConnected).toBe(true);
       client.close();
+      await vi.waitFor(()=>expect(f.host.isStopped).toBe(true));
       await expect(RemotePrivateControllerClient.connect({
         privateAddress:address.address,port:address.port,
         credential:f.credential,pinnedServerCertSha256:pin,
         clientCert:cert,clientKey:key,trustedCa:cert,
       })).rejects.toThrow();
     }finally{client?.close();f.host.stop();}
+  },12000);
+
+  it("terminates the one-use listener and aborts a native approval on viewer disconnect",async()=>{
+    const f=setup();
+    let client:RemotePrivateControllerClient|undefined;
+    let finishApproval:((proof:string)=>void)|undefined;
+    f.approveNative.mockImplementation((challenge:RemoteControlChallenge)=>
+      new Promise<string>(resolve=>{
+        finishApproval=proof=>resolve(proof);
+      }));
+    try{
+      client=await f.connect();
+      const approval=client.requestScope("mouse");
+      await vi.waitFor(()=>expect(f.approveNative).toHaveBeenCalledOnce());
+      await expect(client.requestScope("keyboard")).rejects.toThrow(/BUSY_OR_DENIED/);
+      client.close();
+      await expect(approval).rejects.toThrow();
+      await vi.waitFor(()=>expect(f.host.isStopped).toBe(true));
+      expect(f.nativeDispatch).not.toHaveBeenCalled();
+      finishApproval?.(createHmac("sha256","native-host-only-test-key")
+        .update(JSON.stringify(f.approveNative.mock.calls[0]?.[0])).digest("hex"));
+      await Promise.resolve();
+      expect(f.host.isStopped).toBe(true);
+      expect(f.nativeDispatch).not.toHaveBeenCalled();
+    }finally{client?.close();f.host.stop();}
+  },12000);
+
+  it("revokes in-flight native input if private controller disconnects mid-action",async()=>{
+    const f=setup();
+    let client:RemotePrivateControllerClient|undefined;
+    let releaseNative:(()=>void)|undefined;
+    let nativeCheckpoint=vi.fn();
+    f.nativeDispatch.mockImplementation(async(_input:unknown,authorizeNow:()=>void)=>{
+      await new Promise<void>(resolve=>{releaseNative=resolve;});
+      nativeCheckpoint();
+      authorizeNow(); // Host lease must reject this after controller disconnect.
+    });
+    try{
+      client=await f.connect();
+      expect(await client.requestScope("mouse")).toBe(true);
+      const input=client.sendInput(click);
+      await vi.waitFor(()=>expect(f.nativeDispatch).toHaveBeenCalledOnce());
+      client.close();
+      await expect(input).rejects.toThrow();
+      await vi.waitFor(()=>expect(f.host.isStopped).toBe(true));
+      releaseNative?.();
+      await vi.waitFor(()=>expect(nativeCheckpoint).toHaveBeenCalledOnce());
+      expect(f.controller.isClosed).toBe(false); // View may survive; input lease is revoked.
+      await expect(client.sendInput(click)).rejects.toThrow();
+    }finally{releaseNative?.();client?.close();f.host.stop();}
   },12000);
 
   it("denies public and wildcard listener interfaces before opening a socket",()=>{
