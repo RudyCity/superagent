@@ -8,6 +8,7 @@
   const MAX = 4 * 1024 * 1024;
   const CHUNK = 4096;
   const MAX_FILES = 64;
+  const MAX_QUEUE_FILES = 32;
   const MAX_MANIFEST = 32768;
   const MAGIC = "SAFOLDER1";
   const HEADER = 13; // 9 ASCII bytes + uint32 big-endian JSON length
@@ -19,6 +20,7 @@
   let cancelled = false;
   let activeTransfer = null;
   let targetId = null;
+  let batch = null;
   const selected = () => {
     const device = window.__superagentLanGetSelected?.();
     return device?.connected ? device : null;
@@ -26,7 +28,10 @@
   function state(message, progress = null) {
     if ($("lan-file-state")) $("lan-file-state").textContent = String(message).slice(0, 90);
     if ($("lan-file-info")) $("lan-file-info").textContent = String(message).slice(0, 300);
-    if (progress !== null && $("lan-file-progress")) $("lan-file-progress").value = Math.max(0, Math.min(100, progress));
+    if (progress !== null && $("lan-file-progress")) {
+      const overall = batch ? (batch.index + progress / 100) * 100 / batch.total : progress;
+      $("lan-file-progress").value = Math.max(0, Math.min(100, overall));
+    }
   }
   // Explicitly check WebKit directory-picking support. Never pretend an ordinary
   // multi-file selection represents a folder or silently flatten its structure.
@@ -36,9 +41,9 @@
   };
   function controls() {
     const hasDevice = Boolean(selected());
-    const file = $("lan-file-source")?.files?.[0];
+    const files = $("lan-file-source")?.files;
     const folder = $("lan-folder-source");
-    if ($("lan-file-send")) $("lan-file-send").disabled = busy || !hasDevice || !file;
+    if ($("lan-file-send")) $("lan-file-send").disabled = busy || !hasDevice || !files?.length;
     if ($("lan-folder-send")) $("lan-folder-send").disabled =
       busy || !hasDevice || !folderSupported() || !folder?.files?.length;
     if ($("lan-file-receive")) $("lan-file-receive").disabled = busy || !hasDevice;
@@ -251,34 +256,50 @@
   async function send() {
     if (busy) return;
     const device = selected();
-    const file = $("lan-file-source")?.files?.[0];
-    if (!device || !file) return;
-    if (!filenameAllowed(file.name) || file.size < 1 || file.size > MAX) {
-      state("Only regular files with safe ASCII names, 1 byte–4 MiB, can be transferred.");
+    const input = $("lan-file-source");
+    const files = Array.from(input?.files || []);
+    if (!device || !files.length) return;
+    if (files.length > MAX_QUEUE_FILES || files.some((file) =>
+        !filenameAllowed(file.name) || !Number.isSafeInteger(file.size) ||
+        file.size < 1 || file.size > MAX)) {
+      state("Select 1–32 files with safe ASCII names, each between 1 byte and 4 MiB.");
       return;
     }
-    if (!window.confirm("Send " + file.name + " (" + file.size + " bytes) to " +
-      device.label + "? The target owner must approve this file individually.")) return;
+    if (!window.confirm("Send " + files.length + " selected file(s) to " + device.label +
+      "? The target owner must approve EACH file individually.")) return;
     const ticket = window.TrayFeedback?.begin({
-      key: "lan:file:send", button: $("lan-file-send"), label: "Sending file…",
+      key: "lan:file:send", button: $("lan-file-send"),
+      label: files.length > 1 ? "Sending file queue…" : "Sending file…",
     });
     if (window.TrayFeedback && !ticket) return;
     busy = true; cancelled = false; targetId = device.id; activeTransfer = null;
+    batch = { index: 0, total: files.length };
     controls();
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      if (bytes.length !== file.size) throw Error("Local file changed during selection.");
-      const message = await sendBuffer(device, file.name, bytes);
-      if ($("lan-file-source")) $("lan-file-source").value = "";
-      state(message, 100);
-      notifyTransfer("success", "File transfer verified on target.");
+      let message = "";
+      for (let i = 0; i < files.length; i++) {
+        assertActive();
+        batch.index = i;
+        const file = files[i];
+        state("Queue " + (i + 1) + "/" + files.length + " · preparing " + file.name, 0);
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        assertActive();
+        if (bytes.length !== file.size) throw Error("Local file changed during selection.");
+        message = await sendBuffer(device, file.name, bytes);
+      }
+      if (input) input.value = "";
+      batch.index = files.length;
+      state(files.length === 1 ? message :
+        "Sent " + files.length + "/" + files.length +
+        " selected files; SHA-256 verified on each target.", 100);
+      notifyTransfer("success", files.length + " file(s) verified on target.");
     } catch (error) {
       await abortIfNeeded();
       state("Send failed: " + String(error).slice(0, 200));
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
-        "File transfer was not confirmed. Inspect device status before retrying.");
+        "File queue stopped. Inspect device status before retrying unsent files.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; targetId = null;
+      activeTransfer = null; busy = false; cancelled = false; targetId = null; batch = null;
       ticket?.end(); controls();
     }
   }
