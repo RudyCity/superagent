@@ -98,6 +98,7 @@ jobs:
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
             tests/mcpPolicyHttpSmoke.test.ts \
+            tests/mcpLiveVerifierDiagnostics.test.ts \
             tests/desktop-ui-activation/live-activation-gate.test.ts \
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
@@ -133,6 +134,7 @@ jobs:
           tests/mcpExactFileSearch.test.ts
           tests/mcpExplicitGrepIntegration.test.ts
           tests/mcpPolicyHttpSmoke.test.ts
+          tests/mcpLiveVerifierDiagnostics.test.ts
           tests/desktop-ui-activation/live-activation-gate.test.ts
           tests/mcpFilePolicyMatrix.test.ts
           tests/desktop-ui-integration/registered-file-tool-gate.test.ts
