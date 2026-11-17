@@ -100,7 +100,25 @@ export class LanDiskTargetV2 {
   }
   private async offerUploadExclusive(name: unknown, size: unknown, sha256: unknown) {
     validMetadata(name, size, sha256);
-    if (this.active) throw Error("Another V2 transfer is active.");
+    if (this.active) {
+      const existing = this.active;
+      const same = existing.name === name && existing.size === size &&
+        existing.sha256 === sha256;
+      if (!same && Date.now() - existing.lastUsed < 600_000)
+        throw Error("Another V2 transfer is active.");
+      if (same && Date.now() - existing.lastUsed < 600_000) {
+        const info = await fs.lstat(this.part(existing.id));
+        if (!info.isFile() || info.isSymbolicLink() || info.size !== existing.received)
+          throw Error("Cannot resume changed V2 staging file.");
+        existing.lastUsed = Date.now();
+        return { ok: true, version: 2, transferId: existing.id,
+          direction: "upload" as const, name: existing.name, size: existing.size,
+          sha256: existing.sha256, chunkBytes: LAN_V2_CHUNK_BYTES,
+          seq: existing.sequence, received: existing.received,
+          resumed: existing.received > 0 };
+      }
+      this.active = null; // Expired lease: recover only through re-approved disk checkpoint.
+    }
     await this.ensureStage();
     const entries = (await fs.readdir(this.stage)).filter(entry => UUID.test(entry.replace(/\.json$/, "")) && entry.endsWith(".json"));
     if (entries.length > 512) throw Error("Transfer staging quota exceeded.");
