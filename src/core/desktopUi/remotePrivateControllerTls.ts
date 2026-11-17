@@ -95,6 +95,10 @@ export interface RemotePrivateControllerTlsHostOptions {
   /** Delivered to viewer only via trusted out-of-band native UI. */
   readonly credential:RemotePrivateViewerCredential;
   readonly controller:AttendedNativeControllerSession;
+  /** Trusted, host-only live-viewer membership check. The exact session ID
+   * comes from the server's native-approved viewer, never a remote payload.
+   */
+  readonly isApprovedViewerActive:(sessionId:string)=>boolean;
   /** OS-only attended prompt; must return a fresh host-signed challenge proof. */
   readonly approveNative:(challenge:Readonly<RemoteControlChallenge>)=>Promise<unknown>;
   readonly now?:()=>number;
@@ -125,15 +129,26 @@ export class RemotePrivateControllerTlsHost {
 
   constructor(private readonly options:Readonly<RemotePrivateControllerTlsHostOptions>) {
     if(!options||typeof options.approveNative!=="function"||
+       typeof options.isApprovedViewerActive!=="function"||
        !options.controller||options.controller.isClosed)deny();
     this.now=options.now||Date.now;
     this.serverName=verifiedOptions(options.material,options.credential,this.now());
     this.key=Buffer.from(options.credential.viewerKey,"hex");
   }
 
+  /** A dropped/replaced viewer means the input lease is no longer usable.
+   * Read this only from the installed host's authoritative mTLS view state.
+   */
+  private viewerReady():boolean {
+    try {
+      return !this.stopped && this.options.controller.isClosed===false &&
+        this.options.isApprovedViewerActive(this.options.credential.sessionId)===true;
+    }catch{return false;}
+  }
+
   /** Does not start at application boot. Requires explicit native provisioning. */
   async start():Promise<{address:string;port:number;expiresAt:number}> {
-    if(this.stopped||this.starting||this.server||this.options.controller.isClosed)deny();
+    if(this.stopped||this.starting||this.server||!this.viewerReady())deny();
     this.starting=true;
     try{
       const material=this.options.material;
@@ -164,7 +179,7 @@ export class RemotePrivateControllerTlsHost {
   private accept(socket:TLSSocket):void {
     const v=this.options.credential;
     const peer=socket.getPeerCertificate(true)?.raw;
-    if(this.stopped||this.bound||this.accepted||this.options.controller.isClosed||
+    if(this.stopped||this.bound||this.accepted||!this.viewerReady()||
        !socket.encrypted||!socket.authorized||socket.getProtocol()!=="TLSv1.3"||
        socket.alpnProtocol!==REMOTE_PRIVATE_CONTROLLER_ALPN||
        typeof socket.servername!=="string"||
@@ -203,7 +218,7 @@ export class RemotePrivateControllerTlsHost {
 
   private receive(c:BoundControl,raw:Buffer):void {
     if(this.stopped||this.bound!==c||c.socket.destroyed||
-       c.busy||this.options.controller.isClosed||
+       c.busy||!this.viewerReady()||
        this.now()>=this.options.credential.expiresAt||
        raw.length>REMOTE_PRIVATE_CONTROLLER_MAX_WIRE+4||
        c.incoming.length+raw.length>REMOTE_PRIVATE_CONTROLLER_MAX_WIRE+4){
@@ -230,6 +245,7 @@ export class RemotePrivateControllerTlsHost {
   }
 
   private async process(c:BoundControl,message:unknown):Promise<void> {
+    if(!this.viewerReady())deny();
     if(c.phase==="auth"){
       if(!exact(message,["v","type","nonce","proof"])||
          message.v!==1||message.type!=="authenticate"||
@@ -263,7 +279,7 @@ export class RemotePrivateControllerTlsHost {
           }),
         ]);
         if(this.stopped||this.bound!==c||c.socket.destroyed||
-           this.now()>=this.options.credential.expiresAt)deny();
+           !this.viewerReady()||this.now()>=this.options.credential.expiresAt)deny();
         const result=this.options.controller.confirmScope(challenge.nonce,proof);
         c.grants[family]={token:result.token,expiresAt:result.expiresAt};
         if(!this.write(c,{v:1,type:"scope-granted",family,
@@ -292,9 +308,9 @@ export class RemotePrivateControllerTlsHost {
         k==="key"||k==="type"?"keyboard":null;
       if(!family)deny();
       const grant=c.grants[family];
-      if(!grant||grant.expiresAt<=this.now())deny();
+      if(!grant||grant.expiresAt<=this.now()||!this.viewerReady())deny();
       const result=await this.options.controller.input(c.principal,grant.token,request);
-      if(this.stopped||this.bound!==c||c.socket.destroyed)deny();
+      if(this.stopped||this.bound!==c||c.socket.destroyed||!this.viewerReady())deny();
       // Only a non-sensitive disposition; never send target labels, OS errors,
       // screenshots, native references or the host-held input capability.
       if(!this.write(c,{v:1,type:"input-result",status:result.status,
