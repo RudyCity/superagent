@@ -18,6 +18,7 @@ import {
   type SlotOwnerMetadata,
 } from "./cliBridgeRecovery.js";
 import { jobShardPath } from "./cliBridgeJobStore.js";
+import { DEFAULT_CLI_BRIDGE_PARALLEL_JOBS, MAX_CLI_BRIDGE_PARALLEL_JOBS } from "./cliBridgeScheduler.js";
 
 export interface CliBridgeCapacityLease {
   index: number;
@@ -239,8 +240,8 @@ export async function acquireCliBridgeCapacity(
   extraMetadata?: Partial<CliBridgeCapacityOwnerMetadata>,
   options?: { autoRecoverOrphans?: boolean; capacityDir?: string; jobsDir?: string }
 ): Promise<CliBridgeCapacityLease> {
-  if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > 12)
-    throw new Error("CLI Bridge capacity must be an integer between 1 and 12.");
+  if (!Number.isSafeInteger(maxConcurrent) || maxConcurrent < 1 || maxConcurrent > MAX_CLI_BRIDGE_PARALLEL_JOBS)
+    throw new Error(`CLI Bridge capacity must be an integer between 1 and ${MAX_CLI_BRIDGE_PARALLEL_JOBS}.`);
   const root = options?.capacityDir || capacityRoot();
   await fs.mkdir(root, { recursive: true });
 
@@ -332,16 +333,16 @@ export async function releaseCliBridgeCapacity(lease: CliBridgeCapacityLease): P
 }
 
 export async function listDetailedCapacitySlots(
-  maxConcurrent = 4,
+  maxConcurrent = DEFAULT_CLI_BRIDGE_PARALLEL_JOBS,
   options?: { capacityDir?: string; jobsDir?: string }
 ): Promise<DetailedCapacitySlotDiagnostic[]> {
-  const count = Math.min(12, Math.max(1, maxConcurrent));
+  const count = Math.min(MAX_CLI_BRIDGE_PARALLEL_JOBS, Math.max(1, maxConcurrent));
   return Promise.all(
     Array.from({ length: count }, (_, index) => inspectCapacitySlot(index, options))
   );
 }
 
-export async function listCliBridgeCapacity(maxConcurrent = 4): Promise<Array<{
+export async function listCliBridgeCapacity(maxConcurrent = DEFAULT_CLI_BRIDGE_PARALLEL_JOBS): Promise<Array<{
   index: number; occupied: boolean; ownerPid?: number; acquiredAt?: number; jobId?: string;
 }>> {
   const detailed = await listDetailedCapacitySlots(maxConcurrent);

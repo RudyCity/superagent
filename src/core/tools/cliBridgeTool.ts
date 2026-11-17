@@ -103,6 +103,7 @@ import { getTrustedCliBridgeAgent } from "./cliBridgeAgentOwner.js";
 import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
 import { projectCliDelegate } from "../channels/unifiedChannelTask.js";
 import { listDetailedCapacitySlots, recoverProvenOrphanSlot } from "./cliBridgeCapacity.js";
+import { MAX_CLI_BRIDGE_PARALLEL_JOBS } from "./cliBridgeScheduler.js";
 import { inspectAgyBridgeOutput, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
 import { listRoleProfiles, getRoleProfile } from "./cliBridgeRoleProfiles.js";
 import {
@@ -196,7 +197,7 @@ export const cliBridgeTool: Tool = {
           "'delegate' for short synchronous autonomous tasks, " +
           "'delegate.start' for long-running background tasks that return a jobId immediately (default 60 minutes; up to 12 hours), " +
           "'delegate.jobs' to list concurrent jobs, 'delegate.agents' to show per-agent concurrency summaries, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks, plus 'delegate.recovery' to inspect read-only owner/child process hints (requires jobId). " +
-          "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 8); authenticated agent quota is 2 and CLI adapter quota is 4 by default. Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
+          "The default concurrency limit is 16 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 32); authenticated agent quota is 8 and CLI adapter quota is 16 by default. CPU/memory pressure reduces effective slots automatically. Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
           "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
           "'session.send' to message it, " +
           "'session.respond' to answer a pending prompt, " +
@@ -393,7 +394,7 @@ export const cliBridgeTool: Tool = {
       },
       slot: {
         type: "number",
-        description: "Capacity slot index (0 to 11) for action=delegate.recover-slot.",
+        description: "Capacity slot index (0 to 31) for action=delegate.recover-slot.",
       },
       priority: {
         type: "number",
@@ -594,8 +595,8 @@ export const cliBridgeTool: Tool = {
             return "Error: 'slot' (slot index number) is required for action=delegate.recover-slot.";
           }
           const slotIndex = Number.parseInt(String(slotRaw), 10);
-          if (!Number.isSafeInteger(slotIndex) || slotIndex < 0 || slotIndex >= 12) {
-            return `Error: Invalid slot index '${slotRaw}'. Must be an integer between 0 and 11.`;
+          if (!Number.isSafeInteger(slotIndex) || slotIndex < 0 || slotIndex >= MAX_CLI_BRIDGE_PARALLEL_JOBS) {
+            return `Error: Invalid slot index '${slotRaw}'. Must be an integer between 0 and ${MAX_CLI_BRIDGE_PARALLEL_JOBS - 1}.`;
           }
           try {
             const res = await recoverProvenOrphanSlot(slotIndex);
@@ -1183,7 +1184,7 @@ function formatStartedDelegateJob(job: Awaited<ReturnType<typeof startDelegateJo
     "Poll with action=delegate.get, jobId=" + job.jobId + ".",
     "Read the log tail with action=delegate.tail, jobId=" + job.jobId + ".",
     "Cancel with action=delegate.cancel, jobId=" + job.jobId + ".",
-    "Multiple delegate.start jobs can run concurrently (default limit: 4).",
+    "Multiple delegate.start jobs can run concurrently (default configured limit: 16, maximum 32; effective slots depend on host resources).",
   ].join("\n");
 }
 

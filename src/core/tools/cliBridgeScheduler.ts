@@ -3,6 +3,10 @@ import type { SystemResourceSample, ResourcePressureLevel } from "./cliBridgeRes
 export type JobPriority = "critical" | "high" | "normal" | "low";
 export type ResourceClass = "light" | "normal" | "heavy" | "exclusive";
 
+/** Shared admission/lease/diagnostic hard ceiling; do not expose unbounded slots. */
+export const MAX_CLI_BRIDGE_PARALLEL_JOBS = 32;
+export const DEFAULT_CLI_BRIDGE_PARALLEL_JOBS = 16;
+
 export interface SchedulerPolicy {
   minSlots: number;
   maxSlots: number;
@@ -18,13 +22,13 @@ export interface SchedulerPolicy {
 
 export const DEFAULT_SCHEDULER_POLICY: SchedulerPolicy = {
   minSlots: 2,
-  maxSlots: 8,
-  configuredSlots: 4,
+  maxSlots: MAX_CLI_BRIDGE_PARALLEL_JOBS,
+  configuredSlots: DEFAULT_CLI_BRIDGE_PARALLEL_JOBS,
   cooldownMs: 5000,
-  perProjectQuota: 4,
-  perOwnerQuota: 2,
-  perCliAdapterQuota: 4,
-  maxHeavyJobs: 1,
+  perProjectQuota: 16,
+  perOwnerQuota: 8,
+  perCliAdapterQuota: 16,
+  maxHeavyJobs: 2,
 };
 
 export interface ScheduledJobRequest {
@@ -63,24 +67,33 @@ export function calculateEffectiveSlots(
   now: number = Date.now()
 ): { effectiveSlots: number; changed: boolean; timestamp: number } {
   let targetSlots: number;
+  // Larger configured pools must still fit the machine. CPU contention can
+  // make launching 32 heavyweight CLI processes worse than a bounded queue.
+  // Each core permits at most two in-flight delegates; existing jobs survive
+  // contraction and only *new* work is back-pressured.
+  const coreBudget = Math.max(policy.minSlots, Math.max(1, sample.cpu.cores) * 2);
+  const healthyCapacity = Math.max(
+    policy.minSlots,
+    Math.min(policy.maxSlots, policy.configuredSlots, coreBudget),
+  );
 
   switch (sample.pressure) {
     case "critical":
       targetSlots = policy.minSlots;
       break;
     case "high":
-      targetSlots = Math.max(policy.minSlots, Math.min(3, policy.configuredSlots));
+      targetSlots = Math.max(policy.minSlots, Math.ceil(healthyCapacity * 0.5));
       break;
     case "moderate":
-      targetSlots = Math.max(policy.minSlots, Math.min(4, policy.configuredSlots));
+      targetSlots = Math.max(policy.minSlots, Math.ceil(healthyCapacity * 0.75));
       break;
     case "none":
     default:
-      targetSlots = Math.max(policy.minSlots, Math.min(policy.maxSlots, policy.configuredSlots));
+      targetSlots = healthyCapacity;
       break;
   }
 
-  targetSlots = Math.max(policy.minSlots, Math.min(policy.maxSlots, targetSlots));
+  targetSlots = Math.max(policy.minSlots, Math.min(healthyCapacity, targetSlots));
 
   // If scaling down, apply immediately
   if (targetSlots < currentEffective) {

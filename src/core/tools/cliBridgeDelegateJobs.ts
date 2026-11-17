@@ -34,7 +34,7 @@ import { acquireCliBridgeCapacity, releaseCliBridgeCapacity, updateCliBridgeCapa
 import { sampleSystemResources, type SystemResourceSample, type ResourcePressureLevel } from "./cliBridgeResourceSampler.js";
 import {
   calculateEffectiveSlots, evaluateJobAdmission, CliBridgePriorityQueue,
-  DEFAULT_SCHEDULER_POLICY, type JobPriority, type ResourceClass, type ScheduledJobRequest, type SchedulerPolicy,
+  DEFAULT_SCHEDULER_POLICY, MAX_CLI_BRIDGE_PARALLEL_JOBS, type JobPriority, type ResourceClass, type ScheduledJobRequest, type SchedulerPolicy,
 } from "./cliBridgeScheduler.js";
 import {
   acquireResourceClaims, releaseResourceClaims,
@@ -403,14 +403,14 @@ export function getSchedulerContext(): {
   const configuredEnv = process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
   const configured = Number.parseInt(configuredEnv ?? "", 10);
   const configuredSlots = Number.isFinite(configured) && configured >= 1
-    ? Math.max(1, Math.min(8, configured))
+    ? Math.max(1, Math.min(MAX_CLI_BRIDGE_PARALLEL_JOBS, configured))
     : DEFAULT_SCHEDULER_POLICY.configuredSlots;
 
   const quotaEnv = process.env.SUPERAGENT_CLI_BRIDGE_PER_PROJECT_QUOTA;
   const parsedQuota = Number.parseInt(quotaEnv ?? "", 10);
   const perProjectQuota = Number.isFinite(parsedQuota) && parsedQuota >= 1
-    ? Math.max(1, Math.min(8, parsedQuota))
-    : Math.max(DEFAULT_SCHEDULER_POLICY.perProjectQuota, 4);
+    ? Math.max(1, Math.min(MAX_CLI_BRIDGE_PARALLEL_JOBS, parsedQuota))
+    : DEFAULT_SCHEDULER_POLICY.perProjectQuota;
 
   if (configuredEnv !== lastConfiguredEnv) {
     lastConfiguredEnv = configuredEnv;
@@ -422,10 +422,12 @@ export function getSchedulerContext(): {
   const perCliRaw = Number.parseInt(process.env.SUPERAGENT_CLI_BRIDGE_PER_CLI_QUOTA ?? "", 10);
   const policy: SchedulerPolicy = {
     ...DEFAULT_SCHEDULER_POLICY,
-    perOwnerQuota: Number.isSafeInteger(perAgentRaw) && perAgentRaw >= 1 ? Math.min(8, perAgentRaw) : 2,
-    perCliAdapterQuota: Number.isSafeInteger(perCliRaw) && perCliRaw >= 1 ? Math.min(8, perCliRaw) : 4,
+    perOwnerQuota: Number.isSafeInteger(perAgentRaw) && perAgentRaw >= 1
+      ? Math.min(MAX_CLI_BRIDGE_PARALLEL_JOBS, perAgentRaw) : DEFAULT_SCHEDULER_POLICY.perOwnerQuota,
+    perCliAdapterQuota: Number.isSafeInteger(perCliRaw) && perCliRaw >= 1
+      ? Math.min(MAX_CLI_BRIDGE_PARALLEL_JOBS, perCliRaw) : DEFAULT_SCHEDULER_POLICY.perCliAdapterQuota,
     minSlots: Math.min(2, configuredSlots),
-    maxSlots: 8,
+    maxSlots: MAX_CLI_BRIDGE_PARALLEL_JOBS,
     configuredSlots,
     perProjectQuota,
   };

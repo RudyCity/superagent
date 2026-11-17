@@ -53,6 +53,27 @@ afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true }).catch(() => {});
 });
 
+describe("Expanded host-wide CLI Bridge capacity", () => {
+  it("allocates and inspects more than twelve verified local capacity slots", async () => {
+    const leases = [];
+    try {
+      for (let i = 0; i < 17; i++) {
+        const lease = await acquireCliBridgeCapacity(32, "capacity-growth-" + i,
+          {}, { capacityDir: testCapacityDir, autoRecoverOrphans: false });
+        leases.push(lease);
+      }
+      expect(leases.map(x => x.index)).toEqual(Array.from({ length: 17 }, (_, i) => i));
+      const slots = await listDetailedCapacitySlots(32, { capacityDir: testCapacityDir });
+      expect(slots).toHaveLength(32);
+      expect(slots[16].occupied).toBe(true);
+      await expect(acquireCliBridgeCapacity(33, "excess", {}, { capacityDir: testCapacityDir }))
+        .rejects.toThrow(/between 1 and 32/);
+    } finally {
+      await Promise.all(leases.map(x => releaseCliBridgeCapacity(x)));
+    }
+  });
+});
+
 describe("Milestone M1 — Safe capacity slot classification and orphan recovery", () => {
   it("classifies unoccupied slots as available", () => {
     const res = classifyCapacitySlot({ exists: false });

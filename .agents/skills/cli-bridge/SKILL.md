@@ -20,7 +20,7 @@ The `cli_bridge` tool enables Superagent to offload tasks to external AI CLI ass
 2. **Long-Running / Parallel Delegation Jobs (`action: "delegate.start"`)**:
    - Starts an autonomous one-shot CLI job in the background and immediately returns a `jobId`. The job keeps running after the initial MCP call returns.
    - Poll with `delegate.get`, read log output with `delegate.tail`, list all jobs with `delegate.jobs`, or stop one with `delegate.cancel`.
-   - Background timeout defaults to 30 minutes and accepts 1 second through 2 hours. Default concurrency is 4 jobs, configurable with `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` (maximum 12).
+   - Background timeout defaults to 30 minutes and accepts 1 second through 2 hours. Default configured concurrency is 16 jobs, configurable with `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` (maximum 32). Actual parallel execution is limited by CPU and memory pressure, project/agent/adapter quotas, and capacity leases.
    - **Best for**: Builds, test suites, large refactors, multi-step implementation tasks, and parallel independent subtasks.
 
 3. **Interactive Subprocess Sessions (`action: "session.*"`)**:
@@ -87,7 +87,7 @@ Example starting a long task:
 
 The response contains a `jobId`. Poll it using `delegate.get` and fetch output with `delegate.tail`; continue polling until the job reaches a terminal status (`succeeded`, `failed`, `timed_out`, `cancelled`, or `interrupted`). Do not start another copy merely because the first call returned: that return means the job was accepted, not that the work finished.
 
-For parallel work, start one job per independent subtask and use separate Git worktrees / working directories for tasks that edit files. Multiple jobs in the same directory share the same files and can overwrite or conflict with one another. The default cap is 4 active jobs; set `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` to a value from 1 to 12 to tune it.
+For parallel work, start one job per independent subtask and use separate Git worktrees / working directories for tasks that edit files. Multiple jobs in the same directory share the same files and can overwrite or conflict with one another. The default configured cap is 16 active jobs; set `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` from 1 to 32 to tune it. Effective concurrency is dynamically constrained by host CPU and memory pressure.
 
 Example: Delegating code analysis & rewrite with multiple reference directories attached:
 

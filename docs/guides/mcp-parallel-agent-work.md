@@ -12,15 +12,17 @@ proof that a currently installed Tray/MCP backend has been updated.
 - T-Line jobs use the trusted server-originated T-Line session provenance.
   Client-supplied `agentId`, `role`, `clientInfo`, prompts and tool arguments
   **cannot create or change** owner identity or access grants.
-- Default host capacity is four delegates (adaptive 2–8), with a default of
-  **two active jobs per verified agent**, **four per CLI adapter**, and
-  **four per project**. Existing direct unattributed local launches retain
+- Default host capacity is **16 delegates** (configurable ceiling **32**), with
+  **eight active jobs per verified agent**, **16 per CLI adapter**, and
+  **16 per project**. The *effective* admission cap is also limited to two
+  delegates per CPU core, and moderate/high/critical CPU-or-memory pressure
+  reduces new admissions. Existing jobs are never killed when it contracts. Existing direct unattributed local launches retain
   their previous admissions; host/project/adapter caps still apply.
 - Optional environment configuration on the trusted owner process:
-  `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` (1–8),
-  `SUPERAGENT_CLI_BRIDGE_PER_AGENT_QUOTA` (1–8),
-  `SUPERAGENT_CLI_BRIDGE_PER_CLI_QUOTA` (1–8),
-  `SUPERAGENT_CLI_BRIDGE_PER_PROJECT_QUOTA` (1–8).
+  `SUPERAGENT_CLI_BRIDGE_MAX_JOBS` (1–32),
+  `SUPERAGENT_CLI_BRIDGE_PER_AGENT_QUOTA` (1–32),
+  `SUPERAGENT_CLI_BRIDGE_PER_CLI_QUOTA` (1–32),
+  `SUPERAGENT_CLI_BRIDGE_PER_PROJECT_QUOTA` (1–32).
   These are capacity settings, **not** authentication or host permission grants.
 
 ## Running agents in parallel

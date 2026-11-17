@@ -9,6 +9,8 @@ import {
   evaluateJobAdmission,
   calculateJobSchedulingScore,
   CliBridgePriorityQueue,
+  MAX_CLI_BRIDGE_PARALLEL_JOBS,
+  DEFAULT_SCHEDULER_POLICY,
   type ScheduledJobRequest,
   type SchedulerPolicy,
 } from "../src/core/tools/cliBridgeScheduler.js";
@@ -332,15 +334,37 @@ describe("Milestone M2 — Dynamic Concurrency and Resource-Aware Scheduling", (
       expect(scoreB).toBeGreaterThan(scoreA);
     });
 
-    it("enforces hard dynamic capacity bounds 2..8 even when configured higher", async () => {
-      process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = "12";
+    it("caps configured concurrency at 32 while host CPU pressure bounds effective slots", async () => {
+      process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS = "99";
       const { getSchedulerContext } = await import("../src/core/tools/cliBridgeDelegateJobs.js");
-      const ctx = getSchedulerContext();
-      expect(ctx.effectiveSlots).toBeLessThanOrEqual(8);
-      expect(ctx.effectiveSlots).toBeGreaterThanOrEqual(2);
-      expect(ctx.policy.maxSlots).toBe(8);
-      expect(ctx.policy.minSlots).toBe(2);
-      delete process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
+      try {
+        const ctx = getSchedulerContext();
+        expect(ctx.configuredSlots).toBe(MAX_CLI_BRIDGE_PARALLEL_JOBS);
+        expect(ctx.effectiveSlots).toBeLessThanOrEqual(MAX_CLI_BRIDGE_PARALLEL_JOBS);
+        expect(ctx.effectiveSlots).toBeGreaterThanOrEqual(2);
+        expect(ctx.policy.maxSlots).toBe(MAX_CLI_BRIDGE_PARALLEL_JOBS);
+        expect(ctx.policy.minSlots).toBe(2);
+      } finally {
+        delete process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS;
+      }
+    });
+
+    it("admits 16 healthy slots on 8 CPU cores and scales toward 32 on larger hosts", () => {
+      const sample: SystemResourceSample = {
+        timestamp: 1000,
+        cpu: { cores: 8, loadAverage1m: 0, usagePercent: 10 },
+        memory: { totalBytes: 32 * 2**30, freeBytes: 24 * 2**30, freePercent: 75, processRssBytes: 1000 },
+        pressure: "none",
+        activeJobs: { light: 0, normal: 0, heavy: 0, exclusive: 0, total: 0 },
+      };
+      const policy = { ...DEFAULT_SCHEDULER_POLICY, configuredSlots: 32 };
+      expect(calculateEffectiveSlots(sample, policy, 2, 0, 10000).effectiveSlots).toBe(16);
+      sample.cpu.cores = 16;
+      expect(calculateEffectiveSlots(sample, policy, 2, 0, 10000).effectiveSlots).toBe(32);
+      sample.pressure = "high";
+      expect(calculateEffectiveSlots(sample, policy, 32, 0, 10000).effectiveSlots).toBe(16);
+      sample.pressure = "critical";
+      expect(calculateEffectiveSlots(sample, policy, 32, 0, 10000).effectiveSlots).toBe(2);
     });
 
     it("self-drains restored durable queue on startup when host has capacity (S5)", async () => {
