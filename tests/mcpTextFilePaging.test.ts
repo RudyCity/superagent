@@ -42,6 +42,23 @@ describe("bounded MCP text file paging", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+  it("keeps UTF-8 code points intact across byte cursor pages", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-mcp-utf8-"));
+    const file = path.join(dir, "unicode.txt");
+    try {
+      fs.writeFileSync(file, "🙂".repeat(1000));
+      const first = await readMcpTextFilePage(file, { maxBytes: 257 });
+      expect(first.rows[0].text).toBe("🙂".repeat(64));
+      expect(first.nextOffsetBytes).toBe(256);
+      const next = await readMcpTextFilePage(file, {
+        startLine: first.nextStartLine, offsetBytes: first.nextOffsetBytes, maxBytes: 257,
+      });
+      expect(next.rows[0].text).toBe("🙂".repeat(64));
+      expect(next.nextOffsetBytes).toBe(512);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
   it("honors endLine, empty files, and invalid cursors", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "superagent-mcp-file-"));
     const file = path.join(dir, "sample.txt");

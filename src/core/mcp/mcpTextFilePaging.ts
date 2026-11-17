@@ -56,10 +56,15 @@ export async function readMcpTextFilePage(filePath: string, opts: McpFilePageOpt
         if (selected) {
           const remaining = maxBytes - outputBytes;
           if (segment.length > remaining) {
-            if (remaining > 0) parts.push(Buffer.from(segment.subarray(0, remaining)));
-            outputBytes += remaining;
-            rows.push({ line, text: Buffer.concat(parts).toString("utf8") });
-            return makePage(position + from + remaining, true, true);
+            const prefix = Buffer.concat([...parts, segment.subarray(0, remaining)]);
+            let safeBytes = prefix.length;
+            if ((segment[remaining] & 0xc0) === 0x80) {
+              while (safeBytes > 0 && (prefix[safeBytes - 1] & 0xc0) === 0x80) safeBytes--;
+              if (safeBytes > 0) safeBytes--;
+            }
+            const removedBytes = prefix.length - safeBytes;
+            rows.push({ line, text: prefix.subarray(0, safeBytes).toString("utf8") });
+            return makePage(position + from + remaining - removedBytes, true, true);
           }
           if (segment.length) parts.push(Buffer.from(segment));
           outputBytes += segment.length;
