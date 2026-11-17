@@ -10,6 +10,7 @@ import { registeredFileToolGate } from "../tools/registeredFileToolGate.js";
 
 import fs from "fs";
 import { blockedYoloToolCall } from "../yoloBlocklist.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../project/projectAccessRequestStore.js";
 import path from "path";
 import os from "os";
 import crypto from "node:crypto";
@@ -27,11 +28,8 @@ import {
 import { getSuperAgentVersion } from "../config/paths.js";
 import { MAX_DELEGATE_TIMEOUT_MS, MIN_DELEGATE_TIMEOUT_MS } from "../tools/cliBridgeTimeouts.js";
 import {
-  getYoloModeState,
-  isFullYoloMode,
-  isToolCallWithinYoloScope,
-  isPathWithinYoloScope,
-  getYoloAllowedRoot,
+  isToolCallWithinMcpScope,
+  isPathWithinMcpScope,
   isModelConfigAccess,
   isSensitiveEnvFileAccess,
 } from "../permissions.js";
@@ -630,13 +628,10 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
 
   const getAuthorizedMcpTools = () => {
     const allTools = MCP_TOOL_DEFINITIONS;
-    // Allowlist: hide non-allowed tools from MCP clients.
-    // If allowDangerous is true OR CLI YOLO mode is active ("scoped" | "full"),
-    // dangerous tools are dynamically unlocked for discovery.
-    const yoloState = getYoloModeState();
-    const isDangerousUnlocked = canUnlockMcpDangerousTools({
-      lockSafeTools, allowDangerous: Boolean(allowDangerous), yoloState,
-    });
+    // MCP discovery is independent of the chat-agent YOLO mode.
+    // Listing a tool never authorizes execution: OAuth, grants, file policy,
+    // and per-tool host approvals are verified again for every invocation.
+    const isDangerousUnlocked = canUnlockMcpDangerousTools({ lockSafeTools });
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     // OAuth tool discovery must reflect the CURRENT token, not local YOLO
     // configuration. A revoked/read-only token must not see write tools.
@@ -654,8 +649,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         && canDiscoverRead
         && (!effectiveAllowedTools || effectiveAllowedTools.includes(t.name))
         && (!lockSafeTools || MCP_TOOL_CLASSIFICATION[t.name] === "safe")
-        // YOLO OFF is always read-only; --allow-dangerous, OAuth and grants cannot bypass it.
-        && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || (yoloState !== "off" && canDiscoverDangerous))
+        && (MCP_TOOL_CLASSIFICATION[t.name] !== "dangerous" || canDiscoverDangerous)
         && (!PRIVILEGED_MCP_TOOLS.has(t.name) || canDiscoverAdmin)
     );
     return tools;
@@ -696,11 +690,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     const earlyBlockedRoot = blockedYoloToolCall(args, activeWorkspace);
     if (earlyBlockedRoot) {
       if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "yolo_path_blocked"; }
-      return { content: [{ type: "text", text: `Access denied by YOLO blocklist: ${earlyBlockedRoot}` }], isError: true };
+      return { content: [{ type: "text", text: `Access denied by MCP hard safety blocklist: ${earlyBlockedRoot}` }], isError: true };
     }
-    if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
+    if (isSensitiveEnvFileAccess({ name, args })) {
       if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "protected_path"; }
-      return { content: [{ type: "text", text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard." }], isError: true };
+      return { content: [{ type: "text", text: "MCP access to protected .env files is prohibited; chat YOLO does not override MCP security policy." }], isError: true };
     }
     if (typeof args.projectId === "string" && !WORKSPACE_SCOPED_MCP_TOOLS.has(name)
       && name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name)) {
@@ -730,8 +724,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         const message = error instanceof Error ? error.message : String(error);
         const rawExplicitTarget = [args.workspace, args.cwd, args.worktreePath]
           .find((value) => typeof value === "string" && value.trim()) as string | undefined;
-        // Preserve legacy absolute/relative workspace targets only as candidates;
-        // the Scoped YOLO boundary below remains the authoritative permission check.
+        // Legacy target spelling is only a candidate: the MCP project grant
+        // and exact registered-project boundary remain authoritative.
         if (!args.projectId && rawExplicitTarget && !/^(?:ssh:|chain:)/i.test(rawExplicitTarget)
           && message.includes("Workspace target is not registered or authorized")) {
           targetWorkspace = path.isAbsolute(rawExplicitTarget)
@@ -756,13 +750,15 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       && !chainUriTarget) {
       const selectedProjectRequiresGrant = Boolean(activeProjectGrantRequired && targetProjectId && targetProjectId === activeProjectId);
       const scopedLocalAccess = !selectedProjectRequiresGrant && !sshUriTarget
-        && isPathWithinYoloScope(targetWorkspace, scopedWorkspaceAnchor);
+        && isPathWithinMcpScope(targetWorkspace, scopedWorkspaceAnchor);
       const capability = getProjectCapabilityForTool(name, args);
       const grantedProjectAccess = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(name) && targetProjectId && identityForProjectAccess?.subject
         && hasProjectAccess(identityForProjectAccess, targetProjectId, capability));
       // A host grant for the Core executable is never a substitute for the
       // authenticated MCP principal\u0027s own project capability grant.
-      if (!scopedLocalAccess && !grantedProjectAccess) {
+      // Only an identity-bound project grant authorizes project file/shell tools.
+      // Being inside the initial workspace is not an implicit MCP approval.
+      if (!grantedProjectAccess && name !== "superagent_get_workspace") {
         if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "capability_denied"; }
         const reason = name === "superagent_check_project_health"
           ? "[PROJECT_GRANT_MISSING] Project health check is not authorized for this project. The authenticated MCP identity needs the explicit 'read' capability or approval via superagent_request_project_access."
@@ -918,7 +914,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               identityForProjectAccess, projectId, "read",
             )),
             (candidateWorkspace) => !/^(?:ssh:|chain:)/i.test(candidateWorkspace)
-              && isPathWithinYoloScope(candidateWorkspace, scopedWorkspaceAnchor),
+              && isPathWithinMcpScope(candidateWorkspace, scopedWorkspaceAnchor),
           );
         case "superagent_get_workspace":
           return await handleGetWorkspace();
@@ -995,7 +991,6 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
           // Rendering writes an artifact and executes a worker: explicitly require
           // both capabilities when an MCP project grant (not local scope) is used.
           if (["superagent_motion_render", "superagent_motion_generate", "superagent_motion_revise", "superagent_studio_render", "superagent_studio_generate", "superagent_studio_revise"].includes(name) && targetProjectId && identityForProjectAccess?.subject
-            && !isPathWithinYoloScope(targetWorkspace, scopedWorkspaceAnchor)
             && !hasProjectAccess(identityForProjectAccess, targetProjectId, "write")) {
             return { content: [{ type: "text", text: "Motion rendering also requires project write capability." }], isError: true };
           }
@@ -1028,7 +1023,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
              if (sshUriTarget || chainUriTarget || (providerContext && providerContext.providerKind !== "local")) {
                return { content: [{ type: "text", text: "Media processing requires an authorized local workspace." }], isError: true };
              }
-             const allowMediaWrite = !lockSafeTools && getYoloModeState() !== "off"
+             const allowMediaWrite = !lockSafeTools
                && (authMode !== "oauth" || Boolean(getIdentity?.()?.scopes?.includes("mcp:tools:write")));
              return await dispatchMediaMcpTool(name, args, targetWorkspace, { allowWrite: allowMediaWrite });
            }
@@ -1038,7 +1033,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
             if (sshUriTarget || chainUriTarget || (providerContext && providerContext.providerKind !== "local")) {
               return { content: [{ type: "text", text: "PDF editing is supported only for authorized local workspaces." }], isError: true };
             }
-            const allowPdfWrite = !lockSafeTools && getYoloModeState() !== "off"
+            const allowPdfWrite = !lockSafeTools
               && (authMode !== "oauth" || Boolean(getIdentity?.()?.scopes?.includes("mcp:tools:write")));
             return await dispatchPdfMcpTool(name, args, targetWorkspace, { allowWrite: allowPdfWrite });
           }
@@ -1116,7 +1111,7 @@ function extractMcpResultText(result: unknown): string {
   return "";
 }
 
-  // Allowlist + audit + YOLO boundary wrapper around the dispatcher above.
+  // Independent MCP Security Approval + OAuth + host policy wrapper.
   const handleMcpCall = async (request: any): Promise<any> => {
     const toolName = String((request.params as any)?.name || "");
     const rawArgs = (request.params as any)?.arguments || {};
@@ -1130,10 +1125,7 @@ function extractMcpResultText(result: unknown): string {
       (key === "command" || key === "action" || key === "sessionToken" || key === "text")
         ? value : "[REDACTED_DESKTOP_INPUT]",
     ]));
-    const yoloState = getYoloModeState();
-    const isDangerousUnlocked = canUnlockMcpDangerousTools({
-      lockSafeTools, allowDangerous: Boolean(allowDangerous), yoloState,
-    });
+    const isDangerousUnlocked = canUnlockMcpDangerousTools({ lockSafeTools });
     const effectiveAllowedTools = isDangerousUnlocked ? undefined : allowedTools;
     const level = MCP_TOOL_CLASSIFICATION[toolName];
     const isDangerous = level === "dangerous";
@@ -1231,21 +1223,20 @@ function extractMcpResultText(result: unknown): string {
           workspace: activeWorkspace,
         });
         throw new McpError(ErrorCode.InvalidRequest,
-          "Tool requires OAuth " + requiredScope + " scope; local dangerous/YOLO mode cannot elevate token permissions.");
+          "Tool requires OAuth " + requiredScope + " scope; Security Approval cannot elevate token permissions.");
       }
     }
-    // Re-evaluate the local YOLO state on EVERY invocation, including gateway
-    // recursion and pre-existing MCP sessions. Explicit tunnel opt-in is only
-    // tool exposure, never a substitute for locally enabled YOLO.
-    if (isDangerous && yoloState === "off") {
-      const reason = "YOLO OFF denies MCP write/execute tools even with --allow-dangerous, OAuth write/admin scopes, or project grants. Enable /yolo on locally for scoped access or /yolo full locally for broader access.";
+    // Connection-wide operations (service control, LAN, desktop input, etc.)
+    // require an explicit principal-scoped approval. Project operations instead
+    // require their own project-specific grant, checked at the dispatch boundary.
+    if (isDangerous && !WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
+        && toolName !== "superagent_grant_project_access"
+        && (!callerIdentity?.subject ||
+          !hasProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
+      const reason = "[MCP_APPROVAL_REQUIRED] This operation requires the 'execute' capability on MCP Connection Controls, approved by the human in SuperAgent Tray. Chat YOLO does not authorize MCP.";
       auditContext.authorizationDecision = "denied";
-      auditContext.errorCode = "yolo_off";
+      auditContext.errorCode = "mcp_approval_required";
       emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
-      emitMcpActivity({
-        type: "tool_call", tool: toolName, args: {}, ok: false, error: reason,
-        durationMs: 0, timestamp: Date.now(), workspace: activeWorkspace,
-      });
       throw new McpError(ErrorCode.InvalidRequest, reason);
     }
     if (toolName !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(toolName)
@@ -1317,9 +1308,9 @@ function extractMcpResultText(result: unknown): string {
     }
     const blockedRoot = blockedYoloToolCall(rawArgs, effectiveWs);
     if (blockedRoot) {
-      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: "YOLO blocklist denied access" });
+      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: "MCP hard safety blocklist denied access" });
       return {
-        content: [{ type: "text", text: `Access denied by YOLO blocklist: ${blockedRoot}` }],
+        content: [{ type: "text", text: `Access denied by MCP hard safety blocklist: ${blockedRoot}` }],
         isError: true,
       };
     }
@@ -1357,54 +1348,31 @@ function extractMcpResultText(result: unknown): string {
       throw new McpError(
         ErrorCode.InvalidRequest,
         isDangerous
-          ? `Tool '${toolName}' is classified as dangerous and is blocked by MCP tool allowlist. ` +
-            `Enable it dynamically via SuperAgent CLI (/yolo or /yolo full) or restart the tunnel with --allow-dangerous.`
+          ? `Tool '${toolName}' is classified as dangerous and is blocked by the MCP owner's explicit tool allowlist.`
           : `Tool '${toolName}' is not enabled on this MCP server (blocked by MCP tool allowlist).`
       );
     }
 
-    // Scoped YOLO boundary guard (Layer 1)
-    // If Full YOLO is active, system-wide access is permitted.
-    // If Scoped YOLO is active (or allowDangerous without full YOLO), enforce scope boundary!
-    const chainToolsRequireDedicatedBoundary = toolName === "superagent_manage_workspace_chain" || toolName === "superagent_cross_workspace_exec";
-    // Gateway calls do not carry the target paths in their own schema.
-    // The recursively dispatched target call enforces the original YOLO boundary.
+    // Independently enforce the exact approved project boundary, never the
+    // chat agent's YOLO parent-directory or Full YOLO bypass.
     if (isDangerous && toolName !== MCP_GATEWAY_TOOL_NAMES.execute
-      && !isFullYoloMode() && !chainToolsRequireDedicatedBoundary && toolName !== "superagent_brain") {
-      const remoteSshTarget = /^ssh:/i.test(effectiveWs);
+        && WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
+        && toolName !== "superagent_switch_workspace") {
+      const project = effectiveProjectId ? getProject(effectiveProjectId) : null;
+      const identity = getIdentity?.();
       const capability = getProjectCapabilityForTool(toolName, rawArgs);
-      const boundaryIdentity = getIdentity?.();
-      const projectGrant = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) && effectiveProjectId && boundaryIdentity?.subject
-        && hasProjectAccess(boundaryIdentity, effectiveProjectId, capability));
-      const protectedModelConfig = isModelConfigAccess({ name: toolName, args: rawArgs }, effectiveWs);
-      // An explicit project grant may expand the workspace root, but can never
-      // override the protected model configuration check. SSH paths are validated
-      // by the standalone provider; shell execution still runs with the SSH user's OS privileges.
-      const projectAdministrationRequiresFullYolo = [
-        "superagent_register_project", "superagent_update_project", "superagent_remove_project",
-        "superagent_grant_project_access",
-      ].includes(toolName);
-      const selectedProjectRequiresGrant = Boolean(activeProjectGrantRequired && effectiveProjectId && effectiveProjectId === activeProjectId);
-      const scopedBoundaryAllows = !projectAdministrationRequiresFullYolo && !selectedProjectRequiresGrant && !remoteSshTarget
-        && isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, scopedWorkspaceAnchor);
-      const grantedProjectBoundaryAllows = !projectAdministrationRequiresFullYolo && projectGrant && !protectedModelConfig
-        && (remoteSshTarget || isToolCallWithinYoloScope({ name: toolName, args: rawArgs }, effectiveWs));
-      const inScope = grantedProjectBoundaryAllows || scopedBoundaryAllows;
-      if (!inScope) {
-        const allowedRoot = getYoloAllowedRoot(effectiveWs);
-        const errReason = `Tool '${toolName}' call was blocked by Scoped YOLO boundary: operation targets path or resource outside allowed scope (${allowedRoot}) or accesses protected config files. Use /yolo full in SuperAgent CLI for unrestricted system-wide access.`;
-        emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
-        emitMcpActivity({
-          type: "tool_call",
-          tool: toolName,
-          args: rawArgs,
-          ok: false,
-          error: "Blocked by Scoped YOLO boundary",
-          durationMs: 0,
-          timestamp: Date.now(),
-          workspace: effectiveWs,
-        });
-        throw new McpError(ErrorCode.InvalidParams, errReason);
+      const grant = Boolean(project?.enabled && identity?.subject &&
+        hasProjectAccess(identity, project.id, capability));
+      const remoteProject = project?.type === "ssh" || project?.type === "chain";
+      const within = Boolean(project && (remoteProject ||
+        (project.type === "local" && project.root &&
+          isToolCallWithinMcpScope({ name: toolName, args: rawArgs }, project.root))));
+      if (!grant || !within) {
+        auditContext.authorizationDecision = "denied";
+        auditContext.errorCode = "mcp_project_scope_denied";
+        const reason = "[PROJECT_GRANT_MISSING] Tool requires a matching MCP project capability and exact project path. Request approval in SuperAgent Tray; chat YOLO cannot bypass this.";
+        emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
+        throw new McpError(ErrorCode.InvalidParams, reason);
       }
     }
     const startedAt = Date.now();
