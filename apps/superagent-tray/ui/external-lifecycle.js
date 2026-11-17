@@ -22,6 +22,8 @@
   };
   const time = ms => ms ? new Date(ms).toLocaleString() : "—";
   const state = { busy: false, workflows: [], runs: [], workers: [], targets: [] };
+  let pendingCreateKey = null;
+  const runKeys = new Map();
   const feedback = (message, error = false) => {
     const node = $("external-life-feedback");
     node.textContent = message;
@@ -185,8 +187,10 @@
         const steps = advanced ? JSON.parse(advanced)
           : [{ id:"task", prompt, dependsOn:[], ...(workerId ? { targetWorkerId:workerId } : {}) }];
         if (!Array.isArray(steps)) throw Error("Advanced tasks must be a JSON array.");
+        pendingCreateKey ||= "tray_" + window.crypto.randomUUID();
         await call("create", { name:$("external-life-name").value.trim(),
-          prompt, steps, ...schedule() });
+          prompt, steps, ...schedule(), idempotencyKey: pendingCreateKey });
+        pendingCreateKey = null;
         feedback("Scheduled delegation created. An approved MCP worker can claim it when due.");
         $("external-life-name").value = "";
         $("external-life-prompt").value = "";
@@ -204,10 +208,15 @@
           ? "Only retry after checking that the previous attempt did not perform an irreversible action. Continue?"
           : "Cancel this workflow and its active or queued runs?")) return;
       const args = { [target.dataset.key]:target.dataset.id };
+      if (action === "run.now") {
+        if (!runKeys.has(target.dataset.id)) runKeys.set(target.dataset.id, "tray_" + window.crypto.randomUUID());
+        args.idempotencyKey = runKeys.get(target.dataset.id);
+      }
       if (action === "review.retry") args.stepId = target.dataset.step;
       state.busy = true; target.disabled = true;
       try {
         await call(action, args);
+        if (action === "run.now") runKeys.delete(target.dataset.id);
         feedback("Lifecycle action acknowledged by Core.");
       } catch (error) {
         feedback(error instanceof Error ? error.message : "Lifecycle operation failed.", true);
