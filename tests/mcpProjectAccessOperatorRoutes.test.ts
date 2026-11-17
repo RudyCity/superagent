@@ -1,11 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { handleServerRoute } from "../src/serverRoutes.js";
 import { ensureServerAuthToken } from "../src/core/utils/serverSecurity.js";
 
 describe("MCP project access operator route boundary", () => {
+  const priorConfig = process.env.SUPERAGENT_CONFIG_DIR;
+  const sandbox = fs.mkdtempSync(path.join(os.tmpdir(), "sa-project-operator-"));
+  beforeAll(() => { process.env.SUPERAGENT_CONFIG_DIR = sandbox; });
+  afterAll(() => {
+    if (priorConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+    else process.env.SUPERAGENT_CONFIG_DIR = priorConfig;
+    fs.rmSync(sandbox, { recursive: true, force: true });
+  });
   async function invoke(
     pathname: string,
-    options: { peer?: string; host?: string; origin?: string; token?: string; method?: string } = {},
+    options: { peer?: string; host?: string; origin?: string; token?: string; method?: string; body?: string } = {},
   ) {
     const reply: { status?: number; body?: any } = {};
     const host = options.host ?? "localhost:7888";
@@ -22,6 +34,7 @@ describe("MCP project access operator route boundary", () => {
     const response = { setHeader() {} } as any;
     const ctx = {
       activeSessions: new Map(),
+      readBody: async () => options.body || "{}",
       sendJSON(_res: unknown, status: number, body: any) {
         reply.status = status;
         reply.body = body;
@@ -76,6 +89,57 @@ describe("MCP project access operator route boundary", () => {
     expect(invalid.status).toBe(403);
     const mismatched=await invoke(pathname,{origin:"https://untrusted.example.com"});
     expect(mismatched.status).toBe(403);
+  });
+
+  it("requires a native one-use MAC beyond the Core bearer, and revokes on disable/remove", async () => {
+    const folder=path.join(sandbox,"real-project");
+    fs.mkdirSync(folder,{recursive:true});
+    const registration={action:"register",id:"operator-fixture",name:"Operator Fixture",
+      type:"local",root:folder};
+    const challenge=await invoke("/api/desktop/access/projects/challenge",{method:"GET"});
+    expect(challenge.status).toBe(200);
+    expect(challenge.body.nonce).toMatch(/^[a-f0-9]{48}$/);
+    const direct=await invoke("/api/desktop/access/projects/register",{body:JSON.stringify(registration)});
+    expect(direct.status).toBe(403);
+    const bypass=await invoke("/api/desktop/access/projects/mutate",
+      {body:JSON.stringify(registration)});
+    expect(bypass.status).toBe(403);
+    const sign=(nonce:string,payload:any)=>{
+      const key=Buffer.from(fs.readFileSync(path.join(sandbox,
+        ".mcp-project-operator.key"),"utf8").trim(),"hex");
+      const payloadText=JSON.stringify(payload);
+      const mac=crypto.createHmac("sha256",key)
+        .update("superagent-project-operator-v1:"+nonce+":"+payloadText).digest("hex");
+      return JSON.stringify({payloadText,proof:{nonce,mac}});
+    };
+    const url="/api/desktop/access/projects/mutate";
+    const registered=await invoke(url,{body:sign(challenge.body.nonce,registration)});
+    expect(registered.status).toBe(201);
+    expect(registered.body.capabilitiesGranted).toBe(false);
+    expect(registered.body.project.projectId).toBe("operator-fixture");
+    const replay=await invoke(url,{body:sign(challenge.body.nonce,registration)});
+    expect(replay.status).toBe(403);
+    const staleRev=registered.body.project.updatedAt;
+    const disable={action:"update",projectId:"operator-fixture",
+      expectedUpdatedAt:staleRev,enabled:false};
+    const ch2=await invoke("/api/desktop/access/projects/challenge",{method:"GET"});
+    const disabled=await invoke(url,{body:sign(ch2.body.nonce,disable)});
+    expect(disabled.status).toBe(200);
+    expect(disabled.body.project.enabled).toBe(false);
+    const grantChoices=await invoke("/api/desktop/access/projects",{method:"GET"});
+    expect(grantChoices.body.projects.some((p:any)=>p.projectId==="operator-fixture")).toBe(false);
+    const inventory=await invoke("/api/desktop/access/projects/inventory",{method:"GET"});
+    expect(inventory.body.projects.some((p:any)=>p.projectId==="operator-fixture")).toBe(true);
+    const ch3=await invoke("/api/desktop/access/projects/challenge",{method:"GET"});
+    const stale=await invoke(url,{body:sign(ch3.body.nonce,{
+      action:"remove",projectId:"operator-fixture",expectedUpdatedAt:staleRev})});
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe("PROJECT_STALE_REVISION");
+    const ch4=await invoke("/api/desktop/access/projects/challenge",{method:"GET"});
+    const removed=await invoke(url,{body:sign(ch4.body.nonce,{
+      action:"remove",projectId:"operator-fixture",expectedUpdatedAt:disabled.body.project.updatedAt})});
+    expect(removed.status).toBe(200);
+    expect(removed.body.capabilitiesGranted).toBe(false);
   });
 
   it("returns only explicitly registered enabled project choices to native Tray", async () => {
