@@ -73,7 +73,7 @@ describe("bounded explicit approved-file literal search",()=>{
     expect(gate({query:"hello",filePaths:["alpha.txt","secret.txt"]})).toMatch(/denies read/);
     expect(gate({query:"hello",path:cwd})).toMatch(/Unmediated/);
     expect(gate({query:"hello",filePaths:["alpha.txt"],isRegex:true})).toMatch(/Unmediated/);
-    expect(gate({query:"hello",filePaths:["alpha.txt"],workspace:"../outside"}))
-      .toMatch(/Unmediated|workspace|traversal|not certified/);
+    expect(gate({query:"hello",filePaths:["alpha.txt"],path:"../outside"}))
+      .toMatch(/Unmediated/);
   });
 });
