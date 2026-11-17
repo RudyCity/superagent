@@ -164,6 +164,37 @@ describe("Desktop Live legacy loopback-only preview endpoints", () => {
     expect(JSON.parse(res.body).error).toBe("FRAME_UNAVAILABLE_OR_REVOKED");
   });
 
+  it("does not accept browser-origin native controller requests", async () => {
+    for (const op of ["challenge","approve","status","revoke"]) {
+      const path="/api/desktop/lan-controller/"+op;
+      const response=await request("POST",path,{
+        Origin:"http://untrusted.example.test",
+        "Content-Type":"application/json",
+      },"{}");
+      expect(response.status).toBe(403);
+      expect(JSON.parse(response.body).error).toBe("ANDROID_CONTROLLER_LOCAL_ONLY");
+    }
+  });
+
+  it("requires POST for all native controller authorization operations", async () => {
+    for (const op of ["challenge","approve","status","revoke"]) {
+      const result=await request("GET","/api/desktop/lan-controller/"+op);
+      expect(result.status).toBe(405);
+      expect(JSON.parse(result.body).error).toBe("METHOD_NOT_ALLOWED");
+    }
+  });
+
+  it("rejects forged controller bearer on revoke even if the view is reachable", async () => {
+    const result=await request("POST","/api/desktop/lan-controller/revoke",
+      {"Content-Type":"application/json"},
+      JSON.stringify({
+        deviceId:"123e4567-e89b-12d3-a456-426614174000",
+        controllerToken:dummyToken,
+      }));
+    expect(result.status).toBe(409);
+    expect(JSON.parse(result.body).success).toBe(false);
+  });
+
   it("rejects native input and takeover for every method even with a preview token", async () => {
     for (const pathname of ["/api/desktop/live/lan-input","/api/desktop/live/lan-takeover"]) {
       for (const method of ["GET","POST"]) {
