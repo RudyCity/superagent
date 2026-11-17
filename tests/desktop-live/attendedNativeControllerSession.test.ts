@@ -9,6 +9,9 @@ import type {
 import type {
   RemoteNativeSemanticAdapter,
 } from "../../src/core/desktopUi/remoteNativeInputDispatch.js";
+import { sha256 } from "../../src/core/desktopUi/png.js";
+import { semanticElementHash } from "../../src/core/desktopUi/remoteInputGuard.js";
+import type { DesktopUiElement, DesktopUiSchema } from "../../src/core/desktopUi/types.js";
 
 const principal: RemotePrincipal = {
   principalId:"trusted-operator",connectionId:"private-mtls-connection",
@@ -21,6 +24,33 @@ const hostScope: RemoteHostScope = {
   viewSessionId:principal.viewSessionId,
 };
 const secret="test-attended-native-scope-key";
+const nowMs=1_800_000_000_000;
+const image=Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZsAAAAASUVORK5CYII=",
+  "base64",
+);
+const element:DesktopUiElement={
+  id:"edit1",source:"accessibility",nativeRef:"automationId:TestInput",
+  role:"textbox",label:"Test input",description:null,value:"",
+  actionable:true,focused:true,confidence:1,
+  bounds:{x:10,y:10,width:100,height:25},center:{x:60,y:22.5},
+};
+const schema:DesktopUiSchema={
+  version:1,platform:"win32",
+  screenshot:{
+    revision:1,sha256:sha256(image),capturedAt:new Date(nowMs-20).toISOString(),
+    width:1,height:1,pixelRatioX:1,pixelRatioY:1,
+    targetWindow:{
+      pid:hostScope.pid,nativeId:hostScope.nativeId,title:"Disposable test window",
+      bounds:{x:0,y:0,width:800,height:600},active:true,
+    },
+  },
+  windows:[],warnings:[],elements:[element],
+};
+const clickInput={
+  kind:"click",sequence:1,expectedRevision:1,expectedHash:sha256(image),
+  elementId:element.id,expectedElementHash:semanticElementHash(element),
+};
 function signature(challenge: RemoteControlChallenge) {
   return createHmac("sha256",secret).update(JSON.stringify(challenge)).digest("hex");
 }
@@ -28,7 +58,9 @@ function signature(challenge: RemoteControlChallenge) {
 function setup() {
   let allowed=true;
   const viewer={ humanTakeover:vi.fn() };
-  const nativeDispatch=vi.fn(async (_input:unknown,_authorizeNow:()=>void)=>{});
+  const nativeDispatch=vi.fn(async (_input:unknown,authorizeNow:()=>void)=>{
+    authorizeNow();
+  });
   const adapter:RemoteNativeSemanticAdapter={
     platform:"win32",nativeRefOnly:true,
     dispatchVerifiedNativeRef:nativeDispatch,
@@ -41,11 +73,13 @@ function setup() {
   };
   const session=new AttendedNativeControllerSession({
     hostTrust:trust,
-    captureFresh:async()=>null,
+    captureFresh:async()=>({
+      verifiedInsideCapture:true as const,png:image,schema,hostScope:{...hostScope},
+    }),
     adapter,
     hostPlatform:"win32",
     viewer,
-    now:()=>1_800_000_000_000,
+    now:()=>nowMs,
   });
   const grant=(scope:"mouse"|"keyboard")=>{
     const challenge=session.requestScope(principal,scope);
@@ -63,9 +97,12 @@ describe("host-only attended native controller lifecycle",()=>{
     const {challenge,token}=f.grant("mouse");
     expect(challenge.kinds).toEqual(["click","scroll"]);
     expect(await f.session.input(principal,token,{
-      kind:"type",sequence:1,text:"unapproved",
+      ...clickInput,kind:"type",text:"unapproved",
     })).toEqual({status:"blocked",reason:"INPUT_DENIED"});
     expect(f.nativeDispatch).not.toHaveBeenCalled();
+    expect(await f.session.input(principal,token,clickInput))
+      .toEqual({status:"dispatched"});
+    expect(f.nativeDispatch).toHaveBeenCalledOnce();
     expect(()=>f.session.requestScope(principal,"keyboard")).toThrow(/already exists/);
   });
 
