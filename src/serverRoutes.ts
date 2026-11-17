@@ -464,6 +464,12 @@ export async function handleServerRoute(
     if (handled) return true;
   }
 
+  // External ChatGPT worker lifecycle (authenticated local Core operator API).
+  {
+    const { handleExternalLifecycleRoutes } = await import("./core/lifecycle/lifecycleRoutes.js");
+    if (await handleExternalLifecycleRoutes(req, res, pathname, { sendJSON, readBody })) return true;
+  }
+
   // ─── Headless Daemon & Cron Scheduler Routes ────────────────────────────────
   if (pathname.startsWith("/api/daemon")) {
     const { handleDaemonRoutes } = await import("./core/daemon/daemonRoutes.js");
