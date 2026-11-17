@@ -884,7 +884,8 @@ export const controlChromeCdpTool: Tool = {
       highlightBeforeClick: { type: "boolean", description: "Preflight and re-check visible, unobscured element before clicking; fail closed if layout changes." },
       frameId: { type: "string", description: "Explicit qualified iframe CDP frameId from inspect_qualified_frames. Never falls back to parent DOM." },
       recordingId: { type: "string", description: "Opaque ID returned by record_start; required for export and replay." },
-      video: { type: "boolean", description: "record_session_start: enabled by default; capture exact managed Chrome tab as MP4 under the CURRENT PROJECT .superagent/recordings/cdp directory." },
+      video: { type: "boolean", description: "record_session_start: enabled by default; capture exact authorized Chrome tab as MP4 under the CURRENT PROJECT .superagent/recordings/cdp directory." },
+      videoPreset: { type: "string", enum: ["compact","standard","detail"], description: "record_session_start: compact 640x360 3 FPS; standard 960x540 5 FPS (default); detail 1280x720 5 FPS." },
       confirmSensitiveVideo: { type: "boolean", description: "record_session_start: required explicit true. Video may contain passwords, messages, and other visible sensitive page data. 10-minute maximum, no audio." },
       workflowId: { type: "string", description: "Opaque workflow ID returned by workflow_start; enforces recorded action order." },
       confirmSkip: { type: "boolean", description: "Required true to skip a manual-only workflow step." },
@@ -932,7 +933,7 @@ export const controlChromeCdpTool: Tool = {
     const convenienceKeys = [
       "files", "filePaths", "filePath", "paths", "path", "inputIndex", "input_index", "allowOutsideWorkspace", "confirmExternalFile", "successSelector", "expectedNames", "fileNames", "nativeDialog", "confirmNativeDialog", "windowTitle", "arm", "triggerSelector", "expectedRevision", "recoverByUrl", "expectedUrl", "url", "index", "text", "selector", "option", "optionText", "optionIndex", "exact", "wait_ms", "pattern", "query", "filter", "expression", "compact", "diff", "max_elements", "timeout_ms", "clear", "native", "wait_for_elements", "auto_snapshot", "screenshot", "auto_screenshot", "outputPath", "output_path", "fullPage", "full_page", "format", "quality", "verify", "observe", "debounce_ms", "accept", "promptText", "prompt_text", "max_lines", "before_line", "viewport_only", "enter", "key", "terminal_id", "allow_dangerous", "multiline_mode", "allow_visual_fallback", "auto_crop_screenshot", "expected_output", "verify_shell", "force_new_command", "wait_ms", "rebind_on_reload", "debug_port", "debug_ports",
       "grantPermissions", "grant_permissions", "resetPermissions", "reset_permissions", "smooth", "human", "realistic", "x", "y", "steps", "step_delay_ms", "dwell_ms", "press_ms", "visualCursor", "visual", "cursorName", "nativeClick", "deltaX", "deltaY", "source", "target", "sourceIndex", "targetIndex", "source_index", "target_index", "sourceSelector", "targetSelector", "source_selector", "target_selector", "sourceX", "sourceY", "fromX", "fromY", "startX", "startY", "targetX", "targetY", "toX", "toY", "endX", "endY", "dx", "dy", "deltaX", "deltaY",
-      "mode", "ttlMs", "highlightBeforeClick", "recordingId", "video", "confirmSensitiveVideo", "workflowId", "confirmSkip", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
+      "mode", "ttlMs", "highlightBeforeClick", "recordingId", "video", "videoPreset", "confirmSensitiveVideo", "workflowId", "confirmSkip", "sequence", "confirmReplay", "holdDurationMs", "hold_duration_ms", "dropDwellMs", "drop_dwell_ms", "preset", "device", "orientation", "screenOrientation", "width", "height", "scale", "deviceScaleFactor", "mobile", "touch", "userAgent", "platform", "list_presets", "action", "tabIndex", "tab_index", "includeAudio", "include_audio", "fps", "label", "includeImageData", "include_image_data", "includeValues", "include_values", "includeBase64", "include_base64", "gid", "all_sheets", "allSheets", "cursor", "max_items", "maxItems", "max_chars", "maxChars", "max_links", "maxLinks", "limit",
     ];
     for (const key of convenienceKeys) {
       if (args[key] !== undefined && payload[key] === undefined) payload[key] = args[key];
@@ -2061,6 +2062,7 @@ export const controlChromeCdpTool: Tool = {
               const recorded = await startCdpSessionArchive(scope,{
                 projectDirectory:recordingWorkspace,
                 video: payload.video !== false,
+                videoPreset: payload.videoPreset as "compact" | "standard" | "detail" | undefined,
                 confirmSensitiveVideo:payload.confirmSensitiveVideo === true,
                 captureFrame:async() => {
                   const screenshot = await cdpSend(target,"Page.captureScreenshot",{
