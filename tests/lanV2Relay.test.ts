@@ -99,8 +99,11 @@ describe("P1 device-to-device large-file relay V2", () => {
     expect(h.aborted).not.toContain(dst);
     expect(h.manager.status(job.id).error).toContain("checkpoint retained");
   });
-  it("refuses Android large-file sources until their native SAF streamer is available", () => {
+  it("accepts a freshly approved Android V2 source for Android-to-Android large relay", async () => {
     const h = harness({ sourcePlatform: "android" });
-    expect(() => h.manager.start(src, dst, "v2")).toThrow("Windows source");
-  });
+    const job = h.manager.start(src, dst, "v2");
+    await waitFor(() => h.manager.status(job.id).status === "completed");
+    expect(h.manager.status(job.id).transferred).toBe(h.sourceBytes.length);
+    expect(h.aborted).toEqual([]);
+  }, 40_000);
 });
