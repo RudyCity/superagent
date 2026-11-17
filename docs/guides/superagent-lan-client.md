@@ -221,3 +221,86 @@ the existing TLS/owner-consent tests and an Android Java compilation
 job. Native Java compilation does **not** substitute for physical
 Android device tests, OEM MediaStore acceptance, or distributed
 network/expiry tests.
+
+## Transfer Engine V2: platform and approval matrix (2026-11-17)
+
+This **opt-in extension**, not a replacement of V1, provides disk-backed
+**incoming files up to 256 MiB** on updated Windows and Android LAN
+targets. An updated Tray can stream an explicitly selected local
+`File` as 1-MiB browser hashing slices and 16-KiB authenticated wire
+chunks. V1 retains its 4-MiB/4-KiB limits for its original operations,
+small incoming files, and SAFOLDER1 packages.
+
+| Capability | Windows target | Android target | Tray/controller |
+| --- | --- | --- | --- |
+| V2 upload receiving (from Tray) | Disk-backed, new-only Downloads file | Private staging, then verified MediaStore Downloads | Blob-sliced stream |
+| Restart checkpoint | Private per-file `.part` + `.json` metadata | Private app `filesDir` partial and metadata | Reselect original file / retry |
+| Owner approval | Physical target prompt **per offer/reoffer** | Physical phone dialog **per offer/reoffer** | Explicit source selection + batch confirmation |
+| Cancel | Removes V2 staging | Revokes generation and deletes partials | Stops current/remaining queue |
+| Transport interruption | Staging retained, new offer required | Staging retained, new offer required | Retry warns the first outcome may be uncertain |
+| Final publication | Hash verified, hard-link create-only unique name | SHA-256 verified, MediaStore pending-to-visible | Reconciles a lost finish acknowledgement once |
+| Large file sent *from target to Tray* | **Not V2 yet** | **Not V2 yet** | V1 receive remains at 4 MiB |
+
+V2 checkpoints have a maximum 24-hour identity lifetime and 10-minute
+active idle timeout. Changing the target session or losing connectivity
+must never silently bypass new authorization; a resume is an ordinary
+new offer to the same file identity (basename, length, SHA-256), with
+fresh target-side approval. On transient network error the Tray
+**does not purge** the staging data; explicit Cancel and owner revoke
+**do purge** it. Failure or lost acknowledgement near a completed
+save remains uncertain until a verified receipt or owner inspection.
+
+### P1: bounded background Android receiving
+
+For an **already approved incoming V2 upload**, the Android direct-LAN
+client may start `LanTransferForegroundService` with the standard
+connected-device foreground notification and **STOP SHARING** action,
+provided the Android owner is visible and notification permission is
+available. `MainActivity` can then background without immediately
+closing the in-flight file session. No new file, pairing, remote shell,
+or support action is ever auto-approved in the background. The service
+stops after transfer completion, session expiry, owner revocation, or
+stop; if the owner is no longer visible it closes the listener. It is
+`START_NOT_STICKY`: Android process death still requires a new pairing
+and fresh owner approval, even if a private V2 checkpoint is retained.
+OEM screen-off/background restrictions still require physical testing.
+
+### P1/P2: queue and multi-device scope
+
+The Tray can explicitly send 1–32 owner-selected files to up to **eight
+currently connected targets in the selected route**. Distribution is
+**sequential**, not parallel: every file/target pair needs independent
+target-side approval, with an aggregate progress bar and Pause All,
+Resume All, Cancel All. The Retry failed/remaining action holds the
+unconfirmed and unattempted jobs in **volatile memory** only, and warns
+the user that the first uncertain item could already be saved. It does
+not automatically repeat a destructive or ambiguous operation.
+
+Recent receipts display selected basenames, direction, byte count and
+verification state; the Tray exposes observed average throughput
+(KiB/s) and an approximate ETA for the active transfer. They are not
+durable forensic logs or a performance SLA.
+
+The existing controller request path can address already paired LAN
+or supported tunnel sessions, but this is **not proven seamless
+LAN-to-tunnel failover**, cross-network authorization migration, or
+**direct peer-to-peer transfer**. Current multi-device distribution
+still uses the controller. The system does not provide a target-side
+destination folder picker for V2, Android-origin V2 large-file send,
+full durable queue after Tray restart, adaptive sliding windows,
+or parallel chunk transfer. These require separate source/receiver,
+quota, privacy and consent acceptance.
+
+### Required release gates
+
+- Run `.github/workflows/lan-file-transfer-regression.yml` on Windows
+  and Ubuntu, including V2 disk streaming, SHA-256, restart resume,
+  uncertain ACK, multi-target queue, background lifecycle contracts,
+  and Android Gradle Java compile.
+- Verify **actual Android ↔ Windows hardware**, MediaStore behavior,
+  Wi-Fi disconnect/rejoin, screen-off foreground notification, owner
+  rejection and stop, 256-MiB boundary, rapid cancel during commit,
+  disk exhaustion, concurrent chunk races, and re-pair/resume.
+- Verify Rust Tray/native UI builds and both tunnel/private-LAN
+  authorizations. A green unit workflow or Java compilation alone is
+  **not Runtime Verified or Released**.
