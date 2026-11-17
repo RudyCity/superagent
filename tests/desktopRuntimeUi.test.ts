@@ -822,6 +822,19 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-mcp-access-status").textContent).toContain("bukan berarti nol");
   });
 
+  it("changes Chat Agent YOLO only via installed native Tray and never requests an MCP grant", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 0, activeProcessCount: 0,
+      cores: [], processes: [], remoteServices: [], independentHosts: [],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    await vm.runInContext('runtimeSetYoloMode("scoped")', ui.context);
+    expect(ui.requested.filter(x => x.action === "set_yolo_mode"))
+      .toEqual([{action:"set_yolo_mode",args:{mode:"scoped"}}]);
+    expect(ui.requested.some(x => x.action === "mcp_project_access_action")).toBe(false);
+    expect(js).not.toContain('fetch("/api/desktop/yolo"');
+  });
+
   it("keeps chat-only YOLO controls on the Core card, not MCP owners", async () => {
     const ui = mountRuntime({
       scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 0,
