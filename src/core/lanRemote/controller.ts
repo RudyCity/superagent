@@ -437,10 +437,10 @@ export async function getLanFileStatus(id: string, transferId: string): Promise<
   if (!reply || reply.ok !== true || reply.transferId !== transferId
     || (reply.direction !== "upload" && reply.direction !== "download")
     || typeof reply.name !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_ .()-]{0,95}$/.test(reply.name)
-    || !Number.isInteger(reply.size) || reply.size < 1 || reply.size > LAN_TRANSFER_MAX
+    || typeof reply.size !== "number" || !Number.isInteger(reply.size) || reply.size < 1 || reply.size > LAN_TRANSFER_MAX
     || typeof reply.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(reply.sha256)
-    || !Number.isInteger(reply.seq) || reply.seq < 0 || reply.seq > 1024
-    || !Number.isInteger(reply.received) || reply.received < 0 || reply.received > reply.size)
+    || typeof reply.seq !== "number" || !Number.isInteger(reply.seq) || reply.seq < 0 || reply.seq > 1024
+    || typeof reply.received !== "number" || !Number.isInteger(reply.received) || reply.received < 0 || reply.received > reply.size)
     throw Error("Invalid or expired LAN file checkpoint.");
   return { transferId, direction: reply.direction, name: reply.name,
     size: reply.size, sha256: reply.sha256, seq: reply.seq, received: reply.received };
