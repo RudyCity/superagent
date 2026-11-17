@@ -2,6 +2,7 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import crypto from "node:crypto";
 import {
   MCP_TOOL_CLASSIFICATION,
   getDefaultSafeTools,
@@ -14,6 +15,7 @@ import {
 } from "../src/core/mcp/mcpHttpTransport.js";
 
 import { registerProject, removeProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 import { setYoloMode } from "../src/core/permissions.js";
 
 describe("mcpHttpTransport", () => {
@@ -207,7 +209,7 @@ describe("mcpHttpTransport", () => {
       expect(res.status).toBe(401);
     });
 
-    it("lists only safe tools after MCP initialize", async () => {
+    it("lists tools independently of chat YOLO; authorization remains grant-gated", async () => {
       const init = await post(rpc(1, "initialize", initParams), token);
       expect(init.status).toBe(200);
       const initJson: any = await parseMcpBody(init);
@@ -219,12 +221,12 @@ describe("mcpHttpTransport", () => {
       const names: string[] = (listJson.result?.tools || []).map((t: any) => t.name);
       expect(names).toContain("superagent_read_files");
       expect(names).not.toContain("superagent_read_file");
-      expect(names).not.toContain("superagent_exec_command");
+      expect(names).toContain("superagent_exec_command");
       expect(names).not.toContain("superagent_write_file");
-      expect(names).not.toContain("superagent_write_files");
+      expect(names).toContain("superagent_write_files");
     });
 
-    it("blocks dangerous tool calls via allowlist", async () => {
+    it("blocks unapproved dangerous tool calls even when they are discoverable", async () => {
       const call = await post(rpc(3, "tools/call", {
         name: "superagent_exec_command",
         arguments: { command: "echo hacked" },
@@ -401,6 +403,10 @@ describe("per-session transport isolation", () => {
     fs.mkdirSync(projectB, { recursive: true });
     registerProject({ id: projectIdA, name: "Session Workspace A", type: "local", root: projectA });
     registerProject({ id: projectIdB, name: "Session Workspace B", type: "local", root: projectB });
+    const bearerIdentity = { mode: "static-bearer" as const, subject: "bearer",
+      credentialHash: crypto.createHash("sha256").update(token).digest("hex") };
+    grantProjectAccess(bearerIdentity, projectIdA, ["read"]);
+    grantProjectAccess(bearerIdentity, projectIdB, ["read"]);
 
     const initSession = async (): Promise<string> => {
       const res = await fetch(testUrl, {
