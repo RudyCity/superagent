@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-  lifecycleAction, tickExternalLifecycle,
+  lifecycleAction, tickExternalLifecycle, listCdpWakeCandidates, reserveCdpWake, settleCdpWake,
 } from "../src/core/lifecycle/externalLifecycle.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS } from "../src/core/mcp/mcpToolPolicy.js";
 import { getProjectCapabilityForTool } from "../src/core/project/projectAccessPolicy.js";
@@ -158,6 +158,44 @@ describe("external ChatGPT lifecycle — persistent MCP pull worker contract", (
     fs.mkdirSync(path.dirname(file), {recursive:true});
     fs.writeFileSync(file,'{"version":999}',"utf8");
     expect(() => call("status",{},owner(workspace))).toThrow(/schema/);
+  });
+
+  it("reserves at most one CDP notification per worker and never replays ambiguous delivery", () => {
+    const b = worker(workspace, 2);
+    const reg = call("worker.register", { label:"ChatGPT B" }, b);
+    expect(() => call("worker.bind", {
+      workerId: reg.workerId, clientId:"profile1234", tabId:15,
+    }, owner(workspace))).toThrow(/native operator/);
+    call("worker.bind", { workerId:reg.workerId, clientId:"profile1234", tabId:15 }, operator(workspace));
+    const flow = scheduled([
+      { id:"a", prompt:"Task A", dependsOn:[], targetWorkerId:reg.workerId },
+      { id:"b", prompt:"Task B", dependsOn:[], targetWorkerId:reg.workerId },
+    ]);
+    const selected = listCdpWakeCandidates();
+    expect(selected).toHaveLength(1);
+    expect(selected[0].workflowId).toBe(flow.id);
+    const notice = reserveCdpWake(selected[0]);
+    expect(notice?.requestId).toMatch(/^life_/);
+    expect(reserveCdpWake(selected[0])).toBeNull();
+    settleCdpWake(notice!, false, "timeout; uncertain remote delivery");
+    expect(listCdpWakeCandidates()).toHaveLength(0);
+    expect(call("worker.claim", {workerId:reg.workerId}, b).status).toBe("claimed");
+    expect(call("workers", {}, b).workers[0].cdp).toBeUndefined();
+    expect(call("workers", {}, operator(workspace)).workers[0].cdp.tabId).toBe(15);
+  });
+
+  it("marks cancellation of leased external action uncertain, and revokes without replay", () => {
+    const b = worker(workspace, 2);
+    const reg = call("worker.register", {label:"B"},b);
+    const flow = scheduled();
+    const claim = call("worker.claim", {workerId:reg.workerId},b);
+    call("cancel", {workflowId:flow.id}, owner(workspace));
+    expect(call("list",{},owner(workspace)).runs[0].state).toBe("review_required");
+    expect(() => call("worker.complete", {workerId:reg.workerId,
+      runId:claim.runId,stepId:claim.stepId,leaseToken:claim.leaseToken,
+      outcome:"completed",result:"late"},b)).toThrow(/Lease/);
+    call("worker.revoke", {workerId:reg.workerId},operator(workspace));
+    expect(call("workers",{},operator(workspace)).workers).toHaveLength(0);
   });
 
   it("does not expose internal agent controls over MCP", () => {
