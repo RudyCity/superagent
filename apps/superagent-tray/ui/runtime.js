@@ -109,17 +109,27 @@ let runtimeLastResult = null;
 const runtimeStopTransitions = new Map();
 const runtimeStopKey = (service) => [service.kind, service.port, service.pid].join(":");
 function runtimeVisibleRemote(snapshot = runtimeLastResult) {
-  return (Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [])
-    .filter(service => runtimeStopTransitions.get(runtimeStopKey(service))?.phase !== "removed");
+  const remote = Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [];
+  const visible = remote.filter(service =>
+    runtimeStopTransitions.get(runtimeStopKey(service))?.phase !== "removed");
+  for (const [key, transition] of runtimeStopTransitions) {
+    // Keep the short exit animation even if native scanning already removed
+    // the owner from inventory. This is display-only, never a live owner.
+    if (transition.phase === "stopped" && transition.service &&
+        !remote.some(service => runtimeStopKey(service) === key)) {
+      visible.push(transition.service);
+    }
+  }
+  return visible;
 }
 function runtimeReconcileStoppedOwners(snapshot) {
   const services = Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [];
   for (const [key, transition] of runtimeStopTransitions) {
     if (transition.phase === "stopping") continue;
     const owner = services.find(service => runtimeStopKey(service) === key);
-    if (!owner) {
+    if (!owner && transition.phase === "removed") {
       runtimeStopTransitions.delete(key);
-    } else if (!["stale", "inactive", "stopped"].includes(owner.state)) {
+    } else if (owner && !["stale", "inactive", "stopped"].includes(owner.state)) {
       // A fresh scan still observes the exact owner. Do not let a UI
       // transition obscure it or claim it disappeared.
       runtimeStopTransitions.delete(key);
@@ -875,7 +885,7 @@ async function runtimeServiceAction(event) {
   runtimeActionBusy = true;
   const stopKey = kind !== "muse-core" && action === "stop" ? runtimeStopKey(service) : null;
   if (stopKey) {
-    runtimeStopTransitions.set(stopKey, { phase: "stopping" });
+    runtimeStopTransitions.set(stopKey, { phase: "stopping", service });
     runtimeRenderRemoteList();
   }
   const ticket = window.TrayFeedback?.begin({
@@ -891,13 +901,13 @@ async function runtimeServiceAction(event) {
     if (result?.success !== true) throw new Error("The service owner did not confirm the operation");
     message.textContent = result.message || `${label} ${startAction ? "start" : action} confirmed.`;
     if (stopKey) {
-      runtimeStopTransitions.set(stopKey, { phase: "stopped" });
+      runtimeStopTransitions.set(stopKey, { phase: "stopped", service });
       runtimeRenderRemoteList();
       // The native stop call returns success only after owner exit proof.
       // Animate first, then remove the exact PID from active listing.
       setTimeout(() => {
         if (runtimeStopTransitions.get(stopKey)?.phase !== "stopped") return;
-        runtimeStopTransitions.set(stopKey, { phase: "removed" });
+        runtimeStopTransitions.set(stopKey, { phase: "removed", service });
         runtimeRenderRemoteList();
       }, 420);
     }
