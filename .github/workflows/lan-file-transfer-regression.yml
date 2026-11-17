@@ -67,8 +67,10 @@ jobs:
       - name: Typecheck
         run: bun --bun x tsc --noEmit --pretty false
       - name: Verify LAN UI JavaScript syntax
+        if: ${{ always() && !cancelled() }}
         run: node --check apps/superagent-tray/ui/lan-file-transfer.js
       - name: Run transfer, folder, owner-approval and UI regressions
+        if: ${{ always() && !cancelled() }}
         run: >-
           bun --bun x vitest run --maxWorkers=2
           tests/lanRemote.test.ts
