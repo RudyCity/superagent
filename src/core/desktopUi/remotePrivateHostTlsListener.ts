@@ -78,6 +78,10 @@ export class RemotePrivateHostTlsListener {
   private starting = false;
   private stopped = false;
   private accepted = false;
+  /** An installed native-host controller can register a single terminal
+   * revocation hook. Transport errors must never leave OS input leased.
+   */
+  private controllerEndHook: { viewerDisconnected(): void } | null = null;
 
   constructor(
     private readonly preview: NativeWindowPreviewManager,
@@ -85,6 +89,17 @@ export class RemotePrivateHostTlsListener {
     private readonly material: PrivateHostTlsCertificateMaterial,
     private readonly now: () => number = Date.now,
   ) {}
+
+  /** Private native integration only; never exposed as IPC or a viewer callback.
+   * Single registration prevents a remote view from swapping the revoker.
+   */
+  registerControllerEndHook(controller: { viewerDisconnected(): void }): void {
+    if (this.stopped || this.server || this.starting || this.controllerEndHook ||
+        !controller || typeof controller.viewerDisconnected !== "function") {
+      throw new RemoteLiveDenied("SESSION_DENIED");
+    }
+    this.controllerEndHook = controller;
+  }
 
   /**
    * Only a trusted host native caller may invoke start(). Preview session
@@ -194,6 +209,13 @@ export class RemotePrivateHostTlsListener {
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
+    // Input is revoked synchronously before sockets, native capture or TLS
+    // shutdown. This covers peer disconnect, TLS errors, lease expiry and
+    // physical human takeover, even during asynchronous host start.
+    const controller = this.controllerEndHook;
+    this.controllerEndHook = null;
+    try { controller?.viewerDisconnected(); }
+    catch { /* Continue closing transport: revocation remains terminal. */ }
     if (this.attachTimer) clearInterval(this.attachTimer);
     if (this.expiryTimer) clearTimeout(this.expiryTimer);
     this.attachTimer = null;
