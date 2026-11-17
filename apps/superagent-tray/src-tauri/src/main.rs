@@ -35,6 +35,7 @@ mod named_tunnel_health;
 mod named_tunnel_orchestrator;
 mod tray_lifecycle;
 mod exit_all;
+mod shutdown_manager;
 mod lifecycle_console;
 mod release_updates;
 
@@ -2457,7 +2458,7 @@ fn main() {
             let updates = MenuItem::with_id(app, "updates", "⬇ Check for Updates", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "⚙️ Tray Settings", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
-            let exit_superagent = MenuItem::with_id(app, "exit_superagent", "⏻ Exit App · Stop Managed Services", true, None::<&str>)?;
+            let exit_superagent = MenuItem::with_id(app, "exit_superagent", "⏻ Shutdown Manager · Exit App", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Tray Only · Keep Services Running", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
                 &status_item,
@@ -2616,7 +2617,7 @@ fn main() {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-settings", ());
                     }
-                    "exit_superagent" => exit_all::request(app.clone()),
+                    "exit_superagent" => shutdown_manager::open(app),
                     "quit" => {
                         tray_lifecycle::cleanup();
                         std::process::exit(0);
@@ -2680,6 +2681,7 @@ fn main() {
             set_yolo_mode,
             service_action,
             lifecycle_console_request,
+            shutdown_manager::shutdown_manager_action,
             create_connection,
             regenerate_token,
             get_tray_settings,
