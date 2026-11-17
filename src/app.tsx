@@ -3467,10 +3467,18 @@ export function App({
     },
   };
 
-  const activeChainId = getActiveChainId(workspacePath);
-  const activeChain = activeChainId ? getWorkspaceChain(activeChainId, workspacePath) : null;
-  const primaryChainNode = activeChain ? activeChain.nodes.find((n) => n.id === activeChain.primaryNodeId || n.role === "main") : null;
-  const primaryWorkspacePath = primaryChainNode?.path || workspacePath;
+  // Workspace-chain lookup loads model configuration synchronously. Avoid
+  // repeated disk reads on every keystroke and every streaming repaint.
+  // Recompute after workspace/wizard changes or when a new chat line (e.g.
+  // a tool completing a chain update) enters the history.
+  const primaryWorkspacePath = useMemo(() => {
+    const activeChainId = getActiveChainId(workspacePath);
+    const activeChain = activeChainId ? getWorkspaceChain(activeChainId, workspacePath) : null;
+    const primaryChainNode = activeChain?.nodes.find(
+      (n) => n.id === activeChain.primaryNodeId || n.role === "main",
+    );
+    return primaryChainNode?.path || workspacePath;
+  }, [workspacePath, activeWizard, lines.length]);
 
   return (
     <Box flexDirection="column" height={terminalHeight}>
