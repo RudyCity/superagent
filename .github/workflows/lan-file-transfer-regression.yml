@@ -14,6 +14,7 @@ on:
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanClientServer.java"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "apps/superagent-tray/ui/lan-file-relay.js"
+      - "apps/superagent-tray/ui/lan-transfer-diagnostics.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.js"
       - "apps/superagent-tray/ui/lan-devices.css"
@@ -36,6 +37,7 @@ on:
       - "tests/lanFileRelayManager.test.ts"
       - "tests/lanFileRelayUi.test.ts"
       - "tests/lanRouteHandoff.test.ts"
+      - "tests/lanTransferDiagnostics.test.ts"
       - "tests/androidLanBackgroundTransferContract.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
@@ -46,6 +48,7 @@ on:
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/**"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "apps/superagent-tray/ui/lan-file-relay.js"
+      - "apps/superagent-tray/ui/lan-transfer-diagnostics.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.js"
       - "apps/superagent-tray/ui/lan-devices.css"
@@ -89,6 +92,7 @@ jobs:
         run: |
           node --check apps/superagent-tray/ui/lan-file-transfer.js
           node --check apps/superagent-tray/ui/lan-file-relay.js
+          node --check apps/superagent-tray/ui/lan-transfer-diagnostics.js
           node --check apps/superagent-tray/ui/lan-sha256.js
           node --check apps/superagent-tray/ui/lan-devices.js
       - name: Run transfer, folder, owner-approval and UI regressions
@@ -113,6 +117,7 @@ jobs:
           tests/lanFileRelayManager.test.ts
           tests/lanFileRelayUi.test.ts
           tests/lanRouteHandoff.test.ts
+          tests/lanTransferDiagnostics.test.ts
           tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
 
