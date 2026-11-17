@@ -2967,6 +2967,13 @@
                   <option value="balanced">Balanced · 25 FPS (1280px · Q72)</option>
                   <option value="save">Save data · 6 FPS (768px · Q55)</option>
                 </select>
+                <label for="desktop-live-record-preset" class="desktop-live-sr-only">Recording quality</label>
+                <select id="desktop-live-record-preset" class="desktop-live-stream-select" title="Private recording video quality">
+                  <option value="compact">Record compact · 640×360</option>
+                  <option value="standard" selected>Record standard · 960×540</option>
+                  <option value="detail">Record detail · 1280×720</option>
+                </select>
+                <button type="button" id="desktop-live-stream-record" class="button secondary small" disabled>Record window</button>
                 <button type="button" id="desktop-live-stream-stop" class="button secondary small">Stop stream</button>
               </div>
             </div>
