@@ -9,6 +9,7 @@ on:
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchange.java"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanClientServer.java"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
+      - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
@@ -22,6 +23,8 @@ on:
       - "tests/lanFileStatusE2E.test.ts"
       - "tests/lanFilePauseResume.test.ts"
       - "tests/androidLanCancelContract.test.ts"
+      - "tests/lanDiskTransferV2.test.ts"
+      - "tests/lanStreamingSha256.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
   pull_request:
@@ -30,6 +33,7 @@ on:
       - "src/core/runtime/trayLanBridge.ts"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/**"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
+      - "apps/superagent-tray/ui/lan-sha256.js"
       - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
@@ -68,7 +72,9 @@ jobs:
         run: bun --bun x tsc --noEmit --pretty false
       - name: Verify LAN UI JavaScript syntax
         if: ${{ always() && !cancelled() }}
-        run: node --check apps/superagent-tray/ui/lan-file-transfer.js
+        run: |
+          node --check apps/superagent-tray/ui/lan-file-transfer.js
+          node --check apps/superagent-tray/ui/lan-sha256.js
       - name: Run transfer, folder, owner-approval and UI regressions
         if: ${{ always() && !cancelled() }}
         run: >-
@@ -84,6 +90,8 @@ jobs:
           tests/lanFileStatusE2E.test.ts
           tests/lanFilePauseResume.test.ts
           tests/androidLanCancelContract.test.ts
+          tests/lanDiskTransferV2.test.ts
+          tests/lanStreamingSha256.test.ts
           tests/trayLanBridge.test.ts
 
   android-java:
