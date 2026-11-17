@@ -31,7 +31,7 @@ describe("ChatTextInput Escape debounce regression", () => {
       value: "",
       onChange,
       focus: true,
-    }));
+    }), { patchConsole: false });
     expect(inputHandler).toBeDefined();
 
     inputHandler!("draft", {});
@@ -51,7 +51,7 @@ describe("ChatTextInput Escape debounce regression", () => {
       onChange,
       onEscapeKey,
       immediate: true,
-    }));
+    }), { patchConsole: false });
     expect(inputHandler).toBeDefined();
 
     inputHandler!("", { escape: true });
