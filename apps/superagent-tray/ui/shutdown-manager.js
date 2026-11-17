@@ -216,6 +216,36 @@
     }catch(error){feedback(safe(error),true);}
     finally{state.loading=false;buttons();}
   }
+  function selectManualAll(){
+    if(state.busy||state.loading||!state.preview)return;
+    for(const item of manualReady())state.manualSelected.add(item.id);
+    drawServices();
+  }
+  async function manualKill(){
+    if(state.busy||state.loading||!state.preview||!state.manualSelected.size||
+       $("shutdown-manual-confirm").value!=="KILL SELECTED")return;
+    state.loading=true;buttons();
+    feedback("Awaiting native confirmation for individually selected OS PIDs…");
+    try {
+      const selected=Array.from(state.manualSelected);
+      const response=await invoke("manual_kill",{
+        previewId:state.preview.previewId,
+        selected,forceConfirmation:"KILL SELECTED",
+      });
+      if(!response?.accepted||!response.runId)throw Error("Native manual kill approval rejected");
+      state.busy=true;
+      state.progress={runId:response.runId,stage:"running",exitAfter:false,
+        steps:selected.map(id=>{
+          const item=state.preview.services.find(s=>s.id===id);
+          return {id,label:(item?.label||"Service")+" · PID "+(item?.pid||"-"),
+            status:"queued",message:"Revalidating exact OS PID and process start time"};
+        })};
+      drawProgress();
+      feedback("Manual kill authorized. Exact PID results will be verified independently.");
+      startPolling();await pollStatus();
+    }catch(error){feedback(safe(error),true);}
+    finally{state.loading=false;buttons();}
+  }
   async function forceAll(){
     if(state.busy||state.loading||!state.preview||
        $("shutdown-force-confirm").value!=="FORCE STOP ALL"||!forceReady().length)return;
@@ -263,6 +293,9 @@
     $("shutdown-stop-selected")?.addEventListener("click",()=>{void execute(false);});
     $("shutdown-exit-all")?.addEventListener("click",()=>{void execute(true);});
     $("shutdown-force-confirm")?.addEventListener("input",buttons);
+    $("shutdown-manual-confirm")?.addEventListener("input",buttons);
+    $("shutdown-manual-select-all")?.addEventListener("click",selectManualAll);
+    $("shutdown-manual-kill")?.addEventListener("click",()=>{void manualKill();});
     $("shutdown-force-all")?.addEventListener("click",()=>{void forceAll();});
     $("shutdown-manager-dialog")?.addEventListener("keydown",event=>{
       if(event.key==="Escape"&&!state.busy)close();
