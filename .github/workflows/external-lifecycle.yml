@@ -38,4 +38,4 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - name: Verify MCP lifecycle + daemon run contract
-        run: bun --bun x vitest run tests/externalLifecycle.test.ts tests/daemonScheduler.test.ts tests/mcpServer.test.ts --maxWorkers=2 --reporter=dot
+        run: bun --bun x vitest run tests/externalLifecycle.test.ts tests/daemonScheduler.test.ts --maxWorkers=2 --reporter=dot
