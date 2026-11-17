@@ -715,7 +715,7 @@
   function buildMcpPane() {
     const pane = make("div", "access-pane");
     pane.id = "access-pane-mcp";
-    pane.classList.add("access-mcp-section");
+    pane.className += " access-mcp-section";
     pane.setAttribute("role", "tabpanel");
     pane.setAttribute("aria-labelledby", "access-nav-tab-mcp");
     pane.hidden = true;
@@ -829,206 +829,249 @@
     return pane;
   }
 
-  async function refreshMcpRequests() {
+  const mcpCache = { requests: null, identities: null, projects: null, refreshing: null };
+
+  function setMcpLoadError(id, problems) {
+    const node = $(id);
+    if (!node) return;
+    node.hidden = problems.length === 0;
+    node.textContent = problems.length ? "Data belum lengkap: " + problems.join(" · ") +
+      ". Periksa koneksi Core lalu klik Muat ulang. Data lama (jika ada) belum diverifikasi ulang." : "";
+  }
+
+  function humanMcpTarget(req) {
+    return req.projectId === "mcp-connection" ? "MCP Connection Controls" :
+      String(req.projectName || req.projectId || "Proyek");
+  }
+
+  async function executeMcpDecision(actionName, requestId, label) {
     try {
-      const [reqRes, identRes, projRes] = await Promise.all([
-        invoke("mcp_project_access_action", { action: "requests" }).catch(() => ({ success: false })),
-        invoke("mcp_project_access_action", { action: "identities" }).catch(() => ({ success: false })),
-        invoke("mcp_project_access_action", { action: "projects" }).catch(() => ({ success: false })),
-      ]);
-
-      const requests = reqRes?.success && Array.isArray(reqRes.requests) ? reqRes.requests : [];
-      const identities = identRes?.success && Array.isArray(identRes.identities) ? identRes.identities : [];
-      const projects = projRes?.success && Array.isArray(projRes.projects) ? projRes.projects : [];
-
-      const pending = requests.filter(r => r.status === "pending");
-      const history = requests.filter(r => r.status !== "pending");
-
-      const badgeCount = $("access-tab-badge-mcp");
-      if (badgeCount) {
-        badgeCount.textContent = String(pending.length);
-        badgeCount.className = "access-nav-tab-badge" + (pending.length > 0 ? " pending" : "");
-      }
-      const countEl = $("access-mcp-pending-count");
-      if (countEl) countEl.textContent = pending.length + " permintaan tertunda";
-
-      // Render pending
-      const listEl = $("access-mcp-pending-list");
-      if (listEl) {
-        listEl.replaceChildren();
-        if (pending.length === 0) {
-          listEl.append(make("p", "access-empty", "Tidak ada permintaan akses MCP yang tertunda saat ini."));
-        } else {
-          for (const req of pending) {
-            const card = make("div", "access-audit-row");
-            card.style.display = "grid";
-            card.style.gap = "8px";
-            card.style.padding = "12px";
-            card.style.borderRadius = "10px";
-            card.style.background = "rgba(139, 92, 246, 0.08)";
-            card.style.border = "1px solid rgba(139, 92, 246, 0.25)";
-
-            const top = make("div");
-            top.style.display = "flex";
-            top.style.justifyContent = "space-between";
-            top.style.alignItems = "center";
-            const agentTitle = make("strong", "", "🤖 " + req.subject + " (" + req.mode + ")");
-            const timeSpan = make("small", "access-hint", new Date(req.createdAt).toLocaleTimeString());
-            top.append(agentTitle, timeSpan);
-
-            const projInfo = make("div");
-            projInfo.append(
-              make("div", "", "📁 Proyek: " + (req.projectName || req.projectId) + " (" + req.projectPath + ")"),
-              make("div", "access-hint", "Alasan: \"" + req.reason + "\"")
-            );
-
-            const capsRow = make("div");
-            capsRow.style.display = "flex";
-            capsRow.style.gap = "6px";
-            capsRow.style.alignItems = "center";
-            capsRow.append(make("small", "", "Izin yang diminta:"));
-            for (const cap of req.capabilities) {
-              const capBadge = make("span", "access-permanent-pill", cap);
-              capBadge.style.padding = "2px 8px";
-              capsRow.append(capBadge);
-            }
-
-            const btnRow = make("div");
-            btnRow.style.display = "flex";
-            btnRow.style.gap = "8px";
-            btnRow.style.marginTop = "6px";
-
-            const approveBtn = action("Setujui Akses", "access-submit", async () => {
-              try {
-                status("Menyetujui permintaan akses...", "info");
-                const data = await invoke("mcp_project_access_action", {
-                  action: "approve",
-                  payload: { requestId: req.requestId },
-                });
-                if (data.success) {
-                  status("Izin untuk '" + req.projectName + "' disetujui.", "success");
-                  void refreshMcpRequests();
-                } else {
-                  status("Gagal: " + (data.error || "Gagal menyetujui"), "error");
-                }
-              } catch (e) {
-                status("Error: " + e.message, "error");
-              }
-            });
-
-            const denyBtn = action("Tolak", "access-revoke", async () => {
-              try {
-                status("Menolak permintaan akses...", "info");
-                const data = await invoke("mcp_project_access_action", {
-                  action: "deny",
-                  payload: { requestId: req.requestId },
-                });
-                if (data.success) {
-                  status("Permintaan untuk '" + req.projectName + "' ditolak.", "warn");
-                  void refreshMcpRequests();
-                } else {
-                  status("Gagal: " + (data.error || "Gagal menolak"), "error");
-                }
-              } catch (e) {
-                status("Error: " + e.message, "error");
-              }
-            });
-
-            btnRow.append(approveBtn, denyBtn);
-            card.append(top, projInfo, capsRow, btnRow);
-            listEl.append(card);
-          }
-        }
-      }
-
-      // Render history
-      const histEl = $("access-mcp-history-list");
-      if (histEl) {
-        histEl.replaceChildren();
-        if (history.length === 0) {
-          histEl.append(make("p", "access-empty", "Belum ada riwayat izin proyek."));
-        } else {
-          for (const req of history.slice(0, 15)) {
-            const row = make("div", "access-audit-row");
-            row.style.display = "flex";
-            row.style.justifyContent = "space-between";
-            row.style.alignItems = "center";
-            row.style.padding = "8px 12px";
-
-            const left = make("div");
-            const statusLabel = req.status === "approved" ? "✅ DISETUJUI" : req.status === "revoked" ? "⛔ DICABUT" : "❌ DITOLAK";
-            left.append(
-              make("strong", "", statusLabel + " · " + (req.projectName || req.projectId) + " (" + req.subject + ")"),
-              make("small", "access-hint", " [" + req.capabilities.join(", ") + "] · " + new Date(req.decidedAt || req.createdAt).toLocaleString())
-            );
-
-            const right = make("div");
-            if (req.status === "approved") {
-              const revBtn = action("Cabut Izin", "access-revoke", async () => {
-                try {
-                  status("Mencabut izin...", "info");
-                  const data = await invoke("mcp_project_access_action", {
-                    action: "revoke",
-                    payload: { requestId: req.requestId },
-                  });
-                  if (data.success) {
-                    status("Izin proyek '" + req.projectName + "' dicabut.", "warn");
-                    void refreshMcpRequests();
-                  } else {
-                    status("Gagal: " + (data.error || "Gagal mencabut"), "error");
-                  }
-                } catch (e) {
-                  status("Error: " + e.message, "error");
-                }
-              });
-              right.append(revBtn);
-            }
-            row.append(left, right);
-            histEl.append(row);
-          }
-        }
-      }
-
-      // Populate dropdowns
-      const identSelect = $("access-mcp-ident-select");
-      if (identSelect) {
-        identSelect.replaceChildren();
-        if (identities.length === 0) {
-          identSelect.append(option("", "Tidak ada agen aktif terhubung"));
-        } else {
-          for (const id of identities) {
-            identSelect.append(option(id.identityHandle, id.subject + " (" + id.mode + ") - " + id.identityHandle));
-          }
-        }
-      }
-
-      const projSelect = $("access-mcp-proj-select");
-      if (projSelect) {
-        projSelect.replaceChildren();
-        if (projects.length === 0) {
-          projSelect.append(option("", "Tidak ada proyek terdaftar"));
-        } else {
-          for (const p of projects) {
-            const target = p.target || p.root || p.canonicalTarget || "";
-            projSelect.append(option(p.registeredProjectId || p.projectId || p.id, (p.name || p.id) + " (" + target + ")"));
-          }
-        }
-        // Non-project actions require an independent, explicitly human-approved
-        // MCP connection capability. This does not authorize any project files.
-        projSelect.append(option("mcp-connection", "MCP Connection Controls (execute; no file access)"));
-        projSelect.onchange = () => {
-          if (projSelect.value !== "mcp-connection") return;
-          for (const name of ["read", "write", "git"]) {
-            const check = $("access-cap-" + name)?.querySelector("input");
-            if (check) check.checked = false;
-          }
-          const execute = $("access-cap-execute")?.querySelector("input");
-          if (execute) execute.checked = true;
-        };
-      }
-    } catch (err) {
-      console.warn("[AccessManager] refreshMcpRequests error:", err);
+      const result = await invoke("mcp_project_access_action", {
+        action: actionName, payload: { requestId },
+      });
+      if (!result?.success) throw Error(result?.error || "Core menolak tindakan ini.");
+      status(label + " berhasil.", "success");
+      await refreshMcpRequests();
+    } catch (error) {
+      status(label + " gagal: " + String(error?.message || error), "error");
     }
+  }
+
+  function renderMcpPending(id, requests, isConnection) {
+    const root = $(id);
+    if (!root) return;
+    root.replaceChildren();
+    if (!Array.isArray(requests)) {
+      root.append(make("p", "access-empty", "Permintaan belum dapat dimuat. Gunakan Muat ulang."));
+      return;
+    }
+    if (!requests.length) {
+      root.append(make("p", "access-empty", "Tidak ada permintaan izin " +
+        (isConnection ? "koneksi" : "proyek") + " yang menunggu persetujuan."));
+      return;
+    }
+    for (const req of requests) {
+      const card = make("article", "access-mcp-request-card");
+      const title = make("div", "access-mcp-request-head");
+      title.append(make("strong", "", String(req.subject || "Identitas MCP tidak dikenal")));
+      title.append(make("span", "access-mcp-meta", String(req.mode || "") +
+        " · " + (req.createdAt ? new Date(req.createdAt).toLocaleString() : "Waktu tidak tersedia")));
+      const scope = make("div", "access-mcp-target", humanMcpTarget(req));
+      const description = make("p", "access-mcp-description",
+        String(req.projectPath || "") + (req.reason ? " · " + req.reason : ""));
+      const chips = make("div", "access-mcp-capabilities");
+      for (const cap of Array.isArray(req.capabilities) ? req.capabilities : []) {
+        chips.append(make("span", "access-mcp-cap-chip", String(cap)));
+      }
+      const actions = make("div", "access-mcp-actions");
+      const approve = action("Setujui", "access-submit", async () => {
+        const target = humanMcpTarget(req);
+        const capabilities = Array.isArray(req.capabilities) ? req.capabilities.join(", ") : "";
+        if (typeof window.confirm !== "function" || !window.confirm(
+          "Setujui " + capabilities + " untuk " + target + "?\nAgen: " + req.subject +
+          "\nAlasan: " + (req.reason || "Tidak ada") + "\nIzin dapat dicabut kapan saja.")) return;
+        approve.disabled = true;
+        try { await executeMcpDecision("approve", req.requestId, "Persetujuan " + target); }
+        finally { approve.disabled = false; }
+      });
+      const deny = action("Tolak", "access-revoke", async () => {
+        deny.disabled = true;
+        try { await executeMcpDecision("deny", req.requestId, "Penolakan " + humanMcpTarget(req)); }
+        finally { deny.disabled = false; }
+      });
+      actions.append(approve, deny);
+      card.append(title, scope, description, chips, actions);
+      root.append(card);
+    }
+  }
+
+  function renderMcpHistory(id, requests) {
+    const root = $(id);
+    if (!root) return;
+    root.replaceChildren();
+    if (!Array.isArray(requests)) {
+      root.append(make("p", "access-empty", "Riwayat belum dapat dimuat."));
+      return;
+    }
+    if (!requests.length) {
+      root.append(make("p", "access-empty", "Belum ada izin atau keputusan yang tercatat."));
+      return;
+    }
+    const ordered = [...requests].sort((a, b) =>
+      Number(b.decidedAt || b.createdAt || 0) - Number(a.decidedAt || a.createdAt || 0));
+    for (const req of ordered.slice(0, 30)) {
+      const row = make("div", "access-mcp-history-row");
+      const details = make("div", "access-mcp-history-detail");
+      const title = make("strong", "", humanMcpTarget(req));
+      const state = make("span", "access-mcp-state access-mcp-state-" + String(req.status || "unknown"),
+        ({ approved: "Disetujui", denied: "Ditolak", revoked: "Dicabut" })[req.status] || String(req.status || "—"));
+      const meta = make("span", "access-mcp-meta",
+        String(req.subject || "Identitas MCP") + " · " +
+        (Array.isArray(req.capabilities) ? req.capabilities.join(", ") : "") +
+        " · " + new Date(req.decidedAt || req.createdAt || Date.now()).toLocaleString());
+      details.append(title, state, meta);
+      row.append(details);
+      if (req.status === "approved") {
+        const revoke = action("Cabut Izin", "access-revoke", async () => {
+          if (typeof window.confirm !== "function" || !window.confirm(
+            "Cabut izin " + humanMcpTarget(req) + " milik " + req.subject + "?")) return;
+          revoke.disabled = true;
+          try { await executeMcpDecision("revoke", req.requestId, "Pencabutan izin"); }
+          finally { revoke.disabled = false; }
+        });
+        row.append(revoke);
+      }
+      root.append(row);
+    }
+  }
+
+  function populateMcpIdentitySelect(id, identities) {
+    const node = $(id);
+    if (!node) return;
+    const current = node.value;
+    node.replaceChildren(option("", identities?.length ?
+      "Pilih identitas yang terverifikasi..." : "Belum ada identitas yang terverifikasi"));
+    for (const identity of identities || []) {
+      if (!identity?.identityHandle || !identity?.subject) continue;
+      const recent = Array.isArray(identity.scopes) && identity.scopes.length === 0;
+      node.append(option(identity.identityHandle,
+        identity.subject + " · " + identity.mode + (recent ? " (permintaan terbaru)" : "") +
+        " · " + identity.identityHandle));
+    }
+    if ((identities || []).some(identity => identity.identityHandle === current)) node.value = current;
+  }
+
+  function renderMcpIdentities(identities) {
+    const root = $("access-mcp-identity-list");
+    if (!root) return;
+    root.replaceChildren();
+    if (!Array.isArray(identities)) {
+      root.append(make("p", "access-empty", "Identitas belum dapat dimuat."));
+      return;
+    }
+    if (!identities.length) {
+      root.append(make("p", "access-empty",
+        "Belum ada identitas terverifikasi. Hubungkan MCP dan kirim permintaan melalui superagent_request_project_access, lalu refresh di sini."));
+      return;
+    }
+    for (const id of identities) {
+      const row = make("div", "access-mcp-identity-row");
+      row.append(make("strong", "", String(id.subject || "Identitas tidak dikenal")));
+      row.append(make("span", "access-mcp-meta",
+        String(id.mode || "") + " · " + String(id.identityHandle || "") +
+        (Array.isArray(id.scopes) && id.scopes.length === 0 ? " · permintaan terbaru, belum tentu online" : "")));
+      root.append(row);
+    }
+  }
+
+  async function refreshMcpRequests() {
+    if (mcpCache.refreshing) return mcpCache.refreshing;
+    mcpCache.refreshing = (async () => {
+      const sources = [
+        ["requests", "requests"], ["identities", "identities"], ["projects", "projects"],
+      ];
+      const responses = await Promise.allSettled(sources.map(([, action]) =>
+        invoke("mcp_project_access_action", { action })));
+      const failures = {};
+      for (let i = 0; i < sources.length; i++) {
+        const [key] = sources[i];
+        const res = responses[i];
+        if (res.status === "fulfilled" && res.value?.success && Array.isArray(res.value[key])) {
+          mcpCache[key] = res.value[key];
+        } else {
+          failures[key] = res.status === "rejected"
+            ? String(res.reason?.message || res.reason)
+            : String(res.value?.error || "respons tidak valid");
+        }
+      }
+      const problems = (keys) => keys.filter(key => failures[key])
+        .map(key => key + ": " + failures[key]);
+      setMcpLoadError("access-mcp-project-load-error", problems(["requests", "identities", "projects"]));
+      setMcpLoadError("access-mcp-connection-load-error", problems(["requests", "identities"]));
+
+      const allRequests = mcpCache.requests;
+      const projectRequests = allRequests?.filter(req => req.projectId !== "mcp-connection");
+      const connectionRequests = allRequests?.filter(req => req.projectId === "mcp-connection");
+      const projectPending = projectRequests?.filter(req => req.status === "pending");
+      const connectionPending = connectionRequests?.filter(req => req.status === "pending");
+      const projectHistory = projectRequests?.filter(req => req.status !== "pending");
+      const connectionHistory = connectionRequests?.filter(req => req.status !== "pending");
+      const badgeProject = $("access-tab-badge-mcp");
+      const badgeConnection = $("access-tab-badge-connections");
+      for (const [badge, count] of [[badgeProject, projectPending?.length], [badgeConnection, connectionPending?.length]]) {
+        if (badge) {
+          badge.textContent = typeof count === "number" ? String(count) : "!";
+          badge.className = "access-nav-tab-badge" + (count > 0 ? " pending" : "");
+        }
+      }
+      if ($("access-mcp-pending-count")) {
+        $("access-mcp-pending-count").textContent =
+          projectPending ? projectPending.length + " permintaan" : "Belum dimuat";
+      }
+      if ($("access-mcp-connection-count")) {
+        $("access-mcp-connection-count").textContent =
+          connectionPending ? connectionPending.length + " permintaan" : "Belum dimuat";
+      }
+
+      renderMcpPending("access-mcp-pending-list", projectPending, false);
+      renderMcpPending("access-mcp-connection-pending-list", connectionPending, true);
+      renderMcpHistory("access-mcp-history-list", projectHistory);
+      renderMcpHistory("access-mcp-connection-history-list", connectionHistory);
+      renderMcpIdentities(mcpCache.identities);
+      populateMcpIdentitySelect("access-mcp-ident-select", mcpCache.identities);
+      populateMcpIdentitySelect("access-mcp-connection-identity", mcpCache.identities);
+
+      const projectSelect = $("access-mcp-proj-select");
+      if (projectSelect) {
+        const previousProject = projectSelect.value;
+        const validProjects = Array.isArray(mcpCache.projects) ?
+          mcpCache.projects.filter(project => project.projectId &&
+            project.enabled !== false && project.projectId !== "mcp-connection") : [];
+        projectSelect.replaceChildren(option("",
+          validProjects.length ? "Pilih proyek terdaftar..." : "Belum ada proyek aktif terdaftar"));
+        for (const project of validProjects) {
+          projectSelect.append(option(project.projectId,
+            String(project.name || project.projectId) + " · " +
+            String(project.type || "local") + " · " + String(project.target || "")));
+        }
+        if (validProjects.some(project => project.projectId === previousProject)) {
+          projectSelect.value = previousProject;
+        }
+      }
+      const identitiesAvailable = Boolean(mcpCache.identities?.length);
+      if ($("access-mcp-project-grant")) {
+        $("access-mcp-project-grant").disabled =
+          !identitiesAvailable || !(mcpCache.projects?.length);
+      }
+      if ($("access-mcp-connection-grant")) {
+        $("access-mcp-connection-grant").disabled = !identitiesAvailable;
+      }
+      if (Object.keys(failures).length) {
+        status("Ada data izin MCP yang gagal dimuat. Lihat pesan pada tab MCP.", "warning");
+      }
+    })();
+    try { return await mcpCache.refreshing; }
+    finally { mcpCache.refreshing = null; }
   }
 
   function build() {
