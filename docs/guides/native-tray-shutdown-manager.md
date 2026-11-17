@@ -21,12 +21,27 @@ reported, and a blocker when it cannot be stopped safely.
   sessions or drop a Cloudflare tunnel and rotate its Quick Tunnel URL.
   The Tray stays open for the result; it **never claims universal shutdown**
   when foreign/unverified owners remain.
+- **Manual Kill · owner override** is a distinct OS-level action available
+  only in the focused native Tray window. A human checks the **Kill PID** box
+  beside each observed target, or presses **Select all eligible**, and types
+  `KILL SELECTED`. A second native dialog lists the selected PIDs, executable
+  names and services before consent. It can terminate an unverified Guardian,
+  externally observed `cloudflared`, or a Core Supervisor without their
+  graceful-stop protocol. This overrides missing application owner
+  attestation, **not** OS permissions, process-birth checks, or critical-process
+  exclusions. All selected PIDs are pinned to their OS birth time and name,
+  rechecked after native approval and immediately before termination. Shared
+  PIDs are killed only once; the process tree and current Tray are untouched.
+  Results are reported separately per PID, including OS access denied, reused
+  PID, timeout or exit verified. Services may start a replacement automatically.
 - **Quit Tray Only** leaves services untouched, and cannot interrupt an
   in-flight verified shutdown.
 
 The native command uses a short-lived preview token, a single-flight guard,
-exact PID/port pins, a fresh inventory after native approval, and a new
-owner-specific operation plan for every managed service. Progress is emitted
+exact PID/port pins and a fresh inventory after native approval. Graceful
+managed-service shutdown additionally uses a new owner-specific operation
+plan. Manual Kill uses the independently checked OS process identity and no
+free-form PID inputs. Progress is emitted
 as `shutdown-manager-progress` and can be recovered with the read-only
 `shutdown_manager_action({action:"status"})` command after the dialog closes.
 
@@ -48,13 +63,15 @@ ownership before executing. Graceful stop uses:
 - Direct Core: selected authenticated owner only, guarded against an
   existing supervisor registry, stopped **last** and checked for process exit.
 
-**A full exit is not universally available.** Core Supervisor has no verified
-full-stop protocol; public Cloudflare tunnels require separate intentional
-public-disruption approval; some Muse/Telegram watch owners, active CLI agents,
-and other externally launched owners cannot be safely adopted. Those appear
-as **Review** and keep the Tray open. Force Stop All cannot override an
-unknown/foreign owner's missing evidence (including an unverified Guardian)
-and will report remaining owners instead of silently killing them. Normal
+**A full graceful exit is not universally available.** Core Supervisor has no
+verified full-stop protocol, and active sessions or independent tunnels may
+block graceful shutdown. Those appear as **Review** and keep the Tray open.
+Force Stop All continues to require its verified owner contracts. Unlike that
+owner-based operation, the separately approved **Manual Kill** can target
+OS-observed Guardian, Cloudflare, MCP and Core Supervisor processes even
+without application-level owner verification, if the operator selects their
+exact PID. The app does not guess PIDs, adopt an unobserved process or claim
+that killing one process prevents its supervisor from restarting it. Normal
 graceful shutdown never rotates the Cloudflare URL.
 
 Stopping a scheduler preserves persisted reminders; it does not delete jobs.
@@ -74,8 +91,9 @@ bun run build
 ```
 
 Tests cover native owner-plan projection, selection constraints, matching
-PID/port and OS process birth, exact typed force-stop approval, blocked/foreign
-owner exclusion, preview/selection UI behavior, partial progress, XSS-safe DOM
+PID/port and OS process birth, exact typed force-stop and manual-kill approval,
+explicit reviewed PID selection, critical-system-process exclusion, shared-PID
+deduplication, preview/selection UI behavior, partial progress, XSS-safe DOM
 rendering and full-exit preconditions. OS-level Windows installed-Tray
 certification still requires a controlled, private test profile. Never
 exercise stop-all against the active shared Core/MCP/Cloudflare runtime
