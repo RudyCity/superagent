@@ -179,7 +179,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        largeSource = new LanFileSourceV2(this);
+        largeSource = LanFileSourceV2.shared(this);
         boolean tv = AndroidTvUi.isTv(this);
         getWindow().setStatusBarColor(AndroidUiKit.CANVAS);
         getWindow().setNavigationBarColor(AndroidUiKit.CANVAS);
