@@ -4,6 +4,7 @@
  * Stop revokes one previously observed exact handle. It never closes an OS process/tab.
  */
 import { nativeWindowPreviewManager } from "./livePreview.js";
+import { desktopLiveAccessModes, type DesktopLiveAccessSummary } from "./desktopLiveAccessModes.js";
 import { desktopUiSessionManager } from "../tools/desktopUiTools.js";
 import { listCdpSessions } from "../tools/chromeCdpSessionManager.js";
 import { discoverCdpPages } from "../tools/chromeCdpTools.js";
@@ -17,7 +18,8 @@ export type DesktopLiveKind = "native" | "managed-cdp" | "cdp-delegate" | "lan-d
 export type DesktopLiveItem = {
   id: string; kind: DesktopLiveKind; title: string; application: string;
   handle: string; status: "available" | "controlled" | "human" | "unknown";
-  owner?: string; stopAction: "stop-session" | "takeover" | "stop-delegate-tab" | "disconnect-profile" | null;
+  owner?: string; stopAction: "stop-session" | "takeover" | "return-to-agent" | "stop-delegate-tab" | "disconnect-profile" | null;
+  access: DesktopLiveAccessSummary;
   impact?: string; revision?: number;
 };
 const safe = (v:unknown, n=130) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g," ").slice(0,n);
@@ -43,6 +45,7 @@ export async function listDesktopLiveInventory(): Promise<{
       const owned = ownerSessions.filter(s => s.pid === w.pid && s.nativeId === w.nativeId);
       items.push({
         id:idNative(w.pid,w.nativeId), kind:"native",title:safe(w.title),
+        access:desktopLiveAccessModes("native",{previewActive:isPreview}),
         application:safe(w.application,70),handle:safe(w.nativeId,100),
         status: (isPreview || owned.length) ? "controlled" : "available",
         owner: owned.length ? safe(owned.map(x=>x.owner).join(", "),100) : isPreview ? "Native preview" : undefined,
@@ -73,11 +76,13 @@ export async function listDesktopLiveInventory(): Promise<{
         let mode:"human"|"agent"|"unknown"="unknown";
         if(registration) try { mode=await readManagedControlStatus(port,t.targetId); }catch{}
         items.push({id:idManaged(port,t.targetId),kind:"managed-cdp",
+          access:desktopLiveAccessModes("managed-cdp",{ownerMode:mode}),
           application:"Chrome CDP",title:safe(t.title),handle:safe(t.targetId),
           status:mode==="human"?"human":session?"controlled":mode==="agent"?"available":"unknown",
           owner: session?.agentId ? safe(session.agentId,80) : undefined,
           revision:session?.revision,
-          stopAction:registration && session && mode==="agent" ? "takeover" : null,
+          stopAction:registration && session && mode==="agent" ? "takeover" :
+            registration && session && mode==="human" ? "return-to-agent" : null,
           impact:"Human takeover blocks agent mutations; browser tab stays open",
         });
       }
@@ -97,6 +102,7 @@ export async function listDesktopLiveInventory(): Promise<{
       } catch { /* Online profile still listed below even if CDP discovery unavailable. */ }
       if(!targets.length) {
         items.push({id:"profile:"+client.clientId,kind:"cdp-delegate",title:safe(client.label),
+          access:desktopLiveAccessModes("cdp-delegate"),
           application:"Chrome Delegate",handle:safe(client.clientId),status:"unknown",
           stopAction:"disconnect-profile",impact:"Disconnect this entire Chrome Delegate profile; tabs stay open"});
       }
@@ -105,6 +111,7 @@ export async function listDesktopLiveInventory(): Promise<{
         const tabId=Number(tab.tabId);
         const claimed=sessions.find(s=>s.clientId===client.clientId && s.tabId===tabId);
         items.push({id:idDelegate(client.clientId,tabId),kind:"cdp-delegate",
+          access:desktopLiveAccessModes("cdp-delegate"),
           title:safe(tab.title||"Untitled tab"),application:safe(client.label,70),
           handle:"Tab "+tab.tabId,status:claimed?"controlled":"available",
           owner:claimed?.agentId?safe(claimed.agentId,70):undefined,
@@ -124,6 +131,7 @@ export async function listDesktopLiveInventory(): Promise<{
       items.push({
         id: idLan(dev.id),
         kind: "lan-device",
+        access: desktopLiveAccessModes("lan-device",{connected:dev.connected}),
         title: safe(dev.label || (isAndroid ? "Android Screen" : "Windows LAN Client Screen")),
         application: safe(isAndroid ? "Android LAN Client" : "Windows LAN Client", 70),
         handle: safe(`${dev.host}:${dev.port} · ${dev.platform.toUpperCase()}`, 100),
@@ -205,6 +213,24 @@ export async function stopDesktopLiveHandle(
     await setManagedBrowserControl({mode:"human",port,targetId,profileId:reg.profileId,
       generation:reg.generation,browserFingerprint:reg.browserFingerprint},undefined,Number(b.expectedRevision));
     return {stopped:true,scope:row.id,reason:"Agent mutations blocked; browser tab remains open"};
+  }
+  if(row.stopAction==="return-to-agent") {
+    if(row.kind!=="managed-cdp" || row.status!=="human")
+      throw Error("MANAGED_CDP_HUMAN_HOLD_REQUIRED");
+    if(!Number.isSafeInteger(b.expectedRevision)||b.expectedRevision!==row.revision)
+      throw Error("STALE_CDP_REVISION");
+    const m=/^managed:(\d+):([A-Za-z0-9_-]{1,128})$/.exec(row.id);
+    if(!m)throw Error("INVALID_CDP_TARGET");
+    const port=Number(m[1]),targetId=m[2];
+    const reg=listManagedBrowserRegistrations().find(r=>r.port===port&&r.targetId===targetId);
+    if(!reg)throw Error("UNVERIFIED_CDP_TARGET");
+    // The coordination fence refuses return while a takeover reservation
+    // remains active; no remote URL, preview token, or fake approval can lift it.
+    await setManagedBrowserControl({mode:"agent",port,targetId,profileId:reg.profileId,
+      generation:reg.generation,browserFingerprint:reg.browserFingerprint},
+      undefined,Number(b.expectedRevision));
+    return {stopped:true,scope:row.id,
+      reason:"Verified human hold released; managed agent may resume on the same browser target"};
   }
   if(row.stopAction==="stop-delegate-tab") {
     if(!Number.isSafeInteger(b.expectedRevision) || b.expectedRevision!==row.revision)
