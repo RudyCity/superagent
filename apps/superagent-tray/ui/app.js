@@ -408,7 +408,7 @@ async function onRowClick(event) {
 }
 
 function navigateToPage(pageId) {
-  const validPages = ["overview", "jobs", "runtime", "history", "logs", "delegate", "desktop-live", "security", "terminal", "muse-files", "lan-devices", "updates", "settings"];
+  const validPages = ["overview", "notifications", "jobs", "runtime", "history", "logs", "delegate", "desktop-live", "security", "terminal", "muse-files", "lan-devices", "updates", "settings"];
   const target = validPages.includes(pageId) ? pageId : "overview";
 
   if (window.location.hash !== `#${target}`) {
@@ -461,6 +461,11 @@ function navigateToPage(pageId) {
     if (topDesc) topDesc.textContent = "Real-time companion topology, active subsystem health, connected services, and system metrics.";
     if (actionsOverview) actionsOverview.hidden = false;
     window.__superagentOverviewRefresh?.();
+  } else if (target === "notifications") {
+    if (topEyebrow) topEyebrow.textContent = "EVENT INBOX";
+    if (topTitle) topTitle.textContent = "Notification Manager";
+    if (topDesc) topDesc.textContent = "Review important system activity, acknowledge alerts, and manage notification history.";
+    window.__superagentNotificationsRefresh?.();
   } else if (target === "jobs") {
     if (topEyebrow) topEyebrow.textContent = "AUTOMATION CONSOLE";
     if (topTitle) topTitle.textContent = "Schedules & Reminders";
