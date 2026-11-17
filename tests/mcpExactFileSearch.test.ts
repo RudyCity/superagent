@@ -1,4 +1,4 @@
-import {afterEach,describe,expect,it} from "vitest";
+import {afterEach,describe,expect,it,vi} from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -52,6 +52,23 @@ describe("bounded explicit approved-file literal search",()=>{
     }catch(error){
       if(process.platform!=="win32")throw error;
     }
+  });
+  it("rejects a file whose underlying handle changes during the bounded read",()=>{
+    const cwd=make();
+    const actual=fs.fstatSync.bind(fs);
+    let calls=0;
+    const spy=vi.spyOn(fs,"fstatSync").mockImplementation(((fd:number)=>{
+      const stat=actual(fd);
+      if(++calls===2)return Object.assign(Object.create(Object.getPrototypeOf(stat)),stat,{
+        mtimeMs:stat.mtimeMs+1000,
+      });
+      return stat;
+    }) as typeof fs.fstatSync);
+    try {
+      expect(()=>searchExplicitAuthorizedFiles({
+        filePaths:["alpha.txt"],query:"hello",
+      },cwd)).toThrow(/EXPLICIT_FILE_SEARCH_SOURCE_CHANGED/);
+    }finally{spy.mockRestore();}
   });
   it("keeps v2 recursive grep denied but checks every explicit search target",()=>{
     const cwd=make();
