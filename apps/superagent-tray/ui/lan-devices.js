@@ -454,6 +454,7 @@
     if ($("lan-tunnel-invite")) $("lan-tunnel-invite").disabled = state.busy;
     if ($("lan-apk-download-qr")) $("lan-apk-download-qr").disabled = state.busy;
     window.__superagentLanFilesRefresh?.();
+    window.__superagentLanRelayRefresh?.();
   }
   async function refresh(manual = false) {
     if (state.busy) return;
