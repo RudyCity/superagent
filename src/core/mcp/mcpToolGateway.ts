@@ -26,6 +26,7 @@ export const MCP_GATEWAY_EAGER_PROJECT_WORKSPACE_TOOL_NAMES = Object.freeze([
   "superagent_update_project",
   "superagent_remove_project",
   "superagent_list_project_access",
+  "superagent_request_project_access",
   "superagent_grant_project_access",
   "superagent_revoke_project_access",
 ] as const);
@@ -77,7 +78,7 @@ export const MCP_GATEWAY_TOOL_DEFS = [
   },
   {
     name: MCP_GATEWAY_TOOL_NAMES.execute,
-    description: "Invoke any authorized SuperAgent MCP tool (including dynamic tools discovered via search like Delegate Chat & History, CDP, or media) using its exact name and arguments. Gateway recursion is blocked; all YOLO, OAuth, and security checks are strictly enforced.",
+    description: "Invoke any authorized SuperAgent MCP tool (including dynamic tools discovered via search like Delegate Chat & History, CDP, or media) using its exact name and arguments. Gateway recursion is blocked; all OAuth, Security Approval, and host file-policy checks are strictly enforced.",
     inputSchema: {
       type: "object",
       properties: {
