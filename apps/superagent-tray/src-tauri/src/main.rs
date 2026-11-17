@@ -2892,12 +2892,16 @@ async fn poll_operational_health(
     let tunnel = &services["tunnel"];
     let muse = &services["muse"];
     let telegram = &services["telegram"];
-    let mcp_active = mcp["active"] == true;
-    let mcp_clients = mcp["connectedClientCount"].as_u64().unwrap_or(0);
-    let tunnel_active = tunnel["active"] == true;
-    let muse_connected = muse["ownerPresent"] == true && muse["connected"] == true;
-    let telegram_active = telegram["active"] == true;
-    let hosts = services["channelHosts"]["verifiedCount"].as_u64().unwrap_or(0);
+    // An older Core, truncated projection or unknown field must NEVER look
+    // like an observed disconnect. Preserve the last verified snapshot.
+    let (Some(mcp_active), Some(mcp_clients), Some(tunnel_active),
+        Some(muse_owner), Some(muse_ready), Some(telegram_active), Some(hosts)) = (
+        mcp["active"].as_bool(), mcp["connectedClientCount"].as_u64(),
+        tunnel["active"].as_bool(), muse["ownerPresent"].as_bool(),
+        muse["connected"].as_bool(), telegram["active"].as_bool(),
+        services["channelHosts"]["verifiedCount"].as_u64(),
+    ) else { return Ok(()); };
+    let muse_connected = muse_owner && muse_ready;
     if previous.service_seen {
         monitor_transition(app, "mcp", "health:mcp-owner",
             "MCP service disconnected", "A previously active MCP service is no longer reported by Core.",
@@ -2928,8 +2932,9 @@ async fn poll_operational_health(
 
     if let Ok(delegate) = core_request(Method::GET, "/api/desktop/delegate/status", None).await {
         if delegate.get("success") == Some(&Value::Bool(true)) {
-            let running = delegate["running"] == true;
-            let desired = delegate["desiredEnabled"] == true;
+            let (Some(running), Some(desired)) = (
+                delegate["running"].as_bool(), delegate["desiredEnabled"].as_bool(),
+            ) else { return Ok(()); };
             if desired && !running {
                 record_operational_incident(
                     app, "delegate", "warning", "health:delegate-listener",
