@@ -408,7 +408,7 @@ async function onRowClick(event) {
 }
 
 function navigateToPage(pageId) {
-  const validPages = ["overview", "notifications", "jobs", "runtime", "history", "logs", "delegate", "desktop-live", "security", "terminal", "muse-files", "lan-devices", "updates", "settings"];
+  const validPages = ["overview", "notifications", "jobs", "runtime", "history", "logs", "delegate", "desktop-live", "recordings", "security", "terminal", "muse-files", "lan-devices", "updates", "settings"];
   const target = validPages.includes(pageId) ? pageId : "overview";
 
   if (window.location.hash !== `#${target}`) {
@@ -508,6 +508,11 @@ function navigateToPage(pageId) {
     if (topTitle) topTitle.textContent = "Desktop Live";
     if (topDesc) topDesc.textContent = "Manage per-window native, Chrome CDP and Delegate session handles.";
     window.__superagentDesktopLiveRefresh?.();
+  } else if (target === "recordings") {
+    if (topEyebrow) topEyebrow.textContent = "PROJECT SESSION ARCHIVES";
+    if (topTitle) topTitle.textContent = "Recording Manager";
+    if (topDesc) topDesc.textContent = "Inspect, play, finalize and remove project-local CDP recordings.";
+    window.__superagentRecordingsRefresh?.();
   } else if (target === "security") {
     if (topEyebrow) topEyebrow.textContent = "HOST ACCESS CONTROL";
     if (topTitle) topTitle.textContent = "Security Approval Manager";
