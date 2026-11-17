@@ -386,9 +386,20 @@
         offset * 100 / file.size);
     }
     assertActive();
-    const result = (await invoke("file_v2_finish", {
-      deviceId: targetId, transferId: activeTransfer,
-    })).result;
+    let result;
+    try {
+      result = (await invoke("file_v2_finish", {
+        deviceId: targetId, transferId: activeTransfer,
+      })).result;
+    } catch (firstError) {
+      // The verified save may have completed while its acknowledgment was lost.
+      // Both V2 targets return an idempotent receipt for this exact transfer.
+      try {
+        result = (await invoke("file_v2_finish", {
+          deviceId: targetId, transferId: activeTransfer,
+        })).result;
+      } catch { throw firstError; }
+    }
     if (!result?.ok || result.bytes !== file.size)
       throw Error("Target did not confirm full SHA-256 verified V2 commit.");
     activeTransfer = null;
@@ -482,9 +493,12 @@
         " selected file/device transfers; SHA-256 verified on every target.", 100);
       notifyTransfer("success", jobs.length + " verified file/device transfers.");
     } catch (error) {
-      await abortIfNeeded();
+      // A transport failure must not discard a disk-backed V2 resume checkpoint.
+      // Only explicit owner Cancel revokes/purges the target's partial bytes.
+      const keepV2Checkpoint = activeProtocol === 2 && !cancelled;
+      if (!keepV2Checkpoint) await abortIfNeeded();
       retryPlan = jobs.slice(batch?.index ?? 0);
-      state("Send failed: " + String(error).slice(0, 200));
+      state((keepV2Checkpoint ? "Send failed (V2 checkpoint retained): " : "Send failed: ") +  + String(error).slice(0, 200));
       const item = retryPlan[0];
       if (item) receipt("Send", item.device.label + ": " + item.file.name,
         item.file.size, "Not verified");
