@@ -12,6 +12,7 @@ on:
       - "src/core/daemon/daemonScheduler.ts"
       - "apps/superagent-tray/ui/external-lifecycle.*"
       - "tests/externalLifecycle.test.ts"
+      - "tests/externalCdpWakeAdapter.test.ts"
       - ".github/workflows/external-lifecycle.yml"
   pull_request:
     paths:
@@ -19,6 +20,7 @@ on:
       - "src/core/mcp/**"
       - "src/core/daemon/daemonScheduler.ts"
       - "tests/externalLifecycle.test.ts"
+      - "tests/externalCdpWakeAdapter.test.ts"
       - ".github/workflows/external-lifecycle.yml"
   workflow_dispatch:
 permissions:
@@ -38,4 +40,4 @@ jobs:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
       - name: Verify MCP lifecycle + daemon run contract
-        run: bun --bun x vitest run tests/externalLifecycle.test.ts tests/daemonScheduler.test.ts --maxWorkers=2 --reporter=dot
+        run: bun --bun x vitest run tests/externalLifecycle.test.ts tests/externalCdpWakeAdapter.test.ts tests/daemonScheduler.test.ts --maxWorkers=2 --reporter=dot
