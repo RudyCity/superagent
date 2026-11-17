@@ -81,7 +81,7 @@ function fixture(overrides: Partial<RemoteNativeInputDependencies> = {}) {
       proof === createHmac("sha256", secret).update(JSON.stringify(challenge)).digest("hex"),
   }, () => now);
   const approve = () => {
-    const challenge = authority.request(caller);
+    const challenge = authority.request(caller, ["click","type","key","scroll"]);
     const proof = createHmac("sha256", secret).update(JSON.stringify(challenge)).digest("hex");
     return authority.confirmNativeApproval(challenge.nonce, proof).token;
   };
