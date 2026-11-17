@@ -1029,22 +1029,22 @@ export async function handleServerRoute(
         throw Error("INVALID_CONTROLLER_REQUEST");
       const body=parsed as Record<string,unknown>;
       const expected:Record<string,string>={
-        challenge:"deviceId",
-        approve:"deviceId,fingerprint,mac,nonce",
-        status:"controllerToken,deviceId",
-        revoke:"controllerToken,deviceId",
+        challenge:"deviceId,kind",
+        approve:"deviceId,fingerprint,kind,mac,nonce",
+        status:"controllerToken,deviceId,kind",
+        revoke:"controllerToken,deviceId,kind",
       };
       if(Object.keys(body).sort().join(",")!==expected[action])
         throw Error("INVALID_CONTROLLER_REQUEST");
       const {nativeAndroidControllerApproval:gate}=await import(
         "./core/desktopUi/nativeAndroidControllerApproval.js");
       let result:unknown;
-      if(action==="challenge")result=gate.challenge(body.deviceId);
+      if(action==="challenge")result=gate.challenge(body.deviceId,body.kind);
       else if(action==="approve")result=gate.confirm(body);
-      else if(action==="status")result=gate.status(body.deviceId,body.controllerToken);
+      else if(action==="status")result=gate.status(body.deviceId,body.controllerToken,body.kind);
       else {
-        gate.authorize(body.deviceId,body.controllerToken);
-        gate.revoke(body.controllerToken);
+        gate.authorize(body.deviceId,body.controllerToken,body.kind);
+        gate.revoke(body.controllerToken,body.kind);
         result={approved:false};
       }
       sendJSON(res,200,{success:true,...(result as object)});
