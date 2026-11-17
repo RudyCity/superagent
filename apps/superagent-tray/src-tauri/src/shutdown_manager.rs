@@ -7,6 +7,7 @@ use serde::Serialize;
 use serde_json::{json, Map, Value};
 use std::{
     collections::HashSet,
+    fs,
     sync::{Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -226,14 +227,19 @@ async fn inspect() -> Result<Preview, String> {
     }
 
     let cores=runtime["cores"].as_array().ok_or("SHUTDOWN_CORE_INVENTORY_MISSING")?;
-    let supervised=states.and_then(|s|s.iter().find(|row|row["service"]=="core"))
-        .is_some_and(|s|s["state"]=="active" && s["ownershipVerified"]==true);
+    let supervisor_attested=states.and_then(|s|s.iter().find(|row|row["service"]=="core"))
+        .is_some_and(|s|s["ownershipVerified"]==true);
     for core in cores {
         let state=core["state"].as_str().unwrap_or("unknown");
         let selected=core["selected"]==true;
-        let verified=selected && state=="online" && core["pidVerified"]==true && !supervised;
         let pid=pid_of(&core["pid"]);
         let port=port_of(&core["port"]);
+        // A supervisor registry (even a stale one) prevents treating this as a
+        // direct Core. Do not accidentally shutdown a supervised worker while
+        // its independent supervisor still owns the public listener.
+        let supervised=supervisor_attested || port.is_some_and(|p|
+            fs::symlink_metadata(dir.join(format!("core-supervisor-{p}.json"))).is_ok());
+        let verified=selected && state=="online" && core["pidVerified"]==true && !supervised;
         let eligible=verified && pid.is_some() && port.is_some();
         items.push(Item::new(format!("core:{}:{}",port.unwrap_or(0),pid.unwrap_or(0)),
             if selected {"Selected Core API"} else {"Other Core API"},"core",state,
@@ -307,7 +313,9 @@ async fn inspect() -> Result<Preview, String> {
 fn validate_selection(preview: &Preview, selected: &[String], exit_after: bool)
     -> Result<Vec<Item>,String>
 {
-    if selected.is_empty() || selected.len()>32 {
+    if selected.len()>32 ||
+        (selected.is_empty() && (!exit_after || preview.active().next().is_some() ||
+            !preview.exit_ready)) {
         return Err("SHUTDOWN_SELECTION_SIZE_INVALID".into());
     }
     let mut unique=HashSet::new();
@@ -613,6 +621,13 @@ mod tests {
         assert!(validate_selection(&p,&["managed:guardian".into()],false).is_err());
         assert!(validate_selection(&p,&["managed:vision".into()],true).is_err());
         assert_eq!(validate_selection(&p,&["managed:vision".into()],false).unwrap().len(),1);
+    }
+    #[test]
+    fn permits_exit_when_every_service_is_already_stopped() {
+        let p=preview(vec![Item::new("core-absent".into(),"Core","core","inactive",
+            "Offline",false,false,None,None,None)],true);
+        assert!(validate_selection(&p,&[],true).unwrap().is_empty());
+        assert!(validate_selection(&p,&[],false).is_err());
     }
     #[test]
     fn requires_complete_selection_before_exit() {
