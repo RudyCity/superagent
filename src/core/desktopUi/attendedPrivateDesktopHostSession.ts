@@ -39,15 +39,15 @@ export class AttendedPrivateDesktopHostSession {
   private ended = false;
 
   constructor(components: AttendedPrivateHostComponents) {
-    const {listener, controller, operator} = components || {};
+    if (!components) throw Error("PRIVATE_DESKTOP_HOST_NOT_ATTESTED");
+    const {listener, controller, operator} = components;
     if (!listener || !controller || !operator ||
         typeof listener.registerControllerEndHook !== "function" ||
         typeof listener.start !== "function" ||
         typeof listener.stop !== "function" ||
         typeof controller.humanTakeover !== "function" ||
         typeof controller.viewerDisconnected !== "function" ||
-        typeof operator.registerStopHook !== "function" ||
-        typeof operator.registerControllerStopHook !== "function" ||
+        typeof operator.registerNativeHost !== "function" ||
         listener.isStopped || controller.isClosed) {
       throw Error("PRIVATE_DESKTOP_HOST_NOT_ATTESTED");
     }
@@ -58,13 +58,13 @@ export class AttendedPrivateDesktopHostSession {
       // Register all terminal revocations before opening ANY mTLS socket.
       // Physical takeover calls input before viewer. A viewer-side socket
       // close calls input revocation even when no operator UI is visible.
-      operator.registerControllerStopHook(controller);
-      operator.registerStopHook(listener);
       listener.registerControllerEndHook(controller);
+      operator.registerNativeHost(listener, controller);
     } catch {
-      // A partially wired host must never be allowed to start a private
-      // viewer or native controller. Operator hooks are one-shot only.
-      this.terminate();
+      // Listener has never started. Stop only this rejected candidate; never
+      // revoke an unrelated host already registered with the operator.
+      try { controller.humanTakeover(); } finally { listener.stop(); }
+      this.ended = true;
       throw Error("PRIVATE_DESKTOP_HOST_REGISTRATION_FAILED");
     }
   }
