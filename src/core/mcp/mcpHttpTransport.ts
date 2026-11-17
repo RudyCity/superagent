@@ -559,7 +559,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           // Number of unresolved external tool effects is NOT tracked by
           // the transport and must never be incorrectly reported as zero.
           inflightToolEffects: "unknown" as const,
-          safeToolsOnly: Boolean(opts.lockSafeTools || opts.allowDangerous === false),
+          safeToolsOnly: Boolean(opts.lockSafeTools),
           oauthEnabled: authMode === "oauth",
           publicTunnelStarted: Boolean(opts.ownerPublicTunnelStarted),
         };
