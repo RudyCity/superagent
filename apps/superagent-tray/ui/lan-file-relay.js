@@ -46,7 +46,7 @@
     const selectedSource = source();
     if ($("lan-relay-start")) $("lan-relay-start").disabled =
       busy || !selectedSource || !select.value ||
-      (protocol === "v2" && selectedSource.platform !== "windows");
+      (protocol === "v2" && !["windows", "android"].includes(selectedSource.platform));
     if ($("lan-relay-cancel")) $("lan-relay-cancel").disabled = !busy || !jobId;
   }
   function report(job) {
@@ -107,14 +107,14 @@
     const dst = destinations().find(d => d.id === dstId);
     if (!src?.connected || !dst?.connected ||
         !["v1", "v2"].includes(protocol) ||
-        (protocol === "v2" && src.platform !== "windows")) {
+        (protocol === "v2" && !["windows", "android"].includes(src.platform))) {
       status("Choose two connected devices on the same route."); return;
     }
     if (!window.confirm("Relay the file the " + src.platform +
         " owner ALREADY selected on " + src.label + " to " + dst.label +
         "? Both device owners must separately approve the exact file. " +
         (protocol === "v2" ?
-          "V2: Windows source must have used share-large; max 256 MiB. " :
+          "V2: Source must be owner-selected large file (Android Select Large File or Windows share-large); max 256 MiB. " :
           "V1: max 4 MiB. ") +
         "No source paths or pairing credentials are shared.")) return;
     busy = true;
