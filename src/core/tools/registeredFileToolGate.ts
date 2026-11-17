@@ -68,6 +68,27 @@ function certifiedMediaPlanPaths(args:Args|undefined):string[]|null {
   }else if(args.watermarkPath!==undefined)return null;
   return paths;
 }
+/** No recursive traversal or regular expressions: search only granted file paths. */
+export function certifiedExplicitGrepSearchArgs(args:Args|undefined):boolean{
+  if(!args||typeof args!=="object"||Array.isArray(args))return false;
+  const allowed=["filePaths","query","caseSensitive","isRegex","offset","limit",
+    "workspace","cwd","projectId"];
+  if(Object.keys(args).some(key=>!allowed.includes(key)))return false;
+  if(!Array.isArray(args.filePaths)||args.filePaths.length<1||args.filePaths.length>50||
+      args.filePaths.some(item=>typeof item!=="string"||!item.trim()||item.length>2048))
+    return false;
+  if(typeof args.query!=="string"||!args.query.trim()||args.query.length>200)return false;
+  if(args.isRegex!==undefined&&args.isRegex!==false)return false;
+  if(args.caseSensitive!==undefined&&typeof args.caseSensitive!=="boolean")return false;
+  if(args.offset!==undefined&&(!Number.isSafeInteger(args.offset)||
+     Number(args.offset)<0||Number(args.offset)>1000000))return false;
+  if(args.limit!==undefined&&(!Number.isSafeInteger(args.limit)||
+     Number(args.limit)<1||Number(args.limit)>200))return false;
+  for(const key of ["workspace","cwd","projectId"])
+    if(args[key]!==undefined&&(typeof args[key]!=="string"||!String(args[key]).trim()))
+      return false;
+  return true;
+}
 const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","list_dir",
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
 const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace",
@@ -205,6 +226,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Requires exact port, confirm:true, operationId and expectedBuildDigest; MCP Connection Controls and authenticated Core supervisor still required.";
   if(CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name))
     return "Read-only Core-owned device inventory or opaque pairing status only; device shell, input, screenshots and file transfer remain restricted.";
+  if(name==="superagent_grep_search")
+    return "Recursive grep is denied; supply filePaths of explicitly approved files, a literal query, and bounded offset/limit.";
   if(name==="superagent_manage_services")
     return "Read-only status, inventory, doctor, health, dashboard, logs or profile actions only; lifecycle mutations remain restricted.";
   const readiness=getPermanentFileToolReadiness(name);
@@ -224,7 +247,7 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
       name==="superagent_media_plan")
     return "requires_explicit_files";
   if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services" ||
-      name === "superagent_tool_execute" ||
+      name === "superagent_tool_execute" || name === "superagent_grep_search" ||
       CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name) ||
       CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui")
     return "action_dependent";
@@ -328,7 +351,9 @@ export function registeredFileToolGate(
   if(call.name === "superagent_desktop_ui" && certifiedDesktopDiscovery(call.args))return null;
   if(call.name === "superagent_manage_services" && certifiedServiceInspection(call.args))
     return null;
-  if(READ_SEARCH.has(call.name))return "Unmediated discovery/search could expose explicitly blocked child files.";
+  if(READ_SEARCH.has(call.name) &&
+      !(call.name==="superagent_grep_search"&&certifiedExplicitGrepSearchArgs(call.args)))
+    return "Unmediated discovery/search could expose explicitly blocked child files.";
   if(Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,call.name) &&
       !certifiedInputReaderArguments(call.name,call.args))
     return "Document/media reader requires exactly one explicit input path and certified argument keys.";
@@ -338,6 +363,7 @@ export function registeredFileToolGate(
     return "Media planner requires all explicit input, output and watermark paths with certified argument keys.";
   const operations:FileOperation[]=
     READ_TOOLS.has(call.name) || certifiedInputReaderArguments(call.name,call.args) ||
+    (call.name==="superagent_grep_search"&&certifiedExplicitGrepSearchArgs(call.args)) ||
     mediaPlanPaths!==null?["read"]:
     WRITE_TOOLS.has(call.name)?["read","write"]:
     PATCH_TOOLS.has(call.name)?["read","write","delete"]:[];
