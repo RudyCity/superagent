@@ -63,14 +63,18 @@ describe("Expanded host-wide CLI Bridge capacity", () => {
         leases.push(lease);
       }
       expect(leases.map(x => x.index)).toEqual(Array.from({ length: 17 }, (_, i) => i));
-      const slots = await listDetailedCapacitySlots(32, { capacityDir: testCapacityDir });
-      expect(slots).toHaveLength(32);
-      expect(slots[16].occupied).toBe(true);
+      // Avoid spawning 17 process-identity probes on Windows in parallel.
+      const highSlot = await inspectCapacitySlot(16, { capacityDir: testCapacityDir });
+      expect(highSlot.occupied).toBe(true);
       await expect(acquireCliBridgeCapacity(33, "excess", {}, { capacityDir: testCapacityDir }))
         .rejects.toThrow(/between 1 and 32/);
     } finally {
       await Promise.all(leases.map(x => releaseCliBridgeCapacity(x)));
     }
+    // All 32 paths now have no owners; enumeration should be fast.
+    const slots = await listDetailedCapacitySlots(32, { capacityDir: testCapacityDir });
+    expect(slots).toHaveLength(32);
+    expect(slots[16].state).toBe("available");
   });
 });
 
