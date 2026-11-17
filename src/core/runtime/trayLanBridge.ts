@@ -357,12 +357,13 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
     case "file_v2_abort": await abortLanFileV2(id, args.transferId as string); return { success: true };
     case "schema": return { success: true, schema: await getAndroidUiSchema(id, args.knownRevision as number | undefined) };
     case "element":
-      nativeAndroidControllerApproval.authorize(id,args.controllerToken);
+      nativeAndroidControllerApproval.authorize(id,args.controllerToken,"mouse");
       return { success: true,
         result: await clickAndroidUiElement(id, args.revision as number, args.elementId as string) };
     case "screen": return { success: true, frame: await getAndroidScreenFrame(id) };
     case "input": {
-      nativeAndroidControllerApproval.authorize(id,args.controllerToken);
+      nativeAndroidControllerApproval.authorize(id,args.controllerToken,
+        args.kind === "tap" || args.kind === "swipe" ? "mouse" : "keyboard");
       const command = toAndroidScreenInput(args);
       // No arbitrary shell/URI/browser/native command path is exposed here.
       return { success: true, result: await sendAndroidScreenInput(id, command) };
