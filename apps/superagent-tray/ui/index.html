@@ -53,6 +53,7 @@
   <script src="./muse-files.js" defer></script>
   <script src="./lan-devices.js" defer></script>
   <script src="./lan-screen-viewer.js" defer></script>
+  <script src="./lan-sha256.js" defer></script>
   <script src="./lan-file-transfer.js" defer></script>
 </head>
 <body style="background-color: #07090e; color: #f8fafc;">
@@ -1815,6 +1816,7 @@
               <button type="button" class="button primary" id="lan-folder-send" disabled>Send selected folder (.safolder)</button>
             </div>
             <progress id="lan-file-progress" max="100" value="0" class="lan-file-progress"></progress>
+            <p id="lan-file-metrics" class="lan-file-info" aria-live="polite">File transfer metrics will appear here.</p>
             <p id="lan-file-info" aria-live="polite" class="lan-file-info">First pair and open a support session. On a Windows target, choose a source with <code>share &lt;path&gt;</code> in its LAN Client console. On Android, tap Choose document to share. Every file requires separate target-side approval.</p>
             <div class="lan-transfer-history" aria-label="Recent file transfer receipts">
               <span class="panel-eyebrow">RECENT TRANSFERS · THIS TRAY SESSION</span>
