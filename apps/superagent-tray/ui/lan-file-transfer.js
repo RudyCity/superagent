@@ -22,6 +22,10 @@
   let cancelled = false;
   let activeTransfer = null;
   let activeProtocol = 1;
+  function diagnosticsStart(device, protocol, size, direction) {
+    window.LanTransferDiagnostics?.start(direction,
+      device.transport === "tunnel" ? "tunnel" : "lan", protocol, size);
+  }
   let sendingMany = false;
   let retryPlan = null;
   let transferStartTime = 0;
@@ -288,16 +292,20 @@
     activeTransfer = offer.transferId;
     activeProtocol = 1;
     transferStartTime = Date.now();
+    diagnosticsStart(device, "v1", bytes.length, "upload");
     controls();
     for (let offset = 0, seq = 0; offset < bytes.length; offset += CHUNK, seq++) {
       await waitIfPaused();
       assertActive();
       const data = base64(bytes.subarray(offset, offset + CHUNK));
+      const requestStarted = Date.now();
+      let recovered = false;
       let result;
       try {
         result = (await invoke("file_put", { deviceId: targetId,
           transferId: activeTransfer, seq, data })).result;
       } catch (error) {
+        recovered = true;
         // A transport reply may be lost after the target committed a chunk.
         // Query the authenticated checkpoint rather than blindly replaying
         // an ambiguous mutating request.
@@ -309,6 +317,8 @@
       if (!result || result.seq !== seq + 1 ||
           result.received !== Math.min(offset + CHUNK, bytes.length))
         throw Error("Target chunk confirmation mismatch.");
+      window.LanTransferDiagnostics?.sample(result.received,
+        Date.now() - requestStarted, recovered);
       metrics(result.received, bytes.length);
       state("Sending " + name + " · " + result.received + "/" + bytes.length + " bytes",
         100 * result.received / bytes.length);
@@ -321,6 +331,7 @@
     activeTransfer = null;
     controls();
     receipt("Sent", name, bytes.length, "Verified");
+    window.LanTransferDiagnostics?.finish("verified");
     return successText || ("File sent, SHA-256 verified on target. Saved to: " +
       (committed.savedTo || "the target's approved Downloads folder"));
   }
@@ -376,6 +387,8 @@
     activeProtocol = 2;
     activeTransfer = offer.transferId;
     transferStartTime = Date.now();
+    diagnosticsStart(device, "v2", file.size, "upload");
+    if (offer.received) window.LanTransferDiagnostics?.sample(offer.received, 0);
     controls();
     for (let offset = offer.received, seq = offer.seq; offset < file.size; seq++) {
       await waitIfPaused();
@@ -384,11 +397,14 @@
       if (!raw.length || raw.length > V2_CHUNK || (raw.length !== V2_CHUNK && offset + raw.length !== file.size))
         throw Error("Source file changed or became unreadable while streaming.");
       let result;
+      let recovered = false;
+      const requestStarted = Date.now();
       try {
         result = (await invoke("file_v2_put", {
           deviceId: targetId, transferId: activeTransfer, seq, data: bytesToBase64(raw),
         })).result;
       } catch (error) {
+        recovered = true;
         const remote = await largeCheckpoint(file, sha256);
         if (remote.seq !== seq + 1 || remote.received !== offset + raw.length) throw error;
         result = remote;
@@ -396,6 +412,7 @@
       if (!result || result.seq !== seq + 1 || result.received !== offset + raw.length)
         throw Error("Invalid V2 chunk acknowledgement.");
       offset = result.received;
+      window.LanTransferDiagnostics?.sample(offset, Date.now() - requestStarted, recovered);
       metrics(offset, file.size, offer.resumed ? "Resumed · " : "");
       state("Streaming " + file.name + " · " + offset + "/" + file.size + " bytes",
         offset * 100 / file.size);
@@ -421,6 +438,7 @@
     activeProtocol = 1;
     controls();
     receipt("Sent", file.name, file.size, offer.resumed ? "V2 resumed & verified" : "V2 verified");
+    window.LanTransferDiagnostics?.finish("verified");
     return "Large file sent and SHA-256 verified on target. Saved to: " +
       (result.savedTo || "target's approved Downloads folder");
   }
@@ -512,6 +530,7 @@
     } catch (error) {
       // A transport failure must not discard a disk-backed V2 resume checkpoint.
       // Only explicit owner Cancel revokes/purges the target's partial bytes.
+      window.LanTransferDiagnostics?.failure(error);
       const keepV2Checkpoint = activeProtocol === 2 && !cancelled;
       if (!keepV2Checkpoint) await abortIfNeeded();
       retryPlan = jobs.slice(batch?.index ?? 0);
