@@ -1,7 +1,6 @@
 import path from "node:path";
 import { getWorkspaceChains } from "../../workspace/WorkspaceChainConfig.js";
 import { manageWorkspaceChainTool, crossWorkspaceExecTool } from "../../workspace/workspaceChainTools.js";
-import { isFullYoloMode } from "../../permissions.js";
 import { listProjects } from "../../project/projectRegistry.js";
 import { workspaceMode } from "../../ssh/workspaceMode.js";
 
@@ -147,12 +146,6 @@ function rejectInlineSshSecrets(args: Record<string, unknown>): void {
   }
 }
 
-function requireFullYolo(toolName: string): void {
-  if (!isFullYoloMode()) {
-    throw new Error(`${toolName} can change chain configuration, open SSH sessions, execute commands, or modify remote files. Enable SuperAgent Full YOLO mode locally before using this MCP tool.`);
-  }
-}
-
 export async function dispatchWorkspaceChainMcpTool(
   name: string,
   args: Record<string, unknown>,
@@ -172,7 +165,6 @@ export async function dispatchWorkspaceChainMcpTool(
       return resultText({ count: chains.length, chains });
     }
 
-    requireFullYolo(name);
     if (name === "superagent_manage_workspace_chain") {
       rejectInlineSshSecrets(args);
       const clonedArgs = { ...args } as Record<string, unknown>;
