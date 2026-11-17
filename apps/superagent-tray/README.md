@@ -11,6 +11,34 @@
 
 Windows, macOS and Linux **standalone installers and GitHub prerelease procedure**: see [Windows Standalone Installer](../../docs/guides/windows-standalone-installer.md). The bundled CLI, Core and Bun runtime are independent of a global Bun/Node install.
 
+## Notification Center
+
+The titlebar bell (next to Reload), **Notifications** main-menu page, and
+Windows notification-area **🔔 Notifications** entry show one native-owned inbox.
+Read, mark unread, mark all read, archive, restore and filter by unread,
+important and archived. A count badge indicates unread active alerts.
+
+Important sources currently include Core lifecycle successes/failures, completed
+reminders, failed/interrupted/timed-out daemon executions, notification delivery
+failures, pending MCP Security Approval requests, and generic redacted warning/
+error feedback from Tray pages. Native polling continues while the window is
+hidden. Pending Security Approval is **informational only**—not a permission
+grant, agent action or bypass of host approval. Unknown sources are rejected.
+
+The Rust host alone writes to the capped local
+`tray-notifications.json` (300 records / 256 KiB), deduplicating event IDs
+across reloads/restarts. The WebView cannot insert arbitrary notification
+content: it may only read and acknowledge records, or report a fixed source and
+severity for a generic sanitized UI alert. Never store raw task prompts,
+process command lines, IPC exceptions, file paths, identities, or secrets.
+`notificationsEnabled` continues to control **native OS reminder toasts**; it
+does not erase inbox history. This is not a remote push notification service.
+
+Focused tests: `bun --bun x vitest run tests/desktopTrayNotificationsUi.test.ts`;
+native tests: `cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml`.
+An installed desktop acceptance check is still necessary before declaring
+runtime-verified behavior.
+
 ## Terminal Processes — external Stop / Start
 
 Terminal Processes discovers Windows development listeners without retaining
