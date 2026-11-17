@@ -18,6 +18,24 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     expect(js).toContain("expectedRevision");
     expect(js).toContain("stop-delegate-tab");
   });
+  it("routes native takeover only through Tray, never preview bearer input",()=>{
+    const js=read("apps/superagent-tray/ui/desktop-live-manager.js");
+    const rust=read("apps/superagent-tray/src-tauri/src/main.rs");
+    const inventory=read("src/core/desktopUi/desktopLiveInventory.ts");
+    const routes=read("src/serverRoutes.ts");
+    expect(js).toContain('await invoke("stop-handle", { id })');
+    expect(js).toContain("Native previews are view-only");
+    expect(js).not.toContain("/api/desktop/live/lan-input");
+    expect(js).not.toContain("/api/desktop/live/lan-takeover");
+    expect(js).not.toContain("/api/desktop/live/lan-preview");
+    expect(rust).toContain('"profile:", "lan:"');
+    expect(inventory).toContain('if(row.kind==="lan-device" && row.stopAction==="stop-session")');
+    expect(inventory.indexOf('if(row.kind==="lan-device" && row.stopAction==="stop-session")'))
+      .toBeLessThan(inventory.indexOf('if(row.stopAction==="stop-session")'));
+    expect(inventory).toContain('const m=/^delegate:([A-Za-z0-9_-]{8,80}):(\\d+)$/.exec(row.id)');
+    expect(routes).toContain("SEPARATE_NATIVE_CONTROLLER_APPROVAL_REQUIRED");
+    expect(routes).toContain('const privatePeer = peer === "127.0.0.1" || peer === "::1";');
+  });
   it("has native password settings and remote management controls, not VNC exposure",()=>{
     const html=read("apps/superagent-tray/ui/index.html");
     const pw=read("apps/superagent-tray/ui/tray-access-password.js");
