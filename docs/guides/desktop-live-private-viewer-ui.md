@@ -173,12 +173,13 @@ consent path in both Desktop Live and the dedicated LAN Devices screen:
 
 1. A read-only viewer can open an existing owner-approved support session,
    without receiving any controller authority.
-2. **Request Control** invokes the installed, visible main Tray only. Rust
+2. **Request Mouse** and **Request Keyboard** are distinct operations. Each invokes the installed, visible main Tray only. Rust
    identifies the exact connected Android device/fingerprint by asking the
    authenticated Core, then requests a one-use Core challenge for that
    specific support-session generation.
-3. A second, attended **operating-system dialog** names the target and
-   fingerprint. If approved, Rust generates a domain-separated HMAC using
+3. Each separate, attended **operating-system dialog** names the target,
+   fingerprint, and **mouse or keyboard** permission. If approved, Rust
+   generates a kind-bound, domain-separated HMAC using
    the protected local native key. Core validates the signed proof,
    the challenge deadline, current pairing fingerprint, and a private
    digest of the *current support session ID/token*. It issues a new
@@ -188,12 +189,22 @@ consent path in both Desktop Live and the dedicated LAN Devices screen:
    The native `lan_support_action` bridge injects it internally only for
    `input` and `element`. Core refuses both without a valid, current
    token, even when a caller knows the ordinary Core bearer and a viewer
-   session is active. Input still requires Full YOLO and the Android owner's
-   independent Accessibility/touch consent.
+   session is active. **Mouse approval permits only tap, swipe, and semantic
+   click. Keyboard approval permits only text and navigation.** Each token
+   can expire or be revoked without elevating the other. Attended, proof-bound
+   viewer/input operations do **not** require autonomous-agent Full YOLO:
+   target owner consent and native host approval remain independent,
+   mandatory guards. Remote shell, file operations and autonomous execution
+   retain their distinct Full YOLO/security approval policy.
 5. Native and Core grants revoke independently on explicit revoke, session
    close, reconnect, device identity drift or expiry. A hidden main Tray
    cannot invoke input. A new approval is needed after a reconnect, even
    if the Android device's pairing identity did not change.
+
+A late host approval after the viewer stopped or the target changed is
+immediately revoked rather than being promoted to a current controller.
+UI accessibility/status presents separate mouse/keyboard ready states and
+revoke actions; Core and Rust enforce the same separation.
 
 Windows LAN capture/input remains unavailable in this Android-specific
 transport; do not show functioning controls for it. Local native
