@@ -664,6 +664,20 @@
     notice.setAttribute("role", "alert");
     notice.hidden = true;
 
+    const connectedCard = make("section", "access-stored");
+    const connectedHead = make("div", "access-stored-head");
+    connectedHead.append(
+      make("h3", "", "Sesi MCP Terhubung"),
+      make("span", "access-count", "Memeriksa…"),
+    );
+    connectedHead.lastChild.id = "access-mcp-live-summary";
+    connectedCard.append(connectedHead,
+      make("p", "access-hint",
+        "Sesi berasal dari MCP owner yang diverifikasi. Nama klien adalah klaim klien, bukan identitas yang otomatis berhak mendapat izin."));
+    const connectedList = make("div", "access-mcp-identities");
+    connectedList.id = "access-mcp-live-list";
+    connectedCard.append(connectedList);
+
     const identityCard = make("section", "access-stored");
     const identityHead = make("div", "access-stored-head");
     identityHead.append(
@@ -722,7 +736,7 @@
     historyList.id = "access-mcp-connection-history-list";
     historyCard.append(historyList);
 
-    pane.append(introduction, notice, identityCard, pendingCard, grantCard, historyCard);
+    pane.append(introduction, notice, connectedCard, identityCard, pendingCard, grantCard, historyCard);
     return pane;
   }
 
@@ -847,7 +861,7 @@
     return pane;
   }
 
-  const mcpCache = { requests: null, identities: null, projects: null, refreshing: null };
+  const mcpCache = { requests: null, identities: null, projects: null, live: null, refreshing: null };
 
   function setMcpLoadError(id, problems) {
     const node = $(id);
@@ -984,6 +998,53 @@
     if ((identities || []).some(identity => identity.identityHandle === current)) node.value = current;
   }
 
+  function renderMcpConnectedClients(result) {
+    const root = $("access-mcp-live-list");
+    const summary = $("access-mcp-live-summary");
+    if (!root || !summary) return;
+    root.replaceChildren();
+    if (result?.state !== "verified" || !Array.isArray(result?.clients)) {
+      summary.textContent = "Tidak tersedia";
+      root.append(make("p", "access-empty",
+        "Core belum menerima daftar sesi dari MCP owner yang terverifikasi. Ini bukan bukti bahwa MCP terputus; periksa target Core dan Runtime Detection."));
+      return;
+    }
+    const clients = result.clients;
+    const valid = clients.length <= 64 && clients.every(client =>
+      client && /^ses_[a-f0-9]{12}$/.test(client.sessionHandle) &&
+      /^idh_[a-f0-9]{16}$/.test(client.principalHandle) &&
+      ["oauth", "static-bearer"].includes(client.authMode) &&
+      ["active", "idle", "retiring"].includes(client.state) &&
+      Number.isSafeInteger(client.inFlight) && client.inFlight >= 0 &&
+      Number.isSafeInteger(client.lastSeenAt));
+    if (!valid) {
+      summary.textContent = "Data tidak valid";
+      root.append(make("p", "access-empty",
+        "Inventaris sesi MCP tidak lolos validasi. Data ditolak, bukan ditampilkan sebagai koneksi terverifikasi."));
+      return;
+    }
+    const principals = new Set(clients.map(client => client.principalHandle)).size;
+    summary.textContent = clients.length + " sesi · " + principals + " identitas";
+    if (!clients.length) {
+      root.append(make("p", "access-empty", "Tidak ada sesi MCP aktif yang terdeteksi pada MCP owner ini."));
+      return;
+    }
+    for (const client of clients) {
+      const row = make("div", "access-mcp-identity-row");
+      const reportedName = typeof client.claimedClientName === "string" &&
+        client.claimedClientName.trim() ? client.claimedClientName : "Klien MCP tanpa nama";
+      row.append(
+        make("strong", "", reportedName + " (nama dari klien)"),
+        make("span", "access-mcp-meta",
+          (client.authMode === "oauth" ? "OAuth" : "Bearer") + " · " +
+          client.state + " · " + client.inFlight + " permintaan aktif · " +
+          client.principalHandle + " · " + client.sessionHandle +
+          " · terakhir " + new Date(client.lastSeenAt).toLocaleString()),
+      );
+      root.append(row);
+    }
+  }
+
   function renderMcpIdentities(identities) {
     const root = $("access-mcp-identity-list");
     if (!root) return;
@@ -994,7 +1055,7 @@
     }
     if (!identities.length) {
       root.append(make("p", "access-empty",
-        "Belum ada identitas terverifikasi. Hubungkan MCP dan kirim permintaan melalui superagent_request_project_access, lalu refresh di sini."));
+        "Belum ada identitas yang dapat diberi izin oleh Core. Sesi online di atas belum otomatis berhak mendapat izin. Kirim superagent_request_project_access dari klien MCP, lalu muat ulang."));
       return;
     }
     for (const id of identities) {
@@ -1012,14 +1073,22 @@
     mcpCache.refreshing = (async () => {
       const sources = [
         ["requests", "requests"], ["identities", "identities"], ["projects", "projects"],
+        ["live", "connected_clients"],
       ];
       const responses = await Promise.allSettled(sources.map(([, action]) =>
-        invoke("mcp_project_access_action", { action })));
+        invoke("mcp_project_access_action", action === "connected_clients"
+          ? { action, payload: {} } : { action })));
       const failures = {};
       for (let i = 0; i < sources.length; i++) {
         const [key] = sources[i];
         const res = responses[i];
-        if (res.status === "fulfilled" && res.value?.success && Array.isArray(res.value[key])) {
+        if (key === "live") {
+          mcpCache.live = res.status === "fulfilled" && res.value?.success === true
+            ? res.value : null;
+          if (!mcpCache.live) failures.live = res.status === "rejected"
+            ? String(res.reason?.message || res.reason)
+            : String(res.value?.error || "inventaris sesi tidak tersedia");
+        } else if (res.status === "fulfilled" && res.value?.success && Array.isArray(res.value[key])) {
           mcpCache[key] = res.value[key];
         } else {
           failures[key] = res.status === "rejected"
@@ -1030,7 +1099,7 @@
       const problems = (keys) => keys.filter(key => failures[key])
         .map(key => key + ": " + failures[key]);
       setMcpLoadError("access-mcp-project-load-error", problems(["requests", "identities", "projects"]));
-      setMcpLoadError("access-mcp-connection-load-error", problems(["requests", "identities"]));
+      setMcpLoadError("access-mcp-connection-load-error", problems(["requests", "identities", "live"]));
 
       const allRequests = mcpCache.requests;
       const projectRequests = allRequests?.filter(req => req.projectId !== "mcp-connection");
@@ -1061,7 +1130,8 @@
       renderMcpPending("access-mcp-connection-pending-list", failures.requests ? null : connectionPending, true);
       renderMcpHistory("access-mcp-history-list", failures.requests ? null : projectHistory);
       renderMcpHistory("access-mcp-connection-history-list", failures.requests ? null : connectionHistory);
-      renderMcpIdentities(mcpCache.identities);
+      renderMcpConnectedClients(mcpCache.live);
+      renderMcpIdentities(failures.identities ? null : mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-ident-select", mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-connection-identity", mcpCache.identities);
 
