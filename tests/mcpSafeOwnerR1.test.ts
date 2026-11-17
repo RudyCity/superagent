@@ -40,12 +40,11 @@ describe("R1 immutable MCP permission ceiling",()=>{
       fs.rmSync(outside,{recursive:true,force:true});
     }
   });
-  it("cannot be overridden by global scoped or full YOLO",()=>{
-    for(const yoloState of ["off","scoped","full"] as const) {
-      expect(canUnlockMcpDangerousTools({lockSafeTools:true,allowDangerous:false,yoloState})).toBe(false);
-    }
-    expect(canUnlockMcpDangerousTools({lockSafeTools:false,allowDangerous:true,yoloState:"off"})).toBe(true);
-    expect(canUnlockMcpDangerousTools({lockSafeTools:false,allowDangerous:false,yoloState:"full"})).toBe(true);
+  it("keeps safe-only owners locked while normal MCP discovery remains separate from chat YOLO",()=>{
+    expect(canUnlockMcpDangerousTools({lockSafeTools:true,allowDangerous:false})).toBe(false);
+    expect(canUnlockMcpDangerousTools({lockSafeTools:true,allowDangerous:true})).toBe(false);
+    expect(canUnlockMcpDangerousTools({lockSafeTools:false,allowDangerous:false})).toBe(true);
+    expect(canUnlockMcpDangerousTools({lockSafeTools:false,allowDangerous:true})).toBe(true);
   });
   it("reuses ONE staging owner host for CLI status/start/drain/stop",()=>{
     expect(stagingMcpOwnerHost.mode).toBe("staging_safe_only");
