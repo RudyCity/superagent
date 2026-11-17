@@ -9,6 +9,8 @@ import type {
 import type {
   AttendedNativeControllerSession,
 } from "../../src/core/desktopUi/attendedNativeControllerSession.js";
+import type { RemotePrivateControllerTlsHost } from "../../src/core/desktopUi/remotePrivateControllerTls.js";
+import type { PrivateHostStarted } from "../../src/core/desktopUi/remotePrivateHostTlsListener.js";
 
 const startArg={
   nativeWindow:{
@@ -23,7 +25,8 @@ const startArg={
   localPreviewToken:"a".repeat(64),
 };
 
-function fixture(operator=new RemotePrivateHostOperator()) {
+function fixture(operator=new RemotePrivateHostOperator(),
+  createControllerTlsHost?: (viewer:PrivateHostStarted)=>RemotePrivateControllerTlsHost) {
   const log:string[]=[];
   let endHook: {viewerDisconnected():void} | null = null;
   let releaseStart: (()=>void) | null = null;
@@ -68,7 +71,7 @@ function fixture(operator=new RemotePrivateHostOperator()) {
   const host=new AttendedPrivateDesktopHostSession({
     listener:listener as unknown as RemotePrivateHostTlsListener,
     controller:controller as unknown as AttendedNativeControllerSession,
-    operator,
+    operator,createControllerTlsHost,
   });
   return {
     host,operator,controller,listener,log,result,
@@ -139,6 +142,47 @@ describe("one native Desktop Live host: mTLS viewer + scoped input lifecycle",()
     expect(first.host.isStopped).toBe(false);
     expect(first.controller.humanTakeover).not.toHaveBeenCalled();
     first.host.stop();
+  });
+
+  it("does not start the private input listener before the real viewer is active",async()=>{
+    const control={
+      start:vi.fn(async()=>({address:"127.0.0.1",port:41143,expiresAt:500000})),
+      stop:vi.fn(),
+    };
+    const factory=vi.fn(()=>control as unknown as RemotePrivateControllerTlsHost);
+    const f=fixture(new RemotePrivateHostOperator(),factory);
+    await expect(f.host.startController()).rejects.toThrow(/NOT_READY/);
+    expect(factory).not.toHaveBeenCalled();
+    await f.host.start(startArg);
+    f.listener.isViewing=false;
+    await expect(f.host.startController()).rejects.toThrow(/NOT_READY/);
+    expect(control.start).not.toHaveBeenCalled();
+    f.listener.isViewing=true;
+    expect(await f.host.startController()).toMatchObject({
+      address:"127.0.0.1",port:41143,
+    });
+    expect(factory).toHaveBeenCalledOnce();
+    expect(control.start).toHaveBeenCalledOnce();
+    await expect(f.host.startController()).rejects.toThrow(/NOT_READY/);
+    f.listener.stop(); // Simulate TLS frame-viewer disconnect.
+    expect(f.controller.viewerDisconnected).toHaveBeenCalledOnce();
+    expect(control.stop).toHaveBeenCalledOnce();
+    expect(f.host.isStopped).toBe(true);
+  });
+
+  it("revokes both input and view on a failed private controller listener start",async()=>{
+    const control={
+      start:vi.fn(async()=>{throw Error("invalid certificate");}),
+      stop:vi.fn(),
+    };
+    const f=fixture(new RemotePrivateHostOperator(),
+      ()=>control as unknown as RemotePrivateControllerTlsHost);
+    await f.host.start(startArg);
+    await expect(f.host.startController()).rejects.toThrow(/START_FAILED/);
+    expect(control.stop).toHaveBeenCalled();
+    expect(f.controller.isClosed).toBe(true);
+    expect(f.listener.isStopped).toBe(true);
+    expect(f.host.isStopped).toBe(true);
   });
 
   it("fails closed if the private listener or controller was already terminated",()=>{
