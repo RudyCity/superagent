@@ -15,7 +15,7 @@
     "expectedRunning", "noActiveJobs", "noCoreShutdown", "noPublicIngress", "corePort", "channelMode", "wsPort"];
   const state = {loading:false, lastSeen:null, plan:null, dashboard:null, events:[], history:[],
     filter:"all", agentFilter:"all", agentRows:[], agentDetails:null,
-    errors:[], ready:false, operationBusy:false};
+    metrics:null, errors:[], ready:false, operationBusy:false};
   const call = (name, args={}) => {
     const invoke = window.__TAURI__?.core?.invoke;
     if(typeof invoke !== "function") throw Error("Native Tray IPC is unavailable");
@@ -184,35 +184,46 @@
     text("op-mcp-retiring",number(counts.retiringSessions)!==null?String(counts.retiringSessions):"—");
   }
   function renderResources(data, metrics) {
-    const mcp=Array.isArray(data?.services)?data.services.find(x=>x.service==="mcp"):null;
-    const memory=mcp?.details?.memoryTelemetry;
+    const mcp=Array.isArray(data?.services)?data.services.find(x=>
+      x.service==="mcp" && x.ownershipVerified===true):null;
+    const sampleAt=number(metrics?.observedAt);
+    const current=sampleAt!==null && sampleAt>0 && Math.abs(Date.now()-sampleAt)<90000 &&
+      Array.isArray(metrics?.processes);
+    const memory=(current && metrics?.mcpTelemetry) || mcp?.details?.memoryTelemetry;
     text("op-mcp-rss",bytes(memory?.rssBytes));
     text("op-mcp-heap",bytes(memory?.heapUsedBytes));
     const trend=memory?.trend;
     text("op-memory-trend",trend?.suspicious===true?"Suspicious growth":trend?.suspicious===false?
       "No suspicious trend":"Trend unavailable");
     const root=$("op-process-resources");
+    const chart=$("op-resource-history");
+    if(chart)chart.replaceChildren();
     if(!root)return;
     root.replaceChildren();
-    if(!metrics || !Array.isArray(metrics.processes)){
-      append(root,"p","op-empty","Verified owner CPU and RSS unavailable; no arbitrary process metrics are inferred.");
+    if(!current){
+      state.history=[];
+      text("op-resources-status","Native CPU/RAM sample unavailable or stale — verify the local Core and Tray.");
+      append(root,"p","op-empty","No current verified owner process sample. MCP memory is shown only when separately authenticated.");
       return;
     }
-    for(const item of metrics.processes){
+    const processes=metrics.processes.filter(item=>item &&
+      typeof item.service==="string" && number(item.cpuPct)!==null &&
+      number(item.rssBytes)!==null && item.rssBytes>=0);
+    for(const item of processes){
       const row=append(root,"div","op-resource-row");
       append(row,"span","",item.service.replace(/_/g," "));
-      append(row,"strong","",number(item.cpuPct)!==null?item.cpuPct.toFixed(1)+"% CPU":"CPU —");
+      append(row,"strong","",item.cpuPct.toFixed(1)+"% CPU");
       append(row,"span","",bytes(item.rssBytes));
     }
-    if(!metrics.processes.length)append(root,"p","op-empty","No verified process owners in current snapshot.");
-    const sample=metrics.processes.reduce((sum,x)=>sum+(number(x.rssBytes)||0),0);
-    if(sample>0 && state.lastSeen!==state.history[state.history.length-1]?.at){
-      state.history.push({at:state.lastSeen,value:sample});
+    if(!processes.length)append(root,"p","op-empty","No current OS process has a verified owner.");
+    text("op-resources-status",processes.length+
+      " verified process(es) sampled at "+localTime(sampleAt)+" · RAM totals count each PID once.");
+    const sample=processes.reduce((sum,item)=>sum+item.rssBytes,0);
+    if(sample>0 && sampleAt!==state.history[state.history.length-1]?.at){
+      state.history.push({at:sampleAt,value:sample});
       if(state.history.length>24)state.history.shift();
     }
-    const chart=$("op-resource-history");
     if(!chart)return;
-    chart.replaceChildren();
     const max=Math.max(...state.history.map(x=>x.value),1);
     for(const point of state.history){
       const bar=append(chart,"span","op-history-bar");
@@ -269,7 +280,7 @@
     for(const id of ["op-readiness","op-essential","op-readiness-detail","op-observed"])
       text(id,id==="op-readiness"?"—":message);
     sectionError("op-service-list",message);
-    renderMcp(null);state.agentDetails=null;renderConnectedAgents(null);renderResources(null,null);
+    renderMcp(null);state.agentDetails=null;renderConnectedAgents(null);renderResources(null,state.metrics);
     state.events=[];drawEvents();
     state.plan=null;setPlan(null);
   }
@@ -277,7 +288,8 @@
     if(state.loading || !visible())return;
     state.loading=true;
     text("op-refresh-state","Checking authenticated owners…");
-    const calls=await Promise.allSettled([
+    text("op-resources-status","Sampling verified process owners…");
+    const requests=[
       lifecycle({action:"dashboard",limit:35}), lifecycle({action:"logs",limit:40}),
       call("get_yolo_mode"),call("get_permanent_access_registry"),
       call("get_desktop_input_policy"),
@@ -285,7 +297,17 @@
       call("mcp_project_access_action",{action:"identities",payload:{}}),
       call("get_overview_owner_metrics"),
       call("mcp_project_access_action",{action:"connected_clients",payload:{}})
-    ]);
+    ];
+    // Refresh the native process monitor as soon as its own sample arrives;
+    // slow security/agent queries must not block CPU/RAM visualization.
+    void requests[7].then(metrics=>{
+      state.metrics=metrics;
+      renderResources(null,metrics);
+    },()=>{
+      state.metrics=null;
+      renderResources(null,null);
+    });
+    const calls=await Promise.allSettled(requests);
     const results=calls.map(x=>x.status==="fulfilled"?x.value:null);
     const names=["lifecycle","events","chat yolo","access rules","desktop policy","mcp requests","mcp identities","resources","connected clients"];
     state.errors=names.filter((name,i)=>results[i]===null);
@@ -300,7 +322,7 @@
           ? {connectedAgentsState:"verified",connectedAgents:clients.clients,
              connectedAgentsObservedAt:clients.observedAt} : null;
       renderConnectedAgents(state.agentDetails);
-      renderResources(results[0],results[7]);
+      renderResources(results[0],state.metrics);
       renderEvents(results[0],results[1]);
       if(state.plan && !state.dashboard.services?.some(s=>s.service===state.plan.service &&
         s.ownerPid===state.plan.expectedOwnerPid)) {state.plan=null;setPlan(null);}
