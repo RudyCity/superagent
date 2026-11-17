@@ -1,4 +1,4 @@
-import { registeredFileToolGate, isPathAllowedByPermanentRegistry } from "../tools/registeredFileToolGate.js";
+import { registeredFileToolGate } from "../tools/registeredFileToolGate.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -753,15 +753,16 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       auditContext.requiredCapability = WORKSPACE_SCOPED_MCP_TOOLS.has(name) ? getProjectCapabilityForTool(name, args) : undefined;
     }
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace
-      && !isFullYoloMode() && !chainUriTarget) {
+      && !chainUriTarget) {
       const selectedProjectRequiresGrant = Boolean(activeProjectGrantRequired && targetProjectId && targetProjectId === activeProjectId);
       const scopedLocalAccess = !selectedProjectRequiresGrant && !sshUriTarget
         && isPathWithinYoloScope(targetWorkspace, scopedWorkspaceAnchor);
       const capability = getProjectCapabilityForTool(name, args);
       const grantedProjectAccess = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(name) && targetProjectId && identityForProjectAccess?.subject
         && hasProjectAccess(identityForProjectAccess, targetProjectId, capability));
-      const accessManagerAllows = isPathAllowedByPermanentRegistry(targetWorkspace, capability === "read" ? "read" : "write");
-      if (!scopedLocalAccess && !grantedProjectAccess && !accessManagerAllows) {
+      // A host grant for the Core executable is never a substitute for the
+      // authenticated MCP principal\u0027s own project capability grant.
+      if (!scopedLocalAccess && !grantedProjectAccess) {
         if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "capability_denied"; }
         const reason = name === "superagent_check_project_health"
           ? "[PROJECT_GRANT_MISSING] Project health check is not authorized for this project. The authenticated MCP identity needs the explicit 'read' capability or approval via superagent_request_project_access."
