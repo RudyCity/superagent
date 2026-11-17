@@ -95,7 +95,7 @@ describe("external lifecycle exact-tab CDP wake adapter", () => {
     await dispatchCdpWakeNotifications();
     const send = mock.request.mock.calls.filter(call => call[0] === "delegate.send_message");
     expect(send).toHaveLength(1);
-    expect(send[0][3]).toBeUndefined(); // Bridge request payload is params, not arbitrary browser control context.
+    expect(send[0][2]).toBeUndefined(); // No out-of-band signal bypasses the paired bridge.
     const params = send[0][1];
     expect(params.tabId).toBe(42);
     expect(params.message).toContain("worker.claim");
