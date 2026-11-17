@@ -1339,7 +1339,7 @@ async fn recordings_action(
         if canonical.parent().is_none() { return Err("Filesystem root is not a project".into()); }
         return Ok(json!({"projectDirectory":canonical.to_string_lossy()}));
     }
-    if !matches!(action.as_str(),"list" | "stop" | "open-video" | "open-folder" | "delete") {
+    if !matches!(action.as_str(),"list" | "stop" | "open-video" | "open-folder" | "export-zip" | "delete") {
         return Err("Unsupported recording operation".into());
     }
     let data=payload.ok_or("Project selection required")?;
@@ -1377,6 +1377,28 @@ async fn recordings_action(
     if let Some(id)=id { body["recordingId"]=json!(id); }
     if action=="delete" {body["confirmDelete"]=json!(true);}
     let response=core_request(Method::POST,"/api/desktop/cdp/recordings",Some(body)).await?;
+    if action=="export-zip" {
+        let file=response.get("path").and_then(Value::as_str)
+            .ok_or("Core did not return a verified ZIP path")?;
+        let selected=fs::canonicalize(file).map_err(|_| "ZIP export unavailable")?;
+        let expected=fs::canonicalize(
+            PathBuf::from(project).join(".superagent").join("recordings")
+                .join("cdp").join(id.unwrap())
+        ).map_err(|_| "Recording directory unavailable")?;
+        if selected!=expected.join("recording.zip") {
+            return Err("Native ZIP path verification failed".into());
+        }
+        #[cfg(target_os="windows")]
+        let mut opener=Command::new("explorer.exe");
+        #[cfg(target_os="macos")]
+        let mut opener=Command::new("open");
+        #[cfg(all(not(target_os="windows"),not(target_os="macos")))]
+        let mut opener=Command::new("xdg-open");
+        opener.arg(&expected).spawn().map_err(|_| "Cannot open local archive folder")?;
+        return Ok(json!({"success":true,"exported":true,
+            "bytes":response.get("bytes"),"entries":response.get("entries"),
+            "sha256":response.get("sha256"),"folderOpened":true}));
+    }
     if action=="open-video" || action=="open-folder" {
         let file=response.get("path").and_then(Value::as_str)
             .ok_or("Core did not verify an archive file")?;
