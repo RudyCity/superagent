@@ -100,6 +100,7 @@ function runtimeConfigureRefreshInterval(seconds) {
 }
 
 let runtimeScanBusy = false;
+let runtimeScanSerial = 0;
 let runtimeRefreshQueued = false;
 let runtimeActionBusy = false;
 let runtimeLastResult = null;
@@ -122,11 +123,15 @@ function runtimeVisibleRemote(snapshot = runtimeLastResult) {
   }
   return visible;
 }
-function runtimeReconcileStoppedOwners(snapshot, scanStartedAt) {
+function runtimeReconcileStoppedOwners(snapshot, scanSerial) {
   const services = Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [];
   for (const [key, transition] of runtimeStopTransitions) {
+    // A completed scan must be ordered after the verified stop receipt.
+    // Date.now() has millisecond resolution, so a same-tick read cannot be
+    // distinguished from a pre-stop in-flight read by timestamps alone.
     if (transition.phase === "stopping" ||
-        (transition.confirmedAt && scanStartedAt <= transition.confirmedAt)) continue;
+        (transition.confirmedScanSerial !== undefined &&
+         scanSerial <= transition.confirmedScanSerial)) continue;
     const owner = services.find(service => runtimeStopKey(service) === key);
     if (!owner && transition.phase === "removed") {
       runtimeStopTransitions.delete(key);
@@ -152,7 +157,7 @@ function runtimeAnimateVerifiedStop(service) {
   const previous = runtimeStopTransitions.get(key);
   if (previous?.phase === "stopped" || previous?.phase === "removed") return;
   runtimeStopTransitions.set(key, {
-    phase: "stopped", service, confirmedAt: Date.now(),
+    phase: "stopped", service, confirmedScanSerial: runtimeScanSerial,
   });
   runtimeRenderRemoteList();
   setTimeout(() => {
@@ -821,8 +826,8 @@ function runtimeTabKeydown(event) {
   runtimeSelectTab(runtimeTabNames[next], true);
 }
 
-function runtimeRender(snapshot, scanStartedAt = Date.now()) {
-  runtimeReconcileStoppedOwners(snapshot, scanStartedAt);
+function runtimeRender(snapshot, scanSerial = runtimeScanSerial) {
+  runtimeReconcileStoppedOwners(snapshot, scanSerial);
   runtimeLastResult = snapshot;
   runtimeCopyAllowedUrls = new Set();
   rt("runtime-core-count").textContent = String(snapshot.healthyCoreCount || 0);
@@ -1424,7 +1429,7 @@ async function runtimeRefresh(background = false) {
     return;
   }
   runtimeScanBusy = true;
-  const scanStartedAt = Date.now();
+  const scanSerial = ++runtimeScanSerial;
   const ticket = window.TrayFeedback?.begin({
     key: "runtime:refresh", button: rt("runtime-refresh"),
     label: "Scanning runtime…", background: background === true,
@@ -1436,7 +1441,7 @@ async function runtimeRefresh(background = false) {
       runtimeInvoke("detect_runtime"),
       runtimeGetYoloMode(),
     ]);
-    runtimeRender(snapshot, scanStartedAt);
+    runtimeRender(snapshot, scanSerial);
     const [gateway, named] = await Promise.allSettled([
       runtimeInvoke("desktop_live_action", { action: "gateway-status", payload: null }),
       runtimeInvoke("get_named_tunnel_health"),
