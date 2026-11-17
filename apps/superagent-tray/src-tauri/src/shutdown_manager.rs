@@ -992,6 +992,57 @@ mod tests {
         })).is_err());
     }
     #[test]
+    fn force_candidates_include_only_explicitly_verified_and_birth_pinned_owners() {
+        let mut owned=item("mcp:9227:123",false);
+        owned.kind="mcp".into();owned.port=Some(9227);
+        owned.force_selectable=true;owned.process_started_at=Some(1800000000);
+        let mut foreign=item("observed:cloudflare:18140",false);
+        foreign.kind="cloudflare".into();
+        foreign.process_started_at=Some(1800000001);
+        let mut guardian=item("managed:guardian",false);
+        guardian.force_selectable=true; // no OS process-birth attestation
+        let p=preview(vec![foreign,guardian,owned.clone()],false);
+        let chosen=force_candidates(&p).unwrap();
+        assert_eq!(chosen.len(),1);
+        assert_eq!(chosen[0].id,owned.id);
+        assert!(same_force_owner(&owned,&chosen[0]));
+        assert!(force_candidates(&preview(vec![item("unverified",false)],false)).is_err());
+    }
+    #[test]
+    fn force_authorization_fails_closed_on_pid_birth_or_owner_changes() {
+        let mut trusted=item("observed:cloudflare:18140",false);
+        trusted.kind="cloudflare".into();
+        trusted.force_selectable=true;trusted.process_started_at=Some(1700000000);
+        let mut after=trusted.clone();
+        after.pid=Some(18141);
+        assert!(!same_force_owner(&trusted,&after));
+        after=trusted.clone();after.process_started_at=Some(1700000010);
+        assert!(!same_force_owner(&trusted,&after));
+        after=trusted.clone();after.force_selectable=false;
+        assert!(!same_force_owner(&trusted,&after));
+        after=trusted.clone();after.port=Some(9228);
+        assert!(!same_force_owner(&trusted,&after));
+    }
+    #[test]
+    fn force_candidate_order_never_adopts_unverified_supervisors() {
+        let mut core=item("core:7888:700",true);
+        core.kind="core".into();core.force_selectable=true;
+        core.process_started_at=Some(1700000000);
+        let mut cloudflare=item("observed:cloudflare:800",false);
+        cloudflare.kind="cloudflare".into();
+        cloudflare.force_selectable=true;cloudflare.process_started_at=Some(1700000001);
+        let mut mcp=item("mcp:9227:900",false);
+        mcp.kind="mcp".into();mcp.force_selectable=true;
+        mcp.process_started_at=Some(1700000002);
+        let mut supervisor=item("supervisor:7888:999",false);
+        supervisor.kind="core-supervisor".into();
+        supervisor.process_started_at=Some(1700000003);
+        let p=preview(vec![core,supervisor,mcp,cloudflare],false);
+        let names:Vec<String>=force_candidates(&p).unwrap().iter()
+            .map(|item|item.kind.clone()).collect();
+        assert_eq!(names,vec!["mcp","cloudflare","core"]);
+    }
+    #[test]
     fn pid_or_port_change_invalidates_authorization() {
         let before=item("mcp:8857:123",true);
         let mut after=before.clone();
