@@ -2056,7 +2056,7 @@ async fn mcp_project_access_action(
     match action.as_str() {
         "requests" => core_request(Method::GET, "/api/desktop/access/requests", None).await,
         "identities" => core_request(Method::GET, "/api/desktop/access/identities", None).await,
-        "projects" => core_request(Method::GET, "/api/projects/browser?filter=all", None).await,
+        "projects" => core_request(Method::GET, "/api/desktop/access/projects", None).await,
         "approve" => {
             let request_id = text_field("requestId", 96)?;
             let body = if data.get("capabilities").is_some() {
