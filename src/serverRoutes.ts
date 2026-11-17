@@ -991,6 +991,71 @@ export async function handleServerRoute(
 
   // Local-only and bearer-authenticated LAN Client management for SuperAgent Tray.
   // No pairing code, remote command, or terminal credential is written to Core logs.
+  // Native Android controller grant: separate from view/capture and from the
+  // general Core bearer. Only a fresh signed, attended main-Tray approval can
+  // mint an input lease; WebView clients never receive the controller token.
+  if (pathname.startsWith("/api/desktop/lan-controller/")) {
+    res.setHeader("Cache-Control","no-store");
+    res.setHeader("Referrer-Policy","no-referrer");
+    const peer=req.socket.remoteAddress || "";
+    const host=String(req.headers.host || "");
+    const loopback=["127.0.0.1","::1","::ffff:127.0.0.1"].includes(peer);
+    const hostValid=/^(?:127\\.0\\.0\\.1|localhost):[0-9]{2,5}$/i.test(host);
+    const forwarded=["forwarded","x-forwarded-for","x-forwarded-host",
+      "x-forwarded-proto","cf-connecting-ip","cf-ray","x-real-ip"]
+      .some(header=>req.headers[header]!==undefined);
+    if(!loopback||!hostValid||forwarded||req.headers.origin) {
+      sendJSON(res,403,{success:false,error:"ANDROID_CONTROLLER_LOCAL_ONLY"});
+      return true;
+    }
+    if(req.method!=="POST") {
+      sendJSON(res,405,{success:false,error:"METHOD_NOT_ALLOWED"});
+      return true;
+    }
+    const action=pathname.slice("/api/desktop/lan-controller/".length);
+    if(!["challenge","approve","status","revoke"].includes(action)) {
+      sendJSON(res,404,{success:false,error:"UNKNOWN_CONTROLLER_ACTION"});
+      return true;
+    }
+    if(!isFullYoloMode()&&action!=="revoke") {
+      sendJSON(res,403,{success:false,error:"ANDROID_CONTROLLER_LOCAL_POLICY_REQUIRED"});
+      return true;
+    }
+    try {
+      const raw=await readBody(req);
+      if(Buffer.byteLength(raw,"utf8")>512)throw Error("INVALID_CONTROLLER_REQUEST");
+      const parsed:unknown=JSON.parse(raw);
+      if(!parsed||typeof parsed!=="object"||Array.isArray(parsed))
+        throw Error("INVALID_CONTROLLER_REQUEST");
+      const body=parsed as Record<string,unknown>;
+      const expected:Record<string,string>={
+        challenge:"deviceId",
+        approve:"deviceId,fingerprint,mac,nonce",
+        status:"controllerToken,deviceId",
+        revoke:"controllerToken,deviceId",
+      };
+      if(Object.keys(body).sort().join(",")!==expected[action])
+        throw Error("INVALID_CONTROLLER_REQUEST");
+      const {nativeAndroidControllerApproval:gate}=await import(
+        "./core/desktopUi/nativeAndroidControllerApproval.js");
+      let result:unknown;
+      if(action==="challenge")result=gate.challenge(body.deviceId);
+      else if(action==="approve")result=gate.confirm(body);
+      else if(action==="status")result=gate.status(body.deviceId,body.controllerToken);
+      else {
+        gate.authorize(body.deviceId,body.controllerToken);
+        gate.revoke(body.controllerToken);
+        result={approved:false};
+      }
+      sendJSON(res,200,{success:true,...(result as object)});
+    } catch(error) {
+      const code=error instanceof Error&&/^ANDROID_CONTROLLER_[A-Z_]+$/.test(error.message)
+        ? error.message:"ANDROID_CONTROLLER_REQUEST_REJECTED";
+      sendJSON(res,409,{success:false,error:code});
+    }
+    return true;
+  }
+
   if (pathname === "/api/desktop/lan-support") {
     res.setHeader("Cache-Control", "no-store");
     const peer = req.socket.remoteAddress || "";
