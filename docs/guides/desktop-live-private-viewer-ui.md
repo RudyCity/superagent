@@ -166,6 +166,50 @@ Tests added: `desktopLiveAccessModes.test.ts`, extended
 CI and installed host E2E certification are still required before claiming
 full remote-controller readiness.
 
+## Android controller end-to-end authorization contract (17 November 2026)
+
+The paired **Android** transport now implements a separate native controller
+consent path in both Desktop Live and the dedicated LAN Devices screen:
+
+1. A read-only viewer can open an existing owner-approved support session,
+   without receiving any controller authority.
+2. **Request Control** invokes the installed, visible main Tray only. Rust
+   identifies the exact connected Android device/fingerprint by asking the
+   authenticated Core, then requests a one-use Core challenge for that
+   specific support-session generation.
+3. A second, attended **operating-system dialog** names the target and
+   fingerprint. If approved, Rust generates a domain-separated HMAC using
+   the protected local native key. Core validates the signed proof,
+   the challenge deadline, current pairing fingerprint, and a private
+   digest of the *current support session ID/token*. It issues a new
+   independent, random 256-bit controller token with a **120-second TTL**.
+4. The controller token is returned only to **native Rust memory**. It is
+   not sent to the WebView, screenshot, viewer URL, MCP or discovery list.
+   The native `lan_support_action` bridge injects it internally only for
+   `input` and `element`. Core refuses both without a valid, current
+   token, even when a caller knows the ordinary Core bearer and a viewer
+   session is active. Input still requires Full YOLO and the Android owner's
+   independent Accessibility/touch consent.
+5. Native and Core grants revoke independently on explicit revoke, session
+   close, reconnect, device identity drift or expiry. A hidden main Tray
+   cannot invoke input. A new approval is needed after a reconnect, even
+   if the Android device's pairing identity did not change.
+
+Windows LAN capture/input remains unavailable in this Android-specific
+transport; do not show functioning controls for it. Local native
+Windows/macOS/Linux application *remote* interactive control is still
+**disabled** until an authenticated private viewer transport, independently
+attended OS input approval, and verified semantic adapter are integrated
+and physically tested. Existing native source/installer artifacts do not
+by themselves certify a usable end-to-end remote controller.
+
+Source regressions: `nativeAndroidControllerApproval.test.ts`,
+`desktopTrayAndroidScreenUi.test.ts`, `androidLanRemoteScreen.test.ts`,
+`androidLanSchemaFirst.test.ts`, and the native Rust gate tests.
+The separate `Desktop Live Controller Regression` CI workflow covers
+TypeScript, Windows/Linux contract tests, and a Windows native Rust job.
+Do not claim Installed Runtime Verified or Released from source tests alone.
+
 ## Deployment and verification status
 
 The feature code can be built and tested **without** changing active MCP tunnel
