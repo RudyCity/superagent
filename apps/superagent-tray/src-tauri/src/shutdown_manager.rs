@@ -1,5 +1,7 @@
 //! Native-only, owner-scoped shutdown review and execution.
-//! This module never signals a PID by name, force-kills, or adopts an OS process.
+//! Destructive force-stop is limited to authenticated MCP owner control or a
+//! birth-pinned, registered Cloudflare process after separate native approval.
+
 use super::{config_dir, core_request, lifecycle_console_request, remote_service_detection,
     runtime_control, runtime_detection, server_info, show_main, tray_lifecycle};
 use reqwest::Method;
@@ -37,6 +39,8 @@ struct Item {
     port: Option<u16>,
     pid: Option<u32>,
     active_sessions: Option<u64>,
+    force_selectable: bool,
+    process_started_at: Option<u64>,
 }
 impl Item {
     fn new(id: String, label: &str, kind: &str, state: &str, detail: &str,
@@ -44,7 +48,7 @@ impl Item {
         port: Option<u16>, pid: Option<u32>) -> Self {
         Self {id, label:label.into(), kind:kind.into(), state:state.into(),
             detail:detail.into(), owner_verified, selectable, blocker,
-            port, pid, active_sessions:None}
+            port, pid, active_sessions:None, force_selectable:false, process_started_at:None}
     }
 }
 
@@ -171,6 +175,8 @@ async fn inspect() -> Result<Preview, String> {
         .map_err(|_| "SHUTDOWN_RUNTIME_SNAPSHOT_UNAVAILABLE")?;
     let remote = remote_service_detection::scan(&dir).await;
     let mut items = Vec::new();
+    let mut force_system = System::new();
+    force_system.refresh_processes();
     let mut warning = None;
     let inventory = match lifecycle_console_request(json!({"action":"inventory"})).await {
         Ok(v) => v,
@@ -198,16 +204,34 @@ async fn inspect() -> Result<Preview, String> {
                 item.active_sessions = states.and_then(|rows| rows.iter().find(|row|
                     row["service"]=="mcp" && row["port"].as_u64()==port.map(u64::from)))
                     .and_then(|row| row["details"]["activeSessions"].as_u64());
+                // Even a busy MCP owner may support an explicit forced stop,
+                // but only through its independently authenticated private API.
+                item.force_selectable = remote_owner.source=="registry" &&
+                    matches!(remote_owner.state,"observed"|"online") &&
+                    if let (Some(port),Some(pid))=(port,pid) {
+                        runtime_control::can_force_stop_mcp(&dir,port,pid).await
+                    } else {false};
                 items.push(item);
             }
             "cloudflare" | "muse-watch" => {
-                items.push(Item::new(
+                let mut item=Item::new(
                     format!("observed:{}:{}",remote_owner.kind,remote_owner.pid.unwrap_or(0)),
                     if remote_owner.kind=="cloudflare" {"Cloudflare tunnel"} else {"Muse watcher"},
                     remote_owner.kind,remote_owner.state,
                     "Observed process; no universal verified stop protocol is available",
                     false,false,Some("Stop through the exact owner-specific control first".into()),
-                    remote_owner.port,remote_owner.pid));
+                    remote_owner.port,remote_owner.pid);
+                // An OS-observed Cloudflare process is NEVER adopted. Only a
+                // private registry-backed birth-verified cloudflared can be
+                // force-stopped after typed + native human approval.
+                item.force_selectable = remote_owner.kind=="cloudflare" &&
+                    remote_owner.source=="registry" &&
+                    matches!(remote_owner.state,"online"|"observed") &&
+                    remote_owner.pid.is_some();
+                if item.force_selectable {
+                    item.detail="Registered Cloudflare owner; force stop disconnects the public tunnel and may change its URL".into();
+                }
+                items.push(item);
             }
             _ => {}
         }
@@ -358,6 +382,17 @@ async fn inspect() -> Result<Preview, String> {
     }
     if items.len()>100 {
         return Err("SHUTDOWN_TOO_MANY_OWNERS: narrow runtime before shutdown".into());
+    }
+    // Pin the process birth seen by the OS to the owner-specific preview;
+    // later force execution must verify the same birth, not merely the PID.
+    for item in &mut items {
+        item.force_selectable |= item.selectable &&
+            matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core");
+        if item.force_selectable {
+            item.process_started_at = item.pid.and_then(|pid|
+                force_system.process(Pid::from_u32(pid)).map(|p|p.start_time()));
+            item.force_selectable &= item.process_started_at.is_some();
+        }
     }
     let exit_ready=items.iter().all(|item| !running(&item.state) || item.selectable);
     Ok(Preview {preview_id:Uuid::new_v4().simple().to_string(),
