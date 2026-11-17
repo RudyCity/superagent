@@ -463,6 +463,9 @@ public final class LanClientServer implements AutoCloseable {
             if (!"upload".equals(direction) && !"download".equals(direction)) {
                 fail(socket, "Invalid file transfer direction."); return;
             }
+            // Capture selection BEFORE asking the owner. The approval cannot
+            // authorize a different document chosen while the dialog is open.
+            long selectedRevision = fileExchange.selectionRevision();
             String filename = request.optString("name", "");
             int size = request.optInt("size", -1);
             String declaredName;
@@ -477,7 +480,7 @@ public final class LanClientServer implements AutoCloseable {
             }
             try {
                 JSONObject offer = fileExchange.offer(direction, filename, size,
-                        request.optString("sha256", ""));
+                        request.optString("sha256", ""), selectedRevision);
                 send(socket, offer);
                 notice.show("Approved " + direction + " file: " + declaredName);
             } catch (Exception invalid) {
@@ -485,7 +488,7 @@ public final class LanClientServer implements AutoCloseable {
             }
             return;
         }
-        if ("file_put".equals(op) || "file_get".equals(op)
+        if ("file_put".equals(op) || "file_get".equals(op) || "file_status".equals(op)
                 || "file_finish".equals(op) || "file_abort".equals(op)) {
             String transferId = request.optString("transferId", "");
             try {
@@ -495,6 +498,8 @@ public final class LanClientServer implements AutoCloseable {
                             request.optString("data", ""));
                 } else if ("file_get".equals(op)) {
                     response = fileExchange.get(transferId, request.optInt("seq", -1));
+                } else if ("file_status".equals(op)) {
+                    response = fileExchange.status(transferId);
                 } else if ("file_finish".equals(op)) {
                     response = fileExchange.finish(transferId);
                     notice.show("File transfer completed; checksum verified.");
