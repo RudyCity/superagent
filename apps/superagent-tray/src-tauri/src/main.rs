@@ -2081,7 +2081,7 @@ async fn mcp_project_access_action(
         if caps.is_empty() || caps.len() > 7 {
             return Err("Invalid capabilities".into());
         }
-        let mut values = Vec::new();
+        let mut values: Vec<String> = Vec::new();
         for cap in caps {
             let value = cap.as_str().ok_or_else(|| "Invalid capability".to_string())?;
             if !["read", "write", "execute", "git", "worktree", "planning", "chain"]
