@@ -24,6 +24,13 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Prepare real compiled Core resources required by Tauri
+        run: bun run build
       - name: Confirm native Rust toolchain
         shell: pwsh
         run: |
