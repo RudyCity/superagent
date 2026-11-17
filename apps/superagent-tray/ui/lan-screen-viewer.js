@@ -235,6 +235,11 @@
     schemaStatus("Requesting separate "+kind+" permission from native host...");
     try{
       const result=await invoke("control_request",{deviceId:target.id,kind});
+      if(result?.success===true&&result?.approved===true&&
+         (!viewer.running||viewer.id!==target.id)){
+        try{await invoke("control_revoke",{deviceId:target.id,kind});}catch{}
+        throw Error("Viewer ended during native approval");
+      }
       if(!viewer.running||viewer.id!==target.id||result?.success!==true||
          result?.approved!==true||result?.kind!==kind||
          !Number.isSafeInteger(result.secondsRemaining)||result.secondsRemaining<1)
