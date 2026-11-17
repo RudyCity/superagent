@@ -1,5 +1,4 @@
 import type { McpToolResult } from "../types.js";
-import { isFullYoloMode } from "../../permissions.js";
 import { callServerApi } from "./processTools.js";
 import {
   ANDROID_APPROVED_ACTIONS, ANDROID_READONLY_DIAGNOSTICS,
@@ -122,7 +121,7 @@ const LAN_MCP_BASE_TOOL_DEFS = [
   },
   {
     name: "superagent_device_tunnel_tv_approve",
-    description: "Approve a camera-free Android TV's pending reverse HTTPS bootstrap QR. Requires the exact request ID and 64-character challenge from the TV display, Full YOLO and MCP authorization. This grants a one-time invitation ONLY to that TV's private poll channel; the TV owner must still accept and physically approve pairing. QR carries no bearer secret.",
+    description: "Approve a camera-free Android TV's pending reverse HTTPS bootstrap QR. Requires the exact request ID and 64-character challenge from the TV display, MCP Security Approval and device authorization. This grants a one-time invitation ONLY to that TV's private poll channel; the TV owner must still accept and physically approve pairing. QR carries no bearer secret.",
     inputSchema: closed({
       requestId: { type: "string", pattern: "^[a-fA-F0-9-]{36}$" },
       challenge: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
@@ -130,7 +129,7 @@ const LAN_MCP_BASE_TOOL_DEFS = [
   },
   {
     name: "superagent_device_tunnel_qr_approve",
-    description: "Approve a temporary public QR displayed by an Android phone, Android TV, or Windows LAN Client, with exact request ID and 64-character challenge. Full YOLO and MCP dangerous-tool authorization are mandatory. This issues a one-time invitation to a private device poll channel only; the device owner must separately consent before enrolling, pairing and opening a session. Never request the private poll token.",
+    description: "Approve a temporary public QR displayed by an Android phone, Android TV, or Windows LAN Client, with exact request ID and 64-character challenge. MCP Security Approval and dangerous-tool authorization are mandatory. This issues a one-time invitation to a private device poll channel only; the device owner must separately consent before enrolling, pairing and opening a session. Never request the private poll token.",
     inputSchema: closed({
       requestId: { type: "string", pattern: "^[a-fA-F0-9-]{36}$" },
       challenge: { type: "string", pattern: "^[a-fA-F0-9]{64}$" },
@@ -207,7 +206,7 @@ const LAN_MCP_BASE_TOOL_DEFS = [
   },
   {
     name: "superagent_lan_android_shell",
-    description: "Ask the Android owner to run one exact shell command inside the Android app sandbox (NOT root, ADB, Windows shell or Tray). Requires Full YOLO, approved pairing/session and separate physical consent on Android for each command. Remote screen/input must be OFF. 512 printable characters, 10 seconds, 24 KiB output; revoke or background cancels.",
+    description: "Ask the Android owner to run one exact shell command inside the Android app sandbox (NOT root, ADB, Windows shell or Tray). Requires MCP Security Approval, approved pairing/session and separate physical consent on Android for each command. Remote screen/input must be OFF. 512 printable characters, 10 seconds, 24 KiB output; revoke or background cancels.",
     inputSchema: closed({
       deviceId,
       command: { type: "string", minLength: 1, maxLength: 512,
@@ -341,17 +340,6 @@ export async function dispatchLanMcpTool(
 ): Promise<McpToolResult | null> {
   if (!(name in LAN_MCP_TOOL_CLASSIFICATIONS)) return null;
   const routedName = DEVICE_MCP_ALIAS_TO_LEGACY[name] || name;
-  const deescalating = [
-    "superagent_lan_session_close", "superagent_lan_revoke_device", "superagent_lan_file_abort",
-    "superagent_lan_pair_cancel", "superagent_device_tunnel_revoke",
-  ].includes(routedName);
-  if (LAN_MCP_TOOL_CLASSIFICATIONS[name] === "dangerous" && !isFullYoloMode() && !deescalating) {
-    return result({
-      ok: false,
-      error: "Full YOLO is required for cross-device support, in addition to MCP permission and physical target approval.",
-    }, true);
-  }
-
   try {
     const id = str(args.deviceId);
     switch (routedName) {
