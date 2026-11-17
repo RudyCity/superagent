@@ -1,0 +1,76 @@
+name: LAN File Transfer Regression
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/core/lanRemote/**"
+      - "src/core/runtime/trayLanBridge.ts"
+      - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchange.java"
+      - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanClientServer.java"
+      - "apps/superagent-tray/ui/lan-file-transfer.js"
+      - "apps/superagent-tray/ui/index.html"
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "tests/lanFileTransfer.test.ts"
+      - "tests/lanFileTransferE2E.test.ts"
+      - "tests/lanFolderPackage.test.ts"
+      - "tests/androidLanFileContract.test.ts"
+      - "tests/desktopTrayLanFilesUi.test.ts"
+      - "tests/desktopTrayLanFolderUi.test.ts"
+      - "tests/lanFileQueueRecovery.test.ts"
+      - "tests/trayLanBridge.test.ts"
+      - ".github/workflows/lan-file-transfer-regression.yml"
+  pull_request:
+    paths:
+      - "src/core/lanRemote/**"
+      - "src/core/runtime/trayLanBridge.ts"
+      - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/**"
+      - "apps/superagent-tray/ui/lan-file-transfer.js"
+      - "apps/superagent-tray/ui/index.html"
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "tests/lan*.test.ts"
+      - "tests/androidLanFileContract.test.ts"
+      - "tests/desktopTrayLanFilesUi.test.ts"
+      - "tests/desktopTrayLanFolderUi.test.ts"
+      - "tests/trayLanBridge.test.ts"
+      - ".github/workflows/lan-file-transfer-regression.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  file-transfer:
+    name: LAN protocol and UI (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun --bun x tsc --noEmit --pretty false
+      - name: Verify LAN UI JavaScript syntax
+        run: node --check apps/superagent-tray/ui/lan-file-transfer.js
+      - name: Run transfer, folder, owner-approval and UI regressions
+        run: >-
+          bun --bun x vitest run --maxWorkers=2
+          tests/lanRemote.test.ts
+          tests/lanFileTransfer.test.ts
+          tests/lanFileTransferE2E.test.ts
+          tests/lanFolderPackage.test.ts
+          tests/androidLanFileContract.test.ts
+          tests/desktopTrayLanFilesUi.test.ts
+          tests/desktopTrayLanFolderUi.test.ts
+          tests/lanFileQueueRecovery.test.ts
+          tests/trayLanBridge.test.ts
