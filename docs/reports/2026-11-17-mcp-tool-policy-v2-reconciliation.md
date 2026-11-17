@@ -217,3 +217,27 @@ authorization for a production reload.
 
 **Four-stage status:** Implemented PASS for these code changes; Tested PASS
 at the commit above; Runtime Verified BLOCKED; Released BLOCKED.
+
+### 2026-11-17 08:40 UTC — TOCTOU-safe postflight acceptance
+
+- Read-only verifier now samples the authenticated MCP owner **again after**
+  `tools/list` and `superagent_tool_status`. Both before and after samples
+  must pass the exact expected backend release SHA-256, owner identity, public
+  URL and backend health check. A new PID/backend generation invalidates an
+  otherwise healthy acceptance result (`MCP_OWNER_CHANGED_DURING_ACCEPTANCE`).
+- Pure regression `isSameVerifiedMcpGeneration` covers healthy unchanged
+  generation, owner replaced, backend replaced, and missing evidence.
+- **CI pass:** [MCP Fast Regression run 44048465316](https://github.com/RudyCity/superagent/actions/runs/44048465316),
+  source `bce7ee1d3d21e17bbf532f00515761a87ab9b90c`:
+  TypeScript PASS, **179/179 focused tests** (23 files), and
+  **36/36 host-policy tests** on **each of Windows, Linux and macOS**.
+  This commit is two later unrelated changes after the TOCTOU test commit;
+  the full implementation and test were included unchanged.
+- **Host acceptance remains blocked.** Live `fast1` Core/MCP/tool-status
+  probes still returned internal tool failures; no supervised owner PID/birth,
+  current artifact digest, host CLI execution or authenticated installed
+  MCP session can be attested.
+- The latest published unified prerelease checked remains
+  `v1.14.104-rc.3` (15 assets; published 2026-11-17 02:13 UTC).
+  It does **not** contain the changes in this report. Native release,
+  hardware tests, signing, R0–R7 review and cutover are separate gates.
