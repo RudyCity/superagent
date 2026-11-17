@@ -181,6 +181,39 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     ])expect(gate(args)).toMatch(/not certified/);
   });
 
+  it("permits document/PDF/media readers only for explicitly authorized input files",()=>{
+    const a=setup();
+    const allowed=a.rule("project-read","allow",a.root,["read"],true);
+    const blocked=a.rule("protected","deny",path.join(a.root,".env"),["read"]);
+    const opts={registry:()=>a.p(allowed,blocked),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>
+      registeredFileToolGate({name,args},a.root,opts);
+    for(const name of ["superagent_pdf_inspect","superagent_pdf_extract",
+      "superagent_pdf_ocr","superagent_pdf_verify","superagent_media_inspect"]){
+      expect(getPermanentFileToolReadiness(name)).toBe("requires_explicit_files");
+      expect(gate(name,{inputPath:"src/main.ts"})).toBeNull();
+      expect(gate(name,{inputPath:".env"})).toMatch(/denies read/);
+      expect(gate(name,{inputPath:"src/main.ts",outputPath:"../../secret.txt"}))
+        .toMatch(/certified argument/);
+      expect(gate(name,{inputPath:"src/main.ts",certificatePath:"/private/key.p12"}))
+        .toMatch(/certified argument/);
+    }
+    expect(getPermanentFileToolReadiness("superagent_read_document")).toBe("requires_explicit_files");
+    expect(gate("superagent_read_document",{filePath:"src/main.ts"})).toBeNull();
+    expect(gate("superagent_read_document",{filePath:".env"})).toMatch(/denies read/);
+    expect(gate("superagent_tool_execute",{name:"superagent_read_document",
+      arguments:{filePath:".env"}})).toMatch(/denies read/);
+    expect(gate("superagent_pdf_extract",{inputPath:"src/main.ts",maxChars:500})).toBeNull();
+    expect(gate("superagent_pdf_ocr",{inputPath:"src/main.ts",engine:"tiny"})).toBeNull();
+    expect(gate("superagent_pdf_verify",{inputPath:"src/main.ts",expectedPageCount:1})).toBeNull();
+    for(const name of ["superagent_pdf_render","superagent_pdf_edit",
+      "superagent_pdf_sign","superagent_pdf_verify_signature","superagent_media_transform",
+      "superagent_media_convert","superagent_media_plan","superagent_media_batch"]){
+      expect(gate(name,{inputPath:"src/main.ts"})).toMatch(/not certified/);
+    }
+    expect(gate("superagent_media_capabilities",{})).toBeNull();
+    expect(gate("__proto__",{filePath:"src/main.ts"})).toMatch(/not certified/);
+  });
   it("blocks symlinked targets before IO when host OS authorizes links",()=>{
     const a=setup();
     const link=path.join(a.root,"link.ts");
