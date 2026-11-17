@@ -5,6 +5,7 @@ on:
     paths:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
+      - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
@@ -35,6 +36,7 @@ on:
     paths:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
+      - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
