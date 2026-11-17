@@ -1805,6 +1805,7 @@
             <div class="lan-transfer-actions">
               <button type="button" class="button primary" id="lan-file-send" disabled>Send selected files</button>
               <button type="button" class="button ghost" id="lan-file-receive" disabled>Receive owner's shared file</button>
+              <button type="button" class="button ghost" id="lan-file-pause" disabled>Pause transfer</button>
               <button type="button" class="button ghost danger" id="lan-file-cancel" disabled>Cancel transfer</button>
             </div>
             <div class="lan-folder-picker">
@@ -1815,6 +1816,10 @@
             </div>
             <progress id="lan-file-progress" max="100" value="0" class="lan-file-progress"></progress>
             <p id="lan-file-info" aria-live="polite" class="lan-file-info">First pair and open a support session. On a Windows target, choose a source with <code>share &lt;path&gt;</code> in its LAN Client console. On Android, tap Choose document to share. Every file requires separate target-side approval.</p>
+            <div class="lan-transfer-history" aria-label="Recent file transfer receipts">
+              <span class="panel-eyebrow">RECENT TRANSFERS · THIS TRAY SESSION</span>
+              <p id="lan-file-history" class="lan-file-info lan-transfer-history-list" aria-live="polite">No transfers yet. File contents and device credentials are never kept in this list.</p>
+            </div>
           </div>
         </section>
         </div>
