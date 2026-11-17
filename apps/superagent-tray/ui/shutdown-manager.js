@@ -37,7 +37,7 @@
   function buttons(){
     const lock=state.busy||state.loading;
     $("shutdown-stop-selected").disabled=lock||state.selected.size===0;
-    $("shutdown-exit-all").disabled=lock||state.selected.size===0||!canExit();
+    $("shutdown-exit-all").disabled=lock||!canExit();
     $("shutdown-refresh").disabled=lock;
     $("shutdown-close").disabled=state.loading;
     $("shutdown-selection-count").textContent=String(state.selected.size)+
@@ -85,7 +85,7 @@
     $("shutdown-ready-count").textContent=String(total.ready);
     $("shutdown-blocked-count").textContent=String(total.blocked);
     $("shutdown-all-note").textContent=state.preview?.exitReady
-      ?"Full exit requires every active verified owner to remain selected."
+      ?"Full exit is available while all active owners are selected. If none are running, only the Tray will close."
       :"Full exit is blocked by busy, external or unverified owners. Stop Selected remains available.";
     buttons();
   }
@@ -112,6 +112,7 @@
     if(!progress||!Array.isArray(progress.steps))return;
     if(state.progress&&state.progress.runId!==progress.runId&&state.busy)return;
     state.progress=progress;state.busy=progress.stage==="running";
+    if(!state.busy){state.preview=null;state.selected.clear();}
     drawProgress();buttons();
     if(!state.busy&&state.poller!==null){
       clearInterval(state.poller);state.poller=null;
@@ -150,7 +151,7 @@
     finally{state.loading=false;buttons();}
   }
   async function execute(exitAfter){
-    if(state.busy||state.loading||!state.preview||!state.selected.size)return;
+    if(state.busy||state.loading||!state.preview||(!exitAfter&&!state.selected.size))return;
     if(exitAfter&&!canExit()){
       feedback("Resolve all blockers and select every active owner before exiting.",true);
       return;
