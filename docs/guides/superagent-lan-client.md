@@ -156,3 +156,33 @@ ordered 4096-byte chunks, outer SHA-256 + per-file SHA-256, safe path checks
 and creation of a new extraction directory. At most 64 files in 4 MiB
 including manifest; no automatic resume or broad remote folder browsing.
 Physical device Android E2E is still a release gate.
+
+## LAN transfer hardening: queued sends and uncertain-ACK recovery (2026-11-17)
+
+The Tray **Send selected files** picker accepts 1–32 explicitly selected
+files, processed sequentially with a fresh target-side approval for each
+file. Every file remains capped at 4 MiB; cancel stops remaining items.
+The progress bar reflects the overall file queue. No remote directory
+enumeration, unattended collection, or overwrite is introduced.
+
+A read-only, authenticated `file_status` query returns only metadata
+and the acknowledged cursor for a single still-active, approved
+transfer ID. After an ambiguous lost upload acknowledgement, the
+controller confirms that the exact chunk arrived before continuing,
+without blindly replaying a mutating write. A download may re-read
+only the preceding already-acknowledged chunk after matching the
+transfer's source metadata. A status query never cancels an active
+transfer. Android pins its locally selected file revision before the
+owner approval dialog and rejects any selection change before offer.
+
+This is in-session recovery, not durable restart/resume. Limits
+remain 4 MiB per file/folder package, 64 files in a folder archive,
+one active transfer per target and ten-minute idle expiry. Large-file
+streaming, parallel transfers, direct device-to-device relay and
+Android physical-device acceptance remain incomplete.
+
+Verification: `.github/workflows/lan-file-transfer-regression.yml`
+runs typecheck, existing owner-consent and folder regressions, plus
+queue, uncertain-ACK and read-only status tests on Ubuntu and Windows.
+Native APK Gradle compilation and real-device Android/Windows round
+trips are separate release gates.
