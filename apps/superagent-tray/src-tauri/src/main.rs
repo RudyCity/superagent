@@ -2070,8 +2070,11 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         .await
         .map_err(|_| "SuperAgent Core returned invalid JSON".to_string())?;
     if !status.is_success() || value.get("success") == Some(&Value::Bool(false)) {
-        let msg = value
-            .get("error")
+        let msg = (if path == "/api/desktop/access/projects/mutate" {
+            value.get("code").or_else(|| value.get("error"))
+        } else {
+            value.get("error")
+        })
             .and_then(Value::as_str)
             .unwrap_or("Daemon operation was not applied (the job may be running)");
         return Err(format!(
