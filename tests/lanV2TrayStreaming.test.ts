@@ -10,7 +10,7 @@ const transferId = "e21956a1-daa6-4f62-a4bd-c31a6c3b105e";
 const sha256 = (data: Buffer) => crypto.createHash("sha256").update(data).digest("hex");
 const CHUNK = 16 * 1024;
 
-function harness(options: { lostAck?: boolean; resumeBytes?: number; platform?: string } = {}) {
+function harness(options: { lostAck?: boolean; lostFinishAck?: boolean; failStatus?: boolean; resumeBytes?: number; platform?: string } = {}) {
   const elements = new Map<string, any>();
   const el = (id: string): any => {
     if (!elements.has(id)) elements.set(id, {
@@ -25,6 +25,7 @@ function harness(options: { lostAck?: boolean; resumeBytes?: number; platform?: 
   const requests: Array<{ action: string; seq?: number }> = [];
   let offset = options.resumeBytes || 0;
   let lostOnce = false;
+  let finishCalls = 0;
   let finished = false;
   let requestedHash = "";
   const invoke = async (command: string, input: any) => {
@@ -55,6 +56,7 @@ function harness(options: { lostAck?: boolean; resumeBytes?: number; platform?: 
       return { success: true, result: { ok: true, seq: payload.seq + 1, received: offset } };
     }
     if (action === "file_v2_status") {
+      if (options.failStatus) throw Error("Target lost contact during checkpoint.");
       return { success: true, result: {
         ok: true, version: 2, transferId, direction: "upload",
         name: "large.bin", size: data.length, sha256: digest,
@@ -63,6 +65,9 @@ function harness(options: { lostAck?: boolean; resumeBytes?: number; platform?: 
     }
     if (action === "file_v2_finish") {
       if (offset !== data.length) throw Error("Incomplete file");
+      finishCalls++;
+      if (options.lostFinishAck && finishCalls === 1)
+        throw Error("Verified commit completed; reply was lost");
       finished = true;
       return { success: true, result: { ok: true, bytes: offset, savedTo: "Downloads/SuperAgent LAN" } };
     }
@@ -95,7 +100,8 @@ function harness(options: { lostAck?: boolean; resumeBytes?: number; platform?: 
   el("lan-file-source").files = [file];
   el("lan-file-source").listeners.get("change")?.();
   return { el, requests, digest, requestedHash: () => requestedHash,
-    finished: () => finished, offset: () => offset,
+    finished: () => finished, finishCalls: () => finishCalls,
+    offset: () => offset,
     click: (id: string) => el(id).listeners.get("click")?.() };
 }
 
@@ -136,6 +142,23 @@ describe("Desktop LAN V2 user-selected Blob streaming", () => {
     expect(h.requests.filter(a => a.action === "file_v2_offer")).toHaveLength(1);
     expect(h.offset()).toBe(4 * 1024 * 1024 + 11);
     expect(h.el("lan-file-history").textContent).toContain("V2 verified");
+  }, 40_000);
+
+  it("retries an idempotent finish receipt after a lost final ACK", async () => {
+    const h = harness({ lostFinishAck: true });
+    h.click("lan-file-send");
+    await eventually(h.finished);
+    expect(h.finishCalls()).toBe(2);
+    expect(h.requests.filter(x => x.action === "file_v2_abort")).toHaveLength(0);
+    expect(h.el("lan-file-history").textContent).toContain("V2 verified");
+  }, 40_000);
+
+  it("keeps target checkpoint after transport failure and offers explicit Retry remaining", async () => {
+    const h = harness({ lostAck: true, failStatus: true });
+    h.click("lan-file-send");
+    await eventually(() => h.el("lan-file-info").textContent.includes("V2 checkpoint retained"));
+    expect(h.requests.filter(x => x.action === "file_v2_abort")).toHaveLength(0);
+    expect(h.el("lan-file-retry").disabled).toBe(false);
   }, 40_000);
 
   it("rejects targets without an allowed V2-capable platform", async () => {
