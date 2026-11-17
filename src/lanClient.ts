@@ -146,7 +146,7 @@ async function main() {
     });
     tunnelActive = true;
   }
-  console.log("Commands: pair | share <local-file> | share-folder <local-folder> | approve | deny | status | revoke | stop");
+  console.log("Commands: pair | share <local-file> | share-large <local-file> | share-folder <local-folder> | approve | deny | status | revoke | stop");
   let stopped = false;
   async function stop() {
     if (stopped) return; stopped = true;
@@ -172,6 +172,14 @@ async function main() {
           " (" + folder.files + " files; " + folder.size + " bytes). Each download still needs APPROVE."),
         (error: Error) => console.log("Folder not shared: " + error.message),
       );
+    } else if (command.startsWith("share-large ")) {
+      const selectedPath = line.trim().slice("share-large ".length).trim().replace(/^"|"$/g, "");
+      void client.shareSelectedLargeFile(selectedPath).then(
+        (file) => console.log("Owner selected large V2 source: " + file.name +
+          " (" + file.size + " bytes; SHA-256 " + file.sha256.slice(0, 12) +
+          "…). Each transfer still requires a fresh target-side APPROVE."),
+        (error: Error) => console.log("V2 source not shared: " + error.message),
+      );
     } else if (command.startsWith("share ")) {
       const chosen = line.trim().slice(6).trim().replace(/^"|"$/g, "");
       void client.shareSelectedFile(chosen).then(
@@ -182,7 +190,7 @@ async function main() {
     else if (command === "status") console.log(JSON.stringify({ ...client.state(), tunnelActive }));
     else if (command === "revoke") { client.revoke(); console.log("Paired devices revoked."); }
     else if (command === "stop" || command === "quit" || command === "exit") void stop();
-    else console.log("Commands: pair | share <local-file> | share-folder <local-folder> | approve | deny | status | revoke | stop");
+    else console.log("Commands: pair | share <local-file> | share-large <local-file> | share-folder <local-folder> | approve | deny | status | revoke | stop");
   });
   process.once("SIGINT", () => { void stop(); });
   process.once("SIGTERM", () => { void stop(); });
