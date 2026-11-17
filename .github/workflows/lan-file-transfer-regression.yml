@@ -42,6 +42,7 @@ on:
       - "tests/lanTransferDiagnostics.test.ts"
       - "tests/lanV2Source.test.ts"
       - "tests/lanV2Relay.test.ts"
+      - "tests/lanV2DuplexE2E.test.ts"
       - "tests/androidLanLargeSourceContract.test.ts"
       - "tests/androidLanBackgroundTransferContract.test.ts"
       - "tests/trayLanBridge.test.ts"
@@ -126,6 +127,7 @@ jobs:
           tests/lanTransferDiagnostics.test.ts
           tests/lanV2Source.test.ts
           tests/lanV2Relay.test.ts
+          tests/lanV2DuplexE2E.test.ts
           tests/androidLanLargeSourceContract.test.ts
           tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
