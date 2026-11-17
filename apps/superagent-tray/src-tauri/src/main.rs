@@ -2294,8 +2294,9 @@ async fn external_lifecycle_action(
     let args = obj.get("args").cloned().unwrap_or_else(|| json!({}));
     let fields = args.as_object().ok_or("Invalid lifecycle arguments")?;
     let allowed: &[&str] = match action.as_str() {
-        "create" => &["name", "cronExpression", "prompt", "steps", "maxRuns", "enabled"],
-        "run.now" | "pause" | "resume" | "cancel" => &["workflowId"],
+        "create" => &["name", "cronExpression", "prompt", "steps", "maxRuns", "enabled", "idempotencyKey"],
+        "run.now" => &["workflowId", "idempotencyKey"],
+        "pause" | "resume" | "cancel" => &["workflowId"],
         "review.retry" => &["runId", "stepId"],
         "worker.bind" => &["workerId", "clientId", "tabId"],
         "worker.unbind" | "worker.revoke" => &["workerId"],
