@@ -166,11 +166,11 @@ export class RemoteControlAuthority {
     return current;
   }
 
-  /** Viewing never grants input; this only creates a 30-second native challenge.
-   * Installed controllers SHOULD specify the minimal kinds rather than using
-   * the backward-compatible all-kinds default used by older host integrations.
+  /** Viewing never grants input. Host callers MUST explicitly specify
+   * action kinds bound to the independently signed native approval proof.
+   * No silent all-kinds default may promote mouse consent into keyboard input.
    */
-  request(caller: RemotePrincipal, requestedKinds: readonly RemoteInputKind[] = kinds): RemoteControlChallenge {
+  request(caller: RemotePrincipal, requestedKinds: readonly RemoteInputKind[]): RemoteControlChallenge {
     if (!Array.isArray(requestedKinds) || requestedKinds.length === 0 ||
         requestedKinds.length > kinds.length ||
         requestedKinds.some(kind => !kinds.includes(kind)) ||
