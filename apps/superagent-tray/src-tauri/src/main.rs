@@ -2083,7 +2083,7 @@ async fn mcp_project_access_action(
                 format!("{} ({})", clean(project.get("name").and_then(Value::as_str).unwrap_or(&project_id)),
                     clean(project.get("target").and_then(Value::as_str).unwrap_or("")))
             };
-            format!("APPROVE MCP ACCESS?\n\nAgent: {}\nIdentity: {}\nTarget: {}\nCapabilities: {}\n\nThis is independent from Chat Agent YOLO. Permissions remain active until revoked.",
+            format!("APPROVE MCP ACCESS?\n\nAgent: {}\nIdentity: {}\nTarget: {}\nCapabilities: {}\n\nExecute/Git may run commands with OS-user privileges. This is independent from Chat Agent YOLO. Permissions remain active until revoked.",
                 subject, identity_handle, target, caps.join(", "))
         } else {
             let request_id = text_field("requestId", 96)?;
@@ -2113,10 +2113,11 @@ async fn mcp_project_access_action(
                 "revoke" => "REVOKE",
                 _ => return Err("Unsupported native MCP approval action".into()),
             };
-            format!("{} MCP ACCESS?\n\nAgent: {}\nTarget: {}\nCapabilities: {}\nReason: {}\nRequest: {}\n\nReview this exact scope before confirming.",
+            format!("{} MCP ACCESS?\n\nAgent: {}\nTarget: {}\nPath: {}\nCapabilities: {}\nReason: {}\nRequest: {}\n\nReview this exact scope before confirming.",
                 verb,
                 clean(request.get("subject").and_then(Value::as_str).unwrap_or("Unknown")),
                 clean(request.get("projectName").and_then(Value::as_str).unwrap_or("Unknown")),
+                clean(request.get("projectPath").and_then(Value::as_str).unwrap_or("")),
                 selected.join(", "),
                 clean(request.get("reason").and_then(Value::as_str).unwrap_or("Not provided")),
                 request_id)
