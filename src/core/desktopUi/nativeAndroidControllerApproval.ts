@@ -85,7 +85,8 @@ export class NativeAndroidControllerApproval {
     this.key();
     const nonce = randomBytes(24).toString("hex");
     this.pending = {...device,nonce,expiresAt:now+ANDROID_CONTROL_CHALLENGE_TTL_MS};
-    return {...this.pending};
+    return {nonce,deviceId:device.deviceId,fingerprint:device.fingerprint,
+      expiresAt:this.pending.expiresAt};
   }
 
   /** Consume every challenge once, including invalid signatures. */
