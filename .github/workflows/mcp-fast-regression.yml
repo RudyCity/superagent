@@ -1,0 +1,47 @@
+name: MCP Fast Regression
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/core/mcp/**"
+      - "src/core/tools/mcpTools.ts"
+      - "tests/mcp*.test.ts"
+      - ".github/workflows/mcp-fast-regression.yml"
+  pull_request:
+    paths:
+      - "src/core/mcp/**"
+      - "src/core/tools/mcpTools.ts"
+      - "tests/mcp*.test.ts"
+      - ".github/workflows/mcp-fast-regression.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  focused:
+    name: MCP response, paging, metrics and protocol
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck
+        run: bun --bun x tsc --noEmit
+      - name: MCP focused regression
+        run: |
+          bun --bun x vitest run --maxWorkers=2 \
+            tests/mcpToolMetrics.test.ts \
+            tests/mcpToolResultFormatter.test.ts \
+            tests/mcpLogTail.test.ts \
+            tests/mcpTextFilePaging.test.ts \
+            tests/mcpOutputRecovery.test.ts \
+            tests/mcpToolGateway.test.ts \
+            tests/mcpGatewayHttp.test.ts \
+            tests/mcpSessionRegistry.test.ts \
+            tests/mcpResponseLease.test.ts
