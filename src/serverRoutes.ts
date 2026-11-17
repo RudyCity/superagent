@@ -1676,9 +1676,10 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Private LAN Desktop Live is view-only. A preview capability is NOT a
-  // controller capability. Host-native takeover remains available only through
-  // the authenticated visible Tray, never through this LAN-facing HTTP route.
+  // Legacy LAN HTTP Desktop Live is LOOPBACK ONLY. Never send screenshots
+  // unencrypted across a LAN: private remote viewing requires the separately
+  // approved mTLS host/viewer transport. A local preview token never grants
+  // input or takeover, even when a caller reaches these deprecated endpoints.
   if (pathname === "/api/desktop/live/lan-preview" || pathname === "/api/desktop/live/lan-frame" ||
       pathname === "/api/desktop/live/lan-takeover" || pathname === "/api/desktop/live/lan-input") {
     res.setHeader("Cache-Control", "no-store");
@@ -1686,8 +1687,7 @@ export async function handleServerRoute(
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
     const peer = (req.socket.remoteAddress || "").replace(/^::ffff:/, "");
-    const { privateV4 } = await import("./core/lanRemote/transport.js");
-    const privatePeer = peer === "127.0.0.1" || peer === "::1" || privateV4(peer);
+    const privatePeer = peer === "127.0.0.1" || peer === "::1";
     const forwarded = ["forwarded", "x-forwarded-for", "x-forwarded-host",
       "x-forwarded-proto", "cf-connecting-ip", "cf-ray"].some(key =>
         Object.hasOwn(req.headers, key));
@@ -1697,10 +1697,10 @@ export async function handleServerRoute(
       const parsedHost = new URL("http://" + host);
       privateHost = parsedHost.host === host && !parsedHost.username &&
         (parsedHost.hostname === "localhost" || parsedHost.hostname === "127.0.0.1" ||
-         parsedHost.hostname === "[::1]" || privateV4(parsedHost.hostname));
+         parsedHost.hostname === "[::1]");
     } catch { /* Reject malformed/dns-rebinding host headers. */ }
     if (!privatePeer || !privateHost || forwarded) {
-      sendJSON(res, 403, { success: false, error: "LAN_STREAM_PRIVATE_NETWORK_REQUIRED" });
+      sendJSON(res, 403, { success: false, error: "LAN_STREAM_LOOPBACK_REQUIRED" });
       return true;
     }
     if (pathname === "/api/desktop/live/lan-takeover" ||
