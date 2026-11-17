@@ -162,7 +162,6 @@ function archiveSource(item: Session): "managed-cdp-exact-tab" | "delegate-cdp-e
 }
 function publicStatus(item: Session) {
   return { recordingId: item.id,
-    source: item.scope.targetKey.startsWith("delegate:") ? "delegate-cdp-exact-tab" : "managed-cdp-exact-tab",
     status: item.status, startedAt: new Date(item.start).toISOString(),
     elapsedMs: safeCount(Date.now() - item.start), video: true, source:archiveSource(item),
     fps: item.profile.fps, videoPreset:item.preset,
