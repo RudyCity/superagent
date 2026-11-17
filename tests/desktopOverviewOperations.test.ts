@@ -29,7 +29,9 @@ function mount(calls: Record<string,any> = {}) {
   const ipc=async (name:string,args:any)=>{
     requests.push({name,args});
     if(name==="lifecycle_console_request"){
-      if(args.request.action==="dashboard")return calls.dashboard ?? {
+      if(args.request.action==="dashboard"){
+        if(calls.dashboardPending)return new Promise(()=>{});
+        return calls.dashboard ?? {
         observedAt:Date.now(),summary:{ready:3},
         checks:[
           {service:"core",ready:true,ownerVerified:true,state:"active",reason:"Verified"},
@@ -43,6 +45,7 @@ function mount(calls: Record<string,any> = {}) {
             memoryTelemetry:{rssBytes:10485760,heapUsedBytes:5242880,trend:{suspicious:false}}}}],
         timeline:[{at:Date.now(),service:"mcp",action:"status",outcome:"succeeded"}],
       };
+      }
       if(args.request.action==="logs")return {events:[]};
       if(args.request.action==="plan")return calls.plan ?? {
         service:args.request.service,action:args.request.targetAction,
@@ -67,7 +70,12 @@ function mount(calls: Record<string,any> = {}) {
       };
       return {requests:[],identities:[]};
     }
-    if(name==="get_overview_owner_metrics")return {processes:[{service:"mcp",cpuPct:2,rssBytes:10485760}]};
+    if(name==="get_overview_owner_metrics"){
+      if(calls.metricsError)throw new Error("OVERVIEW_OWNER_INVENTORY_UNAVAILABLE");
+      return calls.metrics ?? {observedAt:Date.now(),
+        processes:[{service:"mcp",cpuPct:2,rssBytes:10485760}],
+        mcpTelemetry:{rssBytes:10485760,heapUsedBytes:5242880,trend:{suspicious:false}}};
+    }
     return null;
   };
   const context=vm.createContext({
@@ -100,6 +108,44 @@ describe("Tray Overview owner-verified cockpit",()=>{
       .toBe("Gemini");
     expect(h.byId("op-connected-agent-list").children[0].children[0].children[1].textContent)
       .toContain("not independently verified");
+  });
+  it("renders native owner CPU/RAM and graph with the native sample timestamp",async()=>{
+    const sampleAt=Date.now()-2500;
+    const h=mount({metrics:{observedAt:sampleAt,
+      processes:[{service:"core",cpuPct:1.25,rssBytes:20971520},
+        {service:"mcp",cpuPct:3.6,rssBytes:10485760}],
+      mcpTelemetry:{rssBytes:10485760,heapUsedBytes:5242880,
+        trend:{suspicious:false}}}});await settle();
+    const rows=h.byId("op-process-resources").children;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].children[1].textContent).toBe("1.3% CPU");
+    expect(rows[0].children[2].textContent).toBe("20.0 MiB");
+    expect(h.byId("op-resources-status").textContent).toContain("2 verified process(es)");
+    expect(h.byId("op-resource-history").children).toHaveLength(1);
+    expect(h.byId("op-resource-history").children[0].title)
+      .toContain(new Date(sampleAt).toLocaleTimeString());
+  });
+  it("updates Resource Monitor before a slow Lifecycle Dashboard returns",async()=>{
+    const h=mount({dashboardPending:true});await settle();
+    expect(h.byId("op-process-resources").children).toHaveLength(1);
+    expect(h.byId("op-process-resources").children[0].children[1].textContent).toBe("2.0% CPU");
+    expect(h.byId("op-mcp-rss").textContent).toBe("10.0 MiB");
+    expect(h.byId("op-mcp-heap").textContent).toBe("5.0 MiB");
+    expect(h.byId("op-resources-status").textContent).toContain("verified process");
+  });
+  it("does not display stale or failed native process samples",async()=>{
+    for(const config of [
+      {metrics:{observedAt:Date.now()-120000,processes:[
+        {service:"core",cpuPct:10,rssBytes:10485760}]}},
+      {metricsError:true}
+    ]){
+      const h=mount(config);await settle();
+      expect(h.byId("op-process-resources").children).toHaveLength(1);
+      expect(h.byId("op-process-resources").children[0].textContent)
+        .toContain("No current verified owner process sample");
+      expect(h.byId("op-resources-status").textContent).toContain("unavailable or stale");
+      expect(h.byId("op-resource-history").children).toHaveLength(0);
+    }
   });
   it("fails closed when lifecycle telemetry disappears",async()=>{
     const h=mount({dashboard:{}});await settle();
@@ -166,6 +212,8 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(markup).toContain('id="overview-operations"');
     expect(markup).toContain('src="./overview-operations.js"');
     expect(markup).toContain('href="./overview-operations.css"');
+    expect(markup).toContain('id="op-resources-status"');
+    expect(native).toContain('lifecycle_console_request(json!({"action":"inventory"}))');
     expect(markup).toContain('id="op-connected-agent-list"');
     expect(markup).toContain('id="runtime-mcp-connected-list"');
     expect(ui).toContain("window.__superagentRenderMcpClientList");
