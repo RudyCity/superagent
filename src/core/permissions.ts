@@ -948,24 +948,52 @@ export function isToolCallWithinYoloScope(
   );
 }
 
-/** MCP filesystem/project boundaries are independent from the chat-agent YOLO mode. */
-export function isPathWithinMcpScope(targetPath: string, projectRoot: string, baseCwd?: string): boolean {
-  if (!path.isAbsolute(projectRoot)) return false;
-  const root = resolveNormalizedPath(projectRoot);
-  const resolved = path.isAbsolute(targetPath)
-    ? resolveNormalizedPath(targetPath)
-    : resolveNormalizedPath(targetPath, baseCwd || root);
-  return normalizeAndCheckSubpath(resolved, root);
+/** Realpath-check existing files and parents of yet-to-be-created MCP paths. */
+function realMcpPath(raw: string): string | null {
+  const absolute = path.resolve(raw);
+  try {
+    if (fs.existsSync(absolute)) return fs.realpathSync.native(absolute);
+    let ancestor = absolute;
+    while (!fs.existsSync(ancestor)) {
+      const next = path.dirname(ancestor);
+      if (next === ancestor) return null;
+      ancestor = next;
+    }
+    const realAncestor = fs.realpathSync.native(ancestor);
+    return path.resolve(realAncestor, path.relative(ancestor, absolute));
+  } catch { return null; }
 }
 
-/** MCP checks the exact authorized project root, never the YOLO parent or Full mode. */
+/** MCP filesystem/project boundaries are independent from Chat Agent YOLO. */
+export function isPathWithinMcpScope(targetPath: string, projectRoot: string, baseCwd?: string): boolean {
+  if (!path.isAbsolute(projectRoot)) return false;
+  const root = realMcpPath(projectRoot);
+  const raw = path.isAbsolute(targetPath)
+    ? targetPath : path.resolve(baseCwd || projectRoot, targetPath);
+  const candidate = realMcpPath(raw);
+  return Boolean(root && candidate && normalizeAndCheckSubpath(candidate, root));
+}
+
+/** MCP checks the exact, canonical approved project root, never YOLO parent/full scopes. */
 export function isToolCallWithinMcpScope(
   toolCall: { name: string; args?: Record<string, unknown> },
   projectRoot: string,
 ): boolean {
   if (!path.isAbsolute(projectRoot)) return false;
-  const root = resolveNormalizedPath(projectRoot);
-  return checkToolCallWithinRoots(toolCall, [root], root);
+  const root = realMcpPath(projectRoot);
+  if (!root) return false;
+  if (!checkToolCallWithinRoots(toolCall, [root], root)) return false;
+  const args = toolCall.args || {};
+  const paths = extractCandidateFilePaths(args);
+  for (const key of ["cwd", "workspace", "worktreePath", "DirectoryPath", "SearchPath",
+    "targetPath", "sourcePath", "destination", "workspacePath", "dir", "dirPath"]) {
+    const value = args[key];
+    if (typeof value === "string" && value.trim()) paths.push(value);
+  }
+  const base = typeof args.cwd === "string" && args.cwd.trim() ? args.cwd
+    : typeof args.workspace === "string" && args.workspace.trim() ? args.workspace : root;
+  if (!isPathWithinMcpScope(base, root)) return false;
+  return paths.every(candidate => isPathWithinMcpScope(candidate, root, base));
 }
 
 function checkToolCallWithinRoots(
