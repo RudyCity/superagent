@@ -45,6 +45,9 @@ describe("multi-agent CLI input responsiveness", () => {
     );
 
     try {
+      // Ink schedules passive effects after the initial render. Let the
+      // registration effect run before observing its supplied callback.
+      await new Promise((resolve) => setTimeout(resolve, 30));
       expect(emitLog).toBeTypeOf("function");
       expect(intervalSpy.mock.calls.every(([, delay]) => delay !== 0)).toBe(true);
       expect(timeoutSpy.mock.calls.filter(([, delay]) => delay === 48)).toHaveLength(0);
