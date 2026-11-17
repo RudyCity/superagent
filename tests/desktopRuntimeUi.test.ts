@@ -453,6 +453,27 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.byId("runtime-action-feedback").textContent).toContain("Outcome uncertain");
   });
 
+  it("reconciles a fresh scan started in the same millisecond as a verified stop", async () => {
+    const owner = {kind:"mcp",source:"registry",port:9227,pid:3628,
+      state:"observed",canStop:true,transport:"cloudflare"};
+    const snapshot = {scannedAt:Date.now(),cores:[],processes:[],
+      independentHosts:[],remoteServices:[owner]};
+    const ui = mountRuntime(snapshot);
+    await new Promise(resolve => setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    // Date.now() cannot distinguish the ordered receipt/scan on a fast runner.
+    const frozen = Date.now();
+    ui.context.Date = class FixedDate extends Date {
+      static now() { return frozen; }
+    };
+    await (vm.runInContext(
+      'runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"mcp",runtimeAction:"stop",runtimePort:"9227",runtimePid:"3628"}})}})',
+      ui.context) as Promise<void>);
+    expect(ui.byId("runtime-remote").innerHTML).toContain("MCP HTTP Server");
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("runtime-instance--stopped");
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("1");
+  });
+
   it("re-shows an owner if a fresh scan still observes it despite a stop receipt", async () => {
     const owner={kind:"mcp",source:"registry",port:9227,pid:3628,
       state:"observed",canStop:true,transport:"cloudflare"};
