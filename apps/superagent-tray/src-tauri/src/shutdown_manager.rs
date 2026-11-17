@@ -1,6 +1,7 @@
 //! Native-only, owner-scoped shutdown review and execution.
-//! Destructive force-stop is limited to authenticated MCP owner control or a
-//! birth-pinned, registered Cloudflare process after separate native approval.
+//! Graceful and force-stop follow authenticated owner protocols. Manual Kill
+//! requires an additional focused native approval and exact OS PID/birth/name
+//! pin, allowing the human operator to override missing application attestation.
 
 use super::{config_dir, core_request, lifecycle_console_request, remote_service_detection,
     runtime_control, runtime_detection, server_info, show_main, tray_lifecycle};
@@ -40,6 +41,8 @@ struct Item {
     pid: Option<u32>,
     active_sessions: Option<u64>,
     force_selectable: bool,
+    manual_kill_selectable: bool,
+    process_name: Option<String>,
     process_started_at: Option<u64>,
 }
 impl Item {
@@ -48,7 +51,8 @@ impl Item {
         port: Option<u16>, pid: Option<u32>) -> Self {
         Self {id, label:label.into(), kind:kind.into(), state:state.into(),
             detail:detail.into(), owner_verified, selectable, blocker,
-            port, pid, active_sessions:None, force_selectable:false, process_started_at:None}
+            port, pid, active_sessions:None, force_selectable:false,
+            manual_kill_selectable:false, process_name:None, process_started_at:None}
     }
 }
 
@@ -212,6 +216,14 @@ async fn inspect() -> Result<Preview, String> {
                         runtime_control::can_force_stop_mcp(&dir,port,pid).await
                     } else {false};
                 items.push(item);
+            }
+            "core-supervisor" => {
+                items.push(Item::new(
+                    format!("supervisor:{}:{}",remote_owner.port.unwrap_or(0),remote_owner.pid.unwrap_or(0)),
+                    "Core Supervisor","core-supervisor",remote_owner.state,
+                    "Supervisor process observed; manual PID kill may interrupt all Core generations",
+                    false,false,Some("No verified full-stop protocol; manual kill requires separate approval".into()),
+                    remote_owner.port,remote_owner.pid));
             }
             "cloudflare" | "muse-watch" => {
                 let mut item=Item::new(
@@ -383,16 +395,23 @@ async fn inspect() -> Result<Preview, String> {
     if items.len()>100 {
         return Err("SHUTDOWN_TOO_MANY_OWNERS: narrow runtime before shutdown".into());
     }
-    // Pin the process birth seen by the OS to the owner-specific preview;
-    // later force execution must verify the same birth, not merely the PID.
+    // A human may explicitly select OS-observed processes whose application
+    // owner is unverified. Pin both process birth and name; no UI-supplied PID
+    // is accepted by the backend and no process tree is traversed.
     for item in &mut items {
         item.force_selectable |= item.selectable &&
             matches!(item.kind.as_str(),"managed"|"daemon-direct"|"core");
-        if item.force_selectable {
-            item.process_started_at = item.pid.and_then(|pid|
-                force_system.process(Pid::from_u32(pid)).map(|p|p.start_time()));
-            item.force_selectable &= item.process_started_at.is_some();
+        if let Some(pid)=item.pid {
+            if let Some(process)=force_system.process(Pid::from_u32(pid)) {
+                let name=process.name().to_string();
+                if manual_process_allowed(&item.kind,pid,&name) && running(&item.state) {
+                    item.manual_kill_selectable=true;
+                    item.process_name=Some(name);
+                }
+                item.process_started_at=Some(process.start_time());
+            }
         }
+        item.force_selectable &= item.process_started_at.is_some();
     }
     let exit_ready=items.iter().all(|item| !running(&item.state) || item.selectable);
     Ok(Preview {preview_id:Uuid::new_v4().simple().to_string(),
