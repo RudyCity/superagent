@@ -14,11 +14,18 @@ describe("Desktop Live independent viewer and controller permissions", () => {
 
   it("reports paired LAN support separately from device input permission", () => {
     const disconnected = desktopLiveAccessModes("lan-device",{connected:false});
-    const connected = desktopLiveAccessModes("lan-device",{connected:true});
+    const connected = desktopLiveAccessModes("lan-device",{connected:true,devicePlatform:"android"});
     expect(disconnected.view).toBe("not-supported");
     expect(connected.view).toBe("device-approval-required");
     expect(connected.controller).toBe("device-approval-required");
     expect(connected.independentlyApproved).toBe(false);
+  });
+
+  it("does not advertise unsupported Windows LAN screen or keyboard access", () => {
+    const windows = desktopLiveAccessModes("lan-device",{connected:true,devicePlatform:"windows"});
+    expect(windows.view).toBe("not-supported");
+    expect(windows.controller).toBe("not-supported");
+    expect(windows.independentlyApproved).toBe(false);
   });
 
   it("reports managed CDP ownership without suggesting a screen or OS input grant", () => {
