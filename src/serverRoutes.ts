@@ -1872,7 +1872,7 @@ export async function handleServerRoute(
     }
     try {
       const raw=await readBody(req);
-      if (Buffer.byteLength(raw,"utf8")>2400) throw Error("Oversized request.");
+      if (Buffer.byteLength(raw,"utf8")>8192) throw Error("Oversized request.");
       const body=JSON.parse(raw);
       if (!body || typeof body!=="object" || Array.isArray(body) ||
           typeof body.action!=="string") throw Error("Invalid body.");
