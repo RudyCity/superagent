@@ -150,3 +150,25 @@
   .external-life-submit .button { width: 100%; }
   .external-life-mini { flex: 0 0 auto; }
 }
+.external-life-cdp-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px 13px;
+  padding: 11px 13px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface-raised);
+}
+.external-life-cdp-tools label { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+.external-life-cdp-tools select {
+  flex: 1 1 250px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.external-life-cdp-tools select:focus-visible { outline: 2px solid var(--border-focus); }
+.external-life-cdp-tools small { flex-basis: 100%; font-size: 11px; color: var(--text-muted); }
