@@ -274,6 +274,8 @@ export class CliBridgePriorityQueue {
     now: number = Date.now(),
     /** Skip jobs whose declared output/resource claims are currently locked. */
     canStart: (job: ScheduledJobRequest) => boolean = () => true,
+    // Policy may change dynamically as host limits/agent quotas change.
+    admissionPolicy: SchedulerPolicy = this.policy,
   ): { job: ScheduledJobRequest; decision: AdmissionDecision } | null {
     if (this.queue.length === 0) return null;
 
@@ -294,7 +296,7 @@ export class CliBridgePriorityQueue {
         activeJobs,
         effectiveSlots,
         pressure,
-        this.policy
+        admissionPolicy
       );
 
       if (decision.admitted) {

@@ -507,7 +507,9 @@ async function persistQueuedJob(job: DelegateJob, opts: StartDelegateJobOptions)
 }
 
 async function removeQueuedJobFile(jobId: string): Promise<void> {
-  await fs.rm(path.join(getQueueDir(), `${jobId}.json`), { force: true }).catch(() => {});
+  // A failed durable queue removal is NOT permission to run the job:
+  // reloading a remaining queued record could otherwise repeat mutations.
+  await fs.rm(path.join(getQueueDir(), `${jobId}.json`), { force: true });
 }
 
 let isInitializing = false;
@@ -556,7 +558,7 @@ async function initialize(): Promise<void> {
             try {
               const raw = await fs.readFile(path.join(getQueueDir(), qf), "utf8");
               const parsed = JSON.parse(raw);
-              if (parsed.job && parsed.opts) {
+              if (parsed.job?.status === "queued" && parsed.opts) {
                 jobs.set(parsed.job.jobId, parsed.job);
                 queuedJobOptions.set(parsed.job.jobId, parsed.opts);
                 ownedJobIds.add(parsed.job.jobId);
@@ -713,7 +715,7 @@ async function drainQueue(): Promise<void> {
   isDrainingPriorityQueue = true;
   try {
     while (priorityQueue.size() > 0) {
-      const { effectiveSlots, pressure } = getSchedulerContext();
+      const { effectiveSlots, pressure, policy } = getSchedulerContext();
       const activeJobs = [...jobs.values()].filter((j) => ownedJobIds.has(j.jobId) &&
         (activeStatus(j.status) || runners.has(j.jobId) || capacityLeases.has(j.jobId)));
       const activeRequests: ScheduledJobRequest[] = activeJobs.map((j) => ({
@@ -737,7 +739,7 @@ async function drainQueue(): Promise<void> {
           return true; // invalid inputs fail in the existing launch validation
         }
       };
-      const next = priorityQueue.dequeueNextEligible(activeRequests, effectiveSlots, pressure, Date.now(), canStart);
+      const next = priorityQueue.dequeueNextEligible(activeRequests, effectiveSlots, pressure, Date.now(), canStart, policy);
       if (!next) break;
       const queuedJob = jobs.get(next.job.jobId);
       const queuedOpts = queuedJobOptions.get(next.job.jobId);
@@ -776,7 +778,21 @@ async function drainQueue(): Promise<void> {
       queuedJob.status = "starting";
       queuedJob.updatedAt = Date.now();
       queuedJobOptions.delete(queuedJob.jobId);
-      await removeQueuedJobFile(queuedJob.jobId).catch(() => {});
+      try {
+        await removeQueuedJobFile(queuedJob.jobId);
+      } catch {
+        // Do not launch while the durable queue file can still replay this
+        // job after a crash. Release only our own in-process claims.
+        queuedJob.status = "queued";
+        queuedJob.updatedAt = Date.now();
+        queuedJobOptions.set(queuedJob.jobId, queuedOpts);
+        priorityQueue.enqueue(next.job);
+        for (const file of claims) {
+          if (artifactClaims.get(file) === queuedJob.jobId) artifactClaims.delete(file);
+        }
+        jobClaims.delete(queuedJob.jobId);
+        break;
+      }
       void launchJobExecution(queuedJob, queuedOpts, effectiveSlots).catch(async (err) => {
         queuedJob.status = "failed";
         queuedJob.completionState = "failed";
@@ -1415,9 +1431,28 @@ export async function cancelDelegateJob(jobId: string): Promise<{ ok: boolean; m
   const job = jobs.get(jobId);
   if (!job) return { ok: false, message: `No CLI Bridge delegation job found with id ${jobId}.` };
   if (job.status === "queued") {
+    // Reserve cancellation synchronously so a concurrent drain cannot start
+    // this job while its durable queue file is being removed.
     priorityQueue.remove(jobId);
+    job.status = "cancelling";
+    job.updatedAt = Date.now();
+    try {
+      await removeQueuedJobFile(jobId);
+    } catch {
+      // A surviving on-disk queue record may be replayed on restart; put the
+      // job back into the same in-memory queue rather than report success.
+      job.status = "queued";
+      job.updatedAt = Date.now();
+      priorityQueue.enqueue({
+        jobId: job.jobId, projectId: job.projectId ?? "default",
+        ownerId: job.ownerId, cliAlias: job.cliAlias,
+        priority: job.priority ?? "normal",
+        resourceClass: job.resourceClass ?? "normal",
+        createdAt: job.startedAt,
+      });
+      return { ok: false, message: "Durable queue record could not be removed; cancellation is unverified.", job: { ...job } };
+    }
     queuedJobOptions.delete(jobId);
-    await removeQueuedJobFile(jobId).catch(() => {});
     job.status = "cancelled";
     job.completionState = "cancelled";
     job.updatedAt = Date.now();

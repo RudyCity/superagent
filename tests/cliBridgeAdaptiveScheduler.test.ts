@@ -72,6 +72,19 @@ describe("Milestone M2 — Dynamic Concurrency and Resource-Aware Scheduling", (
         .toBeGreaterThan(calculateJobSchedulingScore(request("a2","mcp:one"),active,1000));
     });
 
+    it("honors the CURRENT dynamic admission policy when draining the queue", () => {
+      const q=new CliBridgePriorityQueue({...policy, perOwnerQuota: 4});
+      q.enqueue(request("a2", "mcp:one"));
+      const active=[request("a1", "mcp:one")];
+      // Queue constructor allows four, but current policy only one per agent.
+      const livePolicy={...policy, perOwnerQuota:1};
+      expect(q.dequeueNextEligible(active,6,"none",1000,()=>true,livePolicy)).toBeNull();
+      expect(q.size()).toBe(1);
+      const relaxed={...policy, perOwnerQuota:2};
+      expect(q.dequeueNextEligible(active,6,"none",1000,()=>true,relaxed)?.job.jobId)
+        .toBe("a2");
+    });
+
     it("skips locked jobs rather than blocking eligible independent agents", () => {
       const queue=new CliBridgePriorityQueue(policy);
       queue.enqueue({...request("locked","mcp:one"),priority:"critical"});
