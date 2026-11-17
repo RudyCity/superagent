@@ -1808,6 +1808,7 @@
             <div class="lan-transfer-actions">
               <button type="button" class="button primary" id="lan-file-send" disabled>Send selected files</button>
               <button type="button" class="button ghost" id="lan-file-retry" disabled>Retry failed / remaining</button>
+              <button type="button" class="button ghost" id="lan-file-handoff" disabled>Retry on selected route</button>
               <button type="button" class="button ghost" id="lan-file-receive" disabled>Receive owner's shared file</button>
               <button type="button" class="button ghost" id="lan-file-pause" disabled>Pause transfer</button>
               <button type="button" class="button ghost danger" id="lan-file-cancel" disabled>Cancel transfer</button>
@@ -1832,6 +1833,7 @@
             </div>
             <progress id="lan-file-progress" max="100" value="0" class="lan-file-progress"></progress>
             <p id="lan-file-metrics" class="lan-file-info" aria-live="polite">File transfer metrics will appear here.</p>
+            <p class="lan-file-info">Switch Direct LAN / Device Tunnel and reconnect the intended device before choosing Retry on selected route. This requires a new owner approval; transfer outcomes on the old route may be unknown.</p>
             <p id="lan-file-info" aria-live="polite" class="lan-file-info">First pair and open a support session. On a Windows target, choose a source with <code>share &lt;path&gt;</code> in its LAN Client console. On Android, tap Choose document to share. Every file requires separate target-side approval.</p>
             <div class="lan-transfer-history" aria-label="Recent file transfer receipts">
               <span class="panel-eyebrow">RECENT TRANSFERS · THIS TRAY SESSION</span>
