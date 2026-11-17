@@ -372,7 +372,7 @@ mod tests {
             ledger.items.push(Entry {
                 id: format!("{}-{i}", "I".repeat(160)),
                 source: "core".into(), severity: "critical".into(),
-                title: "T".repeat(160), body: "B".repeat(320),
+                title: '"'.to_string().repeat(160), body: '\\'.to_string().repeat(320),
                 created_at: now, read_at: None, archived_at: None,
                 acknowledged_at: None, resolved_at: None,
                 occurrences: 1, last_seen_at: None,
