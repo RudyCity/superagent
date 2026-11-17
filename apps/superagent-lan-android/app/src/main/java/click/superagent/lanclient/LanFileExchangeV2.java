@@ -258,7 +258,7 @@ public final class LanFileExchangeV2 {
         receiptAt = SystemClock.elapsedRealtime();
         return receipt;
     }
-    public JSONObject abort(String id) {
+    public JSONObject abort(String id) throws Exception {
         Pending expected = active;
         if (expected != null && expected.id.equals(id)) {
             generation.incrementAndGet();
