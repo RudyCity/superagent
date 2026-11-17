@@ -50,6 +50,7 @@ import {
   type McpSessionRemovalReason,
 } from "./mcpSessionRegistry.js";
 import { registerMcpSessionTelemetry } from "./mcpSessionTelemetry.js";
+import { createMcpResponseLease } from "./mcpResponseLease.js";
 import { summarizeArgs, argShape } from "./mcpLogSanitizer.js";
 import { recordMcpOAuthAudit } from "./mcpOAuthAudit.js";
 import { recordMcpIdentityPresence } from "./mcpIdentityPresence.js";
@@ -734,20 +735,20 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           if (!r.ok) return;
           body = r.body;
         }
+        if (registry.get(requestSessionId) !== session || registry.isRetiring(requestSessionId)) {
+          // Session can expire/delete while a large POST body is being read.
+          res.writeHead(404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify({ error: "MCP session expired; initialize a new session" }));
+          return;
+        }
         registry.beginRequest(requestSessionId);
         const diagnosticStage = getMcpDiagnosticStage(body);
         const diagnosticStart = performance.now();
         const isToolCall = diagnosticStage === "mcp.tools_call";
         if (isToolCall) inFlightToolCalls++;
-        // A dropped HTTP response does not imply the tool handler's effects
-        // have stopped. Wait for BOTH the actual response lifecycle and the
-        // async MCP handler before releasing this session's in-flight lease.
-        let responseDone = false;
-        let handlerDone = false;
-        let settled = false;
-        const maybeSettle = () => {
-          if (settled || !responseDone || !handlerDone) return;
-          settled = true;
+        // A disconnected HTTP response does not cancel a still-running tool.
+        // An SSE response can remain open after handleRequest resolves.
+        const lease = createMcpResponseLease(res, () => {
           registry.endRequest(requestSessionId);
           if (isToolCall) inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
           if (diagnosticStage) {
@@ -758,21 +759,12 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
               durationMs: performance.now() - diagnosticStart,
             });
           }
-        };
-        const finishResponse = () => { responseDone = true; maybeSettle(); };
-        res.once("finish", finishResponse);
-        res.once("close", finishResponse);
+        });
         try {
           await session.transport.handleRequest(req, res, body);
-          handlerDone = true;
-          if (res.writableEnded || res.destroyed) responseDone = true;
-          maybeSettle();
+          lease.handlerResolved();
         } catch (error) {
-          // A rejected handler can no longer make progress; its lease must not
-          // remain pinned by an unwritable response.
-          handlerDone = true;
-          responseDone = true;
-          maybeSettle();
+          lease.handlerRejected();
           throw error;
         }
         return;
