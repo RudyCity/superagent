@@ -3112,7 +3112,7 @@ export function App({
   const tokenRecountKey = useMemo(() => {
     const historyMessages = agentRef.current?.getHistory ? agentRef.current.getHistory().getMessages() : [];
     return getContextRecountKey(historyMessages);
-  }, [lines.length, isProcessing, isExecutingTool]);
+  }, [lines, isProcessing, isExecutingTool]);
   const baseContextUsage = useMemo(() => {
     const cm = agentRef.current?.getContextManager?.();
     if (cm && agentRef.current) {
