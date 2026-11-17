@@ -1332,6 +1332,17 @@
     tabConnections.addEventListener("click", () => setActiveTab("connections"));
 
     navTabs.append(tabRegister, tabRules, tabConnections, tabMcp, tabAudit);
+    const tabOrder = [tabRegister, tabRules, tabConnections, tabMcp, tabAudit];
+    navTabs.addEventListener("keydown", event => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      const selected = tabOrder.findIndex(tab => tab.getAttribute("aria-selected") === "true");
+      if (selected < 0) return;
+      const next = event.key === "Home" ? 0 : event.key === "End"
+        ? tabOrder.length - 1 : (selected + (event.key === "ArrowRight" ? 1 : -1) + tabOrder.length) % tabOrder.length;
+      event.preventDefault();
+      tabOrder[next].click();
+      tabOrder[next].focus?.();
+    });
 
     const paneRegister = make("div", "access-pane");
     paneRegister.id = "access-pane-register";
