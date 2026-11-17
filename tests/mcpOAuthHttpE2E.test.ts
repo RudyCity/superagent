@@ -28,6 +28,16 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     Accept: "application/json, text/event-stream",
     ...(sid ? { "mcp-session-id": sid } : {}),
   });
+  const searchedToolNames = (body: string): string[] => {
+    const data = body.split(/\r?\n/).find((line) => line.startsWith("data: "));
+    expect(data, "MCP response must contain a JSON-RPC SSE message").toBeDefined();
+    const response = JSON.parse(data!.slice(6));
+    expect(response.error).toBeUndefined();
+    const text = response.result?.content?.find((item: {type: string}) => item.type === "text")?.text;
+    const names = JSON.parse(text)?.tools;
+    expect(Array.isArray(names)).toBe(true);
+    return names.map((tool: {name: string}) => tool.name);
+  };
   const post = async (token: string, data: object, sid?: string) => {
     const response = await fetch(endpoint() + "/mcp", {
       method: "POST", headers: headers(token, sid), body: JSON.stringify(data),
@@ -198,14 +208,14 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
       name: "superagent_tool_search", arguments: { query: "superagent_write_files" },
     }), writerSession);
     // Tool discovery reflects OAuth capability; execution still needs human-approved project grants.
-    expect(writerSearch.body).toContain('"name":"superagent_write_files"');
+    expect(searchedToolNames(writerSearch.body)).toContain("superagent_write_files");
     const listAdmin = await post(admin, rpc(22, "tools/list"), adminSession);
     expect(listAdmin.status).toBe(200);
     expect(listAdmin.body).toContain('"name":"superagent_tool_search"');
     const adminSearch = await post(admin, rpc(221, "tools/call", {
       name: "superagent_tool_search", arguments: { query: "superagent_grant_project_access" },
     }), adminSession);
-    expect(adminSearch.body).toContain('"name":"superagent_grant_project_access"');
+    expect(searchedToolNames(adminSearch.body)).toContain("superagent_grant_project_access");
     const denied = await post(writer, rpc(23, "tools/call", {
       name: "superagent_grant_project_access",
       arguments: { projectId: "nonexistent", capabilities: ["read"] },
