@@ -20,6 +20,7 @@ export type DesktopLiveItem = {
   handle: string; status: "available" | "controlled" | "human" | "unknown";
   owner?: string; stopAction: "stop-session" | "takeover" | "return-to-agent" | "stop-delegate-tab" | "disconnect-profile" | null;
   access: DesktopLiveAccessSummary;
+  devicePlatform?: "windows" | "android";
   impact?: string; revision?: number;
 };
 const safe = (v:unknown, n=130) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g," ").slice(0,n);
@@ -131,7 +132,8 @@ export async function listDesktopLiveInventory(): Promise<{
       items.push({
         id: idLan(dev.id),
         kind: "lan-device",
-        access: desktopLiveAccessModes("lan-device",{connected:dev.connected}),
+        access: desktopLiveAccessModes("lan-device",{connected:dev.connected,devicePlatform:dev.platform}),
+        devicePlatform: dev.platform,
         title: safe(dev.label || (isAndroid ? "Android Screen" : "Windows LAN Client Screen")),
         application: safe(isAndroid ? "Android LAN Client" : "Windows LAN Client", 70),
         handle: safe(`${dev.host}:${dev.port} · ${dev.platform.toUpperCase()}`, 100),
