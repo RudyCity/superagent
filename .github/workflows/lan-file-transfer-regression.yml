@@ -8,6 +8,9 @@ on:
       - "src/core/runtime/trayLanBridge.ts"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchange.java"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchangeV2.java"
+      - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanTransferForegroundService.java"
+      - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/MainActivity.java"
+      - "apps/superagent-lan-android/app/src/main/AndroidManifest.xml"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanClientServer.java"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
@@ -29,6 +32,7 @@ on:
       - "tests/lanStreamingSha256.test.ts"
       - "tests/lanV2TrayStreaming.test.ts"
       - "tests/lanMultiDeviceQueue.test.ts"
+      - "tests/androidLanBackgroundTransferContract.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
   pull_request:
@@ -100,6 +104,7 @@ jobs:
           tests/lanStreamingSha256.test.ts
           tests/lanV2TrayStreaming.test.ts
           tests/lanMultiDeviceQueue.test.ts
+          tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
 
   android-java:
@@ -112,6 +117,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
       - name: Ensure Android API 35 SDK
         shell: bash
         run: |
