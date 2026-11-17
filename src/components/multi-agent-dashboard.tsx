@@ -3,7 +3,6 @@ import { execa } from "execa";
 import { Box, Text, useInput, useApp } from "ink";
 import ChatTextInput, { ChatTextInputRef } from "./ChatTextInput.js";
 import fs from "fs/promises";
-import { existsSync } from "fs";
 import { 
   subagentInstances, 
   subscribeToSubagents, 
