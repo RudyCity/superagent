@@ -26,6 +26,11 @@ public final class LanFileSourceV2 {
     private static final long EXPIRE_MS = 600_000;
     private final Context context;
     private final File stage;
+    private static LanFileSourceV2 instance;
+    public static synchronized LanFileSourceV2 shared(Context context) {
+        if (instance == null) instance = new LanFileSourceV2(context);
+        return instance;
+    }
     private final AtomicLong generation = new AtomicLong();
     private Selection selection;
     private volatile Active active;
@@ -44,7 +49,7 @@ public final class LanFileSourceV2 {
         long lastUsed, epoch;
     }
 
-    public LanFileSourceV2(Context context) {
+    private LanFileSourceV2(Context context) {
         this.context = context.getApplicationContext();
         stage = new File(this.context.getFilesDir(), "lan-v2-selected-source");
         if (!stage.isDirectory() && !stage.mkdirs())
