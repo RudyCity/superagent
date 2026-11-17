@@ -227,7 +227,7 @@ export function updateProject(id: string, updates: UpdateProjectInput, registryP
     description: updates.description ?? existing.description,
     tags: updates.tags ?? existing.tags,
     enabled: updates.enabled ?? existing.enabled,
-  }, Date.now(), existing.id);
+  }, Math.max(Date.now(), existing.updatedAt + 1), existing.id);
   if (normalized.type === "local" && document.projects.some((other) => other.id !== existing.id && other.type === "local" && other.root && normalized.root && pathKey(other.root) === pathKey(normalized.root))) {
     throw new Error(`Project root already registered: ${normalized.root}`);
   }
