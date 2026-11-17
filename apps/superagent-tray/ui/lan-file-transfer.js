@@ -83,7 +83,8 @@
     return Boolean(input && "webkitdirectory" in input && input.webkitdirectory === true && input.multiple === true);
   };
   function controls() {
-    const relayBusy = window.__superagentLanRelayBusy === true;
+    const relayBusy = window.__superagentLanRelayBusy === true ||
+      window.__superagentLanLargeReceiveBusy === true;
     const hasDevice = Boolean(selected());
     const files = $("lan-file-source")?.files;
     const folder = $("lan-folder-source");
@@ -681,7 +682,8 @@
     }
   }
   function retryOnSelectedRoute() {
-    if (busy || window.__superagentLanRelayBusy === true || retryPlan?.length !== 1) return;
+    if (busy || window.__superagentLanRelayBusy === true ||
+        window.__superagentLanLargeReceiveBusy === true || retryPlan?.length !== 1) return;
     const current = selected();
     const old = retryPlan[0].device;
     if (!current || old.id === current.id || old.platform !== current.platform ||
