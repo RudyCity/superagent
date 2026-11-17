@@ -135,8 +135,14 @@ export async function stopProjectCdpRecording(projectDirectory: string, recordin
   if (!exists) throw Error("Recording unavailable.");
   const directory=await safeDirectory(root,recordingId);
   const live=inspectCdpSessionArchiveDirectory(directory);
-  if (!live || !["recording","stopping"].includes(live.status))
+  if (!live || !["recording","stopping"].includes(live.status)) {
+    const manifest=await manifestOf(directory);
+    // Closing a preview may finalize before the operator's Stop reaches Core.
+    // Returning status is safe and idempotent; it never restarts a recorder.
+    if (manifest?.status === "saved" || manifest?.status === "failed")
+      return {recordingId,status:manifest.status,alreadyFinalized:true};
     throw Error("Recording is no longer active.");
+  }
   return stopCdpSessionArchiveByOperator(directory);
 }
 export async function deleteProjectCdpRecording(
