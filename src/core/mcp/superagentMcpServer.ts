@@ -794,10 +794,19 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       const observedArgs = name.startsWith("superagent_lan_")
         ? { action: name, deviceId: args.deviceId, host: args.host, port: args.port }
         : (delegateMcpObservation(name, args)?.args ?? args);
+      const wrappedLifecycle = name === MCP_GATEWAY_TOOL_NAMES.execute &&
+        args.name === "superagent_lifecycle";
+      const lifecycleCall = name.startsWith("superagent_lifecycle") || wrappedLifecycle;
+      const lifecycleParams = wrappedLifecycle && args.arguments && typeof args.arguments === "object"
+        && !Array.isArray(args.arguments) ? args.arguments as Record<string, unknown> : args;
+      const lifecycleAuditArgs = {
+        action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
+        runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
+        workerId: lifecycleParams.workerId,
+      };
       const safeLogArgs = name === "superagent_desktop_ui"
         ? { command: (observedArgs as any)?.command, action: (observedArgs as any)?.action }
-        : name === "superagent_lifecycle" ? { action: args.action, workflowId: args.workflowId,
-            runId: args.runId, stepId: args.stepId, workerId: args.workerId } : observedArgs;
+        : lifecycleCall ? lifecycleAuditArgs : observedArgs;
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(safeLogArgs)}`);
 
       try {
@@ -1203,13 +1212,21 @@ function extractMcpResultText(result: unknown): string {
       const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
         ?? (!info.ok ? "tool_execution_failed" : undefined);
       const privateDelegate = delegateMcpObservation(toolName, rawArgs);
+      const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
+        rawArgs.name === "superagent_lifecycle";
+      const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
+        && !Array.isArray(rawArgs.arguments) ? rawArgs.arguments as Record<string, unknown> : rawArgs;
+      const lifecycleAuditArgs = {
+        action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
+        runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
+        workerId: lifecycleParams.workerId,
+      };
       let safeInfo = privateDelegate ? {
         ...info, args: privateDelegate.args,
         ...(info.error ? { error: privateDelegate.error(info.error) } : {}),
-      } : toolName === "superagent_lifecycle" ? {
-        ...info,
-        args: { action: rawArgs.action, workflowId: rawArgs.workflowId,
-          runId: rawArgs.runId, stepId: rawArgs.stepId, workerId: rawArgs.workerId },
+      } : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle ? {
+        ...info, args: lifecycleAuditArgs,
+        ...(info.error ? { error: "EXTERNAL_LIFECYCLE_CALL_FAILED" } : {}),
       } : info;
       if (desktopCall) {
         safeInfo = {
@@ -1455,13 +1472,18 @@ function extractMcpResultText(result: unknown): string {
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
+      const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
+        rawArgs.name === "superagent_lifecycle";
+      const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
+        && !Array.isArray(rawArgs.arguments) ? rawArgs.arguments as Record<string, unknown> : rawArgs;
       const safeActivityArgs = desktopCall ? desktopAuditArgs
-        : toolName.startsWith("superagent_lifecycle")
-          ? { action: rawArgs.action, workflowId: rawArgs.workflowId, runId: rawArgs.runId,
-              stepId: rawArgs.stepId, workerId: rawArgs.workerId } : rawArgs;
+        : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
+          ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
+              runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
+              workerId: lifecycleParams.workerId } : rawArgs;
       const safeActivityOutput = desktopCall
         ? "[DESKTOP_UI_RESPONSE_REDACTED]"
-        : toolName.startsWith("superagent_lifecycle")
+        : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? "[EXTERNAL_LIFECYCLE_RESPONSE_REDACTED]" : outputText;
       emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
       emitMcpActivity({
@@ -1479,13 +1501,19 @@ function extractMcpResultText(result: unknown): string {
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
+      const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
+        rawArgs.name === "superagent_lifecycle";
+      const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
+        && !Array.isArray(rawArgs.arguments) ? rawArgs.arguments as Record<string, unknown> : rawArgs;
       const safeActivityArgs = desktopCall ? desktopAuditArgs
-        : toolName.startsWith("superagent_lifecycle")
-          ? { action: rawArgs.action, workflowId: rawArgs.workflowId, runId: rawArgs.runId,
-              stepId: rawArgs.stepId, workerId: rawArgs.workerId } : rawArgs;
+        : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
+          ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
+              runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
+              workerId: lifecycleParams.workerId } : rawArgs;
       const safeErrorMsg = desktopCall
         ? "DESKTOP_UI_CALL_FAILED"
-        : errorMsg;
+        : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
+          ? "EXTERNAL_LIFECYCLE_CALL_FAILED" : errorMsg;
       emitAudit({
         tool: toolName,
         args: rawArgs,
