@@ -57,7 +57,7 @@ function setup(approved: boolean, controllerApproved = true) {
           expect(name).toBe("lan_support_action");
           requests.push({ action, payload });
           if (action === "control_request") return {
-            success: true, approved: controllerApproved,
+            success: true, approved: controllerApproved,kind:payload.kind,
             secondsRemaining: controllerApproved ? 120 : 0,
           };
           if (action === "control_revoke") return { success: true, approved: false };
@@ -120,14 +120,14 @@ describe("Android schema-first viewer UI interactions", () => {
     await click(ui.get("lan-schema-list").children[0]);
     await click(ui.get("lan-screen-home"));
     expect(ui.requests.some((r) => r.action === "element" || r.action === "input")).toBe(false);
-    expect(ui.get("lan-screen-controller-status").textContent).toContain("Separate native");
+    expect(ui.get("lan-screen-controller-status").textContent).toContain("Mouse: not approved");
   });
 
   it("revokes native controller without stopping the read-only viewer", async () => {
     const ui = setup(true);
     await click(ui.get("lan-screen-start"));
     await click(ui.get("lan-screen-request-control"));
-    expect(ui.get("lan-screen-controller-status").textContent).toContain("controller approved");
+    expect(ui.get("lan-screen-controller-status").textContent).toContain("Mouse: approved");
     await click(ui.get("lan-screen-revoke-control"));
     expect(ui.requests.some((r) => r.action === "control_revoke")).toBe(true);
     expect(ui.get("lan-schema-list").children[0].disabled).toBe(true);
@@ -136,6 +136,30 @@ describe("Android schema-first viewer UI interactions", () => {
     expect(ui.get("lan-screen-stop").disabled).toBe(false);
   });
 
+  it("never allows semantic clicks with keyboard-only approval", async () => {
+    const ui=setup(true);
+    await click(ui.get("lan-screen-start"));
+    await click(ui.get("lan-screen-request-keyboard"));
+    expect(ui.get("lan-schema-list").children[0].disabled).toBe(true);
+    await click(ui.get("lan-schema-list").children[0]);
+    expect(ui.requests.some(r=>r.action==="element")).toBe(false);
+    await click(ui.get("lan-screen-home"));
+    expect(ui.requests.some(r=>r.action==="input"&&r.payload.kind==="home")).toBe(true);
+  });
+  it("mouse-only approval never permits typing or navigation",async()=>{
+    const ui=setup(true);
+    await click(ui.get("lan-screen-start"));
+    await click(ui.get("lan-screen-request-control"));
+    expect(ui.get("lan-screen-home").disabled).toBe(true);
+    await click(ui.get("lan-screen-home"));
+    expect(ui.requests.some(r=>r.action==="input"&&r.payload.kind==="home")).toBe(false);
+    await click(ui.get("lan-screen-request-keyboard"));
+    await click(ui.get("lan-screen-home"));
+    expect(ui.requests.some(r=>r.action==="input"&&r.payload.kind==="home")).toBe(true);
+    await click(ui.get("lan-screen-revoke-keyboard"));
+    expect(ui.get("lan-screen-home").disabled).toBe(true);
+    expect(ui.get("lan-schema-list").children[0].disabled).toBe(false);
+  });
   it("clicks a current clickable element by ID and revision, not by screenshot coordinates", async () => {
     const ui = setup(true);
     await click(ui.get("lan-screen-start"));
@@ -178,7 +202,7 @@ describe("Android schema-first viewer UI interactions", () => {
   it("supports navigation/text without screenshot and explicitly closes remote session", async () => {
     const ui = setup(true);
     await click(ui.get("lan-screen-start"));
-    await click(ui.get("lan-screen-request-control"));
+    await click(ui.get("lan-screen-request-keyboard"));
     await click(ui.get("lan-screen-home"));
     expect(ui.requests.some((r) => r.action === "input" && r.payload.kind === "home")).toBe(true);
     ui.get("lan-screen-text").value = "Safe edit";
