@@ -209,28 +209,10 @@ export function createProjectAccessRequest(
     }
   }
 
-  if (!resolvedProject) {
-    // If not matching an existing registered project, check if projectPath is an existing directory
-    if (input.projectPath) {
-      const canonicalReq = canonicalizePath(input.projectPath);
-      if (!canonicalReq || !fs.existsSync(canonicalReq) || !fs.statSync(canonicalReq).isDirectory()) {
-        throw new Error(`Project target directory does not exist or is inaccessible: ${input.projectPath}`);
-      }
-      // Generate synthetic ID from directory basename
-      const baseName = path.basename(canonicalReq).toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 50) || "local-project";
-      resolvedProject = {
-        id: `auto-${baseName}`,
-        name: path.basename(canonicalReq),
-        type: "local",
-        root: canonicalReq,
-        tags: [],
-        enabled: true,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-    } else {
-      throw new Error(`Project '${input.projectId || ""}' was not found in registered projects.`);
-    }
+  // Arbitrary unregistered paths cannot become project grants merely because
+  // an MCP caller requested them. The human must register the project first.
+  if (!resolvedProject && input.projectPath) {
+    throw new Error("Project path must match an enabled registered project before requesting access.");
   }
 
   if (!resolvedProject) {
