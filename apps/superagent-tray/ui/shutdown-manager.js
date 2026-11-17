@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const state={preview:null,selected:new Set(),manualSelected:new Set(),
-    progress:null,busy:false,loading:false,poller:null};
+    progress:null,busy:false,loading:false,poller:null,lastTerminalRefresh:null};
   const invoke=(action,fields={})=>{
     const call=window.__TAURI__?.core?.invoke;
     if(!call)throw Error("Native SuperAgent Tray is required");
@@ -144,9 +144,12 @@
     wrap.hidden=!state.progress;
     list.replaceChildren();
     if(!state.progress)return;
+    const restarted=(state.progress.steps??[]).some(step=>step.status==="restarted");
     $("shutdown-progress-status").textContent=state.progress.stage==="running"
-      ?"Owner shutdown in progress":state.progress.stage==="complete"
-      ?"Selected owners verified stopped":"Shutdown partial — review remaining owners";
+      ?"Owner shutdown in progress":restarted
+      ?"A replacement PID was detected — review before retry":
+      state.progress.stage==="complete"?"Selected PIDs verified stopped":
+      "Shutdown partial — review remaining owners";
     for(const step of state.progress.steps??[]){
       const row=document.createElement("li");
       row.className="shutdown-step";row.dataset.status=step.status;
@@ -171,6 +174,16 @@
     if(!state.busy&&state.poller!==null){
       clearInterval(state.poller);state.poller=null;
     }
+    if(!state.busy && state.lastTerminalRefresh!==progress.runId){
+      state.lastTerminalRefresh=progress.runId;
+      // A terminal native operation invalidates the old owner list. Refresh
+      // once only, preserving the operation receipt above for operator review.
+      void Promise.resolve().then(async()=>{
+        if($("shutdown-manager-dialog").hidden||state.busy||state.loading)return;
+        await refresh();
+        drawProgress();
+      });
+    }
   }
   async function pollStatus(){
     try {
@@ -189,7 +202,7 @@
     state.loading=true;state.preview=null;state.selected.clear();state.manualSelected.clear();
     $("shutdown-force-confirm").value="";
     $("shutdown-manual-confirm").value="";
-    buttons();feedback("Checking authenticated owners, open sessions and scheduled jobs...");
+    buttons();feedback("Inspecting local OS owners, Guardian leases, Core health and active sessions...");
     try {
       const response=await invoke("preview");
       if(!response?.preview||!Array.isArray(response.preview.services))
