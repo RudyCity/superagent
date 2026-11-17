@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assessDesktopMcpOwnerEvidence,
+  isSameVerifiedMcpGeneration,
   type McpServiceEvidence,
 } from "../../src/core/desktopUi/liveActivationGate.js";
 
@@ -62,6 +63,26 @@ describe("desktop MCP live owner preflight", () => {
     unhealthy.details!.backendHealthy = false;
     expect(assessDesktopMcpOwnerEvidence(active, unhealthy, publicUrl).reasons)
       .toContain("MCP_BACKEND_NOT_HEALTHY");
+  });
+
+  it("rejects a successful but replaced owner/backend between preflight and postflight", () => {
+    const digest = "b".repeat(64);
+    const snapshot = structuredClone(active);
+    snapshot.details!.backendReleaseDigest = digest;
+    const before = assessDesktopMcpOwnerEvidence(snapshot, snapshot, publicUrl, digest);
+    expect(isSameVerifiedMcpGeneration(before, before)).toBe(true);
+    const newOwner = structuredClone(snapshot);
+    newOwner.ownerPid = 3003;
+    const ownerAfter = assessDesktopMcpOwnerEvidence(newOwner, newOwner, publicUrl, digest);
+    expect(ownerAfter.ready).toBe(true);
+    expect(isSameVerifiedMcpGeneration(before, ownerAfter)).toBe(false);
+    const newBackend = structuredClone(snapshot);
+    newBackend.details!.backendPid = 4004;
+    const backendAfter = assessDesktopMcpOwnerEvidence(newBackend, newBackend, publicUrl, digest);
+    expect(backendAfter.ready).toBe(true);
+    expect(isSameVerifiedMcpGeneration(before, backendAfter)).toBe(false);
+    expect(isSameVerifiedMcpGeneration(before,
+      assessDesktopMcpOwnerEvidence(undefined, snapshot, publicUrl, digest))).toBe(false);
   });
 
   it("attests exact activated release digest across status and doctor snapshots", () => {
