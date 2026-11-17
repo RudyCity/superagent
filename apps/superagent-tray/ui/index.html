@@ -1002,6 +1002,11 @@
           </form>
           <div class="external-life-inventory">
             <div class="external-life-inventory-heading"><h3>Worker availability</h3><span id="external-life-worker-count">—</span></div>
+            <div class="external-life-cdp-tools">
+              <label for="external-life-cdp-target">Approved ChatGPT.com tab (CDP wake-up)</label>
+              <select id="external-life-cdp-target"><option value="">Select an idle paired ChatGPT tab</option></select>
+              <small>Binding is explicit and sends a notification only. The worker must still claim through its own authorised MCP connection.</small>
+            </div>
             <div id="external-life-workers" class="external-life-worker-list" aria-live="polite"></div>
             <div class="external-life-inventory-heading"><h3>Scheduled workflows and runs</h3><span id="external-life-run-count">—</span></div>
             <div id="external-life-runs" class="external-life-run-list" aria-live="polite"></div>
