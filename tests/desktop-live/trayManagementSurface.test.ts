@@ -36,6 +36,34 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     expect(routes).toContain("SEPARATE_NATIVE_CONTROLLER_APPROVAL_REQUIRED");
     expect(routes).toContain('const privatePeer = peer === "127.0.0.1" || peer === "::1";');
   });
+  it("separates Watch, Request Control, Take Over and Return to Agent",()=>{
+    const html=read("apps/superagent-tray/ui/index.html");
+    const js=read("apps/superagent-tray/ui/desktop-live-manager.js");
+    const rust=read("apps/superagent-tray/src-tauri/src/main.rs");
+    const gateway=read("src/core/desktopUi/remoteTrayGatewayHtml.ts");
+    const inventory=read("src/core/desktopUi/desktopLiveInventory.ts");
+    const access=read("src/core/desktopUi/desktopLiveAccessModes.ts");
+    expect(html).toContain('id="desktop-live-view-heading"');
+    expect(html).toContain('id="desktop-live-control-heading"');
+    expect(html).toContain('id="desktop-live-view-permission"');
+    expect(html).toContain('id="desktop-live-controller-permission"');
+    expect(html).toContain('id="desktop-live-stream-request-control"');
+    expect(html).toContain('id="desktop-live-stream-toggle-control"');
+    expect(html).toContain('id="desktop-live-stream-takeover"');
+    expect(js).toContain('await invoke("controller-review")');
+    expect(js).toContain("stream.controlRequested = true");
+    expect(js).toContain("if (accepted?.success !== true || accepted?.result?.ok !== true)");
+    expect(js).toContain("inputEnabled !== false");
+    expect(js).toContain('item.stopAction==="return-to-agent"?"Return to Agent"');
+    expect(js).not.toContain("/api/desktop/live/lan-input");
+    expect(rust).toContain('"controller-review" =>');
+    expect(rust).toContain('"approved": false');
+    expect(rust).toContain('"inputEnabled": false');
+    expect(inventory).toContain('stopAction:registration && session && mode==="agent" ? "takeover" :');
+    expect(inventory).toContain('mode==="human" ? "return-to-agent"');
+    expect(gateway).toContain('item.stopAction==="return-to-agent"?"Return to Agent"');
+    expect(access).toContain('independentlyApproved: false');
+  });
   it("has native password settings and remote management controls, not VNC exposure",()=>{
     const html=read("apps/superagent-tray/ui/index.html");
     const pw=read("apps/superagent-tray/ui/tray-access-password.js");
