@@ -8,6 +8,7 @@ import { isFullYoloMode, isSystemDestructiveCommand } from "../permissions.js";
 import { nativeAndroidControllerApproval } from "../desktopUi/nativeAndroidControllerApproval.js";
 import { privateIntranetPeer } from "../lanRemote/transport.js";
 import { lanFileRelayManager } from "../lanRemote/fileRelayManager.js";
+import { lanLargeFileReceiveManager } from "../lanRemote/fileReceiveManager.js";
 import { assertAndroidShellCommand } from "../lanRemote/androidCapabilities.js";
 import {
   closeLanSession, discoverLanDevices, execLanCommand, execAndroidShellCommand, listLanDevices,
@@ -29,11 +30,13 @@ import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
 export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
   "file_v2_offer" | "file_v2_put" | "file_v2_status" | "file_v2_finish" | "file_v2_abort" |
-  "file_relay_start" | "file_relay_status" | "file_relay_cancel";
+  "file_relay_start" | "file_relay_status" | "file_relay_cancel" |
+  "file_receive_v2_start" | "file_receive_v2_status" | "file_receive_v2_cancel";
 type LanArgs = Record<string, unknown>;
 const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
   "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
-  "file_relay_start", "file_relay_status", "file_relay_cancel"]);
+  "file_relay_start", "file_relay_status", "file_relay_cancel",
+  "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"]);
 
 export function parseTrayLanAction(input: unknown): { action: TrayLanAction; args: LanArgs } {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("Invalid LAN request.");
@@ -68,6 +71,9 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     file_relay_start: ["action", "sourceId", "destinationId", "protocol"],
     file_relay_status: ["action", "jobId"],
     file_relay_cancel: ["action", "jobId"],
+    file_receive_v2_start: ["action", "deviceId"],
+    file_receive_v2_status: ["action", "jobId"],
+    file_receive_v2_cancel: ["action", "jobId"],
     schema: ["action", "deviceId", "knownRevision"],
     element: ["action", "deviceId", "elementId", "revision", "kind", "controllerToken"],
     screen: ["action", "deviceId"],
@@ -127,7 +133,14 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     if (action === "android_shell") assertAndroidShellCommand(data.command as string);
   }
   if (action.startsWith("file_")) {
-    if (action.startsWith("file_relay_")) {
+    if (action.startsWith("file_receive_v2_")) {
+      if (action === "file_receive_v2_start") {
+        if (typeof data.deviceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.deviceId))
+          throw Error("Valid approved V2 source device ID required.");
+      } else if (typeof data.jobId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.jobId)) {
+        throw Error("Valid V2 receive job ID required.");
+      }
+    } else if (action.startsWith("file_relay_")) {
       if (action === "file_relay_start") {
         if (typeof data.sourceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.sourceId) ||
             typeof data.destinationId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.destinationId) ||
@@ -294,7 +307,9 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
   // to an unrestricted YOLO grant for commands, files, pairing, or shell.
   const attendedSupport = ["open","schema","screen","input","element"];
   if (!isFullYoloMode() && !["close", "revoke", "file_abort", "file_v2_abort",
-    "file_relay_cancel", "file_relay_status", "pair_cancel", "tunnel_revoke",
+    "file_relay_cancel", "file_relay_status",
+    "file_receive_v2_cancel", "file_receive_v2_status",
+    "pair_cancel", "tunnel_revoke",
     ...attendedSupport].includes(action)) {
     throw Error("Full YOLO is required for autonomous LAN execution; attended viewer/input use independent approval.");
   }
@@ -338,6 +353,10 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       if (isSystemDestructiveCommand(command)) throw Error("Potentially destructive Android shell command blocked.");
       return { success: true, result: await execAndroidShellCommand(id, command) };
     }
+    case "file_receive_v2_start": return { success: true, job: lanLargeFileReceiveManager.start(
+      args.deviceId as string) };
+    case "file_receive_v2_status": return { success: true, job: lanLargeFileReceiveManager.status(args.jobId as string) };
+    case "file_receive_v2_cancel": return { success: true, job: lanLargeFileReceiveManager.cancel(args.jobId as string) };
     case "file_relay_start": return { success: true, job: lanFileRelayManager.start(
       args.sourceId as string, args.destinationId as string,
       (args.protocol as "v1" | "v2" | undefined) ?? "v1") };
