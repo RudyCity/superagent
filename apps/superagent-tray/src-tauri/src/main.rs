@@ -303,14 +303,10 @@ fn tray_notification_center_ui_alert(
 }
 
 fn record_core_notification(app: &tauri::AppHandle, severity: &str, title: &str, body: &str) {
-    if let Ok(dir) = config_dir() {
-        let id = format!("core:{}:{}", severity, SystemTime::now()
-            .duration_since(UNIX_EPOCH).map_or(0, |t| t.as_nanos()));
-        if let Ok(true) = tray_notification_center::publish(
-            &dir, "core", severity, &id, title, body,
-        ) {
-            let _ = app.emit("tray-notifications-changed", ());
-        }
+    let id = format!("core:{}:{}", severity, SystemTime::now()
+        .duration_since(UNIX_EPOCH).map_or(0, |t| t.as_nanos()));
+    if record_operational_incident(app, "core", severity, &id, title, body).is_err() {
+        eprintln!("[tray] Core incident persistence unavailable");
     }
 }
 
@@ -3121,29 +3117,14 @@ fn main() {
                         let handle = app.clone();
                         tauri::async_runtime::spawn(async move {
                             match launch_server_process(7888).await {
-                                Ok(pid) => {
+                                Ok(_pid) => {
                                     show_main(&handle, false);
-                                    let msg = if pid == 0 {
-                                        "SuperAgent Core is already running (:7888)".to_string()
-                                    } else {
-                                        "SuperAgent Core server active on port 7888".to_string()
-                                    };
-                                    let _ = handle.notification()
-                                        .builder()
-                                        .title("SuperAgent Core")
-                                        .body(&msg)
-                                        .show();
                                     record_core_notification(&handle, "info", "Core started", "Core is active.");
                                     let _ = handle.emit("desktop-server-started", 7888);
                                 }
                                 Err(e) => {
                                     eprintln!("[tray] Failed to start Core server: {}", e);
                                     show_main(&handle, false);
-                                    let _ = handle.notification()
-                                        .builder()
-                                        .title("SuperAgent Core Error")
-                                        .body(format!("Failed to start Core: {}", e))
-                                        .show();
                                     record_core_notification(&handle, "critical", "Core start failed", "Core could not start. Open Runtime Detection.");
                                     let _ = handle.emit("desktop-server-start-failed", e);
                                 }
@@ -3156,25 +3137,14 @@ fn main() {
                             let _ = stop_core_server_inner(7888).await;
                             tokio::time::sleep(Duration::from_millis(600)).await;
                             match launch_server_process(7888).await {
-                                Ok(pid) => {
+                                Ok(_pid) => {
                                     show_main(&handle, false);
-                                    let msg = format!("SuperAgent Core server restarted on port 7888 (PID {})", pid);
-                                    let _ = handle.notification()
-                                        .builder()
-                                        .title("SuperAgent Core")
-                                        .body(&msg)
-                                        .show();
                                     record_core_notification(&handle, "info", "Core restarted", "Core was restarted from the notification area.");
                                     let _ = handle.emit("desktop-server-started", 7888);
                                 }
                                 Err(e) => {
                                     eprintln!("[tray] Failed to restart Core server: {}", e);
                                     show_main(&handle, false);
-                                    let _ = handle.notification()
-                                        .builder()
-                                        .title("SuperAgent Core Error")
-                                        .body(format!("Failed to restart Core: {}", e))
-                                        .show();
                                     record_core_notification(&handle, "critical", "Core restart failed", "Core restart failed. Inspect Runtime Detection.");
                                     let _ = handle.emit("desktop-server-start-failed", e);
                                 }
@@ -3187,22 +3157,12 @@ fn main() {
                             match stop_core_server_inner(7888).await {
                                 Ok(_) => {
                                     show_main(&handle, false);
-                                    let _ = handle.notification()
-                                        .builder()
-                                        .title("SuperAgent Core")
-                                        .body("SuperAgent Core server stopped")
-                                        .show();
                                     record_core_notification(&handle, "warning", "Core stopped", "Core was stopped from the notification area.");
                                     let _ = handle.emit("desktop-server-stopped", 7888);
                                 }
                                 Err(e) => {
                                     eprintln!("[tray] Failed to stop Core server: {}", e);
                                     show_main(&handle, false);
-                                    let _ = handle.notification()
-                                        .builder()
-                                        .title("SuperAgent Core Error")
-                                        .body(format!("Failed to stop Core: {}", e))
-                                        .show();
                                     record_core_notification(&handle, "critical", "Core stop failed", "Core could not be stopped. Inspect the verified owner.");
                                     let _ = handle.emit("desktop-server-stop-failed", e);
                                 }
