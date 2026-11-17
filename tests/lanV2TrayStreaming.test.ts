@@ -129,10 +129,19 @@ describe("Desktop LAN V2 user-selected Blob streaming", () => {
     expect(h.el("lan-file-history").textContent).toContain("V2 resumed & verified");
   }, 40_000);
 
-  it("does not offer a large file to an Android target that only supports legacy V1", async () => {
+  it("streams a large upload to an owner-approved Android V2 target", async () => {
     const h = harness({ platform: "android" });
     h.click("lan-file-send");
+    await eventually(h.finished);
+    expect(h.requests.filter(a => a.action === "file_v2_offer")).toHaveLength(1);
+    expect(h.offset()).toBe(4 * 1024 * 1024 + 11);
+    expect(h.el("lan-file-history").textContent).toContain("V2 verified");
+  }, 40_000);
+
+  it("rejects targets without an allowed V2-capable platform", async () => {
+    const h = harness({ platform: "unknown" });
+    h.click("lan-file-send");
     expect(h.requests.some(a => a.action === "file_v2_offer")).toBe(false);
-    expect(h.el("lan-file-info").textContent).toContain("max 4 MiB");
+    expect(h.el("lan-file-info").textContent).toContain("No valid target sessions");
   });
 });
