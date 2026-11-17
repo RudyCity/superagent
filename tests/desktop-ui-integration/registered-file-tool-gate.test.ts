@@ -157,6 +157,30 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     expect(gate("superagent_cli_bridge",{action:"delegate",permissionMode:"full-auto"}))
       .toMatch(/not certified/);
   });
+  it("allows bounded desktop metadata but refuses window content and input under v2",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(args:Record<string,unknown>)=>
+      registeredFileToolGate({name:"superagent_desktop_ui",args},a.root,opts);
+    expect(getPermanentFileToolReadiness("superagent_desktop_ui")).toBe("action_dependent");
+    for(const args of [
+      {command:"probe"}, {command:"list_windows",limit:50},
+      {action:"get_active_window"}, {command:"find_window",query:"Chrome",pid:2345},
+      {command:"list_installed_apps",limit:50},
+      {command:"live_inventory"}, {command:"inspect_security_prompts"},
+    ])expect(gate(args)).toBeNull();
+    for(const args of [
+      {command:"snapshot",sessionToken:"a".repeat(64)},
+      {command:"open",pid:100},
+      {command:"action",action:"click",elementId:"button"},
+      {command:"inspect_window",includeScreenshotImage:true},
+      {command:"list_windows",filePath:".env"},
+      {command:"find_window",query:""},
+      {command:"find_window",query:"Chrome",pid:-1},
+      {command:"list_windows",limit:1000},
+      {command:"live_inventory",sessionToken:"a".repeat(64)},
+    ])expect(gate(args)).toMatch(/not certified/);
+  });
+
   it("blocks symlinked targets before IO when host OS authorizes links",()=>{
     const a=setup();
     const link=path.join(a.root,"link.ts");
