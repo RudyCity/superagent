@@ -1,7 +1,8 @@
 "use strict";
 (() => {
   const $ = id => document.getElementById(id);
-  const state={preview:null,selected:new Set(),progress:null,busy:false,loading:false,poller:null};
+  const state={preview:null,selected:new Set(),manualSelected:new Set(),
+    progress:null,busy:false,loading:false,poller:null};
   const invoke=(action,fields={})=>{
     const call=window.__TAURI__?.core?.invoke;
     if(!call)throw Error("Native SuperAgent Tray is required");
@@ -9,6 +10,7 @@
   };
   const active=item=>!["inactive","stopped","stale","embedded"].includes(item.state);
   const forceReady=()=>state.preview?.services?.filter(s=>active(s)&&s.forceSelectable===true)??[];
+  const manualReady=()=>state.preview?.services?.filter(s=>active(s)&&s.manualKillSelectable===true)??[];
   function node(parent,tag,className,value){
     const element=document.createElement(tag);
     if(className)element.className=className;
@@ -41,11 +43,15 @@
     $("shutdown-exit-all").disabled=lock||!canExit();
     $("shutdown-force-all").disabled=lock||!state.preview||!forceReady().length||
       $("shutdown-force-confirm").value!=="FORCE STOP ALL";
+    $("shutdown-manual-kill").disabled=lock||!state.preview||!state.manualSelected.size||
+      $("shutdown-manual-confirm").value!=="KILL SELECTED";
+    $("shutdown-manual-select-all").disabled=lock||!manualReady().length;
     $("shutdown-refresh").disabled=lock;
     $("shutdown-close").disabled=state.loading;
     $("shutdown-selection-count").textContent=String(state.selected.size)+
-      " graceful selected · "+String(forceReady().length)+" force-capable · "+
-      String(counts().blocked)+" require review";
+      " graceful selected · "+String(state.manualSelected.size)+
+      " manual PID(s) selected · "+String(manualReady().length)+" manual-eligible · "+
+      String(counts().blocked)+" need graceful review";
   }
   function drawServices(){
     const list=$("shutdown-services");
@@ -54,9 +60,10 @@
     if(!services.length)node(list,"p","shutdown-empty",
       "No authenticated services available in this preview.");
     for(const item of services){
-      const row=document.createElement("label");
+      const row=document.createElement("div");
       row.className="shutdown-service";
-      row.dataset.state=item.selectable?"ready":item.forceSelectable?"force":active(item)?"blocked":"inactive";
+      row.dataset.state=item.selectable?"ready":item.forceSelectable?"force":
+        item.manualKillSelectable?"manual":active(item)?"blocked":"inactive";
       const checkbox=document.createElement("input");
       checkbox.type="checkbox";checkbox.value=item.id;
       checkbox.checked=state.selected.has(item.id);
@@ -74,6 +81,7 @@
       const details=[
         item.port?"Port "+item.port:null,
         item.pid?"PID "+item.pid:null,
+        item.processName?"OS "+item.processName:null,
         item.activeSessions!=null?item.activeSessions+" active jobs/sessions":null,
       ].filter(Boolean).join(" · ");
       node(copy,"small","",details||item.detail);
@@ -84,7 +92,25 @@
       else if(item.selectable)node(copy,"span","shutdown-explanation",item.detail);
       row.append(copy);
       node(row,"span","shutdown-status",item.selectable?"Ready":
-        item.forceSelectable?"Force ready":active(item)?"Review":"Stopped");
+        item.forceSelectable?"Force ready":item.manualKillSelectable?"Manual kill":
+        active(item)?"Review":"Stopped");
+      if(item.manualKillSelectable && active(item)){
+        const killLabel=document.createElement("label");
+        killLabel.className="shutdown-manual-choice";
+        const kill=document.createElement("input");
+        kill.type="checkbox";kill.value=item.id;
+        kill.checked=state.manualSelected.has(item.id);
+        kill.disabled=state.busy;
+        kill.setAttribute("aria-label","Manually kill PID "+item.pid+" · "+item.label);
+        kill.addEventListener("change",()=>{
+          if(kill.checked)state.manualSelected.add(item.id);
+          else state.manualSelected.delete(item.id);
+          buttons();
+        });
+        killLabel.append(kill);
+        node(killLabel,"span","","Kill PID");
+        row.append(killLabel);
+      }
       list.append(row);
     }
     const total=counts();
@@ -93,7 +119,7 @@
     $("shutdown-blocked-count").textContent=String(total.blocked);
     $("shutdown-all-note").textContent=state.preview?.exitReady
       ?"Full exit is available while all active owners are selected. If none are running, only the Tray will close."
-      :"Graceful full exit is blocked. Force Stop All can interrupt authenticated owners, but foreign and unverified processes still require separate review.";
+      :"Graceful full exit is blocked. Manual Kill lets the owner explicitly select OS-observed Guardian, Cloudflare and Core Supervisor PIDs.";
     buttons();
   }
   function drawProgress(){
@@ -120,8 +146,9 @@
     if(state.progress&&state.progress.runId!==progress.runId&&state.busy)return;
     state.progress=progress;state.busy=progress.stage==="running";
     if(!state.busy){
-      state.preview=null;state.selected.clear();
+      state.preview=null;state.selected.clear();state.manualSelected.clear();
       $("shutdown-force-confirm").value="";
+      $("shutdown-manual-confirm").value="";
       drawServices();
     }
     drawProgress();buttons();
@@ -143,8 +170,9 @@
   }
   async function refresh(){
     if(state.busy||state.loading)return;
-    state.loading=true;state.preview=null;state.selected.clear();
+    state.loading=true;state.preview=null;state.selected.clear();state.manualSelected.clear();
     $("shutdown-force-confirm").value="";
+    $("shutdown-manual-confirm").value="";
     buttons();feedback("Checking authenticated owners, open sessions and scheduled jobs...");
     try {
       const response=await invoke("preview");
