@@ -343,7 +343,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
             if (typeof received === "number" && received >= transfer.transferred)
               transfer.transferred = Math.min(transfer.size, received);
             notifyTransfer();
-          } else {
+          } else if (op === "file_finish" || op === "file_abort") {
+            // A read-only file_status checkpoint MUST NOT alter progress or
+            // convert an active transfer into a cancelled one.
             transfer.transferred = op === "file_finish" ? transfer.size : transfer.transferred;
             transfer.status = op === "file_finish" ? "completed" : "cancelled";
             notifyTransfer(true);
