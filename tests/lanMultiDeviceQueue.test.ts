@@ -9,7 +9,7 @@ const transferId = "e21956a1-daa6-4f62-a4bd-c31a6c3b105e";
 const targets = [{ id: a, connected: true, label: "Approved PC", platform: "windows" },
   { id: b, connected: true, label: "Approved Android", platform: "android" }];
 
-function harness(cancelAfterFirst = false) {
+function harness(cancelAfterFirst: boolean | "fail-second" = false) {
   const fields = new Map<string, any>();
   const el = (id: string): any => {
     if (!fields.has(id)) fields.set(id, {
@@ -21,6 +21,8 @@ function harness(cancelAfterFirst = false) {
   };
   const offers: string[] = [];
   const finished: string[] = [];
+  const confirmations: string[] = [];
+  let failedOnce = false;
   let remote: string = "";
   const sha256 = (data: Buffer) => crypto.createHash("sha256").update(data).digest("hex");
   const invoke = async (command: string, args: any) => {
@@ -29,6 +31,10 @@ function harness(cancelAfterFirst = false) {
     if (action === "file_offer") {
       remote = payload.deviceId;
       offers.push(remote + ":" + payload.name);
+      if (cancelAfterFirst === "fail-second" && offers.length === 2 && !failedOnce) {
+        failedOnce = true;
+        throw Error("Owner declined the second file.");
+      }
       return { success: true, file: { transferId, name: payload.name,
         size: payload.size, sha256: payload.sha256, chunkBytes: 4096 } };
     }
@@ -41,7 +47,7 @@ function harness(cancelAfterFirst = false) {
     if (action === "file_finish") {
       if (payload.deviceId !== remote) throw Error("Commit sent to a different target");
       finished.push(remote);
-      if (cancelAfterFirst && finished.length === 1)
+      if (cancelAfterFirst === true && finished.length === 1)
         el("lan-file-cancel").listeners.get("click")?.();
       return { success: true, result: { ok: true, bytes: 3 } };
     }
@@ -49,7 +55,9 @@ function harness(cancelAfterFirst = false) {
     throw Error("Unexpected action " + action);
   };
   const window: Record<string, any> = {
-    __TAURI__: { core: { invoke } }, confirm: () => true,
+    __TAURI__: { core: { invoke } }, confirm: (message: string) => {
+      confirmations.push(message); return true;
+    },
     __superagentLanGetSelected: () => targets[0],
     __superagentLanListTransferTargets: () => targets,
   };
@@ -63,7 +71,9 @@ function harness(cancelAfterFirst = false) {
     name, size: 3, arrayBuffer: async () => Uint8Array.from(Buffer.from("abc")).buffer,
   }));
   el("lan-file-source").listeners.get("change")?.();
-  return { el, offers, finished, send: () => el("lan-file-send").listeners.get("click")?.() };
+  return { el, offers, finished, confirmations,
+    send: () => el("lan-file-send").listeners.get("click")?.(),
+    retry: () => el("lan-file-retry").listeners.get("click")?.() };
 }
 async function until(test: () => boolean) {
   for (let i = 0; i < 300; i++) {
@@ -83,6 +93,21 @@ describe("LAN opt-in multi-device queue", () => {
     expect(h.finished).toEqual([a, a, b, b]);
     expect(h.el("lan-file-progress").value).toBe(100);
   });
+  it("retains the failed item and unsent devices for a separately confirmed retry", async () => {
+    const h = harness("fail-second");
+    h.send();
+    await until(() => h.el("lan-file-info").textContent.includes("Send failed"));
+    expect(h.finished).toEqual([a]);
+    expect(h.el("lan-file-retry").disabled).toBe(false);
+    h.retry();
+    await until(() => h.finished.length === 4);
+    expect(h.offers).toEqual([
+      a + ":one.txt", a + ":two.txt", a + ":two.txt",
+      b + ":one.txt", b + ":two.txt",
+    ]);
+    expect(h.confirmations.at(-1)).toContain("UNKNOWN outcome");
+  });
+
   it("does not continue to next device after an owner cancel", async () => {
     const h = harness(true);
     h.send();
