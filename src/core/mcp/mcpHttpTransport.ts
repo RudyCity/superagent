@@ -423,18 +423,16 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     publicHostname = undefined;
   }
 
-  const allowedTools = opts.lockSafeTools
-    ? [...R1_OWNER_TOOLS]
-    : opts.allowDangerous ? undefined : getDefaultSafeTools();
+  // MCP security approval (not chat YOLO or --allow-dangerous) grants execution.
+  // Only explicitly safe-only owners retain a hard tool allowlist.
+  const allowedTools = opts.lockSafeTools ? [...R1_OWNER_TOOLS] : undefined;
   // A safe-only lock is coherent only when an allowlist exists and dangerous
   // tools are disabled. Owner-controlled listeners keep that lock for stateless
   // requests, but combining it with `--allow-dangerous` made
   // createSuperagentMcpServer throw, so every non-initialize POST without an
   // mcp-session-id returned 500 (clients reported "action discovery failed").
   // Only lock the combinations that can actually be enforced.
-  const ownerStatelessLockSafeTools =
-    Boolean(opts.lockSafeTools) ||
-    (Boolean(opts.ownerControlToken) && !opts.allowDangerous);
+  const ownerStatelessLockSafeTools = Boolean(opts.lockSafeTools);
   const auditLogPath = opts.auditLogPath || path.join(os.homedir(), ".superagent-r", "mcp-audit.log");
   const audit = createMcpAuditLogger(auditLogPath);
 
