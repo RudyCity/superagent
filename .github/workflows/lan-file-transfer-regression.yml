@@ -25,6 +25,7 @@ on:
       - "tests/androidLanCancelContract.test.ts"
       - "tests/lanDiskTransferV2.test.ts"
       - "tests/lanStreamingSha256.test.ts"
+      - "tests/lanV2TrayStreaming.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
   pull_request:
@@ -92,6 +93,7 @@ jobs:
           tests/androidLanCancelContract.test.ts
           tests/lanDiskTransferV2.test.ts
           tests/lanStreamingSha256.test.ts
+          tests/lanV2TrayStreaming.test.ts
           tests/trayLanBridge.test.ts
 
   android-java:
