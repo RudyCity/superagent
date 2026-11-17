@@ -15,12 +15,7 @@ import {
   replaceFileContentTool,
   applyPatchTool,
 } from "../../tools/systemTools.js";
-import {
-  isYoloMode,
-  isFullYoloMode,
-  isPathWithinYoloScope,
-  getYoloAllowedRoot,
-} from "../../permissions.js";
+import { isPathWithinMcpScope } from "../../permissions.js";
 import { getMcpWorkspacePath } from "./workspaceContext.js";
 import { assertPathWithinProject } from "../../project/projectRouter.js";
 
@@ -97,23 +92,6 @@ export async function handleSynthesizeSkill(args: any): Promise<McpToolResult> {
   }
 }
 
-async function autoPreemptFileLocksInYolo(paths: string[]): Promise<void> {
-  if (!isYoloMode() || paths.length === 0) return;
-  try {
-    const { checkFileLock, releaseFile } = await import("../../storage/sharedMemory.js");
-    const cwd = getMcpWorkspacePath();
-    for (const raw of paths) {
-      if (!raw || typeof raw !== "string") continue;
-      const resolved = path.isAbsolute(raw) ? raw : path.resolve(cwd, raw);
-      const lockCheck = checkFileLock(resolved, undefined, cwd);
-      if (lockCheck.locked) {
-        releaseFile(resolved, undefined, cwd, true);
-      }
-    }
-  } catch {}
-}
-
-
 function validateLocalMutationTargets(rawPaths: string[]): { error?: string } {
   const workspace = getMcpWorkspacePath();
   if (/^(?:ssh:|chain:)/i.test(workspace)) {
@@ -150,7 +128,7 @@ export async function handleReplaceFileContent(args: any): Promise<McpToolResult
   const filePath = String(args.filePath || args.TargetFile || args.path || args.file || "");
   const validation = validateLocalMutationTargets(getMutationTargets(args));
   if (validation.error) return { content: [{ type: "text", text: validation.error }], isError: true };
-  if (!isFullYoloMode() && filePath) {
+  if (filePath) {
     const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(getMcpWorkspacePath(), filePath);
     if (path.basename(resolved).toLowerCase() === "model-config.json") {
       return {
@@ -158,34 +136,12 @@ export async function handleReplaceFileContent(args: any): Promise<McpToolResult
         isError: true,
       };
     }
-    if (!isPathWithinYoloScope(resolved, getMcpWorkspacePath())) {
-      const allowedRoot = getYoloAllowedRoot(getMcpWorkspacePath());
-      return {
-        content: [{
-          type: "text",
-          text: `Error: File editing blocked by Scoped YOLO boundary: "${resolved}" is outside allowed scope (${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted access.`,
-        }],
-        isError: true,
-      };
+    if (!isPathWithinMcpScope(resolved, getMcpWorkspacePath())) {
+      return { content: [{ type: "text", text: "File edit target is outside the approved MCP project root." }], isError: true };
     }
   }
 
-  // Self-Healing Concurrency: Preempt conflicting file locks when in YOLO mode
-  const targetPaths: string[] = [];
-  if (filePath) targetPaths.push(filePath);
-  if (Array.isArray(args.edits)) {
-    for (const e of args.edits) {
-      const p = e?.filePath || e?.TargetFile || e?.targetFile || e?.path || e?.file;
-      if (typeof p === "string") targetPaths.push(p);
-    }
-  }
-  if (Array.isArray(args.files)) {
-    for (const f of args.files) {
-      const p = f?.filePath || f?.TargetFile || f?.targetFile || f?.path || f?.file;
-      if (typeof p === "string") targetPaths.push(p);
-    }
-  }
-  await autoPreemptFileLocksInYolo(targetPaths);
+
 
   try {
     const res = await replaceFileContentTool.execute(args || {}, getMcpWorkspacePath());
@@ -202,7 +158,7 @@ export async function handleApplyPatch(args: any): Promise<McpToolResult> {
   const filePath = String(args.filePath || args.path || args.file || "");
   const validation = validateLocalMutationTargets(getMutationTargets(args));
   if (validation.error) return { content: [{ type: "text", text: validation.error }], isError: true };
-  if (!isFullYoloMode() && filePath) {
+  if (filePath) {
     const resolved = path.isAbsolute(filePath) ? filePath : path.resolve(getMcpWorkspacePath(), filePath);
     if (path.basename(resolved).toLowerCase() === "model-config.json") {
       return {
@@ -210,28 +166,12 @@ export async function handleApplyPatch(args: any): Promise<McpToolResult> {
         isError: true,
       };
     }
-    if (!isPathWithinYoloScope(resolved, getMcpWorkspacePath())) {
-      const allowedRoot = getYoloAllowedRoot(getMcpWorkspacePath());
-      return {
-        content: [{
-          type: "text",
-          text: `Error: Patch application blocked by Scoped YOLO boundary: "${resolved}" is outside allowed scope (${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted access.`,
-        }],
-        isError: true,
-      };
+    if (!isPathWithinMcpScope(resolved, getMcpWorkspacePath())) {
+      return { content: [{ type: "text", text: "Patch target is outside the approved MCP project root." }], isError: true };
     }
   }
 
-  // Self-Healing Concurrency: Preempt conflicting file locks when in YOLO mode
-  const targetPaths: string[] = [];
-  if (filePath) targetPaths.push(filePath);
-  if (Array.isArray(args.patches)) {
-    for (const p of args.patches) {
-      const patchPath = p?.filePath || p?.path || p?.file;
-      if (typeof patchPath === "string") targetPaths.push(patchPath);
-    }
-  }
-  await autoPreemptFileLocksInYolo(targetPaths);
+
 
   try {
     const res = await applyPatchTool.execute(args || {}, getMcpWorkspacePath());
