@@ -766,7 +766,7 @@ async fn create_connection(payload: Value) -> Result<Value, String> {
 /// authenticated loopback Core. It never receives Core bearer or pair/session tokens.
 #[tauri::command]
 async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"];
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
     let data = payload.unwrap_or_else(|| json!({}));
     let obj = data.as_object().ok_or("Invalid LAN payload")?;
@@ -785,6 +785,7 @@ async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Va
         "file_offer" => &["deviceId", "direction", "name", "size", "sha256"],
         "file_put" => &["deviceId", "transferId", "seq", "data"],
         "file_get" => &["deviceId", "transferId", "seq"],
+        "file_status" => &["deviceId", "transferId"],
         "file_finish" | "file_abort" => &["deviceId", "transferId"],
         "schema" => &["deviceId", "knownRevision"],
         "element" => &["deviceId", "elementId", "revision", "kind"],
