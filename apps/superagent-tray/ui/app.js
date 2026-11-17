@@ -713,6 +713,10 @@ function install() {
     if (hash) navigateToPage(hash);
   });
 
+  window.__TAURI__?.event?.listen?.("desktop-open-notifications", () => {
+    navigateToPage("notifications");
+  });
+
   window.__TAURI__?.event?.listen?.("desktop-open-runtime", () => {
     navigateToPage("runtime");
   });
