@@ -1362,6 +1362,43 @@ mod tests {
         assert_eq!(names,vec!["mcp","cloudflare","core"]);
     }
     #[test]
+    fn guardian_os_lease_fallback_rejects_pid_reuse_and_stale_owner_records() {
+        let valid=json!({"version":1,"port":7888,"pid":25204,
+            "startedAt":1_800_000_003_000u64,"instanceId":"owner"});
+        assert!(guardian_lease_matches(&valid,7888,25204,1_800_000_000,
+            1_800_000_003_100));
+        assert!(!guardian_lease_matches(&valid,7888,25205,1_800_000_000,
+            1_800_000_003_100));
+        assert!(!guardian_lease_matches(&valid,7889,25204,1_800_000_000,
+            1_800_000_003_100));
+        assert!(!guardian_lease_matches(&valid,7888,25204,1_800_001_000,
+            1_800_001_003_100));
+        assert!(!guardian_lease_matches(&valid,7888,25204,1_799_999_990,
+            1_800_000_003_100));
+        assert!(!guardian_lease_matches(&valid,7888,25204,1_800_000_000,
+            1_799_000_000_000));
+        let no_birth=json!({"version":1,"port":7888,"pid":25204});
+        assert!(!guardian_lease_matches(&no_birth,7888,25204,1_800_000_000,
+            1_800_000_003_100));
+    }
+    #[test]
+    fn manual_process_identity_blocks_executable_path_swaps() {
+        let mut item=item("guardian-os:7888:25204",false);
+        item.manual_kill_selectable=true;item.process_name=Some("bun.exe".into());
+        item.process_started_at=Some(1_800_000_000);
+        item.process_path=Some("C:\\SuperAgent\\bun.exe".into());
+        assert!(manual_process_identity_matches(&item,1_800_000_000,
+            "bun.exe",Some("C:\\SuperAgent\\bun.exe")));
+        assert!(!manual_process_identity_matches(&item,1_800_000_000,
+            "bun.exe",Some("C:\\Windows\\bun.exe")));
+        assert!(!manual_process_identity_matches(&item,1_800_000_001,
+            "bun.exe",Some("C:\\SuperAgent\\bun.exe")));
+        assert!(!manual_process_identity_matches(&item,1_800_000_000,
+            "node.exe",Some("C:\\SuperAgent\\bun.exe")));
+        assert!(!manual_process_identity_matches(&item,1_800_000_000,
+            "bun.exe",None));
+    }
+    #[test]
     fn explicit_manual_kill_allows_reviewed_owners_but_not_system_or_tray() {
         let pid=std::process::id().saturating_add(5000);
         assert!(manual_process_allowed("managed",pid,"bun.exe"));
