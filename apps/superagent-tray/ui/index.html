@@ -3569,11 +3569,12 @@
       aria-labelledby="shutdown-manager-title" aria-describedby="shutdown-manager-description">
       <header class="modal-header">
         <div>
-          <div class="modal-eyebrow">NATIVE · OWNER-VERIFIED LIFECYCLE</div>
+          <div class="modal-eyebrow">NATIVE · LIFECYCLE &amp; MANUAL OVERRIDE</div>
           <h2 id="shutdown-manager-title">Shutdown Manager</h2>
           <p id="shutdown-manager-description" class="shutdown-description">
             Review running services, active sessions and ownership before stopping anything.
-            Only verified processes can be selected. Your other applications are untouched.
+            Graceful operations use authenticated owners. Manual Kill separately allows the PC owner
+            to select observed process PIDs, including unverified services, with native confirmation.
           </p>
         </div>
         <button type="button" id="shutdown-close" class="icon-button"
@@ -3598,7 +3599,7 @@
           Open this manager to inspect authenticated runtime owners.
         </div>
         <div id="shutdown-services" class="shutdown-services"
-          role="group" aria-label="Select verified services to stop"></div>
+          role="group" aria-label="Select graceful stops or manual OS PID kills"></div>
         <div id="shutdown-all-note" class="shutdown-note">
           Full exit requires every active owner to have a supported graceful-stop protocol.
         </div>
@@ -3606,11 +3607,26 @@
           <div class="shutdown-force-copy">
             <strong>Emergency force stop</strong>
             <small>Interrupts authenticated SuperAgent owners, including MCP sessions and registered Cloudflare tunnels.
-              Foreign or unverified processes are never killed. The Tray remains open to show results.</small>
+              Use the separate Manual Kill section below to explicitly target observed but unverified PIDs.
+              The Tray remains open to show results.</small>
           </div>
           <label for="shutdown-force-confirm">Type <code>FORCE STOP ALL</code> to unlock</label>
           <input id="shutdown-force-confirm" type="text" maxlength="14" autocomplete="off"
             spellcheck="false" placeholder="FORCE STOP ALL" aria-label="Force stop confirmation phrase" />
+        </section>
+        <section class="shutdown-manual-panel" aria-labelledby="shutdown-manual-heading">
+          <div class="shutdown-manual-heading">
+            <div>
+              <strong id="shutdown-manual-heading">Manual Kill · owner override</strong>
+              <small>Target the checked OS PIDs even when their SuperAgent owner status is unverified.
+                Killing a Core Supervisor or Guardian can interrupt active jobs, break connections, or
+                trigger automatic restarts. Each PID is checked against its current executable and start time.</small>
+            </div>
+            <button id="shutdown-manual-select-all" class="button ghost" type="button" disabled>Select all eligible</button>
+          </div>
+          <label for="shutdown-manual-confirm">Type <code>KILL SELECTED</code> to unlock</label>
+          <input id="shutdown-manual-confirm" type="text" maxlength="13" autocomplete="off"
+            spellcheck="false" placeholder="KILL SELECTED" aria-label="Manual kill confirmation phrase" />
         </section>
         <section id="shutdown-progress" class="shutdown-progress" aria-label="Shutdown progress"
           aria-live="polite" hidden>
@@ -3623,6 +3639,7 @@
         <button id="shutdown-cancel" type="button" class="button ghost">Close</button>
         <button id="shutdown-stop-selected" type="button" class="button secondary" disabled>Stop selected</button>
         <button id="shutdown-force-all" type="button" class="button shutdown-danger" disabled>Force Stop All</button>
+        <button id="shutdown-manual-kill" type="button" class="button shutdown-danger" disabled>Kill selected PIDs</button>
         <button id="shutdown-exit-all" type="button" class="button shutdown-danger" disabled>Stop all &amp; exit</button>
       </footer>
     </section>
