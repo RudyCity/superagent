@@ -198,6 +198,12 @@
 .access-project-row strong{font-size:12px;min-width:115px}
 .access-project-row .access-mcp-meta{flex:1;min-width:150px}
 .access-project-no-grant{font-size:10px;color:var(--text-muted,#a2aec4);white-space:nowrap}
+.access-project-search{margin-top:13px}
+.access-project-detail{display:grid;gap:5px;flex:1;min-width:0}
+.access-project-detail .access-mcp-meta{min-width:0;overflow-wrap:anywhere}
+.access-project-actions{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.access-project-actions button{width:auto;margin:0;min-height:34px;padding:7px 11px;font-size:11px}
+.access-project-actions button:focus-visible,.access-project-add:focus-visible{outline:2px solid var(--color-accent,#a78bfa);outline-offset:2px}
 @media(max-width:640px){.access-project-form{grid-template-columns:minmax(0,1fr)}.access-project-add{width:100%}.access-project-target{flex-wrap:wrap}.access-project-folder{width:100%}.access-project-save{max-width:none;width:100%}}
 .access-trusted-session{display:grid;gap:10px}
 .access-trusted-session h3{margin:0}
