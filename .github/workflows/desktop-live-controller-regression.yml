@@ -71,6 +71,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Prepare Core dist resources for Tauri build script
+        run: bun run build
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: "apps/superagent-tray/src-tauri -> target"
