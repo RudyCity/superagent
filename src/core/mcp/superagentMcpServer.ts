@@ -1384,7 +1384,7 @@ function extractMcpResultText(result: unknown): string {
       emitMcpActivity({
         type: "tool_call",
         tool: toolName,
-        args: rawArgs,
+        args: toolName.startsWith("superagent_lifecycle") ? { action: rawArgs.action } : rawArgs,
         ok: false,
         error: "Blocked by MCP tool allowlist",
         durationMs: 0,
@@ -1455,10 +1455,14 @@ function extractMcpResultText(result: unknown): string {
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
-      const safeActivityArgs = desktopCall ? desktopAuditArgs : rawArgs;
+      const safeActivityArgs = desktopCall ? desktopAuditArgs
+        : toolName.startsWith("superagent_lifecycle")
+          ? { action: rawArgs.action, workflowId: rawArgs.workflowId, runId: rawArgs.runId,
+              stepId: rawArgs.stepId, workerId: rawArgs.workerId } : rawArgs;
       const safeActivityOutput = desktopCall
         ? "[DESKTOP_UI_RESPONSE_REDACTED]"
-        : outputText;
+        : toolName.startsWith("superagent_lifecycle")
+          ? "[EXTERNAL_LIFECYCLE_RESPONSE_REDACTED]" : outputText;
       emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
       emitMcpActivity({
         type: "tool_call",
@@ -1475,7 +1479,10 @@ function extractMcpResultText(result: unknown): string {
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
-      const safeActivityArgs = desktopCall ? desktopAuditArgs : rawArgs;
+      const safeActivityArgs = desktopCall ? desktopAuditArgs
+        : toolName.startsWith("superagent_lifecycle")
+          ? { action: rawArgs.action, workflowId: rawArgs.workflowId, runId: rawArgs.runId,
+              stepId: rawArgs.stepId, workerId: rawArgs.workerId } : rawArgs;
       const safeErrorMsg = desktopCall
         ? "DESKTOP_UI_CALL_FAILED"
         : errorMsg;
