@@ -105,6 +105,13 @@ function boot(nativeEnabled=true, mcpData?: {
       if(args.action==="requests") return {success:true,requests:mcpRequests};
       if(args.action==="identities") return {success:true,identities:mcpIdentities};
       if(args.action==="projects") return {success:true,projects:mcpProjects};
+      if(args.action==="register_project"){
+        const input=args.payload;
+        const id=input.id||input.name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
+        mcpProjects.push({projectId:id,name:input.name,type:input.type,
+          target:input.root||input.target});
+        return {success:true,project:{projectId:id},capabilitiesGranted:false};
+      }
       if(args.action==="connected_clients") return mcpData?.connectedClients ??
         {success:true,state:"unavailable",clients:null};
       if(["approve","deny","revoke","direct_grant"].includes(args.action)) return {success:true};
@@ -499,6 +506,66 @@ describe("independent MCP Connections and Project Access UI", () => {
       .toBe("Tidak tersedia");
     expect(ui.document.getElementById("access-mcp-connection-grant")!.disabled)
       .toBe(false);
+  });
+
+  it("adds a local project via native folder selection without granting MCP privileges", async () => {
+    const ui=boot(true,{requests:[],identities:[],projects:[]});await flush();
+    const add=ui.document.getElementById("access-project-add")!;
+    const form=ui.document.getElementById("access-project-form")!;
+    expect(form.hidden).toBe(true);
+    add.click();
+    expect(form.hidden).toBe(false);
+    ui.document.getElementById("access-project-name")!.value="Tryout Online";
+    ui.document.getElementById("access-project-id")!.value="tryout-online";
+    ui.document.getElementById("access-project-browse")!.click();await flush();
+    expect(ui.document.getElementById("access-project-root")!.value)
+      .toBe("G:/project/tryout-online");
+    ui.document.getElementById("access-project-save")!.click();await flush();
+    const registration=ui.calls.find(c=>c.name==="mcp_project_access_action" &&
+      c.args.action==="register_project");
+    expect(registration?.args.payload).toEqual({id:"tryout-online",name:"Tryout Online",
+      type:"local",root:"G:/project/tryout-online"});
+    expect(ui.calls.some(c=>c.args?.action==="direct_grant")).toBe(false);
+    expect(form.hidden).toBe(true);
+    expect(ui.document.getElementById("access-mcp-proj-select")!.value)
+      .toBe("tryout-online");
+    expect(ui.document.getElementById("access-project-list")!.textContent)
+      .toContain("Tryout Online");
+  });
+
+  it("registers credential-free SSH target without asking for a local folder", async () => {
+    const ui=boot(true,{projects:[]});await flush();
+    ui.document.getElementById("access-project-add")!.click();
+    ui.document.getElementById("access-project-name")!.value="Remote API";
+    const type=ui.document.getElementById("access-project-type")!;
+    type.value="ssh";type.change();
+    expect(ui.document.getElementById("access-project-remote")!.hidden).toBe(false);
+    ui.document.getElementById("access-project-target")!.value="ssh://deploy@example.net/srv/app";
+    ui.document.getElementById("access-project-save")!.click();await flush();
+    const call=ui.calls.find(c=>c.args?.action==="register_project");
+    expect(call?.args.payload).toEqual({name:"Remote API",type:"ssh",
+      target:"ssh://deploy@example.net/srv/app"});
+    expect(ui.calls.some(c=>c.name==="pick_permanent_access_path")).toBe(false);
+    expect(ui.calls.some(c=>c.args?.action==="direct_grant")).toBe(false);
+  });
+
+  it("rejects incomplete Add Project input and retains form after Core failure", async () => {
+    const ui=boot(true,{projects:[],failActions:["register_project"]});await flush();
+    ui.document.getElementById("access-project-add")!.click();
+    ui.document.getElementById("access-project-save")!.click();await flush();
+    expect(ui.calls.some(c=>c.args?.action==="register_project")).toBe(false);
+    ui.document.getElementById("access-project-name")!.value="Sample";
+    ui.document.getElementById("access-project-id")!.value="Bad ID";
+    ui.document.getElementById("access-project-browse")!.click();await flush();
+    ui.document.getElementById("access-project-save")!.click();await flush();
+    expect(ui.calls.some(c=>c.args?.action==="register_project")).toBe(false);
+    ui.document.getElementById("access-project-id")!.value="sample";
+    ui.document.getElementById("access-project-save")!.click();await flush();
+    expect(ui.document.getElementById("access-project-form")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-status")!.textContent)
+      .toContain("Core unavailable");
+    expect(ui.document.getElementById("access-project-list")!.textContent)
+      .not.toContain("Sample");
   });
 
   it("offers only enabled registered projects and sends the selected read grant", async () => {
