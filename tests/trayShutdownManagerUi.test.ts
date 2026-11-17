@@ -102,6 +102,16 @@ describe("native Shutdown Manager UI",()=>{
     row.children[0].handlers.change();
     expect(m.node("shutdown-exit-all").disabled).toBe(true);
   });
+  it("permits exit when every service is already stopped",async()=>{
+    const idle=fixture(true);
+    idle.services=[idle.services[2]];
+    const m=mount(idle);
+    await m.open();
+    expect(m.node("shutdown-exit-all").disabled).toBe(false);
+    await m.click("shutdown-exit-all");
+    const action=m.calls.find(c=>c.action==="execute");
+    expect(action).toMatchObject({action:"execute",selected:[],exitAfter:true});
+  });
   it("renders progress through textContent and never replays a blocked operation",async()=>{
     const m=mount();
     await m.open();
