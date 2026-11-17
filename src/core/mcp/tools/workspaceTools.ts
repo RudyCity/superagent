@@ -62,9 +62,8 @@ export async function handleSwitchWorkspace(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const target = path.isAbsolute(ws) ? path.resolve(ws) : path.resolve(currentWorkspace, ws);
-    const isAllowedByAccessManager = isPathAllowedByPermanentRegistry(target, "read");
     if (!args.projectId && (message.includes("Workspace target is not registered or authorized") || message.includes("escapes registered project"))
-      && (isAllowedByAccessManager || isPathWithinYoloScope(target, currentWorkspace))) {
+      && isPathWithinYoloScope(target, currentWorkspace)) {
       resolved = target;
     } else {
       return { content: [{ type: "text", text: message }], isError: true };
@@ -82,8 +81,8 @@ export async function handleSwitchWorkspace(
     return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
   }
 
-  const isAllowedByAccessManager = isPathAllowedByPermanentRegistry(resolved, "read");
-  if (!projectAccessGranted && !withinScopedRoot && !isAllowedByAccessManager) {
+  // The Core executable\u0027s native file permission cannot authorize an MCP identity.
+  if (!projectAccessGranted && !withinScopedRoot) {
     return {
       content: [{
         type: "text",
@@ -101,7 +100,7 @@ export async function handleSwitchWorkspace(
   }
   // Keep selection per MCP server instance. process.chdir() and the shared HTTP
   // server's last-active workspace are process-global and unsafe for concurrency.
-  onWorkspaceChange?.(resolved, resolvedProjectId, Boolean(projectAccessGranted && !withinScopedRoot && !isAllowedByAccessManager));
+  onWorkspaceChange?.(resolved, resolvedProjectId, Boolean(projectAccessGranted && !withinScopedRoot));
   return { content: [{ type: "text", text: `Switched active Superagent workspace to: ${resolved}` }] };
 }
 
