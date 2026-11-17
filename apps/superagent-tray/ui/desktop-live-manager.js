@@ -47,6 +47,8 @@
     inputPending: false,
     lastFrameAt: 0,
   };
+  // A slow native recorder or controller revoke must finish before another start.
+  let stopOperation = null;
 
   const invoke = async (action,payload) => {
     const call=window.__TAURI__?.core?.invoke;
@@ -89,6 +91,8 @@
     const keyboardStatus=el("desktop-live-keyboard-status");
     const mouseButton=el("desktop-live-stream-request-control");
     const keyboardButton=el("desktop-live-stream-request-keyboard");
+    const revokeMouse=el("desktop-live-stream-revoke-control");
+    const revokeKeyboard=el("desktop-live-stream-revoke-keyboard");
     const toggle=el("desktop-live-stream-toggle-control");
     const takeover=el("desktop-live-stream-takeover");
     const inputBar=el("desktop-live-stream-input-bar");
@@ -132,8 +136,10 @@
       keyboardButton.title=lan?"Separate attended permission for text and navigation keys"
         :"Native PC input requires independently verified host controller";
     }
+    if(revokeMouse)revokeMouse.disabled=!mouse||stream.controllerPending;
+    if(revokeKeyboard)revokeKeyboard.disabled=!keyboard||stream.controllerPending;
     if(toggle){
-      toggle.disabled=!lan||!any;
+      toggle.disabled=!lan||!any||stream.controllerPending;
       toggle.textContent=stream.controlEnabled?"Hide Input UI":"Show Input UI";
       toggle.classList.toggle("active",Boolean(lan&&stream.controlEnabled&&any));
     }
@@ -141,28 +147,30 @@
     if(inputBar)inputBar.hidden=!lan||!stream.controlEnabled||!any;
     const typeInput=el("desktop-live-stream-type-input");
     const typeSend=el("desktop-live-stream-type-send");
-    if(typeInput)typeInput.disabled=!keyboard||stream.inputPending;
-    if(typeSend)typeSend.disabled=!keyboard||stream.inputPending;
-    document.querySelectorAll(".desktop-live-key-btn").forEach(btn=>{btn.disabled=!keyboard||stream.inputPending;});
+    if(typeInput)typeInput.disabled=!keyboard||stream.inputPending||stream.controllerPending;
+    if(typeSend)typeSend.disabled=!keyboard||stream.inputPending||stream.controllerPending;
+    document.querySelectorAll(".desktop-live-key-btn").forEach(btn=>{
+      btn.disabled=!keyboard||stream.inputPending||stream.controllerPending;
+    });
     if(viewport)viewport.classList.toggle("interactive",Boolean(lan&&stream.controlEnabled&&mouse));
   }
 
   async function refreshControlPermission() {
     if (!stream.active || !stream.isLanDevice || !stream.controlRequested) return;
-    const id=stream.deviceId;
+    const id=stream.deviceId, generation=stream.generation;
     for(const kind of ["mouse","keyboard"]) {
       if(!stream.controllerScopes[kind])continue;
       try {
         const result=await window.__TAURI__?.core?.invoke?.("lan_support_action", {
           action:"control_status",payload:{deviceId:id,kind},
         });
-        if(!stream.active||stream.deviceId!==id)return;
+        if(!stream.active||stream.deviceId!==id||stream.generation!==generation)return;
         if(result?.success!==true||result?.approved!==true||
            !Number.isSafeInteger(result.secondsRemaining)||
            result.secondsRemaining<1)throw Error("Scoped controller expired");
         stream.controllerSeconds=result.secondsRemaining;
       } catch {
-        if(!stream.active||stream.deviceId!==id)return;
+        if(!stream.active||stream.deviceId!==id||stream.generation!==generation)return;
         stream.controllerScopes[kind]=false;
         if(kind==="mouse")stream.pointer=null;
         status(kind+" control expired or revoked; View Only remains active.",true);
@@ -271,8 +279,10 @@
   async function startStream(item, button) {
     if (stream.startPending) return;
     stream.startPending = true;
-    try { await startStreamOwned(item, button); }
-    finally { stream.startPending = false; }
+    try {
+      if (stopOperation) await stopOperation;
+      await startStreamOwned(item, button);
+    } finally { stream.startPending = false; }
   }
 
   async function startStreamOwned(item, button) {
@@ -485,6 +495,8 @@
     }finally{stream.recordingPending=false;renderStreamPermissions();}
   }
   async function stopStream(reason) {
+    if (stopOperation) return stopOperation;
+    const operation = (async () => {
     if (stream.timer) {
       clearTimeout(stream.timer);
       cancelAnimationFrame(stream.timer);
@@ -570,6 +582,10 @@
       status("Local control disabled. Core-wide revocation unverified; controller token expires automatically.",true);
     else if (reason) status(reason);
     draw();
+    })();
+    stopOperation = operation;
+    try { return await operation; }
+    finally { if (stopOperation === operation) stopOperation = null; }
   }
 
   function draw() {
@@ -743,7 +759,7 @@
       if(!["mouse","keyboard"].includes(kind)||!stream.active||!stream.token||
          stream.controllerScopes[kind]||stream.controllerPending)return;
       stream.controllerPending=true;
-      const id=stream.deviceId;
+      const id=stream.deviceId,generation=stream.generation;
       renderStreamPermissions();
       try{
         if(stream.isLanDevice){
@@ -753,14 +769,15 @@
             action:"control_request",payload:{deviceId:id,kind},
           });
           if(result?.success===true&&result?.approved===true&&
-             (!stream.active||!stream.isLanDevice||stream.deviceId!==id)){
+             (!stream.active||!stream.isLanDevice||stream.deviceId!==id||
+              stream.generation!==generation)){
             try{await call("lan_support_action",{
               action:"control_revoke",payload:{deviceId:id,kind},
             });}catch{}
             throw Error("Stream ended during native approval");
           }
           if(!stream.active||!stream.isLanDevice||stream.deviceId!==id||
-             result?.success!==true||result?.approved!==true||result?.kind!==kind||
+             stream.generation!==generation||result?.success!==true||result?.approved!==true||result?.kind!==kind||
              !Number.isSafeInteger(result.secondsRemaining)||result.secondsRemaining<1)
             throw Error("Independent "+kind+" controller not approved");
           stream.controllerScopes[kind]=true;
@@ -774,13 +791,52 @@
           status("PC native controller requires separately configured, attended mTLS transport.",true);
         }
       }catch(err){
-        if(stream.active&&stream.deviceId===id)stream.controllerScopes[kind]=false;
-        status(kind+" approval denied: "+(err?.message||"Host rejected"),true);
+        if(stream.active&&stream.deviceId===id&&stream.generation===generation){
+          stream.controllerScopes[kind]=false;
+          status(kind+" approval denied: "+(err?.message||"Host rejected"),true);
+        }
       }finally{
-        stream.controllerPending=false;
-        renderStreamPermissions();
+        if(stream.generation===generation){
+          stream.controllerPending=false;
+          renderStreamPermissions();
+        }
       }
     }
+
+    async function revokeScopedController(kind) {
+      if (!stream.active || !stream.isLanDevice || stream.controllerPending ||
+          !["mouse","keyboard"].includes(kind) || !stream.controllerScopes[kind]) return;
+      const id=stream.deviceId,generation=stream.generation;
+      // Fail closed locally before the remote host has acknowledged revocation.
+      stream.controllerPending=true;
+      stream.controllerScopes[kind]=false;
+      if (kind==="mouse") stream.pointer=null;
+      renderStreamPermissions();
+      try {
+        const response=await window.__TAURI__?.core?.invoke?.("lan_support_action",{
+          action:"control_revoke",payload:{deviceId:id,kind},
+        });
+        if (stream.generation!==generation || stream.deviceId!==id) return;
+        if (response?.success!==true || response?.approved!==false)
+          throw Error("Host did not confirm controller revocation");
+        status(kind+" controller revoked; View Only remains active.");
+      } catch(err) {
+        if (stream.generation===generation)
+          status(kind+" input disabled locally, Core revocation unverified: "+
+            (err?.message||"Connection lost"),true);
+      } finally {
+        if(stream.generation===generation){
+          stream.controllerPending=false;
+          if(!stream.controllerScopes.mouse&&!stream.controllerScopes.keyboard)
+            stream.controlEnabled=false;
+          renderStreamPermissions();
+        }
+      }
+    }
+    el("desktop-live-stream-revoke-control")?.addEventListener("click",
+      ()=>void revokeScopedController("mouse"));
+    el("desktop-live-stream-revoke-keyboard")?.addEventListener("click",
+      ()=>void revokeScopedController("keyboard"));
     el("desktop-live-stream-request-control")?.addEventListener("click",()=>void requestScopedController("mouse"));
     el("desktop-live-stream-request-keyboard")?.addEventListener("click",()=>void requestScopedController("keyboard"));
 
@@ -799,7 +855,7 @@
     // Only approved Android LAN sessions accept touch, never native PC previews.
     function gesturePoint(event) {
       if (!stream.active || !stream.isLanDevice || !stream.controlEnabled ||
-          !stream.controllerScopes.mouse || stream.inputPending ||
+          !stream.controllerScopes.mouse || stream.inputPending || stream.controllerPending ||
           stream.lastFrameAt <= 0 || Date.now() - stream.lastFrameAt > 3000) return null;
       const img=el("desktop-live-stream-img");
       if(!img||img.hidden||!img.naturalWidth||!img.naturalHeight)return null;
@@ -859,7 +915,8 @@
 
     async function sendTrayType() {
       const input = el("desktop-live-stream-type-input");
-      if (!input || !stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard || stream.inputPending) return;
+      if (!input || !stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard ||
+          stream.inputPending || stream.controllerPending) return;
       const text = input.value;
       if (!text || text.length > 160 || /[\u0000-\u001f\u007f]/.test(text)) {
         status("Text must be 1-160 characters without control characters.",true);
@@ -900,7 +957,8 @@
 
     document.querySelectorAll(".desktop-live-key-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard || stream.inputPending) return;
+        if (!stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard ||
+            stream.inputPending || stream.controllerPending) return;
         const key = btn.dataset.key;
         if (!key) return;
         if (stream.isLanDevice) {
