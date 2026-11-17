@@ -55,3 +55,68 @@ An installed native-host controller composition is still missing. A complete del
 - **Released:** no installer/release verification performed in this session.
 
 This is **not** a claim that universal remote desktop takeover is complete.
+
+## Follow-up implementation: independent native input scopes and private host lifecycle
+
+This addendum records source changes after the original audit, not an installed
+Windows controller or a published installer.
+
+### Implemented in GitHub source
+
+- `AttendedNativeControllerSession` now supports **simultaneously approved,
+  independently revocable mouse and keyboard families**, with separate signed
+  native challenges, separate tokens/sequences, one verified viewer principal,
+  and one native action in flight across both families. A mouse token never
+  permits typing or keys. A forged nonce revokes approval; owner drift and
+  reentrant dispatch fail closed.
+- `RemotePrivateHostTlsListener` has a single trusted host-side terminal
+  controller revocation hook. mTLS viewer disconnect, TLS error, approval
+  expiry, failed start and human stop revoke controller authorization before
+  capture/TLS shutdown. This is not a general viewer input endpoint.
+- `RemotePrivateHostOperator.registerNativeHost` atomically pairs the
+  controller and listener so duplicate host setup cannot replace an active
+  viewer or steal another operator's controller.
+- `AttendedPrivateDesktopHostSession` composes the listener, scoped native
+  controller, and physical takeover into one trusted host-only lifecycle.
+  The listener must already have separately provisioned pinned mTLS identity,
+  and the controller must already have a trusted native signer, fresh
+  accessibility capture and nativeRef-only adapter. Nothing automatically
+  creates those privileges or exposes them through HTTP/MCP/Quick Tunnel.
+- Regression tests cover concurrent approvals, independent revocation,
+  mismatched controller identity, nonce replay, active private TLS disconnect,
+  in-flight startup cancellation and duplicate host registration.
+
+### CI evidence and limits
+
+The earlier full Desktop Live Controller Regression run for
+`19e277b1` completed successfully on Windows and Ubuntu Core plus both
+Windows Rust gates:
+https://github.com/RudyCity/superagent/actions/runs/44084502066
+
+Each later GitHub commit triggers its own CI. Refer to the latest matching
+workflow run before promoting **Tested** to PASS for the new host composition:
+https://github.com/RudyCity/superagent/actions
+
+**Runtime Verified: NO. Released: NO.** No installed Windows Tray or live
+Android/Windows physical device was controlled through this native
+composition during this code-only task. Do not claim end-to-end remote desktop,
+full keyboard shortcuts, arbitrary monitor dragging or installed readiness.
+
+### Remaining P0 deployment gates
+
+1. Install a native Windows-host approval UI and trusted signed challenges
+   bound to a live HWND/PID/process birth/SID/session/foreground.
+2. Provision per-viewer pinned mTLS credentials and a private network
+   listener from an OS-trusted local path; no secrets through WebView/MCP.
+3. Implement and certify a separately approved **private controller command
+   transport** with host-side sequence, scope and native input verification.
+   Current mTLS stream is view-only and deliberately rejects input messages.
+4. Connect the installed Core/Tray native host composition and the remote
+   viewer controls, without promoting existing preview tokens into control.
+5. Pass physical Windows positive/negative tests, network disconnection,
+   reboot, session takeover, installer extraction and clean-host smoke,
+   then publish an explicitly identified/signed tested release.
+
+Until these gates pass, `remotePrivateHostOperator.status().state` must
+remain `NOT_CONFIGURED`. This is an intentional safety invariant rather
+than a successful remote controller activation.
