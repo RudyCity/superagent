@@ -14,7 +14,7 @@
 import {Client} from "@modelcontextprotocol/sdk/client/index.js";
 import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {manageServices} from "../src/core/runtime/serviceManager.js";
-import {assessDesktopMcpOwnerEvidence,type McpServiceEvidence}
+import {assessDesktopMcpOwnerEvidence,isSameVerifiedMcpGeneration,type McpServiceEvidence}
   from "../src/core/desktopUi/liveActivationGate.js";
 
 function blocked(code:string,details?:string):never{
@@ -86,8 +86,7 @@ async function main(){
     // A reload while listing tools invalidates the acceptance result.
     const postflight=assessDesktopMcpOwnerEvidence(
       await owner("status",port),await owner("doctor",port),url.href,expectedDigest);
-    if(!postflight.ready||postflight.ownerPid!==evidence.ownerPid||
-       postflight.backendPid!==evidence.backendPid)
+    if(!isSameVerifiedMcpGeneration(evidence,postflight))
       blocked("MCP_OWNER_CHANGED_DURING_ACCEPTANCE",postflight.reasons.join(","));
     process.stdout.write(JSON.stringify({
       status:"PASS",verifiedThrough:"attested-live-mcp-http",
