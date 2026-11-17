@@ -51,7 +51,9 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+  # Preserve the active native build when concurrent agents push commits.
+  # GitHub queues only the latest pending run for this workflow/ref group.
+  cancel-in-progress: false
 
 permissions:
   contents: read
