@@ -559,10 +559,12 @@
     const tabRules = $("access-nav-tab-rules");
     const tabAudit = $("access-nav-tab-audit");
     const tabMcp = $("access-nav-tab-mcp");
+    const tabConnections = $("access-nav-tab-connections");
     const paneRegister = $("access-pane-register");
     const paneRules = $("access-pane-rules");
     const paneAudit = $("access-pane-audit");
     const paneMcp = $("access-pane-mcp");
+    const paneConnections = $("access-pane-connections");
 
     if (tabRegister) {
       const active = tabName === "register";
@@ -590,6 +592,16 @@
       tabMcp.tabIndex = active ? 0 : -1;
     }
 
+    if (tabConnections) {
+      const active = tabName === "connections";
+      tabConnections.className = "access-nav-tab" + (active ? " active" : "");
+      tabConnections.setAttribute("aria-selected", active ? "true" : "false");
+      tabConnections.tabIndex = active ? 0 : -1;
+    }
+    if (paneConnections) {
+      paneConnections.hidden = tabName !== "connections";
+      if (tabName === "connections") void refreshMcpRequests();
+    }
     if (paneRegister) paneRegister.hidden = (tabName !== "register");
     if (paneRules) paneRules.hidden = (tabName !== "rules");
     if (paneAudit) paneAudit.hidden = (tabName !== "audit");
@@ -604,7 +616,9 @@
       setActiveTab("audit");
     } else if (hash.includes(":rules")) {
       setActiveTab("rules");
-    } else if (hash.includes(":mcp") || hash.includes(":requests")) {
+    } else if (hash.includes(":connections") || hash.includes(":connection")) {
+      setActiveTab("connections");
+    } else if (hash.includes(":mcp") || hash.includes(":projects") || hash.includes(":requests")) {
       setActiveTab("mcp");
     } else if (hash.includes(":register")) {
       setActiveTab("register");
@@ -1084,7 +1098,7 @@
     const intro = make("div");
     intro.append(make("span", "access-eyebrow", "SUPERAGENT · HOST ACCESS CONTROL"),
       make("h2", "", "Access Manager"),
-      make("p", "", "Registrasikan aplikasi sekali. Izin tetap berlaku sampai dicabut."));
+      make("p", "", "Atur izin native, koneksi MCP, dan proyek secara terpisah. Izin berlaku hingga dicabut."));
     const pill = make("span", "access-permanent-pill", "● Registrasi permanen");
     head.append(intro,pill);
 
@@ -1239,8 +1253,7 @@
     tabRegister.setAttribute("aria-controls", "access-pane-register");
     tabRegister.tabIndex = 0;
     tabRegister.append(
-      make("span", "access-nav-tab-icon", "➕"),
-      make("span", "access-nav-tab-label", "Daftarkan Izin")
+      make("span", "access-nav-tab-label", "Aplikasi & File")
     );
     tabRegister.addEventListener("click", () => setActiveTab("register"));
 
@@ -1254,8 +1267,7 @@
     const ruleBadge = make("span", "access-nav-tab-badge", "0");
     ruleBadge.id = "access-tab-badge-rules";
     tabRules.append(
-      make("span", "access-nav-tab-icon", "📋"),
-      make("span", "access-nav-tab-label", "Aturan Terdaftar"),
+      make("span", "access-nav-tab-label", "Aturan Aktif"),
       ruleBadge
     );
     tabRules.addEventListener("click", () => setActiveTab("rules"));
@@ -1271,8 +1283,7 @@
     const auditBadge = make("span", "access-nav-tab-badge", "0");
     auditBadge.id = "access-tab-badge-audit";
     tabAudit.append(
-      make("span", "access-nav-tab-icon", "📜"),
-      make("span", "access-nav-tab-label", "Log Audit"),
+      make("span", "access-nav-tab-label", "Aktivitas"),
       auditPulseDot,
       auditBadge
     );
@@ -1288,13 +1299,24 @@
     const mcpBadge = make("span", "access-nav-tab-badge", "0");
     mcpBadge.id = "access-tab-badge-mcp";
     tabMcp.append(
-      make("span", "access-nav-tab-icon", "🛡️"),
-      make("span", "access-nav-tab-label", "Izin Proyek MCP"),
+      make("span", "access-nav-tab-label", "Akses Proyek"),
       mcpBadge
     );
     tabMcp.addEventListener("click", () => setActiveTab("mcp"));
 
-    navTabs.append(tabRegister, tabRules, tabAudit, tabMcp);
+    const tabConnections = make("button", "access-nav-tab");
+    tabConnections.id = "access-nav-tab-connections";
+    tabConnections.type = "button";
+    tabConnections.setAttribute("role", "tab");
+    tabConnections.setAttribute("aria-selected", "false");
+    tabConnections.setAttribute("aria-controls", "access-pane-connections");
+    tabConnections.tabIndex = -1;
+    const connectionBadge = make("span", "access-nav-tab-badge", "0");
+    connectionBadge.id = "access-tab-badge-connections";
+    tabConnections.append(make("span", "access-nav-tab-label", "Koneksi MCP"), connectionBadge);
+    tabConnections.addEventListener("click", () => setActiveTab("connections"));
+
+    navTabs.append(tabRegister, tabRules, tabConnections, tabMcp, tabAudit);
 
     const paneRegister = make("div", "access-pane");
     paneRegister.id = "access-pane-register";
@@ -1321,10 +1343,28 @@
     footer.setAttribute("role", "status");
     footer.setAttribute("aria-live", "polite");
 
+    const paneConnections = buildMcpConnectionsPane();
     const paneMcp = buildMcpPane();
-    root.append(head, navTabs, paneRegister, paneRules, paneAudit, paneMcp, footer);
+    root.append(head, navTabs, paneRegister, paneRules, paneConnections, paneMcp, paneAudit, footer);
     void refreshMcpRequests();
     parent.insertBefore(root, old);
+    // Permanent host ACL and attended desktop input sessions are different
+    // approvals. Retain the full trusted-session controls on demand.
+    const trustPanel = make("section", "access-editor access-trusted-session");
+    trustPanel.append(make("h3", "", "Sesi Desktop Input Sementara"),
+      make("p", "access-hint", "Persetujuan input native per jendela tetap terpisah dari izin permanen dan izin MCP."));
+    const toggleTrust = action("Buka pengaturan sesi Desktop Input", "access-audit-refresh", () => {
+      old.hidden = !old.hidden;
+      toggleTrust.textContent = old.hidden
+        ? "Buka pengaturan sesi Desktop Input" : "Tutup pengaturan sesi Desktop Input";
+      toggleTrust.setAttribute("aria-expanded", old.hidden ? "false" : "true");
+    });
+    toggleTrust.id = "access-trusted-session-toggle";
+    toggleTrust.setAttribute("aria-controls", "desktop-trust-panel");
+    toggleTrust.setAttribute("aria-expanded", "false");
+    trustPanel.append(toggleTrust);
+    paneRegister.append(trustPanel);
+    paneRegister.append(old);
     old.hidden = true;
     updateTabFromHash();
     updateSelection();
