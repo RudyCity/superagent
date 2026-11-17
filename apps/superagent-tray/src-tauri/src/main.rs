@@ -1076,10 +1076,8 @@ async fn lan_support_action(
         // revocation unless the separately authorized Core confirms it.
         let outcome = async {
             let (_, fp) = desktop_live_android_device(id).await?;
-            let token = match desktop_live_android_control::credential(id,&fp,kind,true) {
-                Ok(token) => token,
-                Err(_) => return Ok::<(),String>(()),
-            };
+            let token = desktop_live_android_control::credential(id,&fp,kind,true)
+                .map_err(|_| "ANDROID_CONTROLLER_CORE_REVOKE_UNVERIFIED".to_string())?;
             let result = core_request(Method::POST,"/api/desktop/lan-controller/revoke",
                 Some(json!({"deviceId":id,"controllerToken":token,"kind":kind}))).await?;
             if result.get("success").and_then(Value::as_bool) != Some(true) ||
