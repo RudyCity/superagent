@@ -140,7 +140,7 @@ export async function listDesktopLiveInventory(): Promise<{
         status: dev.connected ? "controlled" : "available",
         owner: dev.transport === "tunnel" ? "Device Tunnel" : "LAN Intranet",
         stopAction: dev.connected ? "stop-session" : null,
-        impact: isAndroid ? "Mirror screen of Android device via MediaProjection" : "Mirror screen of secondary Windows LAN client",
+        impact: isAndroid ? "Mirror screen of Android device via MediaProjection" : "Windows LAN remote screen/input unavailable in this transport; session management only",
       });
     }
     sources["lan-device"]="ok";
