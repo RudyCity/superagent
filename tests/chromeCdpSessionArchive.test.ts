@@ -116,6 +116,30 @@ describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>
     expect(record.directory).toContain("recordings");
   },25000);
 
+  test("recording presets are explicit, bounded and preserve default compatibility",async()=>{
+    await expect(startCdpSessionArchive(scope,{
+      projectDirectory:projectRoot,confirmSensitiveVideo:true,
+      videoPreset:"extreme" as any,captureFrame:async()=>encodedJpeg,checkLease:async()=>true,
+    })).rejects.toThrow(/videoPreset/);
+    const compact=await startCdpSessionArchive(scope,{
+      projectDirectory:projectRoot,confirmSensitiveVideo:true,
+      videoPreset:"compact",captureFrame:async()=>encodedJpeg,checkLease:async()=>true,
+    });
+    expect(compact).toMatchObject({videoPreset:"compact",fps:3,videoWidth:640,videoHeight:360});
+    const saved=await stopCdpSessionArchive(scope);
+    expect(saved.status).toBe("saved");
+    const probe=spawnSync("ffprobe",["-v","error","-show_entries","stream=width,height",
+      "-of","json",saved.videoFile],{encoding:"utf8",timeout:15000});
+    expect(probe.status).toBe(0);
+    expect(JSON.parse(probe.stdout).streams[0]).toMatchObject({width:640,height:360});
+    const detail=await startCdpSessionArchive(scope,{
+      projectDirectory:projectRoot,confirmSensitiveVideo:true,
+      videoPreset:"detail",captureFrame:async()=>encodedJpeg,checkLease:async()=>true,
+    });
+    expect(detail).toMatchObject({videoPreset:"detail",fps:5,videoWidth:1280,videoHeight:720});
+    await stopCdpSessionArchive(scope);
+  },25000);
+
   test("refuses SuperAgent source/runtime paths and supports multiple saved recordings",async()=>{
     const deps={confirmSensitiveVideo:true,captureFrame:async()=>encodedJpeg,
       checkLease:async()=>true};
