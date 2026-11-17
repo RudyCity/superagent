@@ -270,6 +270,13 @@ public final class LanFileExchangeV2 {
         }
         return new JSONObject().put("ok", true);
     }
+    /** A visible owner may background an already approved V2 upload, but
+     * the foreground service must stop once the bounded active lease expires.
+     */
+    public synchronized boolean isTransferActive() {
+        Pending p = active;
+        return p != null && SystemClock.elapsedRealtime() - p.lastUsed < EXPIRE_MS;
+    }
     public void suspend() {
         generation.incrementAndGet();
         synchronized (this) { active = null; receipt = null; }
