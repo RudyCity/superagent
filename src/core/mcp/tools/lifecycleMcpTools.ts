@@ -42,6 +42,7 @@ export const LIFECYCLE_MCP_TOOL_DEFS = [
         }, additionalProperties: false,
       } },
       maxRuns: { type: "integer", minimum: 1 },
+      idempotencyKey: { type: "string", description: "Stable 1-100 character key for safe retry of create or run.now without duplicate jobs." },
       enabled: { type: "boolean" },
       workflowId: { type: "string" },
       runId: { type: "string" },
