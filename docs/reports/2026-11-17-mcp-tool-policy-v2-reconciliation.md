@@ -147,3 +147,38 @@ Do not auto-restart or migrate a shared Core/MCP owner based only on CI success.
   is blocked by the outstanding R0–R7 host/identity/soak/operator evidence.
   Never equate a GitHub commit or CI build with code installed on the live
   Windows Core/MCP/Tray or public tunnel.
+
+### 2026-11-17 08:17 UTC — latest isolated transport and authorization evidence
+
+- [Run 44044400904](https://github.com/RudyCity/superagent/actions/runs/44044400904):
+  project-registered direct and nested MCP grep end-to-end acceptance passed,
+  with **171/171 focused tests** and TypeScript PASS. Test fixture was fixed
+  to grant the authenticated reader the explicit project `read` capability,
+  rather than misattributing project-grant denial to file policy.
+- [Run 44044533780](https://github.com/RudyCity/superagent/actions/runs/44044533780):
+  byte-bounded exact-file reader changes passed the same security matrix on
+  Windows, Linux and macOS and the focused MCP suite.
+- [Run 44045228520](https://github.com/RudyCity/superagent/actions/runs/44045228520):
+  isolated authenticated Streamable HTTP policy smoke passed, with
+  **172/172 focused tests** and **29/29 host-policy tests on EACH of Windows,
+  Ubuntu and macOS**. Typecheck in that snapshot FAILED in
+  `src/core/tools/chromeCdpRecordingLibrary.ts` because the archive status
+  lacked typed `source` metadata. A later surgical fix added the same
+  managed/delegate source classification already written in recording
+  manifests; the fix's separate CI must pass before declaring typecheck green.
+- Read-only **operator/owner-verified** runtime acceptance verifier:
+  `scripts/mcp-tool-policy-live-verify.ts`. It requires
+  `SUPERAGENT_MCP_POLICY_LIVE_ACCEPTANCE=1`, reviewed
+  `SUPERAGENT_MCP_POLICY_URL`, a bearer token **from host environment**
+  `SUPERAGENT_MCP_POLICY_BEARER_TOKEN`, and
+  `SUPERAGENT_MCP_POLICY_PORT`. It checks stable owner/Backend PIDs and
+  public URL against the authenticated local service inventory, then makes
+  only `tools/list` and `superagent_tool_status` MCP requests. Output contains
+  no URL or token, and no process/file/browser/Android mutation is performed.
+  This script was **NOT run on the user's host** because the live MCP connector
+  still returns an internal connection failure.
+
+**End state:** code implemented, automated security regression evidenced,
+runtime and new public release remain blocked by real host owner proof,
+external connection recovery and R0–R7 production approval. Do not use
+the passing staging tests to justify an unattended release or restart.
