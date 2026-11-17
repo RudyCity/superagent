@@ -47,7 +47,7 @@
     }
     const actionable = eligible && viewer.controllerApproved;
     const list = $("lan-schema-list");
-    if (list) [...list.querySelectorAll(".lan-schema-node")].forEach((button, i) => {
+    if (list) [...list.children].forEach((button, i) => {
       const node = viewer.nodes[i];
       button.disabled = !actionable || !node || !node.clickable || !node.enabled;
     });
@@ -403,8 +403,8 @@
       }
     });
     window.__superagentLanViewerStop = stop;
-    window.setInterval(() => { void refreshController(); }, 10_000);
-    document.addEventListener("visibilitychange", () => {
+    if (typeof window.setInterval === "function") window.setInterval(() => { void refreshController(); }, 10_000);
+    document.addEventListener?.("visibilitychange", () => {
       if (document.hidden && viewer.controllerApproved) void revokeController();
     });
     controls();
