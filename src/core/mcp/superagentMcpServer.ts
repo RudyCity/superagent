@@ -205,6 +205,7 @@ import {
   gatewayTextResult,
 } from "./mcpToolGateway.js";
 import { getMcpToolExposure } from "./mcpToolExposure.js";
+import { mcpToolMetrics } from "./mcpToolMetrics.js";
 import { isR1OwnerToolCallAllowed } from "./mcpSafeOwnerPolicy.js";
 import { MCP_TOOL_CLASSIFICATION, DISABLED_MCP_TOOLS, PRIVILEGED_MCP_TOOLS, getToolAnnotations, getToolSecuritySchemes } from "./mcpToolPolicy.js";
 import type { McpServerOptions } from "./mcpToolPolicy.js";
@@ -1475,6 +1476,7 @@ function extractMcpResultText(result: unknown): string {
       const failed = !!(result && typeof result === "object" && (result as any).isError);
       const durationMs = Date.now() - startedAt;
       const outputText = extractMcpResultText(result);
+      mcpToolMetrics.record(toolName, durationMs, failed, Buffer.byteLength(outputText, "utf8"));
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
       const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
@@ -1504,6 +1506,7 @@ function extractMcpResultText(result: unknown): string {
     } catch (err: any) {
       const durationMs = Date.now() - startedAt;
       const errorMsg = err?.message || String(err);
+      mcpToolMetrics.record(toolName, durationMs, true, Buffer.byteLength(errorMsg, "utf8"));
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
       const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"

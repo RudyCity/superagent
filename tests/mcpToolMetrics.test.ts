@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { McpToolMetrics } from "../src/core/mcp/mcpToolMetrics.js";
+import { McpToolMetrics, mcpToolMetrics } from "../src/core/mcp/mcpToolMetrics.js";
+import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
+import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 describe("MCP tool observability", () => {
   it("tracks calls, failures, duration without inputs or outputs", () => {
@@ -28,5 +30,20 @@ describe("MCP tool observability", () => {
     expect(value.p50DurationMs).toBe(30);
     expect(value.p95DurationMs).toBe(100);
     expect(JSON.stringify(metrics.snapshot())).not.toContain("Bearer");
+  });
+  it("records incoming MCP tool durations and returned text size", async () => {
+    mcpToolMetrics.reset();
+    const server = createSuperagentMcpServer({ toolExposure: "gateway" });
+    const handler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    const result = await handler({ method: "tools/call", params: {
+      name: "superagent_tool_status", arguments: {},
+    } });
+    expect(result.isError).not.toBe(true);
+    const status = mcpToolMetrics.snapshot().find((row) => row.tool === "superagent_tool_status");
+    expect(status).toBeDefined();
+    expect(status?.calls).toBe(1);
+    expect(status?.lastResponseBytes).toBeGreaterThan(0);
+    expect(status?.p95DurationMs).toBeGreaterThanOrEqual(0);
+    mcpToolMetrics.reset();
   });
 });
