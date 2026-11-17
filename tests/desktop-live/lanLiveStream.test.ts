@@ -132,14 +132,17 @@ describe("Desktop Live legacy loopback-only preview endpoints", () => {
     const body = JSON.stringify({token: dummyToken});
     const noOrigin = await request("POST", framePath, { "Content-Type":"application/json" }, body);
     expect(noOrigin.status).toBe(403);
+    expect(JSON.parse(noOrigin.body).error).toBe("SAME_ORIGIN_JSON_REQUIRED");
     const wrongOrigin = await request("POST", framePath, {
       Origin:"http://evil.example.test","Content-Type":"application/json",
     },body);
     expect(wrongOrigin.status).toBe(403);
+    expect(JSON.parse(wrongOrigin.body).error).toBe("SAME_ORIGIN_JSON_REQUIRED");
     const wrongType = await request("POST",framePath,{
       Origin:"http://127.0.0.1:"+port,"Content-Type":"text/plain",
     },body);
     expect(wrongType.status).toBe(403);
+    expect(JSON.parse(wrongType.body).error).toBe("SAME_ORIGIN_JSON_REQUIRED");
   });
 
   it("rejects forged frame tokens, malformed bodies and unknown fields", async () => {
