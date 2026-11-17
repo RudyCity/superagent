@@ -76,7 +76,8 @@
 .notification-filter-row { display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 1px solid var(--notif-edge); padding: 15px 0; }
 .notification-filter {
   border: 1px solid transparent; background: transparent; color: var(--notif-muted);
-  border-radius: 7px; padding: 7px 12px; cursor: pointer; font: 650 12px/1.3 inherit;
+  border-radius: 7px; padding: 7px 12px; cursor: pointer;
+  font-family: inherit; font-size: 12px; font-weight: 650; line-height: 1.3;
 }
 .notification-filter:hover { background: rgba(148,163,184,.08); color: var(--text-primary, #fff); }
 .notification-filter.active { color: var(--text-primary, #fff); background: rgba(148,163,184,.12); border-color: var(--notif-edge); }
