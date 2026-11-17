@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
-import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
+import { setFullYoloMode, setYoloMode, isPathWithinMcpScope, isToolCallWithinMcpScope } from "../src/core/permissions.js";
 import { registerProject } from "../src/core/project/projectRegistry.js";
 import { grantProjectAccess, revokeProjectAccess, hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
@@ -89,6 +89,23 @@ describe("MCP authorization is independent from chat YOLO", () => {
       await expect(write(server, outside)).rejects.toThrow(/project|scope/i);
       expect(fs.existsSync(outside)).toBe(false);
     } finally { await server.close(); }
+  });
+
+  it("rejects filesystem symlink and junction escape regardless of Full YOLO", () => {
+    setFullYoloMode(true);
+    expect(isPathWithinMcpScope(path.join(root, "allowed.txt"), root)).toBe(true);
+    expect(isPathWithinMcpScope(path.join(outsideDir, "blocked.txt"), root)).toBe(false);
+    const alias = path.join(root, "outside-alias");
+    try {
+      fs.symlinkSync(outsideDir, alias, process.platform === "win32" ? "junction" : "dir");
+      expect(isPathWithinMcpScope(path.join(alias, "escape.txt"), root)).toBe(false);
+      expect(isToolCallWithinMcpScope({
+        name: "superagent_write_files",
+        args: { files: [{ filePath: path.join(alias, "escape.txt"), content: "DENIED" }] },
+      }, root)).toBe(false);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EPERM") throw error;
+    }
   });
 
   it("chat YOLO off does not revoke a separately approved MCP grant", async () => {
