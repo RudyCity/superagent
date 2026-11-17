@@ -31,6 +31,7 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_tool_search","superagent_tool_describe","superagent_tool_status",
   "superagent_core_status","superagent_core_plan","superagent_server_health","get_current_time",
   "superagent_get_project","superagent_list_projects","superagent_list_project_access",
+  "superagent_request_project_access",
   "superagent_discover_projects","superagent_get_token_usage","superagent_get_remote_status",
   "superagent_services_status",
   "superagent_delegate_doctor","superagent_delegate_list_chats",
