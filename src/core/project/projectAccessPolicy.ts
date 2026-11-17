@@ -181,6 +181,8 @@ export function getProjectCapabilityForTool(toolName: string, args: Record<strin
   if (["superagent_pdf_inspect", "superagent_pdf_extract", "superagent_pdf_ocr", "superagent_pdf_verify", "superagent_pdf_verify_signature"].includes(toolName)) return "read";
   // Exporting a local file to a remote party needs a project write grant, not read-only access.
   if (toolName === "superagent_telegram_send_file" || toolName === "superagent_muse_send_file") return "write";
+  if (toolName === "superagent_lifecycle") return "execute";
+  if (toolName === "superagent_lifecycle_status") return "read";
   if (toolName === "superagent_exec_command" || toolName === "superagent_office_cli" || toolName === "superagent_cli_bridge") return "execute";
   if (toolName === "superagent_motion_render" || toolName === "superagent_motion_generate" ||
       toolName === "superagent_motion_revise" || toolName === "superagent_motion_cancel") return "execute";
