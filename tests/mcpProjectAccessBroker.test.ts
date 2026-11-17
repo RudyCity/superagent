@@ -9,6 +9,7 @@ import {
   registerProject,
 } from "../src/core/project/projectRegistry.js";
 import { setFullYoloMode } from "../src/core/permissions.js";
+import { registeredFileToolGate } from "../src/core/tools/registeredFileToolGate.js";
 import {
   hasProjectAccess,
   listProjectAccess,
@@ -84,7 +85,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
     expect(result.isError).toBe(true);
     const body = JSON.parse(textOf(result));
     expect(body.code).toBe("POLICY_DENIED");
-    expect(body.error).toContain("Full YOLO");
+    expect(body.error).toContain("MCP self-grant is prohibited");
     expect(body.requestId).toBeDefined();
 
     // Verify the agent does NOT have access
@@ -96,6 +97,45 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
     expect(pendingRequests[0].requestId).toBe(body.requestId);
     expect(pendingRequests[0].status).toBe("pending");
     expect(pendingRequests[0].capabilities).toEqual(["read", "write"]);
+  });
+
+  it("2b. Full YOLO never allows an MCP caller to self-grant access", async () => {
+    registerProject({ projectId: "yolo-project", name: "YOLO Project", type: "local", root: projectRoot });
+    setFullYoloMode(true);
+    const result = await dispatchProjectMcpTool("superagent_grant_project_access", {
+      projectId: "yolo-project", capabilities: ["read", "execute"],
+    }, geminiIdentity);
+    expect(result.isError).toBe(true);
+    const body = JSON.parse(textOf(result));
+    expect(body.code).toBe("POLICY_DENIED");
+    expect(body.status).toBe("pending");
+    expect(hasProjectAccess(geminiIdentity, "yolo-project", "read")).toBe(false);
+    expect(hasProjectAccess(geminiIdentity, "yolo-project", "execute")).toBe(false);
+  });
+
+  it("2c. Safe access-request tool is not blocked by permanent file certification", () => {
+    const blocked = registeredFileToolGate({
+      name: "superagent_request_project_access",
+      args: { projectId: "my-project", capabilities: ["read"], reason: "Code audit" },
+    }, projectRoot, {
+      registry: () => ({} as any),
+      identity: () => ({
+        platform: "linux",
+        executablePath: "/usr/local/bin/node",
+        sha256: "a".repeat(64),
+      }),
+    });
+    expect(blocked).toBeNull();
+    expect(registeredFileToolGate({
+      name: "superagent_exec_command", args: { command: "echo test" },
+    }, projectRoot, {
+      registry: () => ({} as any),
+      identity: () => ({
+        platform: "linux",
+        executablePath: "/usr/local/bin/node",
+        sha256: "a".repeat(64),
+      }),
+    })).not.toBeNull();
   });
 
   it("3. Pending access request via superagent_request_project_access does not grant access", async () => {
@@ -152,6 +192,21 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
     // Verification: Write and execute remain denied
     expect(hasProjectAccess(geminiIdentity, "my-project", "write")).toBe(false);
     expect(hasProjectAccess(geminiIdentity, "my-project", "execute")).toBe(false);
+  });
+
+  it("6b. Approval cannot add capabilities never requested by the agent", () => {
+    registerProject({ projectId: "scope-project", name: "Scoped Project", type: "local", root: projectRoot });
+    const pending = createProjectAccessRequest(geminiIdentity, {
+      projectId: "scope-project", capabilities: ["read"], reason: "Read-only audit",
+    });
+    expect(() => approveProjectAccessRequest(pending.requestId, {
+      approvedCapabilities: ["read", "write"],
+    })).toThrow(/subset/);
+    expect(hasProjectAccess(geminiIdentity, "scope-project", "read")).toBe(false);
+    expect(hasProjectAccess(geminiIdentity, "scope-project", "write")).toBe(false);
+    expect(() => approveProjectAccessRequest(pending.requestId, {
+      approvedCapabilities: [],
+    })).toThrow(/subset/);
   });
 
   it("7 & 8. Valid grant survives MCP reconnect and Core restart (persisted on disk)", () => {
