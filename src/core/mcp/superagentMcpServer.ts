@@ -1229,6 +1229,8 @@ function extractMcpResultText(result: unknown): string {
     // require their own project-specific grant, checked at the dispatch boundary.
     if (isDangerous && !WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
         && toolName !== "superagent_grant_project_access"
+        // Revoking one's own grant decreases privilege and must remain usable.
+        && toolName !== "superagent_revoke_project_access"
         && (!callerIdentity?.subject ||
           !hasProjectAccess(callerIdentity, MCP_CONNECTION_PROJECT_ID, "execute"))) {
       const reason = "[MCP_APPROVAL_REQUIRED] This operation requires the 'execute' capability on MCP Connection Controls, approved by the human in SuperAgent Tray. Chat YOLO does not authorize MCP.";
