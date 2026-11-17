@@ -2144,6 +2144,43 @@ tbody tr:hover {
   padding: 14px;
 }
 
+/* A confirmed owner stop has three visible stages: stopping, verified exit,
+   then removal. No animation or stale state claims a process was terminated. */
+.runtime-instance--stopping {
+  border-color: var(--warning);
+  animation: runtime-owner-wait 1.2s ease-in-out infinite;
+}
+.runtime-instance--stopping .runtime-state::before {
+  content: "";
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: runtime-owner-spin .75s linear infinite;
+}
+.runtime-instance--stopped {
+  overflow: hidden;
+  pointer-events: none;
+  transform-origin: top;
+  animation: runtime-owner-exit 420ms ease-in forwards;
+}
+@keyframes runtime-owner-spin { to { transform: rotate(360deg); } }
+@keyframes runtime-owner-wait {
+  50% { border-color: var(--border-medium); }
+}
+@keyframes runtime-owner-exit {
+  0% { opacity: 1; transform: translateY(0) scaleY(1); max-height: 340px; }
+  100% { opacity: 0; transform: translateY(-8px) scaleY(.9); max-height: 0; padding-top: 0; padding-bottom: 0; border-width: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .runtime-instance--stopping,
+  .runtime-instance--stopping .runtime-state::before,
+  .runtime-instance--stopped { animation: none; }
+}
+
 .runtime-instance-head {
   display: flex;
   align-items: flex-start;
