@@ -12,6 +12,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, writeFile, appendFile, stat, realpath, lstat, rm } from "node:fs/promises";
 import { join, resolve, parse, relative, isAbsolute } from "node:path";
 import { getRootConfigDir, getPackageRootDir } from "../config/paths.js";
+import { browserActionRecordingStatus, stopBrowserActionRecording,
+  readBrowserActionRecording } from "./chromeCdpActionRecorder.js";
 
 const MAX_MS = 10 * 60_000;
 export const CDP_RECORDING_PRESETS = Object.freeze({
@@ -490,5 +492,14 @@ export async function stopCdpSessionArchiveByOperator(directory: string) {
   if (!item) throw Error("Active recording not found in this Core.");
   if (item.status === "saved") return publicStatus(item);
   if (item.status === "failed") throw Error("Recording has already failed.");
-  return stopCdpSessionArchive(item.scope);
+  const journal=browserActionRecordingStatus(item.scope.targetKey,item.scope.actorId,item.scope.generation);
+  if (journal.active) stopBrowserActionRecording(item.scope.targetKey,item.scope.actorId,item.scope.generation);
+  let actions: object | undefined;
+  if ("recordingId" in journal && typeof journal.recordingId === "string") {
+    try {
+      actions=readBrowserActionRecording(item.scope.targetKey,item.scope.actorId,
+        item.scope.generation,journal.recordingId);
+    } catch { /* A journal may expire before the video recorder is stopped. */ }
+  }
+  return stopCdpSessionArchive(item.scope,actions);
 }
