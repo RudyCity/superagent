@@ -734,9 +734,7 @@
     pane.setAttribute("aria-labelledby", "access-nav-tab-mcp");
     pane.hidden = true;
 
-    const banner = make("div", "access-editor");
-    banner.style.background = "linear-gradient(135deg, rgba(88,28,135,0.18), rgba(17,24,39,0.85))";
-    banner.style.borderColor = "rgba(167,139,250,0.3)";
+    const banner = make("div", "access-editor access-mcp-intro");
     const bannerTitle = make("h3", "", "Project Access · MCP");
     const bannerDesc = make("p", "access-hint", "Agen MCP hanya bisa meminta izin. Pemilik proyek menyetujui kemampuan read/write/execute/git secara terpisah. Tidak terkait mode YOLO Chat Agent.");
     bannerDesc.style.fontSize = "12px";
@@ -770,7 +768,7 @@
     const grantDesc = make("p", "access-hint", "Hanya proyek yang terdaftar dan aktif yang dapat dipilih. Untuk izin operasi non-proyek, buka tab MCP Connections.");
     grantDesc.style.fontSize = "11px";
 
-    const grantForm = make("form");
+    const grantForm = make("div", "access-mcp-grant-form");
     grantForm.id = "access-mcp-direct-grant-form";
     grantForm.style.display = "grid";
     grantForm.style.gap = "12px";
@@ -789,7 +787,10 @@
       checkbox("access-cap-read", "Read (Baca)", true),
       checkbox("access-cap-write", "Write (Tulis/Edit)", false),
       checkbox("access-cap-execute", "Execute (Terminal)", false),
-      checkbox("access-cap-git", "Git", false)
+      checkbox("access-cap-git", "Git", false),
+      checkbox("access-cap-worktree", "Worktree", false),
+      checkbox("access-cap-planning", "Planning", false),
+      checkbox("access-cap-chain", "Workspace Chain", false)
     );
     capsWrap.append(capsLabel, capsGrid);
 
@@ -805,6 +806,9 @@
       if ($("access-cap-write")?.checked) caps.push("write");
       if ($("access-cap-execute")?.checked) caps.push("execute");
       if ($("access-cap-git")?.checked) caps.push("git");
+      if ($("access-cap-worktree")?.checked) caps.push("worktree");
+      if ($("access-cap-planning")?.checked) caps.push("planning");
+      if ($("access-cap-chain")?.checked) caps.push("chain");
       if (caps.length === 0) {
         status("Pilih minimal satu capability.", "warn");
         return;
@@ -858,10 +862,10 @@
       String(req.projectName || req.projectId || "Proyek");
   }
 
-  async function executeMcpDecision(actionName, requestId, label) {
+  async function executeMcpDecision(actionName, requestId, label, capabilities) {
     try {
       const result = await invoke("mcp_project_access_action", {
-        action: actionName, payload: { requestId },
+        action: actionName, payload: { requestId, ...(capabilities ? { capabilities } : {}) },
       });
       if (!result?.success) throw Error(result?.error || "Core menolak tindakan ini.");
       status(label + " berhasil.", "success");
@@ -894,18 +898,26 @@
       const description = make("p", "access-mcp-description",
         String(req.projectPath || "") + (req.reason ? " · " + req.reason : ""));
       const chips = make("div", "access-mcp-capabilities");
+      const selections = [];
       for (const cap of Array.isArray(req.capabilities) ? req.capabilities : []) {
-        chips.append(make("span", "access-mcp-cap-chip", String(cap)));
+        const checkLabel = checkbox("approval-" + req.requestId + "-" + cap, String(cap), true);
+        const input = checkLabel.firstChild;
+        selections.push({ capability: cap, input });
+        chips.append(checkLabel);
       }
       const actions = make("div", "access-mcp-actions");
-      const approve = action("Setujui", "access-submit", async () => {
+      const approve = action("Setujui Pilihan", "access-submit", async () => {
         const target = humanMcpTarget(req);
-        const capabilities = Array.isArray(req.capabilities) ? req.capabilities.join(", ") : "";
+        const selected = selections.filter(item => item.input?.checked).map(item => item.capability);
+        if (!selected.length) {
+          status("Pilih setidaknya satu capability yang akan disetujui.", "warning");
+          return;
+        }
         if (typeof window.confirm !== "function" || !window.confirm(
-          "Setujui " + capabilities + " untuk " + target + "?\nAgen: " + req.subject +
+          "Setujui HANYA " + selected.join(", ") + " untuk " + target + "?\nAgen: " + req.subject +
           "\nAlasan: " + (req.reason || "Tidak ada") + "\nIzin dapat dicabut kapan saja.")) return;
         approve.disabled = true;
-        try { await executeMcpDecision("approve", req.requestId, "Persetujuan " + target); }
+        try { await executeMcpDecision("approve", req.requestId, "Persetujuan " + target, selected); }
         finally { approve.disabled = false; }
       });
       const deny = action("Tolak", "access-revoke", async () => {
