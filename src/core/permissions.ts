@@ -990,8 +990,9 @@ export function isToolCallWithinMcpScope(
     const value = args[key];
     if (typeof value === "string" && value.trim()) paths.push(value);
   }
-  const base = typeof args.cwd === "string" && args.cwd.trim() ? args.cwd
+  const rawBase = typeof args.cwd === "string" && args.cwd.trim() ? args.cwd
     : typeof args.workspace === "string" && args.workspace.trim() ? args.workspace : root;
+  const base = path.isAbsolute(rawBase) ? rawBase : path.resolve(root, rawBase);
   if (!isPathWithinMcpScope(base, root)) return false;
   return paths.every(candidate => isPathWithinMcpScope(candidate, root, base));
 }
