@@ -30,8 +30,8 @@ export interface McpPolicyReadinessReport {
 export function buildMcpPolicyReadinessReport(): McpPolicyReadinessReport {
   const active = MCP_TOOL_DEFINITIONS.filter(t => !DISABLED_MCP_TOOLS.has(t.name));
   const names = new Set<string>();
-  const effectCounts = Object.fromEntries(EFFECTS.map(effect => [effect, 0]))
-    as Record<PermanentFileToolReadiness, number>;
+  const effectCounts = Object.fromEntries(EFFECTS.map(effect => [effect, 0])) as
+    Record<PermanentFileToolReadiness, number>;
   const unsafeToolNames: string[] = [];
   let classificationComplete = true;
 
