@@ -2124,6 +2124,61 @@ fn limited_body(action: &str, payload: Option<Value>) -> Result<Value, String> {
     Ok(Value::Object(filtered))
 }
 
+// Separate local proof for project metadata mutation. The Core bearer is
+// insufficient: each operation is bound to a one-use 30s nonce and a key
+// never exposed to WebView JavaScript. Same-user malware remains outside
+// this key-file boundary until platform-native IPC attestation is available.
+async fn signed_project_operator_mutation(payload: Value) -> Result<Value, String> {
+    use sha2::{Digest, Sha256};
+    let challenge = core_request(Method::GET, "/api/desktop/access/projects/challenge", None).await?;
+    let nonce = challenge.get("nonce").and_then(Value::as_str)
+        .ok_or("Project operator challenge unavailable")?;
+    if nonce.len() != 48 || !nonce.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("Invalid operator challenge".into());
+    }
+    let file = config_dir()?.join(".mcp-project-operator.key");
+    let metadata = fs::symlink_metadata(&file).map_err(|_| "Operator proof key unavailable")?;
+    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() < 64 || metadata.len() > 80 {
+        return Err("Operator proof key invalid".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if metadata.permissions().mode() & 0o077 != 0 {
+            return Err("Operator proof key permissions invalid".into());
+        }
+    }
+    let raw_key = fs::read_to_string(&file).map_err(|_| "Operator proof key unreadable")?;
+    let raw_key = raw_key.trim();
+    if raw_key.len() != 64 || !raw_key.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("Operator proof key malformed".into());
+    }
+    let mut key = [0u8; 32];
+    for (index, cell) in key.iter_mut().enumerate() {
+        *cell = u8::from_str_radix(&raw_key[index * 2..index * 2 + 2], 16)
+            .map_err(|_| "Operator proof key invalid hex")?;
+    }
+    let payload_text = serde_json::to_string(&payload).map_err(|_| "Invalid project payload")?;
+    if payload_text.len() > 7500 { return Err("Project payload too large".into()); }
+    let message = format!("superagent-project-operator-v1:{}:{}", nonce, payload_text);
+    let mut inner_pad = [0x36u8; 64];
+    let mut outer_pad = [0x5cu8; 64];
+    for (i, byte) in key.iter().enumerate() {
+        inner_pad[i] ^= byte;
+        outer_pad[i] ^= byte;
+    }
+    let mut inner = Sha256::new();
+    inner.update(inner_pad);
+    inner.update(message.as_bytes());
+    let inner_hash = inner.finalize();
+    let mut outer = Sha256::new();
+    outer.update(outer_pad);
+    outer.update(inner_hash);
+    let mac: String = outer.finalize().iter().map(|b| format!("{:02x}", b)).collect();
+    core_request(Method::POST, "/api/desktop/access/projects/mutate",
+        Some(json!({"payloadText": payload_text, "proof": {"nonce": nonce, "mac": mac}}))).await
+}
+
 // Fixed-shape native bridge for the MCP Security Approval Manager.
 // Only the installed, focused Tray window can issue grants or revoke access;
 // the Core bearer token stays in Rust, never in WebView JavaScript.
@@ -2136,7 +2191,7 @@ async fn mcp_project_access_action(
     if window.label() != "main" {
         return Err("MCP project access is available only in the native main Tray window".into());
     }
-    let mutating = matches!(action.as_str(), "approve" | "deny" | "revoke" | "direct_grant" | "register_project");
+    let mutating = matches!(action.as_str(), "approve" | "deny" | "revoke" | "direct_grant" | "register_project" | "update_project" | "remove_project");
     if mutating
         && (!window.is_visible().unwrap_or(false)
             || window.is_minimized().unwrap_or(true)
@@ -2175,45 +2230,101 @@ async fn mcp_project_access_action(
         }
         Ok(values)
     };
-    let registration = || -> Result<Value, String> {
-        let allowed = ["id", "name", "type", "root", "target", "description"];
+    let project_mutation = || -> Result<Value, String> {
+        let allowed: &[&str] = match action.as_str() {
+            "register_project" => &["id", "name", "type", "root", "target", "description"],
+            "update_project" => &["projectId", "expectedUpdatedAt", "name", "root", "target", "description", "enabled"],
+            "remove_project" => &["projectId", "expectedUpdatedAt"],
+            _ => return Err("Unsupported project action".into()),
+        };
         if data.as_object().ok_or("Invalid project fields")?.keys()
             .any(|key| !allowed.contains(&key.as_str())) {
             return Err("Unsupported project registration field".into());
         }
-        let name = text_field("name", 120)?;
-        let project_type = text_field("type", 5)?;
-        if project_type != "local" && project_type != "ssh" {
-            return Err("Project type must be local or ssh".into());
-        }
         let mut result = serde_json::Map::new();
-        result.insert("name".into(), json!(name));
+        let op = match action.as_str() {
+            "register_project" => "register",
+            "update_project" => "update",
+            _ => "remove",
+        };
+        result.insert("action".into(), json!(op));
+        if action != "register_project" {
+            let id = text_field("projectId", 63)?;
+            if !id.bytes().enumerate().all(|(i, b)|
+                b.is_ascii_lowercase() || b.is_ascii_digit() || (b == b'-' && i > 0)) {
+                return Err("Invalid project ID".into());
+            }
+            let updated = data.get("expectedUpdatedAt").and_then(Value::as_u64)
+                .ok_or("Project revision required")?;
+            if updated == 0 { return Err("Invalid project revision".into()); }
+            result.insert("projectId".into(), json!(id));
+            result.insert("expectedUpdatedAt".into(), json!(updated));
+            if action == "remove_project" { return Ok(Value::Object(result)); }
+        }
+        let name = if action == "register_project" || data.get("name").is_some() {
+            Some(text_field("name", 120)?)
+        } else { None };
+        if let Some(name) = name { result.insert("name".into(), json!(name)); }
+        if let Some(desc) = data.get("description") {
+            let desc = desc.as_str().ok_or("Invalid description")?;
+            if desc.len() > 500 || desc.chars().any(|c| c.is_control()) {
+                return Err("Invalid description".into());
+            }
+            result.insert("description".into(), json!(desc));
+        }
+        if action == "update_project" {
+            if let Some(enabled) = data.get("enabled") {
+                result.insert("enabled".into(),
+                    json!(enabled.as_bool().ok_or("Invalid enabled flag")?));
+            }
+            if let Some(root) = data.get("root") {
+                let root = root.as_str().ok_or("Invalid project root")?;
+                if root.is_empty() || root.len() > 4096 ||
+                   !PathBuf::from(root).is_absolute() || !PathBuf::from(root).is_dir() {
+                    return Err("Choose an existing absolute project folder".into());
+                }
+                result.insert("root".into(), json!(root));
+            }
+            if let Some(target) = data.get("target") {
+                let target = target.as_str().ok_or("Invalid project target")?;
+                if target.is_empty() || target.len() > 2048 ||
+                    !(target.starts_with("ssh://") || target.starts_with("chain:")) ||
+                    target.contains('?') || target.contains('#') {
+                    return Err("Invalid project target".into());
+                }
+                result.insert("target".into(), json!(target));
+            }
+            return Ok(Value::Object(result));
+        }
+        let project_type = text_field("type", 5)?;
+        if !["local", "ssh", "chain"].contains(&project_type.as_str()) {
+            return Err("Project type must be local, ssh or chain".into());
+        }
         result.insert("type".into(), json!(project_type));
         if data.get("id").is_some() {
             let id = text_field("id", 63)?;
-            if !id.bytes().enumerate().all(|(index, byte)|
-                byte.is_ascii_lowercase() || byte.is_ascii_digit() ||
-                (byte == b'-' && index > 0)) {
-                return Err("Project ID must be lowercase letters, numbers and hyphens".into());
+            if !id.bytes().enumerate().all(|(i,b)|
+                b.is_ascii_lowercase() || b.is_ascii_digit() || (b == b'-' && i > 0)) {
+                return Err("Invalid project ID".into());
             }
             result.insert("id".into(), json!(id));
         }
-        if data.get("description").is_some() {
-            result.insert("description".into(), json!(text_field("description", 500)?));
-        }
         if project_type == "local" {
-            if data.get("target").is_some() { return Err("Unexpected SSH target".into()); }
+            if data.get("target").is_some() { return Err("Unexpected project target".into()); }
             let root = text_field("root", 4096)?;
-            let path = PathBuf::from(&root);
-            if !path.is_absolute() || !path.is_dir() {
+            if !PathBuf::from(&root).is_absolute() || !PathBuf::from(&root).is_dir() {
                 return Err("Choose an existing absolute project folder".into());
             }
             result.insert("root".into(), json!(root));
         } else {
             if data.get("root").is_some() { return Err("Unexpected local root".into()); }
             let target = text_field("target", 2048)?;
-            if !target.starts_with("ssh://") || target.contains('?') || target.contains('#') {
-                return Err("SSH target must be credential-free ssh:// URI".into());
+            if (project_type == "ssh" && (!target.starts_with("ssh://") ||
+                    target.contains('?') || target.contains('#'))) ||
+                (project_type == "chain" && (!target.starts_with("chain:") ||
+                    !target["chain:".len()..].bytes().all(|b| b.is_ascii_lowercase() ||
+                    b.is_ascii_digit() || b == b'-'))) {
+                return Err("Invalid SSH or chain target".into());
             }
             result.insert("target".into(), json!(target));
         }
@@ -2226,14 +2337,38 @@ async fn mcp_project_access_action(
         let clean = |value: &str| -> String {
             value.chars().filter(|c| !c.is_control()).take(140).collect()
         };
-        let prompt = if action == "register_project" {
-            let input = registration()?;
-            let name = clean(input.get("name").and_then(Value::as_str).unwrap_or(""));
-            let id = clean(input.get("id").and_then(Value::as_str).unwrap_or("(auto from name)"));
-            let target = clean(input.get("root").or_else(|| input.get("target"))
-                .and_then(Value::as_str).unwrap_or(""));
-            format!("REGISTER PROJECT?\n\nName: {}\nID: {}\nType: {}\nTarget: {}\n\nRegistration adds metadata only. No MCP agent receives file access or other capabilities. Grant permissions separately in Access Manager.",
-                name, id, input.get("type").and_then(Value::as_str).unwrap_or(""), target)
+        let prompt = if matches!(action.as_str(), "register_project" | "update_project" | "remove_project") {
+            let input = project_mutation()?;
+            let verb = match action.as_str() {
+                "register_project" => "REGISTER",
+                "update_project" => "UPDATE",
+                _ => "REMOVE",
+            };
+            let (name, id, target) = if action == "register_project" {
+                (clean(input.get("name").and_then(Value::as_str).unwrap_or("")),
+                 clean(input.get("id").and_then(Value::as_str).unwrap_or("(auto from name)")),
+                 clean(input.get("root").or_else(|| input.get("target"))
+                     .and_then(Value::as_str).unwrap_or("")))
+            } else {
+                let inventory = core_request(Method::GET,
+                    "/api/desktop/access/projects/inventory", None).await?;
+                let id = input.get("projectId").and_then(Value::as_str).ok_or("Missing project ID")?;
+                let projects = inventory.get("projects").and_then(Value::as_array)
+                    .ok_or("Unable to verify project inventory")?;
+                let current = projects.iter().find(|p|
+                    p.get("projectId").and_then(Value::as_str) == Some(id))
+                    .ok_or("Project no longer registered")?;
+                if current.get("updatedAt").and_then(Value::as_u64) !=
+                    input.get("expectedUpdatedAt").and_then(Value::as_u64) {
+                    return Err("Project changed. Reload the inventory before editing".into());
+                }
+                (clean(current.get("name").and_then(Value::as_str).unwrap_or("")),
+                 clean(id),
+                 clean(current.get("target").and_then(Value::as_str).unwrap_or("")))
+            };
+            format!("{} PROJECT?\\n\\nName: {}\\nID: {}\\nCurrent target: {}\\nNew data: {}\\n\\nChanging a target, disabling or removing revokes existing MCP grants. Registration never grants access. Review the exact action.",
+                verb, name, id, target,
+                clean(&serde_json::to_string(&input).unwrap_or_default()))
         } else if action == "direct_grant" {
             let identity_handle = text_field("identityHandle", 96)?;
             let project_id = text_field("projectId", 63)?;
@@ -2325,8 +2460,10 @@ async fn mcp_project_access_action(
             core_request(Method::GET, "/api/desktop/access/connected-clients", None).await
         },
         "projects" => core_request(Method::GET, "/api/desktop/access/projects", None).await,
-        "register_project" => core_request(Method::POST,
-            "/api/desktop/access/projects/register", Some(registration()?)).await,
+        "project_inventory" => core_request(Method::GET,
+            "/api/desktop/access/projects/inventory", None).await,
+        "register_project" | "update_project" | "remove_project" =>
+            signed_project_operator_mutation(project_mutation()?).await,
         "approve" => {
             let request_id = text_field("requestId", 96)?;
             let body = if data.get("capabilities").is_some() {
