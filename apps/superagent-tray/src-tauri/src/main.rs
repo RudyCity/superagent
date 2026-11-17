@@ -2623,6 +2623,39 @@ async fn poll_reminders(
 ) -> Result<usize, String> {
     let jobs = core_request(Method::GET, "/api/daemon/jobs", None).await?;
     let runs = core_request(Method::GET, "/api/daemon/runs?limit=100", None).await?;
+    // Reuse the existing authenticated daemon poll to surface recent execution
+    // failures even when no reminder jobs exist. Never copy task prompts,
+    // workspace paths, output, error strings or notification delivery secrets.
+    if let Some(entries) = runs.get("runs").and_then(Value::as_array) {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH)
+            .map_or(0, |t| t.as_millis() as u64);
+        for run in entries.iter().take(100) {
+            let Some(id) = run.get("runId").and_then(Value::as_str) else { continue };
+            let completed = run.get("completedAt").and_then(Value::as_u64).unwrap_or(0);
+            if completed == 0 || completed > now ||
+                now.saturating_sub(completed) > 15 * 60 * 1000 {
+                continue;
+            }
+            let status = run.get("status").and_then(Value::as_str).unwrap_or("");
+            let failed_execution = matches!(status, "error" | "timed_out" | "interrupted");
+            let failed_delivery = run.get("notificationStatus").and_then(Value::as_str) == Some("failed");
+            if !failed_execution && !failed_delivery { continue; }
+            let (severity, title, body) = if failed_execution {
+                ("critical", "Scheduled run needs attention",
+                    "A scheduled execution did not complete successfully. Review Execution History.")
+            } else {
+                ("warning", "Scheduled notification delivery failed",
+                    "A scheduled run could not deliver its notification. Review Execution History.")
+            };
+            if let Ok(dir) = config_dir() {
+                if let Ok(true) = tray_notification_center::publish(
+                    &dir, "jobs", severity, &format!("daemon-run:{id}:{title}"), title, body,
+                ) {
+                    let _ = app.emit("tray-notifications-changed", ());
+                }
+            }
+        }
+    }
     let reminder_jobs: HashMap<String, (String, String)> = jobs["jobs"]
         .as_array()
         .ok_or("Missing daemon jobs")?
