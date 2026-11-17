@@ -1264,6 +1264,71 @@ mod tests {
         assert_eq!(names,vec!["mcp","cloudflare","core"]);
     }
     #[test]
+    fn explicit_manual_kill_allows_reviewed_owners_but_not_system_or_tray() {
+        let pid=std::process::id().saturating_add(5000);
+        assert!(manual_process_allowed("managed",pid,"bun.exe"));
+        assert!(manual_process_allowed("managed",pid,"powershell.exe"));
+        assert!(manual_process_allowed("core-supervisor",pid,"node.exe"));
+        assert!(manual_process_allowed("cloudflare",pid,"cloudflared.exe"));
+        assert!(!manual_process_allowed("cloudflare",pid,"bun.exe"));
+        assert!(!manual_process_allowed("managed",pid,"svchost.exe"));
+        assert!(!manual_process_allowed("core",pid,"lsass.exe"));
+        assert!(!manual_process_allowed("managed",pid,"superagent-tray.exe"));
+        assert!(!manual_process_allowed("managed",std::process::id(),"bun.exe"));
+        assert!(!manual_process_allowed("managed",4,"bun.exe"));
+        assert!(!manual_process_allowed("agents",pid,"bun.exe"));
+    }
+    #[test]
+    fn manual_candidates_dedupe_shared_pid_and_enforce_birth_and_owner_kind() {
+        let mut guardian=item("managed:guardian",false);
+        guardian.kind="managed".into();guardian.pid=Some(25204);
+        guardian.process_name=Some("bun.exe".into());
+        guardian.process_started_at=Some(1_800_000_000);
+        guardian.manual_kill_selectable=true;
+        let mut core=item("core:7888:25204",false);
+        core.kind="core".into();core.pid=Some(25204);
+        core.process_name=Some("bun.exe".into());
+        core.process_started_at=Some(1_800_000_000);
+        core.manual_kill_selectable=true;
+        let mut external=item("observed:cloudflare:18140",false);
+        external.kind="cloudflare".into();external.pid=Some(18140);
+        external.process_name=Some("cloudflared.exe".into());
+        external.process_started_at=Some(1_800_000_100);
+        external.manual_kill_selectable=true;
+        let mut supervisor=item("supervisor:7888:3628",false);
+        supervisor.kind="core-supervisor".into();supervisor.pid=Some(3628);
+        supervisor.process_name=Some("bun.exe".into());
+        supervisor.process_started_at=Some(1_800_000_200);
+        supervisor.manual_kill_selectable=true;
+        let all=preview(vec![guardian.clone(),core.clone(),external.clone(),supervisor.clone()],false);
+        let ids=vec![guardian.id.clone(),core.id.clone(),external.id.clone(),supervisor.id.clone()];
+        let chosen=manual_candidates(&all,&ids).unwrap();
+        assert_eq!(chosen.len(),3);
+        assert_eq!(chosen[0].kind,"cloudflare");
+        assert_eq!(chosen.last().unwrap().kind,"core-supervisor");
+        assert!(manual_candidates(&all,&[guardian.id.clone(),guardian.id.clone()]).is_err());
+        assert!(manual_candidates(&all,&["unknown:pid".into()]).is_err());
+        assert!(manual_candidates(&all,&[]).is_err());
+        let mut changed=supervisor.clone();changed.process_started_at=Some(1_800_000_999);
+        assert!(!same_manual_owner(&supervisor,&changed));
+        changed=supervisor.clone();changed.process_name=Some("node.exe".into());
+        assert!(!same_manual_owner(&supervisor,&changed));
+        changed=supervisor.clone();changed.manual_kill_selectable=false;
+        assert!(!same_manual_owner(&supervisor,&changed));
+    }
+    #[test]
+    fn manual_candidates_reject_os_unpinned_or_protected_processes() {
+        let mut item=item("managed:guardian",false);
+        item.manual_kill_selectable=true;item.process_name=Some("bun.exe".into());
+        item.process_started_at=None;
+        let p=preview(vec![item.clone()],false);
+        assert!(manual_candidates(&p,&[item.id.clone()]).is_err());
+        item.process_started_at=Some(1_800_000_000);
+        item.process_name=Some("svchost.exe".into());
+        let p=preview(vec![item.clone()],false);
+        assert!(manual_candidates(&p,&[item.id.clone()]).is_err());
+    }
+    #[test]
     fn pid_or_port_change_invalidates_authorization() {
         let before=item("mcp:8857:123",true);
         let mut after=before.clone();
