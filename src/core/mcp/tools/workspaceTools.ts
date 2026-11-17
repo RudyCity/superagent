@@ -20,11 +20,9 @@ import { handleGetCurrentTask } from "./workspaceStatusTools.js";
 import { addTrustedDirectory, ensureDirectoryTrusted } from "../../config.js";
 import {
   isYoloMode,
-  isFullYoloMode,
   isSystemDestructiveCommand,
   isPathWithinYoloScope,
   isToolCallWithinYoloScope,
-  getYoloAllowedRoot,
 } from "../../permissions.js";
 import { mapConcurrentOrdered } from "../../concurrency.js";
 import {
