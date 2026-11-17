@@ -9,6 +9,7 @@ import type { Tool } from "../tools/types.js";
 import { bumpToolRegistryVersion } from "../tools/toolRegistryVersion.js";
 import { McpReconnectController } from "./mcpReconnectController.js";
 import { mcpToolMetrics } from "./mcpToolMetrics.js";
+import { formatRemoteMcpResult } from "./mcpToolResultFormatter.js";
 import { killProcessTree } from "../tools/helpers.js";
 import {
   getRemoteMcpOAuthCallbackPort,
@@ -143,19 +144,9 @@ function mapRemoteTools(serverName: string, client: Client, tools: Array<{name: 
           MCP_TOOL_CALL_TIMEOUT_MS,
           `MCP tool "${tool.name}" on server "${serverName}" timed out after ${MCP_TOOL_CALL_TIMEOUT_MS / 1000}s`
         );
-        mcpToolMetrics.record(mapped.name, Date.now() - startedAt, Boolean(response.isError));
-        const rendered = Array.isArray(response.content)
-          ? response.content.map((item: any) => {
-              if (item.type === "text") return item.text;
-              if (item.type === "image") return "[Image Content (" + (item.mimeType || "image/png") + "); binary data unavailable in text-only tool adapter]";
-              return JSON.stringify(item);
-            }).join("\n")
-          : "";
-        // Preserve structured results alongside text.
-        const structured = response.structuredContent === undefined
-          ? "" : JSON.stringify(response.structuredContent);
-        const result = [rendered, structured].filter(Boolean).join("\n");
-        return response.isError ? "MCP tool error: " + result : result || JSON.stringify(response);
+        const result = formatRemoteMcpResult(response);
+        mcpToolMetrics.record(mapped.name, Date.now() - startedAt, Boolean(response.isError), Buffer.byteLength(result, "utf8"));
+        return result;
       } catch (err: any) {
         mcpToolMetrics.record(mapped.name, Date.now() - startedAt, true);
         return `Error executing MCP tool "${tool.name}": ${safeMcpError(err)}`;

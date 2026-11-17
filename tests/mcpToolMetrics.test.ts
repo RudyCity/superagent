@@ -16,4 +16,17 @@ describe("MCP tool observability", () => {
     metrics.reset();
     expect(metrics.snapshot()).toEqual([]);
   });
+  it("tracks bounded response bytes and latency percentiles without retaining payloads", () => {
+    const metrics = new McpToolMetrics(2, 4);
+    [10, 20, 30, 40, 100].forEach((duration, index) =>
+      metrics.record("mcp_fetch", duration, false, 100 + index));
+    const [value] = metrics.snapshot("mcp");
+    expect(value.calls).toBe(5);
+    expect(value.totalResponseBytes).toBe(510);
+    expect(value.maxResponseBytes).toBe(104);
+    expect(value.lastResponseBytes).toBe(104);
+    expect(value.p50DurationMs).toBe(30);
+    expect(value.p95DurationMs).toBe(100);
+    expect(JSON.stringify(metrics.snapshot())).not.toContain("Bearer");
+  });
 });

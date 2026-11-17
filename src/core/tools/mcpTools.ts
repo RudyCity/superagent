@@ -153,7 +153,7 @@ export const manageMcpTool: Tool = {
       const metrics = mcpToolMetrics.snapshot(name || undefined).slice(0, 40);
       if (!metrics.length) return "No MCP tool execution metrics recorded.";
       return metrics.map((metric) =>
-        `${metric.tool}: calls=${metric.calls} failures=${metric.failures} avgMs=${Math.round(metric.totalDurationMs / metric.calls)} lastMs=${metric.lastDurationMs}`
+        `${metric.tool}: calls=${metric.calls} failures=${metric.failures} avgMs=${Math.round(metric.totalDurationMs / metric.calls)} p95Ms=${metric.p95DurationMs} lastMs=${metric.lastDurationMs} avgResponseBytes=${Math.round(metric.totalResponseBytes / metric.calls)} maxResponseBytes=${metric.maxResponseBytes}`
       ).join("\n");
     }
 

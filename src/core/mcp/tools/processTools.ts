@@ -6,6 +6,7 @@ import fs from "fs";
 import path from "path";
 import http from "http";
 import { McpToolResult, ServerInfo } from "../types.js";
+import { readBoundedLogTail } from "../mcpLogTail.js";
 import { getRootConfigDir, getGlobalConfigDir } from "../../config/paths.js";
 import { loadRegistry, reconcileRegistry } from "../../tools/superagentRegistry.js";
 import { loadActiveProcesses } from "../processJournal.js";
@@ -653,7 +654,8 @@ export async function handleGetStatus(args: any): Promise<McpToolResult> {
 export async function handleGetLogs(args: any): Promise<McpToolResult> {
   const rawId = args.id || args.superagentId || args.subagentId || args.taskId;
   const id = rawId ? String(rawId).trim() : "";
-  const limit = typeof args.limit === "number" ? Math.min(args.limit, 200) : (typeof args.lines === "number" ? Math.min(args.lines, 200) : 50);
+  const requestedLimit = typeof args.limit === "number" ? args.limit : (typeof args.lines === "number" ? args.lines : 50);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(200, Math.floor(requestedLimit))) : 50;
 
   // 1. If id is empty, "all", "current", "latest", or numeric PID:
   const currentWs = resolveMcpWorkspace(args?.workspace).path;
@@ -669,9 +671,8 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
     // Priority 1: If target process has an active command log on disk, read live output from it
     if (targetProc?.currentCommandLogPath && fs.existsSync(targetProc.currentCommandLogPath)) {
       try {
-        const content = fs.readFileSync(targetProc.currentCommandLogPath, "utf-8");
-        const lines = content.split(/\r?\n/);
-        const sliced = lines.slice(-limit).join("\n");
+        const tail = readBoundedLogTail(targetProc.currentCommandLogPath, limit);
+        const sliced = (tail.clippedByBytes ? "[Log tail clipped at 64 KiB]\n" : "") + tail.text;
         return {
           content: [
             {
@@ -688,9 +689,8 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
       const latestPath = path.join(getRootConfigDir(), "logs", "latest-command.log");
       if (fs.existsSync(latestPath)) {
         try {
-          const content = fs.readFileSync(latestPath, "utf-8");
-          const lines = content.split(/\r?\n/);
-          const sliced = lines.slice(-limit).join("\n");
+          const tail = readBoundedLogTail(latestPath, limit);
+          const sliced = (tail.clippedByBytes ? "[Log tail clipped at 64 KiB]\n" : "") + tail.text;
           return {
             content: [
               {
@@ -719,14 +719,13 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
     try {
       const logFile = path.join(getGlobalConfigDir(), "superagent.log");
       if (fs.existsSync(logFile)) {
-        const content = fs.readFileSync(logFile, "utf-8");
-        const lines = content.split("\n").filter(Boolean);
-        const sliced = lines.slice(-limit).join("\n");
+        const tail = readBoundedLogTail(logFile, limit);
+        const sliced = (tail.clippedByBytes ? "[Log tail clipped at 64 KiB]\n" : "") + tail.text;
         return {
           content: [
             {
               type: "text",
-              text: `=== Global Superagent Logs (last ${Math.min(limit, lines.length)} lines) ===\n${sliced}`,
+              text: `=== Global Superagent Logs (last ${limit} requested lines) ===\n${sliced}`,
             },
           ],
         };
@@ -763,13 +762,13 @@ export async function handleGetLogs(args: any): Promise<McpToolResult> {
   // 4. Check background tasks
   const task = backgroundTasks.get(id);
   if (task) {
-    let out = task.output || [];
+    let recent = (task.output || []).slice(-limit).join("");
     if (task.logPath && fs.existsSync(task.logPath)) {
       try {
-        out = fs.readFileSync(task.logPath, "utf-8").split("\n").map((l) => l + "\n");
+        const tail = readBoundedLogTail(task.logPath, limit);
+        recent = (tail.clippedByBytes ? "[Log tail clipped at 64 KiB]\n" : "") + tail.text;
       } catch {}
     }
-    const recent = out.slice(-limit).join("");
     return {
       content: [{ type: "text", text: `Logs for background task ${id}:\n${recent || "(no logs)"}` }],
     };
