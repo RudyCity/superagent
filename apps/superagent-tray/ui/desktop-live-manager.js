@@ -33,6 +33,7 @@
     controlEnabled: false,
     controlRequested: false,
     isLanDevice: false,
+    devicePlatform: null,
     deviceId: "",
   };
 
@@ -187,6 +188,10 @@
     }
 
     const isLan = item.kind === "lan-device" || item.id.startsWith("lan:");
+    if (isLan && item.devicePlatform !== "android") {
+      status("Windows LAN screen/input is not implemented in this transport. No controller permission is available.", true);
+      return;
+    }
     let pid = 0, nativeId = "", deviceId = "";
     if (isLan) {
       deviceId = item.id.slice(4);
@@ -236,6 +241,7 @@
         stream.title = item.title || "LAN Device";
         stream.application = item.application || "LAN Client";
         stream.isLanDevice = true;
+        stream.devicePlatform = item.devicePlatform;
         stream.controlRequested = false;
         stream.controlEnabled = false;
         stream.deviceId = deviceId;
@@ -263,6 +269,7 @@
         stream.pid = pid;
         stream.nativeId = nativeId;
         stream.isLanDevice = false;
+        stream.devicePlatform = null;
         stream.controlRequested = false;
         stream.controlEnabled = false;
         stream.deviceId = "";
@@ -305,6 +312,7 @@
     stream.lastHash = null;
     const wasLanDevice = stream.isLanDevice;
     stream.isLanDevice = false;
+    stream.devicePlatform = null;
     stream.deviceId = "";
     stream.controlRequested = false;
     stream.controlEnabled = false;
@@ -394,8 +402,12 @@
           isCurrentStreaming ? "Streaming…" : "Watch stream");
         watch.type = "button";
         watch.title = isCurrentStreaming ? "Live stream aktif" : item.kind === "lan-device" ? "Mulai live stream layar perangkat LAN" : "Mulai live stream pratinjau jendela native";
-        if (isCurrentStreaming) {
+        if (isCurrentStreaming || (item.kind === "lan-device" && item.devicePlatform !== "android")) {
           watch.disabled = true;
+          if (item.kind === "lan-device" && item.devicePlatform !== "android") {
+            watch.textContent = "Viewer unavailable";
+            watch.title = "Windows LAN Client has no verified screen capture/input implementation yet";
+          }
         } else {
           watch.addEventListener("click", () => void startStream(item, watch));
         }
