@@ -1,8 +1,12 @@
+import { Console } from "node:console";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import * as inkModule from "ink";
 import { MultiAgentDashboard } from "../src/components/multi-agent-dashboard.js";
 import { appendDashboardLiveLog, normalizeDashboardLiveLog, MAX_DASHBOARD_LIVE_LOG_CHARS } from "../src/utils/dashboardLiveLog.js";
+
+// Ink's patched console expects console.Console under Bun.
+if (!console.Console) console.Console = Console;
 
 describe("multi-agent CLI input responsiveness", () => {
   beforeEach(() => {
@@ -82,7 +86,7 @@ describe("bounded dashboard log normalization", () => {
   });
 
   it("normalizes carriage-return progress output", () => {
-    const live = appendDashboardLiveLog("[AGENT] Step one\\r", "Step two");
-    expect(live).not.toContain("\\r");
+    const live = appendDashboardLiveLog("[AGENT] Step one\r", "Step two");
+    expect(live).not.toContain("\r");
   });
 });
