@@ -34,6 +34,7 @@ on:
       - "tests/lanV2TrayStreaming.test.ts"
       - "tests/lanMultiDeviceQueue.test.ts"
       - "tests/lanFileRelayManager.test.ts"
+      - "tests/lanRouteHandoff.test.ts"
       - "tests/androidLanBackgroundTransferContract.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
@@ -109,6 +110,7 @@ jobs:
           tests/lanV2TrayStreaming.test.ts
           tests/lanMultiDeviceQueue.test.ts
           tests/lanFileRelayManager.test.ts
+          tests/lanRouteHandoff.test.ts
           tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
 
