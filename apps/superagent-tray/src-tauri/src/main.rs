@@ -34,6 +34,7 @@ mod named_tunnel_clipboard;
 mod named_tunnel_health;
 mod named_tunnel_orchestrator;
 mod tray_lifecycle;
+mod exit_all;
 mod lifecycle_console;
 mod release_updates;
 
@@ -2456,7 +2457,8 @@ fn main() {
             let updates = MenuItem::with_id(app, "updates", "⬇ Check for Updates", true, None::<&str>)?;
             let settings = MenuItem::with_id(app, "settings", "⚙️ Tray Settings", true, None::<&str>)?;
             let sep2 = PredefinedMenuItem::separator(app)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit SuperAgent Tray", true, None::<&str>)?;
+            let exit_superagent = MenuItem::with_id(app, "exit_superagent", "⏻ Exit App · Stop Managed Services", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Tray Only · Keep Services Running", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[
                 &status_item,
                 &version_item,
@@ -2477,6 +2479,7 @@ fn main() {
                 &updates,
                 &settings,
                 &sep2,
+                &exit_superagent,
                 &quit,
             ])?;
             TrayIconBuilder::new()
@@ -2613,6 +2616,7 @@ fn main() {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-settings", ());
                     }
+                    "exit_superagent" => exit_all::request(app.clone()),
                     "quit" => {
                         tray_lifecycle::cleanup();
                         std::process::exit(0);
