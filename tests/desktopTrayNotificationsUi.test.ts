@@ -171,6 +171,24 @@ describe("Tray Notification Manager", () => {
     expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf('.show()'));
     expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf("write_seen(&file"));
   });
+  it("deep-links to an exact MCP approval without invoking approve/deny", () => {
+    const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
+    expect(js).toContain("__superagentAccessManagerFocusRequest?.(");
+    expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId)");
+    expect(access).toContain("card.dataset.requestId = String(req.requestId ||");
+    expect(access).toContain("row.dataset.requestId = String(req.requestId ||");
+    expect(access).toContain("entry.classList.add(\"access-mcp-request-highlight\")");
+    expect(js).not.toContain('mcp_project_access_action');
+  });
+  it("uses generic OS alerts and explicit policy instead of leaking Core errors", () => {
+    expect(rust).toContain('static OS_ALERT_BUDGET:');
+    expect(rust).toContain('os_alert_budget_available()');
+    expect(rust).toContain('tray_notification_center::should_notify_os(&dir, source, severity)?');
+    expect(rust).toContain('.title("SuperAgent needs attention")');
+    expect(rust).not.toContain('.body(format!("Failed to start Core: {}", e))');
+    expect(rust).not.toContain('.body(format!("Failed to restart Core: {}", e))');
+    expect(rust).not.toContain('.body(format!("Failed to stop Core: {}", e))');
+  });
   it("native API only acknowledges and archives; UI error summaries are redacted", () => {
     expect(store).toContain('["list", "read", "unread", "archive", "restore", "read-all"');
     expect(store).toContain('const MAX_ITEMS: usize = 300;');
