@@ -303,3 +303,18 @@ function parseHistoryRounds(content: string): HistoryRound[] {
 
   return rounds;
 }
+
+/**
+ * UI checklist source of truth: the currently selected agent session only.
+ * Workspace task.md/tasks.md may be tracked project documents and must not
+ * appear as live session tasks in a fresh clone or after changing sessions.
+ */
+export function getActiveSessionTaskPath(
+  agent: { getTaskFilePath: () => string } | null | undefined,
+): string | null {
+  try {
+    return agent?.getTaskFilePath() || null;
+  } catch {
+    return null;
+  }
+}
