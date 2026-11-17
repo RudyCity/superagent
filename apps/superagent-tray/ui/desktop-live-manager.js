@@ -678,6 +678,13 @@
           const result=await call("lan_support_action",{
             action:"control_request",payload:{deviceId:id,kind},
           });
+          if(result?.success===true&&result?.approved===true&&
+             (!stream.active||!stream.isLanDevice||stream.deviceId!==id)){
+            try{await call("lan_support_action",{
+              action:"control_revoke",payload:{deviceId:id,kind},
+            });}catch{}
+            throw Error("Stream ended during native approval");
+          }
           if(!stream.active||!stream.isLanDevice||stream.deviceId!==id||
              result?.success!==true||result?.approved!==true||result?.kind!==kind||
              !Number.isSafeInteger(result.secondsRemaining)||result.secondsRemaining<1)
