@@ -273,10 +273,11 @@ export function useDashboardKeyboard(ctx: DashboardKeyboardContext) {
       }
     }
 
-    // ESC: stop all running agents regardless of focus area
+    // ESC: interrupt even when a task is between agent/tool phases and
+    // stopAllRunningAgents reports zero for this particular render.
     if (isEscape && !activeWizard) {
       const stopped = stopAllRunningAgents();
-      if (stopped > 0) {
+      if (stopped > 0 || isProcessing) {
         setCurrentTask("Idle - Interrupted");
         setIsProcessing(false);
         return;
