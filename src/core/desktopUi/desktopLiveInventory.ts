@@ -179,6 +179,13 @@ export async function stopDesktopLiveHandle(
     }
     throw Error("AGENT_MAY_NOT_DISCONNECT_ENTIRE_PROFILE");
   }
+  if(row.kind==="lan-device" && row.stopAction==="stop-session") {
+    if(!/^lan:[A-Za-z0-9_-]{1,128}$/.test(row.id))throw Error("INVALID_LAN_DEVICE");
+    const deviceId = row.id.slice(4);
+    const { closeLanSession } = await import("../lanRemote/controller.js");
+    await closeLanSession(deviceId);
+    return { stopped:true,scope:row.id,reason:"LAN session disconnected; device remains connected to its network" };
+  }
   if(row.stopAction==="stop-session") {
     const m=/^native:(\d+):(.+)$/.exec(row.id);
     if(!m)throw Error("INVALID_NATIVE_TARGET");
@@ -202,7 +209,7 @@ export async function stopDesktopLiveHandle(
   if(row.stopAction==="stop-delegate-tab") {
     if(!Number.isSafeInteger(b.expectedRevision) || b.expectedRevision!==row.revision)
       throw Error("STALE_DELEGATE_REVISION");
-    const m=/^delegate:([A-Za-z0-9_-]{8,80}):(d+)$/.exec(row.id);
+    const m=/^delegate:([A-Za-z0-9_-]{8,80}):(\d+)$/.exec(row.id);
     if(!m)throw Error("INVALID_DELEGATE_TAB");
     const { revokeDelegateTargetByHuman }=await import("../browserTransport/sessionCoordinator.js");
     const stopped=await revokeDelegateTargetByHuman(m[1],Number(m[2]),Number(b.expectedRevision));
@@ -215,12 +222,6 @@ export async function stopDesktopLiveHandle(
     const disconnected=delegateBridge.disconnectClient(id);
     return {stopped:disconnected,scope:"profile:"+id,
       reason:"Chrome Delegate profile disconnected; browser tabs stay open"};
-  }
-  if(row.kind==="lan-device") {
-    const deviceId = row.id.slice(4);
-    const { closeLanSession } = await import("../lanRemote/controller.js");
-    try { await closeLanSession(deviceId); } catch {}
-    return { stopped: true, scope: row.id, reason: "LAN device session disconnected; device remains connected to Wi-Fi" };
   }
   throw Error("UNSUPPORTED_STOP");
 }
