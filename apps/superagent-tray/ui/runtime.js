@@ -410,25 +410,13 @@ function runtimeYoloMarkup(currentMode = runtimeCurrentYoloMode) {
 }
 
 async function runtimeGetYoloMode() {
+  // Chat Agent policy is read only through the installed native Tray.
+  // A browser or MCP connection must not control this setting via a web fallback.
   try {
-    const res = await runtimeInvoke("get_yolo_mode");
-    if (typeof res === "string" && ["off", "scoped", "full"].includes(res)) {
-      runtimeCurrentYoloMode = res;
-      return res;
-    }
+    const mode = await runtimeInvoke("get_yolo_mode");
+    if (["off", "scoped", "full"].includes(mode)) runtimeCurrentYoloMode = mode;
   } catch {
-    try {
-      if (typeof fetch === "function") {
-        const resp = await fetch("/api/desktop/yolo");
-        if (resp?.ok) {
-          const data = await resp.json();
-          if (data && ["off", "scoped", "full"].includes(data.mode)) {
-            runtimeCurrentYoloMode = data.mode;
-            return data.mode;
-          }
-        }
-      }
-    } catch {}
+    // Do not claim a successful mode read if the native host is unavailable.
   }
   return runtimeCurrentYoloMode;
 }
@@ -441,20 +429,9 @@ async function runtimeSetYoloMode(mode) {
     full: "YOLO Full (Unrestricted)"
   };
   try {
-    try {
-      await runtimeInvoke("set_yolo_mode", { mode });
-    } catch (invokeErr) {
-      if (typeof fetch === "function") {
-        const resp = await fetch("/api/desktop/yolo", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode })
-        });
-        if (!resp?.ok) throw invokeErr;
-      } else {
-        throw invokeErr;
-      }
-    }
+    // The local native Tray is the only UI channel for Chat Agent YOLO.
+    // No MCP/HTTP fallback when the native permission boundary denies a change.
+    await runtimeInvoke("set_yolo_mode", { mode });
     runtimeCurrentYoloMode = mode;
     document.querySelectorAll(".runtime-yolo-control[data-current-yolo]").forEach(ctrl => {
       ctrl.dataset.currentYolo = mode;
@@ -1329,12 +1306,14 @@ async function runtimeRefresh(background = false) {
   rt("runtime-refresh").disabled = true;
 
   try {
-    const snapshot = await runtimeInvoke("detect_runtime");
+    const [snapshot] = await Promise.all([
+      runtimeInvoke("detect_runtime"),
+      runtimeGetYoloMode(),
+    ]);
     runtimeRender(snapshot);
     const [gateway, named] = await Promise.allSettled([
       runtimeInvoke("desktop_live_action", { action: "gateway-status", payload: null }),
       runtimeInvoke("get_named_tunnel_health"),
-      runtimeGetYoloMode(),
     ]);
     const trayNode = rt("runtime-tray-gateway");
     if (trayNode) trayNode.innerHTML = runtimeTrayGatewayCard(gateway.status === "fulfilled" ? gateway.value : null);
