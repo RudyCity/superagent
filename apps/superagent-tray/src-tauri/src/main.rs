@@ -1105,7 +1105,7 @@ async fn lan_support_action(
             let (_, fp) = desktop_live_android_device(id).await?;
             let token = desktop_live_android_control::credential(id,&fp,kind,true)?;
             let response = core_request(Method::POST,"/api/desktop/lan-controller/status",
-                Some(json!({"deviceId":id,"controllerToken":token}))).await?;
+                Some(json!({"deviceId":id,"controllerToken":token,"kind":kind}))).await?;
             if response.get("approved").and_then(Value::as_bool) != Some(true) {
                 return Err("ANDROID_CONTROLLER_CORE_GRANT_REVOKED".into());
             }
@@ -1118,7 +1118,7 @@ async fn lan_support_action(
         }.await;
         return Ok(match result {
             Ok(seconds) => json!({"success":true,"approved":true,"secondsRemaining":seconds}),
-            Err(_) => { desktop_live_android_control::revoke_device(id);
+            Err(_) => { desktop_live_android_control::revoke_kind(id,kind);
                 json!({"success":true,"approved":false,"secondsRemaining":0}) },
         });
     }
@@ -1161,16 +1161,16 @@ async fn lan_support_action(
             ).blocking_show()
         }).await.map_err(|_| "ANDROID_CONTROLLER_NATIVE_DIALOG_FAILED")?;
         if !approved {
-            desktop_live_android_control::revoke_device(id);
+            desktop_live_android_control::revoke_kind(id,kind);
             return Ok(json!({"success":true,"approved":false}));
         }
         if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
-            desktop_live_android_control::revoke_device(id);
+            desktop_live_android_control::revoke_kind(id,kind);
             return Err("ANDROID_CONTROLLER_TRAY_HIDDEN_DURING_APPROVAL".into());
         }
         let (_, after) = desktop_live_android_device(id).await?;
         if after != fingerprint {
-            desktop_live_android_control::revoke_device(id);
+            desktop_live_android_control::revoke_kind(id,kind);
             return Err("ANDROID_CONTROLLER_DEVICE_CHANGED_DURING_APPROVAL".into());
         }
         let mac = desktop_live_android_controller_proof(nonce,id,&fingerprint,kind)?;
