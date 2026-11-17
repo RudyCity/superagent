@@ -175,6 +175,9 @@ export function createProjectAccessRequest(
   if (invalidCaps.length > 0) {
     throw new Error(`Invalid capabilities requested: ${invalidCaps.join(", ")}.`);
   }
+  if (input.projectId === MCP_CONNECTION_PROJECT_ID && input.capabilities.some(cap => cap !== "execute")) {
+    throw new Error("MCP Connection Controls accepts only the execute capability.");
+  }
   const cleanReason = String(input.reason || "").trim();
   if (cleanReason.length < 5) {
     throw new Error("A meaningful human-readable reason (at least 5 characters) is required.");
@@ -444,6 +447,10 @@ export function grantProjectAccessToIdentity(
   capabilities: ProjectAccessCapability[],
   options?: { decidedBy?: string; requestStorePath?: string; policyPath?: string },
 ): ProjectAccessRequest {
+  if (projectId === MCP_CONNECTION_PROJECT_ID &&
+      (capabilities.length !== 1 || capabilities[0] !== "execute")) {
+    throw new Error("MCP Connection Controls can only grant the execute capability.");
+  }
   const project = projectId === MCP_CONNECTION_PROJECT_ID
     ? { name: MCP_CONNECTION_PROJECT_NAME, root: undefined, target: MCP_CONNECTION_PROJECT_PATH, enabled: true }
     : getProject(projectId);
