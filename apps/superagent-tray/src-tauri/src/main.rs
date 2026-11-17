@@ -202,7 +202,18 @@ fn open_external_url(url: String) -> Result<(), String> {
 
 /// The WebView can read and acknowledge, but may not insert arbitrary content.
 #[tauri::command]
-fn tray_notification_center_action(action: String, id: Option<String>) -> Result<Value, String> {
+fn tray_notification_center_action(
+    window: tauri::WebviewWindow,
+    action: String,
+    id: Option<String>,
+) -> Result<Value, String> {
+    if window.label() != "main" {
+        return Err("Notification Center is limited to the native Tray window".into());
+    }
+    if action != "list" && (!window.is_visible().unwrap_or(false) ||
+        !window.is_focused().unwrap_or(false)) {
+        return Err("Focus the native Tray to change notifications".into());
+    }
     tray_notification_center::perform(&config_dir()?, &action, id.as_deref())
 }
 
@@ -210,10 +221,14 @@ fn tray_notification_center_action(action: String, id: Option<String>) -> Result
 /// commands, credentials, project paths or other potentially private content.
 #[tauri::command]
 fn tray_notification_center_ui_alert(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     scope: String,
     kind: String,
 ) -> Result<(), String> {
+    if window.label() != "main" {
+        return Err("Notification reports are limited to the native Tray window".into());
+    }
     let allowed = ["security", "runtime", "delegate", "desktop-live", "terminal",
         "lan-devices", "muse-files", "jobs", "updates", "settings", "shutdown",
         "overview", "logs"];
