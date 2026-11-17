@@ -199,7 +199,7 @@ ${host}-main`, stderr: "", exitCode: 0 } as any;
       const beforeDangerous = commands.length;
       const dangerous = await provider.execCommand(context, { command: "rm -rf /tmp/superagent-remote-never-created" });
       expect(dangerous.isError).toBe(true);
-      expect(dangerous.text).toMatch(/blocked by the destructive-command safety policy/i);
+      expect(dangerous.text).toMatch(/destructive command blocked by MCP security policy/i);
       expect(commands).toHaveLength(beforeDangerous);
     } finally {
       setFullYoloMode(false);
