@@ -41,7 +41,7 @@ function mount(preview=fixture()){
     calls.push(args);
     if(args.action==="preview")return {preview};
     if(args.action==="status")return {busy:false,progress:null};
-    if(args.action==="execute"||args.action==="force_all")
+    if(args.action==="execute"||args.action==="force_all"||args.action==="manual_kill")
       return {accepted:true,runId:"run-confirmed"};
     throw Error("Unexpected request");
   });
@@ -66,6 +66,7 @@ describe("native Shutdown Manager UI",()=>{
   it("mounts one accessible dialog, bounded progress and CSP-compatible files",()=>{
     for(const id of ["shutdown-manager-dialog","shutdown-services","shutdown-exit-all",
       "shutdown-stop-selected","shutdown-force-all","shutdown-force-confirm",
+      "shutdown-manual-select-all","shutdown-manual-confirm","shutdown-manual-kill",
       "shutdown-progress","shutdown-feedback"])
       expect(html).toContain('id="'+id+'"');
     expect(html).toContain('role="dialog" aria-modal="true"');
@@ -77,6 +78,10 @@ describe("native Shutdown Manager UI",()=>{
     expect(native).toContain('process.start_time())!=item.process_started_at');
     expect(ownerControl).toContain('"/_internal/owner/stop?force=1"');
     expect(ownerControl).toContain('read_lease(dir, port, pid)');
+    expect(native).toContain('force_confirmation.as_deref()!=Some("KILL SELECTED")');
+    expect(native).toContain('manual_process_allowed(&item.kind,pid,expected)');
+    expect(native).toContain('process.start_time()!=birth');
+    expect(native).toContain('pid==std::process::id()');
   });
   it("previews owner states read-only, and excludes unverified services from selection",async()=>{
     const m=mount();
@@ -148,6 +153,63 @@ describe("native Shutdown Manager UI",()=>{
     expect(action.pid).toBeUndefined();
     expect(m.node("shutdown-progress").hidden).toBe(false);
     expect(m.node("shutdown-progress-status").textContent).toContain("in progress");
+  });
+  it("allows manually killing reviewed Guardian, external Cloudflare and Core Supervisor PIDs",async()=>{
+    const inventory=fixture();
+    inventory.services[0].ownerVerified=false;
+    inventory.services[0].selectable=false;
+    inventory.services[0].manualKillSelectable=true;
+    inventory.services[0].processName="bun.exe";
+    inventory.services[1].manualKillSelectable=false;
+    const other=[
+      {id:"observed:cloudflare:18140",label:"External Cloudflare",
+        kind:"cloudflare",state:"observed",port:9227,pid:18140,
+        ownerVerified:false,selectable:false,forceSelectable:false,
+        manualKillSelectable:true,processName:"cloudflared.exe",
+        blocker:"External owner",activeSessions:null,detail:"External tunnel"},
+      {id:"supervisor:7888:25204",label:"Core Supervisor",
+        kind:"core-supervisor",state:"unverified",port:7888,pid:25204,
+        ownerVerified:false,selectable:false,forceSelectable:false,
+        manualKillSelectable:true,processName:"bun.exe",
+        blocker:"Unverified",activeSessions:null,detail:"Core supervisor"},
+    ];
+    inventory.services.push(...other);
+    const m=mount(inventory);await m.open();
+    const rows=m.node("shutdown-services").children;
+    expect(rows[0].children[0].disabled).toBe(true);
+    expect(rows[0].children[3].children[0].disabled).toBe(false);
+    expect(rows[0].children[3].children[0].attributes["aria-label"])
+      .toContain("PID 212");
+    expect(rows[3].dataset.state).toBe("manual");
+    expect(rows[4].dataset.state).toBe("manual");
+    expect(m.node("shutdown-manual-kill").disabled).toBe(true);
+    await m.click("shutdown-manual-select-all");
+    expect(m.node("shutdown-selection-count").textContent).toContain("3 manual PID(s) selected");
+    const phrase=m.node("shutdown-manual-confirm");
+    phrase.value="kill selected";phrase.handlers.input();
+    expect(m.node("shutdown-manual-kill").disabled).toBe(true);
+    phrase.value="KILL SELECTED";phrase.handlers.input();
+    expect(m.node("shutdown-manual-kill").disabled).toBe(false);
+    await m.click("shutdown-manual-kill");
+    const actions=m.calls.filter(c=>c.action==="manual_kill");
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      action:"manual_kill",previewId:"trusted-preview",
+      forceConfirmation:"KILL SELECTED",
+      selected:["managed:guardian","observed:cloudflare:18140","supervisor:7888:25204"],
+    });
+    expect(actions[0].pid).toBeUndefined();
+    expect(actions[0].exitAfter).toBeUndefined();
+    expect(m.node("shutdown-progress").hidden).toBe(false);
+  });
+  it("never permits manual kill without a selected, OS-pinned eligible PID",async()=>{
+    const inventory=fixture();
+    const m=mount(inventory);await m.open();
+    const phrase=m.node("shutdown-manual-confirm");
+    phrase.value="KILL SELECTED";phrase.handlers.input();
+    expect(m.node("shutdown-manual-kill").disabled).toBe(true);
+    expect(m.node("shutdown-manual-select-all").disabled).toBe(true);
+    expect(m.calls.every(c=>c.action!=="manual_kill")).toBe(true);
   });
   it("never enables force control when only foreign/unverified owners remain",async()=>{
     const inventory=fixture();
