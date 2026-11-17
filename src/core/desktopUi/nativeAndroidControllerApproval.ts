@@ -9,13 +9,14 @@
  */
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readNativeDesktopApprovalKey } from "./nativeApprovalProof.js";
-import { listLanDevices, type LanDevice } from "../lanRemote/controller.js";
+import { listLanDevices, currentAndroidLanSupportSessionProof,
+  type LanDevice } from "../lanRemote/controller.js";
 
 export const ANDROID_CONTROL_CHALLENGE_TTL_MS = 30_000;
 export const ANDROID_CONTROL_LEASE_TTL_MS = 120_000;
 const CONTROLLER_DOMAIN = "superagent-desktop-live-android-controller-v1";
-type Pending = {nonce:string;deviceId:string;fingerprint:string;expiresAt:number};
-type Grant = {deviceId:string;fingerprint:string;digest:Buffer;expiresAt:number};
+type Pending = {nonce:string;deviceId:string;fingerprint:string;sessionProof:string;expiresAt:number};
+type Grant = {deviceId:string;fingerprint:string;sessionProof:string;digest:Buffer;expiresAt:number};
 
 function deny(code: string): never { throw Error(code); }
 function validId(id: unknown): id is string {
@@ -41,6 +42,8 @@ export class NativeAndroidControllerApproval {
     private readonly key: () => Buffer = readNativeDesktopApprovalKey,
     private readonly list: () => readonly LanDevice[] = listLanDevices,
     private readonly now: () => number = Date.now,
+    private readonly sessionProof: (id: string) => string | null =
+      currentAndroidLanSupportSessionProof,
   ) {}
 
   private clock(): number {
@@ -54,7 +57,7 @@ export class NativeAndroidControllerApproval {
     return time;
   }
 
-  private exactDevice(id: string): {deviceId:string; fingerprint:string} {
+  private exactDevice(id: string): {deviceId:string; fingerprint:string;sessionProof:string} {
     const matching = this.list().filter(d => d.id === id &&
       d.platform === "android" && d.paired === true && d.connected === true &&
       validHex(d.fingerprint, 64));
@@ -62,7 +65,13 @@ export class NativeAndroidControllerApproval {
       this.revoke();
       deny("ANDROID_CONTROLLER_DEVICE_SESSION_UNAVAILABLE");
     }
-    return { deviceId: id, fingerprint: matching[0].fingerprint.toLowerCase() };
+    const proof=this.sessionProof(id);
+    if (!validHex(proof,64)) {
+      this.revoke();
+      deny("ANDROID_CONTROLLER_SUPPORT_SESSION_INVALID");
+    }
+    return { deviceId:id, fingerprint:matching[0].fingerprint.toLowerCase(),
+      sessionProof:proof };
   }
 
   /** Challenge is NOT permission and contains no input bearer. */
@@ -70,8 +79,9 @@ export class NativeAndroidControllerApproval {
     if (!validId(rawId)) deny("ANDROID_CONTROLLER_INVALID_DEVICE");
     const device = this.exactDevice(rawId);
     const now = this.clock();
-    // The OS dialog may only approve the one currently pinned device.
-    this.pending = null;
+    // Starting a new attended challenge invalidates the prior controller.
+    // Viewing is left untouched.
+    this.revoke();
     this.key();
     const nonce = randomBytes(24).toString("hex");
     this.pending = {...device,nonce,expiresAt:now+ANDROID_CONTROL_CHALLENGE_TTL_MS};
@@ -93,7 +103,8 @@ export class NativeAndroidControllerApproval {
         this.clock() >= pending.expiresAt)
       deny("ANDROID_CONTROLLER_NATIVE_PROOF_INVALID");
     const current = this.exactDevice(pending.deviceId);
-    if (current.fingerprint !== pending.fingerprint)
+    if (current.fingerprint !== pending.fingerprint ||
+        current.sessionProof !== pending.sessionProof)
       deny("ANDROID_CONTROLLER_DEVICE_CHANGED");
     const mac = createHmac("sha256", this.key())
       .update(proofMessage(pending.nonce,pending.deviceId,pending.fingerprint))
@@ -104,6 +115,7 @@ export class NativeAndroidControllerApproval {
     this.active = {
       deviceId: pending.deviceId,
       fingerprint: pending.fingerprint,
+      sessionProof: pending.sessionProof,
       digest: createHash("sha256").update(token,"ascii").digest(),
       expiresAt: this.clock()+ANDROID_CONTROL_LEASE_TTL_MS,
     };
@@ -123,7 +135,8 @@ export class NativeAndroidControllerApproval {
       deny("ANDROID_CONTROLLER_APPROVAL_EXPIRED");
     }
     const current = this.exactDevice(grant.deviceId);
-    if (current.fingerprint !== grant.fingerprint) {
+    if (current.fingerprint !== grant.fingerprint ||
+        current.sessionProof !== grant.sessionProof) {
       this.revoke();
       deny("ANDROID_CONTROLLER_DEVICE_CHANGED");
     }
