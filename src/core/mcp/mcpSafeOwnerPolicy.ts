@@ -21,10 +21,11 @@ export const R1_OWNER_TOOLS: readonly string[] = Object.freeze([
 
 export function canUnlockMcpDangerousTools(input: {
   lockSafeTools: boolean;
-  allowDangerous: boolean;
-  yoloState: "off" | "scoped" | "full";
+  allowDangerous?: boolean;
 }): boolean {
-  return !input.lockSafeTools && (input.allowDangerous || input.yoloState !== "off");
+  // Discovery is separate from authorization. Execution still requires the
+  // authenticated principal's Security Approval grant and OAuth scopes.
+  return !input.lockSafeTools;
 }
 
 export function isR1OwnerToolCallAllowed(
