@@ -41,3 +41,50 @@ Focused source tests are in
 `tests/desktopOverviewOperations.test.ts`.
 The installed native Tray and managed MCP service must be tested after
 a separately approved build/release before declaring Runtime Verified.
+
+## Diagnosing a failing MCP connection (without changing running services)
+
+A GitHub commit or green MCP CI does not update the installed MCP backend.
+The independently owned backend and the selected public URL must first pass
+local owner verification. Never infer that an agent is active from an old
+Access Manager identity or a stale session record.
+
+For **attended, read-only verification** on the actual SuperAgent host, use
+`bun scripts/mcp-tool-policy-live-verify.ts` with these operator-provided
+environment variables:
+
+- `SUPERAGENT_MCP_POLICY_LIVE_ACCEPTANCE=1` — explicit opt-in for the probe
+- `SUPERAGENT_MCP_POLICY_URL` — the reviewed MCP URL ending in `/mcp`
+- `SUPERAGENT_MCP_POLICY_PORT` — locally verified owner port
+- `SUPERAGENT_MCP_POLICY_BEARER_TOKEN` — current host-provided credential
+- `SUPERAGENT_MCP_POLICY_EXPECTED_RELEASE_DIGEST` — **actual** SHA-256 of
+  the staged/activated backend release, not the Git commit ID
+
+Do not paste the token into chat, commit it, or include it in screenshots/logs.
+The script never changes grants, files, Core, Tray, remote devices, or browser
+sessions. It verifies the owner on both sides of the HTTP read-only probe,
+including matching owner/backend PIDs and the exact release digest.
+
+A `BLOCKED` result includes a redacted `phase` and `code`, not raw HTTP
+errors or credentials. The phases are `preflight`, `owner`,
+`mcp_connect`, `mcp_catalog`, `mcp_status`, and `owner_postflight`.
+Common codes:
+
+| Code | Meaning / next safe step |
+| --- | --- |
+| `OPERATOR_OPT_IN_REQUIRED` | The attended preflight has not been explicitly enabled |
+| `UNVERIFIED_MCP_OWNER` | Check the native Tray service status, listener identity and owner/backend health; do **not** adopt an arbitrary PID |
+| `MCP_BACKEND_RELEASE_DIGEST_MISMATCH` (owner reason) | The active backend is not the reviewed release artifact; do not claim a successful upgrade |
+| `MCP_POLICY_AUTH_REJECTED` | Inspect the actual OAuth/static-bearer connection approval and authentication mode without sharing credentials |
+| `MCP_POLICY_CONNECTION_REFUSED` | Verify the expected listener and independently owned backend are up; do not restart blindly |
+| `MCP_POLICY_DNS_UNAVAILABLE` / `MCP_POLICY_TLS_REJECTED` | Validate named/quick tunnel configuration and certificate using a non-secret challenge |
+| `MCP_POLICY_LIVE_TIMEOUT` | Investigate transport, tunnel, backend drain and worker health |
+| `MCP_OWNER_CHANGED_DURING_ACCEPTANCE` | A backend or owner generation changed during the probe; treat the receipt as invalid and check active sessions |
+| `MCP_POLICY_LIVE_FAILED` | Generic unknown error; inspect local owner log privately before making changes |
+
+If ChatGPT's connected tool reports only *"The tool failed internally"*, that
+is not proof of a permanent-file-policy refusal: the request may not have
+reached the MCP tool dispatcher. Separate transport/authentication failures
+from explicit `Tool is not certified for permanent file access restrictions`
+errors observed after dispatch. Permission troubleshooting must never change
+Chat Agent YOLO to grant an MCP identity additional privileges.
