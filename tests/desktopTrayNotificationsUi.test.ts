@@ -14,7 +14,7 @@ function mount(items: Record<string, unknown>[] = []) {
   const domEvents = new Map<string, (...args: any[]) => any>();
   const mockInvocations: { action: string; id?: string | null }[] = [];
   const nav = vi.fn();
-  const filters = ["all", "unread", "important", "archived"].map((filter) => {
+  const filters = ["all", "unread", "important", "open", "acknowledged", "resolved", "archived"].map((filter) => {
     const n = makeNode();
     n.dataset = { notificationFilter: filter };
     return n;
@@ -118,6 +118,58 @@ describe("Tray Notification Manager", () => {
     expect(mounted.mockInvocations.some((call) => call.action === "read-all")).toBe(true);
     expect(mounted.get("tray-notification-count").hidden).toBe(true);
     expect(js).not.toMatch(/localStorage|sessionStorage/);
+  });
+  it("filters incident lifecycle, source, search and time without trusting HTML", async () => {
+    const mounted = mount([
+      { id: "a", severity: "critical", source: "mcp", title: "MCP disconnected",
+        body: "Check owner", createdAt: Date.now(), readAt: null, archivedAt: null,
+        acknowledgedAt: null, resolvedAt: null },
+      { id: "b", severity: "warning", source: "delegate", title: "Delegate pending",
+        body: "Check runtime", createdAt: Date.now(), readAt: Date.now(), archivedAt: null,
+        acknowledgedAt: Date.now(), resolvedAt: null },
+      { id: "c", severity: "info", source: "jobs", title: "Old job fixed",
+        body: "Completed", createdAt: Date.now(), readAt: Date.now(), archivedAt: null,
+        acknowledgedAt: null, resolvedAt: Date.now() },
+    ]);
+    await Promise.resolve(); await Promise.resolve();
+    mounted.filters[3].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.filters[4].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.filters[5].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.filters[0].trigger("click");
+    mounted.get("notification-search").trigger("input", { target: { value: "MCP disconnected" } });
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.get("notification-search").trigger("input", { target: { value: "" } });
+    mounted.get("notification-source").trigger("change", { target: { value: "delegate" } });
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.get("notification-source").trigger("change", { target: { value: "all" } });
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(3);
+    expect(js).toContain('textContent = String(text)');
+  });
+  it("wires notification preferences and complete fixed-severity incident actions", () => {
+    expect(html).toContain('id="notification-search"');
+    expect(html).toContain('id="notification-period"');
+    expect(html).toContain('id="notification-source"');
+    expect(html).toContain('id="notification-save-preferences"');
+    expect(html).toContain('data-notification-category="mcp"');
+    expect(html).toContain('data-notification-filter="resolved"');
+    expect(js).toContain('"acknowledge"');
+    expect(js).toContain('"resolve"');
+    expect(js).toContain('"reopen"');
+    expect(store).toContain("pub fn resolve_missing(");
+    expect(store).toContain("pub fn save_preferences(");
+    expect(store).toContain("pub fn should_notify_os(");
+    expect(rust).toContain("tray_notification_center_preferences,");
+    expect(rust).toContain("poll_operational_health(");
+    expect(rust).toContain("poll_pending_security_requests(");
+    expect(rust).toContain("os_alert_budget_available()");
+    const start = rust.indexOf("    let mut delivered = 0;");
+    const end = rust.indexOf("    Ok(delivered)", start);
+    const reminder = rust.slice(start, end);
+    expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf('.show()'));
+    expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf("write_seen(&file"));
   });
   it("native API only acknowledges and archives; UI error summaries are redacted", () => {
     expect(store).toContain('["list", "read", "unread", "archive", "restore", "read-all"');
