@@ -23,6 +23,8 @@
   <script src="./runtime.js" defer></script>
   <script src="./lifecycle.js" defer></script>
   <link rel="stylesheet" href="./lifecycle.css" />
+  <link rel="stylesheet" href="./shutdown-manager.css" />
+  <script src="./shutdown-manager.js" defer></script>
   <script src="./settings.js" defer></script>
   <script src="./desktop-input-trust.js" defer></script>
   <link rel="stylesheet" href="./desktop-input-trust.css" />
@@ -3289,6 +3291,60 @@
       <span id="timezone"></span>
     </div>
   </footer>
+
+  <!-- Native-only Shutdown Manager. It displays owner-scoped plans; no direct OS process controls. -->
+  <div id="shutdown-manager-dialog" class="overlay" hidden>
+    <section class="modal-dialog shutdown-manager" role="dialog" aria-modal="true"
+      aria-labelledby="shutdown-manager-title" aria-describedby="shutdown-manager-description">
+      <header class="modal-header">
+        <div>
+          <div class="modal-eyebrow">NATIVE · OWNER-VERIFIED LIFECYCLE</div>
+          <h2 id="shutdown-manager-title">Shutdown Manager</h2>
+          <p id="shutdown-manager-description" class="shutdown-description">
+            Review running services, active sessions and ownership before stopping anything.
+            Only verified processes can be selected. Your other applications are untouched.
+          </p>
+        </div>
+        <button type="button" id="shutdown-close" class="icon-button"
+          aria-label="Close Shutdown Manager" title="Close preview (does not cancel running operations)">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none"
+            stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18"></path>
+          </svg>
+        </button>
+      </header>
+      <div class="modal-body">
+        <div class="shutdown-stats" aria-label="Service readiness summary">
+          <div class="shutdown-stat"><strong id="shutdown-active-count">0</strong><span>Observed active</span></div>
+          <div class="shutdown-stat"><strong id="shutdown-ready-count">0</strong><span>Verified &amp; stoppable</span></div>
+          <div class="shutdown-stat blocked"><strong id="shutdown-blocked-count">0</strong><span>Needs review</span></div>
+        </div>
+        <div class="shutdown-panel-heading">
+          <h3>Service inventory</h3>
+          <button id="shutdown-refresh" type="button" class="button ghost">Refresh preview</button>
+        </div>
+        <div id="shutdown-feedback" class="shutdown-feedback" role="status" aria-live="polite">
+          Open this manager to inspect authenticated runtime owners.
+        </div>
+        <div id="shutdown-services" class="shutdown-services"
+          role="group" aria-label="Select verified services to stop"></div>
+        <div id="shutdown-all-note" class="shutdown-note">
+          Full exit requires every active owner to have a supported graceful-stop protocol.
+        </div>
+        <section id="shutdown-progress" class="shutdown-progress" aria-label="Shutdown progress"
+          aria-live="polite" hidden>
+          <h3 id="shutdown-progress-status">Graceful shutdown progress</h3>
+          <ol id="shutdown-progress-steps"></ol>
+        </section>
+      </div>
+      <footer class="modal-footer">
+        <span id="shutdown-selection-count" class="shutdown-selection-count">0 selected</span>
+        <button id="shutdown-cancel" type="button" class="button ghost">Close</button>
+        <button id="shutdown-stop-selected" type="button" class="button secondary" disabled>Stop selected</button>
+        <button id="shutdown-exit-all" type="button" class="button shutdown-danger" disabled>Stop all &amp; exit</button>
+      </footer>
+    </section>
+  </div>
 
   <!-- Log Detail Modal Dialog -->
   <div id="log-detail-dialog" class="overlay" hidden>
