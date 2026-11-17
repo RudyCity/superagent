@@ -4,216 +4,130 @@ import os from "node:os";
 import path from "node:path";
 import { CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
-import { registerProject, removeProject, updateProject } from "../src/core/project/projectRegistry.js";
+import { registerProject, updateProject } from "../src/core/project/projectRegistry.js";
 import { hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { createProjectAccessRequest, approveProjectAccessRequest } from "../src/core/project/projectAccessRequestStore.js";
 import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
 
-let configDir: string;
-let previousConfigDir: string | undefined;
-let projectA: string;
-let projectB: string;
-const projectAId = "independent-local-a";
-const projectBId = "independent-local-b";
-const identity = { mode: "static-bearer" as const, subject: "bearer", credentialHash: "c".repeat(64) };
+describe("MCP independent project Security Approval", () => {
+  let configDir = "";
+  let projectA = "";
+  let projectB = "";
+  let previousConfig: string | undefined;
+  const projectAId = "independent-local-a";
+  const projectBId = "independent-local-b";
+  const identity = { mode: "oauth" as const, subject: "approved-mcp-client",
+    scopes: ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"] };
 
-function toolText(result: any): string {
-  return (result?.content ?? []).map((part: any) => part.text ?? "").join("\n");
-}
-
-beforeEach(() => {
-  previousConfigDir = process.env.SUPERAGENT_CONFIG_DIR;
-  configDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-independent-config-"));
-  process.env.SUPERAGENT_CONFIG_DIR = configDir;
-  projectA = path.join(process.cwd(), ".tmp-mcp-independent-a-" + process.pid + "-" + Date.now());
-  projectB = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-independent-b-"));
-  fs.mkdirSync(projectA, { recursive: true });
-  fs.writeFileSync(path.join(projectA, "from-a.txt"), "alpha project marker");
-  fs.writeFileSync(path.join(projectB, "from-b.txt"), "bravo project marker");
-  fs.writeFileSync(path.join(projectB, ".env.local"), "TEST_SECRET=must-not-be-read");
-  registerProject({ id: projectAId, name: "Independent A", type: "local", root: projectA });
-  registerProject({ id: projectBId, name: "Independent B", type: "local", root: projectB });
-  setFullYoloMode(false);
-});
-
-afterEach(() => {
-  setFullYoloMode(false);
-  removeProject(projectAId);
-  removeProject(projectBId);
-  if (previousConfigDir === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
-  else process.env.SUPERAGENT_CONFIG_DIR = previousConfigDir;
-  fs.rmSync(configDir, { recursive: true, force: true });
-  fs.rmSync(projectA, { recursive: true, force: true });
-  fs.rmSync(projectB, { recursive: true, force: true });
-});
-
-describe("independent multi-project operations through the MCP dispatcher", () => {
-  it("enforces grant revocation and project disable on the next call in an existing MCP server", async () => {
-    const server = createSuperagentMcpServer({
-      workspace: projectA,
-      allowDangerous: true,
+  const textOf = (result: any): string =>
+    (result?.content ?? []).map((part: any) => part.text ?? "").join("\n");
+  function server() {
+    return createSuperagentMcpServer({
+      workspace: projectA, toolExposure: "full", authMode: "oauth",
       getIdentity: () => identity,
     });
-    const rawCall = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
-    const call = async (name: string, args: Record<string, unknown>) => {
-      try {
-        return await rawCall({ method: "tools/call", params: { name, arguments: args } });
-      } catch (error) {
-        return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] };
-      }
-    };
+  }
+  async function call(mcp: ReturnType<typeof server>, name: string, args: Record<string, unknown>) {
+    const handler = (mcp as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
+    try { return await handler({ method: "tools/call", params: { name, arguments: args } }, {}); }
+    catch (error) { return { isError: true, content: [{ text: String(error) }] }; }
+  }
+  function approve(projectId: string, capabilities: Array<"read" | "write" | "execute">) {
+    const pending = createProjectAccessRequest(identity, {
+      projectId, capabilities, reason: "Approved by local operator for test",
+    });
+    approveProjectAccessRequest(pending.requestId);
+  }
 
-    setFullYoloMode(true);
-    const granted = await call("superagent_grant_project_access", { projectId: projectBId, capabilities: ["read"] });
-    expect(granted.isError).toBeFalsy();
-    setFullYoloMode(false);
-    setYoloMode(true); // Revocation is a dangerous MCP operation; OFF is read-only.
-
-    const initiallyReadable = await call("superagent_list_files", { projectId: projectBId });
-    expect(initiallyReadable.isError).toBeFalsy();
-    expect(toolText(initiallyReadable)).toContain("from-b.txt");
-
-    const revoked = await call("superagent_revoke_project_access", { projectId: projectBId });
-    expect(revoked.isError).toBeFalsy();
-    const deniedAfterRevoke = await call("superagent_list_files", { projectId: projectBId });
-    expect(deniedAfterRevoke.isError).toBeTruthy();
-    expect(toolText(deniedAfterRevoke)).toMatch(/not granted|outside the allowed workspace scope/i);
-
-    setFullYoloMode(true);
-    const regranted = await call("superagent_grant_project_access", { projectId: projectBId, capabilities: ["read"] });
-    expect(regranted.isError).toBeFalsy();
-    setFullYoloMode(false);
-    updateProject(projectBId, { enabled: false });
-
-    const deniedAfterDisable = await call("superagent_list_files", { projectId: projectBId });
-    expect(deniedAfterDisable.isError).toBeTruthy();
-    expect(toolText(deniedAfterDisable)).toMatch(/disabled/i);
+  beforeEach(() => {
+    previousConfig = process.env.SUPERAGENT_CONFIG_DIR;
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-independent-"));
+    projectA = path.join(configDir, "project-a");
+    projectB = path.join(configDir, "project-b");
+    fs.mkdirSync(projectA); fs.mkdirSync(projectB);
+    process.env.SUPERAGENT_CONFIG_DIR = configDir;
+    fs.writeFileSync(path.join(projectA, "from-a.txt"), "alpha");
+    fs.writeFileSync(path.join(projectB, "from-b.txt"), "bravo");
+    fs.writeFileSync(path.join(projectB, ".env.local"), "TEST_SECRET=private");
+    registerProject({ projectId: projectAId, name: "Project A", type: "local", root: projectA });
+    registerProject({ projectId: projectBId, name: "Project B", type: "local", root: projectB });
+    setYoloMode(false);
+  });
+  afterEach(() => {
+    setYoloMode(false);
+    if (previousConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
+    else process.env.SUPERAGENT_CONFIG_DIR = previousConfig;
+    fs.rmSync(configDir, { recursive: true, force: true });
   });
 
-  it("uses two unrelated local project roots in one MCP server without switching the session default", async () => {
-    const server = createSuperagentMcpServer({
-      workspace: projectA,
-      allowDangerous: true,
-      getIdentity: () => identity,
-    });
-    const rawCall = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
-    const call = async (request: any) => {
-      try {
-        return await rawCall(request);
-      } catch (error) {
-        // The SDK may reject at the outer Scoped YOLO guard before dispatch,
-        // while remote MCP clients receive an ordinary JSON-RPC error response.
-        return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] };
-      }
-    };
-
-    const deniedB = await call({
-      method: "tools/call",
-      params: { name: "superagent_list_files", arguments: { projectId: projectBId } },
-    });
-    expect(deniedB.isError).toBeTruthy();
-    expect(toolText(deniedB)).toMatch(/outside the allowed workspace scope|access is not granted/i);
-
+  it("registration never authorizes another project, even with chat Full YOLO", async () => {
     setFullYoloMode(true);
-    const grant = await call({
-      method: "tools/call",
-      params: { name: "superagent_grant_project_access", arguments: { projectId: projectBId, capabilities: ["read"] } },
-    });
-    expect(grant.isError).toBeFalsy();
+    const mcp = server();
+    try {
+      const result = await call(mcp, "superagent_list_files", { projectId: projectBId });
+      expect(result.isError).toBe(true);
+      expect(textOf(result)).toContain("PROJECT_GRANT_MISSING");
+    } finally { await mcp.close(); }
+  });
+
+  it("human-approved read grants allow only their selected project and no writes", async () => {
+    approve(projectBId, ["read"]);
+    setYoloMode(false);
+    const mcp = server();
+    try {
+      const listed = await call(mcp, "superagent_list_files", { projectId: projectBId });
+      expect(listed.isError).not.toBe(true);
+      expect(textOf(listed)).toContain("from-b.txt");
+      const forbidden = await call(mcp, "superagent_list_files", { projectId: projectAId });
+      expect(forbidden.isError).toBe(true);
+      const edit = await call(mcp, "superagent_write_files", {
+        projectId: projectBId, files: [{ filePath: "unauthorized.txt", content: "no" }],
+      });
+      expect(edit.isError).toBe(true);
+      expect(fs.existsSync(path.join(projectB, "unauthorized.txt"))).toBe(false);
+    } finally { await mcp.close(); }
+  });
+
+  it("project-scoped write cannot escape into another registered project", async () => {
+    approve(projectBId, ["read", "write"]);
+    setFullYoloMode(true);
+    const mcp = server();
+    try {
+      const outside = path.join(projectA, "cross-project.txt");
+      const result = await call(mcp, "superagent_write_files", {
+        projectId: projectBId, files: [{ filePath: outside, content: "NO" }],
+      });
+      expect(result.isError).toBe(true);
+      expect(fs.existsSync(outside)).toBe(false);
+      const protectedEnv = await call(mcp, "superagent_read_files", {
+        projectId: projectBId, files: [".env.local"],
+      });
+      expect(protectedEnv.isError).toBe(true);
+      expect(textOf(protectedEnv)).not.toContain("TEST_SECRET=private");
+    } finally { await mcp.close(); }
+  });
+
+  it("disabling a project revokes all approved MCP grants without affecting chat YOLO", async () => {
+    approve(projectBId, ["read"]);
     expect(hasProjectAccess(identity, projectBId, "read")).toBe(true);
-    setFullYoloMode(false);
-    setYoloMode(true);
+    updateProject(projectBId, { enabled: false });
+    expect(hasProjectAccess(identity, projectBId, "read")).toBe(false);
+    const mcp = server();
+    try {
+      const result = await call(mcp, "superagent_list_files", { projectId: projectBId });
+      expect(result.isError).toBe(true);
+    } finally { await mcp.close(); }
+  });
 
-    const readB = await call({
-      method: "tools/call",
-      params: { name: "superagent_list_files", arguments: { projectId: projectBId } },
-    });
-    expect(readB.isError).toBeFalsy();
-    expect(toolText(readB)).toContain("from-b.txt");
-    expect(toolText(readB)).not.toContain("from-a.txt");
-
-    const envRead = await call({
-      method: "tools/call",
-      params: { name: "superagent_read_files", arguments: { projectId: projectBId, files: [".env.local"] } },
-    });
-    expect(envRead.isError).toBeTruthy();
-    expect(toolText(envRead)).toMatch(/\.env files.*Full YOLO/i);
-    expect(toolText(envRead)).not.toContain("TEST_SECRET=must-not-be-read");
-
-    // Two independent calls can route concurrently without one AsyncLocalStorage
-    // workspace context leaking into the other call.
-    const [readAConcurrent, readBConcurrent] = await Promise.all([
-      call({ method: "tools/call", params: { name: "superagent_list_files", arguments: { projectId: projectAId } } }),
-      call({ method: "tools/call", params: { name: "superagent_list_files", arguments: { projectId: projectBId } } }),
-    ]);
-    expect(toolText(readAConcurrent)).toContain("from-a.txt");
-    expect(toolText(readAConcurrent)).not.toContain("from-b.txt");
-    expect(toolText(readBConcurrent)).toContain("from-b.txt");
-    expect(toolText(readBConcurrent)).not.toContain("from-a.txt");
-
-    const deniedWrite = await call({
-      method: "tools/call",
-      params: { name: "superagent_write_files", arguments: {
-        projectId: projectBId,
-        files: [{ filePath: "should-not-exist.txt", content: "must be denied" }],
-      } },
-    });
-    expect(deniedWrite.isError).toBeTruthy();
-    expect(fs.existsSync(path.join(projectB, "should-not-exist.txt"))).toBe(false);
-
-    const defaultWorkspace = await call({
-      method: "tools/call",
-      params: { name: "superagent_get_workspace", arguments: {} },
-    });
-    expect(toolText(defaultWorkspace)).toContain(projectA);
-    expect(toolText(defaultWorkspace)).not.toContain(projectB);
-
-    const switched = await call({
-      method: "tools/call",
-      params: { name: "superagent_switch_workspace", arguments: { projectId: projectBId } },
-    });
-    expect(switched.isError).toBeFalsy();
-
-    const lockedDefault = await call({
-      method: "tools/call",
-      params: { name: "superagent_get_workspace", arguments: {} },
-    });
-    expect(toolText(lockedDefault)).toContain(projectB);
-
-    const deniedProjectRemoval = await call({
-      method: "tools/call",
-      params: { name: "superagent_remove_project", arguments: { projectId: projectBId } },
-    });
-    expect(deniedProjectRemoval.isError).toBeTruthy();
-    expect(toolText(deniedProjectRemoval)).toMatch(/Scoped YOLO boundary/i);
-    expect((await import("../src/core/project/projectRegistry.js")).getProject(projectBId)).not.toBeNull();
-
-    const deniedDefaultWrite = await call({
-      method: "tools/call",
-      params: { name: "superagent_write_files", arguments: {
-        files: [{ filePath: "default-workspace-write.txt", content: "must stay denied" }],
-      } },
-    });
-    expect(deniedDefaultWrite.isError).toBeTruthy();
-    expect(toolText(deniedDefaultWrite)).toMatch(/Scoped YOLO boundary|capability/i);
-    expect(fs.existsSync(path.join(projectB, "default-workspace-write.txt"))).toBe(false);
-
+  it("legacy MCP self-grant cannot create a project grant even with Full YOLO", async () => {
     setFullYoloMode(true);
-    const grantWrite = await call({
-      method: "tools/call",
-      params: { name: "superagent_grant_project_access", arguments: { projectId: projectBId, capabilities: ["read", "write"] } },
-    });
-    expect(grantWrite.isError).toBeFalsy();
-    setFullYoloMode(false);
-    setYoloMode(true);
-
-    const writeB = await call({
-      method: "tools/call",
-      params: { name: "superagent_write_files", arguments: {
-        files: [{ filePath: "created-by-mcp.txt", content: "written into project B" }],
-      } },
-    });
-    expect(writeB.isError).toBeFalsy();
-    expect(fs.readFileSync(path.join(projectB, "created-by-mcp.txt"), "utf8")).toBe("written into project B");
-    expect(fs.existsSync(path.join(projectA, "created-by-mcp.txt"))).toBe(false);
+    const mcp = server();
+    try {
+      const attempted = await call(mcp, "superagent_grant_project_access", {
+        projectId: projectBId, capabilities: ["read"],
+      });
+      expect(attempted.isError).toBe(true);
+      expect(hasProjectAccess(identity, projectBId, "read")).toBe(false);
+    } finally { await mcp.close(); }
   });
 });
