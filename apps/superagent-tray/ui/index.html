@@ -56,6 +56,7 @@
   <script src="./lan-sha256.js" defer></script>
   <script src="./lan-file-transfer.js" defer></script>
   <script src="./lan-file-relay.js" defer></script>
+  <script src="./lan-transfer-diagnostics.js" defer></script>
 </head>
 <body style="background-color: #07090e; color: #f8fafc;">
   <!-- Native Windows decorations are disabled; these controls use strict
@@ -1833,6 +1834,9 @@
             </div>
             <progress id="lan-file-progress" max="100" value="0" class="lan-file-progress"></progress>
             <p id="lan-file-metrics" class="lan-file-info" aria-live="polite">File transfer metrics will appear here.</p>
+            <details class="lan-transfer-history"><summary>Transfer diagnostics</summary>
+              <p id="lan-file-diagnostics" class="lan-file-info" aria-live="polite">Private latency and throughput statistics appear after a transfer starts.</p>
+            </details>
             <p class="lan-file-info">Switch Direct LAN / Device Tunnel and reconnect the intended device before choosing Retry on selected route. This requires a new owner approval; transfer outcomes on the old route may be unknown.</p>
             <p id="lan-file-info" aria-live="polite" class="lan-file-info">First pair and open a support session. On a Windows target, choose a source with <code>share &lt;path&gt;</code> in its LAN Client console. On Android, tap Choose document to share. Every file requires separate target-side approval.</p>
             <div class="lan-transfer-history" aria-label="Recent file transfer receipts">
