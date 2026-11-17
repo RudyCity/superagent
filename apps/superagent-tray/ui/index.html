@@ -2923,7 +2923,7 @@
             <div>
               <div class="panel-eyebrow">SESSION CONTROL CENTER</div>
               <h2 id="desktop-live-manager-title">Desktop Live</h2>
-              <p>All verified application windows, Chrome CDP targets and Chrome Delegate tabs. Stop revokes access, not the application. No screen is streamed via tunnel.</p>
+              <p>Verified applications, Chrome CDP, Delegate and LAN devices. View Only and Remote Control require separate approval. No screen is streamed through the Tray tunnel.</p>
             </div>
             <button class="button secondary" type="button" id="desktop-live-manager-refresh">Refresh handles</button>
           </div>
@@ -2937,13 +2937,13 @@
             </div>
           </div>
 
-          <!-- Real-Time Desktop Live Stream Viewport (Local & LAN Stream) -->
+          <!-- Desktop Live local preview and independent controller approval -->
           <div id="desktop-live-stream-panel" class="desktop-live-stream-panel" hidden>
             <div class="desktop-live-stream-header">
               <div class="desktop-live-stream-target-info">
                 <span class="desktop-live-stream-pill live" id="desktop-live-stream-badge">
                   <span class="desktop-live-pulse-dot" aria-hidden="true"></span>
-                  LIVE STREAM
+                  VIEW ONLY
                 </span>
                 <strong id="desktop-live-stream-title" class="desktop-live-stream-title">Window Name</strong>
                 <span id="desktop-live-stream-meta" class="desktop-live-stream-meta">PID: 0000</span>
@@ -2957,10 +2957,31 @@
                   <option value="balanced">Balanced · 25 FPS (1280px · Q72)</option>
                   <option value="save">Save data · 6 FPS (768px · Q55)</option>
                 </select>
-                <button type="button" id="desktop-live-stream-takeover" class="button secondary small desktop-live-takeover-btn" title="Ambil alih kendali jendela ini secara fisik dari agen dan bawa ke depan">Take Over</button>
-                <button type="button" id="desktop-live-stream-toggle-control" class="button ghost small desktop-live-control-toggle-btn" title="Toggle kontrol klik dan ketik teks pada layar">Control: OFF</button>
                 <button type="button" id="desktop-live-stream-stop" class="button secondary small">Stop stream</button>
               </div>
+            </div>
+            <div class="desktop-live-access-grid" aria-label="Separate Desktop Live permissions">
+              <section class="desktop-live-access-panel" aria-labelledby="desktop-live-view-heading">
+                <div class="desktop-live-access-heading">
+                  <span class="desktop-live-access-index" aria-hidden="true">01</span>
+                  <h3 id="desktop-live-view-heading">Viewer · View Only</h3>
+                </div>
+                <p id="desktop-live-view-permission" class="desktop-live-access-state" aria-live="polite">Not started</p>
+                <p>Watching an approved window never authorizes mouse, keyboard, or clipboard access.</p>
+              </section>
+              <section class="desktop-live-access-panel desktop-live-access-controller" aria-labelledby="desktop-live-control-heading">
+                <div class="desktop-live-access-heading">
+                  <span class="desktop-live-access-index" aria-hidden="true">02</span>
+                  <h3 id="desktop-live-control-heading">Controller · Mouse &amp; Keyboard</h3>
+                </div>
+                <p id="desktop-live-controller-permission" class="desktop-live-access-state" aria-live="polite">Separate approval required</p>
+                <p>Controller approval is independent. Physical Take Over revokes an agent session; it does not grant remote input.</p>
+                <div class="desktop-live-access-actions">
+                  <button type="button" id="desktop-live-stream-request-control" class="button secondary small" disabled>Request Control</button>
+                  <button type="button" id="desktop-live-stream-toggle-control" class="button ghost small desktop-live-control-toggle-btn" title="Show or hide device input UI; not a controller grant" disabled>Input UI: OFF</button>
+                  <button type="button" id="desktop-live-stream-takeover" class="button secondary small desktop-live-takeover-btn" disabled>Take Over</button>
+                </div>
+              </section>
             </div>
             <div id="desktop-live-stream-viewport" class="desktop-live-stream-viewport">
               <img id="desktop-live-stream-img" class="desktop-live-stream-img" alt="Live preview of the selected native application window" referrerpolicy="no-referrer" hidden />
@@ -2991,7 +3012,7 @@
                   <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
                   <line x1="12" y1="20" x2="12.01" y2="20"></line>
                 </svg>
-                <span><strong>LAN Device Stream:</strong> Tonton di HP / perangkat Wi-Fi yang sama: <code id="desktop-live-lan-url">http://...</code></span>
+                <span><strong>Legacy LAN HTTP viewer disabled:</strong> Secure private transport required: <code id="desktop-live-lan-url">http://...</code></span>
               </div>
               <button type="button" id="desktop-live-lan-copy" class="button ghost small" title="Salin link LAN stream">Copy URL</button>
             </div>
