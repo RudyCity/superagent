@@ -202,6 +202,45 @@ describe("native Shutdown Manager UI",()=>{
     expect(actions[0].exitAfter).toBeUndefined();
     expect(m.node("shutdown-progress").hidden).toBe(false);
   });
+  it("shows pinned executable path and lease-backed Guardian even when Core is unavailable",async()=>{
+    const inventory=fixture();
+    inventory.services=[
+      {id:"guardian-os:7888:25204",label:"Guardian watchdog (OS lease)",
+        kind:"managed",state:"unverified",port:7888,pid:25204,
+        ownerVerified:false,selectable:false,forceSelectable:false,
+        manualKillSelectable:true,processName:"bun.exe",
+        processPath:"C:\\SuperAgent\\bun.exe",activeSessions:null,
+        blocker:"Core unavailable",detail:"Local Guardian lease + live OS process"},
+    ];
+    inventory.warning="Core lifecycle inventory unavailable";
+    const m=mount(inventory);await m.open();
+    expect(m.node("shutdown-services").children).toHaveLength(1);
+    const row=m.node("shutdown-services").children[0];
+    expect(row.children[1].children[2].textContent).toContain("C:\\SuperAgent\\bun.exe");
+    expect(row.children[1].children[3].textContent).toContain("Local Guardian lease");
+    expect(row.children[3].children[0].disabled).toBe(false);
+    expect(m.node("shutdown-manual-select-all").disabled).toBe(false);
+  });
+  it("refreshes the owner list once after manual shutdown and reports a respawned PID",async()=>{
+    const inventory=fixture();
+    const m=mount(inventory);await m.open();
+    const cb=m.listeners.get("shutdown-manager-progress");
+    expect(cb).toBeTypeOf("function");
+    cb!({payload:{runId:"manual-1",stage:"partial",exitAfter:false,
+      error:"SHUTDOWN_MANUAL_OWNER_RESPAWNED",steps:[{
+        id:"guardian-os:7888:212",label:"Guardian watchdog · PID 212",
+        status:"restarted",message:"PID 212 exited; new PID 235 detected"}]}});
+    expect(m.node("shutdown-progress-status").textContent).toContain("replacement PID");
+    await new Promise(resolve=>setTimeout(resolve,10));
+    expect(m.calls.filter(c=>c.action==="preview")).toHaveLength(2);
+    expect(m.node("shutdown-progress-steps").children[0].dataset.status).toBe("restarted");
+    cb!({payload:{runId:"manual-1",stage:"partial",exitAfter:false,
+      error:"SHUTDOWN_MANUAL_OWNER_RESPAWNED",steps:[{
+        id:"guardian-os:7888:212",label:"Guardian watchdog · PID 212",
+        status:"restarted",message:"PID 212 exited; new PID 235 detected"}]}});
+    await new Promise(resolve=>setTimeout(resolve,10));
+    expect(m.calls.filter(c=>c.action==="preview")).toHaveLength(2);
+  });
   it("never permits manual kill without a selected, OS-pinned eligible PID",async()=>{
     const inventory=fixture();
     const m=mount(inventory);await m.open();
