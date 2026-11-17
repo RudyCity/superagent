@@ -7,6 +7,7 @@ on:
       - "src/core/tools/mcpTools.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
+      - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
@@ -38,6 +39,7 @@ on:
       - "src/core/tools/mcpTools.ts"
       - "src/app.tsx" # CLI StatusBar uses the same Core build entrypoint
       - "scripts/mcp-tool-policy-live-verify.ts"
+      - "scripts/report-mcp-policy-readiness.ts"
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
@@ -96,6 +98,7 @@ jobs:
             tests/mcpOutputRecovery.test.ts \
             tests/mcpToolGateway.test.ts \
             tests/mcpFilePolicyMatrix.test.ts \
+            tests/mcpPolicyReadinessReport.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
@@ -113,6 +116,9 @@ jobs:
             tests/mcpCrossIdeGateway.test.ts \
             tests/safeManagedChromeObservation.test.ts \
             tests/desktop-ui-integration/registered-file-tool-gate.test.ts
+
+      - name: Non-mutating source policy and release-readiness report
+        run: bun scripts/report-mcp-policy-readiness.ts
 
   policy-cross-platform:
     name: MCP host policy (${{ matrix.os }})
@@ -139,6 +145,7 @@ jobs:
           tests/mcpLiveVerifierDiagnostics.test.ts
           tests/desktop-ui-activation/live-activation-gate.test.ts
           tests/mcpFilePolicyMatrix.test.ts
+          tests/mcpPolicyReadinessReport.test.ts
           tests/desktop-ui-integration/registered-file-tool-gate.test.ts
           tests/mcpCrossIdeGateway.test.ts
           tests/safeManagedChromeObservation.test.ts
