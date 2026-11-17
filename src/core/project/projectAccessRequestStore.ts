@@ -29,6 +29,10 @@ import {
 import { getProject, listProjects, type RegisteredProject } from "./projectRegistry.js";
 import { deriveIdentityHandle } from "../mcp/mcpIdentityPresence.js";
 
+export const MCP_CONNECTION_PROJECT_ID = "mcp-connection";
+export const MCP_CONNECTION_PROJECT_PATH = "mcp://connection";
+const MCP_CONNECTION_PROJECT_NAME = "MCP Connection Controls";
+
 export const PROJECT_ACCESS_REQUEST_SCHEMA_VERSION = 1;
 export const MAX_STORED_REQUESTS = 200;
 
@@ -177,7 +181,23 @@ export function createProjectAccessRequest(
   }
 
   const projects = listProjects(options?.projectsPath);
-  let resolvedProject: RegisteredProject | null = input.projectId ? getProject(input.projectId, options?.projectsPath) : null;
+  // Virtual security resource for non-project MCP actions (desktop, LAN, service control).
+  // This has no filesystem root, so it can never authorize project file access.
+  if (input.projectId === MCP_CONNECTION_PROJECT_ID && input.projectPath) {
+    throw new Error("MCP connection controls cannot be requested by filesystem path.");
+  }
+  let resolvedProject: RegisteredProject | null = input.projectId === MCP_CONNECTION_PROJECT_ID
+    ? {
+        id: MCP_CONNECTION_PROJECT_ID,
+        name: MCP_CONNECTION_PROJECT_NAME,
+        type: "chain",
+        target: MCP_CONNECTION_PROJECT_PATH,
+        tags: [],
+        enabled: true,
+        createdAt: 0,
+        updatedAt: 0,
+      }
+    : input.projectId ? getProject(input.projectId, options?.projectsPath) : null;
 
   if (!resolvedProject && input.projectPath) {
     const canonicalReq = canonicalizePath(input.projectPath);
@@ -330,10 +350,16 @@ export function approveProjectAccessRequest(
   const capabilitiesToGrant = options?.approvedCapabilities ?? req.capabilities;
 
   // A pending request is not authority over a later changed/disabled project.
-  const currentProject = getProject(req.projectId, options?.projectsPath);
-  if (!currentProject || !currentProject.enabled ||
-      (currentProject.root || currentProject.target || "") !== req.projectPath) {
-    throw new Error("Requested project no longer matches an enabled registered project.");
+  if (req.projectId === MCP_CONNECTION_PROJECT_ID) {
+    if (req.projectPath !== MCP_CONNECTION_PROJECT_PATH) {
+      throw new Error("Invalid MCP connection approval target.");
+    }
+  } else {
+    const currentProject = getProject(req.projectId, options?.projectsPath);
+    if (!currentProject || !currentProject.enabled ||
+        (currentProject.root || currentProject.target || "") !== req.projectPath) {
+      throw new Error("Requested project no longer matches an enabled registered project.");
+    }
   }
 
   const identity: ProjectAccessIdentity = {
@@ -418,9 +444,11 @@ export function grantProjectAccessToIdentity(
   capabilities: ProjectAccessCapability[],
   options?: { decidedBy?: string; requestStorePath?: string; policyPath?: string },
 ): ProjectAccessRequest {
-  const project = getProject(projectId);
+  const project = projectId === MCP_CONNECTION_PROJECT_ID
+    ? { name: MCP_CONNECTION_PROJECT_NAME, root: undefined, target: MCP_CONNECTION_PROJECT_PATH, enabled: true }
+    : getProject(projectId);
   if (!project || !project.enabled) {
-    throw new Error("Direct grant requires an enabled registered project.");
+    throw new Error("Direct grant requires an enabled registered project or MCP connection controls.");
   }
   const grant = grantProjectAccess(identity, projectId, capabilities, options?.policyPath);
   const identityHandle = deriveIdentityHandle(identity);
