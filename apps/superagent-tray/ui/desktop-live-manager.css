@@ -649,7 +649,10 @@
 
 .desktop-live-stream-viewport.interactive .desktop-live-stream-img {
   cursor: crosshair;
+  touch-action: none; /* Pointer drags must not scroll the Tray instead of the phone. */
+  user-select: none;
 }
+
 
 .desktop-live-stream-input-bar {
   display: flex;
