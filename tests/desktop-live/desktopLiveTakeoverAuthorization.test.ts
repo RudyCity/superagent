@@ -83,7 +83,8 @@ describe("Desktop Live exact-owner takeover and stop routing", () => {
     const result = await stopDesktopLiveHandle({id:"lan:device_A1"},"human");
     expect(result.stopped).toBe(true);
     expect(result.scope).toBe("lan:device_A1");
-    expect(mock.closeLanSession).toHaveBeenCalledExactlyOnceWith("device_A1");
+    expect(mock.closeLanSession).toHaveBeenCalledTimes(1);
+    expect(mock.closeLanSession).toHaveBeenCalledWith("device_A1");
     expect(mock.operatorStop).not.toHaveBeenCalled();
     expect(mock.revokeOperatorWindowSessions).not.toHaveBeenCalled();
   });
@@ -101,8 +102,8 @@ describe("Desktop Live exact-owner takeover and stop routing", () => {
       id:"delegate:profile_A1B2:42", expectedRevision:7,
     },"human");
     expect(result.stopped).toBe(true);
-    expect(mock.revokeDelegateTargetByHuman).toHaveBeenCalledExactlyOnceWith(
-      "profile_A1B2",42,7);
+    expect(mock.revokeDelegateTargetByHuman).toHaveBeenCalledTimes(1);
+    expect(mock.revokeDelegateTargetByHuman).toHaveBeenCalledWith("profile_A1B2",42,7);
     expect(mock.closeLanSession).not.toHaveBeenCalled();
   });
 
