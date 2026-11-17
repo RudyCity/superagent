@@ -2002,6 +2002,93 @@ fn limited_body(action: &str, payload: Option<Value>) -> Result<Value, String> {
     Ok(Value::Object(filtered))
 }
 
+// Fixed-shape native bridge for the MCP Security Approval Manager.
+// Only the installed, focused Tray window can issue grants or revoke access;
+// the Core bearer token stays in Rust, never in WebView JavaScript.
+#[tauri::command]
+async fn mcp_project_access_action(
+    window: tauri::WebviewWindow,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    if window.label() != "main" {
+        return Err("MCP project access is available only in the native main Tray window".into());
+    }
+    let mutating = matches!(action.as_str(), "approve" | "deny" | "revoke" | "direct_grant");
+    if mutating
+        && (!window.is_visible().unwrap_or(false)
+            || window.is_minimized().unwrap_or(true)
+            || !window.is_focused().unwrap_or(false))
+    {
+        return Err("Bring the native SuperAgent Tray to the foreground to approve project access".into());
+    }
+
+    let data = payload.unwrap_or_else(|| json!({}));
+    if !data.is_object() {
+        return Err("Invalid MCP project access payload".into());
+    }
+    let text_field = |name: &str, max: usize| -> Result<String, String> {
+        let value = data.get(name).and_then(Value::as_str)
+            .ok_or_else(|| format!("Missing {}", name))?;
+        if value.is_empty() || value.len() > max || value.trim() != value
+            || value.chars().any(|c| c.is_control()) {
+            return Err(format!("Invalid {}", name));
+        }
+        Ok(value.to_string())
+    };
+    let checked_capabilities = || -> Result<Vec<String>, String> {
+        let caps = data.get("capabilities").and_then(Value::as_array)
+            .ok_or_else(|| "Capabilities must be an array".to_string())?;
+        if caps.is_empty() || caps.len() > 7 {
+            return Err("Invalid capabilities".into());
+        }
+        let mut values = Vec::new();
+        for cap in caps {
+            let value = cap.as_str().ok_or_else(|| "Invalid capability".to_string())?;
+            if !["read", "write", "execute", "git", "worktree", "planning", "chain"]
+                .contains(&value) || values.iter().any(|existing| existing == value) {
+                return Err("Invalid or duplicate capability".into());
+            }
+            values.push(value.to_string());
+        }
+        Ok(values)
+    };
+    match action.as_str() {
+        "requests" => core_request(Method::GET, "/api/desktop/access/requests", None).await,
+        "identities" => core_request(Method::GET, "/api/desktop/access/identities", None).await,
+        "projects" => core_request(Method::GET, "/api/projects/browser?filter=all", None).await,
+        "approve" => {
+            let request_id = text_field("requestId", 96)?;
+            let body = if data.get("capabilities").is_some() {
+                json!({"requestId": request_id, "capabilities": checked_capabilities()?})
+            } else {
+                json!({"requestId": request_id})
+            };
+            core_request(Method::POST, "/api/desktop/access/requests/approve", Some(body)).await
+        }
+        "deny" => {
+            let request_id = text_field("requestId", 96)?;
+            core_request(Method::POST, "/api/desktop/access/requests/deny",
+                Some(json!({"requestId": request_id, "reason": "Denied by native operator"}))).await
+        }
+        "revoke" => {
+            let request_id = text_field("requestId", 96)?;
+            core_request(Method::POST, "/api/desktop/access/requests/revoke",
+                Some(json!({"requestId": request_id}))).await
+        }
+        "direct_grant" => {
+            let identity_handle = text_field("identityHandle", 96)?;
+            let project_id = text_field("projectId", 63)?;
+            core_request(Method::POST, "/api/desktop/access/direct-grant", Some(json!({
+                "identityHandle": identity_handle,
+                "projectId": project_id,
+                "capabilities": checked_capabilities()?
+            }))).await
+        }
+        _ => Err("Unknown or unauthorized MCP project access action".into()),
+    }
+}
+
 #[tauri::command]
 async fn daemon_action(action: String, payload: Option<Value>) -> Result<Value, String> {
     match action.as_str() {
@@ -2493,6 +2580,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            mcp_project_access_action,
             daemon_action,
             detect_runtime,
             select_runtime_core,
