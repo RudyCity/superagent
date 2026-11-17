@@ -166,7 +166,7 @@ function runtimeNativeShutdownProgress(event) {
   const progress = event?.payload;
   for (const step of Array.isArray(progress?.steps) ? progress.steps : []) {
     const match = typeof step?.id === "string" && step.status === "stopped"
-      ? /^mcp:(\\d{4,5}):(\\d+)$/.exec(step.id) : null;
+      ? /^mcp:(\d{4,5}):(\d+)$/.exec(step.id) : null;
     if (!match) continue;
     const owner = runtimeLastResult?.remoteServices?.find(service =>
       service.kind === "mcp" && service.port === Number(match[1]) &&
