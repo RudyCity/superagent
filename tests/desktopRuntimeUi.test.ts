@@ -10,6 +10,9 @@ const js = fs.readFileSync(
 function mountRuntime(snapshot: unknown, extra: {
   gateway?: Record<string, unknown>;
   named?: Record<string, unknown>;
+  mcpRequests?: any[];
+  mcpIdentities?: any[];
+  failMcp?: boolean;
 } = {}) {
   const elements = new Map<string, any>();
   const listeners = new Map<string, (e: unknown) => unknown>();
@@ -46,11 +49,18 @@ function mountRuntime(snapshot: unknown, extra: {
         if (action === "detect_runtime") return snapshot;
         if (action === "desktop_live_action") return extra.gateway ?? { active: false };
         if (action === "get_named_tunnel_health") return extra.named ?? null;
+        if (action === "mcp_project_access_action") {
+          if (extra.failMcp) throw Error("MCP Core unavailable");
+          if ((args as any)?.action === "requests") return {success:true,requests:extra.mcpRequests ?? []};
+          if ((args as any)?.action === "identities") return {success:true,identities:extra.mcpIdentities ?? []};
+        }
         return { success: true };
       } } },
       addEventListener: () => {},
       dispatchEvent: (e: { type: string }) => events.push(e.type),
       confirm,
+      navigateToPage: vi.fn(),
+      __superagentAccessManagerOpenTab: vi.fn(),
       navigator: { clipboard: { writeText: copy } },
     },
     setInterval: vi.fn(),
@@ -746,42 +756,83 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     expect(ui.requested.filter(x=>x.action==="create_connection")).toHaveLength(0);
   });
 
-  it("renders YOLO execution policy control on MCP cards and supports switching modes", async () => {
+  it("removes Chat Agent YOLO toggles from MCP cards but keeps a read-only Security Approval summary", async () => {
     const ui = mountRuntime({
       scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 0,
-      selectedCorePort: 7888,
-      cores: [],
-      processes: [],
-      independentHosts: [],
+      selectedCorePort: 7888, cores: [], processes: [], independentHosts: [],
       remoteServices: [{
         kind: "mcp", source: "registry", port: 9227, pid: 8260,
-        state: "observed", canStop: true, canRestart: true, canRegenerateToken: true,
-        transport: "mcp-http", detail: "MCP HTTP listener responds", evidence: "owner PID verified"
+        state: "observed", canStop: true, canRestart: true,
+        transport: "mcp-http", detail: "MCP listener", evidence: "owner PID verified",
       }],
+    }, {
+      mcpRequests: [
+        { projectId: "mcp-connection", status: "pending" },
+        { projectId: "shop", status: "pending" },
+        { projectId: "shop", status: "approved" },
+      ],
+      mcpIdentities: [{ subject: "Gemini", identityHandle: "idh_abcdef1234567890", scopes: [] }],
     });
     await new Promise(resolve => setImmediate(resolve));
-    const remoteHtml = ui.byId("runtime-remote").innerHTML;
-    expect(remoteHtml).toContain("YOLO Policy");
-    expect(remoteHtml).toContain("Tanpa YOLO");
-    expect(remoteHtml).toContain("YOLO Standar");
-    expect(remoteHtml).toContain("YOLO Full");
+    const owner = ui.byId("runtime-remote").innerHTML;
+    expect(owner).toContain("OAuth + Security Approval");
+    expect(owner).not.toContain("runtime-yolo-control");
+    expect(owner).not.toContain("data-runtime-yolo");
+    const overview = ui.byId("runtime-mcp-security").innerHTML;
+    expect(overview).toContain('data-runtime-security-tab="connections"');
+    expect(overview).toContain('data-runtime-security-tab="mcp"');
+    vm.runInContext('runtimeSelectTab("mcp")', ui.context);
+    await new Promise(resolve => setImmediate(resolve));
+    expect(ui.byId("runtime-mcp-security").hidden).toBe(false);
+    expect(ui.byId("runtime-mcp-connection-pending").textContent).toBe("1");
+    expect(ui.byId("runtime-mcp-project-pending").textContent).toBe("1");
+    expect(ui.byId("runtime-mcp-approved-summary").textContent).toContain("riwayat");
+    expect(ui.byId("runtime-mcp-identity-summary").textContent).toContain("bukan jumlah online");
+    expect(ui.byId("runtime-mcp-access-status").dataset.state).toBe("ready");
+    expect(ui.requested.some(r => r.action === "set_yolo_mode")).toBe(false);
+  });
 
-    // Click on YOLO Standar chip
-    const clickHandler = ui.listeners.get("runtime-remote:click");
-    expect(clickHandler).toBeTypeOf("function");
-    await clickHandler?.({
-      target: {
-        closest: (selector: string) => {
-          if (selector === "button.yolo-chip") {
-            return { dataset: { runtimeYolo: "scoped" } };
-          }
-          return null;
-        }
-      }
+  it("opens dedicated native Security Approval tabs without changing YOLO or granting MCP permissions", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 0, activeProcessCount: 0,
+      cores: [], processes: [], remoteServices: [], independentHosts: [],
     });
+    await new Promise(resolve => setImmediate(resolve));
+    const clickHandler = ui.listeners.get("runtime-remote-panel:click");
+    expect(clickHandler).toBeTypeOf("function");
+    await clickHandler?.({ target: { closest: (selector:string) => selector === "button[data-runtime-security-tab]"
+      ? {dataset:{runtimeSecurityTab:"connections"},disabled:false} : null } });
+    expect((ui.context.window as any).navigateToPage).toHaveBeenCalledWith("security");
+    expect((ui.context.window as any).__superagentAccessManagerOpenTab).toHaveBeenCalledWith("connections");
+    expect(ui.requested.some(x => x.action === "set_yolo_mode" ||
+      x.action === "mcp_project_access_action")).toBe(false);
+  });
 
-    const setYoloCalls = ui.requested.filter(x => x.action === "set_yolo_mode");
-    expect(setYoloCalls).toHaveLength(1);
-    expect(setYoloCalls[0].args).toEqual({ mode: "scoped" });
+  it("displays MCP permission read failure explicitly instead of reporting zero grants", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 0, activeProcessCount: 0,
+      cores: [], processes: [], remoteServices: [], independentHosts: [],
+    }, { failMcp: true });
+    await new Promise(resolve => setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")', ui.context);
+    await new Promise(resolve => setImmediate(resolve));
+    expect(ui.byId("runtime-mcp-connection-pending").textContent).toBe("—");
+    expect(ui.byId("runtime-mcp-project-pending").textContent).toBe("—");
+    expect(ui.byId("runtime-mcp-access-status").dataset.state).toBe("error");
+    expect(ui.byId("runtime-mcp-access-status").textContent).toContain("bukan berarti nol");
+  });
+
+  it("keeps chat-only YOLO controls on the Core card, not MCP owners", async () => {
+    const ui = mountRuntime({
+      scannedAt: Date.now(), healthyCoreCount: 1, activeProcessCount: 0,
+      cores: [{port:7888,pid:199,state:"online",selected:true,evidence:"authenticated",
+        services:{mcp:{active:true}},version:"1.14.105"}],
+      processes: [], remoteServices: [{kind:"mcp",pid:299,port:9227,state:"observed"}],
+      independentHosts: [],
+    });
+    await new Promise(resolve => setImmediate(resolve));
+    expect(ui.byId("runtime-servers").innerHTML).toContain("Chat Agent YOLO Policy");
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("YOLO Full");
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("data-runtime-yolo");
   });
 });
