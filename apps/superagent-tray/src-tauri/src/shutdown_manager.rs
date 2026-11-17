@@ -196,15 +196,67 @@ fn manual_process_allowed(kind:&str,pid:u32,name:&str)->bool {
         "muse-watch"|"daemon-direct"|"external")
 }
 
+/// Local Guardian fallback works while the Core HTTP lifecycle inventory is
+/// unavailable. A bounded, non-symlinked lease must match the live OS process
+/// and its birth timestamp; an arbitrary node/bun PID is never inferred.
+fn guardian_lease_matches(value:&Value,port:u16,pid:u32,birth_seconds:u64,now_ms:u64)->bool {
+    let born_ms=birth_seconds.saturating_mul(1000);
+    let registered=value["startedAt"].as_u64().unwrap_or(0);
+    value["version"]==1 && value["port"].as_u64()==Some(u64::from(port)) &&
+        value["pid"].as_u64()==Some(u64::from(pid)) &&
+        registered>0 && registered>=born_ms &&
+        registered<=born_ms.saturating_add(5_000) &&
+        registered<=now_ms.saturating_add(5_000)
+}
+fn guardian_os_candidates(dir:&std::path::Path,system:&System)->Vec<Item> {
+    let Ok(entries)=fs::read_dir(dir) else{return Vec::new()};
+    let now_ms=timestamp();
+    let mut found=Vec::new();
+    for entry in entries.take(128).flatten() {
+        let file_name=entry.file_name();
+        let Some(raw)=file_name.to_str() else{continue};
+        let Some(port)=raw.strip_prefix("core-guardian-")
+            .and_then(|s|s.strip_suffix(".json"))
+            .and_then(|s|s.parse::<u16>().ok())
+            .filter(|port|*port>=1024) else {continue};
+        let path=entry.path();
+        let Ok(metadata)=fs::symlink_metadata(&path) else{continue};
+        if !metadata.file_type().is_file()||metadata.len()==0||
+            metadata.len()>1024 {continue}
+        let Some(lease)=fs::read(&path).ok()
+            .and_then(|bytes|serde_json::from_slice::<Value>(&bytes).ok())
+        else {continue};
+        let Some(pid)=pid_of(&lease["pid"]) else{continue};
+        let Some(process)=system.process(Pid::from_u32(pid)) else{continue};
+        if !guardian_lease_matches(&lease,port,pid,process.start_time(),now_ms) ||
+            !manual_process_allowed("managed",pid,process.name()) {continue}
+        found.push(Item::new(
+            format!("guardian-os:{port}:{pid}"),"Guardian watchdog (OS lease)",
+            "managed","unverified",
+            "Local Guardian lease and live OS process match; Core inventory is not required for a manual kill",
+            false,false,
+            Some("Manual Kill requires separate focused native approval".into()),
+            Some(port),Some(pid)));
+        if found.len()>=16{break}
+    }
+    found
+}
+
 async fn inspect() -> Result<Preview, String> {
     let dir = config_dir()?;
-    let runtime = serde_json::to_value(runtime_detection::detect_runtime(&dir).await?)
-        .map_err(|_| "SHUTDOWN_RUNTIME_SNAPSHOT_UNAVAILABLE")?;
+    // Core API failure must not remove the manual, OS-pinned fallback.
+    // Missing runtime fields are shown as unavailable, never as stopped.
+    let runtime=match runtime_detection::detect_runtime(&dir).await {
+        Ok(value)=>serde_json::to_value(value).unwrap_or_else(|_|json!({})),
+        Err(_)=>json!({}),
+    };
     let remote = remote_service_detection::scan(&dir).await;
     let mut items = Vec::new();
     let mut force_system = System::new();
     force_system.refresh_processes();
-    let mut warning = None;
+    let mut warning = if runtime.get("cores").and_then(Value::as_array).is_none() {
+        Some("Core runtime discovery unavailable; showing OS-observed owners only.".into())
+    } else {None};
     let inventory = match lifecycle_console_request(json!({"action":"inventory"})).await {
         Ok(v) => v,
         Err(_) => {
@@ -335,7 +387,24 @@ async fn inspect() -> Result<Preview, String> {
             false,false,Some("Restore Core inventory or review owners individually".into()),None,None));
     }
 
-    let cores=runtime["cores"].as_array().ok_or("SHUTDOWN_CORE_INVENTORY_MISSING")?;
+    // Local lease fallback: include the Guardian even if the authenticated
+    // lifecycle API is unreachable. If it is already listed, do not duplicate.
+    for guardian in guardian_os_candidates(&dir,&force_system) {
+        if items.iter().any(|item:&Item|item.id=="managed:guardian"&&
+            item.pid==guardian.pid) {continue}
+        if let Some(unknown)=items.iter_mut().find(|item|item.id=="managed:guardian"&&
+            item.pid.is_none()) {
+            unknown.pid=guardian.pid;
+            unknown.port=guardian.port;
+            unknown.state="unverified".into();
+            unknown.detail=guardian.detail;
+            unknown.blocker=guardian.blocker;
+        } else {
+            items.push(guardian);
+        }
+    }
+    let empty_cores=Vec::new();
+    let cores=runtime["cores"].as_array().unwrap_or(&empty_cores);
     let supervisor_attested=states.and_then(|s|s.iter().find(|row|row["service"]=="core"))
         .is_some_and(|s|s["ownershipVerified"]==true);
     for core in cores {
