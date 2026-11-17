@@ -1239,10 +1239,11 @@ async fn recordings_action(
     if action=="delete" {
         use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
         let dialog_app=app.clone();
-        let dialog_window=window.clone();
         let approved=tauri::async_runtime::spawn_blocking(move || {
+            // MessageDialogBuilder does not expose set_parent on Linux/macOS.
+            // The IPC caller was already checked as the visible main Tray.
             dialog_app.dialog().message("Permanently delete this recording, video and logs?")
-                .title("Delete recording").set_parent(&dialog_window)
+                .title("Delete recording")
                 .buttons(MessageDialogButtons::OkCancel).blocking_show()
         }).await.map_err(|_| "Native deletion approval failed")?;
         if !approved { return Err("Recording deletion cancelled".into()); }
