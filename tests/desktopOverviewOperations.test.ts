@@ -40,8 +40,11 @@ function mount(calls: Record<string,any> = {}) {
           {service:"vision",ready:false,ownerVerified:false,state:"inactive",reason:"Not requested"},
         ],
         services:[{service:"mcp",ownerPid:100,ownershipVerified:true,
-          details:{activeSessions:2,inFlightRequests:0,backendHealthy:true,
-            backendGenerations:1,sessionTelemetry:{activePrincipals:1,rejectedTotal:0},
+          details:{activeSessions:2,inFlightRequests:4,activeSseStreams:3,
+            nonStreamInFlightRequests:1,inFlightToolCalls:0,backendHealthy:true,
+            backendGenerationDetails:[{current:true,healthAgeMs:750}],
+            backendGenerations:1,sessionTelemetry:{activePrincipals:1,rejectedTotal:0,
+              inFlightSessions:1,oldestIdleMs:12000},
             memoryTelemetry:{rssBytes:10485760,heapUsedBytes:5242880,trend:{suspicious:false}}}}],
         timeline:[{at:Date.now(),service:"mcp",action:"status",outcome:"succeeded"}],
       };
@@ -101,6 +104,12 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(h.byId("op-essential").textContent).toBe("Essential stack ready");
     expect(h.byId("op-service-list").children).toHaveLength(4);
     expect(h.byId("op-mcp-sessions").textContent).toBe("2");
+    expect(h.byId("op-mcp-inflight").textContent).toBe("4");
+    expect(h.byId("op-mcp-sse").textContent).toBe("3");
+    expect(h.byId("op-mcp-nonstream").textContent).toBe("1");
+    expect(h.byId("op-mcp-tools").textContent).toBe("0");
+    expect(h.byId("op-mcp-backend").textContent).toBe("Healthy");
+    expect(h.byId("op-mcp-note").textContent).toContain("long-lived SSE");
     expect(h.byId("op-mcp-rss").textContent).toBe("10.0 MiB");
     expect(h.byId("op-connected-agent-list").children).toHaveLength(2);
     expect(h.byId("op-connected-agent-summary").textContent).toContain("2 sessions");
@@ -108,6 +117,19 @@ describe("Tray Overview owner-verified cockpit",()=>{
       .toBe("Gemini");
     expect(h.byId("op-connected-agent-list").children[0].children[0].children[1].textContent)
       .toContain("not independently verified");
+  });
+  it("does not show a healthy backend when the heartbeat is stale", async()=>{
+    const h=mount({dashboard:{
+      observedAt:Date.now(),checks:[{service:"mcp",ready:true,ownerVerified:true,state:"active"}],
+      services:[{service:"mcp",ownershipVerified:true,details:{
+        activeSessions:16,inFlightRequests:15,activeSseStreams:15,
+        nonStreamInFlightRequests:0,inFlightToolCalls:0,backendHealthy:true,
+        backendGenerationDetails:[{current:true,healthAgeMs:30000}],
+        sessionTelemetry:{activePrincipals:1,inFlightSessions:15}
+      }}]
+    }});await settle();
+    expect(h.byId("op-mcp-backend").textContent).toBe("Stale heartbeat");
+    expect(h.byId("op-mcp-note").textContent).toContain("heartbeat");
   });
   it("renders native owner CPU/RAM and graph with the native sample timestamp",async()=>{
     const sampleAt=Date.now()-2500;
@@ -215,6 +237,8 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(markup).toContain('id="op-resources-status"');
     expect(native).toContain('lifecycle_console_request(json!({"action":"inventory"}))');
     expect(markup).toContain('id="op-connected-agent-list"');
+    expect(markup).toContain('id="op-mcp-tools"');
+    expect(markup).toContain('id="op-mcp-sse"');
     expect(markup).toContain('id="runtime-mcp-connected-list"');
     expect(ui).toContain("window.__superagentRenderMcpClientList");
   });
