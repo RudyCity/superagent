@@ -178,7 +178,7 @@ export class McpSessionRegistry {
 
   /** Read-only session inventory without raw session IDs or credentials. */
   connectedAgentSessions(): McpConnectedAgentSession[] {
-    return [...this.sessions.values()].slice(0, 64).map(entry => ({
+    return [...this.sessions.values()].slice(0, 64).map((entry): McpConnectedAgentSession => ({
       sessionHandle: "ses_" + crypto.createHash("sha256").update(entry.sessionId).digest("hex").slice(0, 12),
       principalHandle: deriveIdentityHandle(entry.identity),
       authMode: entry.identity.mode,
