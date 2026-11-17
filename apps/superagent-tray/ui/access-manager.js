@@ -691,15 +691,13 @@
     grantCard.append(make("h3", "", "Berikan Izin Operasi Koneksi"),
       make("p", "access-hint", "Izin ini hanya untuk operasi MCP non-proyek. Tidak memberikan akses baca/tulis ke file mana pun."));
     const identitySelect = select("access-mcp-connection-identity", [["", "Memuat identitas MCP..."]]);
-    const grant = action("Setujui MCP Connection Controls (Execute)", "access-submit access-mcp-primary", async () => {
+    const grant = action("Tinjau Izin Koneksi MCP (Execute)", "access-submit access-mcp-primary", async () => {
       const identityHandle = identitySelect.value;
       if (!identityHandle) {
         status("Pilih identitas MCP terverifikasi terlebih dahulu.", "warning");
         return;
       }
-      if (typeof window.confirm !== "function" || !window.confirm(
-        "Izinkan identitas MCP terpilih menjalankan operasi non-proyek yang memerlukan execute?\n" +
-        "Izin ini tidak termasuk akses file proyek dan bisa dicabut kapan saja.")) return;
+      // The native Tauri bridge shows the authoritative identity/scope dialog.
       grant.disabled = true;
       try {
         const data = await invoke("mcp_project_access_action", {
@@ -796,7 +794,7 @@
     );
     capsWrap.append(capsLabel, capsGrid);
 
-    const grantBtn = action("Beri Izin Proyek", "access-submit access-mcp-primary", async () => {
+    const grantBtn = action("Tinjau Izin Proyek", "access-submit access-mcp-primary", async () => {
       const identHandle = $("access-mcp-ident-select")?.value;
       const projId = $("access-mcp-proj-select")?.value;
       if (!identHandle || !projId) {
@@ -815,7 +813,7 @@
         status("Pilih minimal satu capability.", "warn");
         return;
       }
-      if (!window.confirm("Berikan hak akses " + caps.join(", ") + " untuk proyek '" + projId + "' ke identitas MCP terpilih?\nAkses berlaku sampai dicabut.")) return;
+      // Native Tauri review is mandatory; no WebView self-approval.
       try {
         status("Memberikan hak akses proyek...", "info");
         const data = await invoke("mcp_project_access_action", {
@@ -908,16 +906,14 @@
         chips.append(checkLabel);
       }
       const actions = make("div", "access-mcp-actions");
-      const approve = action("Setujui Pilihan", "access-submit", async () => {
+      const approve = action("Tinjau & Setujui", "access-submit", async () => {
         const target = humanMcpTarget(req);
         const selected = selections.filter(item => item.input?.checked).map(item => item.capability);
         if (!selected.length) {
           status("Pilih setidaknya satu capability yang akan disetujui.", "warning");
           return;
         }
-        if (typeof window.confirm !== "function" || !window.confirm(
-          "Setujui HANYA " + selected.join(", ") + " untuk " + target + "?\nAgen: " + req.subject +
-          "\nAlasan: " + (req.reason || "Tidak ada") + "\nIzin dapat dicabut kapan saja.")) return;
+        // Final review and human confirmation happen in the native Tray dialog.
         approve.disabled = true;
         try { await executeMcpDecision("approve", req.requestId, "Persetujuan " + target, selected); }
         finally { approve.disabled = false; }
@@ -961,8 +957,7 @@
       row.append(details);
       if (req.status === "approved") {
         const revoke = action("Cabut Izin", "access-revoke", async () => {
-          if (typeof window.confirm !== "function" || !window.confirm(
-            "Cabut izin " + humanMcpTarget(req) + " milik " + req.subject + "?")) return;
+          // Native dialog confirms the exact grant before it is revoked.
           revoke.disabled = true;
           try { await executeMcpDecision("revoke", req.requestId, "Pencabutan izin"); }
           finally { revoke.disabled = false; }
