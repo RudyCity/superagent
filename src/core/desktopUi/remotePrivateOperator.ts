@@ -10,6 +10,7 @@
  * never a way to start, authorize or enumerate remote sessions.
  */
 import type { RemotePrivateLiveRuntime } from "./remotePrivateLiveRuntime.js";
+import type { RemoteControlAuthority } from "./remoteControlAuthority.js";
 
 export const PRIVATE_OPERATOR_STATE = "NOT_CONFIGURED" as const;
 
@@ -32,6 +33,7 @@ const BLOCKERS = Object.freeze([
 
 export class RemotePrivateHostOperator {
   private runtime: Pick<RemotePrivateLiveRuntime, "humanTakeover"> | null = null;
+  private controller: Pick<RemoteControlAuthority, "humanTakeover"> | null = null;
 
   /** Internal stop-only handoff; it must NOT carry certificates or preview tokens. */
   registerStopHook(runtime: Pick<RemotePrivateLiveRuntime, "humanTakeover">): void {
@@ -39,6 +41,16 @@ export class RemotePrivateHostOperator {
       throw Error("PRIVATE_HOST_OPERATOR_UNAVAILABLE");
     }
     this.runtime = runtime;
+  }
+
+  /** Trusted host-only input lease revoker. Do not expose this registration
+   * through Core routes, WebView, MCP or untrusted viewer messages.
+   */
+  registerControllerStopHook(controller: Pick<RemoteControlAuthority, "humanTakeover">): void {
+    if (!controller || typeof controller.humanTakeover !== "function" || this.controller) {
+      throw Error("PRIVATE_HOST_CONTROLLER_UNAVAILABLE");
+    }
+    this.controller = controller;
   }
 
   status(): PrivateOperatorStatus {
@@ -60,7 +72,15 @@ export class RemotePrivateHostOperator {
   /** Always revoke in-process capture/TLS first; never wait for WebView navigation. */
   humanTakeover(): PrivateOperatorStatus {
     const runtime = this.runtime;
+    const controller = this.controller;
     this.runtime = null;
+    this.controller = null;
+    // Revoke native input first, then revoke viewing. No async wait or automatic
+    // return-to-agent; local physical takeover is terminal for both leases.
+    if (controller) {
+      try { controller.humanTakeover(); }
+      catch { /* Terminal revoke; viewer still must be stopped. */ }
+    }
     if (runtime) {
       try { runtime.humanTakeover(); }
       catch { /* Terminal revocation; never restore a potentially live handle. */ }
