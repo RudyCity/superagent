@@ -4,6 +4,7 @@ import path from "path";
 import { DaemonJob, DaemonStatus, DaemonConfig, DaemonJobKind } from "./daemonTypes.js";
 import { matchesCron, getNextCronTime, isValidCron } from "./cronParser.js";
 import { getRootConfigDir, getWorkspaceId } from "../config/paths.js";
+import { tickExternalLifecycle } from "../lifecycle/externalLifecycle.js";
 import { redactMemorySecrets } from "../memoryLifecycle.js";
 import { insertDaemonRun, listDaemonRuns, updateDaemonRun } from "../storage/daemonRunLedger.js";
 
@@ -438,6 +439,11 @@ export class DaemonScheduler {
   }
 
   private tick(): void {
+    // External MCP worker tasks are persisted independently from internal Agent jobs.
+    // Delivery is opt-in worker claim, never an unsolicited MCP client invocation.
+    try { tickExternalLifecycle(); } catch (error) {
+      this.log("External lifecycle tick failed closed: " + String(error));
+    }
     const now = new Date();
     const currentMinuteKey = [
       now.getFullYear(), now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(),
