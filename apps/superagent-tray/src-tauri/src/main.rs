@@ -2272,10 +2272,10 @@ async fn external_lifecycle_action(
     if window.label() != "main" {
         return Err("External lifecycle is available only in the main Tray window".into());
     }
-    let mutating = !matches!(action.as_str(), "list" | "status" | "workers");
+    let mutating = !matches!(action.as_str(), "list" | "status" | "workers" | "targets");
     if !matches!(
         action.as_str(),
-        "list" | "status" | "workers" | "create" | "run.now" | "pause" | "resume" | "cancel" | "review.retry"
+        "list" | "status" | "workers" | "targets" | "create" | "run.now" | "pause" | "resume" | "cancel" | "review.retry" | "worker.bind" | "worker.unbind" | "worker.revoke"
     ) {
         return Err("Unsupported external lifecycle action".into());
     }
@@ -2297,6 +2297,8 @@ async fn external_lifecycle_action(
         "create" => &["name", "cronExpression", "prompt", "steps", "maxRuns", "enabled"],
         "run.now" | "pause" | "resume" | "cancel" => &["workflowId"],
         "review.retry" => &["runId", "stepId"],
+        "worker.bind" => &["workerId", "clientId", "tabId"],
+        "worker.unbind" | "worker.revoke" => &["workerId"],
         "list" => &["limit"],
         _ => &[],
     };
