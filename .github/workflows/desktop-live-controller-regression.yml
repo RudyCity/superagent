@@ -1,0 +1,78 @@
+name: Desktop Live Controller Regression
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/core/desktopUi/nativeAndroidControllerApproval.ts"
+      - "src/core/desktopUi/nativeApprovalProof.ts"
+      - "src/core/desktopUi/desktopLiveAccessModes.ts"
+      - "src/core/desktopUi/desktopLiveInventory.ts"
+      - "src/core/runtime/trayLanBridge.ts"
+      - "src/serverRoutes.ts"
+      - "apps/superagent-tray/src-tauri/src/desktop_live_android_control.rs"
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "apps/superagent-tray/ui/desktop-live-manager.js"
+      - "apps/superagent-tray/ui/lan-screen-viewer.js"
+      - "apps/superagent-tray/ui/index.html"
+      - "tests/desktop-live/nativeAndroidControllerApproval.test.ts"
+      - "tests/desktop-live/desktopLiveAccessModes.test.ts"
+      - "tests/desktop-live/desktopLiveTakeoverAuthorization.test.ts"
+      - "tests/desktop-live/trayManagementSurface.test.ts"
+      - "tests/androidLanRemoteScreen.test.ts"
+      - "tests/androidLanSchemaFirst.test.ts"
+      - "tests/desktopTrayAndroidScreenUi.test.ts"
+      - ".github/workflows/desktop-live-controller-regression.yml"
+permissions:
+  contents: read
+concurrency:
+  group: desktop-live-controller-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  core:
+    name: Native-controller Core contract (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: TypeScript typecheck
+        run: bun --bun x tsc --noEmit --pretty false
+      - name: Native Tray WebView syntax
+        if: ${{ always() && !cancelled() }}
+        run: |
+          node --check apps/superagent-tray/ui/desktop-live-manager.js
+          node --check apps/superagent-tray/ui/lan-screen-viewer.js
+      - name: View and controller integration tests
+        if: ${{ always() && !cancelled() }}
+        run: >-
+          bun --bun x vitest run --maxWorkers=2
+          tests/desktop-live/nativeAndroidControllerApproval.test.ts
+          tests/desktop-live/desktopLiveAccessModes.test.ts
+          tests/desktop-live/desktopLiveTakeoverAuthorization.test.ts
+          tests/desktop-live/trayManagementSurface.test.ts
+          tests/desktop-live/lanLiveStream.test.ts
+          tests/androidLanRemoteScreen.test.ts
+          tests/androidLanSchemaFirst.test.ts
+          tests/desktopTrayAndroidScreenUi.test.ts
+          tests/trayLanBridge.test.ts
+
+  native:
+    name: Rust attended-controller gate (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/superagent-tray/src-tauri -> target"
+      - name: Native Android controller unit tests and full Tray compile
+        run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml desktop_live_android_control::tests
