@@ -419,8 +419,8 @@ export const MCP_TOOL_DEFINITIONS = [
     },
     {
       name: "superagent_grep_search",
-      description: "Pattern search with deterministic, paged results. Pass offset from More matches and limit to get later results without losing matches.",
-      inputSchema: { type: "object", properties: { query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" }, caseSensitive: { type: "boolean" }, offset: { type: "number", description: "Zero-based match offset (default 0)." }, limit: { type: "number", description: "Maximum matches (default 100, max 200)." }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } }, required: ["query"] },
+      description: "Pattern search with pagination. Under permanent host file policy v2, only literal search over an explicit approved filePaths list (1-50 files) is certified; recursive grep remains denied.",
+      inputSchema: { type: "object", properties: { filePaths: { type: "array", minItems: 1, maxItems: 50, items: { type: "string" }, description: "Exact, approved local files. With v2 file policy, a literal query and filePaths are required; no recursive search." }, query: { type: "string" }, path: { type: "string" }, include: { type: "string" }, exclude: { type: "string" }, isRegex: { type: "boolean" }, caseSensitive: { type: "boolean" }, offset: { type: "number", description: "Zero-based match offset (default 0)." }, limit: { type: "number", description: "Maximum matches (default 100, max 200)." }, workspace: { type: "string" }, cwd: { type: "string" }, projectId: { type: "string" } }, required: ["query"] },
     },
     {
       name: "superagent_find_files",
