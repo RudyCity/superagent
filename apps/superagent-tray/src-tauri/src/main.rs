@@ -1394,6 +1394,40 @@ async fn desktop_live_action(
             if payload.is_some() { return Err("Unexpected remote gateway stop payload".into()); }
             core_request(Method::POST, "/api/desktop/tray-remote/stop", Some(json!({}))).await
         }
+        "controller-review" => {
+            if payload.is_some() {
+                return Err("Controller review accepts no viewer or browser payload".into());
+            }
+            if DESKTOP_LIVE_APPROVAL_OPEN.compare_exchange(
+                false, true, std::sync::atomic::Ordering::SeqCst,
+                std::sync::atomic::Ordering::SeqCst,
+            ).is_err() {
+                return Err("Another native Desktop Live review is pending".into());
+            }
+            let _approval_guard = DesktopLiveApprovalGuard;
+            // The dialog explains the separate authorization boundary. It is
+            // NOT itself a controller approval and never grants input.
+            let native = app.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                use tauri_plugin_dialog::DialogExt;
+                native.dialog().message(concat!(
+                    "DESKTOP LIVE — REMOTE CONTROLLER\n\n",
+                    "Watching a window does not authorize mouse or keyboard input.\n",
+                    "Native remote control is not configured for this installed Tray.\n",
+                    "A separate authenticated viewer identity, attended native input ",
+                    "approval, and a verified semantic input adapter are required.\n\n",
+                    "No control token will be issued. ",
+                    "Use Take Over for physical control at the host, or the separately ",
+                    "approved LAN Devices workflow for Android input."
+                )).blocking_show();
+            }).await.map_err(|_| "Native controller review could not complete")?;
+            Ok(json!({
+                "success": true,
+                "state": "NOT_CONFIGURED",
+                "approved": false,
+                "inputEnabled": false,
+            }))
+        }
         "remote-status" => {
             if payload.is_some() { return Err("Unexpected remote readiness payload".into()); }
             core_request(Method::GET, "/api/desktop/live/remote/status", None).await
