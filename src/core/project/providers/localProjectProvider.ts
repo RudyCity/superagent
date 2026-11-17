@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { getProject } from "../projectRegistry.js";
-import { isFullYoloMode, isModelConfigAccess, isSensitiveEnvFileAccess } from "../../permissions.js";
+import { isModelConfigAccess, isSensitiveEnvFileAccess } from "../../permissions.js";
 import { handleReadFiles, handleListFiles, handleGrepSearch, handleFindFiles, handleWriteFiles, handleExecCommand } from "../../mcp/tools/workspaceTools.js";
 import { handleGitAction } from "../../mcp/tools/networkContentMcpTools.js";
 import { runWithMcpWorkspace } from "../../mcp/tools/workspaceContext.js";
@@ -39,11 +39,11 @@ export class LocalProjectProvider implements ProjectProvider {
       return { text: error instanceof Error ? error.message : String(error), isError: true };
     }
     const normalizedArgs = { ...args, cwd: info.workspace, workspace: info.workspace };
-    if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args: normalizedArgs })) {
-      return { text: "MCP access to .env files is blocked unless Full YOLO is enabled locally.", isError: true };
+    if (isSensitiveEnvFileAccess({ name, args: normalizedArgs })) {
+      return { text: "MCP access to protected .env files is prohibited independently of chat YOLO.", isError: true };
     }
-    if (!isFullYoloMode() && isModelConfigAccess({ name, args: normalizedArgs }, info.workspace)) {
-      return { text: "Error: model-config.json is protected and cannot be read through MCP without Full YOLO.", isError: true };
+    if (isModelConfigAccess({ name, args: normalizedArgs }, info.workspace)) {
+      return { text: "Error: model-config.json is protected and cannot be accessed through MCP.", isError: true };
     }
     const result = await runWithMcpWorkspace(info.workspace, () => handler(normalizedArgs));
     return {
