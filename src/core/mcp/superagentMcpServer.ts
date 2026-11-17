@@ -92,6 +92,7 @@ import {
 } from "./tools/chromeMcpTools.js";
 import { DELEGATE_MCP_TOOL_DEFS, dispatchDelegateMcpTool, delegateMcpObservation } from "./tools/delegateMcpTools.js";
 import { runWithTrustedCliBridgeAgent } from "../tools/cliBridgeAgentOwner.js";
+import { LIFECYCLE_MCP_TOOL_DEFS, dispatchLifecycleMcpTool } from "./tools/lifecycleMcpTools.js";
 import { PDF_MCP_TOOL_DEFS, PDF_MCP_TOOL_NAMES, dispatchPdfMcpTool } from "./tools/pdfMcpTools.js";
 import { MEDIA_MCP_TOOL_DEFS, MEDIA_MCP_TOOL_NAMES, dispatchMediaMcpTool } from "./tools/mediaMcpTools.js";
 import { DESKTOP_UI_MCP_TOOL_DEFS, dispatchDesktopUiMcpTool } from "./tools/desktopUiMcpTools.js";
@@ -557,6 +558,7 @@ export const MCP_TOOL_DEFINITIONS = [
     },
     ...CHROME_MCP_TOOL_DEFS,
     ...DIAGNOSTICS_MCP_TOOL_DEFS,
+    ...LIFECYCLE_MCP_TOOL_DEFS,
     ...PLAN_SKILLS_MCP_TOOL_DEFS,
     ...NETWORK_CONTENT_MCP_TOOL_DEFS,
     ...REMOTE_AGENT_MCP_TOOL_DEFS,
@@ -794,7 +796,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         : (delegateMcpObservation(name, args)?.args ?? args);
       const safeLogArgs = name === "superagent_desktop_ui"
         ? { command: (observedArgs as any)?.command, action: (observedArgs as any)?.action }
-        : observedArgs;
+        : name === "superagent_lifecycle" ? { action: args.action, workflowId: args.workflowId,
+            runId: args.runId, stepId: args.stepId, workerId: args.workerId } : observedArgs;
       logMcp(`Handling tool call: ${name} with args: ${summarizeArgs(safeLogArgs)}`);
 
       try {
@@ -1088,6 +1091,24 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
               workspace: targetWorkspace,
             });
             if (desktopUiRes) return desktopUiRes;
+           if (name === "superagent_lifecycle" || name === "superagent_lifecycle_status") {
+             // Verified per-transport identity only: client-supplied names/IDs are never authority.
+             const verified = getIdentity?.();
+             if (authMode === "oauth" && !verified) {
+               throw new Error("Verified OAuth identity required for lifecycle delegation.");
+             }
+             const principalKey = crypto.createHash("sha256")
+               .update((verified?.mode || "local-stdio") + ":" +
+                 (verified?.subject || verified?.credentialHash || delegatePrincipalSessionId))
+               .digest("hex");
+             const actorKey = crypto.createHash("sha256")
+               .update("external-lifecycle-v1:" + delegatePrincipalSessionId + ":" + principalKey)
+               .digest("hex");
+             const lifecycleResult = await dispatchLifecycleMcpTool(name, args, {
+               actor: "mcp:" + actorKey, principal: "principal:" + principalKey,
+             });
+             if (lifecycleResult) return lifecycleResult;
+           }
            const diagRes = await dispatchDiagnosticsMcpTool(name, args);
            if (diagRes) return diagRes;
            const planSkillsRes = await dispatchPlanSkillsMcpTool(name, args);
@@ -1185,6 +1206,10 @@ function extractMcpResultText(result: unknown): string {
       let safeInfo = privateDelegate ? {
         ...info, args: privateDelegate.args,
         ...(info.error ? { error: privateDelegate.error(info.error) } : {}),
+      } : toolName === "superagent_lifecycle" ? {
+        ...info,
+        args: { action: rawArgs.action, workflowId: rawArgs.workflowId,
+          runId: rawArgs.runId, stepId: rawArgs.stepId, workerId: rawArgs.workerId },
       } : info;
       if (desktopCall) {
         safeInfo = {
