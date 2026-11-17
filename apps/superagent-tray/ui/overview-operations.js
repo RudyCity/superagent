@@ -126,7 +126,7 @@
     const retiring=state.agentRows.filter(x=>x.state==="retiring").length;
     const observed=number(details.connectedAgentsObservedAt);
     text(summaryId,state.agentRows.length+
-      " sessions · "+active+" busy · "+idle+" idle · "+retiring+" retiring"+
+      " sessions · "+active+" with open requests · "+idle+" idle · "+retiring+" retiring"+
       (observed!==null?" · sampled "+localTime(observed):""));
     const filtered=state.agentRows.filter(x=>filter==="all"||x.state===filter);
     if(!filtered.length){
@@ -149,7 +149,7 @@
       append(identity,"code","",item.sessionHandle);
       const activity=append(row,"div","op-client-activity");
       const seen=number(item.lastSeenAt);
-      append(activity,"strong","",number(item.inFlight)!==null?item.inFlight+" request(s)":"Requests unknown");
+      append(activity,"strong","",number(item.inFlight)!==null?item.inFlight+" open HTTP request(s)":"Requests unknown");
       append(activity,"small","",seen!==null?"Last seen "+new Date(seen).toLocaleString():"Last activity unavailable");
       append(activity,"small","",item.lastToolRequest?"Requested tool: "+item.lastToolRequest:
         "No tool request recorded");
@@ -165,20 +165,37 @@
     if(!details || owner.ownershipVerified!==true) {
       for(const id of ["op-mcp-sessions","op-mcp-inflight","op-mcp-backend","op-mcp-principals",
         "op-mcp-rejected","op-mcp-oldest","op-mcp-generations","op-mcp-capacity",
-        "op-mcp-busy","op-mcp-retiring"])text(id,"—");
+        "op-mcp-busy","op-mcp-retiring","op-mcp-sse","op-mcp-nonstream","op-mcp-tools"])text(id,"—");
       text("op-mcp-note","Authenticated MCP owner telemetry unavailable");
       return;
     }
     const counts=details.sessionTelemetry||{};
     text("op-mcp-sessions",fmt(details.activeSessions));
     text("op-mcp-inflight",fmt(details.inFlightRequests));
-    text("op-mcp-backend",details.backendHealthy===true?"Healthy":details.backendHealthy===false?"Unhealthy":"Unverified");
+    text("op-mcp-sse",fmt(details.activeSseStreams));
+    text("op-mcp-nonstream",fmt(details.nonStreamInFlightRequests));
+    text("op-mcp-tools",fmt(details.inFlightToolCalls));
+    const latest=Array.isArray(details.backendGenerationDetails)
+      ? details.backendGenerationDetails.find(x=>x.current===true) : null;
+    const heartbeatAge=number(latest?.healthAgeMs);
+    const heartbeatFresh=heartbeatAge!==null && heartbeatAge>=0 && heartbeatAge<=15000;
+    text("op-mcp-backend",details.backendHealthy===false?"Unhealthy":
+      details.backendHealthy===true && heartbeatFresh?"Healthy":
+      details.backendHealthy===true && heartbeatAge!==null?"Stale heartbeat":"Unverified");
     text("op-mcp-principals",fmt(counts.activePrincipals));
     text("op-mcp-rejected",fmt(counts.rejectedTotal));
     text("op-mcp-oldest",number(counts.oldestIdleMs)!==null?Math.round(counts.oldestIdleMs/1000)+"s idle":"—");
     text("op-mcp-generations",fmt(details.backendGenerations));
+    const open=number(details.inFlightRequests);
+    const sse=number(details.activeSseStreams);
+    const tools=number(details.inFlightToolCalls);
     text("op-mcp-note",counts.affinityDrift?"Session affinity drift detected":
-      "MCP sessions are logical client sessions, not operating-system processes. Idle sessions expire automatically.");
+      details.backendHealthy!==true || !heartbeatFresh?"Backend heartbeat unavailable or stale; verify MCP owner before trusting these counters.":
+      sse!==null && tools!==null && sse>0 && tools===0
+        ? sse+" long-lived SSE stream(s) are open; this does not indicate active tool executions."
+        : open!==null && tools!==null
+          ? open+" open HTTP request(s), "+tools+" tool execution(s). Session counts are not process counts."
+          : "Session telemetry incomplete; HTTP connections do not necessarily represent running tools.");
     text("op-mcp-capacity",number(counts.capacity)!==null?String(counts.capacity):"—");
     text("op-mcp-busy",number(counts.inFlightSessions)!==null?String(counts.inFlightSessions):"—");
     text("op-mcp-retiring",number(counts.retiringSessions)!==null?String(counts.retiringSessions):"—");
@@ -193,8 +210,8 @@
     text("op-mcp-rss",bytes(memory?.rssBytes));
     text("op-mcp-heap",bytes(memory?.heapUsedBytes));
     const trend=memory?.trend;
-    text("op-memory-trend",trend?.suspicious===true?"Suspicious growth":trend?.suspicious===false?
-      "No suspicious trend":"Trend unavailable");
+    text("op-memory-trend",trend?.suspicious===true?"Growing":trend?.suspicious===false?
+      "Stable":"Unverified");
     const root=$("op-process-resources");
     const chart=$("op-resource-history");
     if(chart)chart.replaceChildren();
