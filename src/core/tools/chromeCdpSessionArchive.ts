@@ -157,7 +157,9 @@ function queueSafe(item: Session, file: string, payload: object) {
     });
 }
 function publicStatus(item: Session) {
-  return { recordingId: item.id, status: item.status, startedAt: new Date(item.start).toISOString(),
+  return { recordingId: item.id,
+    source: item.scope.targetKey.startsWith("delegate:") ? "delegate-cdp-exact-tab" : "managed-cdp-exact-tab",
+    status: item.status, startedAt: new Date(item.start).toISOString(),
     elapsedMs: safeCount(Date.now() - item.start), video: true,
     fps: item.profile.fps, videoPreset:item.preset,
     videoWidth:item.profile.width, videoHeight:item.profile.height,
