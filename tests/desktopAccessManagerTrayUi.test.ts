@@ -33,13 +33,19 @@ class Element {
 const discovered={pid:35416,nativeId:"10553336",title:"Antigravity editor",application:"Antigravity"};
 const app={platform:"win32",executablePath:"C:\\Apps\\Antigravity.exe",sha256:"f".repeat(64)};
 const flush=async()=>{for(let i=0;i<6;i++)await new Promise(resolve=>setImmediate(resolve));};
-function boot(nativeEnabled=true){
+function boot(nativeEnabled=true, mcpData?: {
+  requests?: any[]; identities?: any[]; projects?: any[];
+  failActions?: string[];
+}){
   const parent=new Element("section");parent.id="settings-subpage-security";
   const old=new Element("section");old.id="desktop-trust-panel";parent.append(old);
   const listeners=new Map<string,Function>();
   let policy:any={version:2,defaultEffect:"deny",rules:[]};
   let auditLogs:any[]=[];
   const calls:{name:string,args:any}[]=[];
+  const mcpRequests=mcpData?.requests || [];
+  const mcpIdentities=mcpData?.identities || [];
+  const mcpProjects=mcpData?.projects || [];
   const invoke=vi.fn(async(name:string,args:any)=>{
     calls.push({name,args});
     if(name==="get_permanent_access_registry"){
@@ -93,6 +99,13 @@ function boot(nativeEnabled=true){
     }
     if(name==="get_permanent_access_audit_log")return auditLogs;
     if(name==="clear_permanent_access_audit_log"){auditLogs=[];return true;}
+    if(name==="mcp_project_access_action"){
+      if(mcpData?.failActions?.includes(args.action)) throw Error("MCP Core unavailable");
+      if(args.action==="requests") return {success:true,requests:mcpRequests};
+      if(args.action==="identities") return {success:true,identities:mcpIdentities};
+      if(args.action==="projects") return {success:true,projects:mcpProjects};
+      if(["approve","deny","revoke","direct_grant"].includes(args.action)) return {success:true};
+    }
     throw Error("unknown native command");
   });
   const document={
@@ -103,7 +116,8 @@ function boot(nativeEnabled=true){
     },
     createElement:(tag:string)=>new Element(tag),
   };
-  const window={__TAURI__:{core:{invoke}},addEventListener:(k:string,f:Function)=>listeners.set(k,f)};
+  const window={__TAURI__:{core:{invoke}},addEventListener:(k:string,f:Function)=>listeners.set(k,f),
+    confirm:vi.fn(()=>true)};
   vm.runInNewContext(code,{document,window,location:{hash:"#settings"},
     Number,String,Array,Object,Boolean,Error,Promise,Date,Math});
   return {document,parent,old,calls,invoke,listeners,getPolicy:()=>policy};
@@ -387,5 +401,96 @@ describe("main navigation promotion", () => {
     expect(html).toContain('id="page-security-container"');
     expect(appJs).toContain('"security"');
     expect(appJs).toMatch(/validPages\s*=\s*\[[^\]]*"security"[^\]]*\]/);
+  });
+});
+
+
+describe("independent MCP Connections and Project Access UI", () => {
+  const handle="idh_0123456789abcdef";
+  const fixtures = {
+    identities:[{identityHandle:handle,subject:"Gemini client",mode:"oauth",scopes:["mcp:tools:write"]}],
+    projects:[
+      {projectId:"superagent",name:"SuperAgent",type:"local",enabled:true,target:"D:/superagent"},
+      {projectId:"disabled",name:"Unavailable",type:"local",enabled:false,target:"D:/disabled"},
+    ],
+    requests:[
+      {requestId:"req_project",projectId:"superagent",projectName:"SuperAgent",
+        projectPath:"D:/superagent",subject:"Gemini client",mode:"oauth",status:"pending",
+        capabilities:["read","write"],reason:"Review source files",createdAt:1700000000000},
+      {requestId:"req_connection",projectId:"mcp-connection",projectName:"MCP Connection Controls",
+        projectPath:"mcp://connection",subject:"Gemini client",mode:"oauth",status:"pending",
+        capabilities:["execute"],reason:"Run approved MCP operations",createdAt:1700000000000},
+    ],
+  };
+
+  it("separates the MCP connection and project approval views", async () => {
+    const ui=boot(true,fixtures);await flush();
+    const connection=ui.document.getElementById("access-pane-connections")!;
+    const project=ui.document.getElementById("access-pane-mcp")!;
+    expect(connection).not.toBeNull();
+    expect(project).not.toBeNull();
+    expect(connection.hidden).toBe(true);
+    ui.document.getElementById("access-nav-tab-connections")!.click();await flush();
+    expect(connection.hidden).toBe(false);
+    expect(project.hidden).toBe(true);
+    ui.document.getElementById("access-nav-tab-mcp")!.click();await flush();
+    expect(connection.hidden).toBe(true);
+    expect(project.hidden).toBe(false);
+    expect(ui.document.getElementById("access-mcp-pending-list")!.children).toHaveLength(1);
+    expect(ui.document.getElementById("access-mcp-connection-pending-list")!.children).toHaveLength(1);
+  });
+
+  it("offers only enabled registered projects and sends the selected read grant", async () => {
+    const ui=boot(true,fixtures);await flush();
+    const project=ui.document.getElementById("access-mcp-proj-select")!;
+    expect(project.children.map(x=>x.value)).toEqual(["","superagent"]);
+    expect(project.children.map(x=>x.value)).not.toContain("mcp-connection");
+    expect(ui.document.getElementById("access-cap-read")!.checked).toBe(true);
+    expect(ui.document.getElementById("access-cap-write")!.checked).toBe(false);
+    ui.document.getElementById("access-mcp-ident-select")!.value=handle;
+    project.value="superagent";
+    ui.document.getElementById("access-mcp-project-grant")!.click();await flush();
+    const grant=ui.calls.find(c=>c.name==="mcp_project_access_action" &&
+      c.args.action==="direct_grant");
+    expect(grant?.args.payload).toEqual({identityHandle:handle,projectId:"superagent",capabilities:["read"]});
+  });
+
+  it("uses only connection execute for independent MCP Connections approval", async () => {
+    const ui=boot(true,fixtures);await flush();
+    ui.document.getElementById("access-mcp-connection-identity")!.value=handle;
+    ui.document.getElementById("access-mcp-connection-grant")!.click();await flush();
+    const grant=ui.calls.find(c=>c.name==="mcp_project_access_action" &&
+      c.args.action==="direct_grant");
+    expect(grant?.args.payload).toEqual({
+      identityHandle:handle,projectId:"mcp-connection",capabilities:["execute"],
+    });
+  });
+
+  it("permits the owner to narrow the pending project request before approval", async () => {
+    const ui=boot(true,fixtures);await flush();
+    ui.document.getElementById("approval-req_project-write")!.checked=false;
+    const requestCard=ui.document.getElementById("access-mcp-pending-list")!.firstChild!;
+    requestCard.lastChild!.firstChild!.click();await flush();
+    const approve=ui.calls.find(c=>c.name==="mcp_project_access_action" &&
+      c.args.action==="approve");
+    expect(approve?.args.payload).toEqual({requestId:"req_project",capabilities:["read"]});
+  });
+
+  it("reports Core errors instead of showing an invented empty request list", async () => {
+    const ui=boot(true,{...fixtures,failActions:["requests"]});await flush();
+    const alert=ui.document.getElementById("access-mcp-project-load-error")!;
+    expect(alert.hidden).toBe(false);
+    expect(alert.textContent).toContain("requests");
+    expect(ui.document.getElementById("access-mcp-pending-list")!.firstChild!.textContent)
+      .toContain("belum dapat dimuat");
+  });
+
+  it("keeps the attended native desktop input session panel accessible", async () => {
+    const ui=boot(true,fixtures);await flush();
+    expect(ui.old.hidden).toBe(true);
+    ui.document.getElementById("access-trusted-session-toggle")!.click();
+    expect(ui.old.hidden).toBe(false);
+    ui.document.getElementById("access-trusted-session-toggle")!.click();
+    expect(ui.old.hidden).toBe(true);
   });
 });
