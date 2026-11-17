@@ -7,9 +7,11 @@ on:
       - "src/core/lanRemote/**"
       - "src/core/runtime/trayLanBridge.ts"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchange.java"
+      - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchangeV2.java"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanClientServer.java"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
+      - "apps/superagent-tray/ui/lan-devices.js"
       - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
@@ -26,6 +28,7 @@ on:
       - "tests/lanDiskTransferV2.test.ts"
       - "tests/lanStreamingSha256.test.ts"
       - "tests/lanV2TrayStreaming.test.ts"
+      - "tests/lanMultiDeviceQueue.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
   pull_request:
@@ -35,6 +38,7 @@ on:
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/**"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "apps/superagent-tray/ui/lan-sha256.js"
+      - "apps/superagent-tray/ui/lan-devices.js"
       - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
@@ -76,6 +80,7 @@ jobs:
         run: |
           node --check apps/superagent-tray/ui/lan-file-transfer.js
           node --check apps/superagent-tray/ui/lan-sha256.js
+          node --check apps/superagent-tray/ui/lan-devices.js
       - name: Run transfer, folder, owner-approval and UI regressions
         if: ${{ always() && !cancelled() }}
         run: >-
@@ -94,6 +99,7 @@ jobs:
           tests/lanDiskTransferV2.test.ts
           tests/lanStreamingSha256.test.ts
           tests/lanV2TrayStreaming.test.ts
+          tests/lanMultiDeviceQueue.test.ts
           tests/trayLanBridge.test.ts
 
   android-java:
