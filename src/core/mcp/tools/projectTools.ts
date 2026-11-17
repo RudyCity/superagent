@@ -8,11 +8,9 @@ import {
   type UpdateProjectInput,
   type RegisteredProject,
 } from "../../project/projectRegistry.js";
-import { isFullYoloMode } from "../../permissions.js";
 import { standaloneSshProjectProvider } from "./standaloneSshProjectTools.js";
 import {
   PROJECT_ACCESS_CAPABILITIES,
-  grantProjectAccess,
   listProjectAccess,
   revokeProjectAccess,
   revokeAllProjectAccess,
