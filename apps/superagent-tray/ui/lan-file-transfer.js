@@ -498,7 +498,7 @@
       const keepV2Checkpoint = activeProtocol === 2 && !cancelled;
       if (!keepV2Checkpoint) await abortIfNeeded();
       retryPlan = jobs.slice(batch?.index ?? 0);
-      state((keepV2Checkpoint ? "Send failed (V2 checkpoint retained): " : "Send failed: ") +  + String(error).slice(0, 200));
+      state((keepV2Checkpoint ? "Send failed (V2 checkpoint retained): " : "Send failed: ") + String(error).slice(0, 200));
       const item = retryPlan[0];
       if (item) receipt("Send", item.device.label + ": " + item.file.name,
         item.file.size, "Not verified");
