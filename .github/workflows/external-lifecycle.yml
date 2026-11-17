@@ -1,0 +1,41 @@
+name: External ChatGPT Lifecycle Acceptance
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/core/lifecycle/**"
+      - "src/core/mcp/superagentMcpServer.ts"
+      - "src/core/mcp/tools/lifecycleMcpTools.ts"
+      - "src/core/mcp/mcpToolPolicy.ts"
+      - "src/core/mcp/mcpWorkspacePolicy.ts"
+      - "src/core/project/projectAccessPolicy.ts"
+      - "src/core/daemon/daemonScheduler.ts"
+      - "apps/superagent-tray/ui/external-lifecycle.*"
+      - "tests/externalLifecycle.test.ts"
+      - ".github/workflows/external-lifecycle.yml"
+  pull_request:
+    paths:
+      - "src/core/lifecycle/**"
+      - "src/core/mcp/**"
+      - "src/core/daemon/daemonScheduler.ts"
+      - "tests/externalLifecycle.test.ts"
+      - ".github/workflows/external-lifecycle.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: external-lifecycle-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+jobs:
+  lifecycle-contract:
+    name: Lifecycle security, DAG and lease regression
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - name: Verify MCP lifecycle + daemon run contract
+        run: bun --bun x vitest run tests/externalLifecycle.test.ts tests/daemonScheduler.test.ts tests/mcpServer.test.ts --maxWorkers=2 --reporter=dot
