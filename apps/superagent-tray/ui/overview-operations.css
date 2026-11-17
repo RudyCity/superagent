@@ -45,3 +45,21 @@
 @media(max-width:760px){.op-row,.op-pair {grid-template-columns:1fr}.op-row>.op-frame:first-child {grid-column:auto}}
 @media(max-width:520px){.op-service-list {grid-template-columns:1fr}.op-metrics {grid-template-columns:repeat(2,minmax(0,1fr))}.op-frame {padding:12px}.op-head h3 {overflow-wrap:anywhere}.op-actions {align-items:stretch}.op-actions>* {flex:1;min-width:0}}
 @media(prefers-reduced-motion:reduce){.op-history-bar {transition:none}}
+
+/* Hallmark · pre-emit critique: P4 H5 E4 S5 R5 V4 — native Tray tokens and compact hierarchy. */
+.op-client-head {display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.op-client-head h3 {font-size:13px;color:var(--text-primary);margin:0;font-weight:700}
+.op-client-head p {font-size:11px;color:var(--text-muted);margin:4px 0 0}
+.op-client-head label {font-size:11px;color:var(--text-secondary);display:flex;align-items:center;gap:8px}
+.op-client-head select {background:var(--bg-surface-elevated);color:var(--text-primary);border:1px solid var(--border-medium);border-radius:var(--radius-sm);padding:7px 10px}
+.op-client-list {display:grid;gap:0;max-height:410px;overflow-y:auto;min-width:0}
+.op-client-row {display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1.2fr);align-items:center;gap:14px;padding:11px 0;border-bottom:1px solid var(--border-subtle);min-width:0}
+.op-client-row:last-child {border-bottom:none}
+.op-client-primary,.op-client-identity,.op-client-activity {min-width:0;display:grid;gap:4px}
+.op-client-heading {display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.op-client-heading strong {font-size:12px;overflow-wrap:anywhere;color:var(--text-primary)}
+.op-client-row small,.op-client-identity span {font-size:10px;color:var(--text-muted);line-height:1.45;overflow-wrap:anywhere}
+.op-client-identity code {font:10px/1.45 var(--font-mono);color:var(--text-secondary);overflow-wrap:anywhere}
+.op-client-activity strong {font-size:11px;color:var(--text-secondary);font-weight:600}
+@media(max-width:760px){.op-client-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}.op-client-primary{grid-column:1/-1}}
+@media(max-width:414px){.op-client-row{grid-template-columns:minmax(0,1fr)}.op-client-primary{grid-column:auto}.op-client-head label{width:100%;justify-content:space-between}.op-client-head select{min-width:0}}

@@ -19,6 +19,35 @@ import { grantProjectAccess } from "../src/core/project/projectAccessPolicy.js";
 import { setYoloMode } from "../src/core/permissions.js";
 
 describe("mcpHttpTransport", () => {
+  it("exposes claimed client labels only through opaque in-memory session snapshots", async () => {
+    const token=generateMcpBearerToken();
+    const handle=await startMcpHttpServer({port:0,bearerToken:token,allowDangerous:false});
+    const url=`http://127.0.0.1:${handle.port}${MCP_HTTP_PATH}`;
+    try {
+      const res=await fetch(url,{method:"POST",
+        headers:{Authorization:"Bearer "+token,"Content-Type":"application/json",
+          Accept:"application/json, text/event-stream"},
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",
+          params:{protocolVersion:"2024-11-05",capabilities:{},
+            clientInfo:{name:"Claimed ChatGPT",version:"1"}}}),
+      });
+      await res.text();
+      const sid=res.headers.get("mcp-session-id");
+      expect(sid).toBeTruthy();
+      const view=handle.getConnectedAgentSessions();
+      expect(view).toHaveLength(1);
+      expect(view[0]).toMatchObject({claimedClientName:"Claimed ChatGPT",
+        authMode:"static-bearer",state:"idle"});
+      expect(JSON.stringify(view)).not.toContain(sid!);
+      expect(JSON.stringify(view)).not.toContain(token);
+      const closed=await fetch(url,{method:"DELETE",
+        headers:{Authorization:"Bearer "+token,"mcp-session-id":sid!}});
+      expect(closed.status).toBe(200);
+      await closed.text();
+      expect(handle.getConnectedAgentSessions()).toEqual([]);
+    } finally {await handle.close();}
+  });
+
   it("generates 64-char hex bearer tokens", () => {
     const a = generateMcpBearerToken();
     const b = generateMcpBearerToken();

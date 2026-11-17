@@ -40,6 +40,15 @@ function mount(calls: Record<string,any> = {}) {
         services:[{service:"mcp",ownerPid:100,ownershipVerified:true,
           details:{activeSessions:2,inFlightRequests:0,backendHealthy:true,
             backendGenerations:1,sessionTelemetry:{activePrincipals:1,rejectedTotal:0},
+            connectedAgentsState:"verified",connectedAgentsObservedAt:Date.now(),
+            connectedAgents:[
+              {sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
+                authMode:"oauth",claimedClientName:"Gemini",state:"active",inFlight:1,
+                lastSeenAt:Date.now(),lastToolRequest:"superagent_list_projects"},
+              {sessionHandle:"ses_bbbbbbbbbbbb",principalHandle:"idh_2222222222222222",
+                authMode:"static-bearer",claimedClientName:"ChatGPT",state:"idle",inFlight:0,
+                lastSeenAt:Date.now(),lastToolRequest:null}
+            ],
             memoryTelemetry:{rssBytes:10485760,heapUsedBytes:5242880,trend:{suspicious:false}}}}],
         timeline:[{at:Date.now(),service:"mcp",action:"status",outcome:"succeeded"}],
       };
@@ -82,12 +91,30 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(h.byId("op-service-list").children).toHaveLength(4);
     expect(h.byId("op-mcp-sessions").textContent).toBe("2");
     expect(h.byId("op-mcp-rss").textContent).toBe("10.0 MiB");
+    expect(h.byId("op-connected-agent-list").children).toHaveLength(2);
+    expect(h.byId("op-connected-agent-summary").textContent).toContain("2 sessions");
+    expect(h.byId("op-connected-agent-list").children[0].children[0].children[0].children[0].textContent)
+      .toBe("Gemini");
+    expect(h.byId("op-connected-agent-list").children[0].children[0].children[1].textContent)
+      .toContain("not independently verified");
   });
   it("fails closed when lifecycle telemetry disappears",async()=>{
     const h=mount({dashboard:{}});await settle();
     expect(h.byId("op-readiness").textContent).toBe("—");
     expect(h.byId("op-mcp-sessions").textContent).toBe("—");
+    expect(h.byId("op-connected-agent-list").children[0].textContent).toContain("Unavailable");
     expect(h.byId("op-service-list").children[0].textContent).toContain("unavailable");
+  });
+  it("filters only registry-backed connected clients; never assumes claimed labels are authenticated",async()=>{
+    const h=mount();await settle();
+    h.byId("op-client-filter").value="idle";
+    h.handlers.get("op-client-filter:change")?.({target:{value:"idle"}});
+    expect(h.byId("op-connected-agent-list").children).toHaveLength(1);
+    expect(h.byId("op-connected-agent-list").children[0].children[0].children[0].children[0].textContent)
+      .toBe("ChatGPT");
+    expect(h.byId("op-connected-agent-list").children[0].children[1].children[0].textContent)
+      .toContain("Bearer authenticated");
+    expect(JSON.stringify(h.byId("op-connected-agent-list").children)).not.toContain("mcp-session-id");
   });
   it("keeps Chat YOLO separate from MCP requests and desktop approval",async()=>{
     const h=mount();await settle();
@@ -110,5 +137,8 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(markup).toContain('id="overview-operations"');
     expect(markup).toContain('src="./overview-operations.js"');
     expect(markup).toContain('href="./overview-operations.css"');
+    expect(markup).toContain('id="op-connected-agent-list"');
+    expect(markup).toContain('id="runtime-mcp-connected-list"');
+    expect(ui).toContain("window.__superagentRenderMcpClientList");
   });
 });

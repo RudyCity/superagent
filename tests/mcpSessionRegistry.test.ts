@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
   McpSessionRegistry,
+  safeMcpClaimedClientLabel,
   type McpSessionEntry,
 } from "../src/core/mcp/mcpSessionRegistry.js";
 import type { McpIdentity } from "../src/core/mcp/mcpAuth.js";
@@ -34,6 +35,40 @@ describe("McpSessionRegistry", () => {
     reg = new McpSessionRegistry({ maxSessions: 4, idleTimeoutMs: 60000, maxLifetimeMs: 60000 });
   });
   afterEach(() => vi.useRealTimers());
+
+  it("projects only live opaque sessions and marks every client name as untrusted metadata", async () => {
+    const a=entry("private-secret-session", "principal-a");
+    a.claimedClientName="Gemini";
+    a.claimedClientVersion="1.0";
+    reg.add(a);
+    reg.noteToolRequest(a.sessionId, "superagent_list_projects");
+    reg.beginRequest(a.sessionId);
+    const busy=reg.connectedAgentSessions();
+    expect(busy).toHaveLength(1);
+    expect(busy[0]).toMatchObject({
+      authMode:"static-bearer",claimedClientName:"Gemini",state:"active",
+      inFlight:1,lastToolRequest:"superagent_list_projects",
+    });
+    expect(busy[0].sessionHandle).toMatch(/^ses_[a-f0-9]{12}$/);
+    expect(busy[0].principalHandle).toMatch(/^idh_[a-f0-9]{16}$/);
+    expect(JSON.stringify(busy)).not.toContain("private-secret-session");
+    expect(JSON.stringify(busy)).not.toContain("principal-a");
+    expect(JSON.stringify(busy)).not.toContain('"credentialHash"');
+    reg.endRequest(a.sessionId);
+    expect(reg.connectedAgentSessions()[0].state).toBe("idle");
+    await reg.remove(a.sessionId);
+    expect(reg.connectedAgentSessions()).toEqual([]);
+  });
+
+  it("sanitizes client-supplied labels and never treats them as authenticated app names", () => {
+    expect(safeMcpClaimedClientLabel("  ChatGPT\u202e  ")).toBe("ChatGPT");
+    expect(safeMcpClaimedClientLabel("<script>fake</script>")).toBe("<script>fake</script>");
+    expect(safeMcpClaimedClientLabel("x".repeat(70))).toBeNull();
+    expect(safeMcpClaimedClientLabel(null)).toBeNull();
+    reg.add(entry("s1"));
+    reg.noteToolRequest("s1","javascript:steal");
+    expect(reg.connectedAgentSessions()[0].lastToolRequest).toBeNull();
+  });
 
   it("adds and retrieves sessions", () => {
     reg.add(entry("s1"));

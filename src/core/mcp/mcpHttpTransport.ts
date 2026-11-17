@@ -45,6 +45,8 @@ import {
 import { R1_OWNER_TOOLS } from "./mcpSafeOwnerPolicy.js";
 import {
   McpSessionRegistry,
+  safeMcpClaimedClientLabel,
+  type McpConnectedAgentSession,
   type McpSessionEntry,
   type McpSessionRegistryStats,
   type McpSessionRemovalReason,
@@ -376,6 +378,8 @@ export interface McpHttpServerHandle {
   close: () => Promise<void>;
   /** Aggregate-only session telemetry; never exposes ids or principals. */
   getSessionStats: () => McpSessionRegistryStats;
+  /** Only token-free, opaque session handles and untrusted client labels. */
+  getConnectedAgentSessions: () => McpConnectedAgentSession[];
   /** Private worker IPC only; never publish session identifiers in telemetry. */
   getActiveSessionIds: () => string[];
   /** Count of currently executing tools/call requests. */
@@ -742,6 +746,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           return;
         }
         registry.beginRequest(requestSessionId);
+        if ((body as any)?.method === "tools/call") {
+          registry.noteToolRequest(requestSessionId, (body as any)?.params?.name);
+        }
         const diagnosticStage = getMcpDiagnosticStage(body);
         const diagnosticStart = performance.now();
         const isToolCall = diagnosticStage === "mcp.tools_call";
@@ -845,6 +852,8 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
                 identity: identity as McpIdentity,
                 createdAt: Date.now(),
                 lastActivityAt: Date.now(),
+                claimedClientName: safeMcpClaimedClientLabel((rb.body as any)?.params?.clientInfo?.name),
+                claimedClientVersion: safeMcpClaimedClientLabel((rb.body as any)?.params?.clientInfo?.version, 32),
               });
             } catch {
               try { await newTransport.close(); } catch { /* ignore */ }
@@ -927,6 +936,7 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
     port: boundPort,
     oauthStore,
     getSessionStats: () => registry.snapshot(),
+    getConnectedAgentSessions: () => registry.connectedAgentSessions(),
     getActiveSessionIds: () => registry.activeSessionIds(),
     getInFlightToolCalls: () => inFlightToolCalls,
     close: () =>

@@ -14,7 +14,7 @@
     "expectedProcessIdentity", "expectedLegacyCommandDigest", "clientMode", "expectedWorkerPid",
     "expectedRunning", "noActiveJobs", "noCoreShutdown", "noPublicIngress", "corePort", "channelMode", "wsPort"];
   const state = {loading:false, lastSeen:null, plan:null, dashboard:null, events:[], history:[],
-    filter:"all", errors:[], ready:false, operationBusy:false};
+    filter:"all", agentFilter:"all", agentRows:[], errors:[], ready:false, operationBusy:false};
   const call = (name, args={}) => {
     const invoke = window.__TAURI__?.core?.invoke;
     if(typeof invoke !== "function") throw Error("Native Tray IPC is unavailable");
@@ -99,6 +99,65 @@
     state.lastSeen=Number.isFinite(sync)?sync:null;
     text("op-observed",state.lastSeen?"Verified "+localTime(state.lastSeen):"No trustworthy timestamp");
   }
+  function renderConnectedAgents(details, listId="op-connected-agent-list",
+      summaryId="op-connected-agent-summary", filter=state.agentFilter) {
+    const root=$(listId);
+    if(!root)return;
+    root.replaceChildren();
+    const verified=details?.connectedAgentsState==="verified" &&
+      Array.isArray(details.connectedAgents);
+    const rows=verified ? details.connectedAgents : null;
+    if(!rows) {
+      state.agentRows=[];
+      text(summaryId,"Session-level owner evidence unavailable");
+      append(root,"p","op-empty","Unavailable — verify the MCP owner and backend health. A previous identity sighting does not mean an active session.");
+      return;
+    }
+    // Labels are untrusted MCP initialize.clientInfo strings; auth and
+    // lifecycle are verified separately by the native owner path.
+    state.agentRows=rows.filter(row => row && typeof row.sessionHandle==="string" &&
+      /^ses_[a-f0-9]{12}$/.test(row.sessionHandle) &&
+      typeof row.principalHandle==="string" && /^idh_[a-f0-9]{16}$/.test(row.principalHandle) &&
+      ["oauth","static-bearer"].includes(row.authMode) &&
+      ["active","idle","retiring"].includes(row.state));
+    const active=state.agentRows.filter(x=>x.state==="active").length;
+    const idle=state.agentRows.filter(x=>x.state==="idle").length;
+    const retiring=state.agentRows.filter(x=>x.state==="retiring").length;
+    const observed=number(details.connectedAgentsObservedAt);
+    text(summaryId,state.agentRows.length+
+      " sessions · "+active+" busy · "+idle+" idle · "+retiring+" retiring"+
+      (observed!==null?" · sampled "+localTime(observed):""));
+    const filtered=state.agentRows.filter(x=>filter==="all"||x.state===filter);
+    if(!filtered.length){
+      append(root,"p","op-empty",state.agentRows.length?"No sessions match this filter.":
+        "No active MCP sessions in the verified owner registry.");
+      return;
+    }
+    for(const item of filtered.slice(0,64)){
+      const row=append(root,"article","op-client-row");
+      const primary=append(row,"div","op-client-primary");
+      const heading=append(primary,"div","op-client-heading");
+      append(heading,"strong","",item.claimedClientName||"Unidentified MCP client");
+      badge(heading,item.state,item.state==="active"?"good":item.state==="retiring"?"bad":"muted");
+      append(primary,"small","",item.claimedClientName?
+        "Client-reported name · not independently verified":
+        "No clientInfo.name supplied");
+      const identity=append(row,"div","op-client-identity");
+      append(identity,"span","",item.authMode==="oauth"?"OAuth authenticated":"Bearer authenticated");
+      append(identity,"code","",item.principalHandle);
+      append(identity,"code","",item.sessionHandle);
+      const activity=append(row,"div","op-client-activity");
+      const seen=number(item.lastSeenAt);
+      append(activity,"strong","",number(item.inFlight)!==null?item.inFlight+" request(s)":"Requests unknown");
+      append(activity,"small","",seen!==null?"Last seen "+new Date(seen).toLocaleString():"Last activity unavailable");
+      append(activity,"small","",item.lastToolRequest?"Requested tool: "+item.lastToolRequest:
+        "No tool request recorded");
+    }
+  }
+  // Shared renderer for Runtime Detection → MCP; no second identity cache.
+  window.__superagentRenderMcpClientList = details =>
+    renderConnectedAgents(details,"runtime-mcp-connected-list","runtime-mcp-connected-summary","all");
+
   function renderMcp(data) {
     const owner=Array.isArray(data?.services)?data.services.find(x=>x.service==="mcp"):null;
     const details=owner?.details;
@@ -107,6 +166,7 @@
         "op-mcp-rejected","op-mcp-oldest","op-mcp-generations","op-mcp-capacity",
         "op-mcp-busy","op-mcp-retiring"])text(id,"—");
       text("op-mcp-note","Authenticated MCP owner telemetry unavailable");
+      renderConnectedAgents(null);
       return;
     }
     const counts=details.sessionTelemetry||{};
@@ -122,6 +182,7 @@
     text("op-mcp-capacity",number(counts.capacity)!==null?String(counts.capacity):"—");
     text("op-mcp-busy",number(counts.inFlightSessions)!==null?String(counts.inFlightSessions):"—");
     text("op-mcp-retiring",number(counts.retiringSessions)!==null?String(counts.retiringSessions):"—");
+    renderConnectedAgents(details);
   }
   function renderResources(data, metrics) {
     const mcp=Array.isArray(data?.services)?data.services.find(x=>x.service==="mcp"):null;
@@ -313,6 +374,11 @@
   }
   function bind(){
     $("op-refresh")?.addEventListener("click",()=>{void refresh();});
+    $("op-client-filter")?.addEventListener("change",e=>{
+      state.agentFilter=String(e.target.value||"all");
+      const details=state.dashboard?.services?.find(x=>x.service==="mcp");
+      renderConnectedAgents(details?.ownershipVerified===true?details.details:null);
+    });
     $("op-event-filter")?.addEventListener("change",e=>{
       state.filter=String(e.target.value||"all");drawEvents();
     });

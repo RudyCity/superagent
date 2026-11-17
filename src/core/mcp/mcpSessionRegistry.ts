@@ -16,6 +16,8 @@
 
 import type { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { McpIdentity } from "./mcpAuth.js";
+import crypto from "node:crypto";
+import { deriveIdentityHandle } from "./mcpIdentityPresence.js";
 
 export interface McpSessionEntry {
   sessionId: string;
@@ -24,6 +26,31 @@ export interface McpSessionEntry {
   createdAt: number;
   lastActivityAt: number;
   inFlight?: number;
+  /** Client-supplied MCP initialize labels, never authentication evidence. */
+  claimedClientName?: string | null;
+  claimedClientVersion?: string | null;
+  /** Last authenticated tool request name, no arguments or prompts. */
+  lastToolRequest?: string;
+}
+
+export interface McpConnectedAgentSession {
+  sessionHandle: string;
+  principalHandle: string;
+  authMode: "oauth" | "static-bearer";
+  claimedClientName: string | null;
+  claimedClientVersion: string | null;
+  state: "active" | "idle" | "retiring";
+  inFlight: number;
+  createdAt: number;
+  lastSeenAt: number;
+  lastToolRequest: string | null;
+}
+
+export function safeMcpClaimedClientLabel(input: unknown, maxLength = 64): string | null {
+  if (typeof input !== "string") return null;
+  const label = input.replace(/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(/\s+/g, " ").trim();
+  return label && label.length <= maxLength ? label : null;
 }
 
 export type McpSessionRemovalReason =
@@ -140,6 +167,30 @@ export class McpSessionRegistry {
   /** Max lifetime elapsed; only already-running requests may finish. */
   isRetiring(sessionId: string): boolean {
     return this.retiringSessions.has(sessionId);
+  }
+
+  noteToolRequest(sessionId: string, name: unknown): void {
+    const entry = this.sessions.get(sessionId);
+    if (!entry) return;
+    entry.lastToolRequest = typeof name === "string" && /^[A-Za-z0-9_.\/-]{1,80}$/.test(name)
+      ? name : undefined;
+  }
+
+  /** Read-only session inventory without raw session IDs or credentials. */
+  connectedAgentSessions(): McpConnectedAgentSession[] {
+    return [...this.sessions.values()].slice(0, 64).map(entry => ({
+      sessionHandle: "ses_" + crypto.createHash("sha256").update(entry.sessionId).digest("hex").slice(0, 12),
+      principalHandle: deriveIdentityHandle(entry.identity),
+      authMode: entry.identity.mode,
+      claimedClientName: entry.claimedClientName ?? null,
+      claimedClientVersion: entry.claimedClientVersion ?? null,
+      state: this.retiringSessions.has(entry.sessionId) ? "retiring"
+        : (entry.inFlight ?? 0) > 0 ? "active" : "idle",
+      inFlight: entry.inFlight ?? 0,
+      createdAt: entry.createdAt,
+      lastSeenAt: entry.lastActivityAt,
+      lastToolRequest: entry.lastToolRequest ?? null,
+    })).sort((a, b) => b.lastSeenAt - a.lastSeenAt);
   }
 
   /** Private worker-to-owner reconciliation only; never expose IDs via status. */

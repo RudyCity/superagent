@@ -310,7 +310,13 @@ async function runtimeRefreshMcpSecurity() {
     const results = await Promise.allSettled([
       runtimeInvoke("mcp_project_access_action", {action:"requests"}),
       runtimeInvoke("mcp_project_access_action", {action:"identities"}),
+      runtimeInvoke("lifecycle_console_request", {request:{action:"dashboard",limit:1}}),
     ]);
+    const dashboard = results[2].status==="fulfilled" ? results[2].value : null;
+    const owner = Array.isArray(dashboard?.services)
+      ? dashboard.services.find(x=>x.service==="mcp") : null;
+    window.__superagentRenderMcpClientList?.(
+      owner?.ownershipVerified===true ? owner.details : null);
     const reqResult = results[0], idResult = results[1];
     const reqOk = reqResult.status === "fulfilled" && reqResult.value?.success === true &&
       Array.isArray(reqResult.value.requests);
@@ -346,6 +352,7 @@ async function runtimeRefreshMcpSecurity() {
         : "Data read-only; setiap persetujuan atau pencabutan dilakukan melalui dialog native Security Approval Manager.";
     }
   } catch {
+    window.__superagentRenderMcpClientList?.(null);
     if (status) {
       status.dataset.state = "error";
       status.textContent = "Status MCP tidak tersedia. Tidak ada izin yang diubah.";
@@ -682,6 +689,8 @@ function runtimeApplyTab() {
   if (namedCard) namedCard.hidden = tab !== "cloudflare";
   const mcpAccess = rt("runtime-mcp-security");
   if (mcpAccess) mcpAccess.hidden = tab !== "mcp";
+  const mcpConnected=rt("runtime-mcp-connected-panel");
+  if (mcpConnected) mcpConnected.hidden = tab !== "mcp";
   const remotePanel = rt("runtime-remote-panel");
   remotePanel?.setAttribute?.("aria-labelledby", "runtime-tab-" + tab);
   if (config) {

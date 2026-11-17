@@ -6,7 +6,7 @@
  * Startup credentials travel only over the trusted child IPC channel.
  */
 import { startMcpHttpServer, type McpHttpServerHandle } from "../mcp/mcpHttpTransport.js";
-import type { McpSessionRegistryStats, McpSessionRemovalReason } from "../mcp/mcpSessionRegistry.js";
+import type { McpSessionRegistryStats, McpSessionRemovalReason, McpConnectedAgentSession } from "../mcp/mcpSessionRegistry.js";
 import { createPersistentMcpOAuthStore } from "../mcp/mcpOAuthPersistentStore.js";
 import { startMcpDelegateForwardingSubscription } from "./delegateForwardingLifecycle.js";
 import { resolveDelegateCorePort } from "./delegateCoreEndpoint.js";
@@ -45,6 +45,8 @@ export type BackendWorkerReply =
       inFlightToolCalls: number;
       /** Private owner-worker IPC only; never exposed by public status endpoints. */
       activeSessionIds: string[];
+      /** Private worker-to-owner, bounded session display metadata. */
+      connectedAgentSessions?: McpConnectedAgentSession[];
       sessionStats: McpSessionRegistryStats;
     };
 
@@ -142,6 +144,7 @@ export async function runReloadableMcpBackendWorker(): Promise<never> {
       arrayBuffersBytes:memory.arrayBuffers ?? 0,
       inFlightToolCalls:handle.getInFlightToolCalls(),
       activeSessionIds:handle.getActiveSessionIds(),
+      connectedAgentSessions:handle.getConnectedAgentSessions(),
       sessionStats:handle.getSessionStats(),
     } satisfies BackendWorkerReply);
   };

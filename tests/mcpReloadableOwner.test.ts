@@ -95,6 +95,15 @@ describe("MCP hot reload through durable ingress (no live external tunnel)", () 
       await new Promise(resolve => setTimeout(resolve, 12_000));
       const freshHealth = (await control("status")).body;
       expect(freshHealth.memoryTelemetry.healthAgeMs).toBeLessThan(8_000);
+      // Private authenticated owner sees only registry-backed, anonymized
+      // clientInfo labels; no raw MCP session or bearer authentication data.
+      expect(freshHealth.connectedAgentsState).toBe("verified");
+      expect(freshHealth.connectedAgents).toEqual(expect.arrayContaining([
+        expect.objectContaining({claimedClientName:"hot-reload-test",
+          authMode:"static-bearer",state:expect.stringMatching(/^(active|idle)$/)}),
+      ]));
+      expect(JSON.stringify(freshHealth.connectedAgents)).not.toContain(owner.info.bearerToken);
+      expect(freshHealth.connectedAgents[0].sessionHandle).toMatch(/^ses_[a-f0-9]{12}$/);
       expect(freshHealth.memoryTelemetry.trend.sampleCount).toBe(1);
       const migrated = await control("reload", "POST");
       expect(migrated.status).toBe(200);

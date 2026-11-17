@@ -690,6 +690,26 @@
                 <p class="op-note" id="op-security-evidence">Checking enforcement evidence…</p>
               </section>
             </div>
+            <section class="op-frame op-client-panel" aria-labelledby="op-connected-agents-title">
+              <div class="op-client-head">
+                <div>
+                  <h3 id="op-connected-agents-title">Connected MCP agents</h3>
+                  <p id="op-connected-agent-summary" role="status" aria-live="polite">Checking verified live sessions…</p>
+                </div>
+                <label for="op-client-filter">State
+                  <select id="op-client-filter">
+                    <option value="all">All sessions</option>
+                    <option value="active">Busy</option>
+                    <option value="idle">Idle</option>
+                    <option value="retiring">Retiring</option>
+                  </select>
+                </label>
+              </div>
+              <div id="op-connected-agent-list" class="op-client-list" aria-live="polite">
+                <p class="op-empty">Awaiting owner-verified MCP session telemetry.</p>
+              </div>
+              <p class="op-note">Client names are untrusted labels supplied during MCP initialization. Authentication verifies the principal, not the app brand. Idle sessions are registered sessions, not evidence of a running OS process. No raw session IDs or credentials are displayed.</p>
+            </section>
             <div class="op-pair">
               <section class="op-frame" aria-label="Unified diagnostic events">
                 <div class="op-head"><div><h3>Unified diagnostics</h3>
@@ -1178,6 +1198,18 @@
               </div>
               <section id="runtime-mcp-security" class="runtime-mcp-security" hidden aria-label="MCP Security Approval overview">
                 <p class="empty-state">Memeriksa status izin MCP dari Security Approval Manager...</p>
+              </section>
+              <section id="runtime-mcp-connected-panel" class="op-frame op-client-panel" hidden
+                aria-labelledby="runtime-mcp-connected-title">
+                <div class="op-client-head"><div>
+                  <h3 id="runtime-mcp-connected-title">Connected MCP agents</h3>
+                  <p id="runtime-mcp-connected-summary" role="status" aria-live="polite">Checking active MCP sessions…</p>
+                </div></div>
+                <div id="runtime-mcp-connected-list" class="op-client-list" aria-live="polite">
+                  <p class="op-empty">Waiting for verified MCP owner telemetry.</p>
+                </div>
+                <p class="op-note">Client names are self-reported. OAuth/Bearer identity is verified separately.
+                  Only live registry sessions appear; previous authentication requests do not count as online agents.</p>
               </section>
               <div id="runtime-tray-gateway" class="runtime-items runtime-host-grid" hidden aria-label="SuperAgent Tray management URL"></div>
               <div id="runtime-named-mcp-status" class="runtime-items runtime-host-grid" hidden aria-label="MCP Named Tunnel URL"></div>

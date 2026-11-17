@@ -538,6 +538,21 @@ export async function startReloadableMcpTunnelOwner(
     const backendActiveSessions = allGenerationsHealthy
       ? [...generations].reduce((sum, gen) => sum + gen.lastHealth!.sessionStats.activeSessions, 0)
       : null;
+    // Never misreport stale or unreconciled workers as zero connected clients.
+    const reports = [...generations].map(gen => {
+      const health = gen.lastHealth;
+      if (!gen.alive || !health || now - health.timestamp > 15_000 ||
+          !Array.isArray(health.connectedAgentSessions) ||
+          !Array.isArray(health.activeSessionIds) ||
+          health.connectedAgentSessions.length !== health.sessionStats.activeSessions ||
+          health.activeSessionIds.length !== health.sessionStats.activeSessions) return null;
+      return health.connectedAgentSessions;
+    });
+    const connectedAgentsVerified = current?.alive===true && generations.size>0 &&
+      allGenerationsHealthy && reports.every(Array.isArray) &&
+      reports.reduce((sum, items) => sum + (items?.length ?? 0), 0) === activeSessionCount();
+    const connectedAgents = connectedAgentsVerified
+      ? reports.flatMap(items => items ?? []).slice(0,64) : null;
     const trend = current?.memoryTrend ?? assessMemoryTrend([]);
     return {
       version: 1, kind: "private_mcp_owner", pid: process.pid,
@@ -566,6 +581,11 @@ export async function startReloadableMcpTunnelOwner(
         healthAgeMs: gen.lastHealth ? Math.max(0, now - gen.lastHealth.timestamp) : null,
         memoryTrendSuspicious: gen.memoryTrend.suspicious,
       })),
+      /** Private authenticated owner status. No raw IDs or authorization material. */
+      connectedAgents,
+      connectedAgentsState: connectedAgentsVerified ? "verified" : "unavailable",
+      connectedAgentsObservedAt: connectedAgentsVerified
+        ? Math.max(0, ...[...generations].map(gen => gen.lastHealth?.timestamp ?? 0)) : null,
       sessionTelemetry: {
         backendActiveSessions,
         inFlightSessions: currentStats?.inFlightSessions ?? null,
