@@ -166,7 +166,8 @@ describe("auth-protected tools do not execute without identity", () => {
       }),
     });
     const text = await call.text();
-    expect(text).toContain("--allow-dangerous");
+    expect(text).toContain("MCP_APPROVAL_REQUIRED");
+    expect(text).toContain("Chat YOLO does not authorize MCP");
     await fetch(`http://127.0.0.1:${handle.port}${MCP_HTTP_PATH}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}`, "mcp-session-id": sid as string },
