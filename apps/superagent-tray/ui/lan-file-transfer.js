@@ -79,22 +79,23 @@
     return Boolean(input && "webkitdirectory" in input && input.webkitdirectory === true && input.multiple === true);
   };
   function controls() {
+    const relayBusy = window.__superagentLanRelayBusy === true;
     const hasDevice = Boolean(selected());
     const files = $("lan-file-source")?.files;
     const folder = $("lan-folder-source");
-    if ($("lan-file-send")) $("lan-file-send").disabled = busy || !hasDevice || !files?.length;
-    if ($("lan-file-retry")) $("lan-file-retry").disabled = busy || !hasDevice || !retryPlan;
+    if ($("lan-file-send")) $("lan-file-send").disabled = busy || relayBusy || !hasDevice || !files?.length;
+    if ($("lan-file-retry")) $("lan-file-retry").disabled = busy || relayBusy || !hasDevice || !retryPlan;
     if ($("lan-folder-send")) $("lan-folder-send").disabled =
-      busy || !hasDevice || !folderSupported() || !folder?.files?.length;
-    if ($("lan-file-receive")) $("lan-file-receive").disabled = busy || !hasDevice;
+      busy || relayBusy || !hasDevice || !folderSupported() || !folder?.files?.length;
+    if ($("lan-file-receive")) $("lan-file-receive").disabled = busy || relayBusy || !hasDevice;
     if ($("lan-file-cancel")) $("lan-file-cancel").disabled = !busy;
     if ($("lan-file-pause")) {
       $("lan-file-pause").disabled = !busy || !activeTransfer || cancelled;
       $("lan-file-pause").textContent = paused ? "Resume transfer" : "Pause transfer";
     }
-    if ($("lan-file-source")) $("lan-file-source").disabled = busy;
-    if ($("lan-file-send-all")) $("lan-file-send-all").disabled = busy || !hasDevice;
-    if (folder) folder.disabled = busy || !folderSupported();
+    if ($("lan-file-source")) $("lan-file-source").disabled = busy || relayBusy;
+    if ($("lan-file-send-all")) $("lan-file-send-all").disabled = busy || relayBusy || !hasDevice;
+    if (folder) folder.disabled = busy || relayBusy || !folderSupported();
     if ($("lan-folder-support")) $("lan-folder-support").textContent = folderSupported()
       ? "Choose one folder. Up to 64 files and 4 MiB total (including package overhead). Hidden files and unsafe paths are blocked."
       : "Folder picking is not supported in this WebView; folder sending is disabled.";
