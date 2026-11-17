@@ -12,7 +12,7 @@ import {
   openLanSession, pairLanDevice, revokeLanDevice,
   getAndroidScreenFrame, sendAndroidScreenInput, type AndroidScreenInput,
   getAndroidUiSchema, clickAndroidUiElement, offerLanFile, putLanFileChunk,
-  getLanFileChunk, finalizeLanFile, abortLanFile,
+  getLanFileChunk, getLanFileStatus, finalizeLanFile, abortLanFile,
 } from "../lanRemote/controller.js";
 import {
   cancelLanPairRequest, completeLanPairRequest, createLanPairRequest, createTunnelPairRequest,
@@ -24,9 +24,9 @@ import { createAndroidApkDownloadTicket, getAndroidApkDownloadTicketStatus, revo
 import { approveTvTunnelBootstrap } from "../deviceTunnel/tvBootstrap.js";
 import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
-export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_finish" | "file_abort";
+export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"]);
+const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"]);
 
 export function parseTrayLanAction(input: unknown): { action: TrayLanAction; args: LanArgs } {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw Error("Invalid LAN request.");
@@ -50,6 +50,7 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     file_offer: ["action", "deviceId", "direction", "name", "size", "sha256"],
     file_put: ["action", "deviceId", "transferId", "seq", "data"],
     file_get: ["action", "deviceId", "transferId", "seq"],
+    file_status: ["action", "deviceId", "transferId"],
     file_finish: ["action", "deviceId", "transferId"],
     file_abort: ["action", "deviceId", "transferId"],
     schema: ["action", "deviceId", "knownRevision"],
@@ -103,7 +104,7 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
       if (typeof data.code !== "string" || !/^\d{8}$/.test(data.code)) throw Error("Eight-digit code required.");
       if (data.verified !== true) throw Error("Local fingerprint confirmation required.");
     }
-  } else if (["open", "exec", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_finish", "file_abort"].includes(action)) {
+  } else if (["open", "exec", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"].includes(action)) {
     if (typeof data.deviceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.deviceId)) throw Error("Valid paired device ID required.");
     if (action === "exec" &&
       (typeof data.command !== "string" || !data.command.trim() || data.command.length > 2000)) throw Error("PowerShell command must contain 1–2000 characters.");
@@ -286,6 +287,7 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       args.transferId as string, args.seq as number, args.data as string) };
     case "file_get": return { success: true, result: await getLanFileChunk(id,
       args.transferId as string, args.seq as number) };
+    case "file_status": return { success: true, result: await getLanFileStatus(id, args.transferId as string) };
     case "file_finish": return { success: true, result: await finalizeLanFile(id, args.transferId as string) };
     case "file_abort": await abortLanFile(id, args.transferId as string); return { success: true };
     case "schema": return { success: true, schema: await getAndroidUiSchema(id, args.knownRevision as number | undefined) };
