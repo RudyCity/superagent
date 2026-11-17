@@ -200,6 +200,42 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// All native producers use one redacted, durable event path. Never use
+/// untrusted Core strings as OS notification titles or bodies.
+fn record_operational_incident(
+    app: &tauri::AppHandle, source: &str, severity: &str,
+    id: &str, title: &str, body: &str,
+) -> Result<bool, String> {
+    let dir = config_dir()?;
+    let created = tray_notification_center::publish(&dir, source, severity, id, title, body)?;
+    if created {
+        let _ = app.emit("tray-notifications-changed", ());
+        if tray_notification_center::should_notify_os(&dir, source, severity)? {
+            // The OS surface is intentionally generic; detailed text stays in
+            // the private, authenticated native Tray inbox.
+            if let Err(error) = app.notification().builder()
+                .title("SuperAgent needs attention")
+                .body("A system event requires review. Open the Tray Notification Center.")
+                .show() {
+                eprintln!("[tray] Critical desktop alert unavailable: {error}");
+            }
+        }
+    }
+    Ok(created)
+}
+
+#[tauri::command]
+fn tray_notification_center_preferences(
+    window: tauri::WebviewWindow,
+    preferences: tray_notification_center::NotificationPreferences,
+) -> Result<Value, String> {
+    if window.label() != "main" || !window.is_visible().unwrap_or(false) ||
+        !window.is_focused().unwrap_or(false) {
+        return Err("Focus the native Tray to manage notification preferences".into());
+    }
+    tray_notification_center::save_preferences(&config_dir()?, preferences)
+}
+
 /// The WebView can read and acknowledge, but may not insert arbitrary content.
 #[tauri::command]
 fn tray_notification_center_action(
@@ -2743,46 +2779,153 @@ async fn poll_reminders(
             let keep_from = state.ids.len() - 500;
             state.ids.drain(0..keep_from);
         }
-        // Persist immediately so a crash does not generate a notification storm.
+        // A completed reminder is not acknowledged until its inbox event is
+        // durably committed. A storage failure is retried on the next poll.
+        record_operational_incident(
+            app, "reminder", "info", &format!("reminder:{id}"),
+            "Reminder completed",
+            "A scheduled reminder completed. Open Schedules & Reminders for details.",
+        )?;
         write_seen(&file, &state)?;
-        if let Ok(dir) = config_dir() {
-            if let Ok(true) = tray_notification_center::publish(
-                &dir, "reminder", "info", &format!("reminder:{id}"),
-                "Reminder completed",
-                "A scheduled reminder completed. Open Schedules & Reminders for details.",
-            ) {
-                let _ = app.emit("tray-notifications-changed", ());
-            }
-        }
     }
     Ok(delivered)
 }
 
-/// Passive security inbox projection. This read never approves access,
-/// grants capabilities, or surfaces client-provided labels, paths or reasons.
-async fn poll_pending_security_requests(app: &tauri::AppHandle) {
-    let Ok(payload) = core_request(Method::GET, "/api/desktop/access/requests", None).await else {
-        return;
-    };
-    let Some(requests) = payload.get("requests").and_then(Value::as_array) else {
-        return;
-    };
-    let Ok(dir) = config_dir() else { return };
-    for request in requests.iter().take(50) {
-        if request.get("status").and_then(Value::as_str) != Some("pending") {
-            continue;
-        }
-        let Some(id) = request.get("requestId").and_then(Value::as_str) else {
-            continue;
-        };
-        if let Ok(true) = tray_notification_center::publish(
-            &dir, "security", "critical", &format!("mcp-pending:{id}"),
+/// Passive, authenticated security projection. Never approves/revokes a
+/// capability; absence is trusted only after a complete successful inventory.
+async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), String> {
+    let payload = core_request(Method::GET, "/api/desktop/access/requests", None).await?;
+    if payload.get("success") != Some(&Value::Bool(true)) {
+        return Err("Security request inventory unavailable".into());
+    }
+    let requests = payload.get("requests").and_then(Value::as_array)
+        .ok_or("Security inventory malformed")?;
+    let mut active = HashSet::new();
+    for request in requests.iter().take(300) {
+        if request.get("status").and_then(Value::as_str) != Some("pending") { continue; }
+        let Some(id) = request.get("requestId").and_then(Value::as_str) else { continue; };
+        if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
+        let key = format!("mcp-pending:{id}");
+        active.insert(key.clone());
+        record_operational_incident(
+            app, "security", "critical", &key,
             "Security approval pending",
-            "A connected MCP identity requested access. Review Security Approval.",
-        ) {
+            "An MCP connection requested access. Review Security Approval.",
+        )?;
+    }
+    // The API is unpaginated; avoid false resolves if a future revision
+    // returns a partial/bounded projection.
+    if requests.len() <= 300 {
+        let resolved = tray_notification_center::resolve_missing(
+            &config_dir()?, "mcp-pending:", &active,
+        )?;
+        if resolved > 0 { let _ = app.emit("tray-notifications-changed", ()); }
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct HealthObservation {
+    core_seen: bool,
+    service_seen: bool,
+    mcp_active: bool,
+    mcp_clients: u64,
+    tunnel_active: bool,
+    muse_connected: bool,
+    telegram_active: bool,
+    channel_host_count: u64,
+}
+
+fn monitor_transition(
+    app: &tauri::AppHandle, source: &str, key: &str,
+    title: &str, body: &str, was_running: bool, running: bool,
+) -> Result<(), String> {
+    if was_running && !running {
+        record_operational_incident(app, source, "warning", key, title, body)?;
+    } else if running {
+        if tray_notification_center::resolve(&config_dir()?, key)? {
             let _ = app.emit("tray-notifications-changed", ());
         }
     }
+    Ok(())
+}
+
+/// Read-only per-process health observations. Unknown is NOT equivalent to
+/// stopped: network errors and unavailable owners never auto-resolve incidents.
+async fn poll_operational_health(
+    app: &tauri::AppHandle, previous: &mut HealthObservation,
+) -> Result<(), String> {
+    let services = match core_request(Method::GET, "/api/desktop/runtime-services", None).await {
+        Ok(value) if value.get("success") == Some(&Value::Bool(true)) => value,
+        _ => {
+            if previous.core_seen {
+                record_operational_incident(
+                    app, "core", "critical", "health:core",
+                    "Core health unavailable",
+                    "The selected Core health endpoint is unavailable. Inspect Runtime Detection.",
+                )?;
+            }
+            return Ok(());
+        }
+    };
+    if tray_notification_center::resolve(&config_dir()?, "health:core")? {
+        let _ = app.emit("tray-notifications-changed", ());
+    }
+    previous.core_seen = true;
+    let mcp = &services["mcp"];
+    let tunnel = &services["tunnel"];
+    let muse = &services["muse"];
+    let telegram = &services["telegram"];
+    let mcp_active = mcp["active"] == true;
+    let mcp_clients = mcp["connectedClientCount"].as_u64().unwrap_or(0);
+    let tunnel_active = tunnel["active"] == true;
+    let muse_connected = muse["ownerPresent"] == true && muse["connected"] == true;
+    let telegram_active = telegram["active"] == true;
+    let hosts = services["channelHosts"]["verifiedCount"].as_u64().unwrap_or(0);
+    if previous.service_seen {
+        monitor_transition(app, "mcp", "health:mcp-owner",
+            "MCP service disconnected", "A previously active MCP service is no longer reported by Core.",
+            previous.mcp_active, mcp_active)?;
+        monitor_transition(app, "mcp", "health:mcp-clients",
+            "MCP client connections lost", "A previously connected MCP client is no longer observed by Core.",
+            previous.mcp_clients > 0, mcp_clients > 0)?;
+        monitor_transition(app, "tunnel", "health:tunnel",
+            "Tunnel disconnected", "A previously active Core-owned tunnel is no longer observed.",
+            previous.tunnel_active, tunnel_active)?;
+        monitor_transition(app, "runtime", "health:muse",
+            "Muse connection lost", "The previously connected Muse watcher is no longer connected.",
+            previous.muse_connected, muse_connected)?;
+        monitor_transition(app, "runtime", "health:telegram",
+            "Telegram service stopped", "A previously active Telegram service is no longer observed.",
+            previous.telegram_active, telegram_active)?;
+        monitor_transition(app, "runtime", "health:channel-hosts",
+            "Channel host connection lost", "Previously verified channel hosts are no longer observed.",
+            previous.channel_host_count > 0, hosts > 0)?;
+    }
+    previous.service_seen = true;
+    previous.mcp_active = mcp_active;
+    previous.mcp_clients = mcp_clients;
+    previous.tunnel_active = tunnel_active;
+    previous.muse_connected = muse_connected;
+    previous.telegram_active = telegram_active;
+    previous.channel_host_count = hosts;
+
+    if let Ok(delegate) = core_request(Method::GET, "/api/desktop/delegate/status", None).await {
+        if delegate.get("success") == Some(&Value::Bool(true)) {
+            let running = delegate["running"] == true;
+            let desired = delegate["desiredEnabled"] == true;
+            if desired && !running {
+                record_operational_incident(
+                    app, "delegate", "warning", "health:delegate-listener",
+                    "Delegate listener unavailable",
+                    "The enabled Delegate listener is not running. Review Delegate status.",
+                )?;
+            } else if tray_notification_center::resolve(&config_dir()?, "health:delegate-listener")? {
+                let _ = app.emit("tray-notifications-changed", ());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn show_main(app: &tauri::AppHandle, new_reminder: bool) {
@@ -3111,6 +3254,7 @@ fn main() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                let mut observation = HealthObservation::default();
                 loop {
                     // No auto-start: SuperAgent Core and daemon scheduling
                     // remain user-owned. This loop only displays completed runs.
@@ -3121,8 +3265,15 @@ fn main() {
                     // When notifications are switched off, acknowledge
                     // completed reminders without emitting toasts so they
                     // cannot flood the user when re-enabled later.
-                    let _ = poll_reminders(&handle, preferences.notifications_enabled).await;
-                    poll_pending_security_requests(&handle).await;
+                    if let Err(error) = poll_reminders(&handle, preferences.notifications_enabled).await {
+                        eprintln!("[tray] Reminder notification projection failed: {error}");
+                    }
+                    if let Err(error) = poll_pending_security_requests(&handle).await {
+                        eprintln!("[tray] Security notification projection unavailable: {error}");
+                    }
+                    if let Err(error) = poll_operational_health(&handle, &mut observation).await {
+                        eprintln!("[tray] Operational notification projection unavailable: {error}");
+                    }
                     tokio::time::sleep(Duration::from_secs(preferences.notification_poll_seconds))
                         .await;
                 }
@@ -3169,6 +3320,7 @@ fn main() {
             get_tray_settings,
             tray_notification_center_action,
             tray_notification_center_ui_alert,
+            tray_notification_center_preferences,
             desktop_input_trust::get_desktop_input_policy,
             desktop_input_trust::list_desktop_input_windows,
             desktop_input_trust::set_desktop_input_mode,
