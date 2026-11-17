@@ -7,10 +7,11 @@ import { lstat, realpath, readdir, readFile, rm } from "node:fs/promises";
 import { isAbsolute, join, parse, relative, resolve } from "node:path";
 import { getPackageRootDir, getRootConfigDir } from "../config/paths.js";
 import { inspectCdpSessionArchiveDirectory, stopCdpSessionArchiveByOperator } from "./chromeCdpSessionArchive.js";
+import { writeProjectRecordingZip } from "./recordingZip.js";
 
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const FILES = new Set(["video.mp4", "actions.json", "transcript.jsonl", "console.jsonl",
-  "errors.jsonl", "network.jsonl", "diagnostics.jsonl", "manifest.json", "README.txt"]);
+  "errors.jsonl", "network.jsonl", "diagnostics.jsonl", "manifest.json", "README.txt", "recording.zip"]);
 
 function inside(base: string, path: string): boolean {
   const diff=relative(base,path);
@@ -86,8 +87,9 @@ export async function listProjectCdpRecordings(projectDirectory: string) {
       const status=live?.status === "recording" || live?.status === "stopping"
         ? live.status : ["saved","failed"].includes(String(manifest?.status))
           ? String(manifest?.status) : "interrupted";
-      const source=["managed-cdp-exact-tab","delegate-cdp-exact-tab"].includes(String(manifest?.source))
-        ? manifest?.source : "unknown";
+      const liveSource=live?.source;
+      const source=["managed-cdp-exact-tab","delegate-cdp-exact-tab","native-window-exact-window"].includes(String(manifest?.source??liveSource))
+        ? (manifest?.source ?? liveSource) : "unknown";
       const video=join(directory,"video.mp4");
       let videoBytes=0;
       try {
@@ -153,4 +155,19 @@ export async function deleteProjectCdpRecording(
   }
   await rm(directory,{recursive:true,force:false,maxRetries:0});
   return {deleted:true,recordingId};
+}
+
+/** An explicit local operator export. ZIP bytes never leave the Core over HTTP. */
+export async function exportProjectCdpRecording(projectDirectory: string, recordingId: string) {
+  const {root,exists}=await recordingRoot(projectDirectory);
+  if (!exists) throw Error("Recording unavailable.");
+  const directory=await safeDirectory(root,recordingId);
+  const manifest=await manifestOf(directory);
+  if (manifest?.status!=="saved") throw Error("Finalize recording before export.");
+  const inFlight=inspectCdpSessionArchiveDirectory(directory);
+  if (inFlight && ["recording","stopping"].includes(inFlight.status))
+    throw Error("Recording is still active.");
+  const verified=await locateProjectCdpRecording(projectDirectory,recordingId,"video");
+  if (!verified.path.endsWith("video.mp4")) throw Error("Recording video unavailable.");
+  return writeProjectRecordingZip(directory);
 }
