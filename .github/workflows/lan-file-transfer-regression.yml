@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "src/core/lanRemote/**"
+      - "src/lanClient.ts"
       - "src/core/runtime/trayLanBridge.ts"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchange.java"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchangeV2.java"
@@ -38,12 +39,15 @@ on:
       - "tests/lanFileRelayUi.test.ts"
       - "tests/lanRouteHandoff.test.ts"
       - "tests/lanTransferDiagnostics.test.ts"
+      - "tests/lanV2Source.test.ts"
+      - "tests/lanV2Relay.test.ts"
       - "tests/androidLanBackgroundTransferContract.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
   pull_request:
     paths:
       - "src/core/lanRemote/**"
+      - "src/lanClient.ts"
       - "src/core/runtime/trayLanBridge.ts"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/**"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
@@ -118,6 +122,8 @@ jobs:
           tests/lanFileRelayUi.test.ts
           tests/lanRouteHandoff.test.ts
           tests/lanTransferDiagnostics.test.ts
+          tests/lanV2Source.test.ts
+          tests/lanV2Relay.test.ts
           tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
 
