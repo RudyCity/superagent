@@ -70,6 +70,30 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     }},a.root,opts)).toMatch(/not certified/);
     expect(registeredFileToolGate({name:"unknown_file_reader"},a.root,opts)).toMatch(/not certified/);
   });
+  it("certifies only safe browser inventory under active permanent file policy",()=>{
+    const a=setup(), opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(name:string,args:Record<string,unknown>)=>
+      registeredFileToolGate({name,args},a.root,opts);
+    expect(gate("superagent_browser_gateway",{action:"identity"})).toBeNull();
+    expect(gate("superagent_browser_gateway",{action:"policy"})).toBeNull();
+    expect(gate("superagent_list_running_chrome",{})).toBeNull();
+    expect(gate("superagent_chrome_cdp",{command:"list_targets"})).toBeNull();
+    expect(gate("superagent_control_chrome_cdp",{command:"transport_status",debug_port:9222})).toBeNull();
+    expect(gate("superagent_tool_execute",{name:"superagent_chrome_cdp",arguments:{command:"list_targets"}})).toBeNull();
+    for(const [name,args] of [
+      ["superagent_chrome_cdp",{command:"evaluate",payload:"{}"}],
+      ["superagent_chrome_cdp",{command:"navigate",url:"file:///secret"}],
+      ["superagent_chrome_cdp",{command:"upload_file",files:["/secret"]}],
+      ["superagent_chrome_cdp",{command:"list_targets",transport:"delegate"}],
+      ["superagent_chrome_cdp",{command:"list_targets",payload:"{}"}],
+      ["superagent_chrome_cdp",{command:"list_targets",debug_port:1}],
+      ["superagent_browser_gateway",{action:"execute",command:"evaluate"}],
+      ["superagent_browser_gateway",{action:"discover"}],
+      ["superagent_browser_gateway",{action:"identity",payload:{filePath:"/secret"}}],
+      ["superagent_list_running_chrome",{customUserDataPath:"/secret"}],
+      ["superagent_list_chrome_profiles",{}],
+    ] as const)expect(gate(name,args)).toMatch(/not certified/);
+  });
   it("blocks symlinked targets before IO when host OS authorizes links",()=>{
     const a=setup();
     const link=path.join(a.root,"link.ts");
