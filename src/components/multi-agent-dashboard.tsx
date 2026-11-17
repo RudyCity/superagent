@@ -84,6 +84,7 @@ import { getDashboardSuggestions, getSuggestionDescriptions } from "../utils/das
 import { useDashboardSessions } from "../hooks/useDashboardSessions.js";
 import { useDashboardMouse } from "../hooks/useDashboardMouse.js";
 import { useDashboardKeyboard } from "../hooks/useDashboardKeyboard.js";
+import { appendDashboardLiveLog, normalizeDashboardLiveLog } from "../utils/dashboardLiveLog.js";
 import { useRmemoryStatus } from "../hooks/useRmemoryStatus.js";
 import { useVisionStatus } from "../hooks/useVisionStatus.js";
 import { useChecklistAutoHide } from "../hooks/useChecklistAutoHide.js";
@@ -705,18 +706,27 @@ export function MultiAgentDashboard({
   useEffect(() => {
     let disposed = false;
     let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    let droppedLiveMessages = 0;
     const flushLogs = () => {
       flushTimer = null;
       if (disposed || logQueueRef.current.length === 0) return;
-      const msgs = logQueueRef.current;
-      logQueueRef.current = [];
+      // Limit per-frame work. A burst exceeding the UI backlog budget is
+      // accounted for, not silently replayed at the expense of keyboard input.
+      const msgs = logQueueRef.current.splice(0, 250);
+      if (droppedLiveMessages > 0) {
+        msgs.unshift(`[MASTER] Live dashboard skipped ${droppedLiveMessages} older log event(s) to remain responsive.`);
+        droppedLiveMessages = 0;
+      }
+      if (logQueueRef.current.length > 0) {
+        flushTimer = setTimeout(flushLogs, 48);
+      }
 
       setMasterLogs((prev) => {
         let current = [...prev];
         for (const rawMsg of msgs) {
           const msg = rawMsg.replace(/\r\n/g, "\n");
           if (current.length === 0) {
-            current = [resolveCarriageReturns(msg)];
+            current = [normalizeDashboardLiveLog(msg)];
             continue;
           }
 
@@ -739,11 +749,11 @@ export function MultiAgentDashboard({
 
           if (msg.startsWith("[AGENT]") && last.startsWith("[AGENT]")) {
             const cleanMsg = msg.replace(/^\[AGENT\]/, "");
-            current[lastIdx] = resolveCarriageReturns(last + cleanMsg);
+            current[lastIdx] = appendDashboardLiveLog(last, cleanMsg);
           } else if (!isTag(msg) && !isTag(last)) {
-            current[lastIdx] = resolveCarriageReturns(last + "\n" + msg);
+            current[lastIdx] = appendDashboardLiveLog(last, "\n" + msg);
           } else {
-            current.push(resolveCarriageReturns(msg));
+            current.push(normalizeDashboardLiveLog(msg));
           }
         }
         return current.slice(-500);
@@ -755,6 +765,11 @@ export function MultiAgentDashboard({
       // Coalesce bursts into one React update roughly once per frame; never
       // run a timer while idle. The authoritative agent history is unchanged.
       logQueueRef.current.push(rawMsg);
+      if (logQueueRef.current.length > 2000) {
+        const overflow = logQueueRef.current.length - 2000;
+        logQueueRef.current.splice(0, overflow);
+        droppedLiveMessages += overflow;
+      }
       if (flushTimer === null) {
         flushTimer = setTimeout(flushLogs, 48);
       }
