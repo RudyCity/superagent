@@ -18,7 +18,7 @@
   });
   const state = {
     items: [], unreadCount: 0, filter: "all", source: "all", period: "all",
-    search: "", open: false, busy: false, error: "", prefsDirty: false,
+    search: "", open: false, busy: false, error: "", prefsDirty: false, evictedCount: 0,
   };
   const invoke = (action, id) => {
     const call = window.__TAURI__?.core?.invoke;
@@ -87,6 +87,8 @@
   function apply(data) {
     state.items = safeItems(data);
     state.unreadCount = state.items.filter((n) => !n.readAt && !n.archivedAt).length;
+    state.evictedCount = Number.isSafeInteger(data.evictedCount) && data.evictedCount >= 0
+      ? data.evictedCount : 0;
     state.error = "";
     displayPrefs(readPrefs(data));
     render();
@@ -185,7 +187,8 @@
     if (summary) summary.textContent = count + " unread · " +
       active().filter((n) => !n.resolvedAt).length + " open · " +
       active().filter((n) => n.resolvedAt).length + " resolved · " +
-      (state.items.length - active().length) + " archived";
+      (state.items.length - active().length) + " archived" +
+      (state.evictedCount ? " · " + state.evictedCount + " older events pruned" : "");
     document.querySelectorAll("[data-notification-filter]").forEach((button) => {
       const yes = button.dataset.notificationFilter === state.filter;
       button.classList.toggle("active", yes);
