@@ -32,6 +32,7 @@
     lanUrl: "",
     controlEnabled: false,
     controlRequested: false,
+    controllerSeconds: 0,
     isLanDevice: false,
     devicePlatform: null,
     deviceId: "",
@@ -75,15 +76,15 @@
     if (controller) {
       controller.textContent = !active ? "No controller grant" :
         !isLan ? "Native remote input unavailable · separate approval required" :
-        !stream.controlRequested ? "Device input permission not requested" :
-        stream.controlEnabled ? "Input UI open · device must authorize every action" :
-        "Input UI paused · device consent remains mandatory";
-      controller.dataset.status = "blocked";
+        !stream.controlRequested ? "Separate native controller approval required" :
+        stream.controlEnabled ? "Host-approved controller · Android device consent required" :
+        "Host-approved controller · input UI hidden";
+      controller.dataset.status = isLan && stream.controlRequested ? "active" : "blocked";
     }
     if (request) {
       request.disabled = !active || stream.controlRequested;
       request.title = !active ? "Start a separately approved viewer first" :
-        isLan ? "Request access to the on-device input controls, without automatic approval" :
+        isLan ? "Request separate attended native approval for Android remote input" :
         "Review required host-native controller approval; no input token is granted";
     }
     if (toggle) {
@@ -94,6 +95,29 @@
     if (takeover) takeover.disabled = !active || isLan;
     if (inputBar) inputBar.hidden = !isLan || !stream.controlEnabled;
     if (viewport) viewport.classList.toggle("interactive", Boolean(isLan && stream.controlEnabled));
+  }
+
+  async function refreshControlPermission() {
+    if (!stream.active || !stream.isLanDevice || !stream.controlRequested) return;
+    const id = stream.deviceId;
+    try {
+      const result = await window.__TAURI__?.core?.invoke?.("lan_support_action", {
+        action: "control_status", payload: { deviceId: id },
+      });
+      if (!stream.active || stream.deviceId !== id) return;
+      if (result?.success !== true || result?.approved !== true ||
+          !Number.isSafeInteger(result.secondsRemaining) ||
+          result.secondsRemaining < 1) throw Error("Host controller approval expired");
+      stream.controllerSeconds = result.secondsRemaining;
+      renderStreamPermissions();
+    } catch {
+      if (!stream.active || stream.deviceId !== id) return;
+      stream.controlRequested = false;
+      stream.controlEnabled = false;
+      stream.controllerSeconds = 0;
+      renderStreamPermissions();
+      status("Controller expired or revoked. View Only remains active; request new native approval.",true);
+    }
   }
 
   function scheduleNextFrame() {
@@ -311,11 +335,13 @@
     stream.inFlight = false;
     stream.lastHash = null;
     const wasLanDevice = stream.isLanDevice;
+    const previousDeviceId = stream.deviceId;
     stream.isLanDevice = false;
     stream.devicePlatform = null;
     stream.deviceId = "";
     stream.controlRequested = false;
     stream.controlEnabled = false;
+    stream.controllerSeconds = 0;
     stream.lanUrl = "";
 
     const panel = el("desktop-live-stream-panel");
@@ -336,6 +362,13 @@
     const viewport = el("desktop-live-stream-viewport");
     if (viewport) viewport.classList.remove("interactive");
 
+    if (wasLanDevice && previousDeviceId) {
+      try {
+        await window.__TAURI__?.core?.invoke?.("lan_support_action", {
+          action: "control_revoke", payload: { deviceId: previousDeviceId },
+        });
+      } catch { /* Fails closed: native gate rejects hidden Tray and lease expires. */ }
+    }
     if (token && !wasLanDevice) {
       try { await invoke("stop", { token }); } catch {}
     }
@@ -517,13 +550,20 @@
       button.disabled = true;
       try {
         if (stream.isLanDevice) {
-          if (!window.confirm(
-            "Open LAN device input tools? This does not grant input permission. The phone owner must independently enable remote touch / Accessibility and approve every input command."
-          )) return;
+          const call = window.__TAURI__?.core?.invoke;
+          if (typeof call !== "function") throw Error("Installed native Tray required");
+          const result = await call("lan_support_action", {
+            action: "control_request", payload: { deviceId: stream.deviceId },
+          });
+          if (!stream.active || !stream.isLanDevice ||
+              result?.success !== true || result?.approved !== true ||
+              !Number.isSafeInteger(result.secondsRemaining) ||
+              result.secondsRemaining < 1) throw Error("Host operator did not approve controller");
           stream.controlRequested = true;
+          stream.controllerSeconds = result.secondsRemaining;
           stream.controlEnabled = true;
           renderStreamPermissions();
-          status("Input tools opened. Device approval is still mandatory; no controller grant was issued.");
+          status("Native host input approved. Android must still independently authorize every action.");
         } else {
           const result = await invoke("controller-review");
           if (result?.state !== "NOT_CONFIGURED" || result?.approved !== false ||
@@ -653,9 +693,11 @@
     });
     window.addEventListener("beforeunload",()=>{
       if(stream.token && !stream.isLanDevice)void invoke("stop",{token:stream.token});
+      if(stream.isLanDevice && stream.deviceId)void window.__TAURI__?.core?.invoke?.(
+        "lan_support_action",{action:"control_revoke",payload:{deviceId:stream.deviceId}});
     });
     if(state.poll)clearInterval(state.poll);
-    state.poll=setInterval(()=>{if(visible())void refresh();},15000);
+    state.poll=setInterval(()=>{if(visible()){void refresh();void refreshControlPermission();}},15000);
     document.addEventListener("visibilitychange",()=>{
       if(visible())void refresh();
       else if(stream.active)void stopStream("Stream auto-paused: Tray window is hidden.");
