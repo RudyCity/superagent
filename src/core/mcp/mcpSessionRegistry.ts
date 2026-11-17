@@ -231,11 +231,13 @@ export class McpSessionRegistry {
     let oldestIdleMs = 0;
     let inFlightSessions = 0;
     for (const session of this.sessions.values()) {
-      if ((session.inFlight ?? 0) > 0) inFlightSessions++;
+      const busy = (session.inFlight ?? 0) > 0;
+      if (busy) inFlightSessions++;
       const key = principalKey(session.identity);
       principalCounts.set(key, (principalCounts.get(key) ?? 0) + 1);
       oldestSessionAgeMs = Math.max(oldestSessionAgeMs, Math.max(0, now - session.createdAt));
-      oldestIdleMs = Math.max(oldestIdleMs, Math.max(0, now - session.lastActivityAt));
+      // A live tool request or persistent SSE connection must not be reported as idle.
+      if (!busy) oldestIdleMs = Math.max(oldestIdleMs, Math.max(0, now - session.lastActivityAt));
     }
     return {
       activeSessions: this.sessions.size,
