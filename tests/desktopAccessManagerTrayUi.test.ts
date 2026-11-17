@@ -46,7 +46,8 @@ function boot(nativeEnabled=true, mcpData?: {
   const calls:{name:string,args:any}[]=[];
   const mcpRequests=mcpData?.requests || [];
   const mcpIdentities=mcpData?.identities || [];
-  const mcpProjects=mcpData?.projects || [];
+  const mcpProjects=(mcpData?.projects || []).map(p=>({...p,enabled:p.enabled!==false,
+    description:p.description||"",updatedAt:p.updatedAt??123456789}));
   const invoke=vi.fn(async(name:string,args:any)=>{
     calls.push({name,args});
     if(name==="get_permanent_access_registry"){
@@ -104,13 +105,32 @@ function boot(nativeEnabled=true, mcpData?: {
       if(mcpData?.failActions?.includes(args.action)) throw Error("MCP Core unavailable");
       if(args.action==="requests") return {success:true,requests:mcpRequests};
       if(args.action==="identities") return {success:true,identities:mcpIdentities};
-      if(args.action==="projects") return {success:true,projects:mcpProjects};
+      if(args.action==="projects") return {success:true,projects:mcpProjects.filter(p=>p.enabled)};
+      if(args.action==="project_inventory") return {success:true,projects:mcpProjects};
       if(args.action==="register_project"){
         const input=args.payload;
         const id=input.id||input.name.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");
         mcpProjects.push({projectId:id,name:input.name,type:input.type,
-          target:input.root||input.target});
+          target:input.root||input.target,description:input.description||"",
+          enabled:true,updatedAt:123456789});
         return {success:true,project:{projectId:id},capabilitiesGranted:false};
+      }
+      if(args.action==="update_project"){
+        const input=args.payload;const project=mcpProjects.find(p=>p.projectId===input.projectId);
+        if(!project || input.expectedUpdatedAt!==project.updatedAt)throw Error("PROJECT_STALE_REVISION");
+        Object.assign(project,{
+          name:input.name??project.name,description:input.description??project.description,
+          enabled:input.enabled??project.enabled,target:input.root||input.target||project.target,
+          updatedAt:project.updatedAt+1,
+        });
+        return {success:true,project:{...project},capabilitiesGranted:false};
+      }
+      if(args.action==="remove_project"){
+        const input=args.payload;const index=mcpProjects.findIndex(p=>p.projectId===input.projectId);
+        if(index<0||mcpProjects[index].updatedAt!==input.expectedUpdatedAt)
+          throw Error("PROJECT_STALE_REVISION");
+        mcpProjects.splice(index,1);
+        return {success:true,projectId:input.projectId,capabilitiesGranted:false};
       }
       if(args.action==="connected_clients") return mcpData?.connectedClients ??
         {success:true,state:"unavailable",clients:null};
@@ -546,6 +566,69 @@ describe("independent MCP Connections and Project Access UI", () => {
     expect(call?.args.payload).toEqual({name:"Remote API",type:"ssh",
       target:"ssh://deploy@example.net/srv/app"});
     expect(ui.calls.some(c=>c.name==="pick_permanent_access_path")).toBe(false);
+    expect(ui.calls.some(c=>c.args?.action==="direct_grant")).toBe(false);
+  });
+
+  it("adds an existing Workspace Chain target without granting access", async () => {
+    const ui=boot(true,{projects:[]});await flush();
+    ui.document.getElementById("access-project-add")!.click();
+    ui.document.getElementById("access-project-name")!.value="Build Chain";
+    const type=ui.document.getElementById("access-project-type")!;
+    type.value="chain";type.change();
+    expect(ui.document.getElementById("access-project-remote")!.hidden).toBe(false);
+    ui.document.getElementById("access-project-target")!.value="chain:build-app";
+    ui.document.getElementById("access-project-save")!.click();await flush();
+    const call=ui.calls.find(c=>c.args?.action==="register_project");
+    expect(call?.args.payload).toEqual({name:"Build Chain",type:"chain",target:"chain:build-app"});
+    expect(ui.calls.some(c=>c.args?.action==="direct_grant")).toBe(false);
+  });
+
+  it("searches enabled and disabled projects, edits and disables with revision pin", async () => {
+    const ui=boot(true,{projects:[
+      {projectId:"superagent",name:"SuperAgent",type:"local",target:"G:/project/superagent",
+        updatedAt:111,enabled:true},
+      {projectId:"old",name:"Old App",type:"ssh",target:"ssh://host/a",
+        updatedAt:222,enabled:false},
+    ]});await flush();
+    const list=ui.document.getElementById("access-project-list")!;
+    expect(list.children).toHaveLength(2);
+    const search=ui.document.getElementById("access-project-search")!;
+    search.value="old";search.input();
+    expect(list.children).toHaveLength(1);
+    expect(list.textContent).toContain("Nonaktif");
+    search.value="";search.input();
+    const row=list.children[0];
+    const actions=row.lastChild!;
+    actions.firstChild!.click();
+    expect(ui.document.getElementById("access-project-form")!.hidden).toBe(false);
+    expect(ui.document.getElementById("access-project-id")!.readOnly).toBe(true);
+    ui.document.getElementById("access-project-name")!.value="SuperAgent Plus";
+    ui.document.getElementById("access-project-save")!.click();await flush();
+    const edit=ui.calls.find(c=>c.args?.action==="update_project" && c.args.payload.name);
+    expect(edit?.args.payload).toEqual({
+      projectId:"superagent",expectedUpdatedAt:111,name:"SuperAgent Plus",
+      description:"",root:"G:/project/superagent",
+    });
+    expect(ui.calls.some(c=>c.args?.action==="direct_grant")).toBe(false);
+    list.children[0].lastChild!.children[1].click();await flush();
+    const disable=ui.calls.find(c=>c.args?.action==="update_project" &&
+      c.args.payload.enabled===false);
+    expect(disable?.args.payload.projectId).toBe("superagent");
+    expect(ui.document.getElementById("access-mcp-proj-select")!.children.map(c=>c.value))
+      .not.toContain("superagent");
+    expect(list.textContent).toContain("Nonaktif");
+  });
+
+  it("removes a registered project through a separate native confirmation action", async () => {
+    const ui=boot(true,{projects:[{projectId:"temporary",name:"Temp",type:"local",
+      target:"G:/temp",updatedAt:777,enabled:true}]});await flush();
+    const list=ui.document.getElementById("access-project-list")!;
+    list.firstChild!.lastChild!.children[2].click();await flush();
+    const removed=ui.calls.find(c=>c.args?.action==="remove_project");
+    expect(removed?.args.payload).toEqual({
+      projectId:"temporary",expectedUpdatedAt:777,
+    });
+    expect(list.textContent).toContain("Belum ada proyek");
     expect(ui.calls.some(c=>c.args?.action==="direct_grant")).toBe(false);
   });
 
