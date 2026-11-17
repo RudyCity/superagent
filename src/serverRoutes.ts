@@ -1367,42 +1367,11 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Registration is metadata only. Capability grants remain a separate,
-  // explicitly attended MCP access action.
-  if (pathname === "/api/desktop/access/projects/register" && req.method === "POST") {
-    res.setHeader("Cache-Control", "no-store");
-    try {
-      const body = JSON.parse(await readBody(req));
-      if (!body || typeof body !== "object" || Array.isArray(body) ||
-          Object.keys(body).some(key => !["id", "name", "type", "root", "target", "description"].includes(key))) {
-        sendJSON(res, 400, { success: false, error: "Unsupported project registration fields." });
-        return true;
-      }
-      if ((body.type !== "local" && body.type !== "ssh") ||
-          typeof body.name !== "string" || !body.name.trim() ||
-          (body.id !== undefined && (typeof body.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,62}$/.test(body.id))) ||
-          (body.description !== undefined && typeof body.description !== "string") ||
-          (body.type === "local" && (typeof body.root !== "string" || body.target !== undefined)) ||
-          (body.type === "ssh" && (typeof body.target !== "string" || body.root !== undefined))) {
-        sendJSON(res, 400, { success: false, error: "Invalid local or SSH project registration." });
-        return true;
-      }
-      const project = registerProject({
-        id: body.id,
-        name: body.name,
-        type: body.type,
-        root: body.type === "local" ? body.root : undefined,
-        target: body.type === "ssh" ? body.target : undefined,
-        description: body.description,
-      });
-      sendJSON(res, 201, { success: true, project: {
-        projectId: project.id, name: project.name, type: project.type,
-        target: project.root || project.target,
-      }, capabilitiesGranted: false });
-    } catch (err: any) {
-      sendJSON(res, 400, { success: false, error: err?.message || "Failed to register project." });
-    }
-    return true;
+  // Project registry mutations are proof-gated inside this existing local
+  // authenticated operator-only boundary, never the general MCP bearer path.
+  {
+    const { handleProjectOperatorRoute } = await import("./core/project/projectOperatorRoutes.js");
+    if (await handleProjectOperatorRoute(req, res, pathname, readBody, sendJSON)) return true;
   }
 
   // The native Tray only needs registered, enabled projects. Never present
