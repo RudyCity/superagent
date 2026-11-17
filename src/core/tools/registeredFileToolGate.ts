@@ -27,7 +27,7 @@ const PATCH_TOOLS = new Set(["apply_patch"]);
 const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","list_dir",
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
 const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace",
-  "git_status","git_diff","get_git_diff","git_log",
+  "git_status", // Git diffs/logs may expose denied source-file contents.
   "inspect_port","find_process","get_remote_service_status",
   "superagent_tool_search","superagent_tool_describe","superagent_tool_status",
   "superagent_core_status","superagent_core_plan","superagent_server_health","get_current_time",
@@ -37,12 +37,50 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_services_status",
   "superagent_delegate_doctor","superagent_delegate_list_chats",
   "superagent_delegate_read_chat","superagent_delegate_read_chat_full",
-  "superagent_delegate_search_history","superagent_delegate_sync_history",
+  "superagent_delegate_search_history",
   "superagent_delegate_search_index","superagent_delegate_inspect_chat_config",
+  "superagent_process_pool_status","superagent_lan_capabilities",
 ]);
 const READ_ONLY_SERVICE_ACTIONS = new Set([
   "status","inventory","doctor","health","dashboard","logs","profile",
 ]);
+const BROWSER_OBSERVATION_TOOLS = new Set([
+  "superagent_browser_gateway", "superagent_chrome_cdp",
+  "superagent_control_chrome_cdp", "superagent_list_running_chrome",
+]);
+/**
+ * The Delegate history sync writes only its app-owned SQLite mirror. It is NOT
+ * a read-only operation and still requires MCP write scope + Security Approval.
+ * No workspace/filePath or other caller-selected filesystem argument is allowed.
+ */
+function certifiedDelegateHistorySync(args: Args | undefined): boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  if (Object.keys(args).some(key => !["clientId","maxChats","refreshRecent","force"].includes(key))) return false;
+  if (args.clientId !== undefined &&
+      (typeof args.clientId !== "string" || !/^[A-Za-z0-9_-]{8,80}$/.test(args.clientId))) return false;
+  if (args.maxChats !== undefined &&
+      (!Number.isSafeInteger(args.maxChats) || Number(args.maxChats) < 1 || Number(args.maxChats) > 500)) return false;
+  if (args.refreshRecent !== undefined &&
+      (!Number.isSafeInteger(args.refreshRecent) || Number(args.refreshRecent) < 0 || Number(args.refreshRecent) > 100)) return false;
+  return args.force === undefined || typeof args.force === "boolean";
+}
+export type PermanentFileToolReadiness = "certified_metadata" | "certified_app_storage" |
+  "requires_explicit_files" | "action_dependent" | "uncertified";
+/**
+ * This describes ONLY the host file-policy gate, never the final authorization.
+ * OAuth, principal grants, workspace scope and native approvals still apply.
+ * A tool may have a permitted action even when its generic classification is
+ * 'action_dependent'; this function deliberately does not guess its arguments.
+ */
+export function getPermanentFileToolReadiness(name: string): PermanentFileToolReadiness {
+  if (BENIGN.has(name)) return "certified_metadata";
+  if (name === "superagent_delegate_sync_history") return "certified_app_storage";
+  if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name))
+    return "requires_explicit_files";
+  if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services")
+    return "action_dependent";
+  return "uncertified";
+}
 const keyOf = (identity: ExecutableIdentity) => [identity.platform,identity.executablePath,identity.sha256].join(":");
 let cachedSelf:{key:string,identity:ExecutableIdentity}|null=null;
 export function identityOfSelf():ExecutableIdentity|null {
@@ -131,6 +169,8 @@ export function registeredFileToolGate(
   const identity=(options.identity ?? identityOfSelf)();
   if(!identity)return "Core executable identity could not be verified.";
   if(BENIGN.has(call.name))return null;
+  if (call.name === "superagent_delegate_sync_history" && certifiedDelegateHistorySync(call.args))
+    return null; // App-owned index only; never a general file write exemption.
   // No blanket Chrome exemption: only side-effect-free, non-file inventory
   // operations qualify. All other browser/file-capable actions fail closed.
   if(certifiedBrowserObservation(call))return null;
