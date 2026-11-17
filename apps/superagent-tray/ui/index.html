@@ -1849,7 +1849,12 @@
                 <div id="lan-schema-list" class="lan-schema-list" aria-live="polite"></div>
                 <p class="lan-screen-caption">No text contents or password values leave the Android device. Actions target the current schema revision only.</p>
               </div>
-              <button id="lan-screen-start" type="button" class="button primary">Start schema-first control</button>
+              <button id="lan-screen-start" type="button" class="button primary">Start View Only</button>
+              <div class="lan-screen-approval-actions" role="group" aria-label="Separate controller permission">
+                <button id="lan-screen-request-control" type="button" class="button secondary" disabled>Request Control</button>
+                <button id="lan-screen-revoke-control" type="button" class="button ghost" disabled>Revoke Control</button>
+              </div>
+              <p id="lan-screen-controller-status" class="lan-screen-caption" role="status">Remote input requires a separate native Tray approval. Viewing alone never permits touch or typing.</p>
               <button id="lan-screen-capture" type="button" class="button ghost" disabled>Capture one screenshot (fallback)</button>
               <button id="lan-screen-stop" type="button" class="button ghost" disabled>Stop viewing</button>
               <div class="lan-screen-keypad">
