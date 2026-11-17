@@ -532,6 +532,20 @@ fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
     });
     Ok(chosen)
 }
+/// Manual override checks the exact OS process rather than depending on
+/// another Core/lifecycle inventory request after the human approves it.
+fn manual_os_identity_matches(item:&Item)->bool {
+    let (Some(pid),Some(birth),Some(name))=(
+        item.pid,item.process_started_at,item.process_name.as_deref()
+    ) else {return false};
+    if !item.manual_kill_selectable ||
+        !manual_process_allowed(&item.kind,pid,name) {return false;}
+    let mut system=System::new();
+    system.refresh_processes();
+    system.process(Pid::from_u32(pid)).is_some_and(|process|
+        process.start_time()==birth && process.name()==name)
+}
+
 async fn manual_kill_one(item:&Item)->Result<(),String> {
     let pid=item.pid.ok_or("SHUTDOWN_MANUAL_PID_UNAVAILABLE")?;
     let birth=item.process_started_at.ok_or("SHUTDOWN_MANUAL_BIRTH_UNAVAILABLE")?;
@@ -973,11 +987,12 @@ pub async fn shutdown_manager_action(
                     )).blocking_show()
             }).await.map_err(|_|"SHUTDOWN_NATIVE_APPROVAL_FAILED")?;
             if !approved{return Err("SHUTDOWN_OPERATOR_CANCELLED".into());}
-            let latest=inspect().await?;
-            for item in &chosen {
-                if !latest.services.iter().any(|current|same_manual_owner(item,current)) {
-                    return Err("SHUTDOWN_MANUAL_PROCESS_CHANGED_SINCE_PREVIEW".into());
-                }
+            // The selected process identity was pinned during preview and
+            // displayed in the human approval dialog. A failed Core inventory
+            // must not veto this deliberate OS-only override, but process
+            // reuse, disappearance or executable changes still block it.
+            if chosen.iter().any(|item|!manual_os_identity_matches(item)) {
+                return Err("SHUTDOWN_MANUAL_PROCESS_CHANGED_SINCE_PREVIEW".into());
             }
             let progress=Progress {run_id:Uuid::new_v4().simple().to_string(),
                 stage:"running".into(),exit_after:false,
