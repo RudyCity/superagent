@@ -721,21 +721,30 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
           res.end(JSON.stringify({ error: "session credential mismatch" }));
           return;
         }
+        if (registry.isRetiring(requestSessionId)) {
+          // Lifetime expired during another active request. Never repurpose
+          // its credential-bound session or interrupt the in-flight work.
+          res.writeHead(404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+          res.end(JSON.stringify({ error: "MCP session expired; initialize a new session" }));
+          return;
+        }
         let body: unknown = undefined;
         if (req.method === "POST") {
           const r = await readBody();
           if (!r.ok) return;
           body = r.body;
         }
-        registry.touch(requestSessionId);
         registry.beginRequest(requestSessionId);
         const diagnosticStage = getMcpDiagnosticStage(body);
         const diagnosticStart = performance.now();
         const isToolCall = diagnosticStage === "mcp.tools_call";
         if (isToolCall) inFlightToolCalls++;
-        try {
-          await session.transport.handleRequest(req, res, body);
-        } finally {
+        // Streamable HTTP can resolve handleRequest while an SSE response
+        // remains open. Only settle on the actual response lifecycle.
+        let settled = false;
+        const settleSessionRequest = () => {
+          if (settled) return;
+          settled = true;
           registry.endRequest(requestSessionId);
           if (isToolCall) inFlightToolCalls = Math.max(0, inFlightToolCalls - 1);
           if (diagnosticStage) {
@@ -746,6 +755,15 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
               durationMs: performance.now() - diagnosticStart,
             });
           }
+        };
+        res.once("finish", settleSessionRequest);
+        res.once("close", settleSessionRequest);
+        try {
+          await session.transport.handleRequest(req, res, body);
+          if (res.writableEnded || res.destroyed) settleSessionRequest();
+        } catch (error) {
+          settleSessionRequest();
+          throw error;
         }
         return;
       }

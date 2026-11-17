@@ -1,7 +1,7 @@
 /**
  * mcpSessionRegistry.test.ts - unit tests for the per-session MCP registry.
  */
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import {
   McpSessionRegistry,
   type McpSessionEntry,
@@ -33,6 +33,7 @@ describe("McpSessionRegistry", () => {
   beforeEach(() => {
     reg = new McpSessionRegistry({ maxSessions: 4, idleTimeoutMs: 60000, maxLifetimeMs: 60000 });
   });
+  afterEach(() => vi.useRealTimers());
 
   it("adds and retrieves sessions", () => {
     reg.add(entry("s1"));
@@ -209,6 +210,58 @@ describe("McpSessionRegistry", () => {
     expect(r.get("g2")).toBeDefined();
     expect(r.get("g3")).toBeDefined();
     expect(r.snapshot().removals.capacity_eviction).toBe(1);
+  });
+
+  it("does not expire an SSE or tool request while its response is in flight", async () => {
+    vi.useFakeTimers();
+    const closed = vi.fn(async () => {});
+    const r = new McpSessionRegistry({ idleTimeoutMs: 25, maxLifetimeMs: 10_000 });
+    const e = entry("stream");
+    e.transport = { close: closed } as any;
+    r.add(e);
+    r.beginRequest("stream");
+    await vi.advanceTimersByTimeAsync(50);
+    expect(r.size).toBe(1);
+    expect(r.snapshot()).toMatchObject({ activeSessions: 1, inFlightSessions: 1, retiringSessions: 0 });
+    r.endRequest("stream");
+    await vi.advanceTimersByTimeAsync(26);
+    expect(r.size).toBe(0);
+    expect(r.snapshot().removals.idle_timeout).toBe(1);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("defers maximum lifetime until all active responses close, rejecting new binds", async () => {
+    vi.useFakeTimers();
+    const closed = vi.fn(async () => {});
+    const r = new McpSessionRegistry({ idleTimeoutMs: 10_000, maxLifetimeMs: 30 });
+    const e = entry("busy");
+    e.transport = { close: closed } as any;
+    r.add(e);
+    r.beginRequest("busy");
+    r.beginRequest("busy");
+    await vi.advanceTimersByTimeAsync(31);
+    expect(r.isRetiring("busy")).toBe(true);
+    expect(r.snapshot()).toMatchObject({ activeSessions: 1, inFlightSessions: 1, retiringSessions: 1 });
+    r.endRequest("busy");
+    expect(r.size).toBe(1);
+    r.endRequest("busy");
+    await Promise.resolve();
+    expect(r.get("busy")).toBeUndefined();
+    expect(r.snapshot().removals.max_lifetime).toBe(1);
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not keep expired entries or pending lifetime state after explicit close", async () => {
+    vi.useFakeTimers();
+    const r = new McpSessionRegistry({ idleTimeoutMs: 10_000, maxLifetimeMs: 30 });
+    r.add(entry("s1"));
+    r.beginRequest("s1");
+    await vi.advanceTimersByTimeAsync(31);
+    expect(r.isRetiring("s1")).toBe(true);
+    expect(await r.remove("s1", "client_delete")).toBe(true);
+    r.endRequest("s1");
+    expect(r.snapshot()).toMatchObject({ activeSessions: 0, inFlightSessions: 0, retiringSessions: 0 });
+    await r.closeAll();
   });
 
   it("grants static-bearer principal a generous default ceiling up to 32", () => {

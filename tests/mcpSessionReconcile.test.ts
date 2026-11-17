@@ -27,6 +27,15 @@ describe("MCP private affinity reconciliation", () => {
     expect(findOrphanedMcpAffinities({...base, workerIds:null})).toEqual([]);
     expect(findOrphanedMcpAffinities({...base, workerCount:1000})).toEqual([]);
   });
+  it("reconciles more than 32 valid sessions without exposing session IDs in public status", () => {
+    const workerIds = Array.from({ length: 40 }, (_, i) => "worker-" + i);
+    const ownerIds = [...workerIds, "orphan"];
+    const registeredAt = new Map(ownerIds.map(id => [id, 1000]));
+    expect(findOrphanedMcpAffinities({
+      ownerIds, workerIds, workerCount: 40, registeredAt,
+      inFlight: new Map(), snapshotAt: now,
+    })).toEqual(["orphan"]);
+  });
   it("uses only the snapshot time, not the wall clock, to avoid asynchronous races", () => {
     expect(findOrphanedMcpAffinities({...base, snapshotAt:1100})).toEqual([]);
   });

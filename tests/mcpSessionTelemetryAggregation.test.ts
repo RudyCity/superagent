@@ -12,6 +12,8 @@ const sample = (values: Partial<McpSessionRegistryStats> = {}): McpSessionRegist
   largestPrincipalSessionCount: 0,
   oldestSessionAgeMs: 0,
   oldestIdleMs: 0,
+  inFlightSessions: 0,
+  retiringSessions: 0,
   maxSessions: 32,
   maxSessionsPerPrincipal: 8,
   createdTotal: 0,

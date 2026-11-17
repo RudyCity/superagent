@@ -41,6 +41,8 @@ export interface McpSessionRegistryStats {
   largestPrincipalSessionCount: number;
   oldestSessionAgeMs: number;
   oldestIdleMs: number;
+  inFlightSessions: number;
+  retiringSessions: number;
   maxSessions: number;
   maxSessionsPerPrincipal: number;
   createdTotal: number;
@@ -98,6 +100,7 @@ export class McpSessionRegistry {
   private sessions = new Map<string, McpSessionEntry>();
   private idleTimers = new Map<string, NodeJS.Timeout>();
   private lifetimeTimers = new Map<string, NodeJS.Timeout>();
+  private retiringSessions = new Set<string>();
   private readonly maxSessions: number;
   private readonly maxSessionsPerPrincipal: number;
   private readonly explicitMaxSessionsPerPrincipal: boolean;
@@ -132,6 +135,11 @@ export class McpSessionRegistry {
 
   get(sessionId: string): McpSessionEntry | undefined {
     return this.sessions.get(sessionId);
+  }
+
+  /** Max lifetime elapsed; only already-running requests may finish. */
+  isRetiring(sessionId: string): boolean {
+    return this.retiringSessions.has(sessionId);
   }
 
   /** Private worker-to-owner reconciliation only; never expose IDs via status. */
@@ -170,7 +178,9 @@ export class McpSessionRegistry {
     const principalCounts = new Map<string, number>();
     let oldestSessionAgeMs = 0;
     let oldestIdleMs = 0;
+    let inFlightSessions = 0;
     for (const session of this.sessions.values()) {
+      if ((session.inFlight ?? 0) > 0) inFlightSessions++;
       const key = principalKey(session.identity);
       principalCounts.set(key, (principalCounts.get(key) ?? 0) + 1);
       oldestSessionAgeMs = Math.max(oldestSessionAgeMs, Math.max(0, now - session.createdAt));
@@ -182,6 +192,8 @@ export class McpSessionRegistry {
       largestPrincipalSessionCount: Math.max(0, ...principalCounts.values()),
       oldestSessionAgeMs,
       oldestIdleMs,
+      inFlightSessions,
+      retiringSessions: this.retiringSessions.size,
       maxSessions: this.maxSessions,
       maxSessionsPerPrincipal: this.maxSessionsPerPrincipal,
       createdTotal: this.createdTotal,
@@ -208,6 +220,10 @@ export class McpSessionRegistry {
     const s = this.sessions.get(sessionId);
     if (!s) return;
     s.inFlight = Math.max(0, (s.inFlight ?? 1) - 1);
+    if (s.inFlight === 0 && this.retiringSessions.has(sessionId)) {
+      void this.remove(sessionId, "max_lifetime");
+      return;
+    }
     s.lastActivityAt = Date.now();
     this.armIdleTimer(sessionId);
   }
@@ -284,6 +300,13 @@ export class McpSessionRegistry {
     this.createdTotal++;
     this.armIdleTimer(entry.sessionId);
     const lt = setTimeout(() => {
+      const current = this.sessions.get(entry.sessionId);
+      if (!current) return;
+      if ((current.inFlight ?? 0) > 0) {
+        // Existing work/SSE must complete; do not accept new requests.
+        this.retiringSessions.add(entry.sessionId);
+        return;
+      }
       void this.remove(entry.sessionId, "max_lifetime");
     }, this.maxLifetimeMs);
     lt.unref?.();
@@ -309,6 +332,7 @@ export class McpSessionRegistry {
     const s = this.sessions.get(sessionId);
     if (!s) return false;
     this.clearTimers(sessionId);
+    this.retiringSessions.delete(sessionId);
     this.sessions.delete(sessionId);
     this.removedTotal++;
     this.removals[reason]++;
@@ -336,7 +360,12 @@ export class McpSessionRegistry {
     const prev = this.idleTimers.get(sessionId);
     if (prev) clearTimeout(prev);
     const t = setTimeout(() => {
-      void this.remove(sessionId, "idle_timeout");
+      const current = this.sessions.get(sessionId);
+      // A live request or SSE response is not an idle session. endRequest
+      // starts a fresh idle period after the response actually closes.
+      if (current && (current.inFlight ?? 0) === 0) {
+        void this.remove(sessionId, "idle_timeout");
+      }
     }, this.idleTimeoutMs);
     t.unref?.();
     this.idleTimers.set(sessionId, t);

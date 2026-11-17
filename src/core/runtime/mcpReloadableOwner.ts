@@ -533,9 +533,11 @@ export async function startReloadableMcpTunnelOwner(
     pruneAutoRecoveryAttempts(now);
     const currentHealth = current?.lastHealth ?? null;
     const currentStats = currentHealth?.sessionStats ?? null;
-    const backendActiveSessions = [...generations].reduce(
-      (sum, gen) => sum + (gen.lastHealth?.sessionStats.activeSessions ?? 0), 0,
-    );
+    const allGenerationsHealthy = [...generations].every(gen =>
+      gen.alive && gen.lastHealth && now - gen.lastHealth.timestamp <= 15_000);
+    const backendActiveSessions = allGenerationsHealthy
+      ? [...generations].reduce((sum, gen) => sum + gen.lastHealth!.sessionStats.activeSessions, 0)
+      : null;
     const trend = current?.memoryTrend ?? assessMemoryTrend([]);
     return {
       version: 1, kind: "private_mcp_owner", pid: process.pid,
@@ -565,14 +567,21 @@ export async function startReloadableMcpTunnelOwner(
         memoryTrendSuspicious: gen.memoryTrend.suspicious,
       })),
       sessionTelemetry: {
-        backendActiveSessions: currentStats?.activeSessions ?? null,
+        backendActiveSessions,
+        inFlightSessions: currentStats?.inFlightSessions ?? null,
+        retiringSessions: currentStats?.retiringSessions ?? null,
+        capacity: currentStats?.maxSessions ?? null,
+        maxSessionsPerPrincipal: currentStats?.maxSessionsPerPrincipal ?? null,
+        createdTotal: currentStats?.createdTotal ?? null,
+        removedTotal: currentStats?.removedTotal ?? null,
+        removals: currentStats?.removals ?? null,
         activePrincipals: currentStats?.activePrincipals ?? null,
         largestPrincipalSessionCount: currentStats?.largestPrincipalSessionCount ?? null,
         oldestSessionAgeMs: currentStats?.oldestSessionAgeMs ?? null,
         oldestIdleMs: currentStats?.oldestIdleMs ?? null,
         rejectedTotal: currentStats
           ? currentStats.rejectedGlobal + currentStats.rejectedPrincipal : null,
-        affinityDrift: currentStats
+        affinityDrift: backendActiveSessions !== null
           ? Math.max(0, activeSessionCount() - backendActiveSessions) : null,
         staleAffinityReclaimed,
       },

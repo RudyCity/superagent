@@ -104,7 +104,8 @@
     const details=owner?.details;
     if(!details || owner.ownershipVerified!==true) {
       for(const id of ["op-mcp-sessions","op-mcp-inflight","op-mcp-backend","op-mcp-principals",
-        "op-mcp-rejected","op-mcp-oldest","op-mcp-generations"])text(id,"—");
+        "op-mcp-rejected","op-mcp-oldest","op-mcp-generations","op-mcp-capacity",
+        "op-mcp-busy","op-mcp-retiring"])text(id,"—");
       text("op-mcp-note","Authenticated MCP owner telemetry unavailable");
       return;
     }
@@ -116,7 +117,11 @@
     text("op-mcp-rejected",fmt(counts.rejectedTotal));
     text("op-mcp-oldest",number(counts.oldestIdleMs)!==null?Math.round(counts.oldestIdleMs/1000)+"s idle":"—");
     text("op-mcp-generations",fmt(details.backendGenerations));
-    text("op-mcp-note",counts.affinityDrift?"Session affinity drift detected":"Active sessions are authenticated connections, not operating-system processes");
+    text("op-mcp-note",counts.affinityDrift?"Session affinity drift detected":
+      "MCP sessions are logical client sessions, not operating-system processes. Idle sessions expire automatically.");
+    text("op-mcp-capacity",number(counts.capacity)!==null?String(counts.capacity):"—");
+    text("op-mcp-busy",number(counts.inFlightSessions)!==null?String(counts.inFlightSessions):"—");
+    text("op-mcp-retiring",number(counts.retiringSessions)!==null?String(counts.retiringSessions):"—");
   }
   function renderResources(data, metrics) {
     const mcp=Array.isArray(data?.services)?data.services.find(x=>x.service==="mcp"):null;

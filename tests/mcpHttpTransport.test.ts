@@ -475,6 +475,40 @@ describe("per-session transport isolation", () => {
     }
   });
 
+  it("accurately reclaims an initialized session after idle expiration without confusing it with a process", async () => {
+    const key=generateMcpBearerToken();
+    const handle=await startMcpHttpServer({
+      port:0,bearerToken:key,allowDangerous:false,sessionIdleTimeoutMs:50,
+      sessionMaxLifetimeMs:10_000,
+    });
+    const endpoint="http://127.0.0.1:"+handle.port+MCP_HTTP_PATH;
+    try {
+      const response=await fetch(endpoint,{
+        method:"POST",headers:baseHeaders(key),
+        body:JSON.stringify({jsonrpc:"2.0",id:1,method:"initialize",
+          params:{protocolVersion:"2024-11-05",capabilities:{},
+            clientInfo:{name:"idle-regression",version:"1"}}}),
+      });
+      const session=response.headers.get("mcp-session-id");
+      await response.text();
+      expect(session).toBeTruthy();
+      expect(handle.getSessionStats().activeSessions).toBe(1);
+      await new Promise(resolve=>setTimeout(resolve,130));
+      expect(handle.getSessionStats()).toMatchObject({
+        activeSessions:0,inFlightSessions:0,retiringSessions:0,
+        removals:{idle_timeout:1},
+      });
+      const stale=await fetch(endpoint,{method:"POST",headers:{
+        ...baseHeaders(key),"mcp-session-id":session!},
+        body:JSON.stringify({jsonrpc:"2.0",id:2,method:"tools/list",params:{}}),
+      });
+      expect(stale.status).toBe(404);
+      await stale.text();
+    } finally {
+      await handle.close();
+    }
+  });
+
   it("supports reconnect with the same session ID and DELETE cleanup", async () => {
     const init = await initialize(token);
     expect(init.sessionId).toBeTruthy();

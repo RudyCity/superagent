@@ -13,7 +13,7 @@ export function findOrphanedMcpAffinities(input: {
   graceMs?: number;
 }): string[] {
   const {ownerIds, workerIds, workerCount, registeredAt, inFlight, snapshotAt} = input;
-  if (!Number.isSafeInteger(workerCount) || workerCount < 0 || workerCount > 32 ||
+  if (!Number.isSafeInteger(workerCount) || workerCount < 0 || workerCount > 256 ||
       !Number.isSafeInteger(snapshotAt) || snapshotAt <= 0 ||
       !Array.isArray(workerIds) || workerIds.length !== workerCount ||
       new Set(workerIds).size !== workerIds.length ||
