@@ -188,6 +188,7 @@ describe("McpSessionRegistry", () => {
     expect(r.get("p3")).toBeUndefined();
     // When p1 finishes it gets a fresh idle timestamp; p2 is now the oldest
     // eligible idle session, so pressure must evict p2 rather than p1.
+    await sleep(5); // Distinguish p2 idle age from p1's freshly-ended request.
     r.endRequest("p1");
     await sleep(25);
     r.add(entry("p3", "user-1"));
