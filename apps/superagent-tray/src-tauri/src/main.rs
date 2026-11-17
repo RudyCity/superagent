@@ -1253,6 +1253,14 @@ fn desktop_live_hmac(key: &[u8], message: &[u8]) -> String {
 }
 
 fn desktop_live_native_approval_proof(nonce: &str, approved: &Value) -> Result<Value, String> {
+    desktop_native_approval_proof(nonce, approved, false)
+}
+fn desktop_recording_native_approval_proof(nonce: &str, approved: &Value) -> Result<Value, String> {
+    desktop_native_approval_proof(nonce, approved, true)
+}
+fn desktop_native_approval_proof(
+    nonce: &str, approved: &Value, recording: bool,
+) -> Result<Value, String> {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
     if nonce.len() != 48 || !nonce.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()) {
         return Err("Invalid native approval challenge".into());
@@ -1292,10 +1300,27 @@ fn desktop_live_native_approval_proof(nonce: &str, approved: &Value) -> Result<V
         bounds.get(field).and_then(Value::as_i64)
             .ok_or("Invalid native window geometry".into())
     };
-    let message = format!("desktop-live-native-approval-v1:{}:{}:{}:{}:{}:{}:{}:{}:{}",
-        nonce, pid, value("nativeId")?, value("expectedTitle")?,
+    let purpose=if recording {"desktop-live-native-recording-v1"}
+        else {"desktop-live-native-approval-v1"};
+    let base = format!("{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+        purpose, nonce, pid, value("nativeId")?, value("expectedTitle")?,
         value("expectedApplication")?, number("x")?, number("y")?,
         number("width")?, number("height")?);
+    let message=if recording {
+        use sha2::{Digest,Sha256};
+        let token=approved.get("previewToken").and_then(Value::as_str)
+            .filter(|t|t.len()==64 && t.bytes().all(|c|c.is_ascii_hexdigit() && !c.is_ascii_uppercase()))
+            .ok_or("Recording capability missing")?;
+        let directory=approved.get("projectDirectory").and_then(Value::as_str)
+            .filter(|p|p.len()<=1024 && std::path::Path::new(p).is_absolute())
+            .ok_or("Recording project path missing")?;
+        let preset=approved.get("videoPreset").and_then(Value::as_str)
+            .filter(|p|["compact","standard","detail"].contains(p))
+            .ok_or("Recording preset is invalid")?;
+        let digest=Sha256::digest(token.as_bytes());
+        let token_hash=digest.iter().map(|b|format!("{:02x}",b)).collect::<String>();
+        format!("{}:{}:{}:{}",base,token_hash,URL_SAFE_NO_PAD.encode(directory.as_bytes()),preset)
+    } else {base};
     let mac = desktop_live_hmac(&key, message.as_bytes());
     Ok(json!({"nonce": nonce, "mac": mac}))
 }
