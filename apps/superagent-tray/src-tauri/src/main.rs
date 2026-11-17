@@ -37,6 +37,7 @@ mod tray_lifecycle;
 mod shutdown_manager;
 mod lifecycle_console;
 mod release_updates;
+mod tray_notification_center;
 
 /// Samples only independently verified local process owners reported by Core.
 #[tauri::command]
@@ -197,6 +198,53 @@ fn open_external_url(url: String) -> Result<(), String> {
             .map_err(|e| format!("Failed to launch browser: {e}"))?;
     }
     Ok(())
+}
+
+/// The WebView can read and acknowledge, but may not insert arbitrary content.
+#[tauri::command]
+fn tray_notification_center_action(action: String, id: Option<String>) -> Result<Value, String> {
+    tray_notification_center::perform(&config_dir()?, &action, id.as_deref())
+}
+
+/// Record a generic, redacted UI issue; never persist raw IPC error bodies,
+/// commands, credentials, project paths or other potentially private content.
+#[tauri::command]
+fn tray_notification_center_ui_alert(
+    app: tauri::AppHandle,
+    scope: String,
+    kind: String,
+) -> Result<(), String> {
+    let allowed = ["security", "runtime", "delegate", "desktop-live", "terminal",
+        "lan-devices", "muse-files", "jobs", "updates", "settings", "shutdown",
+        "overview", "logs"];
+    if !allowed.contains(&scope.as_str()) ||
+        !["warning", "error"].contains(&kind.as_str()) {
+        return Err("Unsupported notification category".into());
+    }
+    let severity = if kind == "error" { "critical" } else { "warning" };
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map_or(0, |t| t.as_secs() / 60);
+    let id = format!("tray-ui:{scope}:{kind}:{timestamp}");
+    let title = format!("{} needs attention", scope.replace('-', " "));
+    if tray_notification_center::publish(
+        &config_dir()?, &scope, severity, &id, &title,
+        "An operation reported an issue. Open its Tray page to review current status.",
+    )? {
+        let _ = app.emit("tray-notifications-changed", ());
+    }
+    Ok(())
+}
+
+fn record_core_notification(app: &tauri::AppHandle, severity: &str, title: &str, body: &str) {
+    if let Ok(dir) = config_dir() {
+        let id = format!("core:{}:{}", severity, SystemTime::now()
+            .duration_since(UNIX_EPOCH).map_or(0, |t| t.as_nanos()));
+        if let Ok(true) = tray_notification_center::publish(
+            &dir, "core", severity, &id, title, body,
+        ) {
+            let _ = app.emit("tray-notifications-changed", ());
+        }
+    }
 }
 
 #[tauri::command]
@@ -1727,6 +1775,7 @@ async fn start_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<V
                 .title("SuperAgent Core")
                 .body(&message)
                 .show();
+            record_core_notification(&app, "info", "Core started", "The selected Core server was started or is already active.");
             Ok(json!({
                 "success": true,
                 "port": target,
@@ -1741,6 +1790,7 @@ async fn start_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<V
                 .title("SuperAgent Core Error")
                 .body(format!("Failed to start Core: {}", e))
                 .show();
+            record_core_notification(&app, "critical", "Core start failed", "Core could not start. Review Runtime Detection.");
             Err(e)
         }
     }
@@ -1757,6 +1807,7 @@ async fn stop_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Va
                 .title("SuperAgent Core")
                 .body(msg)
                 .show();
+            record_core_notification(&app, "warning", "Core stopped", "The selected Core server was stopped.");
             Ok(val)
         }
         Err(e) => {
@@ -1765,6 +1816,7 @@ async fn stop_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Va
                 .title("SuperAgent Core Error")
                 .body(format!("Failed to stop Core: {}", e))
                 .show();
+            record_core_notification(&app, "critical", "Core stop failed", "Core shutdown did not complete. Inspect the verified owner state.");
             Err(e)
         }
     }
@@ -1783,6 +1835,7 @@ async fn restart_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result
                 .title("SuperAgent Core")
                 .body(&message)
                 .show();
+            record_core_notification(&app, "info", "Core restarted", "The selected Core server was restarted.");
             Ok(json!({
                 "success": true,
                 "port": target,
@@ -1796,6 +1849,7 @@ async fn restart_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result
                 .title("SuperAgent Core Error")
                 .body(format!("Failed to restart Core: {}", e))
                 .show();
+            record_core_notification(&app, "critical", "Core restart failed", "Core restart failed. Inspect Runtime Detection.");
             Err(e)
         }
     }
@@ -2503,6 +2557,13 @@ async fn poll_reminders(
         }
         // Persist immediately so a crash does not generate a notification storm.
         write_seen(&file, &state)?;
+        if let Ok(dir) = config_dir() {
+            if let Ok(true) = tray_notification_center::publish(
+                &dir, "reminder", "info", &format!("reminder:{id}"), name, message,
+            ) {
+                let _ = app.emit("tray-notifications-changed", ());
+            }
+        }
     }
     Ok(delivered)
 }
@@ -2876,6 +2937,8 @@ fn main() {
             create_connection,
             regenerate_token,
             get_tray_settings,
+            tray_notification_center_action,
+            tray_notification_center_ui_alert,
             desktop_input_trust::get_desktop_input_policy,
             desktop_input_trust::list_desktop_input_windows,
             desktop_input_trust::set_desktop_input_mode,
