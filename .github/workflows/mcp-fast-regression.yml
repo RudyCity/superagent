@@ -81,6 +81,7 @@ jobs:
             tests/mcpTextFilePaging.test.ts \
             tests/mcpOutputRecovery.test.ts \
             tests/mcpToolGateway.test.ts \
+            tests/mcpFilePolicyMatrix.test.ts \
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
             tests/mcpResponseLease.test.ts \
