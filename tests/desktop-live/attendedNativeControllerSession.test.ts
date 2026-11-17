@@ -103,7 +103,14 @@ describe("host-only attended native controller lifecycle",()=>{
     expect(await f.session.input(principal,token,clickInput))
       .toEqual({status:"dispatched"});
     expect(f.nativeDispatch).toHaveBeenCalledOnce();
-    expect(()=>f.session.requestScope(principal,"keyboard")).toThrow(/already exists/);
+    const keyboard=f.grant("keyboard");
+    expect(keyboard.challenge.kinds).toEqual(["type","key"]);
+    const typeRequest={...clickInput,kind:"type",text:"hello"};
+    expect(await f.session.input(principal,token,{...typeRequest,sequence:2}))
+      .toEqual({status:"blocked",reason:"INPUT_DENIED"});
+    expect(await f.session.input(principal,keyboard.token,typeRequest))
+      .toEqual({status:"dispatched"});
+    expect(f.nativeDispatch).toHaveBeenCalledTimes(2);
   });
 
   it("requires a new attended proof after revoking mouse before keyboard",()=>{
@@ -121,11 +128,52 @@ describe("host-only attended native controller lifecycle",()=>{
     const f=setup();
     f.grant("mouse");
     f.session.controllerDisconnected("some-other-connection");
-    expect(()=>f.session.requestScope(principal,"keyboard")).toThrow(/already exists/);
+    expect(()=>f.session.requestScope({
+      ...principal,connectionId:"other-authenticated-device",
+    },"keyboard")).toThrow(/OWNER_MISMATCH/);
+    const keyboard=f.grant("keyboard");
+    expect(keyboard.challenge.kinds).toEqual(["type","key"]);
     f.session.controllerDisconnected(principal.connectionId);
     const next=f.grant("keyboard");
     expect(next.challenge.kinds).toEqual(["type","key"]);
     expect(f.viewer.humanTakeover).not.toHaveBeenCalled();
+  });
+
+  it("revokes mouse independently without removing an approved keyboard token",async()=>{
+    const f=setup();
+    const mouse=f.grant("mouse"), keyboard=f.grant("keyboard");
+    f.session.revokeScope("mouse");
+    expect(await f.session.input(principal,mouse.token,clickInput))
+      .toEqual({status:"blocked",reason:"INPUT_DENIED"});
+    expect(await f.session.input(principal,keyboard.token,{
+      ...clickInput,kind:"type",text:"permitted",
+    })).toEqual({status:"dispatched"});
+    expect(f.viewer.humanTakeover).not.toHaveBeenCalled();
+    const replacement=f.grant("mouse");
+    expect(replacement.token).not.toBe(mouse.token);
+    expect(replacement.challenge.kinds).toEqual(["click","scroll"]);
+  });
+
+  it("burns pending approvals after wrong nonce without promoting either input scope",()=>{
+    const f=setup();
+    const a=f.session.requestScope(principal,"mouse");
+    const b=f.session.requestScope(principal,"keyboard");
+    expect(()=>f.session.confirmScope("0".repeat(64),signature(a)))
+      .toThrow(/INVALID_APPROVAL/);
+    expect(()=>f.session.confirmScope(a.nonce,signature(a)))
+      .toThrow();
+    expect(()=>f.session.confirmScope(b.nonce,signature(b)))
+      .toThrow();
+    expect(f.grant("mouse").challenge.kinds).toEqual(["click","scroll"]);
+  });
+
+  it("rejects invalid controller families and mismatched authenticated principals",()=>{
+    const f=setup();
+    f.grant("mouse");
+    expect(()=>f.session.requestScope(principal,"all" as "mouse"))
+      .toThrow(/INVALID_SCOPE/);
+    expect(()=>f.session.requestScope({...principal,viewSessionId:"other-view"},"keyboard"))
+      .toThrow(/OWNER_MISMATCH/);
   });
 
   it.each(["viewerDisconnected","hostRestarted","identityChanged","humanTakeover"] as const)(
