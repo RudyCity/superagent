@@ -269,6 +269,7 @@ public final class LanClientServer implements AutoCloseable {
     public void revoke() {
         stopRemoteShell();
         fileExchange.clear();
+        fileExchangeV2.purge();
         RemoteControlPermit.revoke();
         ScreenProjectionService.stop(context);
         synchronized (guard) {
@@ -914,6 +915,9 @@ public final class LanClientServer implements AutoCloseable {
     @Override public void close() {
         stopRemoteShell();
         fileExchange.clear();
+        // Retain resumable private V2 bytes across process/app restart;
+        // a new physical owner approval is still required to resume.
+        fileExchangeV2.suspend();
         RemoteControlPermit.revoke();
         ScreenProjectionService.stop(context);
         if (!running.getAndSet(false)) return;
