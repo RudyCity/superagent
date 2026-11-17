@@ -57,7 +57,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("1. Fresh agent identity has zero grants (grants: [])", () => {
     registerProject({
-      projectId: "my-project",
+      id: "my-project",
       name: "My Project",
       type: "local",
       root: projectRoot,
@@ -71,7 +71,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("2. Agent self-grant attempt is denied with POLICY_DENIED and queues a pending request", async () => {
     registerProject({
-      projectId: "my-project",
+      id: "my-project",
       name: "My Project",
       type: "local",
       root: projectRoot,
@@ -101,7 +101,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
   });
 
   it("2b. Full YOLO never allows an MCP caller to self-grant access", async () => {
-    registerProject({ projectId: "yolo-project", name: "YOLO Project", type: "local", root: projectRoot });
+    registerProject({ id: "yolo-project", name: "YOLO Project", type: "local", root: projectRoot });
     setFullYoloMode(true);
     const result = await dispatchProjectMcpTool("superagent_grant_project_access", {
       projectId: "yolo-project", capabilities: ["read", "execute"],
@@ -141,7 +141,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("3. Pending access request via superagent_request_project_access does not grant access", async () => {
     registerProject({
-      projectId: "my-project",
+      id: "my-project",
       name: "My Project",
       type: "local",
       root: projectRoot,
@@ -169,7 +169,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("4 & 5 & 6. Human approval produces a valid scoped grant, read succeeds, unauthorized write/exec fail", async () => {
     registerProject({
-      projectId: "my-project",
+      id: "my-project",
       name: "My Project",
       type: "local",
       root: projectRoot,
@@ -196,7 +196,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
   });
 
   it("6b. Approval cannot add capabilities never requested by the agent", () => {
-    registerProject({ projectId: "scope-project", name: "Scoped Project", type: "local", root: projectRoot });
+    registerProject({ id: "scope-project", name: "Scoped Project", type: "local", root: projectRoot });
     const pending = createProjectAccessRequest(geminiIdentity, {
       projectId: "scope-project", capabilities: ["read"], reason: "Read-only audit",
     });
@@ -212,7 +212,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("7 & 8. Valid grant survives MCP reconnect and Core restart (persisted on disk)", () => {
     registerProject({
-      projectId: "persisted-project",
+      id: "persisted-project",
       name: "Persisted Project",
       type: "local",
       root: projectRoot,
@@ -231,7 +231,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("9 & 10. Identity isolation: Different identity cannot inherit another agent's grant", () => {
     registerProject({
-      projectId: "isolated-project",
+      id: "isolated-project",
       name: "Isolated Project",
       type: "local",
       root: projectRoot,
@@ -249,7 +249,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("11. Revocation immediately blocks subsequent operations", () => {
     registerProject({
-      projectId: "revokable-project",
+      id: "revokable-project",
       name: "Revokable Project",
       type: "local",
       root: projectRoot,
@@ -276,7 +276,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("12. Denial of pending request leaves access blocked and marks request as denied", () => {
     registerProject({
-      projectId: "denied-project",
+      id: "denied-project",
       name: "Denied Project",
       type: "local",
       root: projectRoot,
@@ -340,7 +340,7 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
 
   it("15. Direct grant via Broker API creates valid grant immediately", () => {
     registerProject({
-      projectId: "direct-project",
+      id: "direct-project",
       name: "Direct Project",
       type: "local",
       root: projectRoot,
