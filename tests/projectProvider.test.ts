@@ -103,7 +103,7 @@ describe("LocalProjectProvider", () => {
 
     const secret = await provider.readFiles(selected, { filePaths: [".env"] });
     expect(secret.isError).toBe(true);
-    expect(secret.text).toContain("blocked");
+    expect(secret.text).toMatch(/protected \.env files is prohibited/i);
 
     const escaped = await provider.readFiles(selected, { filePaths: [path.join(outside, "outside.txt")] });
     expect(escaped.isError).toBe(true);
