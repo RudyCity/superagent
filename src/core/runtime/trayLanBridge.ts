@@ -286,10 +286,16 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       expiresAt: invite.expiresAt, baseUrl, setup, qrPayload, qrMatrix } };
   }
   if (action === "pair_status") return { success: true, request: getLanPairRequest(String(args.requestId)) };
-  // Closing/revoking/cancelling access decreases privilege and remains available even after YOLO is turned off.
+  // Distinguish autonomous agent execution from attended human support:
+  // 'open' prompts the target owner; 'schema'/'screen' each enforce target
+  // viewing consent; 'input'/'element' require the independently signed
+  // mouse/keyboard bearer checked at dispatch. None of these is equivalent
+  // to an unrestricted YOLO grant for commands, files, pairing, or shell.
+  const attendedSupport = ["open","schema","screen","input","element"];
   if (!isFullYoloMode() && !["close", "revoke", "file_abort", "file_v2_abort",
-    "file_relay_cancel", "file_relay_status", "pair_cancel", "tunnel_revoke"].includes(action)) {
-    throw Error("Full YOLO must be enabled locally for remote LAN pairing and execution. Target approval is also required.");
+    "file_relay_cancel", "file_relay_status", "pair_cancel", "tunnel_revoke",
+    ...attendedSupport].includes(action)) {
+    throw Error("Full YOLO is required for autonomous LAN execution; attended viewer/input use independent approval.");
   }
   const id = String(args.deviceId ?? "");
   switch (action) {
