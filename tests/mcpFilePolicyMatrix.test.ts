@@ -65,6 +65,8 @@ describe("MCP full-catalog host file-policy transparency", () => {
         .toBe("requires_explicit_files");
       expect(byName("superagent_chrome_cdp")._meta.filePolicy.readiness)
         .toBe("action_dependent");
+      expect(byName("superagent_chrome_cdp")._meta.filePolicy.requirement)
+        .toMatch(/no evaluate/i);
       expect(byName("superagent_lan_capabilities")._meta.filePolicy.readiness)
         .toBe("certified_metadata");
 
@@ -73,9 +75,12 @@ describe("MCP full-catalog host file-policy transparency", () => {
       expect(search.filePolicyActive).toBe(true);
       expect(search.tools.find((x:any)=>x.name==="superagent_exec_command").filePolicy)
         .toBe("uncertified");
+      expect(search.tools.find((x:any)=>x.name==="superagent_exec_command").filePolicyRequirement)
+        .toMatch(/not certified/i);
       const describe = resultJson(await invoke(server,MCP_GATEWAY_TOOL_NAMES.describe,
         {name:"superagent_delegate_sync_history"}));
       expect(describe.filePolicy).toBe("certified_app_storage");
+      expect(describe.filePolicyRequirement).toMatch(/MCP write scope/);
       expect(describe.note).toMatch(/never grants execution/i);
       const status = resultJson(await invoke(server,MCP_GATEWAY_TOOL_NAMES.status));
       expect(status.filePolicy).toMatchObject({active:true});
