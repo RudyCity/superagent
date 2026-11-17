@@ -177,9 +177,12 @@ async fn inspect() -> Result<Preview, String> {
                     Some("Owner status unavailable".into()),None,None));
                 continue;
             };
-            let state=s["state"].as_str().unwrap_or("unknown");
+            let mut state=s["state"].as_str().unwrap_or("unknown");
             let port=port_of(&s["port"]);
             let pid=pid_of(&s["ownerPid"]);
+            // An owner PID paired with an "inactive" service is ambiguous,
+            // not proof that the process exited. Never silently ignore it.
+            if state=="inactive" && pid.is_some() {state="unverified";}
             let mut eligible=running(state)&&verified_action(s)&&port.is_some();
             let mut blocker = if eligible {None} else {
                 Some("No verified idle owner or stop capability".into())
@@ -527,7 +530,7 @@ pub async fn shutdown_manager_action(
                 return Err("SHUTDOWN_UNEXPECTED_ARGUMENT".into());
             }
             let state=locked()?;
-            Ok(json!({"busy":state.busy,"progress":state.progress}))
+            Ok(json!({"busy":state.busy,"progress":state.progress.clone()}))
         }
         "preview" => {
             if preview_id.is_some()||selected.is_some()||exit_after.is_some() {
