@@ -9,6 +9,10 @@ export interface SchedulerPolicy {
   configuredSlots: number;
   cooldownMs: number;
   perProjectQuota: number;
+  /** Trusted authenticated agent/session cap, never an input-derived actor label. */
+  perOwnerQuota?: number;
+  /** Prevent one CLI adapter from monopolizing every host slot. */
+  perCliAdapterQuota?: number;
   maxHeavyJobs: number;
 }
 
@@ -18,6 +22,8 @@ export const DEFAULT_SCHEDULER_POLICY: SchedulerPolicy = {
   configuredSlots: 4,
   cooldownMs: 5000,
   perProjectQuota: 4,
+  perOwnerQuota: 2,
+  perCliAdapterQuota: 4,
   maxHeavyJobs: 1,
 };
 
@@ -162,7 +168,31 @@ export function evaluateJobAdmission(
     };
   }
 
-  // 4. Overall effective capacity check
+  // 4. Fair share for independently authenticated agents. Unattributed
+  // legacy local calls keep prior behavior; never trust a client-supplied
+  // agentId, role name, or MCP initialize.clientInfo for this quota.
+  const activeForOwner = job.ownerId
+    ? activeJobs.filter((j) => j.ownerId === job.ownerId).length : 0;
+  if (job.ownerId && policy.perOwnerQuota && activeForOwner >= policy.perOwnerQuota) {
+    return {
+      admitted: false,
+      effectiveSlots,
+      pressure,
+      reason: `Agent quota reached (${activeForOwner}/${policy.perOwnerQuota})`,
+    };
+  }
+
+  const activeForAdapter = activeJobs.filter((j) => j.cliAlias === job.cliAlias).length;
+  if (policy.perCliAdapterQuota && activeForAdapter >= policy.perCliAdapterQuota) {
+    return {
+      admitted: false,
+      effectiveSlots,
+      pressure,
+      reason: `CLI adapter quota reached (${activeForAdapter}/${policy.perCliAdapterQuota})`,
+    };
+  }
+
+  // 5. Overall effective capacity check
   // Note: running jobs are never killed if activeJobs.length > effectiveSlots (e.g. after capacity contraction).
   if (activeJobs.length >= effectiveSlots) {
     return {
@@ -197,8 +227,10 @@ export function calculateJobSchedulingScore(
   // Fairness penalty: projects with more currently running jobs are deprioritized
   const activeForProject = activeJobs.filter((j) => j.projectId === job.projectId).length;
   const projectPenalty = activeForProject * 150;
+  const ownerPenalty = job.ownerId
+    ? activeJobs.filter((j) => j.ownerId === job.ownerId).length * 120 : 0;
 
-  return baseWeight + agingScore - projectPenalty;
+  return baseWeight + agingScore - projectPenalty - ownerPenalty;
 }
 
 /**
@@ -239,7 +271,9 @@ export class CliBridgePriorityQueue {
     activeJobs: ScheduledJobRequest[],
     effectiveSlots: number,
     pressure: ResourcePressureLevel = "none",
-    now: number = Date.now()
+    now: number = Date.now(),
+    /** Skip jobs whose declared output/resource claims are currently locked. */
+    canStart: (job: ScheduledJobRequest) => boolean = () => true,
   ): { job: ScheduledJobRequest; decision: AdmissionDecision } | null {
     if (this.queue.length === 0) return null;
 
@@ -254,6 +288,7 @@ export class CliBridgePriorityQueue {
 
     // Find the first job that meets admission constraints
     for (const item of scored) {
+      if (!canStart(item.job)) continue;
       const decision = evaluateJobAdmission(
         item.job,
         activeJobs,

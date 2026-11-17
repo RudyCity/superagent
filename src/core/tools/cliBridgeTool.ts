@@ -96,8 +96,10 @@ import {
   tailDelegateJob,
   cancelDelegateJob,
   getDelegateJobRecovery,
+  getSchedulerContext,
 } from "./cliBridgeDelegateJobs.js";
 import { resolveExpectedArtifacts, artifactClaimIdentity } from "./cliBridgeArtifactEvidence.js";
+import { getTrustedCliBridgeAgent } from "./cliBridgeAgentOwner.js";
 import { inspectCrossProcessArtifactClaim } from "./cliBridgeCrossProcessClaims.js";
 import { projectCliDelegate } from "../channels/unifiedChannelTask.js";
 import { listDetailedCapacitySlots, recoverProvenOrphanSlot } from "./cliBridgeCapacity.js";
@@ -138,6 +140,7 @@ const ACTIONS = [
   "delegate.read",
   "delegate.cancel",
   "delegate.claims",
+  "delegate.agents",
   "delegate.recovery",
   "delegate.slots",
   "delegate.recover-slot",
@@ -192,8 +195,8 @@ export const cliBridgeTool: Tool = {
           "Operation: 'list'/'profile.list' to discover CLIs/profiles, " +
           "'delegate' for short synchronous autonomous tasks, " +
           "'delegate.start' for long-running background tasks that return a jobId immediately (default 60 minutes; up to 12 hours), " +
-          "'delegate.jobs' to list concurrent jobs, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks, plus 'delegate.recovery' to inspect read-only owner/child process hints (requires jobId). " +
-          "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 12). Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
+          "'delegate.jobs' to list concurrent jobs, 'delegate.agents' to show per-agent concurrency summaries, 'delegate.get' to inspect status/output, 'delegate.tail' to read recent logs, 'delegate.cancel' to stop a job, and 'delegate.claims' to read workspace-bound output-lock status without removing locks, plus 'delegate.recovery' to inspect read-only owner/child process hints (requires jobId). " +
+          "The default concurrency limit is 4 jobs (configure with SUPERAGENT_CLI_BRIDGE_MAX_JOBS, max 8); authenticated agent quota is 2 and CLI adapter quota is 4 by default. Use separate worktrees/cwds for parallel code edits to avoid file conflicts. " +
           "'session.create' to start an interactive multi-turn session (optionally with initial `message` to auto-send once ready), " +
           "'session.send' to message it, " +
           "'session.respond' to answer a pending prompt, " +
@@ -532,6 +535,35 @@ export const cliBridgeTool: Tool = {
         case "delegate.claims":
           return await handleDelegateClaims(args, cwd);
 
+        case "delegate.agents": {
+          // Workspace-scoped aggregate only. Never reveal foreign jobs,
+          // opaque identity keys, PIDs, prompts, paths, or auth material.
+          const visible = (await listDelegateJobs()).filter(job =>
+            delegateJobVisibleToWorkspace(job, cwd));
+          const groups = new Map<string, { running: number; queued: number; completed: number }>();
+          for (const job of visible) {
+            const key = job.ownerId ?? "unattributed";
+            const current = groups.get(key) ?? { running: 0, queued: 0, completed: 0 };
+            if (job.status === "running" || job.status === "starting" || job.status === "cancelling")
+              current.running++;
+            else if (job.status === "queued") current.queued++;
+            else current.completed++;
+            groups.set(key, current);
+          }
+          const ownKey = getTrustedCliBridgeAgent();
+          const lines = [
+            `CLI Bridge agent concurrency (${groups.size} owner group(s) in authorized workspace)`,
+            `Per-agent quota: ${getSchedulerContext().policy.perOwnerQuota ?? "unbounded"} active jobs`,
+          ];
+          let seq = 0;
+          for (const [key, value] of [...groups].sort(([a],[b]) => a.localeCompare(b))) {
+            seq++;
+            const label = key === ownKey ? "This MCP agent" :
+              key === "unattributed" ? "Local/unattributed" : `Agent ${seq}`;
+            lines.push(`  ${label}: ${value.running} running, ${value.queued} queued, ${value.completed} completed`);
+          }
+          return lines.join("\n");
+        }
         case "delegate.recovery": {
           // Detailed recovery diagnostics remain job-scoped so the existing
           // workspace authorization check can prevent cross-project metadata
@@ -539,12 +571,14 @@ export const cliBridgeTool: Tool = {
           return await handleDelegateRecovery(String(args.jobId ?? "").trim(), cwd);
         }
         case "delegate.slots": {
-          const cap = Math.min(12, Math.max(1, Number.parseInt(process.env.SUPERAGENT_CLI_BRIDGE_MAX_JOBS ?? "4", 10) || 4));
+          const scheduling = getSchedulerContext();
+          const cap = scheduling.configuredSlots;
           const detailed = await listDetailedCapacitySlots(cap);
           const occupiedCount = detailed.filter(s => s.occupied).length;
           const availableCount = detailed.filter(s => !s.occupied).length;
           const recoverableCount = detailed.filter(s => s.recoverable).length;
-          let text = `CLI Bridge host-wide capacity: ${cap} total slots (${occupiedCount} occupied, ${availableCount} available, ${recoverableCount} recoverable)\n`;
+          let text = `CLI Bridge host-wide capacity: ${cap} configured slots, ${scheduling.effectiveSlots} effective (${occupiedCount} occupied, ${availableCount} available, ${recoverableCount} recoverable)\n`;
+          text += `Agent parallel quota: ${scheduling.policy.perOwnerQuota ?? "unbounded"}; per-CLI adapter quota: ${scheduling.policy.perCliAdapterQuota ?? "unbounded"}; per-project quota: ${scheduling.policy.perProjectQuota}\n`;
           for (const s of detailed) {
             // Capacity is host-wide and may contain another project's work.
             // Never expose foreign job IDs, PIDs, paths, or workspace digests.

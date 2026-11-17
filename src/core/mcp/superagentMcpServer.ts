@@ -91,6 +91,7 @@ import {
   dispatchChromeMcpTool,
 } from "./tools/chromeMcpTools.js";
 import { DELEGATE_MCP_TOOL_DEFS, dispatchDelegateMcpTool, delegateMcpObservation } from "./tools/delegateMcpTools.js";
+import { runWithTrustedCliBridgeAgent } from "../tools/cliBridgeAgentOwner.js";
 import { PDF_MCP_TOOL_DEFS, PDF_MCP_TOOL_NAMES, dispatchPdfMcpTool } from "./tools/pdfMcpTools.js";
 import { MEDIA_MCP_TOOL_DEFS, MEDIA_MCP_TOOL_NAMES, dispatchMediaMcpTool } from "./tools/mediaMcpTools.js";
 import { DESKTOP_UI_MCP_TOOL_DEFS, dispatchDesktopUiMcpTool } from "./tools/desktopUiMcpTools.js";
@@ -279,7 +280,7 @@ export const MCP_TOOL_DEFINITIONS = [
         properties: {
           action: { type: "string", enum: [
             "list", "profile.list", "role.list", "delegate", "delegate.start", "delegate.jobs", "delegate.get",
-            "delegate.tail", "delegate.read", "delegate.cancel", "delegate.claims", "delegate.recovery",
+            "delegate.tail", "delegate.read", "delegate.cancel", "delegate.claims", "delegate.recovery", "delegate.agents",
             "delegate.slots", "delegate.recover-slot", "delegate.retry", "delegate.health",
             "dag.create", "dag.start", "dag.get", "dag.list", "dag.cancel",
             "speculative.run", "consensus.review",
@@ -897,8 +898,26 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
             content: [{ type: "text", text: "Tool 'superagent_spawn_subagent' is disabled on this MCP server." }],
             isError: true,
           };
-        case "superagent_cli_bridge":
-          return await handleCliBridge(args);
+        case "superagent_cli_bridge": {
+          // Bind parallel CLI delegates to the VERIFIED MCP transport, never
+          // clientInfo, a tool argument, a claimed role, or Chat Agent YOLO.
+          // Stateful sessions have independent opaque IDs; stateless requests
+          // conservatively share one credential-bound owner admission bucket.
+          const verified = getIdentity?.();
+          if (authMode === "oauth" && !verified) {
+            throw new Error("Verified MCP OAuth identity required for CLI Bridge delegation.");
+          }
+          const actorDigest = crypto.createHash("sha256")
+            .update("superagent:cli-bridge:mcp-owner:v1\0")
+            .update(delegatePrincipalSessionId)
+            .update("\0")
+            .update(verified?.mode ?? "local-stdio")
+            .update("\0")
+            .update(verified?.credentialHash ?? "stdio")
+            .digest("hex");
+          return await runWithTrustedCliBridgeAgent("mcp:" + actorDigest,
+            () => handleCliBridge(args));
+        }
         case "superagent_switch_workspace":
           return await handleSwitchWorkspace(
             args,

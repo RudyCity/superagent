@@ -38,6 +38,56 @@ describe("Milestone M2 — Dynamic Concurrency and Resource-Aware Scheduling", (
     });
   });
 
+
+  describe("MCP multi-agent fair-share admission", () => {
+    const policy: SchedulerPolicy = {
+      minSlots: 2, maxSlots: 8, configuredSlots: 6, cooldownMs: 5000,
+      perProjectQuota: 6, perOwnerQuota: 2, perCliAdapterQuota: 4, maxHeavyJobs: 2,
+    };
+    const request = (id: string, ownerId: string, cliAlias = "agy"): ScheduledJobRequest => ({
+      jobId: id, ownerId, projectId: "shared-project", cliAlias,
+      priority: "normal", resourceClass: "normal", createdAt: 100,
+    });
+
+    it("runs two jobs from one verified agent without blocking another agent", () => {
+      const active = [request("a1", "mcp:one"), request("a2", "mcp:one")];
+      const blocked = evaluateJobAdmission(request("a3", "mcp:one"), active, 6, "none", policy);
+      const other = evaluateJobAdmission(request("b1", "mcp:two"), active, 6, "none", policy);
+      expect(blocked).toMatchObject({ admitted: false, reason: expect.stringContaining("Agent quota") });
+      expect(other.admitted).toBe(true);
+      expect(active).toHaveLength(2);
+    });
+
+    it("isolates adapter capacity while allowing a different agent and adapter", () => {
+      const active = ["a", "b", "c", "d"].map(id=>request(id, "agent-"+id));
+      expect(evaluateJobAdmission(request("e","agent-e"),active,8,"none",policy))
+        .toMatchObject({admitted:false,reason:expect.stringContaining("CLI adapter quota")});
+      expect(evaluateJobAdmission(request("f","agent-f","codex"),active,8,"none",policy).admitted)
+        .toBe(true);
+    });
+
+    it("favors an idle agent at equal priority within the same project", () => {
+      const active=[request("a1","mcp:one")];
+      expect(calculateJobSchedulingScore(request("b1","mcp:two"),active,1000))
+        .toBeGreaterThan(calculateJobSchedulingScore(request("a2","mcp:one"),active,1000));
+    });
+
+    it("skips locked jobs rather than blocking eligible independent agents", () => {
+      const queue=new CliBridgePriorityQueue(policy);
+      queue.enqueue({...request("locked","mcp:one"),priority:"critical"});
+      queue.enqueue(request("independent","mcp:two"));
+      const next=queue.dequeueNextEligible([],6,"none",1000,job=>job.jobId!=="locked");
+      expect(next?.job.jobId).toBe("independent");
+      expect(queue.getQueue().map(x=>x.jobId)).toEqual(["locked"]);
+    });
+
+    it("preserves per-session limit when host slots contract without cancelling work", () => {
+      const active=[request("a1","mcp:one"),request("b1","mcp:two")];
+      expect(evaluateJobAdmission(request("a2","mcp:one"),active,2,"high",policy).admitted).toBe(false);
+      expect(active).toHaveLength(2);
+    });
+  });
+
   describe("Adaptive 2–8 Capacity Calculation (P1.2)", () => {
     const policy: SchedulerPolicy = {
       minSlots: 2,

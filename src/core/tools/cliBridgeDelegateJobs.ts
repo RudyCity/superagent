@@ -26,6 +26,7 @@ import { persistJobShard, loadJobShards, loadLegacyJobs, writeCompatibilityJobsS
 import { classifyDelegateRecovery, type DelegateRecoveryDiagnostic } from "./cliBridgeRecovery.js";
 import { readProcessStartIdentity } from "./cliBridgeProcessIdentity.js";
 import { getTlineCreatorForJob } from "../channels/tlineJobCreator.js";
+import { getTrustedCliBridgeAgent } from "./cliBridgeAgentOwner.js";
 import { inspectAgyBridgeLine, AGY_PERMISSION_RECOVERY } from "./cliBridgeAgyPermissions.js";
 import { readBoundedLogTail, redactCliBridgeOutput, summarizedPrompt } from "./cliBridgeObservability.js";
 import { MAX_DELEGATE_TIMEOUT_MS, MIN_DELEGATE_TIMEOUT_MS } from "./cliBridgeTimeouts.js";
@@ -111,6 +112,8 @@ export interface DelegateJob {
   status: DelegateJobStatus;
   startedAt: number;
   updatedAt: number;
+  /** Opaque trusted MCP/T-Line agent owner for fair scheduling; not a capability grant. */
+  ownerId?: string;
   /** Bridge-owner liveness, not evidence of AI progress. */
   heartbeatAt?: number;
   /** Timestamp of latest CLI stdout/stderr. */
@@ -335,6 +338,8 @@ let currentEffectiveCapacity = DEFAULT_SCHEDULER_POLICY.configuredSlots;
 let lastCapacityScaleTime = 0;
 let lastConfiguredEnv: string | undefined = undefined;
 let priorityQueue = new CliBridgePriorityQueue();
+let isDrainingPriorityQueue = false;
+let drainAgainRequested = false;
 const queuedJobOptions = new Map<string, StartDelegateJobOptions>();
 const jobWorktreeCleanups = new Map<string, boolean>();
 
@@ -386,7 +391,8 @@ export function getSchedulerContext(): {
   configuredSlots: number;
   policy: SchedulerPolicy;
 } {
-  const active = [...jobs.values()].filter((j) => ownedJobIds.has(j.jobId) && activeStatus(j.status));
+  const active = [...jobs.values()].filter((j) => ownedJobIds.has(j.jobId) &&
+    (activeStatus(j.status) || runners.has(j.jobId) || capacityLeases.has(j.jobId)));
   const counts = {
     light: active.filter((j) => j.resourceClass === "light").length,
     normal: active.filter((j) => !j.resourceClass || j.resourceClass === "normal").length,
@@ -412,8 +418,12 @@ export function getSchedulerContext(): {
     lastCapacityScaleTime = 0;
   }
 
+  const perAgentRaw = Number.parseInt(process.env.SUPERAGENT_CLI_BRIDGE_PER_AGENT_QUOTA ?? "", 10);
+  const perCliRaw = Number.parseInt(process.env.SUPERAGENT_CLI_BRIDGE_PER_CLI_QUOTA ?? "", 10);
   const policy: SchedulerPolicy = {
     ...DEFAULT_SCHEDULER_POLICY,
+    perOwnerQuota: Number.isSafeInteger(perAgentRaw) && perAgentRaw >= 1 ? Math.min(8, perAgentRaw) : 2,
+    perCliAdapterQuota: Number.isSafeInteger(perCliRaw) && perCliRaw >= 1 ? Math.min(8, perCliRaw) : 4,
     minSlots: Math.min(2, configuredSlots),
     maxSlots: 8,
     configuredSlots,
@@ -553,6 +563,7 @@ async function initialize(): Promise<void> {
                 priorityQueue.enqueue({
                   jobId: parsed.job.jobId,
                   projectId: parsed.job.projectId ?? "default",
+                  ownerId: parsed.job.ownerId,
                   cliAlias: parsed.job.cliAlias,
                   priority: parsed.job.priority ?? "normal",
                   resourceClass: parsed.job.resourceClass ?? "normal",
@@ -693,37 +704,96 @@ function killProcessTree(jobId: string, proc: any): void {
 }
 
 async function drainQueue(): Promise<void> {
-  while (priorityQueue.size() > 0) {
-    const { effectiveSlots, pressure } = getSchedulerContext();
-    const activeJobs = [...jobs.values()].filter((j) => ownedJobIds.has(j.jobId) && activeStatus(j.status));
-    const activeRequests: ScheduledJobRequest[] = activeJobs.map((j) => ({
-      jobId: j.jobId,
-      projectId: j.projectId ?? "default",
-      cliAlias: j.cliAlias,
-      priority: j.priority ?? "normal",
-      resourceClass: j.resourceClass ?? "normal",
-      createdAt: j.startedAt,
-    }));
+  // Only one drain owns admissions. A second completion/wakeup is replayed
+  // after this pass; parallel drainers may otherwise launch beyond capacity.
+  if (isDrainingPriorityQueue) {
+    drainAgainRequested = true;
+    return;
+  }
+  isDrainingPriorityQueue = true;
+  try {
+    while (priorityQueue.size() > 0) {
+      const { effectiveSlots, pressure } = getSchedulerContext();
+      const activeJobs = [...jobs.values()].filter((j) => ownedJobIds.has(j.jobId) &&
+        (activeStatus(j.status) || runners.has(j.jobId) || capacityLeases.has(j.jobId)));
+      const activeRequests: ScheduledJobRequest[] = activeJobs.map((j) => ({
+        jobId: j.jobId,
+        projectId: j.projectId ?? "default",
+        ownerId: j.ownerId,
+        cliAlias: j.cliAlias,
+        priority: j.priority ?? "normal",
+        resourceClass: j.resourceClass ?? "normal",
+        createdAt: j.startedAt,
+      }));
+      // A locked file does not block other agents' independent jobs. All
+      // artifacts are still rechecked and atomically claimed at launch.
+      const canStart = (request: ScheduledJobRequest): boolean => {
+        const opts = queuedJobOptions.get(request.jobId);
+        if (!opts) return true;
+        try {
+          const artifacts = resolveExpectedArtifacts(opts.cwd, opts.workspaceRoot ?? opts.cwd, opts.expectedArtifacts);
+          return artifacts.every(file => !artifactClaims.has(artifactClaimIdentity(file)));
+        } catch {
+          return true; // invalid inputs fail in the existing launch validation
+        }
+      };
+      const next = priorityQueue.dequeueNextEligible(activeRequests, effectiveSlots, pressure, Date.now(), canStart);
+      if (!next) break;
+      const queuedJob = jobs.get(next.job.jobId);
+      const queuedOpts = queuedJobOptions.get(next.job.jobId);
+      if (!queuedJob || !queuedOpts || queuedJob.status !== "queued") {
+        queuedJobOptions.delete(next.job.jobId);
+        await removeQueuedJobFile(next.job.jobId).catch(() => {});
+        continue;
+      }
 
-    const next = priorityQueue.dequeueNextEligible(activeRequests, effectiveSlots, pressure);
-    if (!next) break;
-
-    const queuedJob = jobs.get(next.job.jobId);
-    const queuedOpts = queuedJobOptions.get(next.job.jobId);
-    if (!queuedJob || !queuedOpts) {
-      priorityQueue.remove(next.job.jobId);
-      continue;
+      let claims: string[];
+      try {
+        claims = resolveExpectedArtifacts(queuedOpts.cwd, queuedOpts.workspaceRoot ?? queuedOpts.cwd,
+          queuedOpts.expectedArtifacts).map(artifactClaimIdentity);
+      } catch (error) {
+        queuedJob.status = "failed";
+        queuedJob.completionState = "failed";
+        queuedJob.error = error instanceof Error ? error.message : String(error);
+        queuedJob.updatedAt = Date.now();
+        queuedJob.endedAt = queuedJob.updatedAt;
+        queuedJobOptions.delete(queuedJob.jobId);
+        await removeQueuedJobFile(queuedJob.jobId).catch(() => {});
+        await persistJobs().catch(() => {});
+        ownedJobIds.delete(queuedJob.jobId);
+        continue;
+      }
+      if (claims.some(file => artifactClaims.has(file))) {
+        // A claim may have changed since selection. Never run a second
+        // writer; put this job back and wait for the claim owner to finish.
+        priorityQueue.enqueue(next.job);
+        break;
+      }
+      jobClaims.set(queuedJob.jobId, claims);
+      for (const file of claims) artifactClaims.set(file, queuedJob.jobId);
+      // Reserve capacity synchronously BEFORE any async disk work or worker
+      // spawn; subsequent admissions now count this job as STARTING.
+      queuedJob.status = "starting";
+      queuedJob.updatedAt = Date.now();
+      queuedJobOptions.delete(queuedJob.jobId);
+      await removeQueuedJobFile(queuedJob.jobId).catch(() => {});
+      void launchJobExecution(queuedJob, queuedOpts, effectiveSlots).catch(async (err) => {
+        queuedJob.status = "failed";
+        queuedJob.completionState = "failed";
+        queuedJob.error = err instanceof Error ? err.message : String(err);
+        queuedJob.updatedAt = Date.now();
+        queuedJob.endedAt = queuedJob.updatedAt;
+        await persistJobs().catch(() => {});
+        ownedJobIds.delete(queuedJob.jobId);
+        void drainQueue().catch(() => {});
+      });
     }
-
-    queuedJobOptions.delete(next.job.jobId);
-    await removeQueuedJobFile(next.job.jobId).catch(() => {});
-
-    void launchJobExecution(queuedJob, queuedOpts, effectiveSlots).catch((err) => {
-      queuedJob.status = "failed";
-      queuedJob.completionState = "failed";
-      queuedJob.error = err instanceof Error ? err.message : String(err);
-      void persistJobs().catch(() => {});
-    });
+  } finally {
+    isDrainingPriorityQueue = false;
+    if (drainAgainRequested) {
+      drainAgainRequested = false;
+      queueMicrotask(() => { void drainQueue().catch(() => {}); });
+    }
   }
 }
 
@@ -1192,13 +1262,20 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
     }
   }
 
+  const creator = getTlineCreatorForJob(opts.workspaceRoot ?? opts.cwd);
+  const trustedMcpOwner = getTrustedCliBridgeAgent();
+  const ownerId = trustedMcpOwner ?? (creator
+    ? "tline:" + crypto.createHash("sha256").update(
+        "superagent:cli-bridge:tline-owner:v1\0" + creator.sessionId + "\0" + creator.workspace,
+      ).digest("hex")
+    : undefined);
   const digest = summarizedPrompt(opts.prompt);
   if (opts.idempotencyKey) {
     await refreshJobShards();
     const existing = [...jobs.values()].find(job => job.idempotencyKey === opts.idempotencyKey &&
       job.workspaceRoot === (opts.workspaceRoot ?? opts.cwd));
     if (existing) {
-      if (existing.cliAlias !== opts.cliAlias || existing.promptDigest !== digest) {
+      if (existing.ownerId !== ownerId || existing.cliAlias !== opts.cliAlias || existing.promptDigest !== digest) {
         throw new Error("Idempotency key already belongs to another CLI/prompt in this workspace.");
       }
       return { ...existing };
@@ -1214,16 +1291,19 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   const scheduledRequest: ScheduledJobRequest = {
     jobId: "", // will be assigned below
     projectId,
+    ownerId,
     cliAlias: opts.cliAlias,
     priority,
     resourceClass,
     createdAt: Date.now(),
   };
 
-  const activeJobs = [...jobs.values()].filter((j) => ownedJobIds.has(j.jobId) && activeStatus(j.status));
+  const activeJobs = [...jobs.values()].filter((j) => ownedJobIds.has(j.jobId) &&
+    (activeStatus(j.status) || runners.has(j.jobId) || capacityLeases.has(j.jobId)));
   const activeScheduledRequests: ScheduledJobRequest[] = activeJobs.map((j) => ({
     jobId: j.jobId,
     projectId: j.projectId ?? "default",
+    ownerId: j.ownerId,
     cliAlias: j.cliAlias,
     priority: j.priority ?? "normal",
     resourceClass: j.resourceClass ?? "normal",
@@ -1233,13 +1313,12 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
   const artifactFiles = resolveExpectedArtifacts(opts.cwd, opts.workspaceRoot ?? opts.cwd, opts.expectedArtifacts);
   const claimKeys = artifactFiles.map(artifactClaimIdentity);
   const locked = claimKeys.find(file => artifactClaims.has(file));
-  if (locked) throw new Error("CLI Bridge artifact claim already held by an active delegation in this process.");
+  if (locked && !opts.queueIfBusy) throw new Error("CLI Bridge artifact claim already held by an active delegation in this process.");
 
   const startedAt = Date.now();
   const jobId = `clj_${startedAt}_${crypto.randomBytes(4).toString("hex")}`;
   scheduledRequest.jobId = jobId;
 
-  const creator = getTlineCreatorForJob(opts.workspaceRoot ?? opts.cwd);
   const logDir = path.join(getRootConfigDir(), "logs", "cli-bridge");
   const logPath = path.join(logDir, `job-${jobId}.log`);
 
@@ -1258,18 +1337,16 @@ export async function startDelegateJob(opts: StartDelegateJobOptions): Promise<D
     priority,
     resourceClass,
     projectId,
+    ownerId,
     roleProfile: opts.roleProfile,
     acceptanceContract: opts.acceptanceContract,
   };
 
   // Evaluate admission against dynamic capacity and quotas
-  const decision = evaluateJobAdmission(
-    scheduledRequest,
-    activeScheduledRequests,
-    effectiveSlots,
-    pressure,
-    policy
-  );
+  const decision = locked
+    ? { admitted: false, effectiveSlots, pressure, reason: "Artifact claim busy" }
+    : evaluateJobAdmission(scheduledRequest, activeScheduledRequests,
+        effectiveSlots, pressure, policy);
 
   if (!decision.admitted) {
     if (opts.queueIfBusy) {
@@ -1405,6 +1482,8 @@ export async function __resetDelegateJobsForTests(opts?: { keepDiskFiles?: boole
   capacityLeases.clear();
   artifactClaims.clear(); artifactBaselines.clear(); jobClaims.clear(); jobCrossProcessClaims.clear();
   priorityQueue = new CliBridgePriorityQueue();
+  isDrainingPriorityQueue = false;
+  drainAgainRequested = false;
   queuedJobOptions.clear();
   jobWorktreeCleanups.clear();
   currentEffectiveCapacity = DEFAULT_SCHEDULER_POLICY.configuredSlots;
