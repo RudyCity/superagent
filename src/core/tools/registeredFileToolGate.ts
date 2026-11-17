@@ -44,6 +44,33 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
 const READ_ONLY_SERVICE_ACTIONS = new Set([
   "status","inventory","doctor","health","dashboard","logs","profile",
 ]);
+const CERTIFIED_DESKTOP_DISCOVERY = new Set([
+  "probe","list_windows","get_active_window","find_window",
+  "list_installed_apps","live_inventory","inspect_security_prompts",
+]);
+/**
+ * Metadata-only desktop commands cannot target a window session, return
+ * screenshot content or send input. All control/snapshot/open commands remain
+ * gated off until native host file-policy-aware mediation can prove safety.
+ */
+function certifiedDesktopDiscovery(args:Args|undefined):boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  const cmd = typeof args.command === "string" ? args.command :
+    typeof args.action === "string" ? args.action : "";
+  if (!CERTIFIED_DESKTOP_DISCOVERY.has(cmd)) return false;
+  if (args.command !== undefined && args.action !== undefined && args.action !== cmd) return false;
+  const common=["command","action"];
+  const allowed = cmd === "list_windows" || cmd === "list_installed_apps"
+    ? [...common,"limit"]
+    : cmd === "find_window" ? [...common,"limit","query","pid"] : common;
+  if (Object.keys(args).some(key => !allowed.includes(key))) return false;
+  if (args.limit !== undefined &&
+      (!Number.isSafeInteger(args.limit)||Number(args.limit)<1||Number(args.limit)>100)) return false;
+  if (args.pid !== undefined && (!Number.isSafeInteger(args.pid)||Number(args.pid)<1)) return false;
+  if (args.query !== undefined && (typeof args.query !== "string" ||
+      args.query.length<1 || args.query.length>256)) return false;
+  return true;
+}
 const CERTIFIED_LAN_INVENTORY = new Set([
   "superagent_lan_list_devices", "superagent_device_list",
   "superagent_device_tunnel_list",
@@ -113,7 +140,7 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
     return "requires_explicit_files";
   if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services" ||
       CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name) ||
-      CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name))
+      CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) || name === "superagent_desktop_ui")
     return "action_dependent";
   return "uncertified";
 }
@@ -212,6 +239,7 @@ export function registeredFileToolGate(
   if(certifiedBrowserObservation(call))return null;
   if(certifiedLanInventory(call.name,call.args))return null;
   if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
+  if(call.name === "superagent_desktop_ui" && certifiedDesktopDiscovery(call.args))return null;
   if(call.name === "superagent_manage_services" &&
      call.args && typeof call.args.action === "string" &&
      READ_ONLY_SERVICE_ACTIONS.has(call.args.action)) {
