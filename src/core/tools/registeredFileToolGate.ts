@@ -67,6 +67,22 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
 const READ_ONLY_SERVICE_ACTIONS = new Set([
   "status","inventory","doctor","health","dashboard","logs","profile",
 ]);
+/** Read-only service inspection cannot carry restart/upgrade/file arguments. */
+function certifiedServiceInspection(args:Args|undefined):boolean {
+  if (!args || typeof args!=="object" || Array.isArray(args) ||
+      !READ_ONLY_SERVICE_ACTIONS.has(String(args.action))) return false;
+  if (Object.keys(args).some(key => !["action","service","port","limit"].includes(key)))
+    return false;
+  if (args.service !== undefined &&
+      (typeof args.service !== "string" || !/^[a-z0-9_-]{1,64}$/.test(args.service))) return false;
+  if (args.port !== undefined &&
+      (!Number.isSafeInteger(args.port) || Number(args.port)<1024 || Number(args.port)>65535))
+    return false;
+  if (args.limit !== undefined &&
+      (!Number.isSafeInteger(args.limit) || Number(args.limit)<1 || Number(args.limit)>200))
+    return false;
+  return true;
+}
 const CERTIFIED_DESKTOP_DISCOVERY = new Set([
   "probe","list_windows","get_active_window","find_window",
   "list_installed_apps","live_inventory","inspect_security_prompts",
@@ -287,11 +303,8 @@ export function registeredFileToolGate(
   if(certifiedLanInventory(call.name,call.args))return null;
   if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
   if(call.name === "superagent_desktop_ui" && certifiedDesktopDiscovery(call.args))return null;
-  if(call.name === "superagent_manage_services" &&
-     call.args && typeof call.args.action === "string" &&
-     READ_ONLY_SERVICE_ACTIONS.has(call.args.action)) {
+  if(call.name === "superagent_manage_services" && certifiedServiceInspection(call.args))
     return null;
-  }
   if(READ_SEARCH.has(call.name))return "Unmediated discovery/search could expose explicitly blocked child files.";
   if(Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,call.name) &&
       !certifiedInputReaderArguments(call.name,call.args))
