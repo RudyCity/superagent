@@ -173,6 +173,29 @@ async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<
     Ok(())
 }
 
+/// Manual override is intentionally bounded to the runtime's observed
+/// SuperAgent owner categories and process executables, not arbitrary OS PIDs.
+fn manual_process_allowed(kind:&str,pid:u32,name:&str)->bool {
+    if pid<=4 || pid==std::process::id() {return false;}
+    let executable=name.to_ascii_lowercase();
+    if matches!(executable.as_str(),"superagent-tray"|"superagent-tray.exe") {
+        return false;
+    }
+    if kind=="cloudflare" {
+        return matches!(executable.as_str(),"cloudflared"|"cloudflared.exe");
+    }
+    if !matches!(kind,"managed"|"core"|"core-supervisor"|"mcp"|
+        "muse-watch"|"daemon-direct"|"external") {
+        return false;
+    }
+    matches!(executable.as_str(),"bun"|"bun.exe"|"node"|"node.exe"|
+        "superagent"|"superagent.exe") ||
+        (executable.starts_with("superagent-") &&
+            executable.len()<=96 &&
+            executable.chars().all(|ch|ch.is_ascii_alphanumeric()||
+                matches!(ch,'-'|'_'|'.')))
+}
+
 async fn inspect() -> Result<Preview, String> {
     let dir = config_dir()?;
     let runtime = serde_json::to_value(runtime_detection::detect_runtime(&dir).await?)
