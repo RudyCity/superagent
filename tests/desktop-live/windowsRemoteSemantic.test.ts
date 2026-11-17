@@ -78,7 +78,7 @@ function fixture(e = element) {
       proof === createHmac("sha256", secret).update(JSON.stringify(challenge)).digest("hex"),
   }, () => now);
   const approve = () => {
-    const challenge = authority.request(principal);
+    const challenge = authority.request(principal, ["click","type","key","scroll"]);
     const proof = createHmac("sha256", secret).update(JSON.stringify(challenge)).digest("hex");
     return authority.confirmNativeApproval(challenge.nonce, proof).token;
   };
