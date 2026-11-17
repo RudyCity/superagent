@@ -64,6 +64,22 @@ jobs:
           tests/desktopTrayAndroidScreenUi.test.ts
           tests/trayLanBridge.test.ts
 
+  native-gate:
+    name: Isolated Rust controller gate unit tests (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compile standard-library-only controller gate and execute tests
+        shell: pwsh
+        run: |
+          $testExe = Join-Path $env:RUNNER_TEMP 'android-controller-gate-tests.exe'
+          rustc --edition=2021 --test apps/superagent-tray/src-tauri/src/desktop_live_android_control.rs -o $testExe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $testExe --nocapture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   native:
     name: Rust attended-controller gate (Windows)
     runs-on: windows-2025
