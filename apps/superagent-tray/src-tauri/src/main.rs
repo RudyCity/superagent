@@ -2756,6 +2756,33 @@ async fn poll_reminders(
     Ok(delivered)
 }
 
+/// Passive security inbox projection. This read never approves access,
+/// grants capabilities, or surfaces client-provided labels, paths or reasons.
+async fn poll_pending_security_requests(app: &tauri::AppHandle) {
+    let Ok(payload) = core_request(Method::GET, "/api/desktop/access/requests", None).await else {
+        return;
+    };
+    let Some(requests) = payload.get("requests").and_then(Value::as_array) else {
+        return;
+    };
+    let Ok(dir) = config_dir() else { return };
+    for request in requests.iter().take(50) {
+        if request.get("status").and_then(Value::as_str) != Some("pending") {
+            continue;
+        }
+        let Some(id) = request.get("requestId").and_then(Value::as_str) else {
+            continue;
+        };
+        if let Ok(true) = tray_notification_center::publish(
+            &dir, "security", "critical", &format!("mcp-pending:{id}"),
+            "Security approval pending",
+            "A connected MCP identity requested access. Review Security Approval.",
+        ) {
+            let _ = app.emit("tray-notifications-changed", ());
+        }
+    }
+}
+
 fn show_main(app: &tauri::AppHandle, new_reminder: bool) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -3093,6 +3120,7 @@ fn main() {
                     // completed reminders without emitting toasts so they
                     // cannot flood the user when re-enabled later.
                     let _ = poll_reminders(&handle, preferences.notifications_enabled).await;
+                    poll_pending_security_requests(&handle).await;
                     tokio::time::sleep(Duration::from_secs(preferences.notification_poll_seconds))
                         .await;
                 }
