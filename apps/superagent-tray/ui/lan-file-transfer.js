@@ -21,6 +21,29 @@
   let activeTransfer = null;
   let targetId = null;
   let batch = null;
+  let paused = false;
+  let resumeWake = null;
+  const recent = [];
+  function receipt(direction, filename, bytes, outcome) {
+    recent.unshift({ direction, filename, bytes, outcome });
+    if (recent.length > 6) recent.length = 6;
+    const el = $("lan-file-history");
+    if (el) el.textContent = recent.map((item) =>
+      item.direction + " · " + item.filename + " · " + item.bytes +
+      " bytes · " + item.outcome).join("\n");
+  }
+  function wake() {
+    const resolve = resumeWake;
+    resumeWake = null;
+    if (resolve) resolve();
+  }
+  async function waitIfPaused() {
+    assertActive();
+    while (paused) {
+      await new Promise((resolve) => { resumeWake = resolve; });
+      assertActive();
+    }
+  }
   const selected = () => {
     const device = window.__superagentLanGetSelected?.();
     return device?.connected ? device : null;
@@ -48,6 +71,10 @@
       busy || !hasDevice || !folderSupported() || !folder?.files?.length;
     if ($("lan-file-receive")) $("lan-file-receive").disabled = busy || !hasDevice;
     if ($("lan-file-cancel")) $("lan-file-cancel").disabled = !busy;
+    if ($("lan-file-pause")) {
+      $("lan-file-pause").disabled = !busy || !activeTransfer || cancelled;
+      $("lan-file-pause").textContent = paused ? "Resume transfer" : "Pause transfer";
+    }
     if ($("lan-file-source")) $("lan-file-source").disabled = busy;
     if (folder) folder.disabled = busy || !folderSupported();
     if ($("lan-folder-support")) $("lan-folder-support").textContent = folderSupported()
@@ -222,7 +249,9 @@
         offer.sha256 !== sha256 || offer.chunkBytes !== CHUNK ||
         typeof offer.transferId !== "string") throw Error("Target file metadata mismatch.");
     activeTransfer = offer.transferId;
+    controls();
     for (let offset = 0, seq = 0; offset < bytes.length; offset += CHUNK, seq++) {
+      await waitIfPaused();
       assertActive();
       const data = base64(bytes.subarray(offset, offset + CHUNK));
       let result;
@@ -250,6 +279,8 @@
     if (!committed?.ok || committed.bytes !== bytes.length)
       throw Error("Target did not verify and save all bytes.");
     activeTransfer = null;
+    controls();
+    receipt("Sent", name, bytes.length, "Verified");
     return successText || ("File sent, SHA-256 verified on target. Saved to: " +
       (committed.savedTo || "the target's approved Downloads folder"));
   }
@@ -272,7 +303,7 @@
       label: files.length > 1 ? "Sending file queue…" : "Sending file…",
     });
     if (window.TrayFeedback && !ticket) return;
-    busy = true; cancelled = false; targetId = device.id; activeTransfer = null;
+    busy = true; cancelled = false; paused = false; targetId = device.id; activeTransfer = null;
     batch = { index: 0, total: files.length };
     controls();
     try {
@@ -295,11 +326,14 @@
       notifyTransfer("success", files.length + " file(s) verified on target.");
     } catch (error) {
       await abortIfNeeded();
-      state("Send failed: " + String(error).slice(0, 200));
+      state("Send stopped: " + String(error).slice(0, 200));
+      const unsuccessful = files[batch?.index ?? 0];
+      if (unsuccessful) receipt("Send", unsuccessful.name, unsuccessful.size, "Not verified");
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
         "File queue stopped. Inspect device status before retrying unsent files.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; targetId = null; batch = null;
+      activeTransfer = null; busy = false; cancelled = false; paused = false;
+      wake(); targetId = null; batch = null;
       ticket?.end(); controls();
     }
   }
@@ -319,7 +353,7 @@
       key: "lan:file:folder", button: $("lan-folder-send"), label: "Sending folder…",
     });
     if (window.TrayFeedback && !ticket) return;
-    busy = true; cancelled = false; targetId = device.id; activeTransfer = null;
+    busy = true; cancelled = false; paused = false; targetId = device.id; activeTransfer = null;
     controls();
     try {
       state("Checking safe relative paths and SHA-256 hashes...", 0);
@@ -333,10 +367,12 @@
     } catch (error) {
       await abortIfNeeded();
       state("Folder send failed: " + String(error).slice(0, 200));
+      receipt("Folder", "Selected folder", 0, "Not verified");
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
         "Folder transfer was not confirmed. Inspect device status before retrying.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; targetId = null;
+      activeTransfer = null; busy = false; cancelled = false; paused = false;
+      wake(); targetId = null;
       ticket?.end(); controls();
     }
   }
@@ -350,7 +386,7 @@
       key: "lan:file:receive", button: $("lan-file-receive"), label: "Receiving file…",
     });
     if (window.TrayFeedback && !ticket) return;
-    busy = true; cancelled = false; targetId = device.id; activeTransfer = null;
+    busy = true; cancelled = false; paused = false; targetId = device.id; activeTransfer = null;
     controls();
     try {
       state("Requesting target owner's approval to send their selected file", 0);
@@ -363,9 +399,10 @@
           offer.chunkBytes !== CHUNK || typeof offer.transferId !== "string")
         throw Error("Target returned invalid file metadata.");
       activeTransfer = offer.transferId;
+      controls();
       const received = new Uint8Array(offer.size);
       for (let offset = 0, seq = 0; offset < offer.size; offset += CHUNK, seq++) {
-        assertActive();
+        await waitIfPaused();
         let reply;
         try {
           reply = (await invoke("file_get", { deviceId: targetId,
@@ -410,14 +447,18 @@
           "File received and saved after SHA-256 verification.")
         : (isFolder ? "Folder received, but destination selection was cancelled; nothing was written." :
           "File received, but Save As was cancelled; nothing was written."), 100);
-      if (saved?.saved) notifyTransfer("success", "Received file saved with SHA-256 verification.");
+      if (saved?.saved) {
+        receipt("Received", offer.name, offer.size, "Verified");
+        notifyTransfer("success", "Received file saved with SHA-256 verification.");
+      }
     } catch (error) {
       await abortIfNeeded();
-      state("Receive failed: " + String(error).slice(0, 200));
+      state("Receive stopped: " + String(error).slice(0, 200));
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
         "File receive outcome was not verified. Inspect device status.");
     } finally {
-      activeTransfer = null; busy = false; cancelled = false; targetId = null;
+      activeTransfer = null; busy = false; cancelled = false; paused = false;
+      wake(); targetId = null;
       ticket?.end(); controls();
     }
   }
@@ -427,9 +468,21 @@
     $("lan-file-send")?.addEventListener("click", () => { void send(); });
     $("lan-folder-send")?.addEventListener("click", () => { void sendFolder(); });
     $("lan-file-receive")?.addEventListener("click", () => { void receive(); });
+    $("lan-file-pause")?.addEventListener("click", () => {
+      if (!busy || !activeTransfer || cancelled) return;
+      paused = !paused;
+      if (!paused) wake();
+      state(paused
+        ? "Paused · resume before the 10-minute session idle expiry."
+        : "Resuming transfer…");
+      controls();
+    });
     $("lan-file-cancel")?.addEventListener("click", () => {
       cancelled = true;
-      state("Cancelling file transfer; waiting for the current network chunk to finish.");
+      paused = false;
+      wake();
+      state("Cancelling · an in-flight final save may already have completed. Verify target before retry.");
+      controls();
       void abortIfNeeded();
     });
     window.__superagentLanFilesRefresh = controls;
