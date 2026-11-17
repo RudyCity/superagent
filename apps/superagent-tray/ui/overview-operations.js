@@ -14,7 +14,8 @@
     "expectedProcessIdentity", "expectedLegacyCommandDigest", "clientMode", "expectedWorkerPid",
     "expectedRunning", "noActiveJobs", "noCoreShutdown", "noPublicIngress", "corePort", "channelMode", "wsPort"];
   const state = {loading:false, lastSeen:null, plan:null, dashboard:null, events:[], history:[],
-    filter:"all", agentFilter:"all", agentRows:[], errors:[], ready:false, operationBusy:false};
+    filter:"all", agentFilter:"all", agentRows:[], agentDetails:null,
+    errors:[], ready:false, operationBusy:false};
   const call = (name, args={}) => {
     const invoke = window.__TAURI__?.core?.invoke;
     if(typeof invoke !== "function") throw Error("Native Tray IPC is unavailable");
@@ -166,7 +167,6 @@
         "op-mcp-rejected","op-mcp-oldest","op-mcp-generations","op-mcp-capacity",
         "op-mcp-busy","op-mcp-retiring"])text(id,"—");
       text("op-mcp-note","Authenticated MCP owner telemetry unavailable");
-      renderConnectedAgents(null);
       return;
     }
     const counts=details.sessionTelemetry||{};
@@ -182,7 +182,6 @@
     text("op-mcp-capacity",number(counts.capacity)!==null?String(counts.capacity):"—");
     text("op-mcp-busy",number(counts.inFlightSessions)!==null?String(counts.inFlightSessions):"—");
     text("op-mcp-retiring",number(counts.retiringSessions)!==null?String(counts.retiringSessions):"—");
-    renderConnectedAgents(details);
   }
   function renderResources(data, metrics) {
     const mcp=Array.isArray(data?.services)?data.services.find(x=>x.service==="mcp"):null;
@@ -270,7 +269,7 @@
     for(const id of ["op-readiness","op-essential","op-readiness-detail","op-observed"])
       text(id,id==="op-readiness"?"—":message);
     sectionError("op-service-list",message);
-    renderMcp(null);renderResources(null,null);
+    renderMcp(null);state.agentDetails=null;renderConnectedAgents(null);renderResources(null,null);
     state.events=[];drawEvents();
     state.plan=null;setPlan(null);
   }
@@ -284,15 +283,23 @@
       call("get_desktop_input_policy"),
       call("mcp_project_access_action",{action:"requests",payload:{}}),
       call("mcp_project_access_action",{action:"identities",payload:{}}),
-      call("get_overview_owner_metrics")
+      call("get_overview_owner_metrics"),
+      call("mcp_project_access_action",{action:"connected_clients",payload:{}})
     ]);
     const results=calls.map(x=>x.status==="fulfilled"?x.value:null);
-    const names=["lifecycle","events","chat yolo","access rules","desktop policy","mcp requests","mcp identities","resources"];
+    const names=["lifecycle","events","chat yolo","access rules","desktop policy","mcp requests","mcp identities","resources","connected clients"];
     state.errors=names.filter((name,i)=>results[i]===null);
     if(results[0] && Array.isArray(results[0].checks)){
       state.dashboard=results[0];
       renderReadiness(results[0]);
       renderMcp(results[0]);
+      const owner=results[0].services?.find(x=>x.service==="mcp");
+      const clients=results[8];
+      state.agentDetails=owner?.ownershipVerified===true && clients?.success===true &&
+        clients?.state==="verified" && Array.isArray(clients.clients)
+          ? {connectedAgentsState:"verified",connectedAgents:clients.clients,
+             connectedAgentsObservedAt:clients.observedAt} : null;
+      renderConnectedAgents(state.agentDetails);
       renderResources(results[0],results[7]);
       renderEvents(results[0],results[1]);
       if(state.plan && !state.dashboard.services?.some(s=>s.service===state.plan.service &&
@@ -376,8 +383,7 @@
     $("op-refresh")?.addEventListener("click",()=>{void refresh();});
     $("op-client-filter")?.addEventListener("change",e=>{
       state.agentFilter=String(e.target.value||"all");
-      const details=state.dashboard?.services?.find(x=>x.service==="mcp");
-      renderConnectedAgents(details?.ownershipVerified===true?details.details:null);
+      renderConnectedAgents(state.agentDetails);
     });
     $("op-event-filter")?.addEventListener("change",e=>{
       state.filter=String(e.target.value||"all");drawEvents();

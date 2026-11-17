@@ -310,13 +310,14 @@ async function runtimeRefreshMcpSecurity() {
     const results = await Promise.allSettled([
       runtimeInvoke("mcp_project_access_action", {action:"requests"}),
       runtimeInvoke("mcp_project_access_action", {action:"identities"}),
-      runtimeInvoke("lifecycle_console_request", {request:{action:"dashboard",limit:1}}),
+      runtimeInvoke("mcp_project_access_action", {action:"connected_clients",payload:{}}),
     ]);
-    const dashboard = results[2].status==="fulfilled" ? results[2].value : null;
-    const owner = Array.isArray(dashboard?.services)
-      ? dashboard.services.find(x=>x.service==="mcp") : null;
+    const connected=results[2].status==="fulfilled"?results[2].value:null;
     window.__superagentRenderMcpClientList?.(
-      owner?.ownershipVerified===true ? owner.details : null);
+      connected?.success===true && connected.state==="verified" &&
+      Array.isArray(connected.clients)
+        ? {connectedAgentsState:"verified",connectedAgents:connected.clients,
+           connectedAgentsObservedAt:connected.observedAt} : null);
     const reqResult = results[0], idResult = results[1];
     const reqOk = reqResult.status === "fulfilled" && reqResult.value?.success === true &&
       Array.isArray(reqResult.value.requests);

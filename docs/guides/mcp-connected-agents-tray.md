@@ -8,7 +8,10 @@ The panel is in **Overview → Connected MCP agents** and
 - Source: current live MCP HTTP session registry in the independent MCP
   backend, sampled into private owner-worker IPC every 5 seconds.
 - Data reaches Tray only through the selected authenticated Core's
-  **verified managed MCP owner** status. The owner authenticates with its
+  **local-operator-only** `/api/desktop/access/connected-clients` endpoint
+  and the main native Tray `mcp_project_access_action("connected_clients")`.
+  General MCP service status only reports aggregate counts. The endpoint
+  rechecks the verified managed MCP owner's status. The owner authenticates with its
   private loopback nonce and verifies recorded listener PID/birth identity.
 - If owner verification, backend freshness (15 seconds), session count,
   or per-generation reconciliation fails, the panel says **Unavailable**.

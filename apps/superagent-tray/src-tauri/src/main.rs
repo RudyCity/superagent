@@ -2183,6 +2183,12 @@ async fn mcp_project_access_action(
     match action.as_str() {
         "requests" => core_request(Method::GET, "/api/desktop/access/requests", None).await,
         "identities" => core_request(Method::GET, "/api/desktop/access/identities", None).await,
+        "connected_clients" => {
+            if !data.as_object().is_some_and(|value| value.is_empty()) {
+                return Err("Connected MCP client inventory accepts no query fields".into());
+            }
+            core_request(Method::GET, "/api/desktop/access/connected-clients", None).await
+        },
         "projects" => core_request(Method::GET, "/api/desktop/access/projects", None).await,
         "approve" => {
             let request_id = text_field("requestId", 96)?;

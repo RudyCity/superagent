@@ -90,6 +90,21 @@ describe("MCP project access operator route boundary", () => {
     expect(result.body?.code).toBe("LOCAL_OPERATOR_AUTH_REQUIRED");
   });
 
+  it("rejects remote connected client inventory even with a valid Core token",async()=>{
+    const result=await invoke("/api/desktop/access/connected-clients",{
+      method:"GET",peer:"203.0.113.10",host:"superagent.example.com",
+    });
+    expect(result.status).toBe(403);
+    expect(result.body?.code).toBe("LOCAL_OPERATOR_AUTH_REQUIRED");
+  });
+
+  it("rejects local connected client inventory with an invalid Core token",async()=>{
+    const result=await invoke("/api/desktop/access/connected-clients",{
+      method:"GET",token:"invalid-token",
+    });
+    expect(result.status).toBe(403);
+  });
+
   it("permits authenticated local read-only identity inventory", async () => {
     const result = await invoke("/api/desktop/access/identities", {
       method: "GET",

@@ -1230,6 +1230,72 @@ export async function handleServerRoute(
       return true;
     }
   }
+  // This endpoint is intentionally inside the local-operator-only
+  // /api/desktop/access/* boundary, not the general MCP service status.
+  if (pathname === "/api/desktop/access/connected-clients" && req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    const unavailable = {success:true, state:"unavailable", clients:null};
+    try {
+      const { inspectServices } = await import("./core/runtime/serviceManager.js");
+      const { readManagedMcpTunnelLease, verifyManagedOwnerIdentity,
+        probeManagedMcpTunnelOwner } = await import("./core/runtime/mcpManagedTunnelOwner.js");
+      const observed = (await inspectServices("mcp"))[0];
+      const port = observed?.port;
+      const pid = observed?.ownerPid;
+      if (!observed?.ownershipVerified || !Number.isSafeInteger(port) ||
+          !Number.isSafeInteger(pid) || !observed.details?.reloadable) {
+        sendJSON(res, 200, unavailable); return true;
+      }
+      const lease = readManagedMcpTunnelLease(port!);
+      if (!lease || lease.pid !== pid) {
+        sendJSON(res, 200, unavailable); return true;
+      }
+      await verifyManagedOwnerIdentity(lease, {timeoutMs:1100});
+      const live = await probeManagedMcpTunnelOwner(lease);
+      if (!live || live.pid !== pid || live.connectedAgentsState !== "verified" ||
+          !Array.isArray(live.connectedAgents) || live.connectedAgents.length > 64 ||
+          !Number.isSafeInteger(live.connectedAgentsObservedAt) ||
+          Date.now()-live.connectedAgentsObservedAt! > 15_000 ||
+          live.connectedAgentsObservedAt! > Date.now()+1000) {
+        sendJSON(res, 200, unavailable); return true;
+      }
+      const clients = live.connectedAgents.map(item => {
+        if (!item || typeof item !== "object") return null;
+        const row = item as Record<string,unknown>;
+        if (typeof row.sessionHandle !== "string" || !/^ses_[a-f0-9]{12}$/.test(row.sessionHandle) ||
+            typeof row.principalHandle !== "string" || !/^idh_[a-f0-9]{16}$/.test(row.principalHandle) ||
+            !["oauth","static-bearer"].includes(String(row.authMode)) ||
+            !["active","idle","retiring"].includes(String(row.state)) ||
+            !Number.isSafeInteger(row.inFlight) || Number(row.inFlight) < 0 ||
+            !Number.isSafeInteger(row.createdAt) || !Number.isSafeInteger(row.lastSeenAt) ||
+            Number(row.createdAt) > Number(row.lastSeenAt) ||
+            Number(row.lastSeenAt) > Date.now()+1000) return null;
+        const label = (value:unknown,max:number) =>
+          typeof value === "string" && value.length > 0 && value.length <= max &&
+          !/[\u0000-\u001f\u007f-\u009f]/.test(value) ? value : null;
+        return {
+          sessionHandle:row.sessionHandle, principalHandle:row.principalHandle,
+          authMode:row.authMode, state:row.state, inFlight:row.inFlight,
+          createdAt:row.createdAt, lastSeenAt:row.lastSeenAt,
+          claimedClientName:label(row.claimedClientName,64),
+          claimedClientVersion:label(row.claimedClientVersion,32),
+          lastToolRequest:typeof row.lastToolRequest==="string" &&
+            /^[A-Za-z0-9_./-]{1,80}$/.test(row.lastToolRequest)
+              ? row.lastToolRequest : null,
+        };
+      });
+      if (clients.some(item=>item===null) ||
+          !Number.isSafeInteger(live.activeSessions) ||
+          clients.length !== live.activeSessions) {
+        sendJSON(res, 200, unavailable); return true;
+      }
+      sendJSON(res, 200, {success:true,state:"verified",clients,
+        observedAt:live.connectedAgentsObservedAt});
+    } catch {
+      sendJSON(res, 200, unavailable);
+    }
+    return true;
+  }
   if (pathname === "/api/desktop/access/requests" && req.method === "GET") {
     res.setHeader("Cache-Control", "no-store");
     try {

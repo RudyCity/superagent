@@ -40,15 +40,6 @@ function mount(calls: Record<string,any> = {}) {
         services:[{service:"mcp",ownerPid:100,ownershipVerified:true,
           details:{activeSessions:2,inFlightRequests:0,backendHealthy:true,
             backendGenerations:1,sessionTelemetry:{activePrincipals:1,rejectedTotal:0},
-            connectedAgentsState:"verified",connectedAgentsObservedAt:Date.now(),
-            connectedAgents:[
-              {sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
-                authMode:"oauth",claimedClientName:"Gemini",state:"active",inFlight:1,
-                lastSeenAt:Date.now(),lastToolRequest:"superagent_list_projects"},
-              {sessionHandle:"ses_bbbbbbbbbbbb",principalHandle:"idh_2222222222222222",
-                authMode:"static-bearer",claimedClientName:"ChatGPT",state:"idle",inFlight:0,
-                lastSeenAt:Date.now(),lastToolRequest:null}
-            ],
             memoryTelemetry:{rssBytes:10485760,heapUsedBytes:5242880,trend:{suspicious:false}}}}],
         timeline:[{at:Date.now(),service:"mcp",action:"status",outcome:"succeeded"}],
       };
@@ -63,7 +54,19 @@ function mount(calls: Record<string,any> = {}) {
     if(name==="get_yolo_mode")return "off";
     if(name==="get_permanent_access_registry")return {rules:[{effect:"deny"}]};
     if(name==="get_desktop_input_policy")return {mode:"deny",targets:[]};
-    if(name==="mcp_project_access_action")return {requests:[],identities:[]};
+    if(name==="mcp_project_access_action") {
+      if(args?.action==="connected_clients")return calls.connectedClients ?? {
+        success:true,state:"verified",observedAt:Date.now(),clients:[
+              {sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
+                authMode:"oauth",claimedClientName:"Gemini",state:"active",inFlight:1,
+                lastSeenAt:Date.now(),lastToolRequest:"superagent_list_projects"},
+              {sessionHandle:"ses_bbbbbbbbbbbb",principalHandle:"idh_2222222222222222",
+                authMode:"static-bearer",claimedClientName:"ChatGPT",state:"idle",inFlight:0,
+                lastSeenAt:Date.now(),lastToolRequest:null}
+            ]
+      };
+      return {requests:[],identities:[]};
+    }
     if(name==="get_overview_owner_metrics")return {processes:[{service:"mcp",cpuPct:2,rssBytes:10485760}]};
     return null;
   };
@@ -104,6 +107,10 @@ describe("Tray Overview owner-verified cockpit",()=>{
     expect(h.byId("op-mcp-sessions").textContent).toBe("—");
     expect(h.byId("op-connected-agent-list").children[0].textContent).toContain("Unavailable");
     expect(h.byId("op-service-list").children[0].textContent).toContain("unavailable");
+  });
+  it("does not use client list from generic dashboard without operator-only proof",async()=>{
+    const h=mount({connectedClients:{success:true,state:"unavailable",clients:null}});await settle();
+    expect(h.byId("op-connected-agent-list").children[0].textContent).toContain("Unavailable");
   });
   it("filters only registry-backed connected clients; never assumes claimed labels are authenticated",async()=>{
     const h=mount();await settle();

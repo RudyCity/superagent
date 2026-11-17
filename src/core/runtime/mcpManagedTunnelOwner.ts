@@ -58,6 +58,10 @@ export interface ManagedMcpTunnelOwnerStatus {
   backendHealthy?: boolean;
   backendGenerationDetails?: Array<Record<string, unknown>>;
   sessionTelemetry?: Record<string, unknown>;
+  /** Private operator-only display metadata. Never forward through MCP status. */
+  connectedAgentsState?: "verified" | "unavailable";
+  connectedAgents?: Array<Record<string, unknown>> | null;
+  connectedAgentsObservedAt?: number | null;
   memoryTelemetry?: Record<string, unknown>;
   autoRecovery?: Record<string, unknown>;
 }

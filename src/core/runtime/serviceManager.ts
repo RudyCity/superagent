@@ -384,13 +384,6 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
           ? live.backendGenerationDetails.slice(0,8):[],
         activeSessions:live?.activeSessions??null,
         inFlightRequests:live?.inFlightRequests??null,
-        // Only the verified MCP owner's bounded, anonymized live session view.
-        connectedAgents:verified&&live?.connectedAgentsState==="verified"&&
-          Array.isArray(live?.connectedAgents) ? live.connectedAgents.slice(0,64):null,
-        connectedAgentsState:verified&&live?.connectedAgentsState==="verified"
-          ? "verified":"unavailable",
-        connectedAgentsObservedAt:verified&&live?.connectedAgentsState==="verified"
-          ? live.connectedAgentsObservedAt:null,
         sessionTelemetry:live?.sessionTelemetry??null,
         memoryTelemetry:live?.memoryTelemetry??null,
         runtimeWarning:memorySuspicious?"MCP_MEMORY_GROWTH_DETECTED":
