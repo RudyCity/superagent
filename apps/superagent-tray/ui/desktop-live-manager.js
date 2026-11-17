@@ -781,7 +781,8 @@
              !Number.isSafeInteger(result.secondsRemaining)||result.secondsRemaining<1)
             throw Error("Independent "+kind+" controller not approved");
           stream.controllerScopes[kind]=true;
-          stream.controlEnabled=true;
+          // A host grant alone must not silently open the interactive input UI.
+          // The operator separately uses "Show Input UI" to begin interaction.
           stream.controllerSeconds=result.secondsRemaining;
           status(kind+" approved by host; device must still accept each command.");
         }else{
