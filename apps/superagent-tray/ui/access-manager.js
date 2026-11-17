@@ -664,7 +664,7 @@
     // Section 2: Direct Grant Form
     const grantSection = make("div", "access-editor");
     const grantTitle = make("h3", "", "Pemberian Izin Proyek Langsung (Direct Human Grant)");
-    const grantDesc = make("p", "access-hint", "Jika host agen memblokir tool permintaan akses, berikan hak akses secara langsung kepada identitas agen yang terhubung.");
+    const grantDesc = make("p", "access-hint", "Izin file proyek dan izin MCP Connection Controls terpisah. Chat YOLO tidak memengaruhi MCP. Gunakan opsi MCP Connection Controls hanya untuk operasi non-proyek yang memerlukan execute.");
     grantDesc.style.fontSize = "11px";
 
     const grantForm = make("form");
@@ -923,6 +923,18 @@
             projSelect.append(option(p.registeredProjectId || p.projectId || p.id, (p.name || p.id) + " (" + target + ")"));
           }
         }
+        // Non-project actions require an independent, explicitly human-approved
+        // MCP connection capability. This does not authorize any project files.
+        projSelect.append(option("mcp-connection", "MCP Connection Controls (execute; no file access)"));
+        projSelect.addEventListener("change", () => {
+          if (projSelect.value !== "mcp-connection") return;
+          for (const name of ["read", "write", "git"]) {
+            const check = $("access-cap-" + name)?.querySelector("input");
+            if (check) check.checked = false;
+          }
+          const execute = $("access-cap-execute")?.querySelector("input");
+          if (execute) execute.checked = true;
+        }, { once: true });
       }
     } catch (err) {
       console.warn("[AccessManager] refreshMcpRequests error:", err);
