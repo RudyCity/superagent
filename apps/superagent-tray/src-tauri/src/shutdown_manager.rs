@@ -806,7 +806,12 @@ pub async fn shutdown_manager_action(
             let chosen=force_candidates(&original)?;
             let blocked=original.active().filter(|item|!item.force_selectable).count();
             let summary=format!(
-                "FORCE STOP ALL VERIFIED SUPERAGENT OWNERS?\n\n                Force stop may interrupt MCP sessions, in-flight requests and public                 Cloudflare tunnels. Quick Tunnel URLs can change after restart.\n\n                {} authenticated owner(s) eligible. {} unknown, foreign or                 unsupported owner(s) WILL REMAIN RUNNING.\n\n                The Tray stays open for status verification. Continue?",
+                "FORCE STOP ALL VERIFIED SUPERAGENT OWNERS?\n\n\
+                Force stop may interrupt MCP sessions, in-flight requests and public \
+                Cloudflare tunnels. Quick Tunnel URLs can change after restart.\n\n\
+                {} authenticated owner(s) eligible. {} unknown, foreign or \
+                unsupported owner(s) WILL REMAIN RUNNING.\n\n\
+                The Tray stays open for status verification. Continue?",
                 chosen.len(),blocked);
             let dialog=app.clone();
             let approved=tauri::async_runtime::spawn_blocking(move||{
