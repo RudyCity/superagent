@@ -122,7 +122,16 @@
     if (page) {
       const open = element("button", "notification-link", "View " + page.replaceAll("-", " "));
       open.type = "button";
-      open.addEventListener("click", () => { close(); window.navigateToPage?.(page); });
+      open.addEventListener("click", () => {
+        close();
+        window.navigateToPage?.(page);
+        // The opaque request ID already belongs to the authenticated native
+        // inbox. Focus only; approval remains a separate human action.
+        if (item.source === "security" && item.id.startsWith("mcp-pending:")) {
+          void Promise.resolve(window.__superagentAccessManagerFocusRequest?.(
+            item.id.slice("mcp-pending:".length))).catch(() => {});
+        }
+      });
       actions.append(open);
     }
     addAction(actions, item.readAt ? "Mark unread" : "Mark read",
