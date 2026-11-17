@@ -3476,13 +3476,13 @@ export function App({
   // repeated disk reads on every keystroke and every streaming repaint.
   // Recompute after workspace/wizard changes or when a new chat line (e.g.
   // a tool completing a chain update) enters the history.
-  const primaryWorkspacePath = useMemo(() => {
+  const { primaryWorkspacePath, activeChain } = useMemo(() => {
     const activeChainId = getActiveChainId(workspacePath);
     const activeChain = activeChainId ? getWorkspaceChain(activeChainId, workspacePath) : null;
     const primaryChainNode = activeChain?.nodes.find(
       (n) => n.id === activeChain.primaryNodeId || n.role === "main",
     );
-    return primaryChainNode?.path || workspacePath;
+    return { primaryWorkspacePath: primaryChainNode?.path || workspacePath, activeChain };
   }, [workspacePath, activeWizard, lines.length]);
 
   return (
