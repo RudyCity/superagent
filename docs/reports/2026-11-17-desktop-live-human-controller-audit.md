@@ -120,3 +120,36 @@ full keyboard shortcuts, arbitrary monitor dragging or installed readiness.
 Until these gates pass, `remotePrivateHostOperator.status().state` must
 remain `NOT_CONFIGURED`. This is an intentional safety invariant rather
 than a successful remote controller activation.
+
+## Private controller mTLS protocol — later source implementation
+
+A **distinct**, manually started RFC1918/loopback TLS 1.3 control socket is now
+implemented in `remotePrivateControllerTls.ts`; its Node client is
+`remotePrivateControllerClient.ts`. This does not alter or elevate the existing
+view-only TLS stream. `AttendedPrivateDesktopHostSession.startController()`
+refuses to start the control listener unless the independently approved
+private viewer is already actively authenticated and displaying its pinned
+window. Starting control still requires a trusted native-host factory.
+
+The controller protocol uses mutual certificates, SNI/ALPN/DER pinning,
+domain-separated viewer proof bound to the generated one-use connection,
+a single controller credential connection, separately attended and
+host-signed mouse/keyboard challenges, and host-held action tokens. The viewer
+never supplies its own host proof or sees the OS input token. Every input
+request is checked by the nativeRef-only dispatch/lease system; disconnect
+revokes both input scopes, and session credentials cannot be reconnected.
+
+Its tests use **disposable certificates and mock native UIA capture** to
+exercise genuine TLS handshakes, independent scope approvals, forged proof
+rejection, semantic dispatch, scope revocation and single-use credentials.
+Such a test is NOT installed Windows/Android runtime verification.
+
+**Still not implemented in the installed application:** OS-native controller
+approval/signer plumbing, secure certificate provisioning/handoff, a trusted
+host factory activation point, remote viewer UI/Android control UI,
+foreground physical Windows input positive E2E, installer/signing verification,
+and release. In particular no arbitrary monitor-coordinate/dragging or
+generic OS keyboard shortcut path has been enabled. Core HTTP, MCP, public
+tunnels, browser JavaScript and local preview tokens remain excluded from
+native input authorization. Keep runtime readiness `NOT_CONFIGURED` until
+those gates pass.
