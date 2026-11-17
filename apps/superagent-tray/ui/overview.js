@@ -58,6 +58,11 @@
     trayBuildNumber: null,
     activities: [],
     telemetryUnavailable: [],
+    schedulerObserved: false,
+    delegateObserved: false,
+    terminalObserved: false,
+    lanObserved: false,
+    securityDefaultEffect: null,
     runtimeObserved: false,
     securityObserved: false,
   };
@@ -90,6 +95,11 @@
     if (overviewState.loading) return;
     overviewState.loading = true;
     overviewState.coreOnline = false;
+    overviewState.schedulerObserved = false;
+    overviewState.delegateObserved = false;
+    overviewState.terminalObserved = false;
+    overviewState.lanObserved = false;
+    overviewState.securityDefaultEffect = null;
     overviewState.runtimeObserved = false;
     overviewState.securityObserved = false;
     overviewState.corePid = null;
@@ -176,6 +186,7 @@
       // 2. Process Daemon Jobs
       if (daemonJobs.status === "fulfilled" && Array.isArray(daemonJobs.value?.jobs || daemonJobs.value)) {
         const jobs = daemonJobs.value.jobs || daemonJobs.value;
+        overviewState.schedulerObserved = true;
         overviewState.jobsTotal = jobs.length;
         overviewState.jobsActive = jobs.filter((j) => j.enabled).length;
 
@@ -188,6 +199,7 @@
       // 3. Process Chrome Delegate
       if (delegateStatus.status === "fulfilled" && delegateStatus.value) {
         const ds = delegateStatus.value;
+        overviewState.delegateObserved = true;
         overviewState.delegateTabs = ds.activeTabsCount || ds.tabs?.length || 0;
         overviewState.delegateClients = ds.connectedClientsCount || ds.clients?.length || 0;
         overviewState.delegatePaired = Boolean(ds.paired || overviewState.delegateClients > 0);
@@ -195,6 +207,7 @@
 
       // 4. Process Terminal Tasks
       if (terminalTasks.status === "fulfilled" && Array.isArray(terminalTasks.value)) {
+        overviewState.terminalObserved = true;
         overviewState.terminalTasks = terminalTasks.value.filter((t) => t.status === "running").length;
       }
 
@@ -209,6 +222,7 @@
       // 6. Process LAN Devices
       if (lanSnap.status === "fulfilled" && lanSnap.value) {
         const lanData = lanSnap.value;
+        overviewState.lanObserved = true;
         const devices = Array.isArray(lanData.devices) ? lanData.devices : [];
         const tunnelDevs = Array.isArray(lanData.tunnelDevices) ? lanData.tunnelDevices : [];
         const allDevices = [...devices, ...tunnelDevs];
@@ -218,7 +232,9 @@
 
       // 7. Process Security & Permanent ACL
       if (permanentAccessSnap.status === "fulfilled" && permanentAccessSnap.value) {
-        overviewState.securityObserved = true;
+        overviewState.securityObserved = Boolean(inputPolicySnap.value);
+        overviewState.securityDefaultEffect = typeof permanentAccessSnap.value.defaultEffect === "string" ?
+          permanentAccessSnap.value.defaultEffect : null;
         const reg = permanentAccessSnap.value;
         const rules = Array.isArray(reg.rules) ? reg.rules : [];
         overviewState.securityRules = rules.length;
@@ -351,7 +367,7 @@
         if (isPartial) issues.push(`${overviewState.telemetryUnavailable.length} telemetry sources unavailable`);
         if (!overviewState.delegatePaired) issues.push("Delegate Standby");
         if (overviewState.lanActive > 0) issues.push(`${overviewState.lanActive} LAN Active`);
-        summary.textContent = issues.length ? `Core Active · ${issues.join(" · ")}` : "All Primary Subsystems Operational";
+        summary.textContent = issues.length ? `Core Active · ${issues.join(" · ")}` : "Core Active · inspect full service readiness below";
       } else {
         summary.textContent = overviewState.runtimeObserved ? "Companion Running · Core Offline" :
           "Runtime status unavailable · retry diagnostics";
@@ -369,18 +385,19 @@
     const kpiCoreMeta = $("kpi-core-meta");
     const kpiCoreBadge = $("kpi-core-badge");
     if (kpiCoreVal) kpiCoreVal.textContent = !overviewState.runtimeObserved ? "Unknown" : overviewState.coreOnline ? "Online" : "Offline";
-    if (kpiCoreMeta) kpiCoreMeta.textContent = `Port :${overviewState.corePort || 7888} Loopback`;
+    if (kpiCoreMeta) kpiCoreMeta.textContent = overviewState.runtimeObserved ?
+      `Port :${overviewState.corePort || 7888} Loopback` : "Owner identity unverified";
     if (kpiCoreBadge) {
-      kpiCoreBadge.textContent = overviewState.coreOnline ? "Live" : "Inactive";
+      kpiCoreBadge.textContent = !overviewState.runtimeObserved ? "Unverified" : overviewState.coreOnline ? "Live" : "Inactive";
       kpiCoreBadge.className = `stat-chip ${overviewState.coreOnline ? "success" : "danger"}`;
     }
 
     // 2. Schedulers
     const kpiJobsVal = $("kpi-jobs-count");
     const kpiJobsNext = $("kpi-jobs-next");
-    if (kpiJobsVal) kpiJobsVal.textContent = `${overviewState.jobsActive} / ${overviewState.jobsTotal}`;
+    if (kpiJobsVal) kpiJobsVal.textContent = overviewState.schedulerObserved ? `${overviewState.jobsActive} / ${overviewState.jobsTotal}` : "Unavailable";
     if (kpiJobsNext) {
-      kpiJobsNext.textContent = overviewState.nextRun
+      kpiJobsNext.textContent = !overviewState.schedulerObserved ? "Scheduler telemetry unavailable" : overviewState.nextRun
         ? `Next: ${dateTimeFormat.format(new Date(overviewState.nextRun))}`
         : "No upcoming triggers";
     }
@@ -389,7 +406,7 @@
     const kpiDelVal = $("kpi-delegate-tabs");
     const kpiDelMeta = $("kpi-delegate-meta");
     const kpiDelBadge = $("kpi-delegate-badge");
-    if (kpiDelVal) kpiDelVal.textContent = `${overviewState.delegateTabs} Tabs`;
+    if (kpiDelVal) kpiDelVal.textContent = overviewState.delegateObserved ? `${overviewState.delegateTabs} Tabs` : "Unknown";
     if (kpiDelMeta) {
       kpiDelMeta.textContent = overviewState.delegatePaired ? "Extension Paired (:17341)" : "Awaiting Pairing";
     }
@@ -401,7 +418,7 @@
     // 4. Terminal Tasks
     const kpiTermVal = $("kpi-terminal-tasks");
     const kpiTermMeta = $("kpi-terminal-meta");
-    if (kpiTermVal) kpiTermVal.textContent = `${overviewState.terminalTasks} Running`;
+    if (kpiTermVal) kpiTermVal.textContent = overviewState.terminalObserved ? `${overviewState.terminalTasks} Running` : "Unavailable";
     if (kpiTermMeta) kpiTermMeta.textContent = "Background Subprocesses";
 
     // 5. LAN Devices
@@ -409,7 +426,7 @@
     const kpiLanMeta = $("kpi-lan-meta");
     const kpiLanBadge = $("kpi-lan-badge");
     if (kpiLanVal) {
-      kpiLanVal.textContent = `${overviewState.lanDevices} Paired`;
+      kpiLanVal.textContent = overviewState.lanObserved ? `${overviewState.lanDevices} Paired` : "Unknown";
     }
     if (kpiLanMeta) {
       if (overviewState.lanActive > 0) {
@@ -443,7 +460,7 @@
       } else if (overviewState.securityRules > 0) {
         kpiSecVal.textContent = `${overviewState.securityRules} Rules`;
       } else {
-        kpiSecVal.textContent = overviewState.securityObserved ? "Default Deny" : "Unverified";
+        kpiSecVal.textContent = overviewState.securityDefaultEffect ? `Default ${overviewState.securityDefaultEffect}` : "Configured";
       }
     }
     if (kpiSecMeta) {
@@ -474,25 +491,25 @@
       corePill.className = `overview-service-status-pill ${isOnline ? "online" : "offline"}`;
     }
     if (coreMeta) {
-      coreMeta.textContent = isOnline ? `Port :${overviewState.corePort || 7888}` : "No OS process";
+      coreMeta.textContent = !overviewState.runtimeObserved ? "Owner identity unverified" : isOnline ? `Port :${overviewState.corePort || 7888}` : "Selected Core offline";
     }
 
     // Schedulers
     const schedPill = $("srv-sched-pill");
     const schedMeta = $("srv-sched-meta");
     if (schedPill) {
-      schedPill.textContent = overviewState.jobsActive > 0 ? "Running" : "Idle";
+      schedPill.textContent = !overviewState.schedulerObserved ? "Unverified" : overviewState.jobsActive > 0 ? "Scheduled" : "Idle";
       schedPill.className = `overview-service-status-pill ${overviewState.jobsActive > 0 ? "online" : "standby"}`;
     }
     if (schedMeta) {
-      schedMeta.textContent = `${overviewState.jobsTotal} total schedules`;
+      schedMeta.textContent = overviewState.schedulerObserved ? `${overviewState.jobsTotal} total schedules` : "Scheduler telemetry unavailable";
     }
 
     // Delegate
     const delPill = $("srv-delegate-pill");
     const delMeta = $("srv-delegate-meta");
     if (delPill) {
-      delPill.textContent = overviewState.delegatePaired ? "Paired" : "Standby";
+      delPill.textContent = !overviewState.delegateObserved ? "Unverified" : overviewState.delegatePaired ? "Paired" : "Standby";
       delPill.className = `overview-service-status-pill ${overviewState.delegatePaired ? "online" : "standby"}`;
     }
     if (delMeta) {
@@ -503,11 +520,11 @@
     const termPill = $("srv-terminal-pill");
     const termMeta = $("srv-terminal-meta");
     if (termPill) {
-      termPill.textContent = overviewState.terminalTasks > 0 ? "Active" : "Ready";
+      termPill.textContent = !overviewState.terminalObserved ? "Unverified" : overviewState.terminalTasks > 0 ? "Active" : "Idle";
       termPill.className = `overview-service-status-pill ${overviewState.terminalTasks > 0 ? "online" : "standby"}`;
     }
     if (termMeta) {
-      termMeta.textContent = `${overviewState.terminalTasks} running tasks`;
+      termMeta.textContent = overviewState.terminalObserved ? `${overviewState.terminalTasks} running tasks` : "Terminal telemetry unavailable";
     }
   }
 

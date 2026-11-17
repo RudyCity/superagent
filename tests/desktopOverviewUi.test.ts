@@ -300,7 +300,7 @@ describe("SuperAgent Tray System Overview Dashboard", () => {
 
     // Verify Services Matrix
     expect(harness.byId("srv-core-pill").textContent).toBe("Active");
-    expect(harness.byId("srv-sched-pill").textContent).toBe("Running");
+    expect(harness.byId("srv-sched-pill").textContent).toBe("Scheduled");
     expect(harness.byId("srv-delegate-pill").textContent).toBe("Paired");
     expect(harness.byId("srv-terminal-pill").textContent).toBe("Active");
   });
