@@ -142,6 +142,49 @@ describe("private host TLS listener (manual, attended, no default port)", () => 
     }
   }, 10000);
 
+  it("revokes the native controller synchronously before private viewer cleanup",async()=>{
+    const f=fixture();
+    const events:string[]=[];
+    const controller={
+      viewerDisconnected:vi.fn(()=>{events.push("input-revoked");}),
+    };
+    f.listener.registerControllerEndHook(controller);
+    expect(()=>f.listener.registerControllerEndHook(controller)).toThrow();
+    const started=await approvedStart(f);
+    expect(started.port).toBeGreaterThan(0);
+    f.listener.humanTakeover();
+    expect(controller.viewerDisconnected).toHaveBeenCalledOnce();
+    expect(events).toEqual(["input-revoked"]);
+    f.listener.stop();
+    expect(controller.viewerDisconnected).toHaveBeenCalledOnce();
+    expect(()=>f.listener.registerControllerEndHook(controller)).toThrow();
+  });
+
+  it("revokes native controller when the authenticated mTLS viewer disconnects",async()=>{
+    const f=fixture();
+    const controller={viewerDisconnected:vi.fn()};
+    f.listener.registerControllerEndHook(controller);
+    const started=await approvedStart(f);
+    let viewer: Awaited<ReturnType<typeof connectRemotePrivateViewerClient>> | undefined;
+    try{
+      viewer=await connectRemotePrivateViewerClient({
+        privateAddress:started.address,port:started.port,
+        credential:started.viewerCredential,
+        clientCert:cert,clientKey:key,trustedCa:cert,
+        pinnedServerCertSha256:fingerprint,
+        onFrame:()=>{},
+      });
+      expect(viewer.isConnected).toBe(true);
+      viewer.close();
+      await vi.waitFor(()=>expect(f.listener.isStopped).toBe(true));
+      expect(controller.viewerDisconnected).toHaveBeenCalledOnce();
+      expect(f.close).toHaveBeenCalled();
+    }finally{
+      viewer?.close();
+      f.listener.stop();
+    }
+  },10_000);
+
   it("replay or second host start is refused without opening another port", async () => {
     const f = fixture();
     await approvedStart(f);
