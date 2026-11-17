@@ -156,6 +156,28 @@ export type PermanentFileToolReadiness = "certified_metadata" | "certified_app_s
  * A tool may have a permitted action even when its generic classification is
  * 'action_dependent'; this function deliberately does not guess its arguments.
  */
+export function describePermanentFileToolReadiness(name:string):string {
+  if(name==="superagent_tool_execute")
+    return "Depends on the exact nested target and its arguments; the target is reauthorized independently.";
+  if(name==="superagent_desktop_ui")
+    return "Only probe, bounded window/app inventory, find_window, live_inventory and security-prompt metadata are certified; snapshot, open and input remain restricted.";
+  if(BROWSER_OBSERVATION_TOOLS.has(name))
+    return "Only certified local Chrome process/HTTP(S) target metadata, or browser gateway identity/policy actions; no evaluate, upload or file:// browsing.";
+  if(CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name))
+    return "Requires exact port, confirm:true, operationId and expectedBuildDigest; MCP Connection Controls and authenticated Core supervisor still required.";
+  if(CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name))
+    return "Read-only Core-owned device inventory or opaque pairing status only; device shell, input, screenshots and file transfer remain restricted.";
+  if(name==="superagent_manage_services")
+    return "Read-only status, inventory, doctor, health, dashboard, logs or profile actions only; lifecycle mutations remain restricted.";
+  const readiness=getPermanentFileToolReadiness(name);
+  if(readiness==="requires_explicit_files")
+    return "Supply each canonical input/target file path inside the authorized project, with matching permanent host file rules; implicit outputs are not certified.";
+  if(readiness==="certified_app_storage")
+    return "Bounded app-owned Delegate index synchronization only; no caller-selected file paths. MCP write scope and independent connection approval still required.";
+  if(readiness==="certified_metadata")
+    return "Narrow metadata/control-plane request; no file content grant implied.";
+  return "Not certified for permanent file policy v2: use an explicitly mediated operation rather than bypassing host restrictions.";
+}
 export function getPermanentFileToolReadiness(name: string): PermanentFileToolReadiness {
   if (BENIGN.has(name)) return "certified_metadata";
   if (name === "superagent_delegate_sync_history") return "certified_app_storage";
