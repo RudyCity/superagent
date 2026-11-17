@@ -33,7 +33,17 @@ reported, and a blocker when it cannot be stopped safely.
   rechecked after native approval and immediately before termination. Shared
   PIDs are killed only once; the process tree and current Tray are untouched.
   Results are reported separately per PID, including OS access denied, reused
-  PID, timeout or exit verified. Services may start a replacement automatically.
+  PID, timeout, exit verified, or a newly observed replacement. Preview shows
+  the full OS executable path when available; every execution checks that
+  path again as well as PID, birth time and name.
+  If the authenticated Core inventory is unavailable, a regular, bounded
+  `core-guardian-PORT.json` lease is checked against a live OS process to
+  recover a Guardian candidate without guessing an arbitrary `bun` PID.
+  This OS evidence does not authorize any graceful MCP action.
+  Guardian is retired first, then related services, then Core Supervisor
+  before a selected Core worker to avoid immediate in-process recovery.
+  A bounded post-stop rescan reports replacement PIDs without taking them
+  over or killing them under the original approval.
 - **Quit Tray Only** leaves services untouched, and cannot interrupt an
   in-flight verified shutdown.
 
@@ -71,8 +81,12 @@ owner-based operation, the separately approved **Manual Kill** can target
 OS-observed Guardian, Cloudflare, MCP and Core Supervisor processes even
 without application-level owner verification, if the operator selects their
 exact PID. The app does not guess PIDs, adopt an unobserved process or claim
-that killing one process prevents its supervisor from restarting it. Normal
-graceful shutdown never rotates the Cloudflare URL.
+that killing one process prevents its supervisor or an external Windows
+service/OS launchd/systemd job from restarting it. No global startup/service
+configuration is silently changed or disabled. The OS may deny process
+termination without administrator privileges. A replacement requires a fresh
+preview and separate human approval. Normal graceful shutdown never rotates
+the Cloudflare URL.
 
 Stopping a scheduler preserves persisted reminders; it does not delete jobs.
 In-flight operations are not force-cancelled. An ambiguous timeout leaves the
@@ -91,10 +105,13 @@ bun run build
 ```
 
 Tests cover native owner-plan projection, selection constraints, matching
-PID/port and OS process birth, exact typed force-stop and manual-kill approval,
-explicit reviewed PID selection, critical-system-process exclusion, shared-PID
-deduplication, preview/selection UI behavior, partial progress, XSS-safe DOM
-rendering and full-exit preconditions. OS-level Windows installed-Tray
+PID/port and OS process birth/executable path, bounded Guardian lease fallback
+when Core is down, exact typed force-stop and manual-kill approval, reviewed
+PID selection, critical-system-process exclusion, shared-PID deduplication,
+Guardian-before-supervisor ordering, restart/replacement reporting, terminal
+inventory refresh, partial progress, XSS-safe DOM rendering and full-exit
+preconditions. Passing simulated or isolated tests is not the same as real
+Windows operator certification. OS-level Windows installed-Tray
 certification still requires a controlled, private test profile. Never
 exercise stop-all against the active shared Core/MCP/Cloudflare runtime
 as a CI shortcut.
