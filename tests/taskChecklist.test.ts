@@ -9,7 +9,7 @@ describe("task checklist helpers", () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-clone-tasks-"));
     try {
       const oldProjectTaskPath = path.join(dir, "task.md");
-      await fs.writeFile(oldProjectTaskPath, "- [x] Historical cloned project task\\n");
+      await fs.writeFile(oldProjectTaskPath, "- [x] Historical cloned project task\n");
       expect(getActiveSessionTaskPath(null)).toBeNull();
       expect(getActiveSessionTaskPath(undefined)).toBeNull();
       expect(getActiveSessionTaskPath({ getTaskFilePath: () => "" })).toBeNull();
