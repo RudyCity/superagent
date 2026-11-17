@@ -1783,6 +1783,68 @@ export async function handleServerRoute(
     return true;
   }
 
+  // Authenticated native Tray only. Video bytes never traverse HTTP,
+  // public tunnels, CDP, or the WebView; native OS players open local files.
+  if (pathname === "/api/desktop/cdp/recordings") {
+    res.setHeader("Cache-Control","no-store");
+    res.setHeader("Referrer-Policy","no-referrer");
+    res.setHeader("X-Content-Type-Options","nosniff");
+    const local=["127.0.0.1","::1","::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
+    const host=/^(?:127\\.0\\.0\\.1|localhost)(?::[0-9]{2,5})?$/i.test(String(req.headers.host || ""));
+    const forwarded=["forwarded","x-forwarded-for","x-forwarded-host","x-forwarded-proto",
+      "x-real-ip","cf-connecting-ip","cf-ray","proxy-authorization"].some(name=>Object.hasOwn(req.headers,name));
+    const {isRequestAuthorized}=await import("./core/utils/serverSecurity.js");
+    const bearer=typeof req.headers.authorization==="string" &&
+      /^Bearer [^\\s]+$/.test(req.headers.authorization);
+    if (!local || !host || forwarded || req.headers.origin || req.headers.referer ||
+        !bearer || !isRequestAuthorized(req,parsedUrl)) {
+      sendJSON(res,403,{success:false,error:"CDP_RECORDINGS_LOCAL_OPERATOR_REQUIRED"});
+      return true;
+    }
+    if (req.method!=="POST" || parsedUrl.search) {
+      sendJSON(res,405,{success:false,error:"CDP_RECORDINGS_POST_ONLY"});
+      return true;
+    }
+    try {
+      const raw=await readBody(req);
+      if (Buffer.byteLength(raw,"utf8")>2400) throw Error("Oversized request.");
+      const body=JSON.parse(raw);
+      if (!body || typeof body!=="object" || Array.isArray(body) ||
+          Object.keys(body).some(k=>!["action","projectDirectory","recordingId","confirmDelete"].includes(k)) ||
+          typeof body.projectDirectory!=="string") throw Error("Invalid body.");
+      const {listProjectCdpRecordings,locateProjectCdpRecording,
+        stopProjectCdpRecording,deleteProjectCdpRecording}=
+        await import("./core/tools/chromeCdpRecordingLibrary.js");
+      let result;
+      switch (body.action) {
+        case "list":
+          if (body.recordingId!==undefined || body.confirmDelete!==undefined) throw Error("Unexpected selector.");
+          result=await listProjectCdpRecordings(body.projectDirectory); break;
+        case "video": case "folder":
+          if (typeof body.recordingId!=="string" || body.confirmDelete!==undefined)
+            throw Error("Recording selector required.");
+          result=await locateProjectCdpRecording(body.projectDirectory,body.recordingId,body.action);
+          break;
+        case "stop":
+          if (typeof body.recordingId!=="string" || body.confirmDelete!==undefined)
+            throw Error("Recording selector required.");
+          result=await stopProjectCdpRecording(body.projectDirectory,body.recordingId);
+          break;
+        case "delete":
+          if (typeof body.recordingId!=="string" || body.confirmDelete!==true)
+            throw Error("Confirmation required.");
+          result=await deleteProjectCdpRecording(body.projectDirectory,body.recordingId,true);
+          break;
+        default: throw Error("Unsupported recording manager action.");
+      }
+      sendJSON(res,200,{success:true,...result});
+    } catch {
+      // Never echo arbitrary paths, page contents, or filesystem exceptions.
+      sendJSON(res,409,{success:false,error:"CDP_RECORDINGS_ACTION_UNAVAILABLE"});
+    }
+    return true;
+  }
+
   // Native-only managed CDP live updates and manual human hold. These routes
   // never accept browser content, owner capability, arbitrary CDP commands, or
   // bearer tokens in the URL. The Tray authenticates using its native bridge.

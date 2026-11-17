@@ -454,3 +454,18 @@ export function resetCdpSessionArchivesForTests() {
   }
   sessions.clear();
 }
+
+/** Native operator-only inventory probe. Do not expose a raw filesystem handle to MCP. */
+export function inspectCdpSessionArchiveDirectory(directory: string) {
+  const item=[...sessions.values()].find(s=>s.directory===directory);
+  return item ? publicStatus(item) : undefined;
+}
+
+/** Local authenticated Tray stop: human ownership, never an MCP capability. */
+export async function stopCdpSessionArchiveByOperator(directory: string) {
+  const item=[...sessions.values()].find(s=>s.directory===directory);
+  if (!item) throw Error("Active recording not found in this Core.");
+  if (item.status === "saved") return publicStatus(item);
+  if (item.status === "failed") throw Error("Recording has already failed.");
+  return stopCdpSessionArchive(item.scope);
+}
