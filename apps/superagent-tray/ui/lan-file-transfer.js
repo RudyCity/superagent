@@ -338,12 +338,13 @@
     return result;
   }
   async function sendLargeFile(device, file) {
-    if (device.platform !== "windows") throw Error("V2 disk-backed upload requires updated Windows LAN client.");
+    if (device.platform !== "windows" && device.platform !== "android")
+      throw Error("V2 disk-backed upload requires updated Windows or Android LAN client.");
     if (file.size <= MAX || file.size > V2_MAX || file.name.endsWith(".safolder"))
       throw Error("Large folder archives or invalid V2 file size are not supported.");
     const sha256 = await hashLargeFile(file);
     assertActive();
-    state("Waiting for Windows owner approval to receive large file " + file.name, 0);
+    state("Waiting for " + device.platform + " owner approval to receive large file " + file.name, 0);
     const offer = (await invoke("file_v2_offer", {
       deviceId: targetId, direction: "upload", name: file.name, size: file.size, sha256,
     })).file;
@@ -415,8 +416,9 @@
         !filenameAllowed(file.name) || !Number.isSafeInteger(file.size) ||
         file.size < 1 || file.size > V2_MAX ||
         (file.size > MAX && file.name.endsWith(".safolder")) ||
-        targets.some((target) => file.size > (target.platform === "windows" ? V2_MAX : MAX)))) {
-      state("Select 1–32 safe ASCII files, max 4 MiB for Android or 256 MiB with updated Windows V2.");
+        targets.some((target) => file.size >
+          (["windows", "android"].includes(target.platform) ? V2_MAX : MAX)))) {
+      state("Select 1–32 safe ASCII files, max 256 MiB on updated Windows/Android V2 targets.");
       return;
     }
     const jobs = targets.flatMap((device) => files.map((file) => ({ device, file })));
