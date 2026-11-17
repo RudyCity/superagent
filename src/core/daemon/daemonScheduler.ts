@@ -5,7 +5,6 @@ import { DaemonJob, DaemonStatus, DaemonConfig, DaemonJobKind } from "./daemonTy
 import { matchesCron, getNextCronTime, isValidCron } from "./cronParser.js";
 import { getRootConfigDir, getWorkspaceId } from "../config/paths.js";
 import { tickExternalLifecycle } from "../lifecycle/externalLifecycle.js";
-import { dispatchCdpWakeNotifications } from "../lifecycle/cdpWakeAdapter.js";
 import { redactMemorySecrets } from "../memoryLifecycle.js";
 import { insertDaemonRun, listDaemonRuns, updateDaemonRun } from "../storage/daemonRunLedger.js";
 
@@ -444,8 +443,9 @@ export class DaemonScheduler {
     // Delivery is opt-in worker claim, never an unsolicited MCP client invocation.
     try {
       tickExternalLifecycle();
-      void dispatchCdpWakeNotifications().catch(error =>
-        this.log("External CDP notification failed closed: " + String(error)));
+      void import("../lifecycle/cdpWakeAdapter.js")
+        .then(({ dispatchCdpWakeNotifications }) => dispatchCdpWakeNotifications())
+        .catch(error => this.log("External CDP notification failed closed: " + String(error)));
     } catch (error) {
       this.log("External lifecycle tick failed closed: " + String(error));
     }
