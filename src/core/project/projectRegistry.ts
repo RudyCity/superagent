@@ -250,5 +250,6 @@ export function removeProject(id: string, registryPath?: string): boolean {
   if (index < 0) return false;
   document.projects.splice(index, 1);
   writeRegistry(document, registryPath);
+  if (!registryPath) revokeAllProjectAccess(id.trim().toLowerCase());
   return true;
 }
