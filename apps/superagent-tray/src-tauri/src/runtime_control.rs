@@ -499,6 +499,13 @@ pub async fn unavailable_reason(dir: &Path, kind: &str, port: u16, pid: u32) -> 
     }
 }
 
+/// Read-only proof for a force-stop preview; active sessions do not authorize
+/// mutation, and this check does not expose the private owner nonce.
+pub async fn can_force_stop_mcp(dir: &Path, port: u16, pid: u32) -> bool {
+    let Ok(lease) = read_lease(dir, port, pid) else { return false };
+    mcp_status(&lease).await.is_ok()
+}
+
 /// Force-stop only an authenticated managed MCP owner. This does not adopt an OS
 /// process or kill a PID: the exact private owner handles its force-stop route.
 pub async fn force_stop_mcp(
