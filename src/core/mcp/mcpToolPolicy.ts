@@ -258,4 +258,6 @@ export interface McpServerOptions {
   toolExposure?: "full" | "gateway";
   /** If true, skip registering MCP resources and prompts for tool-only execution paths. */
   skipResourcesAndPrompts?: boolean;
+  /** Optional custom system instructions to advertise during MCP handshake. Defaults to standard Superagent MCP instructions. */
+  instructions?: string;
 }

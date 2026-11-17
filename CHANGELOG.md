@@ -1,4 +1,9 @@
 ## [1.14.104] - 2026-11-17
+### MCP handshake system instructions & instruction fidelity v2.0
+- Advertise canonical Superagent MCP instruction protocol and custom system instructions during the MCP initialize handshake.
+- Support runtime `instructions` configuration in `McpServerOptions` and expose via `superagent://instructions/agentic-mcp`.
+- Upgrade instruction-fidelity skill to v2.0.0 with the five iron laws, taxonomy parsing, rationalization defenses, and evidence-gated verification protocols.
+
 ### Desktop Overview UI live telemetry & polling
 - Add real-time telemetry integration to the Tray Overview dashboard for LAN Devices (paired vs active session tracking with dynamic status badge) and Security Guard (active rules count, allowed rules, and default-deny status).
 - Stream live Security Guard audit logs into the Overview activity list with dedicated security badge styling.

@@ -44,6 +44,26 @@ export const SENSITIVE_MCP_RESOURCE_URIS: ReadonlySet<string> = new Set([
   "superagent://memory/pinned",
 ]);
 
+/**
+ * Canonical system instructions supplied to external MCP clients
+ * during the MCP initialize handshake and via superagent://instructions/agentic-mcp.
+ */
+export function getSuperagentMcpInstructions(): string {
+  return [
+    `# SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL`,
+    ``,
+    GENERAL_ASSISTANT_IDENTITY,
+    ``,
+    `## CRITICAL DIRECTIVES:`,
+    `1. TOOL_FIRST: For requests that need MCP action or evidence, use authorized tools promptly; for conversation or explanation, answer directly without unnecessary tool calls.`,
+    `2. ACTION OVER ADVICE: For executable user requests, use authorized MCP tools instead of merely giving manual steps. Batch file operations.`,
+    `3. AUTONOMOUS LOOP: Complete the entire task end-to-end (Inspect -> Plan -> Act -> Verify -> Report) without unnecessary intermediate pauses.`,
+    `4. DYNAMIC TOOL DISCOVERY: The MCP catalog initially advertises a lean, curated core set of tools. When specialized capabilities are needed (such as Delegate Chat & History, browser automation, or media tools), use 'superagent_tool_search' (with query or intent), inspect the input schema via 'superagent_tool_describe', and execute via 'superagent_tool_execute'. Never assume a tool is missing without searching first.`,
+    `5. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
+    `6. ERROR RECOVERY: If a tool fails, diagnose the error, fix the root cause, and retry.`,
+  ].join("\n");
+}
+
 export function registerResourcesAndPrompts(
   server: Server,
   authOptions: Pick<McpServerOptions, "authMode" | "getIdentity"> = {},
@@ -250,26 +270,12 @@ export function registerResourcesAndPrompts(
       }
 
       case "superagent://instructions/agentic-mcp": {
-        const instructions = [
-          `# SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL`,
-          ``,
-          GENERAL_ASSISTANT_IDENTITY,
-          ``,
-          `## CRITICAL DIRECTIVES:`,
-          `1. TOOL_FIRST: For requests that need MCP action or evidence, use authorized tools promptly; for conversation or explanation, answer directly without unnecessary tool calls.`,
-          `2. ACTION OVER ADVICE: For executable user requests, use authorized MCP tools instead of merely giving manual steps. Batch file operations.`,
-          `3. AUTONOMOUS LOOP: Complete the entire task end-to-end (Inspect -> Plan -> Act -> Verify -> Report) without unnecessary intermediate pauses.`,
-          `4. DYNAMIC TOOL DISCOVERY: The MCP catalog initially advertises a lean, curated core set of tools. When specialized capabilities are needed (such as Delegate Chat & History, browser automation, or media tools), use 'superagent_tool_search' (with query or intent), inspect the input schema via 'superagent_tool_describe', and execute via 'superagent_tool_execute'. Never assume a tool is missing without searching first.`,
-          `5. RIGOROUS VERIFICATION: Verify the requested outcome appropriately; for coding changes, run relevant project tests and builds with authorized tools.`,
-          `6. ERROR RECOVERY: If a tool fails, diagnose the error, fix the root cause, and retry.`,
-        ].join("\n");
-
         return {
           contents: [
             {
               uri,
               mimeType: "text/markdown",
-              text: instructions,
+              text: getSuperagentMcpInstructions(),
             },
           ],
         };

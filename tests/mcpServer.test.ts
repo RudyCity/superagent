@@ -289,6 +289,42 @@ describe("Superagent Complete 3-Pillar MCP Server Suite (tool registry, resource
     expect(agentic.messages[0].content.text).toContain("TOOL_FIRST");
   });
 
+  it("advertises canonical system instructions during the initialize handshake", async () => {
+    const server = createSuperagentMcpServer();
+    const initHandler = (server as any)._requestHandlers.get("initialize");
+    expect(initHandler).toBeDefined();
+
+    const result = await initHandler({
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+      },
+    });
+
+    expect(result.instructions).toBeDefined();
+    expect(result.instructions).toContain("SUPERAGENT MCP AGENTIC INSTRUCTION PROTOCOL");
+    expect(result.instructions).toContain("TOOL_FIRST");
+    expect(result.instructions).toContain("ACTION OVER ADVICE");
+    expect(result.instructions).toContain("DYNAMIC TOOL DISCOVERY");
+
+    // Custom instructions override
+    const customServer = createSuperagentMcpServer({
+      instructions: "Custom isolated system prompt for testing.",
+    });
+    const customInitHandler = (customServer as any)._requestHandlers.get("initialize");
+    const customResult = await customInitHandler({
+      method: "initialize",
+      params: {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+      },
+    });
+    expect(customResult.instructions).toBe("Custom isolated system prompt for testing.");
+  });
+
   it("discovers and inspects registered projects through the actual MCP tool dispatcher", async () => {
     const server = createSuperagentMcpServer();
     const callHandler = (server as any)._requestHandlers.get(CallToolRequestSchema.shape.method.value);
