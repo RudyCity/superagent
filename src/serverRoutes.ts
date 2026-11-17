@@ -1017,10 +1017,9 @@ export async function handleServerRoute(
       sendJSON(res,404,{success:false,error:"UNKNOWN_CONTROLLER_ACTION"});
       return true;
     }
-    if(!isFullYoloMode()&&action!=="revoke") {
-      sendJSON(res,403,{success:false,error:"ANDROID_CONTROLLER_LOCAL_POLICY_REQUIRED"});
-      return true;
-    }
+    // These are host-native, proof-bound approval operations, not autonomous
+    // agent YOLO operations. A challenge never grants input. Only the attended
+    // HMAC and exact Core controller lease permit input or revocation.
     try {
       const raw=await readBody(req);
       if(Buffer.byteLength(raw,"utf8")>512)throw Error("INVALID_CONTROLLER_REQUEST");
