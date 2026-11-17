@@ -214,6 +214,22 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     expect(gate("superagent_media_capabilities",{})).toBeNull();
     expect(gate("__proto__",{filePath:"src/main.ts"})).toMatch(/not certified/);
   });
+  it("rejects service-manager mutation parameters disguised as read-only status",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(args:Record<string,unknown>)=>
+      registeredFileToolGate({name:"superagent_manage_services",args},a.root,opts);
+    expect(gate({action:"status",service:"mcp",limit:30,port:7888})).toBeNull();
+    expect(gate({action:"dashboard",service:"all"})).toBeNull();
+    for(const args of [
+      {action:"status",expectedExecutablePath:"C:/private/secret.exe"},
+      {action:"status",confirm:true,expectedBuildDigest:"a".repeat(64)},
+      {action:"status",targetAction:"restart"},
+      {action:"status",workspace:"/private"},
+      {action:"restart",confirm:true},
+      {action:"status",port:1},
+      {action:"health",limit:9999},
+    ])expect(gate(args)).toMatch(/not certified/);
+  });
   it("blocks symlinked targets before IO when host OS authorizes links",()=>{
     const a=setup();
     const link=path.join(a.root,"link.ts");
