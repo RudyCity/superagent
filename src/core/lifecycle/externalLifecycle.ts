@@ -445,7 +445,7 @@ export function listCdpWakeCandidates(): CdpWakeCandidate[] {
   });
 }
 /** Single-use durable reservation. A crash or timeout is uncertain, never automatically replayed. */
-export function reserveCdpWake(candidate: CdpWakeCandidate): CdpWakeCandidate | null {
+export function reserveCdpWake(candidate: CdpWakeCandidate): (CdpWakeCandidate & { requestId: string }) | null {
   return withStore(true, s => {
     const run = s.runs.find(r => r.id === candidate.runId);
     const stage = run?.stages.find(st => st.id === candidate.stepId);
