@@ -1790,12 +1790,12 @@ export async function handleServerRoute(
     res.setHeader("Referrer-Policy","no-referrer");
     res.setHeader("X-Content-Type-Options","nosniff");
     const local=["127.0.0.1","::1","::ffff:127.0.0.1"].includes(req.socket.remoteAddress || "");
-    const host=/^(?:127\\.0\\.0\\.1|localhost)(?::[0-9]{2,5})?$/i.test(String(req.headers.host || ""));
+    const host=/^(?:127\.0\.0\.1|localhost)(?::[0-9]{2,5})?$/i.test(String(req.headers.host || ""));
     const forwarded=["forwarded","x-forwarded-for","x-forwarded-host","x-forwarded-proto",
       "x-real-ip","cf-connecting-ip","cf-ray","proxy-authorization"].some(name=>Object.hasOwn(req.headers,name));
     const {isRequestAuthorized}=await import("./core/utils/serverSecurity.js");
     const bearer=typeof req.headers.authorization==="string" &&
-      /^Bearer [^\\s]+$/.test(req.headers.authorization);
+      /^Bearer [^\s]+$/.test(req.headers.authorization);
     if (!local || !host || forwarded || req.headers.origin || req.headers.referer ||
         !bearer || !isRequestAuthorized(req,parsedUrl)) {
       sendJSON(res,403,{success:false,error:"CDP_RECORDINGS_LOCAL_OPERATOR_REQUIRED"});
