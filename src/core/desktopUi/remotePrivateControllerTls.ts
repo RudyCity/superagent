@@ -117,6 +117,7 @@ export class RemotePrivateControllerTlsHost {
   private bound:BoundControl|null=null;
   private starting=false;
   private stopped=false;
+  private accepted=false;
   private readonly now:()=>number;
   private readonly serverName:string;
   private readonly key:Buffer;
@@ -163,7 +164,7 @@ export class RemotePrivateControllerTlsHost {
   private accept(socket:TLSSocket):void {
     const v=this.options.credential;
     const peer=socket.getPeerCertificate(true)?.raw;
-    if(this.stopped||this.bound||this.options.controller.isClosed||
+    if(this.stopped||this.bound||this.accepted||this.options.controller.isClosed||
        !socket.encrypted||!socket.authorized||socket.getProtocol()!=="TLSv1.3"||
        socket.alpnProtocol!==REMOTE_PRIVATE_CONTROLLER_ALPN||
        socket.servername?.toLowerCase()!==this.serverName.toLowerCase()||
@@ -180,6 +181,7 @@ export class RemotePrivateControllerTlsHost {
       incoming:Buffer.alloc(0),busy:false,attempts:new Set(),grants:{},
     };
     this.bound=bound;
+    this.accepted=true; // Never reuse a private controller credential after disconnect.
     socket.setNoDelay(true);
     socket.setTimeout(5000,()=>this.disconnect(bound));
     socket.on("data",raw=>this.receive(bound,Buffer.from(raw)));
@@ -249,11 +251,15 @@ export class RemotePrivateControllerTlsHost {
       c.attempts.add(family);
       const challenge=this.options.controller.requestScope(c.principal,family);
       let proof:unknown=null;
+      let promptTimer:ReturnType<typeof setTimeout>|null=null;
       try{
         proof=await Promise.race([
           this.options.approveNative(challenge),
-          new Promise((_,reject)=>setTimeout(()=>reject(Error("NATIVE_APPROVAL_TIMEOUT")),
-            NATIVE_PROMPT_TIMEOUT_MS)),
+          new Promise((_,reject)=>{
+            promptTimer=setTimeout(()=>reject(Error("NATIVE_APPROVAL_TIMEOUT")),
+              NATIVE_PROMPT_TIMEOUT_MS);
+            promptTimer.unref?.();
+          }),
         ]);
         if(this.stopped||this.bound!==c||c.socket.destroyed||
            this.now()>=this.options.credential.expiresAt)deny();
@@ -264,6 +270,8 @@ export class RemotePrivateControllerTlsHost {
       }catch{
         this.options.controller.revokeScope(family);
         if(!this.write(c,{v:1,type:"scope-denied",family}))deny();
+      } finally {
+        if(promptTimer)clearTimeout(promptTimer);
       }
       return;
     }
