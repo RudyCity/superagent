@@ -181,7 +181,7 @@ export const PROJECT_MCP_TOOL_DEFS = [
   },
   {
     name: "superagent_grant_project_access",
-    description: "Grant the authenticated MCP identity explicit capabilities on an enabled registered project. Agents cannot self-grant; requests are routed to Security Approval Manager for human approval.",
+    description: "Legacy access request: NEVER grants project privileges, including in Full YOLO. Creates an auditable pending request for human approval in SuperAgent Tray. Prefer superagent_request_project_access.",
     inputSchema: {
       type: "object",
       properties: {
@@ -455,25 +455,24 @@ export async function dispatchProjectMcpTool(
         if (!project) throw new Error(`Project not found: ${id}`);
         if (!project.enabled) throw new Error(`Project is disabled: ${id}`);
         if (!Array.isArray(args.capabilities) || args.capabilities.length === 0) throw new Error("capabilities must be a non-empty array.");
-        if (!isFullYoloMode()) {
-          const reqResult = createProjectAccessRequest(identity, {
-            projectId: id,
-            capabilities: args.capabilities as ProjectAccessCapability[],
-            reason: typeof args.reason === "string" && args.reason.trim()
-              ? args.reason.trim()
-              : "Agent requested access via superagent_grant_project_access",
-          });
-          return textResult({
-            error: "Granting access outside the current workspace requires Full YOLO to be enabled locally. An access request has been automatically submitted for human approval in SuperAgent Tray.",
-            code: "POLICY_DENIED",
-            status: "pending",
-            requestId: reqResult.requestId,
-            projectId: id,
-            requestedCapabilities: args.capabilities,
-            suggestedTool: "superagent_request_project_access",
-          }, true);
-        }
-        return textResult({ grant: grantProjectAccess(identity, id, args.capabilities as ProjectAccessCapability[]) });
+        // MCP callers may request access but must never approve their own request.
+        // Full YOLO changes execution policy, not who can issue project grants.
+        const reqResult = createProjectAccessRequest(identity, {
+          projectId: id,
+          capabilities: args.capabilities as ProjectAccessCapability[],
+          reason: typeof args.reason === "string" && args.reason.trim()
+            ? args.reason.trim()
+            : "Agent requested access via superagent_grant_project_access",
+        });
+        return textResult({
+          error: "MCP self-grant is prohibited, including in Full YOLO. A pending request requires explicit human approval in SuperAgent Tray.",
+          code: "POLICY_DENIED",
+          status: "pending",
+          requestId: reqResult.requestId,
+          projectId: id,
+          requestedCapabilities: reqResult.requestedCapabilities,
+          suggestedTool: "superagent_request_project_access",
+        }, true);
       }
       case "superagent_revoke_project_access": {
         if (!identity) throw new Error("Project access grants require an authenticated MCP identity.");
