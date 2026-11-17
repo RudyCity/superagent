@@ -100,8 +100,42 @@ function runtimeConfigureRefreshInterval(seconds) {
 }
 
 let runtimeScanBusy = false;
+let runtimeRefreshQueued = false;
 let runtimeActionBusy = false;
 let runtimeLastResult = null;
+
+// The native owner-stop receipt already verifies process exit. Keep a short,
+// exact-identity UI transition; never hide a live/unverified owner on scan.
+const runtimeStopTransitions = new Map();
+const runtimeStopKey = (service) => [service.kind, service.port, service.pid].join(":");
+function runtimeVisibleRemote(snapshot = runtimeLastResult) {
+  return (Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [])
+    .filter(service => runtimeStopTransitions.get(runtimeStopKey(service))?.phase !== "removed");
+}
+function runtimeReconcileStoppedOwners(snapshot) {
+  const services = Array.isArray(snapshot?.remoteServices) ? snapshot.remoteServices : [];
+  for (const [key, transition] of runtimeStopTransitions) {
+    if (transition.phase === "stopping") continue;
+    const owner = services.find(service => runtimeStopKey(service) === key);
+    if (!owner) {
+      runtimeStopTransitions.delete(key);
+    } else if (!["stale", "inactive", "stopped"].includes(owner.state)) {
+      // A fresh scan still observes the exact owner. Do not let a UI
+      // transition obscure it or claim it disappeared.
+      runtimeStopTransitions.delete(key);
+      window.TrayFeedback?.notify?.({
+        kind: "warning", scope: "runtime",
+        message: "An owner is still observed after stop; inspect its live status.",
+      });
+    }
+  }
+}
+function runtimeRenderRemoteList() {
+  const root = rt("runtime-remote");
+  if (!root) return;
+  root.innerHTML = runtimeVisibleRemote().map(runtimeRemoteCard).join("");
+  runtimeApplyTab();
+}
 
 function runtimeLabel(state) {
   const labels = {
@@ -493,6 +527,23 @@ function runtimeRemoteCard(service) {
   const isExternalTunnel = service.kind === "cloudflare" && service.source === "os";
   const name = isExternalTunnel ? "External Cloudflare Tunnel" :
     (titles[service.kind] || "SuperAgent Remote Service");
+  const transition = runtimeStopTransitions.get(runtimeStopKey(service));
+  if (transition && transition.phase !== "removed") {
+    const stopping = transition.phase === "stopping";
+    return `<article class="runtime-instance compact runtime-instance--${stopping ? "stopping" : "stopped"}"
+        data-runtime-service-kind="${runtimeEscape(service.kind)}"
+        aria-busy="${stopping}">
+      <div class="runtime-instance-head">
+        <div><strong>${runtimeEscape(name)} · :${runtimeEscape(service.port ?? "-")}</strong>
+          <small>PID ${runtimeEscape(service.pid ?? "-")} · verified owner</small></div>
+        <span class="runtime-state ${stopping ? "warn" : "dim"}" role="status">
+          ${stopping ? "Stopping…" : "Stopped"}</span>
+      </div>
+      <div class="runtime-evidence">${stopping
+        ? "Waiting for authenticated owner shutdown and exit verification…"
+        : "Owner exit verified. Removing this entry from the active list…"}</div>
+    </article>`;
+  }
   const port = service.port
     ? service.kind === "muse-watch" ? ` · control :${service.port}` : ` · :${service.port}`
     : "";
@@ -649,7 +700,7 @@ function runtimeApplyTab() {
   const tab = runtimeTabNames.includes(runtimeActiveTab) ? runtimeActiveTab : "core";
   const config = runtimeRemoteTabs[tab];
   const snapshot = runtimeLastResult || {};
-  const remote = Array.isArray(snapshot.remoteServices) ? snapshot.remoteServices : [];
+  const remote = runtimeVisibleRemote(snapshot);
   const matched = config ? remote.filter(service => service.kind === config.kind) : [];
   const counts = {
     core: (snapshot.cores?.length || 0) + remote.filter(s => s.kind === "core-supervisor").length,
@@ -729,6 +780,7 @@ function runtimeTabKeydown(event) {
 }
 
 function runtimeRender(snapshot) {
+  runtimeReconcileStoppedOwners(snapshot);
   runtimeLastResult = snapshot;
   runtimeCopyAllowedUrls = new Set();
   rt("runtime-core-count").textContent = String(snapshot.healthyCoreCount || 0);
@@ -749,7 +801,7 @@ function runtimeRender(snapshot) {
     ? processes.map(runtimeProcessCard).join("")
     : '<p class="empty-state">No CLI or MCP sessions with active heartbeats in the process journal.</p>';
 
-  const remote = Array.isArray(snapshot.remoteServices) ? snapshot.remoteServices : [];
+  const remote = runtimeVisibleRemote(snapshot);
   rt("runtime-remote-count").textContent =
     `(${remote.filter(s => s.state === "online" || s.state === "observed").length} active/detected · ${remote.length} registered)`;
   rt("runtime-remote").innerHTML = remote.map(runtimeRemoteCard).join("");
@@ -821,6 +873,11 @@ async function runtimeServiceAction(event) {
   const verb=startAction ? "Start" : applyAction ? "Apply & Restart" : action === "stop" ? "Stop" : "Restart";
   if (!window.confirm(`${verb} ${label} :${port} (PID ${pid})?\n\n${warning}\n\nThis action cannot be undone from this dialog.`)) return;
   runtimeActionBusy = true;
+  const stopKey = kind !== "muse-core" && action === "stop" ? runtimeStopKey(service) : null;
+  if (stopKey) {
+    runtimeStopTransitions.set(stopKey, { phase: "stopping" });
+    runtimeRenderRemoteList();
+  }
   const ticket = window.TrayFeedback?.begin({
     key: "runtime:service:" + kind + ":" + port + ":" + action,
     button, label: verb + "…",
@@ -833,10 +890,26 @@ async function runtimeServiceAction(event) {
     const result = await runtimeInvoke("service_action", { kind, action, port, pid });
     if (result?.success !== true) throw new Error("The service owner did not confirm the operation");
     message.textContent = result.message || `${label} ${startAction ? "start" : action} confirmed.`;
+    if (stopKey) {
+      runtimeStopTransitions.set(stopKey, { phase: "stopped" });
+      runtimeRenderRemoteList();
+      // The native stop call returns success only after owner exit proof.
+      // Animate first, then remove the exact PID from active listing.
+      setTimeout(() => {
+        if (runtimeStopTransitions.get(stopKey)?.phase !== "stopped") return;
+        runtimeStopTransitions.set(stopKey, { phase: "removed" });
+        runtimeRenderRemoteList();
+      }, 420);
+    }
     window.TrayFeedback?.notify({ kind: "success", scope: "runtime",
-      message: verb + " accepted by verified service owner." });
+      message: stopKey ? "Owner stopped and verified; listing is updating." :
+        verb + " accepted by verified service owner." });
     await runtimeRefresh(true);
   } catch (error) {
+    if (stopKey) {
+      runtimeStopTransitions.delete(stopKey);
+      runtimeRenderRemoteList();
+    }
     const unknown = /timed out|timeout|connection lost/i.test(String(error));
     message.textContent = unknown
       ? "Outcome uncertain. Recheck the exact owner and operation journal before further action."
@@ -1307,7 +1380,12 @@ async function runtimeCreateConnection(event) {
 }
 
 async function runtimeRefresh(background = false) {
-  if (runtimeScanBusy) return;
+  if (runtimeScanBusy) {
+    // A lifecycle receipt needs a fresh read even if background polling is
+    // already active; queue only the read, never repeat a mutation.
+    if (runtimeActionBusy || background !== true) runtimeRefreshQueued = true;
+    return;
+  }
   runtimeScanBusy = true;
   const ticket = window.TrayFeedback?.begin({
     key: "runtime:refresh", button: rt("runtime-refresh"),
@@ -1343,6 +1421,10 @@ async function runtimeRefresh(background = false) {
     runtimeScanBusy = false;
     rt("runtime-refresh").disabled = false;
     ticket?.end();
+    if (runtimeRefreshQueued) {
+      runtimeRefreshQueued = false;
+      void runtimeRefresh(true);
+    }
   }
 }
 
@@ -1454,6 +1536,10 @@ function runtimeInstall() {
   rt("runtime-servers")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeYoloChipClick);
 
+  window.__TAURI__?.event?.listen?.("shutdown-manager-progress", (event) => {
+    // Manual shutdown from the native manager must refresh this panel too.
+    if (["complete", "partial"].includes(event?.payload?.stage)) void runtimeRefresh(true);
+  });
   window.__TAURI__?.event?.listen?.("desktop-open-runtime", () => {
     if (typeof window.navigateToPage === "function") {
       window.navigateToPage("runtime");
