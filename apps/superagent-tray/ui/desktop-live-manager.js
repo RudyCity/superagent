@@ -231,19 +231,12 @@
         stream.fpsWindowCount = 0;
         stream.fpsLastTime = performance.now();
 
-        // Offer LAN viewing only through an explicitly configured private
-        // address. The token is a URL fragment, never an HTTP query parameter.
-        const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
-        const hostIp = window.__SUPERAGENT_LAN_IP;
-        const allowedLanIp = typeof hostIp === "string" &&
-          (/^10\.(?:\d{1,3}\.){2}\d{1,3}$/.test(hostIp) ||
-           /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostIp) ||
-           /^172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostIp));
-        stream.lanUrl = allowedLanIp ?
-          `http://${hostIp}:${corePort}/api/desktop/live/lan-preview#token=${result.token}` : "";
-        if (lanUrlEl) lanUrlEl.textContent = stream.lanUrl ||
-          "Private LAN address not configured. Local Tray preview remains available.";
-        if (lanBanner) lanBanner.hidden = !allowedLanIp;
+        // Remote LAN HTTP viewing is disabled: screen frames require a
+        // separately approved encrypted host/viewer transport.
+        stream.lanUrl = "";
+        if (lanUrlEl) lanUrlEl.textContent =
+          "Remote viewing requires a separately approved private mTLS viewer.";
+        if (lanBanner) lanBanner.hidden = true;
 
         const controller = el("desktop-live-stream-toggle-control");
         if (controller) {
