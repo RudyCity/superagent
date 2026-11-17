@@ -3,52 +3,52 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
-import { getYoloModeState, isFullYoloMode, setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
+import { setFullYoloMode, setYoloMode } from "../src/core/permissions.js";
+import { registerProject } from "../src/core/project/projectRegistry.js";
+import { grantProjectAccess, revokeProjectAccess, hasProjectAccess } from "../src/core/project/projectAccessPolicy.js";
+import { MCP_CONNECTION_PROJECT_ID } from "../src/core/project/projectAccessRequestStore.js";
 
-describe("MCP YOLO authorization boundaries", () => {
+describe("MCP authorization is independent from chat YOLO", () => {
   let root = "";
   let configDir = "";
   let outsideDir = "";
   let previousConfig: string | undefined;
 
   const identity = () => ({
-    mode: "oauth" as const, subject: "trusted-writer",
+    mode: "oauth" as const, subject: "mcp-trusted-writer",
     scopes: ["mcp:tools", "mcp:tools:write", "mcp:tools:admin"],
   });
-
-  const makeServer = (audit: any[] = [], exposure: "full" | "gateway" = "full") =>
+  const makeServer = (exposure: "full" | "gateway" = "full") =>
     createSuperagentMcpServer({
-      workspace: root, toolExposure: exposure, authMode: "oauth", allowDangerous: true,
-      getIdentity: identity, onToolCall: event => audit.push(event),
+      workspace: root, authMode: "oauth", toolExposure: exposure,
+      getIdentity: identity,
     });
-
-  const listNames = async (server: ReturnType<typeof makeServer>): Promise<string[]> => {
+  const listNames = async (server: ReturnType<typeof makeServer>) => {
     const handler = (server as any)._requestHandlers.get("tools/list");
     const result = await handler({ method: "tools/list", params: {} }, {});
-    return result.tools.map((tool: any) => tool.name);
+    return result.tools.map((tool: any) => tool.name) as string[];
   };
-
-  const write = (server: ReturnType<typeof makeServer>, filepath: string) => {
+  const call = async (server: ReturnType<typeof makeServer>, name: string, args: any) => {
     const handler = (server as any)._requestHandlers.get("tools/call");
-    return handler({
-      method: "tools/call",
-      params: {
-        name: "superagent_write_files",
-        arguments: { files: [{ filePath: filepath, content: "MCP_WRITE", overwrite: true }], cwd: root },
-      },
-    }, {});
+    return handler({ method: "tools/call", params: { name, arguments: args } }, {});
   };
+  const write = (server: ReturnType<typeof makeServer>, filepath: string) =>
+    call(server, "superagent_write_files", {
+      projectId: "mcp-test-project",
+      files: [{ filePath: filepath, content: "MCP_APPROVED", overwrite: true }],
+      cwd: root,
+    });
 
   beforeEach(() => {
     previousConfig = process.env.SUPERAGENT_CONFIG_DIR;
-    configDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-yolo-config-"));
+    configDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-auth-config-"));
     root = path.join(configDir, "workspace");
+    outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-auth-outside-"));
     fs.mkdirSync(root);
-    outsideDir = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-yolo-external-"));
     process.env.SUPERAGENT_CONFIG_DIR = configDir;
     setYoloMode(false);
+    registerProject({ projectId: "mcp-test-project", name: "MCP Test", type: "local", root });
   });
-
   afterEach(() => {
     setYoloMode(false);
     if (previousConfig === undefined) delete process.env.SUPERAGENT_CONFIG_DIR;
@@ -57,71 +57,88 @@ describe("MCP YOLO authorization boundaries", () => {
     fs.rmSync(outsideDir, { recursive: true, force: true });
   });
 
-  it("YOLO OFF hides and rejects dangerous calls despite --allow-dangerous and all OAuth scopes", async () => {
-    const audit: any[] = [];
-    const server = makeServer(audit);
-    const filepath = path.join(root, "denied.txt");
+  it("lists OAuth write tools with YOLO off, but denies execution without Security Approval", async () => {
+    const server = makeServer();
+    const file = path.join(root, "denied.txt");
     try {
-      expect(await listNames(server)).not.toContain("superagent_write_files");
-      expect(await listNames(server)).not.toContain("superagent_grant_project_access");
-      await expect(write(server, filepath)).rejects.toThrow(/YOLO OFF/);
-      expect(fs.existsSync(filepath)).toBe(false);
-      expect(audit.at(-1)).toMatchObject({
-        tool: "superagent_write_files", ok: false,
-        authorizationDecision: "denied", errorCode: "yolo_off", args: {},
-      });
+      expect(await listNames(server)).toContain("superagent_write_files");
+      const result = await write(server, file);
+      expect(result.isError).toBe(true);
+      expect(JSON.stringify(result)).toContain("PROJECT_GRANT_MISSING");
+      expect(fs.existsSync(file)).toBe(false);
     } finally { await server.close(); }
   });
 
-  it("Scoped YOLO permits in-scope edits and rejects writes outside scope", async () => {
-    setYoloMode(true);
+  it("permits approved project write even when chat YOLO remains off", async () => {
+    grantProjectAccess(identity(), "mcp-test-project", ["read", "write"]);
+    const server = makeServer();
+    const file = path.join(root, "approved.txt");
+    try {
+      const result = await write(server, file);
+      expect(result.isError).not.toBe(true);
+      expect(fs.readFileSync(file, "utf8")).toBe("MCP_APPROVED");
+    } finally { await server.close(); }
+  });
+
+  it("chat YOLO full cannot expand MCP grants beyond the exact project", async () => {
+    setFullYoloMode(true);
+    grantProjectAccess(identity(), "mcp-test-project", ["read", "write"]);
     const server = makeServer();
     try {
-      expect(await listNames(server)).toContain("superagent_write_files");
-      const inside = path.join(root, "inside.txt");
-      const result = await write(server, inside);
-      expect(result.isError).not.toBe(true);
-      expect(fs.readFileSync(inside, "utf8")).toBe("MCP_WRITE");
       const outside = path.join(outsideDir, "outside.txt");
-      await expect(write(server, outside)).rejects.toThrow(/Scoped YOLO boundary/);
+      await expect(write(server, outside)).rejects.toThrow(/project|scope/i);
       expect(fs.existsSync(outside)).toBe(false);
     } finally { await server.close(); }
   });
 
-  it("independent-process downgrade to OFF immediately relocks a FULL session", async () => {
+  it("chat YOLO off does not revoke a separately approved MCP grant", async () => {
+    grantProjectAccess(identity(), "mcp-test-project", ["read", "write"]);
     setFullYoloMode(true);
     const server = makeServer();
     try {
-      expect(await listNames(server)).toContain("superagent_write_files");
-      const stateFile = path.join(configDir, "yolo-mode.json");
-      // Simulate another process writing the persisted authoritative mode.
-      fs.writeFileSync(stateFile, JSON.stringify({ mode: "off" }));
-      expect(getYoloModeState()).toBe("off");
-      expect(isFullYoloMode()).toBe(false);
-      expect(await listNames(server)).not.toContain("superagent_write_files");
-      const filepath = path.join(root, "after-downgrade.txt");
-      await expect(write(server, filepath)).rejects.toThrow(/YOLO OFF/);
-      expect(fs.existsSync(filepath)).toBe(false);
+      setYoloMode(false);
+      const file = path.join(root, "after-yolo-off.txt");
+      const result = await write(server, file);
+      expect(result.isError).not.toBe(true);
+      expect(fs.existsSync(file)).toBe(true);
     } finally { await server.close(); }
   });
 
-  it("gateway recursion cannot bypass YOLO OFF", async () => {
-    const server = makeServer([], "gateway");
-    const filepath = path.join(root, "gateway-denied.txt");
+  it("MCP grant revocation denies subsequent writes regardless of chat YOLO", async () => {
+    grantProjectAccess(identity(), "mcp-test-project", ["read", "write"]);
+    revokeProjectAccess(identity(), "mcp-test-project");
+    setFullYoloMode(true);
+    const server = makeServer();
     try {
-      const handler = (server as any)._requestHandlers.get("tools/call");
-      const result = await handler({
-        method: "tools/call",
-        params: {
-          name: "superagent_tool_execute",
-          arguments: {
-            name: "superagent_write_files",
-            arguments: { files: [{ filePath: filepath, content: "NO" }] },
-          },
-        },
-      }, {});
+      const file = path.join(root, "revoked.txt");
+      const result = await write(server, file);
       expect(result.isError).toBe(true);
-      expect(fs.existsSync(filepath)).toBe(false);
+      expect(fs.existsSync(file)).toBe(false);
+    } finally { await server.close(); }
+  });
+
+  it("non-project dangerous actions need independent MCP Connection Controls", async () => {
+    const server = makeServer();
+    try {
+      await expect(call(server, "superagent_delegate_send_message", {}))
+        .rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      expect(hasProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, "execute")).toBe(false);
+      grantProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, ["execute"]);
+      expect(hasProjectAccess(identity(), MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
+    } finally { await server.close(); }
+  });
+
+  it("gateway recursion cannot bypass a missing project grant", async () => {
+    const server = makeServer("gateway");
+    const file = path.join(root, "gateway-denied.txt");
+    try {
+      const result = await call(server, "superagent_tool_execute", {
+        name: "superagent_write_files",
+        arguments: { projectId: "mcp-test-project",
+          files: [{ filePath: file, content: "DENIED" }], cwd: root },
+      });
+      expect(result.isError).toBe(true);
+      expect(fs.existsSync(file)).toBe(false);
     } finally { await server.close(); }
   });
 });
