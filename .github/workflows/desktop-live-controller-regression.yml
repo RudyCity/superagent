@@ -4,6 +4,15 @@ on:
   push:
     branches: [main]
     paths:
+      - "src/core/desktopUi/remoteControlAuthority.ts"
+      - "src/core/desktopUi/remoteNativeInputDispatch.ts"
+      - "src/core/desktopUi/remoteInputGuard.ts"
+      - "src/core/desktopUi/remotePrivateTransport.ts"
+      - "src/core/desktopUi/remotePrivateViewerClient.ts"
+      - "src/core/desktopUi/remotePrivateHostTlsListener.ts"
+      - "src/core/desktopUi/adapters/windowsRemoteSemantic.ts"
+      - "tests/desktop-live/remote*.test.ts"
+      - "tests/desktop-live/windowsRemoteSemantic*.test.ts"
       - "src/core/desktopUi/nativeAndroidControllerApproval.ts"
       - "src/core/desktopUi/nativeApprovalProof.ts"
       - "src/core/desktopUi/desktopLiveAccessModes.ts"
@@ -54,6 +63,15 @@ jobs:
         if: ${{ always() && !cancelled() }}
         run: >-
           bun --bun x vitest run --maxWorkers=2
+          tests/desktop-live/remoteControlAuthority.test.ts
+          tests/desktop-live/remoteNativeInputDispatch.test.ts
+          tests/desktop-live/remoteInputGuard.test.ts
+          tests/desktop-live/remotePrivateTransport.test.ts
+          tests/desktop-live/remotePrivateViewerClient.test.ts
+          tests/desktop-live/remotePrivateEndToEnd.test.ts
+          tests/desktop-live/remotePrivateHostTlsListener.test.ts
+          tests/desktop-live/remotePrivateOperator.test.ts
+          tests/desktop-live/windowsRemoteSemantic.test.ts
           tests/desktop-live/nativeAndroidControllerApproval.test.ts
           tests/desktop-live/desktopLiveAccessModes.test.ts
           tests/desktop-live/desktopLiveTakeoverAuthorization.test.ts
