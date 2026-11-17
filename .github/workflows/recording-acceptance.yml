@@ -1,0 +1,93 @@
+name: Recording Acceptance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "src/core/tools/chromeCdpSessionArchive.ts"
+      - "src/core/tools/chromeCdpRecordingLibrary.ts"
+      - "src/core/tools/recordingZip.ts"
+      - "src/core/desktopUi/nativeApprovalProof.ts"
+      - "src/core/desktopUi/nativeWindowRecorder.ts"
+      - "src/core/delegate/cdpTransport.ts"
+      - "apps/superagent-tray/ui/recordings.*"
+      - "apps/superagent-tray/ui/desktop-live-manager.js"
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "tests/chromeCdpRecordingLibrary.test.ts"
+      - "tests/chromeCdpSessionArchive.test.ts"
+      - "tests/desktop-live/nativeApprovalProof.test.ts"
+      - "tests/desktop-live/nativeWindowRecording.test.ts"
+      - "tests/desktopTrayRecordingUi.test.ts"
+      - ".github/workflows/recording-acceptance.yml"
+  pull_request:
+    paths:
+      - "src/core/tools/chromeCdpSessionArchive.ts"
+      - "src/core/tools/chromeCdpRecordingLibrary.ts"
+      - "src/core/tools/recordingZip.ts"
+      - "src/core/desktopUi/nativeApprovalProof.ts"
+      - "src/core/desktopUi/nativeWindowRecorder.ts"
+      - "apps/superagent-tray/ui/recordings.*"
+      - "apps/superagent-tray/ui/desktop-live-manager.js"
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "tests/desktop-live/nativeWindowRecording.test.ts"
+      - ".github/workflows/recording-acceptance.yml"
+
+permissions:
+  contents: read
+
+# Per-run identity retains evidence even while other agents push to main.
+concurrency:
+  group: recording-acceptance-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  recording-e2e:
+    name: Recording MP4 / ZIP / Native consent (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Provision native media encoder and probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq ffmpeg
+          elif [[ "${{ runner.os }}" == "macOS" ]]; then
+            if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
+          elif [[ "${{ runner.os }}" == "Windows" ]]; then
+            if ! command -v ffmpeg >/dev/null 2>&1; then
+              choco install ffmpeg -y --no-progress
+              echo "/c/ProgramData/chocolatey/bin" >> "$GITHUB_PATH"
+              export PATH="/c/ProgramData/chocolatey/bin:$PATH"
+            fi
+          fi
+          command -v ffmpeg
+          command -v ffprobe
+          ffmpeg -hide_banner -version | head -n 1
+          ffprobe -hide_banner -version | head -n 1
+      - name: Install pinned dependencies
+        run: bun install --frozen-lockfile
+      - name: Typecheck all Core source
+        run: bun --bun x tsc --noEmit --pretty false
+      - name: Validate Tray scripts
+        run: |
+          node --check apps/superagent-tray/ui/recordings.js
+          node --check apps/superagent-tray/ui/desktop-live-manager.js
+      - name: Run actual H264, ZIP CRC, consent and native-lease regression
+        run: >-
+          bun --bun x vitest run --maxWorkers=2 --reporter=verbose
+          tests/chromeCdpSessionArchive.test.ts
+          tests/chromeCdpRecordingLibrary.test.ts
+          tests/desktop-live/nativeApprovalProof.test.ts
+          tests/desktop-live/nativeWindowRecording.test.ts
+          tests/desktopTrayRecordingUi.test.ts
