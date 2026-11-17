@@ -3106,8 +3106,13 @@ export function App({
   }, [streamDisplay]);
   
   // Use ContextManager's TokenTracker for accurate context usage if available
-  const historyMessages = agentRef.current?.getHistory ? agentRef.current.getHistory().getMessages() : [];
-  const tokenRecountKey = getContextRecountKey(historyMessages);
+  // History token recount hashes every message; do not rescan the entire
+  // conversation for a keystroke or a streaming repaint. An agent phase
+  // transition, completed log line, or tool-state change invalidates it.
+  const tokenRecountKey = useMemo(() => {
+    const historyMessages = agentRef.current?.getHistory ? agentRef.current.getHistory().getMessages() : [];
+    return getContextRecountKey(historyMessages);
+  }, [lines.length, isProcessing, isExecutingTool]);
   const baseContextUsage = useMemo(() => {
     const cm = agentRef.current?.getContextManager?.();
     if (cm && agentRef.current) {
