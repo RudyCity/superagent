@@ -21,7 +21,7 @@
     return node;
   };
   const time = ms => ms ? new Date(ms).toLocaleString() : "—";
-  const state = { busy: false, workflows: [], runs: [], workers: [] };
+  const state = { busy: false, workflows: [], runs: [], workers: [], targets: [] };
   const feedback = (message, error = false) => {
     const node = $("external-life-feedback");
     node.textContent = message;
@@ -49,9 +49,25 @@
     $("external-life-worker-count").textContent = state.workers.filter(w => w.status === "online").length + " online / " + state.workers.length + " registered";
     if (!state.workers.length) workers.append(el("p", "external-life-empty",
       "No MCP workers registered. In another ChatGPT.com session call superagent_lifecycle with action worker.register, then poll worker.claim."));
-    for (const worker of state.workers) workers.append(row(
-      worker.label, worker.id, worker.status, []
-    ));
+    for (const worker of state.workers) {
+      const actions = [button("Bind tab", "worker.bind", "workerId", worker.id)];
+      if (worker.cdp) actions.push(button("Unbind", "worker.unbind", "workerId", worker.id));
+      actions.push(button("Revoke", "worker.revoke", "workerId", worker.id, true));
+      workers.append(row(worker.label,
+        worker.id + (worker.cdp ? " · CDP " + worker.cdp.clientId + " / tab " + worker.cdp.tabId : ""),
+        worker.status, actions));
+    }
+    const cdpSelect = $("external-life-cdp-target");
+    const oldTarget = cdpSelect.value;
+    cdpSelect.replaceChildren();
+    const emptyTarget = el("option", "", "Select an idle paired ChatGPT tab");
+    emptyTarget.value = ""; cdpSelect.append(emptyTarget);
+    for (const profile of state.targets) for (const tab of profile.tabs || []) {
+      const option = el("option", "", profile.label + " · " + tab.title + " (tab " + tab.tabId + ")");
+      option.value = profile.clientId + ":" + tab.tabId;
+      cdpSelect.append(option);
+    }
+    cdpSelect.value = [...cdpSelect.options].some(opt => opt.value === oldTarget) ? oldTarget : "";
     const target = $("external-life-worker");
     const selected = target.value;
     target.replaceChildren();
@@ -100,10 +116,13 @@
     if (state.busy || !($("external-life-workspace")?.value || "").trim()) return;
     state.busy = true;
     try {
-      const [inventory, workerList] = await Promise.all([call("list", { limit: 100 }), call("workers")]);
+      const [inventory, workerList, targetList] = await Promise.all([
+        call("list", { limit: 100 }), call("workers"), call("targets"),
+      ]);
       state.workflows = inventory.workflows || [];
       state.runs = inventory.runs || [];
       state.workers = workerList.workers || [];
+      state.targets = targetList.targets || [];
       render();
       feedback("Workspace inventory updated. Worker polling is opt-in; offline sessions are not awakened.");
     } catch (error) {
@@ -193,6 +212,27 @@
       } catch (error) {
         feedback(error instanceof Error ? error.message : "Lifecycle operation failed.", true);
       } finally { state.busy = false; target.disabled = false; }
+      await refresh();
+    });
+    $("external-life-workers").addEventListener("click", async event => {
+      const target = event.target.closest("button[data-action]");
+      if (!target || state.busy) return;
+      const action = target.dataset.action;
+      const args = { workerId: target.dataset.id };
+      if (action === "worker.bind") {
+        const chosen = $("external-life-cdp-target").value;
+        if (!chosen) { feedback("Select a verified idle ChatGPT tab first.", true); return; }
+        const separator = chosen.lastIndexOf(":");
+        args.clientId = chosen.slice(0, separator);
+        args.tabId = Number(chosen.slice(separator+1));
+        if (!window.confirm("Allow SuperAgent Scheduler to send one-time task notifications to this exact ChatGPT.com tab? The worker still needs separate MCP approval.")) return;
+      } else if (!window.confirm(action === "worker.revoke"
+        ? "Revoke this worker? Any active lease will require manual reconciliation."
+        : "Unbind automatic notifications from this ChatGPT.com tab?")) return;
+      state.busy = true; target.disabled = true;
+      try { await call(action, args); feedback("Worker policy updated."); }
+      catch (error) { feedback(error instanceof Error ? error.message : "Worker operation failed.", true); }
+      finally { state.busy = false; target.disabled = false; }
       await refresh();
     });
     $("external-life-workspace").addEventListener("change", refresh);
