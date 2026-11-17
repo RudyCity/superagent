@@ -43,6 +43,7 @@ struct Item {
     force_selectable: bool,
     manual_kill_selectable: bool,
     process_name: Option<String>,
+    process_path: Option<String>,
     process_started_at: Option<u64>,
 }
 impl Item {
@@ -52,7 +53,7 @@ impl Item {
         Self {id, label:label.into(), kind:kind.into(), state:state.into(),
             detail:detail.into(), owner_verified, selectable, blocker,
             port, pid, active_sessions:None, force_selectable:false,
-            manual_kill_selectable:false, process_name:None, process_started_at:None}
+            manual_kill_selectable:false, process_name:None, process_path:None, process_started_at:None}
     }
 }
 
@@ -429,6 +430,8 @@ async fn inspect() -> Result<Preview, String> {
                 if manual_process_allowed(&item.kind,pid,&name) && running(&item.state) {
                     item.manual_kill_selectable=true;
                     item.process_name=Some(name);
+                    item.process_path=process.exe()
+                        .map(|path|path.to_string_lossy().into_owned());
                 }
                 item.process_started_at=Some(process.start_time());
             }
@@ -502,6 +505,7 @@ fn same_manual_owner(before:&Item,after:&Item)->bool {
         before.port==after.port && before.process_started_at.is_some() &&
         before.process_started_at==after.process_started_at &&
         before.process_name==after.process_name &&
+        before.process_path==after.process_path &&
         after.manual_kill_selectable && running(&after.state)
 }
 fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
@@ -532,6 +536,12 @@ fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
     });
     Ok(chosen)
 }
+fn manual_process_identity_matches(item:&Item,birth:u64,name:&str,path:Option<&str>)->bool {
+    item.process_started_at==Some(birth) &&
+    item.process_name.as_deref()==Some(name) &&
+    item.process_path.as_deref().is_none_or(|expected|Some(expected)==path)
+}
+
 /// Manual override checks the exact OS process rather than depending on
 /// another Core/lifecycle inventory request after the human approves it.
 fn manual_os_identity_matches(item:&Item)->bool {
@@ -543,7 +553,8 @@ fn manual_os_identity_matches(item:&Item)->bool {
     let mut system=System::new();
     system.refresh_processes();
     system.process(Pid::from_u32(pid)).is_some_and(|process|
-        process.start_time()==birth && process.name()==name)
+        manual_process_identity_matches(item,process.start_time(),process.name(),
+            process.exe().and_then(|p|p.to_str())))
 }
 
 async fn manual_kill_one(item:&Item)->Result<(),String> {
@@ -561,7 +572,8 @@ async fn manual_kill_one(item:&Item)->Result<(),String> {
         // The pinned process already exited; never adopt a replacement.
         return Ok(());
     };
-    if process.start_time()!=birth || process.name()!=expected {
+    if !manual_process_identity_matches(item,process.start_time(),process.name(),
+        process.exe().and_then(|p|p.to_str())) {
         return Err("SHUTDOWN_MANUAL_PID_REUSED_OR_CHANGED".into());
     }
     if !process.kill(){return Err("SHUTDOWN_MANUAL_OS_SIGNAL_DENIED".into());}
@@ -970,6 +982,9 @@ pub async fn shutdown_manager_action(
                     item.pid.unwrap_or(0),
                     item.process_name.as_deref().unwrap_or("unknown"),
                     item.label));
+                if let Some(path)=item.process_path.as_deref() {
+                    summary.push_str(&format!("  Executable: {}\n",path.chars().take(240).collect::<String>()));
+                }
             }
             if chosen.len()>16 {
                 summary.push_str(&format!("...and {} more selected process(es).\n",
