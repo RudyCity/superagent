@@ -82,6 +82,13 @@ async function main(){
     if(parsed?.filePolicy?.active!==meta.filePolicy.active||
        typeof parsed?.visibleToolCount!=="number")
       blocked("MCP_POLICY_STATUS_MISMATCH");
+    // The verified backend must still be the same after the MCP requests.
+    // A reload while listing tools invalidates the acceptance result.
+    const postflight=assessDesktopMcpOwnerEvidence(
+      await owner("status",port),await owner("doctor",port),url.href,expectedDigest);
+    if(!postflight.ready||postflight.ownerPid!==evidence.ownerPid||
+       postflight.backendPid!==evidence.backendPid)
+      blocked("MCP_OWNER_CHANGED_DURING_ACCEPTANCE",postflight.reasons.join(","));
     process.stdout.write(JSON.stringify({
       status:"PASS",verifiedThrough:"attested-live-mcp-http",
       verifiedScope:"read-only-catalog-and-policy",
