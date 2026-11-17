@@ -30,6 +30,20 @@ export function listLanDevices(): LanDevice[] {
     transport, ...(tunnelId ? { tunnelId } : {}),
   }));
 }
+/** Core-internal, non-reversible proof of the current approved support session.
+ * Never expose via Tray list, HTTP, MCP, WebView or logs. It changes across
+ * close/open even when the same paired device ID and certificate are reused.
+ */
+export function currentAndroidLanSupportSessionProof(id: string): string | null {
+  const device = sessions.get(id);
+  if (!device || device.platform !== "android" ||
+      typeof device.sessionId !== "string" ||
+      typeof device.sessionToken !== "string" ||
+      !device.sessionId || !device.sessionToken) return null;
+  return crypto.createHash("sha256").update(device.id).update("\\0")
+    .update(device.sessionId).update("\\0").update(device.sessionToken)
+    .digest("hex");
+}
 function assertHost(host: string, port: number, fingerprint: string) {
   if (!privateIntranetPeer(host)) throw new Error("Target must be private IPv4 within the physical adapter's /16 intranet allocation.");
   if (!Number.isInteger(port) || port < 1024 || port > 65534) throw new Error("Invalid port.");
