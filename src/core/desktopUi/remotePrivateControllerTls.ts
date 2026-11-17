@@ -312,7 +312,13 @@ export class RemotePrivateControllerTlsHost {
     this.bound=null;
     c.incoming.fill(0);c.incoming=Buffer.alloc(0);
     c.socket.destroy();
-    this.options.controller.controllerDisconnected(c.connectionId);
+    try { this.options.controller.controllerDisconnected(c.connectionId); }
+    finally {
+      // The one-use controller credential cannot authenticate again. Tear
+      // down the bound listener and zero its locally retained key immediately,
+      // instead of keeping an inert TCP port open until the viewer TTL.
+      this.stop();
+    }
   }
 
   stop():void {
