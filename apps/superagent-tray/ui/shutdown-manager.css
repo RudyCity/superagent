@@ -25,6 +25,7 @@
 .shutdown-service[data-state="ready"]:hover {border-color:#58738f;background:#182537}
 .shutdown-service[data-state="blocked"] {border-color:#63454b;background:#241c25}
 .shutdown-service[data-state="force"] {border-color:#6f6247;background:#25241f}
+.shutdown-service[data-state="manual"] {border-color:#65435c;background:#211d29}
 .shutdown-service[data-state="inactive"] {opacity:.62}
 .shutdown-service input[type="checkbox"] {flex:none;width:16px;height:16px;accent-color:#6b9dea;margin:3px 0 0}
 .shutdown-service-copy {display:flex;flex:1;flex-direction:column;min-width:0;gap:4px}
@@ -36,6 +37,7 @@
   font-size:10px;line-height:1.15;font-weight:700;color:#a4d7ba;background:rgba(41,155,108,.13)}
 .shutdown-service[data-state="blocked"] .shutdown-status {color:#f2b1a5;background:rgba(233,116,99,.12)}
 .shutdown-service[data-state="force"] .shutdown-status {color:#f1d49e;background:rgba(193,148,63,.15)}
+.shutdown-service[data-state="manual"] .shutdown-status {color:#f6b9cc;background:rgba(194,81,117,.16)}
 .shutdown-service[data-state="inactive"] .shutdown-status {color:#adb5c3;background:rgba(128,142,160,.13)}
 .shutdown-empty {padding:20px;text-align:center;font-size:12px;color:#a5b5ca}
 .shutdown-note {padding:10px 12px;background:#172230;border:1px solid #2a3b4c;border-radius:8px;
@@ -61,6 +63,26 @@
 }
 .shutdown-force-panel input:focus-visible {outline:2px solid #8bc4ff;outline-offset:2px}
 .shutdown-force-panel input::placeholder {color:#827780}
+.shutdown-manual-choice {display:inline-flex;align-items:center;gap:6px;flex:none;
+  align-self:center;white-space:nowrap;padding:6px 8px;border:1px solid #805363;
+  background:#30232d;color:#f8c8d2;border-radius:7px;cursor:pointer;
+  font-size:10px;font-weight:750}
+.shutdown-manual-choice input {width:14px;height:14px;accent-color:#dc728e;cursor:pointer;margin:0}
+.shutdown-manual-choice:focus-within {outline:2px solid #8bc4ff;outline-offset:2px}
+.shutdown-manual-panel {display:flex;flex-direction:column;gap:9px;padding:14px 15px;
+  border:1px solid #87505f;border-radius:10px;
+  background:linear-gradient(130deg,#2b1e2b,#19202d)}
+.shutdown-manual-heading {display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+.shutdown-manual-heading > div {display:flex;flex:1;flex-direction:column;gap:5px}
+.shutdown-manual-heading strong {font-size:12px;color:#f6c4cd}
+.shutdown-manual-heading small {font-size:11px;color:#bbaebc;line-height:1.55}
+.shutdown-manual-heading button {flex:none;font-size:11px;padding:7px 11px}
+.shutdown-manual-panel > label {font-size:11px;color:#d8b8c6}
+.shutdown-manual-panel code {font-size:10px;color:#ffd0dd}
+.shutdown-manual-panel > input {min-height:38px;box-sizing:border-box;
+  border:1px solid #885365;border-radius:7px;padding:8px 11px;
+  background:#121923;color:#fff;font-size:12px;letter-spacing:.03em}
+.shutdown-manual-panel > input:focus-visible {outline:2px solid #8bc4ff;outline-offset:2px}
 .shutdown-progress {border:1px solid #334657;border-radius:10px;padding:14px;background:#111d29}
 .shutdown-progress h3 {font-size:12px;margin:0 0 10px;color:#f4f8fc}
 .shutdown-progress ol {list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px}
@@ -90,5 +112,7 @@
   .shutdown-service {gap:9px;padding:10px}
   .shutdown-force-panel {grid-template-columns:minmax(0,1fr)}
   .shutdown-force-copy {grid-row:auto}
+  .shutdown-manual-heading {flex-wrap:wrap}
+  .shutdown-manual-choice {margin-left:auto}
   .shutdown-manager .modal-footer .shutdown-selection-count {flex-basis:100%}
 }
