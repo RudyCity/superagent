@@ -699,11 +699,16 @@ export function MultiAgentDashboard({
     return () => clearInterval(interval);
   }, [isExecutingTool, toolTimeout, toolStartTime]);
 
-  // Register the agent event log handler on mount
+  // Flush logs only when new output arrives. The previous 0ms polling loop
+  // continuously woke the Ink render process, even on an idle terminal,
+  // starving keyboard input when many agents were streaming.
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      if (logQueueRef.current.length === 0) return;
-      const msgs = [...logQueueRef.current];
+    let disposed = false;
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushLogs = () => {
+      flushTimer = null;
+      if (disposed || logQueueRef.current.length === 0) return;
+      const msgs = logQueueRef.current;
       logQueueRef.current = [];
 
       setMasterLogs((prev) => {
@@ -743,14 +748,22 @@ export function MultiAgentDashboard({
         }
         return current.slice(-500);
       });
-    }, 0);
+    };
 
     registerLogHandler((rawMsg) => {
+      if (disposed) return;
+      // Coalesce bursts into one React update roughly once per frame; never
+      // run a timer while idle. The authoritative agent history is unchanged.
       logQueueRef.current.push(rawMsg);
+      if (flushTimer === null) {
+        flushTimer = setTimeout(flushLogs, 48);
+      }
     });
 
     return () => {
-      clearInterval(intervalId);
+      disposed = true;
+      if (flushTimer !== null) clearTimeout(flushTimer);
+      logQueueRef.current = [];
     };
   }, [registerLogHandler]);
 
@@ -1109,7 +1122,12 @@ export function MultiAgentDashboard({
     logsCount = Math.max(1, logsCount - executingToolHeight);
   }
 
-  const wrappedLines = computeWrappedLogs(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
+  // Parsing up to 500 log entries and building Ink nodes on *every keypress*
+  // is expensive. Rebuild only when the selected logs or layout actually change.
+  const wrappedLines = useMemo(
+    () => computeWrappedLogs(selectedSession, feedWidth, isHistoryTruncated, expandedGroups),
+    [selectedSession, feedWidth, isHistoryTruncated, expandedGroups],
+  );
 
   // Pin scroll position when wrapped lines length increases during streaming/thinking
   useEffect(() => {
@@ -1122,7 +1140,10 @@ export function MultiAgentDashboard({
     }
   }, [wrappedLines.length]);
 
-  const groupBoundaries = computeLogGroupBoundaries(selectedSession, feedWidth, isHistoryTruncated, expandedGroups);
+  const groupBoundaries = useMemo(
+    () => computeLogGroupBoundaries(selectedSession, feedWidth, isHistoryTruncated, expandedGroups),
+    [selectedSession, feedWidth, isHistoryTruncated, expandedGroups],
+  );
 
   const endIdxLogs = Math.max(0, wrappedLines.length - logScrollOffset);
   const startIdxLogs = Math.max(0, endIdxLogs - logsCount);
