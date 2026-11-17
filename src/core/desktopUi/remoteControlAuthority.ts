@@ -75,6 +75,8 @@ export interface RemoteActionLease {
 
 interface ActiveControl {
   token: string;
+  /** Independently signed allowed actions; never inferred from preview access. */
+  kinds: readonly RemoteInputKind[];
   controller: RemotePrincipal;
   scope: RemoteHostScope;
   expiresAt: number;
@@ -164,8 +166,17 @@ export class RemoteControlAuthority {
     return current;
   }
 
-  /** Viewing never grants input; this only creates a 30-second native challenge. */
-  request(caller: RemotePrincipal): RemoteControlChallenge {
+  /** Viewing never grants input; this only creates a 30-second native challenge.
+   * Installed controllers SHOULD specify the minimal kinds rather than using
+   * the backward-compatible all-kinds default used by older host integrations.
+   */
+  request(caller: RemotePrincipal, requestedKinds: readonly RemoteInputKind[] = kinds): RemoteControlChallenge {
+    if (!Array.isArray(requestedKinds) || requestedKinds.length === 0 ||
+        requestedKinds.length > kinds.length ||
+        requestedKinds.some(kind => !kinds.includes(kind)) ||
+        new Set(requestedKinds).size !== requestedKinds.length) {
+      disabled("Invalid remote input approval scope.");
+    }
     if (this.takeoverLatched) disabled("Local human takeover has disabled remote control.");
     if (this.pending && this.readClock() >= this.pending.expiresAt) this.pending = null;
     if (this.active && this.readClock() >= this.active.expiresAt) this.revoke();
@@ -186,10 +197,21 @@ export class RemoteControlAuthority {
       expiresAt: issuedAt + REMOTE_CONTROL_CHALLENGE_TTL_MS,
       scope: Object.freeze(scope),
       controller: Object.freeze(controller),
-      kinds,
+      kinds: Object.freeze([...requestedKinds]),
     };
     this.pending = Object.freeze(challenge);
     return challenge;
+  }
+
+  /** Separate attended approval for one input family. Switching families
+   * requires revocation and a fresh native challenge; a viewer cannot promote
+   * itself from mouse to keyboard.
+   */
+  requestScoped(caller: RemotePrincipal, scope: "mouse" | "keyboard"): RemoteControlChallenge {
+    if (scope !== "mouse" && scope !== "keyboard")
+      disabled("Invalid remote input approval scope.");
+    return this.request(caller, scope === "mouse"
+      ? ["click", "scroll"] : ["type", "key"]);
   }
 
   /** Only the native host UI may supply the separate signed human proof. */
@@ -217,6 +239,7 @@ export class RemoteControlAuthority {
     }
     const expiresAt = approvedAt + REMOTE_CONTROL_TTL_MS;
     this.active = { token: randomBytes(32).toString("hex"),
+      kinds: Object.freeze([...challenge.kinds]),
       scope: { ...challenge.scope }, controller: { ...challenge.controller },
       expiresAt, epoch: ++this.epoch, lastSequence: 0 };
     return { token: this.active.token, expiresAt };
@@ -272,6 +295,9 @@ export class RemoteControlAuthority {
     const controller = validatePrincipal(caller);
     if (!samePrincipal(this.active.controller, controller)) {
       disabled("The approval belongs to a different authenticated controller.");
+    }
+    if (kind !== "request" && !this.active.kinds.includes(kind)) {
+      disabled("This remote input kind was not independently approved.");
     }
     if (this.readClock() >= this.active.expiresAt) {
       this.revoke();
