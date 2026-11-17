@@ -205,7 +205,10 @@ fn guardian_lease_matches(value:&Value,port:u16,pid:u32,birth_seconds:u64,now_ms
     value["version"]==1 && value["port"].as_u64()==Some(u64::from(port)) &&
         value["pid"].as_u64()==Some(u64::from(pid)) &&
         registered>0 && registered>=born_ms &&
-        registered<=born_ms.saturating_add(5_000) &&
+        // Guardian startup may authenticate an existing Core before writing
+        // its lease; allow bounded startup time, but never a reused PID born
+        // after the recorded lease.
+        registered<=born_ms.saturating_add(60_000) &&
         registered<=now_ms.saturating_add(5_000)
 }
 fn guardian_os_candidates(dir:&std::path::Path,system:&System)->Vec<Item> {
@@ -1418,7 +1421,7 @@ mod tests {
             1_800_000_003_100));
         assert!(!guardian_lease_matches(&valid,7888,25204,1_800_001_000,
             1_800_001_003_100));
-        assert!(!guardian_lease_matches(&valid,7888,25204,1_799_999_990,
+        assert!(!guardian_lease_matches(&valid,7888,25204,1_799_999_900,
             1_800_000_003_100));
         assert!(!guardian_lease_matches(&valid,7888,25204,1_800_000_000,
             1_799_000_000_000));
