@@ -56,7 +56,7 @@
     for(const item of services){
       const row=document.createElement("label");
       row.className="shutdown-service";
-      row.dataset.state=item.selectable?"ready":active(item)?"blocked":"inactive";
+      row.dataset.state=item.selectable?"ready":item.forceSelectable?"force":active(item)?"blocked":"inactive";
       const checkbox=document.createElement("input");
       checkbox.type="checkbox";checkbox.value=item.id;
       checkbox.checked=state.selected.has(item.id);
@@ -77,11 +77,14 @@
         item.activeSessions!=null?item.activeSessions+" active jobs/sessions":null,
       ].filter(Boolean).join(" · ");
       node(copy,"small","",details||item.detail);
-      if(item.blocker&&active(item))node(copy,"span","shutdown-blocker",item.blocker);
+      if(item.forceSelectable&&!item.selectable&&active(item))
+        node(copy,"span","shutdown-force-explanation",
+          "Force stop available after explicit approval. May interrupt active sessions or public tunnels.");
+      else if(item.blocker&&active(item))node(copy,"span","shutdown-blocker",item.blocker);
       else if(item.selectable)node(copy,"span","shutdown-explanation",item.detail);
       row.append(copy);
       node(row,"span","shutdown-status",item.selectable?"Ready":
-        active(item)?"Review":"Stopped");
+        item.forceSelectable?"Force ready":active(item)?"Review":"Stopped");
       list.append(row);
     }
     const total=counts();
