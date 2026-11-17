@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import fs from "node:fs";
+import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
@@ -71,6 +72,41 @@ describe("Cross-IDE gateway MCP exposure and direct bypass policy", () => {
       expect(newTool.isError).not.toBe(true);
       expect(JSON.parse(newTool.content[0].text).agentId).toMatch(/^ide-/);
     } finally { await mcp.close(); }
+  });
+  test("file-policy v2 allows only certified Chrome inventory with independently approved MCP identity",async()=>{
+    fs.writeFileSync(path.join(isolatedConfig,"desktop-access-registry.json"),
+      JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
+    const web=http.createServer((_req,res)=>{
+      res.setHeader("Content-Type","application/json");
+      res.end(JSON.stringify([
+        {type:"page",id:"allowed-tab",title:"Public Web",url:"https://example.org/"},
+        {type:"page",id:"blocked-local-tab",title:"Private file",url:"file:///C:/private.txt"},
+      ]));
+    });
+    await new Promise<void>(resolve=>web.listen(0,"127.0.0.1",resolve));
+    const port=(web.address() as {port:number}).port;
+    const mcp=createSuperagentMcpServer({toolExposure:"full",allowDangerous:true,
+      authMode:"oauth",getIdentity:approvedIdentity});
+    try{
+      const identity=await call(mcp,"superagent_browser_gateway",{action:"identity"});
+      expect(identity.isError).not.toBe(true);
+      const policy=await call(mcp,"superagent_browser_gateway",{action:"policy"});
+      expect(policy.isError).not.toBe(true);
+      const inventory=await call(mcp,"superagent_chrome_cdp",{command:"list_targets",debug_port:port});
+      expect(inventory.isError).not.toBe(true);
+      expect(inventory.content[0].text).toContain("allowed-tab");
+      expect(inventory.content[0].text).not.toContain("Private file");
+      expect(inventory.content[0].text).not.toContain("blocked-local-tab");
+      const forbidden=await call(mcp,"superagent_chrome_cdp",{command:"evaluate",payload:"{}"});
+      expect(forbidden.isError).toBe(true);
+      expect(JSON.stringify(forbidden)).toMatch(/not certified|permanent file/i);
+      const gatewayExecution=await call(mcp,"superagent_browser_gateway",{action:"execute",command:"evaluate"});
+      expect(gatewayExecution.isError).toBe(true);
+      expect(JSON.stringify(gatewayExecution)).toMatch(/not certified|permanent file/i);
+    }finally{
+      await mcp.close();
+      await new Promise<void>(resolve=>web.close(()=>resolve()));
+    }
   });
   test("read-only OAuth identity cannot discover dangerous gateway tool", async () => {
     const mcp = createSuperagentMcpServer({
