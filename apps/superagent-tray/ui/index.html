@@ -16,6 +16,7 @@
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <link rel="stylesheet" href="./delegate-action-diagnostics.css" />
   <link rel="stylesheet" href="./desktop-live-manager.css" />
+  <link rel="stylesheet" href="./notifications.css" />
   <script src="./overview.js" defer></script>
   <script src="./overview-operations.js" defer></script>
   <script src="./desktop-live-manager.js" defer></script>
@@ -23,6 +24,7 @@
   <script src="./titlebar.js" defer></script>
   <script src="./feedback.js" defer></script>
   <script src="./app.js" defer></script>
+  <script src="./notifications.js" defer></script>
   <script src="./external-lifecycle.js" defer></script>
   <script src="./runtime.js" defer></script>
   <script src="./lifecycle.js" defer></script>
@@ -68,6 +70,16 @@
       <span class="tray-titlebar-description">Automation &amp; Runtime Console</span>
     </div>
     <div class="tray-window-actions" role="group" aria-label="Window controls">
+      <button id="tray-notification-bell" class="tray-window-button tray-notification-bell" type="button"
+              aria-label="Notifications, none unread" aria-expanded="false"
+              aria-controls="tray-notification-popover" title="Notification Center">
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
+          <path d="M10 21h4" />
+        </svg>
+        <span id="tray-notification-count" class="notification-count" hidden>0</span>
+      </button>
       <button id="tray-window-reload" class="tray-window-button tray-window-reload" type="button" aria-label="Reload SuperAgent Tray" title="Reload SuperAgent Tray">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M2.5 8a5.5 5.5 0 0 1 9.3-3.9l1.7-1.6V7H9M13.5 8a5.5 5.5 0 0 1-9.3 3.9L2.5 13.5V9H7" />
@@ -94,6 +106,19 @@
     </div>
     <span id="tray-window-action-feedback" class="visually-hidden" role="status" aria-live="polite"></span>
   </header>
+  <section id="tray-notification-popover" class="notification-popover" role="dialog"
+           aria-label="Recent Tray notifications" hidden>
+    <div class="notification-popover-head">
+      <div><strong>Notifications</strong><span>Important activity across SuperAgent Tray</span></div>
+      <button type="button" class="notification-popover-close" data-notification-close
+              aria-label="Close notifications">×</button>
+    </div>
+    <div id="tray-notification-recent" class="notification-popover-list" aria-live="polite"></div>
+    <div class="notification-popover-foot">
+      <button id="tray-notification-read-all" class="notification-text-button" type="button">Mark all read</button>
+      <button id="tray-notification-view-all" class="notification-text-button" type="button">View all notifications</button>
+    </div>
+  </section>
   <div class="shell">
     <!-- Sidebar Navigation -->
     <aside class="sidebar">
@@ -107,6 +132,13 @@
             <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
           </svg>
           <span>System Overview</span>
+        </a>
+        <a class="nav-link" href="#notifications" data-page="notifications" id="nav-notifications">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" />
+            <path d="M10 21h4" />
+          </svg>
+          <span>Notifications</span><span id="nav-notifications-count" class="notification-nav-count" hidden>0</span>
         </a>
         <a class="nav-link" href="#jobs" data-page="jobs" id="nav-jobs">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -406,6 +438,30 @@
           </div>
         </div>
       </header>
+
+      <!-- Notification inbox has its own route; header bell is a quick preview only. -->
+      <section id="page-notifications" class="page-view" aria-label="Notification Manager" hidden>
+        <div class="notification-manager">
+          <div class="notification-manager-summary">
+            <div>
+              <h2>Notification Center</h2>
+              <p id="notification-summary" aria-live="polite">Loading local notification history…</p>
+            </div>
+            <div class="notification-manager-actions">
+              <button id="notification-retry" class="button ghost" type="button">Refresh</button>
+              <button id="notification-read-all" class="button ghost" type="button">Mark all read</button>
+              <button id="notification-archive-read" class="button ghost" type="button">Archive read</button>
+            </div>
+          </div>
+          <div class="notification-filter-row" role="group" aria-label="Filter notifications">
+            <button class="notification-filter active" type="button" data-notification-filter="all" aria-pressed="true">All</button>
+            <button class="notification-filter" type="button" data-notification-filter="unread" aria-pressed="false">Unread</button>
+            <button class="notification-filter" type="button" data-notification-filter="important" aria-pressed="false">Important</button>
+            <button class="notification-filter" type="button" data-notification-filter="archived" aria-pressed="false">Archived</button>
+          </div>
+          <div id="notification-inbox-list" class="notification-inbox-list" aria-live="polite"></div>
+        </div>
+      </section>
 
       <!-- ================= PAGE 0: SYSTEM OVERVIEW DASHBOARD ================= -->
       <div id="page-overview" class="page-view active">
