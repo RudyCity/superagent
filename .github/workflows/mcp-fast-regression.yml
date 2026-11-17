@@ -82,6 +82,7 @@ jobs:
             tests/mcpOutputRecovery.test.ts \
             tests/mcpToolGateway.test.ts \
             tests/mcpFilePolicyMatrix.test.ts \
+            tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
             tests/mcpResponseLease.test.ts \
@@ -93,3 +94,27 @@ jobs:
             tests/mcpCrossIdeGateway.test.ts \
             tests/safeManagedChromeObservation.test.ts \
             tests/desktop-ui-integration/registered-file-tool-gate.test.ts
+
+  policy-cross-platform:
+    name: MCP host policy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install locked dependencies
+        run: bun install --frozen-lockfile
+      - name: Verify MCP permission and file policy matrix
+        run: >
+          bun --bun x vitest run --maxWorkers=2
+          tests/mcpApprovalAndFilePolicy.test.ts
+          tests/mcpFilePolicyMatrix.test.ts
+          tests/desktop-ui-integration/registered-file-tool-gate.test.ts
+          tests/mcpCrossIdeGateway.test.ts
+          tests/safeManagedChromeObservation.test.ts
