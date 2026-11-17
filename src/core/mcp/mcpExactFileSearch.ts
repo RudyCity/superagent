@@ -41,8 +41,19 @@ export function searchExplicitAuthorizedFiles(
       if(!stat.isFile()||stat.size>MAX_FILE_BYTES||
          scannedBytes+stat.size>MAX_TOTAL_BYTES)
         throw new Error("EXPLICIT_FILE_SEARCH_BUDGET_EXCEEDED");
-      const text=fs.readFileSync(fd,{encoding:"utf8"});
-      scannedBytes+=stat.size;
+      // Read exactly the attested size, never an unbounded readFileSync(fd)
+      // if another process appends to the file after fstat.
+      const bytes=Buffer.alloc(stat.size);
+      let received=0;
+      while(received<bytes.length){
+        const count=fs.readSync(fd,bytes,received,bytes.length-received,received);
+        if(count<=0)throw new Error("EXPLICIT_FILE_SEARCH_SOURCE_CHANGED");
+        received+=count;
+      }
+      if(fs.fstatSync(fd).size!==stat.size)
+        throw new Error("EXPLICIT_FILE_SEARCH_SOURCE_CHANGED");
+      const text=bytes.toString("utf8");
+      scannedBytes+=received;
       filesSearched++;
       for(const [index,line] of text.split(/\r?\n/).entries()){
         if((caseSensitive?line:line.toLowerCase()).includes(needle)){
