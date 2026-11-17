@@ -239,7 +239,7 @@ small incoming files, and SAFOLDER1 packages.
 | Cancel | Removes V2 staging | Revokes generation and deletes partials | Stops current/remaining queue |
 | Transport interruption | Staging retained, new offer required | Staging retained, new offer required | Retry warns the first outcome may be uncertain |
 | Final publication | Hash verified, hard-link create-only unique name | SHA-256 verified, MediaStore pending-to-visible | Reconciles a lost finish acknowledgement once |
-| Large file sent *from target to Tray* | **Not V2 yet** | **Not V2 yet** | V1 receive remains at 4 MiB |
+| Large file sent *from target to Tray* | Owner-selected `share-large` local source | SAF-selected large file staged privately | V2 Core direct receive to `Downloads/SuperAgent LAN/Received` |
 
 V2 checkpoints have a maximum 24-hour identity lifetime and 10-minute
 active idle timeout. Changing the target session or losing connectivity
@@ -285,10 +285,11 @@ The existing controller request path can address already paired LAN
 or supported tunnel sessions, but this is **not proven seamless
 LAN-to-tunnel failover**, cross-network authorization migration, or
 **direct peer-to-peer transfer**. Current multi-device distribution
-still uses the controller. The system does not provide a target-side
-destination folder picker for V2, Android-origin V2 large-file send,
-full durable queue after Tray restart, adaptive sliding windows,
-or parallel chunk transfer. These require separate source/receiver,
+still uses the controller. The system does not yet provide arbitrary target-side V2 destination
+folder selection, a full durable queue after Tray restart, adaptive
+sliding windows, or parallel chunks. Android-origin V2 large-file
+sharing requires an updated Android build with owner-selected private
+SAF staging and fresh on-phone approval. These require separate source/receiver,
 quota, privacy and consent acceptance.
 
 ### Required release gates
@@ -304,3 +305,68 @@ quota, privacy and consent acceptance.
 - Verify Rust Tray/native UI builds and both tunnel/private-LAN
   authorizations. A green unit workflow or Java compilation alone is
   **not Runtime Verified or Released**.
+
+### P0–P2 completion ledger: source-to-source and direct receive
+
+**V2 large-file source.** On Windows the local owner uses
+`share-large <local-file>` at the LAN Client console. On Android the
+owner chooses **Select Large File** in the Files page using the system
+`ACTION_OPEN_DOCUMENT` picker. Both source implementations stage or
+read a verified regular file on disk with a maximum size of **256 MiB**,
+stream **16-KiB chunks**, support only a repeat of the last read chunk
+for a lost response, and validate selected file name, size, SHA-256,
+session, and fresh owner approval before any transfer. Neither API
+accepts arbitrary remotely supplied source paths or SAF URIs.
+
+**Device-to-device relay.** The Tray Files pane offers an explicit V1
+(1–4 MiB) or V2 (over 4–256 MiB) **Relay owner-selected file** option.
+Core forwards one authenticated chunk at a time to a separate target
+after the source and destination owners independently approve; it never
+exposes pairing tokens or file contents in the Tray WebView. V2 can
+resume a partially staged destination under a new consented offer by
+re-reading and validating the whole source digest, without replaying
+already accepted destination writes. The relay is **Core-mediated**,
+sequential, and scoped to paired connected devices on the *same selected
+LAN or tunnel route*; it is **not** unattended/direct peer-to-peer.
+
+**Android/Windows source to local PC.** The Tray
+**Receive selected large file** option starts a Core-owned V2 receive
+job. Core obtains new source-owner permission, streams 16-KiB chunks
+directly to a private `Downloads/SuperAgent LAN/Received` staging area,
+validates SHA-256, and publishes with a create-only destination. The
+WebView never allocates the full source file or accepts a remote
+filesystem destination. The selected source file must be over 4 MiB;
+V1 receives small files through the existing native Save As dialog.
+Network interruptions keep only the bounded, private local checkpoint
+and **require fresh source approval** before retry; explicit owner
+Cancel discards the partial file. Relative device switch/failover is
+never automatic.
+
+**UX and observability.** The optional multi-device queue remains
+sequential with Pause All/Resume All/Cancel All and explicit retry.
+The owner can switch to another LAN/Tunnel route *manually* for a
+single uncertain retry only when the same exact TLS fingerprint matches
+and a new target approval is obtained. The private in-view diagnostics
+show throughput, bounded p95 chunk latency, and response recovery
+counts; never copy token, file contents, or raw error payload into
+diagnostic history.
+
+**Evidence and remaining gates.** Regression workflow
+`.github/workflows/lan-file-transfer-regression.yml` includes
+Windows/Ubuntu TypeScript and LAN protocol tests, a two-local-endpoint
+TLS source-to-destination E2E fixture (skips if the CI host lacks an
+eligible private adapter), Android Java compilation, native-source
+contract tests, large-file relay/receive simulator tests, pause/queue
+tests, cancellation, and route/handoff guards. This is software
+verification, not a real Android-phone-to-PC hardware acceptance test.
+Required for Runtime Verified/Released: installed Tray Rust build,
+actual Android APK, all Android/PC directions on physical devices
+including screen-off and process death, media scanner behavior,
+Wi-Fi vs tunnel changes, 256-MiB boundary, disk exhaustion, rapid
+revoke during commit, and complete R0–R7 release gates.
+
+**Known limits:** large files are capped at 256 MiB, not GB. V2
+does not do arbitrary Android destination folder picking, full
+persisted multi-device retry queue, adaptive sliding-window congestion
+control, transparent cross-route failover, or true peer-to-peer
+transfer without Core. Those must not be marketed as completed.
