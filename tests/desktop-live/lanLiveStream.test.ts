@@ -190,6 +190,7 @@ describe("Desktop Live legacy loopback-only preview endpoints", () => {
       JSON.stringify({
         deviceId:"123e4567-e89b-12d3-a456-426614174000",
         controllerToken:dummyToken,
+        kind:"mouse",
       }));
     expect(result.status).toBe(409);
     expect(JSON.parse(result.body).success).toBe(false);
