@@ -485,10 +485,9 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     await (vm.runInContext(
       'runtimeServiceAction({target:{closest:()=>({disabled:false,dataset:{runtimeKind:"mcp",runtimeAction:"stop",runtimePort:"9227",runtimePid:"3628"}})}})',
       ui.context) as Promise<void>);
-    // Verified native receipt briefly displays a 420ms Stopped animation.
-    // The fresh runtime scan, not the old pre-stop cache, must then restore
-    // the card if the exact owner is still observed alive.
-    expect(ui.byId("runtime-remote").innerHTML).toContain("runtime-instance--stopped");
+    // Native stop animation can be superseded immediately by a fast fresh
+    // scan that still sees this owner. Both timing orders must converge on
+    // the live owner card, not on a hidden/stopped false-positive.
     await new Promise(resolve=>setTimeout(resolve,460));
     await (vm.runInContext("runtimeRefresh(true)",ui.context) as Promise<void>);
     await new Promise(resolve=>setImmediate(resolve));
