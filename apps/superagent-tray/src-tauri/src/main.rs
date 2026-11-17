@@ -2121,6 +2121,9 @@ async fn mcp_project_access_action(
                 clean(request.get("reason").and_then(Value::as_str).unwrap_or("Not provided")),
                 request_id)
         };
+        if !window.is_focused().unwrap_or(false) || !window.is_visible().unwrap_or(false) {
+            return Err("Native Tray lost focus while resolving the MCP access request".into());
+        }
         let dialog_app = window.app_handle().clone();
         let approved = tauri::async_runtime::spawn_blocking(move || {
             use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
