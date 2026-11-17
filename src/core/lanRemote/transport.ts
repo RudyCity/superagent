@@ -329,11 +329,12 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
       } catch { fail(socket, "File offer denied, invalid, or another transfer active."); }
       socket.end(); return;
     }
-    if (["file_put", "file_get", "file_finish", "file_abort"].includes(String(op))) {
+    if (["file_put", "file_get", "file_status", "file_finish", "file_abort"].includes(String(op))) {
       try {
         let reply: unknown;
         if (op === "file_put") reply = files.put(req.transferId, req.seq, req.data);
         else if (op === "file_get") reply = files.get(req.transferId, req.seq);
+        else if (op === "file_status") reply = files.status(req.transferId);
         else if (op === "file_finish") reply = await files.finish(req.transferId);
         else { files.abort(req.transferId); reply = { ok: true }; }
         if (transfer && req.transferId === transfer.transferId) {
