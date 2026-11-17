@@ -125,6 +125,45 @@ readiness, or a published release. A real OS E2E should verify the
 agent-to-human-to-agent handoff, revocation races, active foreground, and
 disconnection behavior before promotion.
 
+## Independent Viewer and Controller UX (17 November 2026)
+
+The Desktop Live panel now displays **two separate authorization areas**:
+
+- **Viewer · View Only**: the host's own OS permission dialog and exact
+  window identity grant the five-minute local native preview. LAN Android
+  viewing uses a distinct device-approved support session. Viewing is never
+  a mouse/keyboard approval.
+- **Controller · Mouse & Keyboard**: **Request Control** is a separate
+  operator action. On native application windows it opens an attended
+  informational Tray dialog and returns `NOT_CONFIGURED`; no controller
+  token or OS action is issued until independently verified remote input
+  provisioning and native semantic adapters have been certified. On a paired
+  LAN Android device it opens the input UI only after explicit user action;
+  every touch/text/navigation command must still be accepted by the phone
+  under its separate Accessibility/input consent.
+- **Take Over**: locally revokes agent/native preview access on the exact
+  window. The host operator then uses physical mouse and keyboard; this is
+  distinct from remote controller access.
+- **Return to Agent**: for an existing managed CDP human hold, the Tray and
+  password-protected management console offer a revision-checked return.
+  It refuses to bypass an active takeover reservation, changed browser
+  fingerprint, stale target, or mismatched revision. Native apps and
+  Delegate tabs do not automatically regain an agent session by clicking
+  this action.
+
+The operator inventory returns `access.view` and `access.controller`
+independently, with `independentlyApproved:false` in the informational
+snapshot. That snapshot is **not** an authorization source; actual native
+input remains guarded by `RemoteControlAuthority` and
+`RemoteNativeInputDispatcher` with fresh, attended approval and
+nativeRef-only dispatch. No viewer token is ever accepted for input.
+
+Tests added: `desktopLiveAccessModes.test.ts`, extended
+`desktopLiveTakeoverAuthorization.test.ts`, and
+`trayManagementSurface.test.ts`. These are source regression tests; clean
+CI and installed host E2E certification are still required before claiming
+full remote-controller readiness.
+
 ## Deployment and verification status
 
 The feature code can be built and tested **without** changing active MCP tunnel
