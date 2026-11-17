@@ -85,6 +85,14 @@
     const folder = $("lan-folder-source");
     if ($("lan-file-send")) $("lan-file-send").disabled = busy || relayBusy || !hasDevice || !files?.length;
     if ($("lan-file-retry")) $("lan-file-retry").disabled = busy || relayBusy || !hasDevice || !retryPlan;
+    if ($("lan-file-handoff")) {
+      const old = retryPlan?.length === 1 ? retryPlan[0]?.device : null;
+      const current = selected();
+      $("lan-file-handoff").disabled = busy || relayBusy || !old || !current ||
+        old.id === current.id || old.platform !== current.platform ||
+        !/^[a-f0-9]{64}$/i.test(old.fingerprint || "") ||
+        old.fingerprint.toLowerCase() !== String(current.fingerprint || "").toLowerCase();
+    }
     if ($("lan-folder-send")) $("lan-folder-send").disabled =
       busy || relayBusy || !hasDevice || !folderSupported() || !folder?.files?.length;
     if ($("lan-file-receive")) $("lan-file-receive").disabled = busy || relayBusy || !hasDevice;
@@ -447,7 +455,9 @@
         state("No valid target sessions, or more than 8 connected devices. Refresh LAN sessions.");
         return;
       }
-      const targets = available.map((d) => ({ id: d.id, label: d.label, platform: d.platform }));
+      const targets = available.map((d) => ({
+        id: d.id, label: d.label, platform: d.platform, fingerprint: d.fingerprint,
+      }));
       if (files.length > MAX_QUEUE_FILES || files.some((file) =>
           !filenameAllowed(file.name) || !Number.isSafeInteger(file.size) ||
           file.size < 1 || file.size > V2_MAX ||
@@ -643,11 +653,33 @@
       ticket?.end(); controls();
     }
   }
+  function retryOnSelectedRoute() {
+    if (busy || window.__superagentLanRelayBusy === true || retryPlan?.length !== 1) return;
+    const current = selected();
+    const old = retryPlan[0].device;
+    if (!current || old.id === current.id || old.platform !== current.platform ||
+        !/^[a-f0-9]{64}$/i.test(old.fingerprint || "") ||
+        old.fingerprint.toLowerCase() !== String(current.fingerprint || "").toLowerCase()) {
+      state("Route handoff denied: the new session must have the exact same pinned TLS fingerprint.");
+      return;
+    }
+    if (!window.confirm("Verified device fingerprint matches. Retry the original selected file via " +
+        (current.transport === "tunnel" ? "Device Tunnel" : "Direct LAN") +
+        "? The old session's outcome may be UNKNOWN; inspect the device before retry. " +
+        "A fresh target-owner approval is required.")) return;
+    retryPlan = [{
+      ...retryPlan[0],
+      device: { id: current.id, label: current.label, platform: current.platform,
+        fingerprint: current.fingerprint },
+    }];
+    void send(true);
+  }
   function install() {
     $("lan-file-source")?.addEventListener("change", () => { retryPlan = null; controls(); });
     $("lan-folder-source")?.addEventListener("change", controls);
     $("lan-file-send")?.addEventListener("click", () => { void send(); });
     $("lan-file-retry")?.addEventListener("click", () => { void send(true); });
+    $("lan-file-handoff")?.addEventListener("click", retryOnSelectedRoute);
     $("lan-folder-send")?.addEventListener("click", () => { void sendFolder(); });
     $("lan-file-receive")?.addEventListener("click", () => { void receive(); });
     $("lan-file-pause")?.addEventListener("click", () => {
