@@ -1187,6 +1187,99 @@ impl Drop for DesktopLiveApprovalGuard {
     }
 }
 
+
+#[tauri::command]
+async fn recordings_action(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    if window.label() != "main" || !window.is_visible().unwrap_or(false) ||
+       window.is_minimized().unwrap_or(true) {
+        return Err("Recording Manager requires the visible native Tray".into());
+    }
+    if action == "pick-project" {
+        use tauri_plugin_dialog::DialogExt;
+        let dialog_app = app.clone();
+        let dialog_window = window.clone();
+        let selected = tauri::async_runtime::spawn_blocking(move || {
+            dialog_app.dialog().file().set_parent(&dialog_window).blocking_pick_folder()
+        }).await.map_err(|_| "Native project picker failed")?;
+        let Some(selected) = selected else { return Ok(json!({"cancelled":true})); };
+        let folder = selected.into_path().map_err(|_| "A local folder is required")?;
+        let meta = fs::symlink_metadata(&folder).map_err(|_| "Project folder unavailable")?;
+        if meta.file_type().is_symlink() || !meta.is_dir() {
+            return Err("Choose a real project directory".into());
+        }
+        let canonical = fs::canonicalize(&folder).map_err(|_| "Project folder unavailable")?;
+        if canonical.parent().is_none() { return Err("Filesystem root is not a project".into()); }
+        return Ok(json!({"projectDirectory":canonical.to_string_lossy()}));
+    }
+    if !matches!(action.as_str(),"list" | "stop" | "open-video" | "open-folder" | "delete") {
+        return Err("Unsupported recording operation".into());
+    }
+    let data=payload.ok_or("Project selection required")?;
+    let map=data.as_object().ok_or("Invalid recording manager payload")?;
+    if map.keys().any(|key| key!="projectDirectory" && key!="recordingId") {
+        return Err("Unexpected recording manager field".into());
+    }
+    let project=map.get("projectDirectory").and_then(Value::as_str)
+        .filter(|p| !p.is_empty() && p.len()<=1024 && std::path::Path::new(p).is_absolute())
+        .ok_or("Choose an absolute project folder")?;
+    let id=map.get("recordingId").and_then(Value::as_str);
+    if action=="list" && id.is_some() { return Err("Unexpected recording ID".into()); }
+    if action!="list" {
+        let bytes=id.ok_or("Exact recording ID required")?.as_bytes();
+        if bytes.len()!=36 || !bytes.iter().enumerate().all(|(i,b)|{
+            if [8,13,18,23].contains(&i) {*b==b'-'} else {b.is_ascii_hexdigit()}
+        }) { return Err("Invalid recording UUID".into()); }
+    }
+    if action=="delete" {
+        use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+        let dialog_app=app.clone();
+        let dialog_window=window.clone();
+        let approved=tauri::async_runtime::spawn_blocking(move || {
+            dialog_app.dialog().message("Permanently delete this recording, video and logs?")
+                .title("Delete recording").set_parent(&dialog_window)
+                .buttons(MessageDialogButtons::OkCancel).blocking_show()
+        }).await.map_err(|_| "Native deletion approval failed")?;
+        if !approved { return Err("Recording deletion cancelled".into()); }
+    }
+    let core_action=match action.as_str() {
+        "open-video"=>"video", "open-folder"=>"folder",other=>other,
+    };
+    let mut body=json!({"action":core_action,"projectDirectory":project});
+    if let Some(id)=id { body["recordingId"]=json!(id); }
+    if action=="delete" {body["confirmDelete"]=json!(true);}
+    let response=core_request(Method::POST,"/api/desktop/cdp/recordings",Some(body)).await?;
+    if action=="open-video" || action=="open-folder" {
+        let file=response.get("path").and_then(Value::as_str)
+            .ok_or("Core did not verify an archive file")?;
+        let selected=fs::canonicalize(file).map_err(|_| "Archive target is unavailable")?;
+        let expected=fs::canonicalize(
+            PathBuf::from(project).join(".superagent").join("recordings")
+                .join("cdp").join(id.unwrap())
+        ).map_err(|_| "Recording folder is unavailable")?;
+        let permitted=if action=="open-video" {selected==expected.join("video.mp4")}
+            else {selected==expected};
+        if !permitted {return Err("Native archive path verification failed".into());}
+        #[cfg(target_os="windows")]
+        let mut opener=if action=="open-video" {
+            let mut command=Command::new("rundll32.exe");
+            command.arg("url.dll,FileProtocolHandler");
+            command
+        } else { Command::new("explorer.exe") };
+        #[cfg(target_os="macos")]
+        let mut opener=Command::new("open");
+        #[cfg(all(not(target_os="windows"),not(target_os="macos")))]
+        let mut opener=Command::new("xdg-open");
+        opener.arg(&selected).spawn().map_err(|_| "Could not launch the local viewer")?;
+        return Ok(json!({"success":true,"launchRequested":true}));
+    }
+    Ok(response)
+}
+
 #[tauri::command]
 async fn desktop_live_action(
     app: tauri::AppHandle,
@@ -3343,6 +3436,7 @@ fn main() {
             get_connection_logs,
             get_delegate_status,
             delegate_action,
+            recordings_action,
             desktop_live_action,
             lan_support_action,
             get_terminal_tasks,
