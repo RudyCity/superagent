@@ -47,7 +47,7 @@ describe("MCP authorization is independent from chat YOLO", () => {
     fs.mkdirSync(root);
     process.env.SUPERAGENT_CONFIG_DIR = configDir;
     setYoloMode(false);
-    registerProject({ projectId: "mcp-test-project", name: "MCP Test", type: "local", root });
+    registerProject({ id: "mcp-test-project", name: "MCP Test", type: "local", root });
   });
   afterEach(() => {
     setYoloMode(false);
