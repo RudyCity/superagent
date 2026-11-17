@@ -70,3 +70,10 @@ native/desktop-live-windows-input/*.exp
 native/desktop-live-windows-input/*.obj
 native/desktop-live-windows-input/*.sha256
 
+
+# Session-owned CLI task checklists must stay local, never ship to new clones.
+/task.md
+/_task.md
+/tasks.md
+/task_history.md
+/_task_history.md
