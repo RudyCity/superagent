@@ -80,14 +80,16 @@ export const REMOTE_TRAY_JS = `"use strict";
       article.append(glyph,info);
       if(item.stopAction){
         const btn=el("button","outline",item.stopAction==="takeover"?"Take over":
+          item.stopAction==="return-to-agent"?"Return to Agent":
           item.stopAction==="stop-delegate-tab"?"Stop tab session":
           item.stopAction==="disconnect-profile"?"Disconnect profile":"Stop session");
         btn.type="button";btn.addEventListener("click",async()=>{
           if(busy)return;
           if(item.stopAction==="disconnect-profile"&&!confirm("Disconnect the whole Delegate profile? Browser tabs remain open."))return;
+          if(item.stopAction==="return-to-agent"&&!confirm("Resume this exact managed CDP target? Active takeover reservations cannot be bypassed."))return;
           busy=true;btn.disabled=true;status.textContent="Revoking session…";
           try{
-            const req={id:item.id,...((item.stopAction==="takeover"||item.stopAction==="stop-delegate-tab")?{expectedRevision:item.revision}:{}),
+            const req={id:item.id,...((item.stopAction==="takeover"||item.stopAction==="return-to-agent"||item.stopAction==="stop-delegate-tab")?{expectedRevision:item.revision}:{}),
               ...(item.stopAction==="disconnect-profile"?{confirmProfile:true}:{})};
             const response=await post("/api/stop",req);
             if(!response.ok)throw Error("Stop rejected");
