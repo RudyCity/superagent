@@ -56,6 +56,8 @@ export interface ManagedMcpTunnelOwnerStatus {
   backendPid?: number | null;
   backendGenerations?: number;
   backendHealthy?: boolean;
+  /** SHA-256 of the explicitly staged and activated MCP backend release; null for source mode. */
+  backendReleaseDigest?: string | null;
   backendGenerationDetails?: Array<Record<string, unknown>>;
   sessionTelemetry?: Record<string, unknown>;
   /** Private operator-only display metadata. Never forward through MCP status. */
