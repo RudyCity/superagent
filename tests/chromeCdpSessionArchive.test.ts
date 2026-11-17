@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, stat } from "node:fs/promises";
 import { join, relative, isAbsolute } from "node:path";
 import { tmpdir } from "node:os";
 import { startCdpSessionArchive, stopCdpSessionArchive,
@@ -51,8 +51,8 @@ describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>
     });
     expect(recording.status).toBe("recording");
     expect(recording.source).toBe("managed-cdp-exact-tab");
-    expect(relative(projectRoot,recording.directory)).toMatch(/^\.superagent[\\/]recordings[\\/]cdp[\\/]/);
-    expect(isAbsolute(relative(projectRoot,recording.directory))).toBe(false);
+    expect(relative(await realpath(projectRoot),recording.directory)).toMatch(/^\.superagent[\\/]recordings[\\/]cdp[\\/]/);
+    expect(isAbsolute(relative(await realpath(projectRoot),recording.directory))).toBe(false);
     recordCdpSessionCommand(scope,"click_cursor","control_chrome_cdp: native mouse click dispatched once");
     recordCdpSessionCommand(scope,"type","control_chrome_cdp failed: password=SECRET token=abc123 https://secret.test/login?token=123");
     recordCdpSessionDiagnostic(scope.targetKey,{at:new Date().toISOString(),kind:"console",
