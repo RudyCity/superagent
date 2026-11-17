@@ -67,6 +67,42 @@ describe("Desktop Live remote control — host-only approval and scope", () => {
       .toThrow(/approval/i);
   });
 
+  it("requires independent signed native mouse approval before click or scroll", () => {
+    const f = fixture();
+    const challenge = f.authority.requestScoped(caller, "mouse");
+    expect(challenge.kinds).toEqual(["click", "scroll"]);
+    const grant = f.authority.confirmNativeApproval(challenge.nonce, signature(challenge));
+    expect(() => f.authority.beginAction(caller, grant.token, "key", 1))
+      .toThrow(/not independently approved/);
+    expect(() => f.authority.beginAction(caller, grant.token, "type", 1))
+      .toThrow(/not independently approved/);
+    const lease = f.authority.beginAction(caller, grant.token, "click", 1);
+    lease.consumeForNativeDispatch();
+    lease.finish();
+    expect(() => f.authority.requestScoped(caller, "keyboard"))
+      .toThrow(/already exists/);
+    f.authority.revoke();
+    const keyboard = f.authority.requestScoped(caller, "keyboard");
+    expect(keyboard.kinds).toEqual(["type", "key"]);
+    const approved = f.authority.confirmNativeApproval(keyboard.nonce, signature(keyboard));
+    expect(() => f.authority.beginAction(caller, approved.token, "click", 1))
+      .toThrow(/not independently approved/);
+    const keyLease = f.authority.beginAction(caller, approved.token, "type", 1);
+    keyLease.finish();
+  });
+
+  it("rejects empty, duplicate, unknown or forged native input scopes", () => {
+    const f = fixture();
+    expect(() => f.authority.request(caller, [])).toThrow(/scope/);
+    expect(() => f.authority.request(caller, ["click", "click"])).toThrow(/scope/);
+    expect(() => f.authority.request(caller, ["clipboard" as "click"])).toThrow(/scope/);
+    expect(() => f.authority.requestScoped(caller, "desktop" as "mouse")).toThrow(/scope/);
+    const approvedMouse = f.authority.requestScoped(caller, "mouse");
+    const tampered = { ...approvedMouse, kinds: ["click", "scroll", "type"] as const };
+    expect(() => f.authority.confirmNativeApproval(
+      approvedMouse.nonce, signature(tampered))).toThrow(/approval/);
+  });
+
   it("binds a single-use signed human approval to the exact host scope and caller", () => {
     const f = fixture();
     const challenge = f.authority.request(caller);
