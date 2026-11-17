@@ -54,7 +54,7 @@ interface Pending {
 }
 
 export class RemotePrivateControllerClient {
-  private phase:"tls"|"hello"|"authenticated"|"closed"="tls";
+  private phase:"tls"|"hello"|"awaiting-auth"|"authenticated"|"closed"="tls";
   private inbound=Buffer.alloc(0);
   private pending:Pending|null=null;
   private connectResolve:((c:RemotePrivateControllerClient)=>void)|null=null;
@@ -166,9 +166,10 @@ export class RemotePrivateControllerClient {
         const proof=computeRemotePrivateControllerProof(
           this.options.credential,msg.nonce,msg.connectionId);
         this.send({v:1,type:"authenticate",nonce:msg.nonce,proof});
+        this.phase="awaiting-auth";
         return;
       }
-      if(this.phase!=="authenticated"){
+      if(this.phase==="awaiting-auth"){
         if(!exact(msg,["v","type"])||msg.v!==1||msg.type!=="authenticated")deny();
         this.phase="authenticated";
         if(this.handshakeTimer)clearTimeout(this.handshakeTimer);
