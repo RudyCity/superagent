@@ -130,6 +130,7 @@ describe("Independent attended Android mouse and keyboard controller grants",()=
     f.now-=1;
     expect(()=>f.gate.authorize(deviceId,mouse,"mouse"))
       .toThrow("ANDROID_CONTROLLER_HOST_CLOCK_INVALID");
+    f.now+=1; // Restore a monotonic host clock before testing disconnection.
     const c=f.gate.challenge(deviceId,"keyboard");
     const mac=NativeAndroidControllerApproval.computeProofForTest(
       secret,c.nonce,deviceId,c.fingerprint,"keyboard");
