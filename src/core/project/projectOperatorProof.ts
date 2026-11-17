@@ -64,14 +64,17 @@ export class ProjectOperatorProof {
     if (Object.keys(proof).sort().join() !== "mac,nonce" ||
         typeof proof.nonce !== "string" || !/^[a-f0-9]{48}$/.test(proof.nonce) ||
         typeof proof.mac !== "string" || !/^[a-f0-9]{64}$/.test(proof.mac)) fail();
-    const expires = this.pending.get(proof.nonce);
-    this.pending.delete(proof.nonce); // burn even forged attempts
+    const nonce = proof.nonce as string;
+    const mac = proof.mac as string;
+    const payloadText = packet.payloadText as string;
+    const expires = this.pending.get(nonce);
+    this.pending.delete(nonce); // burn even forged attempts
     if (!expires || expires <= this.now()) fail();
     const expected = crypto.createHmac("sha256", this.key())
-      .update(PREFIX + proof.nonce + ":" + packet.payloadText).digest();
-    if (!crypto.timingSafeEqual(expected, Buffer.from(proof.mac, "hex"))) fail();
+      .update(PREFIX + nonce + ":" + payloadText).digest();
+    if (!crypto.timingSafeEqual(expected, Buffer.from(mac, "hex"))) fail();
     let parsed: unknown;
-    try { parsed = JSON.parse(packet.payloadText); } catch { fail(); }
+    try { parsed = JSON.parse(payloadText); } catch { fail(); }
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) fail();
     return parsed as Record<string, unknown>;
   }
