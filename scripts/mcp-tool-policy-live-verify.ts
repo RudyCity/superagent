@@ -6,6 +6,7 @@
  * SUPERAGENT_MCP_POLICY_URL=https://reviewed-host.example/mcp
  * SUPERAGENT_MCP_POLICY_BEARER_TOKEN=<host-provided-token>
  * SUPERAGENT_MCP_POLICY_PORT=<verified-owner-port>
+ * SUPERAGENT_MCP_POLICY_EXPECTED_RELEASE_DIGEST=<64-char-sha256-of-staged-mcp-backend>
  * bun scripts/mcp-tool-policy-live-verify.ts
  *
  * Does not print bearer tokens, URLs or tool output.
@@ -38,7 +39,10 @@ async function main(){
   const rawUrl=process.env.SUPERAGENT_MCP_POLICY_URL?.trim();
   const token=process.env.SUPERAGENT_MCP_POLICY_BEARER_TOKEN?.trim();
   const port=Number(process.env.SUPERAGENT_MCP_POLICY_PORT||"9227");
+  const expectedDigest=process.env.SUPERAGENT_MCP_POLICY_EXPECTED_RELEASE_DIGEST?.trim();
   if(!rawUrl||!token)blocked("URL_AND_AUTH_REQUIRED");
+  if(!expectedDigest||!/^[a-f0-9]{64}$/.test(expectedDigest))
+    blocked("ATTESTED_RELEASE_DIGEST_REQUIRED");
   if(!Number.isSafeInteger(port)||port<1024||port>65535)
     blocked("INVALID_OWNER_PORT");
   let url:URL;
@@ -48,7 +52,7 @@ async function main(){
      url.username||url.password||url.search||url.hash||url.pathname!=="/mcp")
     blocked("UNSAFE_MCP_URL");
   const evidence=assessDesktopMcpOwnerEvidence(
-    await owner("status",port),await owner("doctor",port),url.href);
+    await owner("status",port),await owner("doctor",port),url.href,expectedDigest);
   if(!evidence.ready)blocked("UNVERIFIED_MCP_OWNER",evidence.reasons.join(","));
   const client=new Client({name:"mcp-policy-live-attested",version:"1.0.0"},
     {capabilities:{}});
@@ -82,6 +86,7 @@ async function main(){
       status:"PASS",verifiedThrough:"attested-live-mcp-http",
       verifiedScope:"read-only-catalog-and-policy",
       ownerPid:evidence.ownerPid,backendPid:evidence.backendPid,
+      releaseDigestPrefix:expectedDigest.slice(0,16),
       catalogCount:parsed.visibleToolCount,
       filePolicyActive:meta.filePolicy.active,
       warnings:evidence.warnings,
