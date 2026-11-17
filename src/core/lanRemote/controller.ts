@@ -426,6 +426,26 @@ export async function getLanFileChunk(id: string, transferId: string, seq: numbe
     throw Error("Malformed or unauthenticated file chunk.");
   return { data: reply.data, received: Number(reply.received), seq };
 }
+export async function getLanFileStatus(id: string, transferId: string): Promise<{
+  transferId: string; direction: "upload" | "download"; name: string; size: number;
+  sha256: string; seq: number; received: number;
+}> {
+  const device = authFile(id);
+  if (!/^[a-f0-9-]{36}$/i.test(transferId)) throw Error("Invalid transfer handle.");
+  const [reply] = await requestSaved(device,
+    fileEnvelope(device, "file_status", { transferId }), 10_000);
+  if (!reply || reply.ok !== true || reply.transferId !== transferId
+    || (reply.direction !== "upload" && reply.direction !== "download")
+    || typeof reply.name !== "string" || !/^[A-Za-z0-9_][A-Za-z0-9_ .()-]{0,95}$/.test(reply.name)
+    || !Number.isInteger(reply.size) || reply.size < 1 || reply.size > LAN_TRANSFER_MAX
+    || typeof reply.sha256 !== "string" || !/^[a-f0-9]{64}$/.test(reply.sha256)
+    || !Number.isInteger(reply.seq) || reply.seq < 0 || reply.seq > 1024
+    || !Number.isInteger(reply.received) || reply.received < 0 || reply.received > reply.size)
+    throw Error("Invalid or expired LAN file checkpoint.");
+  return { transferId, direction: reply.direction, name: reply.name,
+    size: reply.size, sha256: reply.sha256, seq: reply.seq, received: reply.received };
+}
+
 export async function finalizeLanFile(id: string, transferId: string) {
   const device = authFile(id);
   if (!/^[a-f0-9-]{36}$/i.test(transferId)) throw Error("Invalid transfer handle.");
