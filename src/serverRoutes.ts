@@ -1676,194 +1676,39 @@ export async function handleServerRoute(
     return true;
   }
 
-  // Dedicated private LAN live stream viewer for paired local network devices.
-  // Restricted strictly to RFC1918 private IPv4 or local loopback. Public proxy headers are rejected.
-  // Dedicated private LAN live stream viewer and human control for paired local network devices.
-  // Restricted strictly to RFC1918 private IPv4 or local loopback. Public proxy headers are rejected.
+  // Private LAN Desktop Live is view-only. A preview capability is NOT a
+  // controller capability. Host-native takeover remains available only through
+  // the authenticated visible Tray, never through this LAN-facing HTTP route.
   if (pathname === "/api/desktop/live/lan-preview" || pathname === "/api/desktop/live/lan-frame" ||
       pathname === "/api/desktop/live/lan-takeover" || pathname === "/api/desktop/live/lan-input") {
     res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Referrer-Policy", "no-referrer");
     res.setHeader("X-Content-Type-Options", "nosniff");
-    const peer = req.socket.remoteAddress || "";
-    const cleanPeer = peer.replace(/^::ffff:/, "");
-    const loopback = ["127.0.0.1", "::1"].includes(cleanPeer);
+    res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+    const peer = (req.socket.remoteAddress || "").replace(/^::ffff:/, "");
     const { privateV4 } = await import("./core/lanRemote/transport.js");
-    const isPrivateLan = loopback || privateV4(cleanPeer);
-    const forwarded = ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
-      "cf-connecting-ip", "cf-ray"].some(name => Object.hasOwn(req.headers, name));
-    if (!isPrivateLan || forwarded) {
+    const privatePeer = peer === "127.0.0.1" || peer === "::1" || privateV4(peer);
+    const forwarded = ["forwarded", "x-forwarded-for", "x-forwarded-host",
+      "x-forwarded-proto", "cf-connecting-ip", "cf-ray"].some(key =>
+        Object.hasOwn(req.headers, key));
+    const host = typeof req.headers.host === "string" ? req.headers.host : "";
+    let privateHost = false;
+    try {
+      const parsedHost = new URL("http://" + host);
+      privateHost = parsedHost.host === host && !parsedHost.username &&
+        (parsedHost.hostname === "localhost" || parsedHost.hostname === "127.0.0.1" ||
+         parsedHost.hostname === "[::1]" || privateV4(parsedHost.hostname));
+    } catch { /* Reject malformed/dns-rebinding host headers. */ }
+    if (!privatePeer || !privateHost || forwarded) {
       sendJSON(res, 403, { success: false, error: "LAN_STREAM_PRIVATE_NETWORK_REQUIRED" });
       return true;
     }
-    const token = parsedUrl.searchParams.get("token") || "";
-    const { nativeWindowPreviewManager } = await import("./core/desktopUi/livePreview.js");
-
-    // Human Takeover: Revoke agent sessions and bring window to front
-    if (pathname === "/api/desktop/live/lan-takeover") {
-      let reqToken = token;
-      if (!reqToken && req.method === "POST") {
-        try {
-          const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
-          reqToken = String(body.token || "");
-        } catch {}
-      }
-      if (!reqToken || !/^[a-f0-9]{64}$/.test(reqToken)) {
-        sendJSON(res, 400, { success: false, error: "VALID_STREAM_TOKEN_REQUIRED" });
-        return true;
-      }
-      const session = nativeWindowPreviewManager.getActiveSession(reqToken);
-      if (!session) {
-        sendJSON(res, 409, { success: false, error: "SESSION_NOT_ACTIVE" });
-        return true;
-      }
-      const { desktopUiSessionManager } = await import("./core/tools/desktopUiTools.js");
-      desktopUiSessionManager.revokeOperatorWindowSessions(session.pid, session.nativeId);
-      if (process.platform === "win32") {
-        try {
-          const { createWindowsDesktopAppProvider } = await import("./core/desktopApp/windows.js");
-          const provider = createWindowsDesktopAppProvider();
-          await provider.focusExact({ pid: session.pid, nativeId: session.nativeId });
-        } catch {}
-      }
-      sendJSON(res, 200, {
-        success: true,
-        message: "Human takeover active: agent sessions revoked and window brought to foreground.",
-        pid: session.pid,
-        nativeId: session.nativeId,
-        title: session.title,
+    if (pathname === "/api/desktop/live/lan-takeover" ||
+        pathname === "/api/desktop/live/lan-input") {
+      sendJSON(res, 403, {
+        success: false,
+        error: "SEPARATE_NATIVE_CONTROLLER_APPROVAL_REQUIRED",
       });
-      return true;
-    }
-
-    // Interactive Input: Safe remote click, typing, key press from human operator
-    if (pathname === "/api/desktop/live/lan-input") {
-      if (req.method !== "POST") {
-        sendJSON(res, 405, { success: false, error: "METHOD_NOT_ALLOWED" });
-        return true;
-      }
-      let body: Record<string, unknown> = {};
-      try {
-        body = JSON.parse(await readBody(req)) as Record<string, unknown>;
-      } catch {
-        sendJSON(res, 400, { success: false, error: "INVALID_JSON_PAYLOAD" });
-        return true;
-      }
-      const reqToken = String(body.token || token || "");
-      if (!reqToken || !/^[a-f0-9]{64}$/.test(reqToken)) {
-        sendJSON(res, 400, { success: false, error: "VALID_STREAM_TOKEN_REQUIRED" });
-        return true;
-      }
-      const session = nativeWindowPreviewManager.getActiveSession(reqToken);
-      if (!session) {
-        sendJSON(res, 409, { success: false, error: "SESSION_NOT_ACTIVE" });
-        return true;
-      }
-      const action = String(body.action || "");
-      if (!["click", "type", "key"].includes(action)) {
-        sendJSON(res, 400, { success: false, error: "UNSUPPORTED_INPUT_ACTION" });
-        return true;
-      }
-      // Activate window focus before input
-      if (process.platform === "win32") {
-        try {
-          const { createWindowsDesktopAppProvider } = await import("./core/desktopApp/windows.js");
-          const provider = createWindowsDesktopAppProvider();
-          await provider.focusExact({ pid: session.pid, nativeId: session.nativeId });
-        } catch {}
-      }
-      const { createNativeDesktopUiAdapter } = await import("./core/desktopUi/nativeAdapter.js");
-      const adapter = createNativeDesktopUiAdapter();
-
-      if (action === "click") {
-        const rawRelX = Number(body.relX);
-        const rawRelY = Number(body.relY);
-        const relX = Number.isFinite(rawRelX) ? Math.max(0, Math.min(1, rawRelX)) : 0.5;
-        const relY = Number.isFinite(rawRelY) ? Math.max(0, Math.min(1, rawRelY)) : 0.5;
-        const screenX = Math.round(session.bounds.x + relX * session.bounds.width);
-        const screenY = Math.round(session.bounds.y + relY * session.bounds.height);
-        const synthElement: import("./core/desktopUi/types.js").DesktopUiElement = {
-          id: "stream-target",
-          source: "accessibility",
-          role: "window",
-          label: null,
-          description: null,
-          value: null,
-          confidence: 1,
-          actionable: true,
-          bounds: { x: session.bounds.x, y: session.bounds.y, width: session.bounds.width, height: session.bounds.height },
-          center: { x: screenX, y: screenY },
-        };
-        try {
-          await adapter.dispatch({
-            target: { pid: session.pid, nativeId: session.nativeId },
-            kind: "click",
-            point: { x: screenX, y: screenY },
-            element: synthElement,
-          });
-          sendJSON(res, 200, { success: true, action: "click", x: screenX, y: screenY, pid: session.pid });
-        } catch (err) {
-          sendJSON(res, 500, { success: false, error: err instanceof Error ? err.message : "CLICK_DISPATCH_FAILED" });
-        }
-        return true;
-      }
-
-      if (action === "type") {
-        const text = typeof body.text === "string" ? body.text : "";
-        if (!text || text.length > 2048 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
-          sendJSON(res, 400, { success: false, error: "INVALID_TEXT_PAYLOAD" });
-          return true;
-        }
-        const synthElement: import("./core/desktopUi/types.js").DesktopUiElement = {
-          id: "stream-target",
-          source: "accessibility",
-          role: "window",
-          label: null,
-          description: null,
-          value: null,
-          confidence: 1,
-          actionable: true,
-          bounds: { x: session.bounds.x, y: session.bounds.y, width: session.bounds.width, height: session.bounds.height },
-          center: { x: session.bounds.x + Math.round(session.bounds.width / 2), y: session.bounds.y + Math.round(session.bounds.height / 2) },
-        };
-        try {
-          await adapter.dispatch({
-            target: { pid: session.pid, nativeId: session.nativeId },
-            kind: "type",
-            point: synthElement.center,
-            element: synthElement,
-            text,
-          });
-          sendJSON(res, 200, { success: true, action: "type", length: text.length, pid: session.pid });
-        } catch (err) {
-          sendJSON(res, 500, { success: false, error: err instanceof Error ? err.message : "TYPE_DISPATCH_FAILED" });
-        }
-        return true;
-      }
-
-      if (action === "key") {
-        const key = typeof body.key === "string" ? (body.key.toUpperCase() as import("./core/desktopUi/types.js").DesktopKey) : ("ENTER" as import("./core/desktopUi/types.js").DesktopKey);
-        const { VALID_DESKTOP_KEYS } = await import("./core/tools/desktopUiTools.js");
-        if (!VALID_DESKTOP_KEYS.has(key)) {
-          sendJSON(res, 400, { success: false, error: "INVALID_DESKTOP_KEY" });
-          return true;
-        }
-        try {
-          await adapter.dispatch({
-            target: { pid: session.pid, nativeId: session.nativeId },
-            kind: "key",
-            key,
-            modifiers: Array.isArray(body.modifiers) ? (body.modifiers as import("./core/desktopUi/types.js").DesktopModifier[]) : [],
-          });
-          sendJSON(res, 200, { success: true, action: "key", key, pid: session.pid });
-        } catch (err) {
-          sendJSON(res, 500, { success: false, error: err instanceof Error ? err.message : "KEY_DISPATCH_FAILED" });
-        }
-        return true;
-      }
-    }
-
-    if (!token || !/^[a-f0-9]{64}$/.test(token)) {
-      sendJSON(res, 400, { success: false, error: "VALID_STREAM_TOKEN_REQUIRED" });
       return true;
     }
     if (pathname === "/api/desktop/live/lan-preview") {
@@ -1871,264 +1716,71 @@ export async function handleServerRoute(
         sendJSON(res, 405, { success: false, error: "METHOD_NOT_ALLOWED" });
         return true;
       }
-      const html = `<!doctype html>
-<html lang="id">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SuperAgent Desktop Live · LAN Stream & Human Control</title>
-  <style>
-    :root {
-      --bg: #070a11; --surface: #0f1623; --surface-card: #151d2e;
-      --accent: #38bdf8; --accent-hover: #0ea5e9;
-      --amber: #f59e0b; --amber-hover: #d97706;
-      --red: #ef4444; --green: #10b981;
-      --text: #f8fafc; --muted: #94a3b8; --border: rgba(148,163,184,0.18);
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
-    header { background: var(--surface); padding: 10px 18px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 13.5px; }
-    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 9999px; font-size: 10px; font-weight: 800; background: rgba(239,68,68,0.16); border: 1px solid rgba(239,68,68,0.4); color: #f87171; letter-spacing: .05em; }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: #ef4444; box-shadow: 0 0 6px #ef4444; animation: pulse 1.6s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.85)} }
-    .header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .btn { appearance: none; border: 1px solid var(--border); background: var(--surface-card); color: var(--text); font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 6px; }
-    .btn:hover { border-color: rgba(148,163,184,0.4); }
-    .btn-takeover { background: rgba(245,158,11,0.16); border-color: rgba(245,158,11,0.45); color: #fbbf24; }
-    .btn-takeover:hover { background: rgba(245,158,11,0.26); }
-    .btn-control.active { background: rgba(56,189,248,0.2); border-color: var(--accent); color: var(--accent); }
-    .stats { color: var(--accent); font-size: 12px; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; padding: 4px 8px; background: rgba(56,189,248,0.08); border-radius: 4px; border: 1px solid rgba(56,189,248,0.2); }
-    
-    #notification { display: none; background: rgba(16,185,129,0.18); border-bottom: 1px solid rgba(16,185,129,0.4); color: #34d399; font-size: 12.5px; font-weight: 500; text-align: center; padding: 8px 16px; }
-    #notification.error { background: rgba(239,68,68,0.18); border-color: rgba(239,68,68,0.4); color: #f87171; }
-
-    main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 14px; gap: 12px; }
-    .viewport { position: relative; width: 100%; max-width: 1360px; aspect-ratio: 16 / 9; max-height: 72vh; background: #000; border-radius: 8px; overflow: hidden; display: grid; place-items: center; border: 1px solid var(--border); box-shadow: 0 10px 35px rgba(0,0,0,0.7); user-select: none; }
-    img#stream { width: 100%; height: 100%; object-fit: contain; }
-    .viewport.interactive img#stream { cursor: crosshair; }
-    .hint { font-size: 13px; color: var(--muted); text-align: center; }
-
-    .click-ripple { position: absolute; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--accent); background: rgba(56,189,248,0.3); pointer-events: none; transform: translate(-50%, -50%) scale(0.5); animation: ripple 0.45s ease-out forwards; }
-    @keyframes ripple { 0% { opacity: 1; transform: translate(-50%, -50%) scale(0.4); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(2.2); } }
-
-    .control-deck { width: 100%; max-width: 1360px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
-    .type-row { display: flex; gap: 8px; align-items: center; }
-    .type-input { flex: 1; background: var(--surface-card); border: 1px solid var(--border); color: var(--text); padding: 8px 12px; border-radius: 6px; font-size: 13px; outline: none; }
-    .type-input:focus { border-color: var(--accent); }
-    .btn-send { background: var(--accent); color: #04131f; font-weight: 700; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-    .btn-send:hover { background: var(--accent-hover); }
-    .quick-keys { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 11px; color: var(--muted); }
-    .key-btn { background: var(--surface-card); border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: 4px; font-size: 11px; font-family: ui-monospace, monospace; cursor: pointer; }
-    .key-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-    footer { text-align: center; padding: 10px 16px; font-size: 11px; color: var(--muted); border-top: 1px solid var(--border); }
-  </style>
-</head>
-<body>
-  <header>
-    <div class="brand">
-      <span class="badge"><span class="dot"></span>LAN LIVE STREAM</span>
-      <span id="title">Desktop Window Preview</span>
-    </div>
-    <div class="header-actions">
-      <button type="button" id="btn-takeover" class="btn btn-takeover" title="Ambil alih kendali jendela ini secara fisik dari agen">Take Over</button>
-      <button type="button" id="btn-control" class="btn btn-control" title="Toggle kendali klik dan ketik interaktif">Control: OFF</button>
-      <div class="stats" id="fps">0.0 FPS</div>
-    </div>
-  </header>
-  <div id="notification"></div>
-  <main>
-    <div class="viewport" id="viewport">
-      <img id="stream" alt="Live stream feed" hidden>
-      <p id="msg" class="hint">Menghubungkan ke live stream desktop…</p>
-    </div>
-    <div class="control-deck" id="control-deck">
-      <div class="type-row">
-        <input type="text" id="type-input" class="type-input" placeholder="Ketik teks untuk dikirim ke aplikasi..." autocomplete="off">
-        <button type="button" id="btn-send" class="btn-send">Send</button>
-      </div>
-      <div class="quick-keys">
-        <span>Quick keys:</span>
-        <button type="button" class="key-btn" data-key="ENTER">Enter ↵</button>
-        <button type="button" class="key-btn" data-key="TAB">Tab ⇥</button>
-        <button type="button" class="key-btn" data-key="ESCAPE">Esc</button>
-        <button type="button" class="key-btn" data-key="BACKSPACE">Bksp ⌫</button>
-        <button type="button" class="key-btn" data-key="SPACE">Space ␣</button>
-      </div>
-    </div>
-  </main>
-  <footer>SuperAgent Desktop Live · Human Takeover & Safe Input · RFC1918 Private Intranet</footer>
-  <script>
-    const token = new URLSearchParams(location.search).get("token");
-    const img = document.getElementById("stream");
-    const viewport = document.getElementById("viewport");
-    const msg = document.getElementById("msg");
-    const fpsEl = document.getElementById("fps");
-    const notif = document.getElementById("notification");
-    const btnTakeover = document.getElementById("btn-takeover");
-    const btnControl = document.getElementById("btn-control");
-    const typeInput = document.getElementById("type-input");
-    const btnSend = document.getElementById("btn-send");
-
-    let lastHash = null, frames = 0, lastTime = performance.now();
-    let controlActive = false;
-
-    function notify(text, isError = false) {
-      notif.textContent = text;
-      notif.className = isError ? "error" : "";
-      notif.style.display = "block";
-      setTimeout(() => { notif.style.display = "none"; }, 4000);
-    }
-
-    btnTakeover.addEventListener("click", async () => {
-      try {
-        btnTakeover.disabled = true;
-        const res = await fetch("/api/desktop/live/lan-takeover?token=" + encodeURIComponent(token), { method: "POST" });
-        const data = await res.json();
-        if (data.success) {
-          notify("⚡ Human Takeover Aktif! Sesi agen dicabut dan jendela aplikasi diaktifkan ke depan di layar PC.");
-        } else {
-          notify("Gagal mengambil alih: " + (data.error || "Sesi tidak aktif"), true);
-        }
-      } catch (e) {
-        notify("Kesalahan jaringan saat takeover: " + e.message, true);
-      } finally {
-        btnTakeover.disabled = false;
-      }
-    });
-
-    btnControl.addEventListener("click", () => {
-      controlActive = !controlActive;
-      btnControl.textContent = controlActive ? "Control: ON" : "Control: OFF";
-      btnControl.classList.toggle("active", controlActive);
-      viewport.classList.toggle("interactive", controlActive);
-      notify(controlActive ? "Mode Kontrol Aktif: Klik/ketuk pada stream untuk mengklik jendela." : "Mode Kontrol Dimatikan.");
-    });
-
-    viewport.addEventListener("click", async (e) => {
-      if (!controlActive || !img || img.hidden) return;
-      const rect = img.getBoundingClientRect();
-      if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
-      const relX = (e.clientX - rect.left) / rect.width;
-      const relY = (e.clientY - rect.top) / rect.height;
-
-      // Ripple animation
-      const ripple = document.createElement("div");
-      ripple.className = "click-ripple";
-      ripple.style.left = (e.clientX - viewport.getBoundingClientRect().left) + "px";
-      ripple.style.top = (e.clientY - viewport.getBoundingClientRect().top) + "px";
-      viewport.appendChild(ripple);
-      setTimeout(() => ripple.remove(), 500);
-
-      try {
-        await fetch("/api/desktop/live/lan-input", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, action: "click", relX, relY }),
-        });
-      } catch {}
-    });
-
-    async function sendText() {
-      const text = typeInput.value;
-      if (!text) return;
-      try {
-        btnSend.disabled = true;
-        await fetch("/api/desktop/live/lan-input", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token, action: "type", text }),
-        });
-        typeInput.value = "";
-        notify("Teks terkirim ke aplikasi.");
-      } catch (e) {
-        notify("Gagal mengirim teks: " + e.message, true);
-      } finally {
-        btnSend.disabled = false;
-      }
-    }
-
-    btnSend.addEventListener("click", sendText);
-    typeInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") { e.preventDefault(); sendText(); }
-    });
-
-    document.querySelectorAll(".key-btn").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const key = btn.dataset.key;
-        try {
-          await fetch("/api/desktop/live/lan-input", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token, action: "key", key }),
-          });
-          notify("Tombol " + key + " terkirim.");
-        } catch {}
-      });
-    });
-
-    async function poll() {
-      if (!token) { msg.textContent = "Token sesi live stream tidak ditemukan."; return; }
-      try {
-        const url = "/api/desktop/live/lan-frame?token=" + encodeURIComponent(token) + (lastHash ? "&hash=" + encodeURIComponent(lastHash) : "");
-        const res = await fetch(url);
-        if (!res.ok) throw Error("Sesi live stream telah berakhir atau ditutup oleh operator PC.");
-        const data = await res.json();
-        if (data.jpeg) {
-          img.src = "data:image/jpeg;base64," + data.jpeg;
-          img.hidden = false;
-          msg.hidden = true;
-        }
-        if (data.hash) lastHash = data.hash;
-        frames++;
-        const now = performance.now();
-        if (now - lastTime >= 1000) {
-          const fps = ((frames * 1000) / (now - lastTime)).toFixed(1);
-          fpsEl.textContent = fps + " FPS" + (data.width ? " · " + data.width + "×" + data.height : "");
-          frames = 0; lastTime = now;
-        }
-        if (data.unchanged) {
-          setTimeout(poll, 80);
-        } else if (typeof requestAnimationFrame === "function") {
-          requestAnimationFrame(poll);
-        } else {
-          setTimeout(poll, 16);
-        }
-      } catch (e) {
-        msg.hidden = false;
-        msg.textContent = e.message || "Koneksi stream terputus.";
-      }
-    }
-    poll();
-  </script>
-</body>
-</html>`;
+      // The viewer has no embedded capability or control action. The approved
+      // preview capability travels only in a fragment, never an HTTP URL.
+      const nonce = crypto.randomBytes(16).toString("base64");
+      const { renderLanReadOnlyViewer } = await import("./core/desktopUi/lanReadOnlyViewer.js");
+      res.setHeader("Content-Security-Policy",
+        "default-src 'none'; script-src 'nonce-" + nonce +
+        "'; style-src 'unsafe-inline'; img-src data:; connect-src 'self'; " +
+        "base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'");
       res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.writeHead(200);
-      res.end(html);
+      res.end(renderLanReadOnlyViewer(nonce));
       return true;
     }
-    if (pathname === "/api/desktop/live/lan-frame") {
-      try {
-        const knownHash = parsedUrl.searchParams.get("hash") || undefined;
-        const rawQuality = Number(parsedUrl.searchParams.get("quality"));
-        const rawWidth = Number(parsedUrl.searchParams.get("width"));
-        const quality = Number.isSafeInteger(rawQuality) && rawQuality >= 40 && rawQuality <= 85 ? rawQuality : 75;
-        const maxWidth = Number.isSafeInteger(rawWidth) && rawWidth >= 320 && rawWidth <= 1920 ? rawWidth : 1280;
-        const result = await nativeWindowPreviewManager.frame({
-          token,
-          codec: "jpeg",
-          maxWidth,
-          quality,
-          knownHash,
-        });
-        sendJSON(res, 200, { success: true, ...result });
-      } catch (err) {
-        sendJSON(res, 409, { success: false, error: err instanceof Error ? err.message : "FRAME_UNAVAILABLE" });
+    // The frame capability must be POSTed from the same LAN viewer origin.
+    // GET/query-string token delivery is intentionally unsupported.
+    if (req.method !== "POST") {
+      sendJSON(res, 405, { success: false, error: "METHOD_NOT_ALLOWED" });
+      return true;
+    }
+    if (req.headers.origin !== "http://" + host ||
+        (typeof req.headers["sec-fetch-site"] === "string" &&
+         req.headers["sec-fetch-site"] !== "same-origin") ||
+        String(req.headers["content-type"] || "").split(";")[0].trim().toLowerCase() !== "application/json") {
+      sendJSON(res, 403, { success: false, error: "SAME_ORIGIN_JSON_REQUIRED" });
+      return true;
+    }
+    let body: Record<string, unknown>;
+    try {
+      const declared = Number(req.headers["content-length"] ?? "0");
+      if (!Number.isSafeInteger(declared) || declared < 0 || declared > 512)
+        throw Error("INVALID_FRAME_SIZE");
+      let raw = "";
+      for await (const chunk of req) {
+        raw += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+        if (Buffer.byteLength(raw, "utf8") > 512) throw Error("INVALID_FRAME_SIZE");
       }
+      const parsed = JSON.parse(raw) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+        throw Error("INVALID_FRAME_BODY");
+      body = parsed as Record<string, unknown>;
+      if (Object.keys(body).some(key => !["token", "knownHash", "quality", "maxWidth"].includes(key)) ||
+          typeof body.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token) ||
+          (body.knownHash !== undefined &&
+           (typeof body.knownHash !== "string" || !/^[a-f0-9]{64}$/.test(body.knownHash))) ||
+          (body.quality !== undefined &&
+           (!Number.isSafeInteger(body.quality) || Number(body.quality) < 40 || Number(body.quality) > 85)) ||
+          (body.maxWidth !== undefined &&
+           (!Number.isSafeInteger(body.maxWidth) || Number(body.maxWidth) < 320 || Number(body.maxWidth) > 1920)))
+        throw Error("INVALID_FRAME_BODY");
+    } catch {
+      sendJSON(res, 400, { success: false, error: "INVALID_FRAME_REQUEST" });
       return true;
     }
+    try {
+      const { nativeWindowPreviewManager } = await import("./core/desktopUi/livePreview.js");
+      sendJSON(res, 200, { success: true, ...await nativeWindowPreviewManager.frame({
+        token: body.token as string, codec: "jpeg",
+        knownHash: body.knownHash as string | undefined,
+        quality: (body.quality as number | undefined) ?? 75,
+        maxWidth: (body.maxWidth as number | undefined) ?? 1280,
+      }) });
+    } catch {
+      sendJSON(res, 409, { success: false, error: "FRAME_UNAVAILABLE_OR_REVOKED" });
+    }
+    return true;
   }
 
   // Native-only managed CDP live updates and manual human hold. These routes
