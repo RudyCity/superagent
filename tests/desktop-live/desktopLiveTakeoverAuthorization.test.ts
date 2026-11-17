@@ -150,6 +150,29 @@ describe("Desktop Live exact-owner takeover and stop routing", () => {
     },undefined,9);
   });
 
+  it("allows verified human hold release when agent's CDP lease has already ended", async () => {
+    mock.listCdpSessions.mockResolvedValue([]);
+    mock.listManagedBrowserRegistrations.mockReturnValue([{
+      port:9222,targetId:"target_123",profileId:"test_profile",generation:"gen_1",
+      browserFingerprint:"a".repeat(64),
+    }]);
+    mock.discoverCdpPages.mockResolvedValue([{targetId:"target_123",title:"Test tab"}]);
+    mock.readManagedControlStatus.mockResolvedValue("human");
+    const inventory=await listDesktopLiveInventory();
+    const target=inventory.items.find(item=>item.id==="managed:9222:target_123");
+    expect(target?.status).toBe("human");
+    expect(target?.revision).toBeUndefined();
+    expect(target?.stopAction).toBe("return-to-agent");
+    const response=await stopDesktopLiveHandle({
+      id:"managed:9222:target_123",
+    },"human");
+    expect(response.stopped).toBe(true);
+    expect(mock.setManagedBrowserControl).toHaveBeenCalledWith({
+      mode:"agent",port:9222,targetId:"target_123",profileId:"test_profile",
+      generation:"gen_1",browserFingerprint:"a".repeat(64),
+    },undefined,undefined);
+  });
+
   it("denies Return to Agent if an active takeover reservation prevents release", async () => {
     mock.listCdpSessions.mockResolvedValue([{
       port:9222,targetId:"target_123",agentId:"agentA",revision:9,
