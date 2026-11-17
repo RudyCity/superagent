@@ -3009,9 +3009,12 @@
                   <h3 id="desktop-live-control-heading">Controller · Mouse &amp; Keyboard</h3>
                 </div>
                 <p id="desktop-live-controller-permission" class="desktop-live-access-state" aria-live="polite">Separate approval required</p>
+                <p id="desktop-live-mouse-status" class="desktop-live-access-scope" aria-live="polite">Mouse: not approved</p>
+                <p id="desktop-live-keyboard-status" class="desktop-live-access-scope" aria-live="polite">Keyboard: not approved</p>
                 <p>Controller approval is independent. Physical Take Over revokes an agent session; it does not grant remote input.</p>
                 <div class="desktop-live-access-actions">
-                  <button type="button" id="desktop-live-stream-request-control" class="button secondary small" disabled>Request Control</button>
+                  <button type="button" id="desktop-live-stream-request-control" class="button secondary small" disabled>Request Mouse</button>
+                  <button type="button" id="desktop-live-stream-request-keyboard" class="button secondary small" disabled>Request Keyboard</button>
                   <button type="button" id="desktop-live-stream-toggle-control" class="button ghost small desktop-live-control-toggle-btn" title="Show or hide device input UI; not a controller grant" disabled>Input UI: OFF</button>
                   <button type="button" id="desktop-live-stream-takeover" class="button secondary small desktop-live-takeover-btn" disabled>Take Over</button>
                 </div>
