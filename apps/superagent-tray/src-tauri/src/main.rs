@@ -34,7 +34,6 @@ mod named_tunnel_clipboard;
 mod named_tunnel_health;
 mod named_tunnel_orchestrator;
 mod tray_lifecycle;
-mod exit_all;
 mod shutdown_manager;
 mod lifecycle_console;
 mod release_updates;
