@@ -26,6 +26,8 @@ const PATCH_TOOLS = new Set(["apply_patch"]);
 const READ_SEARCH = new Set(["glob","grep","ripgrep_search","list_directory","list_dir",
   "find_files","superagent_grep_search","superagent_find_files","superagent_list_files"]);
 const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace",
+  "git_status","git_diff","get_git_diff","git_log",
+  "inspect_port","find_process","get_remote_service_status",
   "superagent_tool_search","superagent_tool_describe","superagent_tool_status",
   "superagent_core_status","superagent_core_plan","superagent_server_health","get_current_time",
   "superagent_get_project","superagent_list_projects","superagent_list_project_access",
@@ -41,7 +43,7 @@ const READ_ONLY_SERVICE_ACTIONS = new Set([
 ]);
 const keyOf = (identity: ExecutableIdentity) => [identity.platform,identity.executablePath,identity.sha256].join(":");
 let cachedSelf:{key:string,identity:ExecutableIdentity}|null=null;
-function identityOfSelf():ExecutableIdentity|null {
+export function identityOfSelf():ExecutableIdentity|null {
   const plat=process.platform;
   if(plat!=="win32" && plat!=="darwin" && plat!=="linux")return null;
   try {
@@ -60,7 +62,7 @@ function identityOfSelf():ExecutableIdentity|null {
     return identity;
   }catch{return null;}
 }
-function absoluteCanonical(raw:string,cwd:string):string|null {
+export function absoluteCanonical(raw:string,cwd:string):string|null {
   if(!raw || raw.length>2048 || raw.includes("\0") || /[\r\n]/.test(raw) || !path.isAbsolute(cwd))return null;
   try {
     const lex=path.resolve(cwd,raw);
@@ -157,4 +159,20 @@ export function registeredFileToolGate(
 export function fileRulesRegistered(options:RegistryGuardOptions={}):boolean{
   const policy=(options.registry??readPermanentAccessRegistry)();
   return policy !== null;
+}
+
+export function isPathAllowedByPermanentRegistry(
+  targetPath: string,
+  operation: FileOperation = "read",
+  options: RegistryGuardOptions = {}
+): boolean {
+  const policy = (options.registry ?? readPermanentAccessRegistry)();
+  if (!policy) return false;
+  const identity = (options.identity ?? identityOfSelf)();
+  if (!identity) return false;
+  const baseCwd = path.isAbsolute(targetPath) ? path.dirname(targetPath) : process.cwd();
+  const canonical = absoluteCanonical(targetPath, baseCwd);
+  if (!canonical) return false;
+  const decision = evaluatePersistentAccess(policy, { kind: "file", app: identity, path: canonical, operation });
+  return decision.effect === "allow";
 }

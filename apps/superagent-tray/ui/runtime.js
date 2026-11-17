@@ -227,6 +227,7 @@ function runtimeServerCard(server) {
       ${runtimeService("Channel Hosts", channelHosts ? channelHosts.verifiedCount > 0 : null,
         channelHosts ? `${channelHosts.verifiedCount || 0} running` : "")}
     </div>
+    ${runtimeYoloMarkup(runtimeCurrentYoloMode)}
     <div class="runtime-instance-footer">${museControls}${button}</div>
   </article>`;
 }
@@ -267,11 +268,29 @@ function runtimeHostCard(host) {
 
 let runtimeCurrentYoloMode = "off";
 
+function runtimeMcpSecurityControlMarkup() {
+  return `<div class="runtime-yolo-control runtime-mcp-security-box">
+    <div class="runtime-yolo-header">
+      <div class="runtime-yolo-title">
+        <span class="yolo-badge yolo-badge-safe">SECURITY APPROVAL</span>
+        <strong>MCP Security &amp; Access Control</strong>
+      </div>
+      <small class="runtime-yolo-caption">Izin MCP dikontrol secara ketat oleh <strong>Security Approval Manager</strong> &amp; <strong>Access Manager</strong> (Host ACL, Project Registry, &amp; OAuth Scopes). Mode YOLO hanya berlaku untuk Chat Agent.</small>
+    </div>
+    <div class="runtime-yolo-chips">
+      <a href="#security" class="button ghost" data-jump-page="security" style="text-decoration:none;display:inline-flex;align-items:center;gap:6px;" onclick="if(typeof window.navigateToPage==='function'){window.navigateToPage('security');}else{location.hash='#security';}">
+        <span>🛡️ Buka Security Approval Manager</span>
+        <span>→</span>
+      </a>
+    </div>
+  </div>`;
+}
+
 function runtimeYoloMarkup(currentMode = runtimeCurrentYoloMode) {
   const mode = ["off", "scoped", "full"].includes(currentMode) ? currentMode : "off";
   const captions = {
     off: "Tanpa YOLO: Fail-closed (hanya tool aman / read-only). Tool mutasi & eksekusi diblokir.",
-    scoped: "YOLO Standar: Tool berbahaya diizinkan terbatas dalam workspace & 1 parent.",
+    scoped: "YOLO Standar: Tool berbahaya diizinkan terbatas dalam workspace project.",
     full: "YOLO Full: Akses penuh tanpa batasan workspace, path, atau grant."
   };
   const badgeClasses = {
@@ -296,9 +315,9 @@ function runtimeYoloMarkup(currentMode = runtimeCurrentYoloMode) {
       <button type="button" class="button ghost yolo-chip ${mode === 'off' ? 'active' : ''}"
         data-runtime-yolo="off" title="Tanpa YOLO: Fail-closed, hanya tool aman/read-only">Tanpa YOLO</button>
       <button type="button" class="button ghost yolo-chip ${mode === 'scoped' ? 'active' : ''}"
-        data-runtime-yolo="scoped" title="YOLO Standar: Scoped tools diizinkan di workspace">YOLO Standar</button>
+        data-runtime-yolo="scoped" title="YOLO Standar: Tool diizinkan di workspace project">YOLO Standar</button>
       <button type="button" class="button ghost yolo-chip ${mode === 'full' ? 'active' : ''}"
-        data-runtime-yolo="full" title="YOLO Full: Akses penuh tool berbahaya & luar workspace">YOLO Full</button>
+        data-runtime-yolo="full" title="YOLO Full: Akses penuh tanpa batasan workspace, path, atau grant">YOLO Full</button>
     </div>
   </div>`;
 }
@@ -1352,6 +1371,7 @@ function runtimeInstall() {
   rt("runtime-muse-local")?.addEventListener("click", runtimeRegenerateToken);
   rt("runtime-servers")?.addEventListener("click", runtimeServiceAction);
   rt("runtime-servers")?.addEventListener("click", runtimeRegenerateToken);
+  rt("runtime-servers")?.addEventListener("click", runtimeYoloChipClick);
 
   window.__TAURI__?.event?.listen?.("desktop-open-runtime", () => {
     if (typeof window.navigateToPage === "function") {

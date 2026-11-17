@@ -1188,6 +1188,123 @@ export async function handleServerRoute(
     return true;
   }
 
+  // =========================================================================
+  // Desktop Security Approval & Access Manager (MCP Project Broker)
+  // Human approval endpoints for Tray & Desktop UI.
+  // =========================================================================
+  if (pathname === "/api/desktop/access/requests" && req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const { listProjectAccessRequests } = await import("./core/project/projectAccessRequestStore.js");
+      const statusFilter = parsedUrl.searchParams.get("status") as any;
+      const requests = listProjectAccessRequests(statusFilter ? { status: statusFilter } : undefined);
+      sendJSON(res, 200, { success: true, requests });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || "Failed to list access requests" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/access/requests/approve" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const body = JSON.parse(await readBody(req));
+      const requestId = String(body.requestId || "").trim();
+      if (!requestId) {
+        sendJSON(res, 400, { success: false, error: "requestId is required" });
+        return true;
+      }
+      const { approveProjectAccessRequest } = await import("./core/project/projectAccessRequestStore.js");
+      const result = approveProjectAccessRequest(requestId, {
+        approvedCapabilities: Array.isArray(body.capabilities) ? body.capabilities : undefined,
+        decidedBy: "human-tray",
+      });
+      sendJSON(res, 200, result);
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Failed to approve request" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/access/requests/deny" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const body = JSON.parse(await readBody(req));
+      const requestId = String(body.requestId || "").trim();
+      if (!requestId) {
+        sendJSON(res, 400, { success: false, error: "requestId is required" });
+        return true;
+      }
+      const { denyProjectAccessRequest } = await import("./core/project/projectAccessRequestStore.js");
+      const result = denyProjectAccessRequest(requestId, body.reason, { decidedBy: "human-tray" });
+      sendJSON(res, 200, result);
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Failed to deny request" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/access/requests/revoke" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const body = JSON.parse(await readBody(req));
+      const requestId = String(body.requestId || "").trim();
+      if (!requestId) {
+        sendJSON(res, 400, { success: false, error: "requestId is required" });
+        return true;
+      }
+      const { revokeProjectAccessRequest } = await import("./core/project/projectAccessRequestStore.js");
+      const result = revokeProjectAccessRequest(requestId, { decidedBy: "human-tray" });
+      sendJSON(res, 200, result);
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Failed to revoke request" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/access/identities" && req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const { listSanitizedMcpIdentities } = await import("./core/mcp/mcpIdentityPresence.js");
+      sendJSON(res, 200, { success: true, identities: listSanitizedMcpIdentities() });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err.message || "Failed to list identities" });
+    }
+    return true;
+  }
+
+  if (pathname === "/api/desktop/access/direct-grant" && req.method === "POST") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const body = JSON.parse(await readBody(req));
+      const identityHandle = String(body.identityHandle || "").trim();
+      const projectId = String(body.projectId || "").trim();
+      const capabilities = Array.isArray(body.capabilities) ? body.capabilities : null;
+      if (!identityHandle || !projectId || !capabilities || capabilities.length === 0) {
+        sendJSON(res, 400, { success: false, error: "identityHandle, projectId, and capabilities array are required." });
+        return true;
+      }
+      const { getMcpIdentityByHandle } = await import("./core/mcp/mcpIdentityPresence.js");
+      const identity = getMcpIdentityByHandle(identityHandle);
+      if (!identity) {
+        sendJSON(res, 404, { success: false, error: `Identity handle not found or expired: ${identityHandle}` });
+        return true;
+      }
+      const { getProject } = await import("./core/project/projectRegistry.js");
+      const project = getProject(projectId);
+      if (!project) {
+        sendJSON(res, 404, { success: false, error: `Project not found: ${projectId}` });
+        return true;
+      }
+      const { grantProjectAccess } = await import("./core/project/projectAccessPolicy.js");
+      const grant = grantProjectAccess(identity, projectId, capabilities);
+      sendJSON(res, 200, { success: true, grant });
+    } catch (err: any) {
+      sendJSON(res, 400, { success: false, error: err.message || "Failed to grant access" });
+    }
+    return true;
+  }
+
   if (pathname === "/api/desktop/runtime-services") {
     if (req.method !== "GET") { sendJSON(res, 405, { success: false, error: "Read-only endpoint." }); return true; }
     try {
@@ -2902,13 +3019,6 @@ export async function handleServerRoute(
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
 
-    if (!isFullYoloMode()) {
-      sendJSON(res, 403, {
-        success: false,
-        error: "Granting project access requires Full YOLO mode to be enabled locally.",
-      });
-      return true;
-    }
 
     let body: any;
     try {
@@ -2994,13 +3104,6 @@ export async function handleServerRoute(
     res.setHeader("Cache-Control", "no-store");
     res.setHeader("Referrer-Policy", "no-referrer");
 
-    if (!isFullYoloMode()) {
-      sendJSON(res, 403, {
-        success: false,
-        error: "Revoking project access requires Full YOLO mode to be enabled locally.",
-      });
-      return true;
-    }
 
     let body: any;
     try {

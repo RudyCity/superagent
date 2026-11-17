@@ -1,4 +1,4 @@
-import { registeredFileToolGate } from "../tools/registeredFileToolGate.js";
+import { registeredFileToolGate, isPathAllowedByPermanentRegistry } from "../tools/registeredFileToolGate.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -760,13 +760,14 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       const capability = getProjectCapabilityForTool(name, args);
       const grantedProjectAccess = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(name) && targetProjectId && identityForProjectAccess?.subject
         && hasProjectAccess(identityForProjectAccess, targetProjectId, capability));
-      if (!scopedLocalAccess && !grantedProjectAccess) {
+      const accessManagerAllows = isPathAllowedByPermanentRegistry(targetWorkspace, capability === "read" ? "read" : "write");
+      if (!scopedLocalAccess && !grantedProjectAccess && !accessManagerAllows) {
         if (auditContext) { auditContext.authorizationDecision = "denied"; auditContext.errorCode = "capability_denied"; }
         const reason = name === "superagent_check_project_health"
-          ? "Project health check is not authorized for this project. The authenticated MCP identity needs the explicit 'read' capability or the project must be within the session's allowed workspace scope."
+          ? "[PROJECT_GRANT_MISSING] Project health check is not authorized for this project. The authenticated MCP identity needs the explicit 'read' capability or approval via superagent_request_project_access."
           : sshUriTarget
-            ? `Standalone SSH project access is not granted for project ${targetProjectId || targetWorkspace}. Use superagent_grant_project_access with the required capability after enabling dangerous-tool access.`
-            : `Project target is outside the allowed workspace scope: ${targetWorkspace}. Project registration alone does not grant access. Grant the authenticated MCP identity the '${capability}' capability or enable Full YOLO locally.`;
+            ? `[PROJECT_GRANT_MISSING] Standalone SSH project access is not granted for project ${targetProjectId || targetWorkspace}. Use 'superagent_request_project_access' to request human approval in SuperAgent Tray.`
+            : `[PROJECT_GRANT_MISSING] Project target is outside the session workspace scope: ${targetWorkspace}. The authenticated MCP identity '${identityForProjectAccess?.subject || "unknown"}' lacks the '${capability}' capability grant for project '${targetProjectId || ""}'. Use 'superagent_request_project_access' to request approval from the human operator via SuperAgent Tray.`;
         return { content: [{ type: "text", text: reason }], isError: true };
       }
     }

@@ -142,6 +142,7 @@
 .access-nav-tab.active{color:#fff;background:rgba(139,92,246,.22);border-color:rgba(167,139,250,.4);box-shadow:0 2px 8px rgba(0,0,0,.25);font-weight:750}
 .access-nav-tab-icon{font-size:13px;line-height:1}
 .access-nav-tab-badge{font-size:10px;font-weight:750;padding:2px 7px;border-radius:100px;background:rgba(148,163,184,.14);color:var(--text-secondary,#cbd5e1);border:1px solid rgba(255,255,255,.08);line-height:1.2}
+.access-nav-tab-badge.pending{background:rgba(245,158,11,.25);color:#fbbf24;border-color:rgba(245,158,11,.45);animation:access-pulse 2s cubic-bezier(.4,0,.6,1) infinite}
 .access-nav-tab.active .access-nav-tab-badge{background:rgba(167,139,250,.3);color:#f3e8ff;border-color:rgba(196,181,253,.35)}
 .access-live-pulse-dot{color:#34d399;font-size:10px;animation:access-pulse 2s cubic-bezier(.4,0,.6,1) infinite}
 

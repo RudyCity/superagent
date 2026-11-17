@@ -20,6 +20,9 @@ import {
   type ProjectAccessIdentity,
 } from "../../project/projectAccessPolicy.js";
 import {
+  createProjectAccessRequest,
+} from "../../project/projectAccessRequestStore.js";
+import {
   queryWorkspaceCatalog,
   getWorkspaceCatalogEntry,
 } from "../../project/workspaceCatalog.js";
@@ -35,6 +38,7 @@ export const PROJECT_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerou
   superagent_remove_project: "dangerous",
   superagent_list_project_access: "safe",
   superagent_check_project_health: "safe",
+  superagent_request_project_access: "safe",
   superagent_grant_project_access: "dangerous",
   superagent_revoke_project_access: "dangerous",
 };
@@ -156,8 +160,28 @@ export const PROJECT_MCP_TOOL_DEFS = [
     inputSchema: { type: "object", properties: {} },
   },
   {
+    name: "superagent_request_project_access",
+    description: "Request access to a registered project from the human operator. Submits an auditable access request to the SuperAgent Tray Security Approval Manager. Does NOT grant permissions directly; access must be approved by the human operator.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        projectId: { type: "string", minLength: 1, maxLength: 63, description: "Stable registered project ID (e.g. 'superagent', 'docs', etc.)" },
+        projectPath: { type: "string", description: "Alternative to projectId: absolute filesystem path of the project." },
+        capabilities: {
+          type: "array",
+          minItems: 1,
+          uniqueItems: true,
+          items: { type: "string", enum: [...PROJECT_ACCESS_CAPABILITIES] },
+          description: "Requested capability permissions on the project: read, write, execute, git, worktree, planning, chain."
+        },
+        reason: { type: "string", minLength: 5, maxLength: 500, description: "Human-readable explanation of why this agent requires access." },
+      },
+      required: ["capabilities", "reason"],
+    },
+  },
+  {
     name: "superagent_grant_project_access",
-    description: "Grant the authenticated MCP identity explicit capabilities on an enabled registered project. Requires Full YOLO and dangerous-tool permission. Registration alone does not grant access. Capabilities replace any existing grant for this project: read, write, execute, git, worktree, planning, chain.",
+    description: "Grant the authenticated MCP identity explicit capabilities on an enabled registered project. Agents cannot self-grant; requests are routed to Security Approval Manager for human approval.",
     inputSchema: {
       type: "object",
       properties: {
@@ -409,15 +433,46 @@ export async function dispatchProjectMcpTool(
         if (!identity) throw new Error("Project access grants require an authenticated MCP identity.");
         return textResult({ grants: listProjectAccess(identity), capabilities: PROJECT_ACCESS_CAPABILITIES });
       }
+      case "superagent_request_project_access": {
+        if (!identity) throw new Error("Project access requests require an authenticated MCP identity.");
+        const capabilities = Array.isArray(args.capabilities) ? (args.capabilities as ProjectAccessCapability[]) : [];
+        if (capabilities.length === 0) throw new Error("capabilities must be a non-empty array.");
+        const reason = typeof args.reason === "string" ? args.reason.trim() : "";
+        const projectId = typeof args.projectId === "string" ? args.projectId.trim() : undefined;
+        const projectPath = typeof args.projectPath === "string" ? args.projectPath.trim() : undefined;
+        const reqResult = createProjectAccessRequest(identity, {
+          projectId,
+          projectPath,
+          capabilities,
+          reason,
+        });
+        return textResult(reqResult);
+      }
       case "superagent_grant_project_access": {
         if (!identity) throw new Error("Project access grants require an authenticated MCP identity.");
         const id = typeof args.projectId === "string" ? args.projectId.trim() : "";
         const project = getProject(id);
         if (!project) throw new Error(`Project not found: ${id}`);
         if (!project.enabled) throw new Error(`Project is disabled: ${id}`);
-        if (!isFullYoloMode())
-          throw new Error("Granting access outside the current workspace requires Full YOLO to be enabled locally.");
-        if (!Array.isArray(args.capabilities)) throw new Error("capabilities must be a non-empty array.");
+        if (!Array.isArray(args.capabilities) || args.capabilities.length === 0) throw new Error("capabilities must be a non-empty array.");
+        if (!isFullYoloMode()) {
+          const reqResult = createProjectAccessRequest(identity, {
+            projectId: id,
+            capabilities: args.capabilities as ProjectAccessCapability[],
+            reason: typeof args.reason === "string" && args.reason.trim()
+              ? args.reason.trim()
+              : "Agent requested access via superagent_grant_project_access",
+          });
+          return textResult({
+            error: "Granting access outside the current workspace requires Full YOLO to be enabled locally. An access request has been automatically submitted for human approval in SuperAgent Tray.",
+            code: "POLICY_DENIED",
+            status: "pending",
+            requestId: reqResult.requestId,
+            projectId: id,
+            requestedCapabilities: args.capabilities,
+            suggestedTool: "superagent_request_project_access",
+          }, true);
+        }
         return textResult({ grant: grantProjectAccess(identity, id, args.capabilities as ProjectAccessCapability[]) });
       }
       case "superagent_revoke_project_access": {

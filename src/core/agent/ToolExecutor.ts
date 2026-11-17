@@ -199,8 +199,9 @@ export class ToolExecutor {
       const description = getToolDescription(tc);
       agent.onEvent({ type: "tool_start", toolCall: tc, description });
 
-      const registeredFileBlock = registeredFileToolGate(tc,
-        agent.worktreePath || agent.workingDirectory);
+      const registeredFileBlock = isAgentFullYoloMode(agent)
+        ? null
+        : registeredFileToolGate(tc, agent.worktreePath || agent.workingDirectory);
       if (registeredFileBlock) {
         const blocked: ToolResult = {
           toolCallId: tc.id, name: tc.name,
@@ -397,7 +398,7 @@ export class ToolExecutor {
           (agent.planState === "IDLE" && agent.isSimpleTask && agent.simpleTaskApproved);
         if (!isApprovedForSuperagent) {
           let msg = "";
-          if (agent.planState === "PLANNING_PENDING") {
+          if (agent.planState === "PLANNING_PENDING" && !isAgentFullYoloMode(agent)) {
             msg = `Error: Spawning or merging Superagents is blocked. A plan is pending approval. You must wait for the user to approve the plan using the interactive approval wizard before starting execution.`;
           } else {
             msg = `Error: Spawning or merging Superagents is blocked. You must first write an implementation plan to '${agent.getPlanFilePath()}' and have the user approve it before you can invoke any Superagents.`;
@@ -624,9 +625,9 @@ export class ToolExecutor {
             }
           }
 
-          if (agent.goalMode) {
+          if (agent.goalMode || isAgentFullYoloMode(agent)) {
             agent.planState = "APPROVED";
-            agent.onEvent({ type: "text", content: "\n[SYS] Goal Mode active: Auto-approving implementation plan for autonomous execution.\n" });
+            agent.onEvent({ type: "text", content: "\n[SYS] Auto-approving implementation plan for autonomous execution (Goal / YOLO Full mode active).\n" });
           } else if (agent.planState !== "APPROVED") {
             agent.planState = "PLANNING_PENDING";
           }
@@ -716,7 +717,7 @@ export class ToolExecutor {
           }
         }
 
-        if (!isPlanFile && agent.planState === "PLANNING_PENDING") {
+        if (!isPlanFile && agent.planState === "PLANNING_PENDING" && !isAgentFullYoloMode(agent)) {
           const blocked: ToolResult = {
             toolCallId: tc.id,
             name: tc.name,
@@ -737,7 +738,7 @@ export class ToolExecutor {
       if (
         tc.name === "bash" || tc.name === "run_command" || tc.name === "run_background_process"
       ) {
-        if (agent.planState === "PLANNING_PENDING") {
+        if (agent.planState === "PLANNING_PENDING" && !isAgentFullYoloMode(agent)) {
           const cmd = (tc.args.command as string || "").trim();
           const isModifyingCommand = /([>\u226B\u00BB]|\b(rm|rmdir|mkdir|cp|mv|touch|git\s+(checkout|apply|reset|clean|merge|rebase|commit|add|push|pull)|npm\s+(install|i|uninstall|update|add)|yarn\s+(add|remove|upgrade|install)|pnpm\s+(add|remove|update|install|i))\b)/i.test(cmd);
           if (isModifyingCommand) {

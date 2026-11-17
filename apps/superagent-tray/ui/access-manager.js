@@ -558,9 +558,11 @@
     const tabRegister = $("access-nav-tab-register");
     const tabRules = $("access-nav-tab-rules");
     const tabAudit = $("access-nav-tab-audit");
+    const tabMcp = $("access-nav-tab-mcp");
     const paneRegister = $("access-pane-register");
     const paneRules = $("access-pane-rules");
     const paneAudit = $("access-pane-audit");
+    const paneMcp = $("access-pane-mcp");
 
     if (tabRegister) {
       const active = tabName === "register";
@@ -581,9 +583,20 @@
       tabAudit.tabIndex = active ? 0 : -1;
     }
 
+    if (tabMcp) {
+      const active = (tabName === "mcp");
+      tabMcp.className = "access-nav-tab" + (active ? " active" : "");
+      tabMcp.setAttribute("aria-selected", active ? "true" : "false");
+      tabMcp.tabIndex = active ? 0 : -1;
+    }
+
     if (paneRegister) paneRegister.hidden = (tabName !== "register");
     if (paneRules) paneRules.hidden = (tabName !== "rules");
     if (paneAudit) paneAudit.hidden = (tabName !== "audit");
+    if (paneMcp) {
+      paneMcp.hidden = (tabName !== "mcp");
+      if (tabName === "mcp") void refreshMcpRequests();
+    }
   }
   function updateTabFromHash() {
     const hash = typeof location !== "undefined" ? location.hash || "" : "";
@@ -591,6 +604,8 @@
       setActiveTab("audit");
     } else if (hash.includes(":rules")) {
       setActiveTab("rules");
+    } else if (hash.includes(":mcp") || hash.includes(":requests")) {
+      setActiveTab("mcp");
     } else if (hash.includes(":register")) {
       setActiveTab("register");
     }
@@ -613,6 +628,314 @@
     reminder.append(message, controls);
     document.body.appendChild(reminder);
   }
+
+  function buildMcpPane() {
+    const pane = make("div", "access-pane");
+    pane.id = "access-pane-mcp";
+    pane.setAttribute("role", "tabpanel");
+    pane.setAttribute("aria-labelledby", "access-nav-tab-mcp");
+    pane.hidden = true;
+
+    const banner = make("div", "access-editor");
+    banner.style.background = "linear-gradient(135deg, rgba(88,28,135,0.18), rgba(17,24,39,0.85))";
+    banner.style.borderColor = "rgba(167,139,250,0.3)";
+    const bannerTitle = make("h3", "", "🛡️ MCP Project Access & Security Approval Broker");
+    const bannerDesc = make("p", "access-hint", "Agen MCP eksternal (Gemini, Claude, Cursor) tidak dapat menyetujui atau memperluas izin secara mandiri. Permintaan izin proyek diproses di sini dan memerlukan persetujuan eksplisit dari operator manusia.");
+    bannerDesc.style.fontSize = "12px";
+    bannerDesc.style.marginTop = "4px";
+    banner.append(bannerTitle, bannerDesc);
+
+    // Section 1: Pending Access Requests
+    const reqSection = make("div", "access-stored");
+    const reqHead = make("div", "access-audit-head");
+    const reqTitleWrap = make("div", "access-audit-title-wrap");
+    const reqTitle = make("h3", "", "Permintaan Akses Masuk (Pending Requests)");
+    const reqBadge = make("span", "access-count", "0 permintaan");
+    reqBadge.id = "access-mcp-pending-count";
+    reqTitleWrap.append(reqTitle, reqBadge);
+
+    const reqRefreshBtn = action("Refresh Permintaan", "access-audit-refresh", () => void refreshMcpRequests());
+    reqHead.append(reqTitleWrap, reqRefreshBtn);
+
+    const reqList = make("div", "access-audit-list");
+    reqList.id = "access-mcp-pending-list";
+    reqSection.append(reqHead, reqList);
+
+    // Section 2: Direct Grant Form
+    const grantSection = make("div", "access-editor");
+    const grantTitle = make("h3", "", "Pemberian Izin Proyek Langsung (Direct Human Grant)");
+    const grantDesc = make("p", "access-hint", "Jika host agen memblokir tool permintaan akses, berikan hak akses secara langsung kepada identitas agen yang terhubung.");
+    grantDesc.style.fontSize = "11px";
+
+    const grantForm = make("form");
+    grantForm.id = "access-mcp-direct-grant-form";
+    grantForm.style.display = "grid";
+    grantForm.style.gap = "12px";
+    grantForm.style.marginTop = "10px";
+
+    const identField = field("Pilih Agen MCP Terhubung", select("access-mcp-ident-select", [["", "Memuat agen terhubung..."]]), "Identitas yang terdeteksi via transport MCP.");
+    const projField = field("Pilih Proyek Target", select("access-mcp-proj-select", [["", "Memuat daftar proyek..."]]), "Direktori proyek lokal yang terdaftar.");
+
+    const capsWrap = make("div");
+    const capsLabel = make("span", "access-field-title", "Hak Akses (Capabilities):");
+    const capsGrid = make("div");
+    capsGrid.style.display = "flex";
+    capsGrid.style.gap = "12px";
+    capsGrid.style.marginTop = "6px";
+    capsGrid.append(
+      checkbox("access-cap-read", "Read (Baca)", true),
+      checkbox("access-cap-write", "Write (Tulis/Edit)", true),
+      checkbox("access-cap-execute", "Execute (Terminal)", false),
+      checkbox("access-cap-git", "Git", true)
+    );
+    capsWrap.append(capsLabel, capsGrid);
+
+    const grantBtn = action("Beri Izin Proyek", "access-submit", async () => {
+      const identHandle = $("access-mcp-ident-select")?.value;
+      const projId = $("access-mcp-proj-select")?.value;
+      if (!identHandle || !projId) {
+        status("Pilih agen dan proyek target terlebih dahulu.", "warn");
+        return;
+      }
+      const caps = [];
+      if ($("access-cap-read")?.querySelector("input")?.checked) caps.push("read");
+      if ($("access-cap-write")?.querySelector("input")?.checked) caps.push("write");
+      if ($("access-cap-execute")?.querySelector("input")?.checked) caps.push("execute");
+      if ($("access-cap-git")?.querySelector("input")?.checked) caps.push("git");
+      if (caps.length === 0) {
+        status("Pilih minimal satu capability.", "warn");
+        return;
+      }
+      try {
+        status("Memberikan hak akses proyek...", "info");
+        const res = await fetch("/api/desktop/access/direct-grant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ identityHandle: identHandle, projectId: projId, capabilities: caps }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          status("Izin proyek '" + projId + "' berhasil diberikan.", "success");
+          void refreshMcpRequests();
+        } else {
+          status("Gagal: " + (data.error || "Gagal memberikan izin"), "error");
+        }
+      } catch (err) {
+        status("Error: " + err.message, "error");
+      }
+    });
+
+    grantForm.append(identField, projField, capsWrap, grantBtn);
+    grantSection.append(grantTitle, grantDesc, grantForm);
+
+    // Section 3: History & Active Grants
+    const histSection = make("div", "access-stored");
+    const histHead = make("div", "access-audit-head");
+    histHead.append(make("h3", "", "Riwayat Izin & Hak Akses Aktif"));
+    const histList = make("div", "access-audit-list");
+    histList.id = "access-mcp-history-list";
+    histSection.append(histHead, histList);
+
+    pane.append(banner, reqSection, grantSection, histSection);
+    return pane;
+  }
+
+  async function refreshMcpRequests() {
+    try {
+      const [reqRes, identRes, projRes] = await Promise.all([
+        fetch("/api/desktop/access/requests").then(r => r.json()).catch(() => ({ success: false })),
+        fetch("/api/desktop/access/identities").then(r => r.json()).catch(() => ({ success: false })),
+        fetch("/api/projects/browser?filter=all").then(r => r.json()).catch(() => ({ success: false })),
+      ]);
+
+      const requests = reqRes?.success && Array.isArray(reqRes.requests) ? reqRes.requests : [];
+      const identities = identRes?.success && Array.isArray(identRes.identities) ? identRes.identities : [];
+      const projects = projRes?.success && Array.isArray(projRes.projects) ? projRes.projects : [];
+
+      const pending = requests.filter(r => r.status === "pending");
+      const history = requests.filter(r => r.status !== "pending");
+
+      const badgeCount = $("access-tab-badge-mcp");
+      if (badgeCount) {
+        badgeCount.textContent = String(pending.length);
+        badgeCount.className = "access-nav-tab-badge" + (pending.length > 0 ? " pending" : "");
+      }
+      const countEl = $("access-mcp-pending-count");
+      if (countEl) countEl.textContent = pending.length + " permintaan tertunda";
+
+      // Render pending
+      const listEl = $("access-mcp-pending-list");
+      if (listEl) {
+        listEl.replaceChildren();
+        if (pending.length === 0) {
+          listEl.append(make("p", "access-empty", "Tidak ada permintaan akses MCP yang tertunda saat ini."));
+        } else {
+          for (const req of pending) {
+            const card = make("div", "access-audit-row");
+            card.style.display = "grid";
+            card.style.gap = "8px";
+            card.style.padding = "12px";
+            card.style.borderRadius = "10px";
+            card.style.background = "rgba(139, 92, 246, 0.08)";
+            card.style.border = "1px solid rgba(139, 92, 246, 0.25)";
+
+            const top = make("div");
+            top.style.display = "flex";
+            top.style.justifyContent = "space-between";
+            top.style.alignItems = "center";
+            const agentTitle = make("strong", "", "🤖 " + req.subject + " (" + req.mode + ")");
+            const timeSpan = make("small", "access-hint", new Date(req.createdAt).toLocaleTimeString());
+            top.append(agentTitle, timeSpan);
+
+            const projInfo = make("div");
+            projInfo.append(
+              make("div", "", "📁 Proyek: " + (req.projectName || req.projectId) + " (" + req.projectPath + ")"),
+              make("div", "access-hint", "Alasan: \"" + req.reason + "\"")
+            );
+
+            const capsRow = make("div");
+            capsRow.style.display = "flex";
+            capsRow.style.gap = "6px";
+            capsRow.style.alignItems = "center";
+            capsRow.append(make("small", "", "Izin yang diminta:"));
+            for (const cap of req.capabilities) {
+              const capBadge = make("span", "access-permanent-pill", cap);
+              capBadge.style.padding = "2px 8px";
+              capsRow.append(capBadge);
+            }
+
+            const btnRow = make("div");
+            btnRow.style.display = "flex";
+            btnRow.style.gap = "8px";
+            btnRow.style.marginTop = "6px";
+
+            const approveBtn = action("Setujui Akses", "access-submit", async () => {
+              try {
+                status("Menyetujui permintaan akses...", "info");
+                const res = await fetch("/api/desktop/access/requests/approve", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ requestId: req.requestId }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                  status("Izin untuk '" + req.projectName + "' disetujui.", "success");
+                  void refreshMcpRequests();
+                } else {
+                  status("Gagal: " + (data.error || "Gagal menyetujui"), "error");
+                }
+              } catch (e) {
+                status("Error: " + e.message, "error");
+              }
+            });
+
+            const denyBtn = action("Tolak", "access-revoke", async () => {
+              try {
+                status("Menolak permintaan akses...", "info");
+                const res = await fetch("/api/desktop/access/requests/deny", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ requestId: req.requestId, reason: "Ditolak oleh operator" }),
+                });
+                const data = await res.json();
+                if (data.success) {
+                  status("Permintaan untuk '" + req.projectName + "' ditolak.", "warn");
+                  void refreshMcpRequests();
+                } else {
+                  status("Gagal: " + (data.error || "Gagal menolak"), "error");
+                }
+              } catch (e) {
+                status("Error: " + e.message, "error");
+              }
+            });
+
+            btnRow.append(approveBtn, denyBtn);
+            card.append(top, projInfo, capsRow, btnRow);
+            listEl.append(card);
+          }
+        }
+      }
+
+      // Render history
+      const histEl = $("access-mcp-history-list");
+      if (histEl) {
+        histEl.replaceChildren();
+        if (history.length === 0) {
+          histEl.append(make("p", "access-empty", "Belum ada riwayat izin proyek."));
+        } else {
+          for (const req of history.slice(0, 15)) {
+            const row = make("div", "access-audit-row");
+            row.style.display = "flex";
+            row.style.justifyContent = "space-between";
+            row.style.alignItems = "center";
+            row.style.padding = "8px 12px";
+
+            const left = make("div");
+            const statusLabel = req.status === "approved" ? "✅ DISETUJUI" : req.status === "revoked" ? "⛔ DICABUT" : "❌ DITOLAK";
+            left.append(
+              make("strong", "", statusLabel + " · " + (req.projectName || req.projectId) + " (" + req.subject + ")"),
+              make("small", "access-hint", " [" + req.capabilities.join(", ") + "] · " + new Date(req.decidedAt || req.createdAt).toLocaleString())
+            );
+
+            const right = make("div");
+            if (req.status === "approved") {
+              const revBtn = action("Cabut Izin", "access-revoke", async () => {
+                try {
+                  status("Mencabut izin...", "info");
+                  const res = await fetch("/api/desktop/access/requests/revoke", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ requestId: req.requestId }),
+                  });
+                  const data = await res.json();
+                  if (data.success) {
+                    status("Izin proyek '" + req.projectName + "' dicabut.", "warn");
+                    void refreshMcpRequests();
+                  } else {
+                    status("Gagal: " + (data.error || "Gagal mencabut"), "error");
+                  }
+                } catch (e) {
+                  status("Error: " + e.message, "error");
+                }
+              });
+              right.append(revBtn);
+            }
+            row.append(left, right);
+            histEl.append(row);
+          }
+        }
+      }
+
+      // Populate dropdowns
+      const identSelect = $("access-mcp-ident-select");
+      if (identSelect) {
+        identSelect.replaceChildren();
+        if (identities.length === 0) {
+          identSelect.append(option("", "Tidak ada agen aktif terhubung"));
+        } else {
+          for (const id of identities) {
+            identSelect.append(option(id.identityHandle, id.subject + " (" + id.mode + ") - " + id.identityHandle));
+          }
+        }
+      }
+
+      const projSelect = $("access-mcp-proj-select");
+      if (projSelect) {
+        projSelect.replaceChildren();
+        if (projects.length === 0) {
+          projSelect.append(option("", "Tidak ada proyek terdaftar"));
+        } else {
+          for (const p of projects) {
+            const target = p.target || p.root || p.canonicalTarget || "";
+            projSelect.append(option(p.registeredProjectId || p.projectId || p.id, (p.name || p.id) + " (" + target + ")"));
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[AccessManager] refreshMcpRequests error:", err);
+    }
+  }
+
   function build() {
     const parent = $("page-security-container") || $("settings-subpage-security");
     const old = $("desktop-trust-panel");
@@ -817,7 +1140,23 @@
     );
     tabAudit.addEventListener("click", () => setActiveTab("audit"));
 
-    navTabs.append(tabRegister, tabRules, tabAudit);
+    const tabMcp = make("button", "access-nav-tab");
+    tabMcp.id = "access-nav-tab-mcp";
+    tabMcp.type = "button";
+    tabMcp.setAttribute("role", "tab");
+    tabMcp.setAttribute("aria-selected", "false");
+    tabMcp.setAttribute("aria-controls", "access-pane-mcp");
+    tabMcp.tabIndex = -1;
+    const mcpBadge = make("span", "access-nav-tab-badge", "0");
+    mcpBadge.id = "access-tab-badge-mcp";
+    tabMcp.append(
+      make("span", "access-nav-tab-icon", "🛡️"),
+      make("span", "access-nav-tab-label", "Izin Proyek MCP"),
+      mcpBadge
+    );
+    tabMcp.addEventListener("click", () => setActiveTab("mcp"));
+
+    navTabs.append(tabRegister, tabRules, tabAudit, tabMcp);
 
     const paneRegister = make("div", "access-pane");
     paneRegister.id = "access-pane-register";
@@ -844,7 +1183,9 @@
     footer.setAttribute("role", "status");
     footer.setAttribute("aria-live", "polite");
 
-    root.append(head, navTabs, paneRegister, paneRules, paneAudit, footer);
+    const paneMcp = buildMcpPane();
+    root.append(head, navTabs, paneRegister, paneRules, paneAudit, paneMcp, footer);
+    void refreshMcpRequests();
     parent.insertBefore(root, old);
     old.hidden = true;
     updateTabFromHash();

@@ -1,4 +1,4 @@
-import { registeredFileToolGate } from "../../tools/registeredFileToolGate.js";
+import { registeredFileToolGate, isPathAllowedByPermanentRegistry } from "../../tools/registeredFileToolGate.js";
 /**
  * workspaceTools.ts — Workspace switching, worktree operations, command execution, file tools, search, and checklist tools for MCP.
  */
@@ -56,14 +56,15 @@ export async function handleSwitchWorkspace(
     resolved = target.workspace;
     resolvedProjectId = target.projectId;
     projectAccessGranted = Boolean(resolvedProjectId && canSelectRegisteredProject?.(resolvedProjectId));
-    if (/^ssh:/i.test(resolved) && !isFullYoloMode() && !projectAccessGranted) {
+    if (/^ssh:/i.test(resolved) && !projectAccessGranted) {
       throw new Error(`Standalone SSH project access is not granted for project ${resolvedProjectId || resolved}.`);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const target = path.isAbsolute(ws) ? path.resolve(ws) : path.resolve(currentWorkspace, ws);
-    if (!args.projectId && message.includes("Workspace target is not registered or authorized")
-      && (isFullYoloMode() || isPathWithinYoloScope(target, currentWorkspace))) {
+    const isAllowedByAccessManager = isPathAllowedByPermanentRegistry(target, "read");
+    if (!args.projectId && (message.includes("Workspace target is not registered or authorized") || message.includes("escapes registered project"))
+      && (isAllowedByAccessManager || isPathWithinYoloScope(target, currentWorkspace))) {
       resolved = target;
     } else {
       return { content: [{ type: "text", text: message }], isError: true };
@@ -73,7 +74,7 @@ export async function handleSwitchWorkspace(
     ? isWorkspaceWithinScopedRoot(resolved)
     : isPathWithinYoloScope(resolved, currentWorkspace);
   if (/^(?:ssh:|chain:)/i.test(resolved)) {
-    const requiresProjectGrant = Boolean(!isFullYoloMode() && /^ssh:/i.test(resolved) && projectAccessGranted && !withinScopedRoot);
+    const requiresProjectGrant = Boolean(/^ssh:/i.test(resolved) && projectAccessGranted && !withinScopedRoot);
     onWorkspaceChange?.(resolved, resolvedProjectId, requiresProjectGrant);
     return { content: [{ type: "text", text: `Switched active Superagent workspace to registered remote target: ${resolved}. Use Workspace Chain tools for remote-node operations.` }] };
   }
@@ -81,27 +82,26 @@ export async function handleSwitchWorkspace(
     return { content: [{ type: "text", text: `Directory not found: ${resolved}` }], isError: true };
   }
 
-  // Scoped checks use the current MCP connection's workspace, not process-global cwd.
-  if (!isFullYoloMode() && !projectAccessGranted && !withinScopedRoot) {
-    const allowedRoot = getYoloAllowedRoot(currentWorkspace);
+  const isAllowedByAccessManager = isPathAllowedByPermanentRegistry(resolved, "read");
+  if (!projectAccessGranted && !withinScopedRoot && !isAllowedByAccessManager) {
     return {
       content: [{
         type: "text",
-        text: `Error: Switching workspace to "${resolved}" is blocked by Scoped YOLO boundary (allowed scope: ${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted directory switching.`,
+        text: `Error: Switching workspace to "${resolved}" is blocked. Target directory is not registered in Projects or granted in Security Approval / Access Manager.`,
       }],
       isError: true,
     };
   }
 
   // A project-level access grant is not a blanket trusted-directory grant.
-  // Only use legacy trust registration when the active scoped policy already allows this path.
+  // Only use legacy trust registration when the active policy already allows this path.
   if (!projectAccessGranted) {
     addTrustedDirectory(resolved);
     await ensureDirectoryTrusted(resolved);
   }
   // Keep selection per MCP server instance. process.chdir() and the shared HTTP
   // server's last-active workspace are process-global and unsafe for concurrency.
-  onWorkspaceChange?.(resolved, resolvedProjectId, Boolean(!isFullYoloMode() && projectAccessGranted && !withinScopedRoot));
+  onWorkspaceChange?.(resolved, resolvedProjectId, Boolean(projectAccessGranted && !withinScopedRoot && !isAllowedByAccessManager));
   return { content: [{ type: "text", text: `Switched active Superagent workspace to: ${resolved}` }] };
 }
 
@@ -130,28 +130,26 @@ export async function handleExecCommand(args: any): Promise<McpToolResult> {
     return { content: [{ type: "text", text: "Error: 'command' or 'commandId' is required." }], isError: true };
   }
 
-  // Layer 2: Defense-in-depth safety checks for command execution
-  if (!isFullYoloMode()) {
-    if (isSystemDestructiveCommand(command)) {
-      return {
-        content: [{
-          type: "text",
-          text: "Error: Command execution blocked by safety policy. Destructive system operations are prohibited in Scoped YOLO mode. Use /yolo full in SuperAgent CLI if this was intentional.",
-        }],
-        isError: true,
-      };
-    }
-    const inScope = isToolCallWithinYoloScope({ name: "superagent_exec_command", args: { command, cwd: targetCwd } }, targetCwd);
-    if (!inScope) {
-      const allowedRoot = getYoloAllowedRoot(targetCwd);
-      return {
-        content: [{
-          type: "text",
-          text: `Error: Command execution blocked by Scoped YOLO boundary. Target directory or command traverses outside allowed scope (${allowedRoot}) or accesses protected config files. Use /yolo full in SuperAgent CLI for unrestricted access.`,
-        }],
-        isError: true,
-      };
-    }
+  // Defense-in-depth safety checks for MCP command execution (controlled by Security Approval & Access Manager)
+  if (isSystemDestructiveCommand(command)) {
+    return {
+      content: [{
+        type: "text",
+        text: "Error: Command execution blocked by security policy. Destructive system operations are prohibited via MCP.",
+      }],
+      isError: true,
+    };
+  }
+  const isCwdAllowedByAccessManager = isPathAllowedByPermanentRegistry(String(targetCwd), "read");
+  const inScope = isToolCallWithinYoloScope({ name: "superagent_exec_command", args: { command, cwd: targetCwd } }, targetCwd);
+  if (!inScope && !isCwdAllowedByAccessManager) {
+    return {
+      content: [{
+        type: "text",
+        text: `Error: Command execution blocked. Target directory "${targetCwd}" is outside registered project scope and not granted in Security Approval / Access Manager.`,
+      }],
+      isError: true,
+    };
   }
 
   let childPid: number | undefined;
@@ -389,24 +387,22 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
     return { content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }], isError: true };
   }
 
-  // Layer 2: Defense-in-depth safety checks for file write
-  if (!isFullYoloMode()) {
-    if (path.basename(resolved).toLowerCase() === "model-config.json") {
-      return {
-        content: [{ type: "text", text: "Error: Writing to model-config.json is strictly protected and prohibited via MCP." }],
-        isError: true,
-      };
-    }
-    if (!isPathWithinYoloScope(resolved, targetCwd)) {
-      const allowedRoot = getYoloAllowedRoot(targetCwd);
-      return {
-        content: [{
-          type: "text",
-          text: `Error: File write blocked by Scoped YOLO boundary: "${resolved}" is outside allowed scope (${allowedRoot}). Use /yolo full in SuperAgent CLI for unrestricted access.`,
-        }],
-        isError: true,
-      };
-    }
+  // Defense-in-depth safety checks for MCP file write (controlled by Security Approval & Access Manager)
+  if (path.basename(resolved).toLowerCase() === "model-config.json") {
+    return {
+      content: [{ type: "text", text: "Error: Writing to model-config.json is strictly protected and prohibited via MCP." }],
+      isError: true,
+    };
+  }
+  const isWriteAllowedByAccessManager = isPathAllowedByPermanentRegistry(resolved, "write");
+  if (!isPathWithinYoloScope(resolved, targetCwd) && !isWriteAllowedByAccessManager) {
+    return {
+      content: [{
+        type: "text",
+        text: `Error: File write blocked. Target path "${resolved}" is outside registered project scope and not granted in Security Approval / Access Manager.`,
+      }],
+      isError: true,
+    };
   }
 
   if (fs.existsSync(resolved) && !overwrite) {
@@ -417,8 +413,8 @@ export async function handleWriteFile(args: any): Promise<McpToolResult> {
     const { checkFileLock, releaseFile } = await import("../../storage/sharedMemory.js");
     const lockCheck = checkFileLock(resolved, undefined, targetCwd);
     if (lockCheck.locked) {
-      if (isYoloMode()) releaseFile(resolved, undefined, targetCwd, true);
-      else return { content: [{ type: "text", text: `Error: [LOCK_CONFLICT] File "${resolved}" is locked by session ${lockCheck.owner?.sessionId || "unknown"}. Use superagent_unlock_file with action: "force_unlock" or switch to /yolo mode to override.` }], isError: true };
+      if (args.force || isYoloMode()) releaseFile(resolved, undefined, targetCwd, true);
+      else return { content: [{ type: "text", text: `Error: [LOCK_CONFLICT] File "${resolved}" is locked by session ${lockCheck.owner?.sessionId || "unknown"}. Use superagent_unlock_file with action: "force_unlock" to override.` }], isError: true };
     }
   } catch (err: any) {
     if (err?.code === "LOCK_CONFLICT") return { content: [{ type: "text", text: `Error: [LOCK_CONFLICT] ${err.message}` }], isError: true };
