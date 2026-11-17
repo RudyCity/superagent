@@ -67,6 +67,10 @@ describe("MCP full-catalog host file-policy transparency", () => {
         .toBe("target_dependent");
       expect(byName("superagent_write_files")._meta.mcpApproval.kind)
         .toBe("project");
+      expect(byName("superagent_read_files")._meta.mcpApproval)
+        .toMatchObject({kind:"project",oauthScope:"mcp:tools",capability:"read"});
+      expect(byName("superagent_grep_search")._meta.mcpApproval)
+        .toMatchObject({kind:"project",oauthScope:"mcp:tools",capability:"read"});
       expect(byName("superagent_read_files")._meta.filePolicy.readiness)
         .toBe("requires_explicit_files");
       expect(byName("superagent_chrome_cdp")._meta.filePolicy.readiness)
