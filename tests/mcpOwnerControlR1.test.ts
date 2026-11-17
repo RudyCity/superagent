@@ -49,7 +49,7 @@ describe("R1 private authenticated MCP owner health and drain",()=>{
     const clientToken=generateMcpBearerToken(),controlToken=generateMcpBearerToken();
     const startedAt=Date.now();
     const server=await startMcpHttpServer({port,bearerToken:clientToken,
-      allowDangerous:false,ownerControlToken:controlToken,ownerStartedAt:startedAt,
+      allowDangerous:false,lockSafeTools:true,ownerControlToken:controlToken,ownerStartedAt:startedAt,
       auditLogPath:path.join(os.tmpdir(),"mcp-r1-owner-"+crypto.randomUUID()+".jsonl"),
     });
     try{
@@ -76,7 +76,7 @@ describe("R1 private authenticated MCP owner health and drain",()=>{
     const port=await availablePort(),mcp=generateMcpBearerToken();
     const token=generateMcpBearerToken(),startedAt=Date.now();
     const server=await startMcpHttpServer({port,bearerToken:mcp,
-      allowDangerous:false,ownerControlToken:token,ownerStartedAt:startedAt,
+      allowDangerous:false,lockSafeTools:true,ownerControlToken:token,ownerStartedAt:startedAt,
       auditLogPath:path.join(os.tmpdir(),"mcp-r1-drain-"+crypto.randomUUID()+".jsonl"),
     });
     const profile=lease(port,token,startedAt);
