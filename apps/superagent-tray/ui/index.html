@@ -1800,10 +1800,10 @@
             <span id="lan-file-state" class="subtle-badge">No active transfer</span>
           </div>
           <div class="lan-transfer-panel">
-            <label class="lan-screen-control-label" for="lan-file-source">Send a locally selected file to the selected device</label>
-            <input type="file" id="lan-file-source" class="lan-file-source" />
+            <label class="lan-screen-control-label" for="lan-file-source">Send 1–32 selected files to the device (approval required for each)</label>
+            <input type="file" id="lan-file-source" class="lan-file-source" multiple />
             <div class="lan-transfer-actions">
-              <button type="button" class="button primary" id="lan-file-send" disabled>Send file to device</button>
+              <button type="button" class="button primary" id="lan-file-send" disabled>Send selected files</button>
               <button type="button" class="button ghost" id="lan-file-receive" disabled>Receive owner's shared file</button>
               <button type="button" class="button ghost danger" id="lan-file-cancel" disabled>Cancel transfer</button>
             </div>
