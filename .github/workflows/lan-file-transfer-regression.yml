@@ -9,6 +9,7 @@ on:
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanFileExchange.java"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/LanClientServer.java"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
+      - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
       - "tests/lanFileTransfer.test.ts"
@@ -19,6 +20,8 @@ on:
       - "tests/desktopTrayLanFolderUi.test.ts"
       - "tests/lanFileQueueRecovery.test.ts"
       - "tests/lanFileStatusE2E.test.ts"
+      - "tests/lanFilePauseResume.test.ts"
+      - "tests/androidLanCancelContract.test.ts"
       - "tests/trayLanBridge.test.ts"
       - ".github/workflows/lan-file-transfer-regression.yml"
   pull_request:
@@ -27,6 +30,7 @@ on:
       - "src/core/runtime/trayLanBridge.ts"
       - "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/**"
       - "apps/superagent-tray/ui/lan-file-transfer.js"
+      - "apps/superagent-tray/ui/lan-devices.css"
       - "apps/superagent-tray/ui/index.html"
       - "apps/superagent-tray/src-tauri/src/main.rs"
       - "tests/lan*.test.ts"
@@ -75,4 +79,39 @@ jobs:
           tests/desktopTrayLanFolderUi.test.ts
           tests/lanFileQueueRecovery.test.ts
           tests/lanFileStatusE2E.test.ts
+          tests/lanFilePauseResume.test.ts
+          tests/androidLanCancelContract.test.ts
           tests/trayLanBridge.test.ts
+
+  android-java:
+    name: Android native Java compile
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Ensure Android API 35 SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdk_root="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          sdkmanager_bin="$(find "$sdk_root/cmdline-tools" -maxdepth 3 -type f -name sdkmanager -print -quit)"
+          test -n "$sdkmanager_bin" && test -x "$sdkmanager_bin"
+          echo "ANDROID_HOME=$sdk_root" >> "$GITHUB_ENV"
+          if [ ! -f "$sdk_root/platforms/android-35/android.jar" ]; then
+            set +o pipefail
+            yes | "$sdkmanager_bin" --licenses >/dev/null 2>&1
+            license_status=${PIPESTATUS[1]}
+            set -o pipefail
+            test "$license_status" -eq 0
+            "$sdkmanager_bin" --install 'platforms;android-35' 'build-tools;35.0.0'
+          fi
+      - name: Compile Android LAN client Java
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd apps/superagent-lan-android
+          bash ./gradlew --no-daemon :app:compileDebugJavaWithJavac
