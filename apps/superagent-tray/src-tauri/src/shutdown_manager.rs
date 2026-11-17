@@ -121,6 +121,26 @@ fn redacted(error: &str) -> String {
     "SHUTDOWN_OWNER_REJECTED: status uncertain, inspect Runtime Detection before retry".into()
 }
 
+fn active_core_instances(instances:&Value) -> Result<bool,String> {
+    for kind in ["subagents","superagents","procs"] {
+        let entries=instances[kind].as_array()
+            .ok_or("SHUTDOWN_CORE_AGENT_REPORT_UNAVAILABLE")?;
+        for entry in entries {
+            if kind=="procs" {
+                if entry["hasExited"]!=true {return Ok(true);}
+                continue;
+            }
+            // Unknown states are not completion evidence. Fail closed until
+            // the task owner reports a recognized terminal outcome.
+            let terminal=matches!(entry["status"].as_str(),
+                Some("completed"|"complete"|"done"|"success"|"failed"|"error"|
+                    "cancelled"|"canceled"|"stopped"));
+            if !terminal {return Ok(true);}
+        }
+    }
+    Ok(false)
+}
+
 async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<(),String> {
     let credentials=server_info()?;
     if credentials.pid!=Some(expected_pid) || credentials.port!=expected_port {
@@ -133,16 +153,8 @@ async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<
         return Err("SHUTDOWN_CORE_SESSIONS_ACTIVE: close active Core sessions before exit".into());
     }
     let instances=core_request(Method::GET,"/api/instances",None).await?;
-    for kind in ["subagents","superagents","procs"] {
-        let entries=instances[kind].as_array()
-            .ok_or("SHUTDOWN_CORE_AGENT_REPORT_UNAVAILABLE")?;
-        if entries.iter().any(|item| {
-            let state=item["status"].as_str().unwrap_or("unknown");
-            matches!(state,"starting"|"running"|"pending"|"queued"|"cancelling") ||
-                (kind=="procs" && item["hasExited"]!=true)
-        }) {
-            return Err("SHUTDOWN_CORE_AGENT_RUNNING: finish active tasks before exit".into());
-        }
+    if active_core_instances(&instances)? {
+        return Err("SHUTDOWN_CORE_AGENT_RUNNING: finish active tasks before exit".into());
     }
     let daemon=core_request(Method::GET,"/api/daemon/status",None).await?;
     if pid_of(&daemon["pid"])!=Some(expected_pid) ||
@@ -714,6 +726,26 @@ mod tests {
             "port":8096,"operationId":"a-valid-operation"}),8095,123).is_err());
         assert!(stop_plan_request("core",&json!({"service":"core",
             "action":"stop","port":8095,"operationId":"a-valid-operation"}),8095,123).is_err());
+    }
+    #[test]
+    fn direct_core_never_exits_with_active_or_unverified_agents() {
+        assert!(!active_core_instances(&json!({
+            "subagents":[{"status":"completed"}],
+            "superagents":[],
+            "procs":[{"hasExited":true}]
+        })).unwrap());
+        assert!(active_core_instances(&json!({
+            "subagents":[{"status":"running"}],"superagents":[],"procs":[]
+        })).unwrap());
+        assert!(active_core_instances(&json!({
+            "subagents":[],"superagents":[{"status":"unknown"}],"procs":[]
+        })).unwrap());
+        assert!(active_core_instances(&json!({
+            "subagents":[],"superagents":[],"procs":[{"hasExited":false}]
+        })).unwrap());
+        assert!(active_core_instances(&json!({
+            "subagents":[],"superagents":[]
+        })).is_err());
     }
     #[test]
     fn pid_or_port_change_invalidates_authorization() {
