@@ -1000,7 +1000,7 @@ export async function handleServerRoute(
     const peer=req.socket.remoteAddress || "";
     const host=String(req.headers.host || "");
     const loopback=["127.0.0.1","::1","::ffff:127.0.0.1"].includes(peer);
-    const hostValid=/^(?:127\\.0\\.0\\.1|localhost):[0-9]{2,5}$/i.test(host);
+    const hostValid=/^(?:127\.0\.0\.1|localhost):[0-9]{2,5}$/i.test(host);
     const forwarded=["forwarded","x-forwarded-for","x-forwarded-host",
       "x-forwarded-proto","cf-connecting-ip","cf-ray","x-real-ip"]
       .some(header=>req.headers[header]!==undefined);
