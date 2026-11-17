@@ -816,7 +816,7 @@
         if (!key) return;
         if (stream.isLanDevice) {
           const call = window.__TAURI__?.core?.invoke;
-          const androidKind = key === "ESCAPE" ? "back" : key === "SPACE" ? "home" : key === "TAB" ? "recents" : null;
+          const androidKind = key === "BACK" ? "back" : key === "HOME" ? "home" : key === "RECENTS" ? "recents" : null;
           if (androidKind) {
             try {
               const accepted = await call("lan_support_action", {
