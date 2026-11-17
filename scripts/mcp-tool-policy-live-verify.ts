@@ -16,16 +16,21 @@ import {StreamableHTTPClientTransport} from "@modelcontextprotocol/sdk/client/st
 import {manageServices} from "../src/core/runtime/serviceManager.js";
 import {assessDesktopMcpOwnerEvidence,isSameVerifiedMcpGeneration,type McpServiceEvidence}
   from "../src/core/desktopUi/liveActivationGate.js";
+import {classifyLiveMcpFailure,type LiveVerificationPhase}
+  from "../src/core/mcp/mcpLiveVerifierDiagnostics.js";
+
+let livePhase:LiveVerificationPhase="preflight";
 
 function blocked(code:string,details?:string):never{
-  process.stderr.write(JSON.stringify({status:"BLOCKED",code,
+  process.stderr.write(JSON.stringify({status:"BLOCKED",code,phase:livePhase,
     ...(details?{details:details.slice(0,256)}:{})})+"\n");
   process.exit(2);
 }
 async function timeout<T>(p:Promise<T>,ms:number):Promise<T>{
   let id:ReturnType<typeof setTimeout>|undefined;
   try{return await Promise.race([p,new Promise<never>((_,reject)=>{
-    id=setTimeout(()=>reject(new Error("MCP_POLICY_DEADLINE")),ms);
+    id=setTimeout(()=>reject(Object.assign(new Error("MCP_POLICY_DEADLINE"),
+      {code:"MCP_POLICY_DEADLINE"})),ms);
   })]);}
   finally{if(id)clearTimeout(id);}
 }
@@ -51,15 +56,18 @@ async function main(){
      (url.protocol==="http:"&&!["localhost","127.0.0.1","[::1]"].includes(url.hostname))||
      url.username||url.password||url.search||url.hash||url.pathname!=="/mcp")
     blocked("UNSAFE_MCP_URL");
+  livePhase="owner";
   const evidence=assessDesktopMcpOwnerEvidence(
     await owner("status",port),await owner("doctor",port),url.href,expectedDigest);
   if(!evidence.ready)blocked("UNVERIFIED_MCP_OWNER",evidence.reasons.join(","));
   const client=new Client({name:"mcp-policy-live-attested",version:"1.0.0"},
     {capabilities:{}});
   try{
+    livePhase="mcp_connect";
     await timeout(client.connect(new StreamableHTTPClientTransport(url,{
       requestInit:{headers:{Authorization:"Bearer "+token}},
     })),15000);
+    livePhase="mcp_catalog";
     const response=await timeout(client.listTools(),15000);
     const has=(name:string)=>response.tools.some(t=>t.name===name);
     for(const required of ["superagent_tool_search","superagent_tool_describe",
@@ -71,6 +79,7 @@ async function main(){
       mcpApproval?:{kind?:string}}|undefined;
     if(!meta?.filePolicy||!meta?.mcpApproval)
       blocked("FILE_POLICY_METADATA_MISSING");
+    livePhase="mcp_status";
     const status=await timeout(client.callTool({
       name:"superagent_tool_status",arguments:{},
     }),15000);
@@ -84,6 +93,7 @@ async function main(){
       blocked("MCP_POLICY_STATUS_MISMATCH");
     // The verified backend must still be the same after the MCP requests.
     // A reload while listing tools invalidates the acceptance result.
+    livePhase="owner_postflight";
     const postflight=assessDesktopMcpOwnerEvidence(
       await owner("status",port),await owner("doctor",port),url.href,expectedDigest);
     if(!isSameVerifiedMcpGeneration(evidence,postflight))
@@ -103,7 +113,5 @@ async function main(){
   }
 }
 main().catch((err:unknown)=>{
-  const code=err instanceof Error&&err.message==="MCP_POLICY_DEADLINE"
-    ?"MCP_POLICY_LIVE_TIMEOUT":"MCP_POLICY_LIVE_FAILED";
-  blocked(code);
+  blocked(classifyLiveMcpFailure(err));
 });
