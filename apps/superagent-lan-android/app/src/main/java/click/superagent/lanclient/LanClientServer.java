@@ -244,6 +244,7 @@ public final class LanClientServer implements AutoCloseable {
     public String sharedFileLabel() { return fileExchange.selectedLabel(); }
     public Info currentInfo() { return info; }
     public boolean isRunning() { return running.get(); }
+    public boolean isV2TransferActive() { return running.get() && fileExchangeV2.isTransferActive(); }
 
     public String rotateCode() {
         if (!running.get()) throw new IllegalStateException("Start LAN sharing first.");
@@ -515,6 +516,11 @@ public final class LanClientServer implements AutoCloseable {
             }
             try {
                 JSONObject offer = fileExchangeV2.offer(filename, size, sha256);
+                if (!loopbackOnly && MainActivity.hasVisibleOwner()) {
+                    // Keep the already-approved transfer alive when the phone
+                    // backgrounds; never use this service to approve new files.
+                    LanTransferForegroundService.requestHold(context, this);
+                }
                 send(socket, offer);
                 notice.show("Approved V2 file: " + filename);
             } catch (Exception denied) {
