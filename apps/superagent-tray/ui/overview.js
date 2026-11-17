@@ -64,6 +64,7 @@
     lanObserved: false,
     securityDefaultEffect: null,
     runtimeObserved: false,
+    coreOwnerUnverified: false,
     securityObserved: false,
   };
 
@@ -101,6 +102,7 @@
     overviewState.lanObserved = false;
     overviewState.securityDefaultEffect = null;
     overviewState.runtimeObserved = false;
+    overviewState.coreOwnerUnverified = false;
     overviewState.securityObserved = false;
     overviewState.corePid = null;
     overviewState.coreVersion = null;
@@ -170,7 +172,8 @@
 
         const activeCore = (snap.cores || []).find((c) => c.port === selectedPort || c.selected);
         if (activeCore) {
-          overviewState.coreOnline = activeCore.state === "online";
+          overviewState.coreOnline = activeCore.state === "online" && activeCore.pidVerified === true;
+          overviewState.coreOwnerUnverified = activeCore.state === "online" && activeCore.pidVerified !== true;
           overviewState.corePid = activeCore.pid || null;
           overviewState.coreVersion = activeCore.version || null;
           overviewState.daemonRunning = Boolean(activeCore.daemon?.running);
@@ -344,6 +347,7 @@
 
     if (statusText) {
       statusText.textContent = !overviewState.runtimeObserved ? "Core Status Unavailable" :
+        overviewState.coreOwnerUnverified ? "Core responding · owner unverified" :
         isOnline ? "Core Online & Operating" : "Core Offline / Standalone";
     }
 
@@ -369,7 +373,8 @@
         if (overviewState.lanActive > 0) issues.push(`${overviewState.lanActive} LAN Active`);
         summary.textContent = issues.length ? `Core Active · ${issues.join(" · ")}` : "Core Active · inspect full service readiness below";
       } else {
-        summary.textContent = overviewState.runtimeObserved ? "Companion Running · Core Offline" :
+        summary.textContent = overviewState.coreOwnerUnverified ? "Core response untrusted · owner verification required" :
+          overviewState.runtimeObserved ? "Companion Running · Core Offline" :
           "Runtime status unavailable · retry diagnostics";
       }
     }
@@ -384,11 +389,11 @@
     const kpiCoreVal = $("kpi-core-state");
     const kpiCoreMeta = $("kpi-core-meta");
     const kpiCoreBadge = $("kpi-core-badge");
-    if (kpiCoreVal) kpiCoreVal.textContent = !overviewState.runtimeObserved ? "Unknown" : overviewState.coreOnline ? "Online" : "Offline";
+    if (kpiCoreVal) kpiCoreVal.textContent = overviewState.coreOwnerUnverified ? "Unverified" : !overviewState.runtimeObserved ? "Unknown" : overviewState.coreOnline ? "Online" : "Offline";
     if (kpiCoreMeta) kpiCoreMeta.textContent = overviewState.runtimeObserved ?
       `Port :${overviewState.corePort || 7888} Loopback` : "Owner identity unverified";
     if (kpiCoreBadge) {
-      kpiCoreBadge.textContent = !overviewState.runtimeObserved ? "Unverified" : overviewState.coreOnline ? "Live" : "Inactive";
+      kpiCoreBadge.textContent = overviewState.coreOwnerUnverified || !overviewState.runtimeObserved ? "Unverified" : overviewState.coreOnline ? "Live" : "Inactive";
       kpiCoreBadge.className = `stat-chip ${overviewState.coreOnline ? "success" : "danger"}`;
     }
 
@@ -487,7 +492,7 @@
     const corePill = $("srv-core-pill");
     const coreMeta = $("srv-core-meta");
     if (corePill) {
-      corePill.textContent = isOnline ? "Active" : "Offline";
+      corePill.textContent = overviewState.coreOwnerUnverified ? "Unverified" : isOnline ? "Active" : "Offline";
       corePill.className = `overview-service-status-pill ${isOnline ? "online" : "offline"}`;
     }
     if (coreMeta) {

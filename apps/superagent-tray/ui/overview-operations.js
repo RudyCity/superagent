@@ -58,7 +58,7 @@
     return el;
   }
   function health(item) {
-    if(item.ready===true && item.ownerVerified!==false) return ["Ready","good"];
+    if(item.ready===true && (item.ownerVerified!==false || item.state==="embedded")) return ["Ready","good"];
     if(item.state==="unverified" || item.state==="unknown") return ["Unverified","bad"];
     if(item.dependencyBlocked || item.state==="degraded" || item.alive && !item.ready)
       return ["Degraded","bad"];
@@ -88,7 +88,7 @@
       if(essential.has(item.service))heading.classList.add("op-essential");
       const dep=Array.isArray(item.dependsOn)?item.dependsOn.map(x=>x.service+" "+x.state).join(", "):"";
       append(copy,"small","",[
-        item.ownerVerified?"Verified owner":"Owner not verified",
+        item.state==="embedded"?"Embedded service":item.ownerVerified?"Verified owner":"Owner not verified",
         item.reason||item.state||"No status",
         dep?"Depends on "+dep:""
       ].filter(Boolean).join(" · "));

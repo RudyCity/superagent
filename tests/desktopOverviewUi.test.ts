@@ -107,7 +107,7 @@ function mountOverview(mockData: {
               return mockData.runtime ?? {
                 selectedCorePort: 7888,
                 healthyCoreCount: 1,
-                cores: [{ port: 7888, pid: 1234, state: "online", selected: true, version: "1.14.83" }],
+                cores: [{ port: 7888, pid: 1234, state: "online", selected: true, pidVerified: true, version: "1.14.83" }],
               };
             }
             if (action === "daemon_action") {
@@ -274,7 +274,7 @@ describe("SuperAgent Tray System Overview Dashboard", () => {
       runtime: {
         selectedCorePort: 7888,
         healthyCoreCount: 1,
-        cores: [{ port: 7888, pid: 4567, state: "online", selected: true, version: "1.14.83" }],
+        cores: [{ port: 7888, pid: 4567, state: "online", selected: true, pidVerified: true, version: "1.14.83" }],
       },
       daemonJobs: [
         { id: "j1", name: "Job One", enabled: true, nextRun: Date.now() + 120000 },
