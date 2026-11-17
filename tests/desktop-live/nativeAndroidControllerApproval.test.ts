@@ -18,10 +18,12 @@ const device = (overrides: Partial<LanDevice> = {}): LanDevice => ({
 function fixture() {
   let now = 1_800_000_000_000;
   let devices = [device(),device({id:otherId})];
+  let supportSession = "cd".repeat(32);
   const gate = new NativeAndroidControllerApproval(
     () => secret,
     () => devices,
     () => now,
+    () => supportSession,
   );
   const approve = (id=deviceId) => {
     const challenge = gate.challenge(id);
@@ -36,6 +38,8 @@ function fixture() {
     gate,approve,
     get now(){return now;},set now(value:number){now=value;},
     get devices(){return devices;},set devices(value:LanDevice[]){devices=value;},
+    get supportSession(){return supportSession;},
+    set supportSession(value:string){supportSession=value;},
   };
 }
 
@@ -85,6 +89,24 @@ describe("Native Android input capability, separate from a Viewer", () => {
     expect(() => f.gate.authorize(deviceId,grant.controllerToken)).toThrow();
     f.devices=[device()];
     expect(f.gate.status(deviceId,grant.controllerToken).approved).toBe(false);
+  });
+
+  it("expires previous controller after Android closes and reopens its support session", () => {
+    const f=fixture();
+    const {grant}=f.approve();
+    f.supportSession="ef".repeat(32);
+    expect(() => f.gate.authorize(deviceId,grant.controllerToken))
+      .toThrow("ANDROID_CONTROLLER_DEVICE_CHANGED");
+    f.supportSession="cd".repeat(32);
+    expect(f.gate.status(deviceId,grant.controllerToken).approved).toBe(false);
+  });
+
+  it("never sends the support-session proof to the native approval dialog", () => {
+    const f=fixture();
+    const challenge=f.gate.challenge(deviceId);
+    expect(Object.keys(challenge).sort()).toEqual(
+      ["nonce","deviceId","fingerprint","expiresAt"].sort());
+    expect(JSON.stringify(challenge)).not.toContain(f.supportSession);
   });
 
   it("revokes when session closes, expires, or the host clock regresses", () => {
