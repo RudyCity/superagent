@@ -1065,12 +1065,12 @@
       populateMcpIdentitySelect("access-mcp-ident-select", mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-connection-identity", mcpCache.identities);
 
+      const validProjects = Array.isArray(mcpCache.projects) ?
+        mcpCache.projects.filter(project => project.projectId &&
+          project.enabled !== false && project.projectId !== "mcp-connection") : [];
       const projectSelect = $("access-mcp-proj-select");
       if (projectSelect) {
         const previousProject = projectSelect.value;
-        const validProjects = Array.isArray(mcpCache.projects) ?
-          mcpCache.projects.filter(project => project.projectId &&
-            project.enabled !== false && project.projectId !== "mcp-connection") : [];
         projectSelect.replaceChildren(option("",
           validProjects.length ? "Pilih proyek terdaftar..." : "Belum ada proyek aktif terdaftar"));
         for (const project of validProjects) {
@@ -1085,7 +1085,7 @@
       const identitiesAvailable = Boolean(mcpCache.identities?.length);
       if ($("access-mcp-project-grant")) {
         $("access-mcp-project-grant").disabled =
-          Boolean(failures.identities || failures.projects) || !identitiesAvailable || !(mcpCache.projects?.length);
+          Boolean(failures.identities || failures.projects) || !identitiesAvailable || !validProjects.length;
       }
       if ($("access-mcp-connection-grant")) {
         $("access-mcp-connection-grant").disabled = Boolean(failures.identities) || !identitiesAvailable;
