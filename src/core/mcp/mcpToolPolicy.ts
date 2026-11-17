@@ -239,9 +239,9 @@ export interface McpServerOptions {
   }) => void;
   /** Auth mode for per-tool security metadata. Default "static-bearer". */
   authMode?: "static-bearer" | "oauth";
-  /** If true, explicitly allow dangerous tools regardless of YOLO mode (e.g. CLI flag --allow-dangerous). */
+  /** Legacy MCP listener exposure option; does not authorize operations. Security Approval grants and OAuth scopes are mandatory. */
   allowDangerous?: boolean;
-  /** Hard cap: this MCP instance NEVER unlocks dangerous tools via ambient YOLO, including gateway recursion. */
+  /** Hard cap: this MCP instance NEVER enables dangerous tools, including gateway recursion. */
   lockSafeTools?: boolean;
   /** Optional getter for active client identity (OAuth scopes / subject). */
   getIdentity?: () => { mode: "static-bearer" | "oauth"; subject: string; scopes?: string[]; credentialHash?: string } | null;
@@ -252,7 +252,7 @@ export interface McpServerOptions {
    * so a claim_target capability remains usable by the next tool call.
    */
   delegatePrincipalSessionId?: string;
-  /** Optional workspace root for YOLO scope validation. Defaults to process.cwd(). */
+  /** Optional MCP workspace root. Project access uses independent identity grants, not chat YOLO. */
   workspace?: string;
   /** Gateway (default): compact discovery and authorized execution; full: standalone tools. */
   toolExposure?: "full" | "gateway";
