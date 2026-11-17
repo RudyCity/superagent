@@ -335,14 +335,14 @@
     state.plan=null;setPlan(null);
   }
   async function prepare(){
-    if(state.operationBusy || !state.dashboard)return;
+    if(state.operationBusy)return;
     const service=currentService();
     const action=currentAction(service);
     if(!service||!action){notify("Select an allowed service/action combination.","error");return;}
     invalidatePlan();state.operationBusy=true;
     text("op-lifecycle-plan","Checking authenticated ownership and safety prerequisites…");
     try {
-      const inventory=state.dashboard.services?.find(x=>x.service===service);
+      const inventory=state.dashboard?.services?.find(x=>x.service===service);
       const port=service==="tray"?undefined:inventory?.port||servicePorts[service];
       const request={action:"plan",service,targetAction:action};
       if(port)request.port=port;
@@ -359,7 +359,7 @@
   }
   async function execute(){
     const plan=state.plan;
-    if(!plan||state.operationBusy||!state.dashboard ||
+    if(!plan||state.operationBusy||
        currentService()!==plan.service||currentAction(plan.service)!==plan.action)return;
     if(!window.confirm("Execute "+plan.action+" on "+plan.service+"?\n"+
       "Operation ID: "+plan.operationId+"\n"+
@@ -399,7 +399,8 @@
     $("op-shutdown-open")?.addEventListener("click",()=>{
       const dialog=$("shutdown-manager-dialog");
       if(typeof window.__superagentShutdownManagerOpen==="function" && dialog) {
-        void window.__superagentShutdownManagerOpen();
+        void Promise.resolve().then(()=>window.__superagentShutdownManagerOpen())
+          .catch(err=>notify("Cannot open Shutdown Manager: "+String(err?.message||err),"error"));
       } else notify("Shutdown review is not installed in this Tray build; use the native tray Exit App menu.","error");
     });
     window.addEventListener("superagent-core-selected",()=>{
