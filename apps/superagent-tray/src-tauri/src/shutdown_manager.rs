@@ -121,6 +121,38 @@ fn redacted(error: &str) -> String {
     "SHUTDOWN_OWNER_REJECTED: status uncertain, inspect Runtime Detection before retry".into()
 }
 
+async fn verify_direct_core_idle(expected_pid:u32, expected_port:u16) -> Result<(),String> {
+    let credentials=server_info()?;
+    if credentials.pid!=Some(expected_pid) || credentials.port!=expected_port {
+        return Err("SHUTDOWN_CORE_OWNER_CHANGED".into());
+    }
+    let workspaces=core_request(Method::GET,"/api/workspaces",None).await?;
+    let list=workspaces["workspaces"].as_array()
+        .ok_or("SHUTDOWN_CORE_SESSION_REPORT_UNAVAILABLE")?;
+    if !list.is_empty() {
+        return Err("SHUTDOWN_CORE_SESSIONS_ACTIVE: close active Core sessions before exit".into());
+    }
+    let instances=core_request(Method::GET,"/api/instances",None).await?;
+    for kind in ["subagents","superagents","procs"] {
+        let entries=instances[kind].as_array()
+            .ok_or("SHUTDOWN_CORE_AGENT_REPORT_UNAVAILABLE")?;
+        if entries.iter().any(|item| {
+            let state=item["status"].as_str().unwrap_or("unknown");
+            matches!(state,"starting"|"running"|"pending"|"queued"|"cancelling") ||
+                (kind=="procs" && item["hasExited"]!=true)
+        }) {
+            return Err("SHUTDOWN_CORE_AGENT_RUNNING: finish active tasks before exit".into());
+        }
+    }
+    let daemon=core_request(Method::GET,"/api/daemon/status",None).await?;
+    if pid_of(&daemon["pid"])!=Some(expected_pid) ||
+        daemon["activeJobsCount"].as_u64()!=Some(0) ||
+        !daemon["running"].is_boolean() {
+        return Err("SHUTDOWN_CORE_SCHEDULER_BUSY_OR_UNVERIFIED".into());
+    }
+    Ok(())
+}
+
 async fn inspect() -> Result<Preview, String> {
     let dir = config_dir()?;
     let runtime = serde_json::to_value(runtime_detection::detect_runtime(&dir).await?)
@@ -246,13 +278,17 @@ async fn inspect() -> Result<Preview, String> {
         let supervised=supervisor_attested || port.is_some_and(|p|
             fs::symlink_metadata(dir.join(format!("core-supervisor-{p}.json"))).is_ok());
         let verified=selected && state=="online" && core["pidVerified"]==true && !supervised;
-        let eligible=verified && pid.is_some() && port.is_some();
+        let idle=if let (true,Some(pid),Some(port))=(verified,pid,port) {
+            verify_direct_core_idle(pid,port).await.is_ok()
+        } else {false};
+        let eligible=verified && idle;
         items.push(Item::new(format!("core:{}:{}",port.unwrap_or(0),pid.unwrap_or(0)),
             if selected {"Selected Core API"} else {"Other Core API"},"core",state,
             if supervised {"A supervised Core has no supported full-stop contract"}
             else {"Authenticated direct Core; stopped last after dependent services"},
             eligible,eligible,
             if !running(state) {None} else if eligible {None}
+            else if verified {Some("Active Core sessions, agent tasks or scheduler work prevent graceful exit".into())}
             else {Some("Core is supervised, foreign, or identity is unverified".into())},
             port,pid));
     }
@@ -443,6 +479,14 @@ async fn stop_one(item: &Item) -> Result<(),String> {
             let credentials=server_info()?;
             if credentials.pid!=item.pid || Some(credentials.port)!=item.port {
                 return Err("SHUTDOWN_CORE_OWNER_CHANGED".into());
+            }
+            verify_direct_core_idle(
+                item.pid.ok_or("SHUTDOWN_MISSING_PID")?,
+                item.port.ok_or("SHUTDOWN_MISSING_PORT")?,
+            ).await?;
+            if fs::symlink_metadata(config_dir()?.join(
+                format!("core-supervisor-{}.json",credentials.port))).is_ok() {
+                return Err("SHUTDOWN_CORE_SUPERVISOR_DISCOVERED".into());
             }
             core_request(Method::POST,"/api/shutdown",Some(json!({}))).await?;
             let pid=item.pid.ok_or("SHUTDOWN_MISSING_PID")?;
