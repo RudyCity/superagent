@@ -13,15 +13,16 @@ export type LiveVerificationFailureCode =
   | "MCP_POLICY_TLS_REJECTED" | "MCP_POLICY_REMOTE_FAILURE"
   | "MCP_POLICY_LIVE_FAILED";
 
-function errorCodes(error:unknown):string[] {
-  if(!error || typeof error!=="object")return [];
+function errorCodes(error:unknown, seen=new Set<unknown>()):string[] {
+  if(!error || typeof error!=="object" || seen.has(error) || seen.size>=6)return [];
+  seen.add(error);
   const node=error as {code?:unknown;status?:unknown;statusCode?:unknown;cause?:unknown};
   const codes:string[]=[];
   if(typeof node.code==="string")codes.push(node.code.toUpperCase());
   for(const v of [node.status,node.statusCode]){
     if(typeof v==="number"&&Number.isFinite(v))codes.push(String(v));
   }
-  if(node.cause && node.cause!==error)codes.push(...errorCodes(node.cause).slice(0,5));
+  if(node.cause)codes.push(...errorCodes(node.cause,seen).slice(0,5));
   return codes;
 }
 
