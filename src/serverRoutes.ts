@@ -1810,8 +1810,40 @@ export async function handleServerRoute(
       if (Buffer.byteLength(raw,"utf8")>2400) throw Error("Oversized request.");
       const body=JSON.parse(raw);
       if (!body || typeof body!=="object" || Array.isArray(body) ||
-          Object.keys(body).some(k=>!["action","projectDirectory","recordingId","confirmDelete"].includes(k)) ||
-          typeof body.projectDirectory!=="string") throw Error("Invalid body.");
+          typeof body.action!=="string") throw Error("Invalid body.");
+      if (body.action==="native-preview") {
+        if (Object.keys(body).length!==2 ||
+            Object.keys(body).some(k=>!["action","previewToken"].includes(k)))
+          throw Error("Invalid native preview request.");
+        const {inspectNativeWindowRecordingPreview}=
+          await import("./core/desktopUi/nativeWindowRecorder.js");
+        sendJSON(res,200,{success:true,
+          window:inspectNativeWindowRecordingPreview(body.previewToken)});
+        return true;
+      }
+      if (body.action==="native-challenge") {
+        if (Object.keys(body).length!==1)throw Error("Invalid native challenge.");
+        const {nativeWindowRecordingApprovalGuard}=
+          await import("./core/desktopUi/nativeApprovalProof.js");
+        sendJSON(res,200,{success:true,...nativeWindowRecordingApprovalGuard.issue()});
+        return true;
+      }
+      if (body.action==="start-native") {
+        const keys=["action","projectDirectory","previewToken","pid","nativeId",
+          "expectedTitle","expectedApplication","expectedBounds","videoPreset","consent","approvalProof"];
+        if (Object.keys(body).length!==keys.length ||
+            Object.keys(body).some(k=>!keys.includes(k)))
+          throw Error("Invalid approved recording request.");
+        const {nativeWindowRecordingApprovalGuard}=
+          await import("./core/desktopUi/nativeApprovalProof.js");
+        const {startApprovedNativeWindowRecording}=
+          await import("./core/desktopUi/nativeWindowRecorder.js");
+        const approved=nativeWindowRecordingApprovalGuard.consume(body);
+        sendJSON(res,200,{success:true,...await startApprovedNativeWindowRecording(approved)});
+        return true;
+      }
+      if (Object.keys(body).some(k=>!["action","projectDirectory","recordingId","confirmDelete"].includes(k)) ||
+          typeof body.projectDirectory!=="string")throw Error("Invalid archive manager request.");
       const {listProjectCdpRecordings,locateProjectCdpRecording,
         stopProjectCdpRecording,deleteProjectCdpRecording,exportProjectCdpRecording}=
         await import("./core/tools/chromeCdpRecordingLibrary.js");
