@@ -158,7 +158,7 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     expect(fs.readFileSync(path.join(root,"audit.jsonl"),"utf8")).not.toContain("DENIED_SENTINEL");
   }, 35000);
 
-  it("keeps Brain mutation unavailable when local YOLO is OFF even with OAuth write scope", async () => {
+  it("keeps Brain mutation unavailable without MCP Connection Security Approval even with OAuth write scope", async () => {
     const alice = await issue("client-a", ["mcp:tools", "mcp:tools:write"]);
     const bob = await issue("client-b", ["mcp:tools", "mcp:tools:write"]);
     const reader = await issue("client-a", ["mcp:tools"]);
@@ -175,7 +175,7 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
       name: "superagent_brain", arguments: { action: "create", sessionId: "sess_http_owner" },
     }), aliceSession);
     expect(created.status).toBe(200);
-    expect(created.body).toContain("YOLO OFF");
+    expect(created.body).toContain("MCP_APPROVAL_REQUIRED");
     expect(created.body).not.toContain('"sessionId":"sess_http_owner"');
     const bobDenied = await post(bob, rpc(69, "tools/call", {
       name: "superagent_brain", arguments: {
@@ -197,22 +197,21 @@ describe("Hermes Phase 5 OAuth over loopback HTTP/MCP", () => {
     const writerSearch = await post(writer, rpc(211, "tools/call", {
       name: "superagent_tool_search", arguments: { query: "superagent_write_files" },
     }), writerSession);
-    // OAuth write scope is insufficient when local YOLO is OFF.
-    expect(writerSearch.body).not.toContain('"name":"superagent_write_files"');
+    // Tool discovery reflects OAuth capability; execution still needs human-approved project grants.
+    expect(writerSearch.body).toContain('"name":"superagent_write_files"');
     const listAdmin = await post(admin, rpc(22, "tools/list"), adminSession);
     expect(listAdmin.status).toBe(200);
     expect(listAdmin.body).toContain('"name":"superagent_tool_search"');
     const adminSearch = await post(admin, rpc(221, "tools/call", {
       name: "superagent_tool_search", arguments: { query: "superagent_grant_project_access" },
     }), adminSession);
-    expect(adminSearch.body).not.toContain('"name":"superagent_grant_project_access"');
+    expect(adminSearch.body).toContain('"name":"superagent_grant_project_access"');
     const denied = await post(writer, rpc(23, "tools/call", {
       name: "superagent_grant_project_access",
       arguments: { projectId: "nonexistent", capabilities: ["read"] },
     }), writerSession);
     expect(denied.body).toContain("mcp:tools:admin");
-    // Admin scope is necessary, but local Full YOLO and project checks remain
-    // independently enforced; this test never changes a real access grant.
+    // Admin OAuth scope alone never permits self-grant; only human approval issues project grants.
     const notElevated = await post(admin, rpc(24, "tools/call", {
       name: "superagent_grant_project_access",
       arguments: { projectId: "nonexistent", capabilities: ["read"] },
