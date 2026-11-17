@@ -95,6 +95,8 @@
 .shutdown-step-state {font-size:10px;text-transform:capitalize;color:#c5cfe0}
 .shutdown-step[data-status="stopped"] .shutdown-step-state {color:#8cdbb2}
 .shutdown-step[data-status="blocked"] .shutdown-step-state {color:#f2a7a7}
+.shutdown-step[data-status="restarted"] {border-color:#987849;background:#2b261e}
+.shutdown-step[data-status="restarted"] .shutdown-step-state {color:#efd39b}
 .shutdown-step[data-status="stopping"] .shutdown-step-state {color:#98caff}
 .shutdown-manager .modal-footer {display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:17px 26px}
 .shutdown-manager .modal-footer .shutdown-selection-count {margin-right:auto;font-size:11px;color:#9dafc3}
