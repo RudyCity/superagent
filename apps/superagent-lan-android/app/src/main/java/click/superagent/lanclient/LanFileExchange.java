@@ -43,6 +43,8 @@ public final class LanFileExchange {
     private Pending active;
     private byte[] selected;
     private String selectedName;
+    // Changes to source selection invalidate an outstanding owner approval.
+    private long selectionRevision;
 
     public LanFileExchange(Context context) { this.context = context.getApplicationContext(); }
     public void clear() {
@@ -51,6 +53,7 @@ public final class LanFileExchange {
             active = null;
             selected = null;
             selectedName = null;
+            selectionRevision++;
         }
     }
     public synchronized void select(String name, byte[] bytes) {
@@ -59,7 +62,9 @@ public final class LanFileExchange {
             throw new SecurityException("File must be 1 byte to 4 MiB.");
         selectedName = checked;
         selected = Arrays.copyOf(bytes, bytes.length);
+        selectionRevision++;
     }
+    public synchronized long selectionRevision() { return selectionRevision; }
     public synchronized String selectedLabel() {
         return selected == null ? "No file selected" : selectedName + " (" + selected.length + " bytes)";
     }
@@ -87,7 +92,8 @@ public final class LanFileExchange {
         for (byte b : sha) out.append(String.format(Locale.US, "%02x", b & 0xff));
         return out.toString();
     }
-    public synchronized JSONObject offer(String direction, String filename, int size, String hash) throws Exception {
+    public synchronized JSONObject offer(String direction, String filename, int size, String hash,
+                                         long approvedSelectionRevision) throws Exception {
         if (active != null && SystemClock.elapsedRealtime() - active.lastUsed < EXPIRE_MS)
             throw new SecurityException("Another file transfer is active.");
         active = null;
@@ -95,7 +101,8 @@ public final class LanFileExchange {
         next.id = UUID.randomUUID().toString();
         next.direction = direction;
         if ("download".equals(direction)) {
-            if (selected == null) throw new SecurityException("Owner has not selected file to share.");
+            if (selected == null || selectionRevision != approvedSelectionRevision)
+                throw new SecurityException("Selected file changed while approval was pending.");
             next.name = selectedName;
             next.source = selected;
             next.size = selected.length;
@@ -123,6 +130,16 @@ public final class LanFileExchange {
         }
         return active;
     }
+    /** Authorized read-only checkpoint. Does not enumerate files or return content. */
+    public synchronized JSONObject status(String id) throws Exception {
+        Pending t = check(id);
+        int received = "upload".equals(t.direction) ? t.received
+                : Math.min(t.size, t.sequence * CHUNK_BYTES);
+        return new JSONObject().put("ok", true).put("transferId", t.id)
+                .put("direction", t.direction).put("name", t.name)
+                .put("size", t.size).put("sha256", t.checksum)
+                .put("seq", t.sequence).put("received", received);
+    }
     public synchronized JSONObject put(String id, int seq, String encoded) throws Exception {
         Pending transfer = check(id);
         if (!"upload".equals(transfer.direction) || seq != transfer.sequence || encoded == null
@@ -142,13 +159,14 @@ public final class LanFileExchange {
     }
     public synchronized JSONObject get(String id, int seq) throws Exception {
         Pending transfer = check(id);
-        if (!"download".equals(transfer.direction) || transfer.source == null || seq != transfer.sequence)
+        if (!"download".equals(transfer.direction) || transfer.source == null
+                || (seq != transfer.sequence && seq != transfer.sequence - 1))
             throw new SecurityException("Out-of-order download chunk.");
         int offset = seq * CHUNK_BYTES;
         if (offset < 0 || offset >= transfer.size) throw new SecurityException("No further bytes.");
         int length = Math.min(CHUNK_BYTES, transfer.size - offset);
         byte[] chunk = Arrays.copyOfRange(transfer.source, offset, offset + length);
-        transfer.sequence++;
+        if (seq == transfer.sequence) transfer.sequence++;
         transfer.lastUsed = SystemClock.elapsedRealtime();
         return new JSONObject().put("ok", true).put("seq", seq)
                 .put("received", offset + length)
