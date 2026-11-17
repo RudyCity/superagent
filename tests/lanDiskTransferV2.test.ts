@@ -91,6 +91,23 @@ describe("LAN target V2 encrypted-session, disk-backed staging", () => {
     expect(await fs.readFile(done.savedTo)).toEqual(bytes);
   });
 
+  it("reoffers the same live file only after controller owner approval and retains its cursor", async () => {
+    const { engine } = await target();
+    const bytes = crypto.randomBytes(3 * LAN_V2_CHUNK_BYTES);
+    const digest = hash(bytes);
+    const first = await engine.offerUpload("same.bin", bytes.length, digest);
+    await engine.put(first.transferId, 0, bytes.subarray(0, LAN_V2_CHUNK_BYTES).toString("base64"));
+    const second = await engine.offerUpload("same.bin", bytes.length, digest);
+    expect(second.transferId).toBe(first.transferId);
+    expect(second.resumed).toBe(true);
+    expect(second.received).toBe(LAN_V2_CHUNK_BYTES);
+    await expect(engine.offerUpload("different.bin", bytes.length, digest))
+      .rejects.toThrow("Another V2 transfer");
+    await feed(engine, first.transferId, bytes, second.received);
+    const finished = await engine.finish(first.transferId);
+    expect(await fs.readFile(finished.savedTo)).toEqual(bytes);
+  });
+
   it("rejects racing duplicate chunks without advancing the same checkpoint twice", async () => {
     const { engine } = await target();
     const bytes = crypto.randomBytes(2 * LAN_V2_CHUNK_BYTES);
