@@ -2082,7 +2082,7 @@ async fn mcp_project_access_action(
     if window.label() != "main" {
         return Err("MCP project access is available only in the native main Tray window".into());
     }
-    let mutating = matches!(action.as_str(), "approve" | "deny" | "revoke" | "direct_grant");
+    let mutating = matches!(action.as_str(), "approve" | "deny" | "revoke" | "direct_grant" | "register_project");
     if mutating
         && (!window.is_visible().unwrap_or(false)
             || window.is_minimized().unwrap_or(true)
@@ -2121,6 +2121,50 @@ async fn mcp_project_access_action(
         }
         Ok(values)
     };
+    let registration = || -> Result<Value, String> {
+        let allowed = ["id", "name", "type", "root", "target", "description"];
+        if data.as_object().ok_or("Invalid project fields")?.keys()
+            .any(|key| !allowed.contains(&key.as_str())) {
+            return Err("Unsupported project registration field".into());
+        }
+        let name = text_field("name", 120)?;
+        let project_type = text_field("type", 5)?;
+        if project_type != "local" && project_type != "ssh" {
+            return Err("Project type must be local or ssh".into());
+        }
+        let mut result = serde_json::Map::new();
+        result.insert("name".into(), json!(name));
+        result.insert("type".into(), json!(project_type));
+        if data.get("id").is_some() {
+            let id = text_field("id", 63)?;
+            if !id.bytes().enumerate().all(|(index, byte)|
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() ||
+                (byte == b'-' && index > 0)) {
+                return Err("Project ID must be lowercase letters, numbers and hyphens".into());
+            }
+            result.insert("id".into(), json!(id));
+        }
+        if data.get("description").is_some() {
+            result.insert("description".into(), json!(text_field("description", 500)?));
+        }
+        if project_type == "local" {
+            if data.get("target").is_some() { return Err("Unexpected SSH target".into()); }
+            let root = text_field("root", 4096)?;
+            let path = PathBuf::from(&root);
+            if !path.is_absolute() || !path.is_dir() {
+                return Err("Choose an existing absolute project folder".into());
+            }
+            result.insert("root".into(), json!(root));
+        } else {
+            if data.get("root").is_some() { return Err("Unexpected local root".into()); }
+            let target = text_field("target", 2048)?;
+            if !target.starts_with("ssh://") || target.contains('?') || target.contains('#') {
+                return Err("SSH target must be credential-free ssh:// URI".into());
+            }
+            result.insert("target".into(), json!(target));
+        }
+        Ok(Value::Object(result))
+    };
     if mutating {
         // JavaScript can request an approval, but only this native dialog can
         // accept it. The dialog reads the current Core record, not any
@@ -2128,7 +2172,15 @@ async fn mcp_project_access_action(
         let clean = |value: &str| -> String {
             value.chars().filter(|c| !c.is_control()).take(140).collect()
         };
-        let prompt = if action == "direct_grant" {
+        let prompt = if action == "register_project" {
+            let input = registration()?;
+            let name = clean(input.get("name").and_then(Value::as_str).unwrap_or(""));
+            let id = clean(input.get("id").and_then(Value::as_str).unwrap_or("(auto from name)"));
+            let target = clean(input.get("root").or_else(|| input.get("target"))
+                .and_then(Value::as_str).unwrap_or(""));
+            format!("REGISTER PROJECT?\n\nName: {}\nID: {}\nType: {}\nTarget: {}\n\nRegistration adds metadata only. No MCP agent receives file access or other capabilities. Grant permissions separately in Access Manager.",
+                name, id, input.get("type").and_then(Value::as_str).unwrap_or(""), target)
+        } else if action == "direct_grant" {
             let identity_handle = text_field("identityHandle", 96)?;
             let project_id = text_field("projectId", 63)?;
             let caps = checked_capabilities()?;
@@ -2219,6 +2271,8 @@ async fn mcp_project_access_action(
             core_request(Method::GET, "/api/desktop/access/connected-clients", None).await
         },
         "projects" => core_request(Method::GET, "/api/desktop/access/projects", None).await,
+        "register_project" => core_request(Method::POST,
+            "/api/desktop/access/projects/register", Some(registration()?)).await,
         "approve" => {
             let request_id = text_field("requestId", 96)?;
             let body = if data.get("capabilities").is_some() {
