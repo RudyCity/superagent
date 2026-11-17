@@ -798,7 +798,8 @@ async fn lan_support_action(
     payload: Option<Value>,
 ) -> Result<Value, String> {
     const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
-        "file_relay_start", "file_relay_status", "file_relay_cancel"];
+        "file_relay_start", "file_relay_status", "file_relay_cancel",
+        "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
     if window.label() != "main" { return Err("LAN control requires the installed main Tray".into()); }
     let data = payload.unwrap_or_else(|| json!({}));
@@ -826,6 +827,8 @@ async fn lan_support_action(
         "file_v2_status" | "file_v2_finish" | "file_v2_abort" => &["deviceId", "transferId"],
         "file_relay_start" => &["sourceId", "destinationId", "protocol"],
         "file_relay_status" | "file_relay_cancel" => &["jobId"],
+        "file_receive_v2_start" => &["deviceId"],
+        "file_receive_v2_status" | "file_receive_v2_cancel" => &["jobId"],
         "schema" => &["deviceId", "knownRevision"],
         "element" => &["deviceId", "elementId", "revision", "kind"],
         _ => &["deviceId"],
@@ -914,7 +917,8 @@ async fn lan_support_action(
             return Err("Invalid tunnel device ID".into());
         }
     } else if !["discover", "list", "tunnel_invite", "apk_download_qr", "tunnel_list",
-        "file_relay_start", "file_relay_status", "file_relay_cancel"].contains(&action.as_str()) {
+        "file_relay_start", "file_relay_status", "file_relay_cancel",
+        "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"].contains(&action.as_str()) {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
         if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
             return Err("Invalid device ID".into());
@@ -927,7 +931,16 @@ async fn lan_support_action(
         }
     }
     if action.starts_with("file_") {
-        if action.starts_with("file_relay_") {
+        if action.starts_with("file_receive_v2_") {
+            let id = if action == "file_receive_v2_start" {
+                data["deviceId"].as_str().ok_or("Owner-selected V2 source device ID required")?
+            } else {
+                data["jobId"].as_str().ok_or("V2 receive job ID required")?
+            };
+            if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
+                return Err("Invalid V2 receive handle".into());
+            }
+        } else if action.starts_with("file_relay_") {
             let valid_uuid = |v: &str| v.len() == 36 &&
                 v.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-');
             if action == "file_relay_start" {
