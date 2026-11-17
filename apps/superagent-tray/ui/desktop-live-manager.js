@@ -72,6 +72,7 @@
     const mouse = lan && stream.controllerScopes.mouse;
     const keyboard = lan && stream.controllerScopes.keyboard;
     const any = mouse || keyboard;
+    if (!mouse) stream.pointer = null;
     stream.controlRequested = Boolean(any);
     const record = el("desktop-live-stream-record");
     const preset=el("desktop-live-record-preset");
@@ -141,7 +142,7 @@
     const typeSend=el("desktop-live-stream-type-send");
     if(typeInput)typeInput.disabled=!keyboard||stream.inputPending;
     if(typeSend)typeSend.disabled=!keyboard||stream.inputPending;
-    document.querySelectorAll(".desktop-live-key-btn").forEach(btn=>{btn.disabled=!keyboard;});
+    document.querySelectorAll(".desktop-live-key-btn").forEach(btn=>{btn.disabled=!keyboard||stream.inputPending;});
     if(viewport)viewport.classList.toggle("interactive",Boolean(lan&&stream.controlEnabled&&mouse));
   }
 
@@ -162,6 +163,7 @@
       } catch {
         if(!stream.active||stream.deviceId!==id)return;
         stream.controllerScopes[kind]=false;
+        if(kind==="mouse")stream.pointer=null;
         status(kind+" control expired or revoked; View Only remains active.",true);
       }
     }
@@ -833,17 +835,27 @@
       }
       if (stream.isLanDevice) {
         const call = window.__TAURI__?.core?.invoke;
+        const generation = stream.generation, deviceId = stream.deviceId;
+        stream.inputPending = true;
+        renderStreamPermissions();
         try {
           const accepted = await call("lan_support_action", {
             action: "input",
-            payload: { deviceId: stream.deviceId, kind: "text", text },
+            payload: { deviceId, kind: "text", text },
           });
+          if (generation !== stream.generation || deviceId !== stream.deviceId) return;
           if (accepted?.success !== true || accepted?.result?.ok !== true)
             throw Error("Device did not approve text input");
           input.value = "";
           status("Device accepted one text input.");
         } catch (err) {
-          status("Gagal mengirim teks ke perangkat LAN: " + (err?.message || "Koneksi terputus"), true);
+          if (generation === stream.generation)
+            status("Gagal mengirim teks ke perangkat LAN: " + (err?.message || "Koneksi terputus"), true);
+        } finally {
+          if (generation === stream.generation) {
+            stream.inputPending = false;
+            renderStreamPermissions();
+          }
         }
         return;
       }
@@ -856,23 +868,33 @@
 
     document.querySelectorAll(".desktop-live-key-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard) return;
+        if (!stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard || stream.inputPending) return;
         const key = btn.dataset.key;
         if (!key) return;
         if (stream.isLanDevice) {
           const call = window.__TAURI__?.core?.invoke;
           const androidKind = key === "BACK" ? "back" : key === "HOME" ? "home" : key === "RECENTS" ? "recents" : null;
           if (androidKind) {
+            const generation = stream.generation, deviceId = stream.deviceId;
+            stream.inputPending = true;
+            renderStreamPermissions();
             try {
               const accepted = await call("lan_support_action", {
                 action: "input",
-                payload: { deviceId: stream.deviceId, kind: androidKind },
+                payload: { deviceId, kind: androidKind },
               });
+              if (generation !== stream.generation || deviceId !== stream.deviceId) return;
               if (accepted?.success !== true || accepted?.result?.ok !== true)
                 throw Error("Device did not approve navigation");
               status("Device accepted one navigation action: " + androidKind);
             } catch (err) {
-              status("Gagal kirim navigasi: " + (err?.message || "Error"), true);
+              if (generation === stream.generation)
+                status("Gagal kirim navigasi: " + (err?.message || "Error"), true);
+            } finally {
+              if (generation === stream.generation) {
+                stream.inputPending = false;
+                renderStreamPermissions();
+              }
             }
           }
           return;
