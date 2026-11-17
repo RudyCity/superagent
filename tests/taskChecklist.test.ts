@@ -2,9 +2,28 @@ import { describe, expect, it } from "vitest";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
-import { parseChecklistTasks, readChecklistTasks } from "../src/core/taskChecklist.js";
+import { getActiveSessionTaskPath, parseChecklistTasks, readChecklistTasks } from "../src/core/taskChecklist.js";
 
 describe("task checklist helpers", () => {
+  it("does not fall back to workspace task.md when there is no active session", async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "superagent-clone-tasks-"));
+    try {
+      const oldProjectTaskPath = path.join(dir, "task.md");
+      await fs.writeFile(oldProjectTaskPath, "- [x] Historical cloned project task\\n");
+      expect(getActiveSessionTaskPath(null)).toBeNull();
+      expect(getActiveSessionTaskPath(undefined)).toBeNull();
+      expect(getActiveSessionTaskPath({ getTaskFilePath: () => "" })).toBeNull();
+      expect(getActiveSessionTaskPath({ getTaskFilePath: () => { throw new Error("no session"); } })).toBeNull();
+
+      const sessionPath = path.join(dir, "new-session_task.md");
+      expect(getActiveSessionTaskPath({ getTaskFilePath: () => sessionPath })).toBe(sessionPath);
+      expect((await readChecklistTasks(sessionPath)).tasks).toEqual([]);
+      expect((await readChecklistTasks(oldProjectTaskPath)).tasks).toHaveLength(1);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it("parses checked, active, and pending task lines", () => {
     const tasks = parseChecklistTasks([
       "- [ ] Pending task",
