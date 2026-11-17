@@ -49,8 +49,10 @@
     return device?.connected ? device : null;
   };
   function state(message, progress = null) {
-    if ($("lan-file-state")) $("lan-file-state").textContent = String(message).slice(0, 90);
-    if ($("lan-file-info")) $("lan-file-info").textContent = String(message).slice(0, 300);
+    const visible = paused && !String(message).startsWith("Paused") && progress !== null
+      ? "Paused · " + String(message) : String(message);
+    if ($("lan-file-state")) $("lan-file-state").textContent = visible.slice(0, 90);
+    if ($("lan-file-info")) $("lan-file-info").textContent = visible.slice(0, 300);
     if (progress !== null && $("lan-file-progress")) {
       const overall = batch ? (batch.index + progress / 100) * 100 / batch.total : progress;
       $("lan-file-progress").value = Math.max(0, Math.min(100, overall));
