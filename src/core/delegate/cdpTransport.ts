@@ -349,6 +349,7 @@ async function executeDelegateChromeCommandInternal(
     const seenEvents = new Set<string>();
     const recorded = await startCdpSessionArchive(scope,{
       projectDirectory:typeof args.__recordingWorkspace === "string" ? args.__recordingWorkspace : "",
+      videoPreset: payload.videoPreset as "compact" | "standard" | "detail" | undefined,
       confirmSensitiveVideo:true,
       captureFrame:async() => withDelegateTargetLock(target.connectionId,target.tabId!,async() => {
         inspectDelegateRecordingOwner(target.connectionId,target.tabId!,agentId,sessionToken);
