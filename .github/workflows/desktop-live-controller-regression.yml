@@ -7,6 +7,8 @@ on:
       - "src/core/desktopUi/remoteControlAuthority.ts"
       - "src/core/desktopUi/attendedNativeControllerSession.ts"
       - "src/core/desktopUi/attendedPrivateDesktopHostSession.ts"
+      - "src/core/desktopUi/remotePrivateControllerTls.ts"
+      - "src/core/desktopUi/remotePrivateControllerClient.ts"
       - "src/core/desktopUi/remoteNativeInputDispatch.ts"
       - "src/core/desktopUi/remoteInputGuard.ts"
       - "src/core/desktopUi/remotePrivateTransport.ts"
@@ -16,6 +18,7 @@ on:
       - "tests/desktop-live/remote*.test.ts"
       - "tests/desktop-live/attendedNativeControllerSession.test.ts"
       - "tests/desktop-live/attendedPrivateDesktopHostSession.test.ts"
+      - "tests/desktop-live/remotePrivateControllerTls.test.ts"
       - "tests/desktop-live/windowsRemoteSemantic*.test.ts"
       - "src/core/desktopUi/nativeAndroidControllerApproval.ts"
       - "src/core/desktopUi/nativeApprovalProof.ts"
@@ -73,6 +76,7 @@ jobs:
           tests/desktop-live/remoteControlAuthority.test.ts
           tests/desktop-live/attendedNativeControllerSession.test.ts
           tests/desktop-live/attendedPrivateDesktopHostSession.test.ts
+          tests/desktop-live/remotePrivateControllerTls.test.ts
           tests/desktop-live/remoteNativeInputDispatch.test.ts
           tests/desktop-live/remoteInputGuard.test.ts
           tests/desktop-live/remotePrivateTransport.test.ts
