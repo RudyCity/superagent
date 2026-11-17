@@ -27,6 +27,7 @@ mod runtime_control;
 mod runtime_detection;
 mod tray_settings;
 mod desktop_input_trust;
+mod desktop_live_android_control;
 mod desktop_access_registry;
 mod named_tunnel_settings;
 mod named_tunnel_connector;
@@ -764,10 +765,41 @@ async fn create_connection(payload: Value) -> Result<Value, String> {
 
 /// The WebView may only invoke fixed LAN Client operations through the selected,
 /// authenticated loopback Core. It never receives Core bearer or pair/session tokens.
+/// Fetch the independently paired Android identity from the authenticated Core.
+/// Never trust WebView-selected labels, fingerprints or a cached viewer frame.
+async fn desktop_live_android_device(device_id: &str) -> Result<(String, String), String> {
+    let inventory = core_request(Method::POST, "/api/desktop/lan-support",
+        Some(json!({"action":"list"}))).await?;
+    let list = inventory.get("devices").and_then(Value::as_array)
+        .ok_or("ANDROID_CONTROLLER_INVENTORY_UNAVAILABLE")?;
+    let matched: Vec<&Value> = list.iter().filter(|entry|
+        entry.get("id").and_then(Value::as_str) == Some(device_id) &&
+        entry.get("platform").and_then(Value::as_str) == Some("android") &&
+        entry.get("paired").and_then(Value::as_bool) == Some(true) &&
+        entry.get("connected").and_then(Value::as_bool) == Some(true)
+    ).collect();
+    if matched.len() != 1 { return Err("ANDROID_CONTROLLER_SESSION_NOT_VERIFIED".into()); }
+    let fingerprint = matched[0].get("fingerprint").and_then(Value::as_str)
+        .ok_or("ANDROID_CONTROLLER_FINGERPRINT_REQUIRED")?;
+    if fingerprint.len() != 64 || !fingerprint.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("ANDROID_CONTROLLER_FINGERPRINT_INVALID".into());
+    }
+    let label = matched[0].get("label").and_then(Value::as_str).unwrap_or("Android device")
+        .chars().filter(|c| !c.is_control()).take(80).collect::<String>();
+    Ok((label, fingerprint.to_ascii_lowercase()))
+}
+
+/// The WebView may initiate a native request but cannot approve its own input.
 #[tauri::command]
-async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"];
+async fn lan_support_action(
+    app: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    action: String,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
+    if window.label() != "main" { return Err("LAN control requires the installed main Tray".into()); }
     let data = payload.unwrap_or_else(|| json!({}));
     let obj = data.as_object().ok_or("Invalid LAN payload")?;
     let allowed: &[&str] = match action.as_str() {
@@ -782,6 +814,7 @@ async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Va
         "tunnel_revoke" => &["tunnelId"],
         "exec" => &["deviceId", "command"],
         "input" => &["deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text"],
+        "control_request" | "control_status" | "control_revoke" => &["deviceId"],
         "file_offer" => &["deviceId", "direction", "name", "size", "sha256"],
         "file_put" => &["deviceId", "transferId", "seq", "data"],
         "file_get" => &["deviceId", "transferId", "seq"],
@@ -978,10 +1011,99 @@ async fn lan_support_action(action: String, payload: Option<Value>) -> Result<Va
             }
         }
     }
+    // The native controller permission does not exist in WebView state,
+    // local storage, Core preview tokens or MCP project access grants.
+    if action == "control_revoke" {
+        desktop_live_android_control::revoke_device(
+            data["deviceId"].as_str().ok_or("Device ID required")?);
+        return Ok(json!({"success":true,"approved":false}));
+    }
+    if matches!(action.as_str(), "input" | "element" | "control_request" | "control_status") &&
+       (!window.is_visible().unwrap_or(false) ||
+        window.is_minimized().unwrap_or(true)) {
+        desktop_live_android_control::revoke();
+        return Err("ANDROID_CONTROLLER_VISIBLE_TRAY_REQUIRED".into());
+    }
+    if action == "control_status" {
+        let id = data["deviceId"].as_str().ok_or("Device ID required")?;
+        let result = match desktop_live_android_device(id).await {
+            Ok((_, fingerprint)) => desktop_live_android_control::check(id, &fingerprint, true),
+            Err(_) => { desktop_live_android_control::revoke_device(id);
+                return Ok(json!({"success":true,"approved":false,"secondsRemaining":0})); },
+        };
+        return Ok(match result {
+            Ok(seconds) => json!({"success":true,"approved":true,"secondsRemaining":seconds}),
+            Err(_) => json!({"success":true,"approved":false,"secondsRemaining":0}),
+        });
+    }
+    if action == "control_request" {
+        let id = data["deviceId"].as_str().ok_or("Device ID required")?;
+        if DESKTOP_LIVE_APPROVAL_OPEN.compare_exchange(
+            false, true, std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        ).is_err() {
+            return Err("Another native Desktop Live approval is pending".into());
+        }
+        let _guard = DesktopLiveApprovalGuard;
+        let (label, fingerprint) = desktop_live_android_device(id).await?;
+        let prompt = format!(concat!(
+            "ALLOW ANDROID REMOTE INPUT?\\n\\n",
+            "Device: {}\\nFingerprint: {}…\\n\\n",
+            "Viewer permission does NOT authorize mouse, touch or keyboard.\\n",
+            "Allow this installed Tray to request input on ONLY this device ",
+            "for up to two minutes?\\n\\n",
+            "The Android owner must independently approve Accessibility input. ",
+            "The phone may deny any command. No Core token is shown to the browser."
+        ), label, &fingerprint[..12]);
+        let native = app.clone();
+        let approved = tauri::async_runtime::spawn_blocking(move || {
+            use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+            native.dialog().message(prompt).buttons(
+                MessageDialogButtons::OkCancelCustom(
+                    "Allow input".to_string(), "Deny".to_string(),
+                ),
+            ).blocking_show()
+        }).await.map_err(|_| "ANDROID_CONTROLLER_NATIVE_DIALOG_FAILED")?;
+        if !approved {
+            desktop_live_android_control::revoke_device(id);
+            return Ok(json!({"success":true,"approved":false}));
+        }
+        if !window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true) {
+            desktop_live_android_control::revoke_device(id);
+            return Err("ANDROID_CONTROLLER_TRAY_HIDDEN_DURING_APPROVAL".into());
+        }
+        let (_, after) = desktop_live_android_device(id).await?;
+        if after != fingerprint {
+            desktop_live_android_control::revoke_device(id);
+            return Err("ANDROID_CONTROLLER_DEVICE_CHANGED_DURING_APPROVAL".into());
+        }
+        desktop_live_android_control::approve(id, &fingerprint)?;
+        return Ok(json!({"success":true,"approved":true,
+            "secondsRemaining": desktop_live_android_control::MAX_CONTROL_SECONDS}));
+    }
+    if matches!(action.as_str(), "input" | "element") {
+        let id = data["deviceId"].as_str().ok_or("Device ID required")?;
+        let (_, fingerprint) = desktop_live_android_device(id).await?;
+        desktop_live_android_control::check(id, &fingerprint, true)?;
+    }
+    if matches!(action.as_str(), "open" | "close" | "revoke" | "pair") {
+        if let Some(id) = data.get("deviceId").and_then(Value::as_str) {
+            desktop_live_android_control::revoke_device(id);
+        } else {
+            desktop_live_android_control::revoke();
+        }
+    }
     let mut body = Map::new();
     body.insert("action".into(), Value::String(action));
     body.extend(obj.iter().map(|(key, value)| (key.clone(), value.clone())));
-    core_request(Method::POST, "/api/desktop/lan-support", Some(Value::Object(body))).await
+    let response = core_request(Method::POST, "/api/desktop/lan-support",
+        Some(Value::Object(body))).await;
+    if matches!(action.as_str(), "input" | "element") &&
+       (!window.is_visible().unwrap_or(false) || window.is_minimized().unwrap_or(true)) {
+        desktop_live_android_control::revoke();
+        return Err("ANDROID_CONTROLLER_ACTION_UNVERIFIED_AFTER_TRAY_HIDDEN".into());
+    }
+    response
 }
 
 #[tauri::command]
