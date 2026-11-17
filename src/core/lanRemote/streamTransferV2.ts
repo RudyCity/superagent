@@ -3,11 +3,11 @@ import { createReadStream, constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { decodeLanChunk, LAN_FILE_CHUNK_BYTES, safeLanFilename } from "./fileTransfer.js";
+import { safeLanFilename } from "./fileTransfer.js";
 
 /** V2 is opt-in and does not change the bounded V1 wire contract. */
 export const LAN_V2_MAX_BYTES = 256 * 1024 * 1024;
-export const LAN_V2_CHUNK_BYTES = LAN_FILE_CHUNK_BYTES;
+export const LAN_V2_CHUNK_BYTES = 16 * 1024;
 const EXPIRY_MS = 24 * 60 * 60_000;
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i;
 
@@ -16,6 +16,16 @@ type Metadata = {
 };
 type Active = Metadata & { received: number; sequence: number; lastUsed: number };
 type Receipt = { ok: true; transferId: string; bytes: number; name: string; savedTo: string };
+
+function decodeV2Chunk(encoded: unknown): Buffer {
+  if (typeof encoded !== "string" || !encoded || encoded.length > 21848 ||
+      !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded))
+    throw Error("Invalid V2 chunk encoding.");
+  const data = Buffer.from(encoded, "base64");
+  if (!data.length || data.length > LAN_V2_CHUNK_BYTES || data.toString("base64") !== encoded)
+    throw Error("Invalid V2 chunk bytes or padding.");
+  return data;
+}
 
 function validMetadata(name: unknown, size: unknown, digest: unknown): asserts name is string {
   safeLanFilename(name);
@@ -132,7 +142,7 @@ export class LanDiskTargetV2 {
   async put(id: unknown, seq: unknown, encoded: unknown) {
     const t = this.transfer(id);
     if (!Number.isSafeInteger(seq) || seq !== t.sequence) throw Error("Out-of-order V2 chunk.");
-    const bytes = decodeLanChunk(encoded);
+    const bytes = decodeV2Chunk(encoded);
     if (t.received + bytes.length > t.size ||
         (bytes.length !== LAN_V2_CHUNK_BYTES && t.received + bytes.length !== t.size))
       throw Error("V2 chunk must be full unless final.");
