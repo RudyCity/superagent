@@ -41,6 +41,10 @@
     isLanDevice: false,
     devicePlatform: null,
     deviceId: "",
+    generation: 0,
+    pointer: null,
+    inputPending: false,
+    lastFrameAt: 0,
   };
 
   const invoke = async (action,payload) => {
@@ -135,8 +139,8 @@
     if(inputBar)inputBar.hidden=!lan||!stream.controlEnabled||!any;
     const typeInput=el("desktop-live-stream-type-input");
     const typeSend=el("desktop-live-stream-type-send");
-    if(typeInput)typeInput.disabled=!keyboard;
-    if(typeSend)typeSend.disabled=!keyboard;
+    if(typeInput)typeInput.disabled=!keyboard||stream.inputPending;
+    if(typeSend)typeSend.disabled=!keyboard||stream.inputPending;
     document.querySelectorAll(".desktop-live-key-btn").forEach(btn=>{btn.disabled=!keyboard;});
     if(viewport)viewport.classList.toggle("interactive",Boolean(lan&&stream.controlEnabled&&mouse));
   }
@@ -221,6 +225,7 @@
       const fpsPill = el("desktop-live-stream-fps");
 
       if (frameData.jpeg) {
+        stream.lastFrameAt = Date.now();
         if (img) {
           img.src = "data:image/jpeg;base64," + frameData.jpeg;
           img.hidden = false;
@@ -274,6 +279,10 @@
       if (!Number.isSafeInteger(pid) || pid <= 0 || !nativeId) return;
     }
 
+    stream.generation++;
+    stream.pointer = null;
+    stream.inputPending = false;
+    stream.lastFrameAt = 0;
     const panel = el("desktop-live-stream-panel");
     const titleEl = el("desktop-live-stream-title");
     const metaEl = el("desktop-live-stream-meta");
@@ -464,6 +473,10 @@
       }
     }
     stream.active = false;
+    stream.generation++;
+    stream.pointer = null;
+    stream.inputPending = false;
+    stream.lastFrameAt = 0;
     stream.token = null;
     stream.id = null;
     stream.inFlight = false;
@@ -473,6 +486,8 @@
     stream.isLanDevice = false;
     stream.devicePlatform = null;
     stream.deviceId = "";
+    const draft = el("desktop-live-stream-type-input");
+    if (draft) draft.value = "";
     const previousScopes = {...stream.controllerScopes};
     stream.controlRequested = false;
     stream.controlEnabled = false;
@@ -747,45 +762,75 @@
         : "LAN input tools hidden; no input will be dispatched.");
     });
 
-    el("desktop-live-stream-img")?.addEventListener("click", async (e) => {
-      if (!stream.controlEnabled || !stream.controllerScopes.mouse || !stream.active) return;
-      const img = el("desktop-live-stream-img");
-      if (!img || img.clientWidth <= 0 || img.clientHeight <= 0 ||
-          !img.naturalWidth || !img.naturalHeight) return;
-      // object-fit:contain introduces letterboxing. Reject taps outside the
-      // actual displayed pixels instead of guessing device coordinates.
+    // Only approved Android LAN sessions accept touch, never native PC previews.
+    function gesturePoint(event) {
+      if (!stream.active || !stream.isLanDevice || !stream.controlEnabled ||
+          !stream.controllerScopes.mouse || stream.inputPending ||
+          stream.lastFrameAt <= 0 || Date.now() - stream.lastFrameAt > 3000) return null;
+      const img=el("desktop-live-stream-img");
+      if(!img||img.hidden||!img.naturalWidth||!img.naturalHeight)return null;
       const rect=img.getBoundingClientRect();
+      if(!rect.width||!rect.height)return null;
       const scale=Math.min(rect.width/img.naturalWidth,rect.height/img.naturalHeight);
-      const actualWidth=img.naturalWidth*scale, actualHeight=img.naturalHeight*scale;
-      const left=rect.left+(rect.width-actualWidth)/2;
-      const top=rect.top+(rect.height-actualHeight)/2;
-      const relX=(e.clientX-left)/actualWidth;
-      const relY=(e.clientY-top)/actualHeight;
-      if(!Number.isFinite(relX)||!Number.isFinite(relY)||relX<0||relX>1||
-         relY<0||relY>1)return;
-      if (stream.isLanDevice) {
-        const call = window.__TAURI__?.core?.invoke;
-        try {
-          const accepted = await call("lan_support_action", {
-            action: "input",
-            payload: { deviceId: stream.deviceId, kind: "tap", x: relX, y: relY },
-          });
-          if (accepted?.success !== true || accepted?.result?.ok !== true)
-            throw Error("On-device touch permission denied");
-          status("Device accepted one touch action.");
-        } catch (err) {
-          status("Gagal tap ke perangkat LAN: " + (err?.message || "Koneksi terputus"), true);
+      const w=img.naturalWidth*scale,h=img.naturalHeight*scale;
+      const x=(event.clientX-rect.left-(rect.width-w)/2)/w;
+      const y=(event.clientY-rect.top-(rect.height-h)/2)/h;
+      if(![x,y].every(Number.isFinite)||x<0||x>1||y<0||y>1)return null;
+      return {x:Number(x.toFixed(5)),y:Number(y.toFixed(5))};
+    }
+    const touchImage=el("desktop-live-stream-img");
+    touchImage?.addEventListener("pointerdown",e=>{
+      if(e.isPrimary===false||stream.pointer)return;
+      const from=gesturePoint(e);
+      if(!from)return;
+      stream.pointer={from,pointerId:e.pointerId,startedAt:Date.now(),
+        generation:stream.generation,deviceId:stream.deviceId};
+      touchImage.setPointerCapture?.(e.pointerId);
+    });
+    touchImage?.addEventListener("pointercancel",()=>{stream.pointer=null;});
+    touchImage?.addEventListener("lostpointercapture",()=>{stream.pointer=null;});
+    touchImage?.addEventListener("pointerup",async e=>{
+      const start=stream.pointer;
+      stream.pointer=null;
+      if(!start||start.pointerId!==e.pointerId||
+         start.generation!==stream.generation||start.deviceId!==stream.deviceId)return;
+      const end=gesturePoint(e);
+      if(!end)return;
+      const distance=Math.hypot(end.x-start.from.x,end.y-start.from.y);
+      const command=distance>0.026
+        ?{deviceId:start.deviceId,kind:"swipe",x:start.from.x,y:start.from.y,
+          endX:end.x,endY:end.y,
+          durationMs:Math.max(100,Math.min(1500,Date.now()-start.startedAt))}
+        :{deviceId:start.deviceId,kind:"tap",x:end.x,y:end.y};
+      stream.inputPending=true;
+      renderStreamPermissions();
+      try{
+        const accepted=await window.__TAURI__?.core?.invoke?.("lan_support_action",{
+          action:"input",payload:command,
+        });
+        if(start.generation!==stream.generation||start.deviceId!==stream.deviceId)return;
+        if(accepted?.success !== true || accepted?.result?.ok !== true)
+          throw Error("On-device touch permission denied");
+        status("Device accepted one "+command.kind+" action.");
+      }catch(err){
+        if(start.generation===stream.generation)
+          status("Android "+command.kind+" rejected: "+(err?.message||"Connection lost"),true);
+      }finally{
+        if(start.generation===stream.generation){
+          stream.inputPending=false;
+          renderStreamPermissions();
         }
-        return;
       }
-      status("Remote native clicks require separately attended controller approval.", true);
     });
 
     async function sendTrayType() {
       const input = el("desktop-live-stream-type-input");
-      if (!input || !stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard) return;
+      if (!input || !stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard || stream.inputPending) return;
       const text = input.value;
-      if (!text) return;
+      if (!text || text.length > 160 || /[\u0000-\u001f\u007f]/.test(text)) {
+        status("Text must be 1-160 characters without control characters.",true);
+        return;
+      }
       if (stream.isLanDevice) {
         const call = window.__TAURI__?.core?.invoke;
         try {
