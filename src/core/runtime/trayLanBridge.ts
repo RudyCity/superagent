@@ -65,7 +65,7 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     file_v2_status: ["action", "deviceId", "transferId"],
     file_v2_finish: ["action", "deviceId", "transferId"],
     file_v2_abort: ["action", "deviceId", "transferId"],
-    file_relay_start: ["action", "sourceId", "destinationId"],
+    file_relay_start: ["action", "sourceId", "destinationId", "protocol"],
     file_relay_status: ["action", "jobId"],
     file_relay_cancel: ["action", "jobId"],
     schema: ["action", "deviceId", "knownRevision"],
@@ -131,8 +131,9 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
       if (action === "file_relay_start") {
         if (typeof data.sourceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.sourceId) ||
             typeof data.destinationId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.destinationId) ||
-            data.sourceId === data.destinationId)
-          throw Error("Relay requires two distinct paired device handles.");
+            data.sourceId === data.destinationId ||
+            (data.protocol !== undefined && data.protocol !== "v1" && data.protocol !== "v2"))
+          throw Error("Relay requires two distinct device handles and a valid protocol.");
       } else if (typeof data.jobId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.jobId)) {
         throw Error("Valid relay job handle required.");
       }
@@ -338,7 +339,8 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       return { success: true, result: await execAndroidShellCommand(id, command) };
     }
     case "file_relay_start": return { success: true, job: lanFileRelayManager.start(
-      args.sourceId as string, args.destinationId as string) };
+      args.sourceId as string, args.destinationId as string,
+      (args.protocol as "v1" | "v2" | undefined) ?? "v1") };
     case "file_relay_status": return { success: true, job: lanFileRelayManager.status(args.jobId as string) };
     case "file_relay_cancel": return { success: true, job: lanFileRelayManager.cancel(args.jobId as string) };
     case "file_offer": return { success: true, file: await offerLanFile(id,
