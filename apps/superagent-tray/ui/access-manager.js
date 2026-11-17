@@ -1412,6 +1412,12 @@
           void refreshAuditLog().catch(() => {});
         }
       });
+      // Navigation only. Runtime Detection cannot issue or modify grants.
+      window.__superagentAccessManagerOpenTab = (tabName) => {
+        if (tabName !== "connections" && tabName !== "mcp") return;
+        setActiveTab(tabName);
+        void refreshMcpRequests();
+      };
       window.__superagentAccessManagerRefresh = () => {
         void refreshRegistry().catch(() => {});
         void refreshWindows().catch(() => {});
