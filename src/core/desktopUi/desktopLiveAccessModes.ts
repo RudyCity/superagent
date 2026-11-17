@@ -22,7 +22,7 @@ export interface DesktopLiveAccessSummary {
 }
 export function desktopLiveAccessModes(
   kind: DesktopLiveAccessKind,
-  options: { previewActive?: boolean; connected?: boolean; ownerMode?: "agent" | "human" | "unknown" } = {},
+  options: { previewActive?: boolean; connected?: boolean; devicePlatform?: "android" | "windows"; ownerMode?: "agent" | "human" | "unknown" } = {},
 ): DesktopLiveAccessSummary {
   switch (kind) {
     case "native":
@@ -31,12 +31,16 @@ export function desktopLiveAccessModes(
         controller: "native-approval-required",
         independentlyApproved: false,
       };
-    case "lan-device":
+    case "lan-device": {
+      // Only the Android LAN Client implements the verified screen and touch
+      // methods today. Do not advertise control for a paired Windows client.
+      const supported = options.devicePlatform === "android" && options.connected === true;
       return {
-        view: options.connected === true ? "device-approval-required" : "not-supported",
-        controller: options.connected === true ? "device-approval-required" : "not-supported",
+        view: supported ? "device-approval-required" : "not-supported",
+        controller: supported ? "device-approval-required" : "not-supported",
         independentlyApproved: false,
       };
+    }
     case "managed-cdp":
       return {
         view: "not-supported",
