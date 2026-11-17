@@ -5,6 +5,7 @@ on:
     paths:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
+      - "scripts/mcp-tool-policy-live-verify.ts"
       - "src/core/tools/registeredFileToolGate.ts"
       - "src/core/tools/browserFilePolicyCertification.ts"
       - "src/core/tools/safeManagedChromeObservation.ts"
@@ -30,6 +31,7 @@ on:
     paths:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
+      - "scripts/mcp-tool-policy-live-verify.ts"
       - "src/core/tools/registeredFileToolGate.ts"
       - "src/core/tools/browserFilePolicyCertification.ts"
       - "src/core/tools/safeManagedChromeObservation.ts"
