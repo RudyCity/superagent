@@ -45,6 +45,9 @@ function setup() {
   let now=20_000;
   const deviceId="123e4567-e89b-12d3-a456-426614174000";
   let approved=true;
+  let pauseScreen=false, pauseOpen=false;
+  let releaseScreen:((value:unknown)=>void)|null=null;
+  let releaseOpen:((value:unknown)=>void)|null=null;
   const item = {
     id:"lan:"+deviceId,kind:"lan-device",title:"Android test",
     application:"Android LAN Client",handle:"10.0.0.2:7777",
@@ -58,8 +61,14 @@ function setup() {
       if(name==="desktop_live_action" && action==="inventory")
         return {success:true,items:[item],sources:{"lan-device":"ok"}};
       if(name==="lan_support_action") {
-        if(action==="open")return {success:true};
-        if(action==="screen")return {success:true,frame:{data:"AA==",width:100,height:200}};
+        if(action==="open"){
+          if(pauseOpen)return await new Promise(resolve=>{releaseOpen=resolve;});
+          return {success:true};
+        }
+        if(action==="screen"){
+          if(pauseScreen)return await new Promise(resolve=>{releaseScreen=resolve;});
+          return {success:true,frame:{data:"AA==",width:100,height:200}};
+        }
         if(action==="control_request")return {success:true,kind:payload.kind,approved,
           secondsRemaining:approved?120:0};
         if(action==="control_status")return {success:true,approved,secondsRemaining:approved?120:0};
@@ -105,6 +114,20 @@ function setup() {
   return {get,requests,deviceId,frames,start,mouse,point,flush,click,
     advance:(ms:number)=>{now+=ms;},
     deny:()=>{approved=false;},
+    watch:()=>get("desktop-live-list").children[0].children[2].children[0],
+    setAvailable:()=>{item.status="available";},
+    pauseScreen:()=>{pauseScreen=true;},
+    resumeScreen:()=>{
+      pauseScreen=false;
+      const resolve=releaseScreen;releaseScreen=null;
+      resolve?.({success:true,frame:{data:"AA==",width:100,height:200}});
+    },
+    pauseOpen:()=>{pauseOpen=true;},
+    resumeOpen:()=>{
+      pauseOpen=false;
+      const resolve=releaseOpen;releaseOpen=null;
+      resolve?.({success:true});
+    },
     stop:()=> (windowStub as any).__superagentDesktopLiveStopStream(),
   };
 }
@@ -167,6 +190,38 @@ describe("Desktop Live scoped Android pointer and keyboard regression",()=>{
     input.value="a".repeat(161);
     await ui.click(ui.get("desktop-live-stream-type-send"));
     expect(ui.requests.some(x=>x.action==="input")).toBe(false);
+  });
+
+  it("discards an outstanding old frame after a human stops the stream",async()=>{
+    const ui=setup();await ui.start();await ui.mouse();
+    ui.pauseScreen();
+    const next=ui.frames.shift();
+    expect(next).toBeDefined();
+    next?.();
+    await ui.flush();
+    await ui.stop();
+    ui.resumeScreen();
+    await ui.flush();
+    expect(ui.get("desktop-live-stream-img").hidden).toBe(true);
+    expect(ui.get("desktop-live-stream-img").src).toBe("");
+    ui.point("pointerdown",60,120);ui.point("pointerup",60,120);
+    await ui.flush();
+    expect(ui.requests.some(x=>x.action==="input")).toBe(false);
+  });
+
+  it("closes a superseded Android support session and rejects duplicate starts",async()=>{
+    const ui=setup();await ui.flush();
+    ui.setAvailable();
+    ui.pauseOpen();
+    const watch=ui.watch();
+    await ui.click(watch);
+    await ui.click(watch);
+    expect(ui.requests.filter(x=>x.action==="open")).toHaveLength(1);
+    await ui.stop();
+    ui.resumeOpen();
+    await ui.flush();
+    expect(ui.requests.filter(x=>x.action==="close")).toHaveLength(1);
+    expect(ui.get("desktop-live-stream-img").hidden).toBe(true);
   });
 
   it("requires keyboard scope and sends bounded text without mouse scope",async()=>{
