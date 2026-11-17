@@ -183,7 +183,7 @@ async fn inspect() -> Result<Preview, String> {
             // An owner PID paired with an "inactive" service is ambiguous,
             // not proof that the process exited. Never silently ignore it.
             if state=="inactive" && pid.is_some() {state="unverified";}
-            let mut eligible=running(state)&&verified_action(s)&&port.is_some();
+            let mut eligible=running(state)&&verified_action(s)&&port.is_some()&&pid.is_some();
             let mut blocker = if eligible {None} else {
                 Some("No verified idle owner or stop capability".into())
             };
@@ -353,11 +353,19 @@ fn validate_selection(preview: &Preview, selected: &[String], exit_after: bool)
     Ok(chosen)
 }
 
-fn stop_plan_request(service: &str, plan: &Value, port: u16) -> Result<Value,String> {
+fn stop_plan_request(service: &str, plan: &Value, port: u16, expected_pid:u32) -> Result<Value,String> {
     if !MANAGED_ORDER.contains(&service) || plan["service"]!=service ||
         plan["action"]!="stop" || port_of(&plan["port"])!=Some(port) ||
         plan["allowed"]==false {
         return Err("SHUTDOWN_PLAN_IDENTITY_MISMATCH".into());
+    }
+    let plan_pid=if service=="daemon" {
+        pid_of(&plan["expectedWorkerPid"])
+    } else {
+        pid_of(&plan["expectedOwnerPid"])
+    };
+    if plan_pid!=Some(expected_pid) {
+        return Err("SHUTDOWN_PLAN_OWNER_CHANGED".into());
     }
     let operation=plan["operationId"].as_str()
         .filter(|s|s.len()>=8&&s.len()<=128)
@@ -395,7 +403,8 @@ async fn stop_one(item: &Item) -> Result<(),String> {
             let port=item.port.ok_or("SHUTDOWN_MISSING_PORT")?;
             let plan=lifecycle_console_request(json!({"action":"plan",
                 "service":service,"targetAction":"stop","port":port})).await?;
-            let command=stop_plan_request(service,&plan,port)?;
+            let command=stop_plan_request(service,&plan,port,
+                item.pid.ok_or("SHUTDOWN_MISSING_OWNER_PID")?)?;
             lifecycle_console_request(command).await?;
             // Do not call a second mutation on timeout or an ambiguous receipt.
             let after=inspect().await?;
@@ -650,15 +659,17 @@ mod tests {
         let request=stop_plan_request("vision",&json!({"service":"vision","action":"stop",
             "port":8095,"operationId":"a-valid-operation","expectedOwnerPid":123,
             "expectedInstanceId":"pinned","noPublicIngress":true,
-            "token":"must-never-leak","url":"https://evil.invalid"}),8095).unwrap();
+            "token":"must-never-leak","url":"https://evil.invalid"}),8095,123).unwrap();
         assert_eq!(request["confirm"],true);
         assert_eq!(request["expectedOwnerPid"],123);
         assert!(request.get("token").is_none());
         assert!(request.get("url").is_none());
         assert!(stop_plan_request("vision",&json!({"service":"vision","action":"stop",
-            "port":8096,"operationId":"a-valid-operation"}),8095).is_err());
+            "port":8095,"operationId":"a-valid-operation","expectedOwnerPid":999}),8095,123).is_err());
+        assert!(stop_plan_request("vision",&json!({"service":"vision","action":"stop",
+            "port":8096,"operationId":"a-valid-operation"}),8095,123).is_err());
         assert!(stop_plan_request("core",&json!({"service":"core",
-            "action":"stop","port":8095,"operationId":"a-valid-operation"}),8095).is_err());
+            "action":"stop","port":8095,"operationId":"a-valid-operation"}),8095,123).is_err());
     }
     #[test]
     fn pid_or_port_change_invalidates_authorization() {
