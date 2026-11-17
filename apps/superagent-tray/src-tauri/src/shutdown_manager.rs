@@ -14,7 +14,7 @@ use std::{
     sync::{Mutex, OnceLock},
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use sysinfo::{Pid, System};
+use sysinfo::{Pid, ProcessStatus, System};
 use tauri::{AppHandle, Emitter, WebviewWindow};
 use uuid::Uuid;
 
@@ -232,6 +232,7 @@ fn guardian_os_candidates(dir:&std::path::Path,system:&System)->Vec<Item> {
         let Some(pid)=pid_of(&lease["pid"]) else{continue};
         let Some(process)=system.process(Pid::from_u32(pid)) else{continue};
         if !guardian_lease_matches(&lease,port,pid,process.start_time(),now_ms) ||
+            matches!(process.status(),ProcessStatus::Zombie|ProcessStatus::Dead) ||
             !manual_process_allowed("managed",pid,process.name()) {continue}
         found.push(Item::new(
             format!("guardian-os:{port}:{pid}"),"Guardian watchdog (OS lease)",
@@ -499,7 +500,8 @@ async fn inspect() -> Result<Preview, String> {
         if let Some(pid)=item.pid {
             if let Some(process)=force_system.process(Pid::from_u32(pid)) {
                 let name=process.name().to_string();
-                if manual_process_allowed(&item.kind,pid,&name) && running(&item.state) {
+                if manual_process_allowed(&item.kind,pid,&name) && running(&item.state) &&
+                    !matches!(process.status(),ProcessStatus::Zombie|ProcessStatus::Dead) {
                     item.manual_kill_selectable=true;
                     item.process_name=Some(name);
                     item.process_path=process.exe()
@@ -630,6 +632,7 @@ fn manual_os_identity_matches(item:&Item)->bool {
     let mut system=System::new();
     system.refresh_processes();
     system.process(Pid::from_u32(pid)).is_some_and(|process|
+        !matches!(process.status(),ProcessStatus::Zombie|ProcessStatus::Dead) &&
         manual_process_identity_matches(item,process.start_time(),process.name(),
             process.exe().and_then(|p|p.to_str())))
 }
@@ -662,6 +665,10 @@ async fn manual_kill_one(item:&Item)->Result<(),String> {
             None=>return Ok(()),
             Some(current) if current.start_time()!=birth =>
                 return Err("SHUTDOWN_MANUAL_PID_REUSED_AFTER_SIGNAL".into()),
+            // SIGKILL has terminated a zombie/dead owner, even if the
+            // parent process has not finished collecting its exit receipt.
+            Some(current) if matches!(current.status(),
+                ProcessStatus::Zombie|ProcessStatus::Dead)=>return Ok(()),
             _=>{}
         }
         if began.elapsed()>Duration::from_secs(8) {
