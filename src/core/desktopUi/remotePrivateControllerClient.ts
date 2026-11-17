@@ -63,7 +63,10 @@ export class RemotePrivateControllerClient {
   private handshakeTimer:ReturnType<typeof setTimeout>|null=null;
   private readonly now:()=>number;
   private readonly hostname:string;
-  private readonly granted=new Set<NativeInputFamily>();
+  /** The independently approved scope is never valid past the host-reported
+   * expiry, even if the private viewer certificate remains connected.
+   */
+  private readonly granted=new Map<NativeInputFamily,number>();
 
   private constructor(
     private readonly socket:TLSSocket,
@@ -192,7 +195,7 @@ export class RemotePrivateControllerClient {
          Number.isSafeInteger(msg.expiresAt)&&
          Number(msg.expiresAt)>this.now()&&
          Number(msg.expiresAt)<=this.options.credential.expiresAt){
-        this.granted.add(p.family!);outcome=true;
+        this.granted.set(p.family!,Number(msg.expiresAt));outcome=true;
       }else if(exact(msg,["v","type","family"])&&msg.v===1&&
          msg.type==="scope-denied"&&msg.family===p.family){outcome=false;}
       else deny();
@@ -239,7 +242,12 @@ export class RemotePrivateControllerClient {
     const kind=(request as {kind?:unknown}).kind;
     const family=kind==="click"||kind==="scroll"?"mouse":
       kind==="type"||kind==="key"?"keyboard":null;
-    if(!family||!this.granted.has(family))deny();
+    if(!family)deny();
+    const scopeExpiresAt=this.granted.get(family);
+    if(!scopeExpiresAt||this.now()>=scopeExpiresAt){
+      this.granted.delete(family);
+      deny(); // Do not submit input with expired native approval.
+    }
     return this.action("input",{v:1,type:"input",request}) as Promise<RemoteNativeInputResult>;
   }
 
