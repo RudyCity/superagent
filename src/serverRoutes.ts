@@ -1299,7 +1299,12 @@ export async function handleServerRoute(
     res.setHeader("Cache-Control", "no-store");
     try {
       const { listSanitizedMcpIdentities } = await import("./core/mcp/mcpIdentityPresence.js");
-      sendJSON(res, 200, { success: true, identities: listSanitizedMcpIdentities() });
+      const { listRequestedMcpIdentityCandidates } = await import("./core/project/projectAccessRequestStore.js");
+      const present = listSanitizedMcpIdentities();
+      const requested = listRequestedMcpIdentityCandidates();
+      const seen = new Set(present.map(identity => identity.identityHandle));
+      sendJSON(res, 200, { success: true,
+        identities: [...present, ...requested.filter(identity => !seen.has(identity.identityHandle))] });
     } catch (err: any) {
       sendJSON(res, 500, { success: false, error: err.message || "Failed to list identities" });
     }
@@ -1318,9 +1323,12 @@ export async function handleServerRoute(
         return true;
       }
       const { getMcpIdentityByHandle } = await import("./core/mcp/mcpIdentityPresence.js");
-      const identity = getMcpIdentityByHandle(identityHandle);
+      const { getRequestedMcpIdentityByHandle } = await import("./core/project/projectAccessRequestStore.js");
+      const identity = getMcpIdentityByHandle(identityHandle) ||
+        getRequestedMcpIdentityByHandle(identityHandle);
       if (!identity) {
-        sendJSON(res, 404, { success: false, error: `Identity handle not found or expired: ${identityHandle}` });
+        sendJSON(res, 404, { success: false,
+          error: "Identity is not currently verified. Reconnect the MCP client and submit a new access request." });
         return true;
       }
       const { getProject } = await import("./core/project/projectRegistry.js");
