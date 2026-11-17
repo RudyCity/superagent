@@ -2816,6 +2816,7 @@ fn main() {
             let start_server = MenuItem::with_id(app, "start_server", "🟢 Start Core Server (:7888)", true, None::<&str>)?;
             let restart_server = MenuItem::with_id(app, "restart_server", "🔄 Restart Core Server (:7888)", true, None::<&str>)?;
             let stop_server = MenuItem::with_id(app, "stop_server", "🛑 Stop Core Server (:7888)", true, None::<&str>)?;
+            let notifications = MenuItem::with_id(app, "notifications", "🔔 Notifications", true, None::<&str>)?;
             let runtime =
                 MenuItem::with_id(app, "runtime", "🔍 Runtime Detection", true, None::<&str>)?;
             let conn_logs =
@@ -2842,6 +2843,7 @@ fn main() {
                 &version_item,
                 &sep0,
                 &open,
+                &notifications,
                 &start_server,
                 &restart_server,
                 &stop_server,
@@ -2964,6 +2966,10 @@ fn main() {
                         });
                     }
                     "add" => show_main(app, true),
+                    "notifications" => {
+                        show_main(app, false);
+                        let _ = app.emit("desktop-open-notifications", ());
+                    }
                     "runtime" => {
                         show_main(app, false);
                         let _ = app.emit("desktop-open-runtime", ());
