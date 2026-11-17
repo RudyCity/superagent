@@ -98,13 +98,15 @@ describe("MCP workspace root boundaries", () => {
   it("applies root boundaries independently to every file in a write batch", async () => {
     const { root, outside } = fixture();
     const inside = path.join(root, "created.txt");
-    const result = await handleWriteFiles({
+    // Direct MCP handlers require an authorized session workspace in addition
+    // to the per-file cwd; a caller-provided cwd alone cannot widen scope.
+    const result = await runWithMcpWorkspace(root, () => handleWriteFiles({
       cwd: root,
       files: [
         { filePath: inside, content: "allowed" },
         { filePath: outside, content: "blocked" },
       ],
-    });
+    }));
 
     expect(fs.readFileSync(inside, "utf8")).toBe("allowed");
     expect(fs.readFileSync(outside, "utf8")).toBe("private marker");
