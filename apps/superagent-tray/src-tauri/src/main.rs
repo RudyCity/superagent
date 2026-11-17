@@ -1222,7 +1222,7 @@ async fn desktop_live_action(
             }
             let id = body.get("id").and_then(Value::as_str).ok_or("Exact session handle required")?;
             if id.len() > 210 || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b"-_:.".contains(&b)) ||
-               !["native:", "managed:", "delegate:", "profile:"].iter().any(|prefix| id.starts_with(prefix)) {
+               !["native:", "managed:", "delegate:", "profile:", "lan:"].iter().any(|prefix| id.starts_with(prefix)) {
                 return Err("Invalid exact session handle".into());
             }
             if let Some(revision) = body.get("expectedRevision") {
