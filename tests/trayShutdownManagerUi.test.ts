@@ -9,13 +9,13 @@ const script=fs.readFileSync(path.resolve("apps/superagent-tray/ui/shutdown-mana
 function fixture(exitReady=false){
   return {previewId:"trusted-preview",createdAt:12345,exitReady,warning:null,services:[
     {id:"managed:guardian",label:"Guardian",kind:"managed",state:"active",port:7888,pid:212,
-      ownerVerified:true,selectable:true,blocker:null,activeSessions:0,
+      ownerVerified:true,selectable:true,forceSelectable:false,blocker:null,activeSessions:0,
       detail:"Verified owner"},
     {id:"mcp:8857:999",label:"MCP owner",kind:"mcp",state:"observed",port:8857,pid:999,
-      ownerVerified:false,selectable:false,blocker:"Active sessions",activeSessions:8,
+      ownerVerified:false,selectable:false,forceSelectable:false,blocker:"Active sessions",activeSessions:8,
       detail:"Busy owner"},
     {id:"managed:vision",label:"Vision",kind:"managed",state:"inactive",port:8095,pid:null,
-      ownerVerified:false,selectable:false,blocker:null,activeSessions:null,detail:"Stopped"},
+      ownerVerified:false,selectable:false,forceSelectable:false,blocker:null,activeSessions:null,detail:"Stopped"},
   ]};
 }
 function mount(preview=fixture()){
