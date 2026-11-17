@@ -5,6 +5,13 @@ on:
     paths:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
+      - "src/core/tools/registeredFileToolGate.ts"
+      - "src/core/tools/browserFilePolicyCertification.ts"
+      - "src/core/tools/safeManagedChromeObservation.ts"
+      - "src/core/tools/chromeProcessTools.ts"
+      - "src/core/tools/crossIdeCdpGateway.ts"
+      - "tests/safeManagedChromeObservation.test.ts"
+      - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
       - "tests/desktopAccessManagerTrayUi.test.ts"
       - "apps/superagent-tray/ui/access-manager.js"
@@ -18,6 +25,13 @@ on:
     paths:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
+      - "src/core/tools/registeredFileToolGate.ts"
+      - "src/core/tools/browserFilePolicyCertification.ts"
+      - "src/core/tools/safeManagedChromeObservation.ts"
+      - "src/core/tools/chromeProcessTools.ts"
+      - "src/core/tools/crossIdeCdpGateway.ts"
+      - "tests/safeManagedChromeObservation.test.ts"
+      - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
       - "tests/desktopAccessManagerTrayUi.test.ts"
       - "apps/superagent-tray/ui/access-manager.js"
@@ -61,4 +75,7 @@ jobs:
             tests/mcpResponseLease.test.ts \
             tests/desktopOverviewOperations.test.ts \
             tests/desktopAccessManagerTrayUi.test.ts \
-            tests/mcpProjectAccessOperatorRoutes.test.ts
+            tests/mcpProjectAccessOperatorRoutes.test.ts \
+            tests/mcpCrossIdeGateway.test.ts \
+            tests/safeManagedChromeObservation.test.ts \
+            tests/desktop-ui-integration/registered-file-tool-gate.test.ts
