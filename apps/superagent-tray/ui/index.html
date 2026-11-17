@@ -55,6 +55,7 @@
   <script src="./lan-screen-viewer.js" defer></script>
   <script src="./lan-sha256.js" defer></script>
   <script src="./lan-file-transfer.js" defer></script>
+  <script src="./lan-file-relay.js" defer></script>
 </head>
 <body style="background-color: #07090e; color: #f8fafc;">
   <!-- Native Windows decorations are disabled; these controls use strict
@@ -1810,6 +1811,18 @@
               <button type="button" class="button ghost" id="lan-file-receive" disabled>Receive owner's shared file</button>
               <button type="button" class="button ghost" id="lan-file-pause" disabled>Pause transfer</button>
               <button type="button" class="button ghost danger" id="lan-file-cancel" disabled>Cancel transfer</button>
+            </div>
+            <div class="lan-relay-panel">
+              <div class="panel-eyebrow">DEVICE-TO-DEVICE · OWNER APPROVAL ON BOTH ENDS</div>
+              <p class="lan-file-info">Use the device selected above as the source. Its owner must first select a file locally (up to 4 MiB); the destination owner approves a second time. This relays through Core; it is not an unapproved direct peer connection.</p>
+              <label class="lan-screen-control-label" for="lan-relay-destination">Destination device</label>
+              <select id="lan-relay-destination" disabled><option value="">Connect another device on this route</option></select>
+              <div class="lan-transfer-actions">
+                <button type="button" class="button primary" id="lan-relay-start" disabled>Relay owner-selected file</button>
+                <button type="button" class="button ghost danger" id="lan-relay-cancel" disabled>Cancel relay</button>
+              </div>
+              <progress id="lan-relay-progress" class="lan-file-progress" max="100" value="0"></progress>
+              <p id="lan-relay-status" class="lan-file-info" aria-live="polite">Select a connected source and destination to relay a file.</p>
             </div>
             <div class="lan-folder-picker">
               <label class="lan-screen-control-label" for="lan-folder-source">Send an explicitly selected folder (Windows / Android)</label>
