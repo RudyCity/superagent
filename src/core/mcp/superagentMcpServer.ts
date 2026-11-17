@@ -632,6 +632,28 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     registerResourcesAndPrompts(server, { authMode, getIdentity });
   }
 
+  const describeMcpApprovalRequirement = (name: string) => {
+    if (name === MCP_GATEWAY_TOOL_NAMES.execute) {
+      return { kind: "target_dependent", note: "The nested target is reauthorized for OAuth scopes, project grants, host file policy and MCP Connection Controls." };
+    }
+    if (MCP_TOOL_CLASSIFICATION[name] !== "dangerous") {
+      return { kind: "read_only", oauthScope: "mcp:tools", note: "Read-only classification does not bypass host file or project rules." };
+    }
+    if (PRIVILEGED_MCP_TOOLS.has(name)) {
+      return { kind: "operator_admin", oauthScope: "mcp:tools:admin",
+        note: "Operator consent and admin scope are required for project registry/grant changes." };
+    }
+    if (WORKSPACE_SCOPED_MCP_TOOLS.has(name)) {
+      return { kind: "project", oauthScope: "mcp:tools:write",
+        note: "Requires a grant matching the selected project and per-action capability; authorization is checked when called." };
+    }
+    if (name === "superagent_grant_project_access" || name === "superagent_revoke_project_access") {
+      return { kind: "operator_admin", oauthScope: "mcp:tools:admin", note: "Project grant mutation requires separate operator authorization." };
+    }
+    return { kind: "connection_execute", oauthScope: "mcp:tools:write",
+      projectId: MCP_CONNECTION_PROJECT_ID, capability: "execute",
+      note: "Human approval in SuperAgent Tray; chat-agent YOLO never grants MCP execution." };
+  };
   const getAuthorizedMcpTools = () => {
     const allTools = MCP_TOOL_DEFINITIONS;
     // MCP discovery is independent of the chat-agent YOLO mode.
@@ -673,6 +695,7 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
       annotations: getToolAnnotations(t.name),
       _meta: {
         securitySchemes: getToolSecuritySchemes(t.name, authMode),
+        mcpApproval: describeMcpApprovalRequirement(t.name),
         filePolicy: {
           active: filePolicyActive,
           readiness: filePolicyActive ? getPermanentFileToolReadiness(t.name) : "inactive",
@@ -1461,6 +1484,7 @@ function extractMcpResultText(result: unknown): string {
           tools: searchGatewayTools(authorizedTools, rawArgs).map((tool) => ({
             ...tool, filePolicy: active ? getPermanentFileToolReadiness(tool.name) : "inactive",
             filePolicyRequirement: active ? describePermanentFileToolReadiness(tool.name) : undefined,
+            mcpApproval: describeMcpApprovalRequirement(tool.name),
           })),
           filePolicyActive: active,
         });
@@ -1471,6 +1495,7 @@ function extractMcpResultText(result: unknown): string {
             ? getPermanentFileToolReadiness(found.name) : "inactive",
           filePolicyRequirement: fileRulesRegistered()
             ? describePermanentFileToolReadiness(found.name) : undefined,
+          mcpApproval: describeMcpApprovalRequirement(found.name),
           note: "Discovery never grants execution; inspect the action and obtain required MCP/host approvals.",
         }) : { content: [{ type: "text", text: "Tool unavailable or not authorized." }], isError: true };
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.status) {
