@@ -7,6 +7,7 @@ import type { AddressInfo } from "node:net";
 import forge from "node-forge";
 import { LanTargetFiles, safeLanFilename, LAN_FILE_MAX_BYTES } from "./fileTransfer.js";
 import { LanDiskTargetV2, LAN_V2_MAX_BYTES } from "./streamTransferV2.js";
+import { LanDiskSourceV2 } from "./streamSourceV2.js";
 import { isSegmentDiscoveryRequest, networkSegmentTag } from "./networkSegment.js";
 
 export const LAN_PORT = 17845;
@@ -151,6 +152,7 @@ export interface LanServerHandle {
   close(): Promise<void>; revoke(): void; rotatePairCode(): string;
   cancelTransfer(): boolean;
   shareSelectedFile(filePath: string): Promise<{ name: string; size: number }>;
+  shareSelectedLargeFile(filePath: string): Promise<{ name: string; size: number; sha256: string }>;
   shareSelectedFolder(folderPath: string): Promise<{ name: string; size: number; files: number }>;
   state(): { paired: number; sessionActive: boolean; sharing?: { name: string; size: number } | null; transfer?: LanTransferStatus | null };
 }
@@ -171,7 +173,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
   let busy = false;
   const files = new LanTargetFiles(options.transferDirectory);
   const diskV2 = new LanDiskTargetV2(options.transferDirectory);
+  const sourceV2 = new LanDiskSourceV2();
   let v2TransferId: string | null = null;
+  let v2Direction: "upload" | "download" | null = null;
   let transfer: LanTransferStatus | null = null;
   let lastProgress = -1;
   function notifyTransfer(force = false) {
@@ -185,8 +189,9 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
   function cancelTransfer() {
     if (!transfer || transfer.status !== "active") return false;
     if (transfer.transferId === v2TransferId) {
-      void diskV2.abort(v2TransferId).catch(() => {});
-      v2TransferId = null;
+      if (v2Direction === "download") sourceV2.abort(v2TransferId);
+      else void diskV2.abort(v2TransferId).catch(() => {});
+      v2TransferId = null; v2Direction = null;
     } else files.abort(transfer.transferId);
     transfer = { ...transfer, status: "cancelled" };
     notifyTransfer(true);
@@ -208,7 +213,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     accessEpoch++;
     codeExpires = 0; // Revoked pairing codes never remain reusable.
     cancelTransfer();
-    devices.clear(); session = null; files.clear();
+    devices.clear(); session = null; files.clear(); sourceV2.clear();
     void diskV2.purge().catch(() => { notice("LAN V2 staging cleanup failed; manual review required."); });
     abortChild();
     notice("All paired devices and sessions revoked.");
@@ -293,7 +298,8 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     session.lastUsed = now();
     if (op === "close") {
       cancelTransfer();
-      session = null; files.clear(); diskV2.suspend(); v2TransferId = null;
+      session = null; files.clear(); diskV2.suspend(); sourceV2.clear();
+      v2TransferId = null; v2Direction = null;
       abortChild(); send(socket, { ok: true });
       socket.end(); notice("Support session closed."); return;
     }
@@ -302,44 +308,73 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
         fail(socket, "Another transfer is active."); socket.end(); return;
       }
       try {
-        if (req.direction !== "upload" || typeof req.name !== "string" ||
-            !Number.isSafeInteger(req.size) || Number(req.size) < 1 ||
-            Number(req.size) > LAN_V2_MAX_BYTES || typeof req.sha256 !== "string" ||
-            !/^[a-f0-9]{64}$/.test(req.sha256)) throw Error("Invalid V2 offer.");
-        const name = safeLanFilename(req.name);
-        if (name.endsWith(".safolder")) throw Error("Large folder archives require separate validation.");
-        const size = Number(req.size);
+        if (req.direction !== "upload" && req.direction !== "download")
+          throw Error("Invalid V2 direction.");
+        if (req.direction === "download" &&
+            ["name", "size", "sha256"].some((key) => req[key] !== undefined))
+          throw Error("Source must be selected by its owner.");
+        const selectedAtPrompt = req.direction === "download" ? sourceV2.getShared() : null;
+        const name = req.direction === "download" ? selectedAtPrompt?.name
+          : safeLanFilename(req.name);
+        const size = req.direction === "download" ? selectedAtPrompt?.size : req.size;
+        const checksum = req.direction === "download" ? selectedAtPrompt?.sha256 : req.sha256;
+        if (typeof name !== "string" || name.endsWith(".safolder") ||
+            !Number.isSafeInteger(size) || Number(size) < 1 ||
+            Number(size) > LAN_V2_MAX_BYTES || typeof checksum !== "string" ||
+            !/^[a-f0-9]{64}$/.test(checksum)) throw Error("Invalid V2 source/target metadata.");
         const epoch = accessEpoch;
         const approvedSession = session;
         const approved = await options.onApproval({
-          kind: "file-upload", controller: device.label, ip, expiresInSeconds: 90,
-          detail: "Receive " + name + " (" + size + " bytes; resumable disk-backed V2)",
+          kind: req.direction === "download" ? "file-download" : "file-upload",
+          controller: device.label, ip, expiresInSeconds: 90,
+          detail: (req.direction === "download" ? "Send " : "Receive ") + name +
+            " (" + size + " bytes; V2 disk streaming)",
         });
+        const selectedAfter = req.direction === "download" ? sourceV2.getShared() : null;
         if (!approved || epoch !== accessEpoch || approvedSession !== session ||
-            !session || socket.destroyed) throw Error("V2 target approval revoked.");
-        const metadata = await diskV2.offerUpload(name, size, req.sha256);
+            !session || socket.destroyed ||
+            (req.direction === "download" &&
+              (selectedAfter?.revision !== selectedAtPrompt?.revision ||
+               selectedAfter?.name !== selectedAtPrompt?.name ||
+               selectedAfter?.sha256 !== selectedAtPrompt?.sha256 ||
+               selectedAfter?.size !== selectedAtPrompt?.size)))
+          throw Error("V2 offer approval or selected source revoked.");
+        const metadata = req.direction === "download"
+          ? await sourceV2.offer(selectedAtPrompt!.revision)
+          : await diskV2.offerUpload(name, Number(size), checksum);
         v2TransferId = metadata.transferId;
-        transfer = { transferId: metadata.transferId, direction: "upload",
+        v2Direction = req.direction;
+        transfer = { transferId: metadata.transferId, direction: req.direction,
           name: metadata.name, size: metadata.size, transferred: metadata.received, status: "active" };
         lastProgress = -1;
         notifyTransfer(true);
         send(socket, metadata);
-      } catch {
-        fail(socket, "V2 file offer denied, invalid, or staging unavailable.");
-      }
+      } catch { fail(socket, "V2 offer denied, invalid, or selected file changed."); }
       socket.end(); return;
     }
-    if (["file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort"].includes(String(op))) {
+    if (["file_v2_put", "file_v2_get", "file_v2_status", "file_v2_finish", "file_v2_abort"].includes(String(op))) {
       try {
-        if (req.transferId !== v2TransferId) throw Error("V2 transfer not active in current approved session.");
+        if (req.transferId !== v2TransferId)
+          throw Error("V2 transfer not active in the approved support session.");
         let reply: unknown;
-        if (op === "file_v2_put") reply = await diskV2.put(req.transferId, req.seq, req.data);
-        else if (op === "file_v2_status") reply = diskV2.status(req.transferId);
-        else if (op === "file_v2_finish") reply = await diskV2.finish(req.transferId);
-        else reply = await diskV2.abort(req.transferId);
+        if (op === "file_v2_put" && v2Direction === "upload")
+          reply = await diskV2.put(req.transferId, req.seq, req.data);
+        else if (op === "file_v2_get" && v2Direction === "download")
+          reply = await sourceV2.get(req.transferId, req.seq);
+        else if (op === "file_v2_status")
+          reply = v2Direction === "download" ? sourceV2.status(req.transferId)
+            : diskV2.status(req.transferId);
+        else if (op === "file_v2_finish")
+          reply = v2Direction === "download" ? await sourceV2.finish(req.transferId)
+            : await diskV2.finish(req.transferId);
+        else if (op === "file_v2_abort")
+          reply = v2Direction === "download" ? sourceV2.abort(req.transferId)
+            : await diskV2.abort(req.transferId);
+        else throw Error("Unsupported V2 direction or operation.");
         if (transfer && req.transferId === transfer.transferId) {
-          if (op === "file_v2_put") {
-            transfer.transferred = (reply as { received: number }).received;
+          if (op === "file_v2_put" || op === "file_v2_get") {
+            const received = (reply as { received: number }).received;
+            if (received >= transfer.transferred) transfer.transferred = Math.min(transfer.size, received);
             notifyTransfer();
           } else if (op === "file_v2_finish" || op === "file_v2_abort") {
             transfer.status = op === "file_v2_finish" ? "completed" : "cancelled";
@@ -347,15 +382,14 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
             notifyTransfer(true);
           }
         }
-        // Retain the last completed transfer handle briefly: a lost finish ACK
-        // can be reconciled by idempotently repeating file_v2_finish.
-        if (op === "file_v2_abort") v2TransferId = null;
+        // Keep successful finish receipts briefly for an uncertain network ACK.
+        if (op === "file_v2_abort") { v2TransferId = null; v2Direction = null; }
         send(socket, reply as object);
-      } catch { fail(socket, "V2 transfer rejected; verify checkpoint, session and digest."); }
+      } catch { fail(socket, "V2 transfer rejected: session, chunk or digest invalid."); }
       socket.end(); return;
     }
     if (op === "file_offer") {
-      if (busy) { fail(socket, "Target is busy."); socket.end(); return; }
+      if (busy || transfer?.status === "active") { fail(socket, "Target is busy."); socket.end(); return; }
       const direction = req.direction;
       if (direction !== "upload" && direction !== "download") {
         fail(socket, "Invalid file direction."); socket.end(); return;
@@ -486,6 +520,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     revoke,
     cancelTransfer,
     shareSelectedFile: (filePath) => files.shareSelectedFile(filePath),
+    shareSelectedLargeFile: (filePath) => sourceV2.select(filePath),
     shareSelectedFolder: (folderPath) => files.shareSelectedFolder(folderPath),
     state: () => ({ paired: devices.size, sessionActive: Boolean(session), sharing: files.getShared(), transfer }),
     close: async () => {
