@@ -223,8 +223,12 @@
 
       if (isLan) {
         const call = window.__TAURI__?.core?.invoke;
-        const opened = await call("lan_support_action", { action: "open", payload: { deviceId } });
-        if (!opened?.success) throw Error(opened?.error || "Device support session was not approved");
+        // A previously connected support session already passed its device
+        // approval. Do not open a duplicate session or bypass a new denial.
+        if (item.status !== "controlled") {
+          const opened = await call("lan_support_action", { action: "open", payload: { deviceId } });
+          if (!opened?.success) throw Error(opened?.error || "Device support session was not approved");
+        }
 
         stream.active = true;
         stream.token = "lan-" + deviceId;
