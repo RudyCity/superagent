@@ -66,7 +66,7 @@ function fixture() {
         .update(JSON.stringify(challenge)).digest("hex"),
   };
   const control = new RemoteControlAuthority(trust, () => now);
-  const challenge = control.request(caller);
+  const challenge = control.request(caller, ["click","type","key","scroll"]);
   const signed = createHmac("sha256", "test-host-only-secret")
     .update(JSON.stringify(challenge)).digest("hex");
   const { token } = control.confirmNativeApproval(challenge.nonce, signed);
