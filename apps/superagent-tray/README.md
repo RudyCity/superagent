@@ -35,9 +35,11 @@ MCP or Chat Agent permissions.
   **Archived/Restored**. Search by title/details/source, filter by age, category,
   severity, status, and see repeated-incident counts.
 
-Pending MCP approvals are **informational only**. Opening or acknowledging an
-alert does **not** approve a request, alter permissions, connect a device, or
-execute a tool. Review the actual Security Approval screen to make a decision.
+Pending MCP approvals are **informational only**. Clicking a pending-approval
+notification focuses its exact request card in the Access Manager MCP or
+Connections tab. The focused card still requires separate native human
+confirmation; opening or acknowledging an alert does **not** approve a request,
+alter permissions, connect a device, or execute a tool.
 
 ### Delivery, privacy, and retention
 
