@@ -40,7 +40,9 @@ public final class LanFileExchange {
         ByteArrayOutputStream buffer;
         byte[] source;
     }
-    private Pending active;
+    // Volatile so an owner cancel can invalidate an in-progress synchronized
+    // MediaStore commit before it publishes a file.
+    private volatile Pending active;
     private byte[] selected;
     private String selectedName;
     // Changes to source selection invalidate an outstanding owner approval.
@@ -237,8 +239,17 @@ public final class LanFileExchange {
         }
         return output;
     }
-    public synchronized JSONObject abort(String id) throws Exception {
-        if (active != null && active.id.equals(id)) active = null;
+    public JSONObject abort(String id) throws Exception {
+        // Do not wait for finish()'s monitor before revoking its commit.
+        // Once invalidated, finish() checks this generation and removes
+        // pending MediaStore entries rather than publishing cancelled data.
+        Pending expected = active;
+        if (expected != null && expected.id.equals(id)) {
+            revocationGeneration.incrementAndGet();
+            synchronized (this) {
+                if (active == expected) active = null;
+            }
+        }
         return new JSONObject().put("ok", true);
     }
 }
