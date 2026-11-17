@@ -49,6 +49,10 @@ on:
       - "scripts/observe-runtime-soak-r6.ts"
       - "scripts/setup-core-windows-startup.ts"
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 permissions:
   contents: read
 jobs:

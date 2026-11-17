@@ -153,6 +153,10 @@ on:
       - "docs/guides/runtime-oauth-r2-staging.md"
       - "docs/guides/runtime-r3-r7-release-gates.md"
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
+
 jobs:
   core-guardian:
     name: Core guardian / ${{ matrix.os }}
