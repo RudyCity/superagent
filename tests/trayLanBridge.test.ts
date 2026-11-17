@@ -39,13 +39,24 @@ describe("LAN Client Tray request boundary", () => {
     }).action).toBe("exec");
   });
 
-  it("read-only list works independently; mutations fail closed in YOLO OFF", async () => {
-    const response = await dispatchTrayLanAction({ action: "list" });
-    expect(response).toMatchObject({ success: true, devices: expect.any(Array) });
-    if (getYoloModeState() === "off") {
-      await expect(dispatchTrayLanAction({ action: "open", deviceId: "85d1e5ab-42d1-4ed0-b71f-74a3f16523fe" }))
-        .rejects.toThrow(/Full YOLO/);
+  it("attended support requires target pairing; autonomous execution stays YOLO-gated", async () => {
+    const response=await dispatchTrayLanAction({action:"list"});
+    expect(response).toMatchObject({success:true,devices:expect.any(Array)});
+    if(getYoloModeState()==="off"){
+      // An attended session cannot invent a paired target even with Core access.
+      await expect(dispatchTrayLanAction({
+        action:"open",deviceId:"85d1e5ab-42d1-4ed0-b71f-74a3f16523fe",
+      })).rejects.toThrow(/Unknown LAN handle|not paired|Pair this laptop/);
+      // General commands still require Full YOLO, independent of any viewer.
+      await expect(dispatchTrayLanAction({
+        action:"exec",deviceId:"85d1e5ab-42d1-4ed0-b71f-74a3f16523fe",
+        command:"Get-ComputerInfo",
+      })).rejects.toThrow(/Full YOLO/);
     }
+    expect(()=>parseTrayLanAction({
+      action:"input",deviceId:"85d1e5ab-42d1-4ed0-b71f-74a3f16523fe",
+      kind:"tap",x:.5,y:.5,
+    })).toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
   });
 });
 
