@@ -159,13 +159,13 @@ export class CrossIdeCdpGateway {
         authorization: "NO_CDP_CLAIM; claim or approved attach is separately required" };
     }
     if (action === "discover" || action === "policy") {
-      const sessions = await cdpCoordinatorStatus(action === "discover" ? validPort(input.port) : undefined);
       const controls = {
         gatewayOnlyForMcp: process.env.SUPERAGENT_CDP_GATEWAY_ONLY === "1",
         cdplock: "cross-process-enforced-for-gateway-and-SuperAgent-CDP-clients",
         externalDirectCdp: "NOT_BLOCKED_BY_SUPERAGENT; browser debug port needs OS/network isolation",
       };
-      if (action === "policy") return controls;
+      if (action === "policy") return controls; // Pure config; no file-backed coordinator read.
+      const sessions = await cdpCoordinatorStatus(validPort(input.port));
       let pages: Awaited<ReturnType<typeof discoverCdpPages>> = [];
       let browserError: string | undefined;
       try { pages = await discoverCdpPages(validPort(input.port)); }
