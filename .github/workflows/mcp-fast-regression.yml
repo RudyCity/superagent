@@ -6,12 +6,18 @@ on:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
       - "tests/mcp*.test.ts"
+      - "apps/superagent-tray/ui/overview-operations.js"
+      - "apps/superagent-tray/ui/index.html"
+      - "tests/desktopOverviewOperations.test.ts"
       - ".github/workflows/mcp-fast-regression.yml"
   pull_request:
     paths:
       - "src/core/mcp/**"
       - "src/core/tools/mcpTools.ts"
       - "tests/mcp*.test.ts"
+      - "apps/superagent-tray/ui/overview-operations.js"
+      - "apps/superagent-tray/ui/index.html"
+      - "tests/desktopOverviewOperations.test.ts"
       - ".github/workflows/mcp-fast-regression.yml"
   workflow_dispatch:
 permissions:
