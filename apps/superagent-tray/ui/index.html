@@ -8,6 +8,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self' asset:; script-src 'self'; style-src 'self'; img-src 'self' asset: data: blob:; connect-src ipc: http://ipc.localhost https://ipc.localhost" />
   <title>SuperAgent Tray · Automation &amp; Runtime Console</title>
   <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./external-lifecycle.css" />
   <link rel="stylesheet" href="./overview.css" />
   <link rel="stylesheet" href="./overview-operations.css" />
   <link rel="stylesheet" href="./muse-files.css" />
@@ -22,6 +23,7 @@
   <script src="./titlebar.js" defer></script>
   <script src="./feedback.js" defer></script>
   <script src="./app.js" defer></script>
+  <script src="./external-lifecycle.js" defer></script>
   <script src="./runtime.js" defer></script>
   <script src="./lifecycle.js" defer></script>
   <link rel="stylesheet" href="./lifecycle.css" />
@@ -929,6 +931,80 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+        </section>
+
+        <!-- External MCP workers are opt-in. A connected MCP client is not a wakeable ChatGPT session. -->
+        <section id="external-life" class="panel external-life" aria-labelledby="external-life-title">
+          <div class="panel-head external-life-head">
+            <div>
+              <div class="panel-eyebrow">EXTERNAL AGENT DELEGATION</div>
+              <h2 id="external-life-title">ChatGPT ↔ ChatGPT Workflows</h2>
+              <p>Schedule work for separately authorised ChatGPT MCP workers. Workers explicitly claim tasks; internal SuperAgent agents remain inaccessible.</p>
+            </div>
+            <button type="button" class="button ghost" id="external-life-refresh">Refresh</button>
+          </div>
+          <form id="external-life-form" class="external-life-form">
+            <div class="external-life-field external-life-full">
+              <label for="external-life-workspace">Authorised local workspace</label>
+              <input id="external-life-workspace" type="text" required placeholder="Absolute project path" autocomplete="off" spellcheck="false" />
+            </div>
+            <div class="external-life-field">
+              <label for="external-life-name">Workflow name</label>
+              <input id="external-life-name" type="text" maxlength="120" required placeholder="Daily repository review" />
+            </div>
+            <div class="external-life-field">
+              <label for="external-life-worker">Target MCP worker</label>
+              <select id="external-life-worker"><option value="">Any approved, available worker</option></select>
+            </div>
+            <div class="external-life-field external-life-full">
+              <label for="external-life-prompt">Worker instructions</label>
+              <textarea id="external-life-prompt" rows="3" maxlength="12000" required placeholder="Audit the assigned project and return verifiable findings. Do not modify files without the necessary approval."></textarea>
+            </div>
+            <div class="external-life-field">
+              <label for="external-life-frequency">Schedule</label>
+              <select id="external-life-frequency">
+                <option value="once">Run once</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="custom">Custom cron</option>
+              </select>
+            </div>
+            <div class="external-life-field" id="external-life-once-field">
+              <label for="external-life-once-at">When (local Core time)</label>
+              <input id="external-life-once-at" type="datetime-local" required />
+            </div>
+            <div class="external-life-field" id="external-life-time-field" hidden>
+              <label for="external-life-at-time">Run at</label>
+              <input id="external-life-at-time" type="time" value="08:00" />
+            </div>
+            <div class="external-life-field" id="external-life-weekday-field" hidden>
+              <label for="external-life-weekday">Weekday</label>
+              <select id="external-life-weekday">
+                <option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option>
+                <option value="4">Thursday</option><option value="5">Friday</option>
+                <option value="6">Saturday</option><option value="0">Sunday</option>
+              </select>
+            </div>
+            <div class="external-life-field external-life-full" id="external-life-cron-field" hidden>
+              <label for="external-life-cron">Cron (minute hour day month weekday)</label>
+              <input id="external-life-cron" type="text" placeholder="0 8 * * *" />
+            </div>
+            <details class="external-life-advanced external-life-full">
+              <summary>Advanced: parallel tasks and dependencies (JSON)</summary>
+              <label for="external-life-steps">Steps array. Each task has id, prompt, dependsOn, and optional targetWorkerId.</label>
+              <textarea id="external-life-steps" rows="4" spellcheck="false" placeholder='[{"id":"audit","prompt":"Audit"},{"id":"review","prompt":"Review","dependsOn":["audit"]}]'></textarea>
+            </details>
+            <div class="external-life-submit external-life-full">
+              <span id="external-life-feedback" role="status" aria-live="polite">Choose a workspace, then refresh to see its connected workers.</span>
+              <button class="button primary" type="submit" id="external-life-create">Create scheduled delegation</button>
+            </div>
+          </form>
+          <div class="external-life-inventory">
+            <div class="external-life-inventory-heading"><h3>Worker availability</h3><span id="external-life-worker-count">—</span></div>
+            <div id="external-life-workers" class="external-life-worker-list" aria-live="polite"></div>
+            <div class="external-life-inventory-heading"><h3>Scheduled workflows and runs</h3><span id="external-life-run-count">—</span></div>
+            <div id="external-life-runs" class="external-life-run-list" aria-live="polite"></div>
           </div>
         </section>
       </div>
