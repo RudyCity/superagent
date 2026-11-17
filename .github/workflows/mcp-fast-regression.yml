@@ -20,6 +20,12 @@ on:
       - "tests/safeManagedChromeObservation.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
+      - "tests/lanFileQueueRecovery.test.ts"
+      - "tests/lanFileRelayManager.test.ts"
+      - "tests/desktop-ui-integration/trusted-desktop-input.test.ts"
+      - "tests/desktop-ui-integration/persistent-access-policy.test.ts"
+      - "src/core/lanRemote/fileRelayManager.ts"
+      - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "tests/desktopAccessManagerTrayUi.test.ts"
       - "tests/desktopRuntimeUi.test.ts"
       - "apps/superagent-tray/ui/runtime.js"
@@ -52,6 +58,12 @@ on:
       - "tests/safeManagedChromeObservation.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
+      - "tests/lanFileQueueRecovery.test.ts"
+      - "tests/lanFileRelayManager.test.ts"
+      - "tests/desktop-ui-integration/trusted-desktop-input.test.ts"
+      - "tests/desktop-ui-integration/persistent-access-policy.test.ts"
+      - "src/core/lanRemote/fileRelayManager.ts"
+      - "apps/superagent-tray/ui/lan-file-transfer.js"
       - "tests/desktopAccessManagerTrayUi.test.ts"
       - "tests/desktopRuntimeUi.test.ts"
       - "apps/superagent-tray/ui/runtime.js"
@@ -139,6 +151,10 @@ jobs:
         run: >
           bun --bun x vitest run --maxWorkers=2
           tests/mcpApprovalAndFilePolicy.test.ts
+          tests/desktop-ui-integration/persistent-access-policy.test.ts
+          tests/desktop-ui-integration/trusted-desktop-input.test.ts
+          tests/lanFileQueueRecovery.test.ts
+          tests/lanFileRelayManager.test.ts
           tests/mcpExactFileSearch.test.ts
           tests/mcpExplicitGrepIntegration.test.ts
           tests/mcpPolicyHttpSmoke.test.ts
