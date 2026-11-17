@@ -29,7 +29,7 @@ Each recording gets a new UUID folder; existing files are not overwritten. The p
 ## Start, inspect and stop
 
 1. On an exact managed or Delegate Chrome tab, claim ownership with `claim_target` and retain your `targetId`, `agentId` and secret `sessionToken`. Sharing a tab as an observer or contributor does not grant permission to start a sensitive video recording.
-2. Call `control_chrome_cdp` with `command:"record_session_start"`, `transport:"managed"`, the exact target and owner identity, and `confirmSensitiveVideo:true`. **MP4 is enabled by default**; you need not pass `video:true`.
+2. Call `control_chrome_cdp` with `command:"record_session_start"`, the selected `transport:"managed"` or `transport:"delegate"`, the exact target and owner identity, and `confirmSensitiveVideo:true`. **MP4 is enabled by default**; you need not pass `video:true`. Set `videoPreset` to `compact`, `standard` (default), or `detail` for a bounded quality profile.
 3. Perform the actions to be documented. Native `hover_cursor` and `click_cursor` are logged as action categories and accompanied by video frames; no raw selector, typed value or form content is written to JSON logs.
 4. Call `record_session_status` to inspect the frame count, dropped frames, file paths and errors. Finish with `record_session_stop`. The stop command flushes queued text logs, finalizes FFmpeg and returns the output paths and actual status.
 
@@ -47,7 +47,7 @@ The tool's actual working directory must be the intended project. The archive pa
 
 | File | What is saved |
 | --- | --- |
-| `video.mp4` | Captured exact tab surface, 960×540 pixels, up to **5 FPS**, H.264, **no audio** |
+| `video.mp4` | Captured exact tab surface; **compact** 640×360/3 FPS, **standard** 960×540/5 FPS, or **detail** 1280×720/5 FPS; H.264, no audio |
 | `actions.json` | Bounded action category, cursor coordinates and cryptographic selector/URL digests where available; no typed text |
 | `transcript.jsonl` | Recording start/stop and time-ordered tool-action category, outcome and bounded redacted failure summaries |
 | `console.jsonl` | Redacted console/log/exception metadata |
@@ -62,3 +62,17 @@ Requires locally installed `ffmpeg` on PATH. SuperAgent now checks both `ffmpeg`
 This recorder is deliberately **not** a full raw conversation/keystroke recorder. It saves a structured transcript of browser actions and diagnostic events, not private chat message bodies, cookies, unredacted HTTP traffic, typed secrets or OS audio. The video itself can still contain whatever was visibly rendered inside the tab.
 
 **Transport boundary:** recording supports verified exact-tab owner leases on **managed CDP** and **Delegate CDP** (`transport:"delegate"` with an explicit qualified target). For Delegate, the extension must be connected and enable CDP. Its debugger is attached only for bounded frame capture, then detached; another debugger owner is never displaced. Both transports require an explicit active project workspace and video consent. These are source capabilities, not proof of installed Core/Tray availability. Logs record event kinds and numeric status, never arbitrary console messages, exception text, request URLs or typed values.
+
+## Native Tray Recording Manager
+
+Open **Recordings** in SuperAgent Tray and select the project folder with the native folder picker. The inventory is intentionally **project-scoped**; recordings in other projects are not discovered or displayed by default.
+
+- **Play** opens a finalized MP4 in the operating system's local media player, without a video HTTP endpoint.
+- **Folder** opens the individual local archive folder for inspection or manual transfer.
+- **Stop** finalizes an active recording and its redacted action journal.
+- **Delete** requires a second native confirmation and refuses active recordings or unexpected files within the archive directory.
+- **Refresh**, search and status filters help inspect current and interrupted sessions. A preexisting incomplete archive is explicitly labelled `interrupted`.
+
+The Tray may remember the chosen project directory only, never the video, access token or transcript. Project paths are validated by the native IPC handler and authenticated loopback Core operator route. **Never expose this operator route through a public tunnel.** Video playback deliberately occurs in an OS-local app rather than WebView.
+
+Delegate recordings are H.264 MP4s generated from a claimed exact Chrome tab using bounded temporary debugger attachments. Extension Debugger must be explicitly enabled, and a competing DevTools owner is never forcibly detached. Only metadata action categories, never typed content or arbitrary browser error strings, are persisted. UI implementation and automated tests still require validation on each installed host and across supported operating systems.
