@@ -24,7 +24,7 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     const inventory=read("src/core/desktopUi/desktopLiveInventory.ts");
     const routes=read("src/serverRoutes.ts");
     expect(js).toContain('await invoke("stop-handle", { id })');
-    expect(js).toContain("Native previews are view-only");
+    expect(js).toContain("Native remote input unavailable · separate approval required");
     expect(js).not.toContain("/api/desktop/live/lan-input");
     expect(js).not.toContain("/api/desktop/live/lan-takeover");
     expect(js).not.toContain("/api/desktop/live/lan-preview");
