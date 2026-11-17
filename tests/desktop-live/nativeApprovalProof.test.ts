@@ -78,6 +78,36 @@ describe("native Desktop Live approval — one-time, exact-window proof", () => 
     const second=guard();
     expect(()=>second.consume(sign(nonce))).toThrow(/approval/);
   });
+  it("requires independent recording consent and binds window, project, preset and preview token", () => {
+    const recordingBody={...target, action:"start-native",
+      projectDirectory:process.platform==="win32" ? "C:\\\\projects\\\\example" : "/tmp/projects/example",
+      previewToken:"a".repeat(64),videoPreset:"standard"};
+    const recordingGuard=()=>new NativeDesktopApprovalGuard(()=>key,()=>10_000,"recording");
+    const approved=recordingGuard();
+    const {nonce}=approved.issue();
+    const mac=NativeDesktopApprovalGuard.computeProofForTest(key,recordingBody,nonce,"recording");
+    const protectedBody={...recordingBody,approvalProof:{nonce,mac}};
+    expect(approved.consume(protectedBody)).toEqual(recordingBody);
+    expect(()=>approved.consume(protectedBody)).toThrow(/approval/);
+    for(const changed of [
+      {...recordingBody,projectDirectory:recordingBody.projectDirectory+"-other"},
+      {...recordingBody,previewToken:"b".repeat(64)},
+      {...recordingBody,videoPreset:"detail"},
+      {...recordingBody,expectedTitle:"Other window"},
+    ]) {
+      const guard=recordingGuard();
+      const fresh=guard.issue().nonce;
+      const valid=NativeDesktopApprovalGuard.computeProofForTest(key,recordingBody,fresh,"recording");
+      expect(()=>guard.consume({...changed,approvalProof:{nonce:fresh,mac:valid}}))
+        .toThrow(/approval/);
+    }
+    const replay=recordingGuard();
+    const replayNonce=replay.issue().nonce;
+    const previewMac=NativeDesktopApprovalGuard.computeProofForTest(key,recordingBody,replayNonce);
+    expect(()=>replay.consume({...recordingBody,approvalProof:{nonce:replayNonce,mac:previewMac}}))
+      .toThrow(/approval/);
+  });
+
   it("bounds pending challenges to prevent unauthenticated request flooding", () => {
     const g=guard();
     for(let i=0;i<8;i++) g.issue();
