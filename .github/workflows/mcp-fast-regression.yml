@@ -44,4 +44,5 @@ jobs:
             tests/mcpToolGateway.test.ts \
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
-            tests/mcpResponseLease.test.ts
+            tests/mcpResponseLease.test.ts \
+            tests/desktopOverviewOperations.test.ts
