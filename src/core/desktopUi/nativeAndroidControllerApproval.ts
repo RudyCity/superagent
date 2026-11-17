@@ -60,7 +60,7 @@ export class NativeAndroidControllerApproval {
   private exactDevice(id: string): {deviceId:string; fingerprint:string;sessionProof:string} {
     const matching = this.list().filter(d => d.id === id &&
       d.platform === "android" && d.paired === true && d.connected === true &&
-      validHex(d.fingerprint, 64));
+      typeof d.fingerprint === "string" && /^[a-f0-9]{64}$/i.test(d.fingerprint));
     if (matching.length !== 1) {
       this.revoke();
       deny("ANDROID_CONTROLLER_DEVICE_SESSION_UNAVAILABLE");
