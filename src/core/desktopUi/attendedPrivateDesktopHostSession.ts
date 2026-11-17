@@ -99,9 +99,12 @@ export class AttendedPrivateDesktopHostSession {
   private terminate(): void {
     if (this.ended) return;
     this.ended=true;
-    try { this.operator.humanTakeover(); }
-    finally {
-      // Even an unexpected hook failure cannot leave native control active.
+    try {
+      // The atomic operator registration already revokes the native input
+      // controller BEFORE terminating the viewer, exactly once.
+      this.operator.humanTakeover();
+    } catch {
+      // Defensive fallback for an unexpected operator implementation failure.
       try { this.controller.humanTakeover(); }
       finally { this.listener.stop(); }
     }
