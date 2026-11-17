@@ -1194,7 +1194,8 @@ export async function handleServerRoute(
   // A general Core bearer token or a request arriving via public tunnel is
   // NOT sufficient authority to mint or inspect persistent MCP project grants.
   // =========================================================================
-  if (pathname.startsWith("/api/desktop/access/")) {
+  if (pathname.startsWith("/api/desktop/access/") ||
+      ((pathname === "/api/projects/browser/grant" || pathname === "/api/projects/browser/revoke") && req.method === "POST")) {
     const localPeer = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket?.remoteAddress || "");
     const host = String(req.headers.host || "");
     const localHost = /^(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?$/i.test(host);
@@ -3122,14 +3123,13 @@ export async function handleServerRoute(
     }
 
     try {
-      const grant = grantProjectAccess(identity, projectId, capabilities as ProjectAccessCapability[]);
+      // Use the same auditable broker as the Security Approval Manager.
+      const { grantProjectAccessToIdentity } = await import("./core/project/projectAccessRequestStore.js");
+      const approved = grantProjectAccessToIdentity(identity, projectId, capabilities as ProjectAccessCapability[]);
       sendJSON(res, 200, {
         success: true,
-        grant: {
-          projectId: grant.projectId,
-          capabilities: grant.capabilities,
-          updated: grant.updated,
-        },
+        grant: { projectId: approved.projectId, capabilities: approved.capabilities },
+        requestId: approved.requestId,
       });
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || "Failed to grant project access." });
