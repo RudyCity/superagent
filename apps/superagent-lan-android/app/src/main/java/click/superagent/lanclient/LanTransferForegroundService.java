@@ -42,7 +42,7 @@ public final class LanTransferForegroundService extends Service {
         }
     };
     public static synchronized boolean requestHold(Context context, LanClientServer server) {
-        if (!MainActivity.hasVisibleOwner() || server == null ||
+        if (!MainActivity.canShowLanTransferNotification() || server == null ||
                 !server.isRunning() || !server.isV2TransferActive()) return false;
         if (current != null && current.running && current.client == server) return true;
         requested = server;
@@ -93,7 +93,8 @@ public final class LanTransferForegroundService extends Service {
             requested = null;
         }
         if (candidate == null || !candidate.isRunning() || !candidate.isV2TransferActive()
-                || !MainActivity.hasVisibleOwner()) {
+                || !MainActivity.canShowLanTransferNotification()) {
+            if (candidate != null && !MainActivity.hasVisibleOwner()) candidate.close();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -104,6 +105,7 @@ public final class LanTransferForegroundService extends Service {
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
             else startForeground(NOTICE_ID, notification);
         } catch (RuntimeException denied) {
+            if (!MainActivity.hasVisibleOwner()) candidate.close();
             stopSelf();
             return START_NOT_STICKY;
         }
