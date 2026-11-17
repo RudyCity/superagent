@@ -1198,7 +1198,7 @@ export async function handleServerRoute(
       ((pathname === "/api/projects/browser/grant" || pathname === "/api/projects/browser/revoke") && req.method === "POST")) {
     const localPeer = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket?.remoteAddress || "");
     const host = String(req.headers.host || "");
-    const localHost = /^(?:localhost|127\\.0\\.0\\.1)(?::\\d+)?$/i.test(host);
+    const localHost = /^(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(host);
     const forwarded = ["forwarded", "x-forwarded-for", "x-forwarded-host",
       "x-forwarded-proto", "x-real-ip", "cf-connecting-ip", "cf-ray"]
       .some(header => req.headers[header] !== undefined);
@@ -1213,7 +1213,7 @@ export async function handleServerRoute(
     }
     const { isRequestAuthorized } = await import("./core/utils/serverSecurity.js");
     const headerAuth = typeof req.headers.authorization === "string" &&
-      /^Bearer [^\\s]+$/.test(req.headers.authorization);
+      /^Bearer [^\s]+$/.test(req.headers.authorization);
     const headerToken = typeof req.headers["x-auth-token"] === "string" &&
       req.headers["x-auth-token"].length > 0;
     if (!localPeer || !localHost || forwarded || !sameLocalOrigin ||
@@ -1291,6 +1291,26 @@ export async function handleServerRoute(
       sendJSON(res, 200, result);
     } catch (err: any) {
       sendJSON(res, 400, { success: false, error: err.message || "Failed to revoke request" });
+    }
+    return true;
+  }
+
+  // The native Tray only needs registered, enabled projects. Never present
+  // catalog discoveries, test fixtures, disabled entries, or paginated results
+  // as directly grantable project choices.
+  if (pathname === "/api/desktop/access/projects" && req.method === "GET") {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const { listProjects } = await import("./core/project/projectRegistry.js");
+      const projects = listProjects().filter(project => project.enabled).map(project => ({
+        projectId: project.id,
+        name: project.name,
+        type: project.type,
+        target: project.type === "local" ? project.root : project.target,
+      }));
+      sendJSON(res, 200, { success: true, projects });
+    } catch (err: any) {
+      sendJSON(res, 500, { success: false, error: err?.message || "Failed to list approved project targets" });
     }
     return true;
   }
