@@ -61,6 +61,12 @@ describe("MCP full-catalog host file-policy transparency", () => {
       const byName = (name:string) => tools.find(x=>x.name===name);
       expect(byName("superagent_exec_command")._meta.filePolicy)
         .toMatchObject({active:true,readiness:"uncertified"});
+      expect(byName("superagent_desktop_ui")._meta.mcpApproval)
+        .toMatchObject({kind:"connection_execute",capability:"execute",oauthScope:"mcp:tools:write"});
+      expect(byName("superagent_tool_execute")._meta.mcpApproval.kind)
+        .toBe("target_dependent");
+      expect(byName("superagent_write_files")._meta.mcpApproval.kind)
+        .toBe("project");
       expect(byName("superagent_read_files")._meta.filePolicy.readiness)
         .toBe("requires_explicit_files");
       expect(byName("superagent_chrome_cdp")._meta.filePolicy.readiness)
@@ -80,6 +86,7 @@ describe("MCP full-catalog host file-policy transparency", () => {
       const describe = resultJson(await invoke(server,MCP_GATEWAY_TOOL_NAMES.describe,
         {name:"superagent_delegate_sync_history"}));
       expect(describe.filePolicy).toBe("certified_app_storage");
+      expect(describe.mcpApproval).toMatchObject({kind:"connection_execute",capability:"execute"});
       expect(describe.filePolicyRequirement).toMatch(/MCP write scope/);
       expect(describe.note).toMatch(/never grants execution/i);
       const status = resultJson(await invoke(server,MCP_GATEWAY_TOOL_NAMES.status));
