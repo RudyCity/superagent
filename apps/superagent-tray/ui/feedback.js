@@ -97,6 +97,13 @@
     node.append(item);
     node.hidden = false;
     while (entries.length > MAX_VISIBLE) remove(entries[0]);
+    // The native inbox stores generic, redacted issue metadata only.
+    // No arbitrary toast body is copied into the durable notification ledger.
+    if ((type === "error" || type === "warning") && typeof CustomEvent !== "undefined") {
+      window.dispatchEvent?.(new CustomEvent("superagent-tray-attention", {
+        detail: { scope: String(scope), kind: type },
+      }));
+    }
     if (!sticky) entry.timer = setTimeout(() => remove(entry),
       type === "error" || type === "warning" ? 7000 : 4300);
     return true;
