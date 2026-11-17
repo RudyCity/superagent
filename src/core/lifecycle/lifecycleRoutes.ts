@@ -26,11 +26,24 @@ export async function handleExternalLifecycleRoutes(
     // Worker identities and lease receipts can only originate from a verified
     // MCP session, never from the operator API or browser UI.
     if (!["list", "status", "workers", "create", "run.now", "pause", "resume",
-      "cancel", "review.retry"].includes(action)) throw new Error("Operator action is not supported.");
+      "cancel", "review.retry", "targets", "worker.bind", "worker.unbind", "worker.revoke"].includes(action)) throw new Error("Operator action is not supported.");
     const workspace = data.workspace;
     if (typeof workspace !== "string" || !workspace) throw new Error("An explicit workspace is required.");
     const args = data.args && typeof data.args === "object" && !Array.isArray(data.args)
       ? data.args as Record<string, unknown> : {};
+    if (action === "targets") {
+      const { listApprovedCdpTargets } = await import("./cdpWakeAdapter.js");
+      ctx.sendJSON(res, 200, { success: true, result: { targets: await listApprovedCdpTargets() } });
+      return true;
+    }
+    if (action === "worker.bind") {
+      const clientId = args.clientId, tabId = args.tabId;
+      if (typeof clientId !== "string" || !Number.isSafeInteger(tabId) || Number(tabId) <= 0) {
+        throw new Error("Binding requires an exact paired clientId and ChatGPT tabId.");
+      }
+      const { verifyApprovedCdpTarget } = await import("./cdpWakeAdapter.js");
+      await verifyApprovedCdpTarget(clientId, Number(tabId));
+    }
     const result = lifecycleAction(action, args, {
       workspace, actor: "local-operator", principal: "local-operator", admin: true,
     });
