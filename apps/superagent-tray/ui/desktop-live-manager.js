@@ -494,38 +494,75 @@
       }
     });
 
+    el("desktop-live-stream-request-control")?.addEventListener("click", async () => {
+      if (!stream.active || !stream.token || stream.controlRequested) return;
+      const button = el("desktop-live-stream-request-control");
+      if (button?.disabled) return;
+      button.disabled = true;
+      try {
+        if (stream.isLanDevice) {
+          if (!window.confirm(
+            "Open LAN device input tools? This does not grant input permission. The phone owner must independently enable remote touch / Accessibility and approve every input command."
+          )) return;
+          stream.controlRequested = true;
+          stream.controlEnabled = true;
+          renderStreamPermissions();
+          status("Input tools opened. Device approval is still mandatory; no controller grant was issued.");
+        } else {
+          const result = await invoke("controller-review");
+          if (result?.state !== "NOT_CONFIGURED" || result?.approved !== false ||
+              result?.inputEnabled !== false) throw Error("Controller state unverified");
+          renderStreamPermissions();
+          status("Native remote control is not configured. Local View Only remains active; no input permission granted.",true);
+        }
+      } catch (error) {
+        stream.controlRequested = false;
+        stream.controlEnabled = false;
+        renderStreamPermissions();
+        status("Controller request not approved: " + (error?.message || "native verification failed"),true);
+      } finally {
+        renderStreamPermissions();
+      }
+    });
+
     el("desktop-live-stream-toggle-control")?.addEventListener("click", () => {
-      if (!stream.active) return;
-      if (!stream.isLanDevice) {
-        status("Native previews are view-only; input requires separately attended approval.", true);
+      if (!stream.active || !stream.isLanDevice || !stream.controlRequested) {
+        status("Request device input tools separately from View Only first.", true);
         return;
       }
       stream.controlEnabled = !stream.controlEnabled;
-      const btn = el("desktop-live-stream-toggle-control");
-      const inputBar = el("desktop-live-stream-input-bar");
-      const viewport = el("desktop-live-stream-viewport");
-      if (btn) {
-        btn.textContent = stream.controlEnabled ? "Control: ON" : "Control: OFF";
-        btn.classList.toggle("active", stream.controlEnabled);
-      }
-      if (inputBar) inputBar.hidden = !stream.controlEnabled;
-      if (viewport) viewport.classList.toggle("interactive", stream.controlEnabled);
-      status(stream.controlEnabled ? "Mode Kontrol Aktif: Klik pada stream atau ketik teks untuk mengontrol jendela." : "Mode Kontrol Dimatikan.");
+      renderStreamPermissions();
+      status(stream.controlEnabled
+        ? "LAN input tools visible. Every command still requires on-device approval."
+        : "LAN input tools hidden; no input will be dispatched.");
     });
 
     el("desktop-live-stream-img")?.addEventListener("click", async (e) => {
-      if (!stream.controlEnabled || !stream.active) return;
+      if (!stream.controlEnabled || !stream.controlRequested || !stream.active) return;
       const img = el("desktop-live-stream-img");
-      if (!img || img.clientWidth <= 0 || img.clientHeight <= 0) return;
-      const relX = Math.max(0, Math.min(1, e.offsetX / img.clientWidth));
-      const relY = Math.max(0, Math.min(1, e.offsetY / img.clientHeight));
+      if (!img || img.clientWidth <= 0 || img.clientHeight <= 0 ||
+          !img.naturalWidth || !img.naturalHeight) return;
+      // object-fit:contain introduces letterboxing. Reject taps outside the
+      // actual displayed pixels instead of guessing device coordinates.
+      const rect=img.getBoundingClientRect();
+      const scale=Math.min(rect.width/img.naturalWidth,rect.height/img.naturalHeight);
+      const actualWidth=img.naturalWidth*scale, actualHeight=img.naturalHeight*scale;
+      const left=rect.left+(rect.width-actualWidth)/2;
+      const top=rect.top+(rect.height-actualHeight)/2;
+      const relX=(e.clientX-left)/actualWidth;
+      const relY=(e.clientY-top)/actualHeight;
+      if(!Number.isFinite(relX)||!Number.isFinite(relY)||relX<0||relX>1||
+         relY<0||relY>1)return;
       if (stream.isLanDevice) {
         const call = window.__TAURI__?.core?.invoke;
         try {
-          await call("lan_support_action", {
+          const accepted = await call("lan_support_action", {
             action: "input",
             payload: { deviceId: stream.deviceId, kind: "tap", x: relX, y: relY },
           });
+          if (accepted?.success !== true || accepted?.result?.ok !== true)
+            throw Error("On-device touch permission denied");
+          status("Device accepted one touch action.");
         } catch (err) {
           status("Gagal tap ke perangkat LAN: " + (err?.message || "Koneksi terputus"), true);
         }
@@ -536,18 +573,20 @@
 
     async function sendTrayType() {
       const input = el("desktop-live-stream-type-input");
-      if (!input || !stream.active) return;
+      if (!input || !stream.active || !stream.controlEnabled || !stream.controlRequested) return;
       const text = input.value;
       if (!text) return;
       if (stream.isLanDevice) {
         const call = window.__TAURI__?.core?.invoke;
         try {
-          await call("lan_support_action", {
+          const accepted = await call("lan_support_action", {
             action: "input",
             payload: { deviceId: stream.deviceId, kind: "text", text },
           });
+          if (accepted?.success !== true || accepted?.result?.ok !== true)
+            throw Error("Device did not approve text input");
           input.value = "";
-          status("Teks berhasil dikirim ke perangkat LAN.");
+          status("Device accepted one text input.");
         } catch (err) {
           status("Gagal mengirim teks ke perangkat LAN: " + (err?.message || "Koneksi terputus"), true);
         }
@@ -562,7 +601,7 @@
 
     document.querySelectorAll(".desktop-live-key-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!stream.active) return;
+        if (!stream.active || !stream.controlEnabled || !stream.controlRequested) return;
         const key = btn.dataset.key;
         if (!key) return;
         if (stream.isLanDevice) {
@@ -570,11 +609,13 @@
           const androidKind = key === "ESCAPE" ? "back" : key === "SPACE" ? "home" : key === "TAB" ? "recents" : null;
           if (androidKind) {
             try {
-              await call("lan_support_action", {
+              const accepted = await call("lan_support_action", {
                 action: "input",
                 payload: { deviceId: stream.deviceId, kind: androidKind },
               });
-              status(`Aksi navigasi ${androidKind} terkirim ke perangkat LAN.`);
+              if (accepted?.success !== true || accepted?.result?.ok !== true)
+                throw Error("Device did not approve navigation");
+              status("Device accepted one navigation action: " + androidKind);
             } catch (err) {
               status("Gagal kirim navigasi: " + (err?.message || "Error"), true);
             }
@@ -595,7 +636,7 @@
       }
     });
     window.addEventListener("beforeunload",()=>{
-      if(stream.token)void invoke("stop",{token:stream.token});
+      if(stream.token && !stream.isLanDevice)void invoke("stop",{token:stream.token});
     });
     if(state.poll)clearInterval(state.poll);
     state.poll=setInterval(()=>{if(visible())void refresh();},15000);
@@ -603,6 +644,7 @@
       if(visible())void refresh();
       else if(stream.active)void stopStream("Stream auto-paused: Tray window is hidden.");
     });
+    renderStreamPermissions();
     if(visible())void refresh();
   }
   if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",install);
