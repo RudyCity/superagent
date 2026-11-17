@@ -34,6 +34,28 @@ describe("LAN target file transfer: isolated safe contract", () => {
     await expect(target.finish(offer.transferId)).rejects.toThrow("Unknown transfer");
   });
 
+  it("exposes authenticated in-flight status and lets a lost download ACK re-read only its last chunk", async () => {
+    const target = new LanTargetFiles();
+    const bytes = Buffer.from("status-checkpoint");
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sa-lan-status-"));
+    try {
+      const file = path.join(tempDir, "owner.txt");
+      await fs.writeFile(file, bytes);
+      await target.shareSelectedFile(file);
+      const offer = target.offer("download");
+      const first = target.get(offer.transferId, 0);
+      const checkpoint = target.status(offer.transferId);
+      expect(checkpoint).toMatchObject({
+        direction: "download", seq: 1, received: bytes.length,
+        size: bytes.length, sha256: digest(bytes),
+      });
+      expect(target.get(offer.transferId, 0)).toEqual(first);
+      expect(target.status(offer.transferId).seq).toBe(1);
+      expect(() => target.get(offer.transferId, 2)).toThrow("Out-of-order");
+      target.abort(offer.transferId);
+      expect(() => target.status(offer.transferId)).toThrow("Unknown");
+    } finally { await fs.rm(tempDir, { recursive: true, force: true }); }
+  });
   it("downloads only the target owner's explicitly selected file, one chunk at a time", async () => {
     const target = new LanTargetFiles(directory);
     expect(() => target.offer("download")).toThrow("select");
