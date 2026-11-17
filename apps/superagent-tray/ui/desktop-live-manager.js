@@ -33,6 +33,8 @@
     controlEnabled: false,
     controlRequested: false,
     controllerSeconds: 0,
+    controllerScopes: {mouse:false,keyboard:false},
+    controllerPending: false,
     recording: null,
     recordingPending: false,
     isLanDevice: false,
@@ -61,72 +63,90 @@
   // The only native input authority is a separately attended host approval.
   function renderStreamPermissions() {
     const active = stream.active && !!stream.token;
-    const isLan = active && stream.isLanDevice;
-    const recordButton=el("desktop-live-stream-record");
+    const lan = active && stream.isLanDevice;
+    const mouse = lan && stream.controllerScopes.mouse;
+    const keyboard = lan && stream.controllerScopes.keyboard;
+    const any = mouse || keyboard;
+    stream.controlRequested = Boolean(any);
+    const record = el("desktop-live-stream-record");
     const preset=el("desktop-live-record-preset");
-    if(recordButton){
-      recordButton.disabled=!active||isLan||stream.recordingPending;
-      recordButton.textContent=stream.recording?"Stop recording":"Record window";
+    if(record){
+      record.disabled=!active||lan||stream.recordingPending;
+      record.textContent=stream.recording?"Stop recording":"Record window";
     }
-    if(preset)preset.disabled=!active||isLan||!!stream.recording||stream.recordingPending;
-    const view = el("desktop-live-view-permission");
-    const controller = el("desktop-live-controller-permission");
-    const request = el("desktop-live-stream-request-control");
-    const toggle = el("desktop-live-stream-toggle-control");
-    const takeover = el("desktop-live-stream-takeover");
-    const inputBar = el("desktop-live-stream-input-bar");
-    const viewport = el("desktop-live-stream-viewport");
-    if (view) {
-      view.textContent = !active ? "Not started" :
-        isLan ? "Device-approved support session · View Only" :
-        "Host-approved local window · View Only";
-      view.dataset.status = active ? "active" : "blocked";
+    if(preset)preset.disabled=!active||lan||!!stream.recording||stream.recordingPending;
+    const view=el("desktop-live-view-permission");
+    const controller=el("desktop-live-controller-permission");
+    const mouseStatus=el("desktop-live-mouse-status");
+    const keyboardStatus=el("desktop-live-keyboard-status");
+    const mouseButton=el("desktop-live-stream-request-control");
+    const keyboardButton=el("desktop-live-stream-request-keyboard");
+    const toggle=el("desktop-live-stream-toggle-control");
+    const takeover=el("desktop-live-stream-takeover");
+    const inputBar=el("desktop-live-stream-input-bar");
+    const viewport=el("desktop-live-stream-viewport");
+    if(view){
+      view.textContent=!active?"Not started":lan
+        ?"Device-approved support session · View Only":"Host-approved local window · View Only";
+      view.dataset.status=active?"active":"blocked";
     }
-    if (controller) {
-      controller.textContent = !active ? "No controller grant" :
-        !isLan ? "Native remote input unavailable · separate approval required" :
-        !stream.controlRequested ? "Separate native controller approval required" :
-        stream.controlEnabled ? "Host-approved controller · Android device consent required" :
-        "Host-approved controller · input UI hidden";
-      controller.dataset.status = isLan && stream.controlRequested ? "active" : "blocked";
+    if(controller){
+      controller.textContent=!active?"No controller grant":!lan
+        ?"Native PC remote input is not configured"
+        :any?"Scoped host approval active · Android device consent also required"
+          :"Separate mouse and keyboard approvals required";
+      controller.dataset.status=any?"active":"blocked";
     }
-    if (request) {
-      request.disabled = !active || stream.controlRequested;
-      request.title = !active ? "Start a separately approved viewer first" :
-        isLan ? "Request separate attended native approval for Android remote input" :
-        "Review required host-native controller approval; no input token is granted";
+    if(mouseStatus)mouseStatus.textContent=mouse?"Mouse: approved":"Mouse: not approved";
+    if(keyboardStatus)keyboardStatus.textContent=keyboard?"Keyboard: approved":"Keyboard: not approved";
+    if(mouseButton){
+      mouseButton.disabled=!active||stream.controllerPending||mouse;
+      mouseButton.title=lan?"Separate attended permission for taps, swipes, and element clicks"
+        :"Native PC controller transport not configured";
     }
-    if (toggle) {
-      toggle.disabled = !isLan || !stream.controlRequested;
-      toggle.textContent = stream.controlEnabled ? "Hide Input UI" : "Show Input UI";
-      toggle.classList.toggle("active", Boolean(isLan && stream.controlEnabled));
+    if(keyboardButton){
+      keyboardButton.disabled=!active||stream.controllerPending||keyboard;
+      keyboardButton.title=lan?"Separate attended permission for text and navigation keys"
+        :"Native PC controller transport not configured";
     }
-    if (takeover) takeover.disabled = !active || isLan;
-    if (inputBar) inputBar.hidden = !isLan || !stream.controlEnabled;
-    if (viewport) viewport.classList.toggle("interactive", Boolean(isLan && stream.controlEnabled));
+    if(toggle){
+      toggle.disabled=!lan||!any;
+      toggle.textContent=stream.controlEnabled?"Hide Input UI":"Show Input UI";
+      toggle.classList.toggle("active",Boolean(lan&&stream.controlEnabled&&any));
+    }
+    if(takeover)takeover.disabled=!active||lan;
+    if(inputBar)inputBar.hidden=!lan||!stream.controlEnabled||!any;
+    const typeInput=el("desktop-live-stream-type-input");
+    const typeSend=el("desktop-live-stream-type-send");
+    if(typeInput)typeInput.disabled=!keyboard;
+    if(typeSend)typeSend.disabled=!keyboard;
+    document.querySelectorAll(".desktop-live-key-btn").forEach(btn=>{btn.disabled=!keyboard;});
+    if(viewport)viewport.classList.toggle("interactive",Boolean(lan&&stream.controlEnabled&&mouse));
   }
 
   async function refreshControlPermission() {
     if (!stream.active || !stream.isLanDevice || !stream.controlRequested) return;
-    const id = stream.deviceId;
-    try {
-      const result = await window.__TAURI__?.core?.invoke?.("lan_support_action", {
-        action: "control_status", payload: { deviceId: id },
-      });
-      if (!stream.active || stream.deviceId !== id) return;
-      if (result?.success !== true || result?.approved !== true ||
-          !Number.isSafeInteger(result.secondsRemaining) ||
-          result.secondsRemaining < 1) throw Error("Host controller approval expired");
-      stream.controllerSeconds = result.secondsRemaining;
-      renderStreamPermissions();
-    } catch {
-      if (!stream.active || stream.deviceId !== id) return;
-      stream.controlRequested = false;
-      stream.controlEnabled = false;
-      stream.controllerSeconds = 0;
-      renderStreamPermissions();
-      status("Controller expired or revoked. View Only remains active; request new native approval.",true);
+    const id=stream.deviceId;
+    for(const kind of ["mouse","keyboard"]) {
+      if(!stream.controllerScopes[kind])continue;
+      try {
+        const result=await window.__TAURI__?.core?.invoke?.("lan_support_action", {
+          action:"control_status",payload:{deviceId:id,kind},
+        });
+        if(!stream.active||stream.deviceId!==id)return;
+        if(result?.success!==true||result?.approved!==true||
+           !Number.isSafeInteger(result.secondsRemaining)||
+           result.secondsRemaining<1)throw Error("Scoped controller expired");
+        stream.controllerSeconds=result.secondsRemaining;
+      } catch {
+        if(!stream.active||stream.deviceId!==id)return;
+        stream.controllerScopes[kind]=false;
+        status(kind+" control expired or revoked; View Only remains active.",true);
+      }
     }
+    if(!stream.controllerScopes.mouse&&!stream.controllerScopes.keyboard)
+      stream.controlEnabled=false;
+    renderStreamPermissions();
   }
 
   function scheduleNextFrame() {
@@ -277,6 +297,8 @@
         stream.devicePlatform = item.devicePlatform;
         stream.controlRequested = false;
         stream.controlEnabled = false;
+        stream.controllerScopes = {mouse:false,keyboard:false};
+        stream.controllerPending = false;
         stream.deviceId = deviceId;
         stream.pid = 0;
         stream.nativeId = "";
@@ -427,8 +449,11 @@
     stream.isLanDevice = false;
     stream.devicePlatform = null;
     stream.deviceId = "";
+    const previousScopes = {...stream.controllerScopes};
     stream.controlRequested = false;
     stream.controlEnabled = false;
+    stream.controllerScopes = {mouse:false,keyboard:false};
+    stream.controllerPending = false;
     stream.controllerSeconds = 0;
     stream.lanUrl = "";
 
@@ -451,14 +476,17 @@
     if (viewport) viewport.classList.remove("interactive");
 
     let controllerRevokeVerified = true;
-    if (wasLanDevice && previousDeviceId) {
-      try {
-        const outcome=await window.__TAURI__?.core?.invoke?.("lan_support_action", {
-          action: "control_revoke", payload: { deviceId: previousDeviceId },
-        });
-        if (outcome?.success !== true || outcome?.approved !== false)
-          throw Error("Controller revocation not verified by Core");
-      } catch { controllerRevokeVerified = false; }
+    if(wasLanDevice&&previousDeviceId){
+      for(const kind of ["mouse","keyboard"]){
+        if(!previousScopes[kind])continue;
+        try{
+          const outcome=await window.__TAURI__?.core?.invoke?.("lan_support_action",{
+            action:"control_revoke",payload:{deviceId:previousDeviceId,kind},
+          });
+          if(outcome?.success!==true||outcome?.approved!==false)
+            throw Error("Scoped Core revoke unverified");
+        }catch{controllerRevokeVerified=false;}
+      }
     }
     if (token && !wasLanDevice) {
       try { await invoke("stop", { token }); } catch {}
@@ -637,43 +665,43 @@
       }
     });
 
-    el("desktop-live-stream-request-control")?.addEventListener("click", async () => {
-      if (!stream.active || !stream.token || stream.controlRequested) return;
-      const button = el("desktop-live-stream-request-control");
-      if (button?.disabled) return;
-      button.disabled = true;
-      try {
-        if (stream.isLanDevice) {
-          const call = window.__TAURI__?.core?.invoke;
-          if (typeof call !== "function") throw Error("Installed native Tray required");
-          const result = await call("lan_support_action", {
-            action: "control_request", payload: { deviceId: stream.deviceId },
+    async function requestScopedController(kind) {
+      if(!["mouse","keyboard"].includes(kind)||!stream.active||!stream.token||
+         stream.controllerScopes[kind]||stream.controllerPending)return;
+      stream.controllerPending=true;
+      const id=stream.deviceId;
+      renderStreamPermissions();
+      try{
+        if(stream.isLanDevice){
+          const call=window.__TAURI__?.core?.invoke;
+          if(typeof call!=="function")throw Error("Installed native Tray required");
+          const result=await call("lan_support_action",{
+            action:"control_request",payload:{deviceId:id,kind},
           });
-          if (!stream.active || !stream.isLanDevice ||
-              result?.success !== true || result?.approved !== true ||
-              !Number.isSafeInteger(result.secondsRemaining) ||
-              result.secondsRemaining < 1) throw Error("Host operator did not approve controller");
-          stream.controlRequested = true;
-          stream.controllerSeconds = result.secondsRemaining;
-          stream.controlEnabled = true;
-          renderStreamPermissions();
-          status("Native host input approved. Android must still independently authorize every action.");
-        } else {
-          const result = await invoke("controller-review");
-          if (result?.state !== "NOT_CONFIGURED" || result?.approved !== false ||
-              result?.inputEnabled !== false) throw Error("Controller state unverified");
-          renderStreamPermissions();
-          status("Native remote control is not configured. Local View Only remains active; no input permission granted.",true);
+          if(!stream.active||!stream.isLanDevice||stream.deviceId!==id||
+             result?.success!==true||result?.approved!==true||result?.kind!==kind||
+             !Number.isSafeInteger(result.secondsRemaining)||result.secondsRemaining<1)
+            throw Error("Independent "+kind+" controller not approved");
+          stream.controllerScopes[kind]=true;
+          stream.controlEnabled=true;
+          stream.controllerSeconds=result.secondsRemaining;
+          status(kind+" approved by host; device must still accept each command.");
+        }else{
+          const result=await invoke("controller-review");
+          if(result?.state!=="NOT_CONFIGURED"||result?.approved!==false||
+             result?.inputEnabled!==false)throw Error("Native controller readiness unverified");
+          status("PC native controller requires separately configured, attended mTLS transport.",true);
         }
-      } catch (error) {
-        stream.controlRequested = false;
-        stream.controlEnabled = false;
-        renderStreamPermissions();
-        status("Controller request not approved: " + (error?.message || "native verification failed"),true);
-      } finally {
+      }catch(err){
+        if(stream.active&&stream.deviceId===id)stream.controllerScopes[kind]=false;
+        status(kind+" approval denied: "+(err?.message||"Host rejected"),true);
+      }finally{
+        stream.controllerPending=false;
         renderStreamPermissions();
       }
-    });
+    }
+    el("desktop-live-stream-request-control")?.addEventListener("click",()=>void requestScopedController("mouse"));
+    el("desktop-live-stream-request-keyboard")?.addEventListener("click",()=>void requestScopedController("keyboard"));
 
     el("desktop-live-stream-toggle-control")?.addEventListener("click", () => {
       if (!stream.active || !stream.isLanDevice || !stream.controlRequested) {
@@ -688,7 +716,7 @@
     });
 
     el("desktop-live-stream-img")?.addEventListener("click", async (e) => {
-      if (!stream.controlEnabled || !stream.controlRequested || !stream.active) return;
+      if (!stream.controlEnabled || !stream.controllerScopes.mouse || !stream.active) return;
       const img = el("desktop-live-stream-img");
       if (!img || img.clientWidth <= 0 || img.clientHeight <= 0 ||
           !img.naturalWidth || !img.naturalHeight) return;
@@ -723,7 +751,7 @@
 
     async function sendTrayType() {
       const input = el("desktop-live-stream-type-input");
-      if (!input || !stream.active || !stream.controlEnabled || !stream.controlRequested) return;
+      if (!input || !stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard) return;
       const text = input.value;
       if (!text) return;
       if (stream.isLanDevice) {
@@ -751,7 +779,7 @@
 
     document.querySelectorAll(".desktop-live-key-btn").forEach(btn => {
       btn.addEventListener("click", async () => {
-        if (!stream.active || !stream.controlEnabled || !stream.controlRequested) return;
+        if (!stream.active || !stream.controlEnabled || !stream.controllerScopes.keyboard) return;
         const key = btn.dataset.key;
         if (!key) return;
         if (stream.isLanDevice) {
@@ -787,8 +815,12 @@
     });
     window.addEventListener("beforeunload",()=>{
       if(stream.token && !stream.isLanDevice)void invoke("stop",{token:stream.token});
-      if(stream.isLanDevice && stream.deviceId)void window.__TAURI__?.core?.invoke?.(
-        "lan_support_action",{action:"control_revoke",payload:{deviceId:stream.deviceId}});
+      if(stream.isLanDevice&&stream.deviceId){
+        for(const kind of ["mouse","keyboard"]){
+          if(stream.controllerScopes[kind])void window.__TAURI__?.core?.invoke?.(
+            "lan_support_action",{action:"control_revoke",payload:{deviceId:stream.deviceId,kind}});
+        }
+      }
     });
     if(state.poll)clearInterval(state.poll);
     state.poll=setInterval(()=>{if(visible()){void refresh();void refreshControlPermission();}},15000);
