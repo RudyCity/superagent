@@ -44,6 +44,40 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
 const READ_ONLY_SERVICE_ACTIONS = new Set([
   "status","inventory","doctor","health","dashboard","logs","profile",
 ]);
+const CERTIFIED_LAN_INVENTORY = new Set([
+  "superagent_lan_list_devices", "superagent_device_list",
+  "superagent_device_tunnel_list",
+]);
+const CERTIFIED_PAIR_STATUS = new Set([
+  "superagent_lan_pair_status", "superagent_device_pair_status",
+]);
+const CERTIFIED_CORE_LIFECYCLE_MUTATIONS = new Set([
+  "superagent_core_restart", "superagent_core_rollback", "superagent_core_drain",
+]);
+const OPAQUE_UUID = /^[a-f0-9-]{36}$/i;
+const OPERATION_ID = /^[A-Za-z0-9][A-Za-z0-9_.:-]{15,127}$/;
+function certifiedLanInventory(name:string, args:Args|undefined):boolean {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return false;
+  if (CERTIFIED_LAN_INVENTORY.has(name)) return Object.keys(args).length === 0;
+  return CERTIFIED_PAIR_STATUS.has(name) && Object.keys(args).length === 1 &&
+    typeof args.requestId === "string" && OPAQUE_UUID.test(args.requestId);
+}
+/**
+ * Lifecycle's command/port/hash contract contains no user-selectable file,
+ * shell, or executable path. Runtime still requires the independent MCP
+ * Connection Controls grant, confirmation, and authenticated supervisor plan.
+ */
+function certifiedSupervisedCoreMutation(name:string, args:Args|undefined):boolean {
+  if (!CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name) ||
+      !args || typeof args !== "object" || Array.isArray(args)) return false;
+  if (Object.keys(args).some(key =>
+      !["port","confirm","operationId","expectedBuildDigest"].includes(key))) return false;
+  if (args.port !== undefined &&
+      (!Number.isSafeInteger(args.port) || Number(args.port)<1024 || Number(args.port)>65535)) return false;
+  return args.confirm === true && typeof args.operationId === "string" &&
+    OPERATION_ID.test(args.operationId) && typeof args.expectedBuildDigest === "string" &&
+    /^[a-f0-9]{64}$/.test(args.expectedBuildDigest);
+}
 const BROWSER_OBSERVATION_TOOLS = new Set([
   "superagent_browser_gateway", "superagent_chrome_cdp",
   "superagent_control_chrome_cdp", "superagent_list_running_chrome",
@@ -77,7 +111,9 @@ export function getPermanentFileToolReadiness(name: string): PermanentFileToolRe
   if (name === "superagent_delegate_sync_history") return "certified_app_storage";
   if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name))
     return "requires_explicit_files";
-  if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services")
+  if (BROWSER_OBSERVATION_TOOLS.has(name) || name === "superagent_manage_services" ||
+      CERTIFIED_LAN_INVENTORY.has(name) || CERTIFIED_PAIR_STATUS.has(name) ||
+      CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name))
     return "action_dependent";
   return "uncertified";
 }
@@ -174,6 +210,8 @@ export function registeredFileToolGate(
   // No blanket Chrome exemption: only side-effect-free, non-file inventory
   // operations qualify. All other browser/file-capable actions fail closed.
   if(certifiedBrowserObservation(call))return null;
+  if(certifiedLanInventory(call.name,call.args))return null;
+  if(certifiedSupervisedCoreMutation(call.name,call.args))return null;
   if(call.name === "superagent_manage_services" &&
      call.args && typeof call.args.action === "string" &&
      READ_ONLY_SERVICE_ACTIONS.has(call.args.action)) {
