@@ -498,6 +498,76 @@ fn force_candidates(preview:&Preview)->Result<Vec<Item>,String> {
     });
     Ok(selected)
 }
+fn same_manual_owner(before:&Item,after:&Item)->bool {
+    before.id==after.id && before.kind==after.kind && before.pid==after.pid &&
+        before.port==after.port && before.process_started_at.is_some() &&
+        before.process_started_at==after.process_started_at &&
+        before.process_name==after.process_name &&
+        after.manual_kill_selectable && running(&after.state)
+}
+fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
+    if ids.is_empty()||ids.len()>64{return Err("SHUTDOWN_MANUAL_SELECTION_INVALID".into());}
+    let mut unique=HashSet::new();
+    let mut unique_pids=HashSet::new();
+    let mut chosen=Vec::new();
+    for id in ids {
+        if !unique.insert(id){return Err("SHUTDOWN_MANUAL_DUPLICATE_SELECTION".into());}
+        let item=preview.services.iter().find(|item|item.id==*id)
+            .ok_or("SHUTDOWN_MANUAL_UNKNOWN_SERVICE")?;
+        if !item.manual_kill_selectable || !running(&item.state) ||
+            item.process_started_at.is_none() || item.process_name.is_none() {
+            return Err("SHUTDOWN_MANUAL_PID_UNAVAILABLE".into());
+        }
+        let pid=item.pid.ok_or("SHUTDOWN_MANUAL_PID_UNAVAILABLE")?;
+        if !manual_process_allowed(&item.kind,pid,
+            item.process_name.as_deref().unwrap_or("")) {
+            return Err("SHUTDOWN_MANUAL_EXECUTABLE_NOT_ALLOWED".into());
+        }
+        // One OS PID may represent multiple services (e.g. Core + daemon).
+        // Kill that PID at most once and never recursively kill children.
+        if unique_pids.insert(pid){chosen.push(item.clone());}
+    }
+    chosen.sort_by_key(|item|match item.kind.as_str(){
+        "cloudflare"=>0,"mcp"=>1,"muse-watch"=>2,"managed"=>3,
+        "daemon-direct"=>4,"external"=>5,"core"=>8,"core-supervisor"=>9,_=>7,
+    });
+    Ok(chosen)
+}
+async fn manual_kill_one(item:&Item)->Result<(),String> {
+    let pid=item.pid.ok_or("SHUTDOWN_MANUAL_PID_UNAVAILABLE")?;
+    let birth=item.process_started_at.ok_or("SHUTDOWN_MANUAL_BIRTH_UNAVAILABLE")?;
+    let expected=item.process_name.as_deref()
+        .ok_or("SHUTDOWN_MANUAL_EXECUTABLE_UNAVAILABLE")?;
+    if !item.manual_kill_selectable ||
+        !manual_process_allowed(&item.kind,pid,expected) {
+        return Err("SHUTDOWN_MANUAL_EXECUTABLE_NOT_ALLOWED".into());
+    }
+    let mut system=System::new();
+    system.refresh_processes();
+    let Some(process)=system.process(Pid::from_u32(pid)) else {
+        // The pinned process already exited; never adopt a replacement.
+        return Ok(());
+    };
+    if process.start_time()!=birth || process.name()!=expected {
+        return Err("SHUTDOWN_MANUAL_PID_REUSED_OR_CHANGED".into());
+    }
+    if !process.kill(){return Err("SHUTDOWN_MANUAL_OS_SIGNAL_DENIED".into());}
+    let began=Instant::now();
+    loop {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        system.refresh_processes();
+        match system.process(Pid::from_u32(pid)) {
+            None=>return Ok(()),
+            Some(current) if current.start_time()!=birth =>
+                return Err("SHUTDOWN_MANUAL_PID_REUSED_AFTER_SIGNAL".into()),
+            _=>{}
+        }
+        if began.elapsed()>Duration::from_secs(8) {
+            return Err("SHUTDOWN_MANUAL_EXIT_UNVERIFIED".into());
+        }
+    }
+}
+
 fn os_birth_matches(item:&Item)->bool {
     let (Some(pid),Some(birth))=(item.pid,item.process_started_at) else{return false};
     let mut system=System::new();
@@ -687,6 +757,35 @@ fn set_progress(app:&AppHandle, progress:&Progress) {
     if let Ok(mut state)=locked(){state.progress=Some(progress.clone());}
     let _=app.emit("shutdown-manager-progress",progress);
 }
+async fn run_manual_shutdown(app:AppHandle,chosen:Vec<Item>,mut progress:Progress) {
+    let mut partial=false;
+    for (index,item) in chosen.iter().enumerate() {
+        progress.steps[index].status="stopping".into();
+        progress.steps[index].message=format!(
+            "OS kill requested for PID {}; checking process birth and executable",
+            item.pid.unwrap_or(0));
+        set_progress(&app,&progress);
+        match manual_kill_one(item).await {
+            Ok(())=>{
+                progress.steps[index].status="stopped".into();
+                progress.steps[index].message=format!(
+                    "PID {} exit verified; services may auto-restart with a new PID",
+                    item.pid.unwrap_or(0));
+            }
+            Err(error)=>{
+                partial=true;
+                progress.steps[index].status="blocked".into();
+                progress.steps[index].message=redacted(&error);
+                progress.error=Some(redacted(&error));
+            }
+        }
+        set_progress(&app,&progress);
+    }
+    progress.stage=if partial {"partial"} else {"complete"}.into();
+    set_progress(&app,&progress);
+    if let Ok(mut state)=locked(){state.busy=false;state.preview=None;}
+}
+
 async fn run_force_shutdown(app:AppHandle, chosen:Vec<Item>, mut progress:Progress) {
     for (index,item) in chosen.iter().enumerate(){
         let Some(step)=progress.steps.iter().position(|step|step.id==item.id) else {
