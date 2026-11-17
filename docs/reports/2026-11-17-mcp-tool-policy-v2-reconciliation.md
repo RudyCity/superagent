@@ -8,7 +8,7 @@ This document records **code and CI evidence**, not an installed Windows/Android
 runtime acceptance test.
 
 Focused GitHub Actions evidence:
-- [MCP Fast Regression: 163 tests, 18 files, typecheck PASS](https://github.com/RudyCity/superagent/actions/runs/44040478658) — source commit `37f4bfff02f32f1732308ba46356c27fda02455f`.
+- [MCP Fast Regression: 163 tests, 18 files, typecheck PASS](https://github.com/RudyCity/superagent/actions/runs/44040479511/job/133893782448) — source commit `37f4bfff02f32f1732308ba46356c27fda02455f`.
 - Earlier matrix pass: 159 tests before the expanded LAN/Core/Desktop and document readers.
 
 Relevant seams: `src/core/tools/registeredFileToolGate.ts`,
