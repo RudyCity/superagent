@@ -19,6 +19,25 @@ describe("private remote Desktop Live host operator fail-closed integration", ()
     expect(operator.review()).toEqual(status);
   });
 
+  it("atomically rejects duplicate native host registration without displacing the owner",()=>{
+    const operator=new RemotePrivateHostOperator();
+    const calls:string[]=[];
+    const viewer={humanTakeover:vi.fn(()=>{calls.push("viewer");})};
+    const controller={humanTakeover:vi.fn(()=>{calls.push("input");})};
+    operator.registerNativeHost(viewer,controller);
+    expect(()=>operator.registerNativeHost(
+      {humanTakeover:vi.fn()}, {humanTakeover:vi.fn()},
+    )).toThrow(/ALREADY_REGISTERED/);
+    expect(()=>operator.registerStopHook({humanTakeover:vi.fn()})).toThrow();
+    expect(()=>operator.registerControllerStopHook({humanTakeover:vi.fn()})).toThrow();
+    operator.humanTakeover();
+    expect(calls).toEqual(["input","viewer"]);
+    expect(controller.humanTakeover).toHaveBeenCalledOnce();
+    expect(viewer.humanTakeover).toHaveBeenCalledOnce();
+    operator.humanTakeover();
+    expect(calls).toHaveLength(2);
+  });
+
   it("terminates the trusted capture/TLS runtime on human takeover", () => {
     const operator = new RemotePrivateHostOperator();
     const humanTakeover = vi.fn();
