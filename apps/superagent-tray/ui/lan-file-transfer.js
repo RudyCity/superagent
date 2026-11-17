@@ -326,7 +326,7 @@
       notifyTransfer("success", files.length + " file(s) verified on target.");
     } catch (error) {
       await abortIfNeeded();
-      state("Send stopped: " + String(error).slice(0, 200));
+      state("Send failed: " + String(error).slice(0, 200));
       const unsuccessful = files[batch?.index ?? 0];
       if (unsuccessful) receipt("Send", unsuccessful.name, unsuccessful.size, "Not verified");
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
@@ -453,7 +453,7 @@
       }
     } catch (error) {
       await abortIfNeeded();
-      state("Receive stopped: " + String(error).slice(0, 200));
+      state("Receive failed: " + String(error).slice(0, 200));
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
         "File receive outcome was not verified. Inspect device status.");
     } finally {
