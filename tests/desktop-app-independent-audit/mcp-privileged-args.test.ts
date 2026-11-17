@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import crypto from "node:crypto";
 import { createSuperagentMcpServer } from "../../src/core/mcp/superagentMcpServer.js";
 import { desktopUiSessionManager } from "../../src/core/tools/desktopUiTools.js";
 import { onMcpActivity } from "../../src/core/mcp/mcpActivityBus.js";
@@ -12,6 +13,7 @@ afterEach(() => {
 describe("privileged desktop caller data cannot enter telemetry", () => {
   it("redacts top-level and nested operator secrets, installer paths, and app titles", async () => {
     setYoloMode(true);
+    const credentialHash = crypto.randomBytes(32).toString("hex");
     const audits: any[] = [];
     const activity: any[] = [];
     const unsubscribe = onMcpActivity((entry) => activity.push(entry));
@@ -19,7 +21,7 @@ describe("privileged desktop caller data cannot enter telemetry", () => {
       toolExposure: "full",
       allowDangerous: true,
       authMode: "static-bearer",
-      getIdentity: () => ({ mode: "static-bearer", subject: "operator-test", credentialHash: "masked" }),
+      getIdentity: () => ({ mode: "static-bearer", subject: "operator-test", credentialHash }),
       onToolCall: (entry) => audits.push(entry),
     });
     vi.spyOn(desktopUiSessionManager, "probe").mockResolvedValue({
@@ -36,7 +38,7 @@ describe("privileged desktop caller data cannot enter telemetry", () => {
     const secrets = ["uniqueApprovalCode777", "uniqueOperatorProof888", "uniqueExecutablePath999", "uniquePrivateTitle333"];
     try {
       const handler = (server as any)._requestHandlers.get("tools/call");
-      await handler({
+      await expect(handler({
         method: "tools/call",
         params: {
           name: "superagent_desktop_ui",
@@ -47,7 +49,7 @@ describe("privileged desktop caller data cannot enter telemetry", () => {
             title: secrets[3],
           },
         },
-      });
+      })).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
       expect(audits.length).toBeGreaterThan(0);
       for (const event of [...audits, ...activity]) {
         const record = JSON.stringify(event);
