@@ -12,6 +12,7 @@ import { applyProcessIntent, traceChildProcess } from "../../process/processSpaw
 import { getProcessSupervisor } from "../../process/processSupervisor.js";
 import { rollingCommandOutput, readCommandOutputPage } from "../../tools/commandOutputPaging.js";
 import { readMcpTextFilePage } from "../mcpTextFilePaging.js";
+import { searchExplicitAuthorizedFiles } from "../mcpExactFileSearch.js";
 import { McpToolResult } from "../types.js";
 
 import { getMcpWorkspacePath } from "./workspaceContext.js";
@@ -519,6 +520,17 @@ export async function handleListFiles(args: any): Promise<McpToolResult> {
 }
 
 export async function handleGrepSearch(args: any): Promise<McpToolResult> {
+  if(Array.isArray(args.filePaths)){
+    try {
+      const workspace=String(args.workspace||args.cwd||getMcpWorkspacePath());
+      if(/^(?:ssh:|chain:)/i.test(workspace))
+        throw new Error("Explicit file search is local-only; remote projects require separately authorized tools.");
+      const answer=searchExplicitAuthorizedFiles(args,workspace);
+      return {content:[{type:"text",text:JSON.stringify(answer)}]};
+    } catch(error){
+      return {content:[{type:"text",text:error instanceof Error?error.message:String(error)}],isError:true};
+    }
+  }
   const query = String(args.query || args.pattern || args.search || "");
   const targetCwd = String(args.workspace || args.cwd || getMcpWorkspacePath());
   let searchPath: string;
