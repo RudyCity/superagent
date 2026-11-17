@@ -1,0 +1,34 @@
+/* Hallmark · pre-emit critique: P5 H5 E4 S5 R5 V4 */
+/* Recording Manager: compact inventory, inherited native Tray tokens. */
+.recordings-manager {display:grid;gap:0;min-width:0}
+.recordings-header {display:flex;justify-content:space-between;gap:18px;align-items:start;padding:25px 30px 22px;border-bottom:1px solid var(--border-subtle)}
+.recordings-header h2 {margin:0;font-size:20px;letter-spacing:-.02em;color:var(--text-primary)}
+.recordings-header p {margin:7px 0 0;max-width:65ch;color:var(--text-secondary);line-height:1.6;font-size:13px}
+.recordings-header-actions {display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0}
+.recordings-project {display:flex;gap:14px;align-items:center;padding:16px 30px;min-width:0;border-bottom:1px solid var(--border-subtle);background:var(--bg-surface-sunken)}
+.recordings-project span {font-size:10px;font-weight:750;letter-spacing:.1em;color:var(--text-secondary)}
+.recordings-project code {white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;font-size:12px;color:var(--text-primary)}
+.recordings-toolbar {display:flex;flex-wrap:wrap;gap:14px;padding:20px 30px 8px}
+.recordings-toolbar label {display:grid;gap:7px;min-width:170px;font-size:11px;font-weight:650;color:var(--text-secondary)}
+.recordings-toolbar input,.recordings-toolbar select {min-height:37px;padding:7px 11px;border:1px solid var(--border-medium);border-radius:var(--radius-sm);color:var(--text-primary);background:var(--bg-surface-sunken)}
+.recordings-toolbar input:focus-visible,.recordings-toolbar select:focus-visible,.recordings-row-action:focus-visible {outline:2px solid var(--border-focus);outline-offset:2px}
+.recordings-status {padding:5px 30px 10px;margin:0;min-height:30px;font-size:12px;color:var(--text-secondary)}
+.recordings-status[data-error="true"] {color:var(--text-danger,var(--text-primary))}
+.recordings-list {display:grid;gap:9px;padding:6px 30px 22px}
+.recordings-item {display:grid;grid-template-columns:minmax(0,1fr) 95px minmax(180px,auto);align-items:center;gap:18px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface-raised);padding:16px 18px;min-height:91px}
+.recordings-item:hover {border-color:var(--border-medium);background:var(--bg-surface-elevated)}
+.recordings-description,.recordings-identity {display:grid;gap:7px;min-width:0}
+.recordings-identity {gap:3px}
+.recordings-name {font-size:13px;font-weight:700;color:var(--text-primary)}
+.recordings-id {font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-secondary)}
+.recordings-meta {display:flex;gap:10px;flex-wrap:wrap;color:var(--text-secondary);font-size:11px}
+.recordings-meta > span:not(:first-child)::before {content:"·";margin-right:10px;opacity:.65}
+.recordings-state {font-size:11px;font-weight:700;text-transform:capitalize;color:var(--text-secondary)}
+.recordings-state-saved {color:var(--text-primary)}
+.recordings-state-recording {color:var(--text-accent,var(--text-primary))}
+.recordings-row-actions {display:flex;justify-content:flex-end;gap:6px;flex-wrap:wrap}
+.recordings-row-action {font-size:11px;padding:7px 10px;min-height:32px}
+.recordings-empty {padding:40px 20px;border:1px dashed var(--border-medium);border-radius:var(--radius-md);text-align:center;font-size:13px;color:var(--text-secondary)}
+.recordings-footnote {padding:0 30px 26px;margin:0;font-size:11px;line-height:1.6;color:var(--text-secondary);max-width:78ch}
+@media(max-width:980px){.recordings-header{flex-wrap:wrap}.recordings-item{grid-template-columns:minmax(0,1fr) auto}.recordings-row-actions{grid-column:1/-1;justify-content:start}}
+@media(max-width:560px){.recordings-header,.recordings-project,.recordings-toolbar,.recordings-list{padding-left:16px;padding-right:16px}.recordings-project{display:grid;gap:6px}.recordings-item{grid-template-columns:1fr;gap:10px}.recordings-row-actions{grid-column:auto}}
