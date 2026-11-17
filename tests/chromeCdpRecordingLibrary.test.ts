@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, symlink } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import JSZip from "jszip";
 import { join } from "node:path";
@@ -31,12 +31,12 @@ describe("project-local CDP Recording Manager",()=>{
     })]);
     expect(JSON.stringify(inventory)).not.toContain("manifest.json");
     expect((await locateProjectCdpRecording(project,uuid,"video")).path)
-      .toBe(join(folder,"video.mp4"));
+      .toBe(await realpath(join(folder,"video.mp4")));
   });
   test("exports a valid bounded ZIP with video and verifiable SHA-256 checksums",async()=>{
     await writeFile(join(folder,"transcript.jsonl"),'{"action":"click"}\n');
     const exported=await exportProjectCdpRecording(project,uuid);
-    expect(exported.path).toBe(join(folder,"recording.zip"));
+    expect(exported.path).toBe(await realpath(join(folder,"recording.zip")));
     expect(exported.entries).toBeGreaterThanOrEqual(4);
     const zip=await JSZip.loadAsync(await readFile(exported.path),{checkCRC32:true});
     const names=Object.keys(zip.files).sort();
