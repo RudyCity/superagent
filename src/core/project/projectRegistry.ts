@@ -232,15 +232,15 @@ export function updateProject(id: string, updates: UpdateProjectInput, registryP
     throw new Error(`Project root already registered: ${normalized.root}`);
   }
   normalized.createdAt = existing.createdAt;
-  document.projects[index] = normalized;
-  writeRegistry(document, registryPath);
-  // A project ID never keeps stale authorization after its filesystem/SSH
-  // target changes or is disabled. Existing identities must request approval again.
+  // Revoke before publishing a changed project target: failure must never leave
+  // an old grant authorized for a newly assigned filesystem or SSH destination.
   if (!registryPath && (normalized.root !== existing.root ||
       normalized.target !== existing.target ||
       (existing.enabled && !normalized.enabled))) {
     revokeAllProjectAccess(existing.id);
   }
+  document.projects[index] = normalized;
+  writeRegistry(document, registryPath);
   return normalized;
 }
 
@@ -248,8 +248,8 @@ export function removeProject(id: string, registryPath?: string): boolean {
   const document = readRegistry(registryPath);
   const index = document.projects.findIndex((project) => project.id === id.trim().toLowerCase());
   if (index < 0) return false;
+  if (!registryPath) revokeAllProjectAccess(id.trim().toLowerCase());
   document.projects.splice(index, 1);
   writeRegistry(document, registryPath);
-  if (!registryPath) revokeAllProjectAccess(id.trim().toLowerCase());
   return true;
 }
