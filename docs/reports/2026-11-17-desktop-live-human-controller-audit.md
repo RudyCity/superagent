@@ -153,3 +153,39 @@ generic OS keyboard shortcut path has been enabled. Core HTTP, MCP, public
 tunnels, browser JavaScript and local preview tokens remain excluded from
 native input authorization. Keep runtime readiness `NOT_CONFIGURED` until
 those gates pass.
+
+
+## 2026-11-18 follow-up: fail-closed private controller lifecycle
+
+The source-only private TLS input controller gained the following changes in
+`main`, with no local-device activation or release:
+
+- **Single-use listener termination:** controller TLS disconnect immediately
+  revokes the exact controller connection, closes the native input listener
+  and wipes its retained HMAC-key buffer. There is no socket reuse or silent
+  reconnect after the remote operator leaves.
+- **Expiry enforcement at both ends:** the private viewer/client remembers
+  the host-provided, family-specific native approval deadline. An expired mouse
+  or keyboard scope is rejected locally without sending an input request;
+  the host still independently enforces expiry.
+- **Live-viewer membership check:** input-host provisioning requires a
+  **trusted native-host-only** `isApprovedViewerActive(sessionId)` callback
+  bound to the exact active mTLS viewer. The listener refuses to start
+  without it and checks viewer membership again for authenticated connections,
+  scope approval and semantic input. This callback must never derive from
+  remote JSON, a URL or an MCP/browser claim.
+- **Race-condition regression coverage:** disposable TLS tests now cover
+  controller disconnect during attended scope approval and native input,
+  rejection of an inactive/replaced viewer and terminal port closure.
+
+The CI baseline for the earlier one-use-disconnect change
+(`e13b503f`) completed successfully in all four Desktop Live Controller
+Regression jobs. For the complete new series, check the CI result at
+https://github.com/RudyCity/superagent/actions/workflows/desktop-live-controller-regression.yml
+rather than assuming prior success transfers to new commits.
+
+**Not yet runtime verified or released.** Installed Windows native UI
+approval/signing, real physical OS accessibility input, per-device certificate
+provisioning, remote Android/laptop viewer UI, cross-host network pairing,
+full installer verification and hardware E2E remain separate gates. Keep the
+installed native controller `NOT_CONFIGURED` until those gates pass.
