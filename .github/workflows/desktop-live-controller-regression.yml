@@ -31,6 +31,7 @@ on:
       - "tests/androidLanRemoteScreen.test.ts"
       - "tests/androidLanSchemaFirst.test.ts"
       - "tests/desktopTrayAndroidScreenUi.test.ts"
+      - "tests/trayLanBridge.test.ts"
       - ".github/workflows/desktop-live-controller-regression.yml"
 permissions:
   contents: read
