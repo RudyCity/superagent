@@ -56,7 +56,7 @@ describe("Desktop Live restored to Tray as a per-handle session manager",()=>{
     expect(html).toContain('id="desktop-live-mouse-status"');
     expect(html).toContain('id="desktop-live-keyboard-status"');
     expect(js).toContain("if (accepted?.success !== true || accepted?.result?.ok !== true)");
-    expect(js).toContain("inputEnabled !== false");
+    expect(js).toContain("result?.inputEnabled!==false");
     expect(js).toContain('item.stopAction==="return-to-agent"?"Return to Agent"');
     expect(js).not.toContain("/api/desktop/live/lan-input");
     expect(rust).toContain('"controller-review" =>');
