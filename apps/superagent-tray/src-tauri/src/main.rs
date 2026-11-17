@@ -824,7 +824,7 @@ async fn lan_support_action(
         "file_v2_offer" => &["deviceId", "direction", "name", "size", "sha256"],
         "file_v2_put" => &["deviceId", "transferId", "seq", "data"],
         "file_v2_status" | "file_v2_finish" | "file_v2_abort" => &["deviceId", "transferId"],
-        "file_relay_start" => &["sourceId", "destinationId"],
+        "file_relay_start" => &["sourceId", "destinationId", "protocol"],
         "file_relay_status" | "file_relay_cancel" => &["jobId"],
         "schema" => &["deviceId", "knownRevision"],
         "element" => &["deviceId", "elementId", "revision", "kind"],
@@ -935,6 +935,11 @@ async fn lan_support_action(
                 let dst = data["destinationId"].as_str().ok_or("Destination device required")?;
                 if !valid_uuid(src) || !valid_uuid(dst) || src == dst {
                     return Err("Choose two different approved device IDs".into());
+                }
+                if let Some(v) = data.get("protocol") {
+                    if v.as_str() != Some("v1") && v.as_str() != Some("v2") {
+                        return Err("Invalid relay protocol".into());
+                    }
                 }
             } else {
                 let id = data["jobId"].as_str().ok_or("Relay job ID required")?;
