@@ -926,7 +926,7 @@
         // Non-project actions require an independent, explicitly human-approved
         // MCP connection capability. This does not authorize any project files.
         projSelect.append(option("mcp-connection", "MCP Connection Controls (execute; no file access)"));
-        projSelect.addEventListener("change", () => {
+        projSelect.onchange = () => {
           if (projSelect.value !== "mcp-connection") return;
           for (const name of ["read", "write", "git"]) {
             const check = $("access-cap-" + name)?.querySelector("input");
@@ -934,7 +934,7 @@
           }
           const execute = $("access-cap-execute")?.querySelector("input");
           if (execute) execute.checked = true;
-        }, { once: true });
+        };
       }
     } catch (err) {
       console.warn("[AccessManager] refreshMcpRequests error:", err);
