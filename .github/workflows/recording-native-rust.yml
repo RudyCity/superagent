@@ -1,0 +1,51 @@
+name: Recording Native Tray Rust Acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "apps/superagent-tray/src-tauri/src/desktop_live_android_control.rs"
+      - "apps/superagent-tray/src-tauri/Cargo.toml"
+      - "apps/superagent-tray/src-tauri/Cargo.lock"
+      - ".github/workflows/recording-native-rust.yml"
+  pull_request:
+    paths:
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - "apps/superagent-tray/src-tauri/src/desktop_live_android_control.rs"
+      - ".github/workflows/recording-native-rust.yml"
+permissions:
+  contents: read
+concurrency:
+  group: recording-native-rust-${{ github.run_id }}
+  cancel-in-progress: false
+jobs:
+  native-rust:
+    name: Native Tray Rust (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 65
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x64
+            runner: windows-2025
+          - platform: linux-x64
+            runner: ubuntu-24.04
+          - platform: macos-arm64
+            runner: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux native prerequisites
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev librsvg2-dev libssl-dev pkg-config libayatana-appindicator3-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "apps/superagent-tray/src-tauri -> target"
+      - name: Compile and run native Tray regression
+        run: cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml --bin superagent-tray
