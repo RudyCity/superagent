@@ -84,6 +84,7 @@ jobs:
             tests/mcpFilePolicyMatrix.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpExactFileSearch.test.ts \
+            tests/mcpExplicitGrepIntegration.test.ts \
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
             tests/mcpResponseLease.test.ts \
@@ -116,6 +117,7 @@ jobs:
           bun --bun x vitest run --maxWorkers=2
           tests/mcpApprovalAndFilePolicy.test.ts
           tests/mcpExactFileSearch.test.ts
+          tests/mcpExplicitGrepIntegration.test.ts
           tests/mcpFilePolicyMatrix.test.ts
           tests/desktop-ui-integration/registered-file-tool-gate.test.ts
           tests/mcpCrossIdeGateway.test.ts
