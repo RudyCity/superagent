@@ -83,7 +83,10 @@ describe("Desktop Live exact-owner takeover and stop routing", () => {
     mock.discoverCdpPages.mockResolvedValue([]);
     mock.listManagedBrowserRegistrations.mockReturnValue([]);
     mock.readManagedControlStatus.mockResolvedValue("agent");
-    mock.setManagedBrowserControl.mockResolvedValue({mode:"agent"});
+    mock.setManagedBrowserControl.mockImplementation(async (input:{mode:"human"|"agent"}) => {
+      mock.readManagedControlStatus.mockResolvedValue(input.mode);
+      return {mode:input.mode};
+    });
     mock.revokeOperatorWindowSessions.mockReturnValue(0);
   });
 
@@ -122,6 +125,53 @@ describe("Desktop Live exact-owner takeover and stop routing", () => {
       id:"delegate:profile_A1B2:42",expectedRevision:6,
     },"human")).rejects.toThrow("STALE_DELEGATE_REVISION");
     expect(mock.revokeDelegateTargetByHuman).not.toHaveBeenCalled();
+  });
+
+  it("confirms managed CDP human takeover against the authoritative write fence", async () => {
+    mock.listCdpSessions.mockResolvedValue([{port:9222,targetId:"target_123",agentId:"agentA",revision:9}]);
+    mock.listManagedBrowserRegistrations.mockReturnValue([{
+      port:9222,targetId:"target_123",profileId:"test_profile",generation:"gen_1",
+      browserFingerprint:"a".repeat(64),
+    }]);
+    mock.discoverCdpPages.mockResolvedValue([{targetId:"target_123",title:"Test tab"}]);
+    mock.readManagedControlStatus.mockResolvedValue("agent");
+    const result=await stopDesktopLiveHandle({
+      id:"managed:9222:target_123",expectedRevision:9,
+    },"human");
+    expect(result.stopped).toBe(true);
+    expect(mock.setManagedBrowserControl).toHaveBeenCalledWith({
+      mode:"human",port:9222,targetId:"target_123",profileId:"test_profile",
+      generation:"gen_1",browserFingerprint:"a".repeat(64),
+    },undefined,9);
+    expect(mock.readManagedControlStatus).toHaveBeenLastCalledWith(9222,"target_123");
+  });
+
+  it("never claims a successful human takeover when the hold did not stick", async () => {
+    mock.listCdpSessions.mockResolvedValue([{port:9222,targetId:"target_123",revision:9}]);
+    mock.listManagedBrowserRegistrations.mockReturnValue([{
+      port:9222,targetId:"target_123",profileId:"test_profile",generation:"gen_1",
+      browserFingerprint:"a".repeat(64),
+    }]);
+    mock.discoverCdpPages.mockResolvedValue([{targetId:"target_123",title:"Test tab"}]);
+    mock.readManagedControlStatus.mockResolvedValue("agent");
+    mock.setManagedBrowserControl.mockResolvedValueOnce({mode:"human"});
+    await expect(stopDesktopLiveHandle({
+      id:"managed:9222:target_123",expectedRevision:9,
+    },"human")).rejects.toThrow("CDP_HUMAN_HOLD_NOT_VERIFIED");
+  });
+
+  it("never claims Return to Agent while a competing human hold remains", async () => {
+    mock.listCdpSessions.mockResolvedValue([{port:9222,targetId:"target_123",revision:9}]);
+    mock.listManagedBrowserRegistrations.mockReturnValue([{
+      port:9222,targetId:"target_123",profileId:"test_profile",generation:"gen_1",
+      browserFingerprint:"a".repeat(64),
+    }]);
+    mock.discoverCdpPages.mockResolvedValue([{targetId:"target_123",title:"Test tab"}]);
+    mock.readManagedControlStatus.mockResolvedValue("human");
+    mock.setManagedBrowserControl.mockResolvedValueOnce({mode:"agent"});
+    await expect(stopDesktopLiveHandle({
+      id:"managed:9222:target_123",expectedRevision:9,
+    },"human")).rejects.toThrow("CDP_AGENT_RETURN_NOT_VERIFIED");
   });
 
   it("shows Return to Agent only on a verified human-held managed CDP target", async () => {
