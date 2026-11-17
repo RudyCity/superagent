@@ -111,6 +111,9 @@ fn manager() -> &'static Mutex<Manager> {
 fn locked() -> Result<std::sync::MutexGuard<'static, Manager>, String> {
     manager().lock().map_err(|_| "SHUTDOWN_STATE_UNAVAILABLE".into())
 }
+pub fn is_running() -> bool {
+    locked().map_or(true, |state| state.busy)
+}
 fn redacted(error: &str) -> String {
     if error.starts_with("SHUTDOWN_") || error.starts_with("EXIT_") {
         return error.chars().take(180).collect();
@@ -451,8 +454,12 @@ fn set_progress(app:&AppHandle, progress:&Progress) {
 }
 async fn run_shutdown(app:AppHandle, chosen:Vec<Item>, exit_after:bool, mut progress:Progress) {
     for (index,item) in chosen.iter().enumerate() {
-        progress.steps[index].status="stopping".into();
-        progress.steps[index].message="Revalidating exact owner and requesting graceful stop".into();
+        progress.steps[index].status=if item.kind=="mcp" {"draining"} else {"stopping"}.into();
+        progress.steps[index].message=if item.kind=="mcp" {
+            "Verifying zero active sessions before authenticated owner drain"
+        } else {
+            "Revalidating exact owner and requesting graceful stop"
+        }.into();
         set_progress(&app,&progress);
         match stop_one(item).await {
             Ok(()) => {
