@@ -45,7 +45,7 @@ async function appendAll(handle:Awaited<ReturnType<typeof open>>,chunk:Buffer,po
   }
   return position+written;
 }
-async function metadata(path:string) {
+async function metadata(path:string,limit=MAX_ENTRY_BYTES) {
   const flags=constants.O_RDONLY | (process.platform==="win32"?0:constants.O_NOFOLLOW);
   const handle=await open(path,flags);
   let crc=0xffffffff,bytes=0;
@@ -54,7 +54,7 @@ async function metadata(path:string) {
     for await(const input of handle.createReadStream({autoClose:false,highWaterMark:65536})){
       const chunk=input as Buffer;
       bytes+=chunk.length;
-      if(bytes>MAX_ENTRY_BYTES)throw Error("Archive entry exceeds ZIP size limit.");
+      if(bytes>limit)throw Error("Archive entry exceeds ZIP size limit.");
       crc=crcUpdate(crc,chunk);
       digest.update(chunk);
     }
@@ -160,7 +160,7 @@ export async function writeProjectRecordingZip(directory:string):Promise<{
       if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error;
     }
     await rename(temp,output);
-    const packaged=await metadata(output);
+    const packaged=await metadata(output,MAX_ZIP_BYTES);
     return {path:output,bytes:packaged.bytes,sha256:packaged.sha256,entries:entries.length};
   }finally{
     if(created)await rm(temp,{force:true}).catch(()=>{});
