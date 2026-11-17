@@ -119,11 +119,19 @@ async function archiveRoot(projectDirectory: string): Promise<string> {
 }
 const hash = (input: string) => createHash("sha256").update(input).digest("hex");
 const safeCount = (n: number) => Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, n));
-const safeError = (error: unknown) => String((error as Error)?.message ?? error)
-  .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
-  .replace(/(password|token|secret|cookie|authorization|api[_-]?key|sessionToken)\s*[:=]\s*[^\s,;]+/gi, "$1=[REDACTED]")
-  .replace(/https?:\/\/[^\s]+/gi, "[URL REDACTED]")
-  .slice(0, 300);
+const safeError = (error: unknown) => {
+  // Browser, encoder and filesystem errors may include arbitrary page text,
+  // local paths or secrets. Persist categories only; never free-form messages.
+  const message = String((error as Error)?.message ?? error);
+  if (/ffmpeg|encoder|codec|pipe:/i.test(message)) return "RECORDING_ENCODER_ERROR";
+  if (/screenshot|target|detach|websocket|navigation|capture|frame/i.test(message))
+    return "RECORDING_CAPTURE_ERROR";
+  if (/lease|owner|generation|permission|authorized/i.test(message))
+    return "RECORDING_OWNERSHIP_ERROR";
+  if (/directory|filesystem|file|write|space|ENOENT|EACCES|EPERM/i.test(message))
+    return "RECORDING_STORAGE_ERROR";
+  return "RECORDING_OPERATION_ERROR";
+};
 
 async function appendSafe(file: string, payload: object) {
   await appendFile(file, JSON.stringify(payload) + "\n", { encoding: "utf8", mode: 0o600 });
