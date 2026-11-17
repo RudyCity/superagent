@@ -150,3 +150,46 @@
 .access-pane{display:grid;gap:18px}
 .access-pane[hidden]{display:none !important}
 @media(max-width:640px){.access-nav-tabs{gap:4px;padding:4px}.access-nav-tab{padding:7px 10px;font-size:11px}}
+
+
+/* MCP Access · native settings, separated connection and project grants. */
+.access-mcp-section{min-width:0}
+.access-mcp-section .access-stored,.access-mcp-section .access-editor{min-width:0}
+.access-mcp-intro{display:grid;gap:5px;background:linear-gradient(135deg,rgba(124,93,207,.11),var(--bg-surface,#111827));border-color:rgba(167,139,250,.18)}
+.access-mcp-intro h3{font-size:18px;letter-spacing:-.025em;margin:0}
+.access-mcp-description{margin:0;color:var(--text-secondary,#abb8cd);font-size:12px;line-height:1.65;overflow-wrap:anywhere}
+.access-mcp-load-error{border:1px solid rgba(251,191,36,.36);background:rgba(251,191,36,.07);color:#fde68a;border-radius:12px;padding:13px 15px;font-size:12px;line-height:1.6;overflow-wrap:anywhere}
+.access-mcp-load-error[hidden]{display:none!important}
+.access-mcp-list,.access-mcp-identities{display:grid;gap:9px;margin-top:12px}
+.access-mcp-request-card{padding:16px;border:1px solid var(--border-subtle,rgba(255,255,255,.1));border-radius:13px;background:var(--bg-surface-raised,#172135);display:grid;gap:10px}
+.access-mcp-request-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
+.access-mcp-request-head strong{font-size:13px;overflow-wrap:anywhere}
+.access-mcp-meta{font-size:11px;color:var(--text-muted,#94a3b8);overflow-wrap:anywhere}
+.access-mcp-target{font-size:12px;font-weight:700;overflow-wrap:anywhere}
+.access-mcp-capabilities{display:flex;flex-wrap:wrap;align-items:center;gap:10px 13px;margin-top:7px}
+.access-mcp-cap-chip{font-size:11px;padding:4px 9px;border-radius:7px;color:#d8c9ff;background:rgba(139,92,246,.13);border:1px solid rgba(167,139,250,.23);font-weight:650}
+.access-mcp-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px}
+.access-mcp-actions button,.access-mcp-history-row .access-revoke{width:auto;min-height:35px;padding:8px 14px;margin:0}
+.access-mcp-primary{max-width:420px}
+.access-mcp-history-row{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:12px;border:1px solid var(--border-subtle,rgba(255,255,255,.08));border-radius:11px;min-width:0}
+.access-mcp-history-detail{display:flex;align-items:baseline;gap:5px 10px;flex:1;flex-wrap:wrap;min-width:0}
+.access-mcp-history-detail strong{font-size:12px;overflow-wrap:anywhere}
+.access-mcp-history-detail .access-mcp-meta{flex-basis:100%}
+.access-mcp-state{font-size:10px;letter-spacing:.02em;font-weight:750}
+.access-mcp-state-approved{color:#86efac}
+.access-mcp-state-denied,.access-mcp-state-revoked{color:#fca5a5}
+.access-mcp-identity-row{display:flex;align-items:baseline;justify-content:space-between;gap:5px 15px;flex-wrap:wrap;border:1px solid var(--border-subtle,rgba(255,255,255,.08));border-radius:10px;padding:11px 12px}
+.access-mcp-identity-row strong{font-size:12px}
+.access-mcp-identity-row .access-mcp-meta{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+.access-trusted-session{display:grid;gap:10px}
+.access-trusted-session h3{margin:0}
+.access-trusted-session .access-audit-refresh{justify-self:start}
+.access-nav-tabs{scrollbar-width:none;overscroll-behavior-x:contain}
+.access-nav-tabs::-webkit-scrollbar{display:none}
+.access-nav-tab{flex-shrink:0}
+@media(max-width:640px){
+  .access-mcp-actions>*{flex:1;min-width:100px}
+  .access-mcp-history-row{align-items:flex-start;flex-wrap:wrap}
+  .access-mcp-history-row .access-revoke{width:100%}
+  .access-mcp-primary{max-width:none}
+}
