@@ -52,6 +52,7 @@ const click={
 };
 function setup(approval=true){
   const now=Date.now();
+  let viewerActive=true;
   const credential={
     sessionId:"1".repeat(64),viewerChallenge:"2".repeat(64),
     viewerKey:"3".repeat(64),hostId:"trusted-os-host-00001",
@@ -98,6 +99,7 @@ function setup(approval=true){
       serverKey:key,viewerCa:cert,
     },
     credential,controller,approveNative,
+    isApprovedViewerActive:sessionId=>viewerActive&&sessionId===credential.sessionId,
   });
   const connect=async()=>{
     const address=await host.start();
@@ -108,7 +110,9 @@ function setup(approval=true){
     });
     return client;
   };
-  return {host,connect,controller,credential,nativeDispatch,approveNative};
+  return {host,connect,controller,credential,nativeDispatch,approveNative,
+    setViewerActive:(active:boolean)=>{viewerActive=active;},
+  };
 }
 
 describe("separately approved private mTLS controller (no Core HTTP/MCP)",()=>{
@@ -219,6 +223,28 @@ describe("separately approved private mTLS controller (no Core HTTP/MCP)",()=>{
     }finally{releaseNative?.();client?.close();f.host.stop();}
   },12000);
 
+  it("refuses to start a control socket without authoritative live viewer membership",async()=>{
+    const f=setup();
+    f.setViewerActive(false);
+    await expect(f.host.start()).rejects.toThrow(/DENIED/);
+    expect(f.host.isStopped).toBe(false);
+    f.host.stop();
+  });
+
+  it("revokes a valid controller when the approved viewer session disappears",async()=>{
+    const f=setup();
+    let client:RemotePrivateControllerClient|undefined;
+    try{
+      client=await f.connect();
+      expect(await client.requestScope("mouse")).toBe(true);
+      f.setViewerActive(false);
+      await expect(client.sendInput(click)).rejects.toThrow();
+      await vi.waitFor(()=>expect(f.host.isStopped).toBe(true));
+      expect(f.nativeDispatch).not.toHaveBeenCalled();
+      await expect(client.sendInput(click)).rejects.toThrow();
+    }finally{client?.close();f.host.stop();}
+  },12000);
+
   it("denies public and wildcard listener interfaces before opening a socket",()=>{
     const f=setup();
     expect(()=>new RemotePrivateControllerTlsHost({
@@ -227,6 +253,7 @@ describe("separately approved private mTLS controller (no Core HTTP/MCP)",()=>{
         serverKey:key,viewerCa:cert,
       },
       credential:f.credential,controller:f.controller,
+      isApprovedViewerActive:()=>true,
       approveNative:async()=>true,
     })).toThrow(/DENIED/);
     f.host.stop();
