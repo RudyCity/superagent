@@ -926,6 +926,81 @@ pub async fn shutdown_manager_action(
             locked()?.preview=Some(preview.clone());
             Ok(json!({"preview":preview}))
         }
+        "manual_kill" => {
+            if !window.is_focused().unwrap_or(false) {
+                return Err("SHUTDOWN_FOCUSED_NATIVE_WINDOW_REQUIRED".into());
+            }
+            if exit_after.is_some() ||
+                force_confirmation.as_deref()!=Some("KILL SELECTED") {
+                return Err("SHUTDOWN_MANUAL_TYPED_APPROVAL_REQUIRED".into());
+            }
+            let token=preview_id.ok_or("SHUTDOWN_PREVIEW_REQUIRED")?;
+            let ids=selected.ok_or("SHUTDOWN_MANUAL_SELECTION_REQUIRED")?;
+            let original={
+                let state=locked()?;
+                if state.busy{return Err("SHUTDOWN_ALREADY_RUNNING".into());}
+                state.preview.clone().ok_or("SHUTDOWN_PREVIEW_REQUIRED")?
+            };
+            if original.preview_id!=token ||
+                timestamp().saturating_sub(original.created_at)>PREVIEW_TTL_MS {
+                return Err("SHUTDOWN_PREVIEW_EXPIRED".into());
+            }
+            let chosen=manual_candidates(&original,&ids)?;
+            let mut summary=format!(
+                "MANUALLY KILL {} DISTINCT OS PROCESS(ES)?\n\n\
+                This is an irreversible owner-authorized emergency override.\n\
+                Active agent jobs, MCP sessions, Core generations and Cloudflare tunnels\n\
+                may be interrupted. Their supervisors may start replacement processes.\n\n",
+                chosen.len());
+            for item in chosen.iter().take(16) {
+                summary.push_str(&format!("PID {} · {} · {}\n",
+                    item.pid.unwrap_or(0),
+                    item.process_name.as_deref().unwrap_or("unknown"),
+                    item.label));
+            }
+            if chosen.len()>16 {
+                summary.push_str(&format!("...and {} more selected process(es).\n",
+                    chosen.len()-16));
+            }
+            summary.push_str(
+                "\nOnly the exact OS PIDs selected in this preview are targeted. \
+                No process tree is killed. Continue?");
+            let dialog=app.clone();
+            let approved=tauri::async_runtime::spawn_blocking(move||{
+                use tauri_plugin_dialog::{DialogExt,MessageDialogButtons};
+                dialog.dialog().message(summary).buttons(
+                    MessageDialogButtons::OkCancelCustom(
+                        "Kill selected OS processes".into(),"Cancel".into()
+                    )).blocking_show()
+            }).await.map_err(|_|"SHUTDOWN_NATIVE_APPROVAL_FAILED")?;
+            if !approved{return Err("SHUTDOWN_OPERATOR_CANCELLED".into());}
+            let latest=inspect().await?;
+            for item in &chosen {
+                if !latest.services.iter().any(|current|same_manual_owner(item,current)) {
+                    return Err("SHUTDOWN_MANUAL_PROCESS_CHANGED_SINCE_PREVIEW".into());
+                }
+            }
+            let progress=Progress {run_id:Uuid::new_v4().simple().to_string(),
+                stage:"running".into(),exit_after:false,
+                steps:chosen.iter().map(|item|Step {
+                    id:item.id.clone(),label:format!(
+                        "{} · PID {}",item.label,item.pid.unwrap_or(0)),
+                    status:"queued".into(),
+                    message:"Manual kill approved; awaiting exact OS process verification".into(),
+                }).collect(),error:None};
+            {
+                let mut state=locked()?;
+                if state.busy{return Err("SHUTDOWN_ALREADY_RUNNING".into());}
+                if state.preview.as_ref().is_none_or(|p|p.preview_id!=token){
+                    return Err("SHUTDOWN_PREVIEW_REPLACED".into());
+                }
+                state.busy=true;state.progress=Some(progress.clone());
+            }
+            set_progress(&app,&progress);
+            let run_id=progress.run_id.clone();
+            tauri::async_runtime::spawn(run_manual_shutdown(app,chosen,progress));
+            Ok(json!({"accepted":true,"runId":run_id}))
+        }
         "force_all" => {
             if !window.is_focused().unwrap_or(false) {
                 return Err("SHUTDOWN_FOCUSED_NATIVE_WINDOW_REQUIRED".into());
