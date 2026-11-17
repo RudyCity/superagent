@@ -380,6 +380,9 @@ async function inspectOne(service:ManagedServiceName,port:number|undefined,
         backendPid:live?.backendPid??registered.backendPid??null,
         backendGenerations:live?.backendGenerations??null,
         backendHealthy:live?.backendHealthy??null,
+        // Attested release digest is metadata, not permission to activate or restart.
+        backendReleaseDigest:typeof live?.backendReleaseDigest==="string" &&
+          /^[a-f0-9]{64}$/.test(live.backendReleaseDigest) ? live.backendReleaseDigest : null,
         backendGenerationDetails:Array.isArray(live?.backendGenerationDetails)
           ? live.backendGenerationDetails.slice(0,8):[],
         activeSessions:live?.activeSessions??null,
