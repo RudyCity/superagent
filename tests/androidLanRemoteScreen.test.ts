@@ -3,6 +3,7 @@ import fs from "node:fs";
 import { parseTrayLanAction, toAndroidScreenInput } from "../src/core/runtime/trayLanBridge.js";
 
 const id = "a0b1c2d3-1234-4abc-9f00-aabbccddeeff";
+const controllerToken = "a".repeat(64);
 const android = (name: string) => fs.readFileSync(
   "apps/superagent-lan-android/app/src/main/java/click/superagent/lanclient/" + name + ".java", "utf8");
 const manifest = fs.readFileSync("apps/superagent-lan-android/app/src/main/AndroidManifest.xml", "utf8");
@@ -22,14 +23,21 @@ describe("Android interactive LAN control: strict, consent-gated protocol", () =
     ]) expect(() => parseTrayLanAction(body)).toThrow();
   });
 
+  it("denies input without a separate native controller bearer", () => {
+    expect(() => parseTrayLanAction({action:"input",deviceId:id,kind:"back"}))
+      .toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
+    expect(() => parseTrayLanAction({action:"input",deviceId:id,kind:"back",controllerToken:"viewer"}))
+      .toThrow("ANDROID_CONTROLLER_APPROVAL_REQUIRED");
+  });
+
   it("enforces precise touch and swipe bounds, no injected fields", () => {
     const valid = [
-      { action: "input", deviceId: id, kind: "tap", x: 0, y: 1 },
-      { action: "input", deviceId: id, kind: "swipe", x: .1, y: .9, endX: .1, endY: .1, durationMs: 320 },
-      { action: "input", deviceId: id, kind: "back" },
-      { action: "input", deviceId: id, kind: "home" },
-      { action: "input", deviceId: id, kind: "recents" },
-      { action: "input", deviceId: id, kind: "text", text: "Example authorized input" },
+      { action: "input", deviceId: id, controllerToken, kind: "tap", x: 0, y: 1 },
+      { action: "input", deviceId: id, controllerToken, kind: "swipe", x: .1, y: .9, endX: .1, endY: .1, durationMs: 320 },
+      { action: "input", deviceId: id, controllerToken, kind: "back" },
+      { action: "input", deviceId: id, controllerToken, kind: "home" },
+      { action: "input", deviceId: id, controllerToken, kind: "recents" },
+      { action: "input", deviceId: id, controllerToken, kind: "text", text: "Example authorized input" },
     ];
     for (const item of valid) expect(parseTrayLanAction(item).action).toBe("input");
     const denied = [
@@ -45,7 +53,7 @@ describe("Android interactive LAN control: strict, consent-gated protocol", () =
       { kind: "clipboard", text: "password" },
     ];
     for (const input of denied) {
-      expect(() => parseTrayLanAction({ action: "input", deviceId: id, ...input }))
+      expect(() => parseTrayLanAction({ action: "input", deviceId: id, controllerToken, ...input }))
         .toThrow();
     }
   });
@@ -60,7 +68,7 @@ describe("Android interactive LAN control: strict, consent-gated protocol", () =
       { kind: "text", text: "hello" },
     ];
     for (const input of inputs) {
-      const parsed = parseTrayLanAction({ action: "input", deviceId: id, ...input });
+      const parsed = parseTrayLanAction({ action: "input", deviceId: id, controllerToken, ...input });
       const command = toAndroidScreenInput(parsed.args);
       expect(command).toEqual(input);
       expect(Object.keys(command).sort()).toEqual(Object.keys(input).sort());
