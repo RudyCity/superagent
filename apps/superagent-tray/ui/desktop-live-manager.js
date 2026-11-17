@@ -33,6 +33,8 @@
     controlEnabled: false,
     controlRequested: false,
     controllerSeconds: 0,
+    recording: null,
+    recordingPending: false,
     isLanDevice: false,
     devicePlatform: null,
     deviceId: "",
@@ -60,6 +62,13 @@
   function renderStreamPermissions() {
     const active = stream.active && !!stream.token;
     const isLan = active && stream.isLanDevice;
+    const recordButton=el("desktop-live-stream-record");
+    const preset=el("desktop-live-record-preset");
+    if(recordButton){
+      recordButton.disabled=!active||isLan||stream.recordingPending;
+      recordButton.textContent=stream.recording?"Stop recording":"Record window";
+    }
+    if(preset)preset.disabled=!active||isLan||!!stream.recording||stream.recordingPending;
     const view = el("desktop-live-view-permission");
     const controller = el("desktop-live-controller-permission");
     const request = el("desktop-live-stream-request-control");
@@ -322,6 +331,46 @@
     }
   }
 
+  async function toggleNativeRecording() {
+    if(!stream.active||!stream.token||stream.isLanDevice||stream.recordingPending)return;
+    const native=window.__TAURI__?.core?.invoke;
+    if(typeof native!=="function"){status("Native Tray is required for recording.",true);return;}
+    stream.recordingPending=true;renderStreamPermissions();
+    try{
+      if(stream.recording){
+        const prior=stream.recording;
+        const saved=await native("recordings_action",{
+          action:"stop",payload:{projectDirectory:prior.projectDirectory,recordingId:prior.recordingId},
+        });
+        if(saved?.success===false||!["saved","failed"].includes(String(saved?.status)))
+          throw Error("Recording finalization was not verified.");
+        stream.recording=null;
+        status(saved.status==="saved"?"Native window MP4 finalized inside the selected project.":
+          "Recorder stopped with errors. Check Recording Manager.",saved.status!=="saved");
+      }else{
+        const token=stream.token;
+        const selected=await native("recordings_action",{action:"pick-project",payload:null});
+        if(!selected?.projectDirectory)return;
+        if(!stream.active||stream.isLanDevice||stream.token!==token)
+          throw Error("The previously approved preview is no longer active.");
+        const videoPreset=el("desktop-live-record-preset")?.value||"standard";
+        const begun=await native("recordings_action",{
+          action:"start-native",payload:{
+            previewToken:token,projectDirectory:selected.projectDirectory,videoPreset,
+          },
+        });
+        if(begun?.status!=="recording"||!begun?.recordingId)
+          throw Error("Recording start could not be verified.");
+        stream.recording={
+          recordingId:begun.recordingId,
+          projectDirectory:begun.projectDirectory||selected.projectDirectory,
+        };
+        status("Recording authorized window · MP4 stored locally. Preview approval expires in five minutes.");
+      }
+    }catch(error){
+      status("Recording: "+(error?.message||"Action denied."),true);
+    }finally{stream.recordingPending=false;renderStreamPermissions();}
+  }
   async function stopStream(reason) {
     if (stream.timer) {
       clearTimeout(stream.timer);
@@ -329,6 +378,19 @@
       stream.timer = null;
     }
     const token = stream.token;
+    const recording=stream.recording;
+    stream.recording=null;
+    if(recording&&!stream.isLanDevice){
+      try{
+        await window.__TAURI__?.core?.invoke?.("recordings_action",{
+          action:"stop",payload:{
+            projectDirectory:recording.projectDirectory,recordingId:recording.recordingId,
+          },
+        });
+      }catch{
+        // Core will auto-finalize after the exact preview capability is revoked.
+      }
+    }
     stream.active = false;
     stream.token = null;
     stream.id = null;
@@ -511,6 +573,7 @@
     });
     el("desktop-live-manager-refresh")?.addEventListener("click",()=>void refresh());
     el("desktop-live-stream-stop")?.addEventListener("click",()=>void stopStream("Live stream stopped by operator."));
+    el("desktop-live-stream-record")?.addEventListener("click",()=>void toggleNativeRecording());
     el("desktop-live-stream-quality")?.addEventListener("change",(e)=>{
       stream.quality=e.target?.value||"balanced";
       stream.lastHash=null;
