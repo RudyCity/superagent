@@ -38,7 +38,6 @@ import {
 import { DISABLED_MCP_TOOLS, MCP_TOOL_DEFINITIONS } from "./superagentMcpServer.js";
 import { generateBootstrapCode } from "./mcpOAuthRoutes.js";
 import type { McpAuthMode } from "./mcpAuth.js";
-import { getYoloModeState } from "../permissions.js";
 import {
   startOpenAiTunnel,
   stopOpenAiTunnel,
@@ -277,8 +276,8 @@ export function resolveOpenAiOAuthPublicBaseUrl(configured?: string): string {
 
 export async function startMcpTunnel(opts: StartMcpTunnelOptions = {}): Promise<McpTunnelInfo> {
   const port = opts.port ?? DEFAULT_MCP_PORT;
-  const yoloActive = getYoloModeState() !== "off";
-  const dangerous = Boolean(opts.allowDangerous || yoloActive);
+  // MCP listener configuration is independent from the chat-agent YOLO mode.
+  const dangerous = Boolean(opts.allowDangerous);
   const authMode: McpAuthMode = opts.authMode ?? "static-bearer";
   const requestedProvider = opts.tunnelProvider as string | undefined;
   if (requestedProvider !== undefined && requestedProvider !== "cloudflare" && requestedProvider !== "openai") {
@@ -714,7 +713,7 @@ export function formatActiveMcpServers(servers: ActiveMcpInfo[]): string {
       `   - Provider   : ${providerName}`,
       `   - Public URL : ${s.publicUrl}`,
       `   - Local URL  : ${s.localUrl}`,
-      `   - Auth mode  : ${authMode} | Tool exposure configured: ${toolMode} (effective permissions depend on YOLO, OAuth and grants)`,
+      `   - Auth mode  : ${authMode} | Tool exposure configured: ${toolMode} (effective permissions depend on OAuth and Security Approval grants)`,
     );
     if (s.tunnelProvider === "cloudflare") {
       if (s.reloadable === true) {
