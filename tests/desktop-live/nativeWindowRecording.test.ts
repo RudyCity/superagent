@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,21 +22,8 @@ const previewToken="d".repeat(64);
 const scope={
   targetKey:"native:54321:win:recording-001",
   actorId:"local-tray-native-recording",
-  generation:requireGeneration(),
+  generation:createHash("sha256").update(previewToken).digest("hex").slice(0,40),
 };
-function requireGeneration():string {
-  // Use the same generation scheme, never return or persist the raw capability.
-  return (awaitHash(previewToken)).slice(0,40);
-}
-function awaitHash(value:string):string {
-  const crypto=requireHash();
-  return crypto.createHash("sha256").update(value).digest("hex");
-}
-function requireHash() {
-  // Included through a normal module import in the ESM host.
-  return {createHash:(input:string)=>createHash(input)};
-}
-import { createHash } from "node:crypto";
 
 const ffmpeg=spawnSync("ffmpeg",["-version"],{stdio:"ignore",timeout:3000}).status===0;
 let project:string,jpeg:string;
