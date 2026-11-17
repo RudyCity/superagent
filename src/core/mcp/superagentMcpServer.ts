@@ -30,7 +30,6 @@ import { MAX_DELEGATE_TIMEOUT_MS, MIN_DELEGATE_TIMEOUT_MS } from "../tools/cliBr
 import {
   isToolCallWithinMcpScope,
   isPathWithinMcpScope,
-  isModelConfigAccess,
   isSensitiveEnvFileAccess,
 } from "../permissions.js";
 import { registerResourcesAndPrompts, getSuperagentMcpInstructions } from "./resourcesAndPrompts.js";
@@ -748,9 +747,6 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     }
     if (name !== "superagent_switch_workspace" && !PROJECT_REGISTRY_TOOL_NAMES.has(name) && shouldResolveWorkspace
       && !chainUriTarget) {
-      const selectedProjectRequiresGrant = Boolean(activeProjectGrantRequired && targetProjectId && targetProjectId === activeProjectId);
-      const scopedLocalAccess = !selectedProjectRequiresGrant && !sshUriTarget
-        && isPathWithinMcpScope(targetWorkspace, scopedWorkspaceAnchor);
       const capability = getProjectCapabilityForTool(name, args);
       const grantedProjectAccess = Boolean(WORKSPACE_SCOPED_MCP_TOOLS.has(name) && targetProjectId && identityForProjectAccess?.subject
         && hasProjectAccess(identityForProjectAccess, targetProjectId, capability));
