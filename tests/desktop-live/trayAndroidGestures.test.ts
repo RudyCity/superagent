@@ -160,6 +160,45 @@ describe("Desktop Live scoped Android pointer and keyboard regression",()=>{
     expect(ui.requests.filter(x=>x.action==="input")).toHaveLength(1);
   });
 
+  it("does not activate Android input UI merely because mouse approval succeeded",async()=>{
+    const ui=setup();await ui.start();
+    await ui.click(ui.get("desktop-live-stream-request-control"));
+    expect(ui.get("desktop-live-mouse-status").textContent).toContain("approved");
+    expect(ui.get("desktop-live-stream-toggle-control").textContent).toContain("Show Input UI");
+    ui.point("pointerdown",60,120);ui.point("pointerup",60,120);
+    await ui.flush();
+    expect(ui.requests.some(x=>x.action==="input")).toBe(false);
+    await ui.click(ui.get("desktop-live-stream-toggle-control"));
+    ui.point("pointerdown",60,120);ui.point("pointerup",60,120);
+    await ui.flush();
+    expect(ui.requests.filter(x=>x.action==="input")).toHaveLength(1);
+  });
+
+  it("revokes mouse independently without ending view or keyboard approval",async()=>{
+    const ui=setup();await ui.start();await ui.mouse();
+    await ui.click(ui.get("desktop-live-stream-request-keyboard"));
+    expect(ui.get("desktop-live-keyboard-status").textContent).toContain("approved");
+    await ui.click(ui.get("desktop-live-stream-revoke-control"));
+    expect(ui.requests.some(x=>x.action==="control_revoke" &&
+      x.payload.kind==="mouse")).toBe(true);
+    expect(ui.get("desktop-live-mouse-status").textContent).toContain("not approved");
+    expect(ui.get("desktop-live-keyboard-status").textContent).toContain("approved");
+    ui.point("pointerdown",60,120);ui.point("pointerup",60,120);
+    await ui.flush();
+    expect(ui.requests.some(x=>x.action==="input")).toBe(false);
+    const field=ui.get("desktop-live-stream-type-input");
+    field.value="keyboard survives mouse revoke";
+    await ui.click(ui.get("desktop-live-stream-type-send"));
+    expect(ui.requests.filter(x=>x.action==="input")).toHaveLength(1);
+    expect(ui.requests.find(x=>x.action==="input")?.payload.kind).toBe("text");
+    await ui.click(ui.get("desktop-live-stream-revoke-keyboard"));
+    expect(ui.get("desktop-live-keyboard-status").textContent).toContain("not approved");
+    expect(ui.get("desktop-live-stream-img").hidden).toBe(false);
+    field.value="must be rejected";
+    await ui.click(ui.get("desktop-live-stream-type-send"));
+    expect(ui.requests.filter(x=>x.action==="input")).toHaveLength(1);
+  });
+
   it("maps deliberate drag to one bounded swipe, not an extra tap",async()=>{
     const ui=setup();await ui.start();await ui.mouse();
     ui.point("pointerdown",60,180);ui.advance(550);ui.point("pointerup",60,40);
