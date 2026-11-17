@@ -50,6 +50,7 @@ describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>
       captureFrame:async()=>encodedJpeg,checkLease:async()=>true,
     });
     expect(recording.status).toBe("recording");
+    expect(recording.source).toBe("managed-cdp-exact-tab");
     expect(relative(projectRoot,recording.directory)).toMatch(/^\.superagent[\\/]recordings[\\/]cdp[\\/]/);
     expect(isAbsolute(relative(projectRoot,recording.directory))).toBe(false);
     recordCdpSessionCommand(scope,"click_cursor","control_chrome_cdp: native mouse click dispatched once");
@@ -102,6 +103,7 @@ describe.skipIf(!mediaToolsInstalled)("project-scoped MP4 session archives",()=>
       projectDirectory:projectRoot,confirmSensitiveVideo:true,
       captureFrame:async()=>encodedJpeg,checkLease:async()=>true,
     });
+    expect(record.source).toBe("delegate-cdp-exact-tab");
     recordCdpSessionDiagnostic(delegated.targetKey,{at:new Date().toISOString(),
       kind:"exception",details:{description:"user-token-in-exception",url:"https://secret.example",
         text:"password=secret",level:"error",status:503}});
