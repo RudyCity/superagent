@@ -14,7 +14,7 @@
   });
   const viewer = {
     running: false, generation: 0, id: null, hasFrame: false, hasSchema: false,
-    schemaRevision: 0, nodes: [], origin: null,
+    schemaRevision: 0, nodes: [], origin: null, controllerApproved: false,
   };
   const getTarget = () => {
     const d = window.__superagentLanGetSelected?.();
@@ -37,9 +37,23 @@
     if ($("lan-screen-start")) $("lan-screen-start").disabled = viewer.running || !target;
     if ($("lan-screen-stop")) $("lan-screen-stop").disabled = !viewer.running;
     if ($("lan-screen-capture")) $("lan-screen-capture").disabled = !eligible;
+    if ($("lan-screen-request-control")) $("lan-screen-request-control").disabled = !eligible || viewer.controllerApproved;
+    if ($("lan-screen-revoke-control")) $("lan-screen-revoke-control").disabled = !viewer.controllerApproved;
+    if ($("lan-screen-controller-status")) {
+      $("lan-screen-controller-status").textContent =
+        viewer.controllerApproved
+          ? "Native Tray controller approved. Android device can still deny every action."
+          : "View Only · Separate native controller approval required for remote touch/typing.";
+    }
+    const actionable = eligible && viewer.controllerApproved;
+    const list = $("lan-schema-list");
+    if (list) [...list.querySelectorAll(".lan-schema-node")].forEach((button, i) => {
+      const node = viewer.nodes[i];
+      button.disabled = !actionable || !node || !node.clickable || !node.enabled;
+    });
     for (const id of ["lan-screen-back", "lan-screen-home", "lan-screen-recents",
       "lan-screen-send-text", "lan-screen-text"]) {
-      if ($(id)) $(id).disabled = !eligible || (!viewer.hasSchema && !viewer.hasFrame);
+      if ($(id)) $(id).disabled = !actionable || (!viewer.hasSchema && !viewer.hasFrame);
     }
     if ($("lan-screen-disconnect")) $("lan-screen-disconnect").disabled = !target;
   }
@@ -49,6 +63,13 @@
     if (img) { img.src = ""; img.hidden = true; }
   }
   function stop(message = "Schema-first viewer stopped") {
+    const oldId = viewer.id;
+    if (oldId && viewer.controllerApproved) {
+      void invoke("control_revoke", { deviceId: oldId }).catch(() => {
+        // Native permission is also denied while hidden and expires.
+      });
+    }
+    viewer.controllerApproved = false;
     viewer.running = false;
     viewer.generation++;
     viewer.id = null;
@@ -96,7 +117,7 @@
       meta.textContent = node.id + (node.clickable ? " · tap" : " · view");
       button.appendChild(role);
       button.appendChild(meta);
-      button.disabled = !node.clickable || !node.enabled;
+      button.disabled = !viewer.controllerApproved || !node.clickable || !node.enabled;
       const currentRevision = schema.revision;
       button.addEventListener("click", () => {
         if (!viewer.running || viewer.schemaRevision !== currentRevision
@@ -106,17 +127,18 @@
       return button;
     });
     list.replaceChildren(...rows);
+    controls();
     schemaStatus("UI revision " + schema.revision + " · " + nodes.length
       + " elements" + (schema.truncated ? " · capped" : "") + " · text values hidden");
   }
 
   async function clickElement(revision, elementId) {
     const target = getTarget();
-    if (!viewer.running || !target || target.id !== viewer.id
+    if (!viewer.running || !viewer.controllerApproved || !target || target.id !== viewer.id
       || viewer.schemaRevision !== revision) return;
     try {
       const result = await invoke("element", { deviceId: target.id, kind: "click", elementId, revision });
-      if (!result?.success || !result?.result?.ok) throw Error("Element no longer actionable");
+      if (!result?.success || !result?.result?.ok) throw Error("Element no longer actionable or controller denied");
       status("Semantic click accepted · no screenshot needed");
       viewer.schemaRevision = 0; // Refresh after interaction; reject stale clicks locally.
       viewer.hasSchema = false;
@@ -182,6 +204,7 @@
     if (!target || viewer.running) return;
     if (!window.confirm("Use Android Accessibility UI schema instead of repeated screenshots? The phone owner must approve the LAN session, system screen capture, and separate remote touch permission.")) return;
     viewer.running = true;
+    viewer.controllerApproved = false;
     viewer.id = target.id;
     viewer.generation++;
     viewer.hasSchema = false;
@@ -192,6 +215,54 @@
     controls();
     notifyScreen("info", "Waiting for approved Android UI schema. Sharing is not active yet.");
     void pollSchema(viewer.generation);
+  }
+
+  async function requestController() {
+    const target = getTarget();
+    if (!viewer.running || viewer.controllerApproved || !target || target.id !== viewer.id) return;
+    const button = $("lan-screen-request-control");
+    if (button) button.disabled = true;
+    schemaStatus("Requesting a SEPARATE attended native Tray controller approval...");
+    try {
+      const result = await invoke("control_request", { deviceId: target.id });
+      if (!viewer.running || viewer.id !== target.id || !result?.success ||
+          result?.approved !== true || !Number.isSafeInteger(result.secondsRemaining) ||
+          result.secondsRemaining < 1) throw Error("Native controller permission denied");
+      viewer.controllerApproved = true;
+      status("Controller approved at host. Android input consent still required.");
+      notifyScreen("success", "Native controller approved for this device only (max two minutes).");
+    } catch {
+      viewer.controllerApproved = false;
+      status("Controller not approved. View Only remains available.");
+      notifyScreen("warning", "Remote input was not approved by the host.");
+    } finally { controls(); }
+  }
+
+  async function revokeController() {
+    const id = viewer.id;
+    viewer.controllerApproved = false;
+    controls();
+    if (id) {
+      try { await invoke("control_revoke", { deviceId: id }); }
+      catch { /* Native gate denies hidden/expired controller grants. */ }
+    }
+    status("Controller revoked. View Only remains available.");
+  }
+
+  async function refreshController() {
+    if (!viewer.running || !viewer.controllerApproved || !viewer.id) return;
+    const id = viewer.id;
+    try {
+      const result = await invoke("control_status", { deviceId: id });
+      if (!viewer.running || viewer.id !== id) return;
+      if (result?.success !== true || result?.approved !== true ||
+          !Number.isSafeInteger(result.secondsRemaining) ||
+          result.secondsRemaining < 1) throw Error("Controller grant expired");
+    } catch {
+      viewer.controllerApproved = false;
+      controls();
+      status("Native controller expired/revoked. Viewer remains read-only.");
+    }
   }
 
   async function captureFallback() {
@@ -232,7 +303,7 @@
 
   async function input(command) {
     const target = getTarget();
-    if (!viewer.running || !target || target.id !== viewer.id
+    if (!viewer.running || !viewer.controllerApproved || !target || target.id !== viewer.id
       || (!viewer.hasSchema && !viewer.hasFrame)) return;
     const button = $("lan-screen-" + (command.kind === "text" ? "send-text" : command.kind));
     const ticket = window.TrayFeedback?.begin({
@@ -273,11 +344,13 @@
 
   function install() {
     $("lan-screen-start")?.addEventListener("click", start);
+    $("lan-screen-request-control")?.addEventListener("click", () => { void requestController(); });
+    $("lan-screen-revoke-control")?.addEventListener("click", () => { void revokeController(); });
     $("lan-screen-capture")?.addEventListener("click", () => { void captureFallback(); });
     $("lan-screen-stop")?.addEventListener("click", () =>
       stop("Schema viewer stopped. Use End remote session or the phone's STOP SHARING notification to revoke access."));
     $("lan-screen-image")?.addEventListener("pointerdown", (e) => {
-      if (!viewer.running || !viewer.hasFrame) return;
+      if (!viewer.running || !viewer.controllerApproved || !viewer.hasFrame) return;
       const from = point(e);
       if (!from) return;
       viewer.origin = { ...from, pointer: e.pointerId, when: Date.now() };
@@ -330,6 +403,10 @@
       }
     });
     window.__superagentLanViewerStop = stop;
+    window.setInterval(() => { void refreshController(); }, 10_000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden && viewer.controllerApproved) void revokeController();
+    });
     controls();
   }
   if (document.readyState === "loading") {
