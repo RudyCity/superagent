@@ -1,0 +1,37 @@
+name: LAN Native Tray Rust Check
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - ".github/workflows/lan-native-tray-check.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/superagent-tray/src-tauri/src/main.rs"
+      - ".github/workflows/lan-native-tray-check.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lan-native-tray-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  rust-native:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm native Rust toolchain
+        shell: pwsh
+        run: |
+          rustc --version
+          cargo --version
+      - name: Check native Tray command compiler
+        shell: pwsh
+        env:
+          CARGO_TERM_COLOR: always
+        run: |
+          cargo check --locked --manifest-path apps/superagent-tray/src-tauri/Cargo.toml --bin superagent-tray
