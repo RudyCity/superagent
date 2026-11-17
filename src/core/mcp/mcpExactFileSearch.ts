@@ -41,6 +41,15 @@ export function searchExplicitAuthorizedFiles(
       if(!stat.isFile()||stat.size>MAX_FILE_BYTES||
          scannedBytes+stat.size>MAX_TOTAL_BYTES)
         throw new Error("EXPLICIT_FILE_SEARCH_BUDGET_EXCEEDED");
+      // Re-check the path after opening the handle. Windows lacks O_NOFOLLOW
+      // on some runtimes, so a concurrent symlink swap must not silently
+      // redirect this explicit-file read to a different canonical target.
+      const realOpen=fs.realpathSync.native(file).replace(/^\\\\\?\\/,"");
+      const canonicalFile=file.replace(/^\\\\\?\\/,"");
+      if(process.platform==="win32"
+        ? realOpen.toLowerCase()!==canonicalFile.toLowerCase()
+        : realOpen!==canonicalFile)
+        throw new Error("EXPLICIT_FILE_SEARCH_SOURCE_CHANGED");
       // Read exactly the attested size, never an unbounded readFileSync(fd)
       // if another process appends to the file after fstat.
       const bytes=Buffer.alloc(stat.size);
@@ -50,7 +59,9 @@ export function searchExplicitAuthorizedFiles(
         if(count<=0)throw new Error("EXPLICIT_FILE_SEARCH_SOURCE_CHANGED");
         received+=count;
       }
-      if(fs.fstatSync(fd).size!==stat.size)
+      const after=fs.fstatSync(fd);
+      if(after.size!==stat.size||after.dev!==stat.dev||after.ino!==stat.ino||
+         after.mtimeMs!==stat.mtimeMs||after.ctimeMs!==stat.ctimeMs)
         throw new Error("EXPLICIT_FILE_SEARCH_SOURCE_CHANGED");
       const text=bytes.toString("utf8");
       scannedBytes+=received;
