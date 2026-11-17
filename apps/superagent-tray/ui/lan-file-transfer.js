@@ -23,6 +23,7 @@
   let activeTransfer = null;
   let activeProtocol = 1;
   let sendingMany = false;
+  let retryPlan = null;
   let transferStartTime = 0;
   let targetId = null;
   let batch = null;
@@ -82,6 +83,7 @@
     const files = $("lan-file-source")?.files;
     const folder = $("lan-folder-source");
     if ($("lan-file-send")) $("lan-file-send").disabled = busy || !hasDevice || !files?.length;
+    if ($("lan-file-retry")) $("lan-file-retry").disabled = busy || !hasDevice || !retryPlan;
     if ($("lan-folder-send")) $("lan-folder-send").disabled =
       busy || !hasDevice || !folderSupported() || !folder?.files?.length;
     if ($("lan-file-receive")) $("lan-file-receive").disabled = busy || !hasDevice;
@@ -396,43 +398,62 @@
     return "Large file sent and SHA-256 verified on target. Saved to: " +
       (result.savedTo || "target's approved Downloads folder");
   }
-  async function send() {
+  async function send(retry = false) {
     if (busy) return;
     const selectedDevice = selected();
     const input = $("lan-file-source");
-    const files = Array.from(input?.files || []);
-    if (!selectedDevice || !files.length) return;
-    const all = $("lan-file-send-all")?.checked === true;
-    const available = all ? window.__superagentLanListTransferTargets?.() : [selectedDevice];
-    if (!Array.isArray(available) || !available.length || available.length > 8 ||
-        available.some((d) => !d || !d.connected || typeof d.id !== "string" ||
-          typeof d.label !== "string" || !["windows", "android"].includes(d.platform)) ||
-        new Set(available.map((d) => d.id)).size !== available.length) {
-      state("No valid target sessions, or more than 8 connected devices. Refresh your LAN sessions.");
-      return;
+    if (!selectedDevice) return;
+    let jobs;
+    if (retry) {
+      if (!retryPlan?.length) return;
+      jobs = retryPlan.slice();
+      const active = window.__superagentLanListTransferTargets?.() || [selectedDevice];
+      if (jobs.some(({ device }) => !active.some((d) => d.connected && d.id === device.id)) ||
+          jobs.length > 8 * MAX_QUEUE_FILES) {
+        state("Reconnect and re-approve every required device session before retry.");
+        return;
+      }
+      if (!window.confirm("Retry " + jobs.length + " failed or not-yet-sent file/device transfer(s)? " +
+        "The first item has an UNKNOWN outcome and may already be saved. " +
+        "Inspect the target first to avoid an unwanted duplicate. " +
+        "Every file requires new target-owner approval.")) return;
+    } else {
+      const files = Array.from(input?.files || []);
+      if (!files.length) return;
+      const all = $("lan-file-send-all")?.checked === true;
+      const available = all ? window.__superagentLanListTransferTargets?.() : [selectedDevice];
+      if (!Array.isArray(available) || !available.length || available.length > 8 ||
+          available.some((d) => !d || !d.connected || typeof d.id !== "string" ||
+            typeof d.label !== "string" || !["windows", "android"].includes(d.platform)) ||
+          new Set(available.map((d) => d.id)).size !== available.length) {
+        state("No valid target sessions, or more than 8 connected devices. Refresh LAN sessions.");
+        return;
+      }
+      const targets = available.map((d) => ({ id: d.id, label: d.label, platform: d.platform }));
+      if (files.length > MAX_QUEUE_FILES || files.some((file) =>
+          !filenameAllowed(file.name) || !Number.isSafeInteger(file.size) ||
+          file.size < 1 || file.size > V2_MAX ||
+          (file.size > MAX && file.name.endsWith(".safolder")) ||
+          targets.some((target) => file.size >
+            (["windows", "android"].includes(target.platform) ? V2_MAX : MAX)))) {
+        state("Select 1–32 safe ASCII files, max 256 MiB on updated Windows/Android V2 targets.");
+        return;
+      }
+      jobs = targets.flatMap((device) => files.map((file) => ({ device, file })));
+      const summary = targets.map((d) => d.label).join(", ");
+      if (!window.confirm("Send " + files.length + " owner-selected file(s) to " +
+        targets.length + " connected device(s): " + summary +
+        "? Files are sent sequentially, and EACH target owner must approve EACH file.")) return;
     }
-    const targets = available.map((d) => ({ id: d.id, label: d.label, platform: d.platform }));
-    if (files.length > MAX_QUEUE_FILES || files.some((file) =>
-        !filenameAllowed(file.name) || !Number.isSafeInteger(file.size) ||
-        file.size < 1 || file.size > V2_MAX ||
-        (file.size > MAX && file.name.endsWith(".safolder")) ||
-        targets.some((target) => file.size >
-          (["windows", "android"].includes(target.platform) ? V2_MAX : MAX)))) {
-      state("Select 1–32 safe ASCII files, max 256 MiB on updated Windows/Android V2 targets.");
-      return;
-    }
-    const jobs = targets.flatMap((device) => files.map((file) => ({ device, file })));
-    const summary = targets.map((d) => d.label).join(", ");
-    if (!window.confirm("Send " + files.length + " owner-selected file(s) to " +
-      targets.length + " connected device(s): " + summary +
-      "? Files are sent sequentially, and EACH target owner must approve EACH file.")) return;
+    retryPlan = null;
     const ticket = window.TrayFeedback?.begin({
       key: "lan:file:send", button: $("lan-file-send"),
       label: jobs.length > 1 ? "Sending verified file queue…" : "Sending file…",
     });
     if (window.TrayFeedback && !ticket) return;
     busy = true; cancelled = false; paused = false;
-    sendingMany = targets.length > 1; targetId = jobs[0].device.id;
+    sendingMany = new Set(jobs.map(({ device }) => device.id)).size > 1;
+    targetId = jobs[0].device.id;
     activeTransfer = null; activeProtocol = 1;
     batch = { index: 0, total: jobs.length };
     controls();
@@ -462,12 +483,13 @@
       notifyTransfer("success", jobs.length + " verified file/device transfers.");
     } catch (error) {
       await abortIfNeeded();
+      retryPlan = jobs.slice(batch?.index ?? 0);
       state("Send failed: " + String(error).slice(0, 200));
-      const item = jobs[batch?.index ?? 0];
+      const item = retryPlan[0];
       if (item) receipt("Send", item.device.label + ": " + item.file.name,
         item.file.size, "Not verified");
       notifyTransfer(/timed out|timeout|connection lost/i.test(String(error)) ? "warning" : "error",
-        "File queue stopped. Inspect target device status before retrying unsent files.");
+        "Queue stopped. Inspect first uncertain target, then use explicit Retry remaining.");
     } finally {
       activeTransfer = null; activeProtocol = 1; sendingMany = false;
       busy = false; cancelled = false; paused = false;
@@ -601,9 +623,10 @@
     }
   }
   function install() {
-    $("lan-file-source")?.addEventListener("change", controls);
+    $("lan-file-source")?.addEventListener("change", () => { retryPlan = null; controls(); });
     $("lan-folder-source")?.addEventListener("change", controls);
     $("lan-file-send")?.addEventListener("click", () => { void send(); });
+    $("lan-file-retry")?.addEventListener("click", () => { void send(true); });
     $("lan-folder-send")?.addEventListener("click", () => { void sendFolder(); });
     $("lan-file-receive")?.addEventListener("click", () => { void receive(); });
     $("lan-file-pause")?.addEventListener("click", () => {
