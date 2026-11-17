@@ -940,10 +940,39 @@ export function isToolCallWithinYoloScope(
   if (getYoloModeState() === "full") {
     return true;
   }
-  const rawWorkspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];
-  const primaryWs = rawWorkspaces[0] || process.cwd();
-  const allowedRoots = rawWorkspaces.map((ws) => getYoloAllowedRoot(ws));
+  const workspaces = Array.isArray(workspacePath) ? workspacePath : [workspacePath];
+  return checkToolCallWithinRoots(
+    toolCall,
+    workspaces.map(ws => getYoloAllowedRoot(ws)),
+    workspaces[0] || process.cwd(),
+  );
+}
 
+/** MCP filesystem/project boundaries are independent from the chat-agent YOLO mode. */
+export function isPathWithinMcpScope(targetPath: string, projectRoot: string, baseCwd?: string): boolean {
+  if (!path.isAbsolute(projectRoot)) return false;
+  const root = resolveNormalizedPath(projectRoot);
+  const resolved = path.isAbsolute(targetPath)
+    ? resolveNormalizedPath(targetPath)
+    : resolveNormalizedPath(targetPath, baseCwd || root);
+  return normalizeAndCheckSubpath(resolved, root);
+}
+
+/** MCP checks the exact authorized project root, never the YOLO parent or Full mode. */
+export function isToolCallWithinMcpScope(
+  toolCall: { name: string; args?: Record<string, unknown> },
+  projectRoot: string,
+): boolean {
+  if (!path.isAbsolute(projectRoot)) return false;
+  const root = resolveNormalizedPath(projectRoot);
+  return checkToolCallWithinRoots(toolCall, [root], root);
+}
+
+function checkToolCallWithinRoots(
+  toolCall: { name: string; args?: Record<string, unknown> },
+  allowedRoots: string[],
+  primaryWs: string,
+): boolean {
   // model-config.json is strictly protected, never within YOLO auto-approve
   const rootConfig = resolveNormalizedPath(getRootConfigDir());
   const modelConfigPath = path.join(rootConfig, "model-config.json");
