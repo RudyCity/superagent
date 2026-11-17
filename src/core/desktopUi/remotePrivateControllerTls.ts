@@ -167,7 +167,8 @@ export class RemotePrivateControllerTlsHost {
     if(this.stopped||this.bound||this.accepted||this.options.controller.isClosed||
        !socket.encrypted||!socket.authorized||socket.getProtocol()!=="TLSv1.3"||
        socket.alpnProtocol!==REMOTE_PRIVATE_CONTROLLER_ALPN||
-       socket.servername?.toLowerCase()!==this.serverName.toLowerCase()||
+       typeof socket.servername!=="string"||
+       socket.servername.toLowerCase()!==this.serverName.toLowerCase()||
        !privateIp(socket.localAddress||"")||!privateIp(socket.remoteAddress||"")||
        !peer||!sameDigest(createHash("sha256").update(peer).digest("hex"),v.pinnedViewerCertSha256)||
        this.now()>=v.expiresAt){socket.destroy();return;}
