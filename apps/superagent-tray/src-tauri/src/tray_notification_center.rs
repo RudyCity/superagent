@@ -359,7 +359,8 @@ mod tests {
         active.insert("mcp-pending:one".to_owned());
         assert_eq!(resolve_missing(&dir, "mcp-pending:", &active).unwrap(), 1);
         let rows = perform(&dir, "list", None).unwrap();
-        assert!(!rows["items"][1]["resolvedAt"].is_null());
+        assert_eq!(rows["items"][0]["id"], "mcp-pending:two");
+        assert!(!rows["items"][0]["resolvedAt"].is_null());
         assert!(resolve_missing(&dir, "arbitrary:", &active).is_err());
         let _ = fs::remove_dir_all(dir);
     }
