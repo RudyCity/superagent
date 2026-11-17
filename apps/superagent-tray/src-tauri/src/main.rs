@@ -1074,11 +1074,11 @@ async fn lan_support_action(
             return Err("ANDROID_CONTROLLER_CHALLENGE_IDENTITY_MISMATCH".into());
         }
         let prompt = format!(concat!(
-            "ALLOW ANDROID REMOTE INPUT?\\n\\n",
-            "Device: {}\\nFingerprint: {}…\\n\\n",
-            "Viewer permission does NOT authorize mouse, touch or keyboard.\\n",
+            "ALLOW ANDROID REMOTE INPUT?\n\n",
+            "Device: {}\nFingerprint: {}…\n\n",
+            "Viewer permission does NOT authorize mouse, touch or keyboard.\n",
             "Allow this installed Tray to request input on ONLY this device ",
-            "for up to two minutes?\\n\\n",
+            "for up to two minutes?\n\n",
             "The Android owner must independently approve Accessibility input. ",
             "The phone may deny any command. No Core token is shown to the browser."
         ), label, &fingerprint[..12]);
