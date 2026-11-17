@@ -234,13 +234,24 @@
       }
       if (!stream.active || generation !== stream.generation || token !== stream.token ||
           deviceId !== stream.deviceId) return;
-      if (!frameData?.success && frameData?.error) throw Error(frameData.error);
+      if (frameData?.success!==true) throw Error(frameData?.error || "Frame capture denied.");
 
       const img = el("desktop-live-stream-img");
       const placeholder = el("desktop-live-stream-placeholder");
       const fpsPill = el("desktop-live-stream-fps");
 
       if (frameData.jpeg) {
+        // Bounded payloads: the native Tray should never cache an unverified
+        // unbounded image. The Android controller already caps its own frames.
+        if (typeof frameData.jpeg!=="string" || frameData.jpeg.length<4 ||
+            frameData.jpeg.length>(isLan?290_000:3_000_000) ||
+            !/^[A-Za-z0-9+/]+={0,2}$/.test(frameData.jpeg) ||
+            !Number.isSafeInteger(frameData.width) || frameData.width<1 ||
+            frameData.width>(isLan?480:4096) ||
+            !Number.isSafeInteger(frameData.height) || frameData.height<1 ||
+            frameData.height>(isLan?1080:4096)) {
+          throw Error("Frame payload or dimensions failed verification");
+        }
         stream.lastFrameAt = Date.now();
         if (img) {
           img.src = "data:image/jpeg;base64," + frameData.jpeg;
@@ -248,10 +259,9 @@
         }
         if (placeholder) placeholder.hidden = true;
         if (frameData.hash) stream.lastHash = frameData.hash;
+        stream.framesDelivered++;
+        stream.fpsWindowCount++;
       }
-
-      stream.framesDelivered++;
-      stream.fpsWindowCount++;
       const now = performance.now();
       const elapsed = now - stream.fpsLastTime;
       if (elapsed >= 1000) {
