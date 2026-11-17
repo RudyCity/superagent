@@ -1079,7 +1079,7 @@ async fn lan_support_action(
         let kind = data["kind"].as_str().ok_or("Controller kind required")?;
         // Always destroy the native bearer, but never claim Core-wide
         // revocation unless the separately authorized Core confirms it.
-        let outcome = async {
+        let outcome: Result<(), String> = async {
             let (_, fp) = desktop_live_android_device(id).await?;
             let token = desktop_live_android_control::credential(id,&fp,kind,true)
                 .map_err(|_| "ANDROID_CONTROLLER_CORE_REVOKE_UNVERIFIED".to_string())?;
