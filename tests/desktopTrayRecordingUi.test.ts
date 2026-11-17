@@ -6,6 +6,7 @@ const base="apps/superagent-tray";
 const html=readFileSync(base+"/ui/index.html","utf8");
 const app=readFileSync(base+"/ui/app.js","utf8");
 const js=readFileSync(base+"/ui/recordings.js","utf8");
+const live=readFileSync(base+"/ui/desktop-live-manager.js","utf8");
 const rust=readFileSync(base+"/src-tauri/src/main.rs","utf8");
 const routes=readFileSync("src/serverRoutes.ts","utf8");
 
@@ -21,6 +22,20 @@ describe("native Recording Manager",()=>{
     expect(js).toContain("n.textContent=String(text)");
     expect(js).not.toMatch(/innerHTML|eval\(|fetch\(/);
     expect(()=>new Script(js)).not.toThrow();
+  });
+  it("exposes independent native recording controls after approved preview",()=>{
+    expect(html).toContain('id="desktop-live-stream-record"');
+    expect(html).toContain('id="desktop-live-record-preset"');
+    expect(live).toContain('action:"start-native"');
+    expect(live).toContain('action:"stop"');
+    expect(live).toContain('stream.recordingPending');
+    expect(live).toContain('window.__TAURI__?.core?.invoke');
+    expect(rust).toContain('desktop_recording_native_approval_proof');
+    expect(rust).toContain('Another native approval is pending');
+    expect(routes).toContain('body.action==="native-challenge"');
+    expect(routes).toContain('body.action==="start-native"');
+    expect(js).toContain('actionButton("Export ZIP","export-zip",r)');
+    expect(()=>new Script(live)).not.toThrow();
   });
   it("keeps playback local and requires native delete confirmation",()=>{
     expect(rust).toContain('core_request(Method::POST,"/api/desktop/cdp/recordings"');
