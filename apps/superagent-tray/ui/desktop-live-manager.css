@@ -707,3 +707,98 @@
 }
 
 
+
+/* Independent viewer/controller permission panels */
+.desktop-live-access-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  min-width:0;
+}
+.desktop-live-access-panel{
+  min-width:0;
+  display:grid;
+  align-content:start;
+  gap:9px;
+  padding:15px 17px;
+  border:1px solid var(--border-subtle,rgba(148,163,184,.18));
+  border-radius:var(--radius-md,10px);
+  background:var(--bg-surface-raised,#121a29);
+}
+.desktop-live-access-controller{
+  border-color:var(--border-medium,rgba(148,163,184,.24));
+}
+.desktop-live-access-heading{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+.desktop-live-access-heading h3{
+  font-size:12.5px;
+  font-weight:700;
+  letter-spacing:-.01em;
+  color:var(--text-primary);
+  margin:0;
+}
+.desktop-live-access-index{
+  display:grid;
+  place-items:center;
+  flex-shrink:0;
+  width:25px;
+  height:25px;
+  border:1px solid var(--border-medium);
+  border-radius:7px;
+  color:var(--text-secondary);
+  font-size:10px;
+  font-weight:700;
+  font-variant-numeric:tabular-nums;
+}
+.desktop-live-access-panel p{
+  margin:0;
+  color:var(--text-secondary);
+  font-size:11.5px;
+  line-height:1.55;
+}
+.desktop-live-access-state{
+  font-size:12px !important;
+  font-weight:700;
+  color:var(--text-primary) !important;
+  overflow-wrap:anywhere;
+}
+.desktop-live-access-state[data-status="blocked"]{color:#f59e0b !important}
+.desktop-live-access-state[data-status="active"]{color:#34d399 !important}
+.desktop-live-access-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:7px;
+  padding-top:5px;
+}
+.desktop-live-access-actions button{min-height:33px}
+.desktop-live-access-actions button:disabled{opacity:.55;cursor:not-allowed}
+.desktop-live-access-actions button:focus-visible{
+  outline:2px solid var(--border-focus,#60a5fa);
+  outline-offset:2px;
+}
+.desktop-live-permission-meta{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  margin:3px 0 0;
+}
+.desktop-live-permission-meta span{
+  border:1px solid var(--border-subtle,rgba(148,163,184,.16));
+  border-radius:6px;
+  padding:3px 6px;
+  font-size:10px;
+  color:var(--text-secondary);
+  line-height:1.3;
+}
+@media(max-width:900px){
+  .desktop-live-access-grid{grid-template-columns:1fr}
+}
+@media(max-width:480px){
+  .desktop-live-access-panel{padding:13px}
+  .desktop-live-access-actions button{flex:1 1 auto}
+}
