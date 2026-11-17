@@ -138,11 +138,11 @@ mod tests {
     fn denies_device_repair_or_disconnection_and_expires() {
         let mut g = AndroidControllerGate::default();
         let now = Instant::now();
-        g.approve(id(), &fp(), now).unwrap();
+        g.approve(id(), &fp(), &token(), now).unwrap();
         assert!(g.check(id(), &"bc".repeat(32), true, now).is_err());
-        g.approve(id(), &fp(), now).unwrap();
+        g.approve(id(), &fp(), &token(), now).unwrap();
         assert!(g.check(id(), &fp(), false, now).is_err());
-        g.approve(id(), &fp(), now).unwrap();
+        g.approve(id(), &fp(), &token(), now).unwrap();
         assert!(g.check(id(), &fp(), true,
             now + Duration::from_secs(MAX_CONTROL_SECONDS)).is_err());
     }
@@ -151,7 +151,7 @@ mod tests {
     fn only_revoke_matching_device() {
         let mut g = AndroidControllerGate::default();
         let now = Instant::now();
-        g.approve(id(), &fp(), now).unwrap();
+        g.approve(id(), &fp(), &token(), now).unwrap();
         g.revoke_device("123e4567-e89b-12d3-a456-426614174111");
         assert!(g.check(id(), &fp(), true, now).is_ok());
         g.revoke_device(id());
@@ -162,7 +162,7 @@ mod tests {
     fn denies_invalid_target_and_approval_reset() {
         let mut g = AndroidControllerGate::default();
         let now = Instant::now();
-        g.approve(id(), &fp(), now).unwrap();
+        g.approve(id(), &fp(), &token(), now).unwrap();
         assert!(g.approve("not-an-id", &fp(), &token(), now).is_err());
         assert!(g.check(id(), &fp(), true, now).is_err());
     }
