@@ -75,70 +75,101 @@ describe("Desktop Live LAN Stream Routes (/api/desktop/live/lan-preview & lan-fr
   }
 
   const dummyToken = "a".repeat(64);
+  const framePath = "/api/desktop/live/lan-frame";
+  const viewerPath = "/api/desktop/live/lan-preview";
+  function sameOriginHeaders() {
+    return { Origin: "http://127.0.0.1:" + port, "Content-Type": "application/json" };
+  }
 
-  it("rejects public/forwarded proxy headers", async () => {
-    const res = await request("GET", `/api/desktop/live/lan-preview?token=${dummyToken}`, {
-      "X-Forwarded-For": "203.0.113.7",
-    });
+  it("rejects forwarded/public-proxy requests before viewing or controlling", async () => {
+    for (const pathname of [viewerPath, framePath, "/api/desktop/live/lan-input",
+      "/api/desktop/live/lan-takeover"]) {
+      const res = await request("GET", pathname, { "X-Forwarded-For": "203.0.113.7" });
+      expect(res.status).toBe(403);
+      expect(JSON.parse(res.body).error).toBe("LAN_STREAM_PRIVATE_NETWORK_REQUIRED");
+    }
+  });
+
+  it("rejects DNS-rebinding Host headers on a private transport peer", async () => {
+    const res = await request("GET", viewerPath, {Host: "attacker.example.test:9000"});
     expect(res.status).toBe(403);
-    const body = JSON.parse(res.body);
-    expect(body.error).toBe("LAN_STREAM_PRIVATE_NETWORK_REQUIRED");
+    expect(JSON.parse(res.body).error).toBe("LAN_STREAM_PRIVATE_NETWORK_REQUIRED");
   });
 
-  it("rejects requests missing token or with malformed token", async () => {
-    const resNoToken = await request("GET", "/api/desktop/live/lan-preview");
-    expect(resNoToken.status).toBe(400);
-
-    const resBadToken = await request("GET", "/api/desktop/live/lan-preview?token=invalid_token");
-    expect(resBadToken.status).toBe(400);
-  });
-
-  it("serves HTML stream viewer on valid token from loopback", async () => {
-    const res = await request("GET", `/api/desktop/live/lan-preview?token=${dummyToken}`);
+  it("serves only a CSP-restricted, capability-free, read-only shell", async () => {
+    const res = await request("GET", viewerPath);
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toContain("text/html");
-    expect(res.body).toContain("LAN LIVE STREAM");
-    expect(res.body).toContain("SuperAgent Desktop Live · LAN Stream");
-    expect(res.body).toContain("/api/desktop/live/lan-frame");
+    expect(res.headers["content-security-policy"]).toContain("script-src 'nonce-");
+    expect(res.headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(res.headers["referrer-policy"]).toBe("no-referrer");
+    expect(res.body).toContain("LAN · View only");
+    expect(res.body).toContain("history.replaceState");
+    expect(res.body).toContain('method: "POST"');
+    expect(res.body).not.toContain("/api/desktop/live/lan-input");
+    expect(res.body).not.toContain("/api/desktop/live/lan-takeover");
+    expect(res.body).not.toContain("btn-takeover");
   });
 
-  it("rejects POST method on lan-preview route", async () => {
-    const res = await request("POST", `/api/desktop/live/lan-preview?token=${dummyToken}`);
+  it("does not interpolate incoming query secrets into HTML", async () => {
+    const secret = "0123456789abcdef".repeat(4);
+    const res = await request("GET", viewerPath + "?token=" + secret);
+    expect(res.status).toBe(200);
+    expect(res.body).not.toContain(secret);
+  });
+
+  it("rejects non-GET shell requests", async () => {
+    expect((await request("POST", viewerPath)).status).toBe(405);
+  });
+
+  it("rejects legacy GET or URL query-token frame access", async () => {
+    const res = await request("GET", framePath + "?token=" + dummyToken);
     expect(res.status).toBe(405);
+    expect(JSON.parse(res.body).success).toBe(false);
   });
 
-  it("lan-frame rejects forged/inactive tokens cleanly", async () => {
-    const res = await request("GET", `/api/desktop/live/lan-frame?token=${dummyToken}`);
-    expect([400, 409]).toContain(res.status);
-    const body = JSON.parse(res.body);
-    expect(body.success).toBe(false);
+  it("requires same origin and JSON for frame POST requests", async () => {
+    const body = JSON.stringify({token: dummyToken});
+    const noOrigin = await request("POST", framePath, { "Content-Type":"application/json" }, body);
+    expect(noOrigin.status).toBe(403);
+    const wrongOrigin = await request("POST", framePath, {
+      Origin:"http://evil.example.test","Content-Type":"application/json",
+    },body);
+    expect(wrongOrigin.status).toBe(403);
+    const wrongType = await request("POST",framePath,{
+      Origin:"http://127.0.0.1:"+port,"Content-Type":"text/plain",
+    },body);
+    expect(wrongType.status).toBe(403);
   });
 
-  it("lan-takeover rejects invalid or inactive tokens cleanly", async () => {
-    const resNoToken = await request("POST", "/api/desktop/live/lan-takeover");
-    expect(resNoToken.status).toBe(400);
-
-    const resInactive = await request("POST", `/api/desktop/live/lan-takeover?token=${dummyToken}`);
-    expect(resInactive.status).toBe(409);
-    const body = JSON.parse(resInactive.body);
-    expect(body.success).toBe(false);
-    expect(body.error).toBe("SESSION_NOT_ACTIVE");
+  it("rejects forged frame tokens, malformed bodies and unknown fields", async () => {
+    for (const body of [
+      "not-json", "{}", JSON.stringify({token:"invalid"}),
+      JSON.stringify({token:dummyToken,action:"click"}),
+      JSON.stringify({token:dummyToken,knownHash:"not-a-hash"}),
+      JSON.stringify({token:dummyToken,quality:100}),
+    ]) {
+      const res = await request("POST",framePath,sameOriginHeaders(),body);
+      expect(res.status).toBe(400);
+      expect(JSON.parse(res.body).error).toBe("INVALID_FRAME_REQUEST");
+    }
   });
 
-  it("lan-input rejects invalid payload, unsupported action or inactive session", async () => {
-    const resNoMethod = await request("GET", `/api/desktop/live/lan-input?token=${dummyToken}`);
-    expect(resNoMethod.status).toBe(405);
+  it("does not expose frames for an inactive valid-looking token", async () => {
+    const res = await request("POST",framePath,sameOriginHeaders(),JSON.stringify({token:dummyToken}));
+    expect(res.status).toBe(409);
+    expect(JSON.parse(res.body).error).toBe("FRAME_UNAVAILABLE_OR_REVOKED");
+  });
 
-    const resBadJson = await request("POST", "/api/desktop/live/lan-input", { "Content-Type": "application/json" }, "{invalid-json");
-    expect(resBadJson.status).toBe(400);
-
-    const resNoToken = await request("POST", "/api/desktop/live/lan-input", { "Content-Type": "application/json" }, JSON.stringify({ action: "click" }));
-    expect(resNoToken.status).toBe(400);
-
-    const resInactive = await request("POST", "/api/desktop/live/lan-input", { "Content-Type": "application/json" }, JSON.stringify({ token: dummyToken, action: "click" }));
-    expect(resInactive.status).toBe(409);
-    const body = JSON.parse(resInactive.body);
-    expect(body.success).toBe(false);
-    expect(body.error).toBe("SESSION_NOT_ACTIVE");
+  it("rejects native input and takeover for every method even with a preview token", async () => {
+    for (const pathname of ["/api/desktop/live/lan-input","/api/desktop/live/lan-takeover"]) {
+      for (const method of ["GET","POST"]) {
+        const res = await request(method,pathname+"?token="+dummyToken,
+          method==="POST"?sameOriginHeaders():{},
+          method==="POST"?JSON.stringify({token:dummyToken,action:"click",relX:0.5,relY:0.5}):undefined);
+        expect(res.status).toBe(403);
+        expect(JSON.parse(res.body).error).toBe("SEPARATE_NATIVE_CONTROLLER_APPROVAL_REQUIRED");
+      }
+    }
   });
 });
