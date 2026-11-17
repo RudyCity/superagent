@@ -8,6 +8,7 @@
     return call("shutdown_manager_action",{action,...fields});
   };
   const active=item=>!["inactive","stopped","stale","embedded"].includes(item.state);
+  const forceReady=()=>state.preview?.services?.filter(s=>active(s)&&s.forceSelectable===true)??[];
   function node(parent,tag,className,value){
     const element=document.createElement(tag);
     if(className)element.className=className;
@@ -38,6 +39,8 @@
     const lock=state.busy||state.loading;
     $("shutdown-stop-selected").disabled=lock||!state.preview||state.selected.size===0;
     $("shutdown-exit-all").disabled=lock||!canExit();
+    $("shutdown-force-all").disabled=lock||!state.preview||!forceReady().length||
+      $("shutdown-force-confirm").value!=="FORCE STOP ALL";
     $("shutdown-refresh").disabled=lock;
     $("shutdown-close").disabled=state.loading;
     $("shutdown-selection-count").textContent=String(state.selected.size)+
@@ -86,7 +89,7 @@
     $("shutdown-blocked-count").textContent=String(total.blocked);
     $("shutdown-all-note").textContent=state.preview?.exitReady
       ?"Full exit is available while all active owners are selected. If none are running, only the Tray will close."
-      :"Full exit is blocked by busy, external or unverified owners. Stop Selected remains available.";
+      :"Graceful full exit is blocked. Force Stop All can interrupt authenticated owners, but foreign and unverified processes still require separate review.";
     buttons();
   }
   function drawProgress(){
@@ -96,8 +99,8 @@
     list.replaceChildren();
     if(!state.progress)return;
     $("shutdown-progress-status").textContent=state.progress.stage==="running"
-      ?"Graceful shutdown in progress":state.progress.stage==="complete"
-      ?"Selected services verified stopped":"Stopped with blockers — review required";
+      ?"Owner shutdown in progress":state.progress.stage==="complete"
+      ?"Selected owners verified stopped":"Shutdown partial — review remaining owners";
     for(const step of state.progress.steps??[]){
       const row=document.createElement("li");
       row.className="shutdown-step";row.dataset.status=step.status;
@@ -114,6 +117,7 @@
     state.progress=progress;state.busy=progress.stage==="running";
     if(!state.busy){
       state.preview=null;state.selected.clear();
+      $("shutdown-force-confirm").value="";
       drawServices();
     }
     drawProgress();buttons();
@@ -136,6 +140,7 @@
   async function refresh(){
     if(state.busy||state.loading)return;
     state.loading=true;state.preview=null;state.selected.clear();
+    $("shutdown-force-confirm").value="";
     buttons();feedback("Checking authenticated owners, open sessions and scheduled jobs...");
     try {
       const response=await invoke("preview");
@@ -179,6 +184,28 @@
     }catch(error){feedback(safe(error),true);}
     finally{state.loading=false;buttons();}
   }
+  async function forceAll(){
+    if(state.busy||state.loading||!state.preview||
+       $("shutdown-force-confirm").value!=="FORCE STOP ALL"||!forceReady().length)return;
+    state.loading=true;buttons();feedback("Awaiting separate native force-stop approval…");
+    try {
+      const response=await invoke("force_all",{
+        previewId:state.preview.previewId,forceConfirmation:"FORCE STOP ALL",
+      });
+      if(!response?.accepted||!response.runId)throw Error("Native force-stop approval rejected");
+      state.busy=true;
+      state.progress={runId:response.runId,stage:"running",exitAfter:false,
+        steps:state.preview.services.filter(active).map(item=>({
+          id:item.id,label:item.label,status:item.forceSelectable?"queued":"blocked",
+          message:item.forceSelectable?"Registered owner awaiting final verification":
+            "No authenticated force-stop permission for this owner",
+        }))};
+      drawProgress();
+      feedback("Force stop approved for registered owners. Other processes remain under review.");
+      startPolling();await pollStatus();
+    }catch(error){feedback(safe(error),true);}
+    finally{state.loading=false;buttons();}
+  }
   async function open(){
     $("shutdown-manager-dialog").hidden=false;
     $("shutdown-close").focus();
@@ -203,6 +230,8 @@
     $("shutdown-refresh")?.addEventListener("click",()=>{void refresh();});
     $("shutdown-stop-selected")?.addEventListener("click",()=>{void execute(false);});
     $("shutdown-exit-all")?.addEventListener("click",()=>{void execute(true);});
+    $("shutdown-force-confirm")?.addEventListener("input",buttons);
+    $("shutdown-force-all")?.addEventListener("click",()=>{void forceAll();});
     $("shutdown-manager-dialog")?.addEventListener("keydown",event=>{
       if(event.key==="Escape"&&!state.busy)close();
     });
