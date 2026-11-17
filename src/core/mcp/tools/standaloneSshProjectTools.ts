@@ -2,7 +2,7 @@ import path from "node:path";
 import { SshProxyService } from "../../ssh/sshProxy.js";
 import { workspaceMode, type SshWorkspaceConfig } from "../../ssh/workspaceMode.js";
 import { getProject, type RegisteredProject } from "../../project/projectRegistry.js";
-import { isFullYoloMode, isSystemDestructiveCommand, isModelConfigAccess, isSensitiveEnvFileAccess } from "../../permissions.js";
+import { isSystemDestructiveCommand, isModelConfigAccess, isSensitiveEnvFileAccess } from "../../permissions.js";
 import type { McpToolResult } from "../types.js";
 import type { ProjectProvider, ProjectOperation, ProjectWorkspaceInfo, ProjectHealthReport, ProjectHealthOptions, ProjectOperationResult, ProjectToolArguments, ResolvedProjectContext } from "../../project/providers/types.js";
 
@@ -137,11 +137,11 @@ export class StandaloneSshProjectProvider implements ProjectProvider {
       await this.closeProject(context.projectId);
       return { text: "Project configuration changed after target resolution; resolve the project again before retrying.", isError: true };
     }
-    if (!isFullYoloMode() && isSensitiveEnvFileAccess({ name, args })) {
-      return { text: "MCP access to .env files is blocked unless Full YOLO is enabled locally. Project grants do not override this sensitive-file guard.", isError: true };
+    if (isSensitiveEnvFileAccess({ name, args })) {
+      return { text: "MCP access to protected .env files is prohibited independently of chat YOLO. Project grants do not override this sensitive-file guard.", isError: true };
     }
-    if (!isFullYoloMode() && isModelConfigAccess({ name, args }, context.workspace)) {
-      return { text: "Access to model-config.json is blocked unless Full YOLO is enabled locally. Project grants do not override this protected-config guard.", isError: true };
+    if (isModelConfigAccess({ name, args }, context.workspace)) {
+      return { text: "Access to model-config.json is blocked by MCP security policy. Project grants do not override this protected-config guard.", isError: true };
     }
     const result = await this.dispatch(name, { ...args, projectId: context.projectId, workspace: context.workspace }, context.workspace, context.projectId);
     if (!result) return { text: `Operation ${name} is unsupported for standalone SSH projects.`, isError: true };
@@ -405,8 +405,8 @@ export class StandaloneSshProjectProvider implements ProjectProvider {
         if (name === "superagent_exec_command") {
           const command = typeof args.command === "string" ? args.command : "";
           if (!command.trim()) return result("Error: 'command' is required.", true);
-          if (!isFullYoloMode() && isSystemDestructiveCommand(command)) {
-            return result("Remote command blocked by the destructive-command safety policy. Enable Full YOLO locally only when this system-level operation is intentional.", true);
+          if (isSystemDestructiveCommand(command)) {
+            return result("Remote destructive command blocked by MCP security policy.", true);
           }
           const cwd = await guardedPath(typeof args.cwd === "string" && !/^ssh:/i.test(args.cwd) ? args.cwd : selectedPath, false);
           const timeoutMs = typeof args.timeoutMs === "number" ? Math.max(1000, Math.min(args.timeoutMs, 600000)) : 30000;
