@@ -200,6 +200,21 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+// A system with many pending approvals must not emit an OS toast storm.
+// The inbox remains complete; only pop-up delivery is rate-limited.
+static OS_ALERT_BUDGET: std::sync::Mutex<(u64, u8)> = std::sync::Mutex::new((0, 0));
+fn os_alert_budget_available() -> bool {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH)
+        .map_or(0, |t| t.as_secs());
+    let Ok(mut budget) = OS_ALERT_BUDGET.lock() else { return false; };
+    if now.saturating_sub(budget.0) >= 60 {
+        *budget = (now, 0);
+    }
+    if budget.1 >= 3 { return false; }
+    budget.1 += 1;
+    true
+}
+
 /// All native producers use one redacted, durable event path. Never use
 /// untrusted Core strings as OS notification titles or bodies.
 fn record_operational_incident(
@@ -210,7 +225,8 @@ fn record_operational_incident(
     let created = tray_notification_center::publish(&dir, source, severity, id, title, body)?;
     if created {
         let _ = app.emit("tray-notifications-changed", ());
-        if tray_notification_center::should_notify_os(&dir, source, severity)? {
+        if tray_notification_center::should_notify_os(&dir, source, severity)? &&
+            os_alert_budget_available() {
             // The OS surface is intentionally generic; detailed text stays in
             // the private, authenticated native Tray inbox.
             if let Err(error) = app.notification().builder()
@@ -2762,6 +2778,13 @@ async fn poll_reminders(
         if known.contains(id) {
             continue;
         }
+        // Commit the private inbox before OS delivery or the legacy "seen"
+        // cursor. A persistence error leaves this run eligible for retry.
+        record_operational_incident(
+            app, "reminder", "info", &format!("reminder:{id}"),
+            "Reminder completed",
+            "A scheduled reminder completed. Open Schedules & Reminders for details.",
+        )?;
         // Native notification on Windows requires an installed app.
         // Failed deliveries are not marked as seen; a later poll can retry.
         if notifications_enabled {
@@ -2779,13 +2802,6 @@ async fn poll_reminders(
             let keep_from = state.ids.len() - 500;
             state.ids.drain(0..keep_from);
         }
-        // A completed reminder is not acknowledged until its inbox event is
-        // durably committed. A storage failure is retried on the next poll.
-        record_operational_incident(
-            app, "reminder", "info", &format!("reminder:{id}"),
-            "Reminder completed",
-            "A scheduled reminder completed. Open Schedules & Reminders for details.",
-        )?;
         write_seen(&file, &state)?;
     }
     Ok(delivered)
