@@ -38,7 +38,7 @@
         });
         if(result?.success===false)throw Error("Recording operation was rejected.");
         notice(operation==="delete"?"Recording deleted.":operation==="stop"?
-          "Recording finalization requested.":"Local system viewer launch requested.");
+          "Recording finalization requested.":operation==="export-zip"?"ZIP exported and local folder opened.":"Local system viewer launch requested.");
         data.loading=false;
         await refresh();
       }catch(err){
@@ -76,7 +76,7 @@
       info.append(identity,meta);
       const state=node("span","recordings-state recordings-state-"+r.status,r.status);
       const actions=node("div","recordings-row-actions");
-      if(r.hasVideo&&r.status==="saved")actions.append(actionButton("Play","open-video",r));
+      if(r.hasVideo&&r.status==="saved"){actions.append(actionButton("Play","open-video",r));actions.append(actionButton("Export ZIP","export-zip",r));}
       actions.append(actionButton("Folder","open-folder",r));
       if(r.status==="recording"||r.status==="stopping")
         actions.append(actionButton("Stop","stop",r,r.status==="stopping"));
