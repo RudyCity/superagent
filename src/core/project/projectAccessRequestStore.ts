@@ -320,9 +320,21 @@ export function approveProjectAccessRequest(
     throw new Error(`Access request ${requestId} cannot be approved: current status is '${req.status}'.`);
   }
 
-  const capabilitiesToGrant = options?.approvedCapabilities && options.approvedCapabilities.length > 0
-    ? options.approvedCapabilities
-    : req.capabilities;
+  // Approval may narrow a request, never silently expand it.
+  if (options?.approvedCapabilities && (
+    options.approvedCapabilities.length === 0 ||
+    options.approvedCapabilities.some(cap => !req.capabilities.includes(cap))
+  )) {
+    throw new Error("Approved capabilities must be a non-empty subset of requested capabilities.");
+  }
+  const capabilitiesToGrant = options?.approvedCapabilities ?? req.capabilities;
+
+  // A pending request is not authority over a later changed/disabled project.
+  const currentProject = getProject(req.projectId, options?.projectsPath);
+  if (!currentProject || !currentProject.enabled ||
+      (currentProject.root || currentProject.target || "") !== req.projectPath) {
+    throw new Error("Requested project no longer matches an enabled registered project.");
+  }
 
   const identity: ProjectAccessIdentity = {
     mode: req.mode,
@@ -406,10 +418,13 @@ export function grantProjectAccessToIdentity(
   capabilities: ProjectAccessCapability[],
   options?: { decidedBy?: string; requestStorePath?: string; policyPath?: string },
 ): ProjectAccessRequest {
+  const project = getProject(projectId);
+  if (!project || !project.enabled) {
+    throw new Error("Direct grant requires an enabled registered project.");
+  }
   const grant = grantProjectAccess(identity, projectId, capabilities, options?.policyPath);
   const identityHandle = deriveIdentityHandle(identity);
   const doc = readAccessRequests(options?.requestStorePath);
-  const project = getProject(projectId);
   const newRequest: ProjectAccessRequest = {
     requestId: `direct_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`,
     identityHandle,
