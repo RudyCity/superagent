@@ -35,6 +35,7 @@
     controllerSeconds: 0,
     controllerScopes: {mouse:false,keyboard:false},
     controllerPending: false,
+    remoteReadiness: null,
     recording: null,
     recordingPending: false,
     isLanDevice: false,
@@ -77,6 +78,7 @@
     if(preset)preset.disabled=!active||lan||!!stream.recording||stream.recordingPending;
     const view=el("desktop-live-view-permission");
     const controller=el("desktop-live-controller-permission");
+    const readiness=el("desktop-live-remote-readiness");
     const mouseStatus=el("desktop-live-mouse-status");
     const keyboardStatus=el("desktop-live-keyboard-status");
     const mouseButton=el("desktop-live-stream-request-control");
@@ -97,17 +99,32 @@
           :"Separate mouse and keyboard approvals required";
       controller.dataset.status=any?"active":"blocked";
     }
+    if(readiness){
+      readiness.hidden=!active||lan;
+      if(active&&!lan){
+        const data=stream.remoteReadiness;
+        const blockers=Array.isArray(data?.blockers)
+          ?data.blockers.filter(x=>typeof x==="string").slice(0,4):[];
+        readiness.textContent=data?.state==="NOT_CONFIGURED"
+          ?"PC controller setup incomplete: "+blockers.join(" · ")
+          :data?.inputAvailable===true
+            ?"Private native controller backend reports input available; verify host approval before use."
+            :"PC remote readiness has not been verified.";
+      }
+    }
     if(mouseStatus)mouseStatus.textContent=mouse?"Mouse: approved":"Mouse: not approved";
     if(keyboardStatus)keyboardStatus.textContent=keyboard?"Keyboard: approved":"Keyboard: not approved";
     if(mouseButton){
       mouseButton.disabled=!active||stream.controllerPending||mouse;
+      mouseButton.textContent=lan?"Request Mouse":"Review Mouse Setup";
       mouseButton.title=lan?"Separate attended permission for taps, swipes, and element clicks"
-        :"Native PC controller transport not configured";
+        :"Native PC input requires trusted private viewer and attended input approval";
     }
     if(keyboardButton){
       keyboardButton.disabled=!active||stream.controllerPending||keyboard;
+      keyboardButton.textContent=lan?"Request Keyboard":"Review Keyboard Setup";
       keyboardButton.title=lan?"Separate attended permission for text and navigation keys"
-        :"Native PC controller transport not configured";
+        :"Native PC input requires independently verified host controller";
     }
     if(toggle){
       toggle.disabled=!lan||!any;
@@ -299,6 +316,7 @@
         stream.controlEnabled = false;
         stream.controllerScopes = {mouse:false,keyboard:false};
         stream.controllerPending = false;
+        stream.remoteReadiness = null;
         stream.deviceId = deviceId;
         stream.pid = 0;
         stream.nativeId = "";
@@ -333,6 +351,12 @@
         stream.fpsWindowCount = 0;
         stream.fpsLastTime = performance.now();
 
+        // Query exact local Core operator readiness without exposing native
+        // approval tokens or pretending a source file is an installed feature.
+        try {
+          const ready = await invoke("remote-status");
+          stream.remoteReadiness = ready?.success===true ? ready : null;
+        } catch { stream.remoteReadiness = null; }
         // Remote LAN HTTP viewing is disabled: screen frames require a
         // separately approved encrypted host/viewer transport.
         stream.lanUrl = "";
@@ -454,6 +478,7 @@
     stream.controlEnabled = false;
     stream.controllerScopes = {mouse:false,keyboard:false};
     stream.controllerPending = false;
+    stream.remoteReadiness = null;
     stream.controllerSeconds = 0;
     stream.lanUrl = "";
 
