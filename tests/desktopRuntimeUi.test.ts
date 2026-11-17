@@ -55,6 +55,9 @@ function mountRuntime(snapshot: unknown, extra: {
           if ((args as any)?.action === "identities") return {success:true,identities:extra.mcpIdentities ?? []};
         }
         return { success: true };
+      } }, event: { listen: (name: string, callback: (event: unknown)=>unknown) => {
+        listeners.set("tauri:" + name, callback);
+        return Promise.resolve(() => {});
       } } },
       addEventListener: () => {},
       dispatchEvent: (e: { type: string }) => events.push(e.type),
@@ -398,6 +401,34 @@ describe("SuperAgent desktop Runtime Detection UI", () => {
     await new Promise(resolve=>setTimeout(resolve,460));
     expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("0");
     expect(ui.byId("runtime-remote").innerHTML).not.toContain("MCP HTTP Server");
+  });
+
+  it("animates a shutdown-manager verified MCP owner exit without waiting for scheduled polling", async () => {
+    const owner={kind:"mcp",source:"registry",port:9227,pid:3628,
+      state:"observed",canStop:true,transport:"cloudflare"};
+    const snapshot={scannedAt:Date.now(),cores:[],processes:[],
+      independentHosts:[],remoteServices:[owner]};
+    const ui=mountRuntime(snapshot);
+    await new Promise(resolve=>setImmediate(resolve));
+    vm.runInContext('runtimeSelectTab("mcp")',ui.context);
+    const nativeProgress=ui.listeners.get("tauri:shutdown-manager-progress");
+    expect(nativeProgress).toBeTypeOf("function");
+    // A blocked or unrelated stop receipt must not hide an owner.
+    nativeProgress?.({payload:{stage:"partial",steps:[{
+      id:"mcp:9227:3628",status:"blocked"},{id:"mcp:9227:1234",status:"stopped"}]}});
+    expect(ui.byId("runtime-remote").innerHTML).toContain("MCP HTTP Server");
+    const originalInvoke=ui.context.window.__TAURI__.core.invoke;
+    ui.context.window.__TAURI__.core.invoke=async(action:string,args:any)=>{
+      if(action==="detect_runtime")return {...snapshot,
+        remoteServices:[{...owner,state:"stale",canStop:false}]};
+      return originalInvoke(action,args);
+    };
+    nativeProgress?.({payload:{stage:"complete",steps:[{
+      id:"mcp:9227:3628",label:"MCP owner",status:"stopped"}]}});
+    expect(ui.byId("runtime-remote").innerHTML).toContain("runtime-instance--stopped");
+    await new Promise(resolve=>setTimeout(resolve,460));
+    expect(ui.byId("runtime-remote").innerHTML).not.toContain("MCP HTTP Server");
+    expect(ui.byId("runtime-tab-mcp-count").textContent).toBe("0");
   });
 
   it("reverses pending Stop when native control rejects or reports an uncertain outcome", async () => {
