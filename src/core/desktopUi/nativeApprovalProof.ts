@@ -45,6 +45,11 @@ function localKey(): Buffer {
   return Buffer.from(raw, "hex");
 }
 
+/** Host-only key accessor for domain-separated attended controller proofs.
+ * Never return this value from a route or expose it to a WebView.
+ */
+export function readNativeDesktopApprovalKey(): Buffer { return localKey(); }
+
 function nativeApprovalMessage(body: Record<string, unknown>, nonce: string,
   purpose: "preview" | "recording" = "preview"): string {
   const pid = body.pid;
