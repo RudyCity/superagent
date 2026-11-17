@@ -16,10 +16,12 @@
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <link rel="stylesheet" href="./delegate-action-diagnostics.css" />
   <link rel="stylesheet" href="./desktop-live-manager.css" />
+  <link rel="stylesheet" href="./recordings.css" />
   <link rel="stylesheet" href="./notifications.css" />
   <script src="./overview.js" defer></script>
   <script src="./overview-operations.js" defer></script>
   <script src="./desktop-live-manager.js" defer></script>
+  <script src="./recordings.js" defer></script>
   <script src="./tray-access-password.js" defer></script>
   <script src="./titlebar.js" defer></script>
   <script src="./feedback.js" defer></script>
@@ -185,6 +187,12 @@
             <path d="M8 22h8M12 18v4" />
           </svg>
           <span>Desktop Live</span>
+        </a>
+
+        <a class="nav-link" href="#recordings" data-page="recordings" id="nav-recordings">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1"/>
+          </svg><span>Recordings</span>
         </a>
         <a class="nav-link" href="#security" data-page="security" id="nav-security">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -2997,6 +3005,38 @@
       </div>
 
       <!-- ================= PAGE: SECURITY APPROVAL & ACCESS MANAGER ================= -->
+
+      <div id="page-recordings" class="page-view" hidden>
+        <div class="recordings-manager">
+          <header class="recordings-header">
+            <div><h2>Session recordings</h2>
+              <p>Browse recordings in the selected project. Video stays on the local device.</p>
+            </div>
+            <div class="recordings-header-actions">
+              <button id="recordings-pick" type="button" class="button secondary">Choose project</button>
+              <button id="recordings-refresh" type="button" class="button ghost">Refresh</button>
+            </div>
+          </header>
+          <div class="recordings-project"><span>PROJECT FOLDER</span>
+            <code id="recordings-project-path">No project selected</code>
+          </div>
+          <div class="recordings-toolbar">
+            <label for="recordings-search">Search recordings
+              <input id="recordings-search" type="search" maxlength="100" placeholder="ID or transport">
+            </label>
+            <label for="recordings-filter">Status
+              <select id="recordings-filter">
+                <option value="all">All</option><option value="recording">Recording</option>
+                <option value="saved">Saved</option><option value="interrupted">Interrupted</option>
+                <option value="failed">Failed</option>
+              </select>
+            </label>
+          </div>
+          <p id="recordings-status" class="recordings-status" role="status" aria-live="polite">Choose the project used when recording started.</p>
+          <div id="recordings-list" class="recordings-list" aria-live="polite"></div>
+          <p class="recordings-footnote">Play opens the local system player. Delete requires a native confirmation dialog. Visible page pixels may contain private information.</p>
+        </div>
+      </div>
       <div id="page-security" class="page-view" hidden>
         <div id="page-security-container">
           <section class="panel tray-settings-panel desktop-trust-panel" id="desktop-trust-panel" aria-labelledby="desktop-trust-title">
