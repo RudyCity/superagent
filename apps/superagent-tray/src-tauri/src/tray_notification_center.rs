@@ -128,21 +128,29 @@ fn read(dir: &Path) -> Result<Ledger, String> {
     ledger.preferences.validate()?;
     Ok(ledger)
 }
+fn evict_oldest_low_priority(ledger: &mut Ledger) {
+    if ledger.items.is_empty() { return; }
+    // Preserve active unread critical incidents ahead of archived/read records.
+    let choice = ledger.items.iter().rposition(|i|
+        i.archived_at.is_some() || i.resolved_at.is_some() || i.read_at.is_some())
+        .or_else(|| ledger.items.iter().rposition(|i| i.severity == "info"))
+        .or_else(|| ledger.items.iter().rposition(|i| i.severity == "warning"))
+        .unwrap_or(ledger.items.len() - 1);
+    ledger.items.remove(choice);
+    ledger.evicted_count = ledger.evicted_count.saturating_add(1);
+}
 fn compact(ledger: &mut Ledger) {
     let cutoff = now_ms().saturating_sub(ledger.preferences.retention_days * 86_400_000);
+    let before = ledger.items.len();
     ledger.items.retain(|i| {
-        i.created_at >= cutoff || (i.archived_at.is_none() && i.resolved_at.is_none() && i.read_at.is_none())
+        let freshest = [i.created_at, i.read_at.unwrap_or(0), i.archived_at.unwrap_or(0),
+            i.acknowledged_at.unwrap_or(0), i.resolved_at.unwrap_or(0),
+            i.last_seen_at.unwrap_or(0)].into_iter().max().unwrap_or(0);
+        freshest >= cutoff ||
+            (i.archived_at.is_none() && i.resolved_at.is_none() && i.read_at.is_none())
     });
-    while ledger.items.len() > MAX_ITEMS {
-        // Keep active unread critical incidents ahead of archived/resolved/read items.
-        let choice = ledger.items.iter().rposition(|i|
-            i.archived_at.is_some() || i.resolved_at.is_some() || i.read_at.is_some())
-            .or_else(|| ledger.items.iter().rposition(|i| i.severity == "info"))
-            .or_else(|| ledger.items.iter().rposition(|i| i.severity == "warning"))
-            .unwrap_or(ledger.items.len() - 1);
-        ledger.items.remove(choice);
-        ledger.evicted_count = ledger.evicted_count.saturating_add(1);
-    }
+    ledger.evicted_count = ledger.evicted_count.saturating_add((before - ledger.items.len()) as u64);
+    while ledger.items.len() > MAX_ITEMS { evict_oldest_low_priority(ledger); }
 }
 fn write(dir: &Path, ledger: &mut Ledger) -> Result<(), String> {
     let dest = file(dir);
@@ -153,7 +161,11 @@ fn write(dir: &Path, ledger: &mut Ledger) -> Result<(), String> {
     }
     fs::create_dir_all(dir).map_err(|_| "Cannot prepare notification directory")?;
     compact(ledger);
-    let bytes = serde_json::to_vec(ledger).map_err(|_| "Cannot encode notification store")?;
+    let mut bytes = serde_json::to_vec(&*ledger).map_err(|_| "Cannot encode notification store")?;
+    while bytes.len() as u64 > MAX_BYTES && !ledger.items.is_empty() {
+        evict_oldest_low_priority(ledger);
+        bytes = serde_json::to_vec(&*ledger).map_err(|_| "Cannot encode notification store")?;
+    }
     if bytes.len() as u64 > MAX_BYTES { return Err("Notification store is too large".into()); }
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)
         .map_err(|_| "System clock unavailable")?.as_nanos();
