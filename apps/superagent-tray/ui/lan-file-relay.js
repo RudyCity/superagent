@@ -27,6 +27,7 @@
     const select = $("lan-relay-destination");
     if (!select) return;
     const choices = destinations();
+    const otherBusy = window.__superagentLanLargeReceiveBusy === true;
     const prior = select.value;
     const options = choices.map((device) => {
       const option = document.createElement("option");
@@ -45,7 +46,7 @@
     const protocol = $("lan-relay-protocol")?.value || "v1";
     const selectedSource = source();
     if ($("lan-relay-start")) $("lan-relay-start").disabled =
-      busy || !selectedSource || !select.value ||
+      busy || otherBusy || !selectedSource || !select.value ||
       (protocol === "v2" && !["windows", "android"].includes(selectedSource.platform));
     if ($("lan-relay-cancel")) $("lan-relay-cancel").disabled = !busy || !jobId;
   }
@@ -100,7 +101,7 @@
     }
   }
   async function start() {
-    if (busy) return;
+    if (busy || window.__superagentLanLargeReceiveBusy === true) return;
     const src = source();
     const dstId = $("lan-relay-destination")?.value;
     const protocol = $("lan-relay-protocol")?.value || "v1";
