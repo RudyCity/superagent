@@ -181,6 +181,24 @@
 .access-mcp-identity-row{display:flex;align-items:baseline;justify-content:space-between;gap:5px 15px;flex-wrap:wrap;border:1px solid var(--border-subtle,rgba(255,255,255,.08));border-radius:10px;padding:11px 12px}
 .access-mcp-identity-row strong{font-size:12px}
 .access-mcp-identity-row .access-mcp-meta{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+/* Registered projects · kept distinct from per-agent grants. */
+.access-project-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+.access-project-head h3{margin:0 0 5px}
+.access-project-head .access-hint{margin:0;display:block;line-height:1.55}
+.access-project-add{width:auto;min-width:136px;margin:0}
+.access-project-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:16px;margin:14px 0;border:1px solid var(--border-medium,rgba(255,255,255,.13));border-radius:12px;background:var(--bg-surface-raised,#172135)}
+.access-project-form[hidden],.access-project-target[hidden],#access-project-remote[hidden]{display:none!important}
+.access-project-target{display:flex;align-items:center;gap:9px;min-width:0}
+.access-project-target .access-search{flex:1}
+.access-project-folder{flex-shrink:0;white-space:nowrap}
+.access-project-form>.access-project-target,.access-project-form>#access-project-remote,.access-project-form>.access-hint,.access-project-save{grid-column:1/-1}
+.access-project-save{max-width:240px;margin:0}
+.access-project-list{display:grid;gap:8px;margin-top:12px}
+.access-project-row{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;border:1px solid var(--border-subtle,rgba(255,255,255,.08));border-radius:10px;padding:11px 12px}
+.access-project-row strong{font-size:12px;min-width:115px}
+.access-project-row .access-mcp-meta{flex:1;min-width:150px}
+.access-project-no-grant{font-size:10px;color:var(--text-muted,#a2aec4);white-space:nowrap}
+@media(max-width:640px){.access-project-form{grid-template-columns:minmax(0,1fr)}.access-project-add{width:100%}.access-project-target{flex-wrap:wrap}.access-project-folder{width:100%}.access-project-save{max-width:none;width:100%}}
 .access-trusted-session{display:grid;gap:10px}
 .access-trusted-session h3{margin:0}
 .access-trusted-session .access-audit-refresh{justify-self:start}
