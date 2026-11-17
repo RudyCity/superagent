@@ -199,6 +199,17 @@
         stream.fpsLastTime = performance.now();
         if (lanBanner) lanBanner.hidden = true;
 
+        const controller = el("desktop-live-stream-toggle-control");
+        if (controller) {
+          controller.disabled = false;
+          controller.textContent = "Control: OFF";
+          controller.title = "LAN device input requires its own pairing and device permission";
+        }
+        const takeover = el("desktop-live-stream-takeover");
+        if (takeover) {
+          takeover.disabled = true;
+          takeover.title = "Device control belongs in the LAN Devices permission workflow";
+        }
         status("Live stream active for " + (item.title || "LAN Device") + ".");
         draw();
         scheduleNextFrame();
@@ -220,14 +231,32 @@
         stream.fpsWindowCount = 0;
         stream.fpsLastTime = performance.now();
 
-        // Configure LAN streaming info
+        // Offer LAN viewing only through an explicitly configured private
+        // address. The token is a URL fragment, never an HTTP query parameter.
         const corePort = window.__SUPERAGENT_CORE_PORT || 6789;
-        const hostIp = window.__SUPERAGENT_LAN_IP || location.hostname || "127.0.0.1";
-        stream.lanUrl = `http://${hostIp}:${corePort}/api/desktop/live/lan-preview?token=${result.token}&quality=78&width=1280`;
-        if (lanUrlEl) lanUrlEl.textContent = stream.lanUrl;
-        if (lanBanner) lanBanner.hidden = false;
+        const hostIp = window.__SUPERAGENT_LAN_IP;
+        const allowedLanIp = typeof hostIp === "string" &&
+          (/^10\.(?:\d{1,3}\.){2}\d{1,3}$/.test(hostIp) ||
+           /^192\.168\.\d{1,3}\.\d{1,3}$/.test(hostIp) ||
+           /^172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(hostIp));
+        stream.lanUrl = allowedLanIp ?
+          `http://${hostIp}:${corePort}/api/desktop/live/lan-preview#token=${result.token}` : "";
+        if (lanUrlEl) lanUrlEl.textContent = stream.lanUrl ||
+          "Private LAN address not configured. Local Tray preview remains available.";
+        if (lanBanner) lanBanner.hidden = !allowedLanIp;
 
-        status("Live stream active for " + (item.title || item.application) + " (5 min TTL).");
+        const controller = el("desktop-live-stream-toggle-control");
+        if (controller) {
+          controller.disabled = true;
+          controller.textContent = "Control: requires approval";
+          controller.title = "Preview approval never permits remote keyboard or mouse input";
+        }
+        const takeover = el("desktop-live-stream-takeover");
+        if (takeover) {
+          takeover.disabled = false;
+          takeover.title = "Revoke agent control and return physical control to host";
+        }
+        status("Read-only window preview active (5 min TTL).");
         draw();
         scheduleNextFrame();
       }
@@ -251,6 +280,10 @@
     stream.id = null;
     stream.inFlight = false;
     stream.lastHash = null;
+    const wasLanDevice = stream.isLanDevice;
+    stream.isLanDevice = false;
+    stream.deviceId = "";
+    stream.lanUrl = "";
 
     const panel = el("desktop-live-stream-panel");
     if (panel) panel.hidden = true;
@@ -266,11 +299,12 @@
     if (toggleBtn) {
       toggleBtn.textContent = "Control: OFF";
       toggleBtn.classList.remove("active");
+      toggleBtn.disabled = true;
     }
     const viewport = el("desktop-live-stream-viewport");
     if (viewport) viewport.classList.remove("interactive");
 
-    if (token) {
+    if (token && !wasLanDevice) {
       try { await invoke("stop", { token }); } catch {}
     }
     if (reason) status(reason);
