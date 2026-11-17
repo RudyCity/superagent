@@ -47,13 +47,15 @@ import java.util.function.BooleanSupplier;
 
 /** Foreground-only, on-screen and user-approved Android LAN diagnostics. */
 public final class MainActivity extends Activity {
-    private static final int SCREEN_REQUEST = 9001, NOTIFICATION_REQUEST = 9002, FILE_SELECT_REQUEST = 9003, FOLDER_SELECT_REQUEST = 9004, NOTIFICATION_SETUP_REQUEST = 9005;
+    private static final int SCREEN_REQUEST = 9001, NOTIFICATION_REQUEST = 9002, FILE_SELECT_REQUEST = 9003, FOLDER_SELECT_REQUEST = 9004, NOTIFICATION_SETUP_REQUEST = 9005, LARGE_FILE_SELECT_REQUEST = 9006;
     private static volatile WeakReference<MainActivity> currentActivity = new WeakReference<>(null);
     private final Handler main = new Handler(Looper.getMainLooper());
     private volatile boolean requestingCapture;
     private byte[] sharedFileBytes;
     private String sharedFileName;
+    private LanFileSourceV2 largeSource;
     private volatile boolean preparingFolder;
+    private volatile boolean preparingLargeFile;
     private volatile LanClientServer server;
     // Direct LAN is Activity-owned unless an already-approved V2 file transfer
     // is temporarily held by the visible notification ForegroundService.
@@ -177,6 +179,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        largeSource = new LanFileSourceV2(this);
         boolean tv = AndroidTvUi.isTv(this);
         getWindow().setStatusBarColor(AndroidUiKit.CANVAS);
         getWindow().setNavigationBarColor(AndroidUiKit.CANVAS);
@@ -411,7 +414,7 @@ public final class MainActivity extends Activity {
         touchToggle = action(layout, "Allow remote taps and swipes", this::toggleRemoteInput);
         add(layout, label("Remote interaction can affect other apps. Do not open passwords or financial data. Secure screens may block capture. STOP is available in Android notifications.", 12, AndroidUiKit.MUTED, false), 6);
         layout = section(filesPage, "SEND FILES · OWNER APPROVAL");
-        add(layout, label("Send a selected Android document to Windows or receive into Downloads/SuperAgent LAN. 4 MiB maximum per file. Each transfer needs an on-phone APPROVE.", 13, AndroidUiKit.MUTED, false), 6);
+        add(layout, label("Select a normal file (up to 4 MiB) or a large file (over 4 MiB, up to 256 MiB). Transfers use verified TLS and each one requires an on-phone APPROVE.", 13, AndroidUiKit.MUTED, false), 6);
         LinearLayout filePreviewBox = AndroidUiKit.insetBox(this, 4);
         fileSelected = label("No document selected", 13, AndroidUiKit.TEXT, true);
         fileSelected.setGravity(Gravity.CENTER);
@@ -424,6 +427,12 @@ public final class MainActivity extends Activity {
                     .addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
             startActivityForResult(chooser, FILE_SELECT_REQUEST);
         });
+        actionIn(fileSelectRow, "Select Large File", () -> {
+            stopSharing();
+            Intent chooser = new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                    .addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+            startActivityForResult(chooser, LARGE_FILE_SELECT_REQUEST);
+        });
         actionIn(fileSelectRow, "Select Folder", () -> {
             stopSharing();
             Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE)
@@ -434,6 +443,7 @@ public final class MainActivity extends Activity {
         action(layout, "Clear Selected Document", () -> {
             if (sharedFileBytes != null) Arrays.fill(sharedFileBytes, (byte) 0);
             sharedFileBytes = null; sharedFileName = null;
+            largeSource.clear();
             fileSelected.setText("No document selected");
             stopSharing();
         });
@@ -628,7 +638,7 @@ public final class MainActivity extends Activity {
 
     private void startSharing() {
         if (server != null && !server.isRunning()) server = null;
-        if (server != null || TunnelForegroundService.isActive() || launching || preparingFolder) return;
+        if (server != null || TunnelForegroundService.isActive() || launching || preparingFolder || preparingLargeFile) return;
         final String segmentName;
         try {
             segmentName = LanClientServer.normalizeSegmentName(segmentInput.getText().toString());
@@ -647,6 +657,7 @@ public final class MainActivity extends Activity {
             try {
                 if (sharedFileBytes != null && sharedFileName != null)
                     pending.selectLocalFile(sharedFileName, sharedFileBytes);
+                pending.selectLargeSource(largeSource);
                 LanClientServer.Info info = pending.start(segmentName);
                 main.post(() -> {
                     launching = false;
@@ -1053,6 +1064,7 @@ public final class MainActivity extends Activity {
                     byte[] bytes = file.toByteArray();
                     if (bytes.length == 0) throw new SecurityException("Empty file.");
                     if (sharedFileBytes != null) Arrays.fill(sharedFileBytes, (byte) 0);
+                    largeSource.clear();
                     sharedFileBytes = bytes; sharedFileName = name;
                     fileSelected.setText(name + " · " + bytes.length + " bytes");
                     notifyEvent("Document staged. Tap Start sharing and approve the file request.");
@@ -1060,6 +1072,52 @@ public final class MainActivity extends Activity {
             } catch (Exception e) {
                 notifyEvent("Document not selected: unsafe filename, size or access.");
             }
+            return;
+        }
+        if (requestCode == LARGE_FILE_SELECT_REQUEST) {
+            if (resultCode != RESULT_OK || result == null || result.getData() == null) return;
+            if (preparingLargeFile) return;
+            final android.net.Uri chosen = result.getData();
+            final String chosenName;
+            try (Cursor rows = getContentResolver().query(chosen,
+                    new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (rows == null || !rows.moveToFirst())
+                    throw new SecurityException("Cannot read owner-selected name.");
+                chosenName = LanFileExchange.name(rows.getString(0));
+            } catch (Exception error) {
+                notifyEvent("Large document not selected: unsafe document name.");
+                return;
+            }
+            preparingLargeFile = true;
+            fileSelected.setText("Reading large document securely…");
+            refresh();
+            new Thread(() -> {
+                try {
+                    JSONObject selected = largeSource.select(chosen, chosenName);
+                    main.post(() -> {
+                        preparingLargeFile = false;
+                        if (!visible || isFinishing()) {
+                            largeSource.clear();
+                            refresh();
+                            return;
+                        }
+                        if (sharedFileBytes != null) Arrays.fill(sharedFileBytes, (byte) 0);
+                        sharedFileBytes = null;
+                        sharedFileName = null;
+                        fileSelected.setText(selected.optString("name") + " · " +
+                                selected.optLong("size") + " bytes · V2 SHA-256 ready");
+                        notifyEvent("Large V2 document staged. Start sharing and approve each request.");
+                        refresh();
+                    });
+                } catch (Exception error) {
+                    main.post(() -> {
+                        preparingLargeFile = false;
+                        notifyEvent("Large document rejected: 4–256 MiB, safe filename and storage required.");
+                        fileSelected.setText("No large document selected");
+                        refresh();
+                    });
+                }
+            }, "superagent-android-v2-source").start();
             return;
         }
         if (requestCode == FOLDER_SELECT_REQUEST) {
@@ -1081,6 +1139,7 @@ public final class MainActivity extends Activity {
                             refresh(); return;
                         }
                         if (sharedFileBytes != null) Arrays.fill(sharedFileBytes, (byte) 0);
+                        largeSource.clear();
                         sharedFileBytes = folder.bytes;
                         sharedFileName = folder.name;
                         fileSelected.setText(folder.name + " · " + folder.fileCount + " files · "
