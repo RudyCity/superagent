@@ -94,6 +94,21 @@ fn selected_core_verified(runtime: &Value) -> Result<bool, String> {
     Ok(false)
 }
 
+async fn ensure_standalone_daemon_idle() -> Result<(), String> {
+    // The managed daemon planner requires a Core supervisor. A verified
+    // direct Core still has an embedded scheduler, so check it through the
+    // selected authenticated Core rather than interpreting 'unverified'
+    // as permission to kill a daemon PID.
+    let registered = server_info()?;
+    let pid = registered.pid.ok_or("EXIT_DAEMON_CORE_PID_MISSING")?;
+    let status = core_request(Method::GET, "/api/daemon/status", None).await?;
+    if status["pid"] != pid || !status["running"].is_boolean() ||
+        status["activeJobsCount"].as_u64() != Some(0) {
+        return Err("EXIT_DAEMON_BUSY_OR_CHANGED: scheduled jobs must finish before exit".into());
+    }
+    Ok(())
+}
+
 async fn prepare_managed_stops() -> Result<Vec<Value>, String> {
     let inventory = lifecycle_console_request(json!({"action":"inventory"})).await?;
     let states = inventory.get("services").and_then(Value::as_array)
@@ -114,6 +129,12 @@ async fn prepare_managed_stops() -> Result<Vec<Value>, String> {
         };
         let state = service["state"].as_str().unwrap_or("unknown");
         if state == "inactive" || (name == &"daemon" && state == "embedded") {
+            continue;
+        }
+        if name == &"daemon" && state == "unverified" {
+            // A direct Core cannot use the supervisor-only daemon plan. Its
+            // scheduler will exit with that Core, but must be quiescent first.
+            ensure_standalone_daemon_idle().await?;
             continue;
         }
         if !matches!(state, "active" | "degraded") ||
@@ -138,6 +159,13 @@ async fn stop_owned_stack() -> Result<(), String> {
     let snapshot = serde_json::to_value(runtime_detection::detect_runtime(&dir).await?)
         .map_err(|_| "EXIT_RUNTIME_SNAPSHOT_INVALID")?;
     let core_online = selected_core_verified(&snapshot)?;
+    if snapshot["activeProcessCount"].as_u64().unwrap_or(0) > 0 {
+        return Err("EXIT_AGENT_PROCESSES_ACTIVE: stop running CLI agents in Runtime Detection first".into());
+    }
+    if !core_online && snapshot["independentHosts"].as_array().is_some_and(|hosts|
+        hosts.iter().any(|host| live(host["state"].as_str().unwrap_or("unknown")))) {
+        return Err("EXIT_INDEPENDENT_HOST_ACTIVE: cannot stop it with Core offline".into());
+    }
     let remote = remote_service_detection::scan(&dir).await;
     let mcp_targets = check_observed_owners(&remote)?;
     let stops = if core_online {
@@ -155,6 +183,9 @@ async fn stop_owned_stack() -> Result<(), String> {
         runtime_control::control(&dir, "mcp", "stop", port, pid).await?;
     }
     if core_online {
+        // Recheck immediately before Core shutdown: another scheduled job
+        // could have started after the earlier read-only planning pass.
+        ensure_standalone_daemon_idle().await?;
         // Only the selected, authenticated Core endpoint is asked to exit.
         // A supervisor is rejected above, since it would restart its worker.
         let registered = server_info()?;
