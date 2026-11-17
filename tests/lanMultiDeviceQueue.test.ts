@@ -87,7 +87,7 @@ describe("LAN opt-in multi-device queue", () => {
     const h = harness(true);
     h.send();
     await until(() => h.finished.length === 1);
-    await until(() => !h.el("lan-file-cancel").disabled);
+    await until(() => h.el("lan-file-info").textContent.includes("Send failed"));
     // The current in-flight finish may have completed. No other target is sent.
     await new Promise(resolve => setTimeout(resolve, 70));
     expect(h.offers).toEqual([a + ":one.txt"]);
