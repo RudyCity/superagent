@@ -2747,7 +2747,9 @@ async fn poll_reminders(
         write_seen(&file, &state)?;
         if let Ok(dir) = config_dir() {
             if let Ok(true) = tray_notification_center::publish(
-                &dir, "reminder", "info", &format!("reminder:{id}"), name, message,
+                &dir, "reminder", "info", &format!("reminder:{id}"),
+                "Reminder completed",
+                "A scheduled reminder completed. Open Schedules & Reminders for details.",
             ) {
                 let _ = app.emit("tray-notifications-changed", ());
             }
