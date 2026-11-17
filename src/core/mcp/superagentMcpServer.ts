@@ -1,4 +1,4 @@
-import { registeredFileToolGate } from "../tools/registeredFileToolGate.js";
+import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness } from "../tools/registeredFileToolGate.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -667,10 +667,18 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     const tools = toolExposure === "gateway"
       ? getGatewayInitiallyAdvertisedTools(authorized)
       : authorized;
+    const filePolicyActive = fileRulesRegistered();
     const annotated = tools.map((t) => ({
       ...t,
       annotations: getToolAnnotations(t.name),
-      _meta: { securitySchemes: getToolSecuritySchemes(t.name, authMode) },
+      _meta: {
+        securitySchemes: getToolSecuritySchemes(t.name, authMode),
+        filePolicy: {
+          active: filePolicyActive,
+          readiness: filePolicyActive ? getPermanentFileToolReadiness(t.name) : "inactive",
+          note: "File-policy readiness is not an execution grant; per-action OAuth, project and host approvals still apply.",
+        },
+      },
     }));
     return { tools: annotated };
   });
@@ -1447,14 +1455,33 @@ function extractMcpResultText(result: unknown): string {
       const authorizedTools = getAuthorizedMcpTools();
       let result: any;
       if (toolName === MCP_GATEWAY_TOOL_NAMES.search) {
-        result = gatewayTextResult({ tools: searchGatewayTools(authorizedTools, rawArgs) });
+        const active = fileRulesRegistered();
+        result = gatewayTextResult({
+          tools: searchGatewayTools(authorizedTools, rawArgs).map((tool) => ({
+            ...tool, filePolicy: active ? getPermanentFileToolReadiness(tool.name) : "inactive",
+          })),
+          filePolicyActive: active,
+        });
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.describe) {
         const found = describeGatewayTool(authorizedTools, rawArgs.name);
-        result = found ? gatewayTextResult(found)
-          : { content: [{ type: "text", text: "Tool unavailable or not authorized." }], isError: true };
+        result = found ? gatewayTextResult({
+          ...found, filePolicy: fileRulesRegistered()
+            ? getPermanentFileToolReadiness(found.name) : "inactive",
+          note: "Discovery never grants execution; inspect the action and obtain required MCP/host approvals.",
+        }) : { content: [{ type: "text", text: "Tool unavailable or not authorized." }], isError: true };
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.status) {
+        const filePolicyActive = fileRulesRegistered();
+        const filePolicyReadinessCounts: Record<string,number> = {};
+        if (filePolicyActive) {
+          for (const tool of getGatewayVisibleCatalog(authorizedTools)) {
+            const readiness = getPermanentFileToolReadiness(tool.name);
+            filePolicyReadinessCounts[readiness] = (filePolicyReadinessCounts[readiness] || 0) + 1;
+          }
+        }
         result = gatewayTextResult({
           mode: toolExposure,
+          filePolicy: { active: filePolicyActive, readinessCounts: filePolicyReadinessCounts,
+            note: "Readiness reports host file-policy certification only, not successful OAuth/grant/approval execution." },
           visibleToolCount: getGatewayVisibleCatalog(authorizedTools).length,
           gatewayTools: authorizedTools.filter((tool) =>
             Object.values(MCP_GATEWAY_TOOL_NAMES).includes(tool.name as any)).map((tool) => tool.name),
