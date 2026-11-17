@@ -23,6 +23,7 @@ import {
   revokeProjectAccessRequest,
   listProjectAccessRequests,
   grantProjectAccessToIdentity,
+  MCP_CONNECTION_PROJECT_ID,
 } from "../src/core/project/projectAccessRequestStore.js";
 
 let configDir: string;
@@ -311,6 +312,30 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
     // Listing requests should gracefully recover with empty list rather than crashing
     const list = listProjectAccessRequests();
     expect(list).toEqual([]);
+  });
+
+  it("14b. MCP connection approval is independent of chat YOLO and grants no project files", () => {
+    setFullYoloMode(true);
+    const pending = createProjectAccessRequest(geminiIdentity, {
+      projectId: MCP_CONNECTION_PROJECT_ID,
+      capabilities: ["execute"],
+      reason: "Operate an explicitly approved MCP connection",
+    });
+    expect(pending.code).toBe("APPROVAL_PENDING");
+    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(false);
+    expect(() => createProjectAccessRequest(geminiIdentity, {
+      projectId: MCP_CONNECTION_PROJECT_ID,
+      capabilities: ["read"],
+      reason: "Illegal connection capability",
+    })).toThrow(/execute capability/);
+    const approved = approveProjectAccessRequest(pending.requestId);
+    expect(approved.grant.capabilities).toEqual(["execute"]);
+    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
+    expect(hasProjectAccess(geminiIdentity, "unapproved-project", "read")).toBe(false);
+    setFullYoloMode(false);
+    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(true);
+    revokeProjectAccessRequest(pending.requestId);
+    expect(hasProjectAccess(geminiIdentity, MCP_CONNECTION_PROJECT_ID, "execute")).toBe(false);
   });
 
   it("15. Direct grant via Broker API creates valid grant immediately", () => {
