@@ -883,7 +883,9 @@ async function runtimeServiceAction(event) {
   const verb=startAction ? "Start" : applyAction ? "Apply & Restart" : action === "stop" ? "Stop" : "Restart";
   if (!window.confirm(`${verb} ${label} :${port} (PID ${pid})?\n\n${warning}\n\nThis action cannot be undone from this dialog.`)) return;
   runtimeActionBusy = true;
-  const stopKey = kind !== "muse-core" && action === "stop" ? runtimeStopKey(service) : null;
+  // Muse Watch's Stop intentionally leaves an idle owner available for restart.
+  // Only MCP Stop is an owner-exit operation and should remove its card.
+  const stopKey = kind === "mcp" && action === "stop" ? runtimeStopKey(service) : null;
   if (stopKey) {
     runtimeStopTransitions.set(stopKey, { phase: "stopping", service });
     runtimeRenderRemoteList();
