@@ -1816,9 +1816,9 @@
             </div>
             <div class="lan-relay-panel">
               <div class="panel-eyebrow">DEVICE-TO-DEVICE · OWNER APPROVAL ON BOTH ENDS</div>
-              <p class="lan-file-info">Use the device selected above as the source. Its owner must first select a file locally (up to 4 MiB); the destination owner approves a second time. For V2, select the source with <code>share-large &lt;path&gt;</code> on its Windows LAN Client. This relays through Core; it is not an unapproved direct peer connection.</p>
+              <p class="lan-file-info">Use the device selected above as the source. Its owner must first select a file locally (up to 4 MiB); the destination owner approves a second time. For V2, select the source using <code>share-large &lt;path&gt;</code> on Windows or Select Large File on Android. This relays through Core; it is not an unapproved direct peer connection.</p>
               <label class="lan-screen-control-label" for="lan-relay-protocol">Transfer protocol</label>
-              <select id="lan-relay-protocol"><option value="v1">V1 · Owner-selected file up to 4 MiB (Android or Windows source)</option><option value="v2">V2 · Large file up to 256 MiB (Windows source via share-large)</option></select>
+              <select id="lan-relay-protocol"><option value="v1">V1 · Owner-selected file up to 4 MiB (Android or Windows source)</option><option value="v2">V2 · Large file up to 256 MiB (owner-selected Android/Windows source)</option></select>
               <label class="lan-screen-control-label" for="lan-relay-destination">Destination device</label>
               <select id="lan-relay-destination" disabled><option value="">Connect another device on this route</option></select>
               <div class="lan-transfer-actions">
