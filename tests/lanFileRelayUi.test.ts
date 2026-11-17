@@ -26,7 +26,7 @@ function harness(cancel = false) {
     requests.push(args);
     const { action, payload } = args;
     if (action === "file_relay_start") {
-      expect(payload).toEqual({ sourceId: source, destinationId: destination });
+      expect(payload).toEqual({ sourceId: source, destinationId: destination, protocol: "v1" });
       return { success: true, job: { id: jobId } };
     }
     if (action === "file_relay_status") {
