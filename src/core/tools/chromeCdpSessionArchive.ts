@@ -13,10 +13,18 @@ import { mkdir, writeFile, appendFile, stat, realpath, lstat, rm } from "node:fs
 import { join, resolve, parse, relative, isAbsolute } from "node:path";
 import { getRootConfigDir, getPackageRootDir } from "../config/paths.js";
 
-const FPS = 5;
-const FRAME_MS = 200;
 const MAX_MS = 10 * 60_000;
-const MAX_FRAMES = FPS * MAX_MS / 1000;
+export const CDP_RECORDING_PRESETS = Object.freeze({
+  compact: { fps: 3, width: 640, height: 360, crf: 32 },
+  standard: { fps: 5, width: 960, height: 540, crf: 29 },
+  detail: { fps: 5, width: 1280, height: 720, crf: 26 },
+});
+export type CdpRecordingPreset = keyof typeof CDP_RECORDING_PRESETS;
+function recordingPreset(value: unknown): CdpRecordingPreset {
+  if (value === undefined) return "standard";
+  if (value === "compact" || value === "standard" || value === "detail") return value;
+  throw Error("videoPreset must be compact, standard, or detail.");
+}
 const MAX_SESSIONS = 4;
 const MAX_FRAME_BYTES = 1_000_000;
 const MAX_VIDEO_BYTES = 160_000_000;
@@ -37,6 +45,7 @@ export type SessionArchiveOptions = {
   /** MP4 enabled by default; can be disabled only through a future explicit mode. */
   video?: boolean;
   confirmSensitiveVideo: boolean;
+  videoPreset?: CdpRecordingPreset;
   /** Frame source must be the verified exact CDP target, never a new tab. */
   captureFrame: () => Promise<string>;
   /** A read-only validity check, re-evaluated for every periodic capture. */
@@ -49,6 +58,8 @@ type Session = {
   scope: ArchiveScope;
   directory: string;
   start: number;
+  preset: CdpRecordingPreset;
+  profile: Readonly<{fps:number;width:number;height:number;crf:number}>;
   status: "recording" | "stopping" | "saved" | "failed";
   timer?: ReturnType<typeof setInterval>;
   inFlight?: Promise<void>;
@@ -145,7 +156,9 @@ function queueSafe(item: Session, file: string, payload: object) {
 }
 function publicStatus(item: Session) {
   return { recordingId: item.id, status: item.status, startedAt: new Date(item.start).toISOString(),
-    elapsedMs: safeCount(Date.now() - item.start), video: true, fps: FPS,
+    elapsedMs: safeCount(Date.now() - item.start), video: true,
+    fps: item.profile.fps, videoPreset:item.preset,
+    videoWidth:item.profile.width, videoHeight:item.profile.height,
     frameCount: item.frames, droppedFrames: item.dropped,
     commandCount: item.commands, diagnosticCount: item.diagnostics,
     directory: item.directory, videoFile: join(item.directory,"video.mp4"),
@@ -175,7 +188,7 @@ function isTransientCdpCaptureFailure(error: unknown): boolean {
 }
 async function frameTick(item: Session, capture: () => Promise<string>, valid: () => Promise<boolean>) {
   if (item.status !== "recording") return;
-  if (Date.now() - item.start >= MAX_MS || item.frames >= MAX_FRAMES) {
+  if (Date.now() - item.start >= MAX_MS || item.frames >= item.profile.fps * MAX_MS / 1000) {
     item.problems.push("Maximum 10-minute video duration reached; recording needs an explicit stop.");
     item.status = "stopping";
     if (item.timer) clearInterval(item.timer);
@@ -218,6 +231,8 @@ export async function startCdpSessionArchive(
   if ([...sessions.values()].filter(x => x.status === "recording").length >= MAX_SESSIONS)
     throw Error("Too many concurrent recordings.");
   if (!(await opts.checkLease())) throw Error("Target lease is no longer valid.");
+  const preset=recordingPreset(opts.videoPreset);
+  const profile=CDP_RECORDING_PRESETS[preset];
   assertSessionVideoEncoder();
   const id = randomUUID();
   const root = await archiveRoot(opts.projectDirectory);
@@ -228,9 +243,9 @@ export async function startCdpSessionArchive(
     await writeFile(join(directory,file),"",{flag:"wx",mode:0o600});
   }
   const args = ["-hide_banner","-loglevel","error","-nostdin","-y",
-    "-f","image2pipe","-framerate",String(FPS),"-vcodec","mjpeg","-i","pipe:0",
-    "-vf","scale=960:540:force_original_aspect_ratio=decrease,pad=960:540:(ow-iw)/2:(oh-ih)/2",
-    "-pix_fmt","yuv420p","-c:v","libx264","-preset","ultrafast","-crf","29",
+    "-f","image2pipe","-framerate",String(profile.fps),"-vcodec","mjpeg","-i","pipe:0",
+    "-vf",`scale=${profile.width}:${profile.height}:force_original_aspect_ratio=decrease,pad=${profile.width}:${profile.height}:(ow-iw)/2:(oh-ih)/2`,
+    "-pix_fmt","yuv420p","-c:v","libx264","-preset","ultrafast","-crf",String(profile.crf),
     "-movflags","+faststart",join(directory,"video.mp4")];
   const encoder = spawn("ffmpeg", args, { windowsHide:true, stdio:["pipe","pipe","pipe"] });
   let ffmpegError = "";
@@ -243,7 +258,7 @@ export async function startCdpSessionArchive(
   });
   encoder.stdin.on("error", () => { /* reported by frameTick on next write */ });
   const item: Session = {
-    id, scope, directory, start:Date.now(), status:"recording",
+    id, scope, directory, start:Date.now(), preset, profile, status:"recording",
     encoder, encoderExit, frames:0,dropped:0,consecutiveCaptureFailures:0,commands:0,diagnostics:0,
     totalFrameBytes:0,lastCaptureAt:0,problems:[],pendingWrites:Promise.resolve(),
     stopDiagnostics:opts.stopDiagnostics,
@@ -279,7 +294,7 @@ export async function startCdpSessionArchive(
         });
       }
     };
-    item.timer = setInterval(() => { void save(); }, FRAME_MS);
+    item.timer = setInterval(() => { void save(); }, 1000 / item.profile.fps);
     item.timer.unref?.();
     sessions.set(scopeKey(scope), item);
     return publicStatus(item);
@@ -445,7 +460,7 @@ async function finalizeCdpSessionArchive(item: Session, actionTranscript?: objec
     "Dropped frames: " + item.dropped,
     "Recorded commands: " + item.commands,
     "Captured diagnostics: " + item.diagnostics,
-    "Video: video.mp4 (960×540, 5 FPS, no audio)",
+    "Video: video.mp4 ("+item.profile.width+"×"+item.profile.height+", "+item.profile.fps+" FPS, no audio)",
     "Action transcript: transcript.jsonl, actions.json",
     "Console: console.jsonl | Errors: errors.jsonl | Network metadata: network.jsonl",
     "Combined diagnostics: diagnostics.jsonl",
