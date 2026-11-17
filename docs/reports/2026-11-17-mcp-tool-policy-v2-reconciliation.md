@@ -182,3 +182,38 @@ Do not auto-restart or migrate a shared Core/MCP owner based only on CI success.
 runtime and new public release remain blocked by real host owner proof,
 external connection recovery and R0–R7 production approval. Do not use
 the passing staging tests to justify an unattended release or restart.
+
+### 2026-11-17 08:35 UTC — digest-pinned live acceptance (stage 3 verified; stage 4 unverified)
+
+[GitHub Actions run 44047846830](https://github.com/RudyCity/superagent/actions/runs/44047846830)
+at source commit `295adf5acf3a649d52f5b79765ba9ad3aa4feca0`:
+
+- TypeScript check and focused MCP regression: **23 files, 178/178 tests PASS**.
+- Native matrix: **35/35 policy tests on each** Windows-latest, Ubuntu 24.04 and macOS 15.
+- The read-only MCP owner now reports `backendReleaseDigest` as validated
+  SHA-256 metadata from the **authenticated private owner**. This does not
+  authorize any restart or publish operation.
+- `assessDesktopMcpOwnerEvidence` has a backward-compatible optional
+  `expectedReleaseDigest` parameter; when provided, both owner snapshots
+  must match that exact 64-character digest. Missing, malformed, stale, or
+  mismatched release digests are blocking failures, even with healthy owner
+  and backend PIDs.
+- `scripts/mcp-tool-policy-live-verify.ts` requires
+  `SUPERAGENT_MCP_POLICY_EXPECTED_RELEASE_DIGEST` in addition to the
+  attended host opt-in, URL, token, and port. Its PASS receipt includes only
+  a digest prefix; never prints credentials or full owner URL.
+- **Not installed or executed on the user's laptop:** calls to the connected
+  `fast1` read-only Core/MCP/tool-status tools still failed internally.
+  There is no attested live owner, no verified installed release digest,
+  no new native packaging/asset integrity evidence, and no R0–R7 approval.
+
+To progress stage 4, use the **published, SHA-256-verified tagged backend**
+on a separately reviewed release window; obtain its exact activated backend
+digest, verify real independent owner PID/birth and same public URL, run the
+read-only verifier locally with host-supplied credentials, check historical
+sessions and rollback before any activation decision. Do not use a source
+commit SHA as the expected backend build digest, or treat successful CI as
+authorization for a production reload.
+
+**Four-stage status:** Implemented PASS for these code changes; Tested PASS
+at the commit above; Runtime Verified BLOCKED; Released BLOCKED.
