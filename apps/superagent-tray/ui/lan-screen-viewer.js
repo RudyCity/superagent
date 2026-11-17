@@ -242,11 +242,16 @@
     const id = viewer.id;
     viewer.controllerApproved = false;
     controls();
-    if (id) {
-      try { await invoke("control_revoke", { deviceId: id }); }
-      catch { /* Native gate denies hidden/expired controller grants. */ }
+    if (!id) { status("Local controller disabled."); return; }
+    try {
+      const result=await invoke("control_revoke", { deviceId: id });
+      if (result?.success !== true || result?.approved !== false)
+        throw Error("Core revocation not confirmed");
+      status("Controller revoked at host and Core. View Only remains available.");
+    } catch {
+      status("Local input disabled, but Core revoke is unverified. Grant expires automatically.",true);
+      notifyScreen("warning","Core-wide revocation unverified; local input remains disabled.");
     }
-    status("Controller revoked. View Only remains available.");
   }
 
   async function refreshController() {
