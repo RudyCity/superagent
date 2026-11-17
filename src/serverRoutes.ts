@@ -1813,7 +1813,7 @@ export async function handleServerRoute(
           Object.keys(body).some(k=>!["action","projectDirectory","recordingId","confirmDelete"].includes(k)) ||
           typeof body.projectDirectory!=="string") throw Error("Invalid body.");
       const {listProjectCdpRecordings,locateProjectCdpRecording,
-        stopProjectCdpRecording,deleteProjectCdpRecording}=
+        stopProjectCdpRecording,deleteProjectCdpRecording,exportProjectCdpRecording}=
         await import("./core/tools/chromeCdpRecordingLibrary.js");
       let result;
       switch (body.action) {
@@ -1829,6 +1829,11 @@ export async function handleServerRoute(
           if (typeof body.recordingId!=="string" || body.confirmDelete!==undefined)
             throw Error("Recording selector required.");
           result=await stopProjectCdpRecording(body.projectDirectory,body.recordingId);
+          break;
+        case "export-zip":
+          if (typeof body.recordingId!=="string" || body.confirmDelete!==undefined)
+            throw Error("Recording selector required.");
+          result=await exportProjectCdpRecording(body.projectDirectory,body.recordingId);
           break;
         case "delete":
           if (typeof body.recordingId!=="string" || body.confirmDelete!==true)
