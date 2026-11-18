@@ -1,4 +1,5 @@
 import { delegateBridge } from "./bridge.js";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { recordDelegateAction } from "../browserTransport/delegateActionDiagnostics.js";
 import { delegateMultiTabOrchestrator } from "./multiTabOrchestrator.js";
 import { executeFileUploadCommand, validateUploadPaths, type FileUploadCommand } from "../tools/chromeCdpFileUpload.js";
@@ -23,6 +24,12 @@ import { startCdpSessionArchive, getCdpSessionArchiveStatus, stopCdpSessionArchi
   recordCdpSessionCommand, recordCdpSessionDiagnostic } from "../tools/chromeCdpSessionArchive.js";
 import { beginBrowserActionRecording, browserActionRecordingStatus, stopBrowserActionRecording,
   readBrowserActionRecording, appendBrowserActionRecord } from "../tools/chromeCdpActionRecorder.js";
+
+// Scopes only Core-hosted, signed, explicitly certified MCP web commands.
+const certifiedDelegateWebScope = new AsyncLocalStorage<boolean>();
+export function runWithCertifiedDelegateWebScope<T>(task: () => T): T {
+  return certifiedDelegateWebScope.run(true, task);
+}
 
 type RpcMethod =
   | "delegate.cdp.list_targets" | "delegate.cdp.attach" | "delegate.cdp.detach"
@@ -137,7 +144,11 @@ export class DelegateCdpHostTransport implements BrowserTransport {
     assertDelegateCdpMethodAllowed(method, policy);
     if (method === "Page.navigate") assertDelegateUrlAllowed(String(params.url || ""));
     touchDelegateAttachment(target.connectionId, target.tabId);
-    return this.rpc("delegate.cdp.command", { tabId: target.tabId, method, params, meta: policy }, signal, target.connectionId);
+    // Host-verified origin enforcement is repeated inside the Chrome extension
+    // immediately before each CDP command, preventing URL-switch TOCTOU reads.
+    const meta = certifiedDelegateWebScope.getStore()
+      ? { ...policy, certifiedWeb: true } : policy;
+    return this.rpc("delegate.cdp.command", { tabId: target.tabId, method, params, meta }, signal, target.connectionId);
   }
 
   async capabilities() {
