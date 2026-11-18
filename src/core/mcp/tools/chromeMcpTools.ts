@@ -242,6 +242,7 @@ export function validateDelegateBrowserHostArgs(name: string, args: unknown): st
 
 export const CHROME_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
   superagent_browser_gateway: "dangerous",
+  superagent_chrome_cdp_observe: "safe",
   superagent_chrome_cdp: "dangerous",
   superagent_control_chrome_cdp: "dangerous",
   superagent_chrome_vision: "dangerous",
@@ -281,6 +282,24 @@ export const CHROME_MCP_TOOL_DEFS = [
         waitMs: { type: "number", description: "wait_events: long-poll timeout (max 10s)." },
       },
       required: ["action"],
+    },
+  },
+  {
+    name: "superagent_chrome_cdp_observe",
+    description:
+      "Read-only certified Chrome CDP transport status or filtered HTTP(S) tab inventory. " +
+      "Uses Managed loopback CDP or an already paired Delegate profile; never attaches to a tab, reads DOM, " +
+      "evaluates code, uploads files, or launches Chrome. A delegateClientId is required when multiple profiles are online.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        command: { type: "string", enum: ["transport_status", "list_targets"] },
+        transport: { type: "string", enum: ["managed", "delegate"] },
+        delegateClientId: { type: "string", minLength: 8, maxLength: 80 },
+        debug_port: { type: "integer", minimum: 1024, maximum: 65535 },
+      },
+      required: ["command"],
     },
   },
   {
@@ -485,6 +504,13 @@ export async function dispatchChromeMcpTool(
     return runWithTrustedDelegateForwardingConnection(trustedConnection, () => dispatchChromeMcpTool(name, args));
   }
   switch (name) {
+    case "superagent_chrome_cdp_observe":
+      // Standalone read-only entrypoint; validate even without an installed
+      // permanent file registry. Do not let a caller re-label a control action.
+      if (!certifiedBrowserObservation({ name, args: args || {} })) {
+        return { content: [{ type: "text", text: "Uncertified Chrome CDP observation arguments." }], isError: true };
+      }
+      return await handleControlChromeCdp(args);
     case "superagent_chrome_cdp":
     case "superagent_control_chrome_cdp":
       return await handleControlChromeCdp(args);
