@@ -330,8 +330,9 @@ async fn tray_notification_center_ack_navigation(
                 requests.iter().any(|req|
                     req.get("requestId").and_then(Value::as_str)==Some(request_id.as_str()) &&
                     req.get("status").and_then(Value::as_str)==Some("pending") &&
-                    (req.get("projectId").and_then(Value::as_str)==Some("mcp-connection")) ==
-                    (tab=="connections")));
+                    (tab=="legacy" ||
+                     (req.get("projectId").and_then(Value::as_str)==Some("mcp-connection")) ==
+                     (tab=="connections"))));
         if !valid { return Ok(tray_navigation_receipt::receipt(
             &incident_id,&route,"TARGET_EXPIRED")); }
     }

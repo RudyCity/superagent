@@ -51,10 +51,14 @@ fn fixed_route(source: &str, id: &str) -> Option<(&'static str, Option<(String, 
             ("connections", rest)
         } else if let Some(rest) = rest.strip_prefix("mcp:") {
             ("mcp", rest)
-        } else { ("mcp", rest) };
+        } else { ("legacy", rest) };
         if !safe_id(request, 150) { return None; }
-        return Some((if tab == "connections" {"security:connections"} else {"security:mcp"},
-            Some((request.to_owned(), tab))));
+        let route=match tab {
+            "connections" => "security:connections",
+            "mcp" => "security:mcp",
+            _ => "security",
+        };
+        return Some((route,Some((request.to_owned(),tab))));
     }
     let route = match (source, id) {
         ("runtime", "health:muse") => "runtime:muse",
@@ -128,6 +132,8 @@ mod tests {
     fn native_routes_ignore_titles_and_reject_path_and_url_shape() {
         assert_eq!(fixed_route("security","mcp-pending:connections:req_012")
             .unwrap().0,"security:connections");
+        assert_eq!(fixed_route("security","mcp-pending:req_old")
+            .unwrap().0,"security");
         assert_eq!(fixed_route("core","health:core").unwrap().0,"runtime:core");
         assert_eq!(fixed_route("jobs","daemon-run:run_42:Scheduled run needs attention")
             .unwrap().0,"history");
