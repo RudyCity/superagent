@@ -229,6 +229,24 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
     expect(hasProjectAccess(reconnectedClient, "persisted-project", "write")).toBe(true);
   });
 
+  it("direct Tray grant clears only pending requests fully satisfied by the grant", () => {
+    registerProject({ id: "my-project", name: "My Project", type: "local", root: projectRoot });
+    const pending = createProjectAccessRequest(geminiIdentity, {
+      projectId: "my-project",
+      capabilities: ["read", "write"],
+      reason: "Operator approval requested for an audit and updates",
+    });
+    grantProjectAccessToIdentity(geminiIdentity, "my-project", ["read"]);
+    expect(listProjectAccessRequests({status: "pending"}).map(req => req.requestId))
+      .toContain(pending.requestId);
+    expect(hasProjectAccess(geminiIdentity, "my-project", "write")).toBe(false);
+    grantProjectAccessToIdentity(geminiIdentity, "my-project", ["read", "write"]);
+    const approved = listProjectAccessRequests().find(req => req.requestId === pending.requestId);
+    expect(approved?.status).toBe("approved");
+    expect(approved?.decisionReason).toBe("Satisfied by direct operator grant");
+    expect(listProjectAccessRequests({status: "pending"})).toHaveLength(0);
+  });
+
   it("9 & 10. Identity isolation: Different identity cannot inherit another agent's grant", () => {
     registerProject({
       id: "isolated-project",
