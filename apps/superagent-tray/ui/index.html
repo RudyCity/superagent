@@ -52,6 +52,7 @@
   <script src="./terminal.js" defer></script>
   <script src="./muse-files.js" defer></script>
   <script src="./lan-devices.js" defer></script>
+  <script src="./lan-terminal-task.js" defer></script>
   <script src="./lan-screen-viewer.js" defer></script>
   <script src="./lan-sha256.js" defer></script>
   <script src="./lan-file-transfer.js" defer></script>
@@ -1789,6 +1790,34 @@
           </form>
           <div class="lan-output-head"><span>Command output</span><button id="lan-output-clear" type="button" class="button ghost">Clear</button></div>
           <pre id="lan-output" class="lan-output" aria-live="polite">Select a paired device and request an approved session.</pre>
+
+          <section id="lan-terminal-task-panel" class="lan-terminal-task" aria-labelledby="lan-terminal-task-heading" hidden>
+            <div class="lan-terminal-task-head">
+              <div>
+                <div class="panel-eyebrow">WINDOWS · ATTENDED PIPED TERMINAL</div>
+                <h3 id="lan-terminal-task-heading">Long-running task</h3>
+                <p>Start the command entered above, then read its output or send input. The receiving PC approves the start and each input separately. Not a PTY or elevated shell.</p>
+              </div>
+              <div class="lan-terminal-task-controls">
+                <button id="lan-terminal-task-start" class="button primary" type="button" disabled>Start task</button>
+                <button id="lan-terminal-task-refresh" class="button ghost" type="button" disabled>Read output</button>
+                <button id="lan-terminal-task-stop" class="button ghost danger" type="button" disabled>Stop task</button>
+              </div>
+            </div>
+            <p id="lan-terminal-task-status" class="lan-terminal-task-status" role="status" aria-live="polite">Select an approved Windows LAN session.</p>
+            <div class="lan-terminal-task-output-head"><span>Live task output</span>
+              <button id="lan-terminal-task-clear" class="button ghost" type="button">Clear view</button>
+            </div>
+            <pre id="lan-terminal-task-output" class="lan-output lan-terminal-task-output" aria-live="off">No task started.</pre>
+            <div class="lan-terminal-task-input-row">
+              <label for="lan-terminal-task-input">Input to running task (requires another owner approval)</label>
+              <div class="lan-command-row">
+                <input id="lan-terminal-task-input" maxlength="1024" type="text" spellcheck="false" autocomplete="off" placeholder="Text for stdin…" disabled />
+                <button id="lan-terminal-task-send" class="button ghost" type="button" disabled>Send input</button>
+              </div>
+              <label class="lan-terminal-task-newline"><input id="lan-terminal-task-newline" type="checkbox" checked disabled /> Append Enter</label>
+            </div>
+          </section>
           <p class="lan-security-note">Selected transport only. Android diagnostics are read-only; actions require separate approval on the phone. Settings open locally and disconnect sharing. Volume changes one step per approval. Android remote touch requires explicit on-device Accessibility and input consent; no arbitrary Android shell, root or ADB. Full TLS fingerprint comparison and target approval are required. PAKE, signed releases and cross-device security review remain pending.</p>
         </section>
         </div>
