@@ -82,6 +82,45 @@ async function fullFlow(store: McpOAuthStore, config: McpOAuthRoutesConfig, boot
   return { tokens, verifier, code: code as string };
 }
 
+describe("named one-time OAuth consent", () => {
+  it("shows optional name and only binds it after valid bootstrap approval", async () => {
+    const store=new McpOAuthStore();
+    store.registerClient(CLIENT_ID,[REDIRECT_URI]);
+    const bootstrap="single-use-secret";
+    const cfg=makeConfig(store,bootstrap);
+    const {verifier,challenge}=pkcePair();
+    const url="/oauth/authorize?client_id="+CLIENT_ID+
+      "&redirect_uri="+encodeURIComponent(REDIRECT_URI)+
+      "&code_challenge="+challenge+"&code_challenge_method=S256&scope=mcp%3Atools";
+    const page=await handleOAuthRoute(getReq(url),cfg);
+    expect(page.body).toContain('name="connection_name"');
+    expect(page.body).toContain("Nama koneksi");
+    const requestId=/name="request_id" value="([^"]+)"/.exec(page.body)?.[1];
+    expect(requestId).toBeTruthy();
+    const wrong=await handleOAuthRoute(postReq("/oauth/authorize",
+      "request_id="+requestId+"&bootstrap_code=wrong&decision=approve"+
+      "&connection_name="+encodeURIComponent("Gemini - PC Kantor")),cfg);
+    expect(wrong.statusCode).toBe(403);
+    const denied=await handleOAuthRoute(postReq("/oauth/authorize",
+      "request_id="+requestId+"&bootstrap_code="+bootstrap+"&decision=approve"+
+      "&connection_name="+encodeURIComponent("\\u202eSpoof")),cfg);
+    expect(denied.statusCode).toBe(400);
+    const ok=await handleOAuthRoute(postReq("/oauth/authorize",
+      "request_id="+requestId+"&bootstrap_code="+bootstrap+"&decision=approve"+
+      "&connection_name="+encodeURIComponent("Gemini - PC Kantor")),cfg);
+    expect(ok.statusCode).toBe(302);
+    const code=new URL(ok.headers.Location).searchParams.get("code");
+    expect(code).toBeTruthy();
+    const exchange=await handleOAuthRoute(postReq("/oauth/token",
+      "grant_type=authorization_code&code="+code+"&client_id="+CLIENT_ID+
+      "&redirect_uri="+encodeURIComponent(REDIRECT_URI)+"&code_verifier="+verifier),cfg);
+    expect(exchange.statusCode).toBe(200);
+    const token=JSON.parse(exchange.body).access_token;
+    expect(store.verifyAccessToken(token)?.ownerConnectionName).toBe("Gemini - PC Kantor");
+    expect(store.getClient(CLIENT_ID)?.clientName).not.toBe("Gemini - PC Kantor");
+  });
+});
+
 describe("discovery endpoints", () => {
   let store: McpOAuthStore;
   let config: McpOAuthRoutesConfig;
