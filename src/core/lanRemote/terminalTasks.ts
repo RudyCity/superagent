@@ -188,6 +188,24 @@ export class LanTerminalTaskManager {
     return this.read(sessionId, jobId, task.cursor);
   }
 
+  key(sessionId: string, jobId: string, key: string): LanTerminalSnapshot {
+    const task = this.forSession(sessionId, jobId);
+    if (!task.running || task.stopping) throw Error("Terminal is not running.");
+    if (!task.pty) throw Error("Terminal key input requires ConPTY.");
+    const keys: Record<string, string> = {
+      Enter: "\r", Backspace: "\x7f", Tab: "\t", Escape: "\x1b",
+      ArrowUp: "\x1b[A", ArrowDown: "\x1b[B", ArrowRight: "\x1b[C", ArrowLeft: "\x1b[D",
+      Home: "\x1b[H", End: "\x1b[F", Delete: "\x1b[3~",
+      PageUp: "\x1b[5~", PageDown: "\x1b[6~", CtrlC: "\x03",
+    };
+    if (!Object.hasOwn(keys, key)) throw Error("Unsupported terminal key.");
+    task.pty.write(keys[key]!);
+    clearTimeout(task.idle);
+    task.idle = setTimeout(() => this.stopAll("idle_timeout"), INPUT_IDLE_MS);
+    task.idle.unref?.();
+    return this.read(sessionId, jobId, task.cursor);
+  }
+
   resize(sessionId: string, jobId: string, cols: number, rows: number): LanTerminalSnapshot {
     const task = this.forSession(sessionId, jobId);
     if (!Number.isSafeInteger(cols) || cols < 20 || cols > 300 ||
