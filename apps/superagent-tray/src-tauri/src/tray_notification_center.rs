@@ -299,17 +299,23 @@ pub fn perform(dir: &Path, action: &str, id: Option<&str>) -> Result<Value, Stri
             .ok_or("Notification ID required")?;
         let item = ledger.items.iter_mut().find(|item| item.id == key)
             .ok_or("Notification not found")?;
+        // An explicit interaction with an incident also reads it. Preserve
+        // "Mark unread" as the sole intentional exception. Apply both changes
+        // in the same native ledger write so they cannot diverge.
+        if action != "unread" && item.read_at.is_none() {
+            item.read_at = Some(now);
+            changed = true;
+        }
         match action {
-            "read" if item.read_at.is_none() => { item.read_at = Some(now); changed = true; },
             "unread" if item.read_at.is_some() => { item.read_at = None; changed = true; },
             "archive" if item.archived_at.is_none() => { item.archived_at = Some(now); changed = true; },
             "restore" if item.archived_at.is_some() => { item.archived_at = None; changed = true; },
             "acknowledge" if item.acknowledged_at.is_none() && item.resolved_at.is_none() => {
-                item.acknowledged_at = Some(now); item.read_at = Some(now); changed = true;
+                item.acknowledged_at = Some(now); changed = true;
             },
             "resolve" if item.resolved_at.is_none() => { item.resolved_at = Some(now); changed = true; },
             "reopen" if item.resolved_at.is_some() => {
-                item.resolved_at = None; item.acknowledged_at = None; item.read_at = None; changed = true;
+                item.resolved_at = None; item.acknowledged_at = None; changed = true;
             },
             _ => {},
         }
@@ -350,6 +356,37 @@ mod tests {
         assert_eq!(perform(&dir, "restore", Some("core-1")).unwrap()["items"][0]["archivedAt"], Value::Null);
         let _ = fs::remove_dir_all(dir);
     }
+    #[test]
+    fn incident_buttons_are_read_in_one_persisted_transaction() {
+        let dir = isolated();
+        for action in ["read", "archive", "acknowledge", "resolve"] {
+            publish(&dir, "core", "warning", action, "Issue", "Open incident").unwrap();
+            let snapshot = perform(&dir, action, Some(action)).unwrap();
+            assert!(!snapshot["items"].as_array().unwrap().iter()
+                .find(|entry| entry["id"] == action).unwrap()["readAt"].is_null(),
+                "{action} must mark the notification read");
+        }
+
+        // Undoing an archive or reopening an incident is still an interaction,
+        // not a request to reset the unread badge.
+        perform(&dir, "unread", Some("archive")).unwrap();
+        let restored = perform(&dir, "restore", Some("archive")).unwrap();
+        assert_eq!(restored["items"].as_array().unwrap().iter()
+            .find(|entry| entry["id"] == "archive").unwrap()["readAt"].is_null(), false);
+        perform(&dir, "unread", Some("resolve")).unwrap();
+        let reopened = perform(&dir, "reopen", Some("resolve")).unwrap();
+        assert_eq!(reopened["items"].as_array().unwrap().iter()
+            .find(|entry| entry["id"] == "resolve").unwrap()["readAt"].is_null(), false);
+
+        // The deliberately explicit Mark unread control remains available.
+        assert_eq!(perform(&dir, "unread", Some("read")).unwrap()["items"]
+            .as_array().unwrap().iter().find(|entry| entry["id"] == "read")
+            .unwrap()["readAt"], Value::Null);
+        let persisted = perform(&dir, "list", None).unwrap();
+        assert_eq!(persisted["unreadCount"], 1);
+        let _ = fs::remove_dir_all(dir);
+    }
+
     #[test]
     fn reconciles_complete_security_inventory_without_erasing_history() {
         let dir = isolated();
