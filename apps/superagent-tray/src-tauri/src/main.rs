@@ -246,6 +246,34 @@ fn record_operational_incident(
     Ok(created)
 }
 
+/// A paired-device observation may label an incident with only an ID supplied
+/// by the authenticated Core device inventory; never a WebView/display label.
+fn record_verified_device_incident(
+    app: &tauri::AppHandle, device_id: &str, id: &str,
+    title: &str, body: &str,
+) -> Result<(), String> {
+    let dir = config_dir()?;
+    let created = tray_notification_center::publish_for_device(
+        &dir, "lan-devices", "warning", id, title, body, device_id,
+    )?;
+    if created {
+        let _ = app.emit("tray-notifications-changed", ());
+        if tray_notification_center::should_notify_os(&dir, "lan-devices", "warning")? &&
+            os_alert_budget_available() {
+            let ticket = tray_os_action::issue(&dir, id).ok();
+            let mut builder = app.notification().builder()
+                .title("SuperAgent LAN device needs attention")
+                .body("A previously paired LAN device disconnected. Review LAN Devices.");
+            if let Some(ticket_id) = ticket { builder = builder.id(ticket_id); }
+            if let Err(error) = builder.show() {
+                if let Some(ticket_id) = ticket { tray_os_action::cancel(ticket_id); }
+                eprintln!("[tray] LAN device notification unavailable: {error}");
+            }
+        }
+    }
+    Ok(())
+}
+
 #[tauri::command]
 fn tray_notification_center_preferences(
     window: tauri::WebviewWindow,
@@ -3788,6 +3816,51 @@ fn monitor_transition(
 
 /// Read-only per-process health observations. Unknown is NOT equivalent to
 /// stopped: network errors and unavailable owners never auto-resolve incidents.
+/// Observe transitions for individually verified paired LAN devices. A failed,
+/// incomplete or malformed Core inventory never invents a disconnection.
+async fn poll_lan_device_health(
+    app: &tauri::AppHandle, previous: &mut HashMap<String, bool>,
+) -> Result<(), String> {
+    let data = core_request(Method::POST, "/api/desktop/lan-support",
+        Some(json!({"action":"list"}))).await?;
+    let devices = data.get("devices").and_then(Value::as_array)
+        .ok_or("LAN device inventory unavailable")?;
+    if devices.len() > 300 { return Err("LAN device inventory incomplete".into()); }
+    let mut current = HashMap::new();
+    for device in devices {
+        if device.get("paired").and_then(Value::as_bool) != Some(true) { continue; }
+        let Some(id) = device.get("id").and_then(Value::as_str) else {
+            return Err("LAN device identity unavailable".into());
+        };
+        let Some(connected) = device.get("connected").and_then(Value::as_bool) else {
+            return Err("LAN device connection state unavailable".into());
+        };
+        if id.is_empty() || id.len() > 64 ||
+            !id.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)) ||
+            current.insert(id.to_owned(), connected).is_some() {
+            return Err("LAN device inventory identity invalid".into());
+        }
+    }
+    // First successful inventory is a baseline, not an outage.
+    for (id, connected) in &current {
+        let key = format!("lan:device:{id}:disconnected");
+        match previous.get(id) {
+            Some(true) if !connected => record_verified_device_incident(
+                app, id, &key, "Paired LAN device disconnected",
+                "A previously connected, paired device is now reported disconnected by Core.",
+            )?,
+            Some(false) if *connected => {
+                if tray_notification_center::resolve(&config_dir()?, &key)? {
+                    let _ = app.emit("tray-notifications-changed", ());
+                }
+            },
+            _ => {},
+        }
+    }
+    *previous = current;
+    Ok(())
+}
+
 async fn poll_operational_health(
     app: &tauri::AppHandle, previous: &mut HealthObservation,
 ) -> Result<(), String> {
@@ -4180,6 +4253,8 @@ fn main() {
                 let mut security_log = ProjectionLogState::default();
                 let mut reminder_log = ProjectionLogState::default();
                 let mut health_log = ProjectionLogState::default();
+                let mut lan_log = ProjectionLogState::default();
+                let mut lan_previous = HashMap::<String, bool>::new();
                 loop {
                     // No auto-start: SuperAgent Core and daemon scheduling
                     // remain user-owned. This loop only displays completed runs.
@@ -4193,14 +4268,16 @@ fn main() {
                     // Security approvals must not wait behind slow daemon,
                     // reminder, or health probes. All three projections read
                     // trusted Core state independently, and never grant access.
-                    let (security, reminders, health) = tokio::join!(
+                    let (security, reminders, health, lan) = tokio::join!(
                         poll_pending_security_requests(&handle),
                         poll_reminders(&handle, preferences.notifications_enabled),
                         poll_operational_health(&handle, &mut observation),
+                        poll_lan_device_health(&handle, &mut lan_previous),
                     );
                     security_log.report("Security notification projection", &security);
                     reminder_log.report("Reminder notification projection", &reminders);
                     health_log.report("Operational notification projection", &health);
+                    lan_log.report("Paired LAN device notification projection", &lan);
                     // A digest is claimed in durable native storage before
                     // delivery, so restarts or overlapping UI refreshes cannot
                     // send the same daily summary twice. This never grants
