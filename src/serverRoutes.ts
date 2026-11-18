@@ -841,7 +841,7 @@ export async function handleServerRoute(
     res.setHeader("X-Content-Type-Options", "nosniff");
     const peer = req.socket.remoteAddress || "";
     const loopback = ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(peer);
-    const host = /^(?:127\\.0\\.0\\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
+    const host = /^(?:127\.0\.0\.1|localhost):([0-9]{2,5})$/i.exec(String(req.headers.host || ""));
     const localPort = host ? Number(host[1]) : 0;
     const forwarded = ["origin", "x-forwarded-for", "x-forwarded-host", "cf-connecting-ip", "cf-ray", "forwarded"];
     if (!loopback || !host || localPort < 1024 || localPort > 65535 ||
