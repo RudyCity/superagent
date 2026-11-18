@@ -675,7 +675,13 @@
     pendingHead.append(make("h3", "", "Permintaan Izin Koneksi"));
     const pendingCount = make("span", "access-count", "Memuat...");
     pendingCount.id = "access-mcp-connection-count";
-    pendingHead.append(pendingCount);
+    const pendingControls = make("div", "access-mcp-pending-controls");
+    const pendingLoad = action("Load", "access-audit-refresh", () => void refreshMcpRequests());
+    pendingLoad.id = "access-mcp-connection-pending-load";
+    pendingLoad.title = "Muat ulang permintaan izin koneksi";
+    pendingLoad.setAttribute("aria-label", pendingLoad.title);
+    pendingControls.append(pendingCount, pendingLoad);
+    pendingHead.append(pendingControls);
     const pendingList = make("div", "access-mcp-list");
     pendingList.id = "access-mcp-connection-pending-list";
     pendingCard.append(pendingHead, pendingList);
@@ -948,7 +954,13 @@
     const reqTitle = make("h3", "", "Permintaan Akses Masuk");
     const reqBadge = make("span", "access-count", "0 permintaan");
     reqBadge.id = "access-mcp-pending-count";
-    reqHead.append(reqTitle, reqBadge);
+    const reqControls = make("div", "access-mcp-pending-controls");
+    const reqLoad = action("Load", "access-audit-refresh", () => void refreshMcpRequests());
+    reqLoad.id = "access-mcp-project-pending-load";
+    reqLoad.title = "Muat ulang permintaan akses masuk";
+    reqLoad.setAttribute("aria-label", reqLoad.title);
+    reqControls.append(reqBadge, reqLoad);
+    reqHead.append(reqTitle, reqControls);
 
     const reqList = make("div", "access-mcp-list");
     reqList.id = "access-mcp-pending-list";
@@ -1487,8 +1499,19 @@
     }
   }
 
+  function setMcpPendingLoadBusy(busy) {
+    for (const id of ["access-mcp-project-pending-load", "access-mcp-connection-pending-load"]) {
+      const button = $(id);
+      if (!button) continue;
+      button.disabled = busy;
+      button.textContent = busy ? "Memuat…" : "Load";
+      button.setAttribute("aria-busy", String(busy));
+    }
+  }
+
   async function refreshMcpRequests() {
     if (mcpCache.refreshing) return mcpCache.refreshing;
+    setMcpPendingLoadBusy(true);
     mcpCache.refreshing = (async () => {
       const sources = [
         ["requests", "requests"], ["identities", "identities"], ["projects", "projects"],
@@ -1588,7 +1611,10 @@
       }
     })();
     try { return await mcpCache.refreshing; }
-    finally { mcpCache.refreshing = null; }
+    finally {
+      mcpCache.refreshing = null;
+      setMcpPendingLoadBusy(false);
+    }
   }
 
   function build() {
