@@ -92,6 +92,21 @@
       }, 2000);
     });
     item.append(label, close, copy);
+    // A toast has no authenticated incident ID. Only offer its fixed local
+    // source destination; never infer URLs, request IDs, or retry actions from
+    // the toast message.
+    if ((type === "error" || type === "warning") &&
+      window.__superagentNotificationDefaultRoute?.(scope)) {
+      const review = document.createElement("button");
+      review.type = "button";
+      review.className = "tray-toast-review";
+      review.textContent = "Review";
+      review.setAttribute("aria-label", "Review " + String(scope).replaceAll("-", " ") + " status");
+      review.addEventListener("click", () => {
+        if (window.__superagentNotificationOpenScope?.(scope) === true) remove(entry);
+      });
+      item.append(review);
+    }
     entry.element = item;
     entries.push(entry);
     node.append(item);
