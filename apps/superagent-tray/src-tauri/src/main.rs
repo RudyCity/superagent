@@ -797,7 +797,7 @@ async fn lan_support_action(
     action: String,
     payload: Option<Value>,
 ) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_key", "terminal_resize", "terminal_stop", "terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_key", "terminal_resize", "terminal_stop", "terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_key", "terminal_fleet_resize", "terminal_fleet_stop", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
         "file_relay_start", "file_relay_status", "file_relay_cancel",
         "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
@@ -815,7 +815,7 @@ async fn lan_support_action(
         "tunnel_pair_request" => &["tunnelId", "fingerprint", "controller"],
         "tunnel_revoke" => &["tunnelId"],
         "exec" | "terminal_start" => &["deviceId", "command"],
-        "terminal_fleet_open" | "terminal_fleet_close" | "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_stop" => &["targets"],
+        "terminal_fleet_open" | "terminal_fleet_close" | "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_key" | "terminal_fleet_resize" | "terminal_fleet_stop" => &["targets"],
         "terminal_read" => &["deviceId", "jobId", "cursor"],
         "terminal_input" => &["deviceId", "jobId", "text", "appendNewline"],
         "terminal_key" => &["deviceId", "jobId", "key"],
@@ -925,7 +925,7 @@ async fn lan_support_action(
     } else if !["discover", "list", "tunnel_invite", "apk_download_qr", "tunnel_list",
         "file_relay_start", "file_relay_status", "file_relay_cancel",
         "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel",
-        "terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop"].contains(&action.as_str()) {
+        "terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_key", "terminal_fleet_resize", "terminal_fleet_stop"].contains(&action.as_str()) {
         let id = data["deviceId"].as_str().ok_or("Device ID required")?;
         if id.len() != 36 || !id.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-') {
             return Err("Invalid device ID".into());
@@ -975,6 +975,8 @@ async fn lan_support_action(
                 "terminal_fleet_start" => &["deviceId", "command"],
                 "terminal_fleet_read" => &["deviceId", "jobId", "cursor"],
                 "terminal_fleet_input" => &["deviceId", "jobId", "text", "appendNewline"],
+                "terminal_fleet_key" => &["deviceId", "jobId", "key"],
+                "terminal_fleet_resize" => &["deviceId", "jobId", "cols", "rows"],
                 "terminal_fleet_stop" => &["deviceId", "jobId"],
                 _ => return Err("Unknown terminal fleet action".into()),
             };
@@ -1002,6 +1004,21 @@ async fn lan_support_action(
                 if action == "terminal_fleet_read" && target.get("cursor").is_some() &&
                     target["cursor"].as_u64().is_none() {
                     return Err("Invalid target cursor".into());
+                }
+                if action == "terminal_fleet_key" {
+                    let key = target["key"].as_str().ok_or("Terminal key required")?;
+                    if !matches!(key, "Enter" | "Backspace" | "Tab" | "Escape" |
+                        "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight" |
+                        "Home" | "End" | "Delete" | "PageUp" | "PageDown" | "CtrlC") {
+                        return Err("Unsupported fleet terminal key".into());
+                    }
+                }
+                if action == "terminal_fleet_resize" {
+                    let cols = target["cols"].as_u64().ok_or("Terminal cols required")?;
+                    let rows = target["rows"].as_u64().ok_or("Terminal rows required")?;
+                    if !(20..=300).contains(&cols) || !(5..=120).contains(&rows) {
+                        return Err("Invalid fleet terminal dimensions".into());
+                    }
                 }
                 if action == "terminal_fleet_input" {
                     let input = target["text"].as_str().ok_or("Target terminal input required")?;
@@ -2711,12 +2728,12 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // Pairing / session approval is a physical action at the target console.
         // Avoid replaying ambiguous requests when the owner is slow to approve.
         match body.as_ref().and_then(|b| b.get("action")).and_then(Value::as_str) {
-            Some("pair" | "open" | "file_offer" | "terminal_start" | "terminal_input" | "terminal_fleet_open" | "terminal_fleet_start" | "terminal_fleet_input") => Duration::from_secs(125),
+            Some("pair" | "open" | "file_offer" | "terminal_start" | "terminal_input" | "terminal_fleet_open" | "terminal_fleet_start" | "terminal_fleet_input" | "terminal_fleet_key") => Duration::from_secs(125),
             // HTTPS quick tunnel provisioning may take 30s, followed by public readiness checks.
             // A slow QR operation must not be mistaken for an unreachable Core.
             Some("tunnel_invite" | "apk_download_qr") => Duration::from_secs(75),
             Some("file_put" | "file_get" | "file_finish" | "file_abort") => Duration::from_secs(18),
-            Some("terminal_read" | "terminal_stop" | "terminal_fleet_read" | "terminal_fleet_stop" | "terminal_fleet_close") => Duration::from_secs(15),
+            Some("terminal_read" | "terminal_stop" | "terminal_fleet_read" | "terminal_fleet_resize" | "terminal_fleet_stop" | "terminal_fleet_close") => Duration::from_secs(15),
             Some("exec") if body.as_ref().and_then(|b| b.get("command"))
                 .and_then(Value::as_str).is_some_and(|command|
                     command.starts_with("android.action.")) => Duration::from_secs(120),
