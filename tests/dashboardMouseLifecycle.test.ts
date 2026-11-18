@@ -55,6 +55,8 @@ describe("dashboard mouse lifecycle and keyboard responsiveness", () => {
     } finally {
       view.unmount();
     }
+    // Ink schedules passive-effect cleanup asynchronously after unmount.
+    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(offSpy.mock.calls.filter(([event]) => event === "data")).toHaveLength(1);
   });
 });
