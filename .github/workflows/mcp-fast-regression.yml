@@ -16,10 +16,15 @@ on:
       - "src/core/tools/browserFilePolicyCertification.ts"
       - "src/core/tools/safeManagedChromeObservation.ts"
       - "src/core/tools/safeDelegateChromeObservation.ts"
+      - "src/core/browserRuntime/browserProcessManager.ts"
+      - "src/core/browserRuntime/managedChromeLaunchPlan.ts"
+      - "src/core/tools/chromeBrowserTools.ts"
       - "src/core/tools/chromeProcessTools.ts"
       - "src/core/tools/crossIdeCdpGateway.ts"
       - "tests/safeManagedChromeObservation.test.ts"
       - "tests/safeDelegateChromeObservation.test.ts"
+      - "tests/managedChromeLaunchPlan.test.ts"
+      - "tests/browserRuntimeLaunchOwnership.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
       - "tests/lanFileQueueRecovery.test.ts"
@@ -56,10 +61,15 @@ on:
       - "src/core/tools/browserFilePolicyCertification.ts"
       - "src/core/tools/safeManagedChromeObservation.ts"
       - "src/core/tools/safeDelegateChromeObservation.ts"
+      - "src/core/browserRuntime/browserProcessManager.ts"
+      - "src/core/browserRuntime/managedChromeLaunchPlan.ts"
+      - "src/core/tools/chromeBrowserTools.ts"
       - "src/core/tools/chromeProcessTools.ts"
       - "src/core/tools/crossIdeCdpGateway.ts"
       - "tests/safeManagedChromeObservation.test.ts"
       - "tests/safeDelegateChromeObservation.test.ts"
+      - "tests/managedChromeLaunchPlan.test.ts"
+      - "tests/browserRuntimeLaunchOwnership.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
       - "tests/lanFileQueueRecovery.test.ts"
@@ -133,6 +143,8 @@ jobs:
             tests/mcpCrossIdeGateway.test.ts \
             tests/safeManagedChromeObservation.test.ts \
             tests/safeDelegateChromeObservation.test.ts \
+            tests/managedChromeLaunchPlan.test.ts \
+            tests/browserRuntimeLaunchOwnership.test.ts \
             tests/desktop-ui-integration/registered-file-tool-gate.test.ts
 
       - name: Non-mutating source policy and release-readiness report
@@ -172,3 +184,5 @@ jobs:
           tests/mcpCrossIdeGateway.test.ts
           tests/safeManagedChromeObservation.test.ts
           tests/safeDelegateChromeObservation.test.ts
+          tests/managedChromeLaunchPlan.test.ts
+          tests/browserRuntimeLaunchOwnership.test.ts
