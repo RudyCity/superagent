@@ -1513,14 +1513,60 @@ function extractMcpResultText(result: unknown): string {
         });
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.describe) {
         const found = describeGatewayTool(authorizedTools, rawArgs.name);
-        result = found ? gatewayTextResult({
-          ...found, filePolicy: fileRulesRegistered()
-            ? getPermanentFileToolReadiness(found.name) : "inactive",
-          filePolicyRequirement: fileRulesRegistered()
-            ? describePermanentFileToolReadiness(found.name) : undefined,
-          mcpApproval: describeMcpApprovalRequirement(found.name),
-          note: "Discovery never grants execution; inspect the action and obtain required MCP/host approvals.",
-        }) : { content: [{ type: "text", text: "Tool unavailable or not authorized." }], isError: true };
+        const filePolicyActive = fileRulesRegistered();
+        // An optional preflight is deliberately limited to Desktop UI: arbitrary
+        // tool arguments may refer to protected files, and offering a generic
+        // read-scope path-existence oracle would be unsafe. Only evaluate the
+        // current principal's grant and the same existing host file gate.
+        const hasCheckArguments = Object.prototype.hasOwnProperty.call(rawArgs, "checkArguments");
+        let preflight: Record<string, unknown> | undefined;
+        if (found && hasCheckArguments) {
+          const checkedArgs = rawArgs.checkArguments;
+          if (found.name !== "superagent_desktop_ui" || !checkedArgs ||
+              typeof checkedArgs !== "object" || Array.isArray(checkedArgs)) {
+            result = { content: [{ type: "text",
+              text: "Permission preflight accepts an object only for superagent_desktop_ui." }], isError: true };
+          } else {
+            const commandArgs = checkedArgs as Record<string,unknown>;
+            const command = typeof commandArgs.command === "string" ? commandArgs.command
+              : typeof commandArgs.action === "string" ? commandArgs.action : "";
+            const knownCommands = new Set(["probe","list_windows","get_active_window","find_window",
+              "inspect_window","list_installed_apps","inspect_security_prompts","live_inventory",
+              "live_stop","open","snapshot","action","close","launch_app","focus_window",
+              "close_app","restart_app","plan_package_change","apply_package_change"]);
+            const hostBlock = filePolicyActive
+              ? registeredFileToolGate({name:found.name,args:commandArgs},activeWorkspace) : null;
+            const granted = Boolean(callerIdentity?.subject &&
+              hasProjectAccess(callerIdentity,MCP_CONNECTION_PROJECT_ID,"execute"));
+            preflight = {
+              command: knownCommands.has(command) ? command : "unrecognized",
+              hostFilePolicy: {
+                active: filePolicyActive,
+                decision: !filePolicyActive ? "inactive" : hostBlock ? "blocked" : "eligible",
+                reasonCode: hostBlock
+                  ? hostBlock.includes("unsupported arguments") ? "unsupported_arguments"
+                    : "not_certified_or_denied"
+                  : null,
+              },
+              mcpConnectionExecute: { decision: granted ? "granted" : "approval_required" },
+              oauthScope: { decision: "visible_under_current_token" },
+              nativeHostApproval: { decision: "not_checked" },
+              performedExecution: false,
+              note: "Read-only advisory snapshot. No approval is created; no window is opened. Runtime rechecks all policy layers, target identity and native consent.",
+            };
+          }
+        }
+        if (result === undefined) {
+          result = found ? gatewayTextResult({
+            ...found, filePolicy: filePolicyActive
+              ? getPermanentFileToolReadiness(found.name) : "inactive",
+            filePolicyRequirement: filePolicyActive
+              ? describePermanentFileToolReadiness(found.name) : undefined,
+            mcpApproval: describeMcpApprovalRequirement(found.name),
+            ...(preflight ? { permissionPreflight: preflight } : {}),
+            note: "Discovery never grants execution; inspect the action and obtain required MCP/host approvals.",
+          }) : { content: [{ type: "text", text: "Tool unavailable or not authorized." }], isError: true };
+        }
       } else if (toolName === MCP_GATEWAY_TOOL_NAMES.status) {
         const filePolicyActive = fileRulesRegistered();
         const filePolicyReadinessCounts: Record<string,number> = {};
