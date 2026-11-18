@@ -10,11 +10,15 @@
     "terminal", "lan-devices", "reminder", "jobs", "updates", "shutdown",
     "settings", "muse-files", "overview", "logs",
   ]);
+  // Every supported notification category has one stable default destination.
+  // Specific, trusted incident prefixes may select a deeper tab or run below.
   const destination = Object.freeze({
-    core: "runtime", security: "security", mcp: "runtime", tunnel: "runtime",
-    delegate: "delegate", runtime: "runtime", "desktop-live": "desktop-live",
-    terminal: "terminal", "lan-devices": "lan-devices", reminder: "jobs",
-    jobs: "jobs", updates: "updates", shutdown: "overview", settings: "settings",
+    core: "runtime:core", security: "security", mcp: "runtime:mcp",
+    tunnel: "runtime:cloudflare", delegate: "delegate:connection",
+    runtime: "runtime:core", "desktop-live": "desktop-live",
+    terminal: "terminal", "lan-devices": "lan-devices:devices",
+    reminder: "jobs", jobs: "jobs", updates: "updates",
+    shutdown: "overview", settings: "settings:general",
     "muse-files": "muse-files", overview: "overview", logs: "logs",
   });
   const state = {
@@ -78,8 +82,8 @@
   const safeItems = (data) => {
     if (!data || !Array.isArray(data.items)) throw new Error("Invalid notification response");
     return data.items.slice(0, 300).filter((item) =>
-      item && typeof item.id === "string" && typeof item.title === "string" &&
-      typeof item.body === "string" && sources.includes(item.source) &&
+      item && typeof item.id === "string" && item.id.length > 0 && item.id.length <= 180 &&
+      typeof item.title === "string" && typeof item.body === "string" && sources.includes(item.source) &&
       Object.hasOwn(severity, item.severity));
   };
   const readPrefs = (data) => {
@@ -132,18 +136,50 @@
     if (!requestId || requestId.length > 150 || /[\x00-\x1f]/.test(requestId)) return null;
     return { requestId, tab };
   }
-  // Route only to fixed local pages and sub-tabs. Remember the exact pending
-  // request across asynchronous Access Manager startup. Navigation never grants
-  // or denies a capability.
+  // Use bounded run IDs only to focus an existing history row. Never put
+  // untrusted IDs into a hash, selector, query, or native approval action.
+  function runTarget(item) {
+    if (item.source === "reminder" && item.id.startsWith("reminder:")) {
+      const id = item.id.slice("reminder:".length);
+      return id && id.length <= 160 && !/[\x00-\x1f]/.test(id) ? id : null;
+    }
+    if (item.source === "jobs" && item.id.startsWith("daemon-run:")) {
+      for (const suffix of [
+        ":Scheduled run needs attention",
+        ":Scheduled notification delivery failed",
+      ]) {
+        if (!item.id.endsWith(suffix)) continue;
+        const id = item.id.slice("daemon-run:".length, -suffix.length);
+        return id && id.length <= 160 && !/[\x00-\x1f]/.test(id) ? id : null;
+      }
+    }
+    return null;
+  }
+  function incidentRoute(item) {
+    const base = destination[item.source];
+    if (!base) return null;
+    const pending = pendingAccessTarget(item);
+    if (pending?.tab) return "security:" + pending.tab;
+    if (runTarget(item)) return "history";
+    switch (item.id) {
+      case "health:muse": return "runtime:muse";
+      case "health:telegram": return "settings:muse";
+      case "health:channel-hosts": return "runtime:hosts";
+      case "health:delegate-listener": return "delegate:diagnostics";
+      default: return base;
+    }
+  }
+  // Navigation is read-only and always stays inside allowlisted Tray routes.
   function openDestination(item) {
-    const page = destination[item.source];
-    if (!page) return;
+    const route = incidentRoute(item);
+    if (!route) return;
     const pending = pendingAccessTarget(item);
     if (pending) {
       window.__superagentPendingAccessNotificationId = pending.requestId;
       window.__superagentPendingAccessNotificationTab = pending.tab;
     }
-    const route = pending?.tab ? "security:" + pending.tab : page;
+    const runId = runTarget(item);
+    if (runId) window.__superagentPendingRunNotificationId = runId;
     close();
     if (typeof window.navigateToPage === "function") window.navigateToPage(route);
     else if (window.location) window.location.hash = "#" + route;
@@ -158,7 +194,7 @@
       (item.readAt ? " is-read" : " is-unread") +
       (item.resolvedAt ? " is-resolved" : "") +
       (item.archivedAt ? " is-archived" : ""));
-    const page = destination[item.source];
+    const page = incidentRoute(item);
     if (page) {
       wrapper.className += " is-navigable";
       // The card body is a navigation affordance; individual lifecycle
@@ -192,7 +228,7 @@
         : pending?.tab === "mcp" ? "Review MCP Project Access"
           : pending ? "Review pending access"
             : item.source === "security" ? "Open Security Approval"
-              : "View " + page.replaceAll("-", " ");
+              : "View " + page.replace(":", " · ").replaceAll("-", " ");
       const open = element("button", "notification-link", label);
       open.type = "button";
       open.addEventListener("click", () => openDestination(item));
