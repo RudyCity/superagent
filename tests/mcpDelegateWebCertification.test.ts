@@ -126,5 +126,10 @@ describe("narrow direct Delegate web workflow",()=>{
       expect(policy.privileged(url),url).toBe(true);
     expect(policy.privileged("https://example.org/a")).toBe(false);
     expect(policy.privileged("about:blank")).toBe(false);
+    for(const url of ["about:blank","http://localhost:3000","http://127.0.0.1:9222",
+      "https://192.168.1.2/secret","file:///tmp/secret","blob:https://example.org/x",
+      "https://user:password@example.org/"])
+      expect(()=>policy.assertCertifiedWebUrl(url),url).toThrow();
+    expect(()=>policy.assertCertifiedWebUrl("https://example.org/page")).not.toThrow();
   });
 });
