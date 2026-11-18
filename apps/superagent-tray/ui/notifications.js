@@ -211,9 +211,20 @@
       // Opening Notifications makes a fresh authenticated Core inventory
       // request; passive badge refreshes use only the native persisted inbox.
       // Neither route has an approval or grant mutation operation.
-      const result = syncSecurity === true
-        ? await window.__TAURI__?.core?.invoke?.("tray_notification_center_refresh_security")
-        : await invoke("list");
+      let result;
+      if (syncSecurity === true) {
+        try {
+          const call = window.__TAURI__?.core?.invoke;
+          if (!call) throw new Error("Native synchronization unavailable");
+          result = await call("tray_notification_center_refresh_security");
+        } catch {
+          // Older running Tray builds may not yet expose the new command.
+          // Preserve the existing inbox rather than hiding critical incidents.
+          result = { ...(await invoke("list")), securitySync: "unavailable" };
+        }
+      } else {
+        result = await invoke("list");
+      }
       if (!result) throw new Error("Native notification service unavailable");
       if (syncSecurity === true) state.securitySync = result.securitySync === "ok" ? "ok" : "unavailable";
       apply(result);
