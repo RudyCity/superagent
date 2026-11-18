@@ -1203,6 +1203,11 @@ function extractMcpResultText(result: unknown): string {
     const desktopCall = toolName === "superagent_desktop_ui" ||
       (toolName === MCP_GATEWAY_TOOL_NAMES.execute && rawArgs.name === "superagent_desktop_ui");
     const desktopArgs = toolName === "superagent_desktop_ui" ? rawArgs : rawArgs.arguments || {};
+    // Never persist caller-provided permission-check arguments: they may hold
+    // titles, opaque tokens or protected paths, even though no tool executes.
+    const permissionPreflightCall = toolName === MCP_GATEWAY_TOOL_NAMES.describe &&
+      Object.prototype.hasOwnProperty.call(rawArgs, "checkArguments");
+    const permissionPreflightAuditArgs = { tool: "superagent_desktop_ui", permissionPreflight: true };
     const desktopAuditArgs = Object.fromEntries(Object.entries(
       sanitizeDesktopUiLogPayload(desktopArgs as Record<string, unknown>),
     ).map(([key, value]) => [
@@ -1272,6 +1277,11 @@ function extractMcpResultText(result: unknown): string {
           ...safeInfo,
           args: desktopAuditArgs,
           ...(safeInfo.error ? { error: "DESKTOP_UI_CALL_FAILED" } : {}),
+        };
+      } else if (permissionPreflightCall) {
+        safeInfo = {
+          ...safeInfo, args: permissionPreflightAuditArgs,
+          ...(safeInfo.error ? { error: "TOOL_PERMISSION_PREFLIGHT_FAILED" } : {}),
         };
       }
       try {
@@ -1617,6 +1627,7 @@ function extractMcpResultText(result: unknown): string {
         ? { command: rawArgs.command ?? (rawArgs.arguments as any)?.command,
             contentRedacted: true }
         : desktopCall ? desktopAuditArgs
+        : permissionPreflightCall ? permissionPreflightAuditArgs
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
               runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
@@ -1624,6 +1635,7 @@ function extractMcpResultText(result: unknown): string {
       const safeActivityOutput = privateBrowser
         ? "[DELEGATE_CDP_RESPONSE_REDACTED]"
         : desktopCall ? "[DESKTOP_UI_RESPONSE_REDACTED]"
+        : permissionPreflightCall ? "[TOOL_PERMISSION_PREFLIGHT_REDACTED]"
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? "[EXTERNAL_LIFECYCLE_RESPONSE_REDACTED]" : outputText;
       emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
@@ -1648,12 +1660,14 @@ function extractMcpResultText(result: unknown): string {
       const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
         && !Array.isArray(rawArgs.arguments) ? rawArgs.arguments as Record<string, unknown> : rawArgs;
       const safeActivityArgs = desktopCall ? desktopAuditArgs
+        : permissionPreflightCall ? permissionPreflightAuditArgs
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
               runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
               workerId: lifecycleParams.workerId } : rawArgs;
       const safeErrorMsg = desktopCall
         ? "DESKTOP_UI_CALL_FAILED"
+        : permissionPreflightCall ? "TOOL_PERMISSION_PREFLIGHT_FAILED"
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? "EXTERNAL_LIFECYCLE_CALL_FAILED" : errorMsg;
       emitAudit({
