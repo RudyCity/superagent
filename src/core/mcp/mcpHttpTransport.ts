@@ -852,6 +852,9 @@ export async function startMcpHttpServer(opts: McpHttpServerOptions): Promise<Mc
                 identity: identity as McpIdentity,
                 createdAt: Date.now(),
                 lastActivityAt: Date.now(),
+                ownerConnectionName: (identity as McpIdentity).mode === "oauth"
+                  ? oauthStore?.ownerConnectionNameForTokenHash((identity as McpIdentity).credentialHash) ?? null
+                  : null,
                 claimedClientName: safeMcpClaimedClientLabel((rb.body as any)?.params?.clientInfo?.name),
                 claimedClientVersion: safeMcpClaimedClientLabel((rb.body as any)?.params?.clientInfo?.version, 32),
               });
