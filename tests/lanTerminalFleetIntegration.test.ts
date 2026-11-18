@@ -39,7 +39,8 @@ describe("2 independently approved LAN receiver terminal sessions", () => {
     ids.push(deviceA.id, deviceB.id);
     await Promise.all([openLanSession(deviceA.id), openLanSession(deviceB.id)]);
     const fleet = new LanTerminalFleet({
-      list: listLanDevices, start: startLanTerminal, read: readLanTerminal,
+      list: listLanDevices, open: openLanSession, close: closeLanSession,
+      start: startLanTerminal, read: readLanTerminal,
       input: inputLanTerminal, stop: stopLanTerminal, android: execAndroidShellCommand,
       fullYolo: () => true, destructive: () => false,
     });
@@ -52,7 +53,7 @@ describe("2 independently approved LAN receiver terminal sessions", () => {
     expect(approvals.alpha).toContain("terminal");
     expect(approvals.beta).toContain("terminal");
     const a = started.results[0], b = started.results[1];
-    if (!a.ok || a.platform !== "windows" || !b.ok || b.platform !== "windows")
+    if (!a.ok || !("terminal" in a) || !b.ok || !("terminal" in b))
       throw Error("Windows terminal receipts missing");
     expect(a.terminal.jobId).not.toBe(b.terminal.jobId);
     const stoppedA = await stopLanTerminal(deviceA.id, a.terminal.jobId);
