@@ -56,5 +56,9 @@ describe("owner-initiated managed Chrome CDP launch preflight", () => {
       remoteDebuggingPort: 9222, isolated: false,
     });
     expect(String(nonIsolated)).toMatch(/MANAGED_CDP_ISOLATION_REQUIRED/);
+    const explicitMode = await launchChromeProfileTool.execute({
+      managedCdp: true, isolated: false, mode: "headed",
+    });
+    expect(String(explicitMode)).toMatch(/MANAGED_CDP_ISOLATION_REQUIRED/);
   });
 });
