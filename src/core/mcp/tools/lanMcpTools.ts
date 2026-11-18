@@ -48,6 +48,7 @@ const DEVICE_MCP_ALIAS_TO_LEGACY: Record<string, string> = {
   superagent_device_terminal_read: "superagent_lan_terminal_read",
   superagent_device_terminal_input: "superagent_lan_terminal_input",
   superagent_device_terminal_resize: "superagent_lan_terminal_resize",
+  superagent_device_terminal_key: "superagent_lan_terminal_key",
   superagent_device_terminal_stop: "superagent_lan_terminal_stop",
   superagent_device_android_diagnostic: "superagent_lan_android_diagnostic",
   superagent_device_android_shell: "superagent_lan_android_shell",
@@ -88,6 +89,7 @@ export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> 
   superagent_lan_terminal_read: "dangerous",
   superagent_lan_terminal_input: "dangerous",
   superagent_lan_terminal_resize: "dangerous",
+  superagent_lan_terminal_key: "dangerous",
   superagent_lan_terminal_stop: "dangerous",
   superagent_lan_android_diagnostic: "dangerous",
   superagent_lan_android_shell: "dangerous",
@@ -274,6 +276,14 @@ const LAN_MCP_BASE_TOOL_DEFS = [
       text: { type: "string", minLength: 1, maxLength: 1024 },
       appendNewline: { type: "boolean", description: "Append a newline after input." },
     }, ["deviceId", "jobId", "text"]),
+  },
+  {
+    name: "superagent_lan_terminal_key",
+    description: "Send one named navigation/interrupt key to an approved ConPTY task. Each key requires fresh approval on the receiving Windows PC.",
+    inputSchema: closed({ deviceId, jobId: terminalId,
+      key: { type: "string", enum: ["Enter", "Backspace", "Tab", "Escape", "ArrowUp", "ArrowDown",
+        "ArrowLeft", "ArrowRight", "Home", "End", "Delete", "PageUp", "PageDown", "CtrlC"] },
+    }, ["deviceId", "jobId", "key"]),
   },
   {
     name: "superagent_lan_terminal_resize",
@@ -508,6 +518,9 @@ export async function dispatchLanMcpTool(
       case "superagent_lan_terminal_input":
         return await coreLan({ action: "terminal_input", deviceId: id, jobId: str(args.jobId),
           text: str(args.text), appendNewline: args.appendNewline === true }, 125_000);
+      case "superagent_lan_terminal_key":
+        return await coreLan({ action: "terminal_key", deviceId: id, jobId: str(args.jobId),
+          key: str(args.key) }, 125_000);
       case "superagent_lan_terminal_resize":
         return await coreLan({ action: "terminal_resize", deviceId: id, jobId: str(args.jobId),
           cols: integer(args.cols), rows: integer(args.rows) }, 15_000);
