@@ -18,12 +18,17 @@ on:
       - "src/core/tools/safeDelegateChromeObservation.ts"
       - "src/core/browserRuntime/browserProcessManager.ts"
       - "src/core/browserRuntime/managedChromeLaunchPlan.ts"
+      - "src/core/browserRuntime/trayManagedChrome.ts"
+      - "apps/superagent-tray/ui/managed-chrome.js"
+      - "apps/superagent-tray/ui/managed-chrome.css"
       - "src/core/tools/chromeBrowserTools.ts"
       - "src/core/tools/chromeProcessTools.ts"
       - "src/core/tools/crossIdeCdpGateway.ts"
       - "tests/safeManagedChromeObservation.test.ts"
       - "tests/safeDelegateChromeObservation.test.ts"
       - "tests/managedChromeLaunchPlan.test.ts"
+      - "tests/trayManagedChrome.test.ts"
+      - "tests/managedChromeTrayUi.test.ts"
       - "tests/browserRuntimeLaunchOwnership.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
@@ -63,12 +68,17 @@ on:
       - "src/core/tools/safeDelegateChromeObservation.ts"
       - "src/core/browserRuntime/browserProcessManager.ts"
       - "src/core/browserRuntime/managedChromeLaunchPlan.ts"
+      - "src/core/browserRuntime/trayManagedChrome.ts"
+      - "apps/superagent-tray/ui/managed-chrome.js"
+      - "apps/superagent-tray/ui/managed-chrome.css"
       - "src/core/tools/chromeBrowserTools.ts"
       - "src/core/tools/chromeProcessTools.ts"
       - "src/core/tools/crossIdeCdpGateway.ts"
       - "tests/safeManagedChromeObservation.test.ts"
       - "tests/safeDelegateChromeObservation.test.ts"
       - "tests/managedChromeLaunchPlan.test.ts"
+      - "tests/trayManagedChrome.test.ts"
+      - "tests/managedChromeTrayUi.test.ts"
       - "tests/browserRuntimeLaunchOwnership.test.ts"
       - "tests/desktop-ui-integration/registered-file-tool-gate.test.ts"
       - "tests/mcp*.test.ts"
@@ -144,6 +154,8 @@ jobs:
             tests/safeManagedChromeObservation.test.ts \
             tests/safeDelegateChromeObservation.test.ts \
             tests/managedChromeLaunchPlan.test.ts \
+            tests/trayManagedChrome.test.ts \
+            tests/managedChromeTrayUi.test.ts \
             tests/browserRuntimeLaunchOwnership.test.ts \
             tests/desktop-ui-integration/registered-file-tool-gate.test.ts
 
@@ -185,4 +197,6 @@ jobs:
           tests/safeManagedChromeObservation.test.ts
           tests/safeDelegateChromeObservation.test.ts
           tests/managedChromeLaunchPlan.test.ts
+          tests/trayManagedChrome.test.ts
+          tests/managedChromeTrayUi.test.ts
           tests/browserRuntimeLaunchOwnership.test.ts
