@@ -13,7 +13,7 @@ import { lanLargeFileReceiveManager } from "../lanRemote/fileReceiveManager.js";
 import { assertAndroidShellCommand } from "../lanRemote/androidCapabilities.js";
 import {
   closeLanSession, discoverLanDevices, execLanCommand, execAndroidShellCommand, listLanDevices,
-  startLanTerminal, readLanTerminal, inputLanTerminal, stopLanTerminal,
+  startLanTerminal, readLanTerminal, inputLanTerminal, resizeLanTerminal, stopLanTerminal,
   openLanSession, pairLanDevice, revokeLanDevice,
   getAndroidScreenFrame, sendAndroidScreenInput, type AndroidScreenInput,
   getAndroidUiSchema, clickAndroidUiElement, offerLanFile, putLanFileChunk,
@@ -30,12 +30,12 @@ import { createAndroidApkDownloadTicket, getAndroidApkDownloadTicketStatus, revo
 import { approveTvTunnelBootstrap } from "../deviceTunnel/tvBootstrap.js";
 import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
-export type TrayLanAction = "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_stop" | "terminal_start" | "terminal_read" | "terminal_input" | "terminal_stop" | "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
+export type TrayLanAction = "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_stop" | "terminal_start" | "terminal_read" | "terminal_input" | "terminal_resize" | "terminal_stop" | "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
   "file_v2_offer" | "file_v2_put" | "file_v2_status" | "file_v2_finish" | "file_v2_abort" |
   "file_relay_start" | "file_relay_status" | "file_relay_cancel" |
   "file_receive_v2_start" | "file_receive_v2_status" | "file_receive_v2_cancel";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
+const actions = new Set<TrayLanAction>(["terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "terminal_start", "terminal_read", "terminal_input", "terminal_resize", "terminal_stop", "android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
   "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
   "file_relay_start", "file_relay_status", "file_relay_cancel",
   "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"]);
@@ -64,6 +64,7 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     terminal_start: ["action", "deviceId", "command"],
     terminal_read: ["action", "deviceId", "jobId", "cursor"],
     terminal_input: ["action", "deviceId", "jobId", "text", "appendNewline"],
+    terminal_resize: ["action", "deviceId", "jobId", "cols", "rows"],
     terminal_stop: ["action", "deviceId", "jobId"],
     android_shell: ["action", "deviceId", "command"],
     close: ["action", "deviceId"], revoke: ["action", "deviceId"],
@@ -135,7 +136,7 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
       if (typeof data.code !== "string" || !/^\d{8}$/.test(data.code)) throw Error("Eight-digit code required.");
       if (data.verified !== true) throw Error("Local fingerprint confirmation required.");
     }
-  } else if (["open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
+  } else if (["open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_resize", "terminal_stop", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
     "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort"].includes(action)) {
     if (typeof data.deviceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.deviceId)) throw Error("Valid paired device ID required.");
     if (action === "exec" &&
@@ -144,12 +145,16 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
         (typeof data.command !== "string" || !data.command.trim() ||
          data.command.length > 2000 || /[\x00-\x08\x0b-\x1f\x7f]/.test(data.command)))
       throw Error("Terminal command must contain 1–2000 printable characters.");
-    if (["terminal_read", "terminal_input", "terminal_stop"].includes(action) &&
+    if (["terminal_read", "terminal_input", "terminal_resize", "terminal_stop"].includes(action) &&
         (typeof data.jobId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.jobId)))
       throw Error("Valid terminal task ID required.");
     if (action === "terminal_read" && data.cursor !== undefined &&
         (!Number.isSafeInteger(data.cursor) || Number(data.cursor) < 0))
       throw Error("Invalid terminal cursor.");
+    if (action === "terminal_resize" &&
+        (!Number.isSafeInteger(data.cols) || Number(data.cols) < 20 || Number(data.cols) > 300 ||
+         !Number.isSafeInteger(data.rows) || Number(data.rows) < 5 || Number(data.rows) > 120))
+      throw Error("Invalid terminal dimensions.");
     if (action === "terminal_input" &&
         (typeof data.text !== "string" || !data.text || data.text.length > 1024 ||
          /[\x00-\x08\x0b-\x1f\x7f]/.test(data.text) ||
@@ -398,6 +403,9 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       return { success: true, terminal: await inputLanTerminal(id,
         args.jobId as string, input, args.appendNewline === true) };
     }
+    case "terminal_resize":
+      return { success: true, terminal: await resizeLanTerminal(id, args.jobId as string,
+        args.cols as number, args.rows as number) };
     case "terminal_stop":
       return { success: true, terminal: await stopLanTerminal(id, args.jobId as string) };
     case "android_shell": {
