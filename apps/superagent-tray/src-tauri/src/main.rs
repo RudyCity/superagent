@@ -3672,7 +3672,12 @@ async fn poll_pending_security_requests(app: &tauri::AppHandle) -> Result<(), St
         if request.get("status").and_then(Value::as_str) != Some("pending") { continue; }
         let Some(id) = request.get("requestId").and_then(Value::as_str) else { continue; };
         if id.is_empty() || id.len() > 150 || id.chars().any(char::is_control) { continue; }
-        let key = format!("mcp-pending:{id}");
+        // Encode the exact native Access Manager tab in the incident identity.
+        // Only authenticated request metadata controls the tab; the label/body
+        // remain informational and cannot approve access.
+        let tab = if request.get("projectId").and_then(Value::as_str)
+            == Some("mcp-connection") { "connections" } else { "mcp" };
+        let key = format!("mcp-pending:{tab}:{id}");
         active.insert(key.clone());
         // Informational only. The label was bound to a verified OAuth token
         // after owner consent; it is NEVER an approval or client identity.
