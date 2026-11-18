@@ -278,6 +278,10 @@ describe("Tray Notification Manager", () => {
     expect(store).toContain("pub fn expire_verified(");
     expect(store).toContain("pub fn take_daily_digest(");
     expect(rust).toContain("tray_notification_center::take_daily_digest");
+    expect(rust).toContain('poll_lan_device_health(&handle, &mut lan_previous)');
+    expect(rust).toContain('record_verified_device_incident(');
+    expect(rust).toContain('Some(json!({"action":"list"}))');
+    expect(store).toContain('pub fn publish_for_device(');
     const pending = mounted.get("notification-inbox-list").children[0];
     const actions = pending.children[1].children[3].children;
     expect(actions.some((x: any) => x.textContent === "Resolve")).toBe(false);
