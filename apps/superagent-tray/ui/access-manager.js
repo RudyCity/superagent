@@ -1762,6 +1762,9 @@
         highlightMcpNotificationRequest();
       };
       window.__superagentAccessManagerRefresh = () => {
+        // Pending MCP approvals may have arrived since the page was first built.
+        // Refresh the actual request list on every Security page entry.
+        void refreshMcpRequests();
         void refreshRegistry().catch(() => {});
         void refreshWindows().catch(() => {});
         void refreshInstalledApps().catch(() => {});
