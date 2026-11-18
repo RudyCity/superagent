@@ -480,6 +480,7 @@ function navigateToPage(pageId) {
       window.__superagentRuntimeRefresh();
     }
     window.__superagentLifecycleRefresh?.();
+    window.__superagentManagedChromeRefresh?.();
   } else if (target === "history") {
     if (topEyebrow) topEyebrow.textContent = "AUDIT LEDGER";
     if (topTitle) topTitle.textContent = "Execution History";
