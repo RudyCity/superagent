@@ -8,7 +8,8 @@ export function certifiedBrowserObservation(call:BrowserCall):boolean{
  if(call.name==="superagent_browser_gateway")
    return a.action==="identity"&&exact(a,["action","agentId"]) ||
      a.action==="policy"&&exact(a,["action"]);
- if(call.name==="superagent_chrome_cdp"||call.name==="superagent_control_chrome_cdp"){
+ if(call.name==="superagent_chrome_cdp_observe"||
+   call.name==="superagent_chrome_cdp"||call.name==="superagent_control_chrome_cdp"){
    if(a.command!=="list_targets"&&a.command!=="transport_status")return false;
    if(a.transport==="delegate"){
      if(!exact(a,["command","transport","delegateClientId"]))return false;
