@@ -62,6 +62,52 @@ not from free-text titles, source labels, or user-provided messages.
 The classification only helps the operator triage. Navigation to an approval
 card never grants a capability or automatically performs the requested action.
 
+### Advanced triage and digest (November 2026)
+
+The action badge next to the unread count is the number of **unresolved warning
+and critical incidents**. Read/unread, acknowledged, in-progress, resolved, and
+expired are different states. Manual **Start working / Pause work** changes a
+triage state, not the underlying process or an approval. Authenticated security
+request expiry and health recovery are reflected by native Core polling.
+Managed MCP approval and health incidents cannot be manually marked resolved.
+Bulk **Archive read** does not hide unresolved action-required incidents, and
+manual archiving of such incidents is rejected in native storage.
+
+- **Smart grouping:** optional source/type grouping; every child retains its own
+  exact navigation and read receipt. The bell prioritizes unsnoozed actions.
+- **Snooze:** 15 minutes, 1 hour, or 24 hours; native persisted snooze does not
+  grant access or complete an action and the action counter still includes it.
+- **Per-device filtering:** uses only native-verified `deviceId` metadata.
+  Existing local producers use `local`; legacy events without identity show
+  **Unspecified device**. Specific remote device IDs require source producers
+  to supply verified IDs via the native `publish_for_device` contract. The
+  notification body is never parsed to guess a device.
+- **Activity history:** bounded native audit events include create, reopen,
+  acknowledgement, progress, read, snooze, resolve and archive transitions.
+  Retention/size caps still apply; this is not an immutable forensic log.
+- **Source delivery rules:** each allowed source can override its minimum OS
+  pop-up severity or be OS-muted, in addition to global severity/pop-up toggles.
+  Rules never suppress the native inbox.
+- **DND:** off, short timer, or indefinite. OS alerts are suppressed unless
+  explicitly exempted critical *Security Approval* alerts. Inbox entries and
+  action counts are unchanged; DND does not approve requests.
+- **Daily digest:** opt-in scheduled OS summary near the next 09:00 local
+  time, based on a native persisted next-at timestamp. It reports counts only,
+  not titles/secrets, and is emitted on the next running Tray poll when due.
+  Delivery is deferred during DND or when global notifications are off.
+  Subsequent digests run at roughly 24-hour intervals; after DST/time-zone
+  shifts, re-save settings to realign the time. A native claim prevents
+  duplicate delivery after restart; if the OS API fails, the missed message
+  is logged rather than silently replayed.
+
+Deep links remain fixed, authenticated read-only navigation. An OS activation
+with a native incident token can focus an eligible incident; neither navigation
+nor marking read triggers a permission grant, run retry, or device pairing.
+
+**Verification:** `bun --bun x vitest run tests/desktopTrayNotificationsUi.test.ts`
+and `cargo test --manifest-path apps/superagent-tray/src-tauri/Cargo.toml`.
+These tests do not replace an installed Tray runtime smoke test on Windows.
+
 ### Delivery, privacy, and retention
 
 The expanded **Notification delivery & retention** panel sets minimum OS alert
