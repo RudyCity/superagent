@@ -6,14 +6,14 @@
 import type { LanDevice, LanTerminalSnapshot } from "./controller.js";
 import {
   listLanDevices, openLanSession, closeLanSession, startLanTerminal, readLanTerminal, inputLanTerminal,
-  stopLanTerminal, execAndroidShellCommand,
+  stopLanTerminal, keyLanTerminal, resizeLanTerminal, execAndroidShellCommand,
 } from "./controller.js";
 import { assertAndroidShellCommand } from "./androidCapabilities.js";
 import { isFullYoloMode, isSystemDestructiveCommand } from "../permissions.js";
 
 export const LAN_TERMINAL_FLEET_MAX_DEVICES = 8;
-export type LanTerminalFleetAction = "open" | "close" | "start" | "read" | "input" | "stop";
-type Target = { deviceId: string; command?: string; jobId?: string; cursor?: number; text?: string; appendNewline?: boolean };
+export type LanTerminalFleetAction = "open" | "close" | "start" | "read" | "input" | "key" | "resize" | "stop";
+type Target = { deviceId: string; command?: string; jobId?: string; cursor?: number; text?: string; appendNewline?: boolean; key?: string; cols?: number; rows?: number };
 type AndroidReceipt = Awaited<ReturnType<typeof execAndroidShellCommand>>;
 export type FleetTerminalResult =
   | { deviceId: string; platform: "windows" | "android"; ok: true; session: { connected: boolean } }
@@ -37,6 +37,8 @@ export interface LanTerminalFleetDeps {
   read(deviceId: string, jobId: string, cursor: number): Promise<LanTerminalSnapshot>;
   input(deviceId: string, jobId: string, text: string, appendNewline: boolean): Promise<LanTerminalSnapshot>;
   stop(deviceId: string, jobId: string): Promise<LanTerminalSnapshot>;
+  key(deviceId: string, jobId: string, key: string): Promise<LanTerminalSnapshot>;
+  resize(deviceId: string, jobId: string, cols: number, rows: number): Promise<LanTerminalSnapshot>;
   android(deviceId: string, command: string): Promise<AndroidReceipt>;
   fullYolo(): boolean;
   destructive(command: string): boolean;
@@ -50,6 +52,8 @@ const defaultDeps: LanTerminalFleetDeps = {
   read: readLanTerminal,
   input: inputLanTerminal,
   stop: stopLanTerminal,
+  key: keyLanTerminal,
+  resize: resizeLanTerminal,
   android: execAndroidShellCommand,
   fullYolo: isFullYoloMode,
   destructive: isSystemDestructiveCommand,
@@ -57,6 +61,7 @@ const defaultDeps: LanTerminalFleetDeps = {
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 const COMMAND_CONTROL = /[\x00-\x08\x0b-\x1f\x7f]/;
 const MAX_ANDROID_REPLY = 4096;
+const VALID_KEYS = new Set(["Enter","Backspace","Tab","Escape","ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Home","End","Delete","PageUp","PageDown","CtrlC"]);
 const MAX_ERROR = 240;
 const allowedFields: Record<LanTerminalFleetAction, readonly string[]> = {
   open: ["deviceId"],
@@ -64,6 +69,8 @@ const allowedFields: Record<LanTerminalFleetAction, readonly string[]> = {
   start: ["deviceId", "command"],
   read: ["deviceId", "jobId", "cursor"],
   input: ["deviceId", "jobId", "text", "appendNewline"],
+  key: ["deviceId", "jobId", "key"],
+  resize: ["deviceId", "jobId", "cols", "rows"],
   stop: ["deviceId", "jobId"],
 };
 const message = (error: unknown): string => {
@@ -75,7 +82,7 @@ function validate(action: LanTerminalFleetAction, input: unknown, devices: LanDe
   deps: LanTerminalFleetDeps): { targets: Target[]; deviceById: Map<string, LanDevice> } {
   if (!Array.isArray(input) || input.length < 2 || input.length > LAN_TERMINAL_FLEET_MAX_DEVICES)
     throw Error("Fleet requires 2–8 distinct approved device targets.");
-  if (["open", "start", "read", "input"].includes(action) && !deps.fullYolo())
+  if (["open", "start", "read", "input", "key", "resize"].includes(action) && !deps.fullYolo())
     throw Error("Full YOLO must be enabled locally for agent fleet execution.");
   const deviceById = new Map(devices.map(device => [device.id, device]));
   const targets: Target[] = [];
@@ -126,12 +133,20 @@ function validate(action: LanTerminalFleetAction, input: unknown, devices: LanDe
             deps.destructive(t.text) ||
             (t.appendNewline !== undefined && typeof t.appendNewline !== "boolean")))
         throw Error("Terminal input violates bounds or safety policy.");
+      if (action === "key" && (typeof t.key !== "string" || !VALID_KEYS.has(t.key)))
+        throw Error("Unsupported fleet terminal key.");
+      if (action === "resize" &&
+          (!Number.isSafeInteger(t.cols) || Number(t.cols) < 20 || Number(t.cols) > 300 ||
+           !Number.isSafeInteger(t.rows) || Number(t.rows) < 5 || Number(t.rows) > 120))
+        throw Error("Invalid fleet terminal dimensions.");
       targets.push({
         deviceId: t.deviceId, jobId: t.jobId as string,
         ...(action === "read" ? { cursor: (t.cursor as number | undefined) ?? 0 } : {}),
         ...(action === "input" ? {
           text: t.text as string, appendNewline: (t.appendNewline as boolean | undefined) === true,
         } : {}),
+        ...(action === "key" ? { key: t.key as string } : {}),
+        ...(action === "resize" ? { cols: t.cols as number, rows: t.rows as number } : {}),
       });
     }
   }
@@ -149,12 +164,12 @@ export class LanTerminalFleet {
   constructor(private readonly deps: LanTerminalFleetDeps = defaultDeps) {}
 
   async execute(action: LanTerminalFleetAction, input: unknown): Promise<FleetTerminalReply> {
-    if (!["open", "close", "start", "read", "input", "stop"].includes(action))
+    if (!["open", "close", "start", "read", "input", "key", "resize", "stop"].includes(action))
       throw Error("Unknown fleet terminal operation.");
     const { targets, deviceById } = validate(action, input, this.deps.list(), this.deps);
     const results = await Promise.all(targets.map(async (t): Promise<FleetTerminalResult> => {
       const device = deviceById.get(t.deviceId)!;
-      const mutating = action === "open" || action === "start" || action === "input";
+      const mutating = action === "open" || action === "start" || action === "input" || action === "key" || action === "resize";
       const identity = "receiver:" + device.fingerprint.toLowerCase();
       if (mutating && this.activeMutations.has(identity)) {
         return { deviceId: t.deviceId, platform: device.platform, ok: false,
@@ -187,6 +202,8 @@ export class LanTerminalFleet {
         const terminal = action === "start" ? await this.deps.start(t.deviceId, t.command!)
           : action === "read" ? await this.deps.read(t.deviceId, t.jobId!, t.cursor!)
           : action === "input" ? await this.deps.input(t.deviceId, t.jobId!, t.text!, t.appendNewline!)
+          : action === "key" ? await this.deps.key(t.deviceId, t.jobId!, t.key!)
+          : action === "resize" ? await this.deps.resize(t.deviceId, t.jobId!, t.cols!, t.rows!)
           : await this.deps.stop(t.deviceId, t.jobId!);
         return { deviceId: t.deviceId, platform: "windows", ok: true, terminal };
       } catch (error) {
