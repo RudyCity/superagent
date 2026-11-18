@@ -13,6 +13,7 @@
     "sync-mcp": "bun scripts/syncMcpSchemas.ts",
     "postbuild": "bun scripts/prune-orphan-dist.ts && bun scripts/syncMcpSchemas.ts && bun scripts/build-mcp-named-launchers.ts && bun scripts/write-core-build-manifest.ts",
     "start": "bun dist/cli.js",
+    "cli:input:doctor": "bun scripts/cli-input-doctor.ts",
     "test": "bun --bun x vitest run",
     "test:unit": "bun --bun x vitest run --maxWorkers=4 --exclude \"**/*integration*\" --exclude \"**/*Integration*\" --exclude \"**/*e2e*\" --exclude \"**/*E2E*\"",
     "test:integration": "bun --bun x vitest run tests/*integration*.test.ts tests/*Integration*.test.ts",
