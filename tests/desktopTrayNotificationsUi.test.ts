@@ -85,7 +85,8 @@ describe("Tray Notification Manager", () => {
   it("identifies OAuth-named MCP requests without treating a name as approval", () => {
     expect(rust).toContain('request.get("ownerConnectionName")');
     expect(rust).toContain('requested MCP permission. Review Security Approval.');
-    expect(rust).toContain('"mcp-pending:{id}"');
+    expect(rust).toContain('"mcp-pending:{tab}:{id}"');
+    expect(rust).toContain('== Some("mcp-connection")');
     expect(js).toContain('__superagentAccessManagerFocusRequest');
     expect(js).not.toContain('mcp_project_access_action("approve"');
   });
@@ -222,7 +223,7 @@ describe("Tray Notification Manager", () => {
     mounted.window.__superagentAccessManagerFocusRequest = focus;
     open.trigger("click");
     expect(mounted.nav).toHaveBeenCalledWith("security");
-    expect(focus).toHaveBeenCalledWith("request-42");
+    expect(focus).toHaveBeenCalledWith("request-42", null);
     expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
     const install = access.slice(access.indexOf("async function install()"));
@@ -230,10 +231,73 @@ describe("Tray Notification Manager", () => {
       .toBeLessThan(install.indexOf("await refreshWindows();"));
     expect(install).toContain("window.__superagentPendingAccessNotificationId");
   });
+  it.each([
+    ["connections", "Review MCP Connections"],
+    ["mcp", "Review MCP Project Access"],
+  ])("routes pending %s notifications into the exact Security Approval tab", async (tab, label) => {
+    const mounted = mount([{
+      id: "mcp-pending:" + tab + ":req_x7", source: "security", severity: "critical",
+      title: "Security approval pending", body: "Review MCP permission",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await Promise.resolve(); await Promise.resolve();
+    const card = mounted.get("tray-notification-recent").children[0];
+    const open = card.children[1].children[3].children[0];
+    expect(open.textContent).toBe(label);
+    card.trigger("click", { target: { closest: () => null } });
+    expect(mounted.nav).toHaveBeenCalledWith("security:" + tab);
+    expect(mounted.window.__superagentPendingAccessNotificationId).toBe("req_x7");
+    expect(mounted.window.__superagentPendingAccessNotificationTab).toBe(tab);
+    const focus = vi.fn(async () => undefined);
+    mounted.window.__superagentAccessManagerFocusRequest = focus;
+    open.trigger("click");
+    expect(focus).toHaveBeenCalledWith("req_x7", tab);
+    expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
+  });
+  it("preserves allowlisted Security sub-tab routes across router initialization and hash changes", () => {
+    const app = fs.readFileSync(path.join(base, "ui/app.js"), "utf8");
+    const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
+    expect(app).toContain('^security:(connections|mcp|register|rules|audit)
+    const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
+    expect(js).toContain("window.__superagentAccessManagerFocusRequest(");
+    expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null)");
+    expect(access).toContain("card.dataset.requestId = String(req.requestId ||");
+    expect(access).toContain("row.dataset.requestId = String(req.requestId ||");
+    expect(access).toContain("entry.classList.add(\"access-mcp-request-highlight\")");
+    expect(js).not.toContain('mcp_project_access_action');
+  });
+  it("uses generic OS alerts and explicit policy instead of leaking Core errors", () => {
+    expect(rust).toContain('static OS_ALERT_BUDGET:');
+    expect(rust).toContain('os_alert_budget_available()');
+    expect(rust).toContain('tray_notification_center::should_notify_os(&dir, source, severity)?');
+    expect(rust).toContain('.title("SuperAgent needs attention")');
+    expect(rust).not.toContain('.body(format!("Failed to start Core: {}", e))');
+    expect(rust).not.toContain('.body(format!("Failed to restart Core: {}", e))');
+    expect(rust).not.toContain('.body(format!("Failed to stop Core: {}", e))');
+  });
+  it("native API only acknowledges and archives; UI error summaries are redacted", () => {
+    expect(store).toContain('["list", "read", "unread", "archive", "restore", "read-all"');
+    expect(store).toContain('const MAX_ITEMS: usize = 300;');
+    expect(store).toContain('id.chars().any(char::is_control)');
+    expect(rust).toContain("tray_notification_center_action,");
+    expect(rust).toContain("tray_notification_center_ui_alert,");
+    expect(rust).toContain("tray_notification_center::publish(");
+    expect(rust).toContain("An operation reported an issue.");
+    expect(rust).not.toContain('tray_notification_center::publish(\n        &config_dir()?, &scope, severity, &id, &title,\n        error');
+  });
+});
+);
+    expect(app).toContain('const route = securityTab ? "security:" + securityTab : target;');
+    expect(app).toContain("window.__superagentAccessManagerOpenTab?.(securityTab)");
+    expect(access).toContain('const pendingNotificationTab = window.__superagentPendingAccessNotificationTab;');
+    expect(access).toContain('setActiveTab(tab || "mcp");');
+    expect(access).toContain('const tab = target.projectId === "mcp-connection" ? "connections" : "mcp";');
+    expect(access).not.toContain('/[\\\\x00-\\\\x1f]/.test(requestId)');
+  });
   it("deep-links to an exact MCP approval without invoking approve/deny", () => {
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
-    expect(js).toContain("window.__superagentAccessManagerFocusRequest(requestId)");
-    expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId)");
+    expect(js).toContain("window.__superagentAccessManagerFocusRequest(");
+    expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null)");
     expect(access).toContain("card.dataset.requestId = String(req.requestId ||");
     expect(access).toContain("row.dataset.requestId = String(req.requestId ||");
     expect(access).toContain("entry.classList.add(\"access-mcp-request-highlight\")");
