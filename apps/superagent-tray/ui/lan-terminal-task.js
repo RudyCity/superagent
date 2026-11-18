@@ -11,6 +11,7 @@
   let mutationPending = false;
   let readPending = false;
   let lastError = "";
+  let mutationRevision = 0;
 
   const validJob = (value) => typeof value === "string" && /^[a-f0-9-]{36}$/i.test(value);
   const invoke = async (action, payload) => {
@@ -66,6 +67,7 @@
     if (!task || !snapshot || snapshot.jobId !== task.jobId ||
         !Number.isSafeInteger(snapshot.nextCursor) || !Array.isArray(snapshot.chunks))
       throw Error("Terminal response did not match the active task.");
+    if (snapshot.nextCursor < task.cursor) return; // stale response must not rewind state
     if (snapshot.truncated) task.output += "\n[Earlier receiver output discarded]\n";
     for (const chunk of snapshot.chunks) {
       if (!chunk || typeof chunk.text !== "string" ||
@@ -76,6 +78,7 @@
     }
     task.output = task.output.slice(-65_536);
     task.cursor = snapshot.nextCursor;
+    task.latestCursor = Number.isSafeInteger(snapshot.cursor) ? snapshot.cursor : task.cursor;
     task.running = snapshot.running === true;
     task.reason = typeof snapshot.reason === "string" ? snapshot.reason : null;
     task.exitCode = Number.isSafeInteger(snapshot.exitCode) ? snapshot.exitCode : null;
@@ -91,6 +94,7 @@
     if (mutationPending || !device || device.platform !== "windows" ||
         !command || command.length > 2000 || sameSelection() && task.running) return;
     mutationPending = true;
+    const revision = ++mutationRevision;
     lastError = "";
     display("Approve the full command on the Windows receiver to start a task.");
     sync();
@@ -98,7 +102,8 @@
       const snapshot = await invoke("terminal_start", { deviceId: device.id, command });
       if (!validJob(snapshot.jobId)) throw Error("Invalid terminal task receipt.");
       // Never display output from another device after a route/selection change.
-      task = { deviceId: device.id, jobId: snapshot.jobId, cursor: 0,
+      if (revision !== mutationRevision) return;
+      task = { deviceId: device.id, jobId: snapshot.jobId, cursor: 0, latestCursor: 0,
         running: true, reason: null, exitCode: null, output: "" };
       apply(snapshot);
     } catch (error) {
@@ -108,13 +113,15 @@
     } finally { mutationPending = false; sync(); }
   };
   const poll = async () => {
-    if (readPending || !task || !task.running || !sameSelection()) return;
+    if (readPending || mutationPending || !task || !sameSelection() ||
+        (!task.running && task.cursor >= task.latestCursor)) return;
+    const revision = mutationRevision;
     readPending = true;
     try {
       const snapshot = await invoke("terminal_read", {
         deviceId: task.deviceId, jobId: task.jobId, cursor: task.cursor,
       });
-      apply(snapshot);
+      if (revision === mutationRevision) apply(snapshot);
     } catch (error) {
       lastError = "Cannot verify terminal task: " + String(error);
       // Keep opaque task ID and cursor for a deliberate manual retry.
@@ -126,6 +133,7 @@
     const text = field?.value || "";
     if (!text || text.length > 1024 || /[\x00-\x08\x0b-\x1f\x7f]/.test(text)) return;
     mutationPending = true;
+    const revision = ++mutationRevision;
     lastError = "";
     display("The receiver owner must approve this exact input.");
     sync();
@@ -134,8 +142,10 @@
         deviceId: task.deviceId, jobId: task.jobId, text,
         appendNewline: $("lan-terminal-task-newline")?.checked === true,
       });
-      apply(snapshot);
-      if (field) field.value = "";
+      if (revision === mutationRevision) {
+        apply(snapshot);
+        if (field) field.value = "";
+      }
     } catch (error) {
       lastError = /timeout/i.test(String(error))
         ? "Input outcome unknown. Inspect receiver output before another send."
@@ -145,10 +155,11 @@
   const stop = async () => {
     if (!sameSelection() || !task.running) return;
     const target = { deviceId: task.deviceId, jobId: task.jobId };
+    const revision = ++mutationRevision;
     display("Stopping the exact remote task...");
     try {
       const snapshot = await invoke("terminal_stop", target);
-      apply(snapshot);
+      if (revision === mutationRevision) apply(snapshot);
     } catch (error) {
       lastError = "Stop not verified: " + String(error) + ". Close or revoke device session to force cleanup.";
     } finally { sync(); }
