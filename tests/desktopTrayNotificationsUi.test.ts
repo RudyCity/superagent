@@ -40,6 +40,11 @@ function mount(items: Record<string, unknown>[] = []) {
     n.dataset = { notificationFilter: filter };
     return n;
   });
+  const quickFilters = ["action", "information", "unread", "open", "important", "resolved"].map((filter) => {
+    const n = makeNode();
+    n.dataset = { notificationQuickFilter: filter };
+    return n;
+  });
   function makeNode() {
     const attrs: Record<string, string> = {};
     const listeners: Record<string, (...args: any[]) => any> = {};
@@ -66,7 +71,9 @@ function mount(items: Record<string, unknown>[] = []) {
       getElementById: get,
       createElement: makeNode,
       querySelectorAll(selector: string) {
-        return selector === "[data-notification-filter]" ? filters : [];
+        if (selector === "[data-notification-filter]") return filters;
+        if (selector === "[data-notification-quick-filter]") return quickFilters;
+        return [];
       },
       addEventListener(type: string, fn: (...args: any[]) => any) {
         domEvents.set(type, fn);
@@ -130,7 +137,7 @@ function mount(items: Record<string, unknown>[] = []) {
     Object, Date, Number, String, Promise,
   });
   vm.runInContext(js, context);
-  return { get, filters, mockInvocations, nav, window: context.window };
+  return { get, filters, quickFilters, mockInvocations, nav, window: context.window };
 }
 
 describe("Tray Notification Manager", () => {
@@ -174,6 +181,58 @@ describe("Tray Notification Manager", () => {
       .children[0].textContent).toBe("Core failed");
     expect(mounted.get("tray-notification-count").hidden).toBe(false);
   });
+  it("separates action required from information independently of unread status", async () => {
+    const now = Date.now();
+    const mounted = mount([
+      { id: "reminder:completed", source: "reminder", severity: "info",
+        title: "Reminder complete", body: "Done", createdAt: now,
+        readAt: null, archivedAt: null, acknowledgedAt: null, resolvedAt: null },
+      { id: "mcp-pending:connections:req-23", source: "security", severity: "critical",
+        title: "Permission required", body: "Review access", createdAt: now - 100,
+        readAt: now - 50, archivedAt: null, acknowledgedAt: now - 30, resolvedAt: null },
+      { id: "health:core", source: "core", severity: "warning",
+        title: "Core recovered", body: "Recovered", createdAt: now - 200,
+        readAt: now, archivedAt: null, acknowledgedAt: null, resolvedAt: now },
+    ]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(html).toContain('data-notification-quick-filter="action"');
+    expect(html).toContain('data-notification-quick-filter="information"');
+    expect(mounted.get("notification-kind-count-action").textContent).toBe("1");
+    expect(mounted.get("notification-kind-count-information").textContent).toBe("2");
+    expect(mounted.get("tray-notification-category-summary").textContent)
+      .toBe("1 need action · 2 information");
+    // Actionable incidents appear first in the bell even if an info event is newer.
+    const first = mounted.get("tray-notification-recent").children[0];
+    expect(first.children[1].children[0].children[0].textContent).toBe("Permission required");
+    expect(first.children[1].children[0].children.some((node: any) =>
+      node.className === "notification-item-kind is-action")).toBe(true);
+
+    mounted.quickFilters[0].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    expect(mounted.quickFilters[0].getAttribute("aria-pressed")).toBe("true");
+    // Mark all read does not hide unresolved action-required incidents.
+    mounted.get("notification-read-all").trigger("click");
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(mounted.get("notification-kind-count-action").textContent).toBe("1");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
+    mounted.quickFilters[1].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(2);
+
+    // Resolve is a separate lifecycle action: it moves an item to Information.
+    mounted.quickFilters[0].trigger("click");
+    const card = mounted.get("notification-inbox-list").children[0];
+    const actions = card.children[1].children[3];
+    const resolve = actions.children.find((child: any) => child.textContent === "Resolve");
+    expect(resolve).toBeDefined();
+    resolve.trigger("click");
+    await new Promise<void>((done) => setImmediate(done));
+    expect(mounted.get("notification-kind-count-action").textContent).toBe("0");
+    expect(mounted.get("notification-kind-count-information").textContent).toBe("3");
+    mounted.quickFilters[1].trigger("click");
+    expect(mounted.get("notification-inbox-list").children).toHaveLength(3);
+    expect(mounted.mockInvocations.some((call) => call.action === "approve")).toBe(false);
+  });
+
   it("uses native acknowledgment instead of browser localStorage", async () => {
     const mounted = mount([{
       id: "alert-1", severity: "warning", source: "security", title: "Approval required",
