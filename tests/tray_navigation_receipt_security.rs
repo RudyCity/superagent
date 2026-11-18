@@ -211,3 +211,50 @@ fn an_incident_device_identity_change_invalidates_its_ticket() {
     assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 1);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn scheduled_digest_and_snapshot_both_count_a_recently_reopened_old_incident() {
+    let dir = isolated();
+    let id = "incident_reopened_digest";
+    publish(&dir, id);
+    tray_notification_center::resolve(&dir, id).unwrap();
+    let ledger_file = dir.join("tray-notifications.json");
+    let mut ledger: Value = serde_json::from_slice(&std::fs::read(&ledger_file).unwrap()).unwrap();
+    ledger["items"][0]["createdAt"] = json!(1);
+    ledger["items"][0]["resolvedAt"] = json!(1);
+    ledger["items"][0]["lastSeenAt"] = Value::Null;
+    std::fs::write(&ledger_file, serde_json::to_vec(&ledger).unwrap()).unwrap();
+    publish(&dir, id);
+    let snapshot = tray_notification_center::perform(&dir, "list", None).unwrap();
+    assert_eq!(snapshot["items"][0]["createdAt"], 1);
+    assert_eq!(snapshot["items"][0]["occurrences"], 2);
+    assert_eq!(snapshot["digest"]["last24hAction"], 1);
+    let mut preferences = tray_notification_center::NotificationPreferences::default();
+    preferences.digest_enabled = true;
+    preferences.digest_next_at = Some(0);
+    tray_notification_center::save_preferences(&dir, preferences).unwrap();
+    assert_eq!(tray_notification_center::take_daily_digest(&dir).unwrap(), Some((1, 0)));
+    assert_eq!(tray_notification_center::take_daily_digest(&dir).unwrap(), None);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn denied_or_bulk_archive_never_hides_an_unresolved_action_or_invalidates_its_receipt() {
+    let dir = isolated();
+    let id = "incident_archive_guard";
+    publish(&dir, id);
+    let issued = issue(&dir, id).unwrap();
+    assert!(tray_notification_center::perform(&dir, "archive", Some(id)).is_err());
+    let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
+        "security", true).unwrap().unwrap();
+    assert_eq!(tray_notification_center::perform(&dir, "list", None).unwrap()["unreadCount"], 1);
+    assert!(complete(&dir, &ticket).unwrap());
+    let issued = issue(&dir, id).unwrap();
+    let ticket = consume(&dir, id, issued["nonce"].as_str().unwrap(),
+        "security", true).unwrap().unwrap();
+    let snapshot = tray_notification_center::perform(&dir, "archive-read", None).unwrap();
+    assert!(snapshot["items"][0]["archivedAt"].is_null());
+    assert_eq!(snapshot["actionCount"], 1);
+    assert!(complete(&dir, &ticket).unwrap());
+    std::fs::remove_dir_all(dir).unwrap();
+}
