@@ -60,6 +60,10 @@ export const launchChromeProfileTool: Tool = {
         type: "string",
         description: "Optional URL to open on Chrome launch.",
       },
+      managedCdp: {
+        type: "boolean",
+        description: "Explicitly launch an isolated Managed Chrome CDP instance. Defaults to debugging port 9222 when no remoteDebuggingPort is supplied.",
+      },
       remoteDebuggingPort: {
         type: "integer",
         description: "Optional remote debugging port to enable CDP automation (e.g. 9222). When provided, launches Chrome with --remote-debugging-port=<port> and an isolated debug profile.",
@@ -95,6 +99,7 @@ export const launchChromeProfileTool: Tool = {
     profileName = "Default",
     url = "",
     remoteDebuggingPort,
+    managedCdp = false,
     userDataDir,
     isolated,
     autoSelectDesktopCaptureSource,
@@ -105,6 +110,7 @@ export const launchChromeProfileTool: Tool = {
     profileName?: string;
     url?: string;
     remoteDebuggingPort?: number;
+    managedCdp?: boolean;
     userDataDir?: string;
     isolated?: boolean;
     autoSelectDesktopCaptureSource?: string;
@@ -130,7 +136,8 @@ export const launchChromeProfileTool: Tool = {
       }
     }
 
-    const shouldIsolate = isolated ?? Boolean(remoteDebuggingPort || mode === "virtual-display");
+    const requestedDebugPort = remoteDebuggingPort ?? (managedCdp ? 9222 : undefined);
+    const shouldIsolate = isolated ?? Boolean(requestedDebugPort !== undefined || mode === "virtual-display");
     let resolvedDataDir = userDataDir;
     if (shouldIsolate && !resolvedDataDir) {
       resolvedDataDir = path.join(os.homedir(), ".superagent-r", "chrome-debug-profile");
@@ -138,11 +145,11 @@ export const launchChromeProfileTool: Tool = {
 
     // An explicit Managed CDP launch never falls back to regular Chrome,
     // including when the caller supplied invalid port 0 or disabled isolation.
-    if (remoteDebuggingPort !== undefined || mode === "virtual-display") {
+    if (requestedDebugPort !== undefined || mode === "virtual-display") {
       try {
         const manager = getBrowserProcessManager();
         const plan = planManagedChromeLaunch({
-          port: remoteDebuggingPort ?? 9222,
+          port: requestedDebugPort ?? 9222,
           isolated,
           userDataDir,
           profileName,
