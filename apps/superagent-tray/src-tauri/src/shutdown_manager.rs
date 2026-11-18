@@ -574,14 +574,6 @@ fn force_candidates(preview:&Preview)->Result<Vec<Item>,String> {
     });
     Ok(selected)
 }
-fn same_manual_owner(before:&Item,after:&Item)->bool {
-    before.id==after.id && before.kind==after.kind && before.pid==after.pid &&
-        before.port==after.port && before.process_started_at.is_some() &&
-        before.process_started_at==after.process_started_at &&
-        before.process_name==after.process_name &&
-        before.process_path==after.process_path &&
-        after.manual_kill_selectable && running(&after.state)
-}
 fn manual_candidates(preview:&Preview,ids:&[String])->Result<Vec<Item>,String> {
     if ids.is_empty()||ids.len()>64{return Err("SHUTDOWN_MANUAL_SELECTION_INVALID".into());}
     let mut unique=HashSet::new();
@@ -624,7 +616,7 @@ fn manual_process_identity_matches(item:&Item,birth:u64,name:&str,path:Option<&s
 /// Manual override checks the exact OS process rather than depending on
 /// another Core/lifecycle inventory request after the human approves it.
 fn manual_os_identity_matches(item:&Item)->bool {
-    let (Some(pid),Some(birth),Some(name))=(
+    let (Some(pid),Some(_birth),Some(name))=(
         item.pid,item.process_started_at,item.process_name.as_deref()
     ) else {return false};
     if !item.manual_kill_selectable ||
