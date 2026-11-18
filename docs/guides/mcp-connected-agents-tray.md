@@ -26,6 +26,28 @@ The panel is in **Overview → Connected MCP agents** and
   *requested* tool name (no arguments).
 - Raw MCP session IDs, bearer tokens, credential hashes, prompts, tool
   arguments and raw OAuth subjects are **not** sent to the Tray list.
+- **MCP Connections → Koneksi MCP Tercatat** maintains a separate bounded,
+  metadata-only, 30-day history of opaque credential connection handles.
+  It reconciles only after the native Tray makes a local authenticated Core
+  request and the selected MCP owner's complete session inventory is verified.
+  The same public `/mcp` URL may have simultaneous ChatGPT, Gemini, or other
+  clients with different tokens: each credential handle is recorded separately,
+  and multiple sessions using one credential are counted under that handle.
+  Registration is on verified inventory observation, **not** on receiving an
+  arbitrary Authorization header or clientInfo string. A connection that starts
+  and ends without being observed may not appear in the history.
+- An offline/unavailable owner **never** turns old records into verified online
+  connections. The UI labels them as unverified historical sightings. The
+  persisted file stores no access tokens, credential hashes, raw OAuth client
+  IDs, raw session IDs or public MCP URL. A reported app name is always marked
+  as client-claimed; it is not evidence that a connection really belongs to a
+  specific AI vendor.
+- **Registration is not authorization.** The grantable identities panel comes
+  from existing Core requests/operator-approved identity proofs; a live
+  credential handle does not let the user or agent bypass the explicit
+  Security Approval request. OAuth project grants still follow the
+  authenticated OAuth client ID; session/token handles are for telemetry
+  and are never independent permission grants.
 - The panel is read-only. Session lifecycle follows existing authenticated
   MCP ownership and per-client approval; Chat Agent YOLO is not MCP access.
 - Runtime source changes do not update an installed Tray/MCP backend.
