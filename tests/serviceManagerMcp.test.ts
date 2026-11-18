@@ -34,29 +34,39 @@ describe("MCP unified management authorization",()=>{
       }})).rejects.toThrow();
     } finally {await server.close();}
   });
-  it("shows service manager to write-scope callers and checks confirmations",async()=>{
+  it("exposes write-scope tools but never treats discovery, YOLO, or read actions as an Execute grant",async()=>{
     const {server,list,call}=handlers(["mcp:tools","mcp:tools:write"],true);
     try {
       const names=(await list({method:"tools/list",params:{}})).tools.map((x:any)=>x.name);
       expect(names).toContain("superagent_manage_services");
       const inventory=await call({method:"tools/call",params:{
-        name:"superagent_manage_services",arguments:{action:"status",service:"tray"},
+        name:"superagent_services_status",arguments:{action:"status",service:"tray"},
       }});
       expect(inventory.isError).not.toBe(true);
       expect(JSON.stringify(inventory)).toContain("tray");
-      const refused=await call({method:"tools/call",params:{
+      // Even a read-only action sent via the dangerous mixed-mode endpoint
+      // requires an independent operator-approved MCP Connection grant.
+      await expect(call({method:"tools/call",params:{
+        name:"superagent_manage_services",arguments:{action:"status",service:"tray"},
+      }})).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
+      await expect(call({method:"tools/call",params:{
         name:"superagent_manage_services",
         arguments:{action:"restart",service:"mcp",port:19997,confirm:true},
-      }});
-      expect(refused.isError).toBe(true);
-      expect(JSON.stringify(refused)).toContain("SERVICE_UNSUPPORTED_MUTATION");
+      }})).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
     } finally {await server.close();}
   });
-  it("remains hidden with local YOLO disabled despite OAuth write scopes",async()=>{
-    const {server,list}=handlers(["mcp:tools","mcp:tools:write"],false);
+  it("does not confuse write-scope discovery with a local YOLO or connection grant",async()=>{
+    const {server,list,call}=handlers(["mcp:tools","mcp:tools:write"],false);
     try {
-      const names=(await list({method:"tools/list",params:{}})).tools.map((x:any)=>x.name);
-      expect(names).not.toContain("superagent_manage_services");
+      const tools=(await list({method:"tools/list",params:{}})).tools;
+      const manager=tools.find((x:any)=>x.name==="superagent_manage_services");
+      expect(manager).toBeDefined();
+      // Tool visibility is scoped to OAuth. It does not confer execution
+      // authority while the independent human-approved grant is absent.
+      expect(manager.annotations?.readOnlyHint).not.toBe(true);
+      await expect(call({method:"tools/call",params:{
+        name:"superagent_manage_services",arguments:{action:"status",service:"core"},
+      }})).rejects.toThrow(/MCP_APPROVAL_REQUIRED/);
     } finally {await server.close();}
   });
   it("exposes read-only superagent_services_status to read-only callers without YOLO",async()=>{
