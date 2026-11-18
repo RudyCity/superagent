@@ -11,8 +11,8 @@ const jB = "bbbb2222-2222-4222-8222-222222222222";
 
 describe("Terminal fleet MCP and Core API contracts", () => {
   const defs = new Map(LAN_MCP_TOOL_DEFS.map(tool => [tool.name, tool]));
-  it("exposes all four parallel tools and modern device aliases as dangerous", () => {
-    for (const action of ["start", "read", "input", "stop"]) {
+  it("exposes all six parallel tools and modern device aliases as dangerous", () => {
+    for (const action of ["open", "close", "start", "read", "input", "stop"]) {
       for (const prefix of ["superagent_lan_terminal_fleet_", "superagent_device_terminal_fleet_"]) {
         const name = prefix + action;
         expect(defs.has(name), name).toBe(true);
@@ -31,6 +31,12 @@ describe("Terminal fleet MCP and Core API contracts", () => {
 
   it("permits only expected Core action names and top-level target arrays", () => {
     const targets = [{ deviceId: a, command: "Get-Date" }, { deviceId: b, command: "Get-Date" }];
+    expect(parseTrayLanAction({ action: "terminal_fleet_open",
+      targets: [{ deviceId: a }, { deviceId: b }],
+    }).action).toBe("terminal_fleet_open");
+    expect(parseTrayLanAction({ action: "terminal_fleet_close",
+      targets: [{ deviceId: a }, { deviceId: b }],
+    }).action).toBe("terminal_fleet_close");
     expect(parseTrayLanAction({ action: "terminal_fleet_start", targets }).action)
       .toBe("terminal_fleet_start");
     expect(parseTrayLanAction({
@@ -60,6 +66,7 @@ describe("Terminal fleet MCP and Core API contracts", () => {
     const data = JSON.parse((reply?.content[0] as { text: string }).text);
     expect(data.terminalFleet).toEqual({
       parallel: true, maxDevices: 8, distinctSessionPerDevice: true,
+      parallelSessionApproval: true, emergencyDeviceSessionClose: true,
       windowsPipedJobs: true, androidOwnerApprovedSingleCommand: true,
       automaticPairing: false,
     });
