@@ -3,7 +3,7 @@
 **Date:** 2026-11-18  
 **Scope:** SuperAgent Core, MCP OAuth/gateway, MCP Connection Controls, per-project grants, host permanent-file-policy v2, Desktop UI, Tray Security Approval & Notification Center, CI, Windows installed runtime.  
 **Owner intent:** Resolve the remaining functional gaps end-to-end without broadening privilege, bypassing host policy, or repeatedly asking for an already-approved grant.  
-**Status:** PLAN / NOT YET EXECUTED. Prior source patches for permission diagnostics, notification deep links and audit redaction are committed, but this plan's runtime, native mediator and release acceptance gates remain OPEN.
+**Status:** IN PROGRESS / PARTIAL SOURCE IMPLEMENTATION. Initial OAuth/CI, permission diagnostics and JS notification fixes are committed, but native mediator, signed exact incident receipt, runtime and release acceptance gates remain OPEN. See [execution ledger](./2026-11-18-superagent-permissions-tools-execution-ledger.md) and [native threat model](../security/2026-11-18-desktop-native-mediation-threat-model.md).
 
 ## 0. Baseline, decision and constraints
 

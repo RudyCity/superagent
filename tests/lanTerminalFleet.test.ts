@@ -251,7 +251,8 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
       .execute("start", [{ deviceId: a, command: "id" }, { deviceId: b, command: "id" }]);
     expect(partial).toMatchObject({ requested: 2, succeeded: 1, failed: 1 });
     expect(partial.results[1]).toMatchObject({ deviceId: b, ok: false, error: expect.stringMatching(/no active approved/) });
-    expect(start).toHaveBeenCalledWith(a);
+    // Fleet forwards both verified device identity and requested command.
+    expect(start).toHaveBeenCalledWith(a, "id");
     start.mockClear();
     const alias = { ...devices[0], id: b };
     await expect(new LanTerminalFleet(deps({ list: () => [devices[0], alias] }))
