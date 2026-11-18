@@ -2771,10 +2771,10 @@ async fn managed_chrome_action(
             return Err("MANAGED_CDP_FOCUSED_TRAY_REQUIRED".into());
         }
         let description = if action == "launch" {
-            format!("Launch isolated Chrome CDP on 127.0.0.1:{port}?\\n\\nMode: {}\\nURL: {}\\n\\nYour personal Chrome windows will not be touched.",
+            format!("Launch isolated Chrome CDP on 127.0.0.1:{port}?\n\nMode: {}\nURL: {}\n\nYour personal Chrome windows will not be touched.",
                 body["mode"].as_str().unwrap_or("headed"), body["url"].as_str().unwrap_or("about:blank"))
         } else {
-            format!("Stop only SuperAgent-owned Chrome CDP on port {port}?\\n\\nVerified PID: {}\\n\\nOther Chrome windows will not be touched.",
+            format!("Stop only SuperAgent-owned Chrome CDP on port {port}?\n\nVerified PID: {}\n\nOther Chrome windows will not be touched.",
                 body["expectedPid"])
         };
         let dialog_app = app.clone();
