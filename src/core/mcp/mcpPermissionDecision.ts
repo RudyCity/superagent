@@ -82,11 +82,11 @@ export function describeBoundedServicePermission(args:unknown,filePolicyActive:b
   return {
     decisionCode:valid?"ALLOWED_TO_ATTEMPT" as const:"SCHEMA_INVALID" as const,
     action:valid?(typeof x!.action==="string"?x!.action:"status"):"unrecognized",
-    layers:{oauthScope:"granted",connectionExecute:"not_checked",
+    layers:({oauthScope:"granted",connectionExecute:"not_checked",
       projectCapability:"not_checked",
       hostFilePolicy:!filePolicyActive?"not_checked":valid?"granted":"blocked",
       nativeConsent:"not_checked",targetIdentity:"not_checked",hostOwner:"not_checked"}
-      as Record<string,McpPermissionLayerState>,
+      satisfies Record<string,McpPermissionLayerState>),
     remediation:valid
       ?"Metadata-only advisory. Runtime still validates action, owner and target."
       :"Only bounded read-only action, service, port and limit are permitted; no approval changes the schema.",
