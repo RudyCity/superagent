@@ -116,20 +116,40 @@
     button.disabled = state.busy;
     container.append(button);
   }
-  // Route only to local, fixed Tray pages. An MCP pending request is carried
-  // across asynchronous Access Manager initialization; clicking never grants
-  // a project or connection capability.
+  // Parse only fixed native prefixes; legacy untyped incidents still resolve
+  // their destination via the authenticated Access Manager request inventory.
+  function pendingAccessTarget(item) {
+    if (item.source !== "security" || !item.id.startsWith("mcp-pending:")) return null;
+    let requestId = item.id.slice("mcp-pending:".length);
+    let tab = null;
+    if (requestId.startsWith("connections:")) {
+      requestId = requestId.slice("connections:".length);
+      tab = "connections";
+    } else if (requestId.startsWith("mcp:")) {
+      requestId = requestId.slice("mcp:".length);
+      tab = "mcp";
+    }
+    if (!requestId || requestId.length > 150 || /[\\x00-\\x1f]/.test(requestId)) return null;
+    return { requestId, tab };
+  }
+  // Route only to fixed local pages and sub-tabs. Remember the exact pending
+  // request across asynchronous Access Manager startup. Navigation never grants
+  // or denies a capability.
   function openDestination(item) {
     const page = destination[item.source];
     if (!page) return;
-    const requestId = item.source === "security" && item.id.startsWith("mcp-pending:")
-      ? item.id.slice("mcp-pending:".length) : "";
-    if (requestId) window.__superagentPendingAccessNotificationId = requestId;
+    const pending = pendingAccessTarget(item);
+    if (pending) {
+      window.__superagentPendingAccessNotificationId = pending.requestId;
+      window.__superagentPendingAccessNotificationTab = pending.tab;
+    }
+    const route = pending?.tab ? "security:" + pending.tab : page;
     close();
-    if (typeof window.navigateToPage === "function") window.navigateToPage(page);
-    else if (window.location) window.location.hash = "#" + page;
-    if (requestId && typeof window.__superagentAccessManagerFocusRequest === "function") {
-      void Promise.resolve(window.__superagentAccessManagerFocusRequest(requestId)).catch(() => {});
+    if (typeof window.navigateToPage === "function") window.navigateToPage(route);
+    else if (window.location) window.location.hash = "#" + route;
+    if (pending && typeof window.__superagentAccessManagerFocusRequest === "function") {
+      void Promise.resolve(window.__superagentAccessManagerFocusRequest(
+        pending.requestId, pending.tab)).catch(() => {});
     }
   }
   function noteCard(item, compact) {
@@ -167,10 +187,12 @@
     copy.append(heading, meta, element("p", "notification-item-text", item.body));
     const actions = element("div", "notification-item-actions");
     if (page) {
-      const isPendingAccess = item.source === "security" && item.id.startsWith("mcp-pending:");
-      const label = isPendingAccess ? "Review pending access"
-        : item.source === "security" ? "Open Security Approval"
-          : "View " + page.replaceAll("-", " ");
+      const pending = pendingAccessTarget(item);
+      const label = pending?.tab === "connections" ? "Review MCP Connections"
+        : pending?.tab === "mcp" ? "Review MCP Project Access"
+          : pending ? "Review pending access"
+            : item.source === "security" ? "Open Security Approval"
+              : "View " + page.replaceAll("-", " ");
       const open = element("button", "notification-link", label);
       open.type = "button";
       open.addEventListener("click", () => openDestination(item));
