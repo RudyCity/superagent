@@ -510,7 +510,9 @@ export function App({
     });
   }, []);
 
-  const settings = getSettings();
+  // Settings lookup may synchronously stat model-config.json; never do it
+  // for every chat keystroke or active streaming repaint.
+  const settings = useMemo(() => getSettings(), [activeWizard, workspacePath, lines.length]);
   const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
   const maxHistoryVisible = settings.maxHistoryVisible ?? 3;
   const maxSuperagentsVisible = 2;
