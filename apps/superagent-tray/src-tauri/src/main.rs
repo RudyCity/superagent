@@ -9,7 +9,7 @@ use std::{
     fs,
     path::PathBuf,
     process::Command,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem},
@@ -2800,10 +2800,65 @@ async fn managed_chrome_action(
     core_request(Method::POST, "/api/desktop/chrome-runtime", Some(body)).await
 }
 
+/// Only passive notification inventory GETs receive the longer read deadline.
+fn notification_read_timeout(path: &str) -> Option<Duration> {
+    match path {
+        "/api/desktop/access/requests" |
+        "/api/daemon/jobs" |
+        "/api/daemon/runs?limit=100" => Some(Duration::from_secs(12)),
+        _ => None,
+    }
+}
+
+/// Limits repeated diagnostics without hiding transitions or changing polling.
+/// Failed inventories must never resolve existing Security incidents.
+#[derive(Default)]
+struct ProjectionLogState {
+    last_error: Option<String>,
+    last_reported_at: Option<Instant>,
+}
+
+impl ProjectionLogState {
+    fn should_report(&mut self, error: Option<&str>, now: Instant) -> bool {
+        match error {
+            Some(error) => {
+                let changed = self.last_error.as_deref() != Some(error);
+                let due = self.last_reported_at
+                    .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(300));
+                self.last_error = Some(error.to_owned());
+                if changed || due {
+                    self.last_reported_at = Some(now);
+                    true
+                } else {
+                    false
+                }
+            }
+            None => {
+                let recovered = self.last_error.take().is_some();
+                self.last_reported_at = None;
+                recovered
+            }
+        }
+    }
+
+    fn report<T>(&mut self, label: &str, result: &Result<T, String>) {
+        let error = result.as_ref().err().map(String::as_str);
+        if self.should_report(error, Instant::now()) {
+            if let Some(error) = error {
+                eprintln!("[tray] {label} unavailable: {error}");
+            } else {
+                eprintln!("[tray] {label} recovered");
+            }
+        }
+    }
+}
+
 async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result<Value, String> {
     // path comes from the fixed match below, never from the webview.
     let info = server_info()?;
     let url = format!("http://127.0.0.1:{}{}", info.port, path);
+    let projection_read = method == Method::GET && notification_read_timeout(path).is_some();
+    let core_port = info.port;
     let request_timeout = if path.starts_with("/api/desktop/cdp/live") {
         Duration::from_secs(14)
     } else if path == "/api/desktop/cdp/recordings" {
@@ -2886,6 +2941,8 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
         // Manual agent jobs can legitimately run for the Core's 5-minute
         // default limit. Returning a 4s timeout would invite duplicate runs.
         Duration::from_secs(330)
+    } else if method == Method::GET && notification_read_timeout(path).is_some() {
+        notification_read_timeout(path).unwrap_or(Duration::from_secs(4))
     } else {
         Duration::from_secs(4)
     };
@@ -2902,7 +2959,11 @@ async fn core_request(method: Method, path: &str, body: Option<Value>) -> Result
     }
     let response = request.send().await.map_err(|error| {
         if error.is_timeout() {
-            "SuperAgent Core request timed out. The operation may have completed; check its status before retrying.".to_string()
+            if projection_read {
+                format!("Core notification inventory GET {path} on loopback port {core_port} timed out after {}s; previous notification state is preserved", request_timeout.as_secs())
+            } else {
+                "SuperAgent Core request timed out. The operation may have completed; check its status before retrying.".to_string()
+            }
         } else if error.is_connect() {
             "SuperAgent Core is unreachable at the configured loopback port".to_string()
         } else {
@@ -4030,6 +4091,9 @@ fn main() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let mut observation = HealthObservation::default();
+                let mut security_log = ProjectionLogState::default();
+                let mut reminder_log = ProjectionLogState::default();
+                let mut health_log = ProjectionLogState::default();
                 loop {
                     // No auto-start: SuperAgent Core and daemon scheduling
                     // remain user-owned. This loop only displays completed runs.
@@ -4048,15 +4112,9 @@ fn main() {
                         poll_reminders(&handle, preferences.notifications_enabled),
                         poll_operational_health(&handle, &mut observation),
                     );
-                    if let Err(error) = security {
-                        eprintln!("[tray] Security notification projection unavailable: {error}");
-                    }
-                    if let Err(error) = reminders {
-                        eprintln!("[tray] Reminder notification projection failed: {error}");
-                    }
-                    if let Err(error) = health {
-                        eprintln!("[tray] Operational notification projection unavailable: {error}");
-                    }
+                    security_log.report("Security notification projection", &security);
+                    reminder_log.report("Reminder notification projection", &reminders);
+                    health_log.report("Operational notification projection", &health);
                     tokio::time::sleep(Duration::from_secs(preferences.notification_poll_seconds))
                         .await;
                 }
@@ -4192,6 +4250,35 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn notification_read_timeout_is_limited_to_passive_inventory() {
+        for path in [
+            "/api/desktop/access/requests",
+            "/api/daemon/jobs",
+            "/api/daemon/runs?limit=100",
+        ] {
+            assert_eq!(notification_read_timeout(path), Some(Duration::from_secs(12)));
+        }
+        assert_eq!(notification_read_timeout("/api/desktop/access/requests/approve"), None);
+        assert_eq!(notification_read_timeout("/api/daemon/jobs/run"), None);
+        assert_eq!(notification_read_timeout("/api/status"), None);
+    }
+
+    #[test]
+    fn projection_log_tracks_failure_recovery_and_periodic_retry() {
+        let mut state = ProjectionLogState::default();
+        let start = Instant::now();
+        assert!(!state.should_report(None, start));
+        assert!(state.should_report(Some("timeout"), start));
+        assert!(!state.should_report(Some("timeout"), start + Duration::from_secs(30)));
+        assert!(state.should_report(Some("unreachable"), start + Duration::from_secs(31)));
+        assert!(!state.should_report(Some("unreachable"), start + Duration::from_secs(90)));
+        assert!(state.should_report(Some("unreachable"), start + Duration::from_secs(332)));
+        assert!(state.should_report(None, start + Duration::from_secs(333)));
+        assert!(!state.should_report(None, start + Duration::from_secs(334)));
+        assert!(state.should_report(Some("timeout"), start + Duration::from_secs(335)));
+    }
 
     #[test]
     fn create_connection_strictly_limits_fields_provider_and_selected_core() {
