@@ -100,8 +100,9 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
   it("does not send an open prompt if any receiver is already connected", async () => {
     const open = vi.fn(async (id: string) => devices.find(device => device.id === id)!);
     const fleet = new LanTerminalFleet(deps({ open }));
-    await expect(fleet.execute("open", [{ deviceId: a }, { deviceId: b }]))
-      .rejects.toThrow(/already has an approved support session/);
+    const blocked = await fleet.execute("open", [{ deviceId: a }, { deviceId: b }]);
+    expect(blocked).toMatchObject({ requested: 2, succeeded: 0, failed: 2 });
+    expect(blocked.results.every(result => !result.ok)).toBe(true);
     expect(open).not.toHaveBeenCalled();
   });
 
@@ -221,12 +222,15 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  it("requires existing session on every device and rejects duplicate physical target", async () => {
+  it("reports a disconnected session per device while preventing duplicate physical receivers", async () => {
     const start = vi.fn(async (deviceId: string) => receipt(deviceId));
     const disconnected = { ...devices[1], connected: false };
-    await expect(new LanTerminalFleet(deps({ list: () => [devices[0], disconnected] }))
-      .execute("start", [{ deviceId: a, command: "id" }, { deviceId: b, command: "id" }]))
-      .rejects.toThrow(/approved open support session/);
+    const partial = await new LanTerminalFleet(deps({ list: () => [devices[0], disconnected], start }))
+      .execute("start", [{ deviceId: a, command: "id" }, { deviceId: b, command: "id" }]);
+    expect(partial).toMatchObject({ requested: 2, succeeded: 1, failed: 1 });
+    expect(partial.results[1]).toMatchObject({ deviceId: b, ok: false, error: expect.stringMatching(/no active approved/) });
+    expect(start).toHaveBeenCalledWith(a);
+    start.mockClear();
     const alias = { ...devices[0], id: b };
     await expect(new LanTerminalFleet(deps({ list: () => [devices[0], alias] }))
       .execute("start", [{ deviceId: a, command: "id" }, { deviceId: b, command: "id" }]))
