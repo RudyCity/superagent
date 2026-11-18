@@ -145,6 +145,8 @@ jobs:
           tests/trayLanBridge.test.ts
           tests/lanTerminalTasks.test.ts
           tests/lanTerminalIntegration.test.ts
+          tests/lanTerminalFleet.test.ts
+          tests/lanTerminalFleetIntegration.test.ts
           tests/lanTerminalMcpContract.test.ts
           tests/lanTerminalTrayUi.test.ts
 
