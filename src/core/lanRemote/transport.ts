@@ -342,7 +342,16 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
                 req.text.length > 1024 || !/^[^\x00-\x08\x0b-\x1f\x7f]+$/.test(req.text) ||
                 (req.appendNewline !== undefined && typeof req.appendNewline !== "boolean"))
               throw Error("Invalid terminal input.");
-            send(socket, { ok: true, terminal: terminals.input(session.id, req.jobId,
+            const approvedSession = session;
+            const epoch = accessEpoch;
+            const allowed = await options.onApproval({
+              kind: "terminal", controller: device.label, ip, expiresInSeconds: 90,
+              detail: "Terminal input for " + req.jobId + ": " + req.text,
+            });
+            if (!allowed || epoch !== accessEpoch || session !== approvedSession ||
+                socket.destroyed || !approvedSession)
+              throw Error("Terminal input not approved or session revoked.");
+            send(socket, { ok: true, terminal: terminals.input(approvedSession.id, req.jobId,
               req.text, req.appendNewline === true) });
           } else {
             send(socket, { ok: true, terminal: terminals.stop(session.id, req.jobId) });
