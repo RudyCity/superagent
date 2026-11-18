@@ -270,8 +270,6 @@ fn tray_notification_center_action(
     tray_notification_center::perform(&config_dir()?, &action, id.as_deref())
 }
 
-/// Record a generic, redacted UI issue; never persist raw IPC error bodies,
-/// commands, credentials, project paths or other potentially private content.
 /// Foreground refresh of the exact same authenticated security projection used
 /// by the native background poll. Never approves a capability or trusts MCP
 /// request arguments from WebView. A failed Core read retains local inbox
@@ -296,6 +294,8 @@ async fn tray_notification_center_refresh_security(
     Ok(snapshot)
 }
 
+/// Record a generic, redacted UI issue; never persist raw IPC error bodies,
+/// commands, credentials, project paths or other potentially private content.
 #[tauri::command]
 fn tray_notification_center_ui_alert(
     window: tauri::WebviewWindow,
