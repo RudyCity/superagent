@@ -29,6 +29,8 @@ export interface McpSessionEntry {
   /** Client-supplied MCP initialize labels, never authentication evidence. */
   claimedClientName?: string | null;
   claimedClientVersion?: string | null;
+  /** Name from owner-approved OAuth one-time consent, never clientInfo. */
+  ownerConnectionName?: string | null;
   /** Last authenticated tool request name, no arguments or prompts. */
   lastToolRequest?: string;
 }
@@ -39,6 +41,7 @@ export interface McpConnectedAgentSession {
   authMode: "oauth" | "static-bearer";
   claimedClientName: string | null;
   claimedClientVersion: string | null;
+  ownerConnectionName: string | null;
   state: "active" | "idle" | "retiring";
   inFlight: number;
   createdAt: number;
@@ -184,6 +187,7 @@ export class McpSessionRegistry {
       authMode: entry.identity.mode,
       claimedClientName: entry.claimedClientName ?? null,
       claimedClientVersion: entry.claimedClientVersion ?? null,
+      ownerConnectionName: entry.ownerConnectionName ?? null,
       state: this.retiringSessions.has(entry.sessionId) ? "retiring"
         : (entry.inFlight ?? 0) > 0 ? "active" : "idle",
       inFlight: entry.inFlight ?? 0,
