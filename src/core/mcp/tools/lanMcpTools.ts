@@ -45,6 +45,8 @@ const DEVICE_MCP_ALIAS_TO_LEGACY: Record<string, string> = {
   superagent_device_terminal_fleet_start: "superagent_lan_terminal_fleet_start",
   superagent_device_terminal_fleet_read: "superagent_lan_terminal_fleet_read",
   superagent_device_terminal_fleet_input: "superagent_lan_terminal_fleet_input",
+  superagent_device_terminal_fleet_key: "superagent_lan_terminal_fleet_key",
+  superagent_device_terminal_fleet_resize: "superagent_lan_terminal_fleet_resize",
   superagent_device_terminal_fleet_stop: "superagent_lan_terminal_fleet_stop",
   superagent_device_terminal_start: "superagent_lan_terminal_start",
   superagent_device_terminal_read: "superagent_lan_terminal_read",
@@ -88,6 +90,8 @@ export const LAN_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> 
   superagent_lan_terminal_fleet_start: "dangerous",
   superagent_lan_terminal_fleet_read: "dangerous",
   superagent_lan_terminal_fleet_input: "dangerous",
+  superagent_lan_terminal_fleet_key: "dangerous",
+  superagent_lan_terminal_fleet_resize: "dangerous",
   superagent_lan_terminal_fleet_stop: "dangerous",
   superagent_lan_terminal_start: "dangerous",
   superagent_lan_terminal_read: "dangerous",
@@ -260,6 +264,26 @@ const LAN_MCP_BASE_TOOL_DEFS = [
         text: { type: "string", minLength: 1, maxLength: 1024 },
         appendNewline: { type: "boolean" },
       }, ["deviceId", "jobId", "text"]),
+    }, ["targets"]),
+  },
+  {
+    name: "superagent_lan_terminal_fleet_key",
+    description: "Send an individually approved ConPTY key to each selected Windows terminal job concurrently. Every receiving PC must approve every key. Invalid job/device combinations are rejected at the receiver.",
+    inputSchema: closed({
+      targets: fleetItems({ deviceId, jobId: terminalId,
+        key: { type: "string", enum: ["Enter","Backspace","Tab","Escape","ArrowUp","ArrowDown",
+          "ArrowLeft","ArrowRight","Home","End","Delete","PageUp","PageDown","CtrlC"] },
+      }, ["deviceId", "jobId", "key"]),
+    }, ["targets"]),
+  },
+  {
+    name: "superagent_lan_terminal_fleet_resize",
+    description: "Resize each selected Windows ConPTY independently by explicit deviceId and jobId. Requires already approved sessions and local execution policy.",
+    inputSchema: closed({
+      targets: fleetItems({ deviceId, jobId: terminalId,
+        cols: { type: "integer", minimum: 20, maximum: 300 },
+        rows: { type: "integer", minimum: 5, maximum: 120 },
+      }, ["deviceId", "jobId", "cols", "rows"]),
     }, ["targets"]),
   },
   {
@@ -527,6 +551,10 @@ export async function dispatchLanMcpTool(
         return await coreLan({ action: "terminal_fleet_read", targets: args.targets }, 25_000);
       case "superagent_lan_terminal_fleet_input":
         return await coreLan({ action: "terminal_fleet_input", targets: args.targets }, 145_000);
+      case "superagent_lan_terminal_fleet_key":
+        return await coreLan({ action: "terminal_fleet_key", targets: args.targets }, 145_000);
+      case "superagent_lan_terminal_fleet_resize":
+        return await coreLan({ action: "terminal_fleet_resize", targets: args.targets }, 25_000);
       case "superagent_lan_terminal_fleet_stop":
         return await coreLan({ action: "terminal_fleet_stop", targets: args.targets }, 25_000);
       case "superagent_lan_terminal_start":
