@@ -187,11 +187,39 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       {command:"open",pid:100},
       {command:"action",action:"click",elementId:"button"},
       {command:"inspect_window",includeScreenshotImage:true},
+      {command:"inspect_security_prompts",limit:10},
       {command:"list_windows",filePath:".env"},
       {command:"find_window",query:""},
       {command:"find_window",query:"Chrome",pid:-1},
       {command:"list_windows",limit:1000},
       {command:"live_inventory",sessionToken:"a".repeat(64)},
+    ])expect(gate(args)).toMatch(/not certified/);
+  });
+
+  it("explains Desktop UI file-policy refusal without weakening authorization or echoing private arguments",()=>{
+    const a=setup(),opts={registry:()=>a.p(),identity:a.identity};
+    const gate=(args:Record<string,unknown>)=>
+      registeredFileToolGate({name:"superagent_desktop_ui",args},a.root,opts);
+    expect(gate({command:"inspect_security_prompts"})).toBeNull();
+    const invalid=gate({command:"inspect_security_prompts",limit:10});
+    expect(invalid).toMatch(/unsupported arguments/);
+    expect(invalid).not.toMatch(/permission|approval required/i);
+    const protectedWindow=gate({command:"inspect_window",pid:5344,nativeId:"12345",
+      title:"private-window-secret"});
+    expect(protectedWindow).toMatch(/not certified/);
+    expect(protectedWindow).toMatch(/MCP Execute approval does not replace/i);
+    expect(protectedWindow).not.toContain("private-window-secret");
+    const nested=registeredFileToolGate({name:"superagent_tool_execute",args:{
+      name:"superagent_desktop_ui",arguments:{command:"focus_window",pid:5344,nativeId:"12345"},
+    }},a.root,opts);
+    expect(nested).toMatch(/not certified/);
+    expect(gate({command:"probe"})).toBeNull();
+    expect(gate({command:"find_window",query:"SuperAgent"})).toBeNull();
+    for(const args of [
+      {command:"open",pid:5344,nativeId:"12345",allowInput:false},
+      {command:"snapshot",sessionToken:"a".repeat(64)},
+      {command:"action",action:"click",elementId:"button"},
+      {command:"focus_window",pid:5344,nativeId:"12345"},
     ])expect(gate(args)).toMatch(/not certified/);
   });
 
