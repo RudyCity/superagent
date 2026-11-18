@@ -20,6 +20,8 @@ export interface McpIdentity {
   /** static-bearer: "bearer"; oauth: the OAuth client_id */
   subject: string;
   scopes: string[];
+  /** Human-assigned label attached to the verified OAuth token; never an authority. */
+  ownerConnectionName?: string | null;
   /** sha256 hex of the credential, for log correlation (never the credential) */
   credentialHash: string;
 }
