@@ -653,71 +653,39 @@
     pane.hidden = true;
 
     const introduction = make("div", "access-editor access-mcp-intro");
-    introduction.append(
-      make("span", "access-eyebrow", "MCP · INDEPENDENT AUTHORIZATION"),
-      make("h3", "", "MCP Connections"),
+    const introHead = make("div", "access-mcp-intro-head");
+    const introCopy = make("div", "access-mcp-intro-copy");
+    introCopy.append(
+      make("h3", "", "Koneksi MCP"),
       make("p", "access-mcp-description",
-        "Kelola izin operasi koneksi MCP terpisah dari hak akses file proyek. Chat Agent YOLO tidak memberi izin koneksi MCP."),
+        "Kelola izin operasi non-proyek untuk koneksi MCP secara terpisah dari hak akses file proyek. Mode YOLO Chat Agent tidak memberi izin MCP.")
     );
+    const introRefresh = action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests());
+    introRefresh.id = "access-mcp-connections-refresh";
+    introHead.append(introCopy, introRefresh);
+    introduction.append(introHead);
+
     const notice = make("div", "access-mcp-load-error");
     notice.id = "access-mcp-connection-load-error";
     notice.setAttribute("role", "alert");
     notice.hidden = true;
 
-    const connectedCard = make("section", "access-stored");
-    const connectedHead = make("div", "access-stored-head");
-    connectedHead.append(
-      make("h3", "", "Sesi MCP Terhubung"),
-      make("span", "access-count", "Memeriksa…"),
-    );
-    connectedHead.lastChild.id = "access-mcp-live-summary";
-    connectedCard.append(connectedHead,
-      make("p", "access-hint",
-        "Sesi berasal dari MCP owner yang diverifikasi. Nama klien adalah klaim klien, bukan identitas yang otomatis berhak mendapat izin."));
-    const connectedList = make("div", "access-mcp-identities");
-    connectedList.id = "access-mcp-live-list";
-    connectedCard.append(connectedList);
-
-    const registeredCard = make("section", "access-stored");
-    const registeredHead = make("div", "access-stored-head");
-    registeredHead.append(
-      make("h3", "", "Koneksi MCP Tercatat"),
-      make("span", "access-count", "Memeriksa…"),
-    );
-    registeredHead.lastChild.id = "access-mcp-registered-summary";
-    const registeredList = make("div", "access-mcp-identities");
-    registeredList.id = "access-mcp-registered-list";
-    registeredCard.append(registeredHead,
-      make("p", "access-hint",
-        "Dikelompokkan berdasarkan identitas kredensial yang terautentikasi, bukan URL MCP. Satu klien dapat memiliki beberapa sesi. Nama ChatGPT/Gemini adalah klaim dari aplikasi klien. Terdaftar tidak berarti memiliki izin Execute atau akses proyek."),
-      registeredList);
-
-    const identityCard = make("section", "access-stored");
-    const identityHead = make("div", "access-stored-head");
-    identityHead.append(
-      make("h3", "", "Identitas MCP Terverifikasi"),
-      action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests()),
-    );
-    identityCard.append(identityHead);
-    identityCard.append(make("p", "access-hint",
-      "Menampilkan identitas yang terdeteksi oleh Core atau dari permintaan akses terbaru. Identitas dari permintaan terdahulu belum tentu sedang online."));
-    const identities = make("div", "access-mcp-identities");
-    identities.id = "access-mcp-identity-list";
-    identityCard.append(identities);
-
-    const pendingCard = make("section", "access-stored");
+    const pendingCard = make("section", "access-stored access-mcp-card");
     const pendingHead = make("div", "access-stored-head");
     pendingHead.append(make("h3", "", "Permintaan Izin Koneksi"));
-    const pendingCount = make("span", "access-count", "—");
+    const pendingCount = make("span", "access-count", "Memuat...");
     pendingCount.id = "access-mcp-connection-count";
     pendingHead.append(pendingCount);
     const pendingList = make("div", "access-mcp-list");
     pendingList.id = "access-mcp-connection-pending-list";
     pendingCard.append(pendingHead, pendingList);
 
-    const grantCard = make("section", "access-editor");
-    grantCard.append(make("h3", "", "Berikan Izin Operasi Koneksi"),
-      make("p", "access-hint", "Izin ini hanya untuk operasi MCP non-proyek. Tidak memberikan akses baca/tulis ke file mana pun."));
+    const grantCard = make("section", "access-editor access-mcp-card");
+    grantCard.append(
+      make("h3", "", "Berikan Izin Operasi Koneksi"),
+      make("p", "access-hint", "Izin ini khusus untuk operasi MCP non-proyek dan tidak memberi akses baca atau tulis ke file mana pun.")
+    );
+    const grantForm = make("div", "access-mcp-grant-form");
     const identitySelect = select("access-mcp-connection-identity", [["", "Memuat identitas MCP..."]]);
     const grant = action("Tinjau Izin Koneksi MCP (Execute)", "access-submit access-mcp-primary", async () => {
       const identityHandle = identitySelect.value;
@@ -742,15 +710,66 @@
       }
     });
     grant.id = "access-mcp-connection-grant";
-    grantCard.append(field("Identitas MCP", identitySelect), grant);
+    grantForm.append(field("Identitas MCP", identitySelect), grant);
+    grantCard.append(grantForm);
 
-    const historyCard = make("section", "access-stored");
+    const workspaceGrid = make("div", "access-mcp-grid access-mcp-grid-workspace");
+    workspaceGrid.append(pendingCard, grantCard);
+
+    const connectedCard = make("section", "access-stored access-mcp-card");
+    const connectedHead = make("div", "access-stored-head");
+    connectedHead.append(
+      make("h3", "", "Sesi MCP Terhubung"),
+      make("span", "access-count", "Memeriksa…"),
+    );
+    connectedHead.lastChild.id = "access-mcp-live-summary";
+    connectedCard.append(connectedHead,
+      make("p", "access-hint",
+        "Sesi berasal dari MCP owner terverifikasi. Nama klien adalah klaim klien, bukan identitas yang otomatis berhak mendapat izin."));
+    const connectedList = make("div", "access-mcp-identities access-mcp-scroll-list");
+    connectedList.id = "access-mcp-live-list";
+    connectedCard.append(connectedList);
+
+    const registeredCard = make("section", "access-stored access-mcp-card");
+    const registeredHead = make("div", "access-stored-head");
+    registeredHead.append(
+      make("h3", "", "Koneksi MCP Tercatat"),
+      make("span", "access-count", "Memeriksa…"),
+    );
+    registeredHead.lastChild.id = "access-mcp-registered-summary";
+    const registeredList = make("div", "access-mcp-identities access-mcp-scroll-list");
+    registeredList.id = "access-mcp-registered-list";
+    registeredCard.append(registeredHead,
+      make("p", "access-hint",
+        "Dikelompokkan berdasarkan identitas kredensial terautentikasi, bukan URL MCP. Terdaftar tidak berarti memiliki izin Execute atau akses proyek."),
+      registeredList);
+
+    const telemetryGrid = make("div", "access-mcp-grid access-mcp-grid-equal");
+    telemetryGrid.append(connectedCard, registeredCard);
+
+    const identityCard = make("section", "access-stored access-mcp-card");
+    const identityHead = make("div", "access-stored-head");
+    identityHead.append(
+      make("h3", "", "Identitas MCP Terverifikasi"),
+      action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests()),
+    );
+    identityCard.append(identityHead);
+    identityCard.append(make("p", "access-hint",
+      "Menampilkan identitas yang terdeteksi oleh Core atau dari permintaan akses terbaru; tidak semuanya sedang online."));
+    const identities = make("div", "access-mcp-identities access-mcp-scroll-list");
+    identities.id = "access-mcp-identity-list";
+    identityCard.append(identities);
+
+    const historyCard = make("section", "access-stored access-mcp-card");
     historyCard.append(make("h3", "", "Riwayat Keputusan Koneksi"));
-    const historyList = make("div", "access-mcp-list");
+    const historyList = make("div", "access-mcp-list access-mcp-scroll-list");
     historyList.id = "access-mcp-connection-history-list";
     historyCard.append(historyList);
 
-    pane.append(introduction, notice, connectedCard, registeredCard, identityCard, pendingCard, grantCard, historyCard);
+    const secondaryGrid = make("div", "access-mcp-grid access-mcp-grid-secondary");
+    secondaryGrid.append(identityCard, historyCard);
+
+    pane.append(introduction, notice, workspaceGrid, telemetryGrid, secondaryGrid);
     return pane;
   }
 
@@ -763,11 +782,15 @@
     pane.hidden = true;
 
     const banner = make("div", "access-editor access-mcp-intro");
-    const bannerTitle = make("h3", "", "Project Access · MCP");
-    const bannerDesc = make("p", "access-hint", "Agen MCP hanya bisa meminta izin. Pemilik proyek menyetujui kemampuan read/write/execute/git secara terpisah. Tidak terkait mode YOLO Chat Agent.");
-    bannerDesc.style.fontSize = "12px";
-    bannerDesc.style.marginTop = "4px";
-    banner.append(bannerTitle, bannerDesc);
+    const bannerHead = make("div", "access-mcp-intro-head");
+    const bannerCopy = make("div", "access-mcp-intro-copy");
+    const bannerTitle = make("h3", "", "Akses Proyek");
+    const bannerDesc = make("p", "access-mcp-description", "Agen MCP hanya dapat mengajukan permintaan izin. Pemilik proyek menyetujui hak baca, tulis, eksekusi, atau Git secara terpisah dari mode YOLO Chat Agent.");
+    bannerCopy.append(bannerTitle, bannerDesc);
+    const bannerRefresh = action("Muat ulang", "access-audit-refresh", () => void refreshMcpRequests());
+    bannerRefresh.id = "access-mcp-projects-refresh";
+    bannerHead.append(bannerCopy, bannerRefresh);
+    banner.append(bannerHead);
 
     const loadError = make("div", "access-mcp-load-error");
     loadError.id = "access-mcp-project-load-error";
@@ -776,19 +799,19 @@
 
     // Registration adds project metadata only; each MCP identity still needs
     // a separate, attended Security Approval decision for capabilities.
-    const projectSection = make("section", "access-stored access-project-registry");
+    const projectSection = make("section", "access-stored access-project-registry access-mcp-card");
     const projectHead = make("div", "access-project-head");
     const projectTitle = make("div");
     projectTitle.append(make("h3", "", "Proyek Terdaftar"),
-      make("p", "access-hint", "Daftarkan folder lokal, SSH atau Workspace Chain. Izin setiap agent tetap terpisah."));
+      make("p", "access-hint", "Daftarkan folder lokal, SSH, atau Workspace Chain. Izin setiap agent tetap terpisah."));
     const projectForm = make("div", "access-project-form");
     projectForm.id = "access-project-form";
     projectForm.hidden = true;
     let editingProject = null;
-    const toggleProject = action("+ Add Project", "access-submit access-project-add", () => {
+    const toggleProject = action("+ Tambah Proyek", "access-submit access-project-add", () => {
       if (editingProject) resetProjectEditor();
       projectForm.hidden = !projectForm.hidden;
-      toggleProject.textContent = projectForm.hidden ? "+ Add Project" : "Tutup Form";
+      toggleProject.textContent = projectForm.hidden ? "+ Tambah Proyek" : "Tutup Form";
       toggleProject.setAttribute("aria-expanded", String(!projectForm.hidden));
     });
     toggleProject.id = "access-project-add";
@@ -841,7 +864,7 @@
       projectId.readOnly = false; projectType.disabled = false; projectType.value = "local";
       projectLocal.hidden = false; projectRemote.hidden = true;
       projectSubmit.textContent = "Daftarkan Proyek";
-      toggleProject.textContent = "+ Add Project";
+      toggleProject.textContent = "+ Tambah Proyek";
       toggleProject.setAttribute("aria-expanded", "false");
     };
     const projectSubmit = action("Daftarkan Proyek", "access-submit access-project-save", async () => {
@@ -910,9 +933,9 @@
     );
     const projectSearch = make("input", "access-search access-project-search");
     projectSearch.id = "access-project-search"; projectSearch.type = "search";
-    projectSearch.placeholder = "Cari nama, ID atau lokasi proyek...";
+    projectSearch.placeholder = "Cari nama, ID, atau lokasi proyek...";
     projectSearch.addEventListener("input", () => renderProjectInventory());
-    const projectList = make("div", "access-project-list");
+    const projectList = make("div", "access-project-list access-mcp-scroll-list");
     projectList.id = "access-project-list";
     projectSection.append(projectHead, projectForm, projectSearch, projectList);
     // Only native Core mutations are permitted; this callback alters editor
@@ -920,41 +943,31 @@
     window.__superagentEditProject = project => { editingProject = project; };
 
     // Section 1: Pending Access Requests
-    const reqSection = make("div", "access-stored");
-    const reqHead = make("div", "access-audit-head");
-    const reqTitleWrap = make("div", "access-audit-title-wrap");
-    const reqTitle = make("h3", "", "Permintaan Akses Masuk (Pending Requests)");
+    const reqSection = make("section", "access-stored access-mcp-card");
+    const reqHead = make("div", "access-stored-head");
+    const reqTitle = make("h3", "", "Permintaan Akses Masuk");
     const reqBadge = make("span", "access-count", "0 permintaan");
     reqBadge.id = "access-mcp-pending-count";
-    reqTitleWrap.append(reqTitle, reqBadge);
+    reqHead.append(reqTitle, reqBadge);
 
-    const reqRefreshBtn = action("Refresh Permintaan", "access-audit-refresh", () => void refreshMcpRequests());
-    reqHead.append(reqTitleWrap, reqRefreshBtn);
-
-    const reqList = make("div", "access-audit-list");
+    const reqList = make("div", "access-mcp-list");
     reqList.id = "access-mcp-pending-list";
     reqSection.append(reqHead, reqList);
 
     // Section 2: Direct Grant Form
-    const grantSection = make("div", "access-editor");
+    const grantSection = make("section", "access-editor access-mcp-card");
     const grantTitle = make("h3", "", "Berikan Izin Proyek ke Agent MCP");
-    const grantDesc = make("p", "access-hint", "Hanya proyek yang terdaftar dan aktif yang dapat dipilih. Untuk izin operasi non-proyek, buka tab MCP Connections.");
-    grantDesc.style.fontSize = "11px";
+    const grantDesc = make("p", "access-hint", "Hanya proyek yang terdaftar dan aktif yang dapat dipilih. Untuk izin operasi non-proyek, buka tab Koneksi MCP.");
 
     const grantForm = make("div", "access-mcp-grant-form");
     grantForm.id = "access-mcp-direct-grant-form";
-    grantForm.style.display = "grid";
-    grantForm.style.gap = "12px";
-    grantForm.style.marginTop = "10px";
 
-    const identField = field("Identitas MCP", select("access-mcp-ident-select", [["", "Memuat identitas terverifikasi..."]]), "Identitas terverifikasi atau identitas dari permintaan terbaru; tidak semua sedang online.");
+    const identField = field("Identitas MCP", select("access-mcp-ident-select", [["", "Memuat identitas terverifikasi..."]]), "Identitas terverifikasi atau dari permintaan terbaru; tidak semua sedang online.");
     const projField = field("Proyek Terdaftar & Aktif", select("access-mcp-proj-select", [["", "Memuat daftar proyek..."]]), "Tidak termasuk proyek yang belum terdaftar atau dinonaktifkan.");
 
-    const capsWrap = make("div");
-    const capsLabel = make("span", "access-field-title", "Hak Akses (Capabilities):");
-    const capsGrid = make("div");
-    capsGrid.className = "access-mcp-capabilities";
-
+    const capsWrap = make("div", "access-field");
+    const capsLabel = make("span", "access-field-title", "Hak Akses (Capabilities)");
+    const capsGrid = make("div", "access-mcp-capabilities");
 
     capsGrid.append(
       checkbox("access-cap-read", "Read (Baca)", true),
@@ -1008,15 +1021,18 @@
     grantForm.append(identField, projField, capsWrap, grantBtn);
     grantSection.append(grantTitle, grantDesc, grantForm);
 
+    const workspaceGrid = make("div", "access-mcp-grid access-mcp-grid-workspace");
+    workspaceGrid.append(reqSection, grantSection);
+
     // Section 3: History & Active Grants
-    const histSection = make("div", "access-stored");
-    const histHead = make("div", "access-audit-head");
+    const histSection = make("section", "access-stored access-mcp-card");
+    const histHead = make("div", "access-stored-head");
     histHead.append(make("h3", "", "Riwayat Keputusan Proyek"));
-    const histList = make("div", "access-audit-list");
+    const histList = make("div", "access-mcp-list access-mcp-scroll-list");
     histList.id = "access-mcp-history-list";
     histSection.append(histHead, histList);
 
-    pane.append(banner, loadError, projectSection, reqSection, grantSection, histSection);
+    pane.append(banner, loadError, workspaceGrid, projectSection, histSection);
     return pane;
   }
 
@@ -1092,14 +1108,17 @@
       const title = make("div", "access-mcp-request-head");
       const ownerName = typeof req.ownerConnectionName === "string" &&
         req.ownerConnectionName.trim() ? req.ownerConnectionName : null;
-      title.append(make("strong", "", ownerName || String(req.subject || "Identitas MCP tidak dikenal")));
-      if (ownerName) title.append(make("span", "access-mcp-meta",
-        "Nama dari persetujuan OAuth · identitas: " + String(req.subject || "—")));
-      title.append(make("span", "access-mcp-meta", String(req.mode || "") +
-        " · " + (req.createdAt ? new Date(req.createdAt).toLocaleString() : "Waktu tidak tersedia")));
+      title.append(
+        make("strong", "", ownerName || String(req.subject || "Identitas MCP tidak dikenal")),
+        make("span", "access-mcp-meta", String(req.mode || "") +
+          " · " + (req.createdAt ? new Date(req.createdAt).toLocaleString() : "Waktu tidak tersedia"))
+      );
+      const ownerSubtitle = ownerName
+        ? make("div", "access-mcp-meta", "Nama dari persetujuan OAuth · identitas: " + String(req.subject || "(tidak diketahui)"))
+        : null;
       const scope = make("div", "access-mcp-target", humanMcpTarget(req));
-      const description = make("p", "access-mcp-description",
-        String(req.projectPath || "") + (req.reason ? " · " + req.reason : ""));
+      const pathAndReason = [String(req.projectPath || ""), String(req.reason || "")].filter(Boolean).join(" · ");
+      const description = pathAndReason ? make("p", "access-mcp-description", pathAndReason) : null;
       const chips = make("div", "access-mcp-capabilities");
       const selections = [];
       for (const cap of Array.isArray(req.capabilities) ? req.capabilities : []) {
@@ -1127,7 +1146,7 @@
         finally { deny.disabled = false; }
       });
       actions.append(approve, deny);
-      card.append(title, scope, description, chips, actions);
+      card.append(title, ...(ownerSubtitle ? [ownerSubtitle] : []), scope, ...(description ? [description] : []), chips, actions);
       root.append(card);
     }
   }
@@ -1150,14 +1169,16 @@
       const row = make("div", "access-mcp-history-row");
       row.dataset.requestId = String(req.requestId || "");
       const details = make("div", "access-mcp-history-detail");
+      const head = make("div", "access-mcp-history-head");
       const title = make("strong", "", humanMcpTarget(req));
       const state = make("span", "access-mcp-state access-mcp-state-" + String(req.status || "unknown"),
-        ({ approved: "Disetujui", denied: "Ditolak", revoked: "Dicabut" })[req.status] || String(req.status || "—"));
+        ({ approved: "Disetujui", denied: "Ditolak", revoked: "Dicabut" })[req.status] || String(req.status || "Tidak diketahui"));
+      head.append(title, state);
       const meta = make("span", "access-mcp-meta",
         String(req.subject || "Identitas MCP") + " · " +
         (Array.isArray(req.capabilities) ? req.capabilities.join(", ") : "") +
         " · " + new Date(req.decidedAt || req.createdAt || Date.now()).toLocaleString());
-      details.append(title, state, meta);
+      details.append(head, meta);
       row.append(details);
       if (req.status === "approved") {
         const revoke = action("Cabut Izin", "access-revoke", async () => {
@@ -1225,15 +1246,21 @@
         client.claimedClientName.trim() ? client.claimedClientName : "Klien MCP tanpa nama";
       const assignedName = typeof client.ownerConnectionName === "string" &&
         client.ownerConnectionName.trim() ? client.ownerConnectionName : null;
-      row.append(
+      const head = make("div", "access-mcp-row-head");
+      const badge = make("span", "access-mcp-inline-pill access-mcp-pill-" + client.state,
+        (client.authMode === "oauth" ? "OAuth" : "Bearer") + " · " + client.state);
+      head.append(
         make("strong", "", assignedName
           ? assignedName + " (nama dari persetujuan OAuth)"
           : reportedName + " (nama dari klien)"),
+        badge
+      );
+      row.append(
+        head,
         ...(assignedName ? [make("span", "access-mcp-meta",
           "Aplikasi melaporkan: " + reportedName)] : []),
-        make("span", "access-mcp-meta",
-          (client.authMode === "oauth" ? "OAuth" : "Bearer") + " · " +
-          client.state + " · " + client.inFlight + " permintaan aktif · " +
+        make("span", "access-mcp-meta access-mcp-mono",
+          client.inFlight + " permintaan aktif · " +
           client.principalHandle + " · " + client.sessionHandle +
           " · terakhir " + new Date(client.lastSeenAt).toLocaleString()),
       );
@@ -1311,15 +1338,24 @@
     for (const record of registrations) {
       const row = make("div", "access-mcp-identity-row");
       const name = record.ownerConnectionName || record.reportedClientName || "Klien MCP tanpa nama";
-      row.append(make("strong", "", name + (record.ownerConnectionName
-        ? " (nama dari persetujuan OAuth)" : " (nama diklaim klien)")));
+      const head = make("div", "access-mcp-row-head");
+      const statusText = live
+        ? (record.status === "connected" ? "Terhubung" : "Terputus")
+        : "Status belum terverifikasi";
+      const statusTone = live
+        ? (record.status === "connected" ? "active" : "idle")
+        : "unverified";
+      head.append(
+        make("strong", "", name + (record.ownerConnectionName
+          ? " (nama dari persetujuan OAuth)" : " (nama diklaim klien)")),
+        make("span", "access-mcp-inline-pill access-mcp-pill-" + statusTone,
+          (record.authMode === "oauth" ? "OAuth" : "Bearer") + " · " + statusText)
+      );
+      row.append(head);
       if (record.ownerConnectionName && record.reportedClientName)
         row.append(make("span", "access-mcp-meta",
           "Nama dari aplikasi: " + record.reportedClientName));
-      row.append(make("span", "access-mcp-meta",
-        (record.authMode === "oauth" ? "OAuth" : "Bearer") + " · " +
-        (live ? record.status === "connected" ? "Terhubung" : "Terputus" :
-          "Status belum terverifikasi") + " · " +
+      row.append(make("span", "access-mcp-meta access-mcp-mono",
         (live ? record.sessionCount + " sesi · " : "") +
         record.connectionHandle + " · terakhir " +
         new Date(record.lastObservedAt).toLocaleString()));
@@ -1346,9 +1382,14 @@
     }
     for (const id of identities) {
       const row = make("div", "access-mcp-identity-row");
-      row.append(make("strong", "", String(id.subject || "Identitas tidak dikenal")));
-      row.append(make("span", "access-mcp-meta",
-        String(id.mode || "") + " · " + String(id.identityHandle || "") +
+      const head = make("div", "access-mcp-row-head");
+      head.append(
+        make("strong", "", String(id.subject || "Identitas tidak dikenal")),
+        make("span", "access-mcp-inline-pill access-mcp-pill-neutral", String(id.mode || "oauth"))
+      );
+      row.append(head);
+      row.append(make("span", "access-mcp-meta access-mcp-mono",
+        String(id.identityHandle || "") +
         (Array.isArray(id.scopes) && id.scopes.length === 0 ? " · permintaan terbaru, belum tentu online" : "")));
       root.append(row);
     }
@@ -1389,18 +1430,22 @@
         .toLowerCase().includes(query));
     if (!items.length) {
       root.append(make("p", "access-empty",
-        query ? "Tidak ada proyek sesuai pencarian." : "Belum ada proyek. Klik Add Project."));
+        query ? "Tidak ada proyek sesuai pencarian." : "Belum ada proyek. Klik + Tambah Proyek."));
       return;
     }
     for (const project of items) {
       const row = make("div", "access-project-row");
       const detail = make("div", "access-project-detail");
-      detail.append(
+      const detailHead = make("div", "access-mcp-row-head");
+      detailHead.append(
         make("strong", "", String(project.name || project.projectId)),
-        make("span", "access-mcp-meta", String(project.projectId) + " · " +
-          String(project.type || "local") + " · " + String(project.target || "")),
-        make("span", "access-project-no-grant", project.enabled === false
-          ? "Nonaktif · tidak dapat diberi izin MCP" : "Aktif · izin MCP terpisah"));
+        make("span", "access-project-no-grant " + (project.enabled === false ? "is-inactive" : "is-active"),
+          project.enabled === false ? "Nonaktif · tidak dapat diberi izin MCP" : "Aktif · izin MCP terpisah")
+      );
+      detail.append(
+        detailHead,
+        make("span", "access-mcp-meta access-mcp-mono", String(project.projectId) + " · " +
+          String(project.type || "local") + " · " + String(project.target || "")));
       const controls = make("div", "access-project-actions");
       const edit = action("Edit", "access-audit-refresh", () => {
         const form = $("access-project-form");
@@ -1488,7 +1533,7 @@
       for (const [badge, count] of [[badgeProject, projectPending?.length], [badgeConnection, connectionPending?.length]]) {
         if (badge) {
           badge.textContent = typeof count === "number" ? String(count) : "!";
-          badge.className = "access-nav-tab-badge" + (count > 0 ? " pending" : "");
+          badge.className = "access-nav-tab-badge" + (count > 0 ? " pending" : count === 0 ? " zero" : "");
         }
       }
       if ($("access-mcp-pending-count")) {
@@ -1754,7 +1799,7 @@
     tabMcp.setAttribute("aria-selected", "false");
     tabMcp.setAttribute("aria-controls", "access-pane-mcp");
     tabMcp.tabIndex = -1;
-    const mcpBadge = make("span", "access-nav-tab-badge", "0");
+    const mcpBadge = make("span", "access-nav-tab-badge zero", "0");
     mcpBadge.id = "access-tab-badge-mcp";
     tabMcp.append(
       make("span", "access-nav-tab-label", "Akses Proyek"),
@@ -1769,7 +1814,7 @@
     tabConnections.setAttribute("aria-selected", "false");
     tabConnections.setAttribute("aria-controls", "access-pane-connections");
     tabConnections.tabIndex = -1;
-    const connectionBadge = make("span", "access-nav-tab-badge", "0");
+    const connectionBadge = make("span", "access-nav-tab-badge zero", "0");
     connectionBadge.id = "access-tab-badge-connections";
     tabConnections.append(make("span", "access-nav-tab-label", "Koneksi MCP"), connectionBadge);
     tabConnections.addEventListener("click", () => setActiveTab("connections"));
