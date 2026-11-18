@@ -28,6 +28,8 @@ export interface PendingAuthorizationRequest {
   state: string;
   createdAt: number;
   expiresAt: number;
+  /** Human-entered label bound to this OAuth consent, never to client metadata. */
+  ownerConnectionName?: string;
   /** Owner consent decision; code is issued only after approval. */
   approved: boolean;
   /** RFC 8707 resource URI indicator (canonical MCP resource). */
@@ -36,6 +38,7 @@ export interface PendingAuthorizationRequest {
 
 export interface AuthorizationCodeRecord {
   codeHash: string;
+  ownerConnectionName?: string;
   clientId: string;
   redirectUri: string;
   codeChallenge: string;
@@ -49,6 +52,7 @@ export interface AuthorizationCodeRecord {
 
 export interface TokenRecord {
   tokenHash: string;
+  ownerConnectionName?: string;
   clientId: string;
   scope: string[];
   createdAt: number;
@@ -126,6 +130,19 @@ export interface McpOAuthStoreContract {
   revokeToken: McpOAuthStore["revokeToken"];
   cleanupExpired: McpOAuthStore["cleanupExpired"];
 }
+/** Owner-facing only: sanitized label entered after the one-time bootstrap secret.
+ * This label is NOT an MCP identity, client_id, scope, authorization or credential.
+ */
+export function sanitizeOwnerConnectionName(raw: unknown): string | null {
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string" || raw.length > 100 ||
+      /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(raw))
+    throw new Error("Invalid connection name");
+  const value = raw.replace(/\s+/g, " ").trim();
+  if (!value || value.length > 64) throw new Error("Invalid connection name");
+  return value;
+}
+
 export class McpOAuthStore {
   private authRequests = new Map<string, PendingAuthorizationRequest>();
   private codes = new Map<string, AuthorizationCodeRecord>();
@@ -220,7 +237,8 @@ export class McpOAuthStore {
    */
   approveAuthorizationRequest(
     requestId: string,
-    approved: boolean
+    approved: boolean,
+    ownerConnectionName?: string,
   ): { ok: true; code: string } | { ok: false; error: string } {
     const req = this.authRequests.get(requestId);
     if (!req) return { ok: false, error: "unknown authorization request" };
@@ -232,11 +250,16 @@ export class McpOAuthStore {
       this.authRequests.delete(requestId);
       return { ok: false, error: "owner denied the authorization request" };
     }
+    let approvedName: string | null;
+    try { approvedName = sanitizeOwnerConnectionName(ownerConnectionName); }
+    catch { return {ok:false,error:"invalid connection name"}; }
     req.approved = true;
+    req.ownerConnectionName = approvedName ?? undefined;
     const code = randomToken(32);
     const now = Date.now();
     this.codes.set(sha256Hex(code), {
       codeHash: sha256Hex(code),
+      ownerConnectionName: req.ownerConnectionName,
       clientId: req.clientId,
       redirectUri: req.redirectUri,
       codeChallenge: req.codeChallenge,
@@ -280,6 +303,7 @@ export class McpOAuthStore {
     const boundResource = params.resource || rec.resource;
     this.accessTokens.set(sha256Hex(accessToken), {
       tokenHash: sha256Hex(accessToken),
+      ownerConnectionName: rec.ownerConnectionName,
       clientId: rec.clientId,
       scope: rec.scope,
       resource: boundResource,
@@ -289,6 +313,7 @@ export class McpOAuthStore {
     });
     this.refreshTokens.set(sha256Hex(refreshToken), {
       tokenHash: sha256Hex(refreshToken),
+      ownerConnectionName: rec.ownerConnectionName,
       clientId: rec.clientId,
       scope: rec.scope,
       resource: boundResource,
@@ -297,6 +322,16 @@ export class McpOAuthStore {
       revoked: false,
     });
     return { ok: true, accessToken, refreshToken, scope: rec.scope, resource: boundResource };
+  }
+
+  /** Resolve the owner-approved name from an already-authenticated credential
+   * digest only; clientInfo.name and arbitrary client_id cannot set this field.
+   */
+  ownerConnectionNameForTokenHash(tokenHash: string): string | null {
+    if (!/^[a-f0-9]{64}$/.test(tokenHash)) return null;
+    const record = this.accessTokens.get(tokenHash);
+    if (!record || record.revoked || Date.now() > record.expiresAt) return null;
+    return record.ownerConnectionName ?? null;
   }
 
   /** Verify an access token; validates revocation, expiry, and optional target resource. */
@@ -357,6 +392,7 @@ export class McpOAuthStore {
     });
     this.refreshTokens.set(sha256Hex(newRefreshToken), {
       tokenHash: sha256Hex(newRefreshToken),
+      ownerConnectionName: rec.ownerConnectionName,
       clientId: rec.clientId,
       scope: rec.scope,
       resource: rec.resource,
@@ -428,7 +464,11 @@ export class McpOAuthStore {
     };
     const validToken=(t:TokenRecord)=>typeof t.tokenHash==="string"&&
       /^[a-f0-9]{64}$/.test(t.tokenHash)&&typeof t.clientId==="string"&&
-      Array.isArray(t.scope)&&Number.isSafeInteger(t.expiresAt)&&
+      Array.isArray(t.scope)&&
+      (t.ownerConnectionName===undefined ||
+        (typeof t.ownerConnectionName==="string" &&
+         sanitizeOwnerConnectionName(t.ownerConnectionName)===t.ownerConnectionName))&&
+      Number.isSafeInteger(t.expiresAt)&&
       Number.isSafeInteger(t.createdAt)&&typeof t.revoked==="boolean";
     const clients=unique(snapshot.clients,x=>x.clientId,
       x=>typeof x.clientId==="string"&&x.clientId.length>0&&
