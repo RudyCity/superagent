@@ -818,6 +818,12 @@ function runtimeSelectTab(tab, focus = false) {
   if (focus) rt("runtime-tab-" + tab)?.focus?.();
 }
 
+// Notification deep links select a known Runtime category without changing
+// service ownership, grants, or the user's configured process state.
+window.__superagentRuntimeOpenTab = (tab) => {
+  if (runtimeTabNames.includes(tab)) runtimeSelectTab(tab);
+};
+
 function runtimeTabKeydown(event) {
   const current = runtimeTabNames.indexOf(event.currentTarget?.dataset?.runtimeTab);
   if (current < 0) return;
