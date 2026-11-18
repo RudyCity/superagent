@@ -30,12 +30,12 @@ import { createAndroidApkDownloadTicket, getAndroidApkDownloadTicketStatus, revo
 import { approveTvTunnelBootstrap } from "../deviceTunnel/tvBootstrap.js";
 import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
-export type TrayLanAction = "terminal_fleet_open" | "terminal_fleet_close" | "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_stop" | "terminal_start" | "terminal_read" | "terminal_input" | "terminal_key" | "terminal_resize" | "terminal_stop" | "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
+export type TrayLanAction = "terminal_fleet_open" | "terminal_fleet_close" | "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_key" | "terminal_fleet_resize" | "terminal_fleet_stop" | "terminal_start" | "terminal_read" | "terminal_input" | "terminal_key" | "terminal_resize" | "terminal_stop" | "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
   "file_v2_offer" | "file_v2_put" | "file_v2_status" | "file_v2_finish" | "file_v2_abort" |
   "file_relay_start" | "file_relay_status" | "file_relay_cancel" |
   "file_receive_v2_start" | "file_receive_v2_status" | "file_receive_v2_cancel";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "terminal_start", "terminal_read", "terminal_input", "terminal_key", "terminal_resize", "terminal_stop", "android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
+const actions = new Set<TrayLanAction>(["terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_key", "terminal_fleet_resize", "terminal_fleet_stop", "terminal_start", "terminal_read", "terminal_input", "terminal_key", "terminal_resize", "terminal_stop", "android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
   "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
   "file_relay_start", "file_relay_status", "file_relay_cancel",
   "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"]);
@@ -62,6 +62,8 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     terminal_fleet_start: ["action", "targets"],
     terminal_fleet_read: ["action", "targets"],
     terminal_fleet_input: ["action", "targets"],
+    terminal_fleet_key: ["action", "targets"],
+    terminal_fleet_resize: ["action", "targets"],
     terminal_fleet_stop: ["action", "targets"],
     terminal_start: ["action", "deviceId", "command"],
     terminal_read: ["action", "deviceId", "jobId", "cursor"],
@@ -396,6 +398,10 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       return { success: true, fleet: await lanTerminalFleet.execute("read", args.targets) };
     case "terminal_fleet_input":
       return { success: true, fleet: await lanTerminalFleet.execute("input", args.targets) };
+    case "terminal_fleet_key":
+      return { success: true, fleet: await lanTerminalFleet.execute("key", args.targets) };
+    case "terminal_fleet_resize":
+      return { success: true, fleet: await lanTerminalFleet.execute("resize", args.targets) };
     case "terminal_fleet_stop":
       return { success: true, fleet: await lanTerminalFleet.execute("stop", args.targets) };
     case "terminal_start": {
