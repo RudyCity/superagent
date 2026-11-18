@@ -617,6 +617,16 @@ function consentPage(req: PendingSummary): string {
       <form method="post" action="/oauth/authorize">
         <input type="hidden" name="request_id" value="${escapeHtml(req.requestId)}">
         <div class="form-group">
+          <label for="connection_name" class="form-label">Connection name / Nama koneksi</label>
+          <div class="input-wrapper">
+            <input type="text" id="connection_name" name="connection_name"
+              maxlength="64" autocomplete="off" placeholder="Contoh: ChatGPT - Laptop Rudy"
+              aria-describedby="connection_name_hint"
+              style="font-family:var(--font-sans);letter-spacing:normal;padding-right:.875rem">
+          </div>
+          <span class="form-hint" id="connection_name_hint">Optional. Shown in SuperAgent Tray as an owner-assigned label, never as proof of client identity or automatic permission.</span>
+        </div>
+        <div class="form-group">
           <label for="bootstrap_code" class="form-label">One-time bootstrap code (printed at tunnel startup):</label>
           <div class="input-wrapper">
             <input type="password" id="bootstrap_code" name="bootstrap_code" autocomplete="off" placeholder="Enter bootstrap code..." required autofocus>
@@ -848,7 +858,11 @@ async function handleOAuthRouteInternal(
       return json(403, { error: "access_denied", error_description: "invalid bootstrap approval code" });
     }
     const approved = decision === "approve" || Boolean(form["bootstrap_code"]);
-    const result = config.store.approveAuthorizationRequest(pending.requestId, approved);
+    // This human-supplied label becomes authoritative display metadata ONLY
+    // after the bootstrap code is verified. It never changes OAuth scopes.
+    const result = config.store.approveAuthorizationRequest(
+      pending.requestId, approved, form["connection_name"],
+    );
     if (!result.ok) {
       return json(400, { error: "access_denied", error_description: result.error });
     }
