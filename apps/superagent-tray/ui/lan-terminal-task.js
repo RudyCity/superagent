@@ -71,8 +71,9 @@
         "No terminal output for this device.";
       return;
     }
-    if ($("lan-terminal-task-output")) $("lan-terminal-task-output").textContent =
-      displayVtLog(task.output) || "(No output yet)";
+    const output = $("lan-terminal-task-output");
+    const rendered = displayVtLog(task.output) || "(No output yet)";
+    if (output && output.textContent !== rendered) output.textContent = rendered;
     if (lastError) display(lastError, true);
     else if (mutationPending) display("Waiting for target-owner approval...");
     else display(task.stopping ? "Stopping · verifying owned process exit" : task.running
@@ -246,7 +247,7 @@
       ? window.setInterval(() => {
         if (document.visibilityState !== "hidden") void poll();
         sync();
-      }, 1700) : null;
+      }, 500) : null;
     window.addEventListener?.("beforeunload", () => {
       if (pollInterval !== null) window.clearInterval?.(pollInterval);
     }, { once: true });
