@@ -22,8 +22,9 @@
     "muse-files": "muse-files", overview: "overview", logs: "logs",
   });
   const state = {
-    items: [], unreadCount: 0, filter: "all", source: "all", period: "all",
-    search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
+    items: [], history: [], digest: null, prefs: null, sourceLevels: {},
+    unreadCount: 0, filter: "all", source: "all", device: "all", period: "all",
+    grouped: false, search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
   };
   // A click must not lose its read receipt just because a refresh or native
   // action is currently running. Read receipts wait for the existing request.
@@ -46,14 +47,21 @@
     try { return new Date(n).toLocaleString(); } catch { return "Unknown time"; }
   };
   const incidentState = (n) =>
-    n.resolvedAt ? "Resolved" : n.acknowledgedAt ? "Acknowledged" : "Open";
+    n.expiredAt ? "Expired" : n.resolvedAt ? "Resolved"
+      : n.actionStartedAt ? "In progress"
+        : n.acknowledgedAt ? "Acknowledged" : "Pending";
+  const snoozed = (n) => Number(n.snoozedUntil) > Date.now();
+  const deviceOf = (n) => n.deviceId || "unknown";
+  const managed = (n) => n.id.startsWith("mcp-pending:") || n.id.startsWith("health:");
   const active = () => state.items.filter((n) => !n.archivedAt);
   // Action required is an incident state, not a read receipt. An acknowledged
   // warning still needs follow-up; a resolved incident is information/history.
   // Classification uses native severity/lifecycle metadata, never titles/body.
   const kindOf = (n) => !n.resolvedAt && n.severity !== "info" ? "action" : "information";
   const prioritized = () => active().slice().sort((a, b) =>
-    Number(kindOf(b) === "action") - Number(kindOf(a) === "action"));
+    (Number(kindOf(b) === "action" && !snoozed(b)) -
+     Number(kindOf(a) === "action" && !snoozed(a))) ||
+    (Number(kindOf(b) === "action") - Number(kindOf(a) === "action")));
   const selected = () => {
     let items = state.filter === "archived"
       ? state.items.filter((n) => n.archivedAt) : active();
@@ -66,6 +74,7 @@
       if (state.filter === "acknowledged" && (!n.acknowledgedAt || n.resolvedAt)) return false;
       if (state.filter === "resolved" && !n.resolvedAt) return false;
       if (state.source !== "all" && n.source !== state.source) return false;
+      if (state.device !== "all" && deviceOf(n) !== state.device) return false;
       if (state.search && ![n.title, n.body, n.source]
         .some((part) => String(part).toLowerCase().includes(state.search))) return false;
       if (state.period !== "all") {
@@ -78,7 +87,8 @@
     return items;
   };
   const hasActiveFilters = () =>
-    state.filter !== "all" || state.source !== "all" || state.period !== "all" || Boolean(state.search);
+    state.filter !== "all" || state.source !== "all" || state.device !== "all" ||
+    state.period !== "all" || Boolean(state.search);
   const countsSnapshot = () => {
     const current = active();
     return {
@@ -86,6 +96,8 @@
       unread: current.filter((n) => !n.readAt).length,
       action: current.filter((n) => kindOf(n) === "action").length,
       information: current.filter((n) => kindOf(n) === "information").length,
+      snoozed: current.filter((n) => snoozed(n)).length,
+      inProgress: current.filter((n) => Boolean(n.actionStartedAt) && !n.resolvedAt).length,
       important: current.filter((n) => n.severity !== "info").length,
       open: current.filter((n) => !n.resolvedAt && !n.acknowledgedAt).length,
       acknowledged: current.filter((n) => Boolean(n.acknowledgedAt) && !n.resolvedAt).length,
@@ -98,7 +110,9 @@
     return data.items.slice(0, 300).filter((item) =>
       item && typeof item.id === "string" && item.id.length > 0 && item.id.length <= 180 &&
       typeof item.title === "string" && typeof item.body === "string" && sources.includes(item.source) &&
-      Object.hasOwn(severity, item.severity));
+      Object.hasOwn(severity, item.severity) &&
+      (item.deviceId == null || (typeof item.deviceId === "string" &&
+        /^[a-zA-Z0-9._-]{1,64}$/.test(item.deviceId))));
   };
   const readPrefs = (data) => {
     const prefs = data?.preferences;
@@ -108,7 +122,19 @@
     return prefs;
   };
   function displayPrefs(prefs) {
-    if (!prefs || state.prefsDirty) return;
+    if (!prefs) return;
+    state.prefs = prefs;
+    if (state.prefsDirty) return;
+    state.sourceLevels = { ...(prefs.sourceLevels || {}) };
+    const dnd = $("notification-dnd-mode");
+    if (dnd) {
+      dnd.value = prefs.dndEnabled
+        ? (prefs.dndUntil ? "existing" : "indefinite") : "off";
+      dnd.querySelector?.('option[value="existing"]')?.toggleAttribute?.("hidden", !prefs.dndEnabled || !prefs.dndUntil);
+    }
+    if ($("notification-dnd-critical-bypass")) $("notification-dnd-critical-bypass").checked = prefs.dndCriticalBypass !== false;
+    if ($("notification-digest-enabled")) $("notification-digest-enabled").checked = prefs.digestEnabled === true;
+    renderRuleList();
     if ($("notification-min-severity")) $("notification-min-severity").value = prefs.minSeverity;
     if ($("notification-retention-days")) $("notification-retention-days").value = String(prefs.retentionDays);
     if ($("notification-os-critical")) $("notification-os-critical").checked = prefs.osCritical;
@@ -119,6 +145,10 @@
   }
   function apply(data) {
     state.items = safeItems(data);
+    state.history = Array.isArray(data.history) ? data.history.slice(0, 120).filter((event) =>
+      event && typeof event.action === "string" && typeof event.source === "string" &&
+      sources.includes(event.source) && Number.isFinite(Number(event.at))) : [];
+    state.digest = data.digest || null;
     state.unreadCount = state.items.filter((n) => !n.readAt && !n.archivedAt).length;
     state.evictedCount = Number.isSafeInteger(data.evictedCount) && data.evictedCount >= 0
       ? data.evictedCount : 0;
@@ -261,6 +291,8 @@
       kindOf(item) === "action" ? "Action required" : "Information"));
     heading.append(element("span", "notification-item-severity severity-" + item.severity, severityTag[item.severity]));
     heading.append(element("span", "notification-item-state", incidentState(item)));
+    if (snoozed(item)) heading.append(element("span", "notification-item-snoozed",
+      "Snoozed until " + formatTime(item.snoozedUntil)));
     const meta = element("div", "notification-item-meta");
     meta.append(element("span", "notification-item-source", item.source.replaceAll("-", " ")));
     meta.append(element("span", "notification-item-dot", "·"));
@@ -288,11 +320,38 @@
       item.readAt ? "unread" : "read", item.id,
       (item.readAt ? "Mark unread: " : "Mark read: ") + item.title);
     if (!compact) {
-      if (!item.resolvedAt && !item.acknowledgedAt) {
-        addAction(actions, "Acknowledge", "acknowledge", item.id, "Acknowledge: " + item.title);
+      if (!item.resolvedAt && kindOf(item) === "action") {
+        if (!item.acknowledgedAt) {
+          addAction(actions, "Acknowledge", "acknowledge", item.id, "Acknowledge: " + item.title);
+        }
+        addAction(actions, item.actionStartedAt ? "Pause work" : "Start working",
+          item.actionStartedAt ? "pause-work" : "in-progress", item.id);
+        if (snoozed(item)) {
+          addAction(actions, "Unsnooze", "unsnooze", item.id);
+        } else {
+          const snooze = element("select", "notification-snooze-select");
+          snooze.setAttribute("aria-label", "Snooze " + item.title);
+          [["", "Snooze…"], ["snooze-15m", "15 minutes"],
+            ["snooze-1h", "1 hour"], ["snooze-1d", "24 hours"]]
+            .forEach(([value, label]) => {
+              const option = element("option", "", label);
+              option.value = value;
+              snooze.append(option);
+            });
+          snooze.addEventListener("change", (event) => {
+            const action = event.target?.value;
+            if (["snooze-15m", "snooze-1h", "snooze-1d"].includes(action)) void mutate(action, item.id);
+          });
+          snooze.disabled = state.busy;
+          actions.append(snooze);
+        }
       }
-      addAction(actions, item.resolvedAt ? "Reopen" : "Resolve",
-        item.resolvedAt ? "reopen" : "resolve", item.id);
+      if (!managed(item)) {
+        addAction(actions, item.resolvedAt ? "Reopen" : "Resolve",
+          item.resolvedAt ? "reopen" : "resolve", item.id);
+      } else {
+        actions.append(element("span", "notification-managed-hint", "Verified status from Core"));
+      }
     }
     if (!compact || item.archivedAt) {
       addAction(actions, item.archivedAt ? "Restore" : "Archive",
@@ -303,6 +362,50 @@
     return wrapper;
   }
   const empty = (message) => element("div", "notification-empty", message);
+  function renderGrouped(items, parent) {
+    if (!state.grouped) {
+      items.forEach((item) => parent.append(noteCard(item, false)));
+      return;
+    }
+    const groups = new Map();
+    for (const item of items) {
+      const key = kindOf(item) + ":" + item.source;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(item);
+    }
+    for (const [key, members] of groups) {
+      if (members.length === 1) { parent.append(noteCard(members[0], false)); continue; }
+      const group = element("details", "notification-group");
+      group.open = key.startsWith("action:");
+      group.append(element("summary", "notification-group-title",
+        key.replace(":", " · ").replaceAll("-", " ") + " · " + members.length + " events"));
+      const content = element("div", "notification-group-items");
+      // Never combine separate permission cards into a single approval action.
+      members.forEach((item) => content.append(noteCard(item, false)));
+      group.append(content);
+      parent.append(group);
+    }
+  }
+  function renderRuleList() {
+    const list = $("notification-source-rules");
+    if (!list) return;
+    list.replaceChildren();
+    for (const [source, level] of Object.entries(state.sourceLevels)) {
+      const line = element("div", "notification-rule-row");
+      line.append(element("span", "", source.replaceAll("-", " ") + " · " + level));
+      const remove = element("button", "notification-mini-button", "Remove");
+      remove.type = "button";
+      remove.addEventListener("click", () => {
+        delete state.sourceLevels[source];
+        state.prefsDirty = true;
+        renderRuleList();
+        render();
+      });
+      line.append(remove);
+      list.append(line);
+    }
+    if (!Object.keys(state.sourceLevels).length) list.append(empty("Using the global severity rule for all sources."));
+  }
   function inboxStateCard(kind, headingText, detailText, actionLabel, onAction) {
     const card = element("div", "notification-state-card" + (kind ? " is-" + kind : ""));
     card.append(element("strong", "notification-state-title", headingText));
@@ -323,12 +426,20 @@
     if ($("notification-search")) $("notification-search").value = "";
     if ($("notification-period")) $("notification-period").value = "all";
     if ($("notification-source")) $("notification-source").value = "all";
+    state.device = "all";
+    if ($("notification-device")) $("notification-device").value = "all";
     render();
   }
   function render() {
     const count = state.unreadCount;
     const counts = countsSnapshot();
     const visibleItems = selected();
+    const actionBadge = $("tray-notification-action-count");
+    if (actionBadge) {
+      actionBadge.hidden = counts.action === 0;
+      actionBadge.textContent = String(counts.action > 99 ? "99+" : counts.action);
+      actionBadge.setAttribute("aria-label", counts.action + " actions required");
+    }
     for (const el of [$("tray-notification-count"), $("nav-notifications-count")]) {
       if (!el) continue;
       el.hidden = count === 0;
@@ -372,8 +483,48 @@
               : "No active incidents or system notifications right now."));
         }
       } else {
-        visibleItems.forEach((n) => inbox.append(noteCard(n, false)));
+        renderGrouped(visibleItems, inbox);
       }
+    }
+    const device = $("notification-device");
+    if (device) {
+      const old = device.value || state.device;
+      const choices = Array.from(new Set(state.items.map(deviceOf))).sort();
+      device.replaceChildren();
+      for (const [id, label] of [["all", "All devices"], ...choices.map((id) =>
+        [id, id === "local" ? "This computer" : id === "unknown" ? "Unspecified device" : id])]) {
+        const option = element("option", "", label);
+        option.value = id;
+        device.append(option);
+      }
+      device.value = choices.includes(old) || old === "all" ? old : "all";
+      if (state.device !== "all" && !choices.includes(state.device)) state.device = "all";
+    }
+    const history = $("notification-history-list");
+    if (history) {
+      history.replaceChildren();
+      if (!state.history.length) history.append(empty("No recorded notification actions yet."));
+      state.history.slice(0, 40).forEach((event) => {
+        const line = element("div", "notification-history-line");
+        line.append(element("span", "", formatTime(event.at)));
+        line.append(element("strong", "", event.action.replaceAll("_", " ")));
+        line.append(element("span", "", event.source.replaceAll("-", " ")));
+        history.append(line);
+      });
+    }
+    const digest = $("notification-digest-summary");
+    if (digest) {
+      const stats = state.digest;
+      digest.textContent = stats
+        ? (stats.last24hAction || 0) + " actions · " +
+          (stats.last24hInformation || 0) + " information events in the last 24 hours" +
+          (stats.lastSentAt ? " · Last delivered " + formatTime(stats.lastSentAt) : "")
+        : "Daily summary not available.";
+    }
+    const grouping = $("notification-group-toggle");
+    if (grouping) {
+      grouping.textContent = state.grouped ? "Show individual events" : "Group by source";
+      grouping.setAttribute("aria-pressed", String(state.grouped));
     }
     const summary = $("notification-summary");
     if (summary) summary.textContent = counts.action + " require action · " +
@@ -399,6 +550,7 @@
     if ($("notification-kind-count-action")) $("notification-kind-count-action").textContent = String(counts.action);
     if ($("notification-kind-count-information")) $("notification-kind-count-information").textContent = String(counts.information);
     if ($("notification-kpi-unread")) $("notification-kpi-unread").textContent = String(counts.unread);
+    if ($("notification-kpi-progress")) $("notification-kpi-progress").textContent = String(counts.inProgress);
     if ($("notification-kpi-open")) $("notification-kpi-open").textContent = String(counts.open);
     if ($("notification-kpi-important")) $("notification-kpi-important").textContent = String(counts.important);
     if ($("notification-kpi-resolved")) $("notification-kpi-resolved").textContent = String(counts.resolved);
@@ -493,7 +645,26 @@
     } finally { state.busy = false; render(); flushPendingReads(); }
   }
   function collectPrefs() {
+    const mode = $("notification-dnd-mode")?.value || "off";
+    const durations = { "15m": 900000, "1h": 3600000, "8h": 28800000, "24h": 86400000 };
+    const dndEnabled = mode !== "off";
+    const dndUntil = mode === "existing" ? (state.prefs?.dndUntil ?? null)
+      : Object.hasOwn(durations, mode) ? Date.now() + durations[mode] : null;
+    const digestEnabled = $("notification-digest-enabled")?.checked === true;
+    const nextMorning = () => {
+      const next = new Date();
+      next.setHours(9, 0, 0, 0);
+      if (next.getTime() <= Date.now()) next.setDate(next.getDate() + 1);
+      return next.getTime();
+    };
     return {
+      sourceLevels: { ...state.sourceLevels },
+      dndEnabled, dndUntil,
+      dndCriticalBypass: $("notification-dnd-critical-bypass")?.checked !== false,
+      digestEnabled,
+      digestNextAt: digestEnabled
+        ? (state.prefs?.digestEnabled && state.prefs?.digestNextAt > Date.now()
+          ? state.prefs.digestNextAt : nextMorning()) : null,
       minSeverity: $("notification-min-severity").value,
       osCritical: $("notification-os-critical").checked === true,
       osWarnings: $("notification-os-warnings").checked === true,
@@ -573,6 +744,20 @@
       render();
     });
     $("notification-save-preferences")?.addEventListener("click", savePrefs);
+    $("notification-group-toggle")?.addEventListener("click", () => {
+      state.grouped = !state.grouped;
+      render();
+    });
+    $("notification-rule-add")?.addEventListener("click", () => {
+      const source = $("notification-rule-source")?.value;
+      const level = $("notification-rule-level")?.value;
+      if (!sources.includes(source)) return;
+      if (!["info", "warning", "critical", "off"].includes(level)) return;
+      state.sourceLevels[source] = level;
+      state.prefsDirty = true;
+      renderRuleList();
+      render();
+    });
     document.querySelectorAll("[data-notification-filter]").forEach((button) =>
       button.addEventListener("click", () => {
         state.filter = button.dataset.notificationFilter;
@@ -596,8 +781,14 @@
       state.source = event.target.value;
       render();
     });
+    $("notification-device")?.addEventListener("change", (event) => {
+      state.device = event.target.value;
+      render();
+    });
     for (const id of ["notification-min-severity", "notification-os-critical",
-      "notification-os-warnings", "notification-retention-days"]) {
+      "notification-os-warnings", "notification-retention-days",
+      "notification-dnd-mode", "notification-dnd-critical-bypass",
+      "notification-digest-enabled"]) {
       $(id)?.addEventListener("change", () => { state.prefsDirty = true; render(); });
     }
     document.querySelectorAll("[data-notification-category]").forEach((check) =>
