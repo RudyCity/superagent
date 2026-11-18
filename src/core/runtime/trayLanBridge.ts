@@ -12,6 +12,7 @@ import { lanLargeFileReceiveManager } from "../lanRemote/fileReceiveManager.js";
 import { assertAndroidShellCommand } from "../lanRemote/androidCapabilities.js";
 import {
   closeLanSession, discoverLanDevices, execLanCommand, execAndroidShellCommand, listLanDevices,
+  startLanTerminal, readLanTerminal, inputLanTerminal, stopLanTerminal,
   openLanSession, pairLanDevice, revokeLanDevice,
   getAndroidScreenFrame, sendAndroidScreenInput, type AndroidScreenInput,
   getAndroidUiSchema, clickAndroidUiElement, offerLanFile, putLanFileChunk,
@@ -28,12 +29,12 @@ import { createAndroidApkDownloadTicket, getAndroidApkDownloadTicketStatus, revo
 import { approveTvTunnelBootstrap } from "../deviceTunnel/tvBootstrap.js";
 import { ensureOwnedCoreHttpTunnel } from "./ownedCoreHttpTunnel.js";
 
-export type TrayLanAction = "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
+export type TrayLanAction = "terminal_start" | "terminal_read" | "terminal_input" | "terminal_stop" | "android_shell" | "discover" | "list" | "pair" | "pair_request" | "pair_status" | "pair_complete" | "pair_cancel" | "tunnel_invite" | "apk_download_qr" | "qr_heartbeat" | "tunnel_list" | "tunnel_pair_request" | "tunnel_tv_approve" | "tunnel_revoke" | "open" | "exec" | "close" | "revoke" | "screen" | "input" | "schema" | "element" | "file_offer" | "file_put" | "file_get" | "file_status" | "file_finish" | "file_abort" |
   "file_v2_offer" | "file_v2_put" | "file_v2_status" | "file_v2_finish" | "file_v2_abort" |
   "file_relay_start" | "file_relay_status" | "file_relay_cancel" |
   "file_receive_v2_start" | "file_receive_v2_status" | "file_receive_v2_cancel";
 type LanArgs = Record<string, unknown>;
-const actions = new Set<TrayLanAction>(["android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
+const actions = new Set<TrayLanAction>(["terminal_start", "terminal_read", "terminal_input", "terminal_stop", "android_shell", "discover", "list", "pair", "pair_request", "pair_status", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_tv_approve", "tunnel_revoke", "open", "exec", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
   "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
   "file_relay_start", "file_relay_status", "file_relay_cancel",
   "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"]);
@@ -55,6 +56,10 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
     tunnel_tv_approve: ["action", "requestId", "challenge"],
     tunnel_revoke: ["action", "tunnelId"],
     open: ["action", "deviceId"], exec: ["action", "deviceId", "command"],
+    terminal_start: ["action", "deviceId", "command"],
+    terminal_read: ["action", "deviceId", "jobId", "cursor"],
+    terminal_input: ["action", "deviceId", "jobId", "text", "appendNewline"],
+    terminal_stop: ["action", "deviceId", "jobId"],
     android_shell: ["action", "deviceId", "command"],
     close: ["action", "deviceId"], revoke: ["action", "deviceId"],
     file_offer: ["action", "deviceId", "direction", "name", "size", "sha256"],
@@ -125,11 +130,26 @@ export function parseTrayLanAction(input: unknown): { action: TrayLanAction; arg
       if (typeof data.code !== "string" || !/^\d{8}$/.test(data.code)) throw Error("Eight-digit code required.");
       if (data.verified !== true) throw Error("Local fingerprint confirmation required.");
     }
-  } else if (["open", "exec", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
+  } else if (["open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "android_shell", "close", "revoke", "screen", "input", "schema", "element", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort",
     "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort"].includes(action)) {
     if (typeof data.deviceId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.deviceId)) throw Error("Valid paired device ID required.");
     if (action === "exec" &&
       (typeof data.command !== "string" || !data.command.trim() || data.command.length > 2000)) throw Error("PowerShell command must contain 1–2000 characters.");
+    if (action === "terminal_start" &&
+        (typeof data.command !== "string" || !data.command.trim() ||
+         data.command.length > 2000 || /[\x00-\x08\x0b-\x1f\x7f]/.test(data.command)))
+      throw Error("Terminal command must contain 1–2000 printable characters.");
+    if (["terminal_read", "terminal_input", "terminal_stop"].includes(action) &&
+        (typeof data.jobId !== "string" || !/^[a-f0-9-]{36}$/i.test(data.jobId)))
+      throw Error("Valid terminal task ID required.");
+    if (action === "terminal_read" && data.cursor !== undefined &&
+        (!Number.isSafeInteger(data.cursor) || Number(data.cursor) < 0))
+      throw Error("Invalid terminal cursor.");
+    if (action === "terminal_input" &&
+        (typeof data.text !== "string" || !data.text || data.text.length > 1024 ||
+         /[\x00-\x08\x0b-\x1f\x7f]/.test(data.text) ||
+         (data.appendNewline !== undefined && typeof data.appendNewline !== "boolean")))
+      throw Error("Invalid terminal input.");
     if (action === "android_shell") assertAndroidShellCommand(data.command as string);
   }
   if (action.startsWith("file_")) {
@@ -306,7 +326,7 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
   // mouse/keyboard bearer checked at dispatch. None of these is equivalent
   // to an unrestricted YOLO grant for commands, files, pairing, or shell.
   const attendedSupport = ["open","schema","screen","input","element"];
-  if (!isFullYoloMode() && !["close", "revoke", "file_abort", "file_v2_abort",
+  if (!isFullYoloMode() && !["close", "revoke", "terminal_stop", "file_abort", "file_v2_abort",
     "file_relay_cancel", "file_relay_status",
     "file_receive_v2_cancel", "file_receive_v2_status",
     "pair_cancel", "tunnel_revoke",
@@ -347,6 +367,24 @@ export async function dispatchTrayLanAction(input: unknown): Promise<unknown> {
       const result = await execLanCommand(id, command);
       return { success: true, result };
     }
+    case "terminal_start": {
+      const command = args.command as string;
+      if (isSystemDestructiveCommand(command))
+        throw Error("Potentially destructive terminal command blocked.");
+      return { success: true, terminal: await startLanTerminal(id, command) };
+    }
+    case "terminal_read":
+      return { success: true, terminal: await readLanTerminal(id,
+        args.jobId as string, (args.cursor as number | undefined) ?? 0) };
+    case "terminal_input": {
+      const input = args.text as string;
+      if (isSystemDestructiveCommand(input))
+        throw Error("Potentially destructive terminal input blocked.");
+      return { success: true, terminal: await inputLanTerminal(id,
+        args.jobId as string, input, args.appendNewline === true) };
+    }
+    case "terminal_stop":
+      return { success: true, terminal: await stopLanTerminal(id, args.jobId as string) };
     case "android_shell": {
       const command = args.command as string;
       assertAndroidShellCommand(command);
