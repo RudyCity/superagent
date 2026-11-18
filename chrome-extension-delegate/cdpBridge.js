@@ -306,6 +306,7 @@
       const tab = await getTab(tabId);
       const method = String(params.method || "");
       const meta = params.meta && typeof params.meta === "object" ? params.meta : {};
+      if (meta.certifiedWeb === true) policy.assertCertifiedWebUrl(tab?.url || "");
       policy.classify(method, meta);
       if (method === "Page.navigate") policy.assertUrl(String(params.params?.url || ""));
       try {
