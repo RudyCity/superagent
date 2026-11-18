@@ -1,4 +1,5 @@
 import type { Tool } from "./types.js";
+import { lanTerminalFleet, type LanTerminalFleetAction } from "../lanRemote/terminalFleet.js";
 import { isFullYoloMode, isSystemDestructiveCommand } from "../permissions.js";
 import {
   closeLanSession, discoverLanDevices, execLanCommand, execAndroidShellCommand, listLanDevices,
@@ -8,11 +9,11 @@ import {
 
 export const lanSupportTool: Tool = {
   name: "lan_support",
-  description: "Discover, pair, and support Windows laptops or Android phones on the same private physical LAN. Pair and session require target approval and Full YOLO. Windows: bounded non-admin PowerShell. Android: read-only diagnostics (android.memory, android.network_details, android.sensors, etc.) plus owner-approved actions (android.action.open_wifi_settings, android.action.open_bluetooth_settings, android.action.volume_up/down). EVERY Android action needs a separate on-phone approval; Settings opens locally on the phone and disconnects sharing. Android sandbox shell is available through android_shell only, requiring physical approval for every command and disabled remote screen/input. No root, ADB or unattended access. Actions: discover, list, pair, open, exec, terminal_start, terminal_read, terminal_input, terminal_stop, android_shell, close, revoke.",
+  description: "Discover, pair, and support Windows laptops or Android phones on the same private physical LAN. Pair and session require target approval and Full YOLO. Windows: bounded non-admin PowerShell. Android: read-only diagnostics (android.memory, android.network_details, android.sensors, etc.) plus owner-approved actions (android.action.open_wifi_settings, android.action.open_bluetooth_settings, android.action.volume_up/down). EVERY Android action needs a separate on-phone approval; Settings opens locally on the phone and disconnects sharing. Android sandbox shell is available through android_shell only, requiring physical approval for every command and disabled remote screen/input. No root, ADB or unattended access. Actions include terminal_start/read/input/stop and terminal_fleet_start/read/input/stop for 2–8 individually approved devices; Android fleet starts are separately approved one-shot sandbox shell commands.",
   parameters: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["discover", "list", "pair", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "android_shell", "close", "revoke"] },
+      action: { type: "string", enum: ["discover", "list", "pair", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "android_shell", "close", "revoke"] },
       segment: { type: "string", description: "Required local network segment name (3-32 safe ASCII chars) for discovery; not a security credential." },
       host: { type: "string", description: "Target's verified private physical LAN IPv4." },
       port: { type: "integer", description: "Default 17845." },
@@ -25,6 +26,7 @@ export const lanSupportTool: Tool = {
       cursor: { type: "integer", description: "Cursor returned by terminal_read for incremental output." },
       text: { type: "string", description: "Terminal task stdin text, maximum 1024 characters. Each input requires target approval." },
       appendNewline: { type: "boolean", description: "Append a newline to terminal input." },
+      targets: { type: "array", description: "2–8 distinct targets. Start: {deviceId,command}. Read: {deviceId,jobId,cursor?}. Input: {deviceId,jobId,text,appendNewline?}. Stop: {deviceId,jobId}. Each has its own approved session.", items: { type: "object" } },
     },
     required: ["action"],
   },
@@ -36,7 +38,7 @@ export const lanSupportTool: Tool = {
       catch (error) { return "Network segment discovery rejected: " + (error instanceof Error ? error.message : "Invalid segment"); }
     }
     if (action === "list") return JSON.stringify(listLanDevices(), null, 2);
-    if (!isFullYoloMode() && !["close", "revoke", "terminal_stop"].includes(action)) {
+    if (!isFullYoloMode() && !["close", "revoke", "terminal_stop", "terminal_fleet_stop"].includes(action)) {
       return "Remote LAN support mutation denied: enable Full YOLO locally and obtain target approval.";
     };
     if (signal?.aborted) return "LAN operation cancelled.";
@@ -52,6 +54,10 @@ export const lanSupportTool: Tool = {
         const command = String(args.command || "");
         if (isSystemDestructiveCommand(command)) return "Denied: potentially destructive remote system command.";
         return JSON.stringify(await execLanCommand(id, command), null, 2);
+      }
+      if (["terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop"].includes(action)) {
+        const op = action.replace("terminal_fleet_", "") as LanTerminalFleetAction;
+        return JSON.stringify(await lanTerminalFleet.execute(op, args.targets), null, 2);
       }
       if (action === "terminal_start") {
         const command = String(args.command || "");
