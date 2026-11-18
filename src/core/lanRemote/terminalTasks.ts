@@ -43,7 +43,7 @@ export type LanTerminalSnapshot = {
 
 function commandIsValid(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0
-    && value.length <= LAN_TERMINAL_MAX_COMMAND && !/[\\x00-\\x08\\x0b-\\x1f\\x7f]/.test(value);
+    && value.length <= LAN_TERMINAL_MAX_COMMAND && !/[\x00-\x08\x0b-\x1f\x7f]/.test(value);
 }
 function inputIsValid(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
@@ -142,10 +142,12 @@ export class LanTerminalTaskManager {
     const task = this.forSession(sessionId, jobId);
     if (!task.running || !task.child.stdin.writable) throw Error("Terminal is not running.");
     if (!inputIsValid(text) || typeof appendNewline !== "boolean") throw Error("Invalid terminal input.");
-    if (!task.child.stdin.write(text + (appendNewline ? "\\n" : ""))) {
-      // A full pipe must not accumulate unlimited pending input.
-      throw Error("Terminal input backpressure; read output before retrying.");
-    }
+    if (task.child.stdin.writableLength + text.length > 16 * 1024)
+      throw Error("Terminal input queue is full; read output before retrying.");
+    task.child.stdin.write(text + (appendNewline ? "\n" : ""));
+    clearTimeout(task.idle);
+    task.idle = setTimeout(() => this.stopAll("idle_timeout"), INPUT_IDLE_MS);
+    task.idle.unref?.();
     return this.read(sessionId, jobId, task.cursor);
   }
 
