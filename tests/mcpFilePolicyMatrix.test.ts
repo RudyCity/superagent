@@ -77,6 +77,8 @@ describe("MCP full-catalog host file-policy transparency", () => {
         .toBe("requires_explicit_files");
       expect(byName("superagent_chrome_cdp")._meta.filePolicy.readiness)
         .toBe("action_dependent");
+      expect(byName("superagent_chrome_cdp_observe")._meta.filePolicy.readiness)
+        .toBe("certified_metadata");
       expect(byName("superagent_chrome_cdp")._meta.filePolicy.requirement)
         .toMatch(/no evaluate/i);
       expect(byName("superagent_lan_capabilities")._meta.filePolicy.readiness)
@@ -133,4 +135,21 @@ describe("MCP full-catalog host file-policy transparency", () => {
       expect(JSON.stringify(rejected)).toMatch(/not certified|Uncertified|denied/i);
     } finally { await server.close(); }
   });
+  it("rejects control commands on the observe endpoint even without a permanent file registry", async () => {
+    previous = process.env.SUPERAGENT_CONFIG_DIR;
+    config = fs.mkdtempSync(path.join(os.tmpdir(), "sa-mcp-cdp-no-registry-"));
+    process.env.SUPERAGENT_CONFIG_DIR = config;
+    const server = createSuperagentMcpServer({
+      toolExposure: "full",
+      authMode: "oauth",
+      getIdentity: () => ({mode:"oauth",subject:"cdp-reader-only",scopes:["mcp:tools"]}),
+    });
+    try {
+      const forbidden = await invoke(server,"superagent_chrome_cdp_observe",
+        {command:"navigate",transport:"delegate",url:"https://example.com"});
+      expect(forbidden.isError).toBe(true);
+      expect(JSON.stringify(forbidden)).toMatch(/Uncertified|denied|not certified/i);
+    } finally { await server.close(); }
+  });
+
 });
