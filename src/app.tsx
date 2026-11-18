@@ -945,12 +945,10 @@ export function App({
         env?: Record<string, string | undefined>,
         onData?: (chunk: string) => void
       ) => {
-        const wasRaw = process.stdin.isRaw;
-        if (wasRaw) {
-          process.stdin.setRawMode(false);
-        }
-        process.stdin.pause();
-
+        // The subprocess uses piped stdio (execa), not the CLI terminal's
+        // stdin. Never pause or switch Ink's raw-mode input while waiting for
+        // a command: long-running commands would make all keys, including Esc
+        // and Ctrl+C, appear completely unresponsive until the child exits.
         clearActiveToolOutput();
         setIsExecutingTool(true);
         setIsProcessing(true);
@@ -1003,10 +1001,6 @@ export function App({
           setActiveToolDesc("");
         }
 
-        process.stdin.resume();
-        if (wasRaw) {
-          process.stdin.setRawMode(true);
-        }
         return { exitCode, output };
       };
 
