@@ -26,6 +26,29 @@ export function certifiedBrowserObservation(call:BrowserCall):boolean{
 
 
 /**
+ * Permanent-file-policy-certified browser workflows cannot use loopback,
+ * private-network literals or local hostnames as a tunnel to files served by
+ * an unrelated local process. Private development sites need a separate
+ * explicitly reviewed access path; the general CDP tool is not exempted.
+ */
+export function certifiedRemoteWebUrl(raw:unknown):boolean {
+ if(typeof raw!=="string"||!raw||raw.length>4096)return false;
+ try {
+   const url=new URL(raw);
+   if(url.protocol!=="http:"&&url.protocol!=="https:")return false;
+   if(url.username||url.password)return false;
+   const host=url.hostname.toLowerCase().replace(/\\.$/,"");
+   if(!host||host==="localhost"||host.endsWith(".localhost")||
+      host.endsWith(".local")||host.endsWith(".internal")||
+      host.endsWith(".test")||host.endsWith(".invalid"))return false;
+   // Refuse IP-literal targets (public/private) in this high-trust workflow.
+   // Named public web origins are supported; no private network discovery.
+   if(!host.includes(".")||host.includes(":")||/^[0-9.]+$/.test(host))return false;
+   return true;
+ }catch{return false;}
+}
+
+/**
  * Narrow, audited Delegate web workflow. This certifies argument shapes only:
  * the MCP executor still requires OAuth write scope, an independent human MCP
  * Connection Controls grant and a verified per-transport Delegate principal.
@@ -65,11 +88,7 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
    case "navigate": {
      if(!exactWith("sessionToken","expectedRevision","url")||
        !leased()||!revision()||typeof a.url!=="string"||a.url.length>4096)return false;
-     try{
-       const url=new URL(a.url);
-       return (url.protocol==="http:"||url.protocol==="https:") &&
-         !url.username&&!url.password&&!!url.hostname;
-     }catch{return false;}
+     return certifiedRemoteWebUrl(a.url);
    }
    case "click": {
      if(!exactWith("sessionToken","expectedRevision","selector","index")||
