@@ -34,14 +34,15 @@ describe("certified Chrome metadata reader",()=>{
  });
  it("redacts credentials, query strings, fragments and control characters from certified URL inventory",async()=>{
    const {server,port}=await serverWith([
-     {type:"page",id:"safe1",title:"Public\\nPage",url:"https://user:pass@example.org/photos?token=DO_NOT_EXPOSE#private"},
+     {type:"page",id:"safe1",title:"Public\nPage",url:"https://user:pass@example.org/photos?token=DO_NOT_EXPOSE#private"},
    ]);
    try{
      const output=await safeManagedChromeObservation({command:"list_targets",debug_port:port});
      expect(output).toContain("safe1");
      expect(output).toContain("https://example.org/photos");
      expect(output).not.toMatch(/DO_NOT_EXPOSE|user:pass|#private/);
-     expect(output).not.toContain("Public\\nPage");
+     expect(output).not.toContain("Public\nPage");
+     expect(output).toContain("Public Page");
    }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
  });
  it("reports a closed debugging port without claiming that Delegate is disconnected",async()=>{
@@ -55,7 +56,7 @@ describe("certified Chrome metadata reader",()=>{
    expect(status.diagnostic).toContain("debug_port");
    expect(status.diagnostic).toContain("Delegate");
    await expect(safeManagedChromeObservation({command:"list_targets",debug_port:port}))
-     .rejects.toThrow(/CDP_ENDPOINT_REFUSED.*127\\.0\\.0\\.1/);
+     .rejects.toThrow(/CDP_ENDPOINT_REFUSED.*127\.0\.0\.1/);
  });
 
 });
