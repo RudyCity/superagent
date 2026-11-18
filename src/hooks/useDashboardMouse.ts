@@ -51,50 +51,58 @@ export interface DashboardMouseContext {
 }
 
 export function useDashboardMouse(ctx: DashboardMouseContext) {
-  const {
-    wrappedLines,
-    logsCount,
-    terminalSize,
-    activeWizard,
-    setActiveWizard,
-    wizardOptions,
-    wizardSelectedIndex,
-    setWizardSelectedIndex,
-    wizardSelectedSet,
-    setWizardSelectedSet,
-    setWizardOptions,
-    pendingQuestion,
-    handleWizardSubmit,
-    query,
-    setQuery,
-    wizardAllOptions,
-    workspaceHeight,
-    leftTopHeight,
-    wizardIsLoadingModels,
-    agent,
-    focusArea,
-    setFocusArea,
-    setLogScrollOffset,
-    setChecklistScrollOffset,
-    setAgentsScrollOffset,
-    setProcsScrollOffset,
-    checklistTasksCount,
-    maxChecklistVisible = 3,
-    agentsCount,
-    maxAgentsVisible = 3,
-    procsCount,
-    maxProcsVisible = 3,
-    startIdxLogs = 0,
-    groupBoundaries = [],
-    toggleGroupCollapse,
-    logBoxStartRow = 6,
-  } = ctx;
+  // Ink re-renders on every query/cursor change. Mouse handlers must not
+  // re-register on each keystroke: the old effect toggled SGR tracking and
+  // performed repeated stdout writes, degrading keyboard responsiveness.
+  const contextRef = React.useRef(ctx);
+  contextRef.current = ctx;
 
   useEffect(() => {
     const enableMouseTracking = "\x1b[?1000h\x1b[?1002h\x1b[?1006h";
     const disableMouseTracking = "\x1b[?1006l\x1b[?1002l\x1b[?1000l";
 
     const handleMouseInput = (data: Buffer) => {
+      // Always read the latest render state without reattaching the listener.
+      const ctx = contextRef.current;
+    
+      const {
+        wrappedLines,
+        logsCount,
+        terminalSize,
+        activeWizard,
+        setActiveWizard,
+        wizardOptions,
+        wizardSelectedIndex,
+        setWizardSelectedIndex,
+        wizardSelectedSet,
+        setWizardSelectedSet,
+        setWizardOptions,
+        pendingQuestion,
+        handleWizardSubmit,
+        query,
+        setQuery,
+        wizardAllOptions,
+        workspaceHeight,
+        leftTopHeight,
+        wizardIsLoadingModels,
+        agent,
+        focusArea,
+        setFocusArea,
+        setLogScrollOffset,
+        setChecklistScrollOffset,
+        setAgentsScrollOffset,
+        setProcsScrollOffset,
+        checklistTasksCount,
+        maxChecklistVisible = 3,
+        agentsCount,
+        maxAgentsVisible = 3,
+        procsCount,
+        maxProcsVisible = 3,
+        startIdxLogs = 0,
+        groupBoundaries = [],
+        toggleGroupCollapse,
+        logBoxStartRow = 6,
+      } = ctx;
       const text = data.toString("utf8");
       const matches = text.matchAll(/\x1b\[<(?<btn>\d+);(?<col>\d+);(?<row>\d+)(?<action>[Mm])/g);
 
@@ -545,32 +553,5 @@ export function useDashboardMouse(ctx: DashboardMouseContext) {
       process.off("SIGTERM", emergencyCleanup);
       process.off("uncaughtException", emergencyCleanup);
     };
-  }, [
-    wrappedLines.length,
-    logsCount,
-    terminalSize.width,
-    terminalSize.height,
-    activeWizard,
-    wizardOptions,
-    wizardSelectedIndex,
-    pendingQuestion,
-    handleWizardSubmit,
-    query,
-    wizardAllOptions,
-    workspaceHeight,
-    leftTopHeight,
-    wizardIsLoadingModels,
-    agent,
-    focusArea,
-    checklistTasksCount,
-    maxChecklistVisible,
-    agentsCount,
-    maxAgentsVisible,
-    procsCount,
-    maxProcsVisible,
-    startIdxLogs,
-    groupBoundaries,
-    toggleGroupCollapse,
-    logBoxStartRow,
-  ]);
+  }, []);
 }
