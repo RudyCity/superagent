@@ -101,10 +101,6 @@ function validate(action: LanTerminalFleetAction, input: unknown, devices: LanDe
     const device = deviceById.get(t.deviceId);
     if (!device || !device.paired)
       throw Error("Every target must be paired individually before a fleet operation.");
-    if (action === "open" && device.connected)
-      throw Error("Target already has an approved support session; close it before reopening.");
-    if (!["open", "close"].includes(action) && !device.connected)
-      throw Error("Every device must have its own approved open support session.");
     // A receiver may be reachable by LAN and reverse HTTPS tunnel at once.
     // Its pinned certificate fingerprint, not route or handle, identifies it.
     const identity = "receiver:" + device.fingerprint.toLowerCase();
@@ -169,6 +165,15 @@ export class LanTerminalFleet {
     const { targets, deviceById } = validate(action, input, this.deps.list(), this.deps);
     const results = await Promise.all(targets.map(async (t): Promise<FleetTerminalResult> => {
       const device = deviceById.get(t.deviceId)!;
+      // Connectivity and open-session conflicts are per-target failures.
+      // Safe validation of identifiers/commands/duplicate receiver identity
+      // still completes for the entire batch before any side effect.
+      if (action === "open" && device.connected)
+        return { deviceId: t.deviceId, platform: device.platform, ok: false,
+          error: "Target already has an approved support session." };
+      if (!["open", "close"].includes(action) && !device.connected)
+        return { deviceId: t.deviceId, platform: device.platform, ok: false,
+          error: "Target has no active approved support session." };
       const mutating = action === "open" || action === "start" || action === "input" || action === "key" || action === "resize";
       const identity = "receiver:" + device.fingerprint.toLowerCase();
       if (mutating && this.activeMutations.has(identity)) {
