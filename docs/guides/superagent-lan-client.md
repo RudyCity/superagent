@@ -70,6 +70,10 @@ supported by their existing transport; a duplicated physical receiver
 
 **MCP tools** (legacy equivalents use the superagent_lan_ prefix):
 
+- superagent_device_terminal_fleet_open — request independent support-session
+  approval from 2–8 already paired receivers, concurrently.
+- superagent_device_terminal_fleet_close — close the individually named
+  support sessions; each receiver stops its own running task.
 - superagent_device_terminal_fleet_start — independently start an approved
   long-running PowerShell task on each Windows receiver and/or run a single
   explicitly owner-approved sandbox shell command on Android.
@@ -80,14 +84,16 @@ supported by their existing transport; a duplicated physical receiver
 - superagent_device_terminal_fleet_stop — stop **only** the exact Windows
   deviceId/jobId pairs named by the caller.
 
-The internal agent's lan_support tool supports terminal_fleet_start,
-terminal_fleet_read, terminal_fleet_input and terminal_fleet_stop with
-the same targets envelope.
+The internal agent's lan_support tool supports terminal_fleet_open/close,
+terminal_fleet_start/read/input/stop with the same targets envelope.
 
-First list paired devices with superagent_device_list, then request
-superagent_device_session_open **for each target individually** and obtain
-each target owner's approval. No fleet operation automatically pairs,
-opens sessions, turns on YOLO, approves prompts or handles device secrets.
+First list paired devices with superagent_device_list. Then either use
+superagent_device_terminal_fleet_open for concurrent **separate approval on
+each device**, or open each support session individually. Finally issue
+fleet_start for the approved device handles. No fleet operation automatically
+pairs devices, turns on YOLO, approves prompts or exposes session tokens.
+Fleet_open explicitly requests and verifies owner consent at every receiver;
+it rejects already-open sessions to avoid replacing their running tasks.
 
 Example fleet start request (replace the two deviceId values with actual
 opaque handles from the device list):
