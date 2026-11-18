@@ -42,6 +42,8 @@ export interface ProjectAccessRequest {
   requestId: string;
   identityHandle: string;
   subject: string;
+  /** Human-entered OAuth name, display-only; never grant authority. */
+  ownerConnectionName?: string;
   mode: "oauth" | "static-bearer";
   credentialHash?: string;
   projectId: string;
@@ -95,6 +97,10 @@ function validateDocument(raw: unknown, filePath: string): ProjectAccessRequestD
       typeof r.requestId === "string" &&
       typeof r.identityHandle === "string" &&
       typeof r.subject === "string" &&
+      (r.ownerConnectionName === undefined ||
+        (typeof r.ownerConnectionName === "string" &&
+         r.ownerConnectionName.length > 0 && r.ownerConnectionName.length <= 64 &&
+         !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(r.ownerConnectionName))) &&
       (r.mode === "oauth" || r.mode === "static-bearer") &&
       typeof r.projectId === "string" &&
       typeof r.projectPath === "string" &&
@@ -242,6 +248,12 @@ export function createProjectAccessRequest(
     };
   }
 
+  const ownerConnectionName = identity.mode === "oauth" &&
+    typeof identity.ownerConnectionName === "string" &&
+    identity.ownerConnectionName.length <= 64 &&
+    identity.ownerConnectionName.trim() === identity.ownerConnectionName &&
+    !/[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(identity.ownerConnectionName)
+      ? identity.ownerConnectionName : undefined;
   const identityHandle = deriveIdentityHandle(identity);
   const doc = readAccessRequests(options?.requestStorePath);
 
@@ -254,6 +266,7 @@ export function createProjectAccessRequest(
     // Update capabilities and reason
     existingPending.capabilities = [...new Set([...existingPending.capabilities, ...capabilities])].sort() as ProjectAccessCapability[];
     existingPending.reason = cleanReason;
+    if (ownerConnectionName) existingPending.ownerConnectionName = ownerConnectionName;
     existingPending.createdAt = Date.now();
     writeAccessRequests(doc, options?.requestStorePath);
     return {
@@ -273,6 +286,7 @@ export function createProjectAccessRequest(
     requestId: newRequestId,
     identityHandle,
     subject: identity.subject,
+    ownerConnectionName,
     mode: identity.mode,
     credentialHash: identity.credentialHash,
     projectId: project.id,
