@@ -7,7 +7,7 @@ import { fileRulesRegistered } from "../../tools/registeredFileToolGate.js";
 import { certifiedBrowserObservation, certifiedDelegateWebAction, certifiedRemoteWebUrl } from "../../tools/browserFilePolicyCertification.js";
 import { safeManagedChromeObservation } from "../../tools/safeManagedChromeObservation.js";
 import { safeDelegateChromeObservation } from "../../tools/safeDelegateChromeObservation.js";
-import { delegateCdpTransport } from "../../delegate/cdpTransport.js";
+import { delegateCdpTransport, runWithCertifiedDelegateWebScope } from "../../delegate/cdpTransport.js";
 import { parseBrowserTargetId } from "../../browserTransport/targetIdentity.js";
 import { controlChromeCdpTool } from "../../tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../../tools/chromeVisionTools.js";
@@ -126,7 +126,10 @@ export async function handleControlChromeCdp(args: any, options: { hostOwned?: b
           return await dispatchDelegateBrowserMcpTool("superagent_chrome_cdp", args || {});
         }
       }
-      const res = await controlChromeCdpTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
+      const execute = () => controlChromeCdpTool.execute(args || {}, resolveMcpWorkspace(args?.workspace).path);
+      const res = certifiedWeb && options.hostOwned
+        ? await runWithCertifiedDelegateWebScope(execute)
+        : await execute();
       return toResult(res);
     } catch (err: any) {
       return {
