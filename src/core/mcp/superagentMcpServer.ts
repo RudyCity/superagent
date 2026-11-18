@@ -638,14 +638,22 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
     }
     if (PRIVILEGED_MCP_TOOLS.has(name)) {
       return { kind: "operator_admin", oauthScope: "mcp:tools:admin",
-        note: "Operator consent and admin scope are required for project registry/grant changes." };
+        requiredOAuthScopes: ["mcp:tools:write", "mcp:tools:admin"],
+        note: "Operator authorization requires BOTH write and admin OAuth scopes; native approval and host policy remain separate." };
     }
     if (WORKSPACE_SCOPED_MCP_TOOLS.has(name)) {
       const readonly = MCP_TOOL_CLASSIFICATION[name] !== "dangerous";
+      const actionDependent = name === "superagent_git_action";
       return { kind: "project",
         oauthScope: readonly ? "mcp:tools" : "mcp:tools:write",
-        capability: getProjectCapabilityForTool(name, {}),
-        note: "Requires an identity-bound project capability grant even for safe readers. Rechecked per action; host permanent file policy remains independent." };
+        // The grant is read for Git status/diff/log, git for mutating actions.
+        // Describing without action arguments must not claim one fixed grant.
+        capability: actionDependent ? "action_dependent" : getProjectCapabilityForTool(name, {}),
+        ...(actionDependent ? { capabilitiesByAction: {
+          status: "read", diff: "read", log: "read",
+          add: "git", commit: "git", restore: "git", clean: "git",
+        }} : {}),
+        note: "Requires an identity-bound project capability grant. Action-specific capabilities and host file-policy are rechecked at execution." };
     }
     if (MCP_TOOL_CLASSIFICATION[name] !== "dangerous") {
       return { kind: "read_only", oauthScope: "mcp:tools", note: "Read-only classification does not bypass host file or project rules." };
