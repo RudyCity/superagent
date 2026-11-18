@@ -72,7 +72,9 @@ export async function handleControlChromeCdp(args: any, options: { hostOwned?: b
         if(!options.hostOwned) return await dispatchDelegateBrowserMcpTool("superagent_chrome_cdp",args||{});
         return toResult(await safeDelegateChromeObservation(args));
       }
-      if(filePolicyActive) return toResult(await safeManagedChromeObservation(args));
+      // A Core/MCP config mismatch must not silently fall back to raw CDP for
+      // a metadata-only request certified by the outer host file-policy gate.
+      if(certified) return toResult(await safeManagedChromeObservation(args));
       if (needsDelegateCoreHost(args)) {
         let payload: Record<string, unknown> = {};
         try { payload = typeof args?.payload === "string" ? JSON.parse(args.payload) : (args?.payload || {}); } catch {}
