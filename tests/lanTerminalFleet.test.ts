@@ -155,7 +155,7 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
       ...receipt(id), jobId: job,
     }));
     const stop = vi.fn(async (id: string, job: string) => ({
-      ...receipt(id), jobId: job, stopping: true,
+      ...receipt(id), jobId: job, running: false, stopping: false, reason: "stopped_by_owner",
     }));
     const service = new LanTerminalFleet(deps({ read, input, stop }));
     await service.execute("read", [
@@ -204,6 +204,28 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
     ])).rejects.toThrow(/dimensions/);
     expect(key).toHaveBeenCalledTimes(2);
     expect(resize).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for verified exit on each stopped process without replaying stop", async () => {
+    const reads = new Map<string, number>();
+    const stop = vi.fn(async (id: string, job: string) => ({
+      ...receipt(id), jobId: job, running: true, stopping: true,
+    }));
+    const read = vi.fn(async (id: string, job: string) => {
+      const count = (reads.get(id) || 0) + 1;
+      reads.set(id, count);
+      return { ...receipt(id), jobId: job,
+        running: count < 2, stopping: count < 2,
+        reason: count < 2 ? "stopped_by_owner" : "exited" };
+    });
+    const service = new LanTerminalFleet(deps({ stop, read }));
+    const done = await service.execute("stop", [
+      { deviceId: a, jobId: jA }, { deviceId: b, jobId: jB },
+    ]);
+    expect(done).toMatchObject({ requested: 2, succeeded: 2, failed: 0 });
+    expect(stop).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenCalledTimes(4);
+    expect([...reads.values()]).toEqual([2, 2]);
   });
 
   it("preflights all targets before any side effect or owner prompt", async () => {
