@@ -310,7 +310,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     }
     // Approved, session-bound ConPTY (bounded pipes outside native Bun).
     // Status/resize are allowed only inside the SAME approved support session.
-    if (["terminal_start", "terminal_read", "terminal_input", "terminal_resize", "terminal_stop"].includes(String(op))) {
+    if (["terminal_start", "terminal_read", "terminal_input", "terminal_key", "terminal_resize", "terminal_stop"].includes(String(op))) {
       try {
         if (op === "terminal_start") {
           if (typeof req.command !== "string" || !req.command.trim() ||
@@ -342,6 +342,21 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
               throw Error("Invalid terminal dimensions.");
             send(socket, { ok: true, terminal: terminals.resize(session.id, req.jobId,
               Number(req.cols), Number(req.rows)) });
+          } else if (op === "terminal_key") {
+            const allowedKeys = ["Enter", "Backspace", "Tab", "Escape", "ArrowUp", "ArrowDown",
+              "ArrowLeft", "ArrowRight", "Home", "End", "Delete", "PageUp", "PageDown", "CtrlC"];
+            if (typeof req.key !== "string" || !allowedKeys.includes(req.key))
+              throw Error("Unsupported terminal key.");
+            const approvedSession = session;
+            const epoch = accessEpoch;
+            const allowed = await options.onApproval({
+              kind: "terminal", controller: device.label, ip, expiresInSeconds: 90,
+              detail: "Terminal key for " + req.jobId + ": " + req.key,
+            });
+            if (!allowed || epoch !== accessEpoch || session !== approvedSession ||
+                socket.destroyed || !approvedSession)
+              throw Error("Terminal key not approved or session revoked.");
+            send(socket, { ok: true, terminal: terminals.key(approvedSession.id, req.jobId, req.key) });
           } else if (op === "terminal_input") {
             if (typeof req.text !== "string" || !req.text ||
                 req.text.length > 1024 || !/^[^\x00-\x08\x0b-\x1f\x7f]+$/.test(req.text) ||
