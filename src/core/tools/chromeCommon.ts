@@ -59,11 +59,12 @@ export async function ensureCdpRunning(host = "127.0.0.1", port = 9222): Promise
     return false;
   }
 
+  const manager = getBrowserProcessManager();
   if (await isCdpPortListening(port)) {
-    return true;
+    const health = await manager.checkHealth(port);
+    return health.status === "healthy" && Boolean(health.browserFingerprint);
   }
 
-  const manager = getBrowserProcessManager();
   const useFakeMediaUi = process.env.SUPERAGENT_UNATTENDED_SCREEN_CAPTURE === "1";
   return await manager.ensureBrowserRunning({
     host,
