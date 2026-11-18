@@ -32,6 +32,8 @@ const deps = (override: Partial<LanTerminalFleetDeps> = {}): LanTerminalFleetDep
   start: async (id) => receipt(id),
   read: async (id) => receipt(id),
   input: async (id) => receipt(id),
+  key: async (id) => receipt(id),
+  resize: async (id) => receipt(id),
   stop: async (id) => ({ ...receipt(id), running: false, stopping: true, reason: "stopped_by_owner" }),
   android: async () => ({ stdout: "Android output", ok: true, exitCode: 0 }),
   fullYolo: () => true, destructive: () => false, ...override,
@@ -146,6 +148,36 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
     ]);
     expect(stop).toHaveBeenCalledWith(a, jA);
     expect(stop).toHaveBeenCalledWith(b, jB);
+  });
+
+  it("routes ConPTY keys and resize independently to the correct Windows task", async () => {
+    const key = vi.fn(async (id: string) => receipt(id));
+    const resize = vi.fn(async (id: string) => receipt(id));
+    const service = new LanTerminalFleet(deps({ key, resize }));
+    const keys = await service.execute("key", [
+      { deviceId: a, jobId: jA, key: "Escape" },
+      { deviceId: b, jobId: jB, key: "CtrlC" },
+    ]);
+    expect(keys).toMatchObject({ requested: 2, succeeded: 2, failed: 0 });
+    expect(key).toHaveBeenCalledWith(a, jA, "Escape");
+    expect(key).toHaveBeenCalledWith(b, jB, "CtrlC");
+    const sizes = await service.execute("resize", [
+      { deviceId: a, jobId: jA, cols: 80, rows: 24 },
+      { deviceId: b, jobId: jB, cols: 132, rows: 40 },
+    ]);
+    expect(sizes.succeeded).toBe(2);
+    expect(resize).toHaveBeenCalledWith(a, jA, 80, 24);
+    expect(resize).toHaveBeenCalledWith(b, jB, 132, 40);
+    await expect(service.execute("key", [
+      { deviceId: a, jobId: jA, key: "AltF4" },
+      { deviceId: b, jobId: jB, key: "Escape" },
+    ])).rejects.toThrow(/key/);
+    await expect(service.execute("resize", [
+      { deviceId: a, jobId: jA, cols: 0, rows: 24 },
+      { deviceId: b, jobId: jB, cols: 80, rows: 24 },
+    ])).rejects.toThrow(/dimensions/);
+    expect(key).toHaveBeenCalledTimes(2);
+    expect(resize).toHaveBeenCalledTimes(2);
   });
 
   it("preflights all targets before any side effect or owner prompt", async () => {
