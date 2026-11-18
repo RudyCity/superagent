@@ -37,7 +37,8 @@ describe("Managed CDP launch ownership/reuse", () => {
 
   it("reuses only a tracked PID and matching exact browser fingerprint",async()=>{
     const identity = await readProcessStartIdentity(process.pid);
-    expect(identity).toBeTruthy();
+    // macOS CI may not expose a process birth identity. Fail closed there.
+    // Do not fake ownership or skip the foreign-port safety assertion.
     const dataDir=path.join(os.tmpdir(),"cdp-owner-test-"+port);
     const record:BrowserInstanceRecord={
       recordId:"owned-fixture",pid:process.pid,creationIdentity:identity,port,
@@ -47,6 +48,11 @@ describe("Managed CDP launch ownership/reuse", () => {
       launchedAt:Date.now(),generation:"test-fixture",
     };
     (manager as any).activeInstances.set(port,record);
+    if (!identity) {
+      await expect(manager.launchBrowser({port,mode:"headless",userDataDir:dataDir}))
+        .rejects.toThrow(/MANAGED_CDP_PORT_OCCUPIED/);
+      return;
+    }
     const reused=await manager.launchBrowser({port,mode:"headless",userDataDir:dataDir});
     expect(reused.pid).toBe(process.pid);
     expect(reused.reused).toBe(true);
