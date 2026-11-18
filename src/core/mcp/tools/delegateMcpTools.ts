@@ -182,13 +182,34 @@ export function delegateMcpObservation(name: string, args: unknown): {
   args: Record<string, unknown>;
   error: (text: string) => string;
 } | null {
+  const browserWeb = (value: unknown): boolean =>
+    value === "superagent_chrome_cdp_web" || value === "superagent_chrome_cdp";
+  const nestedBrowser = name === "superagent_tool_execute" && isPlainObject(args) &&
+    browserWeb(args.name) && isPlainObject(args.arguments) &&
+    args.arguments.transport === "delegate" ? String(args.name) : null;
+  const directBrowser = browserWeb(name) && isPlainObject(args) &&
+    args.transport === "delegate" ? name : null;
   const nested = name === "superagent_tool_execute" && isPlainObject(args) &&
     typeof args.name === "string" && nameSet.has(args.name)
-    ? args.name : null;
-  const target = nameSet.has(name) ? name : nested;
+    ? args.name : nestedBrowser;
+  const target = directBrowser || (nameSet.has(name) ? name : nested);
   if (!target) return null;
   const options = nested ? (isPlainObject(args) ? args.arguments : undefined) : args;
   const values = isPlainObject(options) ? options : {};
+  if (directBrowser || nestedBrowser) return {
+    args: {
+      delegateTool: target,
+      command: typeof values.command === "string" ? values.command.slice(0,40) : "unknown",
+      tabSpecified: values.targetId !== undefined,
+      profileSpecified: values.delegateClientId !== undefined,
+      textBytes: typeof values.text === "string" ? Buffer.byteLength(values.text,"utf8") : 0,
+      contentRedacted: true,
+    },
+    error: (message: string) => {
+      const code = String(message).match(/(?:DELEGATE|CDP|MCP)_[A-Z_]+/);
+      return code ? code[0] : "DELEGATE_CDP_TOOL_FAILED";
+    },
+  };
   return {
     args: {
       delegateTool: target,
