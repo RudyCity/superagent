@@ -58,6 +58,75 @@ The Windows camera scanner uses the browser BarcodeDetector capability (current 
 
 Dangerous tools require locally enabled **Full YOLO**, existing MCP permission checks, OAuth write scopes when applicable, plus physical target approval for pairing and sessions. Avoid including passwords or credentials in commands. The controller stores temporary pairing/session secrets **only in process memory**; the target generates an ephemeral TLS private key in memory. No background access or persisted approval.
 
+## Agent/MCP parallel terminal fleet (source implementation, 2026-11-18)
+
+The Core can fan out a single agent/MCP request to **2–8 distinct, already
+approved Windows/Android devices at the same time**. Each target keeps its own
+physical owner consent, pinned receiver identity, pairing, support session,
+process/job ID, output cursor, and error result. A device does **not** inherit
+another device's permission. Direct LAN and reverse HTTPS tunnel receivers are
+supported by their existing transport; a duplicated physical receiver
+(reachable through both routes) is rejected by certificate fingerprint.
+
+**MCP tools** (legacy equivalents use the superagent_lan_ prefix):
+
+- superagent_device_terminal_fleet_start — independently start an approved
+  long-running PowerShell task on each Windows receiver and/or run a single
+  explicitly owner-approved sandbox shell command on Android.
+- superagent_device_terminal_fleet_read — read up to 8 KiB of incremental
+  output per Windows job using its own deviceId + jobId + nextCursor.
+- superagent_device_terminal_fleet_input — send different bounded stdin text
+  to each Windows job; **every receiver must approve each input**.
+- superagent_device_terminal_fleet_stop — stop **only** the exact Windows
+  deviceId/jobId pairs named by the caller.
+
+The internal agent's lan_support tool supports terminal_fleet_start,
+terminal_fleet_read, terminal_fleet_input and terminal_fleet_stop with
+the same targets envelope.
+
+First list paired devices with superagent_device_list, then request
+superagent_device_session_open **for each target individually** and obtain
+each target owner's approval. No fleet operation automatically pairs,
+opens sessions, turns on YOLO, approves prompts or handles device secrets.
+
+Example fleet start request (replace the two deviceId values with actual
+opaque handles from the device list):
+
+```json
+{
+  "targets": [
+    {"deviceId": "11111111-1111-4111-8111-111111111111", "command": "Get-Date"},
+    {"deviceId": "22222222-2222-4222-8222-222222222222", "command": "Get-Process | Select-Object -First 10"}
+  ]
+}
+```
+
+The response contains ordered, per-target receipts: requested/succeeded/
+failed counts, and for Windows a terminal.jobId; Android returns a bounded
+one-shot shell result (maximum 4096 characters exposed in fleet output,
+outputTruncated indicates the aggregate display cap). Windows read/input/stop
+never accept Android entries because Android's terminal is not a persistent
+PTY. A denial or timeout for one target does not cancel another, and a
+timeout must **never trigger automatic command replay**. Use individual
+terminal_read if only one task remains.
+
+Limits and consent: at most 8 distinct devices per fleet request; at most
+one running terminal task per Windows receiver; one active terminal mutation
+per receiver fingerprint; duplicate device handles or two LAN/tunnel routes
+to the same receiver are rejected before prompting anyone. Every target
+must already have an active approved support session, and execution/read/
+input require the locally configured Full YOLO permission plus MCP host
+dangerous-tool authorization. Emergency stop can still request termination
+when YOLO is switched off, but the MCP host must permit that tool. Session
+close/revoke stops only the corresponding receiver's task.
+
+**Verification boundary:** source committed and tests added for mixed device
+fan-out, concurrent completion, partial failures, cross-device job routing,
+duplicate receiver prevention, per-device stop and two separate TLS receivers.
+CI execution, physical Android/Windows pairing, full system runtime and a
+signed installer/APK release must be verified separately. This does not
+constitute production certification.
+
 ## Attended Windows terminal tasks (source implementation, 2026-11-18)
 
 The receiver now exposes a separate, **opt-in piped task** API in addition
