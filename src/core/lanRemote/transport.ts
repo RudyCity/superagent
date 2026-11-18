@@ -9,6 +9,7 @@ import { LanTargetFiles, safeLanFilename, LAN_FILE_MAX_BYTES } from "./fileTrans
 import { LanDiskTargetV2, LAN_V2_MAX_BYTES } from "./streamTransferV2.js";
 import { LanDiskSourceV2 } from "./streamSourceV2.js";
 import { isSegmentDiscoveryRequest, networkSegmentTag } from "./networkSegment.js";
+import { LanTerminalTaskManager } from "./terminalTasks.js";
 
 export const LAN_PORT = 17845;
 export const PAIR_WINDOW_MS = 120_000;
@@ -130,7 +131,7 @@ function certificate(): { cert: string; key: string; fingerprint: string } {
     fingerprint: crypto.createHash("sha256").update(Buffer.from(der, "binary")).digest("hex"),
   };
 }
-export interface ApprovalRequest { kind: "pair" | "session" | "file-upload" | "file-download"; controller: string; ip: string; expiresInSeconds: number; detail?: string }
+export interface ApprovalRequest { kind: "pair" | "session" | "terminal" | "file-upload" | "file-download"; controller: string; ip: string; expiresInSeconds: number; detail?: string }
 export interface LanTransferStatus { transferId: string; direction: "upload" | "download"; name: string; size: number; transferred: number; status: "active" | "completed" | "cancelled" | "failed"; }
 export interface ServerOptions {
   host: string;
@@ -171,6 +172,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
   const devices = new Map<string, PairedDevice>();
   let session: ActiveSession | null = null;
   let busy = false;
+  const terminals = new LanTerminalTaskManager();
   const files = new LanTargetFiles(options.transferDirectory);
   const diskV2 = new LanDiskTargetV2(options.transferDirectory);
   const sourceV2 = new LanDiskSourceV2();
@@ -213,6 +215,7 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
     accessEpoch++;
     codeExpires = 0; // Revoked pairing codes never remain reusable.
     cancelTransfer();
+    terminals.stopAll();
     devices.clear(); session = null; files.clear(); sourceV2.clear();
     void diskV2.purge().catch(() => { notice("LAN V2 staging cleanup failed; manual review required."); });
     abortChild();
@@ -293,15 +296,62 @@ export async function startLanServer(options: ServerOptions): Promise<LanServerH
         || req.sessionId !== session.id || !equal(String(req.sessionToken || ""), session.secret)
         || now() - session.created > SESSION_MAX_MS || now() - session.lastUsed > SESSION_IDLE_MS) {
       session = null;
+      terminals.stopAll();
       fail(socket, "Session expired or denied."); socket.end(); return;
     }
     session.lastUsed = now();
     if (op === "close") {
       cancelTransfer();
+      terminals.stopAll();
       session = null; files.clear(); diskV2.suspend(); sourceV2.clear();
       v2TransferId = null; v2Direction = null;
       abortChild(); send(socket, { ok: true });
       socket.end(); notice("Support session closed."); return;
+    }
+    // Independently approved, session-bound piped terminal. Never expose an
+    // unrestricted PTY or credentials; status can be polled after a dropped
+    // request, but only while the SAME approved support session remains valid.
+    if (["terminal_start", "terminal_read", "terminal_input", "terminal_stop"].includes(String(op))) {
+      try {
+        if (op === "terminal_start") {
+          if (typeof req.command !== "string" || !req.command.trim() ||
+              req.command.length > 2000) throw Error("Invalid terminal command.");
+          if (terminals.hasRunning()) throw Error("A terminal task is already running.");
+          const approvedSession = session;
+          const epoch = accessEpoch;
+          const allowed = await options.onApproval({
+            kind: "terminal", controller: device.label, ip, expiresInSeconds: 90,
+            detail: req.command,
+          });
+          if (!allowed || epoch !== accessEpoch || session !== approvedSession ||
+              socket.destroyed || !approvedSession)
+            throw Error("Terminal task not approved or session revoked.");
+          send(socket, { ok: true, terminal: terminals.start(approvedSession.id, req.command) });
+        } else {
+          if (typeof req.jobId !== "string" ||
+              !/^[a-f0-9-]{36}$/i.test(req.jobId))
+            throw Error("Invalid terminal task ID.");
+          if (op === "terminal_read") {
+            if (req.cursor !== undefined &&
+                (!Number.isSafeInteger(req.cursor) || Number(req.cursor) < 0))
+              throw Error("Invalid terminal cursor.");
+            send(socket, { ok: true, terminal: terminals.read(session.id, req.jobId,
+              req.cursor === undefined ? 0 : Number(req.cursor)) });
+          } else if (op === "terminal_input") {
+            if (typeof req.text !== "string" || !req.text ||
+                req.text.length > 1024 || !/^[^\x00-\x08\x0b-\x1f\x7f]+$/.test(req.text) ||
+                (req.appendNewline !== undefined && typeof req.appendNewline !== "boolean"))
+              throw Error("Invalid terminal input.");
+            send(socket, { ok: true, terminal: terminals.input(session.id, req.jobId,
+              req.text, req.appendNewline === true) });
+          } else {
+            send(socket, { ok: true, terminal: terminals.stop(session.id, req.jobId) });
+          }
+        }
+      } catch (error) {
+        fail(socket, error instanceof Error ? error.message : "Terminal request rejected.");
+      }
+      socket.end(); return;
     }
     if (op === "file_v2_offer") {
       if (busy || (transfer?.status === "active" && transfer.transferId !== v2TransferId)) {
