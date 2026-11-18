@@ -272,6 +272,30 @@ fn tray_notification_center_action(
 
 /// Record a generic, redacted UI issue; never persist raw IPC error bodies,
 /// commands, credentials, project paths or other potentially private content.
+/// Foreground refresh of the exact same authenticated security projection used
+/// by the native background poll. Never approves a capability or trusts MCP
+/// request arguments from WebView. A failed Core read retains local inbox
+/// history and reports an explicit unavailable sync state.
+#[tauri::command]
+async fn tray_notification_center_refresh_security(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+) -> Result<Value, String> {
+    if window.label() != "main" {
+        return Err("Security notifications are limited to the native Tray window".into());
+    }
+    let synchronized = poll_pending_security_requests(&app).await;
+    if let Err(error) = &synchronized {
+        eprintln!("[tray] Security approval refresh unavailable: {error}");
+    }
+    let mut snapshot = tray_notification_center::perform(&config_dir()?, "list", None)?;
+    if let Some(object) = snapshot.as_object_mut() {
+        object.insert("securitySync".into(),
+            json!(if synchronized.is_ok() { "ok" } else { "unavailable" }));
+    }
+    Ok(snapshot)
+}
+
 #[tauri::command]
 fn tray_notification_center_ui_alert(
     window: tauri::WebviewWindow,
@@ -3915,13 +3939,21 @@ fn main() {
                     // When notifications are switched off, acknowledge
                     // completed reminders without emitting toasts so they
                     // cannot flood the user when re-enabled later.
-                    if let Err(error) = poll_reminders(&handle, preferences.notifications_enabled).await {
-                        eprintln!("[tray] Reminder notification projection failed: {error}");
-                    }
-                    if let Err(error) = poll_pending_security_requests(&handle).await {
+                    // Security approvals must not wait behind slow daemon,
+                    // reminder, or health probes. All three projections read
+                    // trusted Core state independently, and never grant access.
+                    let (security, reminders, health) = tokio::join!(
+                        poll_pending_security_requests(&handle),
+                        poll_reminders(&handle, preferences.notifications_enabled),
+                        poll_operational_health(&handle, &mut observation),
+                    );
+                    if let Err(error) = security {
                         eprintln!("[tray] Security notification projection unavailable: {error}");
                     }
-                    if let Err(error) = poll_operational_health(&handle, &mut observation).await {
+                    if let Err(error) = reminders {
+                        eprintln!("[tray] Reminder notification projection failed: {error}");
+                    }
+                    if let Err(error) = health {
                         eprintln!("[tray] Operational notification projection unavailable: {error}");
                     }
                     tokio::time::sleep(Duration::from_secs(preferences.notification_poll_seconds))
@@ -3969,6 +4001,7 @@ fn main() {
             regenerate_token,
             get_tray_settings,
             tray_notification_center_action,
+            tray_notification_center_refresh_security,
             tray_notification_center_ui_alert,
             tray_notification_center_preferences,
             desktop_input_trust::get_desktop_input_policy,
