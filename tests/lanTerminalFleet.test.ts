@@ -141,8 +141,14 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
 
   it("keeps per-device mutation exclusive but permits independent fleet stop", async () => {
     const release: Record<string, (value: LanTerminalSnapshot) => void> = {};
+    let calls = 0;
     const service = new LanTerminalFleet(deps({
-      start: (id) => new Promise(resolve => { release[id] = resolve; }),
+      start: (id) => {
+        calls++;
+        return calls <= 2
+          ? new Promise(resolve => { release[id] = resolve; })
+          : Promise.resolve(receipt(id));
+      },
     }));
     const first = service.execute("start", [
       { deviceId: a, command: "Get-Date" }, { deviceId: b, command: "Get-Date" },
