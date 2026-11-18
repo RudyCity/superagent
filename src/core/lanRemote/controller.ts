@@ -24,6 +24,7 @@ interface SavedSession extends LanDevice {
   transport: "lan" | "tunnel";
 }
 const sessions = new Map<string, SavedSession>();
+const pendingSessionOpens = new Map<string, { cancelled: boolean }>();
 export function listLanDevices(): LanDevice[] {
   return [...sessions.values()].map(({ id, host, port, fingerprint, label, platform, sessionToken, transport, tunnelId }) => ({
     id, host, port, fingerprint, label, platform, paired: true, connected: Boolean(sessionToken),
@@ -183,11 +184,29 @@ function getSession(id: string): SavedSession {
 }
 export async function openLanSession(id: string): Promise<LanDevice> {
   const d = getSession(id);
-  const [reply] = await requestSaved(d, { op: "open", pairId: d.pairId, pairToken: d.pairToken });
-  if (!reply || typeof reply.sessionId !== "string" || typeof reply.sessionToken !== "string") throw new Error("Session approval failed.");
-  d.sessionId = reply.sessionId;
-  d.sessionToken = reply.sessionToken;
-  return { id: d.id, host: d.host, port: d.port, fingerprint: d.fingerprint, label: d.label, platform: d.platform, paired: true, connected: true };
+  if (d.sessionId || d.sessionToken || pendingSessionOpens.has(id))
+    throw new Error("Device session already open or awaiting owner approval.");
+  const lease = { cancelled: false };
+  pendingSessionOpens.set(id, lease);
+  try {
+    const [reply] = await requestSaved(d, { op: "open", pairId: d.pairId, pairToken: d.pairToken });
+    if (!reply || typeof reply.sessionId !== "string" || typeof reply.sessionToken !== "string")
+      throw new Error("Session approval failed.");
+    // A close/revoke during the physical owner prompt invalidates that
+    // approval even if the target returns credentials afterward.
+    if (lease.cancelled || sessions.get(id) !== d) {
+      await requestSaved(d, {
+        op: "close", pairId: d.pairId, pairToken: d.pairToken,
+        sessionId: reply.sessionId, sessionToken: reply.sessionToken,
+      }, 10_000).catch(() => {});
+      throw new Error("Device session approval was cancelled or revoked.");
+    }
+    d.sessionId = reply.sessionId;
+    d.sessionToken = reply.sessionToken;
+    return { id: d.id, host: d.host, port: d.port, fingerprint: d.fingerprint, label: d.label, platform: d.platform, paired: true, connected: true };
+  } finally {
+    if (pendingSessionOpens.get(id) === lease) pendingSessionOpens.delete(id);
+  }
 }
 export async function execLanCommand(id: string, command: string): Promise<{ stdout: string; stderr: string; exitCode: number | null; ok: boolean; error?: string }> {
   const d = getSession(id);
@@ -711,7 +730,12 @@ export async function abortLanFile(id: string, transferId: string): Promise<void
 
 export async function closeLanSession(id: string): Promise<void> {
   const d = getSession(id);
-  if (!d.sessionToken) return;
+  const pending = pendingSessionOpens.get(id);
+  if (pending) pending.cancelled = true;
+  if (!d.sessionToken) {
+    if (d.platform === "android") sessions.delete(id);
+    return;
+  }
   try {
     await requestSaved(d, {
       op: "close", pairId: d.pairId, pairToken: d.pairToken, sessionId: d.sessionId, sessionToken: d.sessionToken,
@@ -726,6 +750,8 @@ export async function closeLanSession(id: string): Promise<void> {
 }
 export async function revokeLanDevice(id: string): Promise<void> {
   const d = getSession(id);
+  const pending = pendingSessionOpens.get(id);
+  if (pending) pending.cancelled = true;
   try { await requestSaved(d, { op: "revoke", pairId: d.pairId, pairToken: d.pairToken }, 10_000); }
   finally { sessions.delete(id); }
 }
