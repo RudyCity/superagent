@@ -129,7 +129,7 @@
       requestId = requestId.slice("mcp:".length);
       tab = "mcp";
     }
-    if (!requestId || requestId.length > 150 || /[\\x00-\\x1f]/.test(requestId)) return null;
+    if (!requestId || requestId.length > 150 || /[\x00-\x1f]/.test(requestId)) return null;
     return { requestId, tab };
   }
   // Route only to fixed local pages and sub-tabs. Remember the exact pending
