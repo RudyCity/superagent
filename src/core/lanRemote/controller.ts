@@ -229,7 +229,7 @@ export interface LanTerminalSnapshot {
   rows?: number;
 }
 async function lanTerminalRequest(
-  id: string, operation: "terminal_start" | "terminal_read" | "terminal_input" | "terminal_resize" | "terminal_stop",
+  id: string, operation: "terminal_start" | "terminal_read" | "terminal_input" | "terminal_key" | "terminal_resize" | "terminal_stop",
   fields: Record<string, unknown>,
 ): Promise<LanTerminalSnapshot> {
   const device = getSession(id);
@@ -238,7 +238,7 @@ async function lanTerminalRequest(
   const frames = await requestSaved(device, {
     op: operation, pairId: device.pairId, pairToken: device.pairToken,
     sessionId: device.sessionId, sessionToken: device.sessionToken, ...fields,
-  }, operation === "terminal_start" || operation === "terminal_input" ? 125_000 : 15_000, 48 * 1024);
+  }, operation === "terminal_start" || operation === "terminal_input" || operation === "terminal_key" ? 125_000 : 15_000, 48 * 1024);
   const terminal = frames[0]?.terminal;
   if (!terminal || typeof terminal !== "object" || Array.isArray(terminal)) throw Error("Malformed terminal response.");
   const t = terminal as Record<string, unknown>;
@@ -267,6 +267,12 @@ export async function inputLanTerminal(
   if (!text || text.length > 1024 || /[\x00-\x08\x0b-\x1f\x7f]/.test(text) ||
       typeof appendNewline !== "boolean") throw Error("Invalid terminal input.");
   return lanTerminalRequest(id, "terminal_input", { jobId, text, appendNewline });
+}
+export async function keyLanTerminal(id: string, jobId: string, key: string): Promise<LanTerminalSnapshot> {
+  const allowed = ["Enter", "Backspace", "Tab", "Escape", "ArrowUp", "ArrowDown",
+    "ArrowLeft", "ArrowRight", "Home", "End", "Delete", "PageUp", "PageDown", "CtrlC"];
+  if (!allowed.includes(key)) throw Error("Unsupported terminal key.");
+  return lanTerminalRequest(id, "terminal_key", { jobId, key });
 }
 export async function resizeLanTerminal(
   id: string, jobId: string, cols: number, rows: number,
