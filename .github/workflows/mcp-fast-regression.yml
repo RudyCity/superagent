@@ -133,7 +133,9 @@ jobs:
             tests/mcpTextFilePaging.test.ts \
             tests/mcpOutputRecovery.test.ts \
             tests/mcpToolGateway.test.ts \
-            tests/mcpFilePolicyMatrix.test.ts \
+            tests/mcpFilePolicyMatrix.test.ts
+          tests/mcpDelegateWebCertification.test.ts \
+            tests/mcpDelegateWebCertification.test.ts \
             tests/mcpPolicyReadinessReport.test.ts \
             tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpExactFileSearch.test.ts \
