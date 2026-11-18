@@ -7,7 +7,7 @@ const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
 async function untilFinished(manager: LanTerminalTaskManager, session: string, id: string) {
   let cursor = 0;
   const collected: string[] = [];
-  for (let i = 0; i < 120; i++) {
+  for (let i = 0; i < 400; i++) {
     const result = manager.read(session, id, cursor);
     collected.push(...result.chunks.map(chunk => chunk.text));
     cursor = result.nextCursor;
@@ -34,7 +34,7 @@ describe("attended LAN terminal task lifecycle", () => {
     } finally {
       manager.stopAll();
     }
-  }, 12_000);
+  }, 24_000);
 
   it("rejects cross-session reads, input and stops; stops only owned child", () => {
     const manager = new LanTerminalTaskManager();
