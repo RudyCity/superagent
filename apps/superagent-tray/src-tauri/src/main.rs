@@ -3634,7 +3634,7 @@ async fn poll_reminders(
         record_operational_incident(
             app, "reminder", "info", &format!("reminder:{id}"),
             "Reminder completed",
-            "A scheduled reminder completed. Open Schedules & Reminders for details.",
+            "A scheduled reminder completed. Review its execution in History.",
         )?;
         // Native notification on Windows requires an installed app.
         // Failed deliveries are not marked as seen; a later poll can retry.
