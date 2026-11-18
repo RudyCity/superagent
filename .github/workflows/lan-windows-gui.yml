@@ -52,7 +52,7 @@ jobs:
       - name: Check TypeScript
         run: bun --bun x tsc --noEmit --pretty false
       - name: Check Windows GUI and remote access regressions
-        run: bun x vitest run tests/desktopLanWindowsGui.test.ts tests/deviceDisplayQrClient.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts tests/lanTerminalTasks.test.ts tests/lanTerminalMcpContract.test.ts tests/lanTerminalTrayUi.test.ts
+        run: bun x vitest run tests/desktopLanWindowsGui.test.ts tests/deviceDisplayQrClient.test.ts tests/windowsQrConnect.test.ts tests/deviceTunnelHttp.test.ts tests/deviceTunnelBroker.test.ts tests/lanRemote.test.ts tests/lanTerminalTasks.test.ts tests/lanTerminalIntegration.test.ts tests/lanTerminalMcpContract.test.ts tests/lanTerminalTrayUi.test.ts
       - name: Build standalone Tauri receiver and bundled executable
         run: bun scripts/build-lan-windows-gui.ts
       - name: Smoke test compiled receiver, approval safety and shutdown
