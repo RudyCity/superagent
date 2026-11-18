@@ -1794,9 +1794,9 @@
           <section id="lan-terminal-task-panel" class="lan-terminal-task" aria-labelledby="lan-terminal-task-heading" hidden>
             <div class="lan-terminal-task-head">
               <div>
-                <div class="panel-eyebrow">WINDOWS · ATTENDED PIPED TERMINAL</div>
+                <div class="panel-eyebrow">WINDOWS · ATTENDED CONPTY / FALLBACK TASK</div>
                 <h3 id="lan-terminal-task-heading">Long-running task</h3>
-                <p>Start the command entered above, then read its output or send input. The receiving PC approves the start and each input separately. Not a PTY or elevated shell.</p>
+                <p>Owner-approved non-elevated task. Windows Bun uses ConPTY for interactive apps; older receivers use limited pipes. Starts, text input and special keys require receiver approval. Live output here is a log view, not a full ANSI renderer.</p>
               </div>
               <div class="lan-terminal-task-controls">
                 <button id="lan-terminal-task-start" class="button primary" type="button" disabled>Start task</button>
@@ -1816,6 +1816,34 @@
                 <button id="lan-terminal-task-send" class="button ghost" type="button" disabled>Send input</button>
               </div>
               <label class="lan-terminal-task-newline"><input id="lan-terminal-task-newline" type="checkbox" checked disabled /> Append Enter</label>
+              <div class="lan-terminal-task-pty-controls">
+                <label for="lan-terminal-task-cols">Columns
+                  <input id="lan-terminal-task-cols" type="number" value="80" min="20" max="300" step="1" disabled />
+                </label>
+                <label for="lan-terminal-task-rows">Rows
+                  <input id="lan-terminal-task-rows" type="number" value="24" min="5" max="120" step="1" disabled />
+                </label>
+                <button id="lan-terminal-task-resize" class="button ghost" type="button" disabled>Resize terminal</button>
+                <label for="lan-terminal-task-key">Special key
+                  <select id="lan-terminal-task-key" disabled>
+                    <option value="Enter">Enter</option>
+                    <option value="ArrowUp">↑ Up</option>
+                    <option value="ArrowDown">↓ Down</option>
+                    <option value="ArrowLeft">← Left</option>
+                    <option value="ArrowRight">→ Right</option>
+                    <option value="Tab">Tab</option>
+                    <option value="Escape">Esc</option>
+                    <option value="Backspace">Backspace</option>
+                    <option value="CtrlC">Ctrl+C</option>
+                    <option value="Home">Home</option>
+                    <option value="End">End</option>
+                    <option value="Delete">Delete</option>
+                    <option value="PageUp">Page Up</option>
+                    <option value="PageDown">Page Down</option>
+                  </select>
+                </label>
+                <button id="lan-terminal-task-send-key" class="button ghost" type="button" disabled>Send approved key</button>
+              </div>
             </div>
           </section>
           <p class="lan-security-note">Selected transport only. Android diagnostics are read-only; actions require separate approval on the phone. Settings open locally and disconnect sharing. Volume changes one step per approval. Android remote touch requires explicit on-device Accessibility and input consent; no arbitrary Android shell, root or ADB. Full TLS fingerprint comparison and target approval are required. PAKE, signed releases and cross-device security review remain pending.</p>
