@@ -214,7 +214,31 @@ export function useKeyboardHandler(ctx: KeyboardHandlerContext) {
     onSessionPath,
   } = ctx;
 
-  const settings = getSettings();
+  // This hook is re-rendered whenever the chat input changes. Keep
+  // configuration reads off the hot keyboard path (loadModelConfig may stat
+  // disk or synchronously wait on a config lock on Windows).
+  const settingsCacheRef = useRef<{
+    value: ReturnType<typeof getSettings>;
+    wizard: typeof activeWizard;
+    lineCount: number;
+    loadedAt: number;
+  } | null>(null);
+  const now = Date.now();
+  const lineCount = lines?.length ?? 0;
+  if (
+    !settingsCacheRef.current ||
+    settingsCacheRef.current.wizard !== activeWizard ||
+    settingsCacheRef.current.lineCount !== lineCount ||
+    now - settingsCacheRef.current.loadedAt >= 2000
+  ) {
+    settingsCacheRef.current = {
+      value: getSettings(),
+      wizard: activeWizard,
+      lineCount,
+      loadedAt: now,
+    };
+  }
+  const settings = settingsCacheRef.current.value;
   const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
   const maxSuperagentsVisible = 2;
   const maxSubagentsVisible = 3;
