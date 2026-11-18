@@ -64,7 +64,7 @@ export class LanTerminalTaskManager {
     // Pipes support incremental I/O, but this does NOT impersonate a full TTY.
     const child = spawn(windows ? "powershell.exe" : "/bin/sh",
       windows ? ["-NoLogo", "-NoProfile", "-Command", command] : ["-c", command],
-      { windowsHide: true, shell: false, stdio: ["pipe", "pipe", "pipe"] });
+      { windowsHide: true, shell: false, detached: !windows, stdio: ["pipe", "pipe", "pipe"] });
     const task: Task = {
       jobId: crypto.randomUUID(), sessionId, child, chunks: [], chars: 0,
       cursor: 0, running: true, exitCode: null, reason: null,
@@ -84,7 +84,10 @@ export class LanTerminalTaskManager {
       // Kill only the exact child spawned by this manager. Windows process
       // trees require a separate best-effort reaper; never reuse a stale PID.
       const pid = child.pid;
-      try { child.kill(); } catch {}
+      try {
+        if (process.platform !== "win32" && pid) process.kill(-pid, "SIGKILL");
+        else child.kill();
+      } catch {}
       if (process.platform === "win32" && pid) {
         const reaper = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"],
           { windowsHide: true, stdio: "ignore" });
@@ -173,7 +176,11 @@ export class LanTerminalTaskManager {
     task.running = false; task.reason = reason;
     clearTimeout(task.deadline); clearTimeout(task.idle);
     const pid = task.child.pid;
-    try { task.child.stdin.destroy(); task.child.kill(); } catch {}
+    try {
+      task.child.stdin.destroy();
+      if (process.platform !== "win32" && pid) process.kill(-pid, "SIGKILL");
+      else task.child.kill();
+    } catch {}
     if (process.platform === "win32" && pid) {
       const reaper = spawn("taskkill.exe", ["/PID", String(pid), "/T", "/F"],
         { windowsHide: true, stdio: "ignore" });
