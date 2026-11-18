@@ -10,6 +10,11 @@ export function certifiedBrowserObservation(call:BrowserCall):boolean{
      a.action==="policy"&&exact(a,["action"]);
  if(call.name==="superagent_chrome_cdp"||call.name==="superagent_control_chrome_cdp"){
    if(a.command!=="list_targets"&&a.command!=="transport_status")return false;
+   if(a.transport==="delegate"){
+     if(!exact(a,["command","transport","delegateClientId"]))return false;
+     return a.delegateClientId===undefined ||
+       (typeof a.delegateClientId==="string"&&/^[A-Za-z0-9_-]{8,80}$/.test(a.delegateClientId));
+   }
    if(a.transport!==undefined&&a.transport!=="managed")return false;
    if(!exact(a,["command","transport","debug_port"]))return false;
    return a.debug_port===undefined ||
