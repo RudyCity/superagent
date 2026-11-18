@@ -319,7 +319,8 @@ export function MultiAgentDashboard({
   const [agentsScrollOffset, setAgentsScrollOffset] = useState(0);
   const [procsScrollOffset, setProcsScrollOffset] = useState(0);
 
-  const settings = getSettings();
+  // Settings are disk-backed. Do not stat model-config.json for every keystroke.
+  const settings = useMemo(() => getSettings(), [activeWizard, tick]);
   const maxChecklistVisible = settings.maxChecklistVisible ?? 3;
   const maxHistoryVisible = settings.maxHistoryVisible ?? 3;
   const maxAgentsVisible = 3;
@@ -568,8 +569,13 @@ export function MultiAgentDashboard({
     }
   }, [activeWizard]);
 
-  const suggestions = activeWizard ? [] : getDashboardSuggestions(lastTabPrefix || query, queryCursorOffset);
-  const suggestionDescs = getSuggestionDescriptions();
+  const suggestions = useMemo(
+    () => activeWizard ? [] : getDashboardSuggestions(lastTabPrefix || query, queryCursorOffset),
+    [activeWizard, lastTabPrefix, query, queryCursorOffset],
+  );
+  // The descriptions enumerate installed skills/presets and may hit the disk.
+  // Rebuild on wizard/workspace transitions, not on terminal input or log events.
+  const suggestionDescs = useMemo(getSuggestionDescriptions, [activeWizard, tick]);
 
   useEffect(() => {
     const mountedRef = { current: true };
@@ -1648,7 +1654,9 @@ export function MultiAgentDashboard({
                       isPasted={isPasted}
                       pastePrefixLength={pastePrefixLength}
                       pasteSuffixLength={pasteSuffixLength}
-                      onCursorOffsetChange={setQueryCursorOffset}
+                      // Ordinary chat typing must stay local to ChatTextInput.
+                      // Cursor tracking is needed only for command completion.
+                      onCursorOffsetChange={query.includes("/") || query.includes("!") ? setQueryCursorOffset : undefined}
                       mask={pendingQuestion?.inputType === "password" ? "•" : undefined}
                     />
                   </Box>
