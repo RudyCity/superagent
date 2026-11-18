@@ -68,6 +68,9 @@
     items = items.filter((n) => {
       if (state.filter === "action" && kindOf(n) !== "action") return false;
       if (state.filter === "information" && kindOf(n) !== "information") return false;
+      if (state.filter === "in-progress" && (!n.actionStartedAt || n.resolvedAt)) return false;
+      if (state.filter === "snoozed" && !snoozed(n)) return false;
+      if (state.filter === "expired" && !n.expiredAt) return false;
       if (state.filter === "unread" && n.readAt) return false;
       if (state.filter === "important" && n.severity === "info") return false;
       if (state.filter === "open" && (n.resolvedAt || n.acknowledgedAt)) return false;
@@ -98,6 +101,8 @@
       information: current.filter((n) => kindOf(n) === "information").length,
       snoozed: current.filter((n) => snoozed(n)).length,
       inProgress: current.filter((n) => Boolean(n.actionStartedAt) && !n.resolvedAt).length,
+      "in-progress": current.filter((n) => Boolean(n.actionStartedAt) && !n.resolvedAt).length,
+      expired: current.filter((n) => Boolean(n.expiredAt)).length,
       important: current.filter((n) => n.severity !== "info").length,
       open: current.filter((n) => !n.resolvedAt && !n.acknowledgedAt).length,
       acknowledged: current.filter((n) => Boolean(n.acknowledgedAt) && !n.resolvedAt).length,
