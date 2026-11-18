@@ -78,7 +78,7 @@ function mount(items: Record<string, unknown>[] = []) {
     Object, Date, Number, String, Promise,
   });
   vm.runInContext(js, context);
-  return { get, filters, mockInvocations, nav };
+  return { get, filters, mockInvocations, nav, window: context.window };
 }
 
 describe("Tray Notification Manager", () => {
@@ -201,6 +201,35 @@ describe("Tray Notification Manager", () => {
     expect(rust).not.toContain("approveProjectAccessRequest(&app)");
   });
 
+  it("opens pending access from its card or action and preserves request focus across startup", async () => {
+    const mounted = mount([{
+      id: "mcp-pending:request-42", source: "security", severity: "critical",
+      title: "Security approval pending", body: "A project needs access",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await Promise.resolve(); await Promise.resolve();
+    const card = mounted.get("tray-notification-recent").children[0];
+    const open = card.children[1].children[3].children[0];
+    expect(open.textContent).toBe("Review pending access");
+    card.trigger("click", { target: { closest: () => null } });
+    expect(mounted.nav).toHaveBeenCalledWith("security");
+    expect(mounted.window.__superagentPendingAccessNotificationId).toBe("request-42");
+    mounted.nav.mockClear();
+    // Inner lifecycle actions must not accidentally open the page.
+    card.trigger("click", { target: { closest: () => open } });
+    expect(mounted.nav).not.toHaveBeenCalled();
+    const focus = vi.fn(async () => undefined);
+    mounted.window.__superagentAccessManagerFocusRequest = focus;
+    open.trigger("click");
+    expect(mounted.nav).toHaveBeenCalledWith("security");
+    expect(focus).toHaveBeenCalledWith("request-42");
+    expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
+    const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
+    const install = access.slice(access.indexOf("async function install()"));
+    expect(install.indexOf("window.__superagentAccessManagerFocusRequest = async"))
+      .toBeLessThan(install.indexOf("await refreshWindows();"));
+    expect(install).toContain("window.__superagentPendingAccessNotificationId");
+  });
   it("deep-links to an exact MCP approval without invoking approve/deny", () => {
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
     expect(js).toContain("__superagentAccessManagerFocusRequest?.(");
