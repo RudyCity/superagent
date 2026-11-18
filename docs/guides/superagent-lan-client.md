@@ -120,7 +120,10 @@ failed counts, and for Windows a terminal.jobId; Android returns a bounded
 one-shot shell result (maximum 4096 characters exposed in fleet output,
 outputTruncated indicates the aggregate display cap). Windows read/input/stop
 never accept Android entries because Android's terminal is not a persistent
-PTY. A denial or timeout for one target does not cancel another, and a
+PTY. An offline or already-open target is reported as a per-device failure without
+blocking the remaining approved targets; malformed commands, duplicate receiver
+identities and unpaired handles still fail the whole preflight before execution.
+A denial or timeout for one target does not cancel another, and a
 timeout must **never trigger automatic command replay**. Use individual
 terminal_read if only one task remains.
 
