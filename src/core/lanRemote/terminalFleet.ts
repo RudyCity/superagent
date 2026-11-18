@@ -86,9 +86,9 @@ function validate(action: LanTerminalFleetAction, input: unknown, devices: LanDe
     const device = deviceById.get(t.deviceId);
     if (!device || !device.connected || !device.paired)
       throw Error("Every device must have its own approved open support session.");
-    const identity = device.transport === "tunnel"
-      ? "tunnel:" + device.tunnelId
-      : "lan:" + device.host + ":" + device.port + ":" + device.fingerprint.toLowerCase();
+    // A receiver may be reachable by LAN and reverse HTTPS tunnel at once.
+    // Its pinned certificate fingerprint, not route or handle, identifies it.
+    const identity = "receiver:" + device.fingerprint.toLowerCase();
     if (physical.has(identity)) throw Error("Same physical receiver appears more than once.");
     physical.add(identity);
     if (action === "start") {
@@ -141,8 +141,7 @@ export class LanTerminalFleet {
     const results = await Promise.all(targets.map(async (t): Promise<FleetTerminalResult> => {
       const device = deviceById.get(t.deviceId)!;
       const mutating = action === "start" || action === "input";
-      const identity = device.transport === "tunnel" ? "t:" + device.tunnelId
-        : "l:" + device.host + ":" + device.port + ":" + device.fingerprint.toLowerCase();
+      const identity = "receiver:" + device.fingerprint.toLowerCase();
       if (mutating && this.activeMutations.has(identity)) {
         return { deviceId: t.deviceId, platform: device.platform, ok: false,
           error: "Another terminal mutation is awaiting this device's approval." };
