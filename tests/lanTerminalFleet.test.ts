@@ -221,6 +221,21 @@ describe("LAN terminal fleet: multi-device isolation and concurrency", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it("reports a failed Android shell exit independently without hiding another device's success", async () => {
+    const service = new LanTerminalFleet(deps({
+      android: async () => ({ stdout: "permission denied", ok: false, exitCode: 1 }),
+    }));
+    const response = await service.execute("start", [
+      { deviceId: a, command: "Get-Date" }, { deviceId: c, command: "id" },
+    ]);
+    expect(response).toMatchObject({ requested: 2, succeeded: 1, failed: 1 });
+    expect(response.results[0]).toMatchObject({ deviceId: a, ok: true });
+    expect(response.results[1]).toMatchObject({
+      deviceId: c, platform: "android", ok: false,
+      shell: { stdout: "permission denied", exitCode: 1 },
+    });
+  });
+
   it("bounds Android output per device and never returns credentials", async () => {
     const service = new LanTerminalFleet(deps({
       android: async () => ({ stdout: "a".repeat(24 * 1024), ok: true, exitCode: 0 }),
