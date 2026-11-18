@@ -204,6 +204,7 @@ function certifiedSupervisedCoreMutation(name:string, args:Args|undefined):boole
 }
 const BROWSER_OBSERVATION_TOOLS = new Set([
   "superagent_browser_gateway", "superagent_chrome_cdp",
+  "superagent_chrome_cdp_observe",
   "superagent_control_chrome_cdp", "superagent_list_running_chrome",
 ]);
 /**
@@ -235,6 +236,8 @@ export function describePermanentFileToolReadiness(name:string):string {
     return "Depends on the exact nested target and its arguments; the target is reauthorized independently.";
   if(name==="superagent_desktop_ui")
     return "Only probe, bounded window/app inventory, find_window, live_inventory and security-prompt metadata are certified; snapshot, open and input remain restricted.";
+  if(name==="superagent_chrome_cdp_observe")
+    return "Only list_targets or transport_status with exact managed/Delegate arguments; HTTP(S) tab metadata is filtered, with no DOM read, navigation, evaluate, upload, or file:// access.";
   if(BROWSER_OBSERVATION_TOOLS.has(name))
     return "Only certified managed/Delegate HTTP(S) target metadata, local Chrome process inventory, or browser gateway identity/policy actions; no navigation, no evaluate, no upload, or file:// browsing.";
   if(CERTIFIED_CORE_LIFECYCLE_MUTATIONS.has(name))
@@ -256,6 +259,7 @@ export function describePermanentFileToolReadiness(name:string):string {
 }
 export function getPermanentFileToolReadiness(name: string): PermanentFileToolReadiness {
   if (BENIGN.has(name)) return "certified_metadata";
+  if (name === "superagent_chrome_cdp_observe") return "certified_metadata";
   if (name === "superagent_delegate_sync_history") return "certified_app_storage";
   if (READ_TOOLS.has(name) || WRITE_TOOLS.has(name) || PATCH_TOOLS.has(name) ||
       Object.prototype.hasOwnProperty.call(EXPLICIT_INPUT_READERS,name) ||
