@@ -13,6 +13,7 @@ import {
   type BrowserRuntimeMode,
 } from "../browserRuntime/index.js";
 import { applyProcessIntent } from "../process/processSpawnPolicy.js";
+import { planManagedChromeLaunch } from "../browserRuntime/managedChromeLaunchPlan.js";
 // PERF: `remoteChromeBridge` pulls in the `ws` websocket library and a
 // per-module HTTP server. It is only needed when a tool *actually* runs
 // — not at module-import time, when we are just constructing the
@@ -135,16 +136,25 @@ export const launchChromeProfileTool: Tool = {
       resolvedDataDir = path.join(os.homedir(), ".superagent-r", "chrome-debug-profile");
     }
 
-    // When remote debugging port is requested, use canonical BrowserProcessManager
-    if (remoteDebuggingPort || mode === "virtual-display") {
+    // An explicit Managed CDP launch never falls back to regular Chrome,
+    // including when the caller supplied invalid port 0 or disabled isolation.
+    if (remoteDebuggingPort !== undefined || mode === "virtual-display") {
       try {
         const manager = getBrowserProcessManager();
+        const plan = planManagedChromeLaunch({
+          port: remoteDebuggingPort ?? 9222,
+          isolated,
+          userDataDir,
+          profileName,
+          url,
+        }, port => manager.getDefaultUserDataDir(port));
         const instance = await manager.launchBrowser({
-          port: Number(remoteDebuggingPort || 9222),
+          port: plan.port,
+          host: plan.host,
           mode,
-          userDataDir: resolvedDataDir,
-          profileName: safeProfile,
-          url: url || undefined,
+          userDataDir: plan.userDataDir,
+          profileName: plan.profileName,
+          url: plan.url,
           autoSelectDesktopCaptureSource,
           useFakeMediaUi,
           virtualDisplay: mode === "virtual-display" && enableLocalHumanTakeover
@@ -154,8 +164,10 @@ export const launchChromeProfileTool: Tool = {
 
         const isolatedNote = instance.userDataDir ? ` (isolated debug profile: \`${instance.userDataDir}\`)` : "";
         const displayNote = instance.virtualDisplay ? ` on virtual display \`${instance.virtualDisplay.displayStr}\`` : "";
-        const baseMsg = `Launched Chrome in \`${instance.resolvedMode}\` mode with profile \`${safeProfile}\`${isolatedNote}${displayNote} (CDP port ${instance.port}, PID ${instance.pid})${url ? ` opening \`${url}\`` : ""}.`;
-        return `${baseMsg} NEXT_ACTION: Chrome is ready for automation. Call control_chrome_cdp(command: 'list_targets') or control_chrome_cdp(command: 'navigate', url: '...') immediately to execute the user's task. Do NOT stop or write manual guides for the user.`;
+        const action = instance.reused ? "Reused a verified owned Chrome" : "Launched Chrome";
+        const baseMsg = `${action} in \`${instance.resolvedMode}\` mode with profile \`${plan.profileName}\`${isolatedNote}${displayNote} (CDP port ${instance.port}, PID ${instance.pid}).`;
+        return `${baseMsg} NEXT_ACTION: Verify with control_chrome_cdp(command: 'list_targets', transport: 'managed', debug_port: ${instance.port}).` +
+          (instance.reused ? " The existing browser was not navigated; use a separate authorized navigate command for a new URL." : "");
       } catch (err: any) {
         return `Failed to launch Chrome with profile \`${safeProfile}\`: ${err.message || String(err)}`;
       }
