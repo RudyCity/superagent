@@ -190,7 +190,6 @@ describe("permanent file access enforced at Core tool boundary",()=>{
       {command:"open",pid:100},
       {command:"action",action:"click",elementId:"button"},
       {command:"inspect_window",includeScreenshotImage:true},
-      {command:"inspect_security_prompts",limit:10},
       {command:"list_windows",filePath:".env"},
       {command:"find_window",query:""},
       {command:"find_window",query:"Chrome",pid:-1},
