@@ -74,23 +74,32 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       expect(metadata.hostFilePolicy).toMatchObject({active:true,decision:"eligible",reasonCode:null});
       expect(metadata.mcpConnectionExecute.decision).toBe("approval_required");
       expect(metadata.performedExecution).toBe(false);
+      expect(metadata.decisionCode).toBe("MCP_CONNECTION_EXECUTE_REQUIRED");
+      expect(metadata.layers).toMatchObject({
+        oauthScope:"granted",connectionExecute:"blocked",hostFilePolicy:"granted",
+        nativeConsent:"not_checked",targetIdentity:"not_checked",
+      });
       const protectedUi=await describe({command:"inspect_window",pid:5344,nativeId:"123",
         title:"SECRET_DO_NOT_ECHO"});
       expect(protectedUi.hostFilePolicy).toMatchObject({
         active:true,decision:"blocked",reasonCode:"not_certified_or_denied",
       });
+      expect(protectedUi.decisionCode).toBe("HOST_FILE_POLICY_UNCERTIFIED");
+      expect(protectedUi.remediation).toMatch(/cannot override/);
       expect(JSON.stringify(protectedUi)).not.toContain("SECRET_DO_NOT_ECHO");
       expect(JSON.stringify(auditRecords)).not.toContain("SECRET_DO_NOT_ECHO");
       expect(JSON.stringify(activityRecords)).not.toContain("SECRET_DO_NOT_ECHO");
       expect(activityRecords.at(-1)).toContain("TOOL_PERMISSION_PREFLIGHT_REDACTED");
       const badShape=await describe({command:"inspect_security_prompts",limit:10});
       expect(badShape.hostFilePolicy.reasonCode).toBe("unsupported_arguments");
+      expect(badShape.decisionCode).toBe("SCHEMA_INVALID");
       const validPrompts=await describe({command:"inspect_security_prompts"});
       expect(validPrompts.hostFilePolicy.decision).toBe("eligible");
       const approvedRequests=listProjectAccessRequests({status:"pending",projectId:MCP_CONNECTION_PROJECT_ID});
       expect(approvedRequests).toHaveLength(0);
       grantProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,["execute"]);
       expect((await describe({command:"probe"})).mcpConnectionExecute.decision).toBe("granted");
+      expect((await describe({command:"probe"})).decisionCode).toBe("ALLOWED_TO_ATTEMPT");
       expect((await describe({command:"open",pid:5344,nativeId:"123",allowInput:false}))
         .hostFilePolicy.decision).toBe("blocked");
       expect(revokeProjectAccess(identity,MCP_CONNECTION_PROJECT_ID)).toBe(true);
@@ -99,6 +108,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       fs.writeFileSync(path.join(isolated,"project-access.json"),"{invalid_private_policy_path");
       const unavailable=await describe({command:"probe"});
       expect(unavailable.mcpConnectionExecute.decision).toBe("unavailable");
+      expect(unavailable.decisionCode).toBe("POLICY_STORE_UNAVAILABLE");
       expect(JSON.stringify(unavailable)).not.toContain(isolated);
       const invalid=await invoke(server,"superagent_tool_describe",{
         name:"superagent_desktop_ui",checkArguments:[],

@@ -1,4 +1,5 @@
 import { registeredFileToolGate, fileRulesRegistered, getPermanentFileToolReadiness, describePermanentFileToolReadiness } from "../tools/registeredFileToolGate.js";
+import { describeBoundedDesktopPermission } from "./mcpPermissionDecision.js";
 /**
  * superagentMcpServer.ts — Complete 3-Pillar (Tools, Resources, Prompts) MCP Server for Superagent.
  *
@@ -814,8 +815,8 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         const reason = name === "superagent_check_project_health"
           ? "[PROJECT_GRANT_MISSING] Project health check is not authorized for this project. The authenticated MCP identity needs the explicit 'read' capability or approval via superagent_request_project_access."
           : sshUriTarget
-            ? `[PROJECT_GRANT_MISSING] Standalone SSH project access is not granted for project ${targetProjectId || targetWorkspace}. Use 'superagent_request_project_access' to request human approval in SuperAgent Tray.`
-            : `[PROJECT_GRANT_MISSING] Project target is outside the session workspace scope: ${targetWorkspace}. The authenticated MCP identity '${identityForProjectAccess?.subject || "unknown"}' lacks the '${capability}' capability grant for project '${targetProjectId || ""}'. Use 'superagent_request_project_access' to request approval from the human operator via SuperAgent Tray.`;
+            ? "[PROJECT_GRANT_MISSING] Standalone SSH project access is not granted. Request an operator-approved project capability in SuperAgent Tray."
+            : `[PROJECT_GRANT_MISSING] Required '${capability}' project capability is missing for the requested target. Request explicit approval in SuperAgent Tray; no project path or principal identity is disclosed.`;
         return { content: [{ type: "text", text: reason }], isError: true };
       }
     }
@@ -1581,7 +1582,12 @@ function extractMcpResultText(result: unknown): string {
               mcpConnectionExecute: { decision: connectionDecision },
               oauthScope: { decision: "visible_under_current_token" },
               nativeHostApproval: { decision: "not_checked" },
-              performedExecution: false,
+              ...describeBoundedDesktopPermission({
+                oauthAllowed: true, // found came from the current OAuth-authorized catalog.
+                connectionDecision,
+                filePolicyActive,
+                hostBlock,
+              }),
               note: "Read-only advisory snapshot. No approval is created; no window is opened. Runtime rechecks all policy layers, target identity and native consent.",
             };
           }
