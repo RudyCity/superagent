@@ -6,6 +6,7 @@ import { McpToolResult } from "../types.js";
 import { fileRulesRegistered } from "../../tools/registeredFileToolGate.js";
 import { certifiedBrowserObservation } from "../../tools/browserFilePolicyCertification.js";
 import { safeManagedChromeObservation } from "../../tools/safeManagedChromeObservation.js";
+import { safeDelegateChromeObservation } from "../../tools/safeDelegateChromeObservation.js";
 import { controlChromeCdpTool } from "../../tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../../tools/chromeVisionTools.js";
 import {
@@ -60,12 +61,18 @@ function toResult(res: unknown): McpToolResult {
 export async function handleControlChromeCdp(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
   return runWithDelegateMcpBoundary(async () => {
     try {
-      if (fileRulesRegistered()) {
-        if (!certifiedBrowserObservation({name:"superagent_chrome_cdp",args:args||{}})) {
-          return {content:[{type:"text",text:"Chrome command is not certified for permanent file access restrictions."}],isError:true};
-        }
-        return toResult(await safeManagedChromeObservation(args));
+      const filePolicyActive=fileRulesRegistered();
+      const certified=certifiedBrowserObservation({name:"superagent_chrome_cdp",args:args||{}});
+      if(filePolicyActive&&!certified) {
+        return {content:[{type:"text",text:"Chrome command is not certified for permanent file access restrictions."}],isError:true};
       }
+      // Forward only the narrow metadata command; Core reconstructs a filtered
+      // HTTP(S)-only result. Never return unfiltered Delegate tab inventory.
+      if(certified&&args?.transport==="delegate") {
+        if(!options.hostOwned) return await dispatchDelegateBrowserMcpTool("superagent_chrome_cdp",args||{});
+        return toResult(await safeDelegateChromeObservation(args));
+      }
+      if(filePolicyActive) return toResult(await safeManagedChromeObservation(args));
       if (needsDelegateCoreHost(args)) {
         let payload: Record<string, unknown> = {};
         try { payload = typeof args?.payload === "string" ? JSON.parse(args.payload) : (args?.payload || {}); } catch {}
