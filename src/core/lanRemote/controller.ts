@@ -234,7 +234,7 @@ async function lanTerminalRequest(
   const frames = await requestSaved(device, {
     op: operation, pairId: device.pairId, pairToken: device.pairToken,
     sessionId: device.sessionId, sessionToken: device.sessionToken, ...fields,
-  }, operation === "terminal_start" ? 125_000 : 15_000, 48 * 1024);
+  }, operation === "terminal_start" || operation === "terminal_input" ? 125_000 : 15_000, 48 * 1024);
   const terminal = frames[0]?.terminal;
   if (!terminal || typeof terminal !== "object" || Array.isArray(terminal)) throw Error("Malformed terminal response.");
   const t = terminal as Record<string, unknown>;
