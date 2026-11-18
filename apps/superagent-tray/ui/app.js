@@ -102,17 +102,38 @@ function drawJobs() {
 
 function drawRuns() {
   const names = new Map(state.jobs.map((job) => [job.id, job.name]));
-  const runs = [...state.runs].sort((a, b) => b.startedAt - a.startedAt).slice(0, 10);
-
-  $("runs").innerHTML = runs.length ? runs.map((run) => `<li>
+  const targetId = window.__superagentPendingRunNotificationId;
+  const sorted = [...state.runs].sort((a, b) => b.startedAt - a.startedAt);
+  const selected = typeof targetId === "string"
+    ? sorted.find((run) => run.runId === targetId) : null;
+  const latest = sorted.slice(0, 10);
+  // An older run is still allowed to open as the exact incident target.
+  const runs = selected && !latest.some((run) => run.runId === targetId)
+    ? [selected, ...latest.slice(0, 9)] : latest;
+  $("runs").innerHTML = runs.length ? runs.map((run) => `<li
+    data-run-id="${escapeHtml(run.runId || "")}"
+    class="${selected?.runId === run.runId ? "notification-run-highlight" : ""}">
     <div>
       <span class="run-name">${escapeHtml(names.get(run.jobId) || run.jobId)}</span>
       <span class="run-meta"> · ${escapeHtml(dateTime(run.completedAt || run.startedAt))}</span>
     </div>
-    <span class="status-badge status-${["success", "error", "running"].includes(run.status) ? run.status : "running"}">
+    <span class="status-badge status-${["success", "error", "running"].includes(run.status) ? run.status
+      : ["timed_out", "interrupted"].includes(run.status) ? "error" : "running"}">
       ${escapeHtml(run.status)}
     </span>
   </li>`).join("") : '<li class="empty-state">No execution activity recorded yet.</li>';
+  const feedback = $("history-notification-feedback");
+  if (typeof targetId === "string") {
+    if (feedback) {
+      feedback.hidden = false;
+      feedback.textContent = selected
+        ? "Showing the execution associated with the selected notification."
+        : "The execution from this notification was not found in recent history.";
+    }
+    if (selected) $("runs").querySelector?.(".notification-run-highlight")
+      ?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    window.__superagentPendingRunNotificationId = null;
+  }
 }
 
 function connection(isOnline, message, coreVersion) {
