@@ -19,6 +19,7 @@ export type FleetTerminalResult =
   | { deviceId: string; platform: "windows" | "android"; ok: true; session: { connected: boolean } }
   | { deviceId: string; platform: "windows"; ok: true; terminal: LanTerminalSnapshot }
   | { deviceId: string; platform: "android"; ok: true; shell: AndroidReceipt; outputTruncated: boolean }
+  | { deviceId: string; platform: "android"; ok: false; shell: AndroidReceipt; outputTruncated: boolean; error: string }
   | { deviceId: string; platform: "windows" | "android"; ok: false; error: string };
 export type FleetTerminalReply = {
   action: LanTerminalFleetAction;
@@ -176,9 +177,12 @@ export class LanTerminalFleet {
         if (action === "start" && device.platform === "android") {
           const shell = await this.deps.android(t.deviceId, t.command!);
           const outputTruncated = shell.stdout.length > MAX_ANDROID_REPLY;
-          return { deviceId: t.deviceId, platform: "android", ok: true,
-            shell: { ...shell, stdout: shell.stdout.slice(0, MAX_ANDROID_REPLY) },
-            outputTruncated };
+          const completed = shell.ok === true && shell.exitCode === 0;
+          const boundedShell = { ...shell, stdout: shell.stdout.slice(0, MAX_ANDROID_REPLY) };
+          return completed
+            ? { deviceId: t.deviceId, platform: "android", ok: true, shell: boundedShell, outputTruncated }
+            : { deviceId: t.deviceId, platform: "android", ok: false, shell: boundedShell,
+                outputTruncated, error: "Android sandbox command failed or was cancelled." };
         }
         const terminal = action === "start" ? await this.deps.start(t.deviceId, t.command!)
           : action === "read" ? await this.deps.read(t.deviceId, t.jobId!, t.cursor!)
