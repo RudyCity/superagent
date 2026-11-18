@@ -51,6 +51,15 @@ try {
   assert.match(completed.output, /CONPTY_OK_verified/);
   console.log("PTY_INTERACTIVE_OK input, output, resize and session isolation");
 
+  const unicode = manager.start(sessionId,
+    "[Console]::OutputEncoding = [Text.Encoding]::UTF8; Write-Output 'CONPTY_UTF8_é_漢字_🙂'");
+  assert.equal(unicode.mode, "conpty");
+  const encoded = await observe(unicode.jobId, (_output, running) => !running, 30_000);
+  assert.equal(encoded.exitCode, 0);
+  assert.match(encoded.output, /CONPTY_UTF8_é_漢字_🙂/);
+  console.log("PTY_UTF8_OK streaming non-ASCII output");
+
+
   const long = manager.start(sessionId, "Write-Output CONPTY_STOP_READY; Start-Sleep -Seconds 60");
   assert.equal(long.mode, "conpty");
   await observe(long.jobId, output => output.includes("CONPTY_STOP_READY"), 30_000);
