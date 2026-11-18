@@ -9,6 +9,7 @@ import { registeredFileToolGate, getPermanentFileToolReadiness } from "../src/co
 import { getGatewayInitiallyAdvertisedTools } from "../src/core/mcp/mcpToolGateway.js";
 import { MCP_TOOL_CLASSIFICATION } from "../src/core/mcp/mcpToolPolicy.js";
 import { CHROME_MCP_TOOL_DEFS, handleDelegateWebMcpTool } from "../src/core/mcp/tools/chromeMcpTools.js";
+import { createSuperagentMcpServer } from "../src/core/mcp/superagentMcpServer.js";
 import { delegateMcpObservation } from "../src/core/mcp/tools/delegateMcpTools.js";
 
 const client="delegate_client123";
@@ -34,6 +35,29 @@ describe("narrow direct Delegate web workflow",()=>{
     expect(certified({...base,command:"navigate",sessionToken:token,expectedRevision:0,url:"https://example.org/path"})).toBe(true);
     expect(certified({...base,command:"click",sessionToken:token,expectedRevision:0,selector:"#submit"})).toBe(true);
     expect(certified({...base,command:"type",sessionToken:token,expectedRevision:1,index:2,text:"hello"})).toBe(true);
+  });
+
+  it("does not advertise browser writes to read-only OAuth principals",async()=>{
+    const make=(scopes:string[])=>createSuperagentMcpServer({
+      authMode:"oauth", toolExposure:"gateway",
+      getIdentity:()=>({mode:"oauth",subject:"certified-web-test",scopes}),
+    });
+    const read=make(["mcp:tools"]);
+    const write=make(["mcp:tools","mcp:tools:write"]);
+    try {
+      const tools=async(server:ReturnType<typeof createSuperagentMcpServer>)=>
+        ((await (server as any)._requestHandlers.get("tools/list")({
+          method:"tools/list",params:{},
+        })).tools as Array<{name:string;_meta:any}>);
+      const readNames=(await tools(read)).map(t=>t.name);
+      const writeTools=await tools(write);
+      expect(readNames).toContain("superagent_chrome_cdp_observe");
+      expect(readNames).not.toContain("superagent_chrome_cdp_web");
+      const web=writeTools.find(t=>t.name==="superagent_chrome_cdp_web");
+      expect(web?._meta.mcpApproval).toMatchObject({
+        kind:"connection_execute",oauthScope:"mcp:tools:write",capability:"execute",
+      });
+    }finally{await read.close();await write.close();}
   });
 
   it("rejects non-web and local-network origins",()=>{
