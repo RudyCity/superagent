@@ -55,6 +55,23 @@ describe("operator-only MCP connection registration", () => {
     expect(file).not.toContain("https://");
   });
 
+  it("keeps owner-assigned OAuth names distinct from untrusted clientInfo labels", () => {
+    const entries=reconcileVerifiedMcpConnections(port,[
+      makeSession({ownerConnectionName:"ChatGPT - Laptop Rudy",claimedClientName:"Unknown Browser"}),
+      makeSession({principalHandle:"idh_2222222222222222",sessionHandle:"ses_bbbbbbbbbbbb",
+        ownerConnectionName:"Gemini - PC Kantor",claimedClientName:"ChatGPT"}),
+    ],Date.now(),ledger);
+    expect(entries).toHaveLength(2);
+    expect(entries.map(item=>item.ownerConnectionName).sort())
+      .toEqual(["ChatGPT - Laptop Rudy","Gemini - PC Kantor"]);
+    const saved=fs.readFileSync(ledger,"utf8");
+    expect(saved).toContain("ChatGPT - Laptop Rudy");
+    expect(saved).not.toContain("accessToken");
+    expect(()=>reconcileVerifiedMcpConnections(port,[
+      makeSession({ownerConnectionName:"Invalid\\u202EName"}),
+    ],Date.now(),ledger)).toThrow("Invalid MCP client label");
+  });
+
   it("keeps connection history without reusing the old online state", () => {
     const first = reconcileVerifiedMcpConnections(port, [
       makeSession(), makeSession({
