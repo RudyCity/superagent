@@ -87,6 +87,9 @@ supported by their existing transport; a duplicated physical receiver
 - superagent_device_terminal_fleet_resize — set independent ConPTY columns/rows
   on each Windows device; only active jobs in their approved session qualify.
 - superagent_device_terminal_fleet_stop — stop **only** the exact Windows
+  The Core polls each target for up to four seconds after the initial Stop
+  receipt, reporting success only after process exit is observed; otherwise
+  that target remains unverified without replaying the Stop request.
   deviceId/jobId pairs named by the caller.
 
 The internal agent's lan_support tool supports terminal_fleet_open/close,
