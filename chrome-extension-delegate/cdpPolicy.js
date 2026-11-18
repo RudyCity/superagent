@@ -43,6 +43,26 @@
     }
   }
 
+  function assertCertifiedWebUrl(url) {
+    // Defense in depth for TOCTOU: recheck actual chrome.tabs.get URL immediately
+    // before each command from a certified MCP web workflow. Never rely only on
+    // Core's earlier inventory or the requested navigation URL.
+    const value = String(url || "").trim();
+    let parsed;
+    try { parsed = new URL(value); }
+    catch { fail("DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP", "Certified web action requires a public web page."); }
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      fail("DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP", "Certified web action requires HTTP(S).");
+    }
+    const host = parsed.hostname.toLowerCase().replace(/\\.$/, "");
+    if (parsed.username || parsed.password || !host.includes(".") || host.includes(":") ||
+        /^[0-9.]+$/.test(host) || host === "localhost" ||
+        host.endsWith(".localhost") || host.endsWith(".local") ||
+        host.endsWith(".internal") || host.endsWith(".test") || host.endsWith(".invalid")) {
+      fail("DELEGATE_WEB_TARGET_NOT_PUBLIC_HTTP", "Private and local web origins require separate authorization.");
+    }
+  }
+
   function classify(method, meta = {}) {
     if (!method || DENIED.has(method) || DENIED_PREFIX.some((prefix) => method.startsWith(prefix))) {
       fail("DELEGATE_CDP_METHOD_DENIED", "CDP method is denied by Delegate-CDP policy: " + method);
@@ -59,5 +79,5 @@
     fail("DELEGATE_CDP_METHOD_UNSUPPORTED", "CDP method is not in the Delegate-CDP v1.8 allowlist: " + method);
   }
 
-  globalThis.DelegateCdpPolicy = Object.freeze({ privileged, assertUrl, classify });
+  globalThis.DelegateCdpPolicy = Object.freeze({ privileged, assertUrl, assertCertifiedWebUrl, classify });
 })();
