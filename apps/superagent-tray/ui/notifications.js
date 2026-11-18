@@ -18,7 +18,7 @@
   });
   const state = {
     items: [], unreadCount: 0, filter: "all", source: "all", period: "all",
-    search: "", open: false, busy: false, error: "", prefsDirty: false, evictedCount: 0,
+    search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
   };
   const invoke = (action, id) => {
     const call = window.__TAURI__?.core?.invoke;
@@ -188,7 +188,8 @@
       active().filter((n) => !n.resolvedAt).length + " open · " +
       active().filter((n) => n.resolvedAt).length + " resolved · " +
       (state.items.length - active().length) + " archived" +
-      (state.evictedCount ? " · " + state.evictedCount + " older events pruned" : "");
+      (state.evictedCount ? " · " + state.evictedCount + " older events pruned" : "") +
+      (state.securitySync === "unavailable" ? " · Security requests could not sync with Core" : "");
     document.querySelectorAll("[data-notification-filter]").forEach((button) => {
       const yes = button.dataset.notificationFilter === state.filter;
       button.classList.toggle("active", yes);
@@ -203,11 +204,21 @@
     const save = $("notification-save-preferences");
     if (save) save.disabled = state.busy || !state.prefsDirty;
   }
-  async function refresh() {
+  async function refresh(syncSecurity = false) {
     if (state.busy) return;
     state.busy = true;
-    try { apply(await invoke("list")); }
-    catch {
+    try {
+      // Opening Notifications makes a fresh authenticated Core inventory
+      // request; passive badge refreshes use only the native persisted inbox.
+      // Neither route has an approval or grant mutation operation.
+      const result = syncSecurity === true
+        ? await window.__TAURI__?.core?.invoke?.("tray_notification_center_refresh_security")
+        : await invoke("list");
+      if (!result) throw new Error("Native notification service unavailable");
+      if (syncSecurity === true) state.securitySync = result.securitySync === "ok" ? "ok" : "unavailable";
+      apply(result);
+    } catch {
+      if (syncSecurity === true) state.securitySync = "unavailable";
       state.error = "Cannot load notifications. Open the installed Tray or retry.";
       render();
     } finally { state.busy = false; render(); }
@@ -252,7 +263,7 @@
   function toggle() {
     state.open = !state.open;
     render();
-    if (state.open) void refresh();
+    if (state.open) void refresh(true);
   }
   function init() {
     $("tray-notification-bell")?.addEventListener("click", toggle);
@@ -310,11 +321,11 @@
     window.__TAURI__?.event?.listen?.("desktop-server-stopped", refresh);
     window.__TAURI__?.event?.listen?.("desktop-server-start-failed", refresh);
     window.__TAURI__?.event?.listen?.("desktop-server-stop-failed", refresh);
-    window.addEventListener("focus", refresh);
+    window.addEventListener("focus", () => { void refresh(true); });
     window.setInterval(refresh, 15000);
     void refresh();
   }
-  window.__superagentNotificationsRefresh = refresh;
+  window.__superagentNotificationsRefresh = () => refresh(true);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 })();
