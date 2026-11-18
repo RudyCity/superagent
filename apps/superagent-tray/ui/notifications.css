@@ -337,7 +337,7 @@
 .notification-rule-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; color: var(--notif-muted); font-size: 12px; padding: 6px 8px; border: 1px solid var(--notif-edge); border-radius: var(--radius-sm, 6px); }
 .notification-kpi-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 .notification-kpi-card {
@@ -488,7 +488,7 @@
 
 .notification-toolbar {
   display: grid;
-  grid-template-columns: minmax(200px, 1.8fr) repeat(2, minmax(140px, 1fr));
+  grid-template-columns: minmax(180px, 1.7fr) repeat(3, minmax(110px, 1fr));
   align-items: end;
   gap: 12px;
 }
