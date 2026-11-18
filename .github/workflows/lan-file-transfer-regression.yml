@@ -144,6 +144,7 @@ jobs:
           tests/androidLanBackgroundTransferContract.test.ts
           tests/trayLanBridge.test.ts
           tests/lanTerminalTasks.test.ts
+          tests/lanTerminalIntegration.test.ts
           tests/lanTerminalMcpContract.test.ts
           tests/lanTerminalTrayUi.test.ts
 
