@@ -68,7 +68,6 @@ describe("Terminal fleet MCP and Core API contracts", () => {
       parallel: true, maxDevices: 8, distinctSessionPerDevice: true,
       parallelSessionApproval: true, emergencyDeviceSessionClose: true,
       windowsPipedJobs: true, androidOwnerApprovedSingleCommand: true,
-      parallelSessionApproval: true, emergencyDeviceSessionClose: true,
       automaticPairing: false,
     });
     expect(data.windows.conpty).toBe(true);
