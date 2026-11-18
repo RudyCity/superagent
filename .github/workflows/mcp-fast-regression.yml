@@ -63,6 +63,9 @@ on:
       - "src/serverRoutes.ts"
       - "src/core/project/projectOperator*.ts"
       - "src/core/project/projectAccessPolicy.ts"
+      - "src/core/project/projectAccessRequestStore.ts"
+      - "src/core/project/projectRegistry.ts"
+      - "src/core/project/projectSecurityResources.ts"
       - "apps/superagent-tray/ui/access-manager.css"
       - "apps/superagent-tray/ui/overview-operations.js"
       - "apps/superagent-tray/ui/index.html"
@@ -130,6 +133,9 @@ on:
       - "src/serverRoutes.ts"
       - "src/core/project/projectOperator*.ts"
       - "src/core/project/projectAccessPolicy.ts"
+      - "src/core/project/projectAccessRequestStore.ts"
+      - "src/core/project/projectRegistry.ts"
+      - "src/core/project/projectSecurityResources.ts"
       - "apps/superagent-tray/ui/access-manager.css"
       - "apps/superagent-tray/ui/overview-operations.js"
       - "apps/superagent-tray/ui/index.html"
@@ -177,6 +183,7 @@ jobs:
             tests/mcpServicePermissionParity.test.ts \
             tests/mcpPolicyStorePrivacy.test.ts \
             tests/mcpDefaultProjectAuthorization.test.ts \
+            tests/mcpReservedProjectScope.test.ts \
             tests/serviceOwnerAttestation.test.ts \
             tests/checkoutRevision.test.ts \
             tests/serviceManagerMcp.test.ts \
@@ -231,6 +238,7 @@ jobs:
           tests/mcpServicePermissionParity.test.ts
           tests/mcpPolicyStorePrivacy.test.ts
           tests/mcpDefaultProjectAuthorization.test.ts
+          tests/mcpReservedProjectScope.test.ts
           tests/serviceOwnerAttestation.test.ts
           tests/checkoutRevision.test.ts
           tests/serviceManagerMcp.test.ts

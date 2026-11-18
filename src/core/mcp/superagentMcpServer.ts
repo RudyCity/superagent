@@ -120,7 +120,8 @@ import {
   dispatchProjectMcpTool,
 } from "./tools/projectTools.js";
 import { resolveProjectTarget } from "../project/projectRouter.js";
-import { getProject } from "../project/projectRegistry.js";
+import { getProject, listProjects } from "../project/projectRegistry.js";
+import { ReservedProjectIdError } from "../project/projectSecurityResources.js";
 import type { ResolvedProjectTarget } from "../project/projectRouter.js";
 import { LocalProjectProvider } from "../project/providers/localProjectProvider.js";
 import type { ProjectProvider, ProjectProviderKind, ResolvedProjectContext } from "../project/providers/types.js";
@@ -1399,6 +1400,15 @@ function extractMcpResultText(result: unknown): string {
     if (toolName === MCP_GATEWAY_TOOL_NAMES.execute && !gatewayTarget) {
       return denyUnvalidatedCall("gateway_target_unavailable",
         "Target tool unavailable, unauthorized, or arguments invalid.");
+    }
+    if (WORKSPACE_SCOPED_MCP_TOOLS.has(gatewayTarget?.name ?? toolName)) {
+      try { listProjects(); }
+      catch (error) {
+        if (error instanceof ReservedProjectIdError) {
+          return denyUnvalidatedCall("reserved_project_id", error.message);
+        }
+        throw error;
+      }
     }
     // Bounded Desktop UI certification precedes an approval request that could
     // never override this host gate. Hidden targets disclose no policy state.

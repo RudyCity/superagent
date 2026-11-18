@@ -28,9 +28,9 @@ import {
 } from "./projectAccessPolicy.js";
 import { getProject, listProjects, type RegisteredProject } from "./projectRegistry.js";
 import { deriveIdentityHandle } from "../mcp/mcpIdentityPresence.js";
+import { MCP_CONNECTION_PROJECT_ID, MCP_CONNECTION_PROJECT_PATH } from "./projectSecurityResources.js";
 
-export const MCP_CONNECTION_PROJECT_ID = "mcp-connection";
-export const MCP_CONNECTION_PROJECT_PATH = "mcp://connection";
+export { MCP_CONNECTION_PROJECT_ID, MCP_CONNECTION_PROJECT_PATH } from "./projectSecurityResources.js";
 const MCP_CONNECTION_PROJECT_NAME = "MCP Connection Controls";
 
 export const PROJECT_ACCESS_REQUEST_SCHEMA_VERSION = 1;
