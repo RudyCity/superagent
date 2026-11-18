@@ -103,7 +103,7 @@ describe("named one-time OAuth consent", () => {
     expect(wrong.statusCode).toBe(403);
     const denied=await handleOAuthRoute(postReq("/oauth/authorize",
       "request_id="+requestId+"&bootstrap_code="+bootstrap+"&decision=approve"+
-      "&connection_name="+encodeURIComponent("\\u202eSpoof")),cfg);
+      "&connection_name="+encodeURIComponent("\u202eSpoof")),cfg);
     expect(denied.statusCode).toBe(400);
     const ok=await handleOAuthRoute(postReq("/oauth/authorize",
       "request_id="+requestId+"&bootstrap_code="+bootstrap+"&decision=approve"+
