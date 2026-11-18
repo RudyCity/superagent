@@ -37,11 +37,12 @@ Legacy `mcp-pending:<id>` notifications remain supported: the native Access Mana
 3. MCP approval notifications carry only an opaque request ID and a fixed category from authenticated native inventory. Opening a card/CTA scrolls to the exact request when available; authorization remains a separate attended native action.
 4. Scheduler notifications carry only the run ID already stored by the native ledger; no commands, prompts, secrets or paths are inserted into a URL or CSS selector. The target row is escaped and highlighted; no retry is executed.
 5. Notification cards and their navigation CTA share the same destination; lifecycle buttons (mark read, resolve, archive) remain independent.
-6. An OS banner remains generic on purpose: the private native inbox holds detail. **OS banner click-to-exact-event is not part of this implementation** because the current native notification payload does not carry an authenticated incident click token.
+6. Warning/error Tray feedback toasts now offer **Review** only when their fixed source maps to an allowlisted destination. Copy/Dismiss remain independent. Toast text never determines a route.
+7. Most operational OS banners remain generic on purpose: the private native inbox holds detail. Scheduled reminder OS banners are a separate legacy delivery surface and may contain the reminder's configured text. **OS banner click-to-exact-event is not part of this implementation** because the current native notification payload does not carry an authenticated incident click token.
 
 ## Verification / gaps
 
-- Added parameterized Vitest navigation coverage for all source categories, contextual health events and exact MCP/project request tabs in `tests/desktopTrayNotificationsUi.test.ts`.
+- Added parameterized Vitest navigation coverage for all source categories, contextual health events and exact MCP/project request tabs in `tests/desktopTrayNotificationsUi.test.ts`, plus feedback Review tests in `tests/desktopTrayFeedback.test.ts`.
 - Added client-side navigation checks for fixed sub-tabs and run selection, and repaired earlier malformed test assertions.
 - JavaScript syntax and route/card interactions can be verified without desktop privileges. Official Bun/Vitest/Cargo CI and live installed Tray click-through **must be run separately**; commits alone do not prove runtime readiness.
 - Remaining possible future enhancement: first-party OS notification activation with authenticated incident IDs, plus native stable IDs for terminal, Desktop Live, LAN pairing, update, and Muse file transfer events. These must not be inferred from untrusted notification body/title.
