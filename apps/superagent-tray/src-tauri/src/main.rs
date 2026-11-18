@@ -797,7 +797,7 @@ async fn lan_support_action(
     action: String,
     payload: Option<Value>,
 ) -> Result<Value, String> {
-    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
+    const ALL: &[&str] = &["discover", "list", "pair", "pair_complete", "pair_cancel", "tunnel_invite", "apk_download_qr", "qr_heartbeat", "tunnel_list", "tunnel_pair_request", "tunnel_revoke", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_key", "terminal_resize", "terminal_stop", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "close", "revoke", "screen", "input", "schema", "element", "control_request", "control_status", "control_revoke", "file_offer", "file_put", "file_get", "file_status", "file_finish", "file_abort", "file_v2_offer", "file_v2_put", "file_v2_status", "file_v2_finish", "file_v2_abort",
         "file_relay_start", "file_relay_status", "file_relay_cancel",
         "file_receive_v2_start", "file_receive_v2_status", "file_receive_v2_cancel"];
     if !ALL.contains(&action.as_str()) { return Err("Unsupported LAN action".into()); }
@@ -818,6 +818,8 @@ async fn lan_support_action(
         "terminal_fleet_start" | "terminal_fleet_read" | "terminal_fleet_input" | "terminal_fleet_stop" => &["targets"],
         "terminal_read" => &["deviceId", "jobId", "cursor"],
         "terminal_input" => &["deviceId", "jobId", "text", "appendNewline"],
+        "terminal_key" => &["deviceId", "jobId", "key"],
+        "terminal_resize" => &["deviceId", "jobId", "cols", "rows"],
         "terminal_stop" => &["deviceId", "jobId"],
         "input" => &["deviceId", "kind", "x", "y", "endX", "endY", "durationMs", "text"],
         "control_request" | "control_status" | "control_revoke" => &["deviceId","kind"],
