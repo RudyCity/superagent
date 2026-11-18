@@ -55,6 +55,28 @@ describe("MCP Project Access Broker & Security Approval Workflow", () => {
   const geminiIdentity = { mode: "oauth" as const, subject: "gemini-client-session-1" };
   const claudeIdentity = { mode: "oauth" as const, subject: "claude-client-session-2" };
 
+  it("uses the human OAuth name on Tray requests without granting execute", () => {
+    const identity={mode:"oauth" as const,subject:"client-for-owner-label",
+      credentialHash:"a".repeat(64),ownerConnectionName:"Gemini - PC Kantor"};
+    const outcome=createProjectAccessRequest(identity,{
+      projectId:MCP_CONNECTION_PROJECT_ID,capabilities:["execute"],
+      reason:"Operator review for connected MCP tools",
+    });
+    expect(outcome.code).toBe("APPROVAL_PENDING");
+    const record=listProjectAccessRequests({status:"pending"})[0];
+    expect(record.ownerConnectionName).toBe("Gemini - PC Kantor");
+    expect(record.subject).toBe(identity.subject);
+    expect(hasProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,"execute")).toBe(false);
+    const attempt=createProjectAccessRequest({...identity,ownerConnectionName:"Renamed instance"},{
+      projectId:MCP_CONNECTION_PROJECT_ID,capabilities:["execute"],
+      reason:"Same client requested permission again",
+    });
+    expect(attempt.requestId).toBe(outcome.requestId);
+    expect(listProjectAccessRequests({status:"pending"})[0].ownerConnectionName)
+      .toBe("Renamed instance");
+    expect(hasProjectAccess(identity,MCP_CONNECTION_PROJECT_ID,"execute")).toBe(false);
+  });
+
   it("1. Fresh agent identity has zero grants (grants: [])", () => {
     registerProject({
       id: "my-project",
