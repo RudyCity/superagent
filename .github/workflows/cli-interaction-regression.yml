@@ -17,6 +17,9 @@ on:
       - "tests/cliInputResponsiveness.test.ts"
       - "tests/dashboardMouseLifecycle.test.ts"
       - "tests/cliStdinOwnership.test.ts"
+      - "tests/cliInputDoctor.test.ts"
+      - "scripts/cli-input-doctor.ts"
+      - "package.json"
       - ".github/workflows/cli-interaction-regression.yml"
   pull_request:
     paths:
@@ -33,6 +36,9 @@ on:
       - "tests/cliInputResponsiveness.test.ts"
       - "tests/dashboardMouseLifecycle.test.ts"
       - "tests/cliStdinOwnership.test.ts"
+      - "tests/cliInputDoctor.test.ts"
+      - "scripts/cli-input-doctor.ts"
+      - "package.json"
       - ".github/workflows/cli-interaction-regression.yml"
   workflow_dispatch:
 
@@ -57,4 +63,4 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run build
       - name: Verify ESC routing and CLI log responsiveness
-        run: bun --bun x vitest run --maxWorkers=2 tests/cliEscapeRouting.test.ts tests/chatTextInputEscape.test.ts tests/cliInputResponsiveness.test.ts tests/dashboardMouseLifecycle.test.ts tests/cliStdinOwnership.test.ts tests/keyboardAbortInterrupt.test.ts tests/multiAgentDashboard.test.ts
+        run: bun --bun x vitest run --maxWorkers=2 tests/cliEscapeRouting.test.ts tests/chatTextInputEscape.test.ts tests/cliInputResponsiveness.test.ts tests/dashboardMouseLifecycle.test.ts tests/cliStdinOwnership.test.ts tests/cliInputDoctor.test.ts tests/keyboardAbortInterrupt.test.ts tests/multiAgentDashboard.test.ts
