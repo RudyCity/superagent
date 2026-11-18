@@ -543,6 +543,36 @@ describe("independent MCP Connections and Project Access UI", () => {
       c.args?.action === "direct_grant")).toBe(false);
   });
 
+  it("shows the one-time OAuth owner name in MCP requests, live connections and registry", async()=>{
+    const now=Date.now();
+    const label="ChatGPT - Laptop Rudy";
+    const pending={...fixtures.requests[1],ownerConnectionName:label};
+    const ui=boot(true,{
+      ...fixtures,requests:[pending],
+      connectedClients:{
+        success:true,state:"verified",registrationState:"verified",observedAt:now,
+        clients:[{sessionHandle:"ses_aaaaaaaaaaaa",principalHandle:"idh_1111111111111111",
+          authMode:"oauth",state:"idle",inFlight:0,lastSeenAt:now,
+          claimedClientName:"A different client name",ownerConnectionName:label,
+          claimedClientVersion:"1.0"}],
+        registeredConnections:[{connectionHandle:"idh_1111111111111111",ownerPort:9227,
+          authMode:"oauth",reportedClientName:"A different client name",ownerConnectionName:label,
+          firstObservedAt:now-1000,lastObservedAt:now,sessionCount:1,status:"connected"}],
+      },
+    });await flush();
+    const request=ui.document.getElementById("access-mcp-connection-pending-list")!;
+    expect(request.textContent).toContain(label);
+    expect(request.textContent).toContain("identitas: Gemini client");
+    const online=ui.document.getElementById("access-mcp-live-list")!;
+    expect(online.textContent).toContain(label);
+    expect(online.textContent).toContain("Aplikasi melaporkan: A different client name");
+    const registered=ui.document.getElementById("access-mcp-registered-list")!;
+    expect(registered.textContent).toContain(label);
+    expect(registered.textContent).toContain("nama dari persetujuan OAuth");
+    expect(ui.calls.some(c=>c.name==="mcp_project_access_action" &&
+      c.args?.action==="approve")).toBe(false);
+  });
+
   it("retains redacted registration history but never calls it online after owner failure", async () => {
     const now = Date.now();
     const ui = boot(true, {
