@@ -868,3 +868,17 @@
     transition: none;
   }
 }
+
+/* The selected run is read-only, with no automatic retry of failed work. */
+.runs .notification-run-highlight {
+  outline: 2px solid var(--notif-info, #60a5fa);
+  outline-offset: -2px;
+  border-radius: var(--radius-md, 10px);
+  background: var(--notif-surface-elevated, rgba(96, 165, 250, 0.1));
+}
+.history-notification-feedback {
+  color: var(--notif-muted, #cbd5e1);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin: 0 16px 10px;
+}
