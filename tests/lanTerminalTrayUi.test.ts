@@ -31,6 +31,8 @@ describe("Attended Windows LAN terminal task Tray", () => {
     expect(js).toContain("if (revision === mutationRevision)");
     expect(js).toContain("snapshot.truncated");
     expect(js).toContain("slice(-65_536)");
+    expect(js).toContain("}, 500) : null;");
+    expect(js).toContain("output.textContent !== rendered");
     expect(js).not.toContain("sessionToken");
     expect(js).not.toContain("pairToken");
   });
