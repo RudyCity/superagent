@@ -23,6 +23,7 @@ SuperAgent already checks multiple independent authorization layers, but discove
    - Calls the **same existing registered file gate**, with no parallel allowlist that bypasses it.
    - Only available if the principal can already discover the dangerous Desktop UI tool using its existing OAuth scopes. An unrelated tool or invalid `checkArguments` fails closed.
    - Does **not** perform Desktop UI actions, request MCP approval, read a screenshot, open a session, or guarantee a later invocation will work.
+   - If the identity-bound grant store is corrupt/unreadable, the preflight reports `mcpConnectionExecute:unavailable` (not granted) without exposing its local file path.
    - No arbitrary file-tool preflight because an unrestricted path permission oracle could reveal protected filesystem details.
 2. **Log and audit privacy:** Permission-check input fields are replaced by a fixed metadata marker in MCP audit and activity success/failure paths. The preflight result is redacted from the event stream, and the response never echoes caller-supplied window titles, file paths, session tokens or text.
 3. **Host path denial privacy:** Permanent file-policy error now says `for the selected target` instead of returning the canonical local absolute path.
