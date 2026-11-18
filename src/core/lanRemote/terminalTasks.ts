@@ -47,7 +47,7 @@ function commandIsValid(value: unknown): value is string {
 }
 function inputIsValid(value: unknown): value is string {
   return typeof value === "string" && value.length > 0
-    && value.length <= LAN_TERMINAL_MAX_INPUT && !/[\\x00-\\x08\\x0b-\\x1f\\x7f]/.test(value);
+    && value.length <= LAN_TERMINAL_MAX_INPUT && !/[\x00-\x08\x0b-\x1f\x7f]/.test(value);
 }
 
 export class LanTerminalTaskManager {
@@ -121,6 +121,15 @@ export class LanTerminalTaskManager {
   read(sessionId: string, jobId: string, cursor = 0): LanTerminalSnapshot {
     const task = this.forSession(sessionId, jobId);
     if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > task.cursor) throw Error("Invalid terminal cursor.");
+    // An authorized polling controller keeps its active task alive across
+    // transient request disconnects. No polling for 2 minutes means stop.
+    if (task.running) {
+      clearTimeout(task.idle);
+      task.idle = setTimeout(() => {
+        if (this.task === task) this.stopAll("idle_timeout");
+      }, INPUT_IDLE_MS);
+      task.idle.unref?.();
+    }
     const oldestCursor = task.chunks[0]?.cursor ?? task.cursor + 1;
     const truncated = cursor < oldestCursor - 1;
     const chunks: Chunk[] = [];
