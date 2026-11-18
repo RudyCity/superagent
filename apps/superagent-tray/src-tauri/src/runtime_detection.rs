@@ -49,6 +49,7 @@ struct CoreRecord {
 pub struct RuntimeCredentials {
     pub port: u16,
     pub pid: Option<u32>,
+    pub started_at: Option<u64>,
     pub auth_token: String,
 }
 
@@ -193,6 +194,19 @@ pub fn server_info(dir: &Path) -> Result<RuntimeCredentials, String> {
     Ok(RuntimeCredentials {
         port: chosen.info.port,
         pid: chosen.info.pid,
+        started_at: chosen.info.startedAt,
+        auth_token: chosen.info.authToken,
+    })
+}
+
+pub fn server_info_for_port(dir: &Path, port: u16) -> Result<RuntimeCredentials, String> {
+    let chosen = parse_core(&dir.join(format!("server-info-{}.json", port)), Some(port), "per-port")
+        .or_else(|| parse_core(&dir.join("server-info.json"), Some(port), "default"))
+        .ok_or_else(|| format!("Core registration is missing or invalid on port {}", port))?;
+    Ok(RuntimeCredentials {
+        port: chosen.info.port,
+        pid: chosen.info.pid,
+        started_at: chosen.info.startedAt,
         auth_token: chosen.info.authToken,
     })
 }

@@ -1,3 +1,9 @@
+## [1.14.106] - 2026-11-18
+### Tray Core startup and restart recovery
+- Require authenticated readiness for the requested Core target before reporting a successful start; an unauthorized HTTP response is not readiness.
+- Preserve Core registration and recovery checkpoints when ownership or startup outcome is uncertain.
+- Route Core restarts through the verified supervisor so existing sessions retain their worker owner and independent MCP services remain untouched.
+
 ## [1.14.104] - 2026-11-17
 ### MCP handshake system instructions & instruction fidelity v2.0
 - Advertise canonical Superagent MCP instruction protocol and custom system instructions during the MCP initialize handshake.

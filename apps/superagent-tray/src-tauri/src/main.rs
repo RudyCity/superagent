@@ -25,6 +25,7 @@ mod lan_folder_save;
 mod remote_service_detection;
 mod runtime_control;
 mod runtime_detection;
+mod core_startup;
 mod tray_settings;
 mod desktop_input_trust;
 mod desktop_live_android_control;
@@ -41,6 +42,10 @@ mod release_updates;
 mod tray_notification_center;
 mod tray_navigation_receipt;
 mod tray_os_action;
+
+#[cfg(test)]
+#[path = "../../../../tests/tray_core_startup.rs"]
+mod core_startup_tests;
 
 /// Samples only independently verified local process owners reported by Core.
 #[tauri::command]
@@ -2397,41 +2402,8 @@ fn find_superagent_executable() -> Result<(PathBuf, Vec<String>), String> {
 }
 
 async fn launch_server_process(port: u16) -> Result<u32, String> {
-    let probe_url = format!("http://127.0.0.1:{}/api/status", port);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(1500))
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let check_alive = |status: reqwest::StatusCode| {
-        status.is_success() || status == reqwest::StatusCode::UNAUTHORIZED
-    };
-
-    let initial_token = server_info().ok().map(|s| s.auth_token);
-    let mut initial_req = client.get(&probe_url);
-    if let Some(ref t) = initial_token {
-        initial_req = initial_req.bearer_auth(t);
-    }
-    if let Ok(resp) = initial_req.send().await {
-        if check_alive(resp.status()) {
-            return Ok(0);
-        }
-    }
-
-    // Core is not responding on port. Clean up any stale state files before starting fresh.
-    if let Ok(dir) = config_dir() {
-        let stale_files = [
-            dir.join(format!("core-checkpoint-{}.json", port)),
-            dir.join(format!("core-supervisor-{}.json", port)),
-            dir.join(format!("server-info-{}.json", port)),
-            dir.join("server-info.json"),
-        ];
-        for f in &stale_files {
-            if f.exists() {
-                let _ = std::fs::remove_file(f);
-            }
-        }
-    }
+    let dir = config_dir()?;
+    if core_startup::preflight(&dir, port).await? { return Ok(0); }
 
     let (exe, extra_args) = find_superagent_executable()?;
     let mut cmd = Command::new(&exe);
@@ -2439,7 +2411,7 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
         cmd.arg(arg);
     }
     cmd.arg("core")
-       .arg("start")
+       .arg("boot")
        .arg("--port")
        .arg(port.to_string())
        .arg("--client-mode")
@@ -2482,100 +2454,27 @@ async fn launch_server_process(port: u16) -> Result<u32, String> {
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    let child = cmd.spawn().map_err(|e| format!("Failed to spawn SuperAgent server: {}", e))?;
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to spawn SuperAgent server: {}", e))?;
     let pid = child.id();
-
-    for _ in 0..14 {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let token = server_info().ok().map(|s| s.auth_token);
-        let mut req = client.get(&probe_url);
-        if let Some(ref t) = token {
-            req = req.bearer_auth(t);
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while Instant::now() < deadline {
+        if let Ok(owner_pid) = core_startup::verified_owner(&dir, port).await {
+            if core_startup::launched_owner(owner_pid, pid).await? { return Ok(owner_pid); }
+            if child.try_wait().map_err(|_| "Core bootstrap process status unavailable")?
+                .is_some_and(|status| status.success()) { return Ok(0); }
         }
-        if let Ok(resp) = req.send().await {
-            if check_alive(resp.status()) {
-                return Ok(pid);
-            }
+        if child.try_wait().map_err(|_| "Core bootstrap process status unavailable")?.is_some() {
+            return Err(format!("Core bootstrap exited before authenticated readiness on port {}. Inspect the local Core log; recovery evidence was preserved.", port));
         }
+        tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    let mut log_tail = String::new();
-    if let Some(ref path) = log_file {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            let lines: Vec<&str> = content.lines().rev().take(6).collect();
-            if !lines.is_empty() {
-                let mut rev = lines;
-                rev.reverse();
-                log_tail = format!(": {}", rev.join(" | "));
-            }
-        }
-    }
-
     Err(format!(
-        "SuperAgent Core server (PID {}) failed to respond on port {} within 7s{}",
-        pid, port, log_tail
+        "Core startup on port {} did not reach authenticated readiness within 30s. Outcome is uncertain; inspect Runtime Detection before retrying. No process was stopped or recovery evidence removed.", port
     ))
 }
 
 async fn stop_core_server_inner(target: u16) -> Result<Value, String> {
-    let dir = config_dir()?;
-    let candidate_paths = [
-        dir.join(format!("server-info-{}.json", target)),
-        dir.join("server-info.json"),
-        dir.join(format!("core-supervisor-{}.json", target)),
-        dir.join(format!("core-checkpoint-{}.json", target)),
-    ];
-    let mut pid: Option<u32> = None;
-    for path in &candidate_paths {
-        if path.exists() {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                if let Ok(val) = serde_json::from_str::<Value>(&content) {
-                    if let Some(p) = val["pid"].as_u64() {
-                        pid = Some(p as u32);
-                        break;
-                    } else if let Some(sp) = val["supervisorPid"].as_u64() {
-                        pid = Some(sp as u32);
-                        break;
-                    } else if let Some(ap) = val["activePid"].as_u64() {
-                        pid = Some(ap as u32);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    if let Some(p) = pid {
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            let _ = Command::new("taskkill")
-                .args(&["/PID", &p.to_string(), "/T", "/F"])
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .creation_flags(CREATE_NO_WINDOW)
-                .status();
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = Command::new("kill").arg(p.to_string()).status();
-        }
-    }
-
-    for path in &candidate_paths {
-        let _ = std::fs::remove_file(path);
-    }
-
-    Ok(json!({
-        "success": true,
-        "port": target,
-        "pid": pid.unwrap_or(0),
-        "message": if pid.is_some() {
-            "SuperAgent Core server stopped".to_string()
-        } else {
-            "SuperAgent Core is not running (cleaned state)".to_string()
-        }
-    }))
+    Err(format!("Core Stop on port {} requires an explicit verified drain/manual shutdown. Use generation-preserving Restart for maintenance. No process was stopped or recovery evidence removed.", target))
 }
 
 #[tauri::command]
@@ -2626,18 +2525,15 @@ async fn stop_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Va
 #[tauri::command]
 async fn restart_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Value, String> {
     let target = port.unwrap_or(7888);
-    let _ = stop_core_server_inner(target).await;
-    tokio::time::sleep(Duration::from_millis(600)).await;
-    match launch_server_process(target).await {
-        Ok(pid) => {
-            let message = format!("SuperAgent Core server restarted on port {}", target);
+    let dir = config_dir()?;
+    let result = async {
+        let pid = core_startup::verified_owner(&dir, target).await?;
+        runtime_control::control(&dir, "core-supervisor", "restart", target, pid).await
+    }.await;
+    match result {
+        Ok(value) => {
             record_core_notification(&app, "info", "Core restarted", "The selected Core server was restarted.");
-            Ok(json!({
-                "success": true,
-                "port": target,
-                "pid": pid,
-                "message": message
-            }))
+            Ok(value)
         }
         Err(e) => {
             record_core_notification(&app, "critical", "Core restart failed", "Core restart failed. Inspect Runtime Detection.");

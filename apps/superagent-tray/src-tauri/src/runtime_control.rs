@@ -204,6 +204,16 @@ async fn supervisor_status(owner: &SupervisorDiscovery) -> Result<Value, String>
     verify_supervisor_identity(owner, &status)?;
     Ok(status)
 }
+
+pub async fn verified_core_status(
+    dir: &Path, port: u16, pid: u32, started_at: u64,
+) -> Result<Value, String> {
+    if !owned_pid(pid, started_at) {
+        return Err("Core registration no longer matches its running process".into());
+    }
+    let owner = read_supervisor(dir, port, pid)?;
+    supervisor_status(&owner).await
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct MuseLease {
