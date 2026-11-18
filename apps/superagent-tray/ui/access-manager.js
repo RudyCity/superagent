@@ -678,6 +678,20 @@
     connectedList.id = "access-mcp-live-list";
     connectedCard.append(connectedList);
 
+    const registeredCard = make("section", "access-stored");
+    const registeredHead = make("div", "access-stored-head");
+    registeredHead.append(
+      make("h3", "", "Koneksi MCP Tercatat"),
+      make("span", "access-count", "Memeriksa…"),
+    );
+    registeredHead.lastChild.id = "access-mcp-registered-summary";
+    const registeredList = make("div", "access-mcp-identities");
+    registeredList.id = "access-mcp-registered-list";
+    registeredCard.append(registeredHead,
+      make("p", "access-hint",
+        "Dikelompokkan berdasarkan identitas kredensial yang terautentikasi, bukan URL MCP. Satu klien dapat memiliki beberapa sesi. Nama ChatGPT/Gemini adalah klaim dari aplikasi klien. Terdaftar tidak berarti memiliki izin Execute atau akses proyek."),
+      registeredList);
+
     const identityCard = make("section", "access-stored");
     const identityHead = make("div", "access-stored-head");
     identityHead.append(
@@ -736,7 +750,7 @@
     historyList.id = "access-mcp-connection-history-list";
     historyCard.append(historyList);
 
-    pane.append(introduction, notice, connectedCard, identityCard, pendingCard, grantCard, historyCard);
+    pane.append(introduction, notice, connectedCard, registeredCard, identityCard, pendingCard, grantCard, historyCard);
     return pane;
   }
 
@@ -1217,6 +1231,88 @@
     }
   }
 
+  function renderMcpRegisteredConnections(result) {
+    const root = $("access-mcp-registered-list");
+    const summary = $("access-mcp-registered-summary");
+    if (!root || !summary) return;
+    root.replaceChildren();
+    const verified = result?.state === "verified" &&
+      result.registrationState === "verified";
+    let registrations = Array.isArray(result?.registeredConnections)
+      ? result.registeredConnections : [];
+
+    // A live, owner-verified session remains useful when native metadata
+    // persistence is unavailable or an older Core lacks the new registry.
+    // These fallback entries are explicitly NOT called persisted registrations.
+    const fallback = result?.state === "verified" &&
+      result.registrationState !== "verified" &&
+      Array.isArray(result.clients);
+    if (fallback) {
+      const groups = new Map();
+      for (const client of result.clients) {
+        if (!client || !/^idh_[a-f0-9]{16}$/.test(client.principalHandle)) continue;
+        const previous = groups.get(client.principalHandle);
+        if (previous) {
+          previous.sessionCount++;
+          if (client.lastSeenAt > previous.lastObservedAt) {
+            previous.reportedClientName = client.claimedClientName;
+            previous.lastObservedAt = client.lastSeenAt;
+          }
+        } else {
+          groups.set(client.principalHandle, {
+            connectionHandle: client.principalHandle, authMode: client.authMode,
+            reportedClientName: client.claimedClientName,
+            lastObservedAt: client.lastSeenAt,
+            sessionCount: 1, status: "connected",
+          });
+        }
+      }
+      registrations = [...groups.values()];
+    }
+    const valid = registrations.length <= 128 && registrations.every(record =>
+      record && /^idh_[a-f0-9]{16}$/.test(record.connectionHandle) &&
+      ["oauth", "static-bearer"].includes(record.authMode) &&
+      Number.isSafeInteger(record.lastObservedAt) &&
+      Number.isSafeInteger(record.sessionCount) &&
+      record.sessionCount >= 0 && record.sessionCount <= 64 &&
+      ["connected", "disconnected"].includes(record.status) &&
+      (record.reportedClientName == null ||
+        (typeof record.reportedClientName === "string" && record.reportedClientName.length <= 64)));
+    if (!valid) {
+      summary.textContent = "Data tidak valid";
+      root.append(make("p", "access-empty", "Catatan koneksi tidak lolos validasi."));
+      return;
+    }
+    const live = verified || fallback;
+    const online = live ? registrations.filter(row => row.status === "connected").length : 0;
+    summary.textContent = registrations.length + " koneksi · " + online +
+      (live ? " terhubung" : " status tidak terverifikasi");
+    if (!registrations.length) {
+      root.append(make("p", "access-empty",
+        result?.state === "verified"
+          ? "Belum ada identitas koneksi yang terdeteksi pada sesi MCP saat ini."
+          : "Data koneksi belum tersedia. Tidak ada koneksi yang dinyatakan offline tanpa verifikasi owner."));
+      return;
+    }
+    for (const record of registrations) {
+      const row = make("div", "access-mcp-identity-row");
+      const name = record.reportedClientName || "Klien MCP tanpa nama";
+      row.append(make("strong", "", name + " (nama diklaim klien)"));
+      row.append(make("span", "access-mcp-meta",
+        (record.authMode === "oauth" ? "OAuth" : "Bearer") + " · " +
+        (live ? record.status === "connected" ? "Terhubung" : "Terputus" :
+          "Status belum terverifikasi") + " · " +
+        (live ? record.sessionCount + " sesi · " : "") +
+        record.connectionHandle + " · terakhir " +
+        new Date(record.lastObservedAt).toLocaleString()));
+      root.append(row);
+    }
+    if (fallback) {
+      root.append(make("p", "access-hint",
+        "Koneksi live terdeteksi, tetapi pencatatan metadata persisten belum tersedia di Core ini."));
+    }
+  }
+
   function renderMcpIdentities(identities) {
     const root = $("access-mcp-identity-list");
     if (!root) return;
@@ -1393,6 +1489,7 @@
       renderMcpHistory("access-mcp-connection-history-list", failures.requests ? null : connectionHistory);
       highlightMcpNotificationRequest();
       renderMcpConnectedClients(mcpCache.live);
+      renderMcpRegisteredConnections(mcpCache.live);
       renderMcpIdentities(failures.identities ? null : mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-ident-select", mcpCache.identities);
       populateMcpIdentitySelect("access-mcp-connection-identity", mcpCache.identities);
