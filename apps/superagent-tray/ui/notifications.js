@@ -25,6 +25,9 @@
     items: [], unreadCount: 0, filter: "all", source: "all", period: "all",
     search: "", open: false, busy: false, error: "", securitySync: "unknown", prefsDirty: false, evictedCount: 0,
   };
+  // A click must not lose its read receipt just because a refresh or native
+  // action is currently running. Read receipts wait for the existing request.
+  const pendingReadIds = new Set();
   const invoke = (action, id) => {
     const call = window.__TAURI__?.core?.invoke;
     if (!call) return Promise.reject(new Error("Native Tray notification service unavailable"));
@@ -169,10 +172,13 @@
       default: return base;
     }
   }
-  // Navigation is read-only and always stays inside allowlisted Tray routes.
+  // Opening an incident marks it read even when the destination is another
+  // Tray page. Navigate immediately; the native read receipt is persisted
+  // separately and is queued when a refresh is already in flight.
   function openDestination(item) {
     const route = incidentRoute(item);
     if (!route) return;
+    scheduleRead(item);
     const pending = pendingAccessTarget(item);
     if (pending) {
       window.__superagentPendingAccessNotificationId = pending.requestId;
@@ -195,15 +201,14 @@
       (item.resolvedAt ? " is-resolved" : "") +
       (item.archivedAt ? " is-archived" : ""));
     const page = incidentRoute(item);
-    if (page) {
-      wrapper.className += " is-navigable";
-      // The card body is a navigation affordance; individual lifecycle
-      // action buttons retain their own behavior and must not navigate.
-      wrapper.addEventListener("click", (event) => {
-        if (event.target?.closest?.("button, a, input, select, textarea")) return;
-        openDestination(item);
-      });
-    }
+    if (page) wrapper.className += " is-navigable";
+    // Every card body click is an explicit read. Lifecycle buttons do not
+    // accidentally navigate; their native actions mark read atomically.
+    wrapper.addEventListener("click", (event) => {
+      if (event.target?.closest?.("button, a, input, select, textarea")) return;
+      if (page) openDestination(item);
+      else scheduleRead(item);
+    });
     const indicator = element("span", "notification-item-indicator");
     indicator.setAttribute("aria-hidden", "true");
     const copy = element("div", "notification-item-copy");
@@ -231,6 +236,7 @@
               : "View " + page.replace(":", " · ").replaceAll("-", " ");
       const open = element("button", "notification-link", label);
       open.type = "button";
+      open.disabled = state.busy;
       open.addEventListener("click", () => openDestination(item));
       actions.append(open);
     }
@@ -407,7 +413,20 @@
       if (syncSecurity === true) state.securitySync = "unavailable";
       state.error = "Cannot load notifications. Open the installed Tray or retry.";
       render();
-    } finally { state.busy = false; render(); }
+    } finally { state.busy = false; render(); flushPendingReads(); }
+  }
+  // Keep the click synchronous for navigation and coalesce repeated read
+  // receipts until the native write has completed.
+  function scheduleRead(item) {
+    if (item.readAt || pendingReadIds.has(item.id)) return;
+    pendingReadIds.add(item.id);
+    flushPendingReads();
+  }
+  function flushPendingReads() {
+    if (state.busy || pendingReadIds.size === 0) return;
+    const id = pendingReadIds.values().next().value;
+    pendingReadIds.delete(id);
+    void mutate("read", id);
   }
   async function mutate(action, id) {
     if (state.busy) return;
@@ -416,7 +435,7 @@
     try { apply(await invoke(action, id)); }
     catch {
       state.error = "Notification change could not be saved. Retry after checking Tray.";
-    } finally { state.busy = false; render(); }
+    } finally { state.busy = false; render(); flushPendingReads(); }
   }
   function collectPrefs() {
     return {
@@ -443,7 +462,7 @@
       if (feedback) feedback.textContent = "Notification preferences saved.";
     } catch {
       if (feedback) feedback.textContent = "Couldn't save preferences. Bring the native Tray to the foreground and retry.";
-    } finally { state.busy = false; render(); }
+    } finally { state.busy = false; render(); flushPendingReads(); }
   }
   function close() { state.open = false; render(); }
   function toggle() {
