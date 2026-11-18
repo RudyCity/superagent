@@ -83,6 +83,45 @@ describe("authorization request validation", () => {
   });
 });
 
+describe("owner-assigned OAuth connection names", () => {
+  it("binds a name only to an approved code and preserves it through refresh", () => {
+    const store = new McpOAuthStore();
+    store.registerClient(CLIENT_ID,[REDIRECT_URI]);
+    const {verifier,challenge}=pkcePair();
+    const request=store.createAuthorizationRequest({
+      clientId:CLIENT_ID,redirectUri:REDIRECT_URI,codeChallenge:challenge,
+      codeChallengeMethod:"S256",scope:["mcp:tools"],state:"test",
+    });
+    const invalid=store.approveAuthorizationRequest(request.requestId,true,"\\u202EGemini");
+    expect(invalid.ok).toBe(false);
+    const approved=store.approveAuthorizationRequest(request.requestId,true,"ChatGPT - Laptop Rudy");
+    expect(approved.ok).toBe(true);
+    if(!approved.ok)return;
+    const exchanged=store.exchangeCode({code:approved.code,clientId:CLIENT_ID,
+      redirectUri:REDIRECT_URI,codeVerifier:verifier});
+    expect(exchanged.ok).toBe(true);
+    if(!exchanged.ok)return;
+    const cryptoHash=(value:string)=>crypto.createHash("sha256").update(value).digest("hex");
+    const h=cryptoHash(exchanged.accessToken);
+    expect(store.verifyAccessToken(exchanged.accessToken)?.ownerConnectionName).toBe("ChatGPT - Laptop Rudy");
+    expect(store.ownerConnectionNameForTokenHash(h)).toBe("ChatGPT - Laptop Rudy");
+    const rotated=store.rotateRefreshToken(exchanged.refreshToken);
+    expect(rotated.ok).toBe(true);
+    if(!rotated.ok)return;
+    expect(store.verifyAccessToken(rotated.accessToken)?.ownerConnectionName).toBe("ChatGPT - Laptop Rudy");
+    expect(store.ownerConnectionNameForTokenHash(cryptoHash(rotated.accessToken)))
+      .toBe("ChatGPT - Laptop Rudy");
+    expect(store.ownerConnectionNameForTokenHash(cryptoHash("unrelated"))).toBeNull();
+    store.revokeToken(rotated.accessToken);
+    expect(store.ownerConnectionNameForTokenHash(cryptoHash(rotated.accessToken))).toBeNull();
+    const snapshot=store.exportSnapshot("https://issuer.example");
+    expect(JSON.stringify(snapshot)).not.toContain(exchanged.accessToken);
+    const restored=new McpOAuthStore();
+    restored.restoreSnapshot(snapshot,"https://issuer.example");
+    expect(restored.ownerConnectionNameForTokenHash(h)).toBe("ChatGPT - Laptop Rudy");
+  });
+});
+
 describe("code exchange", () => {
   let store: McpOAuthStore;
   beforeEach(() => { store = new McpOAuthStore(); });
