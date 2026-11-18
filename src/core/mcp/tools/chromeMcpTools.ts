@@ -4,9 +4,11 @@
 
 import { McpToolResult } from "../types.js";
 import { fileRulesRegistered } from "../../tools/registeredFileToolGate.js";
-import { certifiedBrowserObservation } from "../../tools/browserFilePolicyCertification.js";
+import { certifiedBrowserObservation, certifiedDelegateWebAction } from "../../tools/browserFilePolicyCertification.js";
 import { safeManagedChromeObservation } from "../../tools/safeManagedChromeObservation.js";
 import { safeDelegateChromeObservation } from "../../tools/safeDelegateChromeObservation.js";
+import { delegateCdpTransport } from "../../delegate/cdpTransport.js";
+import { parseBrowserTargetId } from "../../browserTransport/targetIdentity.js";
 import { controlChromeCdpTool } from "../../tools/chromeCdpTools.js";
 import { controlChromeVisionTool } from "../../tools/chromeVisionTools.js";
 import {
@@ -22,7 +24,7 @@ import { resolveBrowserTransport } from "../../browserTransport/router.js";
 import { dispatchDelegateBrowserMcpTool } from "./delegateMcpTools.js";
 import {
   runWithDelegateMcpBoundary,
-  assertDelegateMcpActorForCommand, type AuthenticatedDelegateMcpConnection,
+  assertDelegateMcpActorForCommand, getDelegateMcpPrincipalId, type AuthenticatedDelegateMcpConnection,
 } from "../../browserTransport/delegatePrincipalPolicy.js";
 import { runWithTrustedDelegateForwardingConnection } from "../../browserTransport/delegateForwardedPrincipal.js";
 
@@ -58,12 +60,46 @@ function toResult(res: unknown): McpToolResult {
   };
 }
 
+
+/** Preflight the CURRENT tab before a certified web workflow.
+ * Extension getTab() independently validates the URL on every debugger action.
+ * Never infer web safety from a user-supplied targetId alone.
+ */
+async function assertLiveDelegateWebTarget(args: Record<string, unknown>): Promise<void> {
+  const target = parseBrowserTargetId(String(args.targetId || ""));
+  if (!target || target.kind !== "delegate" || target.connectionId !== args.delegateClientId)
+    throw new Error("DELEGATE_WEB_TARGET_INVALID");
+  const targets = await delegateCdpTransport.listTargets(target.connectionId);
+  const current = targets.find(item => item.tabId === target.tabId &&
+    item.connectionId === target.connectionId);
+  if (!current?.url) throw new Error("DELEGATE_WEB_TARGET_NOT_VISIBLE");
+  let url: URL;
+  try { url = new URL(current.url); }
+  catch { throw new Error("DELEGATE_WEB_TARGET_NOT_HTTP"); }
+  if (url.protocol !== "http:" && url.protocol !== "https:")
+    throw new Error("DELEGATE_WEB_TARGET_NOT_HTTP");
+}
+
+/** Validated direct MCP entrypoint; implementation uses the EXISTING signed
+ * Core forwarding path. A new browser WS/proxy or unguarded evaluate route
+ * is intentionally not introduced.
+ */
+export async function handleDelegateWebMcpTool(
+  args: Record<string, unknown>, options: { hostOwned?: boolean } = {},
+): Promise<McpToolResult> {
+  if (!certifiedDelegateWebAction({ name: "superagent_chrome_cdp_web", args })) {
+    return { content: [{ type: "text", text: "DELEGATE_WEB_ARGUMENTS_NOT_CERTIFIED" }], isError: true };
+  }
+  return handleControlChromeCdp(args, options);
+}
+
 export async function handleControlChromeCdp(args: any, options: { hostOwned?: boolean } = {}): Promise<McpToolResult> {
   return runWithDelegateMcpBoundary(async () => {
     try {
       const filePolicyActive=fileRulesRegistered();
       const certified=certifiedBrowserObservation({name:"superagent_chrome_cdp",args:args||{}});
-      if(filePolicyActive&&!certified) {
+      const certifiedWeb=certifiedDelegateWebAction({name:"superagent_chrome_cdp",args:args||{}});
+      if(filePolicyActive&&!certified&&!certifiedWeb) {
         return {content:[{type:"text",text:"Chrome command is not certified for permanent file access restrictions."}],isError:true};
       }
       // Forward only the narrow metadata command; Core reconstructs a filtered
@@ -76,6 +112,14 @@ export async function handleControlChromeCdp(args: any, options: { hostOwned?: b
       // a metadata-only request certified by the outer host file-policy gate.
       if(certified) return toResult(await safeManagedChromeObservation(args));
       if (needsDelegateCoreHost(args)) {
+        if (certifiedWeb) {
+          // A signed MCP principal, exact profile and tab lease are required;
+          // the metadata-only certification never authorizes browser control.
+          if (!getDelegateMcpPrincipalId())
+            throw new Error("DELEGATE_WEB_VERIFIED_PRINCIPAL_REQUIRED");
+          if (options.hostOwned && args.command !== "release_target")
+            await assertLiveDelegateWebTarget(args);
+        }
         let payload: Record<string, unknown> = {};
         try { payload = typeof args?.payload === "string" ? JSON.parse(args.payload) : (args?.payload || {}); } catch {}
         // Validate in the MCP process BEFORE proxy forwarding; a Core bearer token
@@ -243,6 +287,7 @@ export function validateDelegateBrowserHostArgs(name: string, args: unknown): st
 export const CHROME_MCP_TOOL_CLASSIFICATIONS: Record<string, "safe" | "dangerous"> = {
   superagent_browser_gateway: "dangerous",
   superagent_chrome_cdp_observe: "safe",
+  superagent_chrome_cdp_web: "dangerous",
   superagent_chrome_cdp: "dangerous",
   superagent_control_chrome_cdp: "dangerous",
   superagent_chrome_vision: "dangerous",
@@ -282,6 +327,33 @@ export const CHROME_MCP_TOOL_DEFS = [
         waitMs: { type: "number", description: "wait_events: long-poll timeout (max 10s)." },
       },
       required: ["action"],
+    },
+  },
+  {
+    name: "superagent_chrome_cdp_web",
+    description:
+      "Human-approved, principal-bound Delegate Chrome web workflow on one explicit HTTP(S) tab. " +
+      "Claim tab, navigate, click, type, read limited page content or snapshot, heartbeat, release. " +
+      "Requires MCP write OAuth and Security Approval; no file access, arbitrary JS, cookies, screenshots, uploads, shell or Chrome launch.",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        command: { type: "string", enum: [
+          "claim_target","release_target","heartbeat_session","session_participants",
+          "navigate","click","type","snapshot","read_page",
+        ] },
+        transport: { type: "string", enum: ["delegate"] },
+        delegateClientId: { type: "string", minLength: 8, maxLength: 80 },
+        targetId: { type: "string", description: "Exact qualified delegate:clientId:tabId target from observation." },
+        sessionToken: { type: "string", description: "Opaque token from claim_target; required after claiming." },
+        expectedRevision: { type: "integer", minimum: 0, description: "Required for browser mutations; from the last owned session state." },
+        url: { type: "string", maxLength: 4096, description: "navigate: absolute HTTP(S) URL, without URL credentials." },
+        selector: { type: "string", maxLength: 512, description: "click/type: exact CSS selector (or index)." },
+        index: { type: "integer", minimum: 1, maximum: 250, description: "click/type: visible element index, alternative to selector." },
+        text: { type: "string", maxLength: 10000, description: "type: text inserted in the selected page input." },
+      },
+      required: ["command","transport","delegateClientId","targetId"],
     },
   },
   {
@@ -504,6 +576,8 @@ export async function dispatchChromeMcpTool(
     return runWithTrustedDelegateForwardingConnection(trustedConnection, () => dispatchChromeMcpTool(name, args));
   }
   switch (name) {
+    case "superagent_chrome_cdp_web":
+      return await handleDelegateWebMcpTool(args, { hostOwned: false });
     case "superagent_chrome_cdp_observe":
       // Standalone read-only entrypoint; validate even without an installed
       // permanent file registry. Do not let a caller re-label a control action.
