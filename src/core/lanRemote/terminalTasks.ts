@@ -6,6 +6,7 @@
  */
 import crypto from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { spawnWindowsConpty, type ConptyProcess } from "./bunConpty.js";
 
 export const LAN_TERMINAL_MAX_COMMAND = 2000;
@@ -23,6 +24,7 @@ type Task = {
   pty: ConptyProcess | null;
   cols: number;
   rows: number;
+  decoders: { stdout: StringDecoder; stderr: StringDecoder };
   chunks: Chunk[];
   chars: number;
   cursor: number;
@@ -80,7 +82,9 @@ export class LanTerminalTaskManager {
       windows ? ["-NoLogo", "-NoProfile", "-Command", command] : ["-c", command],
       { windowsHide: true, shell: false, detached: !windows, stdio: ["pipe", "pipe", "pipe"] });
     const task: Task = {
-      jobId: crypto.randomUUID(), sessionId, child, pty, cols: 80, rows: 24, chunks: [], chars: 0,
+      jobId: crypto.randomUUID(), sessionId, child, pty, cols: 80, rows: 24,
+      decoders: { stdout: new StringDecoder("utf8"), stderr: new StringDecoder("utf8") },
+      chunks: [], chars: 0,
       cursor: 0, running: true, stopping: false, exitCode: null, reason: null,
       deadline: undefined as unknown as ReturnType<typeof setTimeout>,
       idle: undefined as unknown as ReturnType<typeof setTimeout>,
@@ -108,7 +112,7 @@ export class LanTerminalTaskManager {
     idleReset();
     function append(stream: "stdout" | "stderr", data: Buffer) {
       if (task !== currentTask) return;
-      const value = data.toString("utf8");
+      const value = task.decoders[stream].write(data);
       for (let i = 0; i < value.length; i += 1024) {
         const text = value.slice(i, i + 1024);
         task.chunks.push({ cursor: ++task.cursor, stream, text });
