@@ -42,6 +42,9 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     const read=(f:string)=>registeredFileToolGate({name:"read",args:{filePaths:[f]}},a.root,opts);
     expect(read("src/main.ts")).toBeNull();
     expect(read(".env")).toMatch(/denies read/);
+    // The canonical host path must not be emitted to remote MCP clients.
+    expect(read(".env")).not.toContain(path.join(a.root,".env"));
+    expect(read(".env")).toContain("selected target");
     expect(read("../somewhere.txt")).toMatch(/traversal/);
     expect(read(path.resolve(a.root,"..","outside.txt"))).toMatch(/denies read/);
   });
