@@ -54,8 +54,12 @@ function mount(items: Record<string, unknown>[] = []) {
     window: {
       __TAURI__: {
         core: { invoke: vi.fn(async (name: string, args: any) => {
-          expect(name).toMatch(/^tray_notification_center_(action|ui_alert)$/);
+          expect(name).toMatch(/^tray_notification_center_(action|ui_alert|refresh_security)$/);
           if (name.endsWith("ui_alert")) return {};
+          if (name.endsWith("refresh_security")) {
+            mockInvocations.push({action: "sync-security"});
+            return {items, unreadCount: items.filter((item) => !item.readAt).length, securitySync: "ok"};
+          }
           mockInvocations.push(args);
           if (args.action === "read" && args.id) {
             items = items.map((item) => item.id === args.id ? { ...item, readAt: 1700000000100 } : item);
@@ -171,6 +175,24 @@ describe("Tray Notification Manager", () => {
     expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf('.show()'));
     expect(reminder.indexOf('app, "reminder", "info"')).toBeLessThan(reminder.indexOf("write_seen(&file"));
   });
+  it("opening the bell requests fresh authenticated security inventory without granting access", async () => {
+    const mounted = mount([{
+      id: "mcp-pending:req_test", source: "security", severity: "critical",
+      title: "Security approval pending", body: "Review Security Approval",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await Promise.resolve(); await Promise.resolve();
+    mounted.get("tray-notification-bell").trigger("click");
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(mounted.mockInvocations.some(call => call.action === "sync-security")).toBe(true);
+    expect(js).toContain("tray_notification_center_refresh_security");
+    expect(rust).toContain("async fn tray_notification_center_refresh_security(");
+    expect(rust).toContain("poll_pending_security_requests(&app).await");
+    expect(rust).toContain("tokio::join!(");
+    expect(rust).toContain("tray_notification_center_refresh_security,");
+    expect(rust).not.toContain("approveProjectAccessRequest(&app)");
+  });
+
   it("deep-links to an exact MCP approval without invoking approve/deny", () => {
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
     expect(js).toContain("__superagentAccessManagerFocusRequest?.(");
