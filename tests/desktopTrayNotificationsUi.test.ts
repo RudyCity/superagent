@@ -232,7 +232,7 @@ describe("Tray Notification Manager", () => {
   });
   it("deep-links to an exact MCP approval without invoking approve/deny", () => {
     const access = fs.readFileSync(path.join(base, "ui/access-manager.js"), "utf8");
-    expect(js).toContain("__superagentAccessManagerFocusRequest?.(");
+    expect(js).toContain("window.__superagentAccessManagerFocusRequest(requestId)");
     expect(access).toContain("window.__superagentAccessManagerFocusRequest = async (requestId)");
     expect(access).toContain("card.dataset.requestId = String(req.requestId ||");
     expect(access).toContain("row.dataset.requestId = String(req.requestId ||");
