@@ -126,6 +126,10 @@ export class LanTerminalTaskManager {
       });
     } else {
       const piped = child as ChildProcessWithoutNullStreams;
+      piped.stdin.on("error", (error: NodeJS.ErrnoException) => {
+        if (error.code !== "EPIPE" && task.running && !task.stopping)
+          append("stderr", Buffer.from("Terminal stdin: " + error.message));
+      });
       piped.stdout.on("data", (data: Buffer) => append("stdout", data));
       piped.stderr.on("data", (data: Buffer) => append("stderr", data));
       piped.once("error", (error: Error) => {
