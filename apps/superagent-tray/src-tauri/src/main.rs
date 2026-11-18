@@ -2536,7 +2536,7 @@ async fn start_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<V
             let _ = app.notification()
                 .builder()
                 .title("SuperAgent Core Error")
-                .body(format!("Failed to start Core: {}", e))
+                .body("Core start failed. Open SuperAgent Tray Runtime for details.")
                 .show();
             record_core_notification(&app, "critical", "Core start failed", "Core could not start. Review Runtime Detection.");
             Err(e)
@@ -2562,7 +2562,7 @@ async fn stop_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result<Va
             let _ = app.notification()
                 .builder()
                 .title("SuperAgent Core Error")
-                .body(format!("Failed to stop Core: {}", e))
+                .body("Core stop failed. Open SuperAgent Tray Runtime for details.")
                 .show();
             record_core_notification(&app, "critical", "Core stop failed", "Core shutdown did not complete. Inspect the verified owner state.");
             Err(e)
@@ -2595,7 +2595,7 @@ async fn restart_core_server(app: tauri::AppHandle, port: Option<u16>) -> Result
             let _ = app.notification()
                 .builder()
                 .title("SuperAgent Core Error")
-                .body(format!("Failed to restart Core: {}", e))
+                .body("Core restart failed. Open SuperAgent Tray Runtime for details.")
                 .show();
             record_core_notification(&app, "critical", "Core restart failed", "Core restart failed. Inspect Runtime Detection.");
             Err(e)

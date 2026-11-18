@@ -125,7 +125,9 @@ describe("Tray Notification Manager", () => {
       id: "reminder-1", severity: "info", source: "reminder", title: "Break",
       body: "Stretch", createdAt: 1700000000000, readAt: 1700000000100, archivedAt: null,
     }]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mounted.get("tray-notification-count").textContent).toBe("1");
     expect(mounted.get("notification-inbox-list").children).toHaveLength(2);
     mounted.filters[1].trigger("click");
@@ -139,9 +141,13 @@ describe("Tray Notification Manager", () => {
       id: "alert-1", severity: "warning", source: "security", title: "Approval required",
       body: "Review security", createdAt: 1700000000000, readAt: null, archivedAt: null,
     }]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.get("notification-read-all").trigger("click");
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mounted.mockInvocations.some((call) => call.action === "read-all")).toBe(true);
     expect(mounted.get("tray-notification-count").hidden).toBe(true);
     expect(js).not.toMatch(/localStorage|sessionStorage/);
@@ -158,7 +164,9 @@ describe("Tray Notification Manager", () => {
         body: "Completed", createdAt: Date.now(), readAt: Date.now(), archivedAt: null,
         acknowledgedAt: null, resolvedAt: Date.now() },
     ]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.filters[3].trigger("click");
     expect(mounted.get("notification-inbox-list").children).toHaveLength(1);
     mounted.filters[4].trigger("click");
@@ -204,9 +212,13 @@ describe("Tray Notification Manager", () => {
       title: "Security approval pending", body: "Review Security Approval",
       createdAt: Date.now(), readAt: null, archivedAt: null,
     }]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     mounted.get("tray-notification-bell").trigger("click");
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mounted.mockInvocations.some(call => call.action === "sync-security")).toBe(true);
     expect(js).toContain("tray_notification_center_refresh_security");
     expect(rust).toContain("async fn tray_notification_center_refresh_security(");
@@ -222,7 +234,9 @@ describe("Tray Notification Manager", () => {
       title: "Security approval pending", body: "A project needs access",
       createdAt: Date.now(), readAt: null, archivedAt: null,
     }]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const card = mounted.get("tray-notification-recent").children[0];
     const open = card.children[1].children[3].children[0];
     expect(open.textContent).toBe("Review pending access");
@@ -254,7 +268,9 @@ describe("Tray Notification Manager", () => {
       title: "Security approval pending", body: "Review MCP permission",
       createdAt: Date.now(), readAt: null, archivedAt: null,
     }]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const card = mounted.get("tray-notification-recent").children[0];
     const open = card.children[1].children[3].children[0];
     expect(open.textContent).toBe(label);
@@ -327,7 +343,9 @@ describe("Tray Notification Manager", () => {
       id, source, severity: "warning", title: "System event", body: "Review",
       createdAt: Date.now(), readAt: null, archivedAt: null,
     }]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const card = mounted.get("tray-notification-recent").children[0];
     card.trigger("click", { target: { closest: () => null } });
     expect(mounted.nav).toHaveBeenCalledWith(route);
@@ -354,13 +372,17 @@ describe("Tray Notification Manager", () => {
         title: "MCP permission pending", body: "Review connection",
         createdAt: Date.now(), readAt: null, archivedAt: null,
       }]);
-      await Promise.resolve(); await Promise.resolve();
+      // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
       const card = mounted.get("tray-notification-recent").children[0];
       const open = card.children[1].children[3].children[0];
       if (mode === "card") card.trigger("click", { target: { closest: () => null } });
       else open.trigger("click");
       expect(mounted.nav).toHaveBeenCalledWith("security:connections");
-      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
       expect(mounted.mockInvocations.filter(call =>
         call.action === "read" && call.id === "mcp-pending:connections:request-42")).toHaveLength(1);
       expect(mounted.get("tray-notification-count").hidden).toBe(true);
@@ -373,13 +395,17 @@ describe("Tray Notification Manager", () => {
       title: "Runtime incident", body: "Inspect runtime",
       createdAt: Date.now(), readAt: null, archivedAt: null,
     }]);
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     const card = mounted.get("notification-inbox-list").children[0];
     const actions = card.children[1].children[3].children;
     const resolve = actions.find((button: any) => button.textContent === "Resolve");
     expect(resolve).toBeDefined();
     resolve.trigger("click");
-    await Promise.resolve(); await Promise.resolve();
+    // Flush the native-invoke promise chain through the render turn, not
+    // just the first two microtasks; this is deterministic across CI OSes.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     expect(mounted.mockInvocations.some(call =>
       call.action === "resolve" && call.id === "incident-1")).toBe(true);
     expect(mounted.nav).not.toHaveBeenCalled();
