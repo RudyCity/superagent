@@ -25,6 +25,8 @@ export interface TrustedMcpSessionMetadata {
   sessionHandle: string;
   authMode: "oauth" | "static-bearer";
   claimedClientName: string | null;
+  /** Human approved OAuth label bound to the authenticated token. */
+  ownerConnectionName?: string | null;
   claimedClientVersion: string | null;
   createdAt: number;
   lastSeenAt: number;
@@ -36,6 +38,7 @@ export interface RegisteredMcpConnection {
   ownerPort: number;
   authMode: "oauth" | "static-bearer";
   reportedClientName: string | null;
+  ownerConnectionName?: string | null;
   reportedClientVersion: string | null;
   firstObservedAt: number;
   lastObservedAt: number;
@@ -71,6 +74,9 @@ function validateRecord(value: RegisteredMcpConnection, now: number): boolean {
     (value.reportedClientName === null ||
       (typeof value.reportedClientName === "string" && value.reportedClientName.length <= 64 &&
         safeName(value.reportedClientName, 64) === value.reportedClientName)) &&
+    (value.ownerConnectionName === undefined || value.ownerConnectionName === null ||
+      (typeof value.ownerConnectionName === "string" && value.ownerConnectionName.length <= 64 &&
+        safeName(value.ownerConnectionName,64) === value.ownerConnectionName)) &&
     (value.reportedClientVersion === null ||
       (typeof value.reportedClientVersion === "string" && value.reportedClientVersion.length <= 32 &&
         safeName(value.reportedClientVersion, 32) === value.reportedClientVersion)) &&
@@ -168,6 +174,7 @@ export function reconcileVerifiedMcpConnections(
     }
     sessionIds.add(session.sessionHandle);
     const reportedClientName = safeName(session.claimedClientName, 64);
+    const ownerConnectionName = safeName(session.ownerConnectionName ?? null, 64);
     const reportedClientVersion = safeName(session.claimedClientVersion, 32);
     const prior = grouped.get(session.principalHandle);
     if (prior && prior.entry.authMode !== session.authMode) {
@@ -175,13 +182,13 @@ export function reconcileVerifiedMcpConnections(
     }
     if (!prior) {
       grouped.set(session.principalHandle, {
-        entry: { ...session, claimedClientName: reportedClientName, claimedClientVersion: reportedClientVersion },
+        entry: { ...session, ownerConnectionName, claimedClientName: reportedClientName, claimedClientVersion: reportedClientVersion },
         count: 1,
       });
     } else {
       prior.count++;
       if (session.lastSeenAt >= prior.entry.lastSeenAt) {
-        prior.entry = { ...session, claimedClientName: reportedClientName, claimedClientVersion: reportedClientVersion };
+        prior.entry = { ...session, ownerConnectionName, claimedClientName: reportedClientName, claimedClientVersion: reportedClientVersion };
       }
     }
   }
@@ -202,6 +209,7 @@ export function reconcileVerifiedMcpConnections(
       connectionHandle, ownerPort,
       authMode: entry.authMode,
       reportedClientName: entry.claimedClientName ?? previous?.reportedClientName ?? null,
+      ownerConnectionName: entry.ownerConnectionName ?? previous?.ownerConnectionName ?? null,
       reportedClientVersion: entry.claimedClientVersion ?? previous?.reportedClientVersion ?? null,
       firstObservedAt: previous?.firstObservedAt ?? now,
       lastObservedAt: now,
