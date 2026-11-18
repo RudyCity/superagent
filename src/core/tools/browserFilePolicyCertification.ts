@@ -94,21 +94,23 @@ export function certifiedDelegateWebAction(call:BrowserCall):boolean{
    case "click": {
      if(!exactWith("sessionToken","expectedRevision","selector","index")||
        !leased()||!revision())return false;
-     const hasSelector=typeof a.selector==="string";
+     const selector=typeof a.selector==="string" ? a.selector : undefined;
+     const hasSelector=selector!==undefined;
      const hasIndex=a.index!==undefined;
      if(hasSelector===hasIndex)return false;
-     return hasSelector
-       ? a.selector.length>0&&a.selector.length<=512&&!/[\0\r\n]/.test(a.selector)
+     return selector!==undefined
+       ? selector.length>0&&selector.length<=512&&!/[\0\r\n]/.test(selector)
        : Number.isSafeInteger(a.index)&&Number(a.index)>=1&&Number(a.index)<=250;
    }
    case "type": {
      if(!exactWith("sessionToken","expectedRevision","selector","index","text")||
        !leased()||!revision()||typeof a.text!=="string"||a.text.length>10000)return false;
-     const hasSelector=typeof a.selector==="string";
+     const selector=typeof a.selector==="string" ? a.selector : undefined;
+     const hasSelector=selector!==undefined;
      const hasIndex=a.index!==undefined;
      if(hasSelector===hasIndex)return false;
-     return hasSelector
-       ? a.selector.length>0&&a.selector.length<=512&&!/[\0\r\n]/.test(a.selector)
+     return selector!==undefined
+       ? selector.length>0&&selector.length<=512&&!/[\0\r\n]/.test(selector)
        : Number.isSafeInteger(a.index)&&Number(a.index)>=1&&Number(a.index)<=250;
    }
    default:return false;
