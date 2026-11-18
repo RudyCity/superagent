@@ -92,7 +92,7 @@ describe("owner-assigned OAuth connection names", () => {
       clientId:CLIENT_ID,redirectUri:REDIRECT_URI,codeChallenge:challenge,
       codeChallengeMethod:"S256",scope:["mcp:tools"],state:"test",
     });
-    const invalid=store.approveAuthorizationRequest(request.requestId,true,"\\u202EGemini");
+    const invalid=store.approveAuthorizationRequest(request.requestId,true,"\u202EGemini");
     expect(invalid.ok).toBe(false);
     const approved=store.approveAuthorizationRequest(request.requestId,true,"ChatGPT - Laptop Rudy");
     expect(approved.ok).toBe(true);
