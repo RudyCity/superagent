@@ -26,7 +26,7 @@ SuperAgent already checks multiple independent authorization layers, but discove
    - No arbitrary file-tool preflight because an unrestricted path permission oracle could reveal protected filesystem details.
 2. **Log and audit privacy:** Permission-check input fields are replaced by a fixed metadata marker in MCP audit and activity success/failure paths. The preflight result is redacted from the event stream, and the response never echoes caller-supplied window titles, file paths, session tokens or text.
 3. **Host path denial privacy:** Permanent file-policy error now says `for the selected target` instead of returning the canonical local absolute path.
-4. **Grant metadata fidelity:** `superagent_git_action` reports `capability:action_dependent` and `capabilitiesByAction`: read for status/diff/log; git for add/commit/restore/clean. Admin tools advertise that **both** OAuth write and admin scopes are required.
+4. **Grant metadata fidelity:** `superagent_git_action` reports `capabilityMode:action_dependent` (without injecting a non-enum `capability` value) and `capabilitiesByAction`: read for status/diff/log; git for add/commit/restore/clean. Admin tools advertise that **both** OAuth write and admin scopes are required.
 5. **Guardrail preservation:** OAuth checks, project grants, MCP Connection Controls approval, native Desktop UI consent, file-policy decisions, disabled tool restrictions, and original gateway dispatch were not relaxed.
 
 ## Example inspection workflow (after the new MCP backend is built and activated)
