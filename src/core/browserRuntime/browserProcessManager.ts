@@ -115,9 +115,34 @@ export class BrowserProcessManager {
       { preferVirtualDisplay: config.preferVirtualDisplay }
     );
 
+    // Repeated owner-initiated launches are idempotent only when BOTH OS PID
+    // birth identity and the browser endpoint fingerprint still match.
+    // A foreign listener must never be adopted merely because port 9222 works.
+    const previous = this.activeInstances.get(port);
+    if (previous) {
+      const currentIdentity = await readProcessStartIdentity(previous.pid);
+      const stillOwned = Boolean(previous.creationIdentity && currentIdentity &&
+        compareProcessStartIdentity(previous.creationIdentity, currentIdentity) === "matched_unverified");
+      if (stillOwned) {
+        const health = await this.checkHealth(port);
+        if (health.status === "healthy" && previous.browserFingerprint &&
+            health.browserFingerprint === previous.browserFingerprint) {
+          if ((config.userDataDir && path.resolve(config.userDataDir) !== path.resolve(previous.userDataDir)) ||
+              (config.profileName && config.profileName !== previous.profileName) ||
+              (config.mode && config.mode !== "auto" && config.mode !== previous.mode) ||
+              (config.url && config.url !== "about:blank")) {
+            throw new Error("MANAGED_CDP_ALREADY_RUNNING: owned Chrome is healthy but launch settings differ; navigate the existing target explicitly or choose another port.");
+          }
+          return { ...previous, reused: true };
+        }
+        throw new Error("MANAGED_CDP_OWNED_UNHEALTHY: tracked Chrome is still running but CDP identity is missing or changed. Refusing to start a second browser on the same profile.");
+      }
+      // Never trust a recycled PID; its old record cannot grant ownership.
+      this.activeInstances.delete(port);
+    }
     // A foreign Chrome on this CDP port must never be mistaken for our launch.
     if (await isCdpPortListening(port, 300)) {
-      throw new Error("CDP port is already listening; refusing to claim an unowned browser.");
+      throw new Error("MANAGED_CDP_PORT_OCCUPIED: CDP port is already listening; refusing to claim an unowned browser. Select another port.");
     }
     // Validate Chrome binary, profile and flags before allocating child displays.
     const discovery = discoverBrowserExecutable(config.executablePath, os.platform());
