@@ -2732,7 +2732,10 @@ async fn managed_chrome_action(
     if object.keys().any(|key| !allowed.contains(&key.as_str())) {
         return Err("MANAGED_CDP_UNEXPECTED_FIELD".into());
     }
-    let port = object.get("port").and_then(Value::as_u64).unwrap_or(9222);
+    let port = match object.get("port") {
+        None => 9222,
+        Some(value) => value.as_u64().ok_or("MANAGED_CDP_INVALID_PORT")?,
+    };
     if !(1024..=65535).contains(&port) {
         return Err("MANAGED_CDP_INVALID_PORT".into());
     }
