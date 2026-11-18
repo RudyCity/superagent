@@ -120,6 +120,13 @@ describe("MCP Connection Controls independent from host file-policy certificatio
     try {
       await expect(invoke(server,"superagent_desktop_ui",{command:"probe"}))
         .rejects.toThrow(/mcp:tools:write/);
+      // A read-only principal cannot inspect the authorization state or
+      // schema of a dangerous tool through an optional metadata preflight.
+      const hidden=await invoke(server,"superagent_tool_describe",{
+        name:"superagent_desktop_ui",checkArguments:{command:"probe"},
+      });
+      expect(hidden.isError).toBe(true);
+      expect(JSON.stringify(hidden)).not.toContain("mcpConnectionExecute");
     }finally{await server.close();}
   });
 });
