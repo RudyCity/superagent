@@ -68,6 +68,12 @@ describe("MCP unified management authorization",()=>{
       expect(statusTool).toBeDefined();
       expect(statusTool.annotations?.readOnlyHint).toBe(true);
       expect(statusTool.annotations?.destructiveHint).toBe(false);
+      const attestation=await call({method:"tools/call",params:{
+        name:"superagent_services_status",arguments:{action:"owner_status",service:"tray"},
+      }});
+      expect(attestation.isError).not.toBe(true);
+      expect(JSON.stringify(attestation)).toContain("owner_status");
+      expect(JSON.stringify(attestation)).not.toContain("authToken");
       const invalid=await call({method:"tools/call",params:{
         name:"superagent_services_status",arguments:{action:"stop"},
       }});

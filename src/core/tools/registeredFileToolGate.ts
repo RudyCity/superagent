@@ -123,7 +123,7 @@ const BENIGN = new Set(["ask_question","get_workspace","superagent_get_workspace
   "superagent_media_capabilities",
 ]);
 const READ_ONLY_SERVICE_ACTIONS = new Set([
-  "status","inventory","doctor","health","dashboard","logs","profile",
+  "status","inventory","owner_status","doctor","health","dashboard","logs","profile",
 ]);
 /** Read-only service inspection cannot carry restart/upgrade/file arguments. */
 function certifiedServiceInspection(args:Args|undefined):boolean {

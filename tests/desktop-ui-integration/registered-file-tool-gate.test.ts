@@ -267,6 +267,9 @@ describe("permanent file access enforced at Core tool boundary",()=>{
     const gate=(args:Record<string,unknown>)=>
       registeredFileToolGate({name:"superagent_manage_services",args},a.root,opts);
     expect(gate({action:"status",service:"mcp",limit:30,port:7888})).toBeNull();
+    expect(gate({action:"owner_status",service:"mcp"})).toBeNull();
+    expect(gate({action:"owner_status",expectedExecutablePath:"C:/secret.exe"}))
+      .toMatch(/not certified/);
     expect(gate({action:"dashboard",service:"all"})).toBeNull();
     for(const args of [
       {action:"status",expectedExecutablePath:"C:/private/secret.exe"},

@@ -11,7 +11,7 @@ export const manageServicesTool:Tool={
   parameters:{
     type:"object",
     properties:{
-      action:{type:"string",enum:["inventory","status","doctor","health","dashboard","logs","profile","configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
+      action:{type:"string",enum:["inventory","status","owner_status","doctor","health","dashboard","logs","profile","configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
       service:{type:"string",enum:["all",...MANAGED_SERVICE_NAMES]},
       port:{type:"integer",minimum:1024,maximum:65535},
       targetAction:{type:"string",enum:["start","stop","restart","rollback","drain","reload","upgrade","recycle"]},

@@ -12,7 +12,7 @@ export const SERVICE_MANAGER_MCP_TOOL_DEFS=[
     inputSchema:{
       type:"object",
       properties:{
-        action:{type:"string",enum:["status","inventory","doctor","health","dashboard","logs","profile"],description:"Read-only action. Defaults to 'status'."},
+        action:{type:"string",enum:["status","inventory","owner_status","doctor","health","dashboard","logs","profile"],description:"Read-only action. Defaults to 'status'."},
         service:{type:"string",enum:["all",...MANAGED_SERVICE_NAMES],description:"Filter by specific service or 'all'. Defaults to 'all'."},
         port:{type:"integer",minimum:1024,maximum:65535},
         limit:{type:"integer",minimum:1,maximum:200,description:"Max event logs to return (default 50)."},
@@ -25,7 +25,7 @@ export const SERVICE_MANAGER_MCP_TOOL_DEFS=[
   inputSchema:{
     type:"object",
     properties:{
-      action:{type:"string",enum:["inventory","status","doctor","health","dashboard","logs","profile","configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
+      action:{type:"string",enum:["inventory","status","owner_status","doctor","health","dashboard","logs","profile","configure","reconcile","watchdog","plan","start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
       service:{type:"string",enum:["all",...MANAGED_SERVICE_NAMES]},
       port:{type:"integer",minimum:1024,maximum:65535},
       targetAction:{type:"string",enum:["start","stop","restart","rollback","drain","reload","upgrade","recycle"]},
@@ -82,7 +82,7 @@ export async function dispatchServiceManagerMcpTool(nameOrArgs:string|Record<str
   }
   if (toolName === "superagent_services_status") {
     const action = typeof args.action === "string" ? args.action : "status";
-    const readOnlyActions = new Set(["status","inventory","doctor","health","dashboard","logs","profile"]);
+    const readOnlyActions = new Set(["status","inventory","owner_status","doctor","health","dashboard","logs","profile"]);
     if (!readOnlyActions.has(action)) {
       return {
         content: [{
