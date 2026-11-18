@@ -46,6 +46,8 @@
 .access-file-controls{border:1px dashed rgba(245,158,11,.4);border-radius:12px;padding:14px}
 .access-stored-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
 .access-stored-head h3{margin:0}
+.access-mcp-pending-controls{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.access-mcp-pending-controls .access-audit-refresh:disabled{cursor:wait;opacity:.65}
 .access-count{font-size:11px;color:var(--text-secondary,#aebacf)}
 .access-summary{font-size:11px;color:var(--text-muted,#98a6be);margin:9px 0 15px}
 .access-rule-list{display:grid;gap:7px}
