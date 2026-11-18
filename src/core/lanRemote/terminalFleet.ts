@@ -5,17 +5,18 @@
  */
 import type { LanDevice, LanTerminalSnapshot } from "./controller.js";
 import {
-  listLanDevices, startLanTerminal, readLanTerminal, inputLanTerminal,
+  listLanDevices, openLanSession, closeLanSession, startLanTerminal, readLanTerminal, inputLanTerminal,
   stopLanTerminal, execAndroidShellCommand,
 } from "./controller.js";
 import { assertAndroidShellCommand } from "./androidCapabilities.js";
 import { isFullYoloMode, isSystemDestructiveCommand } from "../permissions.js";
 
 export const LAN_TERMINAL_FLEET_MAX_DEVICES = 8;
-export type LanTerminalFleetAction = "start" | "read" | "input" | "stop";
+export type LanTerminalFleetAction = "open" | "close" | "start" | "read" | "input" | "stop";
 type Target = { deviceId: string; command?: string; jobId?: string; cursor?: number; text?: string; appendNewline?: boolean };
 type AndroidReceipt = Awaited<ReturnType<typeof execAndroidShellCommand>>;
 export type FleetTerminalResult =
+  | { deviceId: string; platform: "windows" | "android"; ok: true; session: { connected: boolean } }
   | { deviceId: string; platform: "windows"; ok: true; terminal: LanTerminalSnapshot }
   | { deviceId: string; platform: "android"; ok: true; shell: AndroidReceipt; outputTruncated: boolean }
   | { deviceId: string; platform: "windows" | "android"; ok: false; error: string };
@@ -29,6 +30,8 @@ export type FleetTerminalReply = {
 
 export interface LanTerminalFleetDeps {
   list(): LanDevice[];
+  open(deviceId: string): Promise<LanDevice>;
+  close(deviceId: string): Promise<void>;
   start(deviceId: string, command: string): Promise<LanTerminalSnapshot>;
   read(deviceId: string, jobId: string, cursor: number): Promise<LanTerminalSnapshot>;
   input(deviceId: string, jobId: string, text: string, appendNewline: boolean): Promise<LanTerminalSnapshot>;
@@ -40,6 +43,8 @@ export interface LanTerminalFleetDeps {
 
 const defaultDeps: LanTerminalFleetDeps = {
   list: listLanDevices,
+  open: openLanSession,
+  close: closeLanSession,
   start: startLanTerminal,
   read: readLanTerminal,
   input: inputLanTerminal,
@@ -53,6 +58,8 @@ const COMMAND_CONTROL = /[\x00-\x08\x0b-\x1f\x7f]/;
 const MAX_ANDROID_REPLY = 4096;
 const MAX_ERROR = 240;
 const allowedFields: Record<LanTerminalFleetAction, readonly string[]> = {
+  open: ["deviceId"],
+  close: ["deviceId"],
   start: ["deviceId", "command"],
   read: ["deviceId", "jobId", "cursor"],
   input: ["deviceId", "jobId", "text", "appendNewline"],
@@ -67,7 +74,7 @@ function validate(action: LanTerminalFleetAction, input: unknown, devices: LanDe
   deps: LanTerminalFleetDeps): { targets: Target[]; deviceById: Map<string, LanDevice> } {
   if (!Array.isArray(input) || input.length < 2 || input.length > LAN_TERMINAL_FLEET_MAX_DEVICES)
     throw Error("Fleet requires 2–8 distinct approved device targets.");
-  if (["start", "read", "input"].includes(action) && !deps.fullYolo())
+  if (["open", "start", "read", "input"].includes(action) && !deps.fullYolo())
     throw Error("Full YOLO must be enabled locally for agent fleet execution.");
   const deviceById = new Map(devices.map(device => [device.id, device]));
   const targets: Target[] = [];
@@ -84,14 +91,20 @@ function validate(action: LanTerminalFleetAction, input: unknown, devices: LanDe
     if (ids.has(t.deviceId)) throw Error("Duplicate deviceId is not permitted.");
     ids.add(t.deviceId);
     const device = deviceById.get(t.deviceId);
-    if (!device || !device.connected || !device.paired)
+    if (!device || !device.paired)
+      throw Error("Every target must be paired individually before a fleet operation.");
+    if (action === "open" && device.connected)
+      throw Error("Target already has an approved support session; close it before reopening.");
+    if (!["open", "close"].includes(action) && !device.connected)
       throw Error("Every device must have its own approved open support session.");
     // A receiver may be reachable by LAN and reverse HTTPS tunnel at once.
     // Its pinned certificate fingerprint, not route or handle, identifies it.
     const identity = "receiver:" + device.fingerprint.toLowerCase();
     if (physical.has(identity)) throw Error("Same physical receiver appears more than once.");
     physical.add(identity);
-    if (action === "start") {
+    if (action === "open" || action === "close") {
+      targets.push({ deviceId: t.deviceId });
+    } else if (action === "start") {
       if (typeof t.command !== "string" || !t.command.trim() ||
           t.command.length > (device.platform === "android" ? 512 : 2000) ||
           COMMAND_CONTROL.test(t.command) || deps.destructive(t.command))
@@ -135,12 +148,12 @@ export class LanTerminalFleet {
   constructor(private readonly deps: LanTerminalFleetDeps = defaultDeps) {}
 
   async execute(action: LanTerminalFleetAction, input: unknown): Promise<FleetTerminalReply> {
-    if (!["start", "read", "input", "stop"].includes(action))
+    if (!["open", "close", "start", "read", "input", "stop"].includes(action))
       throw Error("Unknown fleet terminal operation.");
     const { targets, deviceById } = validate(action, input, this.deps.list(), this.deps);
     const results = await Promise.all(targets.map(async (t): Promise<FleetTerminalResult> => {
       const device = deviceById.get(t.deviceId)!;
-      const mutating = action === "start" || action === "input";
+      const mutating = action === "open" || action === "start" || action === "input";
       const identity = "receiver:" + device.fingerprint.toLowerCase();
       if (mutating && this.activeMutations.has(identity)) {
         return { deviceId: t.deviceId, platform: device.platform, ok: false,
@@ -148,6 +161,18 @@ export class LanTerminalFleet {
       }
       if (mutating) this.activeMutations.add(identity);
       try {
+        if (action === "open") {
+          const approved = await this.deps.open(t.deviceId);
+          if (approved.id !== t.deviceId || approved.connected !== true)
+            throw Error("Target did not confirm an approved device session.");
+          return { deviceId: t.deviceId, platform: device.platform, ok: true,
+            session: { connected: true } };
+        }
+        if (action === "close") {
+          await this.deps.close(t.deviceId);
+          return { deviceId: t.deviceId, platform: device.platform, ok: true,
+            session: { connected: false } };
+        }
         if (action === "start" && device.platform === "android") {
           const shell = await this.deps.android(t.deviceId, t.command!);
           const outputTruncated = shell.stdout.length > MAX_ANDROID_REPLY;
