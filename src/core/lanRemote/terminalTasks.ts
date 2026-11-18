@@ -1,11 +1,12 @@
 /**
  * Attended LAN receiver terminal tasks.
- * This is a bounded, non-elevated stdio process, NOT a PTY/ConPTY.
+ * Runs under Windows ConPTY when the Bun runtime supports it, or bounded pipes otherwise.
  * The task belongs to exactly one approved support-session ID, never to a device
  * name, caller-provided path or persistent credential. State stays in memory.
  */
 import crypto from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawnWindowsConpty, type ConptyProcess } from "./bunConpty.js";
 
 export const LAN_TERMINAL_MAX_COMMAND = 2000;
 export const LAN_TERMINAL_MAX_INPUT = 1024;
@@ -18,7 +19,10 @@ type Chunk = { cursor: number; stream: "stdout" | "stderr"; text: string };
 type Task = {
   jobId: string;
   sessionId: string;
-  child: ChildProcessWithoutNullStreams;
+  child: ChildProcessWithoutNullStreams | ConptyProcess;
+  pty: ConptyProcess | null;
+  cols: number;
+  rows: number;
   chunks: Chunk[];
   chars: number;
   cursor: number;
@@ -41,6 +45,9 @@ export type LanTerminalSnapshot = {
   nextCursor: number;
   truncated: boolean;
   chunks: Chunk[];
+  mode: "conpty" | "pipe";
+  cols: number;
+  rows: number;
 };
 
 function commandIsValid(value: unknown): value is string {
@@ -63,23 +70,30 @@ export class LanTerminalTaskManager {
     if (this.hasRunning()) throw Error("A remote terminal task is already running.");
     this.stopAll();
     const windows = process.platform === "win32";
-    // Pipes support incremental I/O, but this does NOT impersonate a full TTY.
-    const child = spawn(windows ? "powershell.exe" : "/bin/sh",
+    let currentTask: Task | null = null;
+    const earlyData: Buffer[] = [];
+    const pty = windows ? spawnWindowsConpty(command, data => {
+      if (currentTask) append("stdout", data);
+      else earlyData.push(data);
+    }) : null;
+    const child = pty ?? spawn(windows ? "powershell.exe" : "/bin/sh",
       windows ? ["-NoLogo", "-NoProfile", "-Command", command] : ["-c", command],
       { windowsHide: true, shell: false, detached: !windows, stdio: ["pipe", "pipe", "pipe"] });
     const task: Task = {
-      jobId: crypto.randomUUID(), sessionId, child, chunks: [], chars: 0,
+      jobId: crypto.randomUUID(), sessionId, child, pty, cols: 80, rows: 24, chunks: [], chars: 0,
       cursor: 0, running: true, stopping: false, exitCode: null, reason: null,
       deadline: undefined as unknown as ReturnType<typeof setTimeout>,
       idle: undefined as unknown as ReturnType<typeof setTimeout>,
     };
     this.task = task;
+    currentTask = task;
     const finish = (reason: string, exitCode: number | null = null) => {
       if (!task.running) return;
       task.running = false; task.stopping = false;
       task.reason = task.reason ?? reason; task.exitCode = exitCode;
       clearTimeout(task.deadline); clearTimeout(task.idle);
-      try { child.stdin.end(); } catch {}
+      if (pty) { try { pty.close(); } catch {} }
+      else { try { (child as ChildProcessWithoutNullStreams).stdin.end(); } catch {} }
     };
     const terminate = (reason: string) => {
       if (this.task === task) this.stopAll(reason);
@@ -92,8 +106,8 @@ export class LanTerminalTaskManager {
     task.deadline = setTimeout(() => terminate("lifetime_timeout"), LAN_TERMINAL_MAX_LIFETIME_MS);
     task.deadline.unref?.();
     idleReset();
-    const append = (stream: "stdout" | "stderr", data: Buffer) => {
-      if (this.task !== task) return;
+    function append(stream: "stdout" | "stderr", data: Buffer) {
+      if (task !== currentTask) return;
       const value = data.toString("utf8");
       for (let i = 0; i < value.length; i += 1024) {
         const text = value.slice(i, i + 1024);
@@ -103,11 +117,22 @@ export class LanTerminalTaskManager {
       while (task.chars > MAX_BUFFER_CHARS && task.chunks.length) {
         task.chars -= task.chunks.shift()!.text.length;
       }
-    };
-    child.stdout.on("data", (data: Buffer) => append("stdout", data));
-    child.stderr.on("data", (data: Buffer) => append("stderr", data));
-    child.once("error", (error: Error) => { append("stderr", Buffer.from(error.message)); finish("spawn_failed"); });
-    child.once("close", (code: number | null) => finish("exited", code));
+    }
+    for (const data of earlyData) append("stdout", data);
+    if (pty) {
+      void pty.exited.then(code => finish("exited", code), error => {
+        append("stderr", Buffer.from(String(error)));
+        finish("spawn_failed");
+      });
+    } else {
+      const piped = child as ChildProcessWithoutNullStreams;
+      piped.stdout.on("data", (data: Buffer) => append("stdout", data));
+      piped.stderr.on("data", (data: Buffer) => append("stderr", data));
+      piped.once("error", (error: Error) => {
+        append("stderr", Buffer.from(error.message)); finish("spawn_failed");
+      });
+      piped.once("close", (code: number | null) => finish("exited", code));
+    }
     return this.read(sessionId, task.jobId, 0);
   }
 
@@ -136,20 +161,38 @@ export class LanTerminalTaskManager {
       jobId: task.jobId, running: task.running, stopping: task.stopping, exitCode: task.exitCode,
       reason: task.reason, cursor: task.cursor, oldestCursor,
       nextCursor: chunks.at(-1)?.cursor ?? Math.max(cursor, oldestCursor - 1),
-      truncated, chunks,
+      truncated, chunks, mode: task.pty ? "conpty" : "pipe", cols: task.cols, rows: task.rows,
     };
   }
 
   input(sessionId: string, jobId: string, text: string, appendNewline = false): LanTerminalSnapshot {
     const task = this.forSession(sessionId, jobId);
-    if (!task.running || task.stopping || !task.child.stdin.writable) throw Error("Terminal is not running.");
+    if (!task.running || task.stopping) throw Error("Terminal is not running.");
     if (!inputIsValid(text) || typeof appendNewline !== "boolean") throw Error("Invalid terminal input.");
-    if (task.child.stdin.writableLength + text.length > 16 * 1024)
-      throw Error("Terminal input queue is full; read output before retrying.");
-    task.child.stdin.write(text + (appendNewline ? "\n" : ""));
+    if (task.pty) {
+      task.pty.write(text + (appendNewline ? "\r" : ""));
+    } else {
+      const stdin = (task.child as ChildProcessWithoutNullStreams).stdin;
+      if (!stdin.writable) throw Error("Terminal is not running.");
+      if (stdin.writableLength + text.length > 16 * 1024)
+        throw Error("Terminal input queue is full; read output before retrying.");
+      stdin.write(text + (appendNewline ? "\n" : ""));
+    }
     clearTimeout(task.idle);
     task.idle = setTimeout(() => this.stopAll("idle_timeout"), INPUT_IDLE_MS);
     task.idle.unref?.();
+    return this.read(sessionId, jobId, task.cursor);
+  }
+
+  resize(sessionId: string, jobId: string, cols: number, rows: number): LanTerminalSnapshot {
+    const task = this.forSession(sessionId, jobId);
+    if (!Number.isSafeInteger(cols) || cols < 20 || cols > 300 ||
+        !Number.isSafeInteger(rows) || rows < 5 || rows > 120)
+      throw Error("Invalid terminal dimensions.");
+    if (!task.running || task.stopping) throw Error("Terminal is not running.");
+    if (!task.pty) throw Error("Terminal resize requires ConPTY.");
+    task.pty.resize(cols, rows);
+    task.cols = cols; task.rows = rows;
     return this.read(sessionId, jobId, task.cursor);
   }
 
@@ -168,7 +211,7 @@ export class LanTerminalTaskManager {
     clearTimeout(task.deadline); clearTimeout(task.idle);
     const pid = task.child.pid;
     try {
-      task.child.stdin.destroy();
+      if (!task.pty) (task.child as ChildProcessWithoutNullStreams).stdin.destroy();
       if (process.platform !== "win32" && pid) process.kill(-pid, "SIGKILL");
       else task.child.kill();
     } catch {}
