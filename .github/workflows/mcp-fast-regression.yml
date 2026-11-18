@@ -11,6 +11,7 @@ on:
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
+      - "src/core/runtime/checkoutRevision.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
       - "tests/desktop-ui-activation/live-activation-gate.test.ts"
       - "src/core/tools/registeredFileToolGate.ts"
@@ -43,6 +44,9 @@ on:
       - "tests/desktopTrayNotificationsUi.test.ts"
       - "tests/desktopTrayFeedback.test.ts"
       - "tests/desktopRuntimeUi.test.ts"
+      - "tests/serviceManagerMcp.test.ts"
+      - "tests/serviceOwnerAttestation.test.ts"
+      - "tests/checkoutRevision.test.ts"
       - "apps/superagent-tray/ui/runtime.js"
       - "tests/projectOperatorProof.test.ts"
       - "apps/superagent-tray/ui/access-manager.js"
@@ -64,6 +68,7 @@ on:
       - "src/core/runtime/mcpManagedTunnelOwner.ts"
       - "src/core/runtime/serviceManager.ts"
       - "src/core/runtime/serviceOwnerAttestation.ts"
+      - "src/core/runtime/checkoutRevision.ts"
       - "src/core/desktopUi/liveActivationGate.ts"
       - "tests/desktop-ui-activation/live-activation-gate.test.ts"
       - "src/core/tools/registeredFileToolGate.ts"
@@ -96,6 +101,9 @@ on:
       - "tests/desktopTrayNotificationsUi.test.ts"
       - "tests/desktopTrayFeedback.test.ts"
       - "tests/desktopRuntimeUi.test.ts"
+      - "tests/serviceManagerMcp.test.ts"
+      - "tests/serviceOwnerAttestation.test.ts"
+      - "tests/checkoutRevision.test.ts"
       - "apps/superagent-tray/ui/runtime.js"
       - "tests/projectOperatorProof.test.ts"
       - "apps/superagent-tray/ui/access-manager.js"
@@ -147,6 +155,7 @@ jobs:
             tests/mcpApprovalAndFilePolicy.test.ts \
             tests/mcpPermissionDecision.test.ts \
             tests/serviceOwnerAttestation.test.ts \
+            tests/checkoutRevision.test.ts \
             tests/serviceManagerMcp.test.ts \
             tests/mcpExactFileSearch.test.ts \
             tests/mcpExplicitGrepIntegration.test.ts \
@@ -197,6 +206,7 @@ jobs:
           tests/mcpApprovalAndFilePolicy.test.ts
           tests/mcpPermissionDecision.test.ts
           tests/serviceOwnerAttestation.test.ts
+          tests/checkoutRevision.test.ts
           tests/serviceManagerMcp.test.ts
           tests/mcpOAuthStore.test.ts
           tests/desktopTrayNotificationsUi.test.ts
