@@ -573,9 +573,11 @@ export class BrowserProcessManager {
       return false;
     }
 
-    // If port is already listening and responsive, return true
+    // A listening TCP port is not proof of a working Chrome debugger.
+    // Never declare launch success for an unrelated process on that port.
     if (await isCdpPortListening(port, 250)) {
-      return true;
+      const health = await this.checkHealth(port);
+      return health.status === "healthy" && Boolean(health.browserFingerprint);
     }
 
     try {
