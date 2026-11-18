@@ -23,3 +23,74 @@ export function certifiedBrowserObservation(call:BrowserCall):boolean{
  }
  return false;
 }
+
+
+/**
+ * Narrow, audited Delegate web workflow. This certifies argument shapes only:
+ * the MCP executor still requires OAuth write scope, an independent human MCP
+ * Connection Controls grant and a verified per-transport Delegate principal.
+ * The extension rechecks the tab's current URL on every debugger attachment
+ * and CDP command. There is no raw Runtime.evaluate, cookie, terminal, file,
+ * screenshot, upload, new_tab or arbitrary nested payload in this contract.
+ */
+export function certifiedDelegateWebAction(call:BrowserCall):boolean{
+ if(call.name!=="superagent_chrome_cdp_web" && call.name!=="superagent_chrome_cdp")
+   return false;
+ const a=call.args;
+ if(!a||typeof a!=="object"||Array.isArray(a))return false;
+ if(a.transport!=="delegate"||typeof a.delegateClientId!=="string"||
+   !/^[A-Za-z0-9_-]{8,80}$/.test(a.delegateClientId))return false;
+ const target=typeof a.targetId==="string"
+   ? /^delegate:([A-Za-z0-9_-]{8,80}):([1-9][0-9]{0,9})$/.exec(a.targetId) : null;
+ if(!target||target[1]!==a.delegateClientId||
+   !Number.isSafeInteger(Number(target[2]))||Number(target[2])<1)return false;
+ if(typeof a.command!=="string")return false;
+ const command=a.command;
+ const allow=["command","transport","delegateClientId","targetId"];
+ const token=()=>typeof a.sessionToken==="string"&&a.sessionToken.length>=16&&
+   a.sessionToken.length<=256&&!/[\\r\\n\\0]/.test(a.sessionToken);
+ const exactWith=(...keys:string[])=>exact(a,[...allow,...keys]);
+ const leased=()=>token();
+ const revision=()=>Number.isSafeInteger(a.expectedRevision)&&Number(a.expectedRevision)>=0;
+ switch(command){
+   case "claim_target":
+     return exactWith(); // The Core mints a fresh unforgeable lease capability.
+   case "release_target":
+   case "heartbeat_session":
+   case "session_participants":
+     return exactWith("sessionToken")&&leased();
+   case "snapshot":
+   case "read_page":
+     return exactWith("sessionToken")&&leased();
+   case "navigate": {
+     if(!exactWith("sessionToken","expectedRevision","url")||
+       !leased()||!revision()||typeof a.url!=="string"||a.url.length>4096)return false;
+     try{
+       const url=new URL(a.url);
+       return (url.protocol==="http:"||url.protocol==="https:") &&
+         !url.username&&!url.password&&!!url.hostname;
+     }catch{return false;}
+   }
+   case "click": {
+     if(!exactWith("sessionToken","expectedRevision","selector","index")||
+       !leased()||!revision())return false;
+     const hasSelector=typeof a.selector==="string";
+     const hasIndex=a.index!==undefined;
+     if(hasSelector===hasIndex)return false;
+     return hasSelector
+       ? a.selector.length>0&&a.selector.length<=512&&!/[\\0\\r\\n]/.test(a.selector)
+       : Number.isSafeInteger(a.index)&&Number(a.index)>=1&&Number(a.index)<=250;
+   }
+   case "type": {
+     if(!exactWith("sessionToken","expectedRevision","selector","index","text")||
+       !leased()||!revision()||typeof a.text!=="string"||a.text.length>10000)return false;
+     const hasSelector=typeof a.selector==="string";
+     const hasIndex=a.index!==undefined;
+     if(hasSelector===hasIndex)return false;
+     return hasSelector
+       ? a.selector.length>0&&a.selector.length<=512&&!/[\\0\\r\\n]/.test(a.selector)
+       : Number.isSafeInteger(a.index)&&Number(a.index)>=1&&Number(a.index)<=250;
+   }
+   default:return false;
+ }
+}
