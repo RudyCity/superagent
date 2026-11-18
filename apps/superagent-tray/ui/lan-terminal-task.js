@@ -2,7 +2,7 @@
 /**
  * Attended Windows LAN terminal tasks. The UI holds only an opaque job ID and
  * bounded output; credentials and process ownership remain in Core/receiver.
- * A terminal task is piped (not a PTY). Never replay ambiguous mutations.
+ * Native Bun receivers use ConPTY, older receivers use pipes. Never replay ambiguous mutations.
  */
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -14,6 +14,16 @@
   let mutationRevision = 0;
 
   const validJob = (value) => typeof value === "string" && /^[a-f0-9-]{36}$/i.test(value);
+  const validKey = (key) => [
+    "Enter", "Backspace", "Tab", "Escape", "ArrowUp", "ArrowDown",
+    "ArrowLeft", "ArrowRight", "Home", "End", "Delete", "PageUp", "PageDown", "CtrlC",
+  ].includes(key);
+  const displayVtLog = (raw) => String(raw || "")
+    .replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/\x1b[()][0-9A-Za-z]/g, "")
+    .replace(/\r/g, "\n");
+
   const invoke = async (action, payload) => {
     const fn = window.__TAURI__?.core?.invoke;
     if (typeof fn !== "function") throw Error("Native SuperAgent Tray required.");
@@ -37,6 +47,7 @@
     const mine = sameSelection();
     const running = Boolean(mine && task.running);
     const stopping = Boolean(running && task.stopping);
+    const conptyReady = Boolean(running && !stopping && task.mode === "conpty");
     const command = ($("lan-command")?.value || "").trim();
     const input = $("lan-terminal-task-input")?.value || "";
     for (const [name, enabled] of [
@@ -46,6 +57,11 @@
       ["lan-terminal-task-send", !mutationPending && running && !stopping && input.length > 0 && input.length <= 1024],
       ["lan-terminal-task-input", !mutationPending && running && !stopping],
       ["lan-terminal-task-newline", !mutationPending && running && !stopping],
+      ["lan-terminal-task-cols", !mutationPending && conptyReady],
+      ["lan-terminal-task-rows", !mutationPending && conptyReady],
+      ["lan-terminal-task-resize", !mutationPending && conptyReady],
+      ["lan-terminal-task-key", !mutationPending && conptyReady],
+      ["lan-terminal-task-send-key", !mutationPending && conptyReady],
     ]) if ($(name)) $(name).disabled = !enabled;
     if (!mine) {
       if (!mutationPending) display(device?.platform === "windows"
@@ -56,11 +72,11 @@
       return;
     }
     if ($("lan-terminal-task-output")) $("lan-terminal-task-output").textContent =
-      task.output || "(No output yet)";
+      displayVtLog(task.output) || "(No output yet)";
     if (lastError) display(lastError, true);
     else if (mutationPending) display("Waiting for target-owner approval...");
     else display(task.stopping ? "Stopping · verifying owned process exit" : task.running
-      ? "Running · " + task.jobId.slice(0, 8) + " · 10-minute maximum, 2-minute idle limit"
+      ? "Running " + (task.mode === "conpty" ? "ConPTY" : "piped fallback") + " · " + task.jobId.slice(0, 8) + " · 10-minute maximum, 2-minute idle limit"
       : "Finished · " + (task.reason || "unknown") +
         " · exit code " + (task.exitCode === null ? "n/a" : task.exitCode));
   };
@@ -84,6 +100,9 @@
     task.stopping = snapshot.stopping === true;
     task.reason = typeof snapshot.reason === "string" ? snapshot.reason : null;
     task.exitCode = Number.isSafeInteger(snapshot.exitCode) ? snapshot.exitCode : null;
+    task.mode = snapshot.mode === "conpty" ? "conpty" : "pipe";
+    task.cols = Number.isSafeInteger(snapshot.cols) ? snapshot.cols : 80;
+    task.rows = Number.isSafeInteger(snapshot.rows) ? snapshot.rows : 24;
     lastError = "";
     sync();
     const output = $("lan-terminal-task-output");
@@ -106,8 +125,10 @@
       // Never display output from another device after a route/selection change.
       if (revision !== mutationRevision) return;
       task = { deviceId: device.id, jobId: snapshot.jobId, cursor: 0, latestCursor: 0,
-        running: true, stopping: false, reason: null, exitCode: null, output: "" };
+        running: true, stopping: false, reason: null, exitCode: null, output: "", mode: "pipe", cols: 80, rows: 24 };
       apply(snapshot);
+      if ($("lan-terminal-task-cols")) $("lan-terminal-task-cols").value = String(task.cols);
+      if ($("lan-terminal-task-rows")) $("lan-terminal-task-rows").value = String(task.rows);
     } catch (error) {
       lastError = /timeout/i.test(String(error))
         ? "Start outcome unknown. Check the receiver before starting another task."
@@ -154,6 +175,46 @@
         : "Input denied: " + String(error);
     } finally { mutationPending = false; sync(); }
   };
+  const resize = async () => {
+    if (mutationPending || !sameSelection() || !task.running || task.mode !== "conpty") return;
+    const cols = Number($("lan-terminal-task-cols")?.value);
+    const rows = Number($("lan-terminal-task-rows")?.value);
+    if (!Number.isSafeInteger(cols) || cols < 20 || cols > 300 ||
+        !Number.isSafeInteger(rows) || rows < 5 || rows > 120) {
+      lastError = "Terminal dimensions must be 20–300 columns and 5–120 rows.";
+      sync(); return;
+    }
+    mutationPending = true;
+    const revision = ++mutationRevision;
+    lastError = "";
+    try {
+      const snapshot = await invoke("terminal_resize", {
+        deviceId: task.deviceId, jobId: task.jobId, cols, rows,
+      });
+      if (revision === mutationRevision) apply(snapshot);
+    } catch (error) {
+      lastError = "Resize not verified: " + String(error);
+    } finally { mutationPending = false; sync(); }
+  };
+  const sendKey = async () => {
+    if (mutationPending || !sameSelection() || !task.running || task.mode !== "conpty") return;
+    const key = $("lan-terminal-task-key")?.value || "";
+    if (!validKey(key)) return;
+    mutationPending = true;
+    const revision = ++mutationRevision;
+    lastError = "";
+    display("The receiving PC must approve this key: " + key);
+    try {
+      const snapshot = await invoke("terminal_key", {
+        deviceId: task.deviceId, jobId: task.jobId, key,
+      });
+      if (revision === mutationRevision) apply(snapshot);
+    } catch (error) {
+      lastError = /timeout/i.test(String(error))
+        ? "Key outcome unknown; inspect the receiver before another send."
+        : "Key denied: " + String(error);
+    } finally { mutationPending = false; sync(); }
+  };
   const stop = async () => {
     if (!sameSelection() || !task.running) return;
     const target = { deviceId: task.deviceId, jobId: task.jobId };
@@ -171,6 +232,8 @@
     $("lan-terminal-task-refresh")?.addEventListener("click", () => void poll());
     $("lan-terminal-task-send")?.addEventListener("click", () => void input());
     $("lan-terminal-task-stop")?.addEventListener("click", () => void stop());
+    $("lan-terminal-task-resize")?.addEventListener("click", () => void resize());
+    $("lan-terminal-task-send-key")?.addEventListener("click", () => void sendKey());
     $("lan-terminal-task-input")?.addEventListener("input", sync);
     $("lan-command")?.addEventListener("input", sync);
     $("lan-command-presets")?.addEventListener("change", sync);
