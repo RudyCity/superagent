@@ -73,4 +73,33 @@ describe("attended LAN terminal task lifecycle", () => {
       manager.stopAll();
     }
   }, 10_000);
+
+  it("supports attended interactive input with ConPTY mode on Windows Bun", async () => {
+    const manager = new LanTerminalTaskManager();
+    const command = process.platform === "win32"
+      ? "$x = Read-Host; Write-Output ('LAN_INPUT_OK_' + $x)"
+      : "read -r x; printf 'LAN_INPUT_OK_%s' \"$x\"";
+    const started = manager.start("interactive-session", command);
+    try {
+      expect(started.mode).toBe(process.platform === "win32" && process.versions.bun ? "conpty" : "pipe");
+      expect(started.cols).toBe(80);
+      expect(started.rows).toBe(24);
+      expect(() => manager.resize("other-session", started.jobId, 100, 36)).toThrow(/not found/);
+      expect(() => manager.resize("interactive-session", started.jobId, 4, 36)).toThrow(/dimensions/);
+      if (started.mode === "conpty") {
+        const resized = manager.resize("interactive-session", started.jobId, 100, 36);
+        expect(resized.cols).toBe(100);
+        expect(resized.rows).toBe(36);
+      } else {
+        expect(() => manager.resize("interactive-session", started.jobId, 100, 36)).toThrow(/ConPTY/);
+      }
+      manager.input("interactive-session", started.jobId, "verified", true);
+      const { result, output } = await untilFinished(manager, "interactive-session", started.jobId);
+      expect(output).toContain("LAN_INPUT_OK_verified");
+      expect(result.exitCode).toBe(0);
+    } finally {
+      manager.stopAll();
+    }
+  }, 30_000);
+
 });
