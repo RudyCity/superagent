@@ -119,6 +119,7 @@ jobs:
             tests/desktop-ui-activation/live-activation-gate.test.ts \
             tests/mcpGatewayHttp.test.ts \
             tests/mcpSessionRegistry.test.ts \
+            tests/mcpConnectedClientRegistry.test.ts \
             tests/mcpResponseLease.test.ts \
             tests/desktopOverviewOperations.test.ts \
             tests/desktopAccessManagerTrayUi.test.ts \
