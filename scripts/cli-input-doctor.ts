@@ -9,7 +9,7 @@ import process from "node:process";
 const input = process.stdin;
 const canUseRawMode = Boolean(input.isTTY && typeof input.setRawMode === "function");
 console.log("SuperAgent CLI keyboard transport diagnostic");
-console.log(`Bun: ${process.versions.bun || "unknown"}  OS: ${process.platform}`);
+console.log(`Bun: ${(process.versions as any).bun || "unknown"}  OS: ${process.platform}`);
 console.log(`Terminal stdin: ${input.isTTY ? "TTY" : "NOT A TTY"}`);
 
 if (!canUseRawMode) {
