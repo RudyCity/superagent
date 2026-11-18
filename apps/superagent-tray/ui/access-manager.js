@@ -1053,9 +1053,9 @@
 
   function highlightMcpNotificationRequest() {
     const id = mcpNotificationFocus.id;
-    if (!id || !Array.isArray(mcpCache.requests)) return;
+    if (!id || !Array.isArray(mcpCache.requests)) return false;
     const target = mcpCache.requests.find((request) => request.requestId === id);
-    if (!target) return; // A resolved/expired request is not an active approval.
+    if (!target) return false; // A resolved/expired request is not an active approval.
     const tab = target.projectId === "mcp-connection" ? "connections" : "mcp";
     if (state.activeTab !== tab) setActiveTab(tab);
     for (const listId of ["access-mcp-pending-list", "access-mcp-connection-pending-list",
@@ -1073,6 +1073,8 @@
         }
       }
     }
+    // UI-local receipt only. This is not a native owner attestation or grant.
+    return mcpNotificationFocus.didFocus === true;
   }
 
   function setMcpLoadError(id, problems) {
@@ -1931,7 +1933,7 @@
       // buttons remain protected by their existing native human review.
       window.__superagentAccessManagerFocusRequest = async (requestId, tabHint = null) => {
         if (typeof requestId !== "string" || !requestId || requestId.length > 150 ||
-          /[\x00-\x1f]/.test(requestId)) return;
+          /[\x00-\x1f]/.test(requestId)) return {targetFound:false};
         const tab = tabHint === "connections" || tabHint === "mcp" ? tabHint : null;
         if (window.__superagentPendingAccessNotificationId === requestId) {
           window.__superagentPendingAccessNotificationId = null;
@@ -1943,7 +1945,8 @@
         // Authenticated request data can correct stale hints on refresh.
         setActiveTab(tab || "mcp");
         await refreshMcpRequests();
-        highlightMcpNotificationRequest();
+        return {targetFound:highlightMcpNotificationRequest() === true,
+          tab:state.activeTab};
       };
       window.__superagentAccessManagerRefresh = () => {
         // Pending MCP approvals may have arrived since the page was first built.

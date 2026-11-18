@@ -179,7 +179,6 @@
   function openDestination(item) {
     const route = incidentRoute(item);
     if (!route) return;
-    scheduleRead(item);
     const pending = pendingAccessTarget(item);
     if (pending) {
       window.__superagentPendingAccessNotificationId = pending.requestId;
@@ -187,12 +186,32 @@
     }
     const runId = runTarget(item);
     if (runId) window.__superagentPendingRunNotificationId = runId;
+    let delivered = false;
+    try {
+      if (typeof window.navigateToPage === "function") {
+        window.navigateToPage(route);
+        delivered = true;
+      } else if (window.location) {
+        window.location.hash = "#" + route;
+        delivered = true;
+      }
+    } catch { delivered = false; }
+    if (!delivered) return; // Failed navigation must not silently mark read.
     close();
-    if (typeof window.navigateToPage === "function") window.navigateToPage(route);
-    else if (window.location) window.location.hash = "#" + route;
-    if (pending && typeof window.__superagentAccessManagerFocusRequest === "function") {
-      void Promise.resolve(window.__superagentAccessManagerFocusRequest(
-        pending.requestId, pending.tab)).catch(() => {});
+    if (pending) {
+      // An exact pending approval stays unread until the authenticated request
+      // list contains and focuses its row. Parent-tab navigation is insufficient.
+      const focus = window.__superagentAccessManagerFocusRequest;
+      if (typeof focus === "function") {
+        void Promise.resolve().then(() => focus(pending.requestId, pending.tab))
+          .then((receipt) => {
+            if (receipt?.targetFound === true) scheduleRead(item);
+          }).catch(() => {});
+      }
+    } else {
+      // Other module links use existing synchronous in-app navigation. Native
+      // owner/build attestations are a separate, still-open acceptance gate.
+      scheduleRead(item);
     }
   }
   function noteCard(item, compact) {

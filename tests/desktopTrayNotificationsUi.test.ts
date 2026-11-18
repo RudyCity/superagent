@@ -284,6 +284,40 @@ describe("Tray Notification Manager", () => {
     expect(focus).toHaveBeenCalledWith("req_x7", tab);
     expect(mounted.mockInvocations.some(call => call.action === "approve")).toBe(false);
   });
+  it("keeps missing or expired pending approvals unread until the exact request is focused", async () => {
+    const mounted = mount([{
+      id: "mcp-pending:connections:missing-approval", source: "security",
+      severity: "warning", title: "Access pending", body: "Open request",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const card = mounted.get("tray-notification-recent").children[0];
+    const focus = vi.fn(async () => ({targetFound:false,tab:"connections"}));
+    mounted.window.__superagentAccessManagerFocusRequest = focus;
+    card.trigger("click", { target: { closest: () => null } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(focus).toHaveBeenCalledWith("missing-approval", "connections");
+    expect(mounted.mockInvocations.some((call) => call.action === "read")).toBe(false);
+    focus.mockResolvedValue({targetFound:true,tab:"connections"});
+    card.trigger("click", { target: { closest: () => null } });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(mounted.mockInvocations.some((call) => call.action === "read")).toBe(true);
+  });
+  it("does not mark a notification read if the destination cannot be delivered", async () => {
+    const mounted = mount([{
+      id: "health:core", source: "core", severity: "warning",
+      title: "Core", body: "Open runtime",
+      createdAt: Date.now(), readAt: null, archivedAt: null,
+    }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    mounted.window.navigateToPage = () => { throw new Error("navigation unavailable"); };
+    mounted.get("tray-notification-recent").children[0].trigger("click", {
+      target: { closest: () => null },
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(mounted.mockInvocations.some((call) => call.action === "read")).toBe(false);
+  });
+
   it("uses allowlisted deep links for every supported tabbed Tray page", () => {
     const app = fs.readFileSync(path.join(base, "ui/app.js"), "utf8");
     const runtime = fs.readFileSync(path.join(base, "ui/runtime.js"), "utf8");
