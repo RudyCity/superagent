@@ -133,9 +133,9 @@
     state.sourceLevels = { ...(prefs.sourceLevels || {}) };
     const dnd = $("notification-dnd-mode");
     if (dnd) {
-      dnd.value = prefs.dndEnabled
-        ? (prefs.dndUntil ? "existing" : "indefinite") : "off";
-      dnd.querySelector?.('option[value="existing"]')?.toggleAttribute?.("hidden", !prefs.dndEnabled || !prefs.dndUntil);
+      const enabled = prefs.dndEnabled && (!prefs.dndUntil || prefs.dndUntil > Date.now());
+      dnd.value = enabled ? (prefs.dndUntil ? "existing" : "indefinite") : "off";
+      dnd.querySelector?.('option[value="existing"]')?.toggleAttribute?.("hidden", !enabled || !prefs.dndUntil);
     }
     if ($("notification-dnd-critical-bypass")) $("notification-dnd-critical-bypass").checked = prefs.dndCriticalBypass !== false;
     if ($("notification-digest-enabled")) $("notification-digest-enabled").checked = prefs.digestEnabled === true;
@@ -358,7 +358,7 @@
         actions.append(element("span", "notification-managed-hint", "Verified status from Core"));
       }
     }
-    if (!compact || item.archivedAt) {
+    if (item.archivedAt || (!compact && kindOf(item) === "information")) {
       addAction(actions, item.archivedAt ? "Restore" : "Archive",
         item.archivedAt ? "restore" : "archive", item.id);
     }
