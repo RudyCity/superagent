@@ -5,6 +5,7 @@ import path from "node:path";
 import {createSuperagentMcpServer} from "../src/core/mcp/superagentMcpServer.js";
 import {grantProjectAccess,revokeProjectAccess} from "../src/core/project/projectAccessPolicy.js";
 import {MCP_CONNECTION_PROJECT_ID,listProjectAccessRequests} from "../src/core/project/projectAccessRequestStore.js";
+import {onMcpActivity} from "../src/core/mcp/mcpActivityBus.js";
 
 const invoke=async(server:ReturnType<typeof createSuperagentMcpServer>,name:string,args:Record<string,unknown>)=>
   (server as any)._requestHandlers.get("tools/call")({
@@ -53,8 +54,14 @@ describe("MCP Connection Controls independent from host file-policy certificatio
       JSON.stringify({version:2,defaultEffect:"deny",rules:[]}));
     const identity={mode:"oauth" as const,subject:"mcp-preflight-writer",
       scopes:["mcp:tools","mcp:tools:write"]};
+    const auditRecords:string[]=[];
+    const activityRecords:string[]=[];
+    const unsubscribe=onMcpActivity((event)=>{
+      if(event.tool==="superagent_tool_describe")activityRecords.push(JSON.stringify(event));
+    });
     const server=createSuperagentMcpServer({toolExposure:"gateway",authMode:"oauth",
-      getIdentity:()=>identity,allowDangerous:true});
+      getIdentity:()=>identity,allowDangerous:true,
+      onToolCall:(event)=>{if(event.tool==="superagent_tool_describe")auditRecords.push(JSON.stringify(event));}});
     const describe=async(checkArguments:Record<string,unknown>)=>{
       const response=await invoke(server,"superagent_tool_describe",{
         name:"superagent_desktop_ui",checkArguments,
@@ -73,6 +80,9 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         active:true,decision:"blocked",reasonCode:"not_certified_or_denied",
       });
       expect(JSON.stringify(protectedUi)).not.toContain("SECRET_DO_NOT_ECHO");
+      expect(JSON.stringify(auditRecords)).not.toContain("SECRET_DO_NOT_ECHO");
+      expect(JSON.stringify(activityRecords)).not.toContain("SECRET_DO_NOT_ECHO");
+      expect(activityRecords.at(-1)).toContain("TOOL_PERMISSION_PREFLIGHT_REDACTED");
       const badShape=await describe({command:"inspect_security_prompts",limit:10});
       expect(badShape.hostFilePolicy.reasonCode).toBe("unsupported_arguments");
       const validPrompts=await describe({command:"inspect_security_prompts"});
@@ -94,7 +104,7 @@ describe("MCP Connection Controls independent from host file-policy certificatio
         name:"superagent_server_health",checkArguments:{command:"probe"},
       });
       expect(unavailable.isError).toBe(true);
-    }finally{await server.close();}
+    }finally{unsubscribe();await server.close();}
   });
 
   it("OAuth read-only identities cannot execute approved host-file-safe desktop metadata",async()=>{
