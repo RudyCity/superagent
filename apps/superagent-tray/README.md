@@ -79,9 +79,13 @@ manual archiving of such incidents is rejected in native storage.
   grant access or complete an action and the action counter still includes it.
 - **Per-device filtering:** uses only native-verified `deviceId` metadata.
   Existing local producers use `local`; legacy events without identity show
-  **Unspecified device**. Specific remote device IDs require source producers
-  to supply verified IDs via the native `publish_for_device` contract. The
-  notification body is never parsed to guess a device.
+  **Unspecified device**. The native Tray polls the authenticated, paired LAN
+  inventory and creates device-specific warnings for verified connected →
+  disconnected transitions; verified reconnection resolves those incidents.
+  Core inventory failures and disappearing/unpaired devices do not trigger
+  guessed disconnect events. Further producers can use the native
+  `publish_for_device` contract; titles and message bodies are never parsed
+  to guess an identity.
 - **Activity history:** bounded native audit events include create, reopen,
   acknowledgement, progress, read, snooze, resolve and archive transitions.
   Retention/size caps still apply; this is not an immutable forensic log.
