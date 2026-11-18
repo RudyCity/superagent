@@ -13,7 +13,7 @@ export const lanSupportTool: Tool = {
   parameters: {
     type: "object",
     properties: {
-      action: { type: "string", enum: ["discover", "list", "pair", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop", "android_shell", "close", "revoke"] },
+      action: { type: "string", enum: ["discover", "list", "pair", "open", "exec", "terminal_start", "terminal_read", "terminal_input", "terminal_stop", "terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_key", "terminal_fleet_resize", "terminal_fleet_stop", "android_shell", "close", "revoke"] },
       segment: { type: "string", description: "Required local network segment name (3-32 safe ASCII chars) for discovery; not a security credential." },
       host: { type: "string", description: "Target's verified private physical LAN IPv4." },
       port: { type: "integer", description: "Default 17845." },
@@ -55,7 +55,7 @@ export const lanSupportTool: Tool = {
         if (isSystemDestructiveCommand(command)) return "Denied: potentially destructive remote system command.";
         return JSON.stringify(await execLanCommand(id, command), null, 2);
       }
-      if (["terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_stop"].includes(action)) {
+      if (["terminal_fleet_open", "terminal_fleet_close", "terminal_fleet_start", "terminal_fleet_read", "terminal_fleet_input", "terminal_fleet_key", "terminal_fleet_resize", "terminal_fleet_stop"].includes(action)) {
         const op = action.replace("terminal_fleet_", "") as LanTerminalFleetAction;
         return JSON.stringify(await lanTerminalFleet.execute(op, args.targets), null, 2);
       }
