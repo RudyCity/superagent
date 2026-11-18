@@ -82,6 +82,14 @@ function mount(items: Record<string, unknown>[] = []) {
 }
 
 describe("Tray Notification Manager", () => {
+  it("identifies OAuth-named MCP requests without treating a name as approval", () => {
+    expect(rust).toContain('request.get("ownerConnectionName")');
+    expect(rust).toContain('requested MCP permission. Review Security Approval.');
+    expect(rust).toContain('"mcp-pending:{id}"');
+    expect(js).toContain('__superagentAccessManagerFocusRequest');
+    expect(js).not.toContain('mcp_project_access_action("approve"');
+  });
+
   it("wires one header bell adjacent to Reload and a distinct sidebar/page route", () => {
     expect(html.indexOf('id="tray-notification-bell"')).toBeGreaterThan(0);
     expect(html.indexOf('id="tray-notification-bell"')).toBeLessThan(html.indexOf('id="tray-window-reload"'));
