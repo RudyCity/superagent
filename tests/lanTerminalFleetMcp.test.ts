@@ -63,7 +63,8 @@ describe("Terminal fleet MCP and Core API contracts", () => {
       windowsPipedJobs: true, androidOwnerApprovedSingleCommand: true,
       automaticPairing: false,
     });
-    expect(data.windows.conpty).toBe(false);
+    expect(data.windows.conpty).toBe(true);
+    expect(data.windows.conptyRequiresBun).toBe(true);
     expect(data.android.ownerApprovedSandboxShell.remoteInputDisabled).toBe(true);
   });
 });
