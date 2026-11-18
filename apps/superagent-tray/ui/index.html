@@ -16,11 +16,13 @@
   <link rel="stylesheet" href="./delegate-multitab.css" />
   <link rel="stylesheet" href="./delegate-action-diagnostics.css" />
   <link rel="stylesheet" href="./desktop-live-manager.css" />
+  <link rel="stylesheet" href="./managed-chrome.css" />
   <link rel="stylesheet" href="./recordings.css" />
   <link rel="stylesheet" href="./notifications.css" />
   <script src="./overview.js" defer></script>
   <script src="./overview-operations.js" defer></script>
   <script src="./desktop-live-manager.js" defer></script>
+  <script src="./managed-chrome.js" defer></script>
   <script src="./recordings.js" defer></script>
   <script src="./tray-access-password.js" defer></script>
   <script src="./titlebar.js" defer></script>
@@ -1213,6 +1215,48 @@
               <span id="runtime-scanned" class="subtle-badge">Not scanned yet</span>
             </div>
           </div>
+
+          <!-- Attended managed CDP launcher; no Delegate or personal Chrome takeover. -->
+          <section class="managed-chrome-card" aria-labelledby="managed-chrome-title">
+            <div class="managed-chrome-heading">
+              <div>
+                <span class="panel-eyebrow">BROWSER RUNTIME</span>
+                <h3 id="managed-chrome-title">Managed Chrome CDP</h3>
+                <p>Launch a dedicated Chrome debug profile. Chrome Delegate stays independent.</p>
+              </div>
+              <span id="managed-chrome-status" class="managed-chrome-status" role="status">Not checked</span>
+            </div>
+            <form id="managed-chrome-form" class="managed-chrome-form" autocomplete="off">
+              <label class="managed-chrome-field" for="managed-chrome-port">
+                <span>Debug port</span>
+                <input type="number" min="1024" max="65535" step="1" id="managed-chrome-port" value="9222" required />
+              </label>
+              <label class="managed-chrome-field" for="managed-chrome-mode">
+                <span>Display mode</span>
+                <select id="managed-chrome-mode">
+                  <option value="headed">Visible window</option>
+                  <option value="headless">Headless</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </label>
+              <label class="managed-chrome-field managed-chrome-url" for="managed-chrome-url">
+                <span>Startup URL</span>
+                <input type="url" id="managed-chrome-url" value="https://tab.ub.ac.id/" placeholder="https://example.com/" maxlength="2048" />
+              </label>
+              <div class="managed-chrome-actions">
+                <button type="submit" id="managed-chrome-launch" class="button primary">Launch Chrome CDP</button>
+                <button type="button" id="managed-chrome-refresh" class="button ghost">Check status</button>
+                <button type="button" id="managed-chrome-stop" class="button ghost" disabled>Stop owned Chrome</button>
+              </div>
+            </form>
+            <div class="managed-chrome-details">
+              <span>Endpoint <strong id="managed-chrome-endpoint">127.0.0.1:9222</strong></span>
+              <span>PID <strong id="managed-chrome-pid">—</strong></span>
+              <span>Tabs <strong id="managed-chrome-tabs">—</strong></span>
+              <span id="managed-chrome-browser">Browser not verified</span>
+            </div>
+            <p id="managed-chrome-feedback" class="managed-chrome-feedback" role="status" aria-live="polite">Check status to inspect the selected port. Launch and Stop require native approval.</p>
+          </section>
 
           <div class="runtime-summary">
             <div class="metric-cell">
