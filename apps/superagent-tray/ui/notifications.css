@@ -509,6 +509,9 @@
   background: var(--notif-surface-elevated);
   border-color: var(--notif-edge-strong);
 }
+.notification-item.is-navigable { cursor: pointer; }
+.notification-item.is-navigable:focus-within { border-color: var(--notif-edge-strong); }
+.notification-item.is-navigable .notification-item-actions { cursor: default; }
 .notification-item.is-unread {
   border-color: rgba(96, 165, 250, 0.3);
 }
