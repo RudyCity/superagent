@@ -36,15 +36,16 @@
     panel.hidden = !device || device.platform !== "windows";
     const mine = sameSelection();
     const running = Boolean(mine && task.running);
+    const stopping = Boolean(running && task.stopping);
     const command = ($("lan-command")?.value || "").trim();
     const input = $("lan-terminal-task-input")?.value || "";
     for (const [name, enabled] of [
       ["lan-terminal-task-start", !mutationPending && Boolean(device) && !running && Boolean(command)],
       ["lan-terminal-task-refresh", !readPending && Boolean(mine)],
-      ["lan-terminal-task-stop", Boolean(mine && task.running)],
-      ["lan-terminal-task-send", !mutationPending && running && input.length > 0 && input.length <= 1024],
-      ["lan-terminal-task-input", !mutationPending && running],
-      ["lan-terminal-task-newline", !mutationPending && running],
+      ["lan-terminal-task-stop", Boolean(running && !stopping)],
+      ["lan-terminal-task-send", !mutationPending && running && !stopping && input.length > 0 && input.length <= 1024],
+      ["lan-terminal-task-input", !mutationPending && running && !stopping],
+      ["lan-terminal-task-newline", !mutationPending && running && !stopping],
     ]) if ($(name)) $(name).disabled = !enabled;
     if (!mine) {
       if (!mutationPending) display(device?.platform === "windows"
@@ -58,7 +59,7 @@
       task.output || "(No output yet)";
     if (lastError) display(lastError, true);
     else if (mutationPending) display("Waiting for target-owner approval...");
-    else display(task.running
+    else display(task.stopping ? "Stopping · verifying owned process exit" : task.running
       ? "Running · " + task.jobId.slice(0, 8) + " · 10-minute maximum, 2-minute idle limit"
       : "Finished · " + (task.reason || "unknown") +
         " · exit code " + (task.exitCode === null ? "n/a" : task.exitCode));
@@ -80,6 +81,7 @@
     task.cursor = snapshot.nextCursor;
     task.latestCursor = Number.isSafeInteger(snapshot.cursor) ? snapshot.cursor : task.cursor;
     task.running = snapshot.running === true;
+    task.stopping = snapshot.stopping === true;
     task.reason = typeof snapshot.reason === "string" ? snapshot.reason : null;
     task.exitCode = Number.isSafeInteger(snapshot.exitCode) ? snapshot.exitCode : null;
     lastError = "";
@@ -104,7 +106,7 @@
       // Never display output from another device after a route/selection change.
       if (revision !== mutationRevision) return;
       task = { deviceId: device.id, jobId: snapshot.jobId, cursor: 0, latestCursor: 0,
-        running: true, reason: null, exitCode: null, output: "" };
+        running: true, stopping: false, reason: null, exitCode: null, output: "" };
       apply(snapshot);
     } catch (error) {
       lastError = /timeout/i.test(String(error))
