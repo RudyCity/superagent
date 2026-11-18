@@ -1560,13 +1560,24 @@ function extractMcpResultText(result: unknown): string {
         rawArgs.name === "superagent_lifecycle";
       const lifecycleParams = wrappedLifecycle && rawArgs.arguments && typeof rawArgs.arguments === "object"
         && !Array.isArray(rawArgs.arguments) ? rawArgs.arguments as Record<string, unknown> : rawArgs;
-      const safeActivityArgs = desktopCall ? desktopAuditArgs
+      const privateBrowser = toolName === "superagent_chrome_cdp_web" ||
+        ((toolName === "superagent_chrome_cdp" || toolName === "superagent_control_chrome_cdp") &&
+          rawArgs.transport === "delegate") ||
+        (toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
+          ["superagent_chrome_cdp_web","superagent_chrome_cdp"].includes(String(rawArgs.name)) &&
+          rawArgs.arguments && typeof rawArgs.arguments === "object" &&
+          (rawArgs.arguments as Record<string, unknown>).transport === "delegate");
+      const safeActivityArgs = privateBrowser
+        ? { command: rawArgs.command ?? (rawArgs.arguments as any)?.command,
+            contentRedacted: true }
+        : desktopCall ? desktopAuditArgs
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? { action: lifecycleParams.action, workflowId: lifecycleParams.workflowId,
               runId: lifecycleParams.runId, stepId: lifecycleParams.stepId,
               workerId: lifecycleParams.workerId } : rawArgs;
-      const safeActivityOutput = desktopCall
-        ? "[DESKTOP_UI_RESPONSE_REDACTED]"
+      const safeActivityOutput = privateBrowser
+        ? "[DELEGATE_CDP_RESPONSE_REDACTED]"
+        : desktopCall ? "[DESKTOP_UI_RESPONSE_REDACTED]"
         : toolName.startsWith("superagent_lifecycle") || wrappedLifecycle
           ? "[EXTERNAL_LIFECYCLE_RESPONSE_REDACTED]" : outputText;
       emitAudit({ tool: toolName, args: rawArgs, ok: !failed, ...(failed ? { error: outputText } : {}), durationMs });
