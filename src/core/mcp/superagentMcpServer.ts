@@ -158,6 +158,7 @@ type McpRequestAuditContext = {
   requiredCapability?: string;
   authorizationDecision?: "allowed" | "denied" | "not_applicable";
   errorCode?: string;
+  unvalidatedTarget?: boolean;
 };
 
 function classifyMcpAuditError(error?: string): string | undefined {
@@ -1256,19 +1257,23 @@ function extractMcpResultText(result: unknown): string {
       projectId: effectiveProjectId,
     };
     const emitAudit = (info: { tool: string; args: unknown; ok: boolean; error?: string; durationMs?: number }) => {
-      const projectId = auditContext.projectId ?? effectiveProjectId
-        ?? (typeof rawArgs.projectId === "string" ? rawArgs.projectId : null);
+      const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
+        ?? (!info.ok ? "tool_execution_failed" : undefined);
+      const unvalidatedAuthorizationFailure = auditContext.unvalidatedTarget === true || ["mcp_owner_allowlist_denied",
+        "insufficient_oauth_scope", "insufficient_oauth_admin_scope"].includes(errorCode ?? "");
+      const privatePermissionFailure = unvalidatedAuthorizationFailure || errorCode === "policy_store_unavailable" ||
+        (desktopCall && ["desktop_schema_invalid", "desktop_host_file_policy_denied"].includes(errorCode ?? ""));
+      const projectId = privatePermissionFailure ? null : (auditContext.projectId ?? effectiveProjectId
+        ?? (typeof rawArgs.projectId === "string" ? rawArgs.projectId : null));
       const registeredProject = projectId ? getProject(projectId) : null;
-      const providerKind = auditContext.providerKind ?? registeredProject?.type
-        ?? (/^ssh:/i.test(effectiveWs) ? "ssh" : /^chain:/i.test(effectiveWs) ? "chain" : null);
+      const providerKind = privatePermissionFailure ? null : (auditContext.providerKind ?? registeredProject?.type
+        ?? (/^ssh:/i.test(effectiveWs) ? "ssh" : /^chain:/i.test(effectiveWs) ? "chain" : null));
       const requiredCapability = auditContext.requiredCapability
         ?? (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName)
           ? getProjectCapabilityForTool(toolName, rawArgs)
           : level ? `${level}_tool` : undefined);
       const authorizationDecision = auditContext.authorizationDecision
         ?? (info.ok ? (WORKSPACE_SCOPED_MCP_TOOLS.has(toolName) ? "allowed" : "not_applicable") : "denied");
-      const errorCode = auditContext.errorCode ?? classifyMcpAuditError(info.error)
-        ?? (!info.ok ? "tool_execution_failed" : undefined);
       const privateDelegate = delegateMcpObservation(toolName, rawArgs);
       const wrappedLifecycle = toolName === MCP_GATEWAY_TOOL_NAMES.execute &&
         rawArgs.name === "superagent_lifecycle";
@@ -1288,6 +1293,10 @@ function extractMcpResultText(result: unknown): string {
       } : info;
       if (auditContext.errorCode === "policy_store_unavailable") {
         safeInfo = { ...info, args: {}, error: new ProjectAccessPolicyStoreError().message };
+      } else if (unvalidatedAuthorizationFailure) {
+        safeInfo = { ...info, args: {}, error: errorCode };
+      } else if (privatePermissionFailure) {
+        safeInfo = { ...info, args: {}, error: "DESKTOP_UI_PERMISSION_DENIED" };
       } else if (desktopCall) {
         safeInfo = {
           ...safeInfo,
@@ -1305,8 +1314,8 @@ function extractMcpResultText(result: unknown): string {
           ...safeInfo,
           correlationId: auditContext.correlationId,
           principalHash: auditContext.principalHash,
-          projectId: errorCode === "policy_store_unavailable" ? null : projectId,
-          providerKind: errorCode === "policy_store_unavailable" ? null : providerKind,
+          projectId: privatePermissionFailure ? null : projectId,
+          providerKind: privatePermissionFailure ? null : providerKind,
           requiredCapability,
           authorizationDecision,
           errorCode,
@@ -1314,6 +1323,16 @@ function extractMcpResultText(result: unknown): string {
       } catch {
         // Audit observers must never break tool execution.
       }
+    };
+    const denyUnvalidatedCall = (errorCode: string, reason: string) => {
+      auditContext.authorizationDecision = "denied";
+      auditContext.errorCode = errorCode;
+      auditContext.unvalidatedTarget = true;
+      mcpToolMetrics.record(toolName, 0, true, Buffer.byteLength(reason, "utf8"));
+      emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
+      emitMcpActivity({ type: "tool_call", tool: toolName, args: {}, ok: false,
+        error: reason, durationMs: 0, timestamp: Date.now(), workspace: "mcp://authorization" });
+      return { content: [{ type: "text", text: reason }], isError: true };
     };
     const checkCurrentProjectAccess = (...args: Parameters<typeof hasProjectAccess>) => {
       try { return hasProjectAccess(...args); }
@@ -1361,25 +1380,44 @@ function extractMcpResultText(result: unknown): string {
         : PRIVILEGED_MCP_TOOLS.has(toolName) && !scopes.includes("mcp:tools:admin")
           ? "mcp:tools:admin" : null;
       if (requiredScope) {
-        const reason = "missing required OAuth scope " + requiredScope;
-        auditContext.authorizationDecision = "denied";
-        auditContext.errorCode = requiredScope === "mcp:tools:admin"
-          ? "insufficient_oauth_admin_scope" : "insufficient_oauth_scope";
-        // Denied OAuth scopes must not leak file contents, shell commands or
-        // other caller-supplied arguments into audit/activity subscribers.
-        emitAudit({ tool: toolName, args: {}, ok: false, error: reason, durationMs: 0 });
-        emitMcpActivity({
-          type: "tool_call",
-          tool: toolName,
-          args: {},
-          ok: false,
-          error: reason,
-          durationMs: 0,
-          timestamp: Date.now(),
-          workspace: activeWorkspace,
-        });
-        throw new McpError(ErrorCode.InvalidRequest,
-          "Tool requires OAuth " + requiredScope + " scope; Security Approval cannot elevate token permissions.");
+        const reason = "Tool requires OAuth " + requiredScope + " scope; Security Approval cannot elevate token permissions.";
+        denyUnvalidatedCall(requiredScope === "mcp:tools:admin"
+          ? "insufficient_oauth_admin_scope" : "insufficient_oauth_scope", reason);
+        throw new McpError(ErrorCode.InvalidRequest, reason);
+      }
+    }
+    if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
+      const errReason = "[TOOL_DISABLED] Tool is blocked by the MCP owner's explicit tool allowlist.";
+      denyUnvalidatedCall("mcp_owner_allowlist_denied", errReason);
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        errReason
+      );
+    }
+    const gatewayTarget = toolName === MCP_GATEWAY_TOOL_NAMES.execute
+      ? validateGatewayExecuteTarget(getAuthorizedMcpTools(), rawArgs) : null;
+    if (toolName === MCP_GATEWAY_TOOL_NAMES.execute && !gatewayTarget) {
+      return denyUnvalidatedCall("gateway_target_unavailable",
+        "Target tool unavailable, unauthorized, or arguments invalid.");
+    }
+    // Bounded Desktop UI certification precedes an approval request that could
+    // never override this host gate. Hidden targets disclose no policy state.
+    if (desktopCall) {
+      const visible = getAuthorizedMcpTools();
+      const target = gatewayTarget;
+      if (!describeGatewayTool(visible, "superagent_desktop_ui") ||
+          (toolName === MCP_GATEWAY_TOOL_NAMES.execute && !target)) {
+        return denyUnvalidatedCall("gateway_target_unavailable", "Tool unavailable or not authorized.");
+      }
+      const hostBlock = registeredFileToolGate({ name: "superagent_desktop_ui",
+        args: target ? target.arguments : rawArgs }, activeWorkspace);
+      if (hostBlock) {
+        // Only the host verdict is classified here; no connection grant is read.
+        const denial = describeBoundedDesktopPermission({ oauthAllowed: true,
+          connectionDecision: "approval_required", filePolicyActive: true, hostBlock });
+        return denyUnvalidatedCall(denial.decisionCode === "SCHEMA_INVALID"
+          ? "desktop_schema_invalid" : "desktop_host_file_policy_denied",
+          `[${denial.decisionCode}] Access denied by host permanent file policy: ${hostBlock}`);
       }
     }
     // Connection-wide operations (service control, LAN, desktop input, etc.)
@@ -1492,27 +1530,6 @@ function extractMcpResultText(result: unknown): string {
         content: [{ type: "text", text: `Access denied by MCP hard safety blocklist: ${blockedRoot}` }],
         isError: true,
       };
-    }
-
-    if (effectiveAllowedTools && !effectiveAllowedTools.includes(toolName)) {
-      const errReason = "blocked by MCP tool allowlist";
-      emitAudit({ tool: toolName, args: rawArgs, ok: false, error: errReason });
-      emitMcpActivity({
-        type: "tool_call",
-        tool: toolName,
-        args: toolName.startsWith("superagent_lifecycle") ? { action: rawArgs.action } : rawArgs,
-        ok: false,
-        error: "Blocked by MCP tool allowlist",
-        durationMs: 0,
-        timestamp: Date.now(),
-        workspace: effectiveWs,
-      });
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        isDangerous
-          ? `Tool '${toolName}' is classified as dangerous and is blocked by the MCP owner's explicit tool allowlist.`
-          : `Tool '${toolName}' is not enabled on this MCP server (blocked by MCP tool allowlist).`
-      );
     }
 
     // Independently enforce the exact approved project boundary, never the

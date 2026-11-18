@@ -78,7 +78,7 @@ describe("Offline pretrained OCR tool contract", () => {
     for (const engine of ["tiny", "tesseract"]) {
       const raw = await pdfOcrTool.execute({inputPath:"mixed.pdf",pages:[2],engine,language:"id"},dir);
       const result = JSON.parse(raw);
-      expect(result.status).toBe("verified");
+      expect(result.status, `${engine} OCR status; code=${result.code ?? "none"}`).toBe("verified");
       expect(result.ocrPerformed).toBe(true);
       expect(result.pages[0].backend).toMatch(engine === "tiny" ? /PP-OCRv6-tiny/ : /tesseract/);
       expect(result.text).toContain("FAKULTAS");
