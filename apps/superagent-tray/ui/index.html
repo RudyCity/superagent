@@ -122,6 +122,7 @@
       <button type="button" class="notification-popover-close" data-notification-close
               aria-label="Close notifications">×</button>
     </div>
+    <p id="tray-notification-category-summary" class="notification-popover-summary" aria-live="polite">0 need action · 0 information</p>
     <div id="tray-notification-recent" class="notification-popover-list" aria-live="polite"></div>
     <div class="notification-popover-foot">
       <button id="tray-notification-read-all" class="notification-text-button" type="button">Mark all read</button>
@@ -514,6 +515,22 @@
           </div>
 
           <div class="notification-controls-panel panel">
+            <div class="notification-kind-filters" role="group" aria-label="Notification categories">
+              <button type="button" class="notification-kind-filter is-action" data-notification-quick-filter="action" aria-pressed="false">
+                <span class="notification-kind-copy">
+                  <strong class="notification-kind-label">Requires action</strong>
+                  <span class="notification-kind-detail">Pending approvals and issues needing follow-up</span>
+                </span>
+                <strong id="notification-kind-count-action" class="notification-kind-count">0</strong>
+              </button>
+              <button type="button" class="notification-kind-filter is-information" data-notification-quick-filter="information" aria-pressed="false">
+                <span class="notification-kind-copy">
+                  <strong class="notification-kind-label">Information only</strong>
+                  <span class="notification-kind-detail">Updates, reminders and resolved incidents</span>
+                </span>
+                <strong id="notification-kind-count-information" class="notification-kind-count">0</strong>
+              </button>
+            </div>
             <div class="notification-filter-scroll">
               <div class="notification-filter-row" role="group" aria-label="Filter notifications">
                 <button class="notification-filter active" type="button" data-notification-filter="all" aria-pressed="true"><span>All</span><span id="notification-filter-count-all" class="notification-filter-count">0</span></button>
