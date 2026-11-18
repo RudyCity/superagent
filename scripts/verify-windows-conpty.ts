@@ -61,10 +61,10 @@ try {
 
   const shell = manager.start(sessionId, "powershell.exe -NoLogo -NoProfile -NoExit");
   assert.equal(shell.mode, "conpty");
-  manager.input(sessionId, shell.jobId, "Write-Output CONPTY_PERSISTENT_1", true);
-  await observe(shell.jobId, output => output.includes("CONPTY_PERSISTENT_1"), 30_000);
-  manager.input(sessionId, shell.jobId, "Write-Output CONPTY_PERSISTENT_2", true);
-  await observe(shell.jobId, output => output.includes("CONPTY_PERSISTENT_2"), 30_000);
+  manager.input(sessionId, shell.jobId, "Write-Output ('CONPTY_' + 'PERSISTENT_1_RESULT')", true);
+  await observe(shell.jobId, output => output.includes("CONPTY_PERSISTENT_1_RESULT"), 30_000);
+  manager.input(sessionId, shell.jobId, "Write-Output ('CONPTY_' + 'PERSISTENT_2_RESULT')", true);
+  await observe(shell.jobId, output => output.includes("CONPTY_PERSISTENT_2_RESULT"), 30_000);
   manager.input(sessionId, shell.jobId, "exit", true);
   const shellExit = await observe(shell.jobId, (_output, running) => !running, 30_000);
   assert.equal(shellExit.exitCode, 0);
