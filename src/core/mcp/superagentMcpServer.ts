@@ -648,7 +648,11 @@ export function createSuperagentMcpServer(options: McpServerOptions = {}): Serve
         oauthScope: readonly ? "mcp:tools" : "mcp:tools:write",
         // The grant is read for Git status/diff/log, git for mutating actions.
         // Describing without action arguments must not claim one fixed grant.
-        capability: actionDependent ? "action_dependent" : getProjectCapabilityForTool(name, {}),
+        // Keep "capability" in the actual ProjectAccessCapability enum for
+        // consumers that validate it. Variable actions expose a separate
+        // capabilityMode, never an invented capability value.
+        ...(actionDependent ? { capabilityMode: "action_dependent" }
+          : { capability: getProjectCapabilityForTool(name, {}) }),
         ...(actionDependent ? { capabilitiesByAction: {
           status: "read", diff: "read", log: "read",
           add: "git", commit: "git", restore: "git", clean: "git",
