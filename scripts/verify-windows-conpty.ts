@@ -59,6 +59,18 @@ try {
   assert.match(encoded.output, /CONPTY_UTF8_é_漢字_🙂/);
   console.log("PTY_UTF8_OK streaming non-ASCII output");
 
+  const shell = manager.start(sessionId, "powershell.exe -NoLogo -NoProfile -NoExit");
+  assert.equal(shell.mode, "conpty");
+  manager.input(sessionId, shell.jobId, "Write-Output CONPTY_PERSISTENT_1", true);
+  await observe(shell.jobId, output => output.includes("CONPTY_PERSISTENT_1"), 30_000);
+  manager.input(sessionId, shell.jobId, "Write-Output CONPTY_PERSISTENT_2", true);
+  await observe(shell.jobId, output => output.includes("CONPTY_PERSISTENT_2"), 30_000);
+  manager.input(sessionId, shell.jobId, "exit", true);
+  const shellExit = await observe(shell.jobId, (_output, running) => !running, 30_000);
+  assert.equal(shellExit.exitCode, 0);
+  console.log("PTY_PERSISTENT_OK multiple commands in one ConPTY session");
+
+
 
   const long = manager.start(sessionId, "Write-Output CONPTY_STOP_READY; Start-Sleep -Seconds 60");
   assert.equal(long.mode, "conpty");
